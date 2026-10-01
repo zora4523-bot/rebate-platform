@@ -1,11 +1,15 @@
 id: B2-01a
 repo: rebate-platform
-title: packages/money：bigint 金额类型、舍入与格式化（循环试跑）
+title: packages/money：整数分金额运算与按比例分账（循环试跑，原派单号 MONEY-001）
 type: impl
-refs: [BR-CALC-01, BR-CALC-08]
+# 规则测试另按 BR-CALC-02、04、07、21 的算例与属性写成（test/spec/money、test/properties/money）。
+# 这四条没列进 refs：BR-CALC-02 单条渲染进任务书就有 42KB，超过 24KB 上限（规划/11 §5.3）；
+# BR-CALC-02 的表格行作为一跳引用仍会进任务书。
+refs: [BR-CALC-01, BR-CALC-08, BR-CALC-26]
 refs_hash:
   BR-CALC-01: 102e2d700e30
   BR-CALC-08: fb23c78c03db
+  BR-CALC-26: 9ad8be74b506
 deps: []
 paths:
   - 'packages/money/src/**'
@@ -13,6 +17,7 @@ impl: codex
 tester: claude
 accept:
   - 'pnpm verify'
+  - 'test/spec/money/**'
   - 'test/properties/money/**'
 status: todo
 pr: null
