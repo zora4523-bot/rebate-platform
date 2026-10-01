@@ -1,9 +1,6 @@
 // @couli/money: integer-fen (bigint) amounts and basis-point ratios.
 //
-// SKELETON written by the rule-test author (规划/11 §2.3 step 3): every function only throws
-// NotImplemented so that the rule tests in test/spec/money and test/properties/money go red on
-// their assertions, not on a missing export. The implementer (task B2-01a) replaces the bodies
-// and keeps the exported names, signatures and error classes exactly as declared here.
+// Pure arithmetic primitives; beneficiary selection and business split policies belong to domain.
 // Rules: 规划/08 BR-CALC-01, 02, 04, 07, 08, 21, 26 (text in the task brief).
 
 /** Thrown for an amount that is not an integer number of fen, or is negative where forbidden. */
@@ -38,8 +35,46 @@ export type ReserveResult = {
   reserve_fen: bigint;
 };
 
-function notImplemented(name: string): never {
-  throw new Error(`NotImplemented: ${name}`);
+const BP = 10000n;
+const MAX_JSON_FEN = 9007199254740991n;
+
+function assertAmount(value: unknown): asserts value is bigint {
+  if (typeof value !== 'bigint') throw new InvalidAmount('Amount must be bigint fen');
+}
+
+function assertNonNegativeAmount(value: unknown): asserts value is bigint {
+  assertAmount(value);
+  if (value < 0n) throw new InvalidAmount('Amount must be non-negative');
+}
+
+function assertRatio(value: unknown): asserts value is bigint {
+  if (typeof value !== 'bigint' || value < 0n || value > BP) {
+    throw new InvalidRatio('Ratio must be bigint basis points in 0..10000');
+  }
+}
+
+function assertDenominator(value: unknown): asserts value is bigint {
+  if (typeof value !== 'bigint' || value <= 0n) {
+    throw new InvalidRatio('Denominator must be a positive bigint');
+  }
+}
+
+/** Parse the full decimal literal, then floor to hundredths, including for negative values. */
+function decimalToHundredths(
+  text: string,
+  ErrorType: typeof InvalidAmount | typeof InvalidRatio,
+): { value: bigint; hasTail: boolean } {
+  if (typeof text !== 'string') throw new ErrorType('Decimal input must be a string');
+  const match = /^(-?)([0-9]+)(?:\.([0-9]+))?$/.exec(text);
+  // `$` also matches before a final newline; require the entire input to be consumed.
+  if (!match || match[0] !== text) throw new ErrorType('Invalid decimal string');
+  const whole = match[2];
+  if (whole === undefined) throw new ErrorType('Missing decimal integer part');
+  const fraction = match[3] ?? '';
+  const magnitude = BigInt(whole) * 100n + BigInt(fraction.slice(0, 2).padEnd(2, '0'));
+  const hasTail = /[1-9]/.test(fraction.slice(2));
+  const value = match[1] === '-' ? -magnitude - (hasTail ? 1n : 0n) : magnitude;
+  return { value, hasTail };
 }
 
 /**
@@ -52,8 +87,12 @@ function notImplemented(name: string): never {
  * - any other type throws InvalidAmount.
  */
 export function parseFen(value: unknown): bigint {
-  void value;
-  return notImplemented('parseFen');
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return BigInt(value);
+  if (typeof value === 'string' && /^-?[0-9]+$/.exec(value)?.[0] === value) {
+    return BigInt(value);
+  }
+  throw new InvalidAmount('Expected bigint, safe integer, or decimal integer string');
 }
 
 /**
@@ -62,30 +101,28 @@ export function parseFen(value: unknown): bigint {
  * format. Inverse of yuanStrToFen. A non-bigint argument throws InvalidAmount.
  */
 export function formatFen(fen: bigint): string {
-  void fen;
-  return notImplemented('formatFen');
+  assertAmount(fen);
+  const magnitude = fen < 0n ? -fen : fen;
+  return `${fen < 0n ? '-' : ''}${magnitude / 100n}.${(magnitude % 100n).toString().padStart(2, '0')}`;
 }
 
 /**
  * BR-CALC-26: decimal yuan string -> fen, without ever going through a JS number.
  * Up to two decimals is exact ("14.5" -> 1450n, "14" -> 1400n, "-3.20" -> -320n); more than two
- * decimals is floored to the fen ("14.526" -> 1452n; floor means toward minus infinity, the
- * negative case is not covered by a rule test yet). Empty, non-numeric, scientific notation,
+ * decimals is floored to the fen ("14.526" -> 1452n; "-0.001" -> -1n).
+ * Empty, non-numeric, scientific notation,
  * NaN / Infinity and non-string arguments throw InvalidAmount.
  */
 export function yuanStrToFen(text: string): bigint {
-  void text;
-  return notImplemented('yuanStrToFen');
+  return decimalToHundredths(text, InvalidAmount).value;
 }
 
-/**
- * BR-CALC-26: percentage string -> bigint basis points ("20.00" -> 2000n, "15" -> 1500n), more
- * than two decimals floored ("0.015" -> 1n). Empty, non-numeric, scientific notation and values
- * above 100% throw InvalidRatio (never treated as 0).
- */
+/** BR-CALC-26: percentage string -> bigint bp, floored; the raw ratio must be in 0..100%. */
 export function pctStrToBp(text: string): bigint {
-  void text;
-  return notImplemented('pctStrToBp');
+  const { value, hasTail } = decimalToHundredths(text, InvalidRatio);
+  assertRatio(value);
+  if (value === BP && hasTail) throw new InvalidRatio('Percentage exceeds 100%');
+  return value;
 }
 
 /**
@@ -93,8 +130,12 @@ export function pctStrToBp(text: string): bigint {
  * |fen| > 2^53 - 1 (never loses precision silently) or when fen is not a bigint.
  */
 export function fenToJsonNumber(fen: bigint): number {
-  void fen;
-  return notImplemented('fenToJsonNumber');
+  assertAmount(fen);
+  if (fen < -MAX_JSON_FEN || fen > MAX_JSON_FEN) {
+    // The service boundary catches this error and emits its alert; this library does no I/O.
+    throw new InvalidAmount('Amount exceeds the safe JSON integer range');
+  }
+  return Number(fen);
 }
 
 /**
@@ -103,21 +144,18 @@ export function fenToJsonNumber(fen: bigint): number {
  * (else InvalidRatio); denominator must be a positive bigint (callers pass 10000n).
  */
 export function mulDivFloor(amount_fen: bigint, ratio_bp: bigint, denominator: bigint): bigint {
-  void amount_fen;
-  void ratio_bp;
-  void denominator;
-  return notImplemented('mulDivFloor');
+  assertNonNegativeAmount(amount_fen);
+  assertRatio(ratio_bp);
+  assertDenominator(denominator);
+  return (amount_fen * ratio_bp) / denominator;
 }
 
-/**
- * BR-CALC-01: ceil(amount_fen * ratio_bp / denominator), multiply first, with the same
- * non-negative amount / 0..10000 ratio / positive denominator checks as mulDivFloor.
- */
+/** BR-CALC-01: ceil with the same non-negative amount / ratio / denominator checks as floor. */
 export function mulDivCeil(amount_fen: bigint, ratio_bp: bigint, denominator: bigint): bigint {
-  void amount_fen;
-  void ratio_bp;
-  void denominator;
-  return notImplemented('mulDivCeil');
+  assertNonNegativeAmount(amount_fen);
+  assertRatio(ratio_bp);
+  assertDenominator(denominator);
+  return (amount_fen * ratio_bp + denominator - 1n) / denominator;
 }
 
 /**
@@ -127,9 +165,20 @@ export function mulDivCeil(amount_fen: bigint, ratio_bp: bigint, denominator: bi
  * The input array is not modified.
  */
 export function splitByBp(base_fen: bigint, shares_bp: readonly bigint[]): SplitResult {
-  void base_fen;
-  void shares_bp;
-  return notImplemented('splitByBp');
+  assertNonNegativeAmount(base_fen);
+  if (!Array.isArray(shares_bp)) throw new InvalidRatio('Shares must be an array of basis points');
+  let totalBp = 0n;
+  let remainder = base_fen;
+  const shares: bigint[] = [];
+  for (const bp of shares_bp) {
+    assertRatio(bp);
+    totalBp += bp;
+    if (totalBp > BP) throw new InvalidRatio('Sum of share ratios exceeds 10000');
+    const share = mulDivFloor(base_fen, bp, BP);
+    shares.push(share);
+    remainder -= share;
+  }
+  return { shares, remainder };
 }
 
 /**
@@ -139,7 +188,9 @@ export function splitByBp(base_fen: bigint, shares_bp: readonly bigint[]): Split
  * reserve_bp a bigint in 0..10000 (else InvalidRatio).
  */
 export function applyReserve(n_base_fen: bigint, reserve_bp: bigint): ReserveResult {
-  void n_base_fen;
-  void reserve_bp;
-  return notImplemented('applyReserve');
+  assertAmount(n_base_fen);
+  assertRatio(reserve_bp);
+  const positive = n_base_fen > 0n ? n_base_fen : 0n;
+  const after_reserve_fen = mulDivFloor(positive, BP - reserve_bp, BP);
+  return { after_reserve_fen, reserve_fen: positive - after_reserve_fen };
 }
