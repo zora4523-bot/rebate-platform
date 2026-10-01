@@ -1,0 +1,159 @@
+# Base checks for every pull request and every push to main (规划/11 §3.2, §4.1, §4.2).
+# Written on 2026-10-01 without a GitHub remote: nothing in this file has run on GitHub yet.
+# TODO(规划/11 §9.3 #10): first run on a real runner, then back-fill the timings — blocked on GitHub remote.
+#
+# Rules for every workflow in this repo (checked by tools/ci/check-workflows.ts):
+#   - no workflow-level `paths` filters; path-conditional work uses a job-level `if` plus an
+#     `if: always()` summary job, and only summary jobs are required checks;
+#   - job ids are unique across all workflows and jobs carry no `name:`, so the check context
+#     equals the job id;
+#   - every action is pinned to a full commit SHA with a version comment.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      # The spec-ref and banned-terms guards and the tools/ops ledger tests read planning text
+      # with `git show <SPEC_REF>:<path>`, so the public planning repository is checked out with
+      # full history into the git-ignored .tmp/ directory (规划/11 §5.3).
+      - name: Check out the planning repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zora4523-bot/couli
+          path: .tmp/spec-repo
+          fetch-depth: 0
+          persist-credentials: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify:fast
+        env:
+          COULI_SPEC_REPO: ${{ github.workspace }}/.tmp/spec-repo
+      # PR property tier (规划/11 §4.2): 100k runs with the fixed seed, then 100k runs with a seed
+      # derived from the first 8 hex digits of the commit SHA.
+      - name: Property tests, 100k runs, fixed seed
+        run: pnpm --filter @couli/spec-tests test
+        env:
+          PROP_RUNS: '100000'
+      - name: Property tests, 100k runs, seed from commit SHA
+        run: |
+          PROP_SEED="$((16#${COMMIT_SHA:0:8}))"
+          export PROP_SEED
+          echo "PROP_SEED=${PROP_SEED}"
+          pnpm --filter @couli/spec-tests test
+        env:
+          PROP_RUNS: '100000'
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  verify-int:
+    # Needs Docker (Testcontainers starts the one-shot PostgreSQL): ubuntu-latest, never ubuntu-slim.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:int
+      - run: pnpm db:check
+
+  guard-git:
+    # Git-dependent guards run from the BASE copy of tools/guard against the PR tree, so a branch
+    # cannot weaken the guards that judge it (规划/11 §2.4, §8).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the PR head with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: pr
+          persist-credentials: false
+      - name: Check out the base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: base/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: base/.nvmrc
+          package-manager-cache: false
+      - name: Install the base copy's dependencies
+        working-directory: base
+        run: pnpm install --frozen-lockfile
+      - name: Run the base copy's guards against the PR tree
+        run: |
+          if [ ! -f base/tools/guard/run.ts ]; then
+            echo "::error::base branch has no tools/guard/run.ts; the guards cannot run"
+            exit 1
+          fi
+          set -- git --base "$BASE_SHA" --cwd "$GITHUB_WORKSPACE/pr"
+          case "$HEAD_REF" in
+            task/*)
+              task_id="${HEAD_REF#task/}"
+              if ! printf '%s' "$task_id" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+                echo "::error::branch name does not carry a valid task id"
+                exit 1
+              fi
+              set -- "$@" --task "$task_id"
+              ;;
+          esac
+          node base/tools/guard/run.ts "$@"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+
+  ci-gate:
+    # Summary job: the only required check of this workflow (ops/branch-protection.json).
+    if: always()
+    needs: [verify-fast, verify-int, guard-git]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summarise
+        run: |
+          echo "verify-fast=${FAST} verify-int=${INT} guard-git=${GUARD} event=${EVENT}"
+          [ "$FAST" = success ] || exit 1
+          [ "$INT" = success ] || exit 1
+          if [ "$EVENT" = pull_request ]; then
+            [ "$GUARD" = success ] || exit 1
+          else
+            [ "$GUARD" = skipped ] || [ "$GUARD" = success ] || exit 1
+          fi
+        env:
+          FAST: ${{ needs.verify-fast.result }}
+          INT: ${{ needs.verify-int.result }}
+          GUARD: ${{ needs.guard-git.result }}
+          EVENT: ${{ github.event_name }}

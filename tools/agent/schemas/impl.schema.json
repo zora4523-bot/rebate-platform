@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_done",
+    "files_changed",
+    "commands",
+    "tests_passed",
+    "deps_needed",
+    "outside_needed",
+    "blocked_reason",
+    "notes"
+  ],
+  "properties": {
+    "task_done": { "type": "boolean" },
+    "files_changed": { "type": "array", "items": { "type": "string" } },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cmd", "exit_code"],
+        "properties": {
+          "cmd": { "type": "string" },
+          "exit_code": { "type": "integer" }
+        }
+      }
+    },
+    "tests_passed": { "type": "boolean" },
+    "deps_needed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "reason"],
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "outside_needed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cmd", "reason"],
+        "properties": {
+          "cmd": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "blocked_reason": { "type": "string" },
+    "notes": { "type": "string" }
+  }
+}

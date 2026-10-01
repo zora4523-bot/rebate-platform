@@ -1,0 +1,19 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/testing" },
+    { "path": "packages/money" },
+    { "path": "packages/domain" },
+    { "path": "packages/db" },
+    { "path": "packages/db/scripts" },
+    { "path": "packages/contracts-ts" },
+    { "path": "packages/contracts-ts/scripts" },
+    { "path": "apps/api" },
+    { "path": "apps/api/scripts" },
+    { "path": "tools" },
+    { "path": "tools/ops" },
+    { "path": "tools/agent" },
+    { "path": "tools/ci" },
+    { "path": "test" }
+  ]
+}

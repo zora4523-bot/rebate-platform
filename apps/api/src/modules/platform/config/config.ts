@@ -1,0 +1,124 @@
+// Environment configuration (ADR-0001 §2 配置校验): validated once at startup with zod.
+// `loadConfig` is pure: it only looks at the object it is given.
+import { z } from 'zod';
+import { findCredentialLikeEnvNames } from './credential-env.ts';
+
+export const APP_ENVS = ['local', 'test', 'staging', 'prod'] as const;
+export type AppEnv = (typeof APP_ENVS)[number];
+
+export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+const port = (fallback: number) =>
+  z
+    .string()
+    .regex(/^\d{1,5}$/, 'must be a decimal port number')
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(65535))
+    .default(fallback);
+
+const envSchema = z.object({
+  APP_ENV: z.enum(APP_ENVS),
+  LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
+  // ISO-8601 instant with an explicit offset (`Z` or `+08:00`), see clockFromConfig.
+  CLOCK_NOW: z.iso.datetime({ offset: true }).optional(),
+  COULI_EXIT_AFTER_INIT: z.enum(['0', '1']).default('0'),
+  API_HOST: z.string().min(1).default('127.0.0.1'),
+  API_PORT: port(3100),
+  STREAM_PORT: port(3101),
+  ADMIN_PORT: port(3102),
+  // TODO(ADR-0001 §4.2 #11): make DATABASE_URL / REDIS_URL required per entry once the database and cache modules exist — blocked on B1-01.
+  DATABASE_URL: z.url({ protocol: /^postgres(?:ql)?$/ }).optional(),
+  REDIS_URL: z.url({ protocol: /^rediss?$/ }).optional(),
+});
+
+type EnvKey = keyof z.input<typeof envSchema>;
+const ENV_KEYS = Object.keys(envSchema.shape) as EnvKey[];
+
+export interface AppConfig {
+  readonly appEnv: AppEnv;
+  readonly logLevel: LogLevel;
+  /** Validated CLOCK_NOW text; parsed into an instant only inside platform/clock. */
+  readonly clockNow: string | undefined;
+  readonly exitAfterInit: boolean;
+  readonly apiHost: string;
+  readonly apiPort: number;
+  readonly streamPort: number;
+  readonly adminPort: number;
+  readonly databaseUrl: string | undefined;
+  readonly redisUrl: string | undefined;
+}
+
+/** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
+export class ConfigError extends Error {
+  readonly problems: readonly string[];
+
+  constructor(problems: readonly string[]) {
+    super(
+      `Invalid environment configuration:\n${problems.map((problem) => `- ${problem}`).join('\n')}`,
+    );
+    this.name = 'ConfigError';
+    this.problems = problems;
+  }
+}
+
+/** Startup assertions that depend on the environment name (ADR-0001 §4.2 #10, 规划/11 §8). */
+export function startupViolations(
+  appEnv: AppEnv,
+  env: Readonly<Record<string, string | undefined>>,
+): string[] {
+  const violations: string[] = [];
+  if (appEnv === 'prod' && (env['CLOCK_NOW'] ?? '') !== '') {
+    violations.push(
+      'CLOCK_NOW: must not be set when APP_ENV=prod (the production clock is real time)',
+    );
+  }
+  if (appEnv === 'local' || appEnv === 'test') {
+    for (const name of findCredentialLikeEnvNames(env)) {
+      violations.push(
+        `${name}: looks like a real third-party credential; APP_ENV=${appEnv} only runs fake adapters, unset it`,
+      );
+    }
+  }
+  return violations;
+}
+
+/**
+ * Validates the environment and returns the typed configuration. Variables set to an empty
+ * string count as unset. Throws one `ConfigError` listing every problem.
+ */
+export function loadConfig(env: Readonly<Record<string, string | undefined>>): AppConfig {
+  const input: Record<string, string> = {};
+  for (const key of ENV_KEYS) {
+    const value = env[key];
+    if (value !== undefined && value !== '') input[key] = value;
+  }
+
+  const parsed = envSchema.safeParse(input);
+  if (!parsed.success) {
+    const problems = parsed.error.issues.map(
+      (issue) => `${issue.path.join('.') || '(environment)'}: ${issue.message}`,
+    );
+    // APP_ENV-dependent assertions still run when APP_ENV itself is valid.
+    const appEnv = z.enum(APP_ENVS).safeParse(input['APP_ENV']);
+    if (appEnv.success) problems.push(...startupViolations(appEnv.data, env));
+    throw new ConfigError(problems);
+  }
+
+  const values = parsed.data;
+  const violations = startupViolations(values.APP_ENV, env);
+  if (violations.length > 0) throw new ConfigError(violations);
+
+  return {
+    appEnv: values.APP_ENV,
+    logLevel: values.LOG_LEVEL,
+    clockNow: values.CLOCK_NOW,
+    exitAfterInit: values.COULI_EXIT_AFTER_INIT === '1',
+    apiHost: values.API_HOST,
+    apiPort: values.API_PORT,
+    streamPort: values.STREAM_PORT,
+    adminPort: values.ADMIN_PORT,
+    databaseUrl: values.DATABASE_URL,
+    redisUrl: values.REDIS_URL,
+  };
+}

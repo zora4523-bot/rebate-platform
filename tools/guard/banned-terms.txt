@@ -1,0 +1,13 @@
+# Technology names superseded by ADR-0001 §3 (规划/11 §5.5).
+# Scanned by tools/guard/banned-terms.ts in 规划/** at SPEC_REF and in every task brief.
+# One term per line, matched case-insensitively as a substring.
+# Prefix "word:" = whole-word match (not next to an ASCII letter, digit or underscore).
+# Exceptions (prohibition and history sentences) live in banned-terms.allow.txt.
+Prisma
+BullMQ
+Supertest
+react-vant
+X-Clock
+outbox
+word:relay
+queue Redis

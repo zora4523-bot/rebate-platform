@@ -1,0 +1,97 @@
+openapi: 3.1.0
+info:
+  title: Couli rebate-platform API
+  version: 0.1.0
+  summary: Shared HTTP contract for the app, H5, admin console and backend.
+  description: |
+    Single source for endpoints, error codes and enums (D17). Conventions: 规划/04 §5.
+    Authoring rules: contracts/README.md. The skeleton only declares the health probe;
+    business operations are added per feature by contract tasks (CT-xx).
+servers:
+  - url: http://127.0.0.1:3100
+    description: Local `api` entry (API_HOST / API_PORT defaults).
+tags:
+  - name: ops
+    description: Operational probes. Not part of the product API and not versioned under /v1.
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      tags:
+        - ops
+      summary: Liveness probe
+      description: |
+        Returns 200 as soon as the process has finished initialising. It checks no
+        dependency (database, cache, queue). Served by every HTTP entry.
+      x-auth: none
+      security: []
+      responses:
+        '200':
+          description: The process is initialised.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthzResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  status: ok
+                  entry: api
+                  now: '2026-10-01T04:00:00.000Z'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+components:
+  schemas:
+    EntryName:
+      type: string
+      description: Process entry that produced the response (ADR-0001 §2).
+      enum:
+        - api
+        - stream
+        - admin
+        - worker
+        - payout
+    HealthzData:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - entry
+        - now
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        entry:
+          $ref: '#/components/schemas/EntryName'
+        now:
+          type: string
+          format: date-time
+          description: Current instant of the process clock (follows CLOCK_NOW outside prod).
+    HealthzResponse:
+      type: object
+      description: Response envelope of 规划/04 §5 carrying the health payload.
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          type: integer
+          format: int32
+          description: 0 means success.
+          enum:
+            - 0
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/HealthzData'
+        trace_id:
+          type: string
+          description: Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.
+          minLength: 1
+          maxLength: 64
+          pattern: '^[A-Za-z0-9_-]+$'

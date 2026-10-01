@@ -1,0 +1,100 @@
+# Long-run property tier for the funds tree (规划/11 §3.2, §4.2): 1,000,000 runs per property,
+# bound to the tree hash of the money paths, not to the commit id.
+#
+# DIFFERENCE TO RECONCILE: 规划/11 §3.2 describes `longrun-props` as a commit STATUS written by
+# tools/ops/merge.sh from the local machine (`gh api repos/<owner>/<repo>/statuses/<sha>`). This
+# workflow is the skeleton implementation: an Actions CHECK with the same name, so that the
+# required context exists from the first PR. When merge.sh is built, decide which of the two
+# writes `longrun-props` (a status written locally cannot be pinned to integration_id 15368).
+# TODO(规划/11 §3.2): reconcile with merge.sh — blocked on GitHub remote and tools/ops/merge.sh.
+# Written on 2026-10-01 without a GitHub remote: nothing in this file has run on GitHub yet.
+name: longrun-props
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  longrun-detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.trees.outputs.changed }}
+      tree: ${{ steps.trees.outputs.tree }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare the money tree hashes of head and base
+        id: trees
+        run: |
+          set -euo pipefail
+          # One line per path: "<path> <tree hash | missing>"; the combined hash names the tree.
+          trees_of() {
+            for p in packages/money packages/domain packages/testing test/properties test/spec; do
+              printf '%s %s\n' "$p" "$(git rev-parse --verify --quiet "$1:$p" || echo missing)"
+            done
+          }
+          head_trees="$(trees_of "$HEAD_SHA")"
+          base_trees="$(trees_of "$BASE_SHA")"
+          tree="$(printf '%s\n' "$head_trees" | git hash-object --stdin)"
+          if [ "$head_trees" = "$base_trees" ]; then
+            changed=false
+          else
+            changed=true
+          fi
+          printf 'head:\n%s\nbase:\n%s\n' "$head_trees" "$base_trees"
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "tree=${tree}" >> "$GITHUB_OUTPUT"
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+  longrun-run:
+    needs: longrun-detect
+    if: needs.longrun-detect.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The PR head itself (not the merge ref): the tested tree is the hashed tree.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:longrun
+        env:
+          PROP_RUNS: '1000000'
+
+  longrun-props:
+    # Summary job: the only required check of this workflow (ops/branch-protection.json).
+    # It always reports; a context that never reports would stay pending forever (规划/11 §3.2).
+    if: always()
+    needs: [longrun-detect, longrun-run]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summarise
+        run: |
+          echo "longrun-detect=${DETECT} changed=${CHANGED} longrun-run=${RUN} tree=${TREE}"
+          [ "$DETECT" = success ] || exit 1
+          if [ "$CHANGED" = false ]; then
+            echo "::notice title=longrun-props::n/a tree=${TREE}"
+            exit 0
+          fi
+          [ "$CHANGED" = true ] || exit 1
+          [ "$RUN" = success ] || exit 1
+          echo "::notice title=longrun-props::passed tree=${TREE}"
+        env:
+          DETECT: ${{ needs.longrun-detect.result }}
+          CHANGED: ${{ needs.longrun-detect.outputs.changed }}
+          RUN: ${{ needs.longrun-run.result }}
+          TREE: ${{ needs.longrun-detect.outputs.tree }}

@@ -1,0 +1,8 @@
+# Location-scoped exceptions for `redocly lint`. Hand-maintained: do not regenerate with
+# `--generate-ignore-file` (that would silently swallow every current problem).
+# Every entry needs a reason.
+openapi.yaml:
+  # GET /healthz takes no input and needs no auth, so it has no client-error outcome to
+  # document. The rule stays enabled for every other operation.
+  operation-4xx-response:
+    - '#/paths/~1healthz/get/responses'

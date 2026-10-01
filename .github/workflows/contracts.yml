@@ -1,0 +1,116 @@
+# Contract checks (规划/11 §4.1 「契约」; ADR-0001 §2): redocly lint, generated client drift and
+# oasdiff breaking-change detection. Runs only when contract paths changed; `contracts-gate` is
+# the required summary check and always reports.
+# Written on 2026-10-01 without a GitHub remote: nothing in this file has run on GitHub yet.
+# The npm package `oasdiff` is a placeholder (ADR-0001 §2): the official release binary is used.
+name: contracts
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contracts-detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+      base: ${{ steps.diff.outputs.base }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Did contracts/ or packages/contracts-ts/ change
+        id: diff
+        run: |
+          base=""
+          if [ "$EVENT" = pull_request ]; then
+            base="$PR_BASE_SHA"
+          elif [ -n "$PUSH_BEFORE" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            base="$PUSH_BEFORE"
+          fi
+          if [ -z "$base" ]; then
+            # No usable base (first push): treat as changed, there is nothing to compare against.
+            changed=true
+          elif git diff --quiet "$base" HEAD -- contracts packages/contracts-ts; then
+            changed=false
+          else
+            changed=true
+          fi
+          echo "base=${base} changed=${changed}"
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+
+  contracts-check:
+    needs: contracts-detect
+    if: needs.contracts-detect.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm contracts:check
+      - name: Install oasdiff (official release binary, checksum verified)
+        run: |
+          set -euo pipefail
+          url="https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/oasdiff.tar.gz" "$url"
+          echo "${OASDIFF_SHA256}  $RUNNER_TEMP/oasdiff.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/oasdiff"
+          tar -xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP/oasdiff" oasdiff
+          "$RUNNER_TEMP/oasdiff/oasdiff" --version
+        env:
+          OASDIFF_VERSION: 1.32.1
+          OASDIFF_SHA256: 7c8939fc49b75ee11fec66a5b83b37a2fca6aee109fed85013b1ba2ac2a1ee7f
+      - name: Breaking changes against the base contract
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ] || ! git cat-file -e "${BASE}:contracts/openapi.yaml" 2>/dev/null; then
+            echo "::notice title=oasdiff::base has no contracts/openapi.yaml, nothing to compare"
+            exit 0
+          fi
+          # A detached worktree keeps relative $ref targets of the base contract resolvable.
+          git worktree add --detach "$RUNNER_TEMP/base-tree" "$BASE"
+          "$RUNNER_TEMP/oasdiff/oasdiff" breaking --fail-on ERR \
+            "$RUNNER_TEMP/base-tree/contracts/openapi.yaml" contracts/openapi.yaml
+        env:
+          BASE: ${{ needs.contracts-detect.outputs.base }}
+
+  contracts-gate:
+    # Summary job: the only required check of this workflow (ops/branch-protection.json).
+    if: always()
+    needs: [contracts-detect, contracts-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summarise
+        run: |
+          echo "contracts-detect=${DETECT} changed=${CHANGED} contracts-check=${CHECK}"
+          [ "$DETECT" = success ] || exit 1
+          if [ "$CHANGED" = true ]; then
+            [ "$CHECK" = success ] || exit 1
+          else
+            [ "$CHANGED" = false ] || exit 1
+            echo "::notice title=contracts-gate::n/a, contract paths unchanged"
+          fi
+        env:
+          DETECT: ${{ needs.contracts-detect.result }}
+          CHANGED: ${{ needs.contracts-detect.outputs.changed }}
+          CHECK: ${{ needs.contracts-check.result }}

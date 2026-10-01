@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalPassThroughEnv": ["TMPDIR"],
+  "globalDependencies": ["tsconfig.base.json", "vitest.shared.ts", "contracts/**", "db/**"],
+  "tasks": {
+    "test": {
+      "cache": false,
+      "env": ["PROP_RUNS", "PROP_SEED", "PROP_STATS_FILE", "APP_ENV", "CLOCK_NOW"]
+    },
+    "test:int": {
+      "cache": false
+    }
+  }
+}

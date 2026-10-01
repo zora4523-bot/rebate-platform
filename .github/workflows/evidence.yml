@@ -1,0 +1,56 @@
+# Required check `evidence-check` (规划/11 §3.2): an RV2 pull request must carry a complete
+# ops/evidence/<id>.json whose verified tree is the tree being merged. The checker runs from the
+# BASE copy of tools/ (like guard-git), with the PR checkout as data, so a branch cannot weaken
+# the check that judges it. RV0 / RV1 pull requests pass (an evidence file, when present, is
+# still validated). It prevents omissions, not malice.
+#
+# Written on 2026-10-02 without a GitHub remote: nothing in this file has run on GitHub yet.
+# TODO(规划/11 §3.2): `run_attempt` > 1 on funds paths (不许重跑到绿) — blocked on GitHub remote
+#   (needs the Actions API of a real repository).
+name: evidence
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the PR head with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: pr
+          persist-credentials: false
+      - name: Check out the base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: base/.nvmrc
+          package-manager-cache: false
+      # The checker uses Node built-ins only: no install, nothing of the PR is executed.
+      - name: Check the evidence of the PR from the base copy of tools/ci
+        run: |
+          if [ ! -f base/tools/ci/evidence-check.ts ]; then
+            echo "::error::base branch has no tools/ci/evidence-check.ts; the check cannot run"
+            exit 1
+          fi
+          node base/tools/ci/evidence-check.ts --pr "$GITHUB_WORKSPACE/pr" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --head-ref "$HEAD_REF"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}

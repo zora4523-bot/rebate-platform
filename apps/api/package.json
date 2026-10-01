@@ -1,0 +1,28 @@
+{
+  "name": "@couli/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "smoke:entries": "node scripts/smoke-entries.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "12.1.0",
+    "@nestjs/core": "12.1.0",
+    "@nestjs/platform-fastify": "12.1.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "pino": "10.3.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@couli/contracts-ts": "workspace:*",
+    "@nestjs/testing": "12.1.0",
+    "@readme/openapi-parser": "9.0.0",
+    "openapi-types": "12.1.3"
+  }
+}

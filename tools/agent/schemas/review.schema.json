@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary", "findings", "checklist"],
+  "properties": {
+    "verdict": { "type": "string", "enum": ["pass", "fail"] },
+    "summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "key", "file", "line", "rule", "scenario", "suggestion"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["S0", "S1", "S2"] },
+          "key": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "rule": { "type": "string" },
+          "scenario": { "type": "string" },
+          "suggestion": { "type": "string" }
+        }
+      }
+    },
+    "checklist": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item", "status", "file", "line", "note"],
+        "properties": {
+          "item": {
+            "type": "string",
+            "enum": [
+              "rounding",
+              "sign",
+              "idempotency",
+              "concurrency",
+              "partial_refund",
+              "clock",
+              "app_id"
+            ]
+          },
+          "status": { "type": "string", "enum": ["ok", "issue", "na"] },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}

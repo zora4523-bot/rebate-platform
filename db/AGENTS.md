@@ -1,0 +1,47 @@
+# AGENTS.md（db/）
+
+数据库规则的摘要；正文在规划仓库 `docs/adr/0001-技术栈基线.md` §4 和 `规划/02` §18、§19。
+
+## 目录
+
+| 路径 | 内容 | 谁能改 |
+| --- | --- | --- |
+| `bootstrap/roles.sql`、`bootstrap/extensions.sql` | 五个角色、扩展；超级用户每个环境执行一次，不是迁移 | 迁移任务 |
+| `migrations/NNNN_kebab-name.sql` | SQL 迁移，分区表与普通表同一序列 | 迁移任务（RV2） |
+| `schema.sql` | 表结构快照，**生成物**，表结构的唯一来源 | 只由 `pnpm db:snapshot` 生成 |
+| `seeds/` | 种子（现在为空） | 见 `seeds/README.md` |
+| `invariants/` | 不变量 SQL，保护路径：只能新增 | 规则测试作者 |
+
+## 迁移规则
+
+1. 文件名四位序号加短横线名字，首行 `-- Up Migration`，不写 down 段；恢复方式写在文件头注释里。
+2. **已经合并的迁移永远不改**，要改就写新迁移。
+3. 先扩展、再回填、再收缩：加列或加表 → 回填 → 下一个发布再删旧的。一个迁移不同时做扩展和收缩。
+4. 授权写在创建对象的同一个迁移里；业务角色只拿用得到的权限。只追加的表不给 UPDATE / DELETE。
+5. 迁移里不写依赖日期的 DDL：只建 DEFAULT 分区，月分区由 `app.ensure_month_partition` 在运行时建（`pnpm db:partitions`）。新增按月分区的表时，在同一个迁移里把表名加进该函数的允许名单，并同步 `packages/db/src/partitions.ts`。
+6. 列默认值不得写 `uuidv7()`（PG 17 没有）；UUIDv7 由应用生成。除 `created_at`、`updated_at` 的默认值外不用 SQL 时钟。
+7. 业务表放 schema `app`，带 `app_id NOT NULL`；金额 `bigint` 分（`_fen`），比例万分之一（`_bp`）；保留外键、禁止级联；分区表不作外键目标。
+8. 触发器只允许「禁止 UPDATE / DELETE」这一类；不用存储过程写业务逻辑。
+9. 扩展由超级用户在 `bootstrap/extensions.sql` 里建，迁移里不写 `CREATE EXTENSION`。
+10. `0002_pgboss-schema-v42.sql` 是生成物（`pnpm --filter @couli/db run gen:pgboss`）。升级 pg-boss 的 `deps` 任务必须同时带一个取自 `getMigrationPlans` 的新迁移（ADR-0001 §4.2 第 14 项）。
+
+## 生成物不手改
+
+`schema.sql`、`packages/db/src/db.gen.ts`、`migrations/0002_pgboss-schema-v42.sql` 都由脚本生成；`pnpm db:check` 比对漂移。
+
+## 含迁移的任务拆两段（规划/11 §2.3）
+
+Codex 沙箱里连不上数据库，跑不了迁移和类型生成：
+
+1. 实现者只写迁移 SQL，输出里用 `outside_needed` 写明要跑 `pnpm db:snapshot`。
+2. 编排者在沙箱外跑迁移、快照、类型生成并提交生成物。
+3. 再派实现者基于已生成的类型写代码。
+
+## 命令（仓库根目录，都要在沙箱外跑）
+
+| 用途 | 命令 |
+| --- | --- |
+| 重新生成 `schema.sql` 与 `db.gen.ts` | `pnpm db:snapshot` |
+| 漂移检查 | `pnpm db:check` |
+| 集成测试（一次性 PG） | `pnpm test:int` |
+| 本地栈 | `pnpm dev:stack` |

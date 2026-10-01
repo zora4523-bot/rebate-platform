@@ -1,0 +1,16 @@
+# Allow list for banned-terms.ts. Each entry: <path glob><TAB><regular expression>.
+# A banned-term match is ignored when the file path matches the glob and the line that
+# contains the match also matches the expression. Keep entries as narrow as possible: they
+# exist for sentences that forbid a superseded technology or record an old name.
+# 规划/02 §16.3 禁止 column: "不要引入 Prisma ...".
+规划/02_系统架构.md	不要引入 Prisma 或第二种数据访问方式
+# 规划/02 §16.3 队列与事件 row: "不设 relay 进程与独立 queue Redis ... 不要新建 outbox 表".
+规划/02_系统架构.md	不设 relay 进程与独立 queue Redis（ADR-0001 §3）.*不要新建 outbox 表
+# 规划/02 §16.3 测试 row: "不要引入 Supertest".
+规划/02_系统架构.md	不要无理由维护第二套测试栈；不要引入 Supertest
+# 规划/08 13_命名与编码对照: module mapping of the old backend plan (history).
+规划/08_业务规则/13_命名与编码对照.md	gateway/outbox/clock→platform
+# 规划/08 13_命名与编码对照: old PRD table names, with the note that the table is not built.
+规划/08_业务规则/13_命名与编码对照.md	PRD v2\.1：outbox；后端功能规划：同名，另有 outbox_events.*outbox_events 表不建
+# 规划/08 13_命名与编码对照: deployment-process row noting that the old process was removed.
+规划/08_业务规则/13_命名与编码对照.md	原另有 relay 进程，已由 ADR-0001 §3 取消

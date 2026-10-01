@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/zhixing/我的项目/rebate-platform/tools/guard/hooks/pretooluse.ts\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

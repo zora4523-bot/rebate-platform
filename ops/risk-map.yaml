@@ -1,0 +1,65 @@
+# Risk level by path (规划/11 §1.2). Read by tools/guard/risk-of-paths.ts from the trusted root.
+# - Default is RV2: only paths listed here can be RV0 or RV1.
+# - First match wins; a path that matches no rule is RV2.
+# - Every directory under apps/api/src/modules/* and packages/* must appear here
+#   (tools/guard/risk-map-coverage.ts fails otherwise).
+# - The 分工 table in the root AGENTS.md is generated from this file
+#   (node tools/guard/agents-table.ts --write); do not edit that table by hand.
+# Protected path, class 3 (规划/11 §4.4): changing this file needs owner approval.
+version: 1
+rules:
+  - path: 'docs/**'
+    risk: RV0
+    impl: claude
+    tester: none
+    review: codex
+  - path: 'contracts/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
+  - path: 'packages/contracts-ts/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
+  - path: 'apps/api/src/modules/health/**'
+    risk: RV1
+    impl: codex
+    tester: claude
+    review: claude
+  - path: 'apps/api/src/modules/platform/**'
+    risk: RV2
+    impl: codex
+    tester: claude
+    review: claude+codex
+  - path: 'packages/money/**'
+    risk: RV2
+    impl: codex
+    tester: claude
+    review: claude+codex
+  - path: 'packages/domain/**'
+    risk: RV2
+    impl: codex
+    tester: claude
+    review: claude+codex
+  - path: 'packages/db/**'
+    risk: RV2
+    impl: codex
+    tester: claude
+    review: claude+codex
+  - path: 'db/**'
+    risk: RV2
+    impl: codex
+    tester: claude
+    review: claude+codex
+  - path: 'packages/testing/**'
+    risk: RV2
+    impl: claude
+    tester: none
+    review: codex
+  - path: 'test/**'
+    risk: RV2
+    impl: claude
+    tester: none
+    review: codex

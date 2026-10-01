@@ -1,0 +1,28 @@
+# Redocly CLI configuration for contracts/openapi.yaml (ADR-0001 §2 契约).
+# Run through `pnpm contracts:lint` (packages/contracts-ts/scripts/lint.ts); never call the
+# network from lint: telemetry is off here and in the script's environment.
+telemetry: 'off'
+
+apis:
+  main:
+    root: ./openapi.yaml
+
+# `recommended-strict` = the recommended ruleset with every warning raised to an error.
+extends:
+  - recommended-strict
+
+rules:
+  # Explicit even though the ruleset already has them: every operation needs a unique, URL-safe
+  # operationId because routes and generated clients are keyed by it (规划/11 §4.1 契约).
+  operation-operationId: error
+  operation-operationId-unique: error
+  operation-operationId-url-safe: error
+
+  # Disabled rules. Each entry states why; re-enable when the reason no longer holds.
+  #
+  # info-license: the licence of this public repository is an owner decision that has not been
+  # made (规划/11 §7.1 #1); the contract must not invent one.
+  # TODO(规划/11 §7.1): add info.license and remove this line — blocked on owner.
+  info-license: off
+
+# Single-location exceptions live in .redocly.lint-ignore.yaml (same directory), one reason each.

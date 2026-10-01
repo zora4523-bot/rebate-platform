@@ -1,0 +1,53 @@
+{
+  "class1_add_only": [
+    "test/spec/**",
+    "test/acceptance/**",
+    "test/properties/**",
+    "test/replay/**",
+    "packages/testing/**",
+    "db/invariants/**",
+    "specs/commission-examples.csv",
+    "test-manifest.json"
+  ],
+  "class2_verify_config": [
+    "**/vitest*.config.*",
+    "vitest.shared.ts",
+    "**/stryker.config.*",
+    "**/eslint.config.*",
+    ".dependency-cruiser.cjs",
+    "turbo.json",
+    ".npmrc",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "**/package.json#scripts",
+    "tsconfig*.json",
+    "**/tsconfig*.json",
+    ".prettierrc*",
+    ".prettierignore",
+    ".editorconfig",
+    "contracts/redocly.yaml",
+    "contracts/.redocly.lint-ignore.yaml"
+  ],
+  "class3_gates": [
+    "tools/**",
+    ".github/**",
+    "**/AGENTS.md",
+    "**/CLAUDE.md",
+    "**/AGENTS.override.md",
+    "**/CLAUDE.local.md",
+    ".claude/**",
+    ".codex/**",
+    ".mcp.json",
+    "ops/risk-map.yaml",
+    "ops/approvals.yaml",
+    "ops/branch-protection.json",
+    ".githooks/**",
+    ".gitleaks.toml",
+    "SPEC_REF",
+    ".gitignore",
+    ".gitattributes",
+    "packages/db/scripts/snapshot.ts",
+    "packages/db/scripts/gen-pgboss-migration.ts",
+    "**/scripts/*check*"
+  ]
+}

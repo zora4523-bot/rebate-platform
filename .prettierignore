@@ -1,0 +1,9 @@
+# Prettier also honours .gitignore (node_modules, dist, .turbo, .tmp, coverage, reports).
+*.md
+db/schema.sql
+db/migrations/**
+**/*.gen.ts
+pnpm-lock.yaml
+dist
+.tmp
+tools/agent/prompts/**

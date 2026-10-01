@@ -1,0 +1,340 @@
+# Required check `protected-paths` (规划/11 §4.4).
+#
+# Trigger is `pull_request_target`, so the workflow definition always comes from the base branch
+# and a PR cannot edit the check that judges it. Hard rules for this file (checked by
+# tools/ci/check-workflows.ts): NO checkout, NO artifact download, NO `uses:` at all, never
+# executes PR code. It only reads the changed-file list and file contents through the API.
+#
+# Written on 2026-10-01 without a GitHub remote: nothing in this file has run on GitHub yet.
+# TODO(规划/11 §4.4): public repositories block `pull_request_target` by default policy
+#   (enforced from 2026-11-02, doc-derived); the Actions policy that allows exactly this workflow
+#   file must be created when the remote exists; fallback is `workflow_run` plus a commit status
+#   — blocked on GitHub remote.
+# TODO(规划/11 §4.4): the owner-approval mechanism is still 待定. The label
+#   `owner-approved-<first 12 chars of head sha>` used below is accepted only when the PR
+#   timeline shows it was added by the repository owner account (GITHUB_REPOSITORY_OWNER).
+#   With a single account that still cannot tell the owner's browser from the agent's
+#   fine-grained token, so on the agent side the PreToolUse hook (tools/guard/hooks) turns any
+#   command that adds an `owner-approved-*` label, or POSTs through `gh api`, into a question
+#   for the owner, and tools/ops/merge.sh must still require couli-runs/approvals/<PR> —
+#   blocked on owner decision and tools/ops/merge.sh.
+name: protected-paths
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: protected-paths-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  protected-paths:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Verbatim copy of tools/guard/protected-paths.json (single source for 规划/11 §4.4); a guard
+      # compares the two. The marker lines are part of the value and are dropped before parsing.
+      PROTECTED_PATHS: |
+        # BEGIN protected-paths.json
+        {
+          "class1_add_only": [
+            "test/spec/**",
+            "test/acceptance/**",
+            "test/properties/**",
+            "test/replay/**",
+            "packages/testing/**",
+            "db/invariants/**",
+            "specs/commission-examples.csv",
+            "test-manifest.json"
+          ],
+          "class2_verify_config": [
+            "**/vitest*.config.*",
+            "vitest.shared.ts",
+            "**/stryker.config.*",
+            "**/eslint.config.*",
+            ".dependency-cruiser.cjs",
+            "turbo.json",
+            ".npmrc",
+            "pnpm-workspace.yaml",
+            "pnpm-lock.yaml",
+            "**/package.json#scripts",
+            "tsconfig*.json",
+            "**/tsconfig*.json",
+            ".prettierrc*",
+            ".prettierignore",
+            ".editorconfig",
+            "contracts/redocly.yaml",
+            "contracts/.redocly.lint-ignore.yaml"
+          ],
+          "class3_gates": [
+            "tools/**",
+            ".github/**",
+            "**/AGENTS.md",
+            "**/CLAUDE.md",
+            "**/AGENTS.override.md",
+            "**/CLAUDE.local.md",
+            ".claude/**",
+            ".codex/**",
+            ".mcp.json",
+            "ops/risk-map.yaml",
+            "ops/approvals.yaml",
+            "ops/branch-protection.json",
+            ".githooks/**",
+            ".gitleaks.toml",
+            "SPEC_REF",
+            ".gitignore",
+            ".gitattributes",
+            "packages/db/scripts/snapshot.ts",
+            "packages/db/scripts/gen-pgboss-migration.ts",
+            "**/scripts/*check*"
+          ]
+        }
+        # END protected-paths.json
+    steps:
+      - name: Match changed files against the protected paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+
+          const env = process.env;
+          const api = env.GITHUB_API_URL;
+          const repo = env.GITHUB_REPOSITORY;
+          const prNumber = env.PR_NUMBER;
+
+          function fail(message) {
+            console.log('::error title=protected-paths::' + message);
+            process.exit(1);
+          }
+
+          async function gh(path, accept) {
+            return fetch(api + path, {
+              headers: {
+                authorization: 'Bearer ' + env.GH_TOKEN,
+                accept: accept ?? 'application/vnd.github+json',
+                'x-github-api-version': '2022-11-28',
+                'user-agent': 'couli-protected-paths',
+              },
+            });
+          }
+
+          async function getJson(path) {
+            const res = await gh(path);
+            if (!res.ok) throw new Error('GET ' + path + ' -> HTTP ' + res.status);
+            return res.json();
+          }
+
+          // File content at a ref, or null when the file does not exist there.
+          async function fileAt(repoName, path, ref) {
+            const encoded = path.split('/').map(encodeURIComponent).join('/');
+            const url = '/repos/' + repoName + '/contents/' + encoded + '?ref=' + encodeURIComponent(ref);
+            const res = await gh(url, 'application/vnd.github.raw+json');
+            if (res.status === 404) return null;
+            if (!res.ok) throw new Error('GET ' + url + ' -> HTTP ' + res.status);
+            return res.text();
+          }
+
+          // Same semantics as tools/lib/glob.ts for the subset used by the list: `**/` matches
+          // zero or more whole segments, a trailing `**` matches the rest, `*` and `?` never
+          // cross `/`. Anything else is rejected, so an unsupported pattern fails the check.
+          function globToRegExp(glob) {
+            if (/[{}[\]\\]/.test(glob)) throw new Error('unsupported glob: ' + glob);
+            let out = '';
+            let i = 0;
+            let segmentStart = true;
+            while (i < glob.length) {
+              const c = glob[i];
+              if (c === '*' && glob[i + 1] === '*') {
+                if (!segmentStart) throw new Error('unsupported glob: ' + glob);
+                if (glob[i + 2] === '/') {
+                  out += '(?:[^/]+/)*';
+                  i += 3;
+                } else if (i + 2 === glob.length) {
+                  out += '[\\s\\S]*';
+                  i += 2;
+                } else {
+                  throw new Error('unsupported glob: ' + glob);
+                }
+                continue;
+              }
+              if (c === '*') out += '[^/]*';
+              else if (c === '?') out += '[^/]';
+              else out += c.replace(/[.+^$()|/]/g, '\\$&');
+              segmentStart = c === '/';
+              i += 1;
+            }
+            return new RegExp('^' + out + '$');
+          }
+
+          // A file the changed-file list says exists on that side must be readable; otherwise
+          // the run fails instead of guessing.
+          async function mustRead(repoName, path, ref) {
+            const text = await fileAt(repoName, path, ref);
+            if (text === null) throw new Error('cannot read ' + path + ' at ' + ref);
+            return text;
+          }
+
+          // Canonical text of the `scripts` object of a package.json (keys sorted).
+          function scriptsOf(text) {
+            let parsed;
+            try {
+              parsed = JSON.parse(text);
+            } catch {
+              return 'unparseable:' + text;
+            }
+            const scripts = parsed !== null && typeof parsed === 'object' ? parsed.scripts : undefined;
+            if (scripts === null || typeof scripts !== 'object') return JSON.stringify(scripts ?? null);
+            const sorted = Object.keys(scripts)
+              .sort()
+              .map((key) => [key, scripts[key]]);
+            return JSON.stringify(sorted);
+          }
+
+          const listText = env.PROTECTED_PATHS.split('\n')
+            .filter((line) => !line.trimStart().startsWith('#'))
+            .join('\n');
+          const lists = JSON.parse(listText);
+          for (const key of ['class1_add_only', 'class2_verify_config', 'class3_gates']) {
+            if (!Array.isArray(lists[key]) || lists[key].length === 0) {
+              throw new Error('protected path list has no entries for ' + key);
+            }
+          }
+          const SCRIPTS_SUFFIX = '#scripts';
+          const LOCKFILE = 'pnpm-lock.yaml';
+          const class1 = lists.class1_add_only.map(globToRegExp);
+          const class2 = lists.class2_verify_config
+            .filter((glob) => !glob.endsWith(SCRIPTS_SUFFIX) && glob !== LOCKFILE)
+            .map(globToRegExp);
+          const class2Scripts = lists.class2_verify_config
+            .filter((glob) => glob.endsWith(SCRIPTS_SUFFIX))
+            .map((glob) => globToRegExp(glob.slice(0, -SCRIPTS_SUFFIX.length)));
+          const lockfileProtected = lists.class2_verify_config.includes(LOCKFILE);
+          const class3 = lists.class3_gates.map(globToRegExp);
+          const matches = (regexps, path) => regexps.some((re) => re.test(path));
+
+          const pr = await getJson('/repos/' + repo + '/pulls/' + prNumber);
+          const headSha = pr.head.sha;
+          if (headSha !== env.EVENT_HEAD_SHA) {
+            fail('the PR head moved while this run was starting; the run for the new head decides');
+          }
+          const headRepo = pr.head.repo ? pr.head.repo.full_name : repo;
+          const sameRepo = headRepo === repo;
+
+          // Changed files are relative to the merge base, so base contents are read there too.
+          let baseRef = pr.base.sha;
+          try {
+            const cmp = await getJson('/repos/' + repo + '/compare/' + pr.base.sha + '...' + headSha);
+            if (cmp.merge_base_commit && cmp.merge_base_commit.sha) baseRef = cmp.merge_base_commit.sha;
+          } catch (error) {
+            console.log('compare failed, using the base tip instead: ' + error.message);
+          }
+
+          const files = [];
+          for (let page = 1; page <= 30; page += 1) {
+            const batch = await getJson(
+              '/repos/' + repo + '/pulls/' + prNumber + '/files?per_page=100&page=' + page,
+            );
+            files.push(...batch);
+            if (batch.length < 100) break;
+          }
+          if (files.length >= 3000) {
+            fail('the PR lists 3000 or more files; the API truncates the list, so it cannot be judged');
+          }
+
+          const hits = [];
+          let lockfileTouched = false;
+          for (const file of files) {
+            const renamed = file.status === 'renamed' && typeof file.previous_filename === 'string';
+            const paths = renamed ? [file.filename, file.previous_filename] : [file.filename];
+            const isNew = file.status === 'added' || file.status === 'copied';
+            for (const path of paths) {
+              // Class 1: additions pass; modified, removed and renamed files count.
+              if (!isNew && matches(class1, path)) {
+                hits.push({ cls: 1, path, reason: file.status + ' (only additions are allowed)' });
+              }
+              if (matches(class2, path)) hits.push({ cls: 2, path, reason: file.status });
+              if (matches(class3, path)) hits.push({ cls: 3, path, reason: file.status });
+              if (lockfileProtected && path === LOCKFILE) lockfileTouched = true;
+            }
+            // `**/package.json#scripts`: only a change of the `scripts` object counts.
+            const oldPath = renamed ? file.previous_filename : file.filename;
+            const oldIsManifest = !isNew && matches(class2Scripts, oldPath);
+            const newIsManifest = file.status !== 'removed' && matches(class2Scripts, file.filename);
+            if (oldIsManifest || newIsManifest) {
+              const before = oldIsManifest ? scriptsOf(await mustRead(repo, oldPath, baseRef)) : 'null';
+              const after = newIsManifest
+                ? scriptsOf(await mustRead(headRepo, file.filename, headSha))
+                : 'null';
+              if (before !== after) {
+                hits.push({ cls: 2, path: file.filename, reason: 'package.json scripts changed' });
+              }
+            }
+          }
+
+          // pnpm-lock.yaml: allowed only on a `task/<id>` branch whose task file says `type: deps`.
+          if (lockfileTouched) {
+            let allowed = false;
+            const branch = /^task\/([A-Za-z0-9._-]+)$/.exec(pr.head.ref);
+            if (branch && sameRepo) {
+              const task = await fileAt(headRepo, 'ops/tasks/' + branch[1] + '.yaml', headSha);
+              allowed = task !== null && /^type:[ \t]*["']?deps["']?[ \t]*(#.*)?$/m.test(task);
+            }
+            if (!allowed) {
+              hits.push({ cls: 2, path: LOCKFILE, reason: 'lockfile changed outside a deps task' });
+            }
+          }
+
+          // Owner approval: the label for exactly this head, and the PR timeline must show it
+          // was added by the repository owner account (any other actor, app or bot: no).
+          const label = 'owner-approved-' + headSha.slice(0, 12);
+          const owner = env.GITHUB_REPOSITORY_OWNER;
+          let approved = false;
+          let labelActor = null;
+          if (pr.labels.some((entry) => entry.name === label)) {
+            if (!owner) throw new Error('GITHUB_REPOSITORY_OWNER is not set');
+            const events = [];
+            for (let page = 1; page <= 10; page += 1) {
+              const batch = await getJson(
+                '/repos/' + repo + '/issues/' + prNumber + '/events?per_page=100&page=' + page,
+              );
+              events.push(...batch);
+              if (batch.length < 100) break;
+            }
+            const labelings = events.filter(
+              (e) => e.event === 'labeled' && e.label && e.label.name === label,
+            );
+            const last = labelings[labelings.length - 1];
+            labelActor = last && last.actor ? last.actor.login : null;
+            approved = labelActor === owner;
+          }
+          const lines = hits.map((hit) => '- class ' + hit.cls + ': `' + hit.path + '` (' + hit.reason + ')');
+          const summary = [
+            '## protected-paths',
+            '',
+            'files checked: ' + files.length + ', protected hits: ' + hits.length,
+            '',
+            ...lines,
+            '',
+            hits.length === 0
+              ? 'result: pass (no protected path touched)'
+              : approved
+                ? 'result: pass (label `' + label + '` added by the owner account ' + labelActor + ')'
+                : labelActor !== null
+                  ? 'result: FAIL (label `' + label + '` was added by `' + labelActor + '`, not by the owner account)'
+                  : 'result: FAIL (needs owner approval: label `' + label + '`)',
+          ].join('\n');
+          console.log(summary);
+          if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, summary + '\n');
+
+          if (hits.length > 0 && !approved) {
+            fail(hits.length + ' protected path(s) touched without owner approval (规划/11 §4.4)');
+          }
+          NODE

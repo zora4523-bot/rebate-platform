@@ -1,0 +1,30 @@
+# dependencies and build output
+node_modules
+dist
+.turbo
+*.tsbuildinfo
+
+# test scratch space, coverage and reports
+.tmp/
+coverage/
+reports/
+
+# OS
+.DS_Store
+
+# environment files: only .env.example is committed (规划/11 §8)
+.env
+.env.*
+!.env.example
+
+# key material and signing files never enter this repo (规划/11 §8)
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.mobileprovision
+*.p7b
+*.cer
+*.csr

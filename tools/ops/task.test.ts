@@ -1,0 +1,183 @@
+import { afterAll, beforeAll, expect, it } from 'vitest';
+import { listTaskIds, loadTask } from '../lib/task-file.ts';
+import { ruleHash, findRuleInText } from './spec.ts';
+import { checkTask, checkTasks, computeRefsHash, MAX_TASK_LINES, showTask } from './task.ts';
+import type { CheckOptions } from './task.ts';
+import {
+  CLI_TIMEOUT,
+  fixedRisk,
+  memorySpec,
+  removeDir,
+  runCli,
+  scratchDir,
+  taskYaml,
+  writeFiles,
+} from './test-helpers.ts';
+
+const RULES = [
+  '| 编号 | 规则 | 状态 | 影响面 |',
+  '| --- | --- | --- | --- |',
+  '| BR-DEMO-01 | **演示规则**<br>金额用整数分 | 已确认 | packages/demo |',
+  '',
+  '#### BR-DEMO-01 细则 · 演示规则',
+  '',
+  '- 状态：已确认',
+  '- 例：1 分',
+  '',
+].join('\n');
+const PLAN = [
+  '| 任务 | 内容 |',
+  '| --- | --- |',
+  '| X1-01 | 演示任务 |',
+  '| X1-02 | 第二个 |',
+  '',
+].join('\n');
+const spec = memorySpec({
+  '规划/08_业务规则/01_DEMO.md': RULES,
+  '规划/05_里程碑与任务拆分.md': PLAN,
+});
+const demoRule = findRuleInText(RULES, 'BR-DEMO-01', 'demo.md');
+const HASH = demoRule ? ruleHash(demoRule) : '';
+const good = (fields: Record<string, string> = {}): string =>
+  taskYaml({ refs_hash: `\n  BR-DEMO-01: ${HASH}`, ...fields });
+
+let root = '';
+const opts = (risk: 'RV0' | 'RV1' | 'RV2' = 'RV2'): CheckOptions => ({
+  root,
+  spec,
+  risk: fixedRisk(risk),
+});
+
+beforeAll(() => {
+  root = scratchDir('task');
+  writeFiles(root, {
+    'ops/tasks/X1-01.yaml': good(),
+    'ops/tasks/X1-01a.yaml': good({ id: 'X1-01a', deps: '[X1-01, X1-02]' }),
+    'ops/tasks/archive/202609/X1-02.yaml': good({ id: 'X1-02', status: 'done' }),
+    'ops/tasks/X1-01b.yaml': good({ id: 'X1-01b', refs_hash: '\n  BR-DEMO-01: aaaaaaaaaaaa' }),
+    'ops/tasks/X1-01c.yaml': good({ id: 'X1-01c', refs: '[BR-DEMO-01, BR-DEMO-07]' }),
+    'ops/tasks/X9-01.yaml': good({ id: 'X9-01' }),
+    'ops/tasks/X1-01d.yaml': good({ id: 'X1-01d', deps: '[X1-77]' }),
+    'ops/tasks/X1-01e.yaml': good({ id: 'X1-01e', tester: 'codex' }),
+    'ops/tasks/X1-01f.yaml': good({ id: 'X1-01f', tester: 'none' }),
+    'ops/tasks/X1-01g.yaml': `${good({ id: 'X1-01g' })}${'# padding\n'.repeat(MAX_TASK_LINES)}`,
+    'ops/tasks/X1-01h.yaml': good({ id: 'X1-01zz' }),
+    'ops/tasks/X1-01i.yaml': good({ id: 'X1-01i', type: 'feature', paths: '[]' }),
+    'ops/tasks/X1-01j.yaml': good({ id: 'X1-01j', refs_hash: '{}' }),
+  });
+});
+
+afterAll(() => removeDir(root));
+
+it('accepts a valid task and a split task whose dependency is archived', () => {
+  expect(checkTask('X1-01', opts())).toEqual([]);
+  expect(checkTask('X1-01a', opts())).toEqual([]);
+  expect(computeRefsHash(['BR-DEMO-01'], spec)).toEqual({ 'BR-DEMO-01': HASH });
+});
+
+it('flags a stale hash, an unknown reference and a missing hash entry', () => {
+  expect(checkTask('X1-01b', opts()).join('\n')).toMatch(
+    new RegExp(`BR-DEMO-01 is aaaaaaaaaaaa but the text at SPEC_REF hashes to ${HASH}`),
+  );
+  expect(checkTask('X1-01c', opts()).join('\n')).toMatch(/BR-DEMO-07: not found/);
+  expect(checkTask('X1-01j', opts()).join('\n')).toMatch(/refs_hash: missing entry for BR-DEMO-01/);
+});
+
+it('flags an id that 规划/05 does not know and a missing dependency', () => {
+  expect(checkTask('X9-01', opts())).toEqual([
+    'task id prefix X9-01 is not a task row of 规划/05 at SPEC_REF',
+  ]);
+  expect(checkTask('X1-01d', opts())).toEqual(['deps: X1-77 is not in ops/tasks']);
+});
+
+it('requires another model as rule-test author for RV2 implementation work', () => {
+  expect(checkTask('X1-01e', opts('RV2')).join('\n')).toMatch(/tester: must differ from impl/);
+  expect(checkTask('X1-01f', opts('RV2')).join('\n')).toMatch(/RV2 tasks need a rule-test author/);
+  expect(checkTask('X1-01e', opts('RV1'))).toEqual([]);
+  expect(checkTask('X1-01f', opts('RV0'))).toEqual([]);
+});
+
+it('flags the line limit, a wrong file name and shape errors', () => {
+  expect(checkTask('X1-01g', opts()).join('\n')).toMatch(/lines, the limit is 40/);
+  expect(checkTask('X1-01h', opts()).join('\n')).toMatch(/does not match the file name/);
+  const shape = checkTask('X1-01i', opts()).join('\n');
+  expect(shape).toMatch(/type: must be one of/);
+  expect(shape).toMatch(/paths: must not be empty/);
+});
+
+it('checks every file of the ledger and reports the failing ones', () => {
+  const results = checkTasks([], opts());
+  const failed = results.filter((r) => r.problems.length > 0).map((r) => r.id);
+  expect(results).toHaveLength(12);
+  expect(failed).toEqual([
+    'X1-01b',
+    'X1-01c',
+    'X1-01d',
+    'X1-01e',
+    'X1-01f',
+    'X1-01g',
+    'X1-01h',
+    'X1-01i',
+    'X1-01j',
+    'X9-01',
+  ]);
+  expect(checkTasks(['X1-99'], opts())[0]?.problems).toEqual([
+    'ops/tasks/X1-99.yaml does not exist',
+  ]);
+});
+
+it('shows a task together with its computed risk', () => {
+  const view = showTask('X1-01', opts('RV1'));
+  expect(view.id).toBe('X1-01');
+  expect(view.risk).toBe('RV1');
+  expect(view.risk_paths).toEqual([
+    { path: 'packages/demo/src/**', risk: 'RV1', rule: null, protected: null },
+  ]);
+});
+
+// The cases below use the real ledger, the real guard and the planning repository at SPEC_REF.
+
+it(
+  'the real ledger passes `task.ts check`',
+  () => {
+    const res = runCli('task.ts', ['check', '--json']);
+    expect(res.stderr).toContain('台账检查通过');
+    expect(res.status).toBe(0);
+    const doc = JSON.parse(res.stdout) as { ok: boolean; tasks: { id: string }[] };
+    expect(doc.ok).toBe(true);
+    expect(doc.tasks.map((t) => t.id)).toEqual(listTaskIds());
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '`task.ts show <id> --json` prints a real task together with its computed risk',
+  () => {
+    // Whatever the ledger holds today; archived tasks leave it (规划/11 §2.1).
+    const id = listTaskIds()[0];
+    if (id === undefined) {
+      expect(runCli('task.ts', ['show', 'ZZ-99', '--json']).status).toBe(1);
+      return;
+    }
+    const task = loadTask(id);
+    const res = runCli('task.ts', ['show', id, '--json']);
+    expect(res.status).toBe(0);
+    const doc = JSON.parse(res.stdout) as { risk: string; risk_paths: { path: string }[] };
+    expect(doc).toMatchObject({ id, impl: task.impl, tester: task.tester, paths: task.paths });
+    expect(doc.risk).toMatch(/^RV[012]$/);
+    expect(doc.risk_paths.map((p) => p.path)).toEqual(task.paths);
+    // The money package is funds code: never below RV2 (规划/11 §1.1).
+    if (task.paths.some((p) => p.startsWith('packages/money/'))) expect(doc.risk).toBe('RV2');
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'rejects bad usage with exit code 2',
+  () => {
+    expect(runCli('task.ts', ['show', 'B2-01a']).status).toBe(2);
+    expect(runCli('task.ts', ['check', '../etc']).status).toBe(2);
+    expect(runCli('task.ts', ['frobnicate']).status).toBe(2);
+  },
+  CLI_TIMEOUT,
+);

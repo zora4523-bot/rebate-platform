@@ -1,0 +1,56 @@
+# Local development stack (ADR-0001 §4.2 #12). Started by `pnpm dev:stack`, never by tests:
+# test and verify runs use their own one-shot PostgreSQL (ADR-0001 §4.2 #9).
+# Everything binds to 127.0.0.1 only.
+name: couli-local
+
+services:
+  postgres:
+    # PostgreSQL 18.6 + pgvector 0.8.6 (ADR-0001 §2, §7). Same image as the test database.
+    image: pgvector/pgvector:0.8.6-pg18-trixie
+    environment:
+      POSTGRES_USER: postgres
+      # Local-only password; only read when the data volume is first initialised.
+      POSTGRES_PASSWORD: ${COULI_DB_LOCAL_PASSWORD:-couli_local}
+    ports:
+      - '127.0.0.1:54329:5432'
+    volumes:
+      # PostgreSQL 18 image layout: the volume is mounted at /var/lib/postgresql
+      # (17 and older used /var/lib/postgresql/data).
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      # TCP check on purpose: the init-time server only listens on the unix socket.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -p 5432 -U postgres -d postgres']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  redis:
+    # Cache, token buckets and replay protection only (ADR-0001 §2); keys must never be
+    # evicted silently, so the policy is noeviction with an explicit limit (ADR-0001 §4.2 #17).
+    image: redis:7.4.11-alpine
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+      - --save
+      - ''
+      - --appendonly
+      - 'no'
+    ports:
+      - '127.0.0.1:63790:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # TODO(ADR-0001 §4.2 #12): MinIO (object storage) — blocked on the first task that stores files.
+  # TODO(ADR-0001 §4.2 #12): Prism mock server — blocked on Node >=24.18 (this machine has 24.15.0).
+  # TODO(ADR-0001 §4.2 #12): WireMock (union / payout channel stubs) — blocked on the first
+  #   recorded platform fixture (规划/11 §4.5).
+
+volumes:
+  pgdata:

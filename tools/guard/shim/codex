@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# codex PATH shim (规划/11 §2.4 "垫片").
+#
+# Inside this project (the repository, the trusted copy and the task worktrees) Codex may only
+# be started by tools/agent/codex-run.sh, which sets COULI_CODEX_WRAPPER=1. Everywhere else
+# this script passes straight through to the real codex, so other projects are not affected
+# (规划/11 §7.3 #9: the global Codex behaviour is left alone).
+#
+# This file is NOT installed by the repository; see INSTALL.md next to it.
+set -euo pipefail
+set -f # no pathname expansion: paths are data here
+
+# --- locate this script (following symlinks) --------------------------------------------------
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  link="$(readlink "$self")"
+  case "$link" in
+    /*) self="$link" ;;
+    *) self="$(dirname "$self")/$link" ;;
+  esac
+done
+self_dir="$(cd "$(dirname "$self")" && pwd -P)"
+self_path="$self_dir/$(basename "$self")"
+
+physical_dir() {
+  # Prints the physical path of a directory, or nothing when it does not exist.
+  (cd "$1" 2>/dev/null && pwd -P) || true
+}
+
+# --- find the real codex: first executable named codex on PATH that is not this script --------
+real=""
+rest="${PATH:-}"
+while [ -n "$rest" ]; do
+  case "$rest" in
+    *:*) dir="${rest%%:*}"; rest="${rest#*:}" ;;
+    *) dir="$rest"; rest="" ;;
+  esac
+  [ -n "$dir" ] || continue
+  candidate="$dir/codex"
+  [ -f "$candidate" ] && [ -x "$candidate" ] || continue
+  resolved="$candidate"
+  while [ -L "$resolved" ]; do
+    link="$(readlink "$resolved")"
+    case "$link" in
+      /*) resolved="$link" ;;
+      *) resolved="$(dirname "$resolved")/$link" ;;
+    esac
+  done
+  resolved_dir="$(physical_dir "$(dirname "$resolved")")"
+  if [ "$resolved_dir/$(basename "$resolved")" = "$self_path" ]; then
+    continue
+  fi
+  real="$candidate"
+  break
+done
+
+# --- which directories are guarded -------------------------------------------------------------
+# Default: derived from where this script lives (<root>/tools/guard/shim/codex).
+#   <projects>/rebate-platform             -> that checkout + <projects>/couli-runs/{worktrees,trusted}
+#   <runs>/trusted/<name> or <runs>/worktrees/<id>
+#                                          -> <runs>/{worktrees,trusted} + <projects>/rebate-platform
+# COULI_SHIM_GUARD_DIRS (colon-separated) replaces the default list.
+guard_dirs=""
+add_guard() {
+  resolved_guard="$(physical_dir "$1")"
+  if [ -z "$resolved_guard" ]; then
+    resolved_guard="$1"
+  fi
+  guard_dirs="${guard_dirs}${guard_dirs:+
+}${resolved_guard}"
+}
+
+if [ -n "${COULI_SHIM_GUARD_DIRS:-}" ]; then
+  rest="$COULI_SHIM_GUARD_DIRS"
+  while [ -n "$rest" ]; do
+    case "$rest" in
+      *:*) dir="${rest%%:*}"; rest="${rest#*:}" ;;
+      *) dir="$rest"; rest="" ;;
+    esac
+    [ -n "$dir" ] && add_guard "$dir"
+  done
+else
+  root="$(cd "$self_dir/../../.." && pwd -P)"
+  if [ -f "$root/SPEC_REF" ] && [ -d "$root/tools/guard" ]; then
+    parent="$(dirname "$root")"
+    case "$(basename "$parent")" in
+      worktrees | trusted)
+        runs="$(dirname "$parent")"
+        add_guard "$(dirname "$runs")/rebate-platform"
+        ;;
+      *)
+        runs="${COULI_RUNS:-$parent/couli-runs}"
+        add_guard "$root"
+        ;;
+    esac
+    add_guard "$runs/worktrees"
+    add_guard "$runs/trusted"
+  else
+    # A copy outside the repository cannot know which directories to guard.
+    printf '%s\n' "codex 垫片：$self_path 不在凑狸仓库内，未启用保护（请把 PATH 指向仓库里的 tools/guard/shim，或设置 COULI_SHIM_GUARD_DIRS）。" >&2
+  fi
+fi
+
+is_guarded() {
+  # $1: absolute directory. Compared case-insensitively (the default macOS volume is).
+  target="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  old_ifs="$IFS"
+  IFS='
+'
+  for guarded in $guard_dirs; do
+    lowered="$(printf '%s' "$guarded" | tr '[:upper:]' '[:lower:]')"
+    case "$target" in
+      "$lowered" | "$lowered"/*)
+        IFS="$old_ifs"
+        return 0
+        ;;
+    esac
+  done
+  IFS="$old_ifs"
+  return 1
+}
+
+absolute_dir() {
+  # Physical path when the directory exists, otherwise a plain absolute path.
+  resolved_abs="$(physical_dir "$1")"
+  if [ -n "$resolved_abs" ]; then
+    printf '%s' "$resolved_abs"
+    return
+  fi
+  case "$1" in
+    /*) printf '%s' "$1" ;;
+    *) printf '%s/%s' "$(pwd -P)" "$1" ;;
+  esac
+}
+
+# --- decide ------------------------------------------------------------------------------------
+blocked=""
+if [ "${COULI_CODEX_WRAPPER:-}" != "1" ]; then
+  harmless=0
+  if [ "$#" -eq 1 ]; then
+    case "$1" in
+      --version | -V | --help | -h) harmless=1 ;;
+    esac
+  fi
+  if [ "$harmless" -eq 0 ]; then
+    if is_guarded "$(pwd -P)"; then
+      blocked="$(pwd -P)"
+    fi
+    expect_dir=0
+    for arg in "$@"; do
+      if [ "$expect_dir" -eq 1 ]; then
+        expect_dir=0
+        candidate_dir="$(absolute_dir "$arg")"
+        if is_guarded "$candidate_dir"; then
+          blocked="$candidate_dir"
+        fi
+        continue
+      fi
+      case "$arg" in
+        --) break ;;
+        -C | --cd) expect_dir=1 ;;
+        --cd=*)
+          candidate_dir="$(absolute_dir "${arg#--cd=}")"
+          if is_guarded "$candidate_dir"; then
+            blocked="$candidate_dir"
+          fi
+          ;;
+        -C?*)
+          candidate_dir="$(absolute_dir "${arg#-C}")"
+          if is_guarded "$candidate_dir"; then
+            blocked="$candidate_dir"
+          fi
+          ;;
+      esac
+    done
+  fi
+fi
+
+if [ -n "$blocked" ]; then
+  {
+    printf '%s\n' "已拒绝：在凑狸项目目录里不能直接运行 codex。"
+    printf '%s\n' "  目录：$blocked"
+    printf '%s\n' "  原因：本机 Codex 的默认配置是全盘读写加联网；本项目只允许经包装脚本调用（规划/11 §2.4）。"
+    printf '%s\n' "  做法：在仓库根目录运行 tools/agent/codex-run.sh impl <任务编号> 或 tools/agent/codex-run.sh review <任务编号>。"
+    printf '%s\n' "  其他项目目录不受影响。"
+  } >&2
+  exit 126
+fi
+
+if [ -z "$real" ]; then
+  printf '%s\n' "codex 垫片：PATH 里找不到真正的 codex（已排除垫片自身 $self_path）。" >&2
+  exit 127
+fi
+
+exec "$real" "$@"

@@ -1,0 +1,551 @@
+// End-to-end tests of the guard command lines against fixture trees and repositories.
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { repoRoot } from '../lib/paths.ts';
+import { renderRiskTable, TABLE_BEGIN, TABLE_END } from './lib/agents-table.ts';
+import { cleanupFixtures, fixtureGit, makeRepo, makeTree, writeFiles } from './lib/fixture-kit.ts';
+import { loadRiskMap } from './lib/risk.ts';
+import * as fx from './lib/test-guard.fixtures.ts';
+
+const GUARD_DIR = join(repoRoot(), 'tools', 'guard');
+let trusted = '';
+
+const LEDGER_TASK = [
+  'id: B2-02a',
+  'repo: rebate-platform',
+  'title: ledger：凭证与分录写入',
+  'type: impl',
+  'refs: [BR-FUND-13]',
+  'refs_hash:',
+  '  BR-FUND-13: 0123456789ab',
+  'deps: []',
+  'paths:',
+  '  - "apps/api/src/modules/ledger/**"',
+  'impl: codex',
+  'tester: claude',
+  'accept:',
+  '  - "pnpm verify"',
+  'status: todo',
+  'pr: null',
+  '',
+].join('\n');
+
+const DEPS_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: D1-01')
+  .replace('type: impl', 'type: deps')
+  .replace('  - "apps/api/src/modules/ledger/**"', '  - "package.json"\n  - "pnpm-lock.yaml"');
+
+const APPROVALS = [
+  'source: "规划/11 §7.3"',
+  'spec_ref: cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b',
+  'approvals:',
+  '  - id: 0',
+  '    row: 0',
+  '    title: "技术栈锁定"',
+  '    granted: true',
+  '    date: "2026-10-01"',
+  '    note: ""',
+  '  - id: 1',
+  '    row: 1',
+  '    title: "建仓库"',
+  '    granted: false',
+  '    date: "2026-10-01"',
+  '    note: ""',
+  '',
+].join('\n');
+
+function guard(
+  name: string,
+  args: string[],
+  opts: { cwd?: string; input?: string; env?: Record<string, string> } = {},
+): { status: number | null; stdout: string; stderr: string } {
+  const res = spawnSync(process.execPath, [join(GUARD_DIR, name), ...args], {
+    cwd: opts.cwd ?? trusted,
+    input: opts.input ?? '',
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      COULI_TRUSTED_ROOT: trusted,
+      COULI_SPEC_REPO: '/nonexistent/planning-repo',
+      ...opts.env,
+    },
+  });
+  return { status: res.status, stdout: res.stdout, stderr: res.stderr };
+}
+
+function json<T>(stdout: string): T {
+  return JSON.parse(stdout) as T;
+}
+
+function workRepo(): { root: string; base: string } {
+  return makeRepo({
+    'apps/api/src/modules/ledger/post.ts': 'export const post = 1;\n',
+    'apps/api/src/modules/orders/sync.ts': 'export const sync = 1;\n',
+    'test/spec/ledger/post.test.ts': "it('posts', () => {});\n",
+    'package.json': JSON.stringify({ name: 'x', scripts: { test: 'vitest run' } }, null, 2),
+    'pnpm-lock.yaml': 'lockfileVersion: 9\n',
+    'turbo.json': '{}\n',
+    'docs/notes.md': '# notes\n',
+  });
+}
+
+beforeAll(() => {
+  trusted = makeTree({
+    'ops/tasks/B2-02a.yaml': LEDGER_TASK,
+    'ops/tasks/D1-01.yaml': DEPS_TASK,
+    'ops/approvals.yaml': APPROVALS,
+  });
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'tools/guard/banned-terms.txt',
+    'tools/guard/banned-terms.allow.txt',
+    'ops/risk-map.yaml',
+  ]) {
+    mkdirSync(dirname(join(trusted, file)), { recursive: true });
+    copyFileSync(join(repoRoot(), file), join(trusted, file));
+  }
+});
+
+afterAll(cleanupFixtures);
+
+describe('risk-of-paths.ts', () => {
+  it('prints the report as JSON and always exits 0', () => {
+    const res = guard('risk-of-paths.ts', [
+      '--json',
+      'packages/money/src/index.ts',
+      'docs/README.md',
+      'turbo.json',
+    ]);
+    expect(res.status).toBe(0);
+    expect(json(res.stdout)).toEqual({
+      risk: 'RV2',
+      ask: true,
+      paths: [
+        {
+          path: 'packages/money/src/index.ts',
+          risk: 'RV2',
+          rule: 'packages/money/**',
+          protected: null,
+        },
+        { path: 'docs/README.md', risk: 'RV0', rule: 'docs/**', protected: null },
+        { path: 'turbo.json', risk: 'RV2', rule: 'default', protected: 2 },
+      ],
+    });
+  });
+
+  it('reads newline- or NUL-separated paths from stdin', () => {
+    const lines = guard('risk-of-paths.ts', ['--json', '--stdin'], {
+      input: 'docs/a.md\ndocs/中 文.md\n',
+    });
+    expect(json<{ risk: string; paths: unknown[] }>(lines.stdout)).toMatchObject({ risk: 'RV0' });
+    const nul = guard('risk-of-paths.ts', ['--json', '--stdin'], {
+      input: 'docs/a.md\0contracts/openapi.yaml\0',
+    });
+    expect(json<{ risk: string; paths: unknown[] }>(nul.stdout).risk).toBe('RV1');
+    expect(json<{ paths: unknown[] }>(nul.stdout).paths).toHaveLength(2);
+  });
+
+  it('prints a readable table without --json and rejects wrong usage with exit 2', () => {
+    const res = guard('risk-of-paths.ts', ['docs/a.md']);
+    expect(res.stdout).toBe('RV0  docs/a.md  (docs/**)\nrisk: RV0\n');
+    expect(guard('risk-of-paths.ts', []).status).toBe(2);
+    expect(guard('risk-of-paths.ts', ['--stdin', 'x']).status).toBe(2);
+    expect(guard('risk-of-paths.ts', ['--nope']).status).toBe(2);
+  });
+});
+
+describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
+  type PathGuardJson = {
+    ok: boolean;
+    violations: { path: string; reason: string }[];
+    out_of_scope_ops_docs: string[];
+    protected_hits: { path: string; class: number }[];
+  };
+
+  it('passes a change that stays inside the task paths', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'apps/api/src/modules/ledger/post.ts': 'export const post = 2;\n',
+      'apps/api/src/modules/ledger/新 文件.ts': 'export {};\n',
+    });
+    const res = guard('path-guard.ts', [
+      '--task',
+      'B2-02a',
+      '--base',
+      base,
+      '--cwd',
+      root,
+      '--json',
+    ]);
+    expect(res.status).toBe(0);
+    expect(json<PathGuardJson>(res.stdout)).toEqual({
+      ok: true,
+      violations: [],
+      out_of_scope_ops_docs: [],
+      protected_hits: [],
+    });
+    expect(guard('run.ts', ['git', '--base', base, '--task', 'B2-02a', '--cwd', root]).status).toBe(
+      0,
+    );
+  });
+
+  it('fails on out-of-scope changes and reports ops/docs and protected hits separately', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'apps/api/src/modules/ledger/post.ts': 'export const post = 2;\n',
+      'apps/api/src/modules/orders/sync.ts': 'export const sync = 2;\n',
+      'docs/notes.md': '# changed\n',
+      'turbo.json': '{ "tasks": {} }\n',
+      'scratch file.txt': 'x\n',
+    });
+    const res = guard('path-guard.ts', [
+      '--task',
+      'B2-02a',
+      '--base',
+      base,
+      '--cwd',
+      root,
+      '--json',
+    ]);
+    expect(res.status).toBe(1);
+    expect(json<PathGuardJson>(res.stdout)).toEqual({
+      ok: false,
+      violations: [
+        { path: 'apps/api/src/modules/orders/sync.ts', reason: 'modified outside the task paths' },
+        { path: 'scratch file.txt', reason: 'untracked file outside the task paths' },
+        { path: 'turbo.json', reason: 'modified outside the task paths' },
+      ],
+      out_of_scope_ops_docs: ['docs/notes.md'],
+      protected_hits: [{ path: 'turbo.json', class: 2 }],
+    });
+    expect(res.stderr).toContain('turbo.json: modified outside the task paths');
+  });
+
+  it('accepts --paths with brace groups and uses the current directory by default', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, { 'test/spec/ledger/new.test.ts': "it('new', () => {});\n" });
+    const args = ['--paths', 'docs/**,test/{spec,acceptance}/**', '--base', base];
+    expect(guard('path-guard.ts', args, { cwd: join(root, 'docs') }).status).toBe(0);
+    expect(
+      guard('path-guard.ts', ['--paths', 'docs/**', '--base', base], { cwd: root }).status,
+    ).toBe(1);
+  });
+
+  it('rejects wrong usage with exit 2', () => {
+    const { root, base } = workRepo();
+    expect(guard('path-guard.ts', ['--task', 'B2-02a', '--cwd', root]).status).toBe(2);
+    expect(guard('path-guard.ts', ['--base', base, '--cwd', root]).status).toBe(2);
+    expect(
+      guard('path-guard.ts', ['--task', 'B2-02a', '--paths', 'a/**', '--base', base]).status,
+    ).toBe(2);
+    expect(guard('path-guard.ts', ['--task', 'B9-99', '--base', base, '--cwd', root]).status).toBe(
+      2,
+    );
+    expect(
+      guard('path-guard.ts', ['--task', 'B2-02a', '--base', 'no-such-ref', '--cwd', root]).status,
+    ).toBe(2);
+  });
+
+  it('reads the task from the trusted root, not from the worktree', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'ops/tasks/B2-02a.yaml': LEDGER_TASK.replace('apps/api/src/modules/ledger/**', '**'),
+      'apps/api/src/modules/orders/sync.ts': 'export const sync = 3;\n',
+    });
+    const res = guard('path-guard.ts', [
+      '--task',
+      'B2-02a',
+      '--base',
+      base,
+      '--cwd',
+      root,
+      '--json',
+    ]);
+    expect(res.status).toBe(1);
+    expect(json<PathGuardJson>(res.stdout).out_of_scope_ops_docs).toEqual([
+      'ops/tasks/B2-02a.yaml',
+    ]);
+  });
+
+  it('lists protected hits by class and exits 1', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'test/spec/ledger/post.test.ts': "it('posts differently', () => {});\n",
+      'test/spec/ledger/added.test.ts': "it('added', () => {});\n",
+      'package.json': JSON.stringify({ name: 'x', scripts: { test: 'true' } }, null, 2),
+      'pnpm-lock.yaml': 'lockfileVersion: 9\npackages: {}\n',
+      'packages/money/AGENTS.md': '# rules\n',
+    });
+    const res = guard('protected-paths.ts', ['--base', base, '--cwd', root, '--json']);
+    expect(res.status).toBe(1);
+    expect(
+      json<{ ok: boolean; class1: string[]; class2: string[]; class3: string[] }>(res.stdout),
+    ).toMatchObject({
+      ok: false,
+      class1: ['test/spec/ledger/post.test.ts'],
+      class2: ['package.json', 'pnpm-lock.yaml'],
+      class3: ['packages/money/AGENTS.md'],
+    });
+  });
+
+  it('allows the lock file and dependency edits in a deps task', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'package.json': JSON.stringify(
+        { name: 'x', scripts: { test: 'vitest run' }, dependencies: { zod: '4.6.5' } },
+        null,
+        2,
+      ),
+      'pnpm-lock.yaml': 'lockfileVersion: 9\npackages: {}\n',
+    });
+    expect(guard('protected-paths.ts', ['--base', base, '--cwd', root]).status).toBe(1);
+    const deps = guard('protected-paths.ts', [
+      '--base',
+      base,
+      '--cwd',
+      root,
+      '--task-type',
+      'deps',
+    ]);
+    expect(deps.status).toBe(0);
+    expect(deps.stdout).toBe('PASS protected-paths\n');
+    expect(guard('run.ts', ['git', '--base', base, '--task', 'D1-01', '--cwd', root]).status).toBe(
+      0,
+    );
+    expect(guard('protected-paths.ts', ['--base', base, '--task-type', 'nope']).status).toBe(2);
+    expect(guard('protected-paths.ts', ['--cwd', root]).status).toBe(2);
+  });
+
+  it('test-guard reports static findings and modified test assets', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'test/spec/ledger/post.test.ts': "describe('ledger', () => {});\n",
+      'apps/api/src/modules/ledger/post.test.ts': fx.LISTEN,
+    });
+    const res = guard('test-guard.ts', ['--base', base, '--cwd', root, '--json']);
+    expect(res.status).toBe(1);
+    const out = json<{
+      ok: boolean;
+      findings: { file: string; rule: string }[];
+      add_only_violations: { path: string }[];
+    }>(res.stdout);
+    expect(out.ok).toBe(false);
+    expect(out.findings.map((f) => `${f.file}:${f.rule}`)).toEqual([
+      'apps/api/src/modules/ledger/post.test.ts:unit-no-listen',
+      'test/spec/ledger/post.test.ts:rule-tests-top-level-it',
+    ]);
+    expect(out.add_only_violations.map((v) => v.path)).toEqual(['test/spec/ledger/post.test.ts']);
+    expect(guard('test-guard.ts', ['--cwd', root]).status).toBe(1);
+  });
+
+  it('run.ts git prints one line per check and fails when any check fails', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, { 'turbo.json': '{ "x": 1 }\n' });
+    const withTask = guard('run.ts', ['git', '--base', base, '--task', 'B2-02a', '--cwd', root]);
+    expect(withTask.status).toBe(1);
+    expect(withTask.stdout).toBe(
+      [
+        'FAIL path-guard (1 problem)',
+        'FAIL protected-paths (1 problem)',
+        'PASS test-guard',
+        'guard git: 1 passed, 2 failed, 0 skipped',
+        '',
+      ].join('\n'),
+    );
+    const withoutTask = guard('run.ts', ['git', '--base', base, '--cwd', root]);
+    expect(withoutTask.stdout.split('\n')[0]).toBe('FAIL protected-paths (1 problem)');
+    expect(guard('run.ts', ['git', '--cwd', root]).status).toBe(2);
+    expect(guard('run.ts', ['git', '--base', base, '--cwd', makeTree()]).status).toBe(2);
+    expect(guard('run.ts', ['bogus']).status).toBe(2);
+  });
+});
+
+describe('run.ts static and the single-purpose guards', () => {
+  function staticTree(extra: Record<string, string> = {}): string {
+    const table = renderRiskTable(loadRiskMap(repoRoot()));
+    const root = makeTree({
+      'AGENTS.md': `# AGENTS\n\n${TABLE_BEGIN}\n${table}\n${TABLE_END}\n`,
+      'CLAUDE.md': '@AGENTS.md\n',
+      SPEC_REF: 'cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b\n',
+      'ops/risk-map.yaml': readFileSync(join(repoRoot(), 'ops', 'risk-map.yaml'), 'utf8'),
+      'tools/guard/protected-paths.json': readFileSync(
+        join(GUARD_DIR, 'protected-paths.json'),
+        'utf8',
+      ),
+      'packages/money/src/index.test.ts': "it('works', () => {});\n",
+      ...extra,
+    });
+    return root;
+  }
+
+  it('passes on a consistent tree without .git, skipping what needs the planning repository', () => {
+    const res = guard('run.ts', ['static', '--cwd', staticTree()]);
+    expect(res.stdout.split('\n')).toEqual([
+      `SKIP schema-lint (tools/agent/schemas does not exist yet)`,
+      'PASS agents-pair',
+      'PASS risk-map-coverage',
+      'PASS agents-table',
+      'SKIP protected-sync (.github/workflows/protected-paths.yml does not exist yet)',
+      'PASS test-guard',
+      'PASS hidden-unicode',
+      expect.stringMatching(/^(PASS|SKIP) lockfile-urls/),
+      expect.stringMatching(/^SKIP spec-ref \(planning repository not found/),
+      expect.stringMatching(/^SKIP banned-terms \(planning repository not found/),
+      'guard static: 6 passed, 0 failed, 4 skipped',
+      '',
+    ]);
+    expect(res.status).toBe(0);
+    expect(res.stderr).toContain('no .git directory');
+  });
+
+  it('needs no git binary on a tree without .git (verify image)', () => {
+    const root = staticTree();
+    const res = guard('run.ts', ['static'], { cwd: root, env: { PATH: makeTree() } });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('guard static: 6 passed, 0 failed, 4 skipped');
+  });
+
+  it('accepts the argument separator that pnpm forwards', () => {
+    const res = guard('run.ts', ['static', '--', '--cwd', staticTree()]);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('PASS agents-pair');
+  });
+
+  it('fails with one line per failed check', () => {
+    const zeroWidth = String.fromCodePoint(0x200b);
+    const root = staticTree({
+      'packages/extra/src/index.ts': `export const x = 1;${zeroWidth}\n`,
+      'apps/api/AGENTS.md': '# nested rules\n',
+      'tools/agent/schemas/impl.schema.json': JSON.stringify({ type: 'object', properties: {} }),
+      '.github/workflows/protected-paths.yml':
+        '# BEGIN protected-paths.json\n# { "class1_add_only": [] }\n# END protected-paths.json\n',
+      'packages/money/src/index.test.ts': fx.RETRY_OPTION,
+    });
+    const res = guard('run.ts', ['static', '--cwd', root]);
+    expect(res.status).toBe(1);
+    expect(res.stdout.split('\n').slice(0, 7)).toEqual([
+      'FAIL schema-lint (2 problems)',
+      'FAIL agents-pair (1 problem)',
+      'FAIL risk-map-coverage (1 problem)',
+      'PASS agents-table',
+      'FAIL protected-sync (1 problem)',
+      'FAIL test-guard (1 problem)',
+      'FAIL hidden-unicode (1 problem)',
+    ]);
+    expect(res.stderr).toContain('packages/extra/src/index.ts:1:20: U+200B ZERO WIDTH SPACE');
+    expect(res.stderr).toContain('apps/api/AGENTS.md: no sibling CLAUDE.md');
+  });
+
+  it('requires the planning repository in a git checkout unless told otherwise', () => {
+    const { root } = makeRepo({ SPEC_REF: 'cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b\n' });
+    expect(guard('spec-ref.ts', ['--cwd', root]).status).toBe(1);
+    expect(guard('spec-ref.ts', ['--cwd', root, '--allow-missing-spec']).stdout).toMatch(
+      /^SKIP spec-ref/,
+    );
+    expect(guard('banned-terms.ts', ['--spec', '--cwd', root]).status).toBe(1);
+    expect(guard('banned-terms.ts', ['--spec', '--cwd', root, '--allow-missing-spec']).status).toBe(
+      0,
+    );
+  });
+
+  it('spec-ref and banned-terms --spec read the planning repository at SPEC_REF only', () => {
+    const spec = makeRepo({
+      '规划/02_系统架构.md': '数据访问 | 不要引入 Prisma 或第二种数据访问方式\n队列用 BullMQ\n',
+      '规划/08_业务规则/README.md': '没有问题\n',
+      'README.md': '参考文档里可以提 Prisma\n',
+    });
+    fixtureGit(spec.root, ['update-ref', 'refs/remotes/origin/main', spec.base]);
+    // The working tree of the planning repository is never read.
+    writeFiles(spec.root, { '规划/02_系统架构.md': '已清理\n' });
+    const root = makeTree({ SPEC_REF: `${spec.base}\n` });
+    const env = { COULI_SPEC_REPO: spec.root };
+    expect(guard('spec-ref.ts', ['--cwd', root], { env }).stdout).toBe('PASS spec-ref\n');
+    const res = guard('banned-terms.ts', ['--spec', '--cwd', root], { env });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('规划/02_系统架构.md:2: banned term "BullMQ"');
+    expect(res.stderr).not.toContain('Prisma');
+    expect(res.stdout).toBe('FAIL banned-terms (1 problem)\n');
+  });
+
+  it('banned-terms --file scans task briefs', () => {
+    const dir = makeTree({
+      'brief.md': '# 任务\n事件写 outbox 表\n',
+      'clean.md': '# 任务\n同一事务入队\n',
+    });
+    expect(guard('banned-terms.ts', ['--file', join(dir, 'clean.md')]).status).toBe(0);
+    const bad = guard('banned-terms.ts', ['--file', join(dir, 'clean.md'), join(dir, 'brief.md')]);
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain('brief.md:2: banned term "outbox"');
+    expect(guard('banned-terms.ts', ['--file', join(dir, 'missing.md')]).status).toBe(1);
+    expect(guard('banned-terms.ts', []).status).toBe(2);
+    expect(guard('banned-terms.ts', ['--spec', '--file', 'x']).status).toBe(2);
+  });
+
+  it('approvals --require answers from ops/approvals.yaml of the trusted root', () => {
+    expect(guard('approvals.ts', ['--require', '0']).status).toBe(0);
+    expect(guard('approvals.ts', ['--require', '1']).status).toBe(1);
+    expect(guard('approvals.ts', ['--require', '7']).status).toBe(1);
+    expect(json(guard('approvals.ts', ['--require', '0', '--json']).stdout)).toMatchObject({
+      id: 0,
+      granted: true,
+    });
+    expect(guard('approvals.ts', ['--require', 'yes']).status).toBe(2);
+    expect(guard('approvals.ts', []).status).toBe(2);
+    const empty = makeTree();
+    expect(
+      guard('approvals.ts', ['--require', '0'], { env: { COULI_TRUSTED_ROOT: empty } }).status,
+    ).toBe(1);
+    const broken = makeTree({ 'ops/approvals.yaml': 'approvals: yes\n' });
+    expect(
+      guard('approvals.ts', ['--require', '0'], { env: { COULI_TRUSTED_ROOT: broken } }).status,
+    ).toBe(2);
+  });
+
+  it('schema-lint checks explicit files and the schema directory', () => {
+    const good = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['a'],
+      properties: { a: { type: 'string' } },
+    };
+    const root = makeTree({
+      'tools/agent/schemas/good.schema.json': JSON.stringify(good),
+      'bad.json': JSON.stringify({ ...good, required: [] }),
+    });
+    expect(guard('schema-lint.ts', ['--cwd', root]).stdout).toBe('PASS schema-lint\n');
+    const bad = guard('schema-lint.ts', [join(root, 'bad.json')]);
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain('property "a" is missing from "required"');
+    const none = guard('schema-lint.ts', ['--cwd', makeTree()]);
+    expect(none.status).toBe(0);
+    expect(none.stderr).toContain('does not exist yet');
+  });
+
+  it('agents-table --write fills the markers and --check verifies them', () => {
+    const root = makeTree({
+      'AGENTS.md': `# AGENTS\n\n${TABLE_BEGIN}\n${TABLE_END}\n\n## next\n`,
+      'ops/risk-map.yaml': readFileSync(join(repoRoot(), 'ops', 'risk-map.yaml'), 'utf8'),
+    });
+    expect(guard('agents-table.ts', ['--check', '--cwd', root]).status).toBe(1);
+    expect(guard('agents-table.ts', ['--write', '--cwd', root]).status).toBe(0);
+    expect(guard('agents-table.ts', ['--check', '--cwd', root]).status).toBe(0);
+    const text = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+    expect(text).toContain('| `packages/money/**` | Codex | Claude | Claude + Codex | RV2 |');
+    expect(text.endsWith(`${TABLE_END}\n\n## next\n`)).toBe(true);
+    expect(guard('agents-table.ts', ['--cwd', root]).status).toBe(2);
+    rmSync(join(root, 'AGENTS.md'));
+    writeFileSync(join(root, 'AGENTS.md'), '# no markers\n');
+    expect(guard('agents-table.ts', ['--write', '--cwd', root]).status).toBe(2);
+    expect(guard('agents-table.ts', ['--check', '--cwd', root]).status).toBe(1);
+  });
+
+  it('the remaining single-purpose guards report through their own exit code', () => {
+    const root = staticTree({ 'apps/api/src/modules/ledger/index.ts': 'export {};\n' });
+    expect(guard('agents-pair.ts', ['--cwd', root]).stdout).toBe('PASS agents-pair\n');
+    expect(guard('risk-map-coverage.ts', ['--cwd', root]).status).toBe(1);
+    expect(guard('protected-sync.ts', ['--cwd', root]).status).toBe(0);
+    expect(guard('hidden-unicode.ts', ['--cwd', root]).stdout).toBe('PASS hidden-unicode\n');
+    expect(guard('hidden-unicode.ts', ['--cwd', root, 'extra']).status).toBe(2);
+  });
+});

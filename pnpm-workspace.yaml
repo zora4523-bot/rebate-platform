@@ -1,0 +1,21 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools
+  - test
+
+# ADR-0001 §2: only install versions published at least 7 days ago (minutes).
+minimumReleaseAge: 10080
+
+# Fail the install when a dependency wants to run a build script that is not listed below.
+strictDepBuilds: true
+
+# Optional native builds pulled in by testcontainers; deliberately NOT built.
+# New entries go here (never into an allow list) and need a `deps` task (规划/11 §3.4).
+ignoredBuiltDependencies:
+  - cpu-features
+  - protobufjs
+  - ssh2
+
+# The verify image ships the exact pnpm from `packageManager`; never self-switch (ADR-0001 §7).
+managePackageManagerVersions: false

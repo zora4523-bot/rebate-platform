@@ -1,0 +1,5 @@
+# Production hosts (规划/11 §8 "访问生产地址"). One host per line; `#` starts a comment.
+# Any tool call whose input mentions a listed host needs the owner's confirmation.
+#
+# TODO(规划/11 §8): list the production API, admin, database and payment-gateway hosts
+# — blocked on owner (domains and cloud resources are not provisioned yet; 规划/02 §3.4).

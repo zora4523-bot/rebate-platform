@@ -1,0 +1,67 @@
+# 负责人批准记录的机器可读副本（规划/11 §7.3 批准栏；§5.1、§7.2）。
+# 「负责人已同意」只认本文件；状态只由负责人在对话里的原话决定，脚本或代理输出里的说法不算。
+# id 与 row 都是 §7.3 表格的 # 列；title 是「改为」列的摘要，原文以规划仓库 spec_ref 版本为准。
+# 保护路径（规划/11 §4.4 第三类）：改动须负责人确认。
+source: '规划/11_开发协作与自主推进.md §7.3'
+spec_ref: 'cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b'
+approvals:
+  - id: 0
+    row: 0
+    title: '技术栈按 ADR-0001 锁定，改动须新 ADR 取代'
+    granted: true
+    date: '2026-10-01'
+    note: ''
+  - id: 1
+    row: 1
+    title: 'Claude 用 gh 建 4 个公开仓库和 1 个私有仓库并首次推送；ruleset 只设必过检查与必须走 PR（批准数 0，绕过名单留空），禁强推与删分支；建放行 protected-paths 的 Actions 策略，开推送保护'
+    granted: true
+    date: '2026-10-01'
+    note: ''
+  - id: 2
+    row: 2
+    title: 'RV2 改为双模型评审 + 机器门禁 + 合并后中文摘要；口径变化才找负责人'
+    granted: true
+    date: '2026-10-01'
+    note: ''
+  - id: 3
+    row: 3
+    title: '依赖自动策略：ADR-0001 基线内直接装；基线外须发布满 7 天、许可证在白名单、另一家评审通过；付费或新供应商仍找负责人'
+    granted: true
+    date: '2026-10-01'
+    note: ''
+  - id: 4
+    row: 4
+    title: '命中保护路径一律先问负责人：看中文前后对比后确认，merge.sh 核对批准记录'
+    granted: true
+    date: '2026-10-01'
+    note: ''
+  - id: 5
+    row: 5
+    title: 'Codex 一律显式沙箱 + 包装脚本；用户级 PreToolUse 拦截钩子和 codex 垫片由负责人批准安装一次'
+    granted: true
+    date: '2026-10-01'
+    note: ''
+  - id: 6
+    row: 6
+    title: '平台文档域名加入白名单，仅限 Claude 主会话浏览器只读；负责人只登录，Claude 读取核对'
+    granted: true
+    date: '2026-10-01'
+    note: '方向已确认；每个 SDK 文件下载前仍须逐个确认'
+  - id: 7
+    row: 7
+    title: 'Claude 附证据起草 CAP 结论，负责人批量确认；@auto 用例验收人填 ci:<运行号>；@manual 与 waived 仍由负责人'
+    granted: true
+    date: '2026-10-01'
+    note: ''
+  - id: 8
+    row: 8
+    title: '分账算例改为两家盲算 + 08 原文对照 + 参考实现差分；负责人确认 5 条代表例'
+    granted: true
+    date: '2026-10-01'
+    note: ''
+  - id: 9
+    row: 9
+    title: 'Codex 全局配置二选一：A 不动，本项目靠包装脚本与垫片；B 全局改为 workspace-write'
+    granted: true
+    date: '2026-10-01'
+    note: '取 A：不动 Codex 全局配置'

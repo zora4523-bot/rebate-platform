@@ -1,0 +1,60 @@
+# gitleaks 配置：在默认规则之上，补中文文档里常见的密钥写法
+# （中文冒号、Markdown 表格、「密钥 / 私钥 / 密码」等关键词）。
+# 与规划仓库 couli/.gitleaks.toml 的规则保持一致（本仓库 2026-10-02 收紧了放行名单并加了
+# cn-hex-secret 规则，规划仓库待同步）；本仓库另加一段全局路径白名单。
+# 保护路径（规划/11 §4.4 第三类）：改动须负责人确认。
+[extend]
+useDefault = true
+
+# 依赖、构建产物、测试临时目录不扫描。这些目录都不入库；`gitleaks dir .` 扫工作区时才会遇到。
+# 锁文件 pnpm-lock.yaml 照常扫描（依赖源 URL 里带访问令牌时要能报出来），只对 integrity 哈希
+# 本身加精确例外。
+[[allowlists]]
+description = "依赖、构建产物、临时目录"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)\.tmp/''',
+  '''(^|/)\.turbo/''',
+]
+
+[[allowlists]]
+description = "锁文件里的 integrity 哈希（sha256 / sha512 的 base64），不是密钥"
+regexTarget = "match"
+regexes = ['''sha(256|512)-[A-Za-z0-9+/]{43,86}={0,2}''']
+
+[[rules]]
+id = "cn-doc-secret"
+description = "中文文档中的密钥值（关键词后紧跟长随机串）"
+regex = '''(?i)(secret|app_?key|token|password|passwd|密钥|私钥|秘钥|密码|口令)[^\n]{0,20}?[\s:：=|"'`]+([A-Za-z0-9+/_\-]{16,})'''
+secretGroup = 2
+entropy = 3.5
+keywords = ["secret", "appkey", "app_key", "token", "password", "passwd", "密钥", "私钥", "秘钥", "密码", "口令"]
+
+[[rules.allowlists]]
+description = "占位符"
+regexTarget = "match"
+regexes = ['''<[A-Z_]+>''']
+
+[[rules.allowlists]]
+description = "不含数字的串；带路径分隔符或点的全小写路径 / 字段名 / 配置键；64 位十六进制（sha256 文件哈希）。纯小写字母加数字的其他长串可能是十六进制密钥，不放行"
+regexes = [
+  '''^[^0-9]+$''',
+  '''^[a-z0-9_\-]*[./][a-z0-9_.\-/]*$''',
+  '''^(evidence|fixtures|specs|contracts|tools|docs|packages|apps|acceptance)/''',
+  '''^[0-9a-f]{64}$''',
+]
+
+# 联盟与支付平台的密钥多为 32 / 40 位小写十六进制（淘宝联盟 AppSecret、京东联盟 appSecret、
+# 微信 AppSecret 与商户 API 密钥、拼多多 client_secret），熵值常低于 3.5：按格式直接报，不看熵。
+[[rules]]
+id = "cn-hex-secret"
+description = "密钥关键词（中英文）后（同一行或下一行）紧跟 32 / 40 位小写十六进制串"
+regex = '''(?i)(secret|app_?key|token|password|passwd|密钥|私钥|秘钥|密码|口令|client_secret|appsecret)[^\n]{0,40}?(?:\n[^\n]{0,20}?)?[\s:：=|"'`]+([0-9a-f]{32}|[0-9a-f]{40})(?:[^0-9a-zA-Z]|$)'''
+secretGroup = 2
+keywords = ["secret", "appkey", "app_key", "token", "password", "passwd", "密钥", "私钥", "秘钥", "密码", "口令", "appsecret"]
+
+[[rules.allowlists]]
+description = "占位符与示例（全 0、全 f）"
+regexTarget = "match"
+regexes = ['''<[A-Z_]+>''', '''(0{32}|f{32}|0{40}|f{40})''']

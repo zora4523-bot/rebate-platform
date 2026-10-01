@@ -1,0 +1,361 @@
+// Status board (`pnpm ops:status`, 规划/11 §2.1, §5.2, §7.2).
+// Nothing here is stored: every run recomputes the board from the ledger, the
+// state files, git and the usage ledger.
+//
+//   node tools/ops/status.ts [--json]
+import { parseArgs } from 'node:util';
+import { git } from '../lib/git.ts';
+import { repoRoot, specRef } from '../lib/paths.ts';
+import { listTaskIds } from '../lib/task-file.ts';
+import type { TaskFile } from '../lib/task-file.ts';
+import { formatBeijing, runMain } from './cli.ts';
+import { orchestratorLockStatus } from './lock.ts';
+import type { LockStatus } from './lock.ts';
+import { pathSetsMayOverlap } from './overlap.ts';
+import { listStates } from './state.ts';
+import type { TaskState } from './state.ts';
+import { archivedTaskIds, readTask, riskOfPaths } from './task.ts';
+import type { RiskLevel, RiskReport } from './task.ts';
+import { currentSummary, gate, MAX_CALLS_PER_DAY, MAX_CONSECUTIVE_NO_OUTPUT } from './usage.ts';
+import type { GateReason, Summary } from './usage.ts';
+
+/** Rows printed before the table is cut short (keeps the board inside the §5.2 budget). */
+const MAX_ROWS = 30;
+const HOUR_MS = 3600_000;
+
+export type BoardRow = {
+  id: string;
+  repo: string;
+  title: string;
+  risk: RiskLevel | 'unknown';
+  impl: string;
+  tester: string;
+  deps: { id: string; done: boolean }[];
+  status: 'todo' | 'done';
+  state: string | null;
+  attempts: { impl: number; review: number };
+  pr: number | null;
+};
+
+export type AskItem = {
+  id: string;
+  created_at: string;
+  age_hours: number;
+  level: 'ok' | '24h' | '72h';
+};
+
+export type Board = {
+  at: string;
+  spec_ref: string;
+  lock: LockStatus;
+  usage: Summary;
+  breaker: { open: boolean; reasons: GateReason[] };
+  remote: string | null;
+  rows: BoardRow[];
+  done_count: number;
+  ready: string[];
+  asks: AskItem[];
+  stall: string | null;
+  warnings: string[];
+};
+
+export type BoardOptions = {
+  root?: string;
+  now?: Date;
+  risk?: (paths: readonly string[]) => RiskReport;
+};
+
+/** States that hold a task's paths: everything except "queued". */
+function inFlight(state: TaskState | undefined): boolean {
+  return state !== undefined && state.state !== 'ready';
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** Hours between two instants that fall on Monday to Friday in +08:00. */
+export function workingHoursBetween(from: Date, to: Date): number {
+  let hours = 0;
+  for (let t = from.getTime(); t + HOUR_MS <= to.getTime(); t += HOUR_MS) {
+    const day = new Date(t + 8 * HOUR_MS).getUTCDay();
+    if (day !== 0 && day !== 6) hours += 1;
+  }
+  return hours;
+}
+
+type GitFacts = { remote: string | null; taskBranches: string[]; worktreeBranches: string[] };
+
+function gitFacts(root: string, warnings: string[]): GitFacts {
+  const facts: GitFacts = { remote: null, taskBranches: [], worktreeBranches: [] };
+  try {
+    const remotes = git(['remote'], { cwd: root })
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s !== '');
+    facts.remote = remotes[0] ?? null;
+    facts.taskBranches = git(['branch', '--list', 'task/*', '--format=%(refname:short)'], {
+      cwd: root,
+    })
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s !== '');
+    for (const line of git(['worktree', 'list', '--porcelain'], { cwd: root }).split('\n')) {
+      const m = /^branch refs\/heads\/(task\/.+)$/.exec(line.trim());
+      if (m?.[1]) facts.worktreeBranches.push(m[1]);
+    }
+  } catch (err) {
+    const first = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+    warnings.push(`git 不可用，分支与 worktree 未核对：${first}`);
+  }
+  return facts;
+}
+
+export function collectBoard(opts: BoardOptions = {}): Board {
+  const root = opts.root ?? repoRoot();
+  const now = opts.now ?? new Date();
+  const riskFn = opts.risk ?? riskOfPaths;
+  const warnings: string[] = [];
+
+  const tasks = new Map<string, TaskFile>();
+  for (const id of listTaskIds(root)) {
+    try {
+      tasks.set(id, readTask(id, root));
+    } catch (err) {
+      const first = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+      warnings.push(`台账文件 ${id}.yaml 无法解析（运行 pnpm ops:task:check）：${first}`);
+    }
+  }
+
+  const states = new Map<string, TaskState>();
+  try {
+    for (const s of listStates()) states.set(s.id, s);
+  } catch (err) {
+    warnings.push(`在途状态文件损坏：${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Archived tasks are done by definition (规划/11 §2.1).
+  const archived = new Set(archivedTaskIds(root));
+  const rows: BoardRow[] = [];
+  for (const task of tasks.values()) {
+    const state = states.get(task.id);
+    let risk: BoardRow['risk'] = 'unknown';
+    if (task.status === 'todo') {
+      try {
+        risk = riskFn(task.paths).risk;
+      } catch (err) {
+        const first = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+        warnings.push(`${task.id} 风险级算不出：${first}`);
+      }
+    }
+    rows.push({
+      id: task.id,
+      repo: task.repo,
+      title: task.title,
+      risk,
+      impl: task.impl,
+      tester: task.tester,
+      deps: task.deps.map((d) => ({
+        id: d,
+        done: tasks.get(d)?.status === 'done' || archived.has(d),
+      })),
+      status: task.status,
+      state: state?.state ?? null,
+      attempts: state?.attempts ?? { impl: 0, review: 0 },
+      pr: task.pr,
+    });
+  }
+
+  const busy = rows.filter((r) => r.status === 'todo' && inFlight(states.get(r.id)));
+  const ready: string[] = [];
+  for (const row of rows) {
+    if (row.status !== 'todo' || inFlight(states.get(row.id))) continue;
+    if (!row.deps.every((d) => d.done)) continue;
+    const paths = tasks.get(row.id)?.paths ?? [];
+    const clash = busy.find((b) => pathSetsMayOverlap(paths, tasks.get(b.id)?.paths ?? []));
+    if (!clash) ready.push(row.id);
+  }
+
+  const asks: AskItem[] = [];
+  for (const s of states.values()) {
+    if (s.state !== 'ask') continue;
+    const created = s.ask_created_at ?? s.updated_at;
+    const age = (now.getTime() - Date.parse(created)) / HOUR_MS;
+    asks.push({
+      id: s.id,
+      created_at: created,
+      age_hours: Math.round(age * 10) / 10,
+      level: age >= 72 ? '72h' : age >= 24 ? '24h' : 'ok',
+    });
+  }
+  asks.sort((a, b) => b.age_hours - a.age_hours);
+
+  // 规划/11 §7.2: no ready task while pull requests wait, for one working day.
+  // Without the GitHub side the state `pr` stands in for "unmerged PR".
+  let stall: string | null = null;
+  const waiting = [...states.values()].filter((s) => s.state === 'pr');
+  if (ready.length === 0 && waiting.length > 0) {
+    const oldest = waiting.reduce((a, b) => (a.updated_at < b.updated_at ? a : b));
+    if (workingHoursBetween(new Date(oldest.updated_at), now) >= 24) {
+      stall = `就绪任务为 0，且 ${waiting.map((s) => s.id).join('、')} 停在 pr 状态已满 1 个工作日：通知负责人（规划/11 §7.2）`;
+    }
+  }
+
+  for (const s of states.values()) {
+    const task = tasks.get(s.id);
+    if (!task) warnings.push(`${s.id} 有在途状态文件，但台账里没有这个任务`);
+    else if (task.status === 'done' && s.state !== 'ready') {
+      warnings.push(`${s.id} 台账已 done，在途状态仍是 ${s.state}`);
+    }
+    if (s.pid !== null && !pidAlive(s.pid)) {
+      warnings.push(`${s.id} 记录的后台进程 ${s.pid} 已不在：按孤儿回收（规划/11 §2.5）`);
+    }
+    if (s.lease_until !== null && Date.parse(s.lease_until) < now.getTime()) {
+      warnings.push(`${s.id} 的租约已过期（持有者 ${s.owner_session ?? '未知'}），其他会话可接手`);
+    }
+  }
+
+  const facts = gitFacts(root, warnings);
+  for (const branch of new Set([...facts.taskBranches, ...facts.worktreeBranches])) {
+    const id = branch.slice('task/'.length);
+    if (!states.has(id)) warnings.push(`分支 ${branch} 存在，但没有在途状态文件`);
+  }
+
+  const usage = currentSummary(now);
+  const verdict = gate(usage);
+
+  return {
+    at: now.toISOString(),
+    spec_ref: specRef(),
+    lock: orchestratorLockStatus(now),
+    usage,
+    breaker: { open: !verdict.allowed, reasons: verdict.reasons },
+    remote: facts.remote,
+    rows,
+    done_count: rows.filter((r) => r.status === 'done').length,
+    ready,
+    asks,
+    stall,
+    warnings,
+  };
+}
+
+function cell(text: string): string {
+  return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+function rowLine(r: BoardRow): string {
+  const deps =
+    r.deps.length === 0
+      ? '—'
+      : r.deps.map((d) => `${d.id}（${d.done ? 'done' : 'todo'}）`).join('、');
+  const attempts =
+    r.attempts.review > 0
+      ? `${r.attempts.impl}（评审 ${r.attempts.review}）`
+      : String(r.attempts.impl);
+  return `| ${[
+    r.id,
+    r.repo,
+    cell(r.title),
+    r.risk,
+    `${r.impl} / ${r.tester}`,
+    deps,
+    r.state ?? '—',
+    attempts,
+    r.pr === null ? '—' : `#${r.pr}`,
+  ].join(' | ')} |`;
+}
+
+export function renderBoard(b: Board): string {
+  const out: string[] = [];
+  out.push(`# 看板 ${formatBeijing(new Date(b.at))}（北京时间）`);
+  out.push('');
+  out.push(`- SPEC_REF：\`${b.spec_ref.slice(0, 12)}\``);
+  if (!b.lock.held) {
+    out.push('- 编排锁：无人持有');
+  } else {
+    const who = b.lock.holder ? `${b.lock.holder.session}（pid ${b.lock.holder.pid}）` : '未知';
+    out.push(
+      `- 编排锁：由 ${who} 持有，心跳 ${formatBeijing(new Date(b.lock.heartbeat_at))}` +
+        (b.lock.stale
+          ? '，已超过 20 分钟，可接管'
+          : '；持锁期间不要在本仓库提交，要做的事写进 couli-runs/inbox/'),
+    );
+  }
+  const u = b.usage;
+  const pct = u.estimated_weekly_percent === null ? '未知' : `${u.estimated_weekly_percent}%`;
+  out.push(
+    `- Codex 额度：档位 ${u.tier}，估算周用量 ${pct}；今日调用 ${u.calls_today}/${MAX_CALLS_PER_DAY}；连续无产出 ${u.consecutive_no_output}/${MAX_CONSECUTIVE_NO_OUTPUT}`,
+  );
+  if (b.breaker.open) {
+    out.push('- 熔断：已打开，不得派工给 Codex');
+    for (const r of b.breaker.reasons) out.push(`  - ${r.message}`);
+  } else {
+    out.push('- 熔断：未触发');
+  }
+  out.push(
+    b.remote === null
+      ? '- PR/CI: 未接入（没有 GitHub 远端） — TODO(规划/11 §2.1): 接入 gh 查询未合并 PR 与 CI 状态 — blocked on GitHub remote'
+      : `- PR/CI: 未接入（已有远端 ${b.remote}，gh 查询尚未实现） — TODO(规划/11 §2.1): 接入 gh 查询未合并 PR 与 CI 状态`,
+  );
+  out.push('');
+
+  const open = b.rows.filter((r) => r.status === 'todo');
+  // In-flight tasks first, then ready ones, then the rest of the backlog.
+  const rank = (r: BoardRow): number =>
+    r.state !== null && r.state !== 'ready' ? 0 : b.ready.includes(r.id) ? 1 : 2;
+  open.sort((x, y) => rank(x) - rank(y) || x.id.localeCompare(y.id));
+  out.push('| 编号 | 仓库 | 标题 | 风险级 | 实现 / 测试 | 依赖 | 在途状态 | 尝试 | PR |');
+  out.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (const r of open.slice(0, MAX_ROWS)) out.push(rowLine(r));
+  if (open.length > MAX_ROWS)
+    out.push(`| … | | 另有 ${open.length - MAX_ROWS} 个未开始的任务未列出 | | | | | | |`);
+  if (open.length === 0) out.push('| — | | 没有未完成的任务 | | | | | | |');
+  out.push('');
+  out.push(`已完成 ${b.done_count} 个（不列出）。`);
+  out.push(
+    `就绪任务（依赖已完成、路径不与在途任务相交）：${b.ready.length === 0 ? '无' : b.ready.join('、')}`,
+  );
+
+  if (b.asks.length > 0) {
+    out.push('');
+    out.push('等负责人答复（ask）：');
+    for (const a of b.asks) {
+      const flag =
+        a.level === '72h'
+          ? '【红】超过 72 小时，计入周报'
+          : a.level === '24h'
+            ? '超过 24 小时：下一次对话第一句置顶并推送一次'
+            : '24 小时内';
+      out.push(`- ${a.id}：提出于 ${formatBeijing(new Date(a.created_at))}，${flag}`);
+    }
+  }
+  if (b.stall !== null) {
+    out.push('');
+    out.push(`停滞告警：${b.stall}`);
+  }
+  if (b.warnings.length > 0) {
+    out.push('');
+    out.push('需要处理：');
+    for (const w of b.warnings) out.push(`- ${w}`);
+  }
+  return `${out.join('\n')}\n`;
+}
+
+function main(argv: string[]): number {
+  const { values } = parseArgs({
+    args: argv,
+    options: { json: { type: 'boolean', default: false } },
+  });
+  const board = collectBoard();
+  if (values.json) console.log(JSON.stringify(board, null, 2));
+  else process.stdout.write(renderBoard(board));
+  return 0;
+}
+
+if (import.meta.main) runMain(main);

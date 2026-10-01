@@ -1,0 +1,8 @@
+#!/bin/sh
+# 提交前用 gitleaks 扫描暂存区，发现疑似密钥就拦下提交。
+# 启用：git config core.hooksPath .githooks
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: 未安装 gitleaks，无法检查密钥。请先运行 brew install gitleaks" >&2
+  exit 1
+fi
+exec gitleaks git --pre-commit --staged --redact --no-banner

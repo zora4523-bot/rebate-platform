@@ -1,0 +1,16 @@
+{
+  "name": "@couli/spec-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:longrun": "vitest run --config vitest.longrun.config.ts"
+  },
+  "devDependencies": {
+    "@couli/domain": "workspace:*",
+    "@couli/money": "workspace:*",
+    "@couli/testing": "workspace:*",
+    "fast-check": "4.10.2"
+  }
+}
