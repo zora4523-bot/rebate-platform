@@ -11,6 +11,9 @@
 | `.redocly.lint-ignore.yaml` | 精确到位置的例外，逐条写原因；手工维护，不用 `--generate-ignore-file` 重新生成 |
 | `error-codes.yaml` | 错误码：码值、HTTP 状态、含义、客户端动作、可重试、`data` 字段形状、来源条目（CT-01；码值只按 08 §13.11） |
 | `enums/*.yaml` | 枚举：按主题分文件（平台、商品与转链、订单、资金、身份、消息与 Agent、后台权限点），04 §2 与 08 §13 的取值（CT-01） |
+| `bridge.schema.json` | JSBridge（CT-03）：信封、权限级别、桥错误码 90001–90500、`signed_paths` 白名单（MVP 只有 `POST /v1/orders/claims`，TECH-30）、事件，以及 04 §9 每个方法的 `level`、`model`、`timeout_ms`、`since`（按端）和 params / result 的 JSON Schema |
+| `routes.json` | 路由表（CT-03）：路由名 → `native` 或 `h5` + `h5_path`，`auth`、按端 `since`（TECH-07，null 表示该端尚未提供）、params 的 JSON Schema；跳转一律 `{route, params}`，外链用 `ExternalPage`（TECH-04） |
+| `apps.json` | 外跳目标 App 骨架（CT-03）：`ext.openApp` 与已装检测只认这里的键；取值都是 09 的候选（`status: candidate`），对应 CAP 实测后改 `verified` |
 
 ## 以后会放在这里的文件（规划/02 §16.2）
 
@@ -18,11 +21,8 @@
 
 | 文件 | 内容 | 由谁创建 |
 | --- | --- | --- |
-| `bridge.schema.json` | JSBridge 方法、参数、结果、权限级别 | 契约任务 |
 | `agent-stream.schema.json` | SSE 事件与卡片 | 契约任务 |
 | `home-schema.json` | 首页页面与组件 props | 契约任务 |
-| `routes.json` | 页面路由名 → 原生页 / H5 URL | 契约任务 |
-| `apps.json` | 外跳目标 App | 契约任务 |
 | `design-tokens.json` | 颜色、字号、间距、圆角 | 契约任务 |
 
 ## 命令
@@ -30,10 +30,10 @@
 | 用途 | 命令 |
 | --- | --- |
 | 检查契约 | `pnpm contracts:lint` |
-| 重新生成 TS 类型（`packages/contracts-ts/src/{openapi,enums,error-codes}.gen.ts`） | `pnpm contracts:codegen` |
+| 重新生成 TS 类型（`packages/contracts-ts/src/{openapi,enums,error-codes,bridge}.gen.ts`） | `pnpm contracts:codegen` |
 | 检查 + 生成物无漂移（`verify:fast` 里跑） | `pnpm contracts:check` |
 
-改了 `openapi.yaml`、`enums/`、`error-codes.yaml` 必须在同一个 PR 里重新生成并提交生成物。
+改了 `openapi.yaml`、`enums/`、`error-codes.yaml`、`bridge.schema.json`、`routes.json`、`apps.json` 必须在同一个 PR 里重新生成并提交生成物。
 
 TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载官方二进制）与 Prism mock（prism-cli 要 Node ≥24.18，ADR-0001 §7） — blocked on GitHub remote
 
@@ -63,3 +63,9 @@ TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载�
 3. `error-codes.yaml` 按码值升序；新码先登记 08 §13.11，再改本文件；废弃码保留并标 `deprecated: true`。字段含义见文件头注释。
 4. 两类文件都用仓库的严格 YAML 子集（`tools/lib/yaml-lite.ts`）解析：不用锚点、多行折叠和流式映射；含「: 」的值加引号。
 5. `openapi.yaml` 里的枚举字段与这里的取值保持一致，由 CT-02 起的契约任务逐个对齐。
+
+## 桥、路由与外跳表
+
+1. 三个 JSON 文件由 `packages/contracts-ts/scripts/bridge.ts` 校验并生成 `src/bridge.gen.ts`（经 `index.ts` 以 `bridge` 命名空间导出）：方法名属于 04 §9 的命名空间；`sync` 方法 `timeout_ms` 为 null；params / result 都是 `additionalProperties: false` 的对象；`$defs` 里的平台、绑定状态与 `enums/` 一致，`AppTarget` 与 `apps.json` 的键一致；`signed_paths` 中已在 `openapi.yaml` 声明的接口必须 `x-signed`；iOS 查询 scheme 合计不超过 20 个；路由参数里的 `platform` 与方法里的 `realname_status`、`installed`、`channel` 取值与 `enums/` 一致。`nav.open` 的参数类型就是 `RouteTarget`。`debug_only` 的路由只在 debug / staging 包里能打开（TECH-11）。自由形状的对象写 `additionalProperties: true`，否则生成类型会成为空对象。
+2. `timeout_ms: null` 的异步方法要等用户操作（登录、授权、分享等），不设超时。
+3. 新增路由或方法时写清按端 `since`；尚未在某端发布的写 null。

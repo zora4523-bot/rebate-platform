@@ -15,3 +15,7 @@ export const enumsDir = join(contractsDir, 'enums');
 export const errorCodesFile = join(contractsDir, 'error-codes.yaml');
 export const enumsGeneratedFile = join(packageDir, 'src', 'enums.gen.ts');
 export const errorCodesGeneratedFile = join(packageDir, 'src', 'error-codes.gen.ts');
+export const bridgeFile = join(contractsDir, 'bridge.schema.json');
+export const routesFile = join(contractsDir, 'routes.json');
+export const appsFile = join(contractsDir, 'apps.json');
+export const bridgeGeneratedFile = join(packageDir, 'src', 'bridge.gen.ts');
