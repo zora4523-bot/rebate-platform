@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import {
   applyReserve,
   InvalidAmount,
@@ -95,4 +95,44 @@ it('[AC-B2-01a#9] storage bounds apply to the rounded fen, including boundary ta
     ),
   ).toEqual([9223372036854775807n, -9223372036854775808n, -9223372036854775808n]);
   expect(() => yuanStrToFen('-92233720368547758.0801')).toThrow(InvalidAmount);
+});
+
+it('[AC-B2-01a#10] oversized integer strings are rejected before any BigInt conversion', () => {
+  const convert = vi.spyOn(globalThis, 'BigInt');
+  try {
+    for (const digits of ['1'.repeat(20), '1'.repeat(100000)]) {
+      for (const sign of ['', '-']) {
+        const text = `${sign}${'0'.repeat(100)}${digits}`;
+        expect(() => parseFen(text)).toThrow(InvalidAmount);
+        expect(() => yuanStrToFen(`${text}.001`)).toThrow(InvalidAmount);
+        expect(() => pctStrToBp(`${text}.001`)).toThrow(InvalidRatio);
+      }
+    }
+    expect(convert).not.toHaveBeenCalled();
+  } finally {
+    convert.mockRestore();
+  }
+});
+
+it('[AC-B2-01a#11] long leading zeros preserve valid values and signed int64 boundaries', () => {
+  const zeros = '0'.repeat(100000);
+  expect([
+    parseFen(`${zeros}9223372036854775807`),
+    parseFen(`-${zeros}9223372036854775808`),
+    parseFen(`-${zeros}`),
+    yuanStrToFen(`${zeros}92233720368547758.07`),
+    yuanStrToFen(`-${zeros}92233720368547758.08`),
+    yuanStrToFen(`-${zeros}.001`),
+    pctStrToBp(`${zeros}100.00`),
+    pctStrToBp(`-${zeros}.000`),
+  ]).toEqual([
+    9223372036854775807n,
+    -9223372036854775808n,
+    0n,
+    9223372036854775807n,
+    -9223372036854775808n,
+    -1n,
+    10000n,
+    0n,
+  ]);
 });

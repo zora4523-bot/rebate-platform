@@ -1,7 +1,7 @@
 // @couli/money: integer-fen (bigint) amounts and basis-point ratios.
 //
-// Pure arithmetic primitives; beneficiary selection and business split policies belong to domain.
-// Rules: 规划/08 BR-CALC-01, 02, 04, 07, 08, 21, 26 (text in the task brief).
+// Pure arithmetic primitives; commission split policies belong to packages/domain (B2-03).
+// Rules: 规划/08 BR-CALC-01, 02, 08, 26 (text in the task brief).
 
 /** Thrown for an amount that is not an integer number of fen, or is negative where forbidden. */
 export class InvalidAmount extends Error {
@@ -23,7 +23,7 @@ export class InvalidRatio extends Error {
 export type SplitResult = {
   /** shares[i] = floor(base_fen * shares_bp[i] / 10000), each computed on its own. */
   shares: bigint[];
-  /** base_fen - sum(shares); carries every rounding tail (platform retain). */
+  /** base_fen - sum(shares); undistributed remainder returned to the caller. */
   remainder: bigint;
 };
 
@@ -46,6 +46,16 @@ function checkedParsedFen(fen: bigint): bigint {
     throw new InvalidAmount('Amount exceeds the PG bigint range');
   }
   return fen;
+}
+
+/** Bound validated integer digits before BigInt conversion, ignoring leading zeros. */
+function boundedIntegerDigits(
+  digits: string,
+  ErrorType: typeof InvalidAmount | typeof InvalidRatio,
+): string {
+  const significant = digits.replace(/^0+/, '');
+  if (significant.length > 19) throw new ErrorType('Integer part exceeds the int64 digit limit');
+  return significant || '0';
 }
 
 function assertAmount(value: unknown): asserts value is bigint {
@@ -81,7 +91,9 @@ function decimalToHundredths(
   const whole = match[2];
   if (whole === undefined) throw new ErrorType('Missing decimal integer part');
   const fraction = match[3] ?? '';
-  const magnitude = BigInt(whole) * 100n + BigInt(fraction.slice(0, 2).padEnd(2, '0'));
+  const magnitude =
+    BigInt(boundedIntegerDigits(whole, ErrorType)) * 100n +
+    BigInt(fraction.slice(0, 2).padEnd(2, '0'));
   const hasTail = /[1-9]/.test(fraction.slice(2));
   const value = match[1] === '-' ? -magnitude - (hasTail ? 1n : 0n) : magnitude;
   return { value, hasTail };
@@ -102,7 +114,11 @@ export function parseFen(value: unknown): bigint {
   if (typeof value === 'number' && Number.isSafeInteger(value))
     return checkedParsedFen(BigInt(value));
   if (typeof value === 'string' && /^-?[0-9]+$/.exec(value)?.[0] === value) {
-    return checkedParsedFen(BigInt(value));
+    const negative = value.startsWith('-');
+    const magnitude = BigInt(
+      boundedIntegerDigits(negative ? value.slice(1) : value, InvalidAmount),
+    );
+    return checkedParsedFen(negative ? -magnitude : magnitude);
   }
   throw new InvalidAmount('Expected bigint, safe integer, or decimal integer string');
 }
@@ -171,8 +187,10 @@ export function mulDivCeil(amount_fen: bigint, ratio_bp: bigint, denominator: bi
 }
 
 /**
- * BR-CALC-04 / BR-CALC-08: split base_fen by basis points. Each share is floored on its own;
- * the remainder (platform) takes every tail. base_fen must be a bigint >= 0 (else
+ * Allocate an amount by basis points: each part is floored on its own (BR-CALC-08),
+ * and the undistributed remainder is returned to the caller.
+ * The commission split itself is a packages/domain function (B2-03) that calls this primitive.
+ * base_fen must be a bigint >= 0 (else
  * InvalidAmount); every ratio a bigint in 0..10000 and their sum <= 10000 (else InvalidRatio).
  * The input array is not modified.
  */
