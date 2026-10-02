@@ -88,20 +88,21 @@ function agentsBelow(root: string, dir: string, depth: number, out: Set<string>)
 }
 
 /**
- * Every AGENTS.md that governs the task's paths: the chain from the repository
- * root down to the directory each glob starts in, plus the ones below it (a
- * glob such as `apps/api/src/modules/**` reaches into every module). Codex only
- * injects the root file by itself (规划/11 §2.4), so the rest must be embedded.
- * Sorted root first.
+ * The nested AGENTS.md files that govern the task's paths: the chain below the
+ * repository root down to the directory each glob starts in, plus the ones below
+ * it (a glob such as `apps/api/src/modules/**` reaches into every module). The
+ * root file is left out: codex-run.sh always runs Codex with `-C <worktree root>`
+ * and Codex injects the root AGENTS.md by itself (规划/11 §2.4; seen on the
+ * validation day), while nested files under `paths` are never injected and must
+ * be embedded. Sorted shallowest first.
  */
 export function agentsFilesFor(paths: readonly string[], root: string): string[] {
   const found = new Set<string>();
   for (const glob of paths) {
     const dir = literalDir(glob);
     const parts = dir === '' ? [] : dir.split('/');
-    for (let i = 0; i <= parts.length; i += 1) {
-      const rel = parts.slice(0, i).join('/');
-      const file = rel === '' ? 'AGENTS.md' : `${rel}/AGENTS.md`;
+    for (let i = 1; i <= parts.length; i += 1) {
+      const file = `${parts.slice(0, i).join('/')}/AGENTS.md`;
       if (existsSync(join(root, file))) found.add(file);
     }
     if (/[*?{[]/.test(glob)) agentsBelow(root, dir, 0, found);
@@ -313,8 +314,12 @@ export function renderBrief(input: BriefInput): string {
   out.push('- `ops/`、`docs/` 下任何文件；结果只写进 JSON 输出。', '');
 
   out.push('## 5. 必须遵守的仓库规则', '');
+  out.push(
+    '根 AGENTS.md 由 Codex 自动读取，这里不再内嵌；下面是允许路径上各级子目录的 AGENTS.md 全文。',
+    '',
+  );
   const agents = agentsFilesFor(task.paths, input.rulesRoot);
-  if (agents.length === 0) out.push('（允许路径上没有 AGENTS.md）', '');
+  if (agents.length === 0) out.push('（允许路径上没有子目录的 AGENTS.md）', '');
   for (const file of agents) {
     out.push(`<!-- ${file} 全文开始 -->`, '');
     out.push(readFileSync(join(input.rulesRoot, file), 'utf8').trim(), '');

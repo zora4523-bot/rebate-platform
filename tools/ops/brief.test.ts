@@ -104,23 +104,22 @@ beforeAll(() => {
 
 afterAll(() => removeDir(base));
 
-it('collects the AGENTS.md chain root first, plus the ones below the glob', () => {
+it('collects the nested AGENTS.md chain shallowest first, plus the ones below the glob, never the root', () => {
   expect(agentsFilesFor(['packages/demo/src/**'], root)).toEqual([
-    'AGENTS.md',
     'packages/AGENTS.md',
     'packages/demo/AGENTS.md',
     'packages/demo/src/deep/AGENTS.md',
   ]);
   expect(agentsFilesFor(['packages/demo/src/index.ts'], root)).toEqual([
-    'AGENTS.md',
     'packages/AGENTS.md',
     'packages/demo/AGENTS.md',
   ]);
   expect(agentsFilesFor(['docs/**', 'packages/other/**'], root)).toEqual([
-    'AGENTS.md',
     'packages/AGENTS.md',
     'packages/other/AGENTS.md',
   ]);
+  // A path at the repository root only has the root file, which Codex injects by itself.
+  expect(agentsFilesFor(['README.md'], root)).toEqual([]);
 });
 
 it(
@@ -163,7 +162,8 @@ it('writes the eight sections of the template in order', () => {
     '- 已有规则测试：本任务还没有规则测试提交',
     '- `ops/`、`docs/` 下任何文件；结果只写进 JSON 输出。',
     '## 5. 必须遵守的仓库规则',
-    '根规则第一行。',
+    '根 AGENTS.md 由 Codex 自动读取，这里不再内嵌；',
+    '<!-- packages/AGENTS.md 全文开始 -->',
     '中间一级的规则。',
     '模块规则：单一写者。',
     '更深一级的规则。',
@@ -185,6 +185,9 @@ it('writes the eight sections of the template in order', () => {
   expect(text).not.toContain('这段细则不该出现在一跳引用里');
   expect(text).not.toContain('不相关的模块');
   expect(text).not.toContain('vendored');
+  // The root AGENTS.md is auto-injected by Codex (codex-run.sh runs at the repository root).
+  expect(text).not.toContain('根规则第一行。');
+  expect(text).not.toContain('<!-- AGENTS.md 全文开始 -->');
   // Protected globs that neither reach into `paths` nor hold the accepted rule tests are
   // not repeated: the path guard refuses them anyway.
   expect(text).not.toContain('`turbo.json`');
@@ -352,11 +355,9 @@ it(
     }
     expect(section2).not.toContain('| 影响面 |');
     for (const path of task.paths) expect(text).toContain(`\n- \`${path}\`\n`);
-    // The root AGENTS.md is embedded in full, first.
-    const rootAgents = readFileSync(join(repoRoot(), 'AGENTS.md'), 'utf8').trim();
-    expect(text).toContain(
-      `## 5. 必须遵守的仓库规则\n\n<!-- AGENTS.md 全文开始 -->\n\n${rootAgents}\n\n<!-- AGENTS.md 全文结束 -->`,
-    );
+    // The root AGENTS.md is not embedded: Codex reads it by itself at the repository root.
+    expect(text).toContain('## 5. 必须遵守的仓库规则\n\n根 AGENTS.md 由 Codex 自动读取');
+    expect(text).not.toContain('<!-- AGENTS.md 全文开始 -->');
     expect(text.endsWith('监听端口的命令。\n')).toBe(true);
 
     // Expectations below are computed from the ledger entry, so they hold for whichever
