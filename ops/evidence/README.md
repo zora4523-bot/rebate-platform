@@ -5,7 +5,8 @@
 现状：本目录还没有任何证据文件，也还没有生成器；检查器已经有了。
 
 - TODO(规划/11 §3.2): 证据文件生成器（放 `tools/ops/`） — blocked on B2-01a（10-04 试跑跑通一轮循环后定字段；字段的形状已由检查器固定，见下表）
-- CI 必过检查 `evidence-check`（`tools/ci/evidence-check.ts`，`.github/workflows/evidence.yml`）：改动路径按可信副本的 `ops/risk-map.yaml` 算出 RV2 的 PR，必须带本文件且全部字段过检；RV0 / RV1 的 PR 直接通过（有证据文件时照样校验）。本地可跑：`node tools/ci/evidence-check.ts --pr <检出> --base <基线提交> --head <头提交> --head-ref task/<编号>`。生成器落地前，RV2 的首次合并由编排者按下表手写一份并用这条命令自检。
+- CI 必过检查 `evidence-check`（`tools/ci/evidence-check.ts`，`.github/workflows/evidence.yml`）：改动路径按可信副本的 `ops/risk-map.yaml` 算出 RV2 的 PR，必须带本文件且全部字段过检（例外见下面的负责人豁免）；RV0 / RV1 的 PR 直接通过（有证据文件时照样校验）。本地可跑：`node tools/ci/evidence-check.ts --pr <检出> --base <基线提交> --head <头提交> --head-ref task/<编号>`。生成器落地前，RV2 的首次合并由编排者按下表手写一份并用这条命令自检。
+- 负责人豁免（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 12 条）：分支不是 `task/<编号>` 的 RV2 PR（测试改动、门禁改动这类），带有效负责人批准标签 `owner-approved-<头提交前 12 位>`（由仓库所有者账号添加，判断与 `protected-paths` 检查相同，实现在 `tools/guard/lib/owner-approval.mjs`）时不要求证据文件——**前提是**没有改动资金与归属实现路径：`packages/money/src/**`、`packages/domain/src/**`、`apps/api/src/modules/{ledger,commission,settlement,payout,withdrawals,reconciliation,orders,linking,union}/**`、`db/migrations/**`（检查器里的 `MONEY_PATHS`）。改到其中任何一处，照旧必须带证据文件，标签不起作用。`task/` 分支不受影响。CI 传 `--pr-number`，检查器只在标签能改变结论时才查 GitHub。
 - TODO(规划/11 §3.2): 资金路径 `run_attempt` 不大于 1（不许重跑到绿） — blocked on GitHub remote
 
 证据文件只由脚本生成，不手写、不手改（生成器落地前的例外见上）。

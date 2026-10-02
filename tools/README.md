@@ -21,7 +21,7 @@
 | `guard/` | 门禁守卫，见下表；`hooks/` 是 Claude 会话的 PreToolUse 拦截钩子，`shim/` 是 `codex` 垫片（两者都只是文件，安装步骤在各自的 `INSTALL.md`） | 11 §1.2、§2.3、§2.4、§4、§5.5、§8 |
 | `ops/` | 任务台账检查、在途状态、额度账本与熔断、看板、任务书、交接、verify 容器 | 11 §1.3、§2、§5.3 |
 | `agent/` | Codex 包装脚本 `codex-run.sh`、输出 schema、评审提示词、派工与回收 | 11 §2.4、§3.3 |
-| `ci/` | CI 工作流用到的脚本：`check-workflows.ts`（工作流与规则集的静态检查）、`evidence-check.ts`（必过检查 `evidence-check`，从基线副本运行） | 11 §3.2、§4.4 |
+| `ci/` | CI 工作流用到的脚本：`check-workflows.ts`（工作流与规则集的静态检查）、`evidence-check.ts`（必过检查 `evidence-check`，从基线副本运行；非 `task/` 分支带有效负责人批准标签且没碰资金与归属实现路径时免证据文件） | 11 §3.2、§4.4 |
 
 ## guard/ 各守卫
 
@@ -38,11 +38,13 @@
 | `agents-pair.ts` | 每个 `AGENTS.md` 配一个内容只有 `@AGENTS.md` 的 `CLAUDE.md`；根 ≤150 行，嵌套 ≤60 行 | 11 §5.1、§5.5 |
 | `risk-map-coverage.ts` | `apps/api/src/modules/*`、`packages/*` 的每个目录都在 `ops/risk-map.yaml` 里点名出现 | 11 §1.2 |
 | `agents-table.ts --write \| --check` | 根 `AGENTS.md` 里 `<!-- risk-table:begin -->` 与 `<!-- risk-table:end -->` 之间的分工表由 `ops/risk-map.yaml` 生成 | 11 §1.2 |
-| `protected-sync.ts` | `protected-paths.json` 与 `.github/workflows/protected-paths.yml` 里内嵌的副本一致 | 11 §4.4 |
+| `protected-sync.ts` | `protected-paths.json` 与 `lib/owner-approval.mjs` 各自和 `.github/workflows/protected-paths.yml` 里内嵌的副本一致 | 11 §4.4 |
 | `hidden-unicode.ts` | 文本文件里没有双向控制符和零宽字符 | 11 §4.1 |
 | `lib/lockfile.ts`（在 `run.ts static` 里） | `pnpm-lock.yaml` 里的每个 URL 都是 `https://registry.npmjs.org/` 下、不带查询串与凭据；gitleaks 的默认配置不扫锁文件，这条补上 | 11 §8 |
 | `run.ts static` | 依次跑：schema-lint、agents-pair、risk-map-coverage、agents-table、protected-sync、test-guard、hidden-unicode、lockfile-urls、spec-ref、banned-terms。不需要 git 历史；没有 `.git` 时（verify 容器）改为遍历目录，并跳过需要规划仓库的两项 | `pnpm guard:static` |
-| `run.ts git --base <提交> [--task <编号>] [--cwd]` | 依次跑：path-guard（给了任务时）、protected-paths、test-guard。只在宿主或 CI 跑 | `pnpm guard:git` |
+| `run.ts git --base <提交> [--task <编号>] [--cwd] [--pr-number <PR 号>]` | 依次跑：path-guard（给了任务时）、protected-paths、test-guard。只在宿主或 CI 跑。带 `--pr-number`（CI 的 guard-git）且 protected-paths 或 test-guard 的「只增不改」有问题时，按负责人批准标签查一次（见下文「负责人批准标签」）：批准有效，这两类问题改为警告照样打印、不算失败；其余问题（path-guard、skip / only 等）照旧失败；没有有效标签时行为不变 | `pnpm guard:git` |
+
+负责人批准标签（11 §4.4；负责人 2026-10-02 决定，`ops/approvals.yaml` 第 12 条）：PR 上的标签 `owner-approved-<头提交前 12 位>`，且 PR 时间线显示最后一次加这个标签的是仓库所有者账号，才算批准；标签对应的不是当前头提交（比如推了新提交）就不算。唯一实现是 `guard/lib/owner-approval.mjs`（纯 JavaScript，`protected-paths` 工作流不能检出仓库，所以内嵌一份逐字副本，由 `protected-sync` 核对）；`run.ts git` 与 `ci/evidence-check.ts` 从基线副本导入同一个文件。CI 守卫一律跑基线分支的脚本，所以改这套逻辑的 PR 自己合并前用不上新逻辑。
 
 数据文件：`ops/risk-map.yaml`；`guard/protected-paths.json`（11 §4.4 的唯一来源）；`guard/banned-terms.txt` 与 `guard/banned-terms.allow.txt`（每行「路径 glob、制表符、正则」，只放禁止句和历史对照句）；`guard/hooks/prod-hosts.txt`。
 

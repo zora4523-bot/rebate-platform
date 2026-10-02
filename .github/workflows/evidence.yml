@@ -3,6 +3,10 @@
 # BASE copy of tools/ (like guard-git), with the PR checkout as data, so a branch cannot weaken
 # the check that judges it. RV0 / RV1 pull requests pass (an evidence file, when present, is
 # still validated). It prevents omissions, not malice.
+# Owner waiver (owner decision 2026-10-02): an RV2 PR on a branch that is not task/<id> needs no
+# evidence file when it carries the owner approval label for its head (the check of the
+# protected-paths workflow, tools/guard/lib/owner-approval.mjs) and touches no money /
+# attribution implementation path (MONEY_PATHS in tools/ci/evidence-check.ts).
 #
 # Written on 2026-10-02 without a GitHub remote: nothing in this file has run on GitHub yet.
 # TODO(规划/11 §3.2): `run_attempt` > 1 on funds paths (不许重跑到绿) — blocked on GitHub remote
@@ -11,9 +15,13 @@ name: evidence
 
 on:
   pull_request:
+    # labeled / unlabeled: the owner waiver reads the approval label, so the check reruns when it
+    # is added or removed.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: evidence-${{ github.ref }}
@@ -49,8 +57,10 @@ jobs:
             exit 1
           fi
           node base/tools/ci/evidence-check.ts --pr "$GITHUB_WORKSPACE/pr" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --head-ref "$HEAD_REF"
+            --base "$BASE_SHA" --head "$HEAD_SHA" --head-ref "$HEAD_REF" --pr-number "$PR_NUMBER"
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}

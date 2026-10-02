@@ -36,7 +36,8 @@
 - `.github/workflows/*.yml` 五个工作流都没有在 GitHub 上跑过；动作的提交号、gitleaks 与 oasdiff 的校验和已核对，其余行为是文档结论。
   TODO(规划/11 §9.3 #10): 首次 CI 跑通后回填耗时 — blocked on GitHub remote。
 - `protected-paths` 工作流用 `pull_request_target` 触发：公开仓库默认禁用它，要先建一条只放行这个工作流文件的 Actions 策略。
-  TODO(规划/11 §4.4): 建 Actions 策略；负责人批准后的放行方式（现用标签 `owner-approved-<头提交前 12 位>`）仍待定 — blocked on GitHub remote 与负责人决定。
+  负责人批准后的放行方式已定（负责人 2026-10-02，`ops/approvals.yaml` 第 12 条）：负责人账号在 PR 上加标签 `owner-approved-<头提交前 12 位>`；`protected-paths`、`guard-git`、`evidence-check` 共用 `tools/guard/lib/owner-approval.mjs` 判断它，各自认到什么程度见 `tools/README.md`。
+  TODO(规划/11 §4.4): 建 Actions 策略 — blocked on GitHub remote。
 - `longrun-props` 现在由工作流上报；规划/11 §3.2 写的是由 `merge.sh` 从本机写提交状态。
   TODO(规划/11 §3.2): `merge.sh` 建好时二选一 — blocked on GitHub remote 与 tools/ops/merge.sh。
 - 每晚用 `gh api` 把 `ops/risk-map.yaml`、`ops/branch-protection.json` 与线上设置比对的任务还没有。

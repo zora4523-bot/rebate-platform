@@ -82,6 +82,7 @@
 - 第二类，验证配置，不能碰：`**/vitest*.config.*`、`vitest.shared.ts`、`**/stryker.config.*`、`**/eslint.config.*`、`.dependency-cruiser.cjs`、`turbo.json`、`.npmrc`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`（只有 `deps` 任务可改）、各 `package.json` 的 `scripts`。
 - 第三类，门禁与规则，不能碰：`tools/**`、`.github/**`、各级 `AGENTS.md` 与 `CLAUDE.md`、`.claude/**`、`.codex/**`、`ops/risk-map.yaml`、`ops/approvals.yaml`、`ops/branch-protection.json`、`.githooks/**`、`.gitleaks.toml`。
 - 确实要改：在输出里说明原因，由编排者另开任务；第二、三类合并前一律先问负责人（规划/11 §3.2、§4.4）。
+- 负责人批准的凭据是他本人账号在 PR 上加的标签 `owner-approved-<头提交前 12 位>`：`protected-paths`、`guard-git` 认它（`guard-git` 把保护路径与只增不改的问题降为警告）；`evidence-check` 只对非 `task/` 分支且没碰资金与归属实现路径的 PR 认它（详见 `tools/README.md`）。代理不加这个标签。
 
 ## 6. 安全禁区
 
