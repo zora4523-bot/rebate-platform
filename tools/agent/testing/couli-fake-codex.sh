@@ -168,10 +168,11 @@ case "$SCENARIO" in
     finish_events
     ;;
   busy-then-finish)
-    # No event for 4 seconds, but a descendant burns CPU the whole time (a test run inside
-    # the sandbox): the CPU half of the liveness rule must keep the run alive.
+    # No event for 5 seconds, but a descendant burns CPU the whole time (a test run inside
+    # the sandbox): the CPU half of the liveness rule must keep the run alive. Sub-second clock,
+    # so the silence lasts the full 5 s and not anything between 4 and 5.
     start_events
-    perl -e 'my $end = time + 4; my $x = 0; while (time < $end) { $x += $_ for 1 .. 100000 }'
+    perl -MTime::HiRes=time -e 'my $end = time + 5; my $x = 0; while (time < $end) { $x += $_ for 1 .. 100000 }'
     write_output
     finish_events
     ;;

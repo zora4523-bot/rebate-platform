@@ -60,8 +60,7 @@ my ( $timeout, $grace, $idle ) = @opt{qw(timeout-secs grace-secs idle-secs)};
 # below it, a test run is far above it.
 my $CPU_STEP = $idle > 0 ? ( 0.05 * $idle > 0.25 ? 0.05 * $idle : 0.25 ) : 0.25;
 
-# Process-table scans: once a second, or more often for a short idle window (Linux reports
-# cputime in whole seconds, so a scan must land inside the window after the counter moved).
+# Process-table scans: once a second, or more often for a short idle window.
 my $SCAN_EVERY = ( $idle > 0 && $idle / 5 < 1.0 ) ? $idle / 5 : 1.0;
 
 # Every process started below the leader inherits an open descriptor on this marker file; it
@@ -141,7 +140,10 @@ sub pid_alive {
 # ---------------------------------------------------------------------------------------------
 # Process-table scan: descendants of the leader (by ppid, transitively, plus every member of
 # the group) and their accumulated CPU time. `ps` is portable between macOS and Linux for the
-# four columns used here; cputime is `[[dd-]hh:]mm:ss[.cc]` on both.
+# four columns used here; cputime is `[[dd-]hh:]mm:ss[.cc]` on both, but procps on Linux prints
+# whole seconds only. A process with less than half a core (a busy CI runner) then shows no
+# change for longer than a short idle window although it works, so on Linux the CPU time is
+# read from /proc/<pid>/stat instead (clock ticks, normally 1/100 s).
 # ---------------------------------------------------------------------------------------------
 my %descendant;    # pid => ppid at discovery
 my %cpu_seen;      # pid => highest cputime seen (a process that exits keeps its contribution)
@@ -159,6 +161,23 @@ sub cpu_secs {
         $secs = $secs * 60 + $part;
     }
     return $days * 86400 + $secs;
+}
+
+my $CLK_TCK = eval { POSIX::sysconf( POSIX::_SC_CLK_TCK() ) } || 100;
+
+# utime + stime of one process from /proc (Linux), in seconds; undef where /proc is missing.
+sub proc_cpu_secs {
+    my ($p) = @_;
+    open( my $fh, '<', "/proc/$p/stat" ) or return undef;
+    my $line = <$fh>;
+    close($fh);
+    return undef unless defined $line;
+    # The command name (field 2) is in parentheses and may contain spaces or ')'.
+    my $close = rindex( $line, ')' );
+    return undef if $close < 0;
+    my @f = split ' ', substr( $line, $close + 1 );    # $f[0] is field 3 (state)
+    return undef unless defined $f[12] && $f[11] =~ /^\d+$/ && $f[12] =~ /^\d+$/;
+    return ( $f[11] + $f[12] ) / $CLK_TCK;              # fields 14 (utime) and 15 (stime)
 }
 
 sub scan_processes {
@@ -187,6 +206,8 @@ sub scan_processes {
         $found{$p} = 1 if $pg == $pid;
         next unless $found{$p};
         $descendant{$p} = $pp unless exists $descendant{$p};
+        my $precise = proc_cpu_secs($p);
+        $cpu = $precise if defined $precise;
         $cpu_seen{$p} = $cpu if !defined $cpu_seen{$p} || $cpu > $cpu_seen{$p};
     }
     # Only CPU counts (a poll loop spawning `sleep` every 100 ms is not activity).
@@ -301,7 +322,9 @@ my ( $timed_out, $idle_killed, $stragglers_killed, $escaped_killed ) = ( 0, 0, 0
 
 sub idle_exceeded {
     return 0 unless $idle > 0;
-    my @st   = stat( $opt{'idle-file'} );
+    # Sub-second mtime where available: a whole-second mtime looks older than it is (and an
+    # event written in the first second of the run would not count at all).
+    my @st   = $HIRES ? Time::HiRes::stat( $opt{'idle-file'} ) : stat( $opt{'idle-file'} );
     my $file = ( @st && $st[9] > $started ) ? $st[9] : $started;
     my $last = $file > $cpu_active_at ? $file : $cpu_active_at;
     return ( now() - $last ) >= $idle ? 1 : 0;
