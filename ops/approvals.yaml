@@ -90,3 +90,9 @@ approvals:
     granted: true
     date: '2026-10-02'
     note: '负责人在对话里同意（经编排会话转达）；落在分支 chore/review-rounds-per-type（tools/ops、tools/agent、AGENTS.md），规划/11 §2.5 同步改在规划仓库分支 docs/review-rounds-per-type'
+  - id: 14
+    row: 4
+    title: '门禁修正：task/<编号> 分支上 guard-git 的路径守卫从证据文件 ops/evidence/<编号>.json 的 spec_commit 起算（先核对它是 PR 头提交的祖先、PR 基线的后代）；基线到 spec_commit 之间按规则测试作者的提交检查，只许规则测试资产、ops/tasks 台账与任务 paths 内的 NotImplemented 骨架；没有证据文件或 spec_commit 无效时照旧从基线算；保护路径与 test-guard 不变。规则测试评审的发现只有在任务 paths（加规则测试目录）内可测的才计入结论：引用 paths 以外文件或模块、或评审方标了 [out-of-scope] 的发现由 validate-output.ts 移进 out_of_scope 并记警告，结论只按范围内的 S0 / S1 重算，范围外条目追加到 <runs>/<编号>/out-of-scope.md 留作后续任务的规则测试；资金评审不变'
+    granted: true
+    date: '2026-10-02'
+    note: '负责人在对话里同意（经编排会话转达）；落在分支 chore/gate-spec-base-and-scope（tools/guard、tools/ci、tools/agent、.github/workflows/ci.yml 注释、AGENTS.md），规划/11 §2.3、§3.3 同步改在规划仓库分支 docs/gate-spec-base-and-scope'

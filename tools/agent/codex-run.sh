@@ -241,6 +241,7 @@ resolve_roots() {
 resolve_review_type() {
   TASK_RISK=''
   TASK_REFS=''
+  TASK_PATHS=''
   local task_json=''
   if [ -f "$TRUSTED/tools/ops/task.ts" ]; then
     task_json="$(node "$TRUSTED/tools/ops/task.ts" show "$TASK" --json 2>/dev/null || true)"
@@ -254,6 +255,13 @@ resolve_review_type() {
       node "$SELF_DIR/meta.ts" get --file /dev/stdin refs 2>/dev/null || true)"
     case "$TASK_REFS" in
       *[!A-Za-z0-9,-]*) TASK_REFS='' ;;
+    esac
+    # The task's paths bound what a spec-test finding may count for (owner decision 2026-10-02,
+    # ops/approvals.yaml id 14). Only path globs made of [A-Za-z0-9_.@*{},/-] are kept.
+    TASK_PATHS="$(printf '%s\n' "$task_json" |
+      node "$SELF_DIR/meta.ts" get --file /dev/stdin paths 2>/dev/null || true)"
+    case "$TASK_PATHS" in
+      *[!A-Za-z0-9_.@*{},/-]* | *..*) TASK_PATHS='' ;;
     esac
   fi
   case "$TASK_RISK" in
@@ -514,6 +522,13 @@ build_review_prompt() {
   fi
   changed="$(git -C "$WT_REAL" -c core.quotepath=false diff --name-only "$BASE_SHA" --)"
   untracked="$(git -C "$WT_REAL" -c core.quotepath=false ls-files --others --exclude-standard)"
+  # Spec-test reviews also name the task's paths: findings about behaviour outside them (and
+  # outside the rule-test locations) are out of scope (owner decision 2026-10-02).
+  local paths_line=''
+  if [ "$REVIEW_TYPE" = spec-test ]; then
+    paths_line="
+- Allowed paths (the task's paths; the rule-test locations are added): ${TASK_PATHS:-(none listed)}"
+  fi
   PROMPT="$(cat "$prompt_file")
 
 ---
@@ -527,7 +542,7 @@ build_review_prompt() {
 - Planning repo: $SPEC_REPO
 - SPEC_REF: ${spec_ref:-(not found in the worktree)}
 - Diff to review: \`git diff $BASE_SHA\` in the working directory, plus the untracked files below
-- In-scope rules (the task's refs): $(if [ -n "$TASK_REFS" ]; then printf '%s' "${TASK_REFS//,/, }"; else printf '(none listed)'; fi)
+- In-scope rules (the task's refs): $(if [ -n "$TASK_REFS" ]; then printf '%s' "${TASK_REFS//,/, }"; else printf '(none listed)'; fi)${paths_line}
 
 ### Changed files (\`git diff --name-only $BASE_SHA\`)
 
@@ -701,8 +716,12 @@ run_task() {
     if [ "$MODE" = review ]; then
       validate_args+=(--diff-base "$BASE_SHA" --cwd "$WT_REAL")
       if [ "$REVIEW_TYPE" = money ]; then validate_args+=(--money); fi
-      if [ "$REVIEW_TYPE" = spec-test ] && [ -n "$TASK_REFS" ]; then
-        validate_args+=(--refs "$TASK_REFS")
+      if [ "$REVIEW_TYPE" = spec-test ]; then
+        if [ -n "$TASK_REFS" ]; then validate_args+=(--refs "$TASK_REFS"); fi
+        if [ -n "$TASK_PATHS" ]; then validate_args+=(--allowed-paths "$TASK_PATHS"); fi
+        # Out-of-scope findings are moved and the verdict recomputed in the -o file itself, and
+        # every out-of-scope entry is kept in <runs>/<id>/out-of-scope.md for later rule tests.
+        validate_args+=(--rewrite --out-of-scope-log "$RUN/out-of-scope.md")
       fi
     fi
     if node "$TRUSTED/tools/agent/validate-output.ts" "${validate_args[@]}" \

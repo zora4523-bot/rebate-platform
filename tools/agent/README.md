@@ -13,7 +13,7 @@
 | `dispatch.sh` | 派工前检查 + 后台启动一次实现 |
 | `post-run.sh` | 实现结束后：先跑守卫，再给出下一步动作 |
 | `next-action.ts` | `post-run.sh` 的判定表（纯函数，有单测） |
-| `validate-output.ts` | 产出校验：schema（Ajv2020 strict）+ 评审规则 + 资金清单 |
+| `validate-output.ts` | 产出校验：schema（Ajv2020 strict）+ 评审规则 + 资金清单；规则测试评审的范围外条目移进 `out_of_scope`、重算结论、追加到 `out-of-scope.md` |
 | `meta.ts` | 给 bash 用的 JSON 读写小工具、事件流解析 |
 | `common.sh` | 三个脚本共用的路径解析与进程组函数 |
 | `schemas/impl.schema.json`、`schemas/review.schema.json` | 结构化产出的 schema（每个 object 都是 `additionalProperties:false` + 全字段必填）；评审产出另有 `out_of_scope`（任务 refs 以外的问题，不计入结论） |
@@ -38,7 +38,7 @@ tools/agent/dispatch.sh <id>
 tools/agent/post-run.sh <id>
 
 # 单独校验一份产出
-node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [--refs <BR-…,BR-…>] [--diff-base <ref> --cwd <worktree>] [--json]
+node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [--refs <BR-…,BR-…>] [--allowed-paths <glob,glob>] [--rewrite] [--out-of-scope-log <md>] [--diff-base <ref> --cwd <worktree>] [--json]
 ```
 
 - `<id>` 是台账编号（如 `B2-03a`）。`<runs>` 默认是仓库旁边的 `couli-runs/`，worktree 默认 `<runs>/worktrees/<id>`。
@@ -57,7 +57,8 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 6. **成败判定**（规划/11 §2.4）。四条同时成立才算有产出：Codex 退出码 0、事件流最后一条是 `turn.completed`、`-o` 存在、通过可信副本里的 `validate-output.ts`。
 7. **门禁从可信副本读**。schema、提示词、校验器、`usage.ts`、守卫都取自 `COULI_TRUSTED_ROOT`（默认：`<runs>/trusted/rebate-platform` 存在就用它，否则脚本所在的主检出），不读任务 worktree：脚本从 `couli-runs/worktrees/<编号>` 下运行、或 `COULI_TRUSTED_ROOT` 指到那里，直接拒绝（退出 2），没有静默回退。
 9. **真正的 codex**。只用 `command -v codex`（垫片算数，它会转给真正的二进制），且它的物理路径不能在仓库、worktree、`couli-runs` 或临时目录下。`COULI_CODEX_BIN` 只给测试夹具用：必须同时设 `COULI_AGENT_TEST=1`，且运行目录位于某个 `.tmp` 目录下，否则拒绝（退出 2）。
-10. **评审范围只到任务的 refs**（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 13 条）。包装脚本从可信副本的 `task.ts show` 取任务的 `refs`，写进评审上下文一行「In-scope rules (the task's refs)」。规则测试评审（spec-test）只对照这些 BR 的条款；一跳引用的规则只作理解用；关于 refs 以外规则的问题写进 `out_of_scope`，不计入 `verdict`。资金评审提示词带同样的范围说明（仓库硬规则与七项清单始终在范围内）。spec-test 评审校验时带 `--refs`：`findings` 里只引用 refs 以外 BR 编号的条目记一条警告（进 `meta.json` 的 `validation_messages`），不算 S0 / S1——「pass 带 S0 / S1」的矛盾检查不数它，只因它而 `fail` 的另记一条「refs 内是 pass」的警告。
+10. **评审范围只到任务的 refs**（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 13 条）。包装脚本从可信副本的 `task.ts show` 取任务的 `refs`，写进评审上下文一行「In-scope rules (the task's refs)」。规则测试评审（spec-test）只对照这些 BR 的条款；一跳引用的规则只作理解用；关于 refs 以外规则的问题写进 `out_of_scope`，不计入 `verdict`。资金评审提示词带同样的范围说明（仓库硬规则与七项清单始终在范围内）。spec-test 评审校验时带 `--refs`：`findings` 里只引用 refs 以外 BR 编号的条目记一条警告（进 `meta.json` 的 `validation_messages`），不算 S0 / S1——「pass 带 S0 / S1」的矛盾检查不数它，只因它而 `fail` 的另记一条「范围内是 pass」的警告。
+12. **规则测试评审还以任务 `paths` 为界**（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 14 条）。spec-test 评审的上下文多一行「Allowed paths」（任务 `paths`，取自可信副本的 `task.ts show`），校验时带 `--allowed-paths`；规则测试目录（可信副本 `tools/guard/protected-paths.json` 第一类）自动算在范围内。下面几种 `findings` 条目算范围外：只引用 refs 以外的 BR；`file` 在任务 `paths` 与规则测试目录之外；正文引用的仓库路径全在其外；`rule` 以评审方的范围标记 `[out-of-scope]` 开头。校验带 `--rewrite`：通过校验后把这些条目移进 `-o` 文件的 `out_of_scope`，`verdict` 只按范围内的 S0 / S1 重算（有就 `fail`，没有就 `pass`），每条移动与结论改变都记一条警告进 `validation_messages`；再带 `--out-of-scope-log <runs>/<id>/out-of-scope.md`：把全部 `out_of_scope` 条目（评审方自己写的和移进来的）按 `key` 去重追加进这个文件（不存在就建），留给后续任务写规则测试。校验不过的产出不改写、不追加。资金评审不变。
 11. **评审类型跟着风险级**。`--review-type` 不传时，可信副本的 `tools/ops/task.ts show <id>` 算出 RV2 就用 `money`（强制资金清单），否则 `general`；RV2 任务显式传 `general` 被拒绝（`contract`、`spec-test` 仍可用）。评审产出里 `verdict: pass` 却带 S0 / S1 发现的，按无产出处理（退出 10）。
 8. **每次调用都记账并结算轮次**：结束后调用 `tools/ops/usage.ts record`（规划/11 §1.3），再调用 `tools/ops/state.ts settle <id> --meta <meta.<mode>.json>`：没有产出就结束的调用（见 §4）把派发前计上的那一轮还回去；账本里这次调用照记，仍计入每任务 10 次、每天 40 次与「连续 3 次无产出」。`settle` 按调用的 `started_at` 去重，重复执行不会多还；没有在途状态文件时什么都不做；它失败只记警告，这一轮按已计处理。
 
@@ -92,6 +93,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 | `dispatch.log` | `dispatch.sh` 后台启动的那次包装脚本的输出 |
 | `post-run/` | `post-run.sh` 取到的状态与守卫输出 |
 | `verify/<n>/` | 沙箱外验证的日志与结果（`tools/ops/verify-container.sh` 写） |
+| `out-of-scope.md` | 规则测试评审范围以外的条目，按 `key` 去重累积追加（`validate-output.ts --out-of-scope-log` 写，不随 `attempts/` 归档）；编排者据此给后续任务写规则测试 |
 
 `meta.json` 字段：`mode`、`task`、`worktree`、`run`、`started_at`、`finished_at`、`exit_code`、`codex_exit`、`timed_out`、`idle_killed`、`aborted`、`has_output`、`capacity_error`、`head_before`、`head_after`、`thread_id`、`codex_version`、`model`、`last_event`、`pgid`、`group_gone`、`stragglers_killed`、`validation`、`validation_messages`、`position_changed`、`other_task_branches_changed`、`timeout_secs`、`idle_secs`、`wrapper_pid`、`output_file`、`events_file`，评审另有 `review_type`、`base`。`has_output` 只表示产出通过了校验；位置断言失败时 `exit_code` 仍是 12。
 

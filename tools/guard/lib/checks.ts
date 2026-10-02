@@ -10,7 +10,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile } from '../../lib/fsx.ts';
-import { changedFiles, listTree, showFile } from '../../lib/git.ts';
+import { changedBetweenCommits, changedFiles, listTree, showFile, tryGit } from '../../lib/git.ts';
 import { specRepo, trustedRoot } from '../../lib/paths.ts';
 import { loadTask } from '../../lib/task-file.ts';
 import { checkAgentsPairs } from './agents-pair.ts';
@@ -24,11 +24,12 @@ import { checkLockfile } from './lockfile.ts';
 import { checkPaths } from './path-guard.ts';
 import type { PathGuardResult } from './path-guard.ts';
 import { compareEmbedded, compareEmbeddedScript } from './protected-sync.ts';
-import { findProtectedHits, gitReaders, loadProtected } from './protected.ts';
+import { findProtectedHits, gitReaders, loadProtected, splitFragment } from './protected.ts';
 import type { ProtectedHit } from './protected.ts';
 import { checkCoverage } from './risk-map-coverage.ts';
 import { loadRiskMap } from './risk.ts';
 import { lintSchema } from './schema-lint.ts';
+import { authorProblems } from './spec-base.ts';
 import { checkSpecRef } from './spec-ref.ts';
 import { addOnlyViolations, scanTree } from './test-guard.ts';
 import type { Finding } from './test-guard.ts';
@@ -272,6 +273,32 @@ export function pathGuardCheck(
     ),
     detail,
   };
+}
+
+/**
+ * The rule-test author's part of a task branch, base..spec_commit (规划/11 §2.3 step 3; owner
+ * decision 2026-10-02): only rule-test assets (class 1 of the trusted protected-path list), the
+ * ops/tasks ledger and NotImplemented skeleton shells inside the task paths (lib/spec-base.ts).
+ */
+export function authorPathsCheck(
+  root: string,
+  base: string,
+  specCommit: string,
+  taskPaths: readonly string[],
+): CheckResult {
+  const testAssets = loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob);
+  const changes = changedBetweenCommits(base, specCommit, { cwd: root });
+  const problems = authorProblems(changes, {
+    taskPaths,
+    testAssets,
+    contentAtSpec: (path) => {
+      const res = tryGit(['show', `${specCommit}:${path}`], { cwd: root });
+      return res.status === 0 ? res.stdout : null;
+    },
+  });
+  return result('path-guard-author', problems, [
+    `${changes.length} path(s) changed by the rule-test commits ${base.slice(0, 12)}..${specCommit.slice(0, 12)}`,
+  ]);
 }
 
 export type ProtectedOutcome = { check: CheckResult; hits: ProtectedHit[] };

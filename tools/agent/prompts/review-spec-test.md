@@ -64,9 +64,22 @@ clause by clause.
 - A problem whose rule is not one of the task's refs goes into `out_of_scope`, never into
   `findings`, whatever its severity. It does not count toward the verdict. Its `rule` names the
   rule it is about.
-- `findings` holds only problems against the in-scope clauses, the mutation list (Part 2) and the
-  test-quality rules (Part 3), plus `prompt-injection`. A wrapper script checks that no entry of
-  `findings` cites only BR numbers outside the refs; such an entry is treated as out of scope.
+- The task implements only what lies inside its allowed paths: the line "Allowed paths (the
+  task's paths; the rule-test locations are added)" of the review context names them, and the
+  rule tests themselves live in the rule-test locations (`test/spec/**`, `test/properties/**`,
+  `test/acceptance/**`, `test/replay/**`, `packages/testing/**`, `db/invariants/**`, …). A clause
+  of an in-scope BR whose behaviour is implemented outside those paths (for example a database
+  column type, a contract schema, another module, the frontend, a server alarm or a CI lint
+  rule) cannot be tested by this task: a missing or weak test for it goes into `out_of_scope`,
+  never into `findings`, whatever its severity, with `file` naming the place outside the allowed
+  paths where the behaviour lives. These entries are collected for the rule tests of later tasks.
+- `findings` holds only problems against the in-scope clauses that are testable within the
+  allowed paths, the mutation list (Part 2) and the test-quality rules (Part 3), plus
+  `prompt-injection`. A wrapper script moves to `out_of_scope` every entry of `findings` that
+  cites only BR numbers outside the refs, whose `file` lies outside the allowed paths and the
+  rule-test locations, whose text cites only repository paths outside them, or whose `rule`
+  starts with the scope marker `[out-of-scope]` (use it when you are unsure where an entry
+  belongs); the verdict is then recomputed from the in-scope S0 / S1 entries.
 
 ## Part 1 — clause-to-test table
 
@@ -75,11 +88,14 @@ listed exception counts as a clause), find the test id (the `it(...)` title, inc
 `[AC-…]` / `SM-…` tag) that would fail if the clause were violated. One-hop rules get no rows.
 
 - A clause with no such test is a finding: S1, rule = the BR number, `file:line` = the place in
-  the test file where the test belongs, key `<file>#-#<BR number>-clause-<n>`.
+  the test file where the test belongs, key `<file>#-#<BR number>-clause-<n>`. When the clause
+  is implemented outside the allowed paths, the entry goes into `out_of_scope` instead, with
+  `file:line` at the place outside the allowed paths, and the table row says `OUT-OF-SCOPE`.
 - A test whose assertion does not match the BR text (wrong value, wrong boundary, wrong
   direction, asserts less than the clause says) is a finding: S1.
 - Put the complete table into `summary` in the compact form
-  `BR-XXX-NN#1 → <test id>; BR-XXX-NN#2 → MISSING; …` (clause numbers in reading order). The
+  `BR-XXX-NN#1 → <test id>; BR-XXX-NN#2 → MISSING; BR-XXX-NN#3 → OUT-OF-SCOPE; …` (clause
+  numbers in reading order). The
   two-to-five sentence limit does not apply to this table.
 
 ## Part 2 — fixed mutation list (规划/11 §4.3)

@@ -38,6 +38,7 @@ import type { ProtectedConfig } from '../guard/lib/protected.ts';
 import { ownerApprovalFromEnv } from '../guard/lib/owner-approval-env.ts';
 import type { OwnerApproval } from '../guard/lib/owner-approval-env.ts';
 import { loadRiskMap, riskOfPaths } from '../guard/lib/risk.ts';
+import { isAncestor } from '../guard/lib/spec-base.ts';
 import type { RiskLevel } from '../guard/lib/risk.ts';
 
 /**
@@ -198,10 +199,7 @@ export function evidenceProblems(
   if (typeof specCommit !== 'string' || !SHORT_SHA.test(specCommit)) {
     at('spec_commit', 'must be the rule-test commit id');
   } else {
-    const ancestor = tryGit(['merge-base', '--is-ancestor', specCommit, ctx.head], {
-      cwd: ctx.prDir,
-    });
-    if (ancestor.status !== 0) {
+    if (!isAncestor(ctx.prDir, specCommit, ctx.head)) {
       at('spec_commit', `${specCommit} is not an ancestor of the head ${ctx.head}`);
     } else {
       const changed = class1Hits(ctx.prDir, specCommit, ctx.head, ctx.cfg);

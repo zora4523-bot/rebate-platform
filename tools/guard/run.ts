@@ -10,6 +10,13 @@
 //     protected-paths workflow does (lib/owner-approval.mjs, 规划/11 §4.4). Approved: those
 //     problems are printed as warnings and do not fail; every other problem still fails.
 //     Not approved, or the API cannot be read: unchanged, the problems fail.
+//     With --task (a task/<id> branch), the path guard is split at the spec_commit of
+//     ops/evidence/<id>.json at HEAD once it is verified to be an ancestor of HEAD and a
+//     descendant of --base (owner decision 2026-10-02, ops/approvals.yaml id 14):
+//     path-guard checks spec_commit..HEAD (plus the working tree) against the task paths, and
+//     path-guard-author checks --base..spec_commit against the rule-test author's paths
+//     (lib/spec-base.ts). Without a usable spec_commit, path-guard runs from --base as before.
+//     protected-paths and test-guard always run from --base.
 // One summary line per check on stdout, details on stderr, exit 1 when any check failed.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,6 +24,7 @@ import { tryGit } from '../lib/git.ts';
 import {
   addOnlyProblem,
   agentsPairCheck,
+  authorPathsCheck,
   agentsTableCheck,
   bannedTermsSpecCheck,
   hiddenUnicodeCheck,
@@ -36,6 +44,8 @@ import { UsageError, parseArgs, report, resolveRoot, runCli } from './lib/cli.ts
 import type { CheckResult } from './lib/cli.ts';
 import { ownerApprovalFromEnv } from './lib/owner-approval-env.ts';
 import type { OwnerApproval } from './lib/owner-approval-env.ts';
+import { resolveSpecBase } from './lib/spec-base.ts';
+import type { SpecBase } from './lib/spec-base.ts';
 import { listTreeFiles } from './lib/tree.ts';
 
 function runCheck(name: string, run: () => CheckResult): CheckResult {
@@ -119,10 +129,43 @@ async function runGit(argv: string[]): Promise<number> {
   const taskId = args.values.get('task');
   const task = taskId === undefined ? null : trustedTask(taskId);
   const results: CheckResult[] = [];
-  if (task) {
-    results.push(
-      runCheck('path-guard', () => pathGuardCheck(root, base, task.paths, task.type).check),
-    );
+  if (task && taskId !== undefined) {
+    // The implementer's scope starts at the verified spec_commit of the task's evidence file;
+    // the commits before it are the rule-test author's (lib/spec-base.ts). Without a usable
+    // spec_commit: one range from the base, as before (fails closed on rule tests).
+    let spec: SpecBase;
+    try {
+      spec = resolveSpecBase(root, base, 'HEAD', taskId);
+    } catch (err) {
+      spec = {
+        ok: false,
+        reason: `internal error: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (spec.ok) {
+      const specCommit = spec.specCommit;
+      const note =
+        `implementer scope starts at spec_commit ${specCommit.slice(0, 12)} (${spec.evidenceFile}, ` +
+        'an ancestor of the head and a descendant of the base); the commits before it are ' +
+        "checked as the rule-test author's (path-guard-author)";
+      results.push(
+        runCheck('path-guard', () => {
+          const check = pathGuardCheck(root, specCommit, task.paths, task.type).check;
+          return { ...check, notices: [note, ...check.notices] };
+        }),
+      );
+      results.push(
+        runCheck('path-guard-author', () => authorPathsCheck(root, base, specCommit, task.paths)),
+      );
+    } else {
+      const note = `implementer scope starts at the base: ${spec.reason}`;
+      results.push(
+        runCheck('path-guard', () => {
+          const check = pathGuardCheck(root, base, task.paths, task.type).check;
+          return { ...check, notices: [note, ...check.notices] };
+        }),
+      );
+    }
   }
   results.push(
     runCheck('protected-paths', () => protectedPathsCheck(root, base, task?.type).check),
