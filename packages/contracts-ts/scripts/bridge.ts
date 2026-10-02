@@ -410,8 +410,13 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
   out.push(
     '/** A jump target shared by banners, push, messages, SDUI, Agent cards and nav.open. */',
   );
+  // params may be omitted exactly when the route has no required params (as the JSON schema says).
+  const optionalParams = cat.routes
+    .filter((r) => Array.isArray(r.params['required']) && r.params['required'].length === 0)
+    .map((r) => JSON.stringify(r.name));
+  out.push(`export type RouteWithOptionalParams = ${optionalParams.join(' | ') || 'never'};`);
   out.push(
-    'export type RouteTarget = { [N in RouteName]: { route: N; params: RouteParams[N] } }[RouteName];',
+    'export type RouteTarget = { [N in RouteName]: N extends RouteWithOptionalParams ? { route: N; params?: RouteParams[N] } : { route: N; params: RouteParams[N] } }[RouteName];',
   );
   out.push('');
   out.push('/** External target apps (contracts/apps.json); the only targets of ext.openApp. */');

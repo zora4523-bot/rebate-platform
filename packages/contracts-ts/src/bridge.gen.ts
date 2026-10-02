@@ -1289,7 +1289,8 @@ export interface RouteParams {
   LevelUpgrade: components['schemas']["RouteLevelUpgradeParams"];
 }
 /** A jump target shared by banners, push, messages, SDUI, Agent cards and nav.open. */
-export type RouteTarget = { [N in RouteName]: { route: N; params: RouteParams[N] } }[RouteName];
+export type RouteWithOptionalParams = "Launch" | "BasicMode" | "Login" | "BindPhone" | "Home" | "Search" | "AgentChat" | "AgentConsent" | "OrderList" | "FindOrder" | "Me" | "Wallet" | "Withdraw" | "WithdrawRecords" | "Ledger" | "RealName" | "PayoutAccount" | "LaborAgreement" | "Settings" | "PrivacyCenter" | "DeleteAccount" | "RiskNotice" | "Appeal" | "ForceUpdate" | "About" | "Messages" | "InviteShare" | "Rules" | "Help" | "Notice" | "Agreement" | "InvitedFriends" | "LevelUpgrade";
+export type RouteTarget = { [N in RouteName]: N extends RouteWithOptionalParams ? { route: N; params?: RouteParams[N] } : { route: N; params: RouteParams[N] } }[RouteName];
 
 /** External target apps (contracts/apps.json); the only targets of ext.openApp. */
 export const apps = {

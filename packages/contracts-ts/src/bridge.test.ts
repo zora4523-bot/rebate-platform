@@ -25,6 +25,9 @@ it('routes carry a per-platform since and external links use ExternalPage (TECH-
     params: { url: 'https://example.test/activity' },
   };
   expectTypeOf(target).toMatchTypeOf<bridge.RouteTarget>();
+  // A route without required params may omit them; ProductDetail may not.
+  expectTypeOf({ route: 'Home' as const }).toMatchTypeOf<bridge.RouteTarget>();
+  expectTypeOf({ route: 'ProductDetail' as const }).not.toMatchTypeOf<bridge.RouteTarget>();
   expect(bridge.routes.ExternalPage.kind).toBe('native');
   expect(bridge.routes.FindOrder.h5_path).toBe('/find-order');
   expect(bridge.routes.HomePreview.debug_only).toBe(true);
