@@ -1,0 +1,24 @@
+id: CT-02a
+repo: rebate-platform
+title: 契约：openapi.yaml v0.9 第一片——登录 → 搜索 → 转链跳转（04 §5、§6.1–§6.3、§8.4）
+type: contract
+# refs 为空：BR-ATTR-14、BR-PRICE-21 连同一跳引用，加上 apps/api 的 AGENTS.md，任务书超过 24KB
+# （规划/11 §5.3）。身份、价格、商品、归属各条由评审按 08 原文核对（契约评审本来就按 04 / 08 全文）。
+refs: []
+refs_hash: {}
+# 契约任务书逐字带 04 的这几节（规划/11 §5.3，ops/approvals.yaml 第 17 条）。
+contract_sections: ['5', '6.1', '6.2', '6.3', '8.4']
+deps: [CT-01]
+# apps/api/src/contract.test.ts：契约先于实现（TECH-05），已声明、尚未实现的接口标
+# x-implementation: planned，路由一一对应检查据此放行并反向约束（实现后必须去掉标记）。
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/contract.test.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
