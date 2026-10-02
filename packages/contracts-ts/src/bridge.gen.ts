@@ -52,7 +52,9 @@ export interface components {
         };
         AppGetConfigResult: {
             /** @description Subset of /v1/config limited to the keys whitelisted for H5 */
-            values: Record<string, never>;
+            values: {
+                [key: string]: unknown;
+            };
         };
         AuthGetUserParams: Record<string, never>;
         /** @description No token of any kind is returned (04 §9, BR-ID-32) */
@@ -80,9 +82,12 @@ export interface components {
             expire_at: string;
         };
         NetSignedRequestParams: {
-            /** @enum {string} */
-            method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-            /** @description Path with query, without host; must match signed_paths */
+            /**
+             * @description Methods present in signed_paths
+             * @enum {string}
+             */
+            method: "POST";
+            /** @description Path plus raw query, without host. Native compares the path part (query removed) exactly with signed_paths; '.', '%' and empty segments are rejected by the pattern */
             path: string;
             /** @description JSON request body, sent as is */
             body?: unknown;
@@ -123,7 +128,9 @@ export interface components {
             /** @description Route name from routes.json; unknown or newer than this app → upgrade page (03 §4.4) */
             route: string;
             /** @description Route params, validated against routes.json */
-            params?: Record<string, never>;
+            params?: {
+                [key: string]: unknown;
+            };
         };
         NavOpenResult: {
             opened: boolean;
@@ -138,14 +145,18 @@ export interface components {
         TradeOpenProductResult: {
             opened: boolean;
         };
-        /** @description Either product_key (with item_ref) or url, never both; otherwise 90002 */
+        /** @description product_key (with item_ref) or url, exactly one (04 §9); platform is optional and derived by native when absent */
         TradeConvertAndOpenParams: {
-            platform: components["schemas"]["Platform"];
+            platform?: components["schemas"]["Platform"];
             product_key?: components["schemas"]["ProductKey"];
             item_ref?: components["schemas"]["ItemRef"];
             url?: string;
             spm?: string;
-        };
+        } & ({
+            product_key: components["schemas"]["ProductKey"];
+        } | {
+            url: string;
+        });
         TradeConvertAndOpenResult: {
             jumped: boolean;
             /** @description Step at which the flow ended; values are fixed by specs/client-behavior.md (CT-09) */
@@ -213,7 +224,11 @@ export interface components {
         };
         ExtOpenAppResult: {
             opened: boolean;
-            installed: boolean;
+            /**
+             * @description contracts/enums installed_state; unknown when detection fails or the target is not declared (BR-ATTR-27 ①)
+             * @enum {string}
+             */
+            installed: "true" | "false" | "unknown";
         };
         ExtOpenBrowserParams: {
             url: string;
@@ -229,7 +244,9 @@ export interface components {
         CsOpenParams: {
             entry: string;
             /** @description Free-form context passed to the support chat */
-            context?: Record<string, never>;
+            context?: {
+                [key: string]: unknown;
+            };
         };
         CsOpenResult: {
             opened: boolean;
@@ -248,7 +265,9 @@ export interface components {
         TrackEventParams: {
             name: string;
             /** @description Event properties per specs/events.yaml (CT-13) */
-            props?: Record<string, never>;
+            props?: {
+                [key: string]: unknown;
+            };
         };
         TrackEventResult: Record<string, never>;
         MediaScanParams: Record<string, never>;
@@ -288,7 +307,9 @@ export interface components {
             platform: "taobao" | "jd" | "pdd" | "meituan" | "vip" | "douyin" | "eleme" | "kuaishou" | "suning";
         };
         RouteAgentChatParams: {
-            context?: Record<string, never>;
+            context?: {
+                [key: string]: unknown;
+            };
         };
         RouteAgentConsentParams: Record<string, never>;
         RouteOrderListParams: {
@@ -329,7 +350,7 @@ export interface components {
         };
         RouteAgreementParams: {
             /** @enum {string} */
-            type?: "agreement" | "privacy" | "sdk_list" | "labor_agreement";
+            type?: "agreement" | "privacy" | "sdk_list";
         };
         RouteWebPageParams: {
             url: string;
@@ -337,6 +358,8 @@ export interface components {
         RouteExternalPageParams: {
             url: string;
         };
+        RouteInvitedFriendsParams: Record<string, never>;
+        RouteLevelUpgradeParams: Record<string, never>;
     };
     responses: never;
     parameters: never;
@@ -359,7 +382,7 @@ export interface BridgeMethods {
   "ui.showLoading": { params: components['schemas']["UiShowLoadingParams"]; result: components['schemas']["UiShowLoadingResult"] };
   "ui.hideLoading": { params: components['schemas']["UiHideLoadingParams"]; result: components['schemas']["UiHideLoadingResult"] };
   "ui.setNavBar": { params: components['schemas']["UiSetNavBarParams"]; result: components['schemas']["UiSetNavBarResult"] };
-  "nav.open": { params: components['schemas']["NavOpenParams"]; result: components['schemas']["NavOpenResult"] };
+  "nav.open": { params: RouteTarget; result: components['schemas']["NavOpenResult"] };
   "nav.close": { params: components['schemas']["NavCloseParams"]; result: components['schemas']["NavCloseResult"] };
   "trade.openProduct": { params: components['schemas']["TradeOpenProductParams"]; result: components['schemas']["TradeOpenProductResult"] };
   "trade.convertAndOpen": { params: components['schemas']["TradeConvertAndOpenParams"]; result: components['schemas']["TradeConvertAndOpenResult"] };
@@ -613,7 +636,7 @@ export const bridgeMethods = {
     "since": {
       "ios": "1.0.0",
       "android": "1.0.0",
-      "harmony": "1.0.0"
+      "harmony": null
     }
   },
   "clipboard.setAutoDetect": {
@@ -750,7 +773,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "BasicMode": {
     "kind": "native",
@@ -761,7 +785,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Login": {
     "kind": "native",
@@ -772,7 +797,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "BindPhone": {
     "kind": "native",
@@ -783,7 +809,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Home": {
     "kind": "native",
@@ -794,7 +821,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Search": {
     "kind": "native",
@@ -805,7 +833,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "ProductDetail": {
     "kind": "native",
@@ -816,7 +845,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "AuthSheet": {
     "kind": "native",
@@ -827,7 +857,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "JumpTip": {
     "kind": "native",
@@ -838,7 +869,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "AgentChat": {
     "kind": "native",
@@ -849,7 +881,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "AgentConsent": {
     "kind": "native",
@@ -860,7 +893,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "OrderList": {
     "kind": "native",
@@ -871,7 +905,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "OrderDetail": {
     "kind": "native",
@@ -882,7 +917,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "FindOrder": {
     "kind": "h5",
@@ -893,7 +929,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Me": {
     "kind": "native",
@@ -904,7 +941,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Wallet": {
     "kind": "native",
@@ -915,7 +953,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Withdraw": {
     "kind": "native",
@@ -926,7 +965,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "WithdrawRecords": {
     "kind": "native",
@@ -937,7 +977,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Ledger": {
     "kind": "h5",
@@ -948,7 +989,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "RealName": {
     "kind": "native",
@@ -959,7 +1001,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "PayoutAccount": {
     "kind": "native",
@@ -970,7 +1013,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "LaborAgreement": {
     "kind": "native",
@@ -981,7 +1025,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Settings": {
     "kind": "native",
@@ -992,7 +1037,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "PrivacyCenter": {
     "kind": "native",
@@ -1003,7 +1049,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "DeleteAccount": {
     "kind": "native",
@@ -1014,7 +1061,8 @@ export const routes = {
       "ios": null,
       "android": null,
       "harmony": null
-    }
+    },
+    "debug_only": false
   },
   "RiskNotice": {
     "kind": "native",
@@ -1025,7 +1073,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Appeal": {
     "kind": "native",
@@ -1036,7 +1085,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "ForceUpdate": {
     "kind": "native",
@@ -1047,7 +1097,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "HomePreview": {
     "kind": "native",
@@ -1058,7 +1109,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": true
   },
   "About": {
     "kind": "native",
@@ -1069,7 +1121,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Messages": {
     "kind": "h5",
@@ -1080,7 +1133,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "InviteShare": {
     "kind": "h5",
@@ -1091,7 +1145,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Rules": {
     "kind": "h5",
@@ -1102,7 +1157,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Help": {
     "kind": "h5",
@@ -1113,7 +1169,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Notice": {
     "kind": "h5",
@@ -1124,7 +1181,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "Agreement": {
     "kind": "h5",
@@ -1135,7 +1193,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "WebPage": {
     "kind": "native",
@@ -1146,7 +1205,8 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
   },
   "ExternalPage": {
     "kind": "native",
@@ -1157,7 +1217,32 @@ export const routes = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "debug_only": false
+  },
+  "InvitedFriends": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "phone",
+    "phase": "P1",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false
+  },
+  "LevelUpgrade": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "phone",
+    "phase": "P1",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false
   }
 } as const;
 export type RouteName = keyof typeof routes;
@@ -1200,6 +1285,8 @@ export interface RouteParams {
   Agreement: components['schemas']["RouteAgreementParams"];
   WebPage: components['schemas']["RouteWebPageParams"];
   ExternalPage: components['schemas']["RouteExternalPageParams"];
+  InvitedFriends: components['schemas']["RouteInvitedFriendsParams"];
+  LevelUpgrade: components['schemas']["RouteLevelUpgradeParams"];
 }
 /** A jump target shared by banners, push, messages, SDUI, Agent cards and nav.open. */
 export type RouteTarget = { [N in RouteName]: { route: N; params: RouteParams[N] } }[RouteName];

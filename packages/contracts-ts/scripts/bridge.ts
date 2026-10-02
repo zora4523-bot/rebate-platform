@@ -27,6 +27,7 @@ export type RouteDef = {
   auth: string;
   since: Since;
   phase: string;
+  debug_only: boolean;
   params: Obj;
 };
 export type AppDef = {
@@ -117,6 +118,15 @@ function closedObjectSchema(where: string, value: unknown): Obj {
   return value;
 }
 
+function at(root: unknown, pointer: string): unknown {
+  let cur = root;
+  for (const part of pointer.split('/')) {
+    if (!isObj(cur)) return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+
 function enumOf(where: string, schema: unknown): unknown[] {
   if (!isObj(schema) || !Array.isArray(schema['enum'])) fail(where, 'enum expected');
   return schema['enum'];
@@ -178,6 +188,15 @@ export function loadBridgeCatalog(
       fail(where, 'h5 routes need an h5_path starting with "/"');
     }
     if (kind === 'native' && h5Path !== null) fail(where, 'native routes have no h5_path');
+    const debugOnly = def['debug_only'] ?? false;
+    if (typeof debugOnly !== 'boolean') fail(where, 'debug_only must be a boolean');
+    const platformParam = at(def, 'params/properties/platform');
+    if (
+      platformParam !== undefined &&
+      !sameSet(enumOf(`${where} platform`, platformParam), want('platform'))
+    ) {
+      fail(where, 'params.platform must list exactly the contracts/enums platform values');
+    }
     const auth = def['auth'];
     if (typeof auth !== 'string' || !authLevels.includes(auth)) {
       fail(where, `auth must be one of ${authLevels.join(', ')}`);
@@ -189,6 +208,7 @@ export function loadBridgeCatalog(
       auth,
       since: since(where, def['since']),
       phase: typeof def['phase'] === 'string' ? def['phase'] : fail(where, 'phase missing'),
+      debug_only: debugOnly,
       params: closedObjectSchema(`${where} params`, def['params']),
     });
   }
@@ -214,6 +234,17 @@ export function loadBridgeCatalog(
   );
 
   if (!isObj(bridge['methods'])) fail('bridge', 'methods must be an object');
+  // Inline enums inside method schemas that mirror contracts/enums.
+  const inline: Array<[string, string]> = [
+    ['auth.getUser/result/properties/realname_status', 'realname_status'],
+    ['ext.openApp/result/properties/installed', 'installed_state'],
+    ['app.getEnv/result/properties/channel', 'install_channel'],
+  ];
+  for (const [pointer, enumName] of inline) {
+    if (!sameSet(enumOf(`bridge ${pointer}`, at(bridge['methods'], pointer)), want(enumName))) {
+      fail(`contracts/bridge.schema.json ${pointer}`, `must equal contracts/enums ${enumName}`);
+    }
+  }
   const methods: BridgeMethodDef[] = [];
   for (const [name, def] of Object.entries(bridge['methods'])) {
     const where = `contracts/bridge.schema.json ${name}`;
@@ -326,8 +357,10 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
   out.push('/** JSBridge methods (规划/04 §9): params and result per method. */');
   out.push('export interface BridgeMethods {');
   for (const m of cat.methods) {
+    // nav.open takes a route target; its per-route params come from routes.json.
+    const params = m.name === 'nav.open' ? 'RouteTarget' : s(`${pascal(m.name)}Params`);
     out.push(
-      `  ${JSON.stringify(m.name)}: { params: ${s(`${pascal(m.name)}Params`)}; result: ${s(`${pascal(m.name)}Result`)} };`,
+      `  ${JSON.stringify(m.name)}: { params: ${params}; result: ${s(`${pascal(m.name)}Result`)} };`,
     );
   }
   out.push('}');
@@ -359,7 +392,14 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
   const routeMeta = Object.fromEntries(
     cat.routes.map((r) => [
       r.name,
-      { kind: r.kind, h5_path: r.h5_path, auth: r.auth, phase: r.phase, since: r.since },
+      {
+        kind: r.kind,
+        h5_path: r.h5_path,
+        auth: r.auth,
+        phase: r.phase,
+        since: r.since,
+        debug_only: r.debug_only,
+      },
     ]),
   );
   out.push(`export const routes = ${JSON.stringify(routeMeta, null, 2)} as const;`);

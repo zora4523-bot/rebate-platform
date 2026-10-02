@@ -1,5 +1,5 @@
 {
-  "$comment": "External target apps (CT-03 skeleton): the only targets of ext.openApp and of installed detection (BR-ATTR-27 ①, 规划/03 §4.5). iOS LSApplicationQueriesSchemes (≤ 20 entries), Android <queries> packages and Harmony querySchemes are generated from this file. Nothing here is verified yet: values are candidates from 规划/09 CAP-TB-11, CAP-JD-11, CAP-PDD-11 and CAP-X-04 and stay status=candidate until the matching CAP item is verified; null = not known yet. Clients never build jump URLs from these values: the server sends primary / fallbacks.",
+  "$comment": "External target apps (CT-03 skeleton): the only targets of ext.openApp and of installed detection (BR-ATTR-27 ①, 规划/03 §4.5). iOS LSApplicationQueriesSchemes (≤ 20 entries), Android <queries> packages and Harmony querySchemes are generated from this file. Nothing here is verified yet: values are candidates from 规划/09 CAP-TB-11, CAP-JD-11, CAP-PDD-11 and CAP-X-04 and stay status=candidate until the matching CAP item is verified; an empty list = not known yet. Clients never build jump URLs from these values: the server sends primary / fallbacks.",
   "version": 1,
   "apps": {
     "taobao": {
@@ -7,27 +7,45 @@
       "platform": "taobao",
       "status": "candidate",
       "source": "规划/09 CAP-TB-11（taobao:// / tbopen:// scheme 为候选，以官方为准）；鸿蒙走百川 HarmonyOS SDK，见 CAP-X-04",
-      "ios": { "query_schemes": ["taobao", "tbopen"] },
-      "android": { "packages": [] },
-      "harmony": { "query_schemes": [] }
+      "ios": {
+        "query_schemes": ["taobao", "tbopen"]
+      },
+      "android": {
+        "packages": []
+      },
+      "harmony": {
+        "query_schemes": []
+      }
     },
     "jd": {
       "name": "京东",
       "platform": "jd",
       "status": "candidate",
       "source": "规划/09 CAP-JD-11（openApp.jdMobile scheme，无官方公开文档）",
-      "ios": { "query_schemes": ["openApp.jdMobile"] },
-      "android": { "packages": [] },
-      "harmony": { "query_schemes": [] }
+      "ios": {
+        "query_schemes": ["openApp.jdMobile"]
+      },
+      "android": {
+        "packages": []
+      },
+      "harmony": {
+        "query_schemes": []
+      }
     },
     "pdd": {
       "name": "拼多多",
       "platform": "pdd",
       "status": "candidate",
       "source": "规划/09 CAP-PDD-11（schema_url 由转链返回，三端须静态声明要检测的 scheme，取值待实测）",
-      "ios": { "query_schemes": [] },
-      "android": { "packages": [] },
-      "harmony": { "query_schemes": [] }
+      "ios": {
+        "query_schemes": []
+      },
+      "android": {
+        "packages": []
+      },
+      "harmony": {
+        "query_schemes": []
+      }
     }
   }
 }

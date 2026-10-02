@@ -66,6 +66,6 @@ TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载�
 
 ## 桥、路由与外跳表
 
-1. 三个 JSON 文件由 `packages/contracts-ts/scripts/bridge.ts` 校验并生成 `src/bridge.gen.ts`（经 `index.ts` 以 `bridge` 命名空间导出）：方法名属于 04 §9 的命名空间；`sync` 方法 `timeout_ms` 为 null；params / result 都是 `additionalProperties: false` 的对象；`$defs` 里的平台、绑定状态与 `enums/` 一致，`AppTarget` 与 `apps.json` 的键一致；`signed_paths` 中已在 `openapi.yaml` 声明的接口必须 `x-signed`；iOS 查询 scheme 合计不超过 20 个。
+1. 三个 JSON 文件由 `packages/contracts-ts/scripts/bridge.ts` 校验并生成 `src/bridge.gen.ts`（经 `index.ts` 以 `bridge` 命名空间导出）：方法名属于 04 §9 的命名空间；`sync` 方法 `timeout_ms` 为 null；params / result 都是 `additionalProperties: false` 的对象；`$defs` 里的平台、绑定状态与 `enums/` 一致，`AppTarget` 与 `apps.json` 的键一致；`signed_paths` 中已在 `openapi.yaml` 声明的接口必须 `x-signed`；iOS 查询 scheme 合计不超过 20 个；路由参数里的 `platform` 与方法里的 `realname_status`、`installed`、`channel` 取值与 `enums/` 一致。`nav.open` 的参数类型就是 `RouteTarget`。`debug_only` 的路由只在 debug / staging 包里能打开（TECH-11）。自由形状的对象写 `additionalProperties: true`，否则生成类型会成为空对象。
 2. `timeout_ms: null` 的异步方法要等用户操作（登录、授权、分享等），不设超时。
 3. 新增路由或方法时写清按端 `since`；尚未在某端发布的写 null。

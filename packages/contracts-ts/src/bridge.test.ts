@@ -27,6 +27,12 @@ it('routes carry a per-platform since and external links use ExternalPage (TECH-
   expectTypeOf(target).toMatchTypeOf<bridge.RouteTarget>();
   expect(bridge.routes.ExternalPage.kind).toBe('native');
   expect(bridge.routes.FindOrder.h5_path).toBe('/find-order');
+  expect(bridge.routes.HomePreview.debug_only).toBe(true);
+  expectTypeOf<bridge.BridgeMethods['nav.open']['params']>().toEqualTypeOf<bridge.RouteTarget>();
+});
+
+it('clipboard.read is not offered on Harmony (04 §9: 90001 there)', () => {
+  expect(bridge.bridgeMethods['clipboard.read'].since.harmony).toBeNull();
 });
 
 it('ext.openApp targets are exactly the apps.json keys', () => {

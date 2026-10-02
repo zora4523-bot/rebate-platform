@@ -20,7 +20,8 @@
           "minLength": 1
         },
         "params": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": ["v", "id", "method"]
@@ -42,7 +43,8 @@
           "type": "string"
         },
         "data": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": ["id", "code", "msg"]
@@ -56,7 +58,8 @@
           "minLength": 1
         },
         "data": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": ["event"]
@@ -237,7 +240,8 @@
         "properties": {
           "values": {
             "type": "object",
-            "description": "Subset of /v1/config limited to the keys whitelisted for H5"
+            "description": "Subset of /v1/config limited to the keys whitelisted for H5",
+            "additionalProperties": true
           }
         },
         "required": ["values"]
@@ -377,13 +381,14 @@
         "properties": {
           "method": {
             "type": "string",
-            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+            "enum": ["POST"],
+            "description": "Methods present in signed_paths"
           },
           "path": {
             "type": "string",
-            "pattern": "^/v1/",
             "maxLength": 2048,
-            "description": "Path with query, without host; must match signed_paths"
+            "pattern": "^/v1/[A-Za-z0-9_/-]*(\\?[^#]*)?$",
+            "description": "Path plus raw query, without host. Native compares the path part (query removed) exactly with signed_paths; '.', '%' and empty segments are rejected by the pattern"
           },
           "body": {
             "description": "JSON request body, sent as is"
@@ -582,7 +587,8 @@
           },
           "params": {
             "type": "object",
-            "description": "Route params, validated against routes.json"
+            "description": "Route params, validated against routes.json",
+            "additionalProperties": true
           }
         },
         "required": ["route"]
@@ -692,8 +698,29 @@
             "maxLength": 128
           }
         },
-        "required": ["platform"],
-        "description": "Either product_key (with item_ref) or url, never both; otherwise 90002"
+        "required": [],
+        "description": "product_key (with item_ref) or url, exactly one (04 §9); platform is optional and derived by native when absent",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "product_key": {
+                "$ref": "#/$defs/ProductKey"
+              }
+            },
+            "required": ["product_key"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "maxLength": 2048
+              }
+            },
+            "required": ["url"]
+          }
+        ]
       },
       "result": {
         "type": "object",
@@ -979,9 +1006,9 @@
       "since": {
         "ios": "1.0.0",
         "android": "1.0.0",
-        "harmony": "1.0.0"
+        "harmony": null
       },
-      "note": "Harmony returns 90001; the page falls back to an input box",
+      "note": "Not available on Harmony (since null): the page uses an input box instead",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -1060,7 +1087,9 @@
             "type": "boolean"
           },
           "installed": {
-            "type": "boolean"
+            "type": "string",
+            "enum": ["true", "false", "unknown"],
+            "description": "contracts/enums installed_state; unknown when detection fails or the target is not declared (BR-ATTR-27 ①)"
           }
         },
         "required": ["opened", "installed"]
@@ -1151,7 +1180,8 @@
           },
           "context": {
             "type": "object",
-            "description": "Free-form context passed to the support chat"
+            "description": "Free-form context passed to the support chat",
+            "additionalProperties": true
           }
         },
         "required": ["entry"]
@@ -1247,7 +1277,8 @@
           },
           "props": {
             "type": "object",
-            "description": "Event properties per specs/events.yaml (CT-13)"
+            "description": "Event properties per specs/events.yaml (CT-13)",
+            "additionalProperties": true
           }
         },
         "required": ["name"]

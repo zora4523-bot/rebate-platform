@@ -1,5 +1,5 @@
 {
-  "$comment": "Route table (CT-03): route name → native page or H5 path (规划/01 §4.2, 03 §4.4). Every jump is {route, params} (拍板第二批 TECH-04); external links use {route: ExternalPage, params: {url}}. since is per platform (拍板第二批 TECH-07): null = not shipped on that platform yet; an unknown route or a since above the app version opens the upgrade page. h5_path is relative to config.h5_base_url. P1 routes (CustomPage, InvitedFriends, LevelUpgrade, MyWatches, WatchLanding) are added when they ship.",
+  "$comment": "Route table (CT-03): route name → native page or H5 path (规划/01 §4.2, 03 §4.4). Every jump is {route, params} (拍板第二批 TECH-04); external links use {route: ExternalPage, params: {url}}. since is per platform (拍板第二批 TECH-07): null = not shipped on that platform yet; an unknown route or a since above the app version opens the upgrade page. h5_path is relative to config.h5_base_url. InvitedFriends and LevelUpgrade are P1 with since null (the bridge answers unsupported); CustomPage, MyWatches and WatchLanding are added when they ship. debug_only routes open only in debug / staging builds (TECH-11).",
   "version": 1,
   "routes": {
     "Launch": {
@@ -244,7 +244,8 @@
         "additionalProperties": false,
         "properties": {
           "context": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "required": []
@@ -592,7 +593,8 @@
           }
         },
         "required": ["page_key", "token"]
-      }
+      },
+      "debug_only": true
     },
     "About": {
       "page": "关于",
@@ -728,7 +730,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["agreement", "privacy", "sdk_list", "labor_agreement"]
+            "enum": ["agreement", "privacy", "sdk_list"]
           }
         },
         "required": []
@@ -778,6 +780,40 @@
           }
         },
         "required": ["url"]
+      }
+    },
+    "InvitedFriends": {
+      "page": "邀请的好友（P1；桥调用返回不支持）",
+      "kind": "native",
+      "auth": "phone",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "phase": "P1",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "LevelUpgrade": {
+      "page": "等级（P1；桥调用返回不支持）",
+      "kind": "native",
+      "auth": "phone",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "phase": "P1",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
       }
     }
   }
