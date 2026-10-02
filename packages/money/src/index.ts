@@ -79,6 +79,16 @@ export function yuanStrToFen(text: string): bigint {
 }
 
 /**
+ * BR-CALC-26: percentage string -> bigint basis points ("20.00" -> 2000n, "15" -> 1500n), more
+ * than two decimals floored ("0.015" -> 1n). Empty, non-numeric, scientific notation and values
+ * above 100% throw InvalidRatio (never treated as 0).
+ */
+export function pctStrToBp(text: string): bigint {
+  void text;
+  return notImplemented('pctStrToBp');
+}
+
+/**
  * BR-CALC-01 serialization: the JSON integer for an amount. Throws InvalidAmount when
  * |fen| > 2^53 - 1 (never loses precision silently) or when fen is not a bigint.
  */
@@ -97,6 +107,17 @@ export function mulDivFloor(amount_fen: bigint, ratio_bp: bigint, denominator: b
   void ratio_bp;
   void denominator;
   return notImplemented('mulDivFloor');
+}
+
+/**
+ * BR-CALC-01: ceil(amount_fen * ratio_bp / denominator), multiply first, with the same
+ * non-negative amount / 0..10000 ratio / positive denominator checks as mulDivFloor.
+ */
+export function mulDivCeil(amount_fen: bigint, ratio_bp: bigint, denominator: bigint): bigint {
+  void amount_fen;
+  void ratio_bp;
+  void denominator;
+  return notImplemented('mulDivCeil');
 }
 
 /**
