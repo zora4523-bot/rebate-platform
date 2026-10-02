@@ -1,0 +1,22 @@
+id: CT-01
+repo: rebate-platform
+title: 契约：enums/*.yaml 与 error-codes.yaml（04 §2、§7，08 §13；码值只按 08 §13.11），生成 TS 目录
+type: contract
+# 取值来源是 规划/04 §2、§7 与 08 §13（不是 BR 表格行）。05 CT-01 行点名的 BR-WATCH-19 与流水类型
+# 全集 BR-FUND-15 渲染后任务书都超过 24KB（规划/11 §5.3），所以 refs 为空；评审按 04 / 08 原文核对。
+refs: []
+refs_hash: {}
+# 契约任务书逐字带 04 的这两节（规划/11 §5.3，ops/approvals.yaml 第 17 条）。
+contract_sections: ['2', '7']
+deps: []
+paths:
+  - 'contracts/enums/**'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
