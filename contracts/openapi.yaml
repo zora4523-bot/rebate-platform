@@ -1,18 +1,34 @@
 openapi: 3.1.0
 info:
   title: Couli rebate-platform API
-  version: 0.1.0
+  version: 0.9.0
   summary: Shared HTTP contract for the app, H5, admin console and backend.
   description: |
-    Single source for endpoints, error codes and enums (D17). Conventions: 规划/04 §5.
-    Authoring rules: contracts/README.md. The skeleton only declares the health probe;
-    business operations are added per feature by contract tasks (CT-xx).
+    Single source for endpoints (D17); error codes and enums live in contracts/error-codes.yaml and
+    contracts/enums/*.yaml. Conventions: 规划/04 §5; authoring rules: contracts/README.md.
+    v0.9 (CT-02a) covers the path 登录 → 搜索 → 转链跳转; the rest is added per feature.
+
+    Every business response uses the envelope `{code, msg, data, trace_id}`; `code=0` is success.
+    Operation extensions: `x-auth` (none | optional | login | phone | realname, 04 §5),
+    `x-signed` (true = X-Timestamp / X-Nonce / X-Sign required, BR-ID-09),
+    `x-idempotent` (true = Idempotency-Key required, 04 §6 mark I),
+    `x-error-codes` (business codes the operation may return besides the common ones;
+    meaning, client action and data shape per code in contracts/error-codes.yaml).
+    Common codes any operation may return: 10401, 10402, 10403, 20001, 42901, 44001, 44002,
+    50001, 50401; with x-auth login also 10001, 10002, 10006; with Idempotency-Key also 20901,
+    40901.
 servers:
   - url: http://127.0.0.1:3100
     description: Local `api` entry (API_HOST / API_PORT defaults).
 tags:
   - name: ops
     description: Operational probes. Not part of the product API and not versioned under /v1.
+  - name: identity
+    description: Device registration, SMS login, token refresh and the current user (04 §6.1).
+  - name: config
+    description: Client configuration and switches (04 §6.2, §10.1).
+  - name: trade
+    description: Search, product detail, input parsing and link open / convert (04 §6.3).
 paths:
   /healthz:
     get:
@@ -40,7 +56,1111 @@ paths:
                   entry: api
                   now: '2026-10-01T04:00:00.000Z'
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+  /v1/devices:
+    post:
+      operationId: registerDevice
+      tags:
+        - identity
+      summary: Register a device
+      description: |
+        Issues `device_id` and `install_secret` after the user has agreed to the privacy policy
+        (BR-ID-09). The client stores install_secret only in Keychain / Keystore / HUKS and signs
+        later requests with it. Not signed: the device has no secret yet.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-error-codes: []
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeviceRequest'
+            example:
+              device_hash: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+      responses:
+        '200':
+          description: Device registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterDeviceResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  device_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a60
+                  install_secret: example-install-secret-value
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/auth/sms-codes:
+    post:
+      operationId: sendSmsCode
+      tags:
+        - identity
+      summary: Send an SMS verification code
+      description: |
+        Order of checks: signature 10401 / 10402 → 44001 → 44003 → 42901 (BR-ID-05). Limits per
+        phone: 1 per 60 s, 10 per natural day (+08:00); a code is 6 digits and valid 5 minutes.
+      x-auth: none
+      x-signed: true
+      x-idempotent: false
+      x-error-codes:
+        - 44001
+        - 44003
+        - 42901
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendSmsCodeRequest'
+            example:
+              phone: '13800138000'
+              purpose: login
+      responses:
+        '200':
+          description: The provider accepted the SMS.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsCodeResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  resend_after_sec: 60
+                  expires_in_sec: 300
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/auth/login/sms:
+    post:
+      operationId: loginBySms
+      tags:
+        - identity
+      summary: Log in (or register) with an SMS code
+      description: |
+        Creates the account on first login. The request carries the legal versions the user
+        agreed to and the time of agreement (BR-ID-04). An `invite_code` is ignored for an
+        existing account; `invite_bind` is present only when a non-empty invite_code was sent
+        (BR-INV-06). Errors: 20002 wrong code, 20003 expired code (BR-ID-05).
+      x-auth: none
+      x-signed: true
+      x-idempotent: false
+      x-error-codes:
+        - 20002
+        - 20003
+        - 44001
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginBySmsRequest'
+            example:
+              phone: '13800138000'
+              code: '123456'
+              legal_versions:
+                privacy: 3
+                agreement: 2
+              consent_at: '2026-10-02T09:30:00+08:00'
+              invite_code: K7Q2MZ
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a61
+                  is_new_user: true
+                  tokens:
+                    access_token: example-access-token-one
+                    access_expires_at: '2026-10-02T11:30:00+08:00'
+                    refresh_token: example-refresh-token-one
+                    refresh_expires_at: '2026-11-01T09:30:00+08:00'
+                  invite_bind:
+                    result: bound
+                    code: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/auth/refresh:
+    post:
+      operationId: refreshToken
+      tags:
+        - identity
+      summary: Rotate the token pair
+      description: |
+        Every refresh rotates the refresh token (BR-ID-07). Resubmitting a rotated token outside
+        the 30-second grace revokes the whole session chain and returns 10404. Clients refresh
+        single-flight: N concurrent 10002 trigger one refresh.
+      x-auth: none
+      x-signed: true
+      x-idempotent: false
+      x-error-codes:
+        - 10404
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+            example:
+              refresh_token: example-refresh-token-one
+      responses:
+        '200':
+          description: New token pair.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPairResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  access_token: example-access-token-two
+                  access_expires_at: '2026-10-02T13:30:00+08:00'
+                  refresh_token: example-refresh-token-two
+                  refresh_expires_at: '2026-11-01T11:30:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/me:
+    get:
+      operationId: getMe
+      tags:
+        - identity
+      summary: Current user
+      description: |
+        Nickname and default avatar, invite code, whether an inviter is bound (only yes / no),
+        identity level (BR-ID-01), single-balance summary, union authorization states, real-name
+        state, `need_reconsent` (BR-ID-12) and the risk state for the ban / freeze page. No
+        user level (拍板第二批 OPS-20).
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-error-codes: []
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: The current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a61
+                  nickname: 凑狸用户 8000
+                  avatar_url: https://cdn.example.test/avatar/default.png
+                  invite_code: K7Q2MZ
+                  inviter_bound: false
+                  identity_level: phone
+                  balance:
+                    available_fen: 1234
+                    withdrawable_fen: 1000
+                    estimated_total_fen: 5678
+                  union_bindings:
+                    - platform: taobao
+                      status: active
+                    - platform: pdd
+                      status: unbound
+                  realname_status: none
+                  need_reconsent: false
+                  risk:
+                    state: normal
+                    reason_category: null
+                    frozen_until: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/config:
+    get:
+      operationId: getConfig
+      tags:
+        - config
+      summary: Client configuration
+      description: |
+        Configuration, client switches, texts and the derived per-platform purchase status
+        (04 §10.1, excerpt). Clients keep the last good response (LKG) and fall back to it and
+        then to the bundled default when the request fails (03 §4.3). Keys whose inner shape is
+        not fixed by 04 yet are free-form objects and get typed by the task that consumes them.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-error-codes: []
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/OptionalDeviceId'
+      responses:
+        '200':
+          description: The current configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  dict_version: '2026100201'
+                  h5_base_url: https://h5.example.test/
+                  h5_release:
+                    version: 1.4.2
+                  share_domains:
+                    - s.example.test
+                  features:
+                    flags:
+                      agent.entry.visible: true
+                      clipboard.enabled.taobao: true
+                      ui.grayscale: false
+                    platform_status:
+                      taobao: 'on'
+                      jd: 'on'
+                      pdd: not_launched
+                  texts:
+                    withdraw.sla_text: 工作日 24 小时内处理
+                  legal:
+                    privacy_version: 3
+                    agreement_version: 2
+                    privacy_min_version: 3
+                  invite:
+                    required: false
+                    backfill_hours: 168
+                  agent:
+                    enabled: true
+                    whitelist_only: true
+                    filing_text: ''
+                    examples:
+                      - 帮我找 500 元以内的降噪耳机
+                    guest_daily_quota: 3
+                    require_phone: false
+                  kf:
+                    url: https://work.weixin.qq.com/kfid/example
+                  jump_tip: {}
+                  clipboard: {}
+                  bridge_origins: {}
+                  auth_tips: {}
+                  compliance: {}
+                  display: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/products/search:
+    get:
+      operationId: searchProducts
+      tags:
+        - trade
+      summary: Search one platform
+      description: |
+        Keyword search on one platform (04 §6.3). Coupon-price and rebate sorting reorder only
+        the current page (拍板第二批 TRADE-20). The cursor is opaque and carries only the search
+        session and page (BR-PROD-08); no_rebate items are filtered out (BR-PRICE-08). With no
+        result the response carries `fallback_items` (the platform's first 10 feed items). Union
+        failure without a usable cache returns 50304 with `data.platform` (BR-PROD-07); the
+        product pool is never served as search results. Cards only register a link_id with its
+        quote snapshot and are not converted (BR-PRICE-12): buying goes through
+        `POST /v1/links/{link_id}/open`. `x-auth` is optional although 04 §6.3 lists none:
+        rebate amounts are computed for the current user and links are registered per user
+        (BR-PRICE-11, BR-PRICE-12; 08 wins over 04).
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-error-codes:
+        - 50304
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - name: platform
+          in: query
+          required: true
+          description: Platform to search (enum platform).
+          schema:
+            $ref: '#/components/schemas/PlatformCode'
+        - name: q
+          in: query
+          required: true
+          description: Keyword.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: sort
+          in: query
+          required: false
+          description: Sort order (enum sort); default relevance.
+          schema:
+            $ref: '#/components/schemas/SortCode'
+        - name: has_coupon
+          in: query
+          required: false
+          description: Only items with a coupon.
+          schema:
+            type: boolean
+        - name: price_min_fen
+          in: query
+          required: false
+          description: Lower bound of final_price_fen, inclusive.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: price_max_fen
+          in: query
+          required: false
+          description: Upper bound of final_price_fen, inclusive.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchProductsResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/SearchProductsOk'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/products/{product_key}:
+    get:
+      operationId: getProduct
+      tags:
+        - trade
+      summary: Product detail
+      description: |
+        Coupon, final price, estimated rebate and quote time of one product (BR-PRICE-05,
+        BR-PRICE-11), with a freshly registered `link_id` (BR-PRICE-12). On union failure the
+        server may answer with the product-pool price and `stale=true` (拍板第二批 TRADE-12).
+        A response whose derived key differs from the requested one, or cannot be derived, is
+        30143 ref_expired (BR-PROD-03, BR-PROD-05). `item_ref` of the card the user tapped is
+        passed through unchanged (BR-PROD-11). x-auth optional for the same reason as search.
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-error-codes:
+        - 30141
+        - 30143
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ProductKey'
+        - name: item_ref
+          in: query
+          required: false
+          description: Opaque `item_ref` of the card that was tapped (BR-PROD-11); never parsed.
+          schema:
+            $ref: '#/components/schemas/ItemRef'
+      responses:
+        '200':
+          description: The product card of the detail page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/ProductOk'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/inputs/parse:
+    post:
+      operationId: parseInput
+      tags:
+        - trade
+      summary: Recognise pasted links, tokens or share text
+      description: |
+        Shared by clipboard, search box, share extension and Agent (04 §8.5). At most 3 links or
+        tokens of one text are handled, one card each; the same product key yields one card
+        (BR-PROD-08 ⑤). Cards only register a link_id with the quote snapshot and are never
+        converted here (拍板第二批 TRADE-03); a pasted link without rebate still yields a card
+        with `rebate_basis=no_rebate` (BR-PRICE-08). Nothing recognisable as a concrete product
+        returns 30132 without candidate cards (拍板第二批 TRADE-07); a recognised product
+        whose key cannot be derived returns 30131 (BR-PROD-03). How a platform turns a link or
+        token into a product is the union adapter's business and is not visible here. x-auth is
+        optional although 04 §6.3 lists none, for the same reason as search.
+      x-auth: optional
+      x-signed: true
+      x-idempotent: false
+      x-error-codes:
+        - 30131
+        - 30132
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParseInputRequest'
+            example:
+              text: 【淘宝】https://e.tb.cn/h.AbCdEf?tk=Xy12 「降噪耳机 蓝牙 5.3」
+              scene: clipboard
+      responses:
+        '200':
+          description: One result per recognised link or token, in input order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParseInputResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/ParseInputOk'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/links/{link_id}/open:
+    post:
+      operationId: openLink
+      tags:
+        - trade
+      summary: Buy — re-check the price and convert
+      description: |
+        The only entry for a purchase tap (拍板第二批 TRADE-03): converts in real time with the
+        identity fixed in the link snapshot and re-checks the price before the jump
+        (BR-PRICE-13; ownership rules BR-ATTR-05). `price_changed=true` means the client asks
+        the user before jumping; whenever the new price differs, `new_link_id` replaces the card
+        (BR-PRICE-12). Re-check failure with a cached link of this user ≤ 900 s jumps with
+        `requote_failed=true`; without cache, 50303. Share links open anonymously; other links
+        need login (10001). amount_unknown cards are converted without price re-check
+        (BR-PRICE-08). The client waits at most 8 s and retries with the same Idempotency-Key
+        (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14).
+      x-auth: optional
+      x-signed: true
+      x-idempotent: true
+      x-error-codes:
+        - 10001
+        - 30101
+        - 30102
+        - 30103
+        - 30111
+        - 30121
+        - 30141
+        - 30143
+        - 30144
+        - 30151
+        - 30153
+        - 50301
+        - 50303
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/LinkId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenLinkRequest'
+            example:
+              installed: 'true'
+              no_rebate: false
+              spm: search.result_list.2
+      responses:
+        '200':
+          description: Jump plan and price re-check result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenLinkResponse'
+              examples:
+                unchanged:
+                  $ref: '#/components/examples/OpenLinkUnchanged'
+                priceChanged:
+                  $ref: '#/components/examples/OpenLinkPriceChanged'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/links/convert:
+    post:
+      operationId: convertLink
+      tags:
+        - trade
+      summary: Register and convert in one call (entries without a link_id)
+      description: |
+        Only for entries that have no link_id, such as the H5 bridge method
+        `trade.convertAndOpen` (scene=h5) and share generation: registers the link and then
+        re-checks and converts exactly like open, returning `link_id` plus the open result
+        (拍板第二批 TRADE-03). Pass `product_key` with the tapped card's `item_ref` (a missing
+        item_ref is not an error, BR-PROD-11), or `url`. A url whose product key cannot be
+        derived is 30131 and nothing is registered (BR-PROD-03). A missing or invalid `scene`
+        is 20001 (BR-ATTR-08). Writes a link_log `convert` row (BR-ATTR-14).
+      x-auth: login
+      x-signed: true
+      x-idempotent: true
+      x-error-codes:
+        - 30101
+        - 30102
+        - 30103
+        - 30111
+        - 30121
+        - 30131
+        - 30141
+        - 30143
+        - 30151
+        - 30153
+        - 50301
+        - 50303
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConvertLinkRequest'
+            example:
+              platform: jd
+              product_key: jd:i_100012043978
+              item_ref: v1.Zm9vYmFyLmJhei5xdXg
+              scene: h5
+              spm: h5_activity.banner.1
+              installed: unknown
+      responses:
+        '200':
+          description: The registered link and its jump plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConvertLinkResponse'
+              examples:
+                ok:
+                  $ref: '#/components/examples/ConvertLinkOk'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        `Authorization: Bearer <access_token>`; ES256 JWT with uid, app_id, sid, device_id, scp,
+        valid 2 hours (BR-ID-07). After login app_id is taken from the token only.
+  parameters:
+    AppId:
+      name: X-App-Id
+      in: header
+      required: true
+      description: App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 32
+        pattern: '^[a-z0-9_]+$'
+    Platform:
+      name: X-Platform
+      in: header
+      required: true
+      description: Client platform (enum client_platform, 03 §4.2).
+      schema:
+        $ref: '#/components/schemas/ClientPlatformCode'
+    AppVersion:
+      name: X-App-Version
+      in: header
+      required: true
+      description: SemVer, the same number on all three apps (拍板第二批 TECH-07).
+      schema:
+        type: string
+        pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+        maxLength: 32
+    Build:
+      name: X-Build
+      in: header
+      required: false
+      description: Build number of the client.
+      schema:
+        type: string
+        maxLength: 32
+    Channel:
+      name: X-Channel
+      in: header
+      required: false
+      description: Install channel of the app package (enum install_channel); absent for H5.
+      schema:
+        $ref: '#/components/schemas/InstallChannelCode'
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: false
+      description: Client-generated trace id, echoed as `trace_id` when well-formed.
+      schema:
+        $ref: '#/components/schemas/TraceId'
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      description: device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09).
+      schema:
+        $ref: '#/components/schemas/Id'
+    OptionalDeviceId:
+      name: X-Device-Id
+      in: header
+      required: false
+      description: device_id issued by POST /v1/devices, when the device is registered.
+      schema:
+        $ref: '#/components/schemas/Id'
+    Timestamp:
+      name: X-Timestamp
+      in: header
+      required: true
+      description: Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09).
+      schema:
+        type: string
+        pattern: '^[0-9]{10}$'
+    Nonce:
+      name: X-Nonce
+      in: header
+      required: true
+      description: 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09).
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+    Sign:
+      name: X-Sign
+      in: header
+      required: true
+      description: |
+        lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+        + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+        40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+        the first result (拍板第二批 TRADE-22).
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    LinkId:
+      name: link_id
+      in: path
+      required: true
+      description: link_id from a card; unknown or of another app → 30144.
+      schema:
+        $ref: '#/components/schemas/Id'
+    ProductKey:
+      name: product_key
+      in: path
+      required: true
+      description: Opaque product key, URL-encoded by the client (BR-PROD-02).
+      schema:
+        $ref: '#/components/schemas/ProductKey'
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from `next_cursor`; absent for the first page.
+      schema:
+        type: string
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size, at most 50 (04 §5).
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 50
+        default: 20
+  responses:
+    ClientError:
+      description: |
+        Business or request error. Clients act on `code` only (contracts/error-codes.yaml);
+        the HTTP status per code is listed there as well.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            unionAuthRequired:
+              summary: 30101 Taobao not authorized
+              value:
+                code: 30101
+                msg: 请先授权淘宝
+                data:
+                  auth_url: https://oauth.example.test/authorize?state=st_01
+                  state: st_01
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            invalidParams:
+              summary: 20001 parameter validation failed
+              value:
+                code: 20001
+                msg: 参数错误
+                data:
+                  fields:
+                    - scene
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    ServerError:
+      description: Server-side error; 503 codes carry `data.platform` / `data.reason` where listed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            searchUnavailable:
+              summary: 50304 search unavailable for one platform
+              value:
+                code: 50304
+                msg: 京东搜索暂不可用
+                data:
+                  platform: jd
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            notLaunched:
+              summary: 50301 platform not launched yet
+              value:
+                code: 50301
+                msg: 即将开放
+                data:
+                  platform: pdd
+                  reason: not_launched
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+  examples:
+    SearchProductsOk:
+      summary: One page of taobao results
+      value:
+        code: 0
+        msg: ''
+        data:
+          items:
+            - product_key: tb:7Kq9LmN3pQ
+              item_ref: v1.dGJfN0txOUxtTjNwUQ.c2ln
+              platform: taobao
+              shop_type: tmall
+              title: 降噪蓝牙耳机 5.3
+              image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+              shop_name: 示例旗舰店
+              price_fen: 3990
+              coupon_fen: 1000
+              final_price_fen: 2990
+              est_net_price_fen: 2721
+              rebate_min_fen: 269
+              rebate_max_fen: 269
+              rebate_basis: normal
+              benefit_tags:
+                - 有券
+              spec_text: null
+              is_presale: false
+              link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70
+              cta:
+                text_key: btn.buy.coupon
+              quoted_at: '2026-10-02T09:30:00+08:00'
+              stale: false
+              age_sec: 12
+              source: taobao_union
+              disclaimer_keys:
+                - price_basis
+              ad_label: null
+              availability: ok
+          next_cursor: c2Vzc2lvbj0wMTk5O3BhZ2U9Mg
+          has_more: true
+          fallback_items: []
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    ProductOk:
+      summary: Detail card with a fresh link_id
+      value:
+        code: 0
+        msg: ''
+        data:
+          product_key: tb:7Kq9LmN3pQ
+          item_ref: v1.dGJfN0txOUxtTjNwUQ.c2ln
+          platform: taobao
+          shop_type: tmall
+          title: 降噪蓝牙耳机 5.3
+          image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+          shop_name: 示例旗舰店
+          price_fen: 3990
+          coupon_fen: 1000
+          final_price_fen: 2990
+          est_net_price_fen: 2721
+          rebate_min_fen: 269
+          rebate_max_fen: 269
+          rebate_basis: normal
+          benefit_tags:
+            - 有券
+          spec_text: null
+          is_presale: false
+          link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70
+          cta:
+            text_key: btn.buy.coupon
+          quoted_at: '2026-10-02T09:30:00+08:00'
+          stale: false
+          age_sec: 12
+          source: taobao_union
+          disclaimer_keys:
+            - price_basis
+          ad_label: null
+          availability: ok
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    ParseInputOk:
+      summary: One pasted taobao token recognised
+      value:
+        code: 0
+        msg: ''
+        data:
+          results:
+            - hit:
+                platform: taobao
+                kind: url
+                raw: https://e.tb.cn/h.AbCdEf?tk=Xy12
+              card:
+                product_key: tb:7Kq9LmN3pQ
+                item_ref: v1.dGJfN0txOUxtTjNwUQ.c2ln
+                platform: taobao
+                shop_type: tmall
+                title: 降噪蓝牙耳机 5.3
+                image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+                shop_name: 示例旗舰店
+                price_fen: 3990
+                coupon_fen: 1000
+                final_price_fen: 2990
+                est_net_price_fen: 2721
+                rebate_min_fen: 269
+                rebate_max_fen: 269
+                rebate_basis: normal
+                benefit_tags:
+                  - 有券
+                spec_text: null
+                is_presale: false
+                link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70
+                cta:
+                  text_key: btn.buy.coupon
+                quoted_at: '2026-10-02T09:30:00+08:00'
+                stale: false
+                age_sec: 12
+                source: taobao_union
+                disclaimer_keys:
+                  - price_basis
+                ad_label: null
+                availability: ok
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    OpenLinkUnchanged:
+      summary: Price unchanged, jump directly
+      value:
+        code: 0
+        msg: ''
+        data:
+          jump:
+            primary:
+              type: sdk
+              value: https://s.click.example.test/t?e=abc
+            fallbacks:
+              - type: universal_link
+                value: https://s.click.example.test/t?e=abc
+              - type: copy_tpwd
+                value: ￥AbCdEf12￥
+            expire_at: '2026-10-02T09:45:00+08:00'
+          price_changed: false
+          old_final_price_fen: 2990
+          new_final_price_fen: 2990
+          new_link_id: null
+          requote_failed: false
+          new_rebate_min_fen: 269
+          new_rebate_max_fen: 269
+          availability: ok
+          quoted_at: '2026-10-02T09:30:05+08:00'
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    OpenLinkPriceChanged:
+      summary: Price rose by 200 fen; ask the user and replace the card
+      value:
+        code: 0
+        msg: ''
+        data:
+          jump:
+            primary:
+              type: scheme
+              value: openapp.example://virtual?params=abc
+            fallbacks:
+              - type: h5
+                value: https://u.example.test/abc
+            expire_at: '2026-10-02T09:45:00+08:00'
+          price_changed: true
+          old_final_price_fen: 2990
+          new_final_price_fen: 3190
+          new_link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71
+          requote_failed: false
+          new_rebate_min_fen: 287
+          new_rebate_max_fen: 287
+          availability: ok
+          quoted_at: '2026-10-02T09:30:05+08:00'
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    ConvertLinkOk:
+      summary: H5 entry without a link_id
+      value:
+        code: 0
+        msg: ''
+        data:
+          link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a72
+          jump:
+            primary:
+              type: h5
+              value: https://u.example.test/xyz
+            fallbacks: []
+            expire_at: '2026-10-02T09:45:00+08:00'
+          price_changed: false
+          old_final_price_fen: 5900
+          new_final_price_fen: 5900
+          new_link_id: null
+          requote_failed: false
+          new_rebate_min_fen: 120
+          new_rebate_max_fen: 120
+          availability: ok
+          quoted_at: '2026-10-02T09:30:05+08:00'
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
   schemas:
     EntryName:
       type: string
@@ -80,18 +1200,1272 @@ components:
         - trace_id
       properties:
         code:
-          type: integer
-          format: int32
-          description: 0 means success.
-          enum:
-            - 0
+          $ref: '#/components/schemas/SuccessCode'
         msg:
           type: string
         data:
           $ref: '#/components/schemas/HealthzData'
         trace_id:
+          $ref: '#/components/schemas/TraceId'
+    SuccessCode:
+      type: integer
+      format: int32
+      description: 0 means success.
+      enum:
+        - 0
+    TraceId:
+      type: string
+      description: Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9_-]+$'
+    Id:
+      type: string
+      description: Entity id, a UUIDv7 string (04 §5).
+      minLength: 1
+      maxLength: 64
+    ProductKey:
+      type: string
+      description: |
+        `<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02).
+      minLength: 3
+      maxLength: 128
+    ItemRef:
+      type: string
+      description: Server-signed opaque product reference; passed through unchanged (BR-PROD-11).
+      minLength: 1
+      maxLength: 1024
+    Fen:
+      type: integer
+      format: int64
+      description: Amount in fen (ADR-0001 §4.2 item 3).
+    NullableFen:
+      type:
+        - integer
+        - 'null'
+      format: int64
+      description: Amount in fen, null when unknown.
+    PlatformCode:
+      type: string
+      description: Platform (contracts/enums/platform.yaml platform).
+      enum:
+        - taobao
+        - jd
+        - pdd
+        - meituan
+        - vip
+        - douyin
+        - eleme
+        - kuaishou
+        - suning
+    ClientPlatformCode:
+      type: string
+      description: Client platform (contracts/enums/platform.yaml client_platform).
+      enum:
+        - ios
+        - android
+        - harmony
+        - h5
+        - admin
+    InstallChannelCode:
+      type: string
+      description: Install channel (contracts/enums/platform.yaml install_channel).
+      enum:
+        - appstore
+        - official
+        - huawei
+        - agc
+    SortCode:
+      type: string
+      description: Search sort (contracts/enums/trade.yaml sort).
+      enum:
+        - relevance
+        - sales_desc
+        - final_price_asc
+        - rebate_desc
+    SceneCode:
+      type: string
+      description: |
+        Link source (contracts/enums/trade.yaml scene). The server rejects values that are not
+        enabled (taolijin while tlj.enabled=off, watch_alert, P1 values) with 20001.
+      enum:
+        - search
+        - detail
+        - home_card
+        - feed
+        - clipboard
+        - agent
+        - share
+        - h5
+        - push
+        - taolijin
+        - watch_alert
+        - share_ext
+        - wechat_bot
+        - mcp
+    RebateBasis:
+      type: string
+      description: |
+        contracts/enums/trade.yaml rebate_basis. The three 查返利 states are derived from
+        coupon_fen and rebate_basis only (BR-PRICE-21); amount_unknown and login_required are
+        outside them.
+      enum:
+        - normal
+        - price_compare_risk
+        - no_rebate
+        - amount_unknown
+        - login_required
+    Availability:
+      type: string
+      description: contracts/enums/trade.yaml availability.
+      enum:
+        - ok
+        - off_shelf
+        - coupon_gone
+        - ref_expired
+        - price_unavailable
+        - unknown
+    InstalledState:
+      type: string
+      description: |
+        Whether the platform app is installed, as detected by the client (BR-ATTR-27 ①); the
+        strings "true" / "false" / "unknown", default unknown; H5 always sends unknown.
+      enum:
+        - 'true'
+        - 'false'
+        - unknown
+    JumpStep:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - value
+      properties:
+        type:
           type: string
-          description: Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.
+          description: contracts/enums/trade.yaml jump_type.
+          enum:
+            - sdk
+            - scheme
+            - universal_link
+            - h5
+            - copy_tpwd
+        value:
+          type: string
           minLength: 1
-          maxLength: 64
-          pattern: '^[A-Za-z0-9_-]+$'
+          description: URL, scheme or token to execute; produced by the server only.
+    JumpPlan:
+      type: object
+      description: |
+        Executed strictly in order; clients never build schemes or add fallbacks themselves
+        (BR-ATTR-27, 03 §4.5). The client jumps only after a user tap (BR-ATTR-21).
+      additionalProperties: false
+      required:
+        - primary
+        - fallbacks
+        - expire_at
+      properties:
+        primary:
+          $ref: '#/components/schemas/JumpStep'
+        fallbacks:
+          type: array
+          items:
+            $ref: '#/components/schemas/JumpStep'
+        expire_at:
+          type: string
+          format: date-time
+          description: |
+            Until when the returned union URL can be used directly (BR-ATTR-05); it does not
+            limit opening the link_id again.
+    ErrorEnvelope:
+      type: object
+      description: |
+        Error response (04 §5, §7). `data` is present only for codes that define it; its fields
+        per code are listed in contracts/error-codes.yaml, so it is left open here.
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - trace_id
+      properties:
+        code:
+          type: integer
+          format: int32
+          minimum: 10000
+          maximum: 99999
+        msg:
+          type: string
+          description: Fallback text only; clients show the dictionary text error.<code>.
+        data:
+          type: object
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    FreeForm:
+      type: object
+      description: Configuration block whose inner shape is not fixed by 规划/04 yet.
+    RegisterDeviceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - device_hash
+      properties:
+        device_hash:
+          type: string
+          description: SHA-256 (lowercase hex) of IDFV / OAID (ANDROID_ID fallback) / ODID (BR-ID-09).
+          pattern: '^[0-9a-f]{64}$'
+    RegisterDeviceData:
+      type: object
+      additionalProperties: false
+      required:
+        - device_id
+        - install_secret
+      properties:
+        device_id:
+          $ref: '#/components/schemas/Id'
+        install_secret:
+          type: string
+          description: Signing secret, stored only in Keychain / Keystore / HUKS.
+          minLength: 16
+          maxLength: 128
+    RegisterDeviceResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/RegisterDeviceData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    Phone:
+      type: string
+      description: Mainland mobile number, 11 digits.
+      pattern: '^1[0-9]{10}$'
+    SendSmsCodeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - phone
+        - purpose
+      properties:
+        phone:
+          $ref: '#/components/schemas/Phone'
+        purpose:
+          type: string
+          description: contracts/enums/identity.yaml sms_purpose.
+          enum:
+            - login
+            - bind
+            - step_up
+        captcha_token:
+          type: string
+          description: Human-verification token, required after 44003 (BR-ID-05).
+          maxLength: 2048
+    SendSmsCodeData:
+      type: object
+      additionalProperties: false
+      required:
+        - resend_after_sec
+        - expires_in_sec
+      properties:
+        resend_after_sec:
+          type: integer
+          format: int32
+          description: Seconds until another code may be requested (60, BR-ID-05).
+        expires_in_sec:
+          type: integer
+          format: int32
+          description: Validity of the code in seconds (300, BR-ID-05).
+    SendSmsCodeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/SendSmsCodeData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    LegalVersions:
+      type: object
+      description: Versions of the privacy policy and user agreement the user agreed to (BR-ID-04).
+      additionalProperties: false
+      required:
+        - privacy
+        - agreement
+      properties:
+        privacy:
+          type: integer
+          format: int32
+          minimum: 1
+        agreement:
+          type: integer
+          format: int32
+          minimum: 1
+    LoginBySmsRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - phone
+        - code
+        - legal_versions
+        - consent_at
+      properties:
+        phone:
+          $ref: '#/components/schemas/Phone'
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+        legal_versions:
+          $ref: '#/components/schemas/LegalVersions'
+        consent_at:
+          type: string
+          format: date-time
+          description: When the box was ticked or the confirm dialog accepted (client clock).
+        invite_code:
+          type: string
+          description: Optional invite code; ignored for an existing account (BR-INV-06).
+          maxLength: 32
+    TokenPair:
+      type: object
+      additionalProperties: false
+      required:
+        - access_token
+        - access_expires_at
+        - refresh_token
+        - refresh_expires_at
+      properties:
+        access_token:
+          type: string
+          minLength: 1
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_token:
+          type: string
+          minLength: 1
+        refresh_expires_at:
+          type: string
+          format: date-time
+    InviteBind:
+      type: object
+      description: Result of binding the invite code sent at registration (BR-INV-06).
+      additionalProperties: false
+      required:
+        - result
+        - code
+      properties:
+        result:
+          type: string
+          enum:
+            - bound
+            - failed
+            - ignored_existing_user
+        code:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          description: Error code when result=failed (50001 = internal binding error).
+          enum:
+            - 30401
+            - 30403
+            - 30408
+            - 42901
+            - 50001
+            - null
+    LoginData:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - is_new_user
+        - tokens
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Id'
+        is_new_user:
+          type: boolean
+        tokens:
+          $ref: '#/components/schemas/TokenPair'
+        invite_bind:
+          $ref: '#/components/schemas/InviteBind'
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/LoginData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    RefreshTokenRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          minLength: 1
+    TokenPairResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/TokenPair'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    MeBalance:
+      type: object
+      description: Summary of the single balance (拍板第二批 §8 ADD-06); meanings per BR-FUND-18.
+      additionalProperties: false
+      required:
+        - available_fen
+        - withdrawable_fen
+        - estimated_total_fen
+      properties:
+        available_fen:
+          $ref: '#/components/schemas/Fen'
+        withdrawable_fen:
+          $ref: '#/components/schemas/Fen'
+        estimated_total_fen:
+          $ref: '#/components/schemas/Fen'
+    UnionBindingState:
+      type: object
+      additionalProperties: false
+      required:
+        - platform
+        - status
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        status:
+          type: string
+          description: contracts/enums/identity.yaml union_binding_status.
+          enum:
+            - unbound
+            - pending_auth
+            - active
+            - invalid
+            - released
+            - blocked
+    RiskInfo:
+      type: object
+      description: Risk state for the ban / freeze explanation page (BR-ID-31, 拍板第二批 OPS-12).
+      additionalProperties: false
+      required:
+        - state
+        - reason_category
+        - frozen_until
+      properties:
+        state:
+          type: string
+          description: contracts/enums/identity.yaml risk_state.
+          enum:
+            - normal
+            - frozen
+            - appealing
+            - banned
+        reason_category:
+          type:
+            - string
+            - 'null'
+          description: User-visible reason category (BR-ID-31); null when state=normal.
+        frozen_until:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    Me:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - nickname
+        - avatar_url
+        - invite_code
+        - inviter_bound
+        - identity_level
+        - balance
+        - union_bindings
+        - realname_status
+        - need_reconsent
+        - risk
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Id'
+        nickname:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        invite_code:
+          type:
+            - string
+            - 'null'
+          description: Null when the user cannot invite.
+        inviter_bound:
+          type: boolean
+          description: Only whether an inviter is bound, never who.
+        identity_level:
+          type: string
+          description: contracts/enums/identity.yaml identity_level (BR-ID-01).
+          enum:
+            - basic
+            - guest
+            - member
+            - phone
+            - realname
+        balance:
+          $ref: '#/components/schemas/MeBalance'
+        union_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnionBindingState'
+        realname_status:
+          type: string
+          description: contracts/enums/identity.yaml realname_status.
+          enum:
+            - none
+            - verified
+            - failed
+        need_reconsent:
+          type: boolean
+          description: The user must agree to the current legal version again (BR-ID-12).
+        risk:
+          $ref: '#/components/schemas/RiskInfo'
+    MeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/Me'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    PlatformPurchaseStatus:
+      type: string
+      description: |
+        Derived from convert.enabled.<platform> and convert.off_reason.<platform> (04 §10.1); lets
+        cards tell "maintenance" from "coming soon" before a tap. The tap result (50301
+        data.reason) still wins.
+      enum:
+        - 'on'
+        - maintenance
+        - not_launched
+    ConfigFeatures:
+      type: object
+      additionalProperties: false
+      required:
+        - flags
+        - platform_status
+      properties:
+        flags:
+          type: object
+          description: |
+            Client switches by key: agent.entry.visible, clipboard.enabled.<platform>,
+            home.fallback, h5.route.<page>.enabled, ui.grayscale (03 §4.3).
+          additionalProperties:
+            type: boolean
+        platform_status:
+          type: object
+          description: Purchase status by platform code.
+          propertyNames:
+            $ref: '#/components/schemas/PlatformCode'
+          additionalProperties:
+            $ref: '#/components/schemas/PlatformPurchaseStatus'
+    ConfigLegal:
+      type: object
+      description: Current legal versions and the minimum privacy version (BR-ID-12).
+      additionalProperties: false
+      required:
+        - privacy_version
+        - agreement_version
+        - privacy_min_version
+      properties:
+        privacy_version:
+          type: integer
+          format: int32
+        agreement_version:
+          type: integer
+          format: int32
+        privacy_min_version:
+          type: integer
+          format: int32
+    ConfigInvite:
+      type: object
+      additionalProperties: false
+      required:
+        - required
+        - backfill_hours
+      properties:
+        required:
+          type: boolean
+          description: Must be false in the MVP (BR-INV-06).
+        backfill_hours:
+          type: integer
+          format: int32
+          description: Window for entering an inviter later (BR-INV-07).
+    ConfigAgent:
+      type: object
+      description: Agent availability and guest quota (04 §10.1; BR-AI-11, BR-AI-12).
+      additionalProperties: false
+      required:
+        - enabled
+        - whitelist_only
+        - filing_text
+        - examples
+        - guest_daily_quota
+        - require_phone
+      properties:
+        enabled:
+          type: boolean
+        whitelist_only:
+          type: boolean
+        filing_text:
+          type: string
+        examples:
+          type: array
+          items:
+            type: string
+        guest_daily_quota:
+          type: integer
+          format: int32
+          minimum: 0
+        require_phone:
+          type: boolean
+    ConfigH5Release:
+      type: object
+      description: H5 version bucket for this caller (拍板第二批 TECH-28).
+      additionalProperties: false
+      required:
+        - version
+      properties:
+        version:
+          type: string
+          minLength: 1
+    ConfigKf:
+      type: object
+      description: WeCom customer-service chat link (chat entry only).
+      additionalProperties: false
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+    Config:
+      type: object
+      description: |
+        Top-level keys of /v1/config (04 §10.1, excerpt). jump_tip, clipboard, bridge_origins,
+        auth_tips, compliance and display are not shaped by 04 yet and stay free-form; the task
+        that consumes each one types it (bridge_origins with CT-03, clipboard with B1-07).
+      additionalProperties: false
+      required:
+        - dict_version
+        - h5_base_url
+        - h5_release
+        - share_domains
+        - features
+        - texts
+        - legal
+        - invite
+        - agent
+        - kf
+        - jump_tip
+        - clipboard
+        - bridge_origins
+        - auth_tips
+        - compliance
+        - display
+      properties:
+        dict_version:
+          type: string
+          description: Version of the /v1/dict dictionary (BR-TEXT-12).
+        h5_base_url:
+          type: string
+          format: uri
+        h5_release:
+          $ref: '#/components/schemas/ConfigH5Release'
+        share_domains:
+          type: array
+          items:
+            type: string
+        features:
+          $ref: '#/components/schemas/ConfigFeatures'
+        texts:
+          type: object
+          description: Custom text keys, e.g. withdraw.sla_text (BR-TEXT-07).
+          additionalProperties:
+            type: string
+        legal:
+          $ref: '#/components/schemas/ConfigLegal'
+        invite:
+          $ref: '#/components/schemas/ConfigInvite'
+        agent:
+          $ref: '#/components/schemas/ConfigAgent'
+        kf:
+          $ref: '#/components/schemas/ConfigKf'
+        jump_tip:
+          $ref: '#/components/schemas/FreeForm'
+        clipboard:
+          $ref: '#/components/schemas/FreeForm'
+        bridge_origins:
+          $ref: '#/components/schemas/FreeForm'
+        auth_tips:
+          $ref: '#/components/schemas/FreeForm'
+        compliance:
+          $ref: '#/components/schemas/FreeForm'
+        display:
+          $ref: '#/components/schemas/FreeForm'
+    ConfigResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/Config'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    ProductCta:
+      type: object
+      description: |
+        Buy button chosen by the server; the client never decides it (BR-TEXT-12, 拍板第二批
+        TRADE-21): btn.buy.coupon (有券有返), btn.buy (无券有返 and amount_unknown),
+        btn.buy.no_rebate (无返利); other keys come with login_required and taolijin cards.
+      additionalProperties: false
+      required:
+        - text_key
+      properties:
+        text_key:
+          type: string
+          minLength: 1
+    ProductTlj:
+      type: object
+      description: Taolijin of the card, absent when there is none (BR-PRICE-08); never folded into prices.
+      additionalProperties: false
+      required:
+        - amount_fen
+        - remain
+        - kind
+      properties:
+        amount_fen:
+          $ref: '#/components/schemas/Fen'
+        remain:
+          type: integer
+          format: int32
+        kind:
+          type: string
+          description: contracts/enums/trade.yaml tlj_kind.
+          enum:
+            - ours
+            - brand_open
+            - third_party
+            - unknown
+    ProductCard:
+      type: object
+      description: |
+        Product card (04 §8.3). Price semantics BR-PRICE-01 / 05; rebate_* and est_net_price_fen
+        are computed per request for the current caller and never cached (BR-PRICE-11). The card
+        carries a registered `link_id`; buying always goes through POST /v1/links/{link_id}/open
+        (BR-PRICE-12, BR-PRICE-21). amount_unknown cards have product_key, prices and rebate
+        null (BR-PRICE-08).
+      additionalProperties: false
+      required:
+        - product_key
+        - item_ref
+        - platform
+        - title
+        - image
+        - price_fen
+        - coupon_fen
+        - final_price_fen
+        - est_net_price_fen
+        - rebate_min_fen
+        - rebate_max_fen
+        - rebate_basis
+        - benefit_tags
+        - is_presale
+        - link_id
+        - cta
+        - quoted_at
+        - stale
+        - age_sec
+        - source
+        - disclaimer_keys
+        - availability
+      properties:
+        card_id:
+          type: string
+          description: Agent card sequence id (c1, c2…), only on Agent cards (BR-AI-05).
+        product_key:
+          type:
+            - string
+            - 'null'
+          description: Opaque product key (BR-PROD-02); null only on amount_unknown cards.
+          minLength: 3
+          maxLength: 128
+        item_ref:
+          type:
+            - string
+            - 'null'
+          description: Opaque signed reference passed through unchanged (BR-PROD-11).
+          minLength: 1
+          maxLength: 1024
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        shop_type:
+          type:
+            - string
+            - 'null'
+          description: Shop type, e.g. tmall for Tmall shops on taobao.
+        title:
+          type:
+            - string
+            - 'null'
+        image:
+          type:
+            - string
+            - 'null'
+          format: uri
+        shop_name:
+          type:
+            - string
+            - 'null'
+        price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        coupon_fen:
+          $ref: '#/components/schemas/NullableFen'
+        final_price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        est_net_price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        rebate_min_fen:
+          $ref: '#/components/schemas/NullableFen'
+        rebate_max_fen:
+          $ref: '#/components/schemas/NullableFen'
+        rebate_basis:
+          $ref: '#/components/schemas/RebateBasis'
+        benefit_tags:
+          type: array
+          description: Server-generated labels (有券, 预售, 标题显示为 X…); no per-card reasons.
+          items:
+            type: string
+        match_tag:
+          type: string
+          description: Agent cards only (BR-AI-24); contracts/enums/trade.yaml match_tag.
+          enum:
+            - matched
+            - relaxed
+            - spec_unconfirmed
+        spec_text:
+          type:
+            - string
+            - 'null'
+        is_presale:
+          type: boolean
+          description: Presale; shown with the total price (BR-PRICE-22).
+        tlj:
+          $ref: '#/components/schemas/ProductTlj'
+        link_id:
+          $ref: '#/components/schemas/Id'
+        cta:
+          $ref: '#/components/schemas/ProductCta'
+        quoted_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Receipt time of the union response the price is based on (BR-PRICE-11).
+        stale:
+          type: boolean
+        age_sec:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          description: Age of the price in seconds, computed by the server (BR-PRICE-11).
+        source:
+          type: string
+          description: Price source (BR-PRICE-16).
+          enum:
+            - taobao_union
+            - jd_union
+            - pdd_union
+        disclaimer_keys:
+          type: array
+          description: Ordered dictionary keys (BR-PRICE-17), including price_basis.
+          items:
+            type: string
+        ad_label:
+          type:
+            - string
+            - 'null'
+          description: Ad label (BR-TEXT-17); null on Agent relevance cards.
+        availability:
+          $ref: '#/components/schemas/Availability'
+    SearchProductsData:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+        - has_more
+        - fallback_items
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ProductCard'
+        next_cursor:
+          type:
+            - string
+            - 'null'
+        has_more:
+          type: boolean
+          description: As reported by the union, not by the filtered page size (BR-PRICE-08).
+        fallback_items:
+          type: array
+          description: Only when items is empty on the first page; the platform's first 10 feed items.
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/ProductCard'
+    SearchProductsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/SearchProductsData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    ProductResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/ProductCard'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    ParseInputRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+        - scene
+      properties:
+        text:
+          type: string
+          description: |
+            Locally filtered clipboard or typed text (03 §4.6). Text outside links and tokens
+            is untrusted (BR-AI-05); prices in it are only material.claimed_price_fen.
+          minLength: 1
+          maxLength: 4000
+        scene:
+          $ref: '#/components/schemas/SceneCode'
+    InputHit:
+      type: object
+      description: One candidate found by parse_input (04 §8.5).
+      additionalProperties: false
+      required:
+        - platform
+        - kind
+        - raw
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        kind:
+          type: string
+          description: contracts/enums/trade.yaml input_kind.
+          enum:
+            - tpwd
+            - url
+            - text
+        raw:
+          type: string
+          description: The matched link or token as it appeared in the input.
+    ParseResult:
+      type: object
+      description: Result of one hit; exactly one of `card` and `error_code` is present.
+      additionalProperties: false
+      required:
+        - hit
+      properties:
+        hit:
+          $ref: '#/components/schemas/InputHit'
+        card:
+          $ref: '#/components/schemas/ProductCard'
+        error_code:
+          type: integer
+          format: int32
+          description: Error code for this hit (30131, 30132, 30141, 50301…), see error-codes.yaml.
+    ParseInputData:
+      type: object
+      additionalProperties: false
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/ParseResult'
+    ParseInputResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/ParseInputData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    OpenLinkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        installed:
+          $ref: '#/components/schemas/InstalledState'
+        no_rebate:
+          type: boolean
+          default: false
+          description: Buy without rebate (BR-ID-18).
+        no_rebate_reason:
+          type: string
+          description: |
+            Only with no_rebate=true; default auth_declined. The server overrides it with
+            relation_conflict / binding_blocked when it decides so (BR-ID-18).
+          enum:
+            - auth_declined
+            - auth_failed
+        spm:
+          type: string
+          description: page.module.slot of the tapped button (03 §4.7).
+          maxLength: 128
+    OpenLinkResult:
+      type: object
+      description: |
+        Response of open (04 §8.4). old_final_price_fen is the link's quoted_final_price_fen;
+        price_changed when |new − old| ≥ 100 fen or ≥ 5 % of old, both directions (BR-PRICE-13).
+        Prices and rebates are null on amount_unknown links, which are not re-checked.
+      additionalProperties: false
+      required:
+        - jump
+        - price_changed
+        - old_final_price_fen
+        - new_final_price_fen
+        - new_link_id
+        - requote_failed
+        - new_rebate_min_fen
+        - new_rebate_max_fen
+        - availability
+        - quoted_at
+      properties:
+        jump:
+          $ref: '#/components/schemas/JumpPlan'
+        price_changed:
+          type: boolean
+        old_final_price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        new_final_price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        new_link_id:
+          type:
+            - string
+            - 'null'
+          description: |
+            Set whenever the new price differs from the snapshot, or when a new link was
+            registered for the current user (BR-PRICE-12, BR-ATTR-05 ③); the client replaces the
+            card with it whether or not the user continues.
+        requote_failed:
+          type: boolean
+          description: Re-check failed and the user's cached link (≤ 900 s) is used (BR-PRICE-13).
+        new_rebate_min_fen:
+          $ref: '#/components/schemas/NullableFen'
+        new_rebate_max_fen:
+          $ref: '#/components/schemas/NullableFen'
+        availability:
+          $ref: '#/components/schemas/Availability'
+        quoted_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    OpenLinkResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/OpenLinkResult'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    ConvertLinkRequest:
+      type: object
+      description: |
+        Either product_key (with the tapped card's item_ref) or url; neither, or both, is 20001.
+      additionalProperties: false
+      required:
+        - platform
+        - scene
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        product_key:
+          $ref: '#/components/schemas/ProductKey'
+        item_ref:
+          $ref: '#/components/schemas/ItemRef'
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+        scene:
+          $ref: '#/components/schemas/SceneCode'
+        spm:
+          type: string
+          maxLength: 128
+        installed:
+          $ref: '#/components/schemas/InstalledState'
+    ConvertLinkData:
+      type: object
+      description: The registered link_id plus the same fields as the open result (04 §6.3).
+      additionalProperties: false
+      required:
+        - link_id
+        - jump
+        - price_changed
+        - old_final_price_fen
+        - new_final_price_fen
+        - new_link_id
+        - requote_failed
+        - new_rebate_min_fen
+        - new_rebate_max_fen
+        - availability
+        - quoted_at
+      properties:
+        link_id:
+          $ref: '#/components/schemas/Id'
+        jump:
+          $ref: '#/components/schemas/JumpPlan'
+        price_changed:
+          type: boolean
+        old_final_price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        new_final_price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        new_link_id:
+          type:
+            - string
+            - 'null'
+        requote_failed:
+          type: boolean
+        new_rebate_min_fen:
+          $ref: '#/components/schemas/NullableFen'
+        new_rebate_max_fen:
+          $ref: '#/components/schemas/NullableFen'
+        availability:
+          $ref: '#/components/schemas/Availability'
+        quoted_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    ConvertLinkResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/ConvertLinkData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
