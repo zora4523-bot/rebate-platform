@@ -1,0 +1,21 @@
+id: CT-03
+repo: rebate-platform
+title: 契约：bridge.schema.json（含 signed_paths 白名单）、routes.json（since 按端）、apps.json 骨架
+type: contract
+# 依据是 规划/04 §9、§10.1 与 03 §4.4、§4.5、§5（不是 BR 表格行）。外跳目标按 BR-ATTR-27，但它连同一跳
+# 引用渲染后任务书超过 24KB（规划/11 §5.3），refs 为空，由评审按 08 原文核对。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/bridge.schema.json'
+  - 'contracts/routes.json'
+  - 'contracts/apps.json'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo

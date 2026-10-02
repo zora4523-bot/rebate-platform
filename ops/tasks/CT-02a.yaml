@@ -1,0 +1,20 @@
+id: CT-02a
+repo: rebate-platform
+title: 契约：openapi.yaml v0.9 第一片——登录 → 搜索 → 转链跳转（04 §5、§6.1–§6.3、§8.4）
+type: contract
+# refs 只列 BR-ATTR-14（link_logs 的 convert / register / open 区分）：BR-PRICE-21 连同一跳引用渲染后
+# 任务书超过 24KB（规划/11 §5.3）。BR-PRICE-21 与身份、价格、商品的其余条目由评审按 08 原文核对。
+refs: [BR-ATTR-14]
+refs_hash:
+  BR-ATTR-14: deff41f7f5d2
+deps: [CT-01]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
