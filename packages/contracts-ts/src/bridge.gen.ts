@@ -138,14 +138,14 @@ export interface components {
         TradeOpenProductResult: {
             opened: boolean;
         };
-        /** @description Either product_key (with item_ref) or url, never both */
+        /** @description Either product_key (with item_ref) or url, never both; otherwise 90002 */
         TradeConvertAndOpenParams: {
             platform: components["schemas"]["Platform"];
             product_key?: components["schemas"]["ProductKey"];
             item_ref?: components["schemas"]["ItemRef"];
             url?: string;
             spm?: string;
-        } & (unknown | unknown);
+        };
         TradeConvertAndOpenResult: {
             jumped: boolean;
             /** @description Step at which the flow ended; values are fixed by specs/client-behavior.md (CT-09) */

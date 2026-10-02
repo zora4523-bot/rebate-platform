@@ -693,15 +693,7 @@
           }
         },
         "required": ["platform"],
-        "oneOf": [
-          {
-            "required": ["product_key"]
-          },
-          {
-            "required": ["url"]
-          }
-        ],
-        "description": "Either product_key (with item_ref) or url, never both"
+        "description": "Either product_key (with item_ref) or url, never both; otherwise 90002"
       },
       "result": {
         "type": "object",
