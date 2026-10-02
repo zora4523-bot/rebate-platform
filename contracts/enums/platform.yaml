@@ -1,0 +1,49 @@
+# 平台与客户端（规划/04 §2.1、§5；03 §4.2；08 §13.2）。格式见 contracts/README.md「枚举」。
+enums:
+  platform:
+    source: 规划/04 §2.1；08 §13.2
+    description: 平台字符串编码，不使用数字；天猫是淘宝的 shop_type=tmall，不单独占编码。能力与阶段由平台字典表 platforms 记录，代码不按本列表判断能力
+    values:
+      taobao: 淘宝 / 天猫（M-内测）
+      jd: 京东（M-内测）
+      pdd: 拼多多（M-内测）
+      meituan: 美团（外卖、到店活动；P1，D15）
+      vip: 唯品会（P1）
+      douyin: 抖音（P1）
+      eleme: 饿了么（P1，无商品形态）
+      kuaishou: 快手（P2）
+      suning: 苏宁（P2）
+  key_stability:
+    source: 规划/04 §2.1；BR-PROD-03
+    description: platforms.key_stability，平台 product_key 派生的稳定性验证结论
+    values:
+      unverified: 未验证
+      stable_24h: 24 小时内稳定
+      stable_7d: 7 天内稳定
+      unstable: 不稳定
+  client_platform:
+    source: 规划/03 §4.2（请求头 X-Platform）
+    description: 发起请求的客户端
+    values:
+      ios: iOS App
+      android: Android App
+      harmony: 鸿蒙 App
+      h5: App 内或 App 外 H5
+      admin: 管理后台
+  install_channel:
+    source: 规划/04 §5（请求头 X-Channel）；拍板第二批 TECH-18
+    description: 安装包渠道
+    values:
+      appstore: iOS App Store
+      official: Android 通用包
+      huawei: 华为渠道 Android 包
+      agc: 鸿蒙 AGC
+  auth_level:
+    source: 规划/04 §5（openapi 扩展 x-auth）；08 §13.6
+    description: 接口的鉴权级别；optional = 带令牌按用户处理、不带按匿名处理
+    values:
+      none: 不需要登录
+      optional: 可选登录
+      login: 需要登录
+      phone: 需要已绑手机号
+      realname: 需要已实名

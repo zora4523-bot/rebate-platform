@@ -11,3 +11,7 @@ export const contractsDir = join(repoRoot, 'contracts');
 export const openapiFile = join(contractsDir, 'openapi.yaml');
 export const redoclyConfigFile = join(contractsDir, 'redocly.yaml');
 export const generatedFile = join(packageDir, 'src', 'openapi.gen.ts');
+export const enumsDir = join(contractsDir, 'enums');
+export const errorCodesFile = join(contractsDir, 'error-codes.yaml');
+export const enumsGeneratedFile = join(packageDir, 'src', 'enums.gen.ts');
+export const errorCodesGeneratedFile = join(packageDir, 'src', 'error-codes.gen.ts');

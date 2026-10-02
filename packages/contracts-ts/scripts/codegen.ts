@@ -1,25 +1,37 @@
-// Generates src/openapi.gen.ts from contracts/openapi.yaml with openapi-typescript.
-//   node scripts/codegen.ts           write the generated file
-//   node scripts/codegen.ts --check   exit 1 when the committed file differs from a fresh run
+// Generates the TypeScript view of contracts/:
+//   src/openapi.gen.ts       from contracts/openapi.yaml (openapi-typescript)
+//   src/enums.gen.ts         from contracts/enums/*.yaml
+//   src/error-codes.gen.ts   from contracts/error-codes.yaml
+//   node scripts/codegen.ts           write the generated files
+//   node scripts/codegen.ts --check   exit 1 when a committed file differs from a fresh run
 // Works offline: the contract has no remote $ref and openapi-typescript does not phone home.
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
-import { generatedFile, openapiFile, repoRoot } from './paths.ts';
+import { loadEnums, loadErrorCodes, renderEnums, renderErrorCodes } from './catalog.ts';
+import {
+  enumsGeneratedFile,
+  errorCodesGeneratedFile,
+  generatedFile,
+  openapiFile,
+  repoRoot,
+} from './paths.ts';
 
-const HEADER = [
-  '// GENERATED FILE. Do not edit by hand.',
-  '// Source: contracts/openapi.yaml',
-  '// Regenerate: pnpm contracts:codegen (drift is checked by pnpm contracts:check)',
-  '',
-  '',
-].join('\n');
+function header(source: string): string {
+  return [
+    '// GENERATED FILE. Do not edit by hand.',
+    `// Source: ${source}`,
+    '// Regenerate: pnpm contracts:codegen (drift is checked by pnpm contracts:check)',
+    '',
+    '',
+  ].join('\n');
+}
 
-async function render(): Promise<string> {
+async function renderOpenapi(): Promise<string> {
   const ast = await openapiTS(pathToFileURL(openapiFile), { silent: true });
-  return HEADER + astToString(ast);
+  return header('contracts/openapi.yaml') + astToString(ast);
 }
 
 const args = process.argv.slice(2);
@@ -31,26 +43,49 @@ if (unknown.length > 0) {
   process.exit(2);
 }
 
-const fresh = await render();
-const target = relative(repoRoot, generatedFile);
+let outputs: Array<{ file: string; content: string }>;
+try {
+  const errors = loadErrorCodes();
+  outputs = [
+    { file: generatedFile, content: await renderOpenapi() },
+    {
+      file: enumsGeneratedFile,
+      content: header('contracts/enums/*.yaml') + renderEnums(loadEnums()),
+    },
+    {
+      file: errorCodesGeneratedFile,
+      content: header('contracts/error-codes.yaml') + renderErrorCodes(errors.codes, errors.ranges),
+    },
+  ];
+} catch (err) {
+  console.error(`codegen: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
 
-if (!check) {
-  writeFileSync(generatedFile, fresh);
-  console.error(`codegen: wrote ${target}`);
-} else {
-  const committed = existsSync(generatedFile) ? readFileSync(generatedFile, 'utf8') : undefined;
-  if (committed === fresh) {
-    console.error(`codegen: ${target} is up to date`);
-  } else {
-    const freshFile = join(mkdtempSync(join(tmpdir(), 'couli-codegen-')), 'openapi.gen.ts');
-    writeFileSync(freshFile, fresh);
-    console.error(
-      committed === undefined
-        ? `codegen: ${target} is missing.`
-        : `codegen: ${target} differs from what contracts/openapi.yaml generates.`,
-    );
-    console.error(`codegen: fresh output kept at ${freshFile}`);
-    console.error('codegen: run `pnpm contracts:codegen` and commit the result.');
-    process.exit(1);
+let stale = 0;
+for (const { file, content } of outputs) {
+  const target = relative(repoRoot, file);
+  if (!check) {
+    writeFileSync(file, content);
+    console.error(`codegen: wrote ${target}`);
+    continue;
   }
+  const committed = existsSync(file) ? readFileSync(file, 'utf8') : undefined;
+  if (committed === content) {
+    console.error(`codegen: ${target} is up to date`);
+    continue;
+  }
+  stale++;
+  const freshFile = join(mkdtempSync(join(tmpdir(), 'couli-codegen-')), basename(file));
+  writeFileSync(freshFile, content);
+  console.error(
+    committed === undefined
+      ? `codegen: ${target} is missing.`
+      : `codegen: ${target} differs from what contracts/ generates.`,
+  );
+  console.error(`codegen: fresh output kept at ${freshFile}`);
+}
+if (stale > 0) {
+  console.error('codegen: run `pnpm contracts:codegen` and commit the result.');
+  process.exit(1);
 }

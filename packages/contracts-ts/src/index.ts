@@ -4,6 +4,8 @@ import createClient, { type Client, type ClientOptions } from 'openapi-fetch';
 import type { components, operations, paths } from './openapi.gen.ts';
 
 export type { components, operations, paths };
+export * from './enums.gen.ts';
+export * from './error-codes.gen.ts';
 
 /** Named schema from `components.schemas`, e.g. `Schema<'HealthzResponse'>`. */
 export type Schema<Name extends keyof components['schemas']> = components['schemas'][Name];

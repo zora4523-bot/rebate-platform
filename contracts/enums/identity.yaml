@@ -1,0 +1,89 @@
+# 身份、授权、同意与风控（规划/04 §2.5、§5、§6.1；08 §13.2、§13.6）。
+enums:
+  identity_level:
+    source: 规划/04 §2.5；BR-ID-01
+    description: GET /v1/me 返回的身份等级
+    values:
+      basic: 基本模式
+      guest: 游客
+      member: 已登录
+      phone: 已绑手机号
+      realname: 已实名
+  login_provider:
+    source: 规划/04 §6.1；BR-ID-04
+    description: 第三方登录身份来源（user_oauth.provider）；手机号验证码登录不属于此列
+    values:
+      wechat: 微信（unionid）
+      apple: Sign in with Apple（sub）
+      huawei: 华为账号（unionID，M-公开）
+  sms_purpose:
+    source: 规划/04 §6.1；BR-ID-05
+    values:
+      login: 登录
+      bind: 绑定手机号
+      step_up: 二次验证
+  step_up_action:
+    source: 规划/04 §2.5、§5；BR-ID-08
+    description: step_up_token 的 action，须与所调接口一致
+    values:
+      withdraw: POST /v1/withdrawals
+      payout_account_change: PUT /v1/me/payout-account
+      phone_change: POST /v1/me/phone（更换）
+      account_deletion: POST /v1/me/deletion
+  consent_type:
+    source: 08 §13.2；BR-ID-12、BR-WDR-31
+    values:
+      privacy: 隐私政策
+      agreement: 用户协议
+      ai_third_party: AI 第三方处理
+      id_verification: 实名授权
+      personalization: 个性化推荐
+      labor_agreement: 劳务协议
+  union_binding_status:
+    source: 规划/04 §2.5；BR-ID-19、BR-ID-20
+    description: 不设 cooling，释放后冷却用 released + cooldown_until；无用户自助换绑
+    values:
+      unbound: 未绑定
+      pending_auth: 授权中
+      active: 有效
+      invalid: 已失效，需重新授权
+      released: 已释放
+      blocked: 已停用
+  union_binding_blocked_reason:
+    source: 规划/04 §2.5；BR-ID-20；拍板第二批 OPS-11
+    values:
+      ban: 封禁
+      admin_disable: 后台停用返利（可恢复）
+      deletion: 注销
+  risk_state:
+    source: 规划/04 §2.5；BR-ID-31
+    description: user_risk_state.state，risk 模块唯一写者
+    values:
+      normal: 正常
+      frozen: 冻结（可设期限 frozen_until）
+      appealing: 申诉中
+      banned: 封禁（永久）
+  realname_status:
+    source: 规划/04 §2.5
+    values:
+      none: 未实名
+      verified: 已实名
+      failed: 核验失败
+  deletion_status:
+    source: 规划/04 §2.5；BR-ID-27
+    values:
+      cooling: 冷静期
+      processing: 处理中
+      done: 已注销
+      cancelled: 已撤回
+  appeal_status:
+    source: 规划/04 §2.5；BR-ID-36
+    values:
+      processing: 处理中
+      upheld: 维持
+      revoked: 撤销
+  appeal_target_type:
+    source: 规划/04 §6.1；BR-ID-36
+    values:
+      account: 账号
+      order: 订单

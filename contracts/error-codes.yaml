@@ -1,0 +1,737 @@
+# 错误码表（契约唯一来源，CT-01）。
+# 码值、含义、客户端动作、可重试照 规划/08_业务规则/13_命名与编码对照.md §13.11 转写（唯一分配表）；
+# data 字段形状照 规划/04 §7。两处不一致时以 §13.11 为准，本文件随之改。
+# 本表没有的码视为未分配，不得实现；废弃码不回收、不复用。文案不在这里：客户端取字典
+# error.<code>（带 data.reason 的取 error.<code>.<reason>，未命中回落 error.<code>，BR-TEXT-14）。
+#
+# 字段：
+#   code        5 位整数码值
+#   http        HTTP 状态码。§13.11 与 04 只规定了 30803、30804 为 409，其余按码段由契约任务自定：
+#               鉴权 401 / 403，参数 400，并发 409，业务 422（不存在类 404），限流 429，服务端 5xx。
+#               客户端只按 code 处理，不按 HTTP 状态分支。
+#   meaning     含义（§13.11「含义」列）
+#   action      客户端动作（§13.11「客户端动作」列，去掉文案引用）
+#   retry       §13.11「可重试」列原文
+#   retry_kind  never（原样重发仍失败）/ after_action（完成前置动作后重放）/ later（等待后再发）/
+#               immediate（可立即自动重试，遵守退避）/ not_applicable（「—」）；不带 data.reason 时适用
+#   retry_kind_by_reason  §13.11 按 data.reason 区分可重试时，各 reason 的 retry_kind（优先于 retry_kind）
+#   data        data 里的字段：字段名 → 取值列表；~ 表示取值不在本表枚举（见来源条目）
+#   headers     响应头
+#   sources     来源条目（§13.11「来源条目」列）
+#   phase       P1 表示 MVP 不返回
+#   deprecated  true = 废弃，服务端不再返回；客户端收到按表外 3xxxx 处理
+version: 1
+codes:
+  - code: 10001
+    http: 401
+    meaning: 未登录
+    action: 跳 Login，成功后恢复 pending_action
+    retry: 登录后
+    retry_kind: after_action
+    sources: [BR-ID-01, BR-ID-10, BR-AI-11, BR-AI-23, BR-ATTR-05]
+  - code: 10002
+    http: 401
+    meaning: access_token 过期
+    action: 单飞刷新后重放原请求 1 次；刷新失败清会话跳登录
+    retry: 刷新后
+    retry_kind: after_action
+    sources: [BR-ID-01, BR-ID-07]
+  - code: 10003
+    http: 403
+    meaning: 需要二次验证（含 step_up_token 过期）
+    action: 弹短信验证，拿到 step_up_token 后重放
+    retry: 验证后
+    retry_kind: after_action
+    sources: [BR-ID-08, BR-WDR-01, BR-WDR-03]
+  - code: 10004
+    http: 403
+    meaning: 需要同意（协议重新同意、AI 单独同意、实名授权、劳务协议等）
+    action: 弹对应同意组件，同意后重放
+    retry: 同意后
+    retry_kind: after_action
+    data:
+      consent_type:
+        - privacy
+        - agreement
+        - ai_third_party
+        - id_verification
+        - personalization
+        - labor_agreement
+    sources: [BR-ID-11, BR-ID-12, BR-ID-14, BR-AI-13, BR-INV-05]
+  - code: 10005
+    http: 403
+    meaning: 需要绑定手机号
+    action: 跳 BindPhone，完成后恢复 pending_action
+    retry: 绑定后
+    retry_kind: after_action
+    sources: [BR-ID-01, BR-ID-03, BR-AI-11, BR-INV-02]
+  - code: 10006
+    http: 403
+    meaning: 账号已冻结或封禁
+    action: 展示封禁说明页与申诉入口
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-31, BR-WDR-03]
+  - code: 10007
+    http: 403
+    meaning: 账号在注销冷静期或处理中
+    action: 冷静期跳注销进度页（可撤回）；processing 仅提示
+    retry: 否
+    retry_kind: never
+    data:
+      stage: [cooling, processing]
+    sources: [BR-ID-27]
+  - code: 10401
+    http: 401
+    meaning: 请求签名无效或重放（X-Nonce 重复 / 时间戳超窗）
+    action: 不自动重放，上报埋点
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-01, BR-ID-05, BR-ID-09]
+  - code: 10402
+    http: 401
+    meaning: 设备未注册、已失效或非服务端签发
+    action: 重新注册设备后重放 1 次
+    retry: 重新注册后
+    retry_kind: after_action
+    sources: [BR-ID-01, BR-ID-05, BR-ID-09]
+  - code: 10403
+    http: 403
+    meaning: App 或请求来源不被允许（含令牌作用域越权）
+    action: 不跳登录，仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-01, BR-ID-07, BR-ID-32]
+  - code: 10404
+    http: 401
+    meaning: refresh_token 失效，需重新登录
+    action: 清会话，跳 Login
+    retry: —
+    retry_kind: not_applicable
+    sources: [BR-ID-07]
+  - code: 20001
+    http: 400
+    meaning: 参数校验失败
+    action: 在对应字段旁提示（带 reason 取子键文案）
+    retry: 否
+    retry_kind: never
+    data:
+      fields: ~
+      reason: [watch_target_invalid, nickname_sensitive]
+    sources: [BR-ID-25, BR-ID-39, BR-AI-23, BR-TEXT-13, BR-WDR-03, BR-WATCH-04]
+  - code: 20002
+    http: 400
+    meaning: 验证码错误
+    action: 提示重新输入
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-05]
+  - code: 20003
+    http: 400
+    meaning: 验证码已过期或已作废（含错满 5 次）
+    action: 提示重新获取验证码
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-05]
+  - code: 20901
+    http: 409
+    meaning: 幂等键冲突（同键不同请求体）
+    action: 不重放；生成新幂等键后由用户重新提交
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-01, BR-WDR-03, BR-WDR-07]
+  - code: 20902
+    http: 409
+    meaning: 状态已变化（并发修改冲突）
+    action: 刷新详情
+    retry: 刷新后
+    retry_kind: after_action
+    data:
+      resource: [order, order_attribution, withdrawal, settle_batch, ticket]
+    sources: [BR-FUND-01, BR-FUND-04, BR-ATTR-20, BR-WDR-08, BR-ID-36]
+  - code: 30101
+    http: 422
+    meaning: 淘宝未授权 / 未备案；站长授权过期或失效期间带 reason=auth_unavailable，不带 auth_url
+    action: 弹 AuthSheet → 拉起授权 → 自动重放；auth_unavailable 不拉起授权、不外跳、只提示，不提供无返利购买
+    retry: 授权后；auth_unavailable：稍后
+    retry_kind: after_action
+    retry_kind_by_reason:
+      auth_unavailable: later
+    data:
+      auth_url: ~
+      state: ~
+      reason: [auth_unavailable]
+    sources: [BR-ID-17, BR-ID-18, BR-ID-24, BR-ATTR-05, BR-TEXT-14]
+  - code: 30102
+    http: 422
+    meaning: 淘宝授权已失效，需重新授权；站长授权过期或失效期间带 reason=auth_unavailable
+    action: 同 30101
+    retry: 同 30101
+    retry_kind: after_action
+    retry_kind_by_reason:
+      auth_unavailable: later
+    data:
+      reason: [auth_unavailable]
+    sources: [BR-ID-17, BR-ID-21, BR-ID-24, BR-TEXT-14]
+  - code: 30103
+    http: 422
+    meaning: 该渠道已被限制推广（渠道 ID 黑名单）
+    action: 给无返利购买与联系客服两个按钮
+    retry: 否
+    retry_kind: never
+    sources: [规划/04 §7]
+  - code: 30104
+    http: 422
+    meaning: 淘宝授权请求已过期或已使用（state 超 10 分钟或重复提交）
+    action: 重新获取 auth_url 后重新发起授权
+    retry: 重新授权后
+    retry_kind: after_action
+    sources: [BR-ID-17]
+  - code: 30111
+    http: 422
+    meaning: 拼多多未授权
+    action: 同 30101
+    retry: 授权后
+    retry_kind: after_action
+    sources: [BR-ID-18, BR-ID-22, BR-TEXT-14]
+  - code: 30121
+    http: 422
+    meaning: 京东该链接暂不支持转链（权限不足）
+    action: 给无返利购买按钮（BR-PRICE-08）
+    retry: 否
+    retry_kind: never
+    sources: [BR-PRICE-08]
+  - code: 30131
+    http: 422
+    meaning: 不支持该链接或平台
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-PROD-03, BR-PROD-10, BR-TEXT-14]
+  - code: 30132
+    http: 422
+    meaning: 口令无法识别（含口令解析权限未开通）
+    action: 给商品名搜索按钮（预填规则见 BR-TEXT-14 error.30132）
+    retry: 否
+    retry_kind: never
+    sources: [BR-PROD-03, BR-TEXT-14]
+  - code: 30141
+    http: 422
+    meaning: 商品已下架
+    action: 不外跳，卡片置灰（availability=off_shelf）；Agent 场景追加换一批入口
+    retry: 否
+    retry_kind: never
+    sources: [BR-PRICE-14, BR-PROD-05, BR-TEXT-14]
+  - code: 30142
+    http: 422
+    meaning: 废弃（原义：券已失效或领完），服务端不再返回
+    action: 按表外 3xxxx 处理
+    retry: —
+    retry_kind: not_applicable
+    deprecated: true
+    sources: [BR-PRICE-14]
+  - code: 30143
+    http: 422
+    meaning: 商品信息已失效（ref_expired，检索不到同键商品或派生出不同的键）
+    action: 跳搜索（BR-PROD-05）
+    retry: 否
+    retry_kind: never
+    sources: [BR-PROD-03, BR-PROD-05, BR-PROD-06]
+  - code: 30144
+    http: 404
+    meaning: 购买链接不存在（link_id 不存在或不属于本 App）
+    action: 按卡片 product_key + item_ref 自动重新请求转链，替换卡片后仍须用户再次点击
+    retry: 重新转链后
+    retry_kind: after_action
+    sources: [BR-ATTR-05]
+  - code: 30151
+    http: 422
+    meaning: 该淘宝账号已绑定本 App 其他用户
+    action: 给无返利购买与联系客服两个按钮，不透露对方账号
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-18, BR-ID-19, BR-ATTR-07]
+  - code: 30152
+    http: 422
+    meaning: 废弃（原义：换绑间隔不足），服务端不再返回
+    action: 按表外 3xxxx 处理
+    retry: —
+    retry_kind: not_applicable
+    deprecated: true
+    sources: [BR-ID-19]
+  - code: 30153
+    http: 422
+    meaning: 该平台返利已被停用（绑定为 blocked 且用户未被封禁）
+    action: 给无返利购买与联系客服两个按钮
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-17, BR-ID-18]
+  - code: 30201
+    http: 404
+    meaning: 订单不存在
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-ATTR-17, BR-ATTR-19]
+  - code: 30202
+    http: 422
+    meaning: 订单不可找回
+    action: 按 data.reason 提示
+    retry: 否
+    retry_kind: never
+    data:
+      reason: [FACTOR_MISMATCH, CLAIM_EXPIRED, ORDER_INVALID, ALREADY_YOURS]
+    sources: [BR-ATTR-17, BR-ATTR-19]
+  - code: 30203
+    http: 422
+    meaning: 今日找回次数已用完（风控禁止时 reason=RISK_BLOCKED）
+    action: 仅提示
+    retry: 次日
+    retry_kind: later
+    data:
+      reason: [RISK_BLOCKED]
+    sources: [BR-ATTR-17, BR-ATTR-19]
+  - code: 30204
+    http: 422
+    meaning: 订单已被认领（含已锁定）
+    action: 仅提示，不透露对方信息
+    retry: 否
+    retry_kind: never
+    sources: [BR-ATTR-12, BR-ATTR-17, BR-ATTR-20]
+  - code: 30205
+    http: 422
+    meaning: 已提交过该订单的找回
+    action: 跳找回记录
+    retry: 否
+    retry_kind: never
+    sources: [BR-ATTR-17]
+  - code: 30206
+    http: 422
+    meaning: 找回功能暂时关闭（claims.enabled=off）
+    action: 找回入口置灰
+    retry: 稍后
+    retry_kind: later
+    # §13.11 的来源列写的是映射出处；定义条目 BR-ATTR-17 按 04 §7 的说明一并记上。
+    sources: [08 §13.3 映射（后端功能规划 30104）, BR-ATTR-17]
+  - code: 30301
+    http: 422
+    meaning: 余额不足
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-WDR-03]
+  - code: 30302
+    http: 422
+    meaning: 余额为负，暂不能提现
+    action: 展示负余额说明
+    retry: 否
+    retry_kind: never
+    sources: [BR-FUND-10, BR-FUND-11, BR-WDR-03, BR-WDR-05]
+  - code: 30303
+    http: 422
+    meaning: 不满足提现条件（data.reason 取值见来源条目，含 account_frozen）
+    action: 按 data.reason 提示
+    retry: 否
+    retry_kind: never
+    data:
+      reason: ~
+    sources: [BR-WDR-02, BR-WDR-03, BR-WDR-04, BR-WDR-05, BR-FUND-19]
+  - code: 30304
+    http: 422
+    meaning: 未实名
+    action: 跳 RealName
+    retry: 实名后
+    retry_kind: after_action
+    sources: [BR-ID-01, BR-WDR-03]
+  - code: 30305
+    http: 422
+    meaning: 未绑定收款账号
+    action: 跳 PayoutAccount
+    retry: 绑定后
+    retry_kind: after_action
+    sources: [BR-WDR-03]
+  - code: 30306
+    http: 422
+    meaning: 提现暂停（withdraw.enabled 关闭）
+    action: 提现按钮置灰
+    retry: 否
+    retry_kind: never
+    sources: [BR-WDR-03, BR-WDR-17]
+  - code: 30307
+    http: 422
+    meaning: 收款账号姓名与实名不一致
+    action: 跳 PayoutAccount
+    retry: 否
+    retry_kind: never
+    sources: [BR-WDR-02, BR-WDR-03]
+  - code: 30308
+    http: 422
+    meaning: 收款账号已被其他实名绑定
+    action: 跳 PayoutAccount，不透露对方信息
+    retry: 否
+    retry_kind: never
+    sources: [BR-WDR-02]
+  - code: 30309
+    http: 422
+    meaning: 未成年人提现限制
+    action: 展示未成年提现规则
+    retry: 否
+    retry_kind: never
+    sources: [BR-WDR-06, BR-ID-26]
+  - code: 30401
+    http: 422
+    meaning: 邀请码无效（含格式错误、邀请人不存在或不可用、邀请人未满 18 周岁，不透露原因）
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-INV-02, BR-INV-19, BR-ID-26]
+  - code: 30402
+    http: 422
+    meaning: 已绑定上级 / 已用过绑定机会
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-INV-02, BR-INV-03]
+  - code: 30403
+    http: 422
+    meaning: 不能绑定该邀请人（自己、下级、同设备）
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-INV-08]
+  - code: 30404
+    http: 422
+    meaning: 已超过补填期限
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-INV-07]
+  - code: 30405
+    http: 422
+    meaning: 该身份证已被其他账号实名
+    action: 不透露对方账号
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-25]
+  - code: 30406
+    http: 422
+    meaning: 实名核验不通过
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-25]
+  - code: 30407
+    http: 422
+    meaning: 年龄不满足要求（未满 14 周岁不予实名）
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-25, BR-ID-26]
+  - code: 30408
+    http: 422
+    meaning: 邀请绑定暂停（growth.invite_bind.enabled=off）
+    action: 落地页引导直接下载注册
+    retry: 稍后
+    retry_kind: later
+    sources: [BR-INV-02, BR-INV-05, BR-INV-06, BR-INV-21]
+  - code: 30409
+    http: 422
+    meaning: 已有订单、找回申请或下级，不能补填或改上级
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-INV-02, BR-INV-07, BR-INV-10]
+  - code: 30410
+    http: 422
+    meaning: 今日实名次数已用完
+    action: 仅提示，不暴露身份证是否已被占用
+    retry: 次日
+    retry_kind: later
+    sources: [BR-ID-25]
+  - code: 30411
+    http: 422
+    meaning: 目标手机号已属于本 App 其他账号；满足并号条件时带 reason=mergeable 与 merge_ticket
+    action: 无 reason 仅提示；mergeable 弹并入确认，凭 merge_ticket 调 POST /v1/auth/merge
+    retry: 否
+    retry_kind: never
+    data:
+      reason: [mergeable]
+      merge_ticket: ~
+    sources: [BR-ID-06]
+  - code: 30412
+    http: 422
+    meaning: 有进行中的提现（PENDING_REVIEW / APPROVED / PAYING），暂不能申请注销
+    action: 仅提示
+    retry: 提现完结后
+    retry_kind: later
+    sources: [BR-ID-27, BR-ID-31]
+  - code: 30413
+    http: 422
+    meaning: 未满 18 周岁，不开放邀请与分享
+    action: 隐藏邀请与分享赚入口
+    retry: 否
+    retry_kind: never
+    data:
+      reason: [self_minor]
+    sources: [BR-ID-26, BR-INV-18, BR-INV-19]
+  - code: 30414
+    http: 422
+    meaning: 暂不支持自助更换手机号（account.phone_change_enabled=false，不含首次绑定）
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-06]
+  - code: 30415
+    http: 422
+    meaning: 昵称当月修改次数已满
+    action: 仅提示
+    retry: 次月
+    retry_kind: later
+    sources: [BR-ID-39]
+  - code: 30416
+    http: 422
+    meaning: 账户有待扣回金额（余额为负），暂不能注销
+    action: 注销页展示提示与联系客服，不进入冷静期
+    retry: 余额回正后
+    retry_kind: later
+    data:
+      amount_fen: ~
+    sources: [BR-ID-27, BR-FUND-10]
+  - code: 30501
+    http: 422
+    meaning: AI 助手未开放
+    action: 隐藏或置灰入口
+    retry: 否
+    retry_kind: never
+    sources: [BR-AI-12, BR-AI-23, BR-ID-03]
+  - code: 30502
+    http: 422
+    meaning: 今日 AI 次数已用完
+    action: 跳搜索
+    retry: 次日
+    retry_kind: later
+    sources: [BR-AI-15, BR-AI-23, BR-ID-03]
+  - code: 30503
+    http: 422
+    meaning: 内容不支持
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-03]
+  - code: 30504
+    http: 422
+    meaning: 会话已过期、达轮数上限或不可访问
+    action: 新建会话
+    retry: 新建会话后
+    retry_kind: after_action
+    data:
+      reason: ~
+    sources: [BR-AI-15, BR-AI-20, BR-AI-23]
+  - code: 30505
+    http: 404
+    meaning: run 不存在或已结束
+    action: 刷新会话消息
+    retry: 否
+    retry_kind: never
+    sources: [BR-AI-23]
+  - code: 30506
+    http: 409
+    meaning: 本会话有进行中的 run（run_in_progress）
+    action: 发送按钮保持禁用，当前 run 结束后可再发
+    retry: run 结束后
+    retry_kind: later
+    sources: [BR-AI-23]
+  - code: 30601
+    http: 422
+    meaning: 已领取过该淘礼金
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [规划/04 §7]
+  - code: 30602
+    http: 422
+    meaning: 淘礼金已抢光（含点击时领完）
+    action: 淘礼金按钮置灰，给普通购买入口
+    retry: 否
+    retry_kind: never
+    sources: [BR-PRICE-14]
+  - code: 30603
+    http: 422
+    meaning: 活动未开始或已结束
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [规划/04 §7]
+  - code: 30604
+    http: 422
+    meaning: 不满足领取条件
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [规划/04 §7]
+  - code: 30701
+    http: 404
+    meaning: 页面或内容不存在
+    action: 显示空态
+    retry: 否
+    retry_kind: never
+    sources: [规划/04 §7]
+  - code: 30801
+    http: 422
+    meaning: 当前已达到目标价
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    data:
+      reason: [watch_target_already_met]
+    sources: [BR-WATCH-04]
+    phase: P1
+  - code: 30802
+    http: 422
+    meaning: 提醒数量已达上限
+    action: 列表显示已设数量，引导删除旧提醒
+    retry: 删除旧提醒或到期后
+    retry_kind: after_action
+    data:
+      reason: [watch_limit_exceeded]
+    sources: [BR-WATCH-17]
+    phase: P1
+  - code: 30803
+    http: 409
+    meaning: 同商品已有提醒
+    action: 跳到已有提醒（修改目标价）
+    retry: 否
+    retry_kind: never
+    data:
+      reason: [watch_duplicate]
+      watch_id: ~
+    sources: [BR-WATCH-02]
+    phase: P1
+  - code: 30804
+    http: 409
+    meaning: 同商品有可续期的过期提醒
+    action: 跳到已有提醒（续期）
+    retry: 否
+    retry_kind: never
+    data:
+      reason: [watch_expired_renewable]
+      watch_id: ~
+    sources: [BR-WATCH-02, BR-WATCH-10]
+    phase: P1
+  - code: 30805
+    http: 422
+    meaning: 暂时无法获取价格（不建 watch 行）
+    action: 仅提示，不建提醒
+    retry: 稍后
+    retry_kind: later
+    data:
+      reason: [watch_quote_unavailable]
+    sources: [BR-WATCH-07, BR-WATCH-10]
+    phase: P1
+  - code: 30806
+    http: 422
+    meaning: 该平台提醒暂停服务
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    data:
+      reason: [watch_platform_disabled]
+    sources: [BR-WATCH-27]
+    phase: P1
+  - code: 40901
+    http: 409
+    meaning: 同一请求正在处理
+    action: 保持加载态，稍后查询结果
+    retry: 稍后
+    retry_kind: later
+    sources: [BR-ID-01, BR-ID-08, BR-WDR-03, BR-WDR-07]
+  - code: 42901
+    http: 429
+    meaning: 请求过于频繁
+    action: 按 Retry-After 禁用按钮，缺省 5 秒
+    retry: 稍后
+    retry_kind: later
+    headers: [Retry-After]
+    sources: [BR-TEXT-14, BR-ID-05, BR-INV-02, BR-AI-23]
+  - code: 44001
+    http: 403
+    meaning: 风控拦截（号段或手机号黑名单、设备或 IP 注册上限、封禁用户的受限操作）
+    action: 给申诉入口；文案取字典 risk_msg.<code>，未命中回落 error.44001
+    retry: 否
+    retry_kind: never
+    data:
+      risk_msg_code: ~
+    sources: [BR-TEXT-14, BR-ID-05, BR-ID-06, BR-ID-31, BR-ID-32]
+  - code: 44002
+    http: 403
+    meaning: 设备环境异常
+    action: 仅提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-01]
+  - code: 44003
+    http: 403
+    meaning: 需要人机验证（是否启用待决策，08 §13.3）
+    action: 拉起人机验证组件，通过后带验证凭证重放
+    retry: 验证后
+    retry_kind: after_action
+    sources: [BR-ID-05, BR-ID-32]
+  - code: 50001
+    http: 500
+    meaning: 服务端错误
+    action: 通用错误态 + trace_id 后 6 位
+    retry: 是
+    retry_kind: immediate
+    sources: [BR-TEXT-14, BR-INV-06]
+  - code: 50301
+    http: 503
+    meaning: 平台维护或熔断，或平台未开放
+    action: maintenance 弹 Toast、购买按钮禁用；not_launched 购买按钮禁用、不弹 Toast；无 reason 按 maintenance
+    retry: maintenance：稍后；not_launched：否
+    retry_kind: later
+    retry_kind_by_reason:
+      maintenance: later
+      not_launched: never
+    data:
+      platform: ~
+      reason: [maintenance, not_launched]
+    sources: [BR-TEXT-14, BR-PRICE-13, BR-PROD-05, BR-PROD-10]
+  - code: 50302
+    http: 503
+    meaning: AI 暂不可用（只在服务端按关键词无模型出卡也失败时返回）
+    action: 跳搜索
+    retry: 稍后
+    retry_kind: later
+    data:
+      fallback: ~
+    sources: [BR-TEXT-14, BR-AI-14]
+  - code: 50303
+    http: 503
+    meaning: 暂时无法确认价格或生成链接（点击复核失败且无缓存，或取价成功但转链失败）
+    action: 不外跳返利链接；给重试主按钮与无返利购买次按钮（BR-PRICE-08）
+    retry: 稍后
+    retry_kind: later
+    sources: [BR-PRICE-08, BR-PRICE-13]
+  - code: 50304
+    http: 503
+    meaning: 某平台搜索暂不可用（联盟超时、限流或熔断且无可用搜索缓存）
+    action: 搜索页显示空态与重试按钮；Agent 改查其他平台
+    retry: 稍后
+    retry_kind: later
+    data:
+      platform: ~
+    sources: [BR-PROD-07, BR-PRICE-11, BR-TEXT-14]
+  - code: 50401
+    http: 504
+    meaning: 依赖超时
+    action: 通用错误态 + trace_id 后 6 位
+    retry: 是
+    retry_kind: immediate
+    sources: [BR-PROD-05, BR-ID-25]
+# JSBridge 专用码段，逐码定义在 规划/04 §9 与 contracts/bridge.schema.json（CT-03），HTTP 接口不返回。
+ranges:
+  - from: 90001
+    to: 90500
+    meaning: JSBridge 专用码段
+    action: 由 H5 SDK 处理
+    sources: [规划/03, 规划/04 §9]

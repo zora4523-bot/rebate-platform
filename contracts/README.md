@@ -9,6 +9,8 @@
 | `openapi.yaml` | OAS 3.1。骨架期只有 `GET /healthz`（`getHealthz`） |
 | `redocly.yaml` | lint 规则：`recommended-strict`（推荐规则集，警告一律按错误）；关掉的规则逐条写了原因 |
 | `.redocly.lint-ignore.yaml` | 精确到位置的例外，逐条写原因；手工维护，不用 `--generate-ignore-file` 重新生成 |
+| `error-codes.yaml` | 错误码：码值、HTTP 状态、含义、客户端动作、可重试、`data` 字段形状、来源条目（CT-01；码值只按 08 §13.11） |
+| `enums/*.yaml` | 枚举：按主题分文件（平台、商品与转链、订单、资金、身份、消息与 Agent、后台权限点），04 §2 与 08 §13 的取值（CT-01） |
 
 ## 以后会放在这里的文件（规划/02 §16.2）
 
@@ -16,8 +18,6 @@
 
 | 文件 | 内容 | 由谁创建 |
 | --- | --- | --- |
-| `error-codes.yaml` | 码值、含义、客户端动作、是否可重试（取值以 08 §13.11 为准） | CT-01 |
-| `enums/*.yaml` | 平台、场景、订单状态、原因码、流水类型等 | CT-01 |
 | `bridge.schema.json` | JSBridge 方法、参数、结果、权限级别 | 契约任务 |
 | `agent-stream.schema.json` | SSE 事件与卡片 | 契约任务 |
 | `home-schema.json` | 首页页面与组件 props | 契约任务 |
@@ -30,10 +30,10 @@
 | 用途 | 命令 |
 | --- | --- |
 | 检查契约 | `pnpm contracts:lint` |
-| 重新生成 TS 类型（`packages/contracts-ts/src/openapi.gen.ts`） | `pnpm contracts:codegen` |
+| 重新生成 TS 类型（`packages/contracts-ts/src/{openapi,enums,error-codes}.gen.ts`） | `pnpm contracts:codegen` |
 | 检查 + 生成物无漂移（`verify:fast` 里跑） | `pnpm contracts:check` |
 
-改了 `openapi.yaml` 必须在同一个 PR 里重新生成并提交生成物。
+改了 `openapi.yaml`、`enums/`、`error-codes.yaml` 必须在同一个 PR 里重新生成并提交生成物。
 
 TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载官方二进制）与 Prism mock（prism-cli 要 Node ≥24.18，ADR-0001 §7） — blocked on GitHub remote
 
@@ -50,3 +50,11 @@ TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载�
 7. 整数必须带 `format: int32` 或 `int64`（校验器为这两个格式注册了范围检查，超过 2^53−1 的 `int64` 会被拒绝）。
 8. `/v1` 内只允许新增可选字段、新增接口、新增枚举值；删除、改名、改类型、改语义都算破坏兼容（规划/04 §5「兼容」）。
 9. 关掉任何 lint 规则都要在 `redocly.yaml` 或 `.redocly.lint-ignore.yaml` 里写原因；这两个文件的改动按契约评审。
+
+## 枚举与错误码的写法
+
+1. 枚举文件只有顶层键 `enums`；每个枚举 `<snake_case 名>: {source, description?, values}`，`values` 是「编码: 说明」。编码就是线上取值，不另起别名；说明不是用户文案（文案只在 08 BR-TEXT 与 `/v1/dict`）。
+2. 枚举名全仓唯一。P1、预埋、停用的值在说明里写明；停用且「编码保留不复用」的值不列入（如 `SELF_REBATE`、`NEGATIVE_BALANCE_OTHER`）。04 只写了增量、没给全集的（`users.status` 只写了新增 `deleting`、`deleted`，`users.deleted_reason` 只写了 `merged`，同意渠道 `consent_channel` 只写了部分取值）暂不建枚举，由用到它们的任务补全取值后再加。
+3. `error-codes.yaml` 按码值升序；新码先登记 08 §13.11，再改本文件；废弃码保留并标 `deprecated: true`。字段含义见文件头注释。
+4. 两类文件都用仓库的严格 YAML 子集（`tools/lib/yaml-lite.ts`）解析：不用锚点、多行折叠和流式映射；含「: 」的值加引号。
+5. `openapi.yaml` 里的枚举字段与这里的取值保持一致，由 CT-02 起的契约任务逐个对齐。
