@@ -242,3 +242,158 @@ it('the CLI exits 1 on a failure and 2 on bad usage', () => {
   const usage = spawnSync(process.execPath, [script, '--pr', repo], { encoding: 'utf8' });
   expect(usage.status).toBe(2);
 });
+
+/** A branch from the base with one commit writing `files`; returns its head. */
+function branchFromBase(name: string, files: Record<string, string>): string {
+  git(repo, ['checkout', '-q', '-b', name, base]);
+  write(repo, files);
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', name]);
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  git(repo, ['checkout', '-q', 'task/B2-01a']);
+  return head;
+}
+
+const approved = (head: string) => ({
+  label: `owner-approved-${head.slice(0, 12)}`,
+  approved: true,
+  actor: 'o',
+  reason: `label \`owner-approved-${head.slice(0, 12)}\` added by the owner account o`,
+});
+
+it('owner waiver: a non-task RV2 branch outside the money paths passes with a valid approval', () => {
+  const head = branchFromBase('chore/gate-fix', { 'tools/guard/new-guard.ts': 'export {};\n' });
+  const input = { prDir: repo, base, head, headRef: 'chore/gate-fix', trusted: REPO };
+  const waived = checkEvidence({ ...input, approval: approved(head) });
+  expect(waived).toMatchObject({ ok: true, risk: 'RV2', task: null, waivable: true, waived: true });
+  expect(waived.notices.join('\n')).toContain('evidence file waived by the owner approval');
+
+  const noApproval = checkEvidence(input);
+  expect(noApproval).toMatchObject({ ok: false, waivable: true, waived: false });
+  expect(noApproval.notices.join('\n')).toContain('looked up only with --pr-number');
+
+  const refused = checkEvidence({
+    ...input,
+    approval: { ...approved(head), approved: false, actor: 'ci-bot', reason: 'added by `ci-bot`' },
+  });
+  expect(refused).toMatchObject({ ok: false, waived: false });
+  expect(refused.problems.join('\n')).toContain('owner approval: no (added by `ci-bot`)');
+});
+
+it('owner waiver: touching a money / attribution implementation path still needs evidence', () => {
+  const cases: [string, Record<string, string>][] = [
+    ['chore/money', { 'packages/money/src/index.ts': 'export const a = 3;\n' }],
+    ['chore/domain', { 'packages/domain/src/period.ts': 'export {};\n' }],
+    ['chore/ledger', { 'apps/api/src/modules/ledger/post.ts': 'export {};\n' }],
+    ['chore/union', { 'apps/api/src/modules/union/adapter.ts': 'export {};\n' }],
+    ['chore/migration', { 'db/migrations/0002_x.sql': 'select 1;\n' }],
+  ];
+  for (const [branch, files] of cases) {
+    const head = branchFromBase(branch, { 'tools/x.ts': 'export {};\n', ...files });
+    const report = checkEvidence({
+      prDir: repo,
+      base,
+      head,
+      headRef: branch,
+      trusted: REPO,
+      approval: approved(head),
+    });
+    expect(report, branch).toMatchObject({ ok: false, waivable: false, waived: false });
+    expect(report.money_paths, branch).toEqual(Object.keys(files));
+    expect(report.problems.join('\n'), branch).toContain(
+      'an owner approval label does not waive the evidence file',
+    );
+  }
+  // A module that is not on the list (here: identity) is waivable.
+  const identity = branchFromBase('chore/identity', {
+    'apps/api/src/modules/identity/index.ts': 'export {};\n',
+  });
+  expect(
+    checkEvidence({
+      prDir: repo,
+      base,
+      head: identity,
+      headRef: 'chore/identity',
+      trusted: REPO,
+      approval: approved(identity),
+    }),
+  ).toMatchObject({ ok: true, waived: true, money_paths: [] });
+});
+
+it('owner waiver: task branches are unchanged', () => {
+  const head = git(repo, ['rev-parse', 'task/B2-01a~1']); // the implementation, no evidence
+  const report = checkEvidence({
+    prDir: repo,
+    base,
+    head,
+    headRef: 'task/B2-01a',
+    trusted: REPO,
+    approval: approved(head),
+  });
+  expect(report).toMatchObject({ ok: false, task: 'B2-01a', waivable: false, waived: false });
+  expect(report.problems.join('\n')).toContain('without ops/evidence/B2-01a.json');
+});
+
+it('the CLI looks the approval up with --pr-number, exactly like the protected-paths workflow', () => {
+  const head = branchFromBase('chore/cli-waiver', { 'tools/y.ts': 'export {};\n' });
+  const script = join(REPO, 'tools/ci/evidence-check.ts');
+  const run = (labels: string[], labeledBy = 'o', liveHead = head) => {
+    const routes = join(SCRATCH, `routes-${labels.join('-')}-${labeledBy}-${liveHead}.json`);
+    writeFileSync(
+      routes,
+      JSON.stringify({
+        '/repos/o/r/pulls/7': {
+          status: 200,
+          body: { head: { sha: liveHead }, labels: labels.map((name) => ({ name })) },
+        },
+        '/repos/o/r/issues/7/events?per_page=100&page=1': {
+          status: 200,
+          body: labels.map((name) => ({
+            event: 'labeled',
+            label: { name },
+            actor: { login: labeledBy },
+          })),
+        },
+      }),
+    );
+    const res = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        join(REPO, 'tools/ci/testing/fake-github.ts'),
+        script,
+        '--pr',
+        repo,
+        '--base',
+        base,
+        '--head',
+        head.slice(0, 12),
+        '--head-ref',
+        'chore/cli-waiver',
+        '--pr-number',
+        '7',
+        '--json',
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          COULI_FAKE_GITHUB: routes,
+          GITHUB_API_URL: 'https://api.github.invalid',
+          GITHUB_REPOSITORY: 'o/r',
+          GITHUB_REPOSITORY_OWNER: 'o',
+          GH_TOKEN: 'not-a-real-token',
+        },
+      },
+    );
+    return { status: res.status, report: JSON.parse(res.stdout) as Record<string, unknown> };
+  };
+  const label = `owner-approved-${head.slice(0, 12)}`;
+  expect(run([label])).toMatchObject({ status: 0, report: { ok: true, waived: true } });
+  expect(run([`owner-approved-${base.slice(0, 12)}`])).toMatchObject({
+    status: 1,
+    report: { ok: false, waived: false },
+  });
+  expect(run([label], 'ci-bot')).toMatchObject({ status: 1, report: { ok: false } });
+  expect(run([label], 'o', 'e'.repeat(40))).toMatchObject({ status: 1, report: { ok: false } });
+});

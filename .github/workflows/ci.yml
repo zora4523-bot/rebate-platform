@@ -12,6 +12,9 @@ name: ci
 
 on:
   pull_request:
+    # labeled / unlabeled: guard-git reads the owner approval label, so the check reruns when it
+    # is added or removed.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -85,10 +88,18 @@ jobs:
 
   guard-git:
     # Git-dependent guards run from the BASE copy of tools/guard against the PR tree, so a branch
-    # cannot weaken the guards that judge it (规划/11 §2.4, §8).
+    # cannot weaken the guards that judge it (规划/11 §2.4, §8). A change to this job's script
+    # therefore takes effect only once it is on the base branch.
+    # Owner approval (owner decision 2026-10-02): with the label `owner-approved-<first 12 chars
+    # of the head sha>` added by the repository owner account (the same check as the
+    # protected-paths workflow, tools/guard/lib/owner-approval.mjs), protected-paths problems and
+    # changed add-only test assets are reported as warnings; every other guard still fails.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Check out the PR head with full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,7 +130,7 @@ jobs:
             echo "::error::base branch has no tools/guard/run.ts; the guards cannot run"
             exit 1
           fi
-          set -- git --base "$BASE_SHA" --cwd "$GITHUB_WORKSPACE/pr"
+          set -- git --base "$BASE_SHA" --cwd "$GITHUB_WORKSPACE/pr" --pr-number "$PR_NUMBER"
           case "$HEAD_REF" in
             task/*)
               task_id="${HEAD_REF#task/}"
@@ -134,6 +145,8 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
 
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).

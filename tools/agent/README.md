@@ -109,7 +109,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 
 三处细节：
 
-- **闸门带风险级**。`dispatch.sh` 先用可信副本的 `tools/ops/task.ts show <id> --json` 算出风险级，再调 `usage.ts gate --task <id> --mode impl --risk <RVn>`，这样额度 70%–90% 档「RV0 / RV1 实现改由 Claude」也在这里拦住（规划/11 §1.3）。算不出风险级时只带 `--task`，全局熔断照常生效。
+- **闸门带风险级**。`dispatch.sh` 先用可信副本的 `tools/ops/task.ts show <id> --json` 算出风险级，再调 `usage.ts gate --task <id> --mode impl --risk <RVn>`，这样额度 70%–97% 档「RV0 / RV1 实现改由 Claude」也在这里拦住（规划/11 §1.3）。算不出风险级时只带 `--task`，全局熔断照常生效。
 - **重派一定重新生成任务书**。第 2 次尝试起（在途状态的 `attempts.impl` ≥ 2），不管 `brief.md` 在不在都重新跑 `brief.ts`：任务书里的「第 n 次尝试」和「上一轮失败输出」取自在途状态，沿用旧任务书就丢了上一轮的失败输出（规划/11 §2.3「重试不用 resume」）。所以重派前编排者要先 `node tools/ops/state.ts set <id> --last-error <失败输出文件>`。
 - **停掉一次在跑的派工**：对输出里的 `pid` 发整组信号，`kill -TERM -- -<pid>`（负号表示整组）。包装脚本收到后把 Codex 进程组整组结束、写完 `meta.json` 再退出。只杀单个 pid 可能留下还在跑的包装脚本。
 

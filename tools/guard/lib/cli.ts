@@ -64,10 +64,8 @@ export function printJson(value: unknown): void {
 }
 
 /** Runs a CLI entry point and maps its result and errors to the exit-code convention. */
-export function runCli(usage: string, main: (argv: string[]) => number): void {
-  try {
-    process.exitCode = main(process.argv.slice(2));
-  } catch (err) {
+export function runCli(usage: string, main: (argv: string[]) => number | Promise<number>): void {
+  const fail = (err: unknown): void => {
     const message = err instanceof Error ? err.message : String(err);
     if (err instanceof UsageError) {
       console.error(`usage error: ${message}\nusage: ${usage}`);
@@ -75,6 +73,18 @@ export function runCli(usage: string, main: (argv: string[]) => number): void {
       console.error(`internal error: ${message}`);
     }
     process.exitCode = 2;
+  };
+  try {
+    const code = main(process.argv.slice(2));
+    if (typeof code === 'number') {
+      process.exitCode = code;
+    } else {
+      code.then((value) => {
+        process.exitCode = value;
+      }, fail);
+    }
+  } catch (err) {
+    fail(err);
   }
 }
 
@@ -83,6 +93,8 @@ export type CheckResult = {
   status: 'pass' | 'fail' | 'skip';
   problems: string[];
   notices: string[];
+  /** Problems the owner approved (guard-git with a valid owner label): printed, not failing. */
+  warnings?: string[];
 };
 
 export function result(name: string, problems: string[], notices: string[] = []): CheckResult {
@@ -95,15 +107,20 @@ export function skipped(name: string, notice: string): CheckResult {
 
 /** Prints notices and problems to stderr, one summary line to stdout; returns the exit code. */
 export function report(check: CheckResult): number {
+  const warnings = check.warnings ?? [];
   for (const notice of check.notices) console.error(`${check.name}: notice: ${notice}`);
+  for (const warning of warnings) console.error(`${check.name}: warning: ${warning}`);
   for (const problem of check.problems) console.error(`${check.name}: ${problem}`);
   const label = check.status === 'pass' ? 'PASS' : check.status === 'skip' ? 'SKIP' : 'FAIL';
+  const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
   const detail =
     check.status === 'fail'
-      ? ` (${check.problems.length} problem${check.problems.length === 1 ? '' : 's'})`
+      ? ` (${plural(check.problems.length, 'problem')})`
       : check.status === 'skip'
         ? ` (${check.notices[0] ?? 'skipped'})`
-        : '';
+        : warnings.length > 0
+          ? ` (${plural(warnings.length, 'warning')}, owner-approved)`
+          : '';
   process.stdout.write(`${label} ${check.name}${detail}\n`);
   return check.status === 'fail' ? 1 : 0;
 }

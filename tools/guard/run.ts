@@ -2,12 +2,20 @@
 //   run.ts static [--cwd <dir>] [--allow-missing-spec]
 //     Checks that need no git history (part of `pnpm verify:fast`, also run in the verify
 //     container, which has no .git and no planning repository).
-//   run.ts git --base <ref> [--task <id>] [--cwd <dir>]
+//   run.ts git --base <ref> [--task <id>] [--cwd <dir>] [--pr-number <n>]
 //     Checks of a diff against <ref>; run on the host by the orchestrator or by CI.
+//     With --pr-number (CI job guard-git), when protected-paths or the add-only part of
+//     test-guard has problems, the owner approval of that pull request is looked up for the
+//     checked commit (HEAD of --cwd, which must be clean) through the GitHub API, exactly as the
+//     protected-paths workflow does (lib/owner-approval.mjs, 规划/11 §4.4). Approved: those
+//     problems are printed as warnings and do not fail; every other problem still fails.
+//     Not approved, or the API cannot be read: unchanged, the problems fail.
 // One summary line per check on stdout, details on stderr, exit 1 when any check failed.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { tryGit } from '../lib/git.ts';
 import {
+  addOnlyProblem,
   agentsPairCheck,
   agentsTableCheck,
   bannedTermsSpecCheck,
@@ -22,28 +30,51 @@ import {
   specRepoRequired,
   testGuardCheck,
   trustedTask,
+  waiveProblems,
 } from './lib/checks.ts';
 import { UsageError, parseArgs, report, resolveRoot, runCli } from './lib/cli.ts';
 import type { CheckResult } from './lib/cli.ts';
+import { ownerApprovalFromEnv } from './lib/owner-approval-env.ts';
+import type { OwnerApproval } from './lib/owner-approval-env.ts';
 import { listTreeFiles } from './lib/tree.ts';
 
-function runAll(label: string, checks: [name: string, run: () => CheckResult][]): number {
+function runCheck(name: string, run: () => CheckResult): CheckResult {
+  try {
+    return run();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { name, status: 'fail', problems: [`internal error: ${message}`], notices: [] };
+  }
+}
+
+function reportAll(label: string, results: CheckResult[]): number {
   let failed = 0;
   let skippedCount = 0;
-  for (const [name, run] of checks) {
-    let check: CheckResult;
-    try {
-      check = run();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      check = { name, status: 'fail', problems: [`internal error: ${message}`], notices: [] };
-    }
+  for (const check of results) {
     if (report(check) !== 0) failed++;
     if (check.status === 'skip') skippedCount++;
   }
-  const passed = checks.length - failed - skippedCount;
+  const passed = results.length - failed - skippedCount;
   process.stdout.write(`${label}: ${passed} passed, ${failed} failed, ${skippedCount} skipped\n`);
   return failed === 0 ? 0 : 1;
+}
+
+function runAll(label: string, checks: [name: string, run: () => CheckResult][]): number {
+  return reportAll(
+    label,
+    checks.map(([name, run]) => runCheck(name, run)),
+  );
+}
+
+/** The committed head of `root`, or the reason an approval cannot be bound to it. */
+function cleanHead(root: string): { head: string } | { reason: string } {
+  const head = tryGit(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: root });
+  if (head.status !== 0) return { reason: `${root} has no HEAD commit` };
+  const status = tryGit(['status', '--porcelain', '--untracked-files=all'], { cwd: root });
+  if (status.status !== 0 || status.stdout.trim() !== '') {
+    return { reason: `${root} has uncommitted changes: an approval binds to a commit only` };
+  }
+  return { head: head.stdout.trim() };
 }
 
 function runStatic(argv: string[]): number {
@@ -72,30 +103,75 @@ function runStatic(argv: string[]): number {
   ]);
 }
 
-function runGit(argv: string[]): number {
-  const args = parseArgs(argv, { values: ['base', 'task', 'cwd'] });
+async function runGit(argv: string[]): Promise<number> {
+  const args = parseArgs(argv, { values: ['base', 'task', 'cwd', 'pr-number'] });
   if (args.rest.length > 0) throw new UsageError(`unexpected argument "${args.rest[0]}"`);
   const base = args.values.get('base');
   if (base === undefined) throw new UsageError('--base is required');
+  const prNumber = args.values.get('pr-number');
+  if (prNumber !== undefined && !/^[1-9][0-9]*$/.test(prNumber)) {
+    throw new UsageError('--pr-number must be a pull request number');
+  }
   const root = resolveRoot(args.values.get('cwd'));
   if (!existsSync(join(root, '.git'))) {
     throw new Error(`${root} is not a git work tree: the git guards run on the host only`);
   }
   const taskId = args.values.get('task');
   const task = taskId === undefined ? null : trustedTask(taskId);
-  const checks: [string, () => CheckResult][] = [];
+  const results: CheckResult[] = [];
   if (task) {
-    checks.push(['path-guard', () => pathGuardCheck(root, base, task.paths, task.type).check]);
+    results.push(
+      runCheck('path-guard', () => pathGuardCheck(root, base, task.paths, task.type).check),
+    );
   }
-  checks.push(
-    ['protected-paths', () => protectedPathsCheck(root, base, task?.type).check],
-    ['test-guard', () => testGuardCheck(root, listTreeFiles(root), base)],
+  results.push(
+    runCheck('protected-paths', () => protectedPathsCheck(root, base, task?.type).check),
   );
-  return runAll('guard git', checks);
+  let addOnly = new Set<string>();
+  results.push(
+    runCheck('test-guard', () => {
+      const check = testGuardCheck(root, listTreeFiles(root), base);
+      addOnly = new Set(check.add_only_violations.map(addOnlyProblem));
+      return check;
+    }),
+  );
+
+  // Only the protected-path problems and the add-only test-asset problems can be approved.
+  const waivable = (check: CheckResult, problem: string): boolean =>
+    !problem.startsWith('internal error:') &&
+    (check.name === 'protected-paths' || (check.name === 'test-guard' && addOnly.has(problem)));
+  const needsApproval = results.some((c) => c.problems.some((p) => waivable(c, p)));
+  if (prNumber !== undefined && needsApproval) {
+    const head = cleanHead(root);
+    const approval: OwnerApproval =
+      'head' in head
+        ? await ownerApprovalFromEnv(prNumber, head.head)
+        : { label: '-', approved: false, actor: null, reason: head.reason };
+    for (let i = 0; i < results.length; i++) {
+      const check = results[i];
+      if (check === undefined || !check.problems.some((p) => waivable(check, p))) continue;
+      results[i] = approval.approved
+        ? waiveProblems(
+            check,
+            (p) => waivable(check, p),
+            `owner approval of PR #${prNumber}: ${approval.reason}; the problems below are ` +
+              'reported as warnings (规划/11 §4.4)',
+          )
+        : {
+            ...check,
+            notices: [
+              ...check.notices,
+              `owner approval of PR #${prNumber}: no (${approval.reason})`,
+            ],
+          };
+    }
+  }
+  return reportAll('guard git', results);
 }
 
 runCli(
-  'run.ts static [--cwd <dir>] [--allow-missing-spec] | run.ts git --base <ref> [--task <id>] [--cwd <dir>]',
+  'run.ts static [--cwd <dir>] [--allow-missing-spec] | ' +
+    'run.ts git --base <ref> [--task <id>] [--cwd <dir>] [--pr-number <n>]',
   (argv) => {
     const [mode, ...tail] = argv;
     // `pnpm guard:git -- --base <ref>` forwards the separator as an argument.

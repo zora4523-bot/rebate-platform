@@ -23,7 +23,7 @@ import { scanFilesForHiddenUnicode } from './hidden-unicode.ts';
 import { checkLockfile } from './lockfile.ts';
 import { checkPaths } from './path-guard.ts';
 import type { PathGuardResult } from './path-guard.ts';
-import { compareEmbedded } from './protected-sync.ts';
+import { compareEmbedded, compareEmbeddedScript } from './protected-sync.ts';
 import { findProtectedHits, gitReaders, loadProtected } from './protected.ts';
 import type { ProtectedHit } from './protected.ts';
 import { checkCoverage } from './risk-map-coverage.ts';
@@ -36,6 +36,7 @@ import type { TreeListing } from './tree.ts';
 
 export const SCHEMA_DIR = 'tools/agent/schemas';
 export const PROTECTED_WORKFLOW = '.github/workflows/protected-paths.yml';
+export const OWNER_APPROVAL_SCRIPT = 'tools/guard/lib/owner-approval.mjs';
 
 /** schema-lint: explicit files (absolute or relative to the current directory), or the schema dir. */
 export function schemaLintCheck(root: string, explicit: readonly string[] = []): CheckResult {
@@ -98,11 +99,14 @@ export function protectedSyncCheck(root: string): CheckResult {
   const workflow = join(root, PROTECTED_WORKFLOW);
   if (!existsSync(workflow)) return skipped(name, `${PROTECTED_WORKFLOW} does not exist yet`);
   const source = readJsonFile(join(root, 'tools', 'guard', 'protected-paths.json'));
+  const text = readFileSync(workflow, 'utf8');
+  const scriptFile = join(root, OWNER_APPROVAL_SCRIPT);
+  const scriptProblems = existsSync(scriptFile)
+    ? compareEmbeddedScript(readFileSync(scriptFile, 'utf8'), text)
+    : [`${OWNER_APPROVAL_SCRIPT} is missing, so its embedded copy cannot be compared`];
   return result(
     name,
-    compareEmbedded(source, readFileSync(workflow, 'utf8')).map(
-      (p) => `${PROTECTED_WORKFLOW}: ${p}`,
-    ),
+    [...compareEmbedded(source, text), ...scriptProblems].map((p) => `${PROTECTED_WORKFLOW}: ${p}`),
   );
 }
 
@@ -124,13 +128,35 @@ export function testGuardCheck(
     base === undefined
       ? []
       : addOnlyViolations(changedFiles(base, { cwd: root }), loadProtected(trustedRoot()));
-  const problems = [
-    ...findings.map(formatFinding),
-    ...addOnly.map(
-      (hit) => `${hit.path}: [add-only] existing test asset ${hit.change} (matches ${hit.rule})`,
-    ),
-  ];
+  const problems = [...findings.map(formatFinding), ...addOnly.map(addOnlyProblem)];
   return { ...result('test-guard', problems), findings, add_only_violations: addOnly };
+}
+
+/** The test-guard problem line for a changed class 1 (add-only) test asset. */
+export function addOnlyProblem(hit: ProtectedHit): string {
+  return `${hit.path}: [add-only] existing test asset ${hit.change} (matches ${hit.rule})`;
+}
+
+/**
+ * Turns the problems selected by `waived` into warnings (printed, not failing); the check fails
+ * only when other problems remain. guard-git uses it for an owner-approved head (规划/11 §4.4):
+ * every protected-paths problem and the add-only problems of test-guard; nothing else.
+ */
+export function waiveProblems(
+  check: CheckResult,
+  waived: (problem: string) => boolean,
+  note: string,
+): CheckResult {
+  const warnings = check.problems.filter(waived);
+  if (warnings.length === 0) return check;
+  const problems = check.problems.filter((p) => !waived(p));
+  return {
+    ...check,
+    status: problems.length === 0 ? 'pass' : 'fail',
+    problems,
+    notices: [...check.notices, note],
+    warnings: [...(check.warnings ?? []), ...warnings],
+  };
 }
 
 export function hiddenUnicodeCheck(root: string, tree: TreeListing): CheckResult {

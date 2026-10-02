@@ -12,7 +12,15 @@ import {
 } from './agents-table.ts';
 import { cleanupFixtures, fixtureGit, makeRepo, makeTree, writeFiles } from './fixture-kit.ts';
 import { findHiddenUnicode, scanFilesForHiddenUnicode } from './hidden-unicode.ts';
-import { EMBED_BEGIN, EMBED_END, compareEmbedded, extractEmbedded } from './protected-sync.ts';
+import {
+  EMBED_BEGIN,
+  EMBED_END,
+  SCRIPT_BEGIN,
+  SCRIPT_END,
+  compareEmbedded,
+  compareEmbeddedScript,
+  extractEmbedded,
+} from './protected-sync.ts';
 import { checkCoverage } from './risk-map-coverage.ts';
 import { parseRiskMap } from './risk.ts';
 import { checkSpecRef } from './spec-ref.ts';
@@ -217,6 +225,38 @@ describe('protected-sync', () => {
     expect(compareEmbedded(source, workflow(['{ nope']))[0]).toMatch(/not valid JSON/);
     expect(compareEmbedded(source, 'jobs: {}\n')[0]).toMatch(/must appear exactly once/);
     expect(compareEmbedded(source, workflow([]))[0]).toMatch(/nothing between the markers/);
+  });
+});
+
+describe('protected-sync: the embedded owner-approval script', () => {
+  const source = "export function f(a) {\n  return a + '!';\n}\n\nexport const g = 1;\n";
+  const workflow = (body: string[], indent = '          '): string =>
+    [
+      'jobs:',
+      '  protected-paths:',
+      '    steps:',
+      '      - run: |',
+      "          node --input-type=module <<'NODE'",
+      `          ${SCRIPT_BEGIN}`,
+      ...body.map((l) => (l === '' ? '' : `${indent}${l}`)),
+      `          ${SCRIPT_END}`,
+      '          NODE',
+      '',
+    ].join('\n');
+  const verbatim = source.trimEnd().split('\n');
+
+  it('accepts a verbatim copy inside the YAML block scalar', () => {
+    expect(compareEmbeddedScript(source, workflow(verbatim))).toEqual([]);
+  });
+
+  it('reports drift, missing markers and a line outside the block', () => {
+    const drifted = verbatim.map((l) => l.replace("'!'", "'?'"));
+    expect(compareEmbeddedScript(source, workflow(drifted))).toEqual([
+      'the embedded copy differs from tools/guard/lib/owner-approval.mjs',
+    ]);
+    expect(compareEmbeddedScript(source, 'jobs: {}\n')[0]).toMatch(/must appear exactly once/);
+    const shallow = workflow(verbatim).replace('          return', '  return');
+    expect(compareEmbeddedScript(source, shallow)[0]).toMatch(/indented less than/);
   });
 });
 

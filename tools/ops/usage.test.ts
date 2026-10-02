@@ -192,10 +192,12 @@ it('counts consecutive calls without output and skips capacity errors', () => {
 
 it('estimates the weekly percentage from calibrations and falls back to unknown', () => {
   expect(tierOf(null)).toBe('unknown');
-  expect([tierOf(69.9), tierOf(70), tierOf(89.9), tierOf(90)]).toEqual([
+  expect([tierOf(69.9), tierOf(70), tierOf(90), tierOf(96.9), tierOf(97), tierOf(100)]).toEqual([
     'normal',
     'reduced',
     'reduced',
+    'reduced',
+    'stopped',
     'stopped',
   ]);
 
@@ -288,9 +290,22 @@ it('opens a breaker for each limit and tells how to calibrate', () => {
 
   const stopped: Ledger = {
     calls: [],
-    calibrations: [{ at: '2026-10-02T03:00:00.000Z', weekly_used_percent: 90 }],
+    calibrations: [{ at: '2026-10-02T03:00:00.000Z', weekly_used_percent: 97 }],
   };
   expect(breakers(stopped)).toEqual(['quota_stopped']);
+  expect(gate(summarize(stopped, NOW)).reasons[0]?.message).toContain('达到 97%：Codex 停用');
+
+  // 90% is inside the 70%–97% tier: reviews and RV2 implementation still run.
+  const ninety: Ledger = {
+    calls: [],
+    calibrations: [{ at: '2026-10-02T03:00:00.000Z', weekly_used_percent: 90 }],
+  };
+  expect(breakers(ninety, { mode: 'review', risk: 'RV2' })).toEqual([]);
+  expect(breakers(ninety, { mode: 'impl', risk: 'RV2' })).toEqual([]);
+  expect(breakers(ninety, { mode: 'impl', risk: 'RV0' })).toEqual(['quota_reduced']);
+  expect(gate(summarize(ninety, NOW), { mode: 'impl', risk: 'RV0' }).reasons[0]?.message).toContain(
+    '（70%–97% 档）',
+  );
 
   const reduced: Ledger = {
     calls: [],

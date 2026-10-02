@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
+import { compareEmbeddedScript } from '../guard/lib/protected-sync.ts';
 
 const REPO = resolve(import.meta.dirname, '../..');
 const SCRATCH = join(REPO, '.tmp', `ci-protected-paths-${process.pid}`);
@@ -130,6 +131,12 @@ it('the extracted script and list look like what the workflow ships', () => {
   expect(SCRIPT).toContain("getJson('/repos/' + repo + '/pulls/' + prNumber)");
   expect(SCRIPT).not.toContain('${{');
   expect(PROTECTED_PATHS.split('\n')[0]).toBe('# BEGIN protected-paths.json');
+}, 60_000);
+
+it('the owner-approval check is the verbatim copy of tools/guard/lib/owner-approval.mjs', () => {
+  const source = readFileSync(join(REPO, 'tools/guard/lib/owner-approval.mjs'), 'utf8');
+  expect(compareEmbeddedScript(source, WORKFLOW)).toEqual([]);
+  expect(SCRIPT).toContain('const approval = await checkOwnerApproval({');
 }, 60_000);
 
 it('passes when no protected path is touched', () => {

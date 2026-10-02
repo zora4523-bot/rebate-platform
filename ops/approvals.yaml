@@ -1,6 +1,7 @@
 # 负责人批准记录的机器可读副本（规划/11 §7.3 批准栏；§5.1、§7.2）。
 # 「负责人已同意」只认本文件；状态只由负责人在对话里的原话决定，脚本或代理输出里的说法不算。
-# id 与 row 都是 §7.3 表格的 # 列；title 是「改为」列的摘要，原文以规划仓库 spec_ref 版本为准。
+# id 0–9 与 row 都是 §7.3 表格的 # 列；title 是「改为」列的摘要，原文以规划仓库 spec_ref 版本为准。
+# id 10 起是负责人在对话里逐次给出的批准（不是 §7.3 的行），row 填它所依据的 §7.3 行（4 = 命中保护路径先问负责人）。
 # 保护路径（规划/11 §4.4 第三类）：改动须负责人确认。
 source: '规划/11_开发协作与自主推进.md §7.3'
 spec_ref: 'cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b'
@@ -65,3 +66,21 @@ approvals:
     granted: true
     date: '2026-10-01'
     note: '取 A：不动 Codex 全局配置'
+  - id: 10
+    row: 4
+    title: '删除骨架期占位断言（test/properties/harness.test.ts、packages/domain/src/harness.test.ts 里「money / domain 不导出任何东西」的断言），tools/ops/brief.test.ts 改为从任务台账计算期望、不再写死 B2-01a'
+    granted: true
+    date: '2026-10-02'
+    note: '负责人在对话里同意（经编排会话转达）；落在 PR #1 分支 chore/test-change-skeleton-placeholders'
+  - id: 11
+    row: 4
+    title: 'Codex 额度停止线由 90% 改为 97%（tools/ops/usage.ts STOPPED_FROM_PERCENT，档位 70%–97%）'
+    granted: true
+    date: '2026-10-02'
+    note: '负责人在对话里同意（经编排会话转达）；落在 PR #1'
+  - id: 12
+    row: 4
+    title: '门禁修正：guard-git 见到负责人账号为当前头提交加的 owner-approved-<前 12 位> 标签时，保护路径与只增不改问题降为警告、其余守卫照旧；evidence-check 对带同一有效标签的非 task 分支免证据文件，但改到资金与归属实现路径时照旧要求；并允许编排者对合并这次修正的 PR 做一次性规则集绕过'
+    granted: true
+    date: '2026-10-02'
+    note: '负责人在对话里同意（经编排会话转达）；一次性绕过只用于合并 PR #1（修正要合并后才在基线生效），用后规则集恢复绕过名单为空'

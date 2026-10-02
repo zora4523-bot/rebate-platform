@@ -2,7 +2,8 @@
 // evidence file, the rule-test commit is an ancestor whose rule tests were not changed since,
 // and the verified tree is the tree being merged.
 //
-//   node tools/ci/evidence-check.ts --pr <dir> --base <sha> --head <sha> --head-ref <branch> [--json]
+//   node tools/ci/evidence-check.ts --pr <dir> --base <sha> --head <sha> --head-ref <branch>
+//     [--pr-number <n>] [--json]
 //
 // Runs from the BASE copy of the repository (CI checks out `tools/ci` of the base branch, the
 // way guard-git does), with the PR checkout as data: the risk map and the protected-path list
@@ -16,6 +17,13 @@
 //              with exit code 0 whose tree is the head tree, both reviewers pass with no open
 //              S0 / S1, every recorded directory tree hash equals the head's, long-run result
 //              bound to one of those trees.
+//              Owner waiver (owner decision 2026-10-02, ops/approvals.yaml id 12): on a branch
+//              that is not task/<id> (test-change and gate-change PRs), the evidence file is
+//              not required when the PR carries a valid owner approval label for the head (the
+//              label check of the protected-paths workflow, tools/guard/lib/owner-approval.mjs;
+//              looked up only with --pr-number) AND no changed path is a money / attribution
+//              implementation path (MONEY_PATHS). Touching one keeps the requirement exactly as
+//              before. Task branches are never waived.
 // It prevents omissions, not malice (规划/11 §3.2). Exit codes: 0 ok, 1 failed, 2 usage.
 //
 // TODO(规划/11 §3.2): `run_attempt` > 1 on funds paths (不许重跑到绿) needs the Actions API and
@@ -27,8 +35,21 @@ import { git, tryGit } from '../lib/git.ts';
 import { matchesAny } from '../lib/glob.ts';
 import { loadProtected, splitFragment } from '../guard/lib/protected.ts';
 import type { ProtectedConfig } from '../guard/lib/protected.ts';
+import { ownerApprovalFromEnv } from '../guard/lib/owner-approval-env.ts';
+import type { OwnerApproval } from '../guard/lib/owner-approval-env.ts';
 import { loadRiskMap, riskOfPaths } from '../guard/lib/risk.ts';
 import type { RiskLevel } from '../guard/lib/risk.ts';
+
+/**
+ * Money and attribution implementation paths (owner decision 2026-10-02): a PR touching any of
+ * them needs the evidence file even with an owner approval label. Matched case-insensitively.
+ */
+export const MONEY_PATHS: readonly string[] = [
+  'packages/money/src/**',
+  'packages/domain/src/**',
+  'apps/api/src/modules/{ledger,commission,settlement,payout,withdrawals,reconciliation,orders,linking,union}/**',
+  'db/migrations/**',
+];
 
 export type EvidenceReport = {
   ok: boolean;
@@ -37,6 +58,12 @@ export type EvidenceReport = {
   evidence_file: string | null;
   problems: string[];
   notices: string[];
+  /** RV2 on a non-task branch touching no MONEY_PATHS: an owner approval would waive evidence. */
+  waivable: boolean;
+  /** The evidence requirement was waived by the owner approval. */
+  waived: boolean;
+  /** Changed paths that are money / attribution implementation paths. */
+  money_paths: string[];
 };
 
 export type EvidenceInput = {
@@ -47,6 +74,8 @@ export type EvidenceInput = {
   headRef: string;
   /** The checkout whose risk map and protected-path list are used (this script's own). */
   trusted: string;
+  /** Owner approval of the PR for `head`, when it was looked up (see ownerApprovalFromEnv). */
+  approval?: OwnerApproval | null;
 };
 
 const SHA = /^[0-9a-f]{40,64}$/;
@@ -285,14 +314,37 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
   const task = branch !== null && TASK_ID.test(branch[1] ?? '') ? (branch[1] ?? null) : null;
   const evidencePath = task === null ? null : `ops/evidence/${task}.json`;
   const text = evidencePath === null ? null : showOrNull(input.prDir, input.head, evidencePath);
+  const moneyPaths = changed.filter((p) => matchesAny(p.toLowerCase(), MONEY_PATHS));
+  const waivable = risk === 'RV2' && task === null && moneyPaths.length === 0;
+  const approval = input.approval ?? null;
+  let waived = false;
 
   if (risk !== 'RV2') {
     notices.push(`risk ${risk}: no evidence file required (${changed.length} changed path(s))`);
+  } else if (task === null && waivable && approval?.approved === true) {
+    waived = true;
+    notices.push(
+      `RV2 change on branch "${input.headRef}": evidence file waived by the owner approval ` +
+        `(${approval.reason}); no money / attribution implementation path changed`,
+    );
   } else if (task === null) {
     problems.push(
       `RV2 change on branch "${input.headRef}": the branch must be task/<id> so that ` +
         'ops/evidence/<id>.json can be checked',
     );
+    if (moneyPaths.length > 0) {
+      problems.push(
+        `money / attribution implementation paths changed (${moneyPaths.join(', ')}): an owner ` +
+          'approval label does not waive the evidence file',
+      );
+    } else if (approval !== null) {
+      problems.push(`owner approval: no (${approval.reason})`);
+    } else {
+      notices.push(
+        'an owner approval label for the head would waive the evidence file (no money / ' +
+          'attribution implementation path changed); it is looked up only with --pr-number',
+      );
+    }
   } else if (text === null) {
     problems.push(`RV2 change without ${evidencePath} at the head (规划/11 §3.2 证据文件)`);
   }
@@ -315,10 +367,20 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
       );
     }
   }
-  return { ok: problems.length === 0, risk, task, evidence_file: evidencePath, problems, notices };
+  return {
+    ok: problems.length === 0,
+    risk,
+    task,
+    evidence_file: evidencePath,
+    problems,
+    notices,
+    waivable,
+    waived,
+    money_paths: moneyPaths,
+  };
 }
 
-function main(argv: readonly string[]): number {
+async function main(argv: readonly string[]): Promise<number> {
   const values = new Map<string, string>();
   let json = false;
   for (let i = 0; i < argv.length; i++) {
@@ -328,9 +390,13 @@ function main(argv: readonly string[]): number {
       continue;
     }
     const value = argv[i + 1];
-    if (!['--pr', '--base', '--head', '--head-ref'].includes(arg) || value === undefined) {
+    if (
+      !['--pr', '--base', '--head', '--head-ref', '--pr-number'].includes(arg) ||
+      value === undefined
+    ) {
       throw new Error(
-        `usage: evidence-check.ts --pr <dir> --base <sha> --head <sha> --head-ref <branch> [--json]`,
+        'usage: evidence-check.ts --pr <dir> --base <sha> --head <sha> --head-ref <branch> ' +
+          '[--pr-number <n>] [--json]',
       );
     }
     values.set(arg, value);
@@ -343,13 +409,24 @@ function main(argv: readonly string[]): number {
   if (prDir === undefined || base === undefined || head === undefined || headRef === undefined) {
     throw new Error('--pr, --base, --head and --head-ref are required');
   }
-  const report = checkEvidence({
+  const prNumber = values.get('--pr-number');
+  if (prNumber !== undefined && !/^[1-9][0-9]*$/.test(prNumber)) {
+    throw new Error('--pr-number must be a pull request number');
+  }
+  const input: EvidenceInput = {
     prDir: resolve(prDir),
     base,
     head,
     headRef,
     trusted: resolve(import.meta.dirname, '../..'),
-  });
+  };
+  let report = checkEvidence(input);
+  // The API is asked only when an approval could change the outcome.
+  if (!report.ok && report.waivable && prNumber !== undefined) {
+    const fullHead = git(['rev-parse', '--verify', `${head}^{commit}`], { cwd: input.prDir });
+    const approval = await ownerApprovalFromEnv(prNumber, fullHead);
+    report = checkEvidence({ ...input, approval });
+  }
   if (json) console.log(JSON.stringify(report, null, 2));
   for (const notice of report.notices) console.error(`evidence-check: notice: ${notice}`);
   for (const problem of report.problems) console.error(`evidence-check: ${problem}`);
@@ -360,10 +437,13 @@ function main(argv: readonly string[]): number {
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) {
-  try {
-    process.exitCode = main(process.argv.slice(2));
-  } catch (error) {
-    console.error(`evidence-check: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 2;
-  }
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error: unknown) => {
+      console.error(`evidence-check: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 2;
+    },
+  );
 }

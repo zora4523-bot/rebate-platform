@@ -429,7 +429,7 @@ describe('run.ts static and the single-purpose guards', () => {
       'FAIL agents-pair (1 problem)',
       'FAIL risk-map-coverage (1 problem)',
       'PASS agents-table',
-      'FAIL protected-sync (1 problem)',
+      'FAIL protected-sync (2 problems)',
       'FAIL test-guard (1 problem)',
       'FAIL hidden-unicode (1 problem)',
     ]);
@@ -547,5 +547,165 @@ describe('run.ts static and the single-purpose guards', () => {
     expect(guard('protected-sync.ts', ['--cwd', root]).status).toBe(0);
     expect(guard('hidden-unicode.ts', ['--cwd', root]).stdout).toBe('PASS hidden-unicode\n');
     expect(guard('hidden-unicode.ts', ['--cwd', root, 'extra']).status).toBe(2);
+  });
+});
+
+describe('run.ts git --pr-number: owner approval (规划/11 §4.4, owner decision 2026-10-02)', () => {
+  const FAKE_GITHUB = join(repoRoot(), 'tools', 'ci', 'testing', 'fake-github.ts');
+  let routeCount = 0;
+
+  /** A committed head that changes a class 2 file and modifies an add-only test asset. */
+  function approvedChange(extra: Record<string, string> = {}): {
+    root: string;
+    base: string;
+    head: string;
+  } {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'turbo.json': '{ "x": 1 }\n',
+      'test/spec/ledger/post.test.ts': "it('posts, rewritten', () => {});\n",
+      ...extra,
+    });
+    fixtureGit(root, ['add', '-A']);
+    fixtureGit(root, ['commit', '-q', '-m', 'test-change']);
+    return { root, base, head: fixtureGit(root, ['rev-parse', 'HEAD']) };
+  }
+
+  /** run.ts git with fetch answered from canned routes for PR #7 of o/r (owner account `o`). */
+  function guardWithPr(
+    root: string,
+    args: string[],
+    pr: { head: string; labels: string[]; labeledBy?: string },
+  ): { status: number | null; stdout: string; stderr: string } {
+    const routes = {
+      '/repos/o/r/pulls/7': {
+        status: 200,
+        body: { head: { sha: pr.head }, labels: pr.labels.map((name) => ({ name })) },
+      },
+      '/repos/o/r/issues/7/events?per_page=100&page=1': {
+        status: 200,
+        body: pr.labels.map((name) => ({
+          event: 'labeled',
+          label: { name },
+          actor: { login: pr.labeledBy ?? 'o' },
+        })),
+      },
+    };
+    const file = join(root, '..', `routes-${process.pid}-${++routeCount}.json`);
+    writeFileSync(file, JSON.stringify(routes));
+    const res = spawnSync(
+      process.execPath,
+      ['--import', FAKE_GITHUB, join(GUARD_DIR, 'run.ts'), 'git', ...args, '--cwd', root],
+      {
+        cwd: trusted,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          COULI_TRUSTED_ROOT: trusted,
+          COULI_SPEC_REPO: '/nonexistent/planning-repo',
+          COULI_FAKE_GITHUB: file,
+          GITHUB_API_URL: 'https://api.github.invalid',
+          GITHUB_REPOSITORY: 'o/r',
+          GITHUB_REPOSITORY_OWNER: 'o',
+          GH_TOKEN: 'not-a-real-token',
+        },
+      },
+    );
+    rmSync(file, { force: true });
+    return { status: res.status, stdout: res.stdout, stderr: res.stderr };
+  }
+
+  const label = (sha: string): string => `owner-approved-${sha.slice(0, 12)}`;
+
+  it('a valid label turns protected-path and add-only problems into warnings', () => {
+    const { root, base, head } = approvedChange();
+    const without = guard('run.ts', ['git', '--base', base, '--cwd', root]);
+    expect(without.status).toBe(1);
+    const res = guardWithPr(root, ['--base', base, '--pr-number', '7'], {
+      head,
+      labels: [label(head)],
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toBe(
+      [
+        'PASS protected-paths (2 warnings, owner-approved)',
+        'PASS test-guard (1 warning, owner-approved)',
+        'guard git: 2 passed, 0 failed, 0 skipped',
+        '',
+      ].join('\n'),
+    );
+    // Still printed, as warnings.
+    expect(res.stderr).toContain('protected-paths: warning: turbo.json: class 2');
+    expect(res.stderr).toContain(
+      'protected-paths: warning: test/spec/ledger/post.test.ts: class 1',
+    );
+    expect(res.stderr).toContain(
+      'test-guard: warning: test/spec/ledger/post.test.ts: [add-only] existing test asset',
+    );
+    expect(res.stderr).toContain(`label \`${label(head)}\` added by the owner account o`);
+  });
+
+  it('a label for an older head or added by another account changes nothing', () => {
+    const { root, base, head } = approvedChange();
+    const stale = guardWithPr(root, ['--base', base, '--pr-number', '7'], {
+      head,
+      labels: [label(base)],
+    });
+    expect(stale.status).toBe(1);
+    expect(stale.stdout.split('\n').slice(0, 2)).toEqual([
+      'FAIL protected-paths (2 problems)',
+      'FAIL test-guard (1 problem)',
+    ]);
+    expect(stale.stderr).toContain(`does not carry the label \`${label(head)}\``);
+
+    const byBot = guardWithPr(root, ['--base', base, '--pr-number', '7'], {
+      head,
+      labels: [label(head)],
+      labeledBy: 'ci-bot',
+    });
+    expect(byBot.status).toBe(1);
+    expect(byBot.stderr).toContain('was added by `ci-bot`, not by the owner account');
+
+    // The PR moved on: the label for the new head does not approve the checked commit.
+    const moved = guardWithPr(root, ['--base', base, '--pr-number', '7'], {
+      head: 'e'.repeat(40),
+      labels: [label('e'.repeat(40))],
+    });
+    expect(moved.status).toBe(1);
+    expect(moved.stderr).toContain(`not the checked head ${head}`);
+  });
+
+  it('every other guard problem still fails with a valid label', () => {
+    const { root, base, head } = approvedChange({
+      'apps/api/src/modules/ledger/post.test.ts': fx.FOCUSED_TEST,
+      'apps/api/src/modules/orders/sync.ts': 'export const sync = 2;\n',
+    });
+    const res = guardWithPr(root, ['--base', base, '--task', 'B2-02a', '--pr-number', '7'], {
+      head,
+      labels: [label(head)],
+    });
+    expect(res.status).toBe(1);
+    expect(res.stdout.split('\n').slice(0, 4)).toEqual([
+      'FAIL path-guard (3 problems)',
+      'PASS protected-paths (2 warnings, owner-approved)',
+      'FAIL test-guard (1 problem)',
+      'guard git: 1 passed, 2 failed, 0 skipped',
+    ]);
+    expect(res.stderr).toContain('test-guard: warning: test/spec/ledger/post.test.ts: [add-only]');
+    expect(res.stderr).toContain('apps/api/src/modules/ledger/post.test.ts:1: [no-skip-only]');
+  });
+
+  it('an approval binds to a clean commit only, and the PR number is validated', () => {
+    const { root, base, head } = approvedChange();
+    writeFiles(root, { 'docs/notes.md': '# uncommitted\n' });
+    const dirty = guardWithPr(root, ['--base', base, '--pr-number', '7'], {
+      head,
+      labels: [label(head)],
+    });
+    expect(dirty.status).toBe(1);
+    expect(dirty.stderr).toContain('uncommitted changes');
+    expect(guard('run.ts', ['git', '--base', base, '--cwd', root, '--pr-number', 'x']).status).toBe(
+      2,
+    );
   });
 });

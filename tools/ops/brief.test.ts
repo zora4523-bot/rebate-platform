@@ -312,8 +312,8 @@ it('refuses a brief that hits a banned term and leaves no file behind', () => {
 it(
   'generates the brief of a real task within the size limit, with the real rules embedded',
   () => {
-    // The first open task of the ledger, B2-01a while the trial loop is being set up. Tasks
-    // leave the ledger when they are archived (规划/11 §2.1), so nothing here names one.
+    // The first open task of the ledger. Tasks leave the ledger when they are archived
+    // (规划/11 §2.1), so nothing here names one.
     const runs = join(base, 'real-runs');
     const id = listTaskIds().find((t) => loadTask(t).status === 'todo') ?? listTaskIds()[0];
     if (id === undefined) {
@@ -359,15 +359,23 @@ it(
     );
     expect(text.endsWith('监听端口的命令。\n')).toBe(true);
 
-    if (id === 'B2-01a') {
-      expect(text).toContain('| BR-CALC-01 | **金额与比例的数据类型**<br>');
-      expect(text).toContain('#### BR-CALC-08 细则 · 舍入与尾差归属');
-      // One-hop reference, row only.
-      expect(text).toContain('| BR-CALC-02 | **分佣基数 B 的定义**<br>');
-      expect(text).not.toContain('#### BR-CALC-02 细则');
-      expect(text).toContain('`**/package.json#scripts`');
-      expect(text).toContain('<!-- packages/money/AGENTS.md 全文开始 -->');
-      expect(text).toContain('必须变绿的规则测试：`test/properties/money/**`。');
+    // Expectations below are computed from the ledger entry, so they hold for whichever
+    // task is first in the ledger (no task id or ledger content is written here).
+    const ruleTests = task.accept.filter((a) => !/^(pnpm|node|npx|bash|sh)\s/.test(a));
+    expect(text).toContain(
+      `必须变绿的规则测试：${ruleTests.length === 0 ? '无' : ruleTests.map((t) => `\`${t}\``).join('、')}。`,
+    );
+    // Every AGENTS.md on the static prefix of an allowed path is embedded in full.
+    for (const path of task.paths) {
+      const parts = path.split('/');
+      for (let i = 1; i < parts.length; i += 1) {
+        const dir = parts.slice(0, i);
+        if (dir.some((p) => /[*?{[]/.test(p))) break;
+        const file = [...dir, 'AGENTS.md'].join('/');
+        if (!existsSync(join(repoRoot(), file))) continue;
+        const body = readFileSync(join(repoRoot(), file), 'utf8').trim();
+        expect(text).toContain(`<!-- ${file} 全文开始 -->\n\n${body}\n\n<!-- ${file} 全文结束 -->`);
+      }
     }
   },
   CLI_TIMEOUT,

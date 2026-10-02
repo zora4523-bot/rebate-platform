@@ -105,11 +105,25 @@ describe('ops/approvals.yaml of this repository', () => {
       return;
     }
     const parsed = parseApprovals(readFileSync(file, 'utf8'));
-    expect(parsed.approvals.map((a) => a.id)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    for (const approval of parsed.approvals) {
+    const table = parsed.approvals.filter((a) => a.id <= 9);
+    expect(table.map((a) => a.id)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    for (const approval of table) {
       expect(approval.row).toBe(approval.id);
       expect(approval.granted).toBe(true);
       expect(approval.date).toBe('2026-10-01');
+    }
+  });
+
+  it('later per-occasion approvals (id 10 on) name the §7.3 row they rest on', () => {
+    const file = join(repoRoot(), 'ops', 'approvals.yaml');
+    const later = existsSync(file)
+      ? parseApprovals(readFileSync(file, 'utf8')).approvals.filter((a) => a.id >= 10)
+      : [];
+    expect(later.map((a) => a.id)).toEqual(later.map((_, i) => 10 + i));
+    for (const approval of later) {
+      expect(approval.row).toBeGreaterThanOrEqual(0);
+      expect(approval.row).toBeLessThanOrEqual(9);
+      expect(approval.note).not.toBe('');
     }
   });
 });

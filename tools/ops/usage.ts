@@ -68,7 +68,7 @@ export const MAX_CALLS_PER_TASK = 6;
 export const MAX_CONSECUTIVE_NO_OUTPUT = 3;
 /** 规划/11 §1.3 tiers. */
 export const REDUCED_FROM_PERCENT = 70;
-export const STOPPED_FROM_PERCENT = 90;
+export const STOPPED_FROM_PERCENT = 97;
 const DEFAULT_CALIBRATION_MAX_AGE_HOURS = 24;
 
 export const CAPACITY_TEXT = 'Selected model is at capacity';
@@ -437,7 +437,7 @@ export function gate(summary: Summary, req: GateRequest = {}): GateResult {
   ) {
     reasons.push({
       breaker: 'quota_reduced',
-      message: `估算周额度已用 ${summary.estimated_weekly_percent}%（70%–90% 档）：Codex 只做 RV2 实现和评审，${req.risk} 实现改由 Claude 子代理（规划/11 §1.3）`,
+      message: `估算周额度已用 ${summary.estimated_weekly_percent}%（${REDUCED_FROM_PERCENT}%–${STOPPED_FROM_PERCENT}% 档）：Codex 只做 RV2 实现和评审，${req.risk} 实现改由 Claude 子代理（规划/11 §1.3）`,
     });
   }
   return { allowed: reasons.length === 0, reasons, summary };
