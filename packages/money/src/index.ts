@@ -37,6 +37,16 @@ export type ReserveResult = {
 
 const BP = 10000n;
 const MAX_JSON_FEN = 9007199254740991n;
+const MIN_STORAGE_FEN = -9223372036854775808n;
+const MAX_STORAGE_FEN = 9223372036854775807n;
+
+/** Validate parsed fen after rounding; intermediate arithmetic remains arbitrary precision. */
+function checkedParsedFen(fen: bigint): bigint {
+  if (fen < MIN_STORAGE_FEN || fen > MAX_STORAGE_FEN) {
+    throw new InvalidAmount('Amount exceeds the PG bigint range');
+  }
+  return fen;
+}
 
 function assertAmount(value: unknown): asserts value is bigint {
   if (typeof value !== 'bigint') throw new InvalidAmount('Amount must be bigint fen');
@@ -79,7 +89,8 @@ function decimalToHundredths(
 
 /**
  * Strict amount parser for values coming from JSON, the database driver or config.
- * - bigint: returned unchanged (any sign).
+ * All parsed amounts must fit the signed PG bigint (int64) range, else InvalidAmount.
+ * - bigint: returned unchanged (any sign, within int64).
  * - number: only a safe integer (|n| <= 2^53 - 1) is accepted; fractions, NaN, Infinity and
  *   unsafe integers throw InvalidAmount.
  * - string: only a plain base-10 integer, optional leading "-" (e.g. "1452", "-320",
@@ -87,10 +98,11 @@ function decimalToHundredths(
  * - any other type throws InvalidAmount.
  */
 export function parseFen(value: unknown): bigint {
-  if (typeof value === 'bigint') return value;
-  if (typeof value === 'number' && Number.isSafeInteger(value)) return BigInt(value);
+  if (typeof value === 'bigint') return checkedParsedFen(value);
+  if (typeof value === 'number' && Number.isSafeInteger(value))
+    return checkedParsedFen(BigInt(value));
   if (typeof value === 'string' && /^-?[0-9]+$/.exec(value)?.[0] === value) {
-    return BigInt(value);
+    return checkedParsedFen(BigInt(value));
   }
   throw new InvalidAmount('Expected bigint, safe integer, or decimal integer string');
 }
@@ -111,10 +123,10 @@ export function formatFen(fen: bigint): string {
  * Up to two decimals is exact ("14.5" -> 1450n, "14" -> 1400n, "-3.20" -> -320n); more than two
  * decimals is floored to the fen ("14.526" -> 1452n; "-0.001" -> -1n).
  * Empty, non-numeric, scientific notation,
- * NaN / Infinity and non-string arguments throw InvalidAmount.
+ * NaN / Infinity, non-string arguments and rounded fen outside int64 throw InvalidAmount.
  */
 export function yuanStrToFen(text: string): bigint {
-  return decimalToHundredths(text, InvalidAmount).value;
+  return checkedParsedFen(decimalToHundredths(text, InvalidAmount).value);
 }
 
 /** BR-CALC-26: percentage string -> bigint bp, floored; the raw ratio must be in 0..100%. */

@@ -78,3 +78,21 @@ it('[AC-B2-01a#7] runtime validation remains active for ceil and zero or negativ
   expect(() => splitByBp(0n, new Array<bigint>(1))).toThrow(InvalidRatio);
   expect(() => splitByBp(0n, null as unknown as bigint[])).toThrow(InvalidRatio);
 });
+
+it('[AC-B2-01a#8] bigint inputs cannot bypass the parsed amount storage bounds', () => {
+  expect([parseFen(-9223372036854775808n), parseFen(9223372036854775807n)]).toEqual([
+    -9223372036854775808n,
+    9223372036854775807n,
+  ]);
+  expect(() => parseFen(-9223372036854775809n)).toThrow(InvalidAmount);
+  expect(() => parseFen(9223372036854775808n)).toThrow(InvalidAmount);
+});
+
+it('[AC-B2-01a#9] storage bounds apply to the rounded fen, including boundary tails', () => {
+  expect(
+    ['92233720368547758.079', '-92233720368547758.0800', '-92233720368547758.079'].map(
+      yuanStrToFen,
+    ),
+  ).toEqual([9223372036854775807n, -9223372036854775808n, -9223372036854775808n]);
+  expect(() => yuanStrToFen('-92233720368547758.0801')).toThrow(InvalidAmount);
+});
