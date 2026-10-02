@@ -19,6 +19,21 @@ export const amountFen = fc.oneof(
   { arbitrary: fc.bigInt({ min: TWO_POW_31 + 1n, max: INT64_MAX }), weight: 4 },
 );
 
+/**
+ * Largest whole-yuan value whose fen amount stays within PG bigint for every two-decimal tail:
+ * MAX_YUAN * 100 + 99 <= INT64_MAX (BR-CALC-01). Yuan strings above it are out of range and must
+ * be rejected (test/spec/money/review-additions.test.ts), so the parse properties stop here.
+ */
+export const MAX_YUAN = (INT64_MAX - 99n) / 100n;
+
+/** Non-negative whole yuan whose fen value fits PG bigint; same buckets as amountFen. */
+export const amountYuan = fc.oneof(
+  { arbitrary: fc.constant(0n), weight: 1 },
+  { arbitrary: fc.constant(1n), weight: 1 },
+  { arbitrary: fc.bigInt({ min: 2n, max: TWO_POW_31 }), weight: 4 },
+  { arbitrary: fc.bigInt({ min: TWO_POW_31 + 1n, max: MAX_YUAN }), weight: 4 },
+);
+
 /** Any amount, negative included (raw N may be negative, BR-CALC-02). */
 export const signedFen = fc.oneof(
   { arbitrary: amountFen, weight: 3 },

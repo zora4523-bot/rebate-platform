@@ -6,7 +6,7 @@ import { createPropStats, propParams, propRuns } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import {
-  amountFen,
+  amountYuan,
   bucketOf,
   coverage,
   FULL_COVERAGE,
@@ -39,7 +39,7 @@ it('[BR-CALC-26] formatFen 与 yuanStrToFen 互逆：yuanStrToFen(formatFen(x)) 
 it("[BR-CALC-26] 小数不超过 2 位时精确换算：'<元>.<d>' → 元×100 + d×10，'<元>.<dd>' → 元×100 + dd", () => {
   const stats = createPropStats('money:yuanStrToFen:exact');
   fc.assert(
-    fc.property(amountFen, digits(0, 2), (yuan, frac) => {
+    fc.property(amountYuan, digits(0, 2), (yuan, frac) => {
       stats.hit(bucketOf(yuan));
       const text = frac === '' ? `${yuan}` : `${yuan}.${frac}`;
       const expected = yuan * 100n + (frac === '' ? 0n : BigInt(frac.padEnd(2, '0')));
@@ -53,7 +53,7 @@ it("[BR-CALC-26] 小数不超过 2 位时精确换算：'<元>.<d>' → 元×100
 it('[BR-CALC-26] 超过 2 位小数按 floor 取整到分（非负金额）：只取前两位小数', () => {
   const stats = createPropStats('money:yuanStrToFen:floor');
   fc.assert(
-    fc.property(amountFen, digits(3, 8), (yuan, frac) => {
+    fc.property(amountYuan, digits(3, 8), (yuan, frac) => {
       stats.hit(bucketOf(yuan));
       return yuanStrToFen(`${yuan}.${frac}`) === yuan * 100n + BigInt(frac.slice(0, 2));
     }),
