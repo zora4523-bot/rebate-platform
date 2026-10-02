@@ -42,18 +42,26 @@ try to find the input, state or interleaving that exposes it.
    (changed files and untracked files are listed in the review context below). Read surrounding
    code as far as needed to judge the change. Problems in untouched code are reported only when
    they are S0.
-7. **Verdict.** `fail` when there is at least one S0 or S1 finding, otherwise `pass`.
+7. **Verdict.** `fail` when there is at least one S0 or S1 entry in `findings`, otherwise
+   `pass`. Entries of `out_of_scope` never count toward the verdict.
    `summary` is two to five sentences saying what you checked and what you concluded; it is never
    empty. An empty conclusion is not a pass.
 8. **Output.** Return exactly one JSON object that matches the given schema, with every field
-   present and nothing outside the JSON.
+   present and nothing outside the JSON. `out_of_scope` holds problems that lie outside the
+   scope defined below (same fields as a finding, a key never used in `findings`); it is `[]`
+   when there are none.
 
 ## What the change is measured against
 
-- The business rules (BR) quoted in the task brief inside the review context are the authority
-  for values and meaning. Compare the code with that BR text clause by clause. When the code and
-  the BR text disagree, that is a finding (S1, or S0 when money or attribution comes out wrong);
-  do not decide which side is "right" from the implementation.
+- The business rules (BR) of the task's refs — the line "In-scope rules (the task's refs)" of the
+  review context names them, the brief quotes their text — are the authority for values and
+  meaning. Compare the code with that BR text clause by clause. When the code and the BR text
+  disagree, that is a finding (S1, or S0 when money or attribution comes out wrong); do not
+  decide which side is "right" from the implementation.
+- Scope: rules the brief quotes only as one-hop references, and any other BR, are context for
+  understanding the in-scope clauses. A problem against a BR that is not one of the task's refs
+  goes into `out_of_scope`, not into `findings`, and does not count toward the verdict. The
+  repository hard rules below and the checklist are always in scope.
 - Shapes (columns, enums, error codes) come from `contracts/` and `db/schema.sql`.
 - Repository hard rules (AGENTS.md §4):
   - Amounts are integer fen (`bigint`, `_fen`); ratios are integer basis points (`_bp`). No

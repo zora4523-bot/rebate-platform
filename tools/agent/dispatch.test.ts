@@ -40,7 +40,7 @@ function stateJson(extra: Record<string, unknown> = {}): string {
   return JSON.stringify({
     id: TASK,
     state: 'doing',
-    attempts: { impl: 1, review: 0 },
+    attempts: { impl: 1, 'spec-test': 0, code: 0 },
     spec_commit: null,
     pid: null,
     ...extra,
@@ -390,7 +390,9 @@ it('dispatch: from the second attempt on the brief is regenerated before the lau
   // 规划/11 §2.3: a retry is a new round that carries the previous failure output; brief.ts
   // takes both the attempt number and that output from the in-flight state.
   const fx = fixture('dispatch-retry-brief', {
-    state: [{ when: ['get'], stdout: stateJson({ attempts: { impl: 2, review: 0 } }) }],
+    state: [
+      { when: ['get'], stdout: stateJson({ attempts: { impl: 2, 'spec-test': 0, code: 0 } }) },
+    ],
     brief: [{ writeOut: `# 任务 ${TASK}：regenerated for attempt 2\n` }],
   });
   expect(readFileSync(join(fx.run, 'brief.md'), 'utf8')).toContain('fixture task');
@@ -404,16 +406,25 @@ it('dispatch: from the second attempt on the brief is regenerated before the lau
   expect(observedArgv(fx).at(-1)).toContain('regenerated for attempt 2');
 });
 
-it('dispatch: the re-dispatch after a capacity error does not count another attempt', LONG, () => {
-  const fx = fixture('dispatch-capacity');
-  writeMeta(fx, { exit_code: 11, capacity_error: true, has_output: false });
-  const res = runScript('dispatch.sh', [TASK], fx.env);
-  expect(res.status, res.stderr).toBe(0);
-  waitForRun(fx);
-  expect(stubCalls(fx, 'state').some((call) => call[1] === 'bump-attempt')).toBe(false);
-  // The capacity run was archived by the wrapper; the next dispatch counts again.
-  expect(readJson(join(fx.run, 'attempts', '1', 'meta.json'))['exit_code']).toBe(11);
-});
+it(
+  '[规划/11 §2.5] dispatch always counts; the wrapper gives a call without output back',
+  LONG,
+  () => {
+    const fx = fixture('dispatch-capacity');
+    // The previous call ended with a capacity error; codex-run.sh settled it back then.
+    writeMeta(fx, { exit_code: 11, capacity_error: true, has_output: false });
+    const res = runScript('dispatch.sh', [TASK], fx.env);
+    expect(res.status, res.stderr).toBe(0);
+    waitForRun(fx);
+    const stateCalls = stubCalls(fx, 'state').map((call) => call.slice(1, 3).join(' '));
+    expect(stateCalls).toContain(`bump-attempt ${TASK}`);
+    // The new call is settled by the wrapper when it finishes, after the bump.
+    expect(stateCalls.indexOf(`settle ${TASK}`)).toBeGreaterThan(
+      stateCalls.indexOf(`bump-attempt ${TASK}`),
+    );
+    expect(readJson(join(fx.run, 'attempts', '1', 'meta.json'))['exit_code']).toBe(11);
+  },
+);
 
 it('dispatch: bad usage is exit 2', LONG, () => {
   const fx = fixture('dispatch-usage');
@@ -508,7 +519,9 @@ it('post-run: protected class 3 goes to ask, a path violation is a failed attemp
         stdout: JSON.stringify({ ok: false, violations: [violation], protected_hits: [] }),
       },
     ],
-    state: [{ when: ['get'], stdout: stateJson({ attempts: { impl: 2, review: 0 } }) }],
+    state: [
+      { when: ['get'], stdout: stateJson({ attempts: { impl: 2, 'spec-test': 0, code: 0 } }) },
+    ],
   });
   writeMeta(out, {});
   writeImpl(out);
@@ -563,7 +576,12 @@ it('post-run: failed runs are decided without running any guard', LONG, () => {
   ];
   for (const [meta, attempts, expected] of cases) {
     const fx = fixture('post-failed', {
-      state: [{ when: ['get'], stdout: stateJson({ attempts: { impl: attempts, review: 0 } }) }],
+      state: [
+        {
+          when: ['get'],
+          stdout: stateJson({ attempts: { impl: attempts, 'spec-test': 0, code: 0 } }),
+        },
+      ],
     });
     writeMeta(fx, meta);
     const res = runScript('post-run.sh', [TASK], fx.env);

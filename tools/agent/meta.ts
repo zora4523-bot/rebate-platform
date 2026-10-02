@@ -9,7 +9,8 @@
 //       last_type=<type of the last non-empty line | none | invalid>, thread_id=<id or empty>,
 //       capacity=<0|1> (model capacity error reported by an error event or on stderr).
 //   node meta.ts get --file <json> <key>
-//       Prints one scalar (empty line when missing or null); `a.b` reads a nested key.
+//       Prints one scalar (empty line when missing or null); `a.b` reads a nested key. An array
+//       of scalars is printed comma-separated (empty line when it is empty).
 //   node meta.ts emit [--str k=v]... (same value flags as merge)
 //       Prints one compact JSON object on stdout.
 //
@@ -194,7 +195,9 @@ function main(argv: readonly string[]): number {
     if (file === undefined || key === undefined) throw new UsageError('get needs --file and <key>');
     let value: unknown = readJsonFile(file);
     for (const part of key.split('.')) value = isObject(value) ? value[part] : undefined;
-    const scalar = ['string', 'number', 'boolean'].includes(typeof value) ? String(value) : '';
+    const isScalar = (v: unknown): boolean => ['string', 'number', 'boolean'].includes(typeof v);
+    let scalar = isScalar(value) ? String(value) : '';
+    if (Array.isArray(value) && value.every(isScalar)) scalar = value.map(String).join(',');
     process.stdout.write(`${scalar.replace(/\n/g, ' ')}\n`);
     return 0;
   }

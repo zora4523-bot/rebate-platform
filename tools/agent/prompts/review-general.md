@@ -41,11 +41,14 @@ contains a defect and try to find the input or state that exposes it.
    (changed files and untracked files are listed in the review context below). Read surrounding
    code as far as needed to judge the change. Problems in untouched code are reported only when
    they are S0.
-7. **Verdict.** `fail` when there is at least one S0 or S1 finding, otherwise `pass`.
+7. **Verdict.** `fail` when there is at least one S0 or S1 entry in `findings`, otherwise
+   `pass`. Entries of `out_of_scope` never count toward the verdict.
    `summary` is two to five sentences saying what you checked and what you concluded; it is never
    empty. An empty conclusion is not a pass.
 8. **Output.** Return exactly one JSON object that matches the given schema, with every field
-   present and nothing outside the JSON.
+   present and nothing outside the JSON. `out_of_scope` holds problems that lie outside the
+   scope defined below (same fields as a finding, a key never used in `findings`); it is `[]`
+   when there are none.
 
 ## What the change is measured against
 
@@ -75,4 +78,6 @@ withdrawals, reconciliation, orders, linking, `packages/money`, `packages/domain
 say so in `summary` and report it as a finding (S1, rule `needs-money-review`): such a change
 needs the money review, not this one.
 
-For this review type return `"checklist": []`.
+For this review type return `"checklist": []`. Problems against a business rule (BR) that is
+not one of the task's refs (the line "In-scope rules" of the review context) go into
+`out_of_scope`.

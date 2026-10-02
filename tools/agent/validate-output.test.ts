@@ -8,6 +8,7 @@ import {
   CHECKLIST_ITEMS,
   gitLineChecker,
   type LineChecker,
+  outsideRefs,
   parseHunks,
   type ReviewOutput,
   reviewProblems,
@@ -53,6 +54,7 @@ function validReview(file = 'src/a.ts', line = 1): ReviewOutput {
         suggestion: 'Use floor division.',
       },
     ],
+    out_of_scope: [],
     checklist: CHECKLIST_ITEMS.map((item) => ({
       item,
       status: item === 'rounding' ? 'issue' : 'ok',
@@ -123,17 +125,24 @@ it('schemas carry exactly the agreed fields', () => {
     'verdict',
     'summary',
     'findings',
+    'out_of_scope',
     'checklist',
   ]);
-  expect(Object.keys(review.properties?.['findings']?.items?.properties ?? {})).toEqual([
-    'severity',
-    'key',
-    'file',
-    'line',
-    'rule',
-    'scenario',
-    'suggestion',
-  ]);
+  expect(review.required).toEqual(['verdict', 'summary', 'findings', 'out_of_scope', 'checklist']);
+  for (const list of ['findings', 'out_of_scope']) {
+    const items = review.properties?.[list]?.items;
+    expect(items?.additionalProperties).toBe(false);
+    expect(items?.required).toEqual([
+      'severity',
+      'key',
+      'file',
+      'line',
+      'rule',
+      'scenario',
+      'suggestion',
+    ]);
+    expect(Object.keys(items?.properties ?? {})).toEqual(items?.required);
+  }
   const checklistItem = review.properties?.['checklist']?.items?.properties ?? {};
   expect(Object.keys(checklistItem)).toEqual(['item', 'status', 'file', 'line', 'note']);
   expect(checklistItem['item']?.enum).toEqual([...CHECKLIST_ITEMS]);
@@ -225,6 +234,62 @@ it('a pass verdict next to S0/S1 findings is an error, not a usable output', () 
     findings: validReview().findings.map((f) => ({ ...f, severity: 'S2' as const })),
   };
   expect(reviewProblems(s2Only, { money: false }).errors).toEqual([]);
+});
+
+it('[规划/11 §2.5] out_of_scope entries are checked like findings and never decide the verdict', () => {
+  const finding = validReview().findings[0];
+  if (finding === undefined) throw new Error('fixture has no finding');
+  const elsewhere = {
+    ...finding,
+    key: 'src/a.ts#split#BR-FUND-03',
+    rule: 'BR-FUND-03',
+  };
+  // An S0 outside the scope next to a pass verdict is fine: it does not count.
+  const pass = {
+    ...validReview(),
+    verdict: 'pass' as const,
+    findings: [],
+    out_of_scope: [elsewhere],
+  };
+  expect(reviewProblems(pass, { money: false })).toEqual({ errors: [], warnings: [] });
+  const sloppy = {
+    ...pass,
+    out_of_scope: [{ ...elsewhere, scenario: ' ', key: 'other.ts#x#BR-FUND-03' }, finding],
+    findings: [{ ...finding, severity: 'S2' as const }],
+  };
+  const errors = reviewProblems(sloppy, { money: false }).errors.join('\n');
+  expect(errors).toContain('out_of_scope[0]: scenario is empty');
+  expect(errors).toContain('out_of_scope[0]: key must start with the same path as "file"');
+  expect(errors).toContain(`out_of_scope[1]: key ${finding.key} is also listed in findings`);
+});
+
+it('[规划/11 §2.5] with --refs, findings about rules outside the refs do not count toward the verdict', () => {
+  expect(outsideRefs('BR-FUND-03', ['BR-CALC-01'])).toEqual(['BR-FUND-03']);
+  expect(outsideRefs('BR-CALC-01 via BR-FUND-03', ['BR-CALC-01'])).toEqual([]);
+  expect(outsideRefs('mutation-floor-to-round', ['BR-CALC-01'])).toEqual([]);
+  const finding = validReview().findings[0];
+  if (finding === undefined) throw new Error('fixture has no finding');
+  const misplaced = { ...finding, key: 'src/a.ts#split#BR-FUND-03', rule: 'BR-FUND-03' };
+  const refs = ['BR-CALC-01', 'BR-CALC-08'];
+  // A pass that only carries a misplaced S0 is not contradictory, but the misplacement is named.
+  const pass = { ...validReview(), verdict: 'pass' as const, findings: [misplaced], checklist: [] };
+  const passed = reviewProblems(pass, { money: false, refs });
+  expect(passed.errors).toEqual([]);
+  expect(passed.warnings.join('\n')).toContain(
+    'findings[0]: rule cites BR-FUND-03, outside the task refs (BR-CALC-01, BR-CALC-08)',
+  );
+  // A fail that rests only on misplaced findings is flagged as a pass within the refs.
+  const failed = reviewProblems({ ...pass, verdict: 'fail' }, { money: false, refs });
+  expect(failed.warnings.join('\n')).toContain('within the refs this review is a pass');
+  // Without --refs nothing changes: the pass is contradictory.
+  expect(reviewProblems(pass, { money: false }).errors.join('\n')).toContain(
+    'verdict is "pass" but 1 S0/S1',
+  );
+  // An in-scope S0 next to a pass stays an error with --refs.
+  const inScope = { ...finding, key: 'src/a.ts#split#BR-CALC-01', rule: 'BR-CALC-01' };
+  expect(
+    reviewProblems({ ...pass, findings: [inScope] }, { money: false, refs }).errors.join('\n'),
+  ).toContain('verdict is "pass" but 1 S0/S1');
 });
 
 it('money review: seven items exactly once, each with file:line and a note', () => {
@@ -366,6 +431,28 @@ it('CLI: exit 0 valid, 1 invalid, 2 usage or internal error', { timeout: 60_000 
     2,
   );
   expect(runCli(['--schema', IMPL_SCHEMA_FILE, '--file', good, '--bogus']).status).toBe(2);
+  expect(runCli(['--schema', IMPL_SCHEMA_FILE, '--file', good, '--refs', 'BR 1']).status).toBe(2);
+  // --refs: a pass whose only S0 cites a rule outside the refs is valid, with a warning.
+  const scoped = join(fx.root, 'scoped.json');
+  const base = validReview('src/a.ts', 1);
+  writeFileSync(
+    scoped,
+    JSON.stringify({
+      ...base,
+      verdict: 'pass',
+      checklist: [],
+      findings: base.findings.map((f) => ({
+        ...f,
+        key: 'src/a.ts#split#BR-FUND-03',
+        rule: 'BR-FUND-03',
+      })),
+    }),
+  );
+  const scopedArgs = ['--schema', REVIEW_SCHEMA_FILE, '--file', scoped];
+  expect(runCli(scopedArgs).status).toBe(1);
+  const withRefs = runCli([...scopedArgs, '--refs', 'BR-CALC-01,BR-CALC-08']);
+  expect(withRefs.status).toBe(0);
+  expect(withRefs.stderr).toContain('warning: findings[0]: rule cites BR-FUND-03');
 
   // Money review against the real diff: src/a.ts is unchanged in the fixture worktree.
   const moneyArgs = ['--schema', REVIEW_SCHEMA_FILE, '--file', review, '--money'];

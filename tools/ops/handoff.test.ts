@@ -22,7 +22,7 @@ function state(id: string, over: Partial<TaskState> = {}): TaskState {
   return {
     id,
     state: 'review',
-    attempts: { impl: 2, review: 1 },
+    attempts: { impl: 2, 'spec-test': 1, code: 0 },
     spec_commit: null,
     pid: null,
     started_at: null,
@@ -30,6 +30,7 @@ function state(id: string, over: Partial<TaskState> = {}): TaskState {
     lease_until: null,
     ask_created_at: null,
     last_error: null,
+    uncounted_calls: [],
     updated_at: '2026-10-02T03:00:00.000Z',
     ...over,
   };
@@ -73,7 +74,7 @@ it('fills the computable parts and leaves the judgement sections blank', () => {
     `- \`SPEC_REF\`：${REF}（已是规划仓库 main 最新；按本地 origin/main，未 fetch）`,
     '## 1. 正在进行、无法从台账看出的事',
     '| 任务 | 做到哪一步 | 下一步 | 注意 |',
-    '| B2-01a | review（实现 2 次，评审 1 轮） | <由编排会话填写> | 上一轮失败输出：/runs/B2-01a/verify/2/log.txt；后台进程 4242 |',
+    '| B2-01a | review（实现 2 次，规则测试评审 1 轮，代码评审 0 轮） | <由编排会话填写> | 上一轮失败输出：/runs/B2-01a/verify/2/log.txt；后台进程 4242 |',
     '## 2. 未决判断\n\n<由编排会话填写>',
     '## 3. 坑\n\n<由编排会话填写>',
     '## 4. 等负责人的事',
@@ -181,7 +182,9 @@ it(
     expect(readFileSync(res.current, 'utf8')).toBe(res.text);
     expect(readFileSync(res.copy, 'utf8')).toBe(res.text);
     expect(res.text).toContain('- 会话：s-1；启动目录：');
-    expect(res.text).toContain('| B2-01a | verify（实现 0 次，评审 0 轮） |');
+    expect(res.text).toContain(
+      '| B2-01a | verify（实现 0 次，规则测试评审 0 轮，代码评审 0 轮） |',
+    );
     expect(res.text).toContain('- 编排锁：由 pid 99（session-a） 持有至 2026-10-02 12:25');
   },
   CLI_TIMEOUT,

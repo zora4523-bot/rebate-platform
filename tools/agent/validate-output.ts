@@ -1,12 +1,18 @@
 // Validates the `-o` file of a Codex run against its output schema (规划/11 §2.4 "成败判定")
 // and, for review outputs, the rules of 规划/11 §3.1 and §3.3.
 //
-//   node validate-output.ts --schema <file> --file <json> [--money]
+//   node validate-output.ts --schema <file> --file <json> [--money] [--refs <BR-…,BR-…>]
 //                           [--diff-base <ref> --cwd <dir>] [--json]
 //
 // Always: Ajv2020 strict validation against --schema.
-// Review outputs (the schema has `findings`): non-empty summary; every finding has a concrete
-//   scenario, a `file:line` and a stable key `<file>#<function>#<rule id>`.
+// Review outputs (the schema has `findings`): non-empty summary; every finding and every
+//   `out_of_scope` entry has a concrete scenario, a `file:line` and a stable key
+//   `<file>#<function>#<rule id>`; no key is in both lists. Only `findings` decide the verdict:
+//   `pass` with an S0 / S1 finding is invalid, S0 / S1 entries of `out_of_scope` never count.
+// --refs (spec-test reviews; the task's BR refs, 规划/11 §2.5 owner decision 2026-10-02): a
+//   finding whose `rule` cites only BR ids outside the refs belongs in `out_of_scope`. It is
+//   reported as a warning and does not count toward the verdict (it neither forces `fail` nor
+//   makes a `pass` contradictory).
 // --money (资金评审清单必填): the seven checklist items are present exactly once, each with a
 //   `file:line` and a note; with --diff-base every cited line lies inside the diff hunks of
 //   that file (working tree of --cwd compared with the base ref, untracked files included).
@@ -51,6 +57,8 @@ export type ReviewOutput = {
   verdict: 'pass' | 'fail';
   summary: string;
   findings: Finding[];
+  /** Findings about rules outside the task refs; they never count toward the verdict. */
+  out_of_scope: Finding[];
   checklist: ChecklistEntry[];
 };
 
@@ -143,19 +151,25 @@ export function gitLineChecker(base: string, cwd: string): LineChecker {
 }
 
 const KEY_PATTERN = /^[^#\s]+#[^#\s]+#[^#\s]+$/;
+const BR_ID = /BR-[A-Z]+-[0-9]+/g;
+
+/** BR ids a finding's `rule` cites, when none of them is in `refs` (else an empty list). */
+export function outsideRefs(rule: string, refs: readonly string[]): string[] {
+  const cited = [...new Set(rule.match(BR_ID) ?? [])];
+  return cited.length > 0 && !cited.some((id) => refs.includes(id)) ? cited : [];
+}
 
 /** Checks of 规划/11 §3.1 / §3.3 on a schema-valid review output. */
 export function reviewProblems(
   review: ReviewOutput,
-  opts: { money: boolean; lineChecker?: LineChecker },
+  opts: { money: boolean; lineChecker?: LineChecker; refs?: readonly string[] },
 ): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
   if (review.summary.trim() === '')
     errors.push('summary: empty (an empty conclusion is not a pass)');
 
-  review.findings.forEach((f, i) => {
-    const at = `findings[${i}]`;
+  const checkEntry = (f: Finding, at: string): void => {
     if (f.scenario.trim() === '') errors.push(`${at}: scenario is empty (规划/11 §3.1)`);
     if (f.file.trim() === '' || f.line < 1) errors.push(`${at}: needs file and line >= 1`);
     if (!KEY_PATTERN.test(f.key)) {
@@ -163,13 +177,46 @@ export function reviewProblems(
     } else if (f.key.split('#')[0] !== f.file) {
       errors.push(`${at}: key must start with the same path as "file"`);
     }
+  };
+  review.findings.forEach((f, i) => checkEntry(f, `findings[${i}]`));
+  review.out_of_scope.forEach((f, i) => checkEntry(f, `out_of_scope[${i}]`));
+  const inScopeKeys = new Set(review.findings.map((f) => f.key));
+  review.out_of_scope.forEach((f, i) => {
+    if (inScopeKeys.has(f.key)) {
+      errors.push(`out_of_scope[${i}]: key ${f.key} is also listed in findings`);
+    }
   });
-  const blocking = review.findings.filter((f) => f.severity === 'S0' || f.severity === 'S1');
+
+  // Findings that cite only rules outside the task refs do not count toward the verdict.
+  const misplaced = new Set<Finding>();
+  if (opts.refs !== undefined && opts.refs.length > 0) {
+    const refs = opts.refs;
+    review.findings.forEach((f, i) => {
+      const outside = outsideRefs(f.rule, refs);
+      if (outside.length === 0) return;
+      misplaced.add(f);
+      warnings.push(
+        `findings[${i}]: rule cites ${outside.join(', ')}, outside the task refs (${refs.join(', ')}); ` +
+          'it belongs in out_of_scope and does not count toward the verdict',
+      );
+    });
+  }
+  const isBlocking = (f: Finding): boolean => f.severity === 'S0' || f.severity === 'S1';
+  const blocking = review.findings.filter((f) => isBlocking(f) && !misplaced.has(f));
   if (review.verdict === 'pass' && blocking.length > 0) {
     // A contradictory review is not a usable output: the merge gate reads `verdict` alone
     // (规划/11 §3.2 评审无 S0 / S1), so "pass" must never carry blocking findings.
     errors.push(
       `verdict is "pass" but ${blocking.length} S0/S1 finding(s) are listed (a pass cannot carry blocking findings)`,
+    );
+  }
+  if (
+    review.verdict === 'fail' &&
+    blocking.length === 0 &&
+    review.findings.some((f) => isBlocking(f) && misplaced.has(f))
+  ) {
+    warnings.push(
+      'verdict is "fail" only because of S0/S1 findings outside the task refs: within the refs this review is a pass',
     );
   }
 
@@ -207,7 +254,7 @@ function isReviewSchema(schema: unknown): boolean {
 export function validateOutput(
   schema: unknown,
   data: unknown,
-  opts: { money: boolean; lineChecker?: LineChecker },
+  opts: { money: boolean; lineChecker?: LineChecker; refs?: readonly string[] },
 ): Report {
   const errors = schemaErrors(schema, data);
   const warnings: string[] = [];
@@ -226,6 +273,7 @@ function parseArgs(argv: readonly string[]): {
   file: string;
   money: boolean;
   json: boolean;
+  refs: string[];
   diffBase?: string;
   cwd?: string;
 } {
@@ -235,7 +283,7 @@ function parseArgs(argv: readonly string[]): {
     const arg = argv[i] ?? '';
     if (arg === '--money' || arg === '--json') {
       switches.add(arg);
-    } else if (['--schema', '--file', '--diff-base', '--cwd'].includes(arg)) {
+    } else if (['--schema', '--file', '--diff-base', '--cwd', '--refs'].includes(arg)) {
       const value = argv[i + 1];
       if (value === undefined) throw new UsageError(`${arg} needs a value`);
       values.set(arg, value);
@@ -254,7 +302,20 @@ function parseArgs(argv: readonly string[]): {
   if ((diffBase === undefined) !== (cwd === undefined)) {
     throw new UsageError('--diff-base and --cwd must be given together');
   }
-  const parsed = { schema, file, money: switches.has('--money'), json: switches.has('--json') };
+  const refs = (values.get('--refs') ?? '')
+    .split(',')
+    .map((r) => r.trim())
+    .filter((r) => r !== '');
+  for (const ref of refs) {
+    if (!/^[A-Za-z0-9-]+$/.test(ref)) throw new UsageError(`--refs: invalid rule id "${ref}"`);
+  }
+  const parsed = {
+    schema,
+    file,
+    money: switches.has('--money'),
+    json: switches.has('--json'),
+    refs,
+  };
   return diffBase !== undefined && cwd !== undefined ? { ...parsed, diffBase, cwd } : parsed;
 }
 
@@ -278,11 +339,12 @@ function main(argv: readonly string[]): number {
       args.money && args.diffBase !== undefined && args.cwd !== undefined
         ? gitLineChecker(args.diffBase, args.cwd)
         : undefined;
-    report = validateOutput(
-      schema,
-      data,
-      lineChecker === undefined ? { money: args.money } : { money: args.money, lineChecker },
-    );
+    const opts: { money: boolean; lineChecker?: LineChecker; refs?: string[] } = {
+      money: args.money,
+    };
+    if (lineChecker !== undefined) opts.lineChecker = lineChecker;
+    if (args.refs.length > 0) opts.refs = args.refs;
+    report = validateOutput(schema, data, opts);
   }
 
   if (args.json) process.stdout.write(`${JSON.stringify(report)}\n`);

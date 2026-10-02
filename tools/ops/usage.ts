@@ -62,9 +62,13 @@ export type Ledger = { calls: CallLine[]; calibrations: CalibrationLine[] };
 
 export type Tier = 'normal' | 'reduced' | 'stopped' | 'unknown';
 
-/** 规划/11 §2.5 global breaker limits. */
+/**
+ * 规划/11 §2.5 global breaker limits. Every call counts here, also one that ended without output
+ * and therefore did not use up an implementation or review round (tools/ops/state.ts settle).
+ * The per-task cap was 6 until the owner raised it to 10 on 2026-10-02 (ops/approvals.yaml id 13).
+ */
 export const MAX_CALLS_PER_DAY = 40;
-export const MAX_CALLS_PER_TASK = 6;
+export const MAX_CALLS_PER_TASK = 10;
 export const MAX_CONSECUTIVE_NO_OUTPUT = 3;
 /** 规划/11 §1.3 tiers. */
 export const REDUCED_FROM_PERCENT = 70;
@@ -386,7 +390,7 @@ export type GateResult = { allowed: boolean; reasons: GateReason[]; summary: Sum
 /**
  * Answers "may one more Codex call be dispatched now?". The limits of 规划/11
  * §2.5 are upper bounds on what has happened, so the gate closes as soon as the
- * next call would cross one: at 40 calls today, at 6 calls for the task, at 3
+ * next call would cross one: at 40 calls today, at 10 calls for the task, at 3
  * consecutive calls without output. Capacity errors count towards the daily and
  * the per-task totals, not towards the consecutive run.
  */

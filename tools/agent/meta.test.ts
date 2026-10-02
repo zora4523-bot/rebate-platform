@@ -133,6 +133,11 @@ it('CLI: merge writes and updates a file, get reads nested keys, emit prints one
   writeFileSync(file, JSON.stringify({ attempts: { impl: 2 }, spec_commit: null }));
   expect(metaCli(['get', '--file', file, 'attempts.impl']).stdout).toBe('2\n');
   expect(metaCli(['get', '--file', file, 'spec_commit']).stdout).toBe('\n');
+  // An array of scalars (the task refs) comes out comma-separated; objects stay empty.
+  writeFileSync(file, JSON.stringify({ refs: ['BR-CALC-01', 'BR-CALC-08'], none: [], obj: [{}] }));
+  expect(metaCli(['get', '--file', file, 'refs']).stdout).toBe('BR-CALC-01,BR-CALC-08\n');
+  expect(metaCli(['get', '--file', file, 'none']).stdout).toBe('\n');
+  expect(metaCli(['get', '--file', file, 'obj']).stdout).toBe('\n');
 
   const emitted = metaCli([
     'emit',

@@ -11,8 +11,9 @@
 #                          dispatch process; `--renew` is tried only when the claim on file is
 #                          already held by this very owner (never for another session's claim)
 #   3. count the attempt   node <TRUSTED>/tools/ops/state.ts bump-attempt <id> impl
-#                          BEFORE launching; skipped only when the previous run of this task
-#                          ended with a model capacity error (§2.5: not counted)
+#                          BEFORE launching, every time. A call that ends without output
+#                          (timeout, capacity error, no `-o`, …) is given back by codex-run.sh
+#                          (state.ts settle) when it finishes (§2.5)
 #   4. task brief          RUN/brief.md, else node <TRUSTED>/tools/ops/brief.ts <id>. From the
 #                          second attempt on the brief is always regenerated: every round is a
 #                          new one and carries the previous failure output (§2.3 重试不用 resume)
@@ -144,19 +145,12 @@ case "$running_pid" in
     ;;
 esac
 
-# 3. Count the attempt before anything is launched (规划/11 §2.5).
-previous_exit=''
-if [ -f "$RUN/meta.impl.json" ]; then
-  previous_exit="$(node "$SELF_DIR/meta.ts" get --file "$RUN/meta.impl.json" exit_code)"
-fi
-if [ "$previous_exit" = 11 ]; then
-  log "previous run ended with a model capacity error: attempt not counted again (规划/11 §2.5)"
-else
-  bump_rc=0
-  node "$OPS/state.ts" bump-attempt "$TASK" impl >/dev/null 2>"$ERR_FILE" || bump_rc=$?
-  if [ "$bump_rc" = 1 ]; then stop 1 attempts-exhausted "$(last_error)"; fi
-  if [ "$bump_rc" != 0 ]; then stop 2 state-error "$(last_error)"; fi
-fi
+# 3. Count the attempt before anything is launched (规划/11 §2.5). A previous call that ended
+# without output (capacity error included) was already given back by codex-run.sh.
+bump_rc=0
+node "$OPS/state.ts" bump-attempt "$TASK" impl >/dev/null 2>"$ERR_FILE" || bump_rc=$?
+if [ "$bump_rc" = 1 ]; then stop 1 attempts-exhausted "$(last_error)"; fi
+if [ "$bump_rc" != 0 ]; then stop 2 state-error "$(last_error)"; fi
 
 # 4. Task brief. A first attempt uses the brief that is already there. Every later attempt gets
 # a fresh one: brief.ts reads the attempt number and the previous failure output from the

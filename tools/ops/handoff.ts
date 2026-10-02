@@ -65,7 +65,8 @@ function cell(text: string): string {
 }
 
 function progressRow(s: TaskState): string {
-  const step = `${s.state}（实现 ${s.attempts.impl} 次，评审 ${s.attempts.review} 轮）`;
+  const a = s.attempts;
+  const step = `${s.state}（实现 ${a.impl} 次，规则测试评审 ${a['spec-test']} 轮，代码评审 ${a.code} 轮）`;
   const notes: string[] = [];
   if (s.last_error) notes.push(`上一轮失败输出：${s.last_error}`);
   if (s.pid !== null) notes.push(`后台进程 ${s.pid}`);

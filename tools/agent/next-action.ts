@@ -12,6 +12,7 @@
 // Exit codes: 0 decided, 2 usage or internal error.
 import { existsSync } from 'node:fs';
 import { readJsonFile } from '../lib/fsx.ts';
+import { uncountedReason } from '../ops/state.ts';
 
 /** 规划/11 §2.5: at most 3 implementation attempts; re-dispatch after 15, 30, 60 minutes. */
 export const MAX_IMPL_ATTEMPTS = 3;
@@ -26,7 +27,10 @@ export type Input = {
   run: string;
   /** RUN/meta.impl.json as written by codex-run.sh. */
   meta: Record<string, unknown>;
-  /** state.attempts.impl; the run being judged is already counted (规划/11 §2.5). */
+  /**
+   * state.attempts.impl after codex-run.sh settled the run: it is counted, unless it ended
+   * without output and was given back (规划/11 §2.5, tools/ops/state.ts settle).
+   */
   attempts: number;
   base: string | null;
   /** RUN/impl.json; only present when the wrapper accepted it. */
@@ -80,9 +84,23 @@ export function nextAction(input: Input): Action {
   const exitCode = typeof meta['exit_code'] === 'number' ? meta['exit_code'] : null;
   if (exitCode === null) throw new Error('meta.json has no exit_code: the run is not finished');
 
+  // Does this call use up a round? Only a call that ended without output is given back
+  // (codex-run.sh runs state.ts settle); every call stays in the usage ledger and counts towards
+  // the per-task and daily caps and the no-output breaker (规划/11 §2.5).
+  const countsAsAttempt =
+    uncountedReason({
+      mode: 'impl',
+      review_type: null,
+      started_at: '',
+      exit_code: exitCode,
+      has_output: meta['has_output'] === true,
+      idle_killed: meta['idle_killed'] === true,
+      validation: typeof meta['validation'] === 'string' ? meta['validation'] : null,
+    }) === null;
+
   if (exitCode === 11) {
-    // Model capacity: retried with backoff and NOT counted in attempts (dispatch.sh does not
-    // bump the counter for the re-dispatch); it still counts towards the daily call limit.
+    // Model capacity: retried with backoff and NOT counted in attempts (codex-run.sh gives the
+    // round back); it still counts towards the per-task and daily call limits.
     return {
       action: 'capacity-retry',
       ...common,
@@ -103,12 +121,15 @@ export function nextAction(input: Input): Action {
     };
   }
   if (exitCode === 124) {
-    return failed(input, meta['idle_killed'] === true ? 'inactivity-kill' : 'timeout');
+    return failed(input, meta['idle_killed'] === true ? 'inactivity-kill' : 'timeout', {
+      counts_as_attempt: countsAsAttempt,
+    });
   }
   if (exitCode !== 0) {
     return failed(input, 'no-usable-output', {
       codex_exit: meta['codex_exit'] ?? null,
       validation: meta['validation'] ?? null,
+      counts_as_attempt: countsAsAttempt,
     });
   }
 

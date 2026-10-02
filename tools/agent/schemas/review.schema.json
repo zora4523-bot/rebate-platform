@@ -1,11 +1,28 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["verdict", "summary", "findings", "checklist"],
+  "required": ["verdict", "summary", "findings", "out_of_scope", "checklist"],
   "properties": {
     "verdict": { "type": "string", "enum": ["pass", "fail"] },
     "summary": { "type": "string" },
     "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "key", "file", "line", "rule", "scenario", "suggestion"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["S0", "S1", "S2"] },
+          "key": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "rule": { "type": "string" },
+          "scenario": { "type": "string" },
+          "suggestion": { "type": "string" }
+        }
+      }
+    },
+    "out_of_scope": {
       "type": "array",
       "items": {
         "type": "object",

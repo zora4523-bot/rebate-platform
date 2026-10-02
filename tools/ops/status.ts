@@ -33,7 +33,7 @@ export type BoardRow = {
   deps: { id: string; done: boolean }[];
   status: 'todo' | 'done';
   state: string | null;
-  attempts: { impl: number; review: number };
+  attempts: TaskState['attempts'];
   pr: number | null;
 };
 
@@ -166,7 +166,7 @@ export function collectBoard(opts: BoardOptions = {}): Board {
       })),
       status: task.status,
       state: state?.state ?? null,
-      attempts: state?.attempts ?? { impl: 0, review: 0 },
+      attempts: state?.attempts ?? { impl: 0, 'spec-test': 0, code: 0 },
       pr: task.pr,
     });
   }
@@ -254,10 +254,11 @@ function rowLine(r: BoardRow): string {
     r.deps.length === 0
       ? '—'
       : r.deps.map((d) => `${d.id}（${d.done ? 'done' : 'todo'}）`).join('、');
+  const reviews: string[] = [];
+  if (r.attempts['spec-test'] > 0) reviews.push(`规则测试评审 ${r.attempts['spec-test']}`);
+  if (r.attempts.code > 0) reviews.push(`代码评审 ${r.attempts.code}`);
   const attempts =
-    r.attempts.review > 0
-      ? `${r.attempts.impl}（评审 ${r.attempts.review}）`
-      : String(r.attempts.impl);
+    reviews.length > 0 ? `${r.attempts.impl}（${reviews.join('，')}）` : String(r.attempts.impl);
   return `| ${[
     r.id,
     r.repo,
