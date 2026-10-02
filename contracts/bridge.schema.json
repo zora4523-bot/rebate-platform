@@ -1,0 +1,1346 @@
+{
+  "$comment": "JSBridge contract (CT-03). Methods: 规划/04 §9; protocol, levels, error codes: 规划/03 §5.3. Generated types: packages/contracts-ts/src/bridge.gen.ts. Clients call has() before any method (拍板第二批 TECH-28).",
+  "version": 1,
+  "envelope": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "type": "integer",
+          "enum": [1]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": ["v", "id", "method"]
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "code": {
+          "type": "integer",
+          "description": "0 = success; bridge errors use 90001–90500"
+        },
+        "msg": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": ["id", "code", "msg"]
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": ["event"]
+    }
+  },
+  "levels": {
+    "L0": "Whitelisted origin, main frame",
+    "L1": "L0 + logged in",
+    "L2": "L1 + user gesture within the last 1 second"
+  },
+  "errors": {
+    "90001": "Method does not exist or is not supported",
+    "90002": "Invalid params",
+    "90003": "Timeout",
+    "90004": "Cancelled by the user",
+    "90401": "Not logged in",
+    "90403": "Origin or frame not allowed, or method + path outside signed_paths",
+    "90404": "User gesture missing",
+    "90500": "Native internal error"
+  },
+  "signed_paths": [
+    {
+      "method": "POST",
+      "path": "/v1/orders/claims"
+    }
+  ],
+  "not_exposed": [
+    "withdrawal",
+    "payout account change",
+    "labor agreement signing",
+    "real-name verification",
+    "account deletion",
+    "phone number change"
+  ],
+  "events": {
+    "app.resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    },
+    "app.pause": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    },
+    "auth.changed": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logged_in": {
+          "type": "boolean"
+        }
+      },
+      "required": ["logged_in"]
+    },
+    "page.visible": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": ["visible"]
+    }
+  },
+  "methods": {
+    "app.getEnv": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": ["ios", "android", "harmony"]
+          },
+          "app_version": {
+            "type": "string",
+            "description": "SemVer, same number on all apps (拍板第二批 TECH-07)"
+          },
+          "build": {
+            "type": "string"
+          },
+          "os_version": {
+            "type": "string"
+          },
+          "bridge_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "safe_area": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Insets in points",
+            "properties": {
+              "top": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bottom": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "left": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "right": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["top", "bottom", "left", "right"]
+          },
+          "channel": {
+            "type": "string",
+            "enum": ["appstore", "official", "huawei", "agc"],
+            "description": "contracts/enums install_channel"
+          }
+        },
+        "required": [
+          "platform",
+          "app_version",
+          "build",
+          "os_version",
+          "bridge_version",
+          "safe_area",
+          "channel"
+        ]
+      }
+    },
+    "app.getConfig": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": ["keys"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "values": {
+            "type": "object",
+            "description": "Subset of /v1/config limited to the keys whitelisted for H5"
+          }
+        },
+        "required": ["values"]
+      }
+    },
+    "auth.getUser": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": 10000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "No token of any kind is returned (04 §9, BR-ID-32)",
+        "properties": {
+          "uid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "avatar": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "phone_bound": {
+            "type": "boolean"
+          },
+          "realname_status": {
+            "type": "string",
+            "enum": ["none", "verified", "failed"]
+          },
+          "bindings": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "taobao": {
+                "$ref": "#/$defs/UnionBindingStatus"
+              },
+              "pdd": {
+                "$ref": "#/$defs/UnionBindingStatus"
+              }
+            },
+            "required": ["taobao", "pdd"]
+          }
+        },
+        "required": ["uid", "nickname", "avatar", "phone_bound", "realname_status", "bindings"]
+      }
+    },
+    "auth.login": {
+      "level": "L0",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "note": "Opens Login; resolves when the user finishes or leaves",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "logged_in": {
+            "type": "boolean"
+          }
+        },
+        "required": ["logged_in"]
+      }
+    },
+    "auth.getH5Token": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": 10000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "aud=h5; lifetime and scope per BR-ID-32 (no withdrawal, payout account, real name, deletion, phone change)",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expire_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["token", "expire_at"]
+      }
+    },
+    "net.signedRequest": {
+      "level": "L2",
+      "model": "async",
+      "timeout_ms": 15000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "note": "Native signs with install_secret (BR-ID-09) only for method + path in signed_paths; otherwise 90403 (拍板第二批 TECH-30)",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/v1/",
+            "maxLength": 2048,
+            "description": "Path with query, without host; must match signed_paths"
+          },
+          "body": {
+            "description": "JSON request body, sent as is"
+          }
+        },
+        "required": ["method", "path"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          },
+          "body": {
+            "description": "Parsed JSON response envelope of the API"
+          }
+        },
+        "required": ["status", "body"]
+      }
+    },
+    "ui.toast": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "duration": {
+            "type": "string",
+            "enum": ["short", "long"]
+          }
+        },
+        "required": ["text"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "ui.showLoading": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 50
+          }
+        },
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "ui.hideLoading": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "ui.setNavBar": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "visible": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "bg_color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+          },
+          "bg_gradient": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+            },
+            "minItems": 2,
+            "maxItems": 4
+          },
+          "bg_image": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          },
+          "text_color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+          },
+          "status_bar_style": {
+            "type": "string",
+            "enum": ["light", "dark"]
+          },
+          "immersive": {
+            "type": "boolean"
+          },
+          "hide_close": {
+            "type": "boolean"
+          },
+          "hide_bottom_safe_area": {
+            "type": "boolean"
+          },
+          "bounce": {
+            "type": "boolean"
+          }
+        },
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "nav.open": {
+      "level": "L0",
+      "model": "async",
+      "timeout_ms": 10000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "note": "Login requirements of the target page are handled by the router",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "route": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Route name from routes.json; unknown or newer than this app → upgrade page (03 §4.4)"
+          },
+          "params": {
+            "type": "object",
+            "description": "Route params, validated against routes.json"
+          }
+        },
+        "required": ["route"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          }
+        },
+        "required": ["opened"]
+      }
+    },
+    "nav.close": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "trade.openProduct": {
+      "level": "L0",
+      "model": "async",
+      "timeout_ms": 10000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "note": "Opens the native ProductDetail; item_ref passed through unchanged (BR-PROD-11)",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "$ref": "#/$defs/Platform"
+          },
+          "product_key": {
+            "$ref": "#/$defs/ProductKey"
+          },
+          "item_ref": {
+            "$ref": "#/$defs/ItemRef"
+          }
+        },
+        "required": ["platform", "product_key"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          }
+        },
+        "required": ["opened"]
+      }
+    },
+    "trade.convertAndOpen": {
+      "level": "L2",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "note": "Either product_key (+ item_ref) or url. Native handles login, authorization, POST /v1/links/convert with scene=h5 (拍板第二批 TRADE-03) and the jump",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "$ref": "#/$defs/Platform"
+          },
+          "product_key": {
+            "$ref": "#/$defs/ProductKey"
+          },
+          "item_ref": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "spm": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": ["platform"],
+        "oneOf": [
+          {
+            "required": ["product_key"]
+          },
+          {
+            "required": ["url"]
+          }
+        ],
+        "description": "Either product_key (with item_ref) or url, never both"
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "jumped": {
+            "type": "boolean"
+          },
+          "step": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Step at which the flow ended; values are fixed by specs/client-behavior.md (CT-09)"
+          }
+        },
+        "required": ["jumped", "step"]
+      }
+    },
+    "trade.authorize": {
+      "level": "L2",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "$ref": "#/$defs/Platform"
+          }
+        },
+        "required": ["platform"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/$defs/UnionBindingStatus"
+          }
+        },
+        "required": ["status"]
+      }
+    },
+    "trade.openUnionActivity": {
+      "level": "L2",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "P1",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "$ref": "#/$defs/Platform"
+          },
+          "activity_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["platform", "activity_id"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "jumped": {
+            "type": "boolean"
+          }
+        },
+        "required": ["jumped"]
+      }
+    },
+    "share.open": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": ["wechat_session", "wechat_timeline", "system"]
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["link"]
+                  },
+                  "url": {
+                    "type": "string",
+                    "pattern": "^https://",
+                    "maxLength": 2048
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "desc": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "thumb": {
+                    "type": "string",
+                    "pattern": "^https://",
+                    "maxLength": 2048
+                  }
+                },
+                "required": ["type", "url", "title"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["image"]
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^https://",
+                      "maxLength": 2048
+                    },
+                    "minItems": 1,
+                    "maxItems": 9
+                  }
+                },
+                "required": ["type", "images"]
+              }
+            ]
+          },
+          "show_panel": {
+            "type": "boolean"
+          }
+        },
+        "required": ["content"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "shared": {
+            "type": "boolean"
+          }
+        },
+        "required": ["shared"]
+      }
+    },
+    "media.saveImage": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^https://",
+              "maxLength": 2048
+            },
+            "minItems": 1,
+            "maxItems": 9
+          }
+        },
+        "required": ["urls"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "saved": {
+            "type": "boolean"
+          }
+        },
+        "required": ["saved"]
+      }
+    },
+    "media.previewImage": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^https://",
+              "maxLength": 2048
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["urls"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "clipboard.write": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "note": "Native records a hash of the text and does not recognise it later (03 §4.6)",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "required": ["text"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "clipboard.read": {
+      "level": "L2",
+      "model": "async",
+      "timeout_ms": 5000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "note": "Harmony returns 90001; the page falls back to an input box",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["text"]
+      }
+    },
+    "clipboard.setAutoDetect": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "ext.openApp": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": 10000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "note": "Only targets declared in apps.json",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "$ref": "#/$defs/AppTarget"
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": ["target", "url"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          },
+          "installed": {
+            "type": "boolean"
+          }
+        },
+        "required": ["opened", "installed"]
+      }
+    },
+    "ext.openBrowser": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          }
+        },
+        "required": ["url"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "ext.openMiniProgram": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": 10000,
+      "phase": "P1",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": ["app_id"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          }
+        },
+        "required": ["opened"]
+      }
+    },
+    "cs.open": {
+      "level": "L0",
+      "model": "async",
+      "timeout_ms": 10000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "context": {
+            "type": "object",
+            "description": "Free-form context passed to the support chat"
+          }
+        },
+        "required": ["entry"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          }
+        },
+        "required": ["opened"]
+      }
+    },
+    "perm.getPushStatus": {
+      "level": "L0",
+      "model": "async",
+      "timeout_ms": 5000,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"]
+      }
+    },
+    "perm.request": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["push", "photos", "camera"]
+          }
+        },
+        "required": ["type"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "granted": {
+            "type": "boolean"
+          }
+        },
+        "required": ["granted"]
+      }
+    },
+    "track.event": {
+      "level": "L0",
+      "model": "sync",
+      "timeout_ms": null,
+      "phase": "M-内测",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "props": {
+            "type": "object",
+            "description": "Event properties per specs/events.yaml (CT-13)"
+          }
+        },
+        "required": ["name"]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "media.scan": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "P1",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "media.uploadImage": {
+      "level": "L1",
+      "model": "async",
+      "timeout_ms": null,
+      "phase": "P1",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  "$defs": {
+    "Platform": {
+      "type": "string",
+      "enum": ["taobao", "jd", "pdd", "meituan", "vip", "douyin", "eleme", "kuaishou", "suning"],
+      "description": "contracts/enums platform"
+    },
+    "ProductKey": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque product key (BR-PROD-02)"
+    },
+    "ItemRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Opaque signed reference, passed through unchanged (BR-PROD-11)"
+    },
+    "UnionBindingStatus": {
+      "type": "string",
+      "enum": ["unbound", "pending_auth", "active", "invalid", "released", "blocked"],
+      "description": "contracts/enums union_binding_status"
+    },
+    "AppTarget": {
+      "type": "string",
+      "enum": ["taobao", "jd", "pdd"],
+      "description": "Keys of contracts/apps.json"
+    }
+  }
+}

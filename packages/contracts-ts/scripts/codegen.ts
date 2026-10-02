@@ -2,6 +2,7 @@
 //   src/openapi.gen.ts       from contracts/openapi.yaml (openapi-typescript)
 //   src/enums.gen.ts         from contracts/enums/*.yaml
 //   src/error-codes.gen.ts   from contracts/error-codes.yaml
+//   src/bridge.gen.ts        from contracts/bridge.schema.json, routes.json, apps.json
 //   node scripts/codegen.ts           write the generated files
 //   node scripts/codegen.ts --check   exit 1 when a committed file differs from a fresh run
 // Both modes first run the cross-file conformance checks (conformance.ts) and stop on a problem.
@@ -12,8 +13,10 @@ import { basename, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
 import { loadEnums, loadErrorCodes, renderEnums, renderErrorCodes } from './catalog.ts';
+import { loadBridgeCatalog, renderBridge } from './bridge.ts';
 import { checkConformance } from './conformance.ts';
 import {
+  bridgeGeneratedFile,
   enumsGeneratedFile,
   errorCodesGeneratedFile,
   generatedFile,
@@ -67,6 +70,12 @@ try {
     {
       file: errorCodesGeneratedFile,
       content: header('contracts/error-codes.yaml') + renderErrorCodes(errors.codes, errors.ranges),
+    },
+    {
+      file: bridgeGeneratedFile,
+      content:
+        header('contracts/bridge.schema.json, contracts/routes.json, contracts/apps.json') +
+        (await renderBridge(loadBridgeCatalog(enumDefs, errors.ranges))),
     },
   ];
 } catch (err) {

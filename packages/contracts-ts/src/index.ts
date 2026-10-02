@@ -6,6 +6,8 @@ import type { components, operations, paths } from './openapi.gen.ts';
 export type { components, operations, paths };
 export * from './enums.gen.ts';
 export * from './error-codes.gen.ts';
+/** JSBridge methods, routes and target apps (contracts/bridge.schema.json, routes.json, apps.json). */
+export * as bridge from './bridge.gen.ts';
 
 /** Named schema from `components.schemas`, e.g. `Schema<'HealthzResponse'>`. */
 export type Schema<Name extends keyof components['schemas']> = components['schemas'][Name];
