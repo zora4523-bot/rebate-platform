@@ -63,3 +63,23 @@ it('posts open with the path id, signature and idempotency headers', async () =>
   expect(seen[0]?.headers.get('idempotency-key')).toBe('open-0001');
   expect(data?.data.old_final_price_fen).toBe(2990);
 });
+
+it('convert needs exactly one of product_key and url; a parse result needs card or error_code', () => {
+  // Codex round-3 S1 (ConvertLinkRequest, ParseResult): the oneOf branches declare the property
+  // they require, so the generated types reject a body or result that carries neither.
+  // @ts-expect-error neither product_key nor url
+  const neither: Schema<'ConvertLinkRequest'> = { platform: 'taobao', scene: 'h5' };
+  const byUrl: Schema<'ConvertLinkRequest'> = {
+    platform: 'taobao',
+    scene: 'h5',
+    url: 'https://item.taobao.com/item.htm?id=9',
+  };
+  // @ts-expect-error neither card nor error_code
+  const empty: Schema<'ParseResult'> = { hit: { platform: 'taobao', kind: 'url', raw: 'x' } };
+  const failed: Schema<'ParseResult'> = {
+    hit: { platform: 'taobao', kind: 'url', raw: 'x' },
+    error_code: 30132,
+  };
+  expect([neither, byUrl, empty, failed]).toHaveLength(4);
+  expect(failed.error_code).toBe(30132);
+});

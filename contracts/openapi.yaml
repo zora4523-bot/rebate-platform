@@ -2331,8 +2331,8 @@ components:
     ParseResult:
       type: object
       description: |
-        Result of one hit; exactly one of `card` and `error_code` is present (enforced by the
-        server, not by a oneOf: strict Ajv and the four generators, ADR-0001 §4.2 #15, TECH-27).
+        Result of one hit; exactly one of `card` and `error_code` is present. The oneOf branches
+        declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).
       additionalProperties: false
       required:
         - hit
@@ -2347,6 +2347,22 @@ components:
           minimum: 10000
           maximum: 59999
           description: Error code for this hit (30131, 30132, 30141, 50301…), see error-codes.yaml.
+      oneOf:
+        - type: object
+          properties:
+            card:
+              $ref: '#/components/schemas/ProductCard'
+          required:
+            - card
+        - type: object
+          properties:
+            error_code:
+              type: integer
+              format: int32
+              minimum: 10000
+              maximum: 59999
+          required:
+            - error_code
     ParseInputData:
       type: object
       additionalProperties: false
@@ -2468,10 +2484,26 @@ components:
       type: object
       description: |
         Either product_key (with the tapped card's item_ref) or url; neither, or both, is 20001.
+        The oneOf branches declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).
       additionalProperties: false
       required:
         - platform
         - scene
+      oneOf:
+        - type: object
+          properties:
+            product_key:
+              $ref: '#/components/schemas/ProductKey'
+          required:
+            - product_key
+        - type: object
+          properties:
+            url:
+              type: string
+              format: uri
+              maxLength: 2048
+          required:
+            - url
       properties:
         platform:
           $ref: '#/components/schemas/PlatformCode'

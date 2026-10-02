@@ -820,8 +820,8 @@ export interface components {
             raw: string;
         };
         /**
-         * @description Result of one hit; exactly one of `card` and `error_code` is present (enforced by the
-         *     server, not by a oneOf: strict Ajv and the four generators, ADR-0001 §4.2 #15, TECH-27).
+         * @description Result of one hit; exactly one of `card` and `error_code` is present. The oneOf branches
+         *     declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).
          */
         ParseResult: {
             hit: components["schemas"]["InputHit"];
@@ -831,7 +831,12 @@ export interface components {
              * @description Error code for this hit (30131, 30132, 30141, 50301…), see error-codes.yaml.
              */
             error_code?: number;
-        };
+        } & ({
+            card: components["schemas"]["ProductCard"];
+        } | {
+            /** Format: int32 */
+            error_code: number;
+        });
         ParseInputData: {
             results: components["schemas"]["ParseResult"][];
         };
@@ -887,7 +892,10 @@ export interface components {
             data: components["schemas"]["OpenLinkResult"];
             trace_id: components["schemas"]["TraceId"];
         };
-        /** @description Either product_key (with the tapped card's item_ref) or url; neither, or both, is 20001. */
+        /**
+         * @description Either product_key (with the tapped card's item_ref) or url; neither, or both, is 20001.
+         *     The oneOf branches declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).
+         */
         ConvertLinkRequest: {
             platform: components["schemas"]["PlatformCode"];
             product_key?: components["schemas"]["ProductKey"];
@@ -903,7 +911,12 @@ export interface components {
             scene: "h5";
             spm?: string;
             installed?: components["schemas"]["InstalledState"];
-        };
+        } & ({
+            product_key: components["schemas"]["ProductKey"];
+        } | {
+            /** Format: uri */
+            url: string;
+        });
         /** @description The registered link_id plus the same fields as the open result (04 §6.3). */
         ConvertLinkData: {
             link_id: components["schemas"]["Id"];
