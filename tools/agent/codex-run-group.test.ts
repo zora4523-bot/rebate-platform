@@ -126,10 +126,12 @@ it(
   LONG,
   () => {
     const fx = fixture('cpu-busy');
-    // A busy descendant (no events written for 4 seconds) must not be taken for inactivity.
+    // A busy descendant (no events written for 5 seconds, longer than the 3 s idle window) must
+    // not be taken for inactivity. The window leaves room for a descendant that gets only a
+    // small share of a loaded CI runner (the CPU step is 0.25 s).
     const res = codexRun(fx, ['impl', TASK], {
       FAKE_CODEX_SCENARIO: 'busy-then-finish',
-      COULI_CODEX_IDLE_SECS: '2',
+      COULI_CODEX_IDLE_SECS: '3',
       COULI_CODEX_TIMEOUT_SECS: '40',
     });
     expect(res.status, res.stderr).toBe(0);

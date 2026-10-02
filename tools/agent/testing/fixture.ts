@@ -75,7 +75,13 @@ export function gitIn(dir: string, args: readonly string[]): string {
  * One behaviour of a stub CLI: the first rule whose `when` tokens all occur in the arguments
  * wins. `writeOut` writes that text to the file named after `--out`.
  */
-export type StubRule = { when?: string[]; exit?: number; stdout?: string; writeOut?: string };
+export type StubRule = {
+  when?: string[];
+  exit?: number;
+  stdout?: string;
+  stderr?: string;
+  writeOut?: string;
+};
 
 /**
  * Writes a stub for another package's CLI. Every call appends `[name, ...argv]` as one JSON
@@ -96,6 +102,7 @@ export function writeStub(file: string, name: string, rules: StubRule[] = []): v
     'const rule = rules.find((r) => (r.when ?? []).every((token) => args.includes(token))) ?? {};',
     "if (rule.writeOut !== undefined) writeFileSync(args[args.indexOf('--out') + 1], rule.writeOut);",
     "if (rule.stdout !== undefined) process.stdout.write(rule.stdout + '\\n');",
+    "if (rule.stderr !== undefined) process.stderr.write(rule.stderr + '\\n');",
     'process.exitCode = rule.exit ?? 0;',
     '',
   ].join('\n');
@@ -108,6 +115,7 @@ export function writeStub(file: string, name: string, rules: StubRule[] = []): v
  *   <root>/runs/worktrees/T1-01      linked worktree on branch task/T1-01
  *   <root>/runs/T1-01/brief.md       task brief
  *   <root>/trusted                   copy of tools/agent + tools/lib, stub tools/ops/usage.ts
+ *                                    (token accounting only; nothing gates on it)
  */
 export function makeFixture(name: string): Fixture {
   const root = join(REPO, '.tmp', `agent-${name}-${process.pid}-${randomBytes(4).toString('hex')}`);

@@ -762,6 +762,8 @@ run_task() {
     --str "validation=$validated" --lines "validation_messages=$WORK/validate.txt" \
     --list "position_changed=$changed" --bool "other_task_branches_changed=$other_tasks"
 
+  # Token accounting only (规划/11 §1.3): the Codex quota is unlimited and nothing is gated on
+  # this ledger, so a failure here is a warning and never changes the exit code.
   if [ -f "$TRUSTED/tools/ops/usage.ts" ]; then
     node "$TRUSTED/tools/ops/usage.ts" record --run "$RUN" --task "$TASK" --mode "$MODE" >&2 ||
       log "warning: usage ledger was not updated (tools/ops/usage.ts record failed)"
@@ -769,8 +771,9 @@ run_task() {
     log "warning: $TRUSTED/tools/ops/usage.ts not found, usage not recorded"
   fi
   # Rounds (规划/11 §2.5): the round was counted before the call; a call that ended without
-  # output gives it back (state.ts settle decides, idempotently). It stays in the usage ledger
-  # above, so it still counts towards the per-task and daily caps and the no-output breaker.
+  # output gives it back (state.ts settle decides, idempotently). Its meta.<mode>.json stays in
+  # the run directory, so it still counts towards the per-task call cap and the no-output
+  # breaker (state.ts taskCalls).
   if [ -f "$TRUSTED/tools/ops/state.ts" ]; then
     node "$TRUSTED/tools/ops/state.ts" settle "$TASK" --meta "$RUN/meta.$MODE.json" >&2 ||
       log "warning: in-flight state was not settled (tools/ops/state.ts settle failed); the round stays counted"

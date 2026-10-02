@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | `lib/` | 共用库：`yaml-lite.ts`（严格的 YAML 子集）、`glob.ts`、`paths.ts`、`git.ts`（只读）、`fsx.ts`（原子写）、`task-file.ts`（任务台账文件的形状校验） | 11 §2.1 |
 | `guard/` | 门禁守卫，见下表；`hooks/` 是 Claude 会话的 PreToolUse 拦截钩子，`shim/` 是 `codex` 垫片（两者都只是文件，安装步骤在各自的 `INSTALL.md`） | 11 §1.2、§2.3、§2.4、§4、§5.5、§8 |
-| `ops/` | 任务台账检查、在途状态、额度账本与熔断、看板、任务书、交接、verify 容器 | 11 §1.3、§2、§5.3 |
+| `ops/` | 任务台账检查、在途状态与失败熔断、用量账本（只记账）、看板、任务书、交接、verify 容器 | 11 §1.3、§2、§5.3 |
 | `agent/` | Codex 包装脚本 `codex-run.sh`、输出 schema、评审提示词、派工与回收 | 11 §2.4、§3.3 |
 | `ci/` | CI 工作流用到的脚本：`check-workflows.ts`（工作流与规则集的静态检查）、`evidence-check.ts`（必过检查 `evidence-check`，从基线副本运行；非 `task/` 分支带有效负责人批准标签且没碰资金与归属实现路径时免证据文件） | 11 §3.2、§4.4 |
 

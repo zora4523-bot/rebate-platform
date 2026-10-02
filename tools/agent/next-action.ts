@@ -85,8 +85,8 @@ export function nextAction(input: Input): Action {
   if (exitCode === null) throw new Error('meta.json has no exit_code: the run is not finished');
 
   // Does this call use up a round? Only a call that ended without output is given back
-  // (codex-run.sh runs state.ts settle); every call stays in the usage ledger and counts towards
-  // the per-task and daily caps and the no-output breaker (规划/11 §2.5).
+  // (codex-run.sh runs state.ts settle); every finished call still counts towards the per-task
+  // call cap and the no-output breaker (规划/11 §2.5, tools/ops/state.ts taskCalls).
   const countsAsAttempt =
     uncountedReason({
       mode: 'impl',
@@ -100,7 +100,7 @@ export function nextAction(input: Input): Action {
 
   if (exitCode === 11) {
     // Model capacity: retried with backoff and NOT counted in attempts (codex-run.sh gives the
-    // round back); it still counts towards the per-task and daily call limits.
+    // round back); it still counts towards the per-task call cap.
     return {
       action: 'capacity-retry',
       ...common,

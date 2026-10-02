@@ -28,7 +28,6 @@ afterEach(() => {
 });
 
 type Stubs = {
-  usage?: StubRule[];
   state?: StubRule[];
   brief?: StubRule[];
   task?: StubRule[];
@@ -60,11 +59,8 @@ function fixture(name: string, stubs: Stubs = {}): Fixture {
   fixtures.push(fx);
   const ops = join(fx.trusted, 'tools', 'ops');
   const guard = join(fx.trusted, 'tools', 'guard');
-  writeStub(
-    join(ops, 'usage.ts'),
-    'usage',
-    stubs.usage ?? [{ when: ['gate'], stdout: '{"allowed":true}' }],
-  );
+  // Token accounting only: dispatch.sh never asks it anything (no quota gate, 规划/11 §1.3).
+  writeStub(join(ops, 'usage.ts'), 'usage');
   writeStub(
     join(ops, 'state.ts'),
     'state',
@@ -195,16 +191,16 @@ it('dispatch: preflight in order, background launch, pid recorded', LONG, () => 
   expect(observed(fx)).toMatchObject({ wrapper: '1', stdin: 'devnull' });
 
   const calls = stubCalls(fx);
-  // The risk level comes from the trusted task.ts and is handed to the gate (规划/11 §1.3).
-  expect(calls.slice(0, 6)).toEqual([
-    ['task', 'show', TASK, '--json'],
-    ['usage', 'gate', '--task', TASK, '--mode', 'impl', '--risk', 'RV1'],
+  // No quota gate (owner 2026-10-02, ops/approvals.yaml id 15): the claim comes first, and the
+  // usage ledger is only written by the wrapper after the call.
+  expect(calls.slice(0, 4)).toEqual([
     ['state', 'claim', TASK, '--owner', 'sess-test'],
     // The pid of a still-running previous dispatch is looked up before anything is counted.
     ['state', 'get', TASK],
     ['state', 'bump-attempt', TASK, 'impl'],
     ['state', 'get', TASK],
   ]);
+  expect(calls.filter((call) => call[0] === 'usage' && call[1] !== 'record')).toEqual([]);
   const set = calls.find((call) => call[0] === 'state' && call[1] === 'set');
   expect(set?.slice(0, 7)).toEqual([
     'state',
@@ -231,39 +227,30 @@ it('dispatch: preflight in order, background launch, pid recorded', LONG, () => 
   ]);
 });
 
-it('dispatch: a closed usage gate stops everything with exit 3', LONG, () => {
-  const fx = fixture('dispatch-gate', {
-    usage: [{ when: ['gate'], exit: 3, stdout: '{"allowed":false,"reason":"daily-limit"}' }],
+it('dispatch: an open failure breaker stops the task with exit 3 and says why', LONG, () => {
+  // 规划/11 §2.5: 10 calls per task, or 3 calls in a row without output (state.ts bump-attempt).
+  const why = `${TASK}: 连续 3 次调用没有产出（规划/11 §2.5）；停止该任务并报告`;
+  const fx = fixture('dispatch-breaker', {
+    state: [
+      { when: ['bump-attempt'], exit: 3, stderr: why },
+      { when: ['get'], stdout: stateJson() },
+    ],
   });
   const res = runScript('dispatch.sh', [TASK], fx.env);
   expect(res.status, res.stderr).toBe(3);
   expect(lastJsonLine(res.stdout)).toEqual({
     action: 'stopped',
     task: TASK,
-    reason: 'usage-gate',
-    gate_exit: 3,
-    gate: { allowed: false, reason: 'daily-limit' },
+    reason: 'task-breaker',
+    detail: why,
   });
-  expect(stubCalls(fx)).toEqual([
-    ['task', 'show', TASK, '--json'],
-    ['usage', 'gate', '--task', TASK, '--mode', 'impl', '--risk', 'RV1'],
+  expect(stubCalls(fx).map((call) => call.slice(0, 2).join(' '))).toEqual([
+    'state claim',
+    'state get',
+    'state bump-attempt',
   ]);
   expect(existsSync(join(fx.run, 'dispatch.log'))).toBe(false);
 });
-
-it(
-  'dispatch: without a computed risk level the gate is still asked, with the task only',
-  LONG,
-  () => {
-    const fx = fixture('dispatch-no-risk', {
-      task: [{ when: ['show'], exit: 1 }],
-      usage: [{ when: ['gate'], exit: 3, stdout: '{"allowed":false}' }],
-    });
-    const res = runScript('dispatch.sh', [TASK], fx.env);
-    expect(res.status, res.stderr).toBe(3);
-    expect(stubCalls(fx, 'usage')).toEqual([['usage', 'gate', '--task', TASK]]);
-  },
-);
 
 it(
   'dispatch: a task claimed by someone else is not dispatched; an own claim is renewed',
@@ -369,8 +356,6 @@ it('dispatch: a missing brief is generated; missing dependencies are never insta
   expect(readFileSync(join(fx.run, 'brief.md'), 'utf8')).toContain('stub brief');
   // The attempt was counted before the brief and the worktree were looked at.
   expect(stubCalls(fx).map((call) => call.slice(0, 2).join(' '))).toEqual([
-    'task show',
-    'usage gate',
     'state claim',
     'state get',
     'state bump-attempt',

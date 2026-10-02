@@ -19,15 +19,24 @@
 //   call ended without output: hard timeout or inactivity kill (exit 124), model capacity error
 //   (exit 11), or exit 10 before an answer could be validated (no `-o` file, no
 //   `turn.completed` / `turn.failed`, Codex exit non-zero, aborted, processes left behind). Such
-//   a call still counts towards the per-task and daily Codex call caps and the no-output breaker
-//   (tools/ops/usage.ts). An answer that failed validation (exit 10, validation "failed") and a
-//   position assertion failure (exit 12) stay counted.
+//   a call still counts towards the per-task Codex call cap and the no-output breaker (below).
+//   An answer that failed validation (exit 10, validation "failed") and a position assertion
+//   failure (exit 12) stay counted.
+//
+// Failure breakers (规划/11 §2.5; owner 2026-10-02: the Codex quota is unlimited, only failures
+// stop a task, ops/approvals.yaml id 15). `bump-attempt` refuses with exit 3 when either is open:
+// - at most 10 Codex calls per task (a runaway-loop breaker): every finished call counts, also
+//   one that ended without output and gave its round back;
+// - 3 calls of the task in a row that ended without output stop the task. A capacity error
+//   neither extends nor ends such a run.
+// Both are computed from the task's finished calls in <runs>/<id>/ (meta.<mode>.json and
+// attempts/<n>/meta.json); there is no daily cap and no quota tier.
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readJsonFile, writeFileAtomic } from '../lib/fsx.ts';
 import { runsDir } from '../lib/paths.ts';
-import { assertTaskId, CheckError, runMain, UsageError } from './cli.ts';
+import { assertTaskId, BreakerError, CheckError, runMain, UsageError } from './cli.ts';
 import { acquireLock, heartbeatLock, LEASE_MS, lockStatus } from './lock.ts';
 
 export const STATES = [
@@ -227,9 +236,14 @@ export function updateState(id: string, patch: StatePatch, now: Date = new Date(
 
 /**
  * Counts an attempt BEFORE the dispatch (规划/11 §2.5), so that a run that dies
- * without a trace is still counted. Past the limit nothing is written.
+ * without a trace is still counted. Past the limit nothing is written. An open failure
+ * breaker (`taskCalls`) refuses first, with BreakerError (exit 3).
  */
 export function bumpAttempt(id: string, kind: AttemptKind, now: Date = new Date()): TaskState {
+  const calls = taskCalls(id);
+  if (calls.reasons.length > 0) {
+    throw new BreakerError(calls.reasons.map((r) => r.message).join('\n'));
+  }
   const prev = readState(id) ?? initialState(id, now);
   const used = prev.attempts[kind];
   if (used >= ATTEMPT_LIMITS[kind]) {
@@ -352,6 +366,55 @@ export function runCallMetas(runDir: string): CallMeta[] {
     if (meta !== null) metas.set(`${meta.mode}:${meta.started_at}`, meta);
   }
   return [...metas.values()].sort((a, b) => a.started_at.localeCompare(b.started_at));
+}
+
+/** 规划/11 §2.5: runaway-loop breaker, every finished Codex call of the task counts. */
+export const MAX_CALLS_PER_TASK = 10;
+/** 规划/11 §2.5: this many calls of a task in a row without output stop the task. */
+export const MAX_CONSECUTIVE_NO_OUTPUT = 3;
+
+export type BreakerReason = { breaker: 'task_calls' | 'no_output'; message: string };
+
+export type TaskCalls = {
+  task: string;
+  /** Finished Codex calls of the task, with or without output. */
+  calls: number;
+  /** Trailing calls without output; capacity errors are skipped. */
+  consecutive_no_output: number;
+  /** Open breakers; empty when one more call is allowed. */
+  reasons: BreakerReason[];
+};
+
+/**
+ * The failure breakers of one task, from its finished calls in <runs>/<id>/. They close as soon
+ * as the next call would cross a limit: at 10 calls, at 3 consecutive calls without output.
+ */
+export function taskCalls(id: string): TaskCalls {
+  const metas = runCallMetas(join(runsDir(), id));
+  let consecutive = 0;
+  for (let i = metas.length - 1; i >= 0; i -= 1) {
+    const meta = metas[i];
+    if (!meta) break;
+    // "Without output" is what gives a round back (uncountedReason), capacity errors aside.
+    const reason = uncountedReason(meta);
+    if (reason === 'capacity') continue;
+    if (reason === null) break;
+    consecutive += 1;
+  }
+  const reasons: BreakerReason[] = [];
+  if (metas.length >= MAX_CALLS_PER_TASK) {
+    reasons.push({
+      breaker: 'task_calls',
+      message: `${id}: 已累计调用 Codex ${metas.length} 次，达到每任务上限 ${MAX_CALLS_PER_TASK} 次（防失控循环，规划/11 §2.5）；停止该任务并报告：拆小任务或标 blocked`,
+    });
+  }
+  if (consecutive >= MAX_CONSECUTIVE_NO_OUTPUT) {
+    reasons.push({
+      breaker: 'no_output',
+      message: `${id}: 连续 ${consecutive} 次调用没有产出（规划/11 §2.5）；停止该任务并报告`,
+    });
+  }
+  return { task: id, calls: metas.length, consecutive_no_output: consecutive, reasons };
 }
 
 export type MigrateOptions = {

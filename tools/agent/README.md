@@ -60,7 +60,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 10. **评审范围只到任务的 refs**（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 13 条）。包装脚本从可信副本的 `task.ts show` 取任务的 `refs`，写进评审上下文一行「In-scope rules (the task's refs)」。规则测试评审（spec-test）只对照这些 BR 的条款；一跳引用的规则只作理解用；关于 refs 以外规则的问题写进 `out_of_scope`，不计入 `verdict`。资金评审提示词带同样的范围说明（仓库硬规则与七项清单始终在范围内）。spec-test 评审校验时带 `--refs`：`findings` 里只引用 refs 以外 BR 编号的条目记一条警告（进 `meta.json` 的 `validation_messages`），不算 S0 / S1——「pass 带 S0 / S1」的矛盾检查不数它，只因它而 `fail` 的另记一条「范围内是 pass」的警告。
 12. **规则测试评审还以任务 `paths` 为界**（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 14 条）。spec-test 评审的上下文多一行「Allowed paths」（任务 `paths`，取自可信副本的 `task.ts show`），校验时带 `--allowed-paths`；规则测试目录（可信副本 `tools/guard/protected-paths.json` 第一类）自动算在范围内。下面几种 `findings` 条目算范围外：只引用 refs 以外的 BR；`file` 在任务 `paths` 与规则测试目录之外；正文引用的仓库路径全在其外；`rule` 以评审方的范围标记 `[out-of-scope]` 开头。校验带 `--rewrite`：通过校验后把这些条目移进 `-o` 文件的 `out_of_scope`，`verdict` 只按范围内的 S0 / S1 重算（有就 `fail`，没有就 `pass`），每条移动与结论改变都记一条警告进 `validation_messages`；再带 `--out-of-scope-log <runs>/<id>/out-of-scope.md`：把全部 `out_of_scope` 条目（评审方自己写的和移进来的）按 `key` 去重追加进这个文件（不存在就建），留给后续任务写规则测试。校验不过的产出不改写、不追加。资金评审不变。
 11. **评审类型跟着风险级**。`--review-type` 不传时，可信副本的 `tools/ops/task.ts show <id>` 算出 RV2 就用 `money`（强制资金清单），否则 `general`；RV2 任务显式传 `general` 被拒绝（`contract`、`spec-test` 仍可用）。评审产出里 `verdict: pass` 却带 S0 / S1 发现的，按无产出处理（退出 10）。
-8. **每次调用都记账并结算轮次**：结束后调用 `tools/ops/usage.ts record`（规划/11 §1.3），再调用 `tools/ops/state.ts settle <id> --meta <meta.<mode>.json>`：没有产出就结束的调用（见 §4）把派发前计上的那一轮还回去；账本里这次调用照记，仍计入每任务 10 次、每天 40 次与「连续 3 次无产出」。`settle` 按调用的 `started_at` 去重，重复执行不会多还；没有在途状态文件时什么都不做；它失败只记警告，这一轮按已计处理。
+8. **每次调用都记账并结算轮次**：结束后调用 `tools/ops/usage.ts record`（规划/11 §1.3；只记 token 用量，额度不设限制，记账失败只记警告、不改退出码），再调用 `tools/ops/state.ts settle <id> --meta <meta.<mode>.json>`：没有产出就结束的调用（见 §4）把派发前计上的那一轮还回去；它的 `meta.<mode>.json` 照样留在运行目录，仍计入每任务 10 次与「连续 3 次无产出」两道失败熔断（`state.ts taskCalls`）。`settle` 按调用的 `started_at` 去重，重复执行不会多还；没有在途状态文件时什么都不做；它失败只记警告，这一轮按已计处理。
 
 有产出不等于任务成功。Codex 说「测试通过」不算数，成败只看 `tools/ops/verify-container.sh` 的退出码。
 
@@ -70,9 +70,9 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 | --- | --- | --- |
 | 0 | 有可用产出 | `post-run.sh` → 守卫 → 沙箱外验证 |
 | 10 | 没有可用产出（退出码非 0、缺 `turn.completed`、缺 `-o`、校验不过、被中止） | 退避重试。没拿到回答（`validation` 为 `not-run`：缺 `-o`、`turn.failed`、退出码非 0、被中止、留下进程）不计轮次；拿到回答但校验不过（`validation: failed`）计一轮 |
-| 11 | 模型容量错误（`Selected model is at capacity`） | 退避重试，不计轮次，仍计入每任务 10 次、每天 40 次 |
+| 11 | 模型容量错误（`Selected model is at capacity`） | 退避重试，不计轮次，仍计入每任务 10 次；不计入连续无产出 |
 | 12 | 位置断言失败 | 按越界处理：不执行、不提交这个 worktree 里的任何东西，先人工看 `meta.json` 的 `position_changed` |
-| 124 | 硬超时或无活动被击杀 | 不计轮次，仍计入每任务 10 次、每天 40 次与连续无产出；反复超时说明任务要拆小 |
+| 124 | 硬超时或无活动被击杀 | 不计轮次，仍计入每任务 10 次与连续无产出；反复超时说明任务要拆小 |
 
 「计不计轮次」由 `tools/ops/state.ts settle` 判定（规划/11 §2.5，负责人 2026-10-02 决定）；位置断言失败（12）照计。
 | 2 | 用法错误，或参数被拒绝 | 修正调用；Codex 没有被启动 |
@@ -110,15 +110,15 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 
 ## 7. 派工与收尾
 
-`dispatch.sh <id>` 先用 `mkdir <runs>/<id>/dispatch.lock` 取一把只在本次派工期间存在的锁（10 分钟没清掉的视为残留），再按顺序检查，任何一步不过就停：额度闸门（`usage.ts gate`，退出 3 即全停）→ 认领任务（owner 是 `COULI_SESSION`，不设则本进程唯一；只有认领已被同一 owner 持有时才 `--renew`）→ 上一次派工记录的 pid 还活着就停（`run-in-progress`）→ **先把尝试次数加一**（每次都加；上一次调用若没有产出就结束，包装脚本结束时已经把那一轮还回去了）→ 任务书在不在（不在就生成）→ worktree 与 `node_modules` 在不在（依赖由编排者在沙箱外装，这里绝不安装）。然后在独立会话里后台启动 `codex-run.sh impl <id>`（有 `caffeinate` 就套上防睡眠），登记 pid 与开始时间，输出一行 `{"action":"dispatched","pid":…,"run":"…"}`。
+`dispatch.sh <id>` 先用 `mkdir <runs>/<id>/dispatch.lock` 取一把只在本次派工期间存在的锁（10 分钟没清掉的视为残留），再按顺序检查，任何一步不过就停（没有额度闸门）：认领任务（owner 是 `COULI_SESSION`，不设则本进程唯一；只有认领已被同一 owner 持有时才 `--renew`）→ 上一次派工记录的 pid 还活着就停（`run-in-progress`）→ **先把尝试次数加一**（每次都加；上一次调用若没有产出就结束，包装脚本结束时已经把那一轮还回去了；该任务的失败熔断打开时 `bump-attempt` 退出 3，派工输出 `{"action":"stopped","reason":"task-breaker",…}` 并以 3 退出，只停这个任务）→ 任务书在不在（不在就生成）→ worktree 与 `node_modules` 在不在（依赖由编排者在沙箱外装，这里绝不安装）。然后在独立会话里后台启动 `codex-run.sh impl <id>`（有 `caffeinate` 就套上防睡眠），登记 pid 与开始时间，输出一行 `{"action":"dispatched","pid":…,"run":"…"}`。
 
 三处细节：
 
-- **闸门带风险级**。`dispatch.sh` 先用可信副本的 `tools/ops/task.ts show <id> --json` 算出风险级，再调 `usage.ts gate --task <id> --mode impl --risk <RVn>`，这样额度 70%–97% 档「RV0 / RV1 实现改由 Claude」也在这里拦住（规划/11 §1.3）。算不出风险级时只带 `--task`，全局熔断照常生效。
+- **没有额度闸门**。负责人 2026-10-02 说 Codex 额度不设限制（`ops/approvals.yaml` 第 15 条）：`dispatch.sh` 不调 `usage.ts`、不按风险级改派；只有失败类熔断（每任务 10 次调用、同一任务连续 3 次无产出，`state.ts bump-attempt` 里检查）停任务。
 - **重派一定重新生成任务书**。第 2 次尝试起（在途状态的 `attempts.impl` ≥ 2），不管 `brief.md` 在不在都重新跑 `brief.ts`：任务书里的「第 n 次尝试」和「上一轮失败输出」取自在途状态，沿用旧任务书就丢了上一轮的失败输出（规划/11 §2.3「重试不用 resume」）。所以重派前编排者要先 `node tools/ops/state.ts set <id> --last-error <失败输出文件>`。
 - **停掉一次在跑的派工**：对输出里的 `pid` 发整组信号，`kill -TERM -- -<pid>`（负号表示整组）。包装脚本收到后把 Codex 进程组整组结束、写完 `meta.json` 再退出。只杀单个 pid 可能留下还在跑的包装脚本。
 
-评审不经 `dispatch.sh`：编排者先 `node tools/ops/state.ts bump-attempt <id> review --review-type <类型>`，再前台或后台跑 `codex-run.sh review <id> --review-type <同一类型> …`。轮次按评审类型分开计（规划/11 §2.5）：规则测试评审（`spec-test`）最多 2 轮，代码评审（`money`、`general`、`contract` 共用一个计数）最多 2 轮；没有产出就结束的调用由包装脚本还回那一轮。
+评审不经 `dispatch.sh`：编排者先 `node tools/ops/state.ts bump-attempt <id> review --review-type <类型>`，再前台或后台跑 `codex-run.sh review <id> --review-type <同一类型> …`。轮次按评审类型分开计（规划/11 §2.5）：规则测试评审（`spec-test`）最多 2 轮，代码评审（`money`、`general`、`contract` 共用一个计数）最多 2 轮；没有产出就结束的调用由包装脚本还回那一轮。评审前的 `bump-attempt` 同样先查失败熔断，打开就退出 3，这个任务停下并报告。
 
 `post-run.sh <id>` 只读文件，不执行任务代码、不动 git、不动 worktree，输出一行 JSON：
 

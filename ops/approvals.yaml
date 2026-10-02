@@ -96,3 +96,9 @@ approvals:
     granted: true
     date: '2026-10-02'
     note: '负责人在对话里同意（经编排会话转达）；落在分支 chore/gate-spec-base-and-scope（tools/guard、tools/ci、tools/agent、.github/workflows/ci.yml 注释、AGENTS.md），规划/11 §2.3、§3.3 同步改在规划仓库分支 docs/gate-spec-base-and-scope'
+  - id: 15
+    row: 4
+    title: '取消 Codex 额度限制：去掉周额度估算与 70% / 97% 档位（含读不到额度即停、校准要求、额度停用时暂停 RV2、额度不足时 RV0 / RV1 实现改由 Claude）和每天 40 次的全局调用上限，dispatch.sh 不再调用额度闸门，usage.ts 只记 token 用量、不拦调用；只保留失败类保护：各类型轮次上限、没有产出就结束的调用不算轮次、每任务 10 次调用上限（防失控循环）、同一任务连续 3 次调用没有产出即停该任务并报告（state.ts bump-attempt 退出 3）'
+    granted: true
+    date: '2026-10-02'
+    note: '负责人原话「codex 额度是无限的，请你不要设置无意义的限制」（对话中给编排会话，经编排会话转达）；落在分支 chore/remove-codex-quota-gate（tools/ops、tools/agent、AGENTS.md），规划/11 §1.3、§2.5 同步改在规划仓库分支 docs/remove-codex-quota-gate'
