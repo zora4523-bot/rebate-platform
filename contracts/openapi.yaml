@@ -13,7 +13,9 @@ info:
     `x-signed` (true = X-Timestamp / X-Nonce / X-Sign required, BR-ID-09),
     `x-idempotent` (true = Idempotency-Key required, 04 §6 mark I),
     `x-error-codes` (business codes the operation may return besides the common ones;
-    meaning, client action and data shape per code in contracts/error-codes.yaml).
+    meaning, client action and data shape per code in contracts/error-codes.yaml),
+    `x-implementation: planned` (declared ahead of its route, TECH-05; removed when the route
+    ships, apps/api/src/contract.test.ts enforces both ways).
     Common codes any operation may return: 10401, 10402, 10403, 20001, 42901, 44001, 44002,
     50001, 50401; with x-auth login also 10001, 10002, 10006; with Idempotency-Key also 20901,
     40901.
@@ -69,6 +71,7 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
+      x-implementation: planned
       x-error-codes: []
       security: []
       parameters:
@@ -100,6 +103,8 @@ paths:
                   device_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a60
                   install_secret: example-install-secret-value
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -116,6 +121,7 @@ paths:
       x-auth: none
       x-signed: true
       x-idempotent: false
+      x-implementation: planned
       x-error-codes:
         - 44001
         - 44003
@@ -155,6 +161,8 @@ paths:
                   resend_after_sec: 60
                   expires_in_sec: 300
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -173,6 +181,7 @@ paths:
       x-auth: none
       x-signed: true
       x-idempotent: false
+      x-implementation: planned
       x-error-codes:
         - 20002
         - 20003
@@ -225,6 +234,8 @@ paths:
                     result: bound
                     code: null
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -242,6 +253,7 @@ paths:
       x-auth: none
       x-signed: true
       x-idempotent: false
+      x-implementation: planned
       x-error-codes:
         - 10404
       security: []
@@ -280,6 +292,8 @@ paths:
                   refresh_token: example-refresh-token-two
                   refresh_expires_at: '2026-11-01T11:30:00+08:00'
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -298,6 +312,7 @@ paths:
       x-auth: login
       x-signed: false
       x-idempotent: false
+      x-implementation: planned
       x-error-codes: []
       security:
         - bearerAuth: []
@@ -326,6 +341,7 @@ paths:
                   invite_code: K7Q2MZ
                   inviter_bound: false
                   identity_level: phone
+                  phone_bound: true
                   balance:
                     available_fen: 1234
                     withdrawable_fen: 1000
@@ -342,6 +358,8 @@ paths:
                     reason_category: null
                     frozen_until: null
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -357,11 +375,17 @@ paths:
         (04 §10.1, excerpt). Clients keep the last good response (LKG) and fall back to it and
         then to the bundled default when the request fails (03 §4.3). Keys whose inner shape is
         not fixed by 04 yet are free-form objects and get typed by the task that consumes them.
-      x-auth: none
+        x-auth is optional although 04 §6.2 lists none: h5_release buckets by user_id when
+        logged in (拍板第二批 TECH-28) and agent availability depends on the whitelist user
+        (BR-AI-12).
+      x-auth: optional
       x-signed: false
       x-idempotent: false
+      x-implementation: planned
       x-error-codes: []
-      security: []
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/AppId'
         - $ref: '#/components/parameters/Platform'
@@ -399,9 +423,11 @@ paths:
                   texts:
                     withdraw.sla_text: 工作日 24 小时内处理
                   legal:
-                    privacy_version: 3
-                    agreement_version: 2
-                    privacy_min_version: 3
+                    privacy:
+                      version: 3
+                      min_version: 3
+                    agreement:
+                      version: 2
                   invite:
                     required: false
                     backfill_hours: 168
@@ -422,6 +448,8 @@ paths:
                   compliance: {}
                   display: {}
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -446,6 +474,7 @@ paths:
       x-auth: optional
       x-signed: false
       x-idempotent: false
+      x-implementation: planned
       x-error-codes:
         - 50304
       security:
@@ -513,6 +542,8 @@ paths:
               examples:
                 ok:
                   $ref: '#/components/examples/SearchProductsOk'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -533,6 +564,7 @@ paths:
       x-auth: optional
       x-signed: false
       x-idempotent: false
+      x-implementation: planned
       x-error-codes:
         - 30141
         - 30143
@@ -564,6 +596,8 @@ paths:
               examples:
                 ok:
                   $ref: '#/components/examples/ProductOk'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -587,6 +621,7 @@ paths:
       x-auth: optional
       x-signed: true
       x-idempotent: false
+      x-implementation: planned
       x-error-codes:
         - 30131
         - 30132
@@ -623,6 +658,8 @@ paths:
               examples:
                 ok:
                   $ref: '#/components/examples/ParseInputOk'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -642,10 +679,13 @@ paths:
         `requote_failed=true`; without cache, 50303. Share links open anonymously; other links
         need login (10001). amount_unknown cards are converted without price re-check
         (BR-PRICE-08). The client waits at most 8 s and retries with the same Idempotency-Key
-        (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14).
+        (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14). When the
+        rebate drops from > 0 to 0 (new_rebate_max_fen = 0) the client also asks before jumping,
+        even with price_changed=false (BR-PRICE-13).
       x-auth: optional
       x-signed: true
       x-idempotent: true
+      x-implementation: planned
       x-error-codes:
         - 10001
         - 30101
@@ -698,6 +738,8 @@ paths:
                   $ref: '#/components/examples/OpenLinkUnchanged'
                 priceChanged:
                   $ref: '#/components/examples/OpenLinkPriceChanged'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -710,7 +752,7 @@ paths:
       summary: Register and convert in one call (entries without a link_id)
       description: |
         Only for entries that have no link_id, such as the H5 bridge method
-        `trade.convertAndOpen` (scene=h5) and share generation: registers the link and then
+        `trade.convertAndOpen` (scene=h5): registers the link and then
         re-checks and converts exactly like open, returning `link_id` plus the open result
         (拍板第二批 TRADE-03). Pass `product_key` with the tapped card's `item_ref` (a missing
         item_ref is not an error, BR-PROD-11), or `url`. A url whose product key cannot be
@@ -719,6 +761,7 @@ paths:
       x-auth: login
       x-signed: true
       x-idempotent: true
+      x-implementation: planned
       x-error-codes:
         - 30101
         - 30102
@@ -769,6 +812,8 @@ paths:
               examples:
                 ok:
                   $ref: '#/components/examples/ConvertLinkOk'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         4XX:
           $ref: '#/components/responses/ClientError'
         5XX:
@@ -945,6 +990,24 @@ components:
                   fields:
                     - scene
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    TooManyRequests:
+      description: Rate limited (42901) with the required Retry-After header in seconds (BR-ID-05, BR-TEXT-14).
+      headers:
+        Retry-After:
+          required: true
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            code: 42901
+            msg: 请求过于频繁
+            trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     ServerError:
       description: Server-side error; 503 codes carry `data.platform` / `data.reason` where listed.
       content:
@@ -1283,26 +1346,6 @@ components:
         - sales_desc
         - final_price_asc
         - rebate_desc
-    SceneCode:
-      type: string
-      description: |
-        Link source (contracts/enums/trade.yaml scene). The server rejects values that are not
-        enabled (taolijin while tlj.enabled=off, watch_alert, P1 values) with 20001.
-      enum:
-        - search
-        - detail
-        - home_card
-        - feed
-        - clipboard
-        - agent
-        - share
-        - h5
-        - push
-        - taolijin
-        - watch_alert
-        - share_ext
-        - wechat_bot
-        - mcp
     RebateBasis:
       type: string
       description: |
@@ -1398,11 +1441,13 @@ components:
           description: Fallback text only; clients show the dictionary text error.<code>.
         data:
           type: object
+          additionalProperties: true
         trace_id:
           $ref: '#/components/schemas/TraceId'
     FreeForm:
       type: object
       description: Configuration block whose inner shape is not fixed by 规划/04 yet.
+      additionalProperties: true
     RegisterDeviceRequest:
       type: object
       additionalProperties: false
@@ -1718,6 +1763,7 @@ components:
         - invite_code
         - inviter_bound
         - identity_level
+        - phone_bound
         - balance
         - union_bindings
         - realname_status
@@ -1748,6 +1794,9 @@ components:
             - member
             - phone
             - realname
+        phone_bound:
+          type: boolean
+          description: Whether a phone number is bound (BR-ID-01).
         balance:
           $ref: '#/components/schemas/MeBalance'
         union_bindings:
@@ -1814,24 +1863,33 @@ components:
             $ref: '#/components/schemas/PlatformCode'
           additionalProperties:
             $ref: '#/components/schemas/PlatformPurchaseStatus'
-    ConfigLegal:
+    ConfigLegalDoc:
       type: object
-      description: Current legal versions and the minimum privacy version (BR-ID-12).
       additionalProperties: false
       required:
-        - privacy_version
-        - agreement_version
-        - privacy_min_version
+        - version
       properties:
-        privacy_version:
+        version:
           type: integer
           format: int32
-        agreement_version:
+          minimum: 1
+        min_version:
           type: integer
           format: int32
-        privacy_min_version:
-          type: integer
-          format: int32
+          minimum: 1
+          description: Only on privacy; below it the user must agree again (BR-ID-12).
+    ConfigLegal:
+      type: object
+      description: legal.privacy.version, legal.privacy.min_version, legal.agreement.version (04 §10.1).
+      additionalProperties: false
+      required:
+        - privacy
+        - agreement
+      properties:
+        privacy:
+          $ref: '#/components/schemas/ConfigLegalDoc'
+        agreement:
+          $ref: '#/components/schemas/ConfigLegalDoc'
     ConfigInvite:
       type: object
       additionalProperties: false
@@ -2228,7 +2286,16 @@ components:
           minLength: 1
           maxLength: 4000
         scene:
-          $ref: '#/components/schemas/SceneCode'
+          type: string
+          description: |
+            Entry the text came from (subset of contracts/enums scene). Attribution-bearing
+            scenes (share, agent, …) cannot be chosen by the client: share links come only from
+            POST /v1/shares (phone level), Agent cards from the Agent service (BR-ATTR-05, 08).
+            share_ext is P1.
+          enum:
+            - clipboard
+            - search
+            - share_ext
     InputHit:
       type: object
       description: One candidate found by parse_input (04 §8.5).
@@ -2264,7 +2331,14 @@ components:
         error_code:
           type: integer
           format: int32
+          minimum: 10000
+          maximum: 59999
           description: Error code for this hit (30131, 30132, 30141, 50301…), see error-codes.yaml.
+      oneOf:
+        - required:
+            - card
+        - required:
+            - error_code
     ParseInputData:
       type: object
       additionalProperties: false
@@ -2402,12 +2476,23 @@ components:
           format: uri
           maxLength: 2048
         scene:
-          $ref: '#/components/schemas/SceneCode'
+          type: string
+          description: |
+            Only the H5 entry (trade.convertAndOpen) uses convert (拍板第二批 TRADE-03); other
+            scenes are rejected with 20001 so that the client cannot pick an attribution scene
+            such as share (BR-ATTR-05, BR-ATTR-08).
+          enum:
+            - h5
         spm:
           type: string
           maxLength: 128
         installed:
           $ref: '#/components/schemas/InstalledState'
+      oneOf:
+        - required:
+            - product_key
+        - required:
+            - url
     ConvertLinkData:
       type: object
       description: The registered link_id plus the same fields as the open result (04 §6.3).

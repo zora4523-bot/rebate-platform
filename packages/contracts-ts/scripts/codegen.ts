@@ -32,7 +32,11 @@ function header(source: string): string {
 }
 
 async function renderOpenapi(): Promise<string> {
-  const ast = await openapiTS(pathToFileURL(openapiFile), { silent: true });
+  // defaultNonNullable false: a property with a default stays optional in request types.
+  const ast = await openapiTS(pathToFileURL(openapiFile), {
+    silent: true,
+    defaultNonNullable: false,
+  });
   return header('contracts/openapi.yaml') + astToString(ast);
 }
 

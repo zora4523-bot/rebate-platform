@@ -21,7 +21,6 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   ClientPlatformCode: 'client_platform',
   InstallChannelCode: 'install_channel',
   SortCode: 'sort',
-  SceneCode: 'scene',
   RebateBasis: 'rebate_basis',
   Availability: 'availability',
   InstalledState: 'installed_state',
@@ -34,6 +33,12 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   'ProductTlj/properties/kind': 'tlj_kind',
   'ProductCard/properties/match_tag': 'match_tag',
   'InputHit/properties/kind': 'input_kind',
+};
+
+/** Inline enums that may only use a subset of an enum of contracts/enums. */
+export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
+  'ParseInputRequest/properties/scene': 'scene',
+  'ConvertLinkRequest/properties/scene': 'scene',
 };
 
 function isObj(v: unknown): v is Obj {
@@ -115,6 +120,21 @@ export function checkConformance(
     }
   }
 
+  for (const [pointer, enumName] of Object.entries(ENUM_SUBSETS)) {
+    const node = at(schemas, pointer);
+    const expected = enumValues.get(enumName) ?? [];
+    const actual = isObj(node) ? node['enum'] : undefined;
+    if (
+      !Array.isArray(actual) ||
+      actual.length === 0 ||
+      actual.some((v) => !expected.includes(v))
+    ) {
+      problems.push(
+        `components/schemas/${pointer}: enum must be a subset of contracts/enums ${enumName}`,
+      );
+    }
+  }
+
   for (const [path, item] of Object.entries(doc['paths'])) {
     if (!isObj(item)) continue;
     for (const method of METHODS) {
@@ -134,7 +154,16 @@ export function checkConformance(
       if (schemes === null || !sameSet(schemes, expectSecurity)) {
         problems.push(`${where}: security does not match x-auth ${String(auth)}`);
       }
+      const impl = op['x-implementation'];
+      if (impl !== undefined && impl !== 'planned') {
+        problems.push(`${where}: x-implementation may only be "planned"`);
+      }
       if (!path.startsWith('/v1/')) continue;
+      if (refName(at(op, 'responses/429'), 'responses') !== 'TooManyRequests') {
+        problems.push(
+          `${where}: /v1 operations declare 429 → TooManyRequests (42901, Retry-After)`,
+        );
+      }
       const params = Array.isArray(op['parameters'])
         ? op['parameters'].map((p) => refName(p, 'parameters'))
         : [];

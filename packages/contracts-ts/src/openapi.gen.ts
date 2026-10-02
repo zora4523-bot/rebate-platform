@@ -148,6 +148,9 @@ export interface paths {
          *     (04 §10.1, excerpt). Clients keep the last good response (LKG) and fall back to it and
          *     then to the bundled default when the request fails (03 §4.3). Keys whose inner shape is
          *     not fixed by 04 yet are free-form objects and get typed by the task that consumes them.
+         *     x-auth is optional although 04 §6.2 lists none: h5_release buckets by user_id when
+         *     logged in (拍板第二批 TECH-28) and agent availability depends on the whitelist user
+         *     (BR-AI-12).
          */
         get: operations["getConfig"];
         put?: never;
@@ -259,7 +262,9 @@ export interface paths {
          *     `requote_failed=true`; without cache, 50303. Share links open anonymously; other links
          *     need login (10001). amount_unknown cards are converted without price re-check
          *     (BR-PRICE-08). The client waits at most 8 s and retries with the same Idempotency-Key
-         *     (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14).
+         *     (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14). When the
+         *     rebate drops from > 0 to 0 (new_rebate_max_fen = 0) the client also asks before jumping,
+         *     even with price_changed=false (BR-PRICE-13).
          */
         post: operations["openLink"];
         delete?: never;
@@ -280,7 +285,7 @@ export interface paths {
         /**
          * Register and convert in one call (entries without a link_id)
          * @description Only for entries that have no link_id, such as the H5 bridge method
-         *     `trade.convertAndOpen` (scene=h5) and share generation: registers the link and then
+         *     `trade.convertAndOpen` (scene=h5): registers the link and then
          *     re-checks and converts exactly like open, returning `link_id` plus the open result
          *     (拍板第二批 TRADE-03). Pass `product_key` with the tapped card's `item_ref` (a missing
          *     item_ref is not an error, BR-PROD-11), or `url`. A url whose product key cannot be
@@ -365,12 +370,6 @@ export interface components {
          */
         SortCode: "relevance" | "sales_desc" | "final_price_asc" | "rebate_desc";
         /**
-         * @description Link source (contracts/enums/trade.yaml scene). The server rejects values that are not
-         *     enabled (taolijin while tlj.enabled=off, watch_alert, P1 values) with 20001.
-         * @enum {string}
-         */
-        SceneCode: "search" | "detail" | "home_card" | "feed" | "clipboard" | "agent" | "share" | "h5" | "push" | "taolijin" | "watch_alert" | "share_ext" | "wechat_bot" | "mcp";
-        /**
          * @description contracts/enums/trade.yaml rebate_basis. The three 查返利 states are derived from
          *     coupon_fen and rebate_basis only (BR-PRICE-21); amount_unknown and login_required are
          *     outside them.
@@ -420,11 +419,15 @@ export interface components {
             code: number;
             /** @description Fallback text only; clients show the dictionary text error.<code>. */
             msg: string;
-            data?: Record<string, never>;
+            data?: {
+                [key: string]: unknown;
+            };
             trace_id: components["schemas"]["TraceId"];
         };
         /** @description Configuration block whose inner shape is not fixed by 规划/04 yet. */
-        FreeForm: Record<string, never>;
+        FreeForm: {
+            [key: string]: unknown;
+        };
         RegisterDeviceRequest: {
             /** @description SHA-256 (lowercase hex) of IDFV / OAID (ANDROID_ID fallback) / ODID (BR-ID-09). */
             device_hash: string;
@@ -569,6 +572,8 @@ export interface components {
              * @enum {string}
              */
             identity_level: "basic" | "guest" | "member" | "phone" | "realname";
+            /** @description Whether a phone number is bound (BR-ID-01). */
+            phone_bound: boolean;
             balance: components["schemas"]["MeBalance"];
             union_bindings: components["schemas"]["UnionBindingState"][];
             /**
@@ -606,14 +611,19 @@ export interface components {
                 [key: string]: components["schemas"]["PlatformPurchaseStatus"];
             };
         };
-        /** @description Current legal versions and the minimum privacy version (BR-ID-12). */
+        ConfigLegalDoc: {
+            /** Format: int32 */
+            version: number;
+            /**
+             * Format: int32
+             * @description Only on privacy; below it the user must agree again (BR-ID-12).
+             */
+            min_version?: number;
+        };
+        /** @description legal.privacy.version, legal.privacy.min_version, legal.agreement.version (04 §10.1). */
         ConfigLegal: {
-            /** Format: int32 */
-            privacy_version: number;
-            /** Format: int32 */
-            agreement_version: number;
-            /** Format: int32 */
-            privacy_min_version: number;
+            privacy: components["schemas"]["ConfigLegalDoc"];
+            agreement: components["schemas"]["ConfigLegalDoc"];
         };
         ConfigInvite: {
             /** @description Must be false in the MVP (BR-INV-06). */
@@ -785,7 +795,14 @@ export interface components {
              *     is untrusted (BR-AI-05); prices in it are only material.claimed_price_fen.
              */
             text: string;
-            scene: components["schemas"]["SceneCode"];
+            /**
+             * @description Entry the text came from (subset of contracts/enums scene). Attribution-bearing
+             *     scenes (share, agent, …) cannot be chosen by the client: share links come only from
+             *     POST /v1/shares (phone level), Agent cards from the Agent service (BR-ATTR-05, 08).
+             *     share_ext is P1.
+             * @enum {string}
+             */
+            scene: "clipboard" | "search" | "share_ext";
         };
         /** @description One candidate found by parse_input (04 §8.5). */
         InputHit: {
@@ -807,7 +824,7 @@ export interface components {
              * @description Error code for this hit (30131, 30132, 30141, 50301…), see error-codes.yaml.
              */
             error_code?: number;
-        };
+        } & (unknown | unknown);
         ParseInputData: {
             results: components["schemas"]["ParseResult"][];
         };
@@ -823,7 +840,7 @@ export interface components {
              * @description Buy without rebate (BR-ID-18).
              * @default false
              */
-            no_rebate: boolean;
+            no_rebate?: boolean;
             /**
              * @description Only with no_rebate=true; default auth_declined. The server overrides it with
              *     relation_conflict / binding_blocked when it decides so (BR-ID-18).
@@ -870,10 +887,16 @@ export interface components {
             item_ref?: components["schemas"]["ItemRef"];
             /** Format: uri */
             url?: string;
-            scene: components["schemas"]["SceneCode"];
+            /**
+             * @description Only the H5 entry (trade.convertAndOpen) uses convert (拍板第二批 TRADE-03); other
+             *     scenes are rejected with 20001 so that the client cannot pick an attribution scene
+             *     such as share (BR-ATTR-05, BR-ATTR-08).
+             * @enum {string}
+             */
+            scene: "h5";
             spm?: string;
             installed?: components["schemas"]["InstalledState"];
-        };
+        } & (unknown | unknown);
         /** @description The registered link_id plus the same fields as the open result (04 §6.3). */
         ConvertLinkData: {
             link_id: components["schemas"]["Id"];
@@ -906,6 +929,24 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description Rate limited (42901) with the required Retry-After header in seconds (BR-ID-05, BR-TEXT-14). */
+        TooManyRequests: {
+            headers: {
+                /** @description Seconds to wait before retrying. */
+                "Retry-After": number;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "code": 42901,
+                 *       "msg": "请求过于频繁",
+                 *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ErrorEnvelope"];
             };
         };
@@ -1049,6 +1090,7 @@ export interface operations {
                     "application/json": components["schemas"]["RegisterDeviceResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1116,6 +1158,7 @@ export interface operations {
                     "application/json": components["schemas"]["SendSmsCodeResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1199,6 +1242,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1267,6 +1311,7 @@ export interface operations {
                     "application/json": components["schemas"]["TokenPairResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1312,6 +1357,7 @@ export interface operations {
                      *         "invite_code": "K7Q2MZ",
                      *         "inviter_bound": false,
                      *         "identity_level": "phone",
+                     *         "phone_bound": true,
                      *         "balance": {
                      *           "available_fen": 1234,
                      *           "withdrawable_fen": 1000,
@@ -1341,6 +1387,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1404,9 +1451,13 @@ export interface operations {
                      *           "withdraw.sla_text": "工作日 24 小时内处理"
                      *         },
                      *         "legal": {
-                     *           "privacy_version": 3,
-                     *           "agreement_version": 2,
-                     *           "privacy_min_version": 3
+                     *           "privacy": {
+                     *             "version": 3,
+                     *             "min_version": 3
+                     *           },
+                     *           "agreement": {
+                     *             "version": 2
+                     *           }
                      *         },
                      *         "invite": {
                      *           "required": false,
@@ -1438,6 +1489,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConfigResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1492,6 +1544,7 @@ export interface operations {
                     "application/json": components["schemas"]["SearchProductsResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1535,6 +1588,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProductResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1591,6 +1645,7 @@ export interface operations {
                     "application/json": components["schemas"]["ParseInputResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1657,6 +1712,7 @@ export interface operations {
                     "application/json": components["schemas"]["OpenLinkResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -1723,6 +1779,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConvertLinkResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];
             "5XX": components["responses"]["ServerError"];
         };
