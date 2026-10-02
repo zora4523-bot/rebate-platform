@@ -1,5 +1,6 @@
 // Small helpers shared by the tools/ops command line entry points.
-// Exit codes (conventions C9): 0 ok, 1 check failed, 2 usage or internal error.
+// Exit codes (conventions C9): 0 ok, 1 check failed, 2 usage or internal error,
+// 3 a failure breaker is open (tools/ops/state.ts).
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { trustedRoot } from '../lib/paths.ts';
@@ -8,6 +9,9 @@ export class UsageError extends Error {}
 
 /** A check that failed in an expected way (exit code 1). */
 export class CheckError extends Error {}
+
+/** A failure breaker refuses one more Codex call for a task (exit code 3). */
+export class BreakerError extends Error {}
 
 export type GuardResult = { status: number; stdout: string; stderr: string };
 
@@ -37,7 +41,10 @@ export function runMain(main: (argv: string[]) => number): void {
     process.exitCode = main(process.argv.slice(2));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (err instanceof CheckError) {
+    if (err instanceof BreakerError) {
+      console.error(msg);
+      process.exitCode = 3;
+    } else if (err instanceof CheckError) {
       console.error(msg);
       process.exitCode = 1;
     } else if (err instanceof UsageError) {

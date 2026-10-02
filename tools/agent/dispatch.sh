@@ -2,31 +2,33 @@
 # dispatch.sh <id> — preflight and background launch of one implementation run
 # (规划/11 §2.2 后台运行, §2.3 step 5, §2.5).
 #
+# There is no quota gate: the owner said on 2026-10-02 that the Codex quota is unlimited
+# (ops/approvals.yaml id 15). Only failures stop a task (§2.5), checked in step 2.
+#
 # Preflight, in this order; the first failure stops everything:
-#   1. usage gate          node <TRUSTED>/tools/ops/usage.ts gate --task <id>   (exit 3 = blocked)
-#                          `--mode impl --risk <RVn>` is added when tools/ops/task.ts can compute
-#                          the risk level, so that the 70%-97% quota tier is enforced (§1.3)
-#   2. claim               node <TRUSTED>/tools/ops/state.ts claim <id> --owner <session>
+#   1. claim               node <TRUSTED>/tools/ops/state.ts claim <id> --owner <session>
 #                          The owner is COULI_SESSION when set, else a name unique to this
 #                          dispatch process; `--renew` is tried only when the claim on file is
 #                          already held by this very owner (never for another session's claim)
-#   3. count the attempt   node <TRUSTED>/tools/ops/state.ts bump-attempt <id> impl
+#   2. count the attempt   node <TRUSTED>/tools/ops/state.ts bump-attempt <id> impl
 #                          BEFORE launching, every time. A call that ends without output
 #                          (timeout, capacity error, no `-o`, …) is given back by codex-run.sh
-#                          (state.ts settle) when it finishes (§2.5)
-#   4. task brief          RUN/brief.md, else node <TRUSTED>/tools/ops/brief.ts <id>. From the
+#                          (state.ts settle) when it finishes (§2.5). bump-attempt exits 3 when a
+#                          failure breaker of the task is open (10 calls, or 3 calls in a row
+#                          without output): the task is stopped and reported
+#   3. task brief          RUN/brief.md, else node <TRUSTED>/tools/ops/brief.ts <id>. From the
 #                          second attempt on the brief is always regenerated: every round is a
 #                          new one and carries the previous failure output (§2.3 重试不用 resume)
-#   5. worktree            <runs>/worktrees/<id> exists and has node_modules. Dependencies are
+#   4. worktree            <runs>/worktrees/<id> exists and has node_modules. Dependencies are
 #                          installed by the orchestrator outside the sandbox; nothing is
 #                          installed here.
 # Then codex-run.sh impl <id> is started in the background in its own session (under
 # `caffeinate -i` when available), pid and start time are recorded with state.ts set, and one
 # JSON line is printed: {"action":"dispatched","pid":<n>,"run":"<RUN>"}.
 #
-# Exit codes: 0 dispatched | 3 usage gate closed | 1 a preflight check failed |
-#             2 usage or internal error. On every non-zero exit one JSON line with
-#             "action":"stopped" (gate) or "action":"none" says why.
+# Exit codes: 0 dispatched | 3 a failure breaker of the task is open | 1 a preflight check
+#             failed | 2 usage or internal error. On every non-zero exit one JSON line with
+#             "action":"stopped" (breaker) or "action":"none" says why.
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -57,7 +59,7 @@ agent_resolve_roots || exit 2
 OPS="$TRUSTED/tools/ops"
 RUN="$RUNS/$TASK"
 WT="$RUNS/worktrees/$TASK"
-for script in usage.ts state.ts brief.ts; do
+for script in state.ts brief.ts; do
   [ -f "$OPS/$script" ] || {
     log "missing in the trusted root: tools/ops/$script"
     exit 2
@@ -93,27 +95,7 @@ fi
 trap 'rm -f "$ERR_FILE"; rmdir "$LAUNCH_LOCK" 2>/dev/null || true' EXIT
 last_error() { tail -n 1 "$ERR_FILE" 2>/dev/null || true; }
 
-# 1. Usage gate (规划/11 §1.3, §2.5 全局熔断). The risk level is computed from the task paths by
-# the trusted tools (never typed in); without it the gate still applies every global limit.
-gate_args=(gate --task "$TASK")
-if [ -f "$OPS/task.ts" ]; then
-  risk="$(node "$OPS/task.ts" show "$TASK" --json 2>/dev/null |
-    node "$SELF_DIR/meta.ts" get --file /dev/stdin risk 2>/dev/null || true)"
-  case "$risk" in
-    RV0 | RV1 | RV2) gate_args+=(--mode impl --risk "$risk") ;;
-  esac
-fi
-gate_rc=0
-gate_out="$(node "$OPS/usage.ts" "${gate_args[@]}" 2>"$ERR_FILE")" || gate_rc=$?
-if [ "$gate_rc" != 0 ]; then
-  emit --str action=stopped --str "task=$TASK" --str reason=usage-gate \
-    --num "gate_exit=$gate_rc" --json "gate=${gate_out:-null}"
-  if [ "$gate_rc" = 3 ]; then exit 3; fi
-  log "usage gate failed with exit $gate_rc: $(last_error)"
-  exit 2
-fi
-
-# 2. Claim (规划/11 §2.2 领任务). Every orchestrator session has its own owner name, so a
+# 1. Claim (规划/11 §2.2 领任务). Every orchestrator session has its own owner name, so a
 # renewal can never ride on another session's claim. Without COULI_SESSION the name is unique
 # to this process: a second dispatch of a task that is still claimed is refused instead.
 OWNER="${COULI_SESSION:-orchestrator-$(hostname -s 2>/dev/null || echo host)-$$}"
@@ -145,14 +127,20 @@ case "$running_pid" in
     ;;
 esac
 
-# 3. Count the attempt before anything is launched (规划/11 §2.5). A previous call that ended
-# without output (capacity error included) was already given back by codex-run.sh.
+# 2. Count the attempt before anything is launched (规划/11 §2.5). A previous call that ended
+# without output (capacity error included) was already given back by codex-run.sh. Exit 3: a
+# failure breaker of this task is open (per-task call cap, consecutive calls without output).
 bump_rc=0
 node "$OPS/state.ts" bump-attempt "$TASK" impl >/dev/null 2>"$ERR_FILE" || bump_rc=$?
+if [ "$bump_rc" = 3 ]; then
+  emit --str action=stopped --str "task=$TASK" --str reason=task-breaker \
+    --str "detail=$(cat "$ERR_FILE" 2>/dev/null || true)"
+  exit 3
+fi
 if [ "$bump_rc" = 1 ]; then stop 1 attempts-exhausted "$(last_error)"; fi
 if [ "$bump_rc" != 0 ]; then stop 2 state-error "$(last_error)"; fi
 
-# 4. Task brief. A first attempt uses the brief that is already there. Every later attempt gets
+# 3. Task brief. A first attempt uses the brief that is already there. Every later attempt gets
 # a fresh one: brief.ts reads the attempt number and the previous failure output from the
 # in-flight state, which the orchestrator updates between rounds (state.ts set --last-error).
 attempts_now="$(node "$OPS/state.ts" get "$TASK" 2>/dev/null |
@@ -167,7 +155,7 @@ if [ ! -s "$RUN/brief.md" ] || [ "$attempts_now" -ge 2 ]; then
   [ -s "$RUN/brief.md" ] || stop 1 brief-failed "brief.ts wrote no $RUN/brief.md"
 fi
 
-# 5. Worktree with dependencies already installed (never install here).
+# 4. Worktree with dependencies already installed (never install here).
 [ -d "$WT" ] || stop 1 worktree-missing "$WT"
 [ -d "$WT/node_modules" ] ||
   stop 1 node-modules-missing "run pnpm install --frozen-lockfile in $WT outside the sandbox"

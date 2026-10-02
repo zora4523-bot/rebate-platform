@@ -567,7 +567,7 @@ it('[规划/11 §2.5] every finished call is settled against the in-flight state
   expect(timedOut.status, timedOut.stderr).toBe(124);
   const ok = codexRun(fx, ['impl', TASK]);
   expect(ok.status, ok.stderr).toBe(0);
-  // The usage ledger first (the call counts towards the caps), then settle decides the round.
+  // The usage ledger first (token accounting only), then settle decides the round.
   const calls = stubCalls(fx).map((call) => call.slice(0, 2).join(' '));
   expect(calls.filter((c) => c === 'usage record' || c === `state settle`)).toEqual([
     'usage record',
@@ -585,6 +585,11 @@ it('[规划/11 §2.5] every finished call is settled against the in-flight state
   const warned = codexRun(fx, ['impl', TASK]);
   expect(warned.status, warned.stderr).toBe(0);
   expect(warned.stderr).toContain('in-flight state was not settled');
+  // The usage ledger is telemetry (规划/11 §1.3, no quota gate): a failing record is a warning.
+  writeStub(join(fx.trusted, 'tools', 'ops', 'usage.ts'), 'usage', [{ exit: 2 }]);
+  const unrecorded = codexRun(fx, ['impl', TASK]);
+  expect(unrecorded.status, unrecorded.stderr).toBe(0);
+  expect(unrecorded.stderr).toContain('usage ledger was not updated');
 });
 
 it(

@@ -1,6 +1,6 @@
 # tools/ops：编排脚本
 
-编排会话（Claude 主会话）用来推进任务的脚本：台账、在途状态、额度账本与熔断、看板、任务书、交接、沙箱外验证。规则出处是规划仓库 `规划/11_开发协作与自主推进.md`（下称 11），本文件只写用法和现状。
+编排会话（Claude 主会话）用来推进任务的脚本：台账、在途状态与失败熔断、用量账本（只记账）、看板、任务书、交接、沙箱外验证。规则出处是规划仓库 `规划/11_开发协作与自主推进.md`（下称 11），本文件只写用法和现状。
 
 本目录是保护路径第三类（11 §4.4）：改动要负责人确认。脚本一律从可信副本运行（11 §2.4），可信副本建好前就是主检出；从 `couli-runs/worktrees/<编号>` 下运行一律拒绝。
 
@@ -13,9 +13,9 @@
 | `task.ts check [编号…]` | 校验 `ops/tasks/*.yaml`：字段、文件名、≤40 行、编号前缀在 05 里存在、`refs` 存在且 `refs_hash` 与规划原文一致、依赖存在、RV2 的实现与规则测试作者不是同一家。`pnpm ops:task:check` | 11 §2.1 |
 | `task.ts show <编号> --json` | 任务字段（平铺）加算出的 `risk`、`ask`、`risk_paths` | 11 §1.2 |
 | `task.ts hash <编号>` | 打印可直接粘贴的 `refs_hash` 段 | 11 §5.3 |
-| `state.ts get\|set\|claim\|release\|bump-attempt\|settle\|migrate <编号>` | 在途状态 `couli-runs/state/<编号>.json`（先写临时文件再改名）；领任务 `couli-runs/claims/<编号>/`，租约 20 分钟，`claim --renew` 续期，过期才能被别的会话接手。轮次见下文「轮次怎么计」 | 11 §2.1、§2.2、§2.5 |
+| `state.ts get\|set\|claim\|release\|bump-attempt\|settle\|migrate <编号>` | 在途状态 `couli-runs/state/<编号>.json`（先写临时文件再改名）；领任务 `couli-runs/claims/<编号>/`，租约 20 分钟，`claim --renew` 续期，过期才能被别的会话接手。轮次与失败熔断见下文「轮次怎么计」「失败熔断」；`bump-attempt` 在熔断打开时退出 3 | 11 §2.1、§2.2、§2.5 |
 | `lock.ts`（只有函数） | 编排锁 `couli-runs/lock/orchestrator/`：取锁、心跳、释放；心跳停 20 分钟才允许接管。心跳与释放也在接管闸门 `<锁目录>.takeover` 里做，自己的租约已过期就不再续（返回 false，持有者必须停下） | 11 §2.2 |
-| `usage.ts record\|calibrate\|summary\|gate` | 额度账本 `couli-runs/usage.jsonl`（只追加）与熔断。`gate` 退出码 0 可以派工、3 不行，原因在标准输出的 JSON 里。`pnpm ops:usage summary` | 11 §1.3、§2.5 |
+| `usage.ts record\|summary` | 用量账本 `couli-runs/usage.jsonl`（只追加），只记每次调用的 token 与结果，不拦任何调用；读不出的行跳过并计数。`pnpm ops:usage summary` | 11 §1.3 |
 | `status.ts [--json]` | 看板，每次现算，不落盘。`pnpm ops:status` | 11 §2.1、§5.2、§7.2 |
 | `brief.ts <编号> [--attempt n] [--out 文件]` | 任务书，写到 `couli-runs/<编号>/brief.md`；超过 24KB 或命中禁用词就不写文件、退出码 1。`pnpm ops:brief <编号>` | 11 §2.3 第 2 步、§5.3 |
 | `handoff.ts [--out 文件] [--session 名]` | 交接，写 `couli-runs/handoff/CURRENT.md` 和带时间戳的副本，≤40 行。`pnpm ops:handoff` | 11 §5.1 |
@@ -31,16 +31,17 @@
 - 三个计数器各有上限：实现 `impl` 3 次；规则测试评审 `spec-test` 2 轮；代码评审 `code` 2 轮（`money`、`general`、`contract` 共用）。原来是一个评审计数器共 2 轮。
 - `bump-attempt <编号> impl`（`dispatch.sh` 调）或 `bump-attempt <编号> review --review-type <类型>`（编排者在评审前调）在**派发前**计数并落盘；用完了退出码 1、不写文件。
 - `settle <编号> --meta <meta.json>`（`codex-run.sh` 每次调用结束后调）：没有产出就结束的调用把那一轮还回去，记进状态文件的 `uncounted_calls`（`kind`、`started_at`、`exit_code`、`reason`）；按 `kind` + `started_at` 去重，重复执行不多还。「没有产出」指：硬超时或无活动击杀（124）、模型容量错误（11）、或退出 10 且校验没跑（缺 `-o`、`turn.failed`、退出码非 0、被中止、留下进程）。拿到回答但校验不过（`validation: failed`）、位置断言失败（12）、孤儿（包装脚本没写完 `meta.json`）照计。
-- 不计轮次的调用照样进额度账本：计入每任务 10 次、每天 40 次与连续无产出（见下一节）。
+- 不计轮次的调用照样计入每任务 10 次与连续无产出（见下一节）。
 - `migrate <编号> [--unattributed-review spec-test|code] [--dry-run]`：把旧形状 `attempts: {impl, review}` 的状态文件换成新形状。评审轮次按 `<runs>/<编号>/` 下各次调用的 `meta.json`（`meta.<模式>.json` 与 `attempts/<n>/meta.json`）归到各自类型，没有产出的调用移进 `uncounted_calls`；实现次数减去没有产出的实现调用；其余字段（`state`、`last_error` …）不动。旧计数比留下的评审 `meta.json` 多时，必须用 `--unattributed-review` 说明多出的轮次归哪类，否则拒绝。旧形状的文件不经迁移读不进来（`get`、看板都会报错并提示这条命令）。
 
-### 额度怎么估（`usage.ts`）
+### 失败熔断（`state.ts`），没有额度闸门
 
-Codex 不按次报周额度。编排者隔一段时间从 Codex 自己的记录里读出「本周已用百分比」，用 `usage.ts calibrate --weekly-used-percent <n>` 记一次；两次校准之间按我们自己的用量往上加。算法和它的局限写在 `usage.ts` 文件头。要点：
+负责人 2026-10-02：「codex 额度是无限的，请你不要设置无意义的限制」（`ops/approvals.yaml` 第 15 条）。所以没有周额度估算、档位、校准，也没有每天的调用上限；`usage.ts` 只记账。只留下面这些针对失败的保护：
 
-- 从没校准过，或最近一次校准超过 24 小时：档位 `unknown`，`gate` 关闸（读不到额度按停用，11 §1.3）。
-- 这台 Mac 上其他项目也在用同一份周额度，校准之后它们花掉的看不到，估值可能比真实值低，靠勤校准弥补。`couli-runs/quota.json` 可写 `tokens_per_percent`（每 1% 对应多少 token）和 `calibration_max_age_hours`（校准多久算过期）。
-- 熔断按「再派一次会不会越线」判断：今天已 40 次、该任务已 10 次（2026-10-02 负责人由 6 次提高到 10 次）、连续 3 次无产出、档位 `stopped` 或 `unknown`，都关闸。模型容量错误计入每天和每任务的次数，不计入「连续无产出」。超时、无 `-o` 的调用不算实现或评审轮次，但照样计入这三项。
+- 轮次上限照旧（上一节）。
+- 每任务最多 10 次 Codex 调用（防失控循环）：该任务运行目录里每一次已结束的调用都算（`meta.<模式>.json` 与 `attempts/<n>/meta.json`），没有产出、还回了轮次的也算，模型容量错误也算。
+- 同一任务连续 3 次调用没有产出（超时、无活动击杀、缺 `-o`、`turn.failed` 等，即 `settle` 会还回轮次的那些）就停这个任务；模型容量错误既不延长也不打断这个计数，拿到回答但校验不过的算有产出。
+- 两道熔断按「再派一次会不会越线」判断，由 `bump-attempt` 在计数前检查：打开时退出 3、不写文件，`dispatch.sh` 输出 `{"action":"stopped","reason":"task-breaker",…}`。只停这个任务，其余任务照常；编排者把它标 `blocked` 并报告。看板列出所有打开的熔断。
 
 ### 沙箱外验证（`verify-container.sh`）
 
@@ -92,9 +93,9 @@ Codex 不按次报周额度。编排者隔一段时间从 Codex 自己的记录�
 
 ### 现在怎么手动走一轮（`tick.sh` 之前）
 
-1. `pnpm ops:status` 看就绪任务与熔断；额度没校准先 `pnpm ops:usage calibrate --weekly-used-percent <n>`。
+1. `pnpm ops:status` 看就绪任务与失败熔断。
 2. 建 worktree `../couli-runs/worktrees/<编号>`（分支 `task/<编号>`）并在沙箱外 `pnpm install --frozen-lockfile`。
-3. `tools/agent/dispatch.sh <编号>`（内部依次：`usage.ts gate` → `state.ts claim` → `state.ts bump-attempt` → `brief.ts` → 后台 `codex-run.sh`），结束后 `tools/agent/post-run.sh <编号>` 过路径守卫。
+3. `tools/agent/dispatch.sh <编号>`（内部依次：`state.ts claim` → `state.ts bump-attempt`（含失败熔断） → `brief.ts` → 后台 `codex-run.sh`），结束后 `tools/agent/post-run.sh <编号>` 过路径守卫。
 4. `tools/ops/verify-container.sh <编号>`；任务成败只看它的退出码。
 5. 失败要重派时：先 `node tools/ops/state.ts set <编号> --last-error <verify/<n>/log.txt 的路径>`，然后回到第 3 步。`dispatch.sh` 先计数再生成任务书，从第 2 次尝试起每次都重新生成，所以新任务书会写「第 n 次尝试」并带上一轮失败输出的末尾。`last_error` 目前没有脚本自动写，漏了这一步新任务书就没有失败输出。
 

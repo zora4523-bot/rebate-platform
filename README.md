@@ -18,7 +18,7 @@
 | `pnpm dev:stack` | 在本机启动开发用的数据库和缓存（需要 Docker），并建好表 |
 | `pnpm verify:fast` | 快速自检：类型、代码规范、单元测试，不需要数据库 |
 | `pnpm verify` | 完整自检：在快速自检之上，加连真实数据库的测试 |
-| `pnpm ops:status` | 看板：有哪些任务在做、卡在哪、Codex 额度用了多少 |
+| `pnpm ops:status` | 看板：有哪些任务在做、卡在哪、哪个任务被失败熔断停了、今天调了多少次 Codex（只记账） |
 
 第一次用之前先运行 `pnpm install --frozen-lockfile` 和 `git config core.hooksPath .githooks`。这些命令平时由 Claude 运行，你不需要自己敲。
 

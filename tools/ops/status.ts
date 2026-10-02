@@ -1,6 +1,6 @@
 // Status board (`pnpm ops:status`, 规划/11 §2.1, §5.2, §7.2).
 // Nothing here is stored: every run recomputes the board from the ledger, the
-// state files, git and the usage ledger.
+// state files and run directories, git and the usage ledger (token accounting only).
 //
 //   node tools/ops/status.ts [--json]
 import { parseArgs } from 'node:util';
@@ -12,12 +12,12 @@ import { formatBeijing, runMain } from './cli.ts';
 import { orchestratorLockStatus } from './lock.ts';
 import type { LockStatus } from './lock.ts';
 import { pathSetsMayOverlap } from './overlap.ts';
-import { listStates } from './state.ts';
-import type { TaskState } from './state.ts';
+import { listStates, MAX_CALLS_PER_TASK, MAX_CONSECUTIVE_NO_OUTPUT, taskCalls } from './state.ts';
+import type { BreakerReason, TaskState } from './state.ts';
 import { archivedTaskIds, readTask, riskOfPaths } from './task.ts';
 import type { RiskLevel, RiskReport } from './task.ts';
-import { currentSummary, gate, MAX_CALLS_PER_DAY, MAX_CONSECUTIVE_NO_OUTPUT } from './usage.ts';
-import type { GateReason, Summary } from './usage.ts';
+import { currentSummary } from './usage.ts';
+import type { Summary } from './usage.ts';
 
 /** Rows printed before the table is cut short (keeps the board inside the §5.2 budget). */
 const MAX_ROWS = 30;
@@ -48,8 +48,10 @@ export type Board = {
   at: string;
   spec_ref: string;
   lock: LockStatus;
+  /** Token accounting only: the Codex quota is unlimited (规划/11 §1.3). */
   usage: Summary;
-  breaker: { open: boolean; reasons: GateReason[] };
+  /** Open failure breakers of in-flight tasks (规划/11 §2.5); each stops only its own task. */
+  breakers: BreakerReason[];
   remote: string | null;
   rows: BoardRow[];
   done_count: number;
@@ -227,14 +229,15 @@ export function collectBoard(opts: BoardOptions = {}): Board {
   }
 
   const usage = currentSummary(now);
-  const verdict = gate(usage);
+  const breakers: BreakerReason[] = [];
+  for (const s of states.values()) breakers.push(...taskCalls(s.id).reasons);
 
   return {
     at: now.toISOString(),
     spec_ref: specRef(),
     lock: orchestratorLockStatus(now),
     usage,
-    breaker: { open: !verdict.allowed, reasons: verdict.reasons },
+    breakers,
     remote: facts.remote,
     rows,
     done_count: rows.filter((r) => r.status === 'done').length,
@@ -288,16 +291,15 @@ export function renderBoard(b: Board): string {
           : '；持锁期间不要在本仓库提交，要做的事写进 couli-runs/inbox/'),
     );
   }
-  const u = b.usage;
-  const pct = u.estimated_weekly_percent === null ? '未知' : `${u.estimated_weekly_percent}%`;
   out.push(
-    `- Codex 额度：档位 ${u.tier}，估算周用量 ${pct}；今日调用 ${u.calls_today}/${MAX_CALLS_PER_DAY}；连续无产出 ${u.consecutive_no_output}/${MAX_CONSECUTIVE_NO_OUTPUT}`,
+    `- Codex 调用：今日 ${b.usage.calls_today} 次，${b.usage.tokens_today} token（只记账；额度不设限制）`,
   );
-  if (b.breaker.open) {
-    out.push('- 熔断：已打开，不得派工给 Codex');
-    for (const r of b.breaker.reasons) out.push(`  - ${r.message}`);
+  const limits = `每任务 ${MAX_CALLS_PER_TASK} 次调用、连续 ${MAX_CONSECUTIVE_NO_OUTPUT} 次无产出`;
+  if (b.breakers.length > 0) {
+    out.push(`- 失败熔断（${limits}）：已停的任务不再派工，报告负责人`);
+    for (const r of b.breakers) out.push(`  - ${r.message}`);
   } else {
-    out.push('- 熔断：未触发');
+    out.push(`- 失败熔断（${limits}）：未触发`);
   }
   out.push(
     b.remote === null

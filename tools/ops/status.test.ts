@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { listTaskIds, loadTask } from '../lib/task-file.ts';
@@ -15,7 +16,6 @@ import {
   taskYaml,
   writeFiles,
 } from './test-helpers.ts';
-import { calibrate } from './usage.ts';
 
 // Friday 2026-10-02 12:00 in +08:00.
 const NOW = new Date('2026-10-02T04:00:00.000Z');
@@ -67,7 +67,6 @@ beforeAll(() => {
   updateState('S1-07', { state: 'ask' }, hoursAgo(80));
   updateState('S1-03', { state: 'ready' }, hoursAgo(2));
   updateState('S9-09', { state: 'doing', pid: 2147480000 }, hoursAgo(1));
-  calibrate(72, hoursAgo(1));
 });
 
 afterAll(() => removeDir(base));
@@ -106,8 +105,10 @@ it(
       ['S1-07', '72h'],
       ['S1-06', '24h'],
     ]);
-    expect(board.usage).toMatchObject({ tier: 'reduced', estimated_weekly_percent: 72 });
-    expect(board.breaker.open).toBe(false);
+    // Token accounting only: no tier, no weekly estimate (规划/11 §1.3, owner 2026-10-02).
+    expect(board.usage).toMatchObject({ calls_today: 0, tokens_today: 0 });
+    expect(board.usage).not.toHaveProperty('tier');
+    expect(board.breakers).toEqual([]);
     expect(board.remote).toBeNull();
     expect(board.stall).toBeNull();
     expect(board.warnings).toEqual([
@@ -136,9 +137,9 @@ it(
     expect(text).toContain('就绪任务（依赖已完成、路径不与在途任务相交）：S1-03、S1-08');
     expect(text).toContain('- S1-07：提出于 2026-09-29 04:00，【红】超过 72 小时');
     expect(text).toContain('- S1-06：提出于 2026-10-01 06:00，超过 24 小时');
-    expect(text).toContain(
-      'Codex 额度：档位 reduced，估算周用量 72%；今日调用 0/40；连续无产出 0/3',
-    );
+    expect(text).toContain('Codex 调用：今日 0 次，0 token（只记账；额度不设限制）');
+    expect(text).toContain('失败熔断（每任务 10 次调用、连续 3 次无产出）：未触发');
+    expect(text).not.toContain('档位');
     expect(text).toContain('编排锁：无人持有');
     // In-flight rows come first.
     expect(text.indexOf('| S1-02 |')).toBeLessThan(text.indexOf('| S1-03 |'));
@@ -149,19 +150,36 @@ it(
 );
 
 it(
-  'shows the orchestrator lock, the breaker and the stall warning',
+  'shows the orchestrator lock, a per-task failure breaker and the stall warning',
   () => {
     acquireOrchestratorLock({ session: 'session-a', pid: 4242 }, hoursAgo(0.1));
     updateState('S1-03', { state: 'pr' }, hoursAgo(30));
     updateState('S1-08', { state: 'pr' }, hoursAgo(2));
-    calibrate(98, hoursAgo(0.5));
+    // S1-02 ended its last three calls without output (hard timeouts).
+    for (const n of [1, 2, 3]) {
+      const dir = join(process.env.COULI_RUNS ?? '', 'S1-02', 'attempts', String(n));
+      mkdirSync(dir, { recursive: true });
+      const at = hoursAgo(1 - n * 0.1).toISOString();
+      writeFileSync(
+        join(dir, 'meta.json'),
+        JSON.stringify({
+          mode: 'impl',
+          started_at: at,
+          finished_at: at,
+          exit_code: 124,
+          has_output: false,
+          validation: 'not-run',
+        }),
+      );
+    }
     const board = collectBoard({ root, now: NOW, risk: fixedRisk('RV1') });
     expect(board.ready).toEqual([]);
     expect(board.stall).toContain('S1-03、S1-08 停在 pr 状态已满 1 个工作日');
-    expect(board.breaker).toMatchObject({ open: true, reasons: [{ breaker: 'quota_stopped' }] });
+    expect(board.breakers).toMatchObject([{ breaker: 'no_output' }]);
     const text = renderBoard(board);
     expect(text).toContain('编排锁：由 session-a（pid 4242） 持有');
-    expect(text).toContain('熔断：已打开，不得派工给 Codex');
+    expect(text).toContain('失败熔断（每任务 10 次调用、连续 3 次无产出）：已停的任务不再派工');
+    expect(text).toContain('  - S1-02: 连续 3 次调用没有产出');
     expect(text).toContain('停滞告警：');
     expect(releaseOrchestratorLock({ session: 'session-a' })).toBe(true);
   },
@@ -186,17 +204,19 @@ it(
     expect(missing).toEqual([]);
     expect(md.stdout.includes('| — | | 没有未完成的任务 |')).toBe(open.length === 0);
     expect(md.stdout).toContain('就绪任务（依赖已完成、路径不与在途任务相交）：');
-    // An empty run-state directory has no calibration: the gate is closed.
-    expect(md.stdout).toContain('熔断：已打开');
+    // An empty run-state directory: nothing is stopped, there is no quota gate to close.
+    expect(md.stdout).toContain('失败熔断（每任务 10 次调用、连续 3 次无产出）：未触发');
     const json = runCli('status.ts', ['--json'], env);
     expect(json.status).toBe(0);
     const board = JSON.parse(json.stdout) as {
       spec_ref: string;
-      usage: { tier: string };
+      usage: { calls_today: number };
+      breakers: unknown[];
       rows: { id: string; status: string; risk: string }[];
     };
     expect(board.spec_ref).toMatch(/^[0-9a-f]{40}$/);
-    expect(board.usage.tier).toBe('unknown');
+    expect(board.usage.calls_today).toBe(0);
+    expect(board.breakers).toEqual([]);
     expect(
       board.rows
         .filter((r) => r.status === 'todo')

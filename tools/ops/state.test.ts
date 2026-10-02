@@ -9,12 +9,15 @@ import {
   claimDir,
   claimTask,
   listStates,
+  MAX_CALLS_PER_TASK,
+  MAX_CONSECUTIVE_NO_OUTPUT,
   migrateState,
   readState,
   releaseTask,
   reviewKind,
   settleCall,
   stateFile,
+  taskCalls,
   uncountedReason,
   updateState,
 } from './state.ts';
@@ -227,6 +230,71 @@ it('[规划/11 §2.5] migrates the old shared review counter from the run histor
   removeDir(run);
 });
 
+/** Writes finished calls of a task as the wrapper archives them: attempts/<n>/meta.json. */
+function writeCalls(id: string, outcomes: ('ok' | 'none' | 'capacity' | 'invalid')[]): void {
+  const dir = join(runs, id, 'attempts');
+  outcomes.forEach((o, i) => {
+    mkdirSync(join(dir, String(i + 1)), { recursive: true });
+    const started = new Date(T0.getTime() + i * 60_000).toISOString();
+    const doc = {
+      mode: i % 2 === 0 ? 'impl' : 'review',
+      review_type: i % 2 === 0 ? null : 'general',
+      task: id,
+      started_at: started,
+      finished_at: started,
+      exit_code: { ok: 0, none: 124, capacity: 11, invalid: 10 }[o],
+      has_output: o === 'ok',
+      idle_killed: false,
+      validation: { ok: 'ok', none: 'not-run', capacity: 'not-run', invalid: 'failed' }[o],
+    };
+    writeFileSync(join(dir, String(i + 1), 'meta.json'), JSON.stringify(doc));
+  });
+}
+
+it('[规划/11 §2.5] per-task failure breakers: 10 calls, 3 in a row without output', () => {
+  // Owner 2026-10-02 (ops/approvals.yaml id 15): no quota gate, only these failure breakers.
+  expect(MAX_CALLS_PER_TASK).toBe(10);
+  expect(MAX_CONSECUTIVE_NO_OUTPUT).toBe(3);
+  expect(taskCalls('D1-01')).toEqual({
+    task: 'D1-01',
+    calls: 0,
+    consecutive_no_output: 0,
+    reasons: [],
+  });
+
+  // Capacity errors neither extend nor end a run of calls without output; an answer that failed
+  // validation is output and ends it.
+  writeCalls('D1-02', ['ok', 'none', 'capacity', 'none']);
+  expect(taskCalls('D1-02')).toMatchObject({ calls: 4, consecutive_no_output: 2, reasons: [] });
+  writeCalls('D1-02', ['ok', 'none', 'capacity', 'none', 'invalid']);
+  expect(taskCalls('D1-02').consecutive_no_output).toBe(0);
+  writeCalls('D1-02', ['ok', 'none', 'capacity', 'none', 'invalid', 'none', 'none', 'none']);
+  const silent = taskCalls('D1-02');
+  expect(silent.consecutive_no_output).toBe(3);
+  expect(silent.reasons.map((r) => r.breaker)).toEqual(['no_output']);
+  expect(silent.reasons[0]?.message).toContain('D1-02: 连续 3 次调用没有产出');
+  // The breaker stops only this task, before anything is counted.
+  updateState('D1-02', { state: 'doing' }, T0);
+  expect(() => bumpAttempt('D1-02', 'impl', T0)).toThrow(/连续 3 次调用没有产出/);
+  expect(readState('D1-02')?.attempts.impl).toBe(0);
+  expect(bumpAttempt('D1-03', 'impl', T0).attempts.impl).toBe(1);
+
+  // Every finished call counts towards the cap of 10, also calls that gave their round back.
+  writeCalls('D1-04', ['ok', 'none', 'ok', 'capacity', 'ok', 'none', 'ok', 'capacity', 'ok']);
+  expect(taskCalls('D1-04')).toMatchObject({ calls: 9, reasons: [] });
+  expect(bumpAttempt('D1-04', 'code', T0).attempts.code).toBe(1);
+  writeCalls('D1-04', ['ok', 'none', 'ok', 'capacity', 'ok', 'none', 'ok', 'capacity', 'ok', 'ok']);
+  const capped = taskCalls('D1-04');
+  expect(capped.reasons.map((r) => r.breaker)).toEqual(['task_calls']);
+  expect(capped.reasons[0]?.message).toContain('达到每任务上限 10 次');
+  expect(() => bumpAttempt('D1-04', 'code', T0)).toThrow(/每任务上限 10 次/);
+  expect(readState('D1-04')?.attempts.code).toBe(1);
+  for (const id of ['D1-02', 'D1-03', 'D1-04']) {
+    removeDir(stateFile(id));
+    removeDir(join(runs, id));
+  }
+});
+
 it('refuses to guess when counted review rounds left no meta.json', () => {
   const id = 'B9-02a';
   writeFileSync(
@@ -374,6 +442,14 @@ it(
       attempts: { impl: 3, 'spec-test': 1, code: 0 },
     });
     expect(runCli('state.ts', ['get', '../../etc/passwd'], env).status).toBe(2);
+
+    // An open failure breaker refuses the next round with exit 3 and says why.
+    writeCalls('C1-02', ['none', 'none', 'none']);
+    const stopped = runCli('state.ts', ['bump-attempt', 'C1-02', 'impl'], env);
+    expect(stopped.status).toBe(3);
+    expect(stopped.stderr).toContain('C1-02: 连续 3 次调用没有产出');
+    expect(existsSync(stateFile('C1-02'))).toBe(false);
+    removeDir(join(runs, 'C1-02'));
   },
   CLI_TIMEOUT,
 );
