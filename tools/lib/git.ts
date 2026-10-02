@@ -76,28 +76,9 @@ function assertRef(ref: string): void {
   if (ref === '' || ref.startsWith('-')) throw new Error(`invalid git ref: "${ref}"`);
 }
 
-/**
- * Files that differ between `base` and the working tree (staged and unstaged), plus untracked
- * files that are not ignored (status `?`). Renames are reported as `R` with `oldPath`.
- * Paths are repo-relative POSIX paths, never quoted or escaped.
- */
-export function changedFiles(base: string, opts: { cwd?: string } = {}): Change[] {
-  assertRef(base);
+/** Parses `git diff --name-status -z -M` output into changes (a copy counts as an addition). */
+function parseNameStatus(diff: string): Change[] {
   const changes: Change[] = [];
-  const diff = git(
-    [
-      '-c',
-      'core.quotepath=false',
-      'diff',
-      '--name-status',
-      '-z',
-      '-M',
-      '--no-ext-diff',
-      base,
-      '--',
-    ],
-    opts,
-  );
   const fields = diff.split('\0');
   for (let i = 0; i < fields.length;) {
     const status = fields[i++] ?? '';
@@ -113,6 +94,31 @@ export function changedFiles(base: string, opts: { cwd?: string } = {}): Change[
       changes.push({ path, status: code === 'A' || code === 'D' ? code : 'M' });
     }
   }
+  return changes;
+}
+
+const NAME_STATUS = [
+  '-c',
+  'core.quotepath=false',
+  'diff',
+  '--name-status',
+  '-z',
+  '-M',
+  '--no-ext-diff',
+];
+
+function byPath(a: Change, b: Change): number {
+  return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+}
+
+/**
+ * Files that differ between `base` and the working tree (staged and unstaged), plus untracked
+ * files that are not ignored (status `?`). Renames are reported as `R` with `oldPath`.
+ * Paths are repo-relative POSIX paths, never quoted or escaped.
+ */
+export function changedFiles(base: string, opts: { cwd?: string } = {}): Change[] {
+  assertRef(base);
+  const changes = parseNameStatus(git([...NAME_STATUS, base, '--'], opts));
   const untracked = git(
     ['-c', 'core.quotepath=false', 'ls-files', '-z', '--others', '--exclude-standard'],
     opts,
@@ -120,7 +126,18 @@ export function changedFiles(base: string, opts: { cwd?: string } = {}): Change[
   for (const path of untracked.split('\0')) {
     if (path !== '') changes.push({ path, status: '?' });
   }
-  return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return changes.sort(byPath);
+}
+
+/** Files that differ between two commits (committed content only; same shape as changedFiles). */
+export function changedBetweenCommits(
+  from: string,
+  to: string,
+  opts: { cwd?: string } = {},
+): Change[] {
+  assertRef(from);
+  assertRef(to);
+  return parseNameStatus(git([...NAME_STATUS, from, to, '--'], opts)).sort(byPath);
 }
 
 /** Exact content of `<ref>:<path>` in the repository at `repoDir`; throws when it does not exist. */

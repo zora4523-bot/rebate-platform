@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import {
+  AGENT_DIR,
   FAKE_CODEX,
   type Fixture,
   gitIn,
@@ -641,5 +642,78 @@ it(
     expect(messages.join('\n')).toContain('rule cites BR-FUND-03, outside the task refs');
     // The general review has no refs check: the same pass is contradictory there.
     expect(run('general').status).toBe(10);
+  },
+);
+
+it(
+  '[规划/11 §3.3] spec-test: findings outside the task paths are moved, the verdict recomputed and logged',
+  LONG,
+  () => {
+    const fx = fixture('paths');
+    writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+      {
+        when: ['show'],
+        stdout: JSON.stringify({
+          id: TASK,
+          risk: 'RV2',
+          refs: ['BR-CALC-01'],
+          paths: ['packages/money/src/**'],
+        }),
+      },
+    ]);
+    // The rule-test locations are read from the trusted copy of the protected-path list.
+    mkdirSync(join(fx.trusted, 'tools', 'guard'), { recursive: true });
+    writeFileSync(
+      join(fx.trusted, 'tools', 'guard', 'protected-paths.json'),
+      readFileSync(join(AGENT_DIR, '..', 'guard', 'protected-paths.json'), 'utf8'),
+    );
+    const dry = codexRun(fx, [
+      'review',
+      TASK,
+      '--review-type',
+      'spec-test',
+      '--base',
+      fx.baseSha,
+      '--dry-run',
+    ]);
+    expect(dry.status, dry.stderr).toBe(0);
+    expect(decodeDryRun(dry.stdout).join('\n')).toContain(
+      "- In-scope rules (the task's refs): BR-CALC-01\n" +
+        "- Allowed paths (the task's paths; the rule-test locations are added): packages/money/src/**",
+    );
+    writeFileSync(join(fx.worktree, 'src', 'a.ts'), 'export const a = 2;\n');
+    mkdirSync(fx.log, { recursive: true });
+    const outputFile = join(fx.log, 'review-output.json');
+    const outside = {
+      severity: 'S1',
+      key: 'packages/db/src/schema.ts#-#BR-CALC-01',
+      file: 'packages/db/src/schema.ts',
+      line: 1,
+      rule: 'BR-CALC-01',
+      scenario: 'amount columns are not tested to be bigint',
+      suggestion: 'add the rule test to the task that owns packages/db',
+    };
+    writeFileSync(
+      outputFile,
+      JSON.stringify({
+        verdict: 'fail',
+        summary: 'BR-CALC-01#1 → t1; BR-CALC-01#2 → MISSING (packages/db).',
+        findings: [outside],
+        out_of_scope: [],
+        checklist: [],
+      }),
+    );
+    const res = codexRun(fx, ['review', TASK, '--review-type', 'spec-test', '--base', fx.baseSha], {
+      FAKE_CODEX_OUTPUT_FILE: outputFile,
+    });
+    expect(res.status, res.stderr).toBe(0);
+    const review = readJson(join(fx.run, 'review-codex.json'));
+    expect(review['verdict']).toBe('pass');
+    expect(review['findings']).toEqual([]);
+    expect(review['out_of_scope']).toEqual([outside]);
+    const messages = readJson(join(fx.run, 'meta.json'))['validation_messages'] as string[];
+    expect(messages.join('\n')).toContain('file packages/db/src/schema.ts is outside the task');
+    const log = readFileSync(join(fx.run, 'out-of-scope.md'), 'utf8');
+    expect(log).toContain(`- \`${outside.key}\` S1`);
   },
 );

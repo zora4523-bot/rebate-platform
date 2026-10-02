@@ -94,6 +94,10 @@ jobs:
     # of the head sha>` added by the repository owner account (the same check as the
     # protected-paths workflow, tools/guard/lib/owner-approval.mjs), protected-paths problems and
     # changed add-only test assets are reported as warnings; every other guard still fails.
+    # Task branches (owner decision 2026-10-02, ops/approvals.yaml id 14): the path guard starts
+    # at the spec_commit of ops/evidence/<id>.json once it is verified to lie between the base and
+    # the head; the commits before it are checked as the rule-test author's (path-guard-author).
+    # Without a usable spec_commit it starts at the base, as before.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15

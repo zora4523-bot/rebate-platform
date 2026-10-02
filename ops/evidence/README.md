@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | `task` | 任务编号 | `ops/tasks/<编号>.yaml` |
 | `spec_ref` | 写规则测试和实现时对应的规划版本 | 仓库根 `SPEC_REF` |
-| `spec_commit` | 规则测试提交号；之后规则测试不得改动 | `couli-runs/state/<编号>.json` |
+| `spec_commit` | 规则测试提交号；之后规则测试不得改动。CI 的 guard-git 也读它：核对它是头提交的祖先、基线的后代后，路径守卫从它起算，它之前的提交按规则测试作者的路径检查（`tools/README.md`「任务分支按 spec_commit 分段」，`ops/approvals.yaml` 第 14 条） | `couli-runs/state/<编号>.json` |
 | `red_tests` | 规则测试先红时的测试名列表（红的原因必须是断言失败或属性反例） | `tools/guard/red-check.ts`（还没有） |
 | `runs[]` | 每一次沙箱外验证：`commit`、`tree`、`prop_seed`、`exit_code`、`mode`（`container` 或 `host`）、起止时间。检查器要求至少一条 `mode: container`、`exit_code: 0` 且 `tree` 等于头提交去掉本证据文件后的树哈希（验证在写证据之前跑，证据文件不可能在它描述的树里） | `couli-runs/<编号>/verify/<n>/result.json`，由 `tools/ops/verify-container.sh` 写出，字段同名 |
 | `reviews[]` | 每家评审的结论：`reviewer`（`claude` / `codex`）、`verdict`、未关闭的 S0 / S1 数、资金清单是否齐全 | 评审输出（`tools/agent/schemas/review.schema.json`） |

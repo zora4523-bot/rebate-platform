@@ -2,6 +2,7 @@
 // and, for review outputs, the rules of 规划/11 §3.1 and §3.3.
 //
 //   node validate-output.ts --schema <file> --file <json> [--money] [--refs <BR-…,BR-…>]
+//                           [--allowed-paths <glob,glob>] [--rewrite] [--out-of-scope-log <md>]
 //                           [--diff-base <ref> --cwd <dir>] [--json]
 //
 // Always: Ajv2020 strict validation against --schema.
@@ -13,17 +14,32 @@
 //   finding whose `rule` cites only BR ids outside the refs belongs in `out_of_scope`. It is
 //   reported as a warning and does not count toward the verdict (it neither forces `fail` nor
 //   makes a `pass` contradictory).
+// --allowed-paths <glob,glob> (spec-test reviews; the task's `paths`, owner decision 2026-10-02,
+//   ops/approvals.yaml id 14): a finding counts toward the verdict only when it concerns
+//   behaviour testable within the task's allowed paths plus the rule-test locations (class 1 of
+//   tools/guard/protected-paths.json, read from this script's checkout). A finding whose `file`
+//   lies outside both, or whose text cites repository paths that all lie outside both, is out
+//   of scope, and so is a finding whose `rule` starts with the reviewer's scope marker
+//   `[out-of-scope]`. Like the --refs case, it is reported as a warning and never counts.
+// --rewrite (with a schema-valid, rule-valid review): writes the review back to --file with every
+//   out-of-scope finding moved to `out_of_scope` and `verdict` recomputed from the in-scope
+//   S0 / S1 findings only (fail when there is one, else pass).
+// --out-of-scope-log <file> (with a valid review): appends every `out_of_scope` entry (the
+//   reviewer's and the moved ones) whose key is not in the file yet to that Markdown file
+//   (created when missing; codex-run.sh passes <runs>/<id>/out-of-scope.md), so later tasks can
+//   turn them into rule tests.
 // --money (资金评审清单必填): the seven checklist items are present exactly once, each with a
 //   `file:line` and a note; with --diff-base every cited line lies inside the diff hunks of
 //   that file (working tree of --cwd compared with the base ref, untracked files included).
 //
 // Exit codes: 0 valid, 1 invalid (problems on stderr, or as JSON with --json), 2 usage or
 // internal error.
-import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
-import { readJsonFile } from '../lib/fsx.ts';
+import { readJsonFile, writeFileAtomic } from '../lib/fsx.ts';
 import { git } from '../lib/git.ts';
+import { matchesAny, splitTopLevelCommas } from '../lib/glob.ts';
 
 export const CHECKLIST_ITEMS = [
   'rounding',
@@ -69,6 +85,21 @@ export type LineRange = { start: number; end: number };
 export type LineChecker = (file: string, line: number) => { ok: boolean; reason: string };
 
 export type Report = { ok: boolean; errors: string[]; warnings: string[] };
+
+/** What a spec-test finding is measured against (规划/11 §3.3, owner decisions 2026-10-02). */
+export type ReviewScope = {
+  /** The task's BR refs; a finding citing only other BR ids is out of scope. */
+  refs?: readonly string[];
+  /** The task's paths plus the rule-test locations; a finding about other paths is out of scope. */
+  paths?: readonly string[];
+};
+
+export type ReviewOptions = {
+  money: boolean;
+  lineChecker?: LineChecker;
+  refs?: readonly string[];
+  paths?: readonly string[];
+};
 
 class UsageError extends Error {}
 
@@ -159,10 +190,65 @@ export function outsideRefs(rule: string, refs: readonly string[]): string[] {
   return cited.length > 0 && !cited.some((id) => refs.includes(id)) ? cited : [];
 }
 
+/** The reviewer's own scope flag: a finding whose `rule` starts with it is out of scope. */
+export const SCOPE_MARKER = '[out-of-scope]';
+
+const REPO_PATH =
+  /(?<![\w./@-])((?:apps|packages|db|contracts|test|specs|tools|ops|docs|\.github)\/[A-Za-z0-9_.@*{}\/-]*[A-Za-z0-9_*}\/-])/g;
+
+/** Repository paths named in a text (`file:line` suffixes and trailing slashes dropped). */
+export function citedPaths(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(REPO_PATH)) {
+    const path = (m[1] ?? '').replace(/\/+$/, '');
+    if (path !== '') out.add(path);
+  }
+  return [...out];
+}
+
+/** True when `path` (a file or a directory) lies inside one of `globs`. */
+export function insidePaths(path: string, globs: readonly string[]): boolean {
+  return matchesAny(path, globs) || matchesAny(`${path.replace(/\/+$/, '')}/x`, globs);
+}
+
+/** Why a finding is outside the review scope (empty when it is in scope). */
+export function scopeReasons(f: Finding, scope: ReviewScope): string[] {
+  const reasons: string[] = [];
+  if (scope.refs !== undefined && scope.refs.length > 0) {
+    const outside = outsideRefs(f.rule, scope.refs);
+    if (outside.length > 0) {
+      reasons.push(
+        `rule cites ${outside.join(', ')}, outside the task refs (${scope.refs.join(', ')})`,
+      );
+    }
+  }
+  if (f.rule.trim().toLowerCase().startsWith(SCOPE_MARKER)) {
+    reasons.push(`the reviewer marked it ${SCOPE_MARKER}`);
+  }
+  if (scope.paths !== undefined && scope.paths.length > 0) {
+    const paths = scope.paths;
+    if (!insidePaths(f.file, paths)) {
+      reasons.push(
+        `file ${f.file} is outside the task's allowed paths and the rule-test locations`,
+      );
+    } else {
+      const cited = citedPaths(`${f.rule}\n${f.scenario}\n${f.suggestion}`);
+      if (cited.length > 0 && !cited.some((p) => insidePaths(p, paths))) {
+        reasons.push(
+          `it cites only paths outside the task's allowed paths and the rule-test locations (${cited.join(', ')})`,
+        );
+      }
+    }
+  }
+  return reasons;
+}
+
+const isBlocking = (f: Finding): boolean => f.severity === 'S0' || f.severity === 'S1';
+
 /** Checks of 规划/11 §3.1 / §3.3 on a schema-valid review output. */
 export function reviewProblems(
   review: ReviewOutput,
-  opts: { money: boolean; lineChecker?: LineChecker; refs?: readonly string[] },
+  opts: ReviewOptions,
 ): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -187,22 +273,14 @@ export function reviewProblems(
     }
   });
 
-  // Findings that cite only rules outside the task refs do not count toward the verdict.
-  const misplaced = new Set<Finding>();
-  if (opts.refs !== undefined && opts.refs.length > 0) {
-    const refs = opts.refs;
-    review.findings.forEach((f, i) => {
-      const outside = outsideRefs(f.rule, refs);
-      if (outside.length === 0) return;
-      misplaced.add(f);
-      warnings.push(
-        `findings[${i}]: rule cites ${outside.join(', ')}, outside the task refs (${refs.join(', ')}); ` +
-          'it belongs in out_of_scope and does not count toward the verdict',
-      );
-    });
+  // Findings outside the task scope (refs, allowed paths, reviewer's marker) do not count.
+  const misplaced = misplacedFindings(review, opts);
+  for (const [i, reasons] of misplaced) {
+    warnings.push(
+      `findings[${i}]: ${reasons.join('; ')}; it belongs in out_of_scope and does not count toward the verdict`,
+    );
   }
-  const isBlocking = (f: Finding): boolean => f.severity === 'S0' || f.severity === 'S1';
-  const blocking = review.findings.filter((f) => isBlocking(f) && !misplaced.has(f));
+  const blocking = review.findings.filter((f, i) => isBlocking(f) && !misplaced.has(i));
   if (review.verdict === 'pass' && blocking.length > 0) {
     // A contradictory review is not a usable output: the merge gate reads `verdict` alone
     // (规划/11 §3.2 评审无 S0 / S1), so "pass" must never carry blocking findings.
@@ -213,10 +291,10 @@ export function reviewProblems(
   if (
     review.verdict === 'fail' &&
     blocking.length === 0 &&
-    review.findings.some((f) => isBlocking(f) && misplaced.has(f))
+    review.findings.some((f, i) => isBlocking(f) && misplaced.has(i))
   ) {
     warnings.push(
-      'verdict is "fail" only because of S0/S1 findings outside the task refs: within the refs this review is a pass',
+      'verdict is "fail" only because of S0/S1 findings outside the task scope: within the task scope (refs, allowed paths) this review is a pass',
     );
   }
 
@@ -244,6 +322,104 @@ export function reviewProblems(
   return { errors, warnings };
 }
 
+/** Index of each out-of-scope entry of `findings` with its reasons. */
+function misplacedFindings(review: ReviewOutput, scope: ReviewScope): Map<number, string[]> {
+  const out = new Map<number, string[]>();
+  review.findings.forEach((f, i) => {
+    const reasons = scopeReasons(f, scope);
+    if (reasons.length > 0) out.set(i, reasons);
+  });
+  return out;
+}
+
+/**
+ * The review as the gate reads it: out-of-scope findings moved to `out_of_scope` and the verdict
+ * recomputed from the in-scope S0 / S1 findings only. `moved` lists the moved entries.
+ */
+export function normalizeReview(
+  review: ReviewOutput,
+  scope: ReviewScope,
+): { review: ReviewOutput; moved: { finding: Finding; reasons: string[] }[] } {
+  const misplaced = misplacedFindings(review, scope);
+  const moved = [...misplaced].map(([i, reasons]) => ({
+    finding: review.findings[i] as Finding,
+    reasons,
+  }));
+  const findings = review.findings.filter((_, i) => !misplaced.has(i));
+  return {
+    review: {
+      ...review,
+      verdict: findings.some(isBlocking) ? 'fail' : 'pass',
+      findings,
+      out_of_scope: [...review.out_of_scope, ...moved.map((m) => m.finding)],
+    },
+    moved,
+  };
+}
+
+/**
+ * Appends the out-of-scope entries whose key is not yet in `file` (Markdown, created when
+ * missing). `reasons` maps a key to why it was moved; the others were listed by the reviewer.
+ * Returns the number of entries appended.
+ */
+export function appendOutOfScope(
+  file: string,
+  entries: readonly Finding[],
+  reasons: ReadonlyMap<string, string[]>,
+  context: { source: string; at: string },
+): number {
+  const existing = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const line = (text: string): string => text.replace(/\s+/g, ' ').trim();
+  const fresh = entries.filter(
+    (f, i) =>
+      !existing.includes(`- \`${f.key}\``) && entries.findIndex((g) => g.key === f.key) === i,
+  );
+  if (fresh.length === 0) return 0;
+  const parts: string[] = [];
+  if (existing === '') {
+    parts.push(
+      `# ${basename(dirname(resolve(file)))}: out-of-scope review findings`,
+      '',
+      'Appended by tools/agent/validate-output.ts (规划/11 §3.3; owner decisions 2026-10-02).',
+      'Entries do not count toward the review verdict of this task; each is a candidate rule test',
+      'for a later task (the task whose paths contain the behaviour). One entry per key.',
+      '',
+    );
+  }
+  parts.push(`## ${context.at} ${context.source}`, '');
+  for (const f of fresh) {
+    const why = reasons.get(f.key);
+    parts.push(
+      `- \`${f.key}\` ${f.severity} — ${line(f.rule)} — \`${f.file}:${f.line}\``,
+      `  - source: ${why === undefined ? 'listed in out_of_scope by the reviewer' : `moved from findings: ${line(why.join('; '))}`}`,
+      `  - scenario: ${line(f.scenario)}`,
+      `  - suggestion: ${line(f.suggestion)}`,
+    );
+  }
+  parts.push('');
+  mkdirSync(dirname(file), { recursive: true });
+  appendFileSync(
+    file,
+    `${existing !== '' && !existing.endsWith('\n') ? '\n' : ''}${parts.join('\n')}\n`,
+  );
+  return fresh.length;
+}
+
+/** Rule-test locations: class 1 (add-only test assets) of the protected-path list in `root`. */
+export function ruleTestLocations(root: string): string[] {
+  const doc = readJsonFile(join(root, 'tools', 'guard', 'protected-paths.json'));
+  const list =
+    typeof doc === 'object' && doc !== null
+      ? (doc as Record<string, unknown>)['class1_add_only']
+      : undefined;
+  if (!Array.isArray(list) || !list.every((g) => typeof g === 'string')) {
+    throw new Error('protected-paths.json: class1_add_only must be a list of globs');
+  }
+  return (list as string[]).map((g) =>
+    g.lastIndexOf('#') > 0 ? g.slice(0, g.lastIndexOf('#')) : g,
+  );
+}
+
 function isReviewSchema(schema: unknown): boolean {
   if (typeof schema !== 'object' || schema === null) return false;
   const properties = (schema as { properties?: unknown }).properties;
@@ -251,11 +427,7 @@ function isReviewSchema(schema: unknown): boolean {
 }
 
 /** Full validation of one output document. */
-export function validateOutput(
-  schema: unknown,
-  data: unknown,
-  opts: { money: boolean; lineChecker?: LineChecker; refs?: readonly string[] },
-): Report {
+export function validateOutput(schema: unknown, data: unknown, opts: ReviewOptions): Report {
   const errors = schemaErrors(schema, data);
   const warnings: string[] = [];
   if (errors.length === 0 && isReviewSchema(schema)) {
@@ -268,22 +440,37 @@ export function validateOutput(
   return { ok: errors.length === 0, errors, warnings };
 }
 
-function parseArgs(argv: readonly string[]): {
+type CliArgs = {
   schema: string;
   file: string;
   money: boolean;
   json: boolean;
+  rewrite: boolean;
   refs: string[];
+  allowedPaths: string[];
+  outOfScopeLog?: string;
   diffBase?: string;
   cwd?: string;
-} {
+};
+
+function parseArgs(argv: readonly string[]): CliArgs {
   const values = new Map<string, string>();
   const switches = new Set<string>();
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
-    if (arg === '--money' || arg === '--json') {
+    if (arg === '--money' || arg === '--json' || arg === '--rewrite') {
       switches.add(arg);
-    } else if (['--schema', '--file', '--diff-base', '--cwd', '--refs'].includes(arg)) {
+    } else if (
+      [
+        '--schema',
+        '--file',
+        '--diff-base',
+        '--cwd',
+        '--refs',
+        '--allowed-paths',
+        '--out-of-scope-log',
+      ].includes(arg)
+    ) {
       const value = argv[i + 1];
       if (value === undefined) throw new UsageError(`${arg} needs a value`);
       values.set(arg, value);
@@ -309,13 +496,28 @@ function parseArgs(argv: readonly string[]): {
   for (const ref of refs) {
     if (!/^[A-Za-z0-9-]+$/.test(ref)) throw new UsageError(`--refs: invalid rule id "${ref}"`);
   }
-  const parsed = {
+  const allowedPaths = splitTopLevelCommas(values.get('--allowed-paths') ?? '')
+    .map((g) => g.trim())
+    .filter((g) => g !== '');
+  for (const glob of allowedPaths) {
+    if (!/^[A-Za-z0-9_.@*{},/-]+$/.test(glob) || glob.startsWith('/') || glob.includes('..')) {
+      throw new UsageError(`--allowed-paths: invalid path glob "${glob}"`);
+    }
+  }
+  if (values.has('--allowed-paths') && allowedPaths.length === 0) {
+    throw new UsageError('--allowed-paths is empty');
+  }
+  const parsed: CliArgs = {
     schema,
     file,
     money: switches.has('--money'),
     json: switches.has('--json'),
+    rewrite: switches.has('--rewrite'),
     refs,
+    allowedPaths,
   };
+  const log = values.get('--out-of-scope-log');
+  if (log !== undefined) parsed.outOfScopeLog = log;
   return diffBase !== undefined && cwd !== undefined ? { ...parsed, diffBase, cwd } : parsed;
 }
 
@@ -323,6 +525,11 @@ function main(argv: readonly string[]): number {
   const args = parseArgs(argv);
   if (!existsSync(args.file)) throw new UsageError(`--file ${args.file}: no such file`);
   const schema = readJsonFile(args.schema);
+  // Rule-test locations come from this script's own checkout (the trusted copy), never the PR.
+  const scopePaths =
+    args.allowedPaths.length > 0
+      ? [...args.allowedPaths, ...ruleTestLocations(resolve(import.meta.dirname, '..', '..'))]
+      : [];
 
   let report: Report;
   let data: unknown;
@@ -332,6 +539,7 @@ function main(argv: readonly string[]): number {
   } catch (error) {
     parseError = error instanceof Error ? error.message : String(error);
   }
+  const opts: ReviewOptions = { money: args.money };
   if (parseError !== '') {
     report = { ok: false, errors: [`output is not valid JSON: ${parseError}`], warnings: [] };
   } else {
@@ -339,12 +547,44 @@ function main(argv: readonly string[]): number {
       args.money && args.diffBase !== undefined && args.cwd !== undefined
         ? gitLineChecker(args.diffBase, args.cwd)
         : undefined;
-    const opts: { money: boolean; lineChecker?: LineChecker; refs?: string[] } = {
-      money: args.money,
-    };
     if (lineChecker !== undefined) opts.lineChecker = lineChecker;
     if (args.refs.length > 0) opts.refs = args.refs;
+    if (scopePaths.length > 0) opts.paths = scopePaths;
     report = validateOutput(schema, data, opts);
+  }
+
+  const isReview = report.ok && isReviewSchema(schema);
+  if ((args.rewrite || args.outOfScopeLog !== undefined) && !isReviewSchema(schema)) {
+    throw new UsageError('--rewrite and --out-of-scope-log apply to review outputs only');
+  }
+  if (isReview && (args.rewrite || args.outOfScopeLog !== undefined)) {
+    const raw = data as ReviewOutput;
+    const { review, moved } = normalizeReview(raw, opts);
+    if (args.rewrite) {
+      if (review.verdict !== raw.verdict) {
+        report.warnings.push(
+          `verdict: the reviewer wrote "${raw.verdict}", recomputed "${review.verdict}" from the in-scope S0/S1 findings`,
+        );
+      }
+      if (moved.length > 0 || review.verdict !== raw.verdict) {
+        writeFileAtomic(args.file, `${JSON.stringify(review, null, 2)}\n`);
+        report.warnings.push(
+          `rewrote ${args.file}: ${moved.length} finding(s) moved to out_of_scope, verdict ${review.verdict}`,
+        );
+      }
+    }
+    if (args.outOfScopeLog !== undefined) {
+      const reasons = new Map(moved.map((m) => [m.finding.key, m.reasons]));
+      const added = appendOutOfScope(args.outOfScopeLog, review.out_of_scope, reasons, {
+        source: `review ${basename(args.file)}`,
+        at: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+      });
+      if (added > 0) {
+        report.warnings.push(
+          `appended ${added} out-of-scope entr${added === 1 ? 'y' : 'ies'} to ${args.outOfScopeLog}`,
+        );
+      }
+    }
   }
 
   if (args.json) process.stdout.write(`${JSON.stringify(report)}\n`);

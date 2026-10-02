@@ -1,14 +1,20 @@
 // Tests for the output schemas and validate-output.ts (规划/11 §2.4 schema 写法, §3.1, §3.3).
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { AGENT_DIR, type Fixture, gitIn, makeFixture } from './testing/fixture.ts';
+import { AGENT_DIR, type Fixture, gitIn, makeFixture, REPO } from './testing/fixture.ts';
 import {
+  appendOutOfScope,
   CHECKLIST_ITEMS,
+  citedPaths,
   gitLineChecker,
   type LineChecker,
+  normalizeReview,
   outsideRefs,
+  ruleTestLocations,
+  SCOPE_MARKER,
+  scopeReasons,
   parseHunks,
   type ReviewOutput,
   reviewProblems,
@@ -280,7 +286,9 @@ it('[规划/11 §2.5] with --refs, findings about rules outside the refs do not 
   );
   // A fail that rests only on misplaced findings is flagged as a pass within the refs.
   const failed = reviewProblems({ ...pass, verdict: 'fail' }, { money: false, refs });
-  expect(failed.warnings.join('\n')).toContain('within the refs this review is a pass');
+  expect(failed.warnings.join('\n')).toContain(
+    'within the task scope (refs, allowed paths) this review is a pass',
+  );
   // Without --refs nothing changes: the pass is contradictory.
   expect(reviewProblems(pass, { money: false }).errors.join('\n')).toContain(
     'verdict is "pass" but 1 S0/S1',
@@ -462,4 +470,197 @@ it('CLI: exit 0 valid, 1 invalid, 2 usage or internal error', { timeout: 60_000 
   expect(outside.stderr).toContain('src/a.ts:1 file is not changed in the diff');
   writeFileSync(join(fx.worktree, 'src', 'a.ts'), 'export const a = 3;\n');
   expect(runCli([...moneyArgs, '--diff-base', fx.baseSha, '--cwd', fx.worktree]).status).toBe(0);
+});
+
+// Spec-test review scope by paths (owner decision 2026-10-02, ops/approvals.yaml id 14).
+function specFinding(
+  over: Partial<ReviewOutput['findings'][number]>,
+): ReviewOutput['findings'][number] {
+  const file = over.file ?? 'test/spec/money/a.test.ts';
+  return {
+    severity: 'S1',
+    key: `${file}#-#BR-CALC-01-clause-1`,
+    file,
+    line: 3,
+    rule: 'BR-CALC-01',
+    scenario: 'mulDivFloor(101n, 5000n, 10000n) is not asserted, so a round() passes',
+    suggestion: 'add the exact-fen example',
+    ...over,
+  };
+}
+
+const SCOPE_PATHS = ['packages/money/src/**', ...ruleTestLocations(REPO)];
+
+it('[规划/11 §3.3] spec-test scope: rule-test locations come from class 1 of the protected paths', () => {
+  expect(ruleTestLocations(REPO)).toEqual(
+    expect.arrayContaining(['test/spec/**', 'test/properties/**', 'packages/testing/**']),
+  );
+  expect(citedPaths('see db/migrations/0001_init.sql:12 and `packages/db/src/`.')).toEqual([
+    'db/migrations/0001_init.sql',
+    'packages/db/src',
+  ]);
+  expect(citedPaths('no repository path, only BR-CALC-01 and a.b/c')).toEqual([]);
+});
+
+it('[规划/11 §3.3] findings about behaviour outside the allowed paths are out of scope', () => {
+  const scope = { refs: ['BR-CALC-01'], paths: SCOPE_PATHS };
+  // In scope: a rule-test file, an implementation file of the task, citations inside the paths.
+  expect(scopeReasons(specFinding({}), scope)).toEqual([]);
+  expect(
+    scopeReasons(
+      specFinding({
+        file: 'packages/money/src/index.ts',
+        key: 'packages/money/src/index.ts#mulDivFloor#BR-CALC-01',
+        scenario: 'packages/money/src/index.ts and db/migrations/0001.sql disagree',
+      }),
+      scope,
+    ),
+  ).toEqual([]);
+  // The file lies outside the task paths and the rule-test locations.
+  expect(
+    scopeReasons(
+      specFinding({
+        file: 'db/migrations/0001_init.sql',
+        key: 'db/migrations/0001_init.sql#-#BR-CALC-01',
+      }),
+      scope,
+    )[0],
+  ).toContain('file db/migrations/0001_init.sql is outside the task');
+  // A rule-test location, but every cited path is another module.
+  expect(
+    scopeReasons(
+      specFinding({ scenario: 'amount columns in packages/db/src/schema.ts may be numeric' }),
+      scope,
+    )[0],
+  ).toContain('cites only paths outside the task');
+  // The reviewer's own marker.
+  expect(scopeReasons(specFinding({ rule: `${SCOPE_MARKER} BR-CALC-01 CI lint` }), scope)).toEqual([
+    `the reviewer marked it ${SCOPE_MARKER}`,
+  ]);
+});
+
+it('[规划/11 §3.3] out-of-scope findings are moved and the verdict is recomputed from in-scope S0/S1', () => {
+  const scope = { refs: ['BR-CALC-01'], paths: SCOPE_PATHS };
+  const outside = specFinding({
+    file: 'apps/api/src/modules/settlement/run.ts',
+    key: 'apps/api/src/modules/settlement/run.ts#-#BR-CALC-01',
+  });
+  const s2 = specFinding({ severity: 'S2', key: 'test/spec/money/a.test.ts#-#weak-name' });
+  const review: ReviewOutput = {
+    verdict: 'fail',
+    summary: 'BR-CALC-01#1 → t1.',
+    findings: [outside, s2],
+    out_of_scope: [],
+    checklist: [],
+  };
+  // Valid with a warning: the fail rests only on an out-of-scope S1.
+  const problems = reviewProblems(review, { money: false, ...scope });
+  expect(problems.errors).toEqual([]);
+  expect(problems.warnings.join('\n')).toContain(
+    'findings[0]: file apps/api/src/modules/settlement/run.ts is outside the task',
+  );
+  const normalized = normalizeReview(review, scope);
+  expect(normalized.review.verdict).toBe('pass');
+  expect(normalized.review.findings).toEqual([s2]);
+  expect(normalized.review.out_of_scope).toEqual([outside]);
+  expect(normalized.moved.map((m) => m.finding.key)).toEqual([outside.key]);
+  // An in-scope S1 keeps the fail, and a pass next to it is still contradictory.
+  const inScope = specFinding({});
+  expect(normalizeReview({ ...review, findings: [outside, inScope] }, scope).review.verdict).toBe(
+    'fail',
+  );
+  expect(
+    reviewProblems(
+      { ...review, verdict: 'pass', findings: [outside, inScope] },
+      {
+        money: false,
+        ...scope,
+      },
+    ).errors.join('\n'),
+  ).toContain('verdict is "pass" but 1 S0/S1');
+});
+
+it('[规划/11 §3.3] out-of-scope entries are appended once per key to the run-state file', () => {
+  const fx = makeFixture('oos-log');
+  fixtures.push(fx);
+  const file = join(fx.run, 'out-of-scope.md');
+  const a = specFinding({ file: 'db/x.sql', key: 'db/x.sql#-#BR-CALC-01' });
+  const b = specFinding({
+    file: 'db/y.sql',
+    key: 'db/y.sql#-#BR-CALC-01',
+    scenario: 'multi\nline',
+  });
+  const at = { source: 'review review-codex.json', at: '2026-10-02T00:00:00Z' };
+  expect(appendOutOfScope(file, [a], new Map([[a.key, ['moved']]]), at)).toBe(1);
+  expect(appendOutOfScope(file, [a, b, b], new Map(), at)).toBe(1);
+  expect(appendOutOfScope(file, [a, b], new Map(), at)).toBe(0);
+  const text = readFileSync(file, 'utf8');
+  expect(text.startsWith(`# ${'T1-01'}: out-of-scope review findings`)).toBe(true);
+  expect(text.split('- `db/x.sql#-#BR-CALC-01`').length).toBe(2);
+  expect(text).toContain('  - source: moved from findings: moved');
+  expect(text).toContain('  - source: listed in out_of_scope by the reviewer');
+  expect(text).toContain('  - scenario: multi line');
+});
+
+it('CLI: --allowed-paths, --rewrite and --out-of-scope-log', { timeout: 60_000 }, () => {
+  const fx = makeFixture('validate-scope');
+  fixtures.push(fx);
+  const file = join(fx.root, 'review.json');
+  const log = join(fx.run, 'out-of-scope.md');
+  const outside = specFinding({
+    file: 'packages/db/src/schema.ts',
+    key: 'packages/db/src/schema.ts#-#BR-CALC-01',
+  });
+  const raw = {
+    verdict: 'fail',
+    summary: 'BR-CALC-01#1 → t1.',
+    findings: [outside],
+    out_of_scope: [
+      specFinding({ file: 'db/z.sql', key: 'db/z.sql#-#BR-CALC-26', rule: 'BR-CALC-26' }),
+    ],
+    checklist: [],
+  };
+  writeFileSync(file, JSON.stringify(raw));
+  const args = [
+    '--schema',
+    REVIEW_SCHEMA_FILE,
+    '--file',
+    file,
+    '--allowed-paths',
+    'packages/money/src/**',
+  ];
+  // Without --rewrite the file is untouched; the warning names the misplaced finding.
+  const checked = runCli(args);
+  expect(checked.status, checked.stderr).toBe(0);
+  expect(checked.stderr).toContain('warning: findings[0]: file packages/db/src/schema.ts');
+  expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(raw);
+
+  const rewritten = runCli([...args, '--rewrite', '--out-of-scope-log', log]);
+  expect(rewritten.status, rewritten.stderr).toBe(0);
+  expect(rewritten.stderr).toContain('recomputed "pass"');
+  const after = JSON.parse(readFileSync(file, 'utf8')) as ReviewOutput;
+  expect(after.verdict).toBe('pass');
+  expect(after.findings).toEqual([]);
+  expect(after.out_of_scope.map((f) => f.key)).toEqual(['db/z.sql#-#BR-CALC-26', outside.key]);
+  const text = readFileSync(log, 'utf8');
+  expect(text).toContain(`- \`${outside.key}\` S1`);
+  expect(text).toContain('- `db/z.sql#-#BR-CALC-26` S1');
+  // Idempotent: a second run appends nothing and leaves the review as it is.
+  expect(runCli([...args, '--rewrite', '--out-of-scope-log', log]).status).toBe(0);
+  expect(readFileSync(log, 'utf8')).toBe(text);
+
+  // An invalid review is neither rewritten nor logged.
+  const contradictory = { ...raw, verdict: 'pass', findings: [specFinding({})] };
+  writeFileSync(file, JSON.stringify(contradictory));
+  const rejected = runCli([...args, '--rewrite', '--out-of-scope-log', join(fx.run, 'other.md')]);
+  expect(rejected.status).toBe(1);
+  expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(contradictory);
+  expect(existsSync(join(fx.run, 'other.md'))).toBe(false);
+
+  // Usage errors.
+  expect(runCli([...args.slice(0, 4), '--allowed-paths', '../x/**']).status).toBe(2);
+  expect(runCli([...args.slice(0, 4), '--allowed-paths', ',']).status).toBe(2);
+  const impl = join(fx.root, 'impl.json');
+  writeFileSync(impl, JSON.stringify(validImpl()));
+  expect(runCli(['--schema', IMPL_SCHEMA_FILE, '--file', impl, '--rewrite']).status).toBe(2);
 });

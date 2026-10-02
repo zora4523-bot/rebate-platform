@@ -709,3 +709,199 @@ describe('run.ts git --pr-number: owner approval (规划/11 §4.4, owner decisio
     );
   });
 });
+
+describe('run.ts git --task: the path guard starts at spec_commit (owner decision 2026-10-02)', () => {
+  const SKELETON =
+    "export function post(): number {\n  throw new Error('NotImplemented: post');\n}\n";
+
+  function commitAll(root: string, message: string): string {
+    fixtureGit(root, ['add', '-A']);
+    fixtureGit(root, ['commit', '-q', '-m', message]);
+    return fixtureGit(root, ['rev-parse', 'HEAD']);
+  }
+
+  /**
+   * A task branch of B2-02a (paths apps/api/src/modules/ledger/**): rule-test commit(s), then
+   * the implementation, then the evidence file naming `spec_commit` (default: the rule-test
+   * commit). `author` overrides the rule-test author's files.
+   */
+  function taskBranch(
+    opts: {
+      author?: Record<string, string>;
+      authorRemove?: string[];
+      implementer?: Record<string, string>;
+      evidence?: (spec: string) => unknown;
+    } = {},
+  ): { root: string; base: string; spec: string; head: string } {
+    const { root, base } = workRepo();
+    writeFiles(
+      root,
+      opts.author ?? {
+        'test/spec/ledger/rule.test.ts': "it('[BR-FUND-13] rule', () => { expect(1).toBe(1); });\n",
+        'test/properties/ledger/rule.prop.test.ts': "it('[BR-FUND-13] prop', () => {});\n",
+        'apps/api/src/modules/ledger/post.ts': SKELETON,
+        'ops/tasks/B2-02a.yaml': LEDGER_TASK.replace('status: todo', 'status: doing'),
+      },
+    );
+    for (const path of opts.authorRemove ?? []) fixtureGit(root, ['rm', '-q', path]);
+    const spec = commitAll(root, 'test(spec): rule tests and skeleton');
+    writeFiles(
+      root,
+      opts.implementer ?? {
+        'apps/api/src/modules/ledger/post.ts': 'export function post(): number {\n  return 2;\n}\n',
+        'apps/api/src/modules/ledger/post.test.ts': "it('unit', () => { expect(2).toBe(2); });\n",
+      },
+    );
+    const implemented = commitAll(root, 'feat(ledger): implement');
+    const evidence = opts.evidence ? opts.evidence(spec) : { task: 'B2-02a', spec_commit: spec };
+    if (evidence === undefined) return { root, base, spec, head: implemented };
+    writeFiles(root, { 'ops/evidence/B2-02a.json': `${JSON.stringify(evidence, null, 2)}\n` });
+    const head = commitAll(root, 'ops(evidence)');
+    return { root, base, spec, head };
+  }
+
+  const runGit = (root: string, base: string) =>
+    guard('run.ts', ['git', '--base', base, '--task', 'B2-02a', '--cwd', root]);
+
+  it('a valid spec_commit: rule tests before it are the author’s, the rest the implementer’s', () => {
+    const { root, base, spec } = taskBranch();
+    const res = runGit(root, base);
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout).toBe(
+      [
+        'PASS path-guard',
+        'PASS path-guard-author',
+        'PASS protected-paths',
+        'PASS test-guard',
+        'guard git: 4 passed, 0 failed, 0 skipped',
+        '',
+      ].join('\n'),
+    );
+    expect(res.stderr).toContain(
+      `path-guard: notice: implementer scope starts at spec_commit ${spec.slice(0, 12)}`,
+    );
+    // The evidence file itself is an ops/ change of the implementer range: reported, not failing.
+    expect(res.stderr).toContain('ops/evidence/B2-02a.json: out-of-scope change under ops/');
+  });
+
+  it('an abbreviated spec_commit is accepted once it resolves on the branch', () => {
+    const { root, base } = taskBranch({
+      evidence: (spec) => ({ task: 'B2-02a', spec_commit: spec.slice(0, 7) }),
+    });
+    expect(runGit(root, base).status).toBe(0);
+  });
+
+  it('missing evidence file: one range from the base, as before (rule tests fail)', () => {
+    const { root, base } = taskBranch({ evidence: () => undefined });
+    const res = runGit(root, base);
+    expect(res.status).toBe(1);
+    expect(res.stdout.split('\n')[0]).toBe('FAIL path-guard (2 problems)');
+    expect(res.stdout).not.toContain('path-guard-author');
+    expect(res.stderr).toContain(
+      'path-guard: notice: implementer scope starts at the base: no ops/evidence/B2-02a.json at the head',
+    );
+    expect(res.stderr).toContain('test/spec/ledger/rule.test.ts: added outside the task paths');
+  });
+
+  it('a spec_commit that is not an ancestor of the head is not used', () => {
+    const { root, base, head } = taskBranch({ evidence: () => undefined });
+    // A commit on another branch, not reachable from the head.
+    fixtureGit(root, ['switch', '-q', '-c', 'side', base]);
+    writeFiles(root, { 'docs/side.md': '# side\n' });
+    const side = commitAll(root, 'side');
+    fixtureGit(root, ['switch', '-q', '--detach', head]);
+    writeFiles(root, {
+      'ops/evidence/B2-02a.json': JSON.stringify({ task: 'B2-02a', spec_commit: side }),
+    });
+    commitAll(root, 'ops(evidence) pointing elsewhere');
+    const res = runGit(root, base);
+    expect(res.status).toBe(1);
+    expect(res.stdout.split('\n')[0]).toBe('FAIL path-guard (2 problems)');
+    expect(res.stderr).toContain(`spec_commit ${side} is not an ancestor of the head`);
+  });
+
+  it('a spec_commit that is not a descendant of the base is not used', () => {
+    const { root, base } = taskBranch({ evidence: () => undefined });
+    // The base moved: the branch is rebased onto a newer main commit, but the evidence still
+    // names the original base (an ancestor of the new base) as spec_commit.
+    fixtureGit(root, ['switch', '-q', '-c', 'newmain', base]);
+    writeFiles(root, { 'docs/notes.md': '# main moved\n' });
+    const newBase = commitAll(root, 'main moved');
+    fixtureGit(root, ['switch', '-q', '-c', 'task', 'main']);
+    fixtureGit(root, ['rebase', '-q', newBase]);
+    writeFiles(root, {
+      'ops/evidence/B2-02a.json': JSON.stringify({ task: 'B2-02a', spec_commit: base }),
+    });
+    commitAll(root, 'ops(evidence) naming the old base');
+    const res = runGit(root, newBase);
+    expect(res.status).toBe(1);
+    expect(res.stdout.split('\n')[0]).toBe('FAIL path-guard (2 problems)');
+    expect(res.stderr).toContain(`is not a descendant of the base ${newBase}`);
+  });
+
+  it('an evidence file of another task or without a commit id is not used', () => {
+    const other = taskBranch({ evidence: (spec) => ({ task: 'B2-03a', spec_commit: spec }) });
+    const wrongTask = runGit(other.root, other.base);
+    expect(wrongTask.status).toBe(1);
+    expect(wrongTask.stderr).toContain('task is "B2-03a", not "B2-02a"');
+    const bogus = taskBranch({ evidence: () => ({ task: 'B2-02a', spec_commit: 'HEAD~1' }) });
+    const notId = runGit(bogus.root, bogus.base);
+    expect(notId.status).toBe(1);
+    expect(notId.stderr).toContain('spec_commit is not a commit id');
+  });
+
+  it('rule-test commits touching implementation or other paths fail path-guard-author', () => {
+    const { root, base } = taskBranch({
+      author: {
+        'test/spec/ledger/rule.test.ts': "it('[BR-FUND-13] rule', () => { expect(1).toBe(1); });\n",
+        // Implementation inside the task paths: no NotImplemented skeleton.
+        'apps/api/src/modules/ledger/post.ts': 'export function post(): number {\n  return 2;\n}\n',
+        // Another module, outside the task paths.
+        'apps/api/src/modules/orders/sync.ts': 'export const sync = 2;\n',
+      },
+      implementer: { 'apps/api/src/modules/ledger/more.ts': 'export const more = 1;\n' },
+    });
+    const res = runGit(root, base);
+    expect(res.status).toBe(1);
+    expect(res.stdout.split('\n').slice(0, 2)).toEqual([
+      'PASS path-guard',
+      'FAIL path-guard-author (2 problems)',
+    ]);
+    expect(res.stderr).toContain(
+      'path-guard-author: apps/api/src/modules/ledger/post.ts: implementation path changed in a ' +
+        'rule-test commit (before spec_commit) but it is not a NotImplemented skeleton shell',
+    );
+    expect(res.stderr).toContain(
+      'path-guard-author: apps/api/src/modules/orders/sync.ts: changed in a rule-test commit ' +
+        "(before spec_commit) outside the rule-test author's paths",
+    );
+  });
+
+  it('a rule-test commit may not remove implementation files', () => {
+    const { root, base } = taskBranch({
+      author: { 'test/spec/ledger/rule.test.ts': "it('[BR-FUND-13] rule', () => {});\n" },
+      authorRemove: ['apps/api/src/modules/ledger/post.ts'],
+    });
+    const res = runGit(root, base);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain(
+      'path-guard-author: apps/api/src/modules/ledger/post.ts: removed in a rule-test commit',
+    );
+  });
+
+  it('rule tests added after spec_commit are still implementer overreach', () => {
+    const { root, base } = taskBranch({
+      implementer: {
+        'apps/api/src/modules/ledger/post.ts': 'export function post(): number {\n  return 2;\n}\n',
+        'test/spec/ledger/late.test.ts': "it('[BR-FUND-13] late', () => {});\n",
+      },
+    });
+    const res = runGit(root, base);
+    expect(res.status).toBe(1);
+    expect(res.stdout.split('\n').slice(0, 2)).toEqual([
+      'FAIL path-guard (1 problem)',
+      'PASS path-guard-author',
+    ]);
+    expect(res.stderr).toContain('test/spec/ledger/late.test.ts: added outside the task paths');
+  });
+});
