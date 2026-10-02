@@ -1,0 +1,53 @@
+{
+  "task": "CT-01",
+  "spec_ref": "cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b",
+  "spec_commit": "68e90cd",
+  "red_tests": [],
+  "risk_note": "Contract task (contracts/** and packages/contracts-ts/** are RV1 in ops/risk-map.yaml; ops/tasks/** is RV0). The PR computes as RV2 only because ops/evidence/** is not in the risk-map whitelist. No rule tests (spec_commit is the ledger commit); no money path changed. Rebased onto 3d09b66 on 2026-10-03; contracts/ and packages/ content identical to the reviewed head ae6389f.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "aa4f9b6327b650407690ab42dd500cfbc151715d",
+      "tree": "d77b3b68a950972a3e86be0e9785cfca92a66f9f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-02T16:30:01Z",
+      "finished_at": "2026-10-02T16:31:22Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "scope": "round 1 on 22b4bf4 (independent Claude subagent, read-only): 0 S0/S1, 5 S2, all closed in ae6389f (rebased as 370d2a8)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "checklist_note": "contract reviews carry no money checklist (prompt review-contract.md: checklist []); nothing to fill",
+      "round": 2,
+      "round1_s1_closed": [
+        "contracts/enums/identity.yaml#admin_permission (ae6389f, rebased as 370d2a8)",
+        "contracts/error-codes.yaml#50301#retry-by-reason (ae6389f, rebased as 370d2a8)"
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "833352e1f5760a722404dbc8f911918f6fda1490",
+    "test/spec": "fa605fb01e65f436e5f08371cb7df8b8a92c19b7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "tree": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "note": "unchanged money tree; result of the B2-01a long run bound to this tree hash (规划/11 §3.2)"
+  }
+}
