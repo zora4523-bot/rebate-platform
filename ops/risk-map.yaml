@@ -13,6 +13,14 @@ rules:
     impl: claude
     tester: none
     review: codex
+  # Task ledgers (ops/tasks/<id>.yaml): RV0, owner decision 2026-10-02 (ops/approvals.yaml
+  # id 17). The guards still read a task's paths from the trusted root (or, for a ledger the
+  # task PR itself adds, from its head: tools/guard/lib/checks.ts guardTask).
+  - path: 'ops/tasks/**'
+    risk: RV0
+    impl: claude
+    tester: none
+    review: codex
   - path: 'contracts/**'
     risk: RV1
     impl: claude

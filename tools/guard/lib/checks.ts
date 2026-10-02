@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { readJsonFile } from '../../lib/fsx.ts';
 import { changedBetweenCommits, changedFiles, listTree, showFile, tryGit } from '../../lib/git.ts';
 import { specRepo, trustedRoot } from '../../lib/paths.ts';
-import { loadTask } from '../../lib/task-file.ts';
+import { loadTask, parseTaskFile, TASK_ID_PATTERN } from '../../lib/task-file.ts';
 import { checkAgentsPairs } from './agents-pair.ts';
 import { extractTable, renderRiskTable } from './agents-table.ts';
 import { parseAllow, parseTerms, scanText } from './banned-terms.ts';
@@ -327,4 +327,46 @@ export function protectedPathsCheck(
 export function trustedTask(id: string): { paths: string[]; type: string } {
   const task = loadTask(id, trustedRoot());
   return { paths: task.paths, type: task.type };
+}
+
+export type GuardTask = {
+  paths: string[];
+  type: string;
+  source: 'trusted' | 'head';
+  notice: string | null;
+};
+
+/**
+ * Task definition for `run.ts git --task <id>` (owner decision 2026-10-02, ops/approvals.yaml
+ * id 17): from the trusted root as before; only when the trusted root has no
+ * `ops/tasks/<id>.yaml` AND the pull request itself adds that file (absent at `base`, present
+ * in the committed `HEAD` of `root`) is the ledger read from the head. The id comes from the
+ * task branch name, so a branch can only bring the ledger of its own task, never change one
+ * that is already on the base; every other guard still reads the trusted root.
+ */
+export function guardTask(id: string, root: string, base: string): GuardTask {
+  if (!TASK_ID_PATTERN.test(id)) throw new Error(`invalid task id: "${id}"`);
+  if (base === '' || base.startsWith('-')) throw new Error(`invalid base: "${base}"`);
+  const rel = `ops/tasks/${id}.yaml`;
+  const trustedFile = join(trustedRoot(), rel);
+  if (existsSync(trustedFile)) return { ...trustedTask(id), source: 'trusted', notice: null };
+  const atBase = tryGit(['cat-file', '-e', `${base}:${rel}`], { cwd: root });
+  if (atBase.status === 0) {
+    throw new Error(
+      `task file not found: ${trustedFile} (the base has ${rel}; the trusted copy is stale)`,
+    );
+  }
+  const atHead = tryGit(['show', `HEAD:${rel}`], { cwd: root });
+  if (atHead.status !== 0) {
+    throw new Error(`task file not found: ${trustedFile}, and HEAD does not add ${rel}`);
+  }
+  const task = parseTaskFile(atHead.stdout, rel);
+  return {
+    paths: task.paths,
+    type: task.type,
+    source: 'head',
+    notice:
+      `task ${id}: no ${rel} on the base; the ledger is the one this pull request adds ` +
+      '(read from HEAD, ops/approvals.yaml id 17)',
+  };
 }

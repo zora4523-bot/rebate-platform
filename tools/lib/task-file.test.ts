@@ -49,6 +49,7 @@ describe('parseTaskFile', () => {
         'BR-FUND-16': '123456789abc',
         'BR-FUND-19': '23456789abcd',
       },
+      contract_sections: [],
       deps: ['B2-01'],
       paths: ['apps/api/src/modules/ledger/**'],
       impl: 'codex',
@@ -71,6 +72,21 @@ describe('parseTaskFile', () => {
       .replace(/refs_hash:\n(?: {2}BR-.*\n){3}/, 'refs_hash: {}\n')
       .replace('deps: [B2-01]', 'deps: []');
     expect(parseTaskFile(text, 'B2-02a.yaml')).toMatchObject({ refs: [], refs_hash: {}, deps: [] });
+  });
+
+  it('contract_sections: only on contract tasks, as 规划/04 section numbers', () => {
+    const contract = EXAMPLE.replace('type: impl', 'type: contract');
+    const withSections = contract.replace(
+      'deps: [B2-01]',
+      "contract_sections: ['2', '6.1']\ndeps: [B2-01]",
+    );
+    expect(parseTaskFile(withSections, 'B2-02a.yaml').contract_sections).toEqual(['2', '6.1']);
+    expect(messageOf(withSections.replace("'6.1'", "'§6.1'"), 'B2-02a.yaml')).toContain(
+      'contract_sections: "§6.1" is not a 规划/04 section number',
+    );
+    expect(
+      messageOf(withSections.replace('type: contract', 'type: impl'), 'B2-02a.yaml'),
+    ).toContain('contract_sections: only a contract task names 规划/04 sections');
   });
 
   it('lists every problem in one error', () => {

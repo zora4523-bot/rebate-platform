@@ -13,6 +13,11 @@ export type TaskFile = {
   type: 'impl' | 'contract' | 'migration' | 'deps' | 'test-change' | 'guard-change' | 'sync';
   refs: string[];
   refs_hash: Record<string, string>;
+  /**
+   * Contract tasks only: the 规划/04 sections the brief quotes (e.g. "2", "6.1"); optional,
+   * [] when absent (owner decision 2026-10-02, ops/approvals.yaml id 17).
+   */
+  contract_sections: string[];
   deps: string[];
   paths: string[];
   impl: 'codex' | 'claude';
@@ -36,6 +41,9 @@ export const TASK_IMPLS = ['codex', 'claude'] as const;
 export const TASK_TESTERS = ['codex', 'claude', 'none'] as const;
 export const TASK_STATUSES = ['todo', 'done'] as const;
 
+/** A section number of 规划/04 as written in its headings: "2", "6.1", "10.2". */
+export const CONTRACT_SECTION_PATTERN = /^[1-9][0-9]*(\.[1-9][0-9]*)*$/;
+
 /** Task ids become file names, branch names and run directories: 规划/05 ids plus a suffix. */
 export const TASK_ID_PATTERN = /^[A-Z][A-Z0-9]*-[0-9]+[a-z]*$/;
 
@@ -46,6 +54,7 @@ const KNOWN_KEYS = new Set([
   'type',
   'refs',
   'refs_hash',
+  'contract_sections',
   'deps',
   'paths',
   'impl',
@@ -112,7 +121,9 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     if (!KNOWN_KEYS.has(key)) problems.push(`${key}: unknown field`);
   }
   for (const key of KNOWN_KEYS) {
-    if (key !== 'pr' && !Object.hasOwn(doc, key)) problems.push(`${key}: missing`);
+    if (key !== 'pr' && key !== 'contract_sections' && !Object.hasOwn(doc, key)) {
+      problems.push(`${key}: missing`);
+    }
   }
 
   const id = doc['id'];
@@ -151,6 +162,20 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
   const accept = Object.hasOwn(doc, 'accept')
     ? stringList(doc, 'accept', problems, { nonEmpty: true })
     : [];
+
+  const contractSections = Object.hasOwn(doc, 'contract_sections')
+    ? stringList(doc, 'contract_sections', problems, { nonEmpty: true })
+    : [];
+  if (Object.hasOwn(doc, 'contract_sections') && type !== 'contract') {
+    problems.push('contract_sections: only a contract task names 规划/04 sections');
+  }
+  for (const section of contractSections) {
+    if (!CONTRACT_SECTION_PATTERN.test(section)) {
+      problems.push(
+        `contract_sections: "${section}" is not a 规划/04 section number such as "6.1"`,
+      );
+    }
+  }
 
   for (const dep of deps) {
     if (!TASK_ID_PATTERN.test(dep)) problems.push(`deps: "${dep}" is not a task id`);
@@ -204,6 +229,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     type: type as TaskFile['type'],
     refs,
     refs_hash: refsHash,
+    contract_sections: contractSections,
     deps,
     paths,
     impl: impl as TaskFile['impl'],

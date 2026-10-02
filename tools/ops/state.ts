@@ -13,7 +13,8 @@
 //
 // Rounds (规划/11 §2.5, owner decision 2026-10-02, ops/approvals.yaml id 13):
 // - three counters with their own limits: implementation 3, spec-test review 2, code review
-//   (money / general / contract) 2;
+//   (money / general / contract) 3 (raised from 2, owner decision 2026-10-02, ops/approvals.yaml
+//   id 17);
 // - a counter is bumped BEFORE the call (a run that dies without a trace stays counted);
 // - `settle`, run by tools/agent/codex-run.sh after every call, takes the bump back when the
 //   call ended without output: hard timeout or inactivity kill (exit 124), model capacity error
@@ -56,8 +57,8 @@ export type StateName = (typeof STATES)[number];
 export const ATTEMPT_KINDS = ['impl', 'spec-test', 'code'] as const;
 export type AttemptKind = (typeof ATTEMPT_KINDS)[number];
 
-/** 规划/11 §2.5: 3 implementation attempts; 2 rounds per review type (spec-test, code). */
-export const ATTEMPT_LIMITS: Record<AttemptKind, number> = { impl: 3, 'spec-test': 2, code: 2 };
+/** 规划/11 §2.5: 3 implementation attempts; 2 rule-test review rounds; 3 code review rounds. */
+export const ATTEMPT_LIMITS: Record<AttemptKind, number> = { impl: 3, 'spec-test': 2, code: 3 };
 
 export const REVIEW_TYPES = ['money', 'general', 'contract', 'spec-test'] as const;
 export type ReviewType = (typeof REVIEW_TYPES)[number];
