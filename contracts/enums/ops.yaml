@@ -1,0 +1,104 @@
+# 消息、客服、等级、Agent 与提醒（规划/04 §2.5、§8.2、§8.3；08 §13.2、§13.6）。
+enums:
+  notify_template_code:
+    source: 规划/04 §2.5；BR-TEXT-09、BR-TEXT-20
+    description: 消息模板编码；UNION_AUTH_EXPIRING、UNION_AUTH_EXPIRED 只发站长手机号，不属于用户通知分类
+    values:
+      ORDER_TRACKED: 订单已跟单
+      ORDER_INVALID: 订单失效
+      CREDITED: 月结批次入账（按受益人汇总）
+      CLAWBACK: 扣回
+      WD_SUCCESS: 提现成功
+      WD_REJECTED: 提现驳回
+      WD_FAILED: 提现失败
+      WD_OVERDUE: 提现审核超时
+      CLAIM_RESULT: 找回结果
+      RISK_STATE_CHANGED: 风控状态变化（只发站内信）
+      APPEAL_RESULT: 申诉结果（只发站内信）
+      DELETION_PROGRESS: 注销进度（只发站内信）
+      BALANCE_ADJUSTED: 人工调账调减（只发站内信）
+      SMS_CODE: 短信验证码
+      UNION_AUTH_EXPIRING: 站长授权即将到期（短信）
+      UNION_AUTH_EXPIRED: 站长授权已过期（短信）
+  notify_category:
+    source: 规划/04 §2.5；拍板第二批 OPS-16；BR-WATCH-19
+    description: 用户通知分类；交易与提现模板都归 service，MVP 只开放 service 开关，subscription、marketing 预埋不展示（待负责人确认）
+    values:
+      service: 服务类
+      subscription: 订阅类（预埋）
+      marketing: 营销类（预埋）
+  ticket_type:
+    source: 规划/04 §2.5；拍板第二批 OPS-08、OPS-19、FUND-20
+    values:
+      appeal_unauth: 未登录申诉
+      realname_correction: 实名更正
+      phone_change: 旧手机号不可用换号
+      ai_report: AI 举报
+      data_export: 个人信息副本
+      withdraw_cancel: 提现撤销申请
+      other: 其他
+  ticket_status:
+    source: 规划/04 §2.5；拍板第二批 OPS-08
+    values:
+      open: 待处理
+      processing: 处理中
+      waiting_user: 等待用户
+      resolved: 已解决
+      closed: 已关闭
+  user_level:
+    source: 规划/04 §2.5
+    description: 分销等级，晋升只看本人推广订单；用户端不展示（拍板第二批 OPS-20）
+    values:
+      L1: 一级
+      L2: 二级
+      L3: 三级
+  agent_intent:
+    source: 规划/04 §2.5
+    values:
+      find_by_link: 按链接找货
+      search: 搜索
+      refine: 追加条件
+      order_query: 查订单
+      rule_qa: 规则问答
+      handoff: 转人工
+      clarify: 澄清
+      out_of_scope: 范围外
+  agent_card_type:
+    source: 规划/04 §8.3；08 §13.2
+    description: Agent 卡片类型；watch_confirm、watch_list 为 P1，MVP 不注册，不列入
+    values:
+      product_list: 商品列表
+      rebate_quote: 查返利
+      order_status: 订单状态
+      claim_draft: 找回草稿
+      handoff: 转人工
+      auth_required: 需要授权
+      notice: 提示
+      rule_ref: 规则引用
+  agent_finish_reason:
+    source: 规划/04 §8.2；BR-AI-01、BR-AI-14、BR-AI-16、BR-AI-18
+    description: SSE done 事件的 finish_reason
+    values:
+      stop: 正常结束
+      cancelled: 已取消
+      limit: 达到上限
+      budget: 预算用完
+      error: 出错
+      auth_required: 需要授权
+      safety: 安全拦截
+      fallback: 无模型降级出卡
+      timeout: 单轮时限到
+  watch_status:
+    source: 规划/04 §2.5；BR-WATCH-10（P1）
+    values:
+      active: 生效中
+      paused: 已暂停
+      unavailable: 不可用
+      expired: 已过期
+      cancelled: 已取消
+  watch_event_status:
+    source: 规划/04 §2.5；BR-WATCH-11（P1）
+    values:
+      pending: 待发送
+      suppressed: 已抑制
+      sent: 已发送

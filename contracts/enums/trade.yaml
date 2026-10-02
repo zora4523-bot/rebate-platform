@@ -1,0 +1,134 @@
+# 商品、识别、转链与跳转（规划/04 §2.2、§2.5、§8.3–§8.5；03 §4.5；08 §13.2）。
+enums:
+  scene:
+    source: 规划/04 §2.2；BR-ATTR-08；08 §13.2
+    description: 转链来源，转链请求必填，缺失或非法返回 20001。watch_alert 为 MVP 预埋（开关关闭，不对用户展示，BR-WATCH-19 待确认）；taolijin 在 tlj.enabled=off 期间服务端不接受；share_ext、wechat_bot、mcp 为 P1
+    values:
+      search: 搜索结果
+      detail: 商品详情
+      home_card: 首页卡片
+      feed: 信息流
+      clipboard: 剪贴板识别
+      agent: Agent
+      share: 分享
+      h5: H5（trade.convertAndOpen）
+      push: 推送
+      taolijin: 淘礼金（后续接入，D7）
+      watch_alert: 提醒（MVP 预埋，关闭）
+      share_ext: 分享扩展（P1）
+      wechat_bot: 微信入口（P1）
+      mcp: MCP（P1）
+  pid_scene:
+    source: 规划/04 §2.2；BR-ATTR-08
+    description: 推广位场景，服务端由 scene 推出，不由客户端传入
+    values:
+      self_buy: 自购
+      agent: Agent
+      share: 分享
+      taolijin: 淘礼金（后续接入，首版不建）
+      fallback: 兜底，不下发给用户
+      query: 查价专用，不转链
+  buy_type:
+    source: 规划/04 §2.3；BR-ATTR-08
+    values:
+      self: 自购
+      share: 分享
+  scene_basis:
+    source: 规划/04 §2.3；BR-ATTR-09
+    description: buy_type 的判定依据
+    values:
+      pid: 推广位
+      param: 推广参数
+      fallback: 兜底
+  user_basis:
+    source: 规划/04 §2.3；BR-ATTR-09
+    description: user_id 的来源，未归因为 null
+    values:
+      param: 推广参数
+      claim: 找回
+      admin: 管理员
+  link_event:
+    source: BR-ATTR-14
+    description: link_logs.event；只有 convert、open 且 result_code=0 算点击证据
+    values:
+      convert: 用户主动发起的 POST /v1/links/convert
+      precompute: 保留取值，不再产生（出卡不预转链）
+      register: 出卡登记 link_id
+      open: POST /v1/links/{link_id}/open
+  installed_state:
+    source: BR-ATTR-27；规划/03 §4.5
+    description: open 与 convert 请求体 installed，缺省 unknown
+    values:
+      'true': 已安装
+      'false': 未安装
+      unknown: 未知（H5 固定为 unknown）
+  no_rebate_reason:
+    source: 规划/04 §6.3；BR-ID-18
+    description: open 的无返利原因；客户端只能传 auth_declined、auth_failed，relation_conflict、binding_blocked 由服务端判定
+    values:
+      auth_declined: 用户拒绝授权
+      auth_failed: 授权失败
+      relation_conflict: 渠道关系冲突
+      binding_blocked: 绑定已停用
+  jump_type:
+    source: 规划/03 §4.5；BR-ATTR-27
+    description: 外跳方案 primary / fallbacks 每一项的类型
+    values:
+      sdk: 联盟 SDK
+      scheme: 自定义 scheme
+      universal_link: Universal Link / App Link / App Linking
+      h5: H5 页面
+      copy_tpwd: 复制口令
+  input_kind:
+    source: 规划/04 §8.5
+    description: parse_input 命中项的类型
+    values:
+      tpwd: 口令
+      url: 链接
+      text: 文本
+  rebate_basis:
+    source: 规划/04 §8.3；BR-PRICE-07、BR-PRICE-08、BR-PRICE-21；BR-AI-11
+    values:
+      normal: 正常返利
+      price_compare_risk: 比价风险（返利可能为 0）
+      no_rebate: 无返利
+      amount_unknown: 可返利，金额以订单为准（拼多多直链）
+      login_required: 登录查看返利（游客卡，按平台开关）
+  availability:
+    source: 规划/04 §8.3
+    values:
+      ok: 可购买
+      off_shelf: 已下架
+      coupon_gone: 券已失效
+      ref_expired: 商品信息已失效
+      price_unavailable: 暂无法取价
+      unknown: 未知
+  match_tag:
+    source: 规划/04 §2.5、§8.3；BR-AI-24
+    values:
+      matched: 符合
+      relaxed: 已放宽
+      spec_unconfirmed: 规格待确认
+  benefit:
+    source: 规划/04 §2.5
+    values:
+      coupon: 有券
+      big_coupon: 大额券
+      taolijin: 淘礼金
+      subsidy: 补贴
+      high_rebate: 高返利
+  sort:
+    source: 规划/04 §2.5；拍板第二批 TRADE-20（券后价与返利排序只排当前页）
+    values:
+      relevance: 综合
+      sales_desc: 销量从高到低
+      final_price_asc: 券后价从低到高
+      rebate_desc: 返利从高到低
+  tlj_kind:
+    source: 规划/04 §2.5；BR-TEXT-15
+    description: 素材淘礼金出资方判定；unknown 不宣称已判定为 third_party
+    values:
+      ours: 我方（A）
+      brand_open: 品牌开放（B）
+      third_party: 第三方（C）
+      unknown: 未判定

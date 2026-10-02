@@ -1,0 +1,190 @@
+# 资金、分账、结算、提现与对账（规划/04 §2.4、§2.5；08 §13.4、§13.6）。
+enums:
+  ledger_type:
+    source: 规划/04 §2.4；BR-FUND-15；08 §13.4
+    description: 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
+    values:
+      REBATE_CREDIT: 自购返利入账（+）
+      SHARE_CREDIT: 分享收益入账（+）
+      REFERRAL_CREDIT: 邀请分佣入账（+，直推 / 间推）
+      CLAWBACK: 订单扣回（−，含入账后部分退款）
+      SETTLE_ADJUST: 结算补差（±）
+      WITHDRAW_FREEZE: 提现冻结（可用 → 冻结）
+      WITHDRAW_PAID: 提现出金（冻结 −）
+      WITHDRAW_RETURN: 提现退回（冻结 → 可用）
+      WITHDRAW_FEE: 提现手续费（冻结 −，MVP 为 0）
+      TAX_WITHHOLD: 代扣个税（冻结 −）
+      REWARD: 活动奖励（+，P1）
+      ADMIN_ADJUST: 人工调账（±）
+      BAD_DEBT_WRITEOFF: 负余额核销（+）
+  referral_credit_sub_type:
+    source: 规划/04 §2.4；BR-CALC-05
+    description: REFERRAL_CREDIT 的 sub_type；INDIRECT 只在间推开关开启的规则版本下产生
+    values:
+      DIRECT: 直推
+      INDIRECT: 间推
+  clawback_sub_type:
+    source: 规划/04 §2.4；BR-FUND-08
+    values:
+      FULL: 全额扣回
+      PART_REFUND: 入账后部分退款
+      RIGHTS: 维权
+      PUNISH: 处罚
+  settle_adjust_sub_type:
+    source: 规划/04 §2.4；BR-CALC-14
+    values:
+      SETTLE_DIFF: 结算差异
+      PRICE_COMPARE: 比价
+      PRICE_PROTECT: 价保
+  reward_sub_type:
+    source: 规划/04 §2.4（P1）
+    values:
+      newbie: 新人
+      checkin: 签到
+      invite: 邀请
+  admin_adjust_sub_type:
+    source: 规划/04 §2.4；BR-FUND-24
+    description: 人工调账原因码，含义与流程只在 BR-FUND-24 维护
+    values:
+      RESTORE: 订单恢复与申诉恢复（BR-FUND-22）
+      RECON_FIX: 对账修正
+      PAYOUT_RECOVERY: 打款追回
+      ACCOUNT_CLOSED: 注销放弃余额转平台收入
+      OTHER: 其他
+  beneficiary_role:
+    source: 规划/04 §2.5；BR-CALC-04、BR-CALC-05
+    description: 受益角色；indirect 只在所选规则版本 indirect_enabled=true 时出现；客户端遇未知值按通用收入显示
+    values:
+      self: 本人自购
+      share: 分享者
+      direct: 直推上级
+      indirect: 间推上级
+  forfeit_reason:
+    source: 08 §13.2；BR-CALC-13
+    description: commission_splits.beneficiaries[].forfeit_reason，受益人份额被剥夺的原因
+    values:
+      banned: 封禁
+      deleted: 注销
+      minor: 已识别未满 18 周岁
+  commission_rule_status:
+    source: 规划/04 §2.5；BR-CALC-11、BR-CALC-22
+    values:
+      draft: 草稿
+      published: 已发布
+      revoked: 已撤销（只能撤销未生效版本）
+  income_type:
+    source: 规划/04 §2.4；BR-WDR-20；拍板第二批 FUND-04
+    description: 所得类型；SELF_REBATE 停用，编码保留不复用，不列入
+    values:
+      SERVICE_FEE: 全部佣金收入（劳务报酬，合并累计计税）
+      INCIDENTAL: 活动奖励（偶然所得，P1）
+  withdrawal_status:
+    source: 规划/04 §2.4；BR-WDR-08
+    description: 终态 REJECTED、PAID_API、PAID_MANUAL、FAILED；用户文案见 BR-TEXT-06
+    values:
+      PENDING_REVIEW: 审核中
+      APPROVED: 已审核待执行
+      REJECTED: 已驳回
+      PAYING: 打款中或结果未知
+      PAID_API: 接口确认成功
+      PAID_MANUAL: 人工打款成功
+      FAILED: 打款失败
+  withdraw_reject_reason:
+    source: 规划/04 §2.4；BR-WDR-10、BR-WDR-05
+    description: withdrawals.reject_reason_code；前 5 个人工可选，NEGATIVE_BALANCE 系统专用
+    values:
+      RISK_SUSPECT: 风险嫌疑
+      ORDER_ABNORMAL: 订单异常
+      PAYEE_INFO_INVALID: 收款信息无效
+      USER_REQUEST: 用户申请撤销
+      OTHER: 其他
+      NEGATIVE_BALANCE: 余额为负（系统专用）
+  withdrawal_hold_reason:
+    source: 规划/04 §2.4；BR-WDR-13、BR-WDR-17
+    description: withdrawals.hold_reason，W9 回到 APPROVED 的原因
+    values:
+      payout_disabled: 打款开关关闭
+      queue_paused: 打款队列暂停
+      member_blocked: 用户受限
+      single_cap: 单笔上限
+      daily_cap: 单日上限
+      payer_side_after_transfer: 转账后付款方问题
+  withdrawal_blocked_reason:
+    source: 规划/04 §2.4；BR-WDR-05；拍板第二批 §8 ADD-06
+    description: NEGATIVE_BALANCE_OTHER 随单一余额停用，编码不复用，不列入
+    values:
+      NEGATIVE_BALANCE: 用户余额为负
+  withdrawal_manual_resolution:
+    source: 规划/04 §2.4；BR-WDR-15
+    values:
+      paid: 已打款（→ PAID_API）
+      failed: 失败（→ FAILED）
+  withdraw_hold_kind:
+    source: 规划/04 §2.4；BR-WDR-05、BR-WDR-15、BR-FUND-19
+    description: withdraw_holds.reason
+    values:
+      manual: 人工冻结
+      recon_diff: 对账差异
+      ledger_mismatch: 账务差异
+      manual_failed_watch: 人工失败观察
+  withdrawal_review_mode:
+    source: 规划/04 §2.4；BR-WDR-30
+    values:
+      auto: 系统按规则组审核并打款
+      manual: 人工审核
+  payout_method:
+    source: 规划/04 §2.4；BR-WDR-02、BR-WDR-32
+    description: payout_accounts.payout_method 与 withdrawals.payout_channel
+    values:
+      alipay: 支付宝
+      bank_card: 本人银行卡
+  payout_batch_kind:
+    source: 规划/04 §2.4；BR-WDR-30
+    values:
+      manual: 人工批次
+      auto: 自动批次
+  bad_debt_writeoff_status:
+    source: 规划/04 §2.5；BR-FUND-12
+    values:
+      PENDING: 待批准
+      APPROVED: 已批准
+      CANCELLED: 已取消
+  settle_batch_status:
+    source: 规划/04 §2.5；BR-FUND-04
+    description: 月结账单状态由批次派生、不入库
+    values:
+      DRAFT: 草稿
+      CONFIRMED: 已确认
+      EXECUTING: 执行中
+      PARTIAL: 部分执行
+      DONE: 已完成
+      CANCELLED: 已取消
+  settle_mode:
+    source: 规划/04 §2.5；BR-FUND-04
+    values:
+      IMMEDIATE: 立即执行
+      SCHEDULED: 定时执行
+  settle_batch_item_result:
+    source: 规划/04 §2.5；BR-FUND-04
+    values:
+      credited: 已入账
+      skipped: 已跳过
+      deferred: 已顺延
+  recon_diff_type:
+    source: 规划/04 §2.5；BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23
+    values:
+      union_mismatch: 联盟对账差异（R1）
+      channel_mismatch: 通道对账差异（R2）
+      ledger_mismatch: 内部日终差异（R3）
+      platform_restore: 已作废订单被平台恢复
+      month_end_unbalanced: 月末三项不平
+      settle_amount_mismatch: 月结账单金额不一致
+      settle_missing: 应结未结
+      appeal_restore: 申诉撤销后恢复订单
+  recon_diff_status:
+    source: 规划/04 §2.5；08 §13.6
+    values:
+      open: 待处理
+      processing: 处理中
+      adjusted: 已调账
+      written_off: 已核销
