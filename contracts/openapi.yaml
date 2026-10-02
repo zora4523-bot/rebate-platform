@@ -1863,11 +1863,12 @@ components:
             $ref: '#/components/schemas/PlatformCode'
           additionalProperties:
             $ref: '#/components/schemas/PlatformPurchaseStatus'
-    ConfigLegalDoc:
+    ConfigLegalPrivacy:
       type: object
       additionalProperties: false
       required:
         - version
+        - min_version
       properties:
         version:
           type: integer
@@ -1877,7 +1878,17 @@ components:
           type: integer
           format: int32
           minimum: 1
-          description: Only on privacy; below it the user must agree again (BR-ID-12).
+          description: Below this version the user must agree again (BR-ID-12).
+    ConfigLegalAgreement:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
     ConfigLegal:
       type: object
       description: legal.privacy.version, legal.privacy.min_version, legal.agreement.version (04 §10.1).
@@ -1887,9 +1898,9 @@ components:
         - agreement
       properties:
         privacy:
-          $ref: '#/components/schemas/ConfigLegalDoc'
+          $ref: '#/components/schemas/ConfigLegalPrivacy'
         agreement:
-          $ref: '#/components/schemas/ConfigLegalDoc'
+          $ref: '#/components/schemas/ConfigLegalAgreement'
     ConfigInvite:
       type: object
       additionalProperties: false
@@ -2319,7 +2330,9 @@ components:
           description: The matched link or token as it appeared in the input.
     ParseResult:
       type: object
-      description: Result of one hit; exactly one of `card` and `error_code` is present.
+      description: |
+        Result of one hit; exactly one of `card` and `error_code` is present (enforced by the
+        server, not by a oneOf: strict Ajv and the four generators, ADR-0001 §4.2 #15, TECH-27).
       additionalProperties: false
       required:
         - hit
@@ -2334,11 +2347,6 @@ components:
           minimum: 10000
           maximum: 59999
           description: Error code for this hit (30131, 30132, 30141, 50301…), see error-codes.yaml.
-      oneOf:
-        - required:
-            - card
-        - required:
-            - error_code
     ParseInputData:
       type: object
       additionalProperties: false
@@ -2488,11 +2496,6 @@ components:
           maxLength: 128
         installed:
           $ref: '#/components/schemas/InstalledState'
-      oneOf:
-        - required:
-            - product_key
-        - required:
-            - url
     ConvertLinkData:
       type: object
       description: The registered link_id plus the same fields as the open result (04 §6.3).

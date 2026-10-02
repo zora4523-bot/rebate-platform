@@ -611,19 +611,23 @@ export interface components {
                 [key: string]: components["schemas"]["PlatformPurchaseStatus"];
             };
         };
-        ConfigLegalDoc: {
+        ConfigLegalPrivacy: {
             /** Format: int32 */
             version: number;
             /**
              * Format: int32
-             * @description Only on privacy; below it the user must agree again (BR-ID-12).
+             * @description Below this version the user must agree again (BR-ID-12).
              */
-            min_version?: number;
+            min_version: number;
+        };
+        ConfigLegalAgreement: {
+            /** Format: int32 */
+            version: number;
         };
         /** @description legal.privacy.version, legal.privacy.min_version, legal.agreement.version (04 §10.1). */
         ConfigLegal: {
-            privacy: components["schemas"]["ConfigLegalDoc"];
-            agreement: components["schemas"]["ConfigLegalDoc"];
+            privacy: components["schemas"]["ConfigLegalPrivacy"];
+            agreement: components["schemas"]["ConfigLegalAgreement"];
         };
         ConfigInvite: {
             /** @description Must be false in the MVP (BR-INV-06). */
@@ -815,7 +819,10 @@ export interface components {
             /** @description The matched link or token as it appeared in the input. */
             raw: string;
         };
-        /** @description Result of one hit; exactly one of `card` and `error_code` is present. */
+        /**
+         * @description Result of one hit; exactly one of `card` and `error_code` is present (enforced by the
+         *     server, not by a oneOf: strict Ajv and the four generators, ADR-0001 §4.2 #15, TECH-27).
+         */
         ParseResult: {
             hit: components["schemas"]["InputHit"];
             card?: components["schemas"]["ProductCard"];
@@ -824,7 +831,7 @@ export interface components {
              * @description Error code for this hit (30131, 30132, 30141, 50301…), see error-codes.yaml.
              */
             error_code?: number;
-        } & (unknown | unknown);
+        };
         ParseInputData: {
             results: components["schemas"]["ParseResult"][];
         };
@@ -896,7 +903,7 @@ export interface components {
             scene: "h5";
             spm?: string;
             installed?: components["schemas"]["InstalledState"];
-        } & (unknown | unknown);
+        };
         /** @description The registered link_id plus the same fields as the open result (04 §6.3). */
         ConvertLinkData: {
             link_id: components["schemas"]["Id"];
