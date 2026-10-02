@@ -5,7 +5,7 @@
 # Preflight, in this order; the first failure stops everything:
 #   1. usage gate          node <TRUSTED>/tools/ops/usage.ts gate --task <id>   (exit 3 = blocked)
 #                          `--mode impl --risk <RVn>` is added when tools/ops/task.ts can compute
-#                          the risk level, so that the 70%-90% quota tier is enforced (§1.3)
+#                          the risk level, so that the 70%-97% quota tier is enforced (§1.3)
 #   2. claim               node <TRUSTED>/tools/ops/state.ts claim <id> --owner <session>
 #                          The owner is COULI_SESSION when set, else a name unique to this
 #                          dispatch process; `--renew` is tried only when the claim on file is

@@ -154,7 +154,7 @@ it(
     acquireOrchestratorLock({ session: 'session-a', pid: 4242 }, hoursAgo(0.1));
     updateState('S1-03', { state: 'pr' }, hoursAgo(30));
     updateState('S1-08', { state: 'pr' }, hoursAgo(2));
-    calibrate(93, hoursAgo(0.5));
+    calibrate(98, hoursAgo(0.5));
     const board = collectBoard({ root, now: NOW, risk: fixedRisk('RV1') });
     expect(board.ready).toEqual([]);
     expect(board.stall).toContain('S1-03、S1-08 停在 pr 状态已满 1 个工作日');

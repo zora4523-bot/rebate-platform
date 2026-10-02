@@ -5,8 +5,6 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as domain from '@couli/domain';
-import * as money from '@couli/money';
 import { createPropStats, propParams, propRuns, propSeed } from '@couli/testing';
 import fc from 'fast-check';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -37,9 +35,6 @@ it('resolves the funds packages from source through the couli-src condition', ()
   expect(import.meta.resolve('@couli/money')).toMatch(/\/packages\/money\/src\/index\.ts$/);
   expect(import.meta.resolve('@couli/domain')).toMatch(/\/packages\/domain\/src\/index\.ts$/);
   expect(import.meta.resolve('@couli/testing')).toMatch(/\/packages\/testing\/src\/index\.ts$/);
-  // Both packages are still empty shells (规划/11 §9.2).
-  expect(Object.keys(money)).toEqual([]);
-  expect(Object.keys(domain)).toEqual([]);
 });
 
 it('runs a property PROP_RUNS times with PROP_SEED and writes generator stats to PROP_STATS_FILE', () => {
