@@ -7,6 +7,7 @@ import {
   calibrate,
   gate,
   ledgerFile,
+  MAX_CALLS_PER_TASK,
   parseLedger,
   readEvents,
   readLedger,
@@ -275,12 +276,19 @@ it('opens a breaker for each limit and tells how to calibrate', () => {
   busy.calls.pop();
   expect(breakers(busy)).toEqual([]);
 
+  // 规划/11 §2.5: 10 calls per task (raised from 6 by the owner on 2026-10-02). Calls without
+  // output (timeouts) count here even though they do not use up a round.
+  expect(MAX_CALLS_PER_TASK).toBe(10);
   const sameTask: Ledger = {
-    calls: Array.from({ length: 6 }, () => call('2026-09-30T01:00:00.000Z')),
+    calls: Array.from({ length: 10 }, (_, i) =>
+      call('2026-09-30T01:00:00.000Z', i % 2 === 0 ? { has_output: false, timed_out: true } : {}),
+    ),
     calibrations: calibrated,
   };
   expect(breakers(sameTask, { task: 'B2-01a' })).toEqual(['task_calls']);
   expect(breakers(sameTask, { task: 'B2-02a' })).toEqual([]);
+  sameTask.calls.pop();
+  expect(breakers(sameTask, { task: 'B2-01a' })).toEqual([]);
 
   const silent: Ledger = {
     calls: Array.from({ length: 3 }, () => call('2026-10-02T01:00:00.000Z', { has_output: false })),

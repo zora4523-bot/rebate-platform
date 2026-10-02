@@ -1,16 +1,21 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { LEASE_MS } from './lock.ts';
 import {
   ATTEMPT_LIMITS,
   bumpAttempt,
+  type CallMeta,
   claimDir,
   claimTask,
   listStates,
+  migrateState,
   readState,
   releaseTask,
+  reviewKind,
+  settleCall,
   stateFile,
+  uncountedReason,
   updateState,
 } from './state.ts';
 import { CLI_TIMEOUT, removeDir, runCli, scratchDir } from './test-helpers.ts';
@@ -32,7 +37,7 @@ it('creates the state file on first use and writes it atomically', () => {
   expect(state).toEqual({
     id: 'A1-01',
     state: 'doing',
-    attempts: { impl: 0, review: 0 },
+    attempts: { impl: 0, 'spec-test': 0, code: 0 },
     spec_commit: null,
     pid: 4242,
     started_at: T0.toISOString(),
@@ -40,6 +45,7 @@ it('creates the state file on first use and writes it atomically', () => {
     lease_until: null,
     ask_created_at: null,
     last_error: null,
+    uncounted_calls: [],
     updated_at: T0.toISOString(),
   });
   expect(JSON.parse(readFileSync(stateFile('A1-01'), 'utf8'))).toEqual(state);
@@ -55,17 +61,197 @@ it('records when a task entered `ask` and forgets it when the task leaves', () =
 });
 
 it('counts attempts before dispatch and refuses to go past the limits', () => {
-  expect(ATTEMPT_LIMITS).toEqual({ impl: 3, review: 2 });
-  expect(bumpAttempt('A1-03', 'impl', T0).attempts).toEqual({ impl: 1, review: 0 });
+  expect(bumpAttempt('A1-03', 'impl', T0).attempts).toEqual({ impl: 1, 'spec-test': 0, code: 0 });
   bumpAttempt('A1-03', 'impl', T0);
   expect(bumpAttempt('A1-03', 'impl', T0).attempts.impl).toBe(3);
   // Persisted: a crash right after the bump still counts the attempt.
   expect(readState('A1-03')?.attempts.impl).toBe(3);
   expect(() => bumpAttempt('A1-03', 'impl', T0)).toThrow(/impl attempts exhausted \(3 of 3/);
   expect(readState('A1-03')?.attempts.impl).toBe(3);
-  bumpAttempt('A1-03', 'review', T0);
-  bumpAttempt('A1-03', 'review', T0);
-  expect(() => bumpAttempt('A1-03', 'review', T0)).toThrow(/review attempts exhausted/);
+});
+
+it('[规划/11 §2.5] each review type has its own limit of 2 rounds', () => {
+  expect(ATTEMPT_LIMITS).toEqual({ impl: 3, 'spec-test': 2, code: 2 });
+  expect(reviewKind('spec-test')).toBe('spec-test');
+  for (const type of ['money', 'general', 'contract'] as const)
+    expect(reviewKind(type)).toBe('code');
+  bumpAttempt('A1-07', 'spec-test', T0);
+  bumpAttempt('A1-07', 'spec-test', T0);
+  expect(() => bumpAttempt('A1-07', 'spec-test', T0)).toThrow(
+    /spec-test attempts exhausted \(2 of 2/,
+  );
+  // Two spec-test rounds used up do not take anything from the code review.
+  bumpAttempt('A1-07', 'code', T0);
+  expect(bumpAttempt('A1-07', 'code', T0).attempts).toEqual({ impl: 0, 'spec-test': 2, code: 2 });
+  expect(() => bumpAttempt('A1-07', 'code', T0)).toThrow(/code attempts exhausted \(2 of 2/);
+});
+
+function meta(over: Partial<CallMeta> = {}): CallMeta {
+  return {
+    mode: 'review',
+    review_type: 'spec-test',
+    started_at: '2026-10-02T03:14:01Z',
+    exit_code: 0,
+    has_output: true,
+    idle_killed: false,
+    validation: 'ok',
+    ...over,
+  };
+}
+
+it('[规划/11 §2.5] only a call that ended without output gives its round back', () => {
+  const noOutput = { has_output: false, validation: 'not-run' };
+  expect(uncountedReason(meta())).toBeNull();
+  expect(uncountedReason(meta({ ...noOutput, exit_code: 124 }))).toBe('timeout');
+  expect(uncountedReason(meta({ ...noOutput, exit_code: 124, idle_killed: true }))).toBe(
+    'inactivity-kill',
+  );
+  expect(uncountedReason(meta({ ...noOutput, exit_code: 11 }))).toBe('capacity');
+  // No -o file, turn.failed, non-zero Codex exit: the wrapper never validated an answer.
+  expect(uncountedReason(meta({ ...noOutput, exit_code: 10 }))).toBe('no-output');
+  // An answer that failed validation, and a position assertion failure, stay counted.
+  expect(uncountedReason(meta({ has_output: false, exit_code: 10, validation: 'failed' }))).toBe(
+    null,
+  );
+  expect(uncountedReason(meta({ ...noOutput, exit_code: 12 }))).toBeNull();
+});
+
+it('[规划/11 §2.5] settle takes a timed-out review back once, on its own counter', () => {
+  bumpAttempt('A1-08', 'spec-test', T0);
+  bumpAttempt('A1-08', 'code', T0);
+  const timedOut = meta({ exit_code: 124, has_output: false, validation: 'not-run' });
+  const first = settleCall('A1-08', timedOut, later(1000));
+  expect(first).toMatchObject({ kind: 'spec-test', counted: false, changed: true });
+  expect(first.state?.attempts).toEqual({ impl: 0, 'spec-test': 0, code: 1 });
+  expect(first.state?.uncounted_calls).toEqual([
+    { kind: 'spec-test', started_at: timedOut.started_at, exit_code: 124, reason: 'timeout' },
+  ]);
+  // Idempotent: settling the same call again (post-run, a retry of the wrapper) changes nothing.
+  expect(settleCall('A1-08', timedOut, later(2000))).toMatchObject({ changed: false });
+  expect(readState('A1-08')?.attempts).toEqual({ impl: 0, 'spec-test': 0, code: 1 });
+  // A call with output keeps its round.
+  const ok = meta({ review_type: 'money', started_at: '2026-10-02T04:00:00Z' });
+  expect(settleCall('A1-08', ok, later(3000))).toMatchObject({ counted: true, changed: false });
+  // An implementation killed by the hard timeout does not use up an attempt either.
+  bumpAttempt('A1-08', 'impl', T0);
+  const implTimeout = meta({
+    mode: 'impl',
+    review_type: null,
+    started_at: '2026-10-02T05:00:00Z',
+    exit_code: 124,
+    has_output: false,
+    validation: 'not-run',
+  });
+  expect(settleCall('A1-08', implTimeout, later(4000)).state?.attempts.impl).toBe(0);
+  // Without a state file there is nothing to settle.
+  expect(settleCall('Z9-99', timedOut, T0)).toMatchObject({ state: null, changed: false });
+});
+
+it('[规划/11 §2.5] migrates the old shared review counter from the run history', () => {
+  // The B2-01a history of 2026-10-02: one implementation, then a spec-test review killed by the
+  // hard timeout (exit 124, no output) and a spec-test review that returned "fail".
+  const id = 'B9-01a';
+  writeFileSync(
+    stateFile(id),
+    JSON.stringify({
+      id,
+      state: 'blocked',
+      attempts: { impl: 1, review: 2 },
+      spec_commit: '4de67a1808681f7085c49adf5a64c8aaa6ddcfa4',
+      pid: null,
+      started_at: null,
+      owner_session: null,
+      lease_until: null,
+      ask_created_at: null,
+      last_error: '/runs/B9-01a/r2-fix-input.txt',
+      updated_at: T0.toISOString(),
+    }),
+  );
+  expect(() => readState(id)).toThrow(/old shape .*state\.ts migrate B9-01a/);
+  const run = join(runs, id);
+  const call = (over: Record<string, unknown>) => ({
+    task: id,
+    finished_at: '2026-10-02T03:59:00Z',
+    has_output: false,
+    idle_killed: false,
+    ...over,
+  });
+  mkdirSync(join(run, 'attempts', '1'), { recursive: true });
+  const files: Record<string, unknown> = {
+    'meta.impl.json': call({
+      mode: 'impl',
+      started_at: '2026-10-01T19:40:00Z',
+      exit_code: 0,
+      has_output: true,
+      validation: 'ok',
+    }),
+    'attempts/1/meta.json': call({
+      mode: 'review',
+      review_type: 'spec-test',
+      started_at: '2026-10-02T03:14:01Z',
+      exit_code: 124,
+      timed_out: true,
+      validation: 'not-run',
+    }),
+    'meta.review.json': call({
+      mode: 'review',
+      review_type: 'spec-test',
+      started_at: '2026-10-02T03:32:41Z',
+      exit_code: 0,
+      has_output: true,
+      validation: 'ok',
+    }),
+  };
+  for (const [rel, doc] of Object.entries(files))
+    writeFileSync(join(run, rel), JSON.stringify(doc));
+  // meta.json is a copy of the latest call and must not be counted twice.
+  writeFileSync(join(run, 'meta.json'), JSON.stringify(files['meta.review.json']));
+
+  const dry = migrateState(id, { dryRun: true, now: later(1000) });
+  expect(dry.attempts).toEqual({ impl: 1, 'spec-test': 1, code: 0 });
+  expect(() => readState(id)).toThrow(/old shape/);
+  const migrated = migrateState(id, { now: later(1000) });
+  expect(migrated).toMatchObject({
+    state: 'blocked',
+    attempts: { impl: 1, 'spec-test': 1, code: 0 },
+    last_error: '/runs/B9-01a/r2-fix-input.txt',
+    uncounted_calls: [
+      { kind: 'spec-test', started_at: '2026-10-02T03:14:01Z', exit_code: 124, reason: 'timeout' },
+    ],
+  });
+  expect(readState(id)).toEqual(migrated);
+  // Running it again is a no-op; the second spec-test round is still available.
+  expect(migrateState(id, { now: later(2000) })).toEqual(migrated);
+  expect(bumpAttempt(id, 'spec-test', later(3000)).attempts['spec-test']).toBe(2);
+  removeDir(stateFile(id));
+  removeDir(run);
+});
+
+it('refuses to guess when counted review rounds left no meta.json', () => {
+  const id = 'B9-02a';
+  writeFileSync(
+    stateFile(id),
+    JSON.stringify({
+      id,
+      state: 'review',
+      attempts: { impl: 1, review: 1 },
+      spec_commit: null,
+      pid: null,
+      started_at: null,
+      owner_session: null,
+      lease_until: null,
+      ask_created_at: null,
+      last_error: null,
+      updated_at: T0.toISOString(),
+    }),
+  );
+  expect(() => migrateState(id, { now: T0 })).toThrow(/--unattributed-review/);
+  expect(migrateState(id, { now: T0, unattributedReview: 'code' }).attempts).toEqual({
+    impl: 1,
+    'spec-test': 0,
+    code: 1,
+  });
+  removeDir(stateFile(id));
 });
 
 it('lets one session claim a task, with a 20 minute lease that can be renewed', () => {
@@ -104,7 +290,15 @@ it('hands an expired claim to another session and releases claims', () => {
 });
 
 it('lists every state file and rejects a damaged one', () => {
-  expect(listStates().map((s) => s.id)).toEqual(['A1-01', 'A1-02', 'A1-03', 'A1-04', 'A1-05']);
+  expect(listStates().map((s) => s.id)).toEqual([
+    'A1-01',
+    'A1-02',
+    'A1-03',
+    'A1-04',
+    'A1-05',
+    'A1-07',
+    'A1-08',
+  ]);
   writeFileSync(stateFile('A1-06'), JSON.stringify({ id: 'A1-06', state: 'flying' }));
   expect(() => readState('A1-06')).toThrow(/state must be one of/);
   writeFileSync(stateFile('A1-06'), '{ not json');
@@ -137,12 +331,48 @@ it(
       id: 'C1-01',
       state: 'verify',
       owner_session: 's1',
-      attempts: { impl: 3, review: 0 },
+      attempts: { impl: 3, 'spec-test': 0, code: 0 },
     });
     expect(runCli('state.ts', ['release', 'C1-01', '--owner', 's2'], env).status).toBe(1);
     expect(runCli('state.ts', ['release', 'C1-01', '--owner', 's1'], env).status).toBe(0);
     expect(runCli('state.ts', ['set', 'C1-01', '--state', 'flying'], env).status).toBe(2);
     expect(runCli('state.ts', ['bump-attempt', 'C1-01', 'deploy'], env).status).toBe(2);
+    // A review round needs its type: each type has its own counter.
+    expect(runCli('state.ts', ['bump-attempt', 'C1-01', 'review'], env).status).toBe(2);
+    const spec = runCli(
+      'state.ts',
+      ['bump-attempt', 'C1-01', 'review', '--review-type', 'spec-test'],
+      env,
+    );
+    expect(JSON.parse(spec.stdout)).toMatchObject({ attempts: { 'spec-test': 1, code: 0 } });
+    const money = runCli(
+      'state.ts',
+      ['bump-attempt', 'C1-01', 'review', '--review-type', 'money'],
+      env,
+    );
+    expect(JSON.parse(money.stdout)).toMatchObject({ attempts: { 'spec-test': 1, code: 1 } });
+    const metaFile = join(runs, 'C1-01-meta.json');
+    writeFileSync(
+      metaFile,
+      JSON.stringify({
+        mode: 'review',
+        review_type: 'money',
+        started_at: '2026-10-02T06:00:00Z',
+        finished_at: '2026-10-02T06:15:00Z',
+        exit_code: 124,
+        has_output: false,
+        idle_killed: false,
+        validation: 'not-run',
+      }),
+    );
+    const settled = runCli('state.ts', ['settle', 'C1-01', '--meta', metaFile], env);
+    expect(settled.status).toBe(0);
+    expect(JSON.parse(settled.stdout)).toMatchObject({
+      kind: 'code',
+      counted: false,
+      changed: true,
+      attempts: { impl: 3, 'spec-test': 1, code: 0 },
+    });
     expect(runCli('state.ts', ['get', '../../etc/passwd'], env).status).toBe(2);
   },
   CLI_TIMEOUT,

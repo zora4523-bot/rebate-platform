@@ -59,7 +59,8 @@ GRACE_SECS="${COULI_KILL_GRACE_SECS:-5}"
 WORK="$RUN/post-run"
 mkdir -p "$WORK"
 
-# In-flight state: attempts already used (this run included), rule-test commit, launcher pid.
+# In-flight state: attempts already used (this run included, unless it ended without output and
+# codex-run.sh gave the round back, 规划/11 §2.5), rule-test commit, launcher pid.
 attempts=0
 spec_commit=''
 state_pid=''

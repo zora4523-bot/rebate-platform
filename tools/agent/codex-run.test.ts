@@ -197,6 +197,7 @@ it(
       `- Planning repo: ${specRepo}`,
       '- SPEC_REF: (not found in the worktree)',
       `- Diff to review: \`git diff ${fx.baseSha}\` in the working directory, plus the untracked files below`,
+      "- In-scope rules (the task's refs): (none listed)",
       '',
       `### Changed files (\`git diff --name-only ${fx.baseSha}\`)`,
       '',
@@ -441,6 +442,7 @@ it('money review: checklist lines must lie inside the diff', LONG, () => {
     verdict: 'pass',
     summary: 'Checked the seven money items against the brief.',
     findings: [],
+    out_of_scope: [],
     checklist: items.map((item) => ({
       item,
       status: 'ok',
@@ -549,3 +551,95 @@ it('a checkout path that contains "review" does not change the implementation ou
   expect(res.status, res.stderr).toBe(0);
   expect(readJson(join(fx.run, 'impl.json'))['task_done']).toBe(true);
 });
+
+it('[规划/11 §2.5] every finished call is settled against the in-flight state', LONG, () => {
+  const fx = fixture('settle');
+  writeStub(join(fx.trusted, 'tools', 'ops', 'state.ts'), 'state');
+  const timedOut = codexRun(
+    fx,
+    ['review', TASK, '--review-type', 'spec-test', '--base', fx.baseSha],
+    {
+      FAKE_CODEX_SCENARIO: 'hang',
+      COULI_CODEX_TIMEOUT_SECS: '2',
+    },
+  );
+  expect(timedOut.status, timedOut.stderr).toBe(124);
+  const ok = codexRun(fx, ['impl', TASK]);
+  expect(ok.status, ok.stderr).toBe(0);
+  // The usage ledger first (the call counts towards the caps), then settle decides the round.
+  const calls = stubCalls(fx).map((call) => call.slice(0, 2).join(' '));
+  expect(calls.filter((c) => c === 'usage record' || c === `state settle`)).toEqual([
+    'usage record',
+    'state settle',
+    'usage record',
+    'state settle',
+  ]);
+  const settles = stubCalls(fx, 'state').filter((call) => call[1] === 'settle');
+  expect(settles).toEqual([
+    ['state', 'settle', TASK, '--meta', join(fx.run, 'meta.review.json')],
+    ['state', 'settle', TASK, '--meta', join(fx.run, 'meta.impl.json')],
+  ]);
+  // A settle failure is a warning, never a different exit code.
+  writeStub(join(fx.trusted, 'tools', 'ops', 'state.ts'), 'state', [{ exit: 2 }]);
+  const warned = codexRun(fx, ['impl', TASK]);
+  expect(warned.status, warned.stderr).toBe(0);
+  expect(warned.stderr).toContain('in-flight state was not settled');
+});
+
+it(
+  '[规划/11 §2.5] the review context names the task refs; spec-test validation is scoped to them',
+  LONG,
+  () => {
+    const fx = fixture('refs');
+    writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+      {
+        when: ['show'],
+        stdout: JSON.stringify({ id: TASK, risk: 'RV1', refs: ['BR-CALC-01', 'BR-CALC-08'] }),
+      },
+    ]);
+    const dry = codexRun(fx, [
+      'review',
+      TASK,
+      '--review-type',
+      'spec-test',
+      '--base',
+      fx.baseSha,
+      '--dry-run',
+    ]);
+    expect(dry.status, dry.stderr).toBe(0);
+    expect(decodeDryRun(dry.stdout).join('\n')).toContain(
+      "- In-scope rules (the task's refs): BR-CALC-01, BR-CALC-08",
+    );
+    // A pass whose only S1 is about a rule outside the refs is a usable spec-test review.
+    writeFileSync(join(fx.worktree, 'src', 'a.ts'), 'export const a = 2;\n');
+    mkdirSync(fx.log, { recursive: true });
+    const outputFile = join(fx.log, 'review-output.json');
+    const finding = {
+      severity: 'S1',
+      key: 'src/a.ts#a#BR-FUND-03',
+      file: 'src/a.ts',
+      line: 1,
+      rule: 'BR-FUND-03',
+      scenario: 'a one-hop rule is not tested',
+      suggestion: 'add a test in the task that owns BR-FUND-03',
+    };
+    const output = {
+      verdict: 'pass',
+      summary: 'BR-CALC-01#1 → t1; BR-CALC-08#1 → t2.',
+      findings: [finding],
+      out_of_scope: [],
+      checklist: [],
+    };
+    writeFileSync(outputFile, JSON.stringify(output));
+    const run = (type: string) =>
+      codexRun(fx, ['review', TASK, '--review-type', type, '--base', fx.baseSha], {
+        FAKE_CODEX_OUTPUT_FILE: outputFile,
+      });
+    const spec = run('spec-test');
+    expect(spec.status, spec.stderr).toBe(0);
+    const messages = readJson(join(fx.run, 'meta.json'))['validation_messages'] as string[];
+    expect(messages.join('\n')).toContain('rule cites BR-FUND-03, outside the task refs');
+    // The general review has no refs check: the same pass is contradictory there.
+    expect(run('general').status).toBe(10);
+  },
+);

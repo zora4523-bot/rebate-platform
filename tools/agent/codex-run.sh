@@ -240,9 +240,21 @@ resolve_roots() {
 # `--review-type general` is refused for it. Without a readable task file the default is general.
 resolve_review_type() {
   TASK_RISK=''
+  TASK_REFS=''
+  local task_json=''
   if [ -f "$TRUSTED/tools/ops/task.ts" ]; then
-    TASK_RISK="$(node "$TRUSTED/tools/ops/task.ts" show "$TASK" --json 2>/dev/null |
+    task_json="$(node "$TRUSTED/tools/ops/task.ts" show "$TASK" --json 2>/dev/null || true)"
+  fi
+  if [ -n "$task_json" ]; then
+    TASK_RISK="$(printf '%s\n' "$task_json" |
       node "$SELF_DIR/meta.ts" get --file /dev/stdin risk 2>/dev/null || true)"
+    # The task's BR refs bound the scope of the spec-test and money reviews (规划/11 §2.5,
+    # owner decision 2026-10-02). Only ids made of [A-Za-z0-9-] are kept.
+    TASK_REFS="$(printf '%s\n' "$task_json" |
+      node "$SELF_DIR/meta.ts" get --file /dev/stdin refs 2>/dev/null || true)"
+    case "$TASK_REFS" in
+      *[!A-Za-z0-9,-]*) TASK_REFS='' ;;
+    esac
   fi
   case "$TASK_RISK" in
     RV0 | RV1 | RV2) ;;
@@ -515,6 +527,7 @@ build_review_prompt() {
 - Planning repo: $SPEC_REPO
 - SPEC_REF: ${spec_ref:-(not found in the worktree)}
 - Diff to review: \`git diff $BASE_SHA\` in the working directory, plus the untracked files below
+- In-scope rules (the task's refs): $(if [ -n "$TASK_REFS" ]; then printf '%s' "${TASK_REFS//,/, }"; else printf '(none listed)'; fi)
 
 ### Changed files (\`git diff --name-only $BASE_SHA\`)
 
@@ -688,6 +701,9 @@ run_task() {
     if [ "$MODE" = review ]; then
       validate_args+=(--diff-base "$BASE_SHA" --cwd "$WT_REAL")
       if [ "$REVIEW_TYPE" = money ]; then validate_args+=(--money); fi
+      if [ "$REVIEW_TYPE" = spec-test ] && [ -n "$TASK_REFS" ]; then
+        validate_args+=(--refs "$TASK_REFS")
+      fi
     fi
     if node "$TRUSTED/tools/agent/validate-output.ts" "${validate_args[@]}" \
       >/dev/null 2>"$WORK/validate.txt"; then
@@ -732,6 +748,13 @@ run_task() {
       log "warning: usage ledger was not updated (tools/ops/usage.ts record failed)"
   else
     log "warning: $TRUSTED/tools/ops/usage.ts not found, usage not recorded"
+  fi
+  # Rounds (规划/11 §2.5): the round was counted before the call; a call that ended without
+  # output gives it back (state.ts settle decides, idempotently). It stays in the usage ledger
+  # above, so it still counts towards the per-task and daily caps and the no-output breaker.
+  if [ -f "$TRUSTED/tools/ops/state.ts" ]; then
+    node "$TRUSTED/tools/ops/state.ts" settle "$TASK" --meta "$RUN/meta.$MODE.json" >&2 ||
+      log "warning: in-flight state was not settled (tools/ops/state.ts settle failed); the round stays counted"
   fi
 
   case "$final" in

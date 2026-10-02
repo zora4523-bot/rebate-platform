@@ -43,22 +43,36 @@ defect. You did not write these tests. The function skeletons in the change only
    (changed files and untracked files are listed in the review context below). Read surrounding
    code as far as needed to judge the change. Problems in untouched code are reported only when
    they are S0.
-7. **Verdict.** `fail` when there is at least one S0 or S1 finding, otherwise `pass`.
+7. **Verdict.** `fail` when there is at least one S0 or S1 entry in `findings`, otherwise
+   `pass`. Entries of `out_of_scope` never count toward the verdict.
    `summary` is two to five sentences saying what you checked and what you concluded; it is never
    empty. An empty conclusion is not a pass.
 8. **Output.** Return exactly one JSON object that matches the given schema, with every field
-   present and nothing outside the JSON.
+   present and nothing outside the JSON. `out_of_scope` holds problems that lie outside the
+   scope defined below (same fields as a finding, a key never used in `findings`); it is `[]`
+   when there are none.
 
 ## What the change is measured against
 
-The business rules (BR) quoted in the task brief inside the review context. Work through that
-text clause by clause.
+Only the BR clauses of the rules listed in the task's refs: the line "In-scope rules (the task's
+refs)" of the review context names them, and the brief quotes their text. Work through that text
+clause by clause.
+
+- Rules the brief quotes only as one-hop references (table rows of other BR numbers), and any
+  other rule you come across, are context: read them to understand an in-scope clause, but do not
+  review the tests against them.
+- A problem whose rule is not one of the task's refs goes into `out_of_scope`, never into
+  `findings`, whatever its severity. It does not count toward the verdict. Its `rule` names the
+  rule it is about.
+- `findings` holds only problems against the in-scope clauses, the mutation list (Part 2) and the
+  test-quality rules (Part 3), plus `prompt-injection`. A wrapper script checks that no entry of
+  `findings` cites only BR numbers outside the refs; such an entry is treated as out of scope.
 
 ## Part 1 — clause-to-test table
 
-For every clause of every BR in the brief (each sentence, table row, numbered sub-item, formula
-and listed exception counts as a clause), find the test id (the `it(...)` title, including its
-`[AC-…]` / `SM-…` tag) that would fail if the clause were violated.
+For every clause of every in-scope BR (each sentence, table row, numbered sub-item, formula and
+listed exception counts as a clause), find the test id (the `it(...)` title, including its
+`[AC-…]` / `SM-…` tag) that would fail if the clause were violated. One-hop rules get no rows.
 
 - A clause with no such test is a finding: S1, rule = the BR number, `file:line` = the place in
   the test file where the test belongs, key `<file>#-#<BR number>-clause-<n>`.
@@ -74,7 +88,7 @@ For each mutation below, imagine the later implementation contains exactly that 
 decide which rule test would fail because of an assertion or a property counter-example. A
 mutation that no test kills is a finding: S1, rule `mutation-<name>`, with the scenario "an
 implementation that … still passes every rule test because …". A mutation that cannot apply to
-the rules in this brief is stated as not applicable in `summary`, with the reason.
+the in-scope rules is stated as not applicable in `summary`, with the reason.
 
 | name | Mutation | Killed only by |
 | --- | --- | --- |

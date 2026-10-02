@@ -84,3 +84,9 @@ approvals:
     granted: true
     date: '2026-10-02'
     note: '负责人在对话里同意（经编排会话转达）；一次性绕过只用于合并 PR #1（修正要合并后才在基线生效），用后规则集恢复绕过名单为空'
+  - id: 13
+    row: 4
+    title: '评审轮次按类型分开计：规则测试评审与代码评审（money / general / contract）各最多 2 轮；没有产出就结束的 Codex 调用（硬超时、退出 124、没有 -o、turn.failed）不算实现或评审轮次，但仍计入每任务调用上限与全局熔断；每任务 Codex 调用上限由 6 次提高到 10 次（每天 40 次不变）；规则测试评审只对照任务 refs 里的 BR 条款，refs 以外的问题写进评审产出新增的 out_of_scope 字段、不计入结论，资金评审提示词带同样的范围说明'
+    granted: true
+    date: '2026-10-02'
+    note: '负责人在对话里同意（经编排会话转达）；落在分支 chore/review-rounds-per-type（tools/ops、tools/agent、AGENTS.md），规划/11 §2.5 同步改在规划仓库分支 docs/review-rounds-per-type'

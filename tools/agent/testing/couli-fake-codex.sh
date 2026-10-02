@@ -94,7 +94,7 @@ write_output() {
   # Only the file name decides the shape: a checkout path containing "review" must not.
   case "${schema##*/}" in
     review.schema.json)
-      emit '{"verdict":"pass","summary":"fake review: nothing found","findings":[],"checklist":[]}' >"$out"
+      emit '{"verdict":"pass","summary":"fake review: nothing found","findings":[],"out_of_scope":[],"checklist":[]}' >"$out"
       ;;
     impl.schema.json)
       emit '{"task_done":true,"files_changed":["src/a.ts"],"commands":[{"cmd":"pnpm verify:fast","exit_code":0}],"tests_passed":true,"deps_needed":[],"outside_needed":[],"blocked_reason":"","notes":"fake"}' >"$out"

@@ -6,7 +6,22 @@
 //                                    [--started-at <iso>] [--last-error <path>|none]
 //   node tools/ops/state.ts claim <id> [--owner <session>] [--renew]
 //   node tools/ops/state.ts release <id> [--owner <session>]
-//   node tools/ops/state.ts bump-attempt <id> impl|review
+//   node tools/ops/state.ts bump-attempt <id> impl
+//   node tools/ops/state.ts bump-attempt <id> review --review-type money|general|contract|spec-test
+//   node tools/ops/state.ts settle <id> --meta <meta.json>
+//   node tools/ops/state.ts migrate <id> [--unattributed-review spec-test|code] [--dry-run]
+//
+// Rounds (规划/11 §2.5, owner decision 2026-10-02, ops/approvals.yaml id 13):
+// - three counters with their own limits: implementation 3, spec-test review 2, code review
+//   (money / general / contract) 2;
+// - a counter is bumped BEFORE the call (a run that dies without a trace stays counted);
+// - `settle`, run by tools/agent/codex-run.sh after every call, takes the bump back when the
+//   call ended without output: hard timeout or inactivity kill (exit 124), model capacity error
+//   (exit 11), or exit 10 before an answer could be validated (no `-o` file, no
+//   `turn.completed` / `turn.failed`, Codex exit non-zero, aborted, processes left behind). Such
+//   a call still counts towards the per-task and daily Codex call caps and the no-output breaker
+//   (tools/ops/usage.ts). An answer that failed validation (exit 10, validation "failed") and a
+//   position assertion failure (exit 12) stay counted.
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -29,10 +44,28 @@ export const STATES = [
 ] as const;
 export type StateName = (typeof STATES)[number];
 
-export type AttemptKind = 'impl' | 'review';
+export const ATTEMPT_KINDS = ['impl', 'spec-test', 'code'] as const;
+export type AttemptKind = (typeof ATTEMPT_KINDS)[number];
 
-/** 规划/11 §2.5: at most 3 implementation attempts and 2 review rounds. */
-export const ATTEMPT_LIMITS: Record<AttemptKind, number> = { impl: 3, review: 2 };
+/** 规划/11 §2.5: 3 implementation attempts; 2 rounds per review type (spec-test, code). */
+export const ATTEMPT_LIMITS: Record<AttemptKind, number> = { impl: 3, 'spec-test': 2, code: 2 };
+
+export const REVIEW_TYPES = ['money', 'general', 'contract', 'spec-test'] as const;
+export type ReviewType = (typeof REVIEW_TYPES)[number];
+
+/** The rule-test review has its own counter; money, general and contract are code reviews. */
+export function reviewKind(type: ReviewType): AttemptKind {
+  return type === 'spec-test' ? 'spec-test' : 'code';
+}
+
+/** A Codex call whose pre-counted round was taken back by `settle`. */
+export type UncountedCall = {
+  kind: AttemptKind;
+  /** `started_at` of the call's meta.json; identifies the call, so settling is idempotent. */
+  started_at: string;
+  exit_code: number;
+  reason: 'timeout' | 'inactivity-kill' | 'capacity' | 'no-output';
+};
 
 export type TaskState = {
   id: string;
@@ -49,6 +82,8 @@ export type TaskState = {
   ask_created_at: string | null;
   /** Path of the output file of the previous failed round. */
   last_error: string | null;
+  /** Calls that ended without output and therefore did not use up a round. */
+  uncounted_calls: UncountedCall[];
   updated_at: string;
 };
 
@@ -68,7 +103,7 @@ function initialState(id: string, now: Date): TaskState {
   return {
     id,
     state: 'ready',
-    attempts: { impl: 0, review: 0 },
+    attempts: { impl: 0, 'spec-test': 0, code: 0 },
     spec_commit: null,
     pid: null,
     started_at: null,
@@ -76,6 +111,7 @@ function initialState(id: string, now: Date): TaskState {
     lease_until: null,
     ask_created_at: null,
     last_error: null,
+    uncounted_calls: [],
     updated_at: now.toISOString(),
   };
 }
@@ -101,9 +137,37 @@ export function parseState(raw: unknown, file: string): TaskState {
   }
   const attempts = o.attempts as Record<string, unknown> | undefined;
   if (typeof attempts !== 'object' || attempts === null) bad('attempts must be an object');
-  if (!isCount(attempts?.impl) || !isCount(attempts?.review)) {
-    bad('attempts.impl and attempts.review must be non-negative integers');
+  if (attempts !== undefined && 'review' in attempts) {
+    bad(
+      'attempts uses the old shape {impl, review} (one shared review counter); ' +
+        `convert it with: node tools/ops/state.ts migrate ${String(o.id)}`,
+    );
   }
+  const keys = Object.keys(attempts ?? {}).sort();
+  if (
+    keys.join(',') !== [...ATTEMPT_KINDS].sort().join(',') ||
+    !ATTEMPT_KINDS.every((k) => isCount(attempts?.[k]))
+  ) {
+    bad(`attempts must have exactly ${ATTEMPT_KINDS.join(', ')} as non-negative integers`);
+  }
+  if (!Array.isArray(o.uncounted_calls)) {
+    bad(
+      `uncounted_calls must be an array (old state file? run: node tools/ops/state.ts migrate ${String(o.id)})`,
+    );
+  }
+  (o.uncounted_calls as unknown[]).forEach((c, i) => {
+    const e = c as Record<string, unknown>;
+    if (
+      typeof c !== 'object' ||
+      c === null ||
+      !(ATTEMPT_KINDS as readonly unknown[]).includes(e.kind) ||
+      typeof e.started_at !== 'string' ||
+      typeof e.exit_code !== 'number' ||
+      typeof e.reason !== 'string'
+    ) {
+      bad(`uncounted_calls[${i}] must be {kind, started_at, exit_code, reason}`);
+    }
+  });
   if (!(o.pid === null || isCount(o.pid))) bad('pid must be an integer or null');
   for (const key of [
     'spec_commit',
@@ -145,7 +209,7 @@ export function writeState(state: TaskState): void {
 }
 
 export type StatePatch = Partial<
-  Omit<TaskState, 'id' | 'attempts' | 'updated_at' | 'ask_created_at'>
+  Omit<TaskState, 'id' | 'attempts' | 'uncounted_calls' | 'updated_at' | 'ask_created_at'>
 >;
 
 export function updateState(id: string, patch: StatePatch, now: Date = new Date()): TaskState {
@@ -179,6 +243,182 @@ export function bumpAttempt(id: string, kind: AttemptKind, now: Date = new Date(
     updated_at: now.toISOString(),
   };
   writeState(next);
+  return next;
+}
+
+/** The fields of a codex-run.sh meta.json that `settle` and `migrate` read. */
+export type CallMeta = {
+  mode: 'impl' | 'review';
+  review_type: ReviewType | null;
+  started_at: string;
+  exit_code: number;
+  has_output: boolean;
+  idle_killed: boolean;
+  validation: string | null;
+};
+
+/** Reads a finished meta.json; null when it is not one (still running, or not a call). */
+export function parseCallMeta(raw: unknown): CallMeta | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const m = raw as Record<string, unknown>;
+  if (m.mode !== 'impl' && m.mode !== 'review') return null;
+  if (typeof m.started_at !== 'string' || typeof m.exit_code !== 'number') return null;
+  if (typeof m.finished_at !== 'string') return null;
+  const type = (REVIEW_TYPES as readonly unknown[]).includes(m.review_type)
+    ? (m.review_type as ReviewType)
+    : null;
+  return {
+    mode: m.mode,
+    review_type: m.mode === 'review' ? type : null,
+    started_at: m.started_at,
+    exit_code: m.exit_code,
+    has_output: m.has_output === true,
+    idle_killed: m.idle_killed === true,
+    validation: typeof m.validation === 'string' ? m.validation : null,
+  };
+}
+
+/** Which counter a call used. A review without a recorded type counts as a code review. */
+export function callKind(meta: CallMeta): AttemptKind {
+  if (meta.mode === 'impl') return 'impl';
+  return reviewKind(meta.review_type ?? 'general');
+}
+
+/**
+ * Why a call does NOT use up a round, or null when it does (规划/11 §2.5, owner decision
+ * 2026-10-02): only a call that ended without output is taken back.
+ */
+export function uncountedReason(meta: CallMeta): UncountedCall['reason'] | null {
+  if (meta.has_output) return null;
+  if (meta.exit_code === 124) return meta.idle_killed ? 'inactivity-kill' : 'timeout';
+  if (meta.exit_code === 11) return 'capacity';
+  // Exit 10 with validation "not-run": the wrapper never got an answer to validate.
+  if (meta.exit_code === 10 && meta.validation !== 'failed' && meta.validation !== 'ok') {
+    return 'no-output';
+  }
+  return null;
+}
+
+export type SettleResult = {
+  state: TaskState | null;
+  kind: AttemptKind | null;
+  /** True when the call uses up a round (nothing was taken back). */
+  counted: boolean;
+  /** True when this invocation changed the state file. */
+  changed: boolean;
+};
+
+/**
+ * Takes the pre-counted round back when the call ended without output. Idempotent: a call
+ * (kind + started_at) is taken back at most once. Without a state file nothing happens.
+ */
+export function settleCall(id: string, meta: CallMeta, now: Date = new Date()): SettleResult {
+  const kind = callKind(meta);
+  const reason = uncountedReason(meta);
+  const prev = readState(id);
+  if (prev === null) return { state: null, kind, counted: reason === null, changed: false };
+  if (reason === null) return { state: prev, kind, counted: true, changed: false };
+  const seen = prev.uncounted_calls.some(
+    (c) => c.kind === kind && c.started_at === meta.started_at,
+  );
+  if (seen) return { state: prev, kind, counted: false, changed: false };
+  const next: TaskState = {
+    ...prev,
+    attempts: { ...prev.attempts, [kind]: Math.max(0, prev.attempts[kind] - 1) },
+    uncounted_calls: [
+      ...prev.uncounted_calls,
+      { kind, started_at: meta.started_at, exit_code: meta.exit_code, reason },
+    ],
+    updated_at: now.toISOString(),
+  };
+  writeState(next);
+  return { state: next, kind, counted: false, changed: true };
+}
+
+/** Finished call metas of a run directory: meta.<mode>.json and attempts/<n>/meta.json. */
+export function runCallMetas(runDir: string): CallMeta[] {
+  const files: string[] = [];
+  for (const mode of ['impl', 'review']) files.push(join(runDir, `meta.${mode}.json`));
+  const archive = join(runDir, 'attempts');
+  if (existsSync(archive)) {
+    for (const name of readdirSync(archive)) {
+      if (/^[0-9]+$/.test(name)) files.push(join(archive, name, 'meta.json'));
+    }
+  }
+  const metas = new Map<string, CallMeta>();
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    const meta = parseCallMeta(readJsonFile(file));
+    if (meta !== null) metas.set(`${meta.mode}:${meta.started_at}`, meta);
+  }
+  return [...metas.values()].sort((a, b) => a.started_at.localeCompare(b.started_at));
+}
+
+export type MigrateOptions = {
+  /** Counter for counted review rounds that left no meta.json behind. */
+  unattributedReview?: 'spec-test' | 'code';
+  now?: Date;
+  dryRun?: boolean;
+};
+
+/**
+ * Converts a state file of the old shape `attempts: {impl, review}` (one shared review counter)
+ * to the per-type counters, attributing every review round from the run's meta.json files:
+ * its review type picks the counter, and a call that ended without output is moved to
+ * `uncounted_calls`. Everything else in the file (state, last_error, …) is kept.
+ */
+export function migrateState(id: string, opts: MigrateOptions = {}): TaskState {
+  const now = opts.now ?? new Date();
+  const file = stateFile(id);
+  if (!existsSync(file)) throw new CheckError(`${id}: no state file`);
+  const raw = readJsonFile(file) as Record<string, unknown>;
+  const old = raw.attempts as Record<string, unknown> | undefined;
+  if (typeof old !== 'object' || old === null || !('review' in old)) {
+    return readState(id) as TaskState; // already in the new shape (validated)
+  }
+  if (!isCount(old.impl) || !isCount(old.review)) {
+    throw new CheckError(`${file}: old attempts.impl / attempts.review are not counts`);
+  }
+  const metas = runCallMetas(join(runsDir(), id));
+  const uncounted: UncountedCall[] = [];
+  const attempts: Record<AttemptKind, number> = { impl: old.impl, 'spec-test': 0, code: 0 };
+  for (const meta of metas.filter((m) => m.mode === 'impl')) {
+    const reason = uncountedReason(meta);
+    if (reason === null) continue;
+    attempts.impl = Math.max(0, attempts.impl - 1);
+    uncounted.push({
+      kind: 'impl',
+      started_at: meta.started_at,
+      exit_code: meta.exit_code,
+      reason,
+    });
+  }
+  const reviews = metas.filter((m) => m.mode === 'review');
+  if (reviews.length > old.review) {
+    throw new CheckError(
+      `${id}: ${reviews.length} review calls on file but only ${old.review} counted; fix the state by hand`,
+    );
+  }
+  for (const meta of reviews) {
+    const kind = callKind(meta);
+    const reason = uncountedReason(meta);
+    if (reason === null) attempts[kind] += 1;
+    else uncounted.push({ kind, started_at: meta.started_at, exit_code: meta.exit_code, reason });
+  }
+  const missing = old.review - reviews.length;
+  if (missing > 0) {
+    if (opts.unattributedReview === undefined) {
+      throw new CheckError(
+        `${id}: ${missing} counted review round(s) left no meta.json; say which counter they used with --unattributed-review spec-test|code`,
+      );
+    }
+    attempts[opts.unattributedReview] += missing;
+  }
+  const next = parseState(
+    { ...raw, attempts, uncounted_calls: uncounted, updated_at: now.toISOString() },
+    file,
+  );
+  if (!opts.dryRun) writeState(next);
   return next;
 }
 
@@ -242,6 +482,10 @@ function main(argv: string[]): number {
       'last-error': { type: 'string' },
       owner: { type: 'string' },
       renew: { type: 'boolean', default: false },
+      'review-type': { type: 'string' },
+      meta: { type: 'string' },
+      'unattributed-review': { type: 'string' },
+      'dry-run': { type: 'boolean', default: false },
     },
     allowPositionals: true,
   });
@@ -299,14 +543,56 @@ function main(argv: string[]): number {
     return 0;
   }
   if (cmd === 'bump-attempt') {
-    if (extra !== 'impl' && extra !== 'review') {
-      throw new UsageError('bump-attempt <id> impl|review');
+    let kind: AttemptKind;
+    if (extra === 'impl') {
+      if (values['review-type'] !== undefined) {
+        throw new UsageError('--review-type applies to review only');
+      }
+      kind = 'impl';
+    } else if (extra === 'review') {
+      const type = values['review-type'];
+      if (type === undefined || !(REVIEW_TYPES as readonly string[]).includes(type)) {
+        throw new UsageError(
+          `bump-attempt <id> review needs --review-type ${REVIEW_TYPES.join('|')} (each review type has its own rounds, 规划/11 §2.5)`,
+        );
+      }
+      kind = reviewKind(type as ReviewType);
+    } else {
+      throw new UsageError(
+        'bump-attempt <id> impl | bump-attempt <id> review --review-type <type>',
+      );
     }
-    const state = bumpAttempt(id, extra);
+    const state = bumpAttempt(id, kind);
     console.log(JSON.stringify(state, null, 2));
     return 0;
   }
-  throw new UsageError('expected: get|set|claim|release|bump-attempt <id> ...');
+  if (cmd === 'settle') {
+    if (values.meta === undefined) throw new UsageError('settle <id> --meta <meta.json>');
+    const meta = parseCallMeta(readJsonFile(values.meta));
+    if (meta === null) throw new UsageError(`${values.meta}: not the meta.json of a finished call`);
+    const res = settleCall(id, meta);
+    console.log(
+      JSON.stringify({
+        task: id,
+        kind: res.kind,
+        counted: res.counted,
+        changed: res.changed,
+        attempts: res.state?.attempts ?? null,
+      }),
+    );
+    return 0;
+  }
+  if (cmd === 'migrate') {
+    const un = values['unattributed-review'];
+    if (un !== undefined && un !== 'spec-test' && un !== 'code') {
+      throw new UsageError('--unattributed-review must be spec-test or code');
+    }
+    const opts: MigrateOptions = { dryRun: values['dry-run'] };
+    if (un !== undefined) opts.unattributedReview = un;
+    console.log(JSON.stringify(migrateState(id, opts), null, 2));
+    return 0;
+  }
+  throw new UsageError('expected: get|set|claim|release|bump-attempt|settle|migrate <id> ...');
 }
 
 if (import.meta.main) runMain(main);

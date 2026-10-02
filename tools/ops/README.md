@@ -13,7 +13,7 @@
 | `task.ts check [编号…]` | 校验 `ops/tasks/*.yaml`：字段、文件名、≤40 行、编号前缀在 05 里存在、`refs` 存在且 `refs_hash` 与规划原文一致、依赖存在、RV2 的实现与规则测试作者不是同一家。`pnpm ops:task:check` | 11 §2.1 |
 | `task.ts show <编号> --json` | 任务字段（平铺）加算出的 `risk`、`ask`、`risk_paths` | 11 §1.2 |
 | `task.ts hash <编号>` | 打印可直接粘贴的 `refs_hash` 段 | 11 §5.3 |
-| `state.ts get\|set\|claim\|release\|bump-attempt <编号>` | 在途状态 `couli-runs/state/<编号>.json`（先写临时文件再改名）；领任务 `couli-runs/claims/<编号>/`，租约 20 分钟，`claim --renew` 续期，过期才能被别的会话接手；`bump-attempt` 在派发前计数，实现超过 3 次、评审超过 2 轮退出码 1 | 11 §2.1、§2.2、§2.5 |
+| `state.ts get\|set\|claim\|release\|bump-attempt\|settle\|migrate <编号>` | 在途状态 `couli-runs/state/<编号>.json`（先写临时文件再改名）；领任务 `couli-runs/claims/<编号>/`，租约 20 分钟，`claim --renew` 续期，过期才能被别的会话接手。轮次见下文「轮次怎么计」 | 11 §2.1、§2.2、§2.5 |
 | `lock.ts`（只有函数） | 编排锁 `couli-runs/lock/orchestrator/`：取锁、心跳、释放；心跳停 20 分钟才允许接管。心跳与释放也在接管闸门 `<锁目录>.takeover` 里做，自己的租约已过期就不再续（返回 false，持有者必须停下） | 11 §2.2 |
 | `usage.ts record\|calibrate\|summary\|gate` | 额度账本 `couli-runs/usage.jsonl`（只追加）与熔断。`gate` 退出码 0 可以派工、3 不行，原因在标准输出的 JSON 里。`pnpm ops:usage summary` | 11 §1.3、§2.5 |
 | `status.ts [--json]` | 看板，每次现算，不落盘。`pnpm ops:status` | 11 §2.1、§5.2、§7.2 |
@@ -24,13 +24,23 @@
 | `timeout-group.pl` | `--host` 模式用的超时器：到点杀整个进程组 | 11 §2.4「超时」 |
 | `spec.ts`、`overlap.ts`、`cli.ts` | 供上面脚本用的库：按 `SPEC_REF` 读规则原文与条目哈希、路径是否可能相交、公共小函数 | 11 §5.3 |
 
+### 轮次怎么计（`state.ts`）
+
+规划/11 §2.5；负责人 2026-10-02 决定（`ops/approvals.yaml` 第 13 条）。
+
+- 三个计数器各有上限：实现 `impl` 3 次；规则测试评审 `spec-test` 2 轮；代码评审 `code` 2 轮（`money`、`general`、`contract` 共用）。原来是一个评审计数器共 2 轮。
+- `bump-attempt <编号> impl`（`dispatch.sh` 调）或 `bump-attempt <编号> review --review-type <类型>`（编排者在评审前调）在**派发前**计数并落盘；用完了退出码 1、不写文件。
+- `settle <编号> --meta <meta.json>`（`codex-run.sh` 每次调用结束后调）：没有产出就结束的调用把那一轮还回去，记进状态文件的 `uncounted_calls`（`kind`、`started_at`、`exit_code`、`reason`）；按 `kind` + `started_at` 去重，重复执行不多还。「没有产出」指：硬超时或无活动击杀（124）、模型容量错误（11）、或退出 10 且校验没跑（缺 `-o`、`turn.failed`、退出码非 0、被中止、留下进程）。拿到回答但校验不过（`validation: failed`）、位置断言失败（12）、孤儿（包装脚本没写完 `meta.json`）照计。
+- 不计轮次的调用照样进额度账本：计入每任务 10 次、每天 40 次与连续无产出（见下一节）。
+- `migrate <编号> [--unattributed-review spec-test|code] [--dry-run]`：把旧形状 `attempts: {impl, review}` 的状态文件换成新形状。评审轮次按 `<runs>/<编号>/` 下各次调用的 `meta.json`（`meta.<模式>.json` 与 `attempts/<n>/meta.json`）归到各自类型，没有产出的调用移进 `uncounted_calls`；实现次数减去没有产出的实现调用；其余字段（`state`、`last_error` …）不动。旧计数比留下的评审 `meta.json` 多时，必须用 `--unattributed-review` 说明多出的轮次归哪类，否则拒绝。旧形状的文件不经迁移读不进来（`get`、看板都会报错并提示这条命令）。
+
 ### 额度怎么估（`usage.ts`）
 
 Codex 不按次报周额度。编排者隔一段时间从 Codex 自己的记录里读出「本周已用百分比」，用 `usage.ts calibrate --weekly-used-percent <n>` 记一次；两次校准之间按我们自己的用量往上加。算法和它的局限写在 `usage.ts` 文件头。要点：
 
 - 从没校准过，或最近一次校准超过 24 小时：档位 `unknown`，`gate` 关闸（读不到额度按停用，11 §1.3）。
 - 这台 Mac 上其他项目也在用同一份周额度，校准之后它们花掉的看不到，估值可能比真实值低，靠勤校准弥补。`couli-runs/quota.json` 可写 `tokens_per_percent`（每 1% 对应多少 token）和 `calibration_max_age_hours`（校准多久算过期）。
-- 熔断按「再派一次会不会越线」判断：今天已 40 次、该任务已 6 次、连续 3 次无产出、档位 `stopped` 或 `unknown`，都关闸。模型容量错误计入每天和每任务的次数，不计入「连续无产出」。
+- 熔断按「再派一次会不会越线」判断：今天已 40 次、该任务已 10 次（2026-10-02 负责人由 6 次提高到 10 次）、连续 3 次无产出、档位 `stopped` 或 `unknown`，都关闸。模型容量错误计入每天和每任务的次数，不计入「连续无产出」。超时、无 `-o` 的调用不算实现或评审轮次，但照样计入这三项。
 
 ### 沙箱外验证（`verify-container.sh`）
 
@@ -78,7 +88,7 @@ Codex 不按次报周额度。编排者隔一段时间从 Codex 自己的记录�
 - TODO(规划/11 §0): 可信副本同步（`couli-runs/trusted/rebate-platform` 只跟随 `origin/main`） — blocked on GitHub remote。建好前 `trustedRoot()` 就是主检出（任务 worktree 永远不算）
 - TODO(规划/11 §2.1): 看板里的未合并 PR 与 CI 状态 — blocked on GitHub remote。现在固定输出「PR/CI: 未接入」，不调用 `gh`
 - TODO(规划/11 §5.1): 交接、日志、备忘写进私有库 `rebate-private/ops-state/` — blocked on GitHub remote（私有库未建）。交接现在写在 `couli-runs/handoff/`
-- TODO(规划/11 §2.5): 重派退避（15、30、60 分钟）与超限后换家 / `blocked` 的处理 — blocked on `tick.sh`。`state.ts bump-attempt` 只负责计数与上限
+- TODO(规划/11 §2.5): 重派退避（15、30、60 分钟）与超限后换家 / `blocked` 的处理 — blocked on `tick.sh`。`state.ts bump-attempt` / `settle` 只负责计数、结算与上限
 
 ### 现在怎么手动走一轮（`tick.sh` 之前）
 

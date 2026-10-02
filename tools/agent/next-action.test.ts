@@ -241,6 +241,20 @@ it('failed runs are retried with backoff until the attempts are used up', () => 
   });
 });
 
+it('[规划/11 §2.5] a call without output does not use up an attempt; a rejected answer does', () => {
+  // codex-run.sh already gave the round back (state.ts settle): attempts is the settled value.
+  expect(
+    nextAction(input({ attempts: 2 }, { exit_code: 124, timed_out: true, has_output: false })),
+  ).toMatchObject({ action: 'retry', reason: 'timeout', counts_as_attempt: false });
+  expect(
+    nextAction(input({}, { exit_code: 10, has_output: false, validation: 'not-run' })),
+  ).toMatchObject({ action: 'retry', counts_as_attempt: false });
+  // Codex answered, but the answer failed validation: that round is used up.
+  expect(
+    nextAction(input({}, { exit_code: 10, has_output: false, validation: 'failed' })),
+  ).toMatchObject({ action: 'retry', counts_as_attempt: true });
+});
+
 it('a capacity error is retried without counting, a position failure blocks', () => {
   expect(nextAction(input({ attempts: 3 }, { exit_code: 11, capacity_error: true }))).toMatchObject(
     {

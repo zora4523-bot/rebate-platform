@@ -16,7 +16,7 @@
 | `validate-output.ts` | 产出校验：schema（Ajv2020 strict）+ 评审规则 + 资金清单 |
 | `meta.ts` | 给 bash 用的 JSON 读写小工具、事件流解析 |
 | `common.sh` | 三个脚本共用的路径解析与进程组函数 |
-| `schemas/impl.schema.json`、`schemas/review.schema.json` | 结构化产出的 schema（每个 object 都是 `additionalProperties:false` + 全字段必填） |
+| `schemas/impl.schema.json`、`schemas/review.schema.json` | 结构化产出的 schema（每个 object 都是 `additionalProperties:false` + 全字段必填）；评审产出另有 `out_of_scope`（任务 refs 以外的问题，不计入结论） |
 | `prompts/review-{money,general,contract,spec-test}.md` | 四种评审提示词 |
 | `testing/` | 测试用假 `codex`（`couli-fake-codex.sh`）和夹具；不连模型、不耗额度 |
 
@@ -38,7 +38,7 @@ tools/agent/dispatch.sh <id>
 tools/agent/post-run.sh <id>
 
 # 单独校验一份产出
-node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [--diff-base <ref> --cwd <worktree>] [--json]
+node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [--refs <BR-…,BR-…>] [--diff-base <ref> --cwd <worktree>] [--json]
 ```
 
 - `<id>` 是台账编号（如 `B2-03a`）。`<runs>` 默认是仓库旁边的 `couli-runs/`，worktree 默认 `<runs>/worktrees/<id>`。
@@ -49,7 +49,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 
 ## 3. 包装脚本保证什么
 
-1. **命令固定**。实现与评审的 argv 就是规划/11 §2.4 那两条，写死在脚本里；调用方传不进任何 Codex 参数。评审提示词后面追加的「Review context」一段（任务编号、基线、改动文件列表、任务书）是包装脚本自己加的，§2.4 原命令里没有。
+1. **命令固定**。实现与评审的 argv 就是规划/11 §2.4 那两条，写死在脚本里；调用方传不进任何 Codex 参数。评审提示词后面追加的「Review context」一段（任务编号、基线、任务 refs、改动文件列表、任务书）是包装脚本自己加的，§2.4 原命令里没有。
 2. **stdin 关闭**（`/dev/null`），带 `COULI_CODEX_WRAPPER=1`。
 3. **位置断言**。启动前：worktree、它的 git 目录、`<runs>`、可信副本都不在 `/tmp`、`/private/tmp`、`$TMPDIR` 下，否则退出 12；脚本自身或 `COULI_TRUSTED_ROOT` 位于 `couli-runs/worktrees/<编号>` 下（任务 worktree）一律拒绝，退出 2。结束后：HEAD、当前分支、分支列表、`refs/stash`、暂存区、本地 git 配置（不含 `branch.*`）、`.git/hooks` 与启动前一致，否则退出 12，产出作废。分支列表里只放过一种变化：**别的任务的分支**（`refs/heads/task/<别的编号>`）新增、移动或删除，因为编排者会在本次运行期间给别的任务建 worktree、提交规则测试；这种变化只记进 `meta.json` 的 `other_task_branches_changed`。
 4. **超时杀整组**。Codex 在独立进程组里跑；硬超时或无活动时对整组先 TERM、等 `COULI_KILL_GRACE_SECS`（默认 5 秒，上限 5，只能调小）、再 KILL，确认组内没有存活进程后才去看 `-o` 文件。「无活动」= 事件文件没有新内容 **且** 这次运行的进程没有消耗 CPU（实现 5 分钟 / 评审 12 分钟；每秒扫一次进程表，CPU 时间在窗口内增长不到窗口的 5% 算静止）：沙箱里一条跑很久、不打事件的 `pnpm test` 不会被误杀。监管脚本还记住组长的全部后代（含用 `setsid` 脱离进程组的；靠继承的一个文件描述符在收尾时再找一遍，Linux 用 `/proc`，macOS 用 `lsof`），收尾时一并结束。包装脚本自己被 TERM / INT / HUP 时同样杀整组。Codex 正常退出但留下后台进程（`stragglers_killed`）或有后代脱离了进程组（`escaped_killed`）的，进程被清掉，这一次按**无产出**处理（退出 10，`-o` 改名 `.rejected`）：被强制清理过的运行里写出来的东西不当作模型的回答。
@@ -57,8 +57,9 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 6. **成败判定**（规划/11 §2.4）。四条同时成立才算有产出：Codex 退出码 0、事件流最后一条是 `turn.completed`、`-o` 存在、通过可信副本里的 `validate-output.ts`。
 7. **门禁从可信副本读**。schema、提示词、校验器、`usage.ts`、守卫都取自 `COULI_TRUSTED_ROOT`（默认：`<runs>/trusted/rebate-platform` 存在就用它，否则脚本所在的主检出），不读任务 worktree：脚本从 `couli-runs/worktrees/<编号>` 下运行、或 `COULI_TRUSTED_ROOT` 指到那里，直接拒绝（退出 2），没有静默回退。
 9. **真正的 codex**。只用 `command -v codex`（垫片算数，它会转给真正的二进制），且它的物理路径不能在仓库、worktree、`couli-runs` 或临时目录下。`COULI_CODEX_BIN` 只给测试夹具用：必须同时设 `COULI_AGENT_TEST=1`，且运行目录位于某个 `.tmp` 目录下，否则拒绝（退出 2）。
-10. **评审类型跟着风险级**。`--review-type` 不传时，可信副本的 `tools/ops/task.ts show <id>` 算出 RV2 就用 `money`（强制资金清单），否则 `general`；RV2 任务显式传 `general` 被拒绝（`contract`、`spec-test` 仍可用）。评审产出里 `verdict: pass` 却带 S0 / S1 发现的，按无产出处理（退出 10）。
-8. **每次调用都记账**：结束后调用 `tools/ops/usage.ts record`（规划/11 §1.3）。
+10. **评审范围只到任务的 refs**（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 13 条）。包装脚本从可信副本的 `task.ts show` 取任务的 `refs`，写进评审上下文一行「In-scope rules (the task's refs)」。规则测试评审（spec-test）只对照这些 BR 的条款；一跳引用的规则只作理解用；关于 refs 以外规则的问题写进 `out_of_scope`，不计入 `verdict`。资金评审提示词带同样的范围说明（仓库硬规则与七项清单始终在范围内）。spec-test 评审校验时带 `--refs`：`findings` 里只引用 refs 以外 BR 编号的条目记一条警告（进 `meta.json` 的 `validation_messages`），不算 S0 / S1——「pass 带 S0 / S1」的矛盾检查不数它，只因它而 `fail` 的另记一条「refs 内是 pass」的警告。
+11. **评审类型跟着风险级**。`--review-type` 不传时，可信副本的 `tools/ops/task.ts show <id>` 算出 RV2 就用 `money`（强制资金清单），否则 `general`；RV2 任务显式传 `general` 被拒绝（`contract`、`spec-test` 仍可用）。评审产出里 `verdict: pass` 却带 S0 / S1 发现的，按无产出处理（退出 10）。
+8. **每次调用都记账并结算轮次**：结束后调用 `tools/ops/usage.ts record`（规划/11 §1.3），再调用 `tools/ops/state.ts settle <id> --meta <meta.<mode>.json>`：没有产出就结束的调用（见 §4）把派发前计上的那一轮还回去；账本里这次调用照记，仍计入每任务 10 次、每天 40 次与「连续 3 次无产出」。`settle` 按调用的 `started_at` 去重，重复执行不会多还；没有在途状态文件时什么都不做；它失败只记警告，这一轮按已计处理。
 
 有产出不等于任务成功。Codex 说「测试通过」不算数，成败只看 `tools/ops/verify-container.sh` 的退出码。
 
@@ -67,10 +68,12 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 | 退出码 | 含义 | 编排者怎么处理 |
 | --- | --- | --- |
 | 0 | 有可用产出 | `post-run.sh` → 守卫 → 沙箱外验证 |
-| 10 | 没有可用产出（退出码非 0、缺 `turn.completed`、缺 `-o`、校验不过、被中止） | 计一次尝试，退避重试 |
-| 11 | 模型容量错误（`Selected model is at capacity`） | 退避重试，不计入 attempts，仍计入每天 40 次 |
+| 10 | 没有可用产出（退出码非 0、缺 `turn.completed`、缺 `-o`、校验不过、被中止） | 退避重试。没拿到回答（`validation` 为 `not-run`：缺 `-o`、`turn.failed`、退出码非 0、被中止、留下进程）不计轮次；拿到回答但校验不过（`validation: failed`）计一轮 |
+| 11 | 模型容量错误（`Selected model is at capacity`） | 退避重试，不计轮次，仍计入每任务 10 次、每天 40 次 |
 | 12 | 位置断言失败 | 按越界处理：不执行、不提交这个 worktree 里的任何东西，先人工看 `meta.json` 的 `position_changed` |
-| 124 | 硬超时或无活动被击杀 | 计一次尝试；任务要拆小 |
+| 124 | 硬超时或无活动被击杀 | 不计轮次，仍计入每任务 10 次、每天 40 次与连续无产出；反复超时说明任务要拆小 |
+
+「计不计轮次」由 `tools/ops/state.ts settle` 判定（规划/11 §2.5，负责人 2026-10-02 决定）；位置断言失败（12）照计。
 | 2 | 用法错误，或参数被拒绝 | 修正调用；Codex 没有被启动 |
 
 `selfcheck`：0 通过，1 有检查项失败。
@@ -105,7 +108,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 
 ## 7. 派工与收尾
 
-`dispatch.sh <id>` 先用 `mkdir <runs>/<id>/dispatch.lock` 取一把只在本次派工期间存在的锁（10 分钟没清掉的视为残留），再按顺序检查，任何一步不过就停：额度闸门（`usage.ts gate`，退出 3 即全停）→ 认领任务（owner 是 `COULI_SESSION`，不设则本进程唯一；只有认领已被同一 owner 持有时才 `--renew`）→ 上一次派工记录的 pid 还活着就停（`run-in-progress`）→ **先把尝试次数加一** → 任务书在不在（不在就生成）→ worktree 与 `node_modules` 在不在（依赖由编排者在沙箱外装，这里绝不安装）。然后在独立会话里后台启动 `codex-run.sh impl <id>`（有 `caffeinate` 就套上防睡眠），登记 pid 与开始时间，输出一行 `{"action":"dispatched","pid":…,"run":"…"}`。上一次是容量错误（退出 11）时，这次重派不再加次数。
+`dispatch.sh <id>` 先用 `mkdir <runs>/<id>/dispatch.lock` 取一把只在本次派工期间存在的锁（10 分钟没清掉的视为残留），再按顺序检查，任何一步不过就停：额度闸门（`usage.ts gate`，退出 3 即全停）→ 认领任务（owner 是 `COULI_SESSION`，不设则本进程唯一；只有认领已被同一 owner 持有时才 `--renew`）→ 上一次派工记录的 pid 还活着就停（`run-in-progress`）→ **先把尝试次数加一**（每次都加；上一次调用若没有产出就结束，包装脚本结束时已经把那一轮还回去了）→ 任务书在不在（不在就生成）→ worktree 与 `node_modules` 在不在（依赖由编排者在沙箱外装，这里绝不安装）。然后在独立会话里后台启动 `codex-run.sh impl <id>`（有 `caffeinate` 就套上防睡眠），登记 pid 与开始时间，输出一行 `{"action":"dispatched","pid":…,"run":"…"}`。
 
 三处细节：
 
@@ -113,14 +116,14 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 - **重派一定重新生成任务书**。第 2 次尝试起（在途状态的 `attempts.impl` ≥ 2），不管 `brief.md` 在不在都重新跑 `brief.ts`：任务书里的「第 n 次尝试」和「上一轮失败输出」取自在途状态，沿用旧任务书就丢了上一轮的失败输出（规划/11 §2.3「重试不用 resume」）。所以重派前编排者要先 `node tools/ops/state.ts set <id> --last-error <失败输出文件>`。
 - **停掉一次在跑的派工**：对输出里的 `pid` 发整组信号，`kill -TERM -- -<pid>`（负号表示整组）。包装脚本收到后把 Codex 进程组整组结束、写完 `meta.json` 再退出。只杀单个 pid 可能留下还在跑的包装脚本。
 
-评审不经 `dispatch.sh`：编排者先 `node tools/ops/state.ts bump-attempt <id> review`，再前台或后台跑 `codex-run.sh review <id> …`（评审最多 2 轮，规划/11 §2.5）。
+评审不经 `dispatch.sh`：编排者先 `node tools/ops/state.ts bump-attempt <id> review --review-type <类型>`，再前台或后台跑 `codex-run.sh review <id> --review-type <同一类型> …`。轮次按评审类型分开计（规划/11 §2.5）：规则测试评审（`spec-test`）最多 2 轮，代码评审（`money`、`general`、`contract` 共用一个计数）最多 2 轮；没有产出就结束的调用由包装脚本还回那一轮。
 
 `post-run.sh <id>` 只读文件，不执行任务代码、不动 git、不动 worktree，输出一行 JSON：
 
 | `action` | 什么时候 |
 | --- | --- |
 | `verify` | 有产出、路径守卫与保护路径守卫都过。附 `revert_first`（`ops/`、`docs/` 下要先还原的越界改动）和 `outside_needed`（要在沙箱外跑的命令） |
-| `retry` | 失败的一次尝试（无产出、超时、越界、自称没做完、孤儿）。附 `backoff_min`：第 1 次后 15 分钟，第 2 次后 30 分钟 |
+| `retry` | 失败的一次尝试（无产出、超时、越界、自称没做完、孤儿）。附 `backoff_min`：第 1 次后 15 分钟，第 2 次后 30 分钟；超时与无产出另附 `counts_as_attempt`（`false` = 包装脚本已还回这一轮）。孤儿（包装脚本没写完 `meta.json`）没有结算，照计一次 |
 | `blocked` | 三次用完、位置断言失败、要装依赖（`deps-needed`）、实现者自报受阻、守卫出错 |
 | `ask` | 改动碰了保护路径第二、三类，交负责人确认 |
 | `capacity-retry` | 模型容量错误，不计次数 |
