@@ -102,3 +102,15 @@ approvals:
     granted: true
     date: '2026-10-02'
     note: '负责人原话「codex 额度是无限的，请你不要设置无意义的限制」（对话中给编排会话，经编排会话转达）；落在分支 chore/remove-codex-quota-gate（tools/ops、tools/agent、AGENTS.md），规划/11 §1.3、§2.5 同步改在规划仓库分支 docs/remove-codex-quota-gate'
+  - id: 16
+    row: 4
+    title: '常设授权：门禁流程本身的小改动（台账处理、评审轮次、任务书大小、CI 流程、工具脚本）由编排会话决定，编排会话在 PR 上加 owner-approved-<头提交前 12 位> 标签并合并，事后向负责人一句话报告；仍须先问负责人的：金额与订单归属规则、放宽密钥扫描、删除或削弱资金测试、生产环境'
+    granted: true
+    date: '2026-10-02'
+    note: '负责人在对话里给编排会话的决定（经编排会话转达）；规划/11 §7.1、§7.3 同步改在规划仓库分支 docs/gate-ledger-rounds-brief；本条自身所在的 PR 仍由负责人加标签'
+  - id: 17
+    row: 4
+    title: '门禁修正：ops/tasks/**（台账）在 ops/risk-map.yaml 列为 RV0；guard-git 在可信根没有 ops/tasks/<编号>.yaml、且 PR 自己新增这份台账（基线没有、头提交有）时，从头提交读台账，编号只取 task/<编号> 分支名，其余守卫照旧从基线读；代码评审（money / general / contract）由每任务 2 轮提高到 3 轮，规则测试评审仍 2 轮；契约任务的任务书只带台账 contract_sections 点名的 规划/04 各节原文，refs 里的 BR 只列编号与标题、不带原文与一跳引用'
+    granted: true
+    date: '2026-10-02'
+    note: '负责人在对话里同意（经编排会话转达）；落在分支 chore/gate-ledger-rounds-brief（ops/risk-map.yaml、tools/guard、tools/ops、tools/lib、AGENTS.md），规划/11 §2.5、§5.3 同步改在规划仓库分支 docs/gate-ledger-rounds-brief'

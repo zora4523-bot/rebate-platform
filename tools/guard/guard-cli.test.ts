@@ -905,3 +905,81 @@ describe('run.ts git --task: the path guard starts at spec_commit (owner decisio
     expect(res.stderr).toContain('test/spec/ledger/late.test.ts: added outside the task paths');
   });
 });
+
+describe('run.ts git --task: a ledger the pull request adds (owner decision 2026-10-02)', () => {
+  const NEW_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: CT-09')
+    .replace('type: impl', 'type: contract')
+    .replace('  - "apps/api/src/modules/ledger/**"', '  - "contracts/**"');
+
+  function commitAll(root: string, message: string): string {
+    fixtureGit(root, ['add', '-A']);
+    fixtureGit(root, ['commit', '-q', '-m', message]);
+    return fixtureGit(root, ['rev-parse', 'HEAD']);
+  }
+
+  const runGit = (root: string, base: string, id: string) =>
+    guard('run.ts', ['git', '--base', base, '--task', id, '--cwd', root]);
+
+  it('no ledger in the trusted root: the one the PR adds is read from HEAD', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'ops/tasks/CT-09.yaml': NEW_TASK,
+      'contracts/enums/x.yaml': 'x: 1\n',
+    });
+    commitAll(root, 'task CT-09');
+    const res = runGit(root, base, 'CT-09');
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout.split('\n')[0]).toBe('PASS path-guard');
+    expect(res.stderr).toContain(
+      'path-guard: notice: task CT-09: no ops/tasks/CT-09.yaml on the base; the ledger is the one this pull request adds',
+    );
+  });
+
+  it('the head ledger still bounds the paths', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'ops/tasks/CT-09.yaml': NEW_TASK,
+      'apps/api/src/modules/orders/sync.ts': 'export const sync = 2;\n',
+    });
+    commitAll(root, 'task CT-09 overreach');
+    const res = runGit(root, base, 'CT-09');
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('apps/api/src/modules/orders/sync.ts');
+  });
+
+  it('a ledger only in the working tree, or nowhere, is not used', () => {
+    const { root, base } = workRepo();
+    expect(runGit(root, base, 'CT-09').status).toBe(2);
+    writeFiles(root, { 'ops/tasks/CT-09.yaml': NEW_TASK });
+    const res = runGit(root, base, 'CT-09');
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('HEAD does not add ops/tasks/CT-09.yaml');
+  });
+
+  it('a ledger already on the base is never read from the head', () => {
+    const { root } = workRepo();
+    writeFiles(root, { 'ops/tasks/CT-09.yaml': NEW_TASK });
+    const base = commitAll(root, 'ledger on base');
+    writeFiles(root, { 'contracts/enums/x.yaml': 'x: 1\n' });
+    commitAll(root, 'work');
+    const res = runGit(root, base, 'CT-09');
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('the trusted copy is stale');
+  });
+
+  it('a trusted ledger wins over a widened copy at the head', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'ops/tasks/B2-02a.yaml': LEDGER_TASK.replace(
+        '  - "apps/api/src/modules/ledger/**"',
+        '  - "apps/api/src/modules/ledger/**"\n  - "apps/api/src/modules/orders/**"',
+      ),
+      'apps/api/src/modules/orders/sync.ts': 'export const sync = 2;\n',
+    });
+    commitAll(root, 'widen');
+    const res = runGit(root, base, 'B2-02a');
+    expect(res.status).toBe(1);
+    expect(res.stderr).not.toContain('the ledger is the one this pull request adds');
+    expect(res.stderr).toContain('apps/api/src/modules/orders/sync.ts');
+  });
+});

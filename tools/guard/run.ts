@@ -17,6 +17,9 @@
 //     path-guard-author checks --base..spec_commit against the rule-test author's paths
 //     (lib/spec-base.ts). Without a usable spec_commit, path-guard runs from --base as before.
 //     protected-paths and test-guard always run from --base.
+//     The task ledger comes from the trusted root; only when the trusted root has no
+//     ops/tasks/<id>.yaml and the PR adds it (absent at --base, present at HEAD) is the head's
+//     copy used (owner decision 2026-10-02, ops/approvals.yaml id 17, lib/checks.ts guardTask).
 // One summary line per check on stdout, details on stderr, exit 1 when any check failed.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -37,7 +40,7 @@ import {
   specRefCheck,
   specRepoRequired,
   testGuardCheck,
-  trustedTask,
+  guardTask,
   waiveProblems,
 } from './lib/checks.ts';
 import { UsageError, parseArgs, report, resolveRoot, runCli } from './lib/cli.ts';
@@ -127,8 +130,9 @@ async function runGit(argv: string[]): Promise<number> {
     throw new Error(`${root} is not a git work tree: the git guards run on the host only`);
   }
   const taskId = args.values.get('task');
-  const task = taskId === undefined ? null : trustedTask(taskId);
+  const task = taskId === undefined ? null : guardTask(taskId, root, base);
   const results: CheckResult[] = [];
+  const ledgerNotes = task?.notice ? [task.notice] : [];
   if (task && taskId !== undefined) {
     // The implementer's scope starts at the verified spec_commit of the task's evidence file;
     // the commits before it are the rule-test author's (lib/spec-base.ts). Without a usable
@@ -151,7 +155,7 @@ async function runGit(argv: string[]): Promise<number> {
       results.push(
         runCheck('path-guard', () => {
           const check = pathGuardCheck(root, specCommit, task.paths, task.type).check;
-          return { ...check, notices: [note, ...check.notices] };
+          return { ...check, notices: [...ledgerNotes, note, ...check.notices] };
         }),
       );
       results.push(
@@ -162,7 +166,7 @@ async function runGit(argv: string[]): Promise<number> {
       results.push(
         runCheck('path-guard', () => {
           const check = pathGuardCheck(root, base, task.paths, task.type).check;
-          return { ...check, notices: [note, ...check.notices] };
+          return { ...check, notices: [...ledgerNotes, note, ...check.notices] };
         }),
       );
     }

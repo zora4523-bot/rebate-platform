@@ -28,6 +28,7 @@ export const RULES_DIR = '规划/08_业务规则';
 export const ACCEPTANCE_FILE = '规划/10_首个完整流程验收用例.md';
 export const REQUIREMENTS_FILE = '规划/01_需求规划.md';
 export const TASKS_FILE = '规划/05_里程碑与任务拆分.md';
+export const CONTRACTS_FILE = '规划/04_数据模型与契约.md';
 
 const RULE_TABLE_HEADER = ['编号', '规则', '状态', '影响面'];
 const BR_ID = /^BR-[A-Z]+-[0-9]+[a-z]?$/;
@@ -339,4 +340,45 @@ export function oneHopRefs(rule: Rule): string[] {
 /** True when a task id (without its split suffix) is a row of a task table in 规划/05. */
 export function taskIdKnown(idPrefix: string, src?: SpecSource): boolean {
   return findRowByFirstCell(source(src).read(TASKS_FILE), idPrefix) !== null;
+}
+
+const SECTION_HEADING = /^(#{2,6}) ([1-9][0-9]*(?:\.[1-9][0-9]*)*)\.?(?:\s|$)/;
+
+/**
+ * One numbered section of 规划/04 at SPEC_REF, verbatim from its heading (`## 2. 枚举`,
+ * `### 6.1 账户与身份`) up to the next heading of the same or a higher level. Contract task
+ * briefs quote these instead of whole BR texts (owner decision 2026-10-02). Throws when the
+ * section does not exist.
+ */
+export function contractSection(section: string, src?: SpecSource): string {
+  const lines = source(src).read(CONTRACTS_FILE).split('\n');
+  let start = -1;
+  let level = 0;
+  let inFence = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    if (/^(```|~~~)/.test(line)) inFence = !inFence;
+    if (inFence) continue;
+    const m = SECTION_HEADING.exec(line);
+    const hashes = /^(#{1,6}) /.exec(line)?.[1]?.length ?? 0;
+    if (start >= 0 && hashes > 0 && hashes <= level) {
+      return lines.slice(start, i).join('\n').trim();
+    }
+    if (start < 0 && m && m[2] === section) {
+      start = i;
+      level = (m[1] ?? '').length;
+    }
+  }
+  if (start < 0) throw new Error(`04 §${section}: not found in ${CONTRACTS_FILE} at SPEC_REF`);
+  return lines.slice(start).join('\n').trim();
+}
+
+/** Short title of a rule: the bold lead of its 规则 cell, else the first 60 characters. */
+export function ruleTitle(rule: Rule): string {
+  const cells = splitTableRow(rule.rowText) ?? [];
+  const text = (cells[1] ?? '').trim();
+  const bold = /^\*\*(.+?)\*\*/.exec(text);
+  if (bold?.[1]) return bold[1].trim();
+  const plain = text.replace(/<br\s*\/?>/g, ' ').replace(/\s+/g, ' ');
+  return plain.length > 60 ? `${plain.slice(0, 60)}…` : plain;
 }

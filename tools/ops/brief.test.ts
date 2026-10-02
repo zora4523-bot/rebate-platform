@@ -391,3 +391,90 @@ it(
   },
   CLI_TIMEOUT,
 );
+
+it('a contract task quotes only the named 04 sections and lists BR refs by id and title', () => {
+  const contracts = [
+    '# 04 数据模型与契约',
+    '',
+    '## 1. 术语表',
+    '',
+    '不该出现的术语表。',
+    '',
+    '## 2. 枚举',
+    '',
+    '### 2.1 平台',
+    '',
+    '平台枚举正文。',
+    '',
+    '```text',
+    '## 3. 代码块里的标题不算',
+    '```',
+    '',
+    '## 3. 核心数据模型',
+    '',
+    '### 3.1 关系图',
+    '',
+    '关系图正文。',
+    '',
+    '### 3.2 主要表字段',
+    '',
+    '不该出现的表字段。',
+    '',
+  ].join('\n');
+  const contractSpec = memorySpec({
+    '规划/08_业务规则/01_DEMO.md': RULES,
+    '规划/10_首个完整流程验收用例.md': CASES,
+    '规划/04_数据模型与契约.md': contracts,
+  });
+  writeFiles(root, {
+    'ops/tasks/X1-03.yaml': taskYaml({
+      id: 'X1-03',
+      type: 'contract',
+      title: '演示契约',
+      contract_sections: "['2', '3.1']",
+      paths: "\n  - 'contracts/**'",
+    }),
+  });
+  const text = readFileSync(generateBrief('X1-03', opts({ spec: contractSpec })), 'utf8');
+  const marks = [
+    '## 2. 契约依据（04 相关节原文；BR 只列编号与标题，版本同 SPEC_REF）',
+    '- BR-DEMO-01：演示规则',
+    '<!-- 04 §2 全文开始 -->',
+    '## 2. 枚举',
+    '平台枚举正文。',
+    '## 3. 代码块里的标题不算',
+    '<!-- 04 §2 全文结束 -->',
+    '<!-- 04 §3.1 全文开始 -->',
+    '### 3.1 关系图',
+    '关系图正文。',
+    '<!-- 04 §3.1 全文结束 -->',
+    '## 3. 可以改的路径',
+  ];
+  const positions = marks.map((m) => text.indexOf(m));
+  expect(positions.filter((p) => p < 0)).toEqual([]);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  // No BR text, no detail, no one-hop references, no other 04 sections.
+  expect(text).not.toContain('金额用整数分');
+  expect(text).not.toContain('一跳引用');
+  expect(text).not.toContain('不该出现');
+  expect(sectionSizes(text).map((s) => s.title)).toEqual([
+    '0. 文件头',
+    '1. 目标',
+    '2. 契约依据（04 相关节原文；BR 只列编号与标题，版本同 SPEC_REF）',
+    '3. 可以改的路径',
+    '4. 不能改的',
+    '5. 必须遵守的仓库规则',
+    '6. 验收命令',
+    '7. 上一轮失败输出（第 2 次起才有）',
+    '8. 输出',
+  ]);
+  writeFiles(root, {
+    'ops/tasks/X1-03.yaml': taskYaml({
+      id: 'X1-03',
+      type: 'contract',
+      contract_sections: "['9']",
+      paths: "\n  - 'contracts/**'",
+    }),
+  });
+  expect(() => generateBrief('X1-03', opts({ spec: contractSpec }))).toThrow(/04 §9: not found/);
+});

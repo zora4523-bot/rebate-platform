@@ -16,7 +16,16 @@ import { repoRoot, runsDir, specRef, trustedRoot } from '../lib/paths.ts';
 import type { TaskFile } from '../lib/task-file.ts';
 import { assertTaskId, CheckError, runGuard, runMain, UsageError } from './cli.ts';
 import { globsMayOverlap, literalDir } from './overlap.ts';
-import { findRule, isAcceptanceId, isRuleId, oneHopRefs, splitTableRow } from './spec.ts';
+import {
+  CONTRACTS_FILE,
+  contractSection,
+  findRule,
+  isAcceptanceId,
+  isRuleId,
+  oneHopRefs,
+  ruleTitle,
+  splitTableRow,
+} from './spec.ts';
 import type { Rule, SpecSource } from './spec.ts';
 import { readState } from './state.ts';
 import type { TaskState } from './state.ts';
@@ -182,6 +191,68 @@ function isCommand(entry: string): boolean {
   return /^(pnpm|node|npx|bash|sh)\s/.test(entry);
 }
 
+/** Section 2 of an ordinary brief: the full text of each ref and its one-hop references. */
+function ruleTexts(task: TaskFile, spec: SpecSource | undefined): string[] {
+  const out: string[] = [];
+  out.push('## 2. 规则原文（来自 08，版本同 SPEC_REF）', '');
+  const rules = task.refs.map((ref) => findRule(ref, spec));
+  for (const rule of rules) out.push(...ruleSection(rule));
+  out.push('### 一跳引用', '');
+  const hopIds: string[] = [];
+  for (const rule of rules) {
+    for (const id of oneHopRefs(rule)) {
+      if (!task.refs.includes(id) && !hopIds.includes(id)) hopIds.push(id);
+    }
+  }
+  const hopRows: string[] = [];
+  for (const id of hopIds) {
+    try {
+      hopRows.push(threeColumnRow(findRule(id, spec)));
+    } catch {
+      // A mention that is not a rule at SPEC_REF (prose, retired id): nothing to quote.
+    }
+  }
+  if (hopRows.length === 0) out.push('（无）', '');
+  else out.push('| 编号 | 规则 | 状态 |', '| --- | --- | --- |', ...hopRows, '');
+  out.push(
+    '列名、错误码、枚举值以 `contracts/` 与 `db/schema.sql` 为准；技术实现以 ADR-0001 为准。规则原文与它们冲突时不要自行取舍，在输出的 `blocked_reason` 里写明。',
+    '',
+  );
+  return out;
+}
+
+/**
+ * Section 2 of a contract task brief (owner decision 2026-10-02, ops/approvals.yaml id 17): the
+ * 规划/04 sections named in `contract_sections`, verbatim, and the refs as id + title only
+ * (no BR text, no one-hop references), so that contract briefs stay under the size limit.
+ */
+function contractRules(task: TaskFile, spec: SpecSource | undefined): string[] {
+  const out: string[] = ['## 2. 契约依据（04 相关节原文；BR 只列编号与标题，版本同 SPEC_REF）', ''];
+  out.push('### 涉及的业务规则（只列编号与标题，原文在 08）', '');
+  if (task.refs.length === 0) out.push('（无）', '');
+  else {
+    for (const ref of task.refs) {
+      const rule = findRule(ref, spec);
+      out.push(`- ${rule.id}：${isRuleId(rule.id) ? ruleTitle(rule) : rule.file}`);
+    }
+    out.push('');
+  }
+  out.push(`### 04 相关节（${CONTRACTS_FILE}）`, '');
+  if (task.contract_sections.length === 0) {
+    out.push('（台账没有点名 04 的章节：按任务标题与第 6 节验收命令判断。）', '');
+  }
+  for (const section of task.contract_sections) {
+    out.push(`<!-- 04 §${section} 全文开始 -->`, '');
+    out.push(contractSection(section, spec), '');
+    out.push(`<!-- 04 §${section} 全文结束 -->`, '');
+  }
+  out.push(
+    '技术实现以 ADR-0001 为准。04 与 08 原文冲突时不要自行取舍，在输出的 `blocked_reason` 里写明。',
+    '',
+  );
+  return out;
+}
+
 /** Renders the brief; pure apart from reading rule text and AGENTS.md files. */
 export function renderBrief(input: BriefInput): string {
   const { task, state } = input;
@@ -199,30 +270,8 @@ export function renderBrief(input: BriefInput): string {
     '',
   );
 
-  out.push('## 2. 规则原文（来自 08，版本同 SPEC_REF）', '');
-  const rules = task.refs.map((ref) => findRule(ref, input.spec));
-  for (const rule of rules) out.push(...ruleSection(rule));
-  out.push('### 一跳引用', '');
-  const hopIds: string[] = [];
-  for (const rule of rules) {
-    for (const id of oneHopRefs(rule)) {
-      if (!task.refs.includes(id) && !hopIds.includes(id)) hopIds.push(id);
-    }
-  }
-  const hopRows: string[] = [];
-  for (const id of hopIds) {
-    try {
-      hopRows.push(threeColumnRow(findRule(id, input.spec)));
-    } catch {
-      // A mention that is not a rule at SPEC_REF (prose, retired id): nothing to quote.
-    }
-  }
-  if (hopRows.length === 0) out.push('（无）', '');
-  else out.push('| 编号 | 规则 | 状态 |', '| --- | --- | --- |', ...hopRows, '');
-  out.push(
-    '列名、错误码、枚举值以 `contracts/` 与 `db/schema.sql` 为准；技术实现以 ADR-0001 为准。规则原文与它们冲突时不要自行取舍，在输出的 `blocked_reason` 里写明。',
-    '',
-  );
+  if (task.type === 'contract') out.push(...contractRules(task, input.spec));
+  else out.push(...ruleTexts(task, input.spec));
 
   out.push('## 3. 可以改的路径', '');
   for (const p of task.paths) out.push(`- \`${p}\``);

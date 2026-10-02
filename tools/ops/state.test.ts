@@ -73,8 +73,8 @@ it('counts attempts before dispatch and refuses to go past the limits', () => {
   expect(readState('A1-03')?.attempts.impl).toBe(3);
 });
 
-it('[规划/11 §2.5] each review type has its own limit of 2 rounds', () => {
-  expect(ATTEMPT_LIMITS).toEqual({ impl: 3, 'spec-test': 2, code: 2 });
+it('[规划/11 §2.5] rule-test review has 2 rounds, code review 3, each its own counter', () => {
+  expect(ATTEMPT_LIMITS).toEqual({ impl: 3, 'spec-test': 2, code: 3 });
   expect(reviewKind('spec-test')).toBe('spec-test');
   for (const type of ['money', 'general', 'contract'] as const)
     expect(reviewKind(type)).toBe('code');
@@ -85,8 +85,9 @@ it('[规划/11 §2.5] each review type has its own limit of 2 rounds', () => {
   );
   // Two spec-test rounds used up do not take anything from the code review.
   bumpAttempt('A1-07', 'code', T0);
-  expect(bumpAttempt('A1-07', 'code', T0).attempts).toEqual({ impl: 0, 'spec-test': 2, code: 2 });
-  expect(() => bumpAttempt('A1-07', 'code', T0)).toThrow(/code attempts exhausted \(2 of 2/);
+  bumpAttempt('A1-07', 'code', T0);
+  expect(bumpAttempt('A1-07', 'code', T0).attempts).toEqual({ impl: 0, 'spec-test': 2, code: 3 });
+  expect(() => bumpAttempt('A1-07', 'code', T0)).toThrow(/code attempts exhausted \(3 of 3/);
 });
 
 function meta(over: Partial<CallMeta> = {}): CallMeta {

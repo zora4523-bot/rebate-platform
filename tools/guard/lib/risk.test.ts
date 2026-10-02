@@ -11,6 +11,7 @@ describe('ops/risk-map.yaml', () => {
   it('holds the initial rules in order', () => {
     expect(map.rules.map((r) => `${r.path} ${r.risk} ${r.impl}/${r.tester}/${r.review}`)).toEqual([
       'docs/** RV0 claude/none/codex',
+      'ops/tasks/** RV0 claude/none/codex',
       'contracts/** RV1 claude/codex/codex',
       'packages/contracts-ts/** RV1 claude/codex/codex',
       'apps/api/src/modules/health/** RV1 codex/claude/claude',
@@ -22,6 +23,12 @@ describe('ops/risk-map.yaml', () => {
       'packages/testing/** RV2 claude/none/codex',
       'test/** RV2 claude/none/codex',
     ]);
+  });
+
+  it('ledger files are RV0, the rest of ops/ stays RV2 (owner decision 2026-10-02)', () => {
+    expect(riskOfPath('ops/tasks/CT-01.yaml', map, cfg).risk).toBe('RV0');
+    expect(riskOfPath('ops/evidence/CT-01.json', map, cfg).risk).toBe('RV2');
+    expect(riskOfPath('ops/approvals.yaml', map, cfg).risk).toBe('RV2');
   });
 });
 

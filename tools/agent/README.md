@@ -118,7 +118,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 - **重派一定重新生成任务书**。第 2 次尝试起（在途状态的 `attempts.impl` ≥ 2），不管 `brief.md` 在不在都重新跑 `brief.ts`：任务书里的「第 n 次尝试」和「上一轮失败输出」取自在途状态，沿用旧任务书就丢了上一轮的失败输出（规划/11 §2.3「重试不用 resume」）。所以重派前编排者要先 `node tools/ops/state.ts set <id> --last-error <失败输出文件>`。
 - **停掉一次在跑的派工**：对输出里的 `pid` 发整组信号，`kill -TERM -- -<pid>`（负号表示整组）。包装脚本收到后把 Codex 进程组整组结束、写完 `meta.json` 再退出。只杀单个 pid 可能留下还在跑的包装脚本。
 
-评审不经 `dispatch.sh`：编排者先 `node tools/ops/state.ts bump-attempt <id> review --review-type <类型>`，再前台或后台跑 `codex-run.sh review <id> --review-type <同一类型> …`。轮次按评审类型分开计（规划/11 §2.5）：规则测试评审（`spec-test`）最多 2 轮，代码评审（`money`、`general`、`contract` 共用一个计数）最多 2 轮；没有产出就结束的调用由包装脚本还回那一轮。评审前的 `bump-attempt` 同样先查失败熔断，打开就退出 3，这个任务停下并报告。
+评审不经 `dispatch.sh`：编排者先 `node tools/ops/state.ts bump-attempt <id> review --review-type <类型>`，再前台或后台跑 `codex-run.sh review <id> --review-type <同一类型> …`。轮次按评审类型分开计（规划/11 §2.5）：规则测试评审（`spec-test`）最多 2 轮，代码评审（`money`、`general`、`contract` 共用一个计数）最多 3 轮（负责人 2026-10-02，`ops/approvals.yaml` 第 17 条）；没有产出就结束的调用由包装脚本还回那一轮。评审前的 `bump-attempt` 同样先查失败熔断，打开就退出 3，这个任务停下并报告。
 
 `post-run.sh <id>` 只读文件，不执行任务代码、不动 git、不动 worktree，输出一行 JSON：
 
