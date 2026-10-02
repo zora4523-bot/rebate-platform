@@ -1,0 +1,50 @@
+{
+  "task": "CT-03",
+  "spec_ref": "cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b",
+  "spec_commit": "45ffdc9",
+  "red_tests": [],
+  "risk_note": "Contract task (contracts/** and packages/contracts-ts/** are RV1, ops/tasks/** RV0). RV2 only because ops/evidence/** is outside the risk-map whitelist. No rule tests: spec_commit is the ledger commit. Rebased onto main 71ba848 after PR #6 and PR #10 were merged; contracts/ and packages/ identical to the reviewed head. No money path changed.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "eb66f16c415fca74b945e75278102a828cf611df",
+      "tree": "f24df39d2b2def48a848d208a4b34fedcce4d0d9",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-02T17:05:15Z",
+      "finished_at": "2026-10-02T17:09:27Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "scope": "round 1 on a670808 (now 41eafee): fail, 1 S1 + 7 S2; round 2 on the fix diff 71ce951 + 2c023bf (now c83f670 + 7ce4961), independent read-only Claude subagent 2026-10-03: pass, S1 closed, 1 S2 partly open (signedRequest path pattern accepts empty segments; exact signed_paths match still rejects them) recorded as follow-up"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "checklist_note": "contract reviews carry no money checklist (prompt review-contract.md: checklist [])",
+      "note": "round 3 (base 71ce951 = c83f670) on the round-2 fix 2c023bf (now 7ce4961): pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "833352e1f5760a722404dbc8f911918f6fda1490",
+    "test/spec": "fa605fb01e65f436e5f08371cb7df8b8a92c19b7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "tree": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "note": "unchanged money tree; result of the B2-01a long run bound to this tree hash (规划/11 §3.2)"
+  }
+}
