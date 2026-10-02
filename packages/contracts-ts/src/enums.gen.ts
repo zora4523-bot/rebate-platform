@@ -3,6 +3,57 @@
 // Regenerate: pnpm contracts:codegen (drift is checked by pnpm contracts:check)
 
 /**
+ * 权限点 key；标 step-up 的权限点每次操作都须二次验证（见 04 §11 与 specs/permissions.yaml）
+ * Source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05） (contracts/enums/admin.yaml).
+ */
+export const admin_permission = [
+  "user.list", // 用户列表浏览、筛选（非敏感字段）
+  "user.lookup", // 按 UID、完整手机号或订单号逐个查询
+  "pii.reveal_phone", // 查看完整手机号（step-up）
+  "pii.reveal_identity", // 查看完整身份证号、收款账号（step-up）
+  "fund.view", // 单个用户流水、提现单、对账明细
+  "audit.view_all", // 全部审计日志只读
+  "export", // 导出
+  "content.page", // 首页配置发布 / 回滚、草稿预览二维码
+  "content.pool", // 商品池、淘礼金池
+  "content.article", // 帮助中心、返利规则、公告、消息模板
+  "content.agreement", // 协议发布与提高最低版本 / 标记重签（step-up）
+  "content.poster", // 海报背景图上传、审核
+  "config.general", // 普通配置
+  "config.risk", // 风控规则与阈值（step-up）
+  "config.business", // 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
+  "switch.all", // 全部紧急开关（step-up）
+  "switch.payout", // 仅 withdraw.enabled、payout.enabled、payout.queue_paused（step-up）
+  "risk.freeze", // 冻结 / 解冻（step-up）
+  "risk.ban", // 封禁 / 解封（step-up）
+  "risk.blocklist", // 黑名单增删（step-up）
+  "risk.appeal", // 申诉处理
+  "union.binding_reset", // 用户联盟授权重置（step-up）
+  "union.binding_disable", // 用户联盟授权停用返利 / 恢复（step-up）
+  "union.account_auth", // 站长联盟授权管理（step-up）
+  "user.level", // 调等级（step-up）
+  "user.inviter", // 改上级（step-up）
+  "order.view", // 订单查询、手动同步
+  "order.claim", // 找回、维权处理
+  "order.assign", // 订单归属变更（step-up）
+  "order.hold", // 订单 hold / unhold
+  "order.restore", // 订单平台恢复、申诉恢复差错单（step-up）
+  "ticket.handle", // 客服工单处理
+  "ticket.data_export", // 个人信息副本导出（step-up）
+  "withdraw.review", // 提现审核、驳回
+  "payout.execute", // 执行打款、needs_manual 处置（step-up）
+  "payout.manual_entry", // 线下打款补录（step-up）
+  "settle.bill", // 月结账单确认、撤销定时、驳回、继续执行、补充批次（step-up）
+  "settle.statement_upload", // 联盟结算明细上传
+  "fund.adjust", // 人工调账（step-up）
+  "fund.writeoff", // 坏账核销（step-up）
+  "fund.settle_adjust", // 补差批次（step-up）
+  "fund.recon", // 对账与差错单处理
+  "agent.trace", // Agent trace 查询
+] as const;
+export type AdminPermission = (typeof admin_permission)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -895,7 +946,7 @@ export const link_event = [
 export type LinkEvent = (typeof link_event)[number];
 
 /**
- * open 与 convert 请求体 installed，缺省 unknown
+ * open 与 convert 请求体 installed，缺省 unknown；线上取值是字符串 "true" / "false" / "unknown"，不是 JSON 布尔
  * Source: BR-ATTR-27；规划/03 §4.5 (contracts/enums/trade.yaml).
  */
 export const installed_state = [
@@ -1018,6 +1069,7 @@ export type TljKind = (typeof tlj_kind)[number];
 
 /** Every enum of contracts/enums, by name. */
 export const enums = {
+  admin_permission,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

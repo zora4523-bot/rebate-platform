@@ -57,7 +57,7 @@ enums:
       open: POST /v1/links/{link_id}/open
   installed_state:
     source: BR-ATTR-27；规划/03 §4.5
-    description: open 与 convert 请求体 installed，缺省 unknown
+    description: open 与 convert 请求体 installed，缺省 unknown；线上取值是字符串 "true" / "false" / "unknown"，不是 JSON 布尔
     values:
       'true': 已安装
       'false': 未安装

@@ -60,6 +60,16 @@ it('data shapes of the link and search path match 04 §7', () => {
   expect(errorCodes[42901].headers).toEqual(['Retry-After']);
 });
 
+it('retry policy splits by data.reason where 08 §13.11 does', () => {
+  expect(errorCodes[50301].retry_kind_by_reason).toEqual({
+    maintenance: 'later',
+    not_launched: 'never',
+  });
+  expect(errorCodes[30101].retry_kind_by_reason).toEqual({ auth_unavailable: 'later' });
+  expect(errorCodes[30102].retry_kind_by_reason).toEqual({ auth_unavailable: 'later' });
+  expect(errorCodes[10001].retry_kind_by_reason).toEqual({});
+});
+
 it('every enum is non-empty with unique values', () => {
   for (const [name, values] of Object.entries(enums)) {
     expect(values.length, name).toBeGreaterThan(0);
@@ -82,4 +92,7 @@ it('enums carry the 04 §2 value sets', () => {
   expect(ledger_type).toHaveLength(13);
   expect(scene).toContain('watch_alert');
   expect(enums.notify_category).toEqual(['service', 'subscription', 'marketing']);
+  expect(enums.admin_permission).toContain('user.list');
+  expect(enums.admin_permission).toContain('payout.execute');
+  expect(enums.admin_permission).toHaveLength(43);
 });

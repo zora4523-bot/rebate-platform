@@ -22,6 +22,7 @@ export type ErrorCodeDef = {
   action: string;
   retry: string;
   retry_kind: RetryKind;
+  retry_kind_by_reason: Record<string, RetryKind>;
   data: Record<string, string[] | null>;
   headers: string[];
   sources: string[];
@@ -35,8 +36,9 @@ const RETRY_KINDS = ['never', 'after_action', 'later', 'immediate', 'not_applica
 type RetryKind = (typeof RETRY_KINDS)[number];
 
 const ENUM_NAME = /^[a-z][a-z0-9_]*$/;
-// Enum codes are wire values: letters, digits and underscores only (04 §5 snake_case / UPPER_CASE).
-const ENUM_VALUE = /^[A-Za-z0-9][A-Za-z0-9_]*$/;
+// Enum codes are wire values: letters, digits and underscores (04 §5 snake_case / UPPER_CASE);
+// dotted keys such as the admin permission points of 04 §11 (`user.list`) are allowed.
+const ENUM_VALUE = /^[A-Za-z0-9][A-Za-z0-9_]*(\.[A-Za-z0-9][A-Za-z0-9_]*)*$/;
 const DATA_FIELD = /^[a-z][a-z0-9_]*$/;
 const HTTP_STATUSES = new Set([400, 401, 403, 404, 409, 422, 429, 500, 503, 504]);
 
@@ -145,6 +147,7 @@ export function loadErrorCodes(file: string = errorCodesFile): {
       'action',
       'retry',
       'retry_kind',
+      'retry_kind_by_reason',
       'data',
       'headers',
       'sources',
@@ -165,6 +168,24 @@ export function loadErrorCodes(file: string = errorCodesFile): {
     if (!(RETRY_KINDS as readonly unknown[]).includes(retryKind)) {
       fail(where, `retry_kind must be one of ${RETRY_KINDS.join(', ')}`);
     }
+    const data = errorData(`${where}.data`, entry['data']);
+    const byReason: Record<string, RetryKind> = {};
+    const rawByReason = entry['retry_kind_by_reason'];
+    if (rawByReason !== undefined) {
+      if (!isRecord(rawByReason) || Object.keys(rawByReason).length === 0) {
+        fail(where, 'retry_kind_by_reason must be a non-empty mapping');
+      }
+      const reasons = data['reason'];
+      for (const [reason, kind] of Object.entries(rawByReason)) {
+        if (!Array.isArray(reasons) || !reasons.includes(reason)) {
+          fail(where, `retry_kind_by_reason: "${reason}" is not a listed data.reason value`);
+        }
+        if (!(RETRY_KINDS as readonly unknown[]).includes(kind)) {
+          fail(where, `retry_kind_by_reason.${reason} must be one of ${RETRY_KINDS.join(', ')}`);
+        }
+        byReason[reason] = kind as RetryKind;
+      }
+    }
     const phase = entry['phase'];
     if (phase !== undefined && phase !== 'P1') fail(where, 'phase must be P1 when present');
     const deprecated = entry['deprecated'];
@@ -176,7 +197,8 @@ export function loadErrorCodes(file: string = errorCodesFile): {
       action: text(`${where}.action`, entry['action']),
       retry: text(`${where}.retry`, entry['retry']),
       retry_kind: retryKind as RetryKind,
-      data: errorData(`${where}.data`, entry['data']),
+      retry_kind_by_reason: byReason,
+      data,
       headers:
         entry['headers'] === undefined ? [] : stringList(`${where}.headers`, entry['headers']),
       sources: stringList(`${where}.sources`, entry['sources']),
@@ -193,7 +215,13 @@ export function loadErrorCodes(file: string = errorCodesFile): {
     onlyKeys(where, entry, ['from', 'to', 'meaning', 'action', 'sources']);
     const from = entry['from'];
     const to = entry['to'];
-    if (typeof from !== 'number' || typeof to !== 'number' || !(from < to)) {
+    if (
+      typeof from !== 'number' ||
+      typeof to !== 'number' ||
+      !Number.isInteger(from) ||
+      !Number.isInteger(to) ||
+      !(from < to)
+    ) {
       fail(where, 'from / to must be integers with from < to');
     }
     if (codes.some((c) => c.code >= from && c.code <= to)) fail(where, 'overlaps a code');
@@ -263,6 +291,7 @@ export function renderErrorCodes(
     out.push(`    action: ${JSON.stringify(c.action)},`);
     out.push(`    retry: ${JSON.stringify(c.retry)},`);
     out.push(`    retry_kind: ${JSON.stringify(c.retry_kind)},`);
+    out.push(`    retry_kind_by_reason: ${JSON.stringify(c.retry_kind_by_reason)},`);
     out.push(`    data: ${JSON.stringify(c.data)},`);
     out.push(`    headers: ${JSON.stringify(c.headers)},`);
     out.push(`    sources: ${JSON.stringify(c.sources)},`);

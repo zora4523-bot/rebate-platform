@@ -13,7 +13,8 @@
 #   action      客户端动作（§13.11「客户端动作」列，去掉文案引用）
 #   retry       §13.11「可重试」列原文
 #   retry_kind  never（原样重发仍失败）/ after_action（完成前置动作后重放）/ later（等待后再发）/
-#               immediate（可立即自动重试，遵守退避）/ not_applicable（「—」）
+#               immediate（可立即自动重试，遵守退避）/ not_applicable（「—」）；不带 data.reason 时适用
+#   retry_kind_by_reason  §13.11 按 data.reason 区分可重试时，各 reason 的 retry_kind（优先于 retry_kind）
 #   data        data 里的字段：字段名 → 取值列表；~ 表示取值不在本表枚举（见来源条目）
 #   headers     响应头
 #   sources     来源条目（§13.11「来源条目」列）
@@ -154,6 +155,8 @@ codes:
     action: 弹 AuthSheet → 拉起授权 → 自动重放；auth_unavailable 不拉起授权、不外跳、只提示，不提供无返利购买
     retry: 授权后；auth_unavailable：稍后
     retry_kind: after_action
+    retry_kind_by_reason:
+      auth_unavailable: later
     data:
       auth_url: ~
       state: ~
@@ -165,6 +168,8 @@ codes:
     action: 同 30101
     retry: 同 30101
     retry_kind: after_action
+    retry_kind_by_reason:
+      auth_unavailable: later
     data:
       reason: [auth_unavailable]
     sources: [BR-ID-17, BR-ID-21, BR-ID-24, BR-TEXT-14]
@@ -306,7 +311,8 @@ codes:
     action: 找回入口置灰
     retry: 稍后
     retry_kind: later
-    sources: [BR-ATTR-17]
+    # §13.11 的来源列写的是映射出处；定义条目 BR-ATTR-17 按 04 §7 的说明一并记上。
+    sources: [08 §13.3 映射（后端功能规划 30104）, BR-ATTR-17]
   - code: 30301
     http: 422
     meaning: 余额不足
@@ -650,7 +656,7 @@ codes:
   - code: 44001
     http: 403
     meaning: 风控拦截（号段或手机号黑名单、设备或 IP 注册上限、封禁用户的受限操作）
-    action: 给申诉入口；文案取字典 risk_msg.<code>
+    action: 给申诉入口；文案取字典 risk_msg.<code>，未命中回落 error.44001
     retry: 否
     retry_kind: never
     data:
@@ -683,6 +689,9 @@ codes:
     action: maintenance 弹 Toast、购买按钮禁用；not_launched 购买按钮禁用、不弹 Toast；无 reason 按 maintenance
     retry: maintenance：稍后；not_launched：否
     retry_kind: later
+    retry_kind_by_reason:
+      maintenance: later
+      not_launched: never
     data:
       platform: ~
       reason: [maintenance, not_launched]

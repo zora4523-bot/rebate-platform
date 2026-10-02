@@ -10,7 +10,7 @@
 | `redocly.yaml` | lint 规则：`recommended-strict`（推荐规则集，警告一律按错误）；关掉的规则逐条写了原因 |
 | `.redocly.lint-ignore.yaml` | 精确到位置的例外，逐条写原因；手工维护，不用 `--generate-ignore-file` 重新生成 |
 | `error-codes.yaml` | 错误码：码值、HTTP 状态、含义、客户端动作、可重试、`data` 字段形状、来源条目（CT-01；码值只按 08 §13.11） |
-| `enums/*.yaml` | 枚举：按主题分文件（平台、商品与转链、订单、资金、身份、消息与 Agent），04 §2 与 08 §13 的取值（CT-01） |
+| `enums/*.yaml` | 枚举：按主题分文件（平台、商品与转链、订单、资金、身份、消息与 Agent、后台权限点），04 §2 与 08 §13 的取值（CT-01） |
 
 ## 以后会放在这里的文件（规划/02 §16.2）
 
@@ -54,7 +54,7 @@ TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载�
 ## 枚举与错误码的写法
 
 1. 枚举文件只有顶层键 `enums`；每个枚举 `<snake_case 名>: {source, description?, values}`，`values` 是「编码: 说明」。编码就是线上取值，不另起别名；说明不是用户文案（文案只在 08 BR-TEXT 与 `/v1/dict`）。
-2. 枚举名全仓唯一。P1、预埋、停用的值在说明里写明；停用且「编码保留不复用」的值不列入（如 `SELF_REBATE`、`NEGATIVE_BALANCE_OTHER`）。
+2. 枚举名全仓唯一。P1、预埋、停用的值在说明里写明；停用且「编码保留不复用」的值不列入（如 `SELF_REBATE`、`NEGATIVE_BALANCE_OTHER`）。04 只写了增量、没给全集的（`users.status` 只写了新增 `deleting`、`deleted`，`users.deleted_reason` 只写了 `merged`，同意渠道 `consent_channel` 只写了部分取值）暂不建枚举，由用到它们的任务补全取值后再加。
 3. `error-codes.yaml` 按码值升序；新码先登记 08 §13.11，再改本文件；废弃码保留并标 `deprecated: true`。字段含义见文件头注释。
 4. 两类文件都用仓库的严格 YAML 子集（`tools/lib/yaml-lite.ts`）解析：不用锚点、多行折叠和流式映射；含「: 」的值加引号。
 5. `openapi.yaml` 里的枚举字段与这里的取值保持一致，由 CT-02 起的契约任务逐个对齐。
