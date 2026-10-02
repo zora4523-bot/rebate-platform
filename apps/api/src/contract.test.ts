@@ -1,6 +1,6 @@
 // Contract conformance of the HTTP entries (规划/11 §4.1 契约行, ADR-0001 §4.2 #15, §7):
-// - every operationId in contracts/openapi.yaml maps to exactly one registered route, and
-//   every registered route is declared in the contract;
+// - every implemented operationId maps to exactly one api route; planned operations have
+//   no registered routes, and every registered route is declared in the contract;
 // - real responses validate against the dereferenced response schema with a strict Ajv2020.
 import { fileURLToPath } from 'node:url';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -98,6 +98,78 @@ function withoutImplicitHead(routes: readonly string[], declared: ReadonlySet<st
   });
 }
 
+function routeConformanceErrors(
+  operations: readonly ContractOperation[],
+  entries: ReadonlyMap<HttpEntry, readonly string[]>,
+): string[] {
+  const errors: string[] = [];
+  const declared = new Set(operations.map((operation) => operation.route));
+  const registered = new Set<string>();
+  for (const entry of HTTP_ENTRIES) {
+    const routes = withoutImplicitHead(entries.get(entry) ?? [], declared);
+    if (new Set(routes).size !== routes.length) errors.push(`${entry}: duplicate routes`);
+    for (const route of routes) {
+      if (!declared.has(route)) errors.push(`${entry}: undeclared route ${route}`);
+      registered.add(route);
+    }
+  }
+  const apiRoutes = withoutImplicitHead(entries.get('api') ?? [], declared);
+  for (const { operationId, route, operation } of operations) {
+    if ('x-implementation' in operation) {
+      if (operation['x-implementation'] !== 'planned') {
+        errors.push(`${operationId}: x-implementation must be planned`);
+      } else if (registered.has(route)) {
+        errors.push(`${operationId}: planned route is registered`);
+      }
+    } else if (apiRoutes.filter((registeredRoute) => registeredRoute === route).length !== 1) {
+      errors.push(`${operationId}: expected exactly one api route`);
+    }
+  }
+  return errors;
+}
+
+it('[AC-CT-02a#1] accepts implemented or planned operations and rejects registered planned routes and invalid markers', () => {
+  const document = (extension: { 'x-implementation'?: unknown } = {}): OpenAPIV3_1.Document => ({
+    openapi: '3.1.0',
+    info: { title: 'Route conformance fixture', version: '1.0.0' },
+    paths: {
+      '/v1/things/{thing_id}': {
+        get: {
+          operationId: 'getThing',
+          responses: { '200': { description: 'OK' } },
+          ...extension,
+        },
+      },
+    },
+  });
+  const implemented = operationsOf(document());
+  const planned = operationsOf(document({ 'x-implementation': 'planned' }));
+  const routes = ['GET /v1/things/:thing_id', 'HEAD /v1/things/:thing_id'] as const;
+  expect(routeConformanceErrors(implemented, new Map([['api', routes]]))).toEqual([]);
+  expect(routeConformanceErrors(planned, new Map())).toEqual([]);
+  for (const entry of HTTP_ENTRIES) {
+    expect(routeConformanceErrors(planned, new Map([[entry, routes]]))).toEqual([
+      'getThing: planned route is registered',
+    ]);
+  }
+  for (const value of ['implemented', '', null, undefined, true, 1, [], {}]) {
+    const invalid = operationsOf(document({ 'x-implementation': value }));
+    expect(routeConformanceErrors(invalid, new Map([['api', routes]]))).toEqual([
+      'getThing: x-implementation must be planned',
+    ]);
+  }
+  expect(routeConformanceErrors(implemented, new Map([['admin', routes]]))).toEqual([
+    'getThing: expected exactly one api route',
+  ]);
+  expect(routeConformanceErrors(implemented, new Map([['api', [...routes, routes[0]]]]))).toEqual([
+    'api: duplicate routes',
+    'getThing: expected exactly one api route',
+  ]);
+  expect(routeConformanceErrors(planned, new Map([['stream', ['POST /undeclared']]]))).toEqual([
+    'stream: undeclared route POST /undeclared',
+  ]);
+});
+
 describe('contracts/openapi.yaml', () => {
   let document: OpenAPIV3_1.Document;
   let operations: ContractOperation[];
@@ -121,22 +193,9 @@ describe('contracts/openapi.yaml', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('maps every operationId to exactly one registered route and every route to an operation', () => {
-    const declared = new Set(operations.map((operation) => operation.route));
-    const registered = new Set<string>();
-    for (const entry of HTTP_ENTRIES) {
-      const routes = withoutImplicitHead(apps.get(entry)?.routes ?? [], declared);
-      // No duplicates inside an entry, and nothing the contract does not declare.
-      expect(new Set(routes).size).toBe(routes.length);
-      expect(routes.filter((route) => !declared.has(route))).toEqual([]);
-      for (const route of routes) registered.add(route);
-    }
-    expect([...registered].sort()).toEqual([...declared].sort());
-    // The `api` entry serves the operation list of this skeleton exactly once each.
-    const apiRoutes = withoutImplicitHead(apps.get('api')?.routes ?? [], declared);
-    for (const operation of operations) {
-      expect(apiRoutes.filter((route) => route === operation.route)).toHaveLength(1);
-    }
+  it('[AC-CT-02a#2] maps implemented operations to exactly one api route, forbids planned routes and rejects undeclared routes', () => {
+    const entries = new Map([...apps].map(([entry, { routes }]) => [entry, routes] as const));
+    expect(routeConformanceErrors(operations, entries)).toEqual([]);
   });
 
   it.each(HTTP_ENTRIES)(

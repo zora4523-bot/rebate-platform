@@ -1,0 +1,52 @@
+{
+  "task": "CT-02a",
+  "spec_ref": "cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b",
+  "spec_commit": "6775814",
+  "red_tests": [],
+  "risk_note": "Contract task. RV2 because apps/api/src/contract.test.ts and ops/evidence/** are outside the risk-map whitelist (contracts/** and packages/contracts-ts/** are RV1, ops/tasks/** RV0). No rule tests: spec_commit is the ledger commit; the consistency-test commit by Codex (fd78ee0) lies in the task paths after it. Rebased onto main adac02c after PR #6 (CT-01) was merged. No money path changed.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "5d577da6411767f803e3d65b424b505b6d9c12fd",
+      "tree": "059842af0b8243cc3ec67d561a81754220535521",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-02T16:58:40Z",
+      "finished_at": "2026-10-02T17:00:58Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "scope": "round 2 on ea0a428 (now ebe26a3): pass, 2 S2 closed in 8418e18 (now a596001); incremental re-check of a596001 + dee3f06 (independent read-only Claude subagent, 2026-10-03): pass, 0 S0/S1/S2"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 4,
+      "checklist_note": "contract reviews carry no money checklist (prompt review-contract.md: checklist [])",
+      "round3": "fail, 2 S1: contracts/openapi.yaml#ConvertLinkRequest#convertLink, contracts/openapi.yaml#ParseResult#exclusive-result; fixed in 9100002 (now dee3f06)",
+      "round4": "pass, 0 findings (base a596001, thread 01a0fd88): confirms the round-3 fix",
+      "exception": "Round 4 exceeds the 3-round code-review cap (规划/11 §2.5). Decided by the orchestrator session under the owner's standing authorization for process-gate tweaks (ops/approvals.yaml id 16), 2026-10-03: round 3 found S1s whose fix needs an independent same-vendor re-review; contract task, no money or attribution rules. Scope limited to the fix commit and its type regression tests; no round 5. Record: couli-runs/CT-02a/exception-round4.md"
+    }
+  ],
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "833352e1f5760a722404dbc8f911918f6fda1490",
+    "test/spec": "fa605fb01e65f436e5f08371cb7df8b8a92c19b7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "tree": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "note": "unchanged money tree; result of the B2-01a long run bound to this tree hash (规划/11 §3.2)"
+  }
+}

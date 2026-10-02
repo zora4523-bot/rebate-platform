@@ -24,6 +24,281 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register a device
+         * @description Issues `device_id` and `install_secret` after the user has agreed to the privacy policy
+         *     (BR-ID-09). The client stores install_secret only in Keychain / Keystore / HUKS and signs
+         *     later requests with it. Not signed: the device has no secret yet.
+         */
+        post: operations["registerDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/sms-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an SMS verification code
+         * @description Order of checks: signature 10401 / 10402 → 44001 → 44003 → 42901 (BR-ID-05). Limits per
+         *     phone: 1 per 60 s, 10 per natural day (+08:00); a code is 6 digits and valid 5 minutes.
+         */
+        post: operations["sendSmsCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/login/sms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log in (or register) with an SMS code
+         * @description Creates the account on first login. The request carries the legal versions the user
+         *     agreed to and the time of agreement (BR-ID-04). An `invite_code` is ignored for an
+         *     existing account; `invite_bind` is present only when a non-empty invite_code was sent
+         *     (BR-INV-06). Errors: 20002 wrong code, 20003 expired code (BR-ID-05).
+         */
+        post: operations["loginBySms"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the token pair
+         * @description Every refresh rotates the refresh token (BR-ID-07). Resubmitting a rotated token outside
+         *     the 30-second grace revokes the whole session chain and returns 10404. Clients refresh
+         *     single-flight: N concurrent 10002 trigger one refresh.
+         */
+        post: operations["refreshToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current user
+         * @description Nickname and default avatar, invite code, whether an inviter is bound (only yes / no),
+         *     identity level (BR-ID-01), single-balance summary, union authorization states, real-name
+         *     state, `need_reconsent` (BR-ID-12) and the risk state for the ban / freeze page. No
+         *     user level (拍板第二批 OPS-20).
+         */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client configuration
+         * @description Configuration, client switches, texts and the derived per-platform purchase status
+         *     (04 §10.1, excerpt). Clients keep the last good response (LKG) and fall back to it and
+         *     then to the bundled default when the request fails (03 §4.3). Keys whose inner shape is
+         *     not fixed by 04 yet are free-form objects and get typed by the task that consumes them.
+         *     x-auth is optional although 04 §6.2 lists none: h5_release buckets by user_id when
+         *     logged in (拍板第二批 TECH-28) and agent availability depends on the whitelist user
+         *     (BR-AI-12).
+         */
+        get: operations["getConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/products/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search one platform
+         * @description Keyword search on one platform (04 §6.3). Coupon-price and rebate sorting reorder only
+         *     the current page (拍板第二批 TRADE-20). The cursor is opaque and carries only the search
+         *     session and page (BR-PROD-08); no_rebate items are filtered out (BR-PRICE-08). With no
+         *     result the response carries `fallback_items` (the platform's first 10 feed items). Union
+         *     failure without a usable cache returns 50304 with `data.platform` (BR-PROD-07); the
+         *     product pool is never served as search results. Cards only register a link_id with its
+         *     quote snapshot and are not converted (BR-PRICE-12): buying goes through
+         *     `POST /v1/links/{link_id}/open`. `x-auth` is optional although 04 §6.3 lists none:
+         *     rebate amounts are computed for the current user and links are registered per user
+         *     (BR-PRICE-11, BR-PRICE-12; 08 wins over 04).
+         */
+        get: operations["searchProducts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/products/{product_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Product detail
+         * @description Coupon, final price, estimated rebate and quote time of one product (BR-PRICE-05,
+         *     BR-PRICE-11), with a freshly registered `link_id` (BR-PRICE-12). On union failure the
+         *     server may answer with the product-pool price and `stale=true` (拍板第二批 TRADE-12).
+         *     A response whose derived key differs from the requested one, or cannot be derived, is
+         *     30143 ref_expired (BR-PROD-03, BR-PROD-05). `item_ref` of the card the user tapped is
+         *     passed through unchanged (BR-PROD-11). x-auth optional for the same reason as search.
+         */
+        get: operations["getProduct"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/inputs/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recognise pasted links, tokens or share text
+         * @description Shared by clipboard, search box, share extension and Agent (04 §8.5). At most 3 links or
+         *     tokens of one text are handled, one card each; the same product key yields one card
+         *     (BR-PROD-08 ⑤). Cards only register a link_id with the quote snapshot and are never
+         *     converted here (拍板第二批 TRADE-03); a pasted link without rebate still yields a card
+         *     with `rebate_basis=no_rebate` (BR-PRICE-08). Nothing recognisable as a concrete product
+         *     returns 30132 without candidate cards (拍板第二批 TRADE-07); a recognised product
+         *     whose key cannot be derived returns 30131 (BR-PROD-03). How a platform turns a link or
+         *     token into a product is the union adapter's business and is not visible here. x-auth is
+         *     optional although 04 §6.3 lists none, for the same reason as search.
+         */
+        post: operations["parseInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/links/{link_id}/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buy — re-check the price and convert
+         * @description The only entry for a purchase tap (拍板第二批 TRADE-03): converts in real time with the
+         *     identity fixed in the link snapshot and re-checks the price before the jump
+         *     (BR-PRICE-13; ownership rules BR-ATTR-05). `price_changed=true` means the client asks
+         *     the user before jumping; whenever the new price differs, `new_link_id` replaces the card
+         *     (BR-PRICE-12). Re-check failure with a cached link of this user ≤ 900 s jumps with
+         *     `requote_failed=true`; without cache, 50303. Share links open anonymously; other links
+         *     need login (10001). amount_unknown cards are converted without price re-check
+         *     (BR-PRICE-08). The client waits at most 8 s and retries with the same Idempotency-Key
+         *     (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14). When the
+         *     rebate drops from > 0 to 0 (new_rebate_max_fen = 0) the client also asks before jumping,
+         *     even with price_changed=false (BR-PRICE-13).
+         */
+        post: operations["openLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/links/convert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register and convert in one call (entries without a link_id)
+         * @description Only for entries that have no link_id, such as the H5 bridge method
+         *     `trade.convertAndOpen` (scene=h5): registers the link and then
+         *     re-checks and converts exactly like open, returning `link_id` plus the open result
+         *     (拍板第二批 TRADE-03). Pass `product_key` with the tapped card's `item_ref` (a missing
+         *     item_ref is not an error, BR-PROD-11), or `url`. A url whose product key cannot be
+         *     derived is 30131 and nothing is registered (BR-PROD-03). A missing or invalid `scene`
+         *     is 20001 (BR-ATTR-08). Writes a link_log `convert` row (BR-ATTR-14).
+         */
+        post: operations["convertLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -45,20 +320,707 @@ export interface components {
         };
         /** @description Response envelope of 规划/04 §5 carrying the health payload. */
         HealthzResponse: {
-            /**
-             * Format: int32
-             * @description 0 means success.
-             * @enum {integer}
-             */
-            code: 0;
+            code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["HealthzData"];
-            /** @description Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID. */
-            trace_id: string;
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * Format: int32
+         * @description 0 means success.
+         * @enum {integer}
+         */
+        SuccessCode: 0;
+        /** @description Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID. */
+        TraceId: string;
+        /** @description Entity id, a UUIDv7 string (04 §5). */
+        Id: string;
+        /** @description `<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02). */
+        ProductKey: string;
+        /** @description Server-signed opaque product reference; passed through unchanged (BR-PROD-11). */
+        ItemRef: string;
+        /**
+         * Format: int64
+         * @description Amount in fen (ADR-0001 §4.2 item 3).
+         */
+        Fen: number;
+        /**
+         * Format: int64
+         * @description Amount in fen, null when unknown.
+         */
+        NullableFen: number | null;
+        /**
+         * @description Platform (contracts/enums/platform.yaml platform).
+         * @enum {string}
+         */
+        PlatformCode: "taobao" | "jd" | "pdd" | "meituan" | "vip" | "douyin" | "eleme" | "kuaishou" | "suning";
+        /**
+         * @description Client platform (contracts/enums/platform.yaml client_platform).
+         * @enum {string}
+         */
+        ClientPlatformCode: "ios" | "android" | "harmony" | "h5" | "admin";
+        /**
+         * @description Install channel (contracts/enums/platform.yaml install_channel).
+         * @enum {string}
+         */
+        InstallChannelCode: "appstore" | "official" | "huawei" | "agc";
+        /**
+         * @description Search sort (contracts/enums/trade.yaml sort).
+         * @enum {string}
+         */
+        SortCode: "relevance" | "sales_desc" | "final_price_asc" | "rebate_desc";
+        /**
+         * @description contracts/enums/trade.yaml rebate_basis. The three 查返利 states are derived from
+         *     coupon_fen and rebate_basis only (BR-PRICE-21); amount_unknown and login_required are
+         *     outside them.
+         * @enum {string}
+         */
+        RebateBasis: "normal" | "price_compare_risk" | "no_rebate" | "amount_unknown" | "login_required";
+        /**
+         * @description contracts/enums/trade.yaml availability.
+         * @enum {string}
+         */
+        Availability: "ok" | "off_shelf" | "coupon_gone" | "ref_expired" | "price_unavailable" | "unknown";
+        /**
+         * @description Whether the platform app is installed, as detected by the client (BR-ATTR-27 ①); the
+         *     strings "true" / "false" / "unknown", default unknown; H5 always sends unknown.
+         * @enum {string}
+         */
+        InstalledState: "true" | "false" | "unknown";
+        JumpStep: {
+            /**
+             * @description contracts/enums/trade.yaml jump_type.
+             * @enum {string}
+             */
+            type: "sdk" | "scheme" | "universal_link" | "h5" | "copy_tpwd";
+            /** @description URL, scheme or token to execute; produced by the server only. */
+            value: string;
+        };
+        /**
+         * @description Executed strictly in order; clients never build schemes or add fallbacks themselves
+         *     (BR-ATTR-27, 03 §4.5). The client jumps only after a user tap (BR-ATTR-21).
+         */
+        JumpPlan: {
+            primary: components["schemas"]["JumpStep"];
+            fallbacks: components["schemas"]["JumpStep"][];
+            /**
+             * Format: date-time
+             * @description Until when the returned union URL can be used directly (BR-ATTR-05); it does not
+             *     limit opening the link_id again.
+             */
+            expire_at: string;
+        };
+        /**
+         * @description Error response (04 §5, §7). `data` is present only for codes that define it; its fields
+         *     per code are listed in contracts/error-codes.yaml, so it is left open here.
+         */
+        ErrorEnvelope: {
+            /** Format: int32 */
+            code: number;
+            /** @description Fallback text only; clients show the dictionary text error.<code>. */
+            msg: string;
+            data?: {
+                [key: string]: unknown;
+            };
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Configuration block whose inner shape is not fixed by 规划/04 yet. */
+        FreeForm: {
+            [key: string]: unknown;
+        };
+        RegisterDeviceRequest: {
+            /** @description SHA-256 (lowercase hex) of IDFV / OAID (ANDROID_ID fallback) / ODID (BR-ID-09). */
+            device_hash: string;
+        };
+        RegisterDeviceData: {
+            device_id: components["schemas"]["Id"];
+            /** @description Signing secret, stored only in Keychain / Keystore / HUKS. */
+            install_secret: string;
+        };
+        RegisterDeviceResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["RegisterDeviceData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Mainland mobile number, 11 digits. */
+        Phone: string;
+        SendSmsCodeRequest: {
+            phone: components["schemas"]["Phone"];
+            /**
+             * @description contracts/enums/identity.yaml sms_purpose.
+             * @enum {string}
+             */
+            purpose: "login" | "bind" | "step_up";
+            /** @description Human-verification token, required after 44003 (BR-ID-05). */
+            captcha_token?: string;
+        };
+        SendSmsCodeData: {
+            /**
+             * Format: int32
+             * @description Seconds until another code may be requested (60, BR-ID-05).
+             */
+            resend_after_sec: number;
+            /**
+             * Format: int32
+             * @description Validity of the code in seconds (300, BR-ID-05).
+             */
+            expires_in_sec: number;
+        };
+        SendSmsCodeResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["SendSmsCodeData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Versions of the privacy policy and user agreement the user agreed to (BR-ID-04). */
+        LegalVersions: {
+            /** Format: int32 */
+            privacy: number;
+            /** Format: int32 */
+            agreement: number;
+        };
+        LoginBySmsRequest: {
+            phone: components["schemas"]["Phone"];
+            code: string;
+            legal_versions: components["schemas"]["LegalVersions"];
+            /**
+             * Format: date-time
+             * @description When the box was ticked or the confirm dialog accepted (client clock).
+             */
+            consent_at: string;
+            /** @description Optional invite code; ignored for an existing account (BR-INV-06). */
+            invite_code?: string;
+        };
+        TokenPair: {
+            access_token: string;
+            /** Format: date-time */
+            access_expires_at: string;
+            refresh_token: string;
+            /** Format: date-time */
+            refresh_expires_at: string;
+        };
+        /** @description Result of binding the invite code sent at registration (BR-INV-06). */
+        InviteBind: {
+            /** @enum {string} */
+            result: "bound" | "failed" | "ignored_existing_user";
+            /**
+             * Format: int32
+             * @description Error code when result=failed (50001 = internal binding error).
+             * @enum {integer|null}
+             */
+            code: 30401 | 30403 | 30408 | 42901 | 50001 | null;
+        };
+        LoginData: {
+            user_id: components["schemas"]["Id"];
+            is_new_user: boolean;
+            tokens: components["schemas"]["TokenPair"];
+            invite_bind?: components["schemas"]["InviteBind"];
+        };
+        LoginResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["LoginData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        RefreshTokenRequest: {
+            refresh_token: string;
+        };
+        TokenPairResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["TokenPair"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Summary of the single balance (拍板第二批 §8 ADD-06); meanings per BR-FUND-18. */
+        MeBalance: {
+            available_fen: components["schemas"]["Fen"];
+            withdrawable_fen: components["schemas"]["Fen"];
+            estimated_total_fen: components["schemas"]["Fen"];
+        };
+        UnionBindingState: {
+            platform: components["schemas"]["PlatformCode"];
+            /**
+             * @description contracts/enums/identity.yaml union_binding_status.
+             * @enum {string}
+             */
+            status: "unbound" | "pending_auth" | "active" | "invalid" | "released" | "blocked";
+        };
+        /** @description Risk state for the ban / freeze explanation page (BR-ID-31, 拍板第二批 OPS-12). */
+        RiskInfo: {
+            /**
+             * @description contracts/enums/identity.yaml risk_state.
+             * @enum {string}
+             */
+            state: "normal" | "frozen" | "appealing" | "banned";
+            /** @description User-visible reason category (BR-ID-31); null when state=normal. */
+            reason_category: string | null;
+            /** Format: date-time */
+            frozen_until: string | null;
+        };
+        Me: {
+            user_id: components["schemas"]["Id"];
+            nickname: string;
+            /** Format: uri */
+            avatar_url: string;
+            /** @description Null when the user cannot invite. */
+            invite_code: string | null;
+            /** @description Only whether an inviter is bound, never who. */
+            inviter_bound: boolean;
+            /**
+             * @description contracts/enums/identity.yaml identity_level (BR-ID-01).
+             * @enum {string}
+             */
+            identity_level: "basic" | "guest" | "member" | "phone" | "realname";
+            /** @description Whether a phone number is bound (BR-ID-01). */
+            phone_bound: boolean;
+            balance: components["schemas"]["MeBalance"];
+            union_bindings: components["schemas"]["UnionBindingState"][];
+            /**
+             * @description contracts/enums/identity.yaml realname_status.
+             * @enum {string}
+             */
+            realname_status: "none" | "verified" | "failed";
+            /** @description The user must agree to the current legal version again (BR-ID-12). */
+            need_reconsent: boolean;
+            risk: components["schemas"]["RiskInfo"];
+        };
+        MeResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Me"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Derived from convert.enabled.<platform> and convert.off_reason.<platform> (04 §10.1); lets
+         *     cards tell "maintenance" from "coming soon" before a tap. The tap result (50301
+         *     data.reason) still wins.
+         * @enum {string}
+         */
+        PlatformPurchaseStatus: "on" | "maintenance" | "not_launched";
+        ConfigFeatures: {
+            /**
+             * @description Client switches by key: agent.entry.visible, clipboard.enabled.<platform>,
+             *     home.fallback, h5.route.<page>.enabled, ui.grayscale (03 §4.3).
+             */
+            flags: {
+                [key: string]: boolean;
+            };
+            /** @description Purchase status by platform code. */
+            platform_status: {
+                [key: string]: components["schemas"]["PlatformPurchaseStatus"];
+            };
+        };
+        ConfigLegalPrivacy: {
+            /** Format: int32 */
+            version: number;
+            /**
+             * Format: int32
+             * @description Below this version the user must agree again (BR-ID-12).
+             */
+            min_version: number;
+        };
+        ConfigLegalAgreement: {
+            /** Format: int32 */
+            version: number;
+        };
+        /** @description legal.privacy.version, legal.privacy.min_version, legal.agreement.version (04 §10.1). */
+        ConfigLegal: {
+            privacy: components["schemas"]["ConfigLegalPrivacy"];
+            agreement: components["schemas"]["ConfigLegalAgreement"];
+        };
+        ConfigInvite: {
+            /** @description Must be false in the MVP (BR-INV-06). */
+            required: boolean;
+            /**
+             * Format: int32
+             * @description Window for entering an inviter later (BR-INV-07).
+             */
+            backfill_hours: number;
+        };
+        /** @description Agent availability and guest quota (04 §10.1; BR-AI-11, BR-AI-12). */
+        ConfigAgent: {
+            enabled: boolean;
+            whitelist_only: boolean;
+            filing_text: string;
+            examples: string[];
+            /** Format: int32 */
+            guest_daily_quota: number;
+            require_phone: boolean;
+        };
+        /** @description H5 version bucket for this caller (拍板第二批 TECH-28). */
+        ConfigH5Release: {
+            version: string;
+        };
+        /** @description WeCom customer-service chat link (chat entry only). */
+        ConfigKf: {
+            /** Format: uri */
+            url: string;
+        };
+        /**
+         * @description Top-level keys of /v1/config (04 §10.1, excerpt). jump_tip, clipboard, bridge_origins,
+         *     auth_tips, compliance and display are not shaped by 04 yet and stay free-form; the task
+         *     that consumes each one types it (bridge_origins with CT-03, clipboard with B1-07).
+         */
+        Config: {
+            /** @description Version of the /v1/dict dictionary (BR-TEXT-12). */
+            dict_version: string;
+            /** Format: uri */
+            h5_base_url: string;
+            h5_release: components["schemas"]["ConfigH5Release"];
+            share_domains: string[];
+            features: components["schemas"]["ConfigFeatures"];
+            /** @description Custom text keys, e.g. withdraw.sla_text (BR-TEXT-07). */
+            texts: {
+                [key: string]: string;
+            };
+            legal: components["schemas"]["ConfigLegal"];
+            invite: components["schemas"]["ConfigInvite"];
+            agent: components["schemas"]["ConfigAgent"];
+            kf: components["schemas"]["ConfigKf"];
+            jump_tip: components["schemas"]["FreeForm"];
+            clipboard: components["schemas"]["FreeForm"];
+            bridge_origins: components["schemas"]["FreeForm"];
+            auth_tips: components["schemas"]["FreeForm"];
+            compliance: components["schemas"]["FreeForm"];
+            display: components["schemas"]["FreeForm"];
+        };
+        ConfigResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Config"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Buy button chosen by the server; the client never decides it (BR-TEXT-12, 拍板第二批
+         *     TRADE-21): btn.buy.coupon (有券有返), btn.buy (无券有返 and amount_unknown),
+         *     btn.buy.no_rebate (无返利); other keys come with login_required and taolijin cards.
+         */
+        ProductCta: {
+            text_key: string;
+        };
+        /** @description Taolijin of the card, absent when there is none (BR-PRICE-08); never folded into prices. */
+        ProductTlj: {
+            amount_fen: components["schemas"]["Fen"];
+            /** Format: int32 */
+            remain: number;
+            /**
+             * @description contracts/enums/trade.yaml tlj_kind.
+             * @enum {string}
+             */
+            kind: "ours" | "brand_open" | "third_party" | "unknown";
+        };
+        /**
+         * @description Product card (04 §8.3). Price semantics BR-PRICE-01 / 05; rebate_* and est_net_price_fen
+         *     are computed per request for the current caller and never cached (BR-PRICE-11). The card
+         *     carries a registered `link_id`; buying always goes through POST /v1/links/{link_id}/open
+         *     (BR-PRICE-12, BR-PRICE-21). amount_unknown cards have product_key, prices and rebate
+         *     null (BR-PRICE-08).
+         */
+        ProductCard: {
+            /** @description Agent card sequence id (c1, c2…), only on Agent cards (BR-AI-05). */
+            card_id?: string;
+            /** @description Opaque product key (BR-PROD-02); null only on amount_unknown cards. */
+            product_key: string | null;
+            /** @description Opaque signed reference passed through unchanged (BR-PROD-11). */
+            item_ref: string | null;
+            platform: components["schemas"]["PlatformCode"];
+            /** @description Shop type, e.g. tmall for Tmall shops on taobao. */
+            shop_type?: string | null;
+            title: string | null;
+            /** Format: uri */
+            image: string | null;
+            shop_name?: string | null;
+            price_fen: components["schemas"]["NullableFen"];
+            coupon_fen: components["schemas"]["NullableFen"];
+            final_price_fen: components["schemas"]["NullableFen"];
+            est_net_price_fen: components["schemas"]["NullableFen"];
+            rebate_min_fen: components["schemas"]["NullableFen"];
+            rebate_max_fen: components["schemas"]["NullableFen"];
+            rebate_basis: components["schemas"]["RebateBasis"];
+            /** @description Server-generated labels (有券, 预售, 标题显示为 X…); no per-card reasons. */
+            benefit_tags: string[];
+            /**
+             * @description Agent cards only (BR-AI-24); contracts/enums/trade.yaml match_tag.
+             * @enum {string}
+             */
+            match_tag?: "matched" | "relaxed" | "spec_unconfirmed";
+            spec_text?: string | null;
+            /** @description Presale; shown with the total price (BR-PRICE-22). */
+            is_presale: boolean;
+            tlj?: components["schemas"]["ProductTlj"];
+            link_id: components["schemas"]["Id"];
+            cta: components["schemas"]["ProductCta"];
+            /**
+             * Format: date-time
+             * @description Receipt time of the union response the price is based on (BR-PRICE-11).
+             */
+            quoted_at: string | null;
+            stale: boolean;
+            /**
+             * Format: int32
+             * @description Age of the price in seconds, computed by the server (BR-PRICE-11).
+             */
+            age_sec: number | null;
+            /**
+             * @description Price source (BR-PRICE-16).
+             * @enum {string}
+             */
+            source: "taobao_union" | "jd_union" | "pdd_union";
+            /** @description Ordered dictionary keys (BR-PRICE-17), including price_basis. */
+            disclaimer_keys: string[];
+            /** @description Ad label (BR-TEXT-17); null on Agent relevance cards. */
+            ad_label?: string | null;
+            availability: components["schemas"]["Availability"];
+        };
+        SearchProductsData: {
+            items: components["schemas"]["ProductCard"][];
+            next_cursor: string | null;
+            /** @description As reported by the union, not by the filtered page size (BR-PRICE-08). */
+            has_more: boolean;
+            /** @description Only when items is empty on the first page; the platform's first 10 feed items. */
+            fallback_items: components["schemas"]["ProductCard"][];
+        };
+        SearchProductsResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["SearchProductsData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        ProductResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ProductCard"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        ParseInputRequest: {
+            /**
+             * @description Locally filtered clipboard or typed text (03 §4.6). Text outside links and tokens
+             *     is untrusted (BR-AI-05); prices in it are only material.claimed_price_fen.
+             */
+            text: string;
+            /**
+             * @description Entry the text came from (subset of contracts/enums scene). Attribution-bearing
+             *     scenes (share, agent, …) cannot be chosen by the client: share links come only from
+             *     POST /v1/shares (phone level), Agent cards from the Agent service (BR-ATTR-05, 08).
+             *     share_ext is P1.
+             * @enum {string}
+             */
+            scene: "clipboard" | "search" | "share_ext";
+        };
+        /** @description One candidate found by parse_input (04 §8.5). */
+        InputHit: {
+            platform: components["schemas"]["PlatformCode"];
+            /**
+             * @description contracts/enums/trade.yaml input_kind.
+             * @enum {string}
+             */
+            kind: "tpwd" | "url" | "text";
+            /** @description The matched link or token as it appeared in the input. */
+            raw: string;
+        };
+        /**
+         * @description Result of one hit; exactly one of `card` and `error_code` is present. The oneOf branches
+         *     declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).
+         */
+        ParseResult: {
+            hit: components["schemas"]["InputHit"];
+            card?: components["schemas"]["ProductCard"];
+            /**
+             * Format: int32
+             * @description Error code for this hit (30131, 30132, 30141, 50301…), see error-codes.yaml.
+             */
+            error_code?: number;
+        } & ({
+            card: components["schemas"]["ProductCard"];
+        } | {
+            /** Format: int32 */
+            error_code: number;
+        });
+        ParseInputData: {
+            results: components["schemas"]["ParseResult"][];
+        };
+        ParseInputResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ParseInputData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        OpenLinkRequest: {
+            installed?: components["schemas"]["InstalledState"];
+            /**
+             * @description Buy without rebate (BR-ID-18).
+             * @default false
+             */
+            no_rebate?: boolean;
+            /**
+             * @description Only with no_rebate=true; default auth_declined. The server overrides it with
+             *     relation_conflict / binding_blocked when it decides so (BR-ID-18).
+             * @enum {string}
+             */
+            no_rebate_reason?: "auth_declined" | "auth_failed";
+            /** @description page.module.slot of the tapped button (03 §4.7). */
+            spm?: string;
+        };
+        /**
+         * @description Response of open (04 §8.4). old_final_price_fen is the link's quoted_final_price_fen;
+         *     price_changed when |new − old| ≥ 100 fen or ≥ 5 % of old, both directions (BR-PRICE-13).
+         *     Prices and rebates are null on amount_unknown links, which are not re-checked.
+         */
+        OpenLinkResult: {
+            jump: components["schemas"]["JumpPlan"];
+            price_changed: boolean;
+            old_final_price_fen: components["schemas"]["NullableFen"];
+            new_final_price_fen: components["schemas"]["NullableFen"];
+            /**
+             * @description Set whenever the new price differs from the snapshot, or when a new link was
+             *     registered for the current user (BR-PRICE-12, BR-ATTR-05 ③); the client replaces the
+             *     card with it whether or not the user continues.
+             */
+            new_link_id: string | null;
+            /** @description Re-check failed and the user's cached link (≤ 900 s) is used (BR-PRICE-13). */
+            requote_failed: boolean;
+            new_rebate_min_fen: components["schemas"]["NullableFen"];
+            new_rebate_max_fen: components["schemas"]["NullableFen"];
+            availability: components["schemas"]["Availability"];
+            /** Format: date-time */
+            quoted_at: string | null;
+        };
+        OpenLinkResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["OpenLinkResult"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Either product_key (with the tapped card's item_ref) or url; neither, or both, is 20001.
+         *     The oneOf branches declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).
+         */
+        ConvertLinkRequest: {
+            platform: components["schemas"]["PlatformCode"];
+            product_key?: components["schemas"]["ProductKey"];
+            item_ref?: components["schemas"]["ItemRef"];
+            /** Format: uri */
+            url?: string;
+            /**
+             * @description Only the H5 entry (trade.convertAndOpen) uses convert (拍板第二批 TRADE-03); other
+             *     scenes are rejected with 20001 so that the client cannot pick an attribution scene
+             *     such as share (BR-ATTR-05, BR-ATTR-08).
+             * @enum {string}
+             */
+            scene: "h5";
+            spm?: string;
+            installed?: components["schemas"]["InstalledState"];
+        } & ({
+            product_key: components["schemas"]["ProductKey"];
+        } | {
+            /** Format: uri */
+            url: string;
+        });
+        /** @description The registered link_id plus the same fields as the open result (04 §6.3). */
+        ConvertLinkData: {
+            link_id: components["schemas"]["Id"];
+            jump: components["schemas"]["JumpPlan"];
+            price_changed: boolean;
+            old_final_price_fen: components["schemas"]["NullableFen"];
+            new_final_price_fen: components["schemas"]["NullableFen"];
+            new_link_id: string | null;
+            requote_failed: boolean;
+            new_rebate_min_fen: components["schemas"]["NullableFen"];
+            new_rebate_max_fen: components["schemas"]["NullableFen"];
+            availability: components["schemas"]["Availability"];
+            /** Format: date-time */
+            quoted_at: string | null;
+        };
+        ConvertLinkResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ConvertLinkData"];
+            trace_id: components["schemas"]["TraceId"];
         };
     };
-    responses: never;
-    parameters: never;
+    responses: {
+        /**
+         * @description Business or request error. Clients act on `code` only (contracts/error-codes.yaml);
+         *     the HTTP status per code is listed there as well.
+         */
+        ClientError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description Rate limited (42901) with the required Retry-After header in seconds (BR-ID-05, BR-TEXT-14). */
+        TooManyRequests: {
+            headers: {
+                /** @description Seconds to wait before retrying. */
+                "Retry-After": number;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "code": 42901,
+                 *       "msg": "请求过于频繁",
+                 *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description Server-side error; 503 codes carry `data.platform` / `data.reason` where listed. */
+        ServerError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+    };
+    parameters: {
+        /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+        AppId: string;
+        /** @description Client platform (enum client_platform, 03 §4.2). */
+        Platform: components["schemas"]["ClientPlatformCode"];
+        /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+        AppVersion: string;
+        /** @description Build number of the client. */
+        Build: string;
+        /** @description Install channel of the app package (enum install_channel); absent for H5. */
+        Channel: components["schemas"]["InstallChannelCode"];
+        /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+        TraceId: components["schemas"]["TraceId"];
+        /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+        DeviceId: components["schemas"]["Id"];
+        /** @description device_id issued by POST /v1/devices, when the device is registered. */
+        OptionalDeviceId: components["schemas"]["Id"];
+        /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+        Timestamp: string;
+        /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+        Nonce: string;
+        /**
+         * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+         *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+         */
+        Sign: string;
+        /**
+         * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+         *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+         *     the first result (拍板第二批 TRADE-22).
+         */
+        IdempotencyKey: string;
+        /** @description link_id from a card; unknown or of another app → 30144. */
+        LinkId: components["schemas"]["Id"];
+        /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
+        ProductKey: components["schemas"]["ProductKey"];
+        /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+        Cursor: string;
+        /** @description Page size, at most 50 (04 §5). */
+        Limit: number;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -95,6 +1057,751 @@ export interface operations {
                     "application/json": components["schemas"]["HealthzResponse"];
                 };
             };
+        };
+    };
+    registerDevice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "device_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                 *     }
+                 */
+                "application/json": components["schemas"]["RegisterDeviceRequest"];
+            };
+        };
+        responses: {
+            /** @description Device registered. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "device_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a60",
+                     *         "install_secret": "example-install-secret-value"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RegisterDeviceResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    sendSmsCode: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13800138000",
+                 *       "purpose": "login"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SendSmsCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The provider accepted the SMS. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "resend_after_sec": 60,
+                     *         "expires_in_sec": 300
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SendSmsCodeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    loginBySms: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13800138000",
+                 *       "code": "123456",
+                 *       "legal_versions": {
+                 *         "privacy": 3,
+                 *         "agreement": 2
+                 *       },
+                 *       "consent_at": "2026-10-02T09:30:00+08:00",
+                 *       "invite_code": "K7Q2MZ"
+                 *     }
+                 */
+                "application/json": components["schemas"]["LoginBySmsRequest"];
+            };
+        };
+        responses: {
+            /** @description Logged in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a61",
+                     *         "is_new_user": true,
+                     *         "tokens": {
+                     *           "access_token": "example-access-token-one",
+                     *           "access_expires_at": "2026-10-02T11:30:00+08:00",
+                     *           "refresh_token": "example-refresh-token-one",
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00"
+                     *         },
+                     *         "invite_bind": {
+                     *           "result": "bound",
+                     *           "code": null
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    refreshToken: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "refresh_token": "example-refresh-token-one"
+                 *     }
+                 */
+                "application/json": components["schemas"]["RefreshTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description New token pair. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "access_token": "example-access-token-two",
+                     *         "access_expires_at": "2026-10-02T13:30:00+08:00",
+                     *         "refresh_token": "example-refresh-token-two",
+                     *         "refresh_expires_at": "2026-11-01T11:30:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a61",
+                     *         "nickname": "凑狸用户 8000",
+                     *         "avatar_url": "https://cdn.example.test/avatar/default.png",
+                     *         "invite_code": "K7Q2MZ",
+                     *         "inviter_bound": false,
+                     *         "identity_level": "phone",
+                     *         "phone_bound": true,
+                     *         "balance": {
+                     *           "available_fen": 1234,
+                     *           "withdrawable_fen": 1000,
+                     *           "estimated_total_fen": 5678
+                     *         },
+                     *         "union_bindings": [
+                     *           {
+                     *             "platform": "taobao",
+                     *             "status": "active"
+                     *           },
+                     *           {
+                     *             "platform": "pdd",
+                     *             "status": "unbound"
+                     *           }
+                     *         ],
+                     *         "realname_status": "none",
+                     *         "need_reconsent": false,
+                     *         "risk": {
+                     *           "state": "normal",
+                     *           "reason_category": null,
+                     *           "frozen_until": null
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getConfig: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices, when the device is registered. */
+                "X-Device-Id"?: components["parameters"]["OptionalDeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current configuration. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "dict_version": "2026100201",
+                     *         "h5_base_url": "https://h5.example.test/",
+                     *         "h5_release": {
+                     *           "version": "1.4.2"
+                     *         },
+                     *         "share_domains": [
+                     *           "s.example.test"
+                     *         ],
+                     *         "features": {
+                     *           "flags": {
+                     *             "agent.entry.visible": true,
+                     *             "clipboard.enabled.taobao": true,
+                     *             "ui.grayscale": false
+                     *           },
+                     *           "platform_status": {
+                     *             "taobao": "on",
+                     *             "jd": "on",
+                     *             "pdd": "not_launched"
+                     *           }
+                     *         },
+                     *         "texts": {
+                     *           "withdraw.sla_text": "工作日 24 小时内处理"
+                     *         },
+                     *         "legal": {
+                     *           "privacy": {
+                     *             "version": 3,
+                     *             "min_version": 3
+                     *           },
+                     *           "agreement": {
+                     *             "version": 2
+                     *           }
+                     *         },
+                     *         "invite": {
+                     *           "required": false,
+                     *           "backfill_hours": 168
+                     *         },
+                     *         "agent": {
+                     *           "enabled": true,
+                     *           "whitelist_only": true,
+                     *           "filing_text": "",
+                     *           "examples": [
+                     *             "帮我找 500 元以内的降噪耳机"
+                     *           ],
+                     *           "guest_daily_quota": 3,
+                     *           "require_phone": false
+                     *         },
+                     *         "kf": {
+                     *           "url": "https://work.weixin.qq.com/kfid/example"
+                     *         },
+                     *         "jump_tip": {},
+                     *         "clipboard": {},
+                     *         "bridge_origins": {},
+                     *         "auth_tips": {},
+                     *         "compliance": {},
+                     *         "display": {}
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ConfigResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    searchProducts: {
+        parameters: {
+            query: {
+                /** @description Platform to search (enum platform). */
+                platform: components["schemas"]["PlatformCode"];
+                /** @description Keyword. */
+                q: string;
+                /** @description Sort order (enum sort); default relevance. */
+                sort?: components["schemas"]["SortCode"];
+                /** @description Only items with a coupon. */
+                has_coupon?: boolean;
+                /** @description Lower bound of final_price_fen, inclusive. */
+                price_min_fen?: number;
+                /** @description Upper bound of final_price_fen, inclusive. */
+                price_max_fen?: number;
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchProductsResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getProduct: {
+        parameters: {
+            query?: {
+                /** @description Opaque `item_ref` of the card that was tapped (BR-PROD-11); never parsed. */
+                item_ref?: components["schemas"]["ItemRef"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
+                product_key: components["parameters"]["ProductKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The product card of the detail page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    parseInput: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "text": "【淘宝】https://e.tb.cn/h.AbCdEf?tk=Xy12 「降噪耳机 蓝牙 5.3」",
+                 *       "scene": "clipboard"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ParseInputRequest"];
+            };
+        };
+        responses: {
+            /** @description One result per recognised link or token, in input order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParseInputResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    openLink: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description link_id from a card; unknown or of another app → 30144. */
+                link_id: components["parameters"]["LinkId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "installed": "true",
+                 *       "no_rebate": false,
+                 *       "spm": "search.result_list.2"
+                 *     }
+                 */
+                "application/json": components["schemas"]["OpenLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Jump plan and price re-check result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenLinkResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    convertLink: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "platform": "jd",
+                 *       "product_key": "jd:i_100012043978",
+                 *       "item_ref": "v1.Zm9vYmFyLmJhei5xdXg",
+                 *       "scene": "h5",
+                 *       "spm": "h5_activity.banner.1",
+                 *       "installed": "unknown"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ConvertLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description The registered link and its jump plan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvertLinkResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
         };
     };
 }
