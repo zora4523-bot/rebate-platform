@@ -413,7 +413,7 @@ function scrubbedStack(error: Error): string {
   return (error.stack ?? '').split(FREE).join(SCRUBBED);
 }
 
-it('[BR-ID-33] 日志：自由文本安全网逐种写法替换手机号（含 +86、空格、连字符、全角）、身份证号（18 位含 X、15 位）、银行卡号（16～19 位）与邮箱，别的数字与文字原样', () => {
+it('[BR-ID-33] 日志：自由文本安全网逐种写法替换手机号（含 +86、空格、连字符、全角）、身份证号（18 位末位为数字或 X、15 位）、银行卡号（16～19 位逐个长度）与邮箱，别的数字与文字原样', () => {
   const { logger, lines } = capture();
   const cases: readonly (readonly [string, string])[] = [
     ['手机号13987654321核验失败', '手机号[REDACTED]核验失败'],
@@ -432,6 +432,14 @@ it('[BR-ID-33] 日志：自由文本安全网逐种写法替换手机号（含 +
       '卡 6222021234567890123，4392 2600 1234 5678，6222-0212-3456-7890-123',
       '卡 [REDACTED]，[REDACTED]，[REDACTED]',
     ],
+    // Every length from 15 to 19 without separators, an 18-digit ID number ending in a digit,
+    // and spaced 15- and 17-digit numbers.
+    [
+      '证件 110105194912310011，卡 4392260012345678，62220212345678901，622202123456789012',
+      '证件 [REDACTED]，卡 [REDACTED]，[REDACTED]，[REDACTED]',
+    ],
+    ['旧证件 320105 791231 247，卡 6222 0212 3456 7890 1', '旧证件 [REDACTED]，卡 [REDACTED]'],
+    ['全角证件１１０１０５１９４９１２３１００１１', '全角证件[REDACTED]'],
     ['邮箱 qzx7.vwk3@exmpl-host.cn，zh.san@example.com', '邮箱 [REDACTED]，[REDACTED]'],
     // Not a match: too short or too long, a mobile number must start with 1, a domain must end in
     // letters, dates and amounts. Nothing here may change.
@@ -439,6 +447,7 @@ it('[BR-ID-33] 日志：自由文本安全网逐种写法替换手机号（含 +
       '1357924680，135792468024，23579246801，35792468013579，35792468013579246801',
       '1357924680，135792468024，23579246801，35792468013579，35792468013579246801',
     ],
+    ['3579246801357，8635792468013', '3579246801357，8635792468013'],
     [
       '订单 135792468，金额 1999 分，版本 v10.3.1，pino@10.3.1，时间 2026-10-04 08:00:00',
       '订单 135792468，金额 1999 分，版本 v10.3.1，pino@10.3.1，时间 2026-10-04 08:00:00',
@@ -451,14 +460,16 @@ it('[BR-ID-33] 日志：自由文本安全网逐种写法替换手机号（含 +
   });
 });
 
-it('[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg、printf 结果、子 logger 的 msgPrefix、错误（直接记录、err 下、其他键下、cause、AggregateError）的 message 与 stack，Nest 的消息、context、stack 参数与字符串参数', () => {
+it('[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg（字符串、数字、printf 结果、子 logger 的 msgPrefix、对象自带的 msg、回落的 err.message）、任意深度 msg / message / stack 键下的值、错误（直接记录、err 下、其他键下、属性里、cause、AggregateError）的 message 与 stack，Nest 的消息、context、stack 参数与字符串参数', () => {
   const { logger, lines } = capture();
   const direct = new Error(FREE);
   const cause = new Error(FREE);
   const outer = new Error('outer', { cause });
   const listed = new Error(FREE);
   const aggregate = new AggregateError([listed], FREE);
-  const nested = new Error(FREE);
+  const inner = new Error(FREE);
+  const nested = Object.assign(new Error(FREE), { inner });
+  const fallback = new Error(FREE);
   logger.warn(FREE);
   logger.info('note %s; data %j', FREE, { text: FREE });
   logger.child({ order_id: KEPT.order_id }, { msgPrefix: `${FREE}: ` }).info('checked');
@@ -466,6 +477,13 @@ it('[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg、printf �
   logger.error({ err: outer }, 'cause chain');
   logger.error({ err: aggregate }, 'aggregate');
   logger.warn({ ctx: { failure: nested }, ...KEPT }, 'other key');
+  // No message argument: pino writes the object's own msg, or falls back to err.message.
+  logger.info({ msg: FREE, order_id: KEPT.order_id });
+  logger.error({ err: fallback });
+  logger.warn({ err: { message: FREE, code: 'E_PAYEE' } });
+  logger.info({ result: { message: FREE, stack: FREE, status: 'failed' } }, 'result');
+  logger.info(13987654321);
+  logger.info({ msg: 13987654321 });
   const { nest: adapter, lines: nestLines } = captureNest();
   const nestError = new Error(FREE);
   adapter.log(FREE, 'Payout');
@@ -474,7 +492,11 @@ it('[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg、printf �
   adapter.error(nestError, 'Payout');
   adapter.debug({ text: FREE });
   adapter.log('context check', FREE);
-  expect({ lines: lines.length, nestLines: nestLines.length }).toEqual({ lines: 7, nestLines: 6 });
+  adapter.log(13987654321, 'Payout');
+  expect({ lines: lines.length, nestLines: nestLines.length }).toEqual({
+    lines: 13,
+    nestLines: 7,
+  });
   expectLine(lines[0], { level: 40, msg: SCRUBBED });
   expectLine(lines[1], {
     level: 30,
@@ -505,10 +527,31 @@ it('[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg、printf �
   });
   expectLine(lines[6], {
     level: 40,
-    ctx: { failure: { type: 'Error', message: SCRUBBED, stack: scrubbedStack(nested) } },
+    ctx: {
+      failure: {
+        type: 'Error',
+        message: SCRUBBED,
+        stack: scrubbedStack(nested),
+        inner: { type: 'Error', message: SCRUBBED, stack: scrubbedStack(inner) },
+      },
+    },
     ...KEPT,
     msg: 'other key',
   });
+  expectLine(lines[7], { level: 30, msg: SCRUBBED, order_id: KEPT.order_id });
+  expectLine(lines[8], {
+    level: 50,
+    err: { type: 'Error', message: SCRUBBED, stack: scrubbedStack(fallback) },
+    msg: SCRUBBED,
+  });
+  expectLine(lines[9], { level: 40, err: { message: SCRUBBED, code: 'E_PAYEE' }, msg: SCRUBBED });
+  expectLine(lines[10], {
+    level: 30,
+    result: { message: SCRUBBED, stack: SCRUBBED, status: 'failed' },
+    msg: 'result',
+  });
+  expectLine(lines[11], { level: 30, msg: REDACTED });
+  expectLine(lines[12], { level: 30, msg: REDACTED });
   expectLine(nestLines[0], { level: 30, context: 'Payout', msg: SCRUBBED });
   expectLine(nestLines[1], {
     level: 40,
@@ -530,4 +573,5 @@ it('[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg、printf �
   });
   expectLine(nestLines[4], { level: 20, msg: `{"text":"${SCRUBBED}"}` });
   expectLine(nestLines[5], { level: 30, context: SCRUBBED, msg: 'context check' });
+  expectLine(nestLines[6], { level: 30, context: 'Payout', msg: REDACTED });
 });

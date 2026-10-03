@@ -54,16 +54,21 @@
 //     any other object         its enumerable own string-keyed properties by these rules (plain
 //                              objects, objects without a prototype, class instances)
 //   Otherwise a function or an undefined property is left out, as JSON.stringify does.
-// - Values under other names are structured data (order numbers, ids, amounts) and are written
-//   as they are: personal data is logged only under a sensitive name (规划/02 §19;
+// - Values under other names (apart from the free-text keys msg, message and stack, below) are
+//   structured data (order numbers, ids, amounts) and are written as they are: personal data is
+//   logged only under a sensitive name (规划/02 §19;
 //   apps/api/AGENTS.md 硬规则 3, 只打平铺字段).
 // - An Error passed as the first argument is written under `err`, and its message is `msg` when
 //   no message is given. printf-style %j, %o and %O are replaced by JSON.stringify of the
 //   argument written by these rules (keys in insertion order); the rest of the message is kept.
-// - Free text gets a safety net. Free text is: `msg` as finally written (after printf
-//   formatting, with a child's msgPrefix in front), the `message` and `stack` of every Error
-//   written (causes and aggregateErrors included), and the Nest adapter's context, stack
-//   parameter and string items of `params`. In free text each match of the two patterns below
+// - Free text gets a safety net. Free text is: `msg` as finally written (the message argument,
+//   a number or boolean one written as its text, after printf formatting, with a child's
+//   msgPrefix in front); every string or number written under a key named exactly msg, message
+//   or stack, at any depth, a number then written as its text (so the message and stack of
+//   every Error, causes and aggregateErrors included, the msg of a logged object that pino
+//   writes when the call gives no message, and the message under err that pino falls back to);
+//   and the Nest adapter's context and string items of `params` (its stack parameter is written
+//   under stack). In free text each match of the two patterns below
 //   is replaced by "[REDACTED]" as a whole, e-mail addresses in a first pass, numbers in a
 //   second; every other character is kept exactly:
 //     1. an e-mail address: one or more of A-Z a-z 0-9 . _ % + -, then "@", then labels of
@@ -87,7 +92,7 @@
 //   `err` with its message as `msg`; a string message is `msg`; any other message becomes `msg` =
 //   JSON.stringify of it written by these rules; for error and fatal a string first optional
 //   parameter is `stack`; the optional parameters left are `params`, an array written by these
-//   rules (context, stack and string items of params get the free-text safety net). Levels: log
+//   rules (context, stack and string items of params are free text, see above). Levels: log
 //   info, warn warn, error error, debug debug, verbose trace, fatal fatal.
 //
 // Rules for the implementation: this directory is also compiled by the `test` project: erasable
