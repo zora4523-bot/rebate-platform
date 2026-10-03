@@ -1,0 +1,722 @@
+{
+  "$comment": "ExternalNavigationPolicy test vectors (08 BR-ATTR-29 ② and 细则; 03 §5.1). Shared by the three apps; the server does not use them. Synthetic rule tables with reserved .test domains (real hosts come from specs/link-patterns.yaml, B1-07). Matching follows the syntax notes of specs/link-patterns.yaml.",
+  "version": 1,
+  "inputs": {
+    "frame": "initial (first URL the container opens) | main | subframe | new_window",
+    "switches": "features.flags external_page.union_host_block (null = unreadable, treated as on) and external_page.product_intercept",
+    "basic_mode": "basic mode (BR-ID-01): no device signature, inputs/parse cannot be called",
+    "download": "the response is a download (attachment, unrenderable type, blob:, data:)",
+    "tables": "which rule tables the client has, in the order current (/v1/config.link_patterns) → last_good → bundled"
+  },
+  "outputs": {
+    "action": "allow | parse (cancel, send the URL without fragment to POST /v1/inputs/parse) | block (cancel; subframe: that frame is not loaded) | cancel (non-https or download; nothing is handed to the system)",
+    "notice": "union_host_blocked (BR-TEXT-14 external_page.union_host_blocked) | download (external_page.download_blocked or download_unsupported, by can_open_in_browser) | null",
+    "table_used": "the table the decision was made with"
+  },
+  "rule_tables": {
+    "current": {
+      "version": "synthetic-1",
+      "rules": [
+        {
+          "platform": "taobao",
+          "category": "union_host",
+          "hosts": ["shop-a.test", "mall-a.test"],
+          "path_patterns": []
+        },
+        {
+          "platform": "taobao",
+          "category": "product",
+          "hosts": ["item.shop-a.test"],
+          "path_patterns": ["/item.htm"]
+        },
+        {
+          "platform": "taobao",
+          "category": "product",
+          "hosts": ["detail.mall-a.test"],
+          "path_patterns": ["/item/*.htm"]
+        },
+        {
+          "platform": "taobao",
+          "category": "promo",
+          "hosts": ["s.click-a.test"],
+          "path_patterns": ["/**"]
+        },
+        {
+          "platform": "jd",
+          "category": "union_host",
+          "hosts": ["shop-b.test"],
+          "path_patterns": []
+        },
+        {
+          "platform": "jd",
+          "category": "product",
+          "hosts": ["item.shop-b.test", "m.shop-b.test"],
+          "path_patterns": ["/*.html", "/product/*.html"]
+        },
+        {
+          "platform": "pdd",
+          "category": "union_host",
+          "hosts": ["shop-c.test"],
+          "path_patterns": []
+        },
+        {
+          "platform": "pdd",
+          "category": "promo",
+          "hosts": ["p.shop-c-link.test"],
+          "path_patterns": ["/x/**"]
+        }
+      ]
+    },
+    "bundled": {
+      "version": "bundled-1",
+      "rules": [
+        {
+          "platform": "taobao",
+          "category": "union_host",
+          "hosts": ["shop-a.test", "mall-a.test"],
+          "path_patterns": []
+        },
+        {
+          "platform": "jd",
+          "category": "union_host",
+          "hosts": ["shop-b.test"],
+          "path_patterns": []
+        },
+        {
+          "platform": "pdd",
+          "category": "union_host",
+          "hosts": ["shop-c.test"],
+          "path_patterns": []
+        }
+      ]
+    }
+  },
+  "navigation_cases": [
+    {
+      "note": "brand site: not in the table",
+      "url": "https://www.brand.test/about",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "allow",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "product page in the main frame goes to parsing",
+      "url": "https://item.shop-a.test/item.htm?id=1#top",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "parse",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "product page opened as a new window goes to parsing",
+      "url": "https://item.shop-a.test/item.htm?id=1",
+      "frame": "new_window",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "parse",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "first URL of the container is a product page: parsed like a main-frame navigation (08 ②(a)); on success ProductDetail opens without the container",
+      "url": "https://detail.mall-a.test/item/123.htm",
+      "frame": "initial",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "parse",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "product page in a subframe: the frame is blocked",
+      "url": "https://item.shop-a.test/item.htm?id=1",
+      "frame": "subframe",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "platform store page in the main frame is blocked",
+      "url": "https://store.shop-a.test/shop/9",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "platform campaign page as a new window is blocked",
+      "url": "https://www.shop-b.test/activity",
+      "frame": "new_window",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "first URL of the container is a platform page: no container, notice",
+      "url": "https://shop-c.test/",
+      "frame": "initial",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "registered domain itself",
+      "url": "https://shop-a.test/",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "look-alike domain is not a subdomain",
+      "url": "https://evilshop-a.test/item.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "allow",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "upper-case host and trailing dot are normalised",
+      "url": "https://ITEM.Shop-A.test./item.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "parse",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "port 443 is the default",
+      "url": "https://item.shop-a.test:443/item.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "parse",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "percent-encoded path is decoded once",
+      "url": "https://item.shop-b.test/%31%32%33.html",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "parse",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "jd mobile product pattern",
+      "url": "https://m.shop-b.test/product/456.html",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "parse",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "jd path outside the product patterns is blocked, not parsed",
+      "url": "https://item.shop-b.test/list/456.html",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "product_intercept off: product page is blocked, never allowed",
+      "url": "https://item.shop-a.test/item.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": false
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "basic mode: no parsing, product page is blocked",
+      "url": "https://item.shop-a.test/item.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": true,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "union_host_block unreadable: treated as on",
+      "url": "https://store.shop-a.test/",
+      "frame": "main",
+      "switches": {
+        "union_host_block": null,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "union_host_block off (only after option B): platform page loads",
+      "url": "https://store.shop-a.test/",
+      "frame": "main",
+      "switches": {
+        "union_host_block": false,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "allow",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "promo link of a non-platform host is not used for navigation decisions",
+      "url": "https://s.click-a.test/t?e=abc",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "allow",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "fetch failed: last good table is used",
+      "url": "https://item.shop-a.test/item.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["last_good", "bundled"],
+      "expected": {
+        "action": "parse",
+        "notice": null,
+        "table_used": "last_good"
+      }
+    },
+    {
+      "note": "fetch failed, no last good: bundled snapshot blocks the whole domain (product page blocked, not parsed)",
+      "url": "https://item.shop-a.test/item.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "bundled"
+      }
+    },
+    {
+      "note": "bundled snapshot still blocks platform pages",
+      "url": "https://store.shop-b.test/",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
+        "table_used": "bundled"
+      }
+    },
+    {
+      "note": "http is cancelled",
+      "url": "http://www.brand.test/",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "http to a platform host is cancelled too",
+      "url": "http://item.shop-a.test/item.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "platform app scheme is cancelled",
+      "url": "shopa://item?id=1",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "intent:// is cancelled without loading its fallback",
+      "url": "intent://item#Intent;scheme=shopa;S.browser_fallback_url=https%3A%2F%2Fwww.brand.test;end",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "tel: is cancelled",
+      "url": "tel:10086",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "mailto: is cancelled",
+      "url": "mailto:a@brand.test",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "custom scheme from a subframe is cancelled",
+      "url": "market://details?id=x",
+      "frame": "subframe",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "data: navigation is cancelled",
+      "url": "data:text/html,hi",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "download response is cancelled even on an allowed page",
+      "url": "https://www.brand.test/app.apk",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": true,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": "download",
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "blob: download is cancelled",
+      "url": "blob:https://www.brand.test/uuid",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": true,
+      "tables": ["current", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": "download",
+        "table_used": "current"
+      }
+    }
+  ],
+  "open_in_browser_cases": [
+    {
+      "note": "brand https page: button shown",
+      "url": "https://www.brand.test/about",
+      "tables": ["current", "bundled"],
+      "expected": {
+        "can_open_in_browser": true,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "platform page loaded (switch off): button hidden",
+      "url": "https://store.shop-a.test/",
+      "tables": ["current", "bundled"],
+      "expected": {
+        "can_open_in_browser": false,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "promo host page: button hidden",
+      "url": "https://s.click-a.test/t?e=1",
+      "tables": ["current", "bundled"],
+      "expected": {
+        "can_open_in_browser": false,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "product page: button hidden",
+      "url": "https://item.shop-b.test/1.html",
+      "tables": ["current", "bundled"],
+      "expected": {
+        "can_open_in_browser": false,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "http page: button hidden",
+      "url": "http://www.brand.test/",
+      "tables": ["current", "bundled"],
+      "expected": {
+        "can_open_in_browser": false,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "only the bundled snapshot: brand page still decided",
+      "url": "https://www.brand.test/",
+      "tables": ["bundled"],
+      "expected": {
+        "can_open_in_browser": true,
+        "table_used": "bundled"
+      }
+    },
+    {
+      "note": "only the bundled snapshot: platform domain hidden",
+      "url": "https://store.shop-c.test/",
+      "tables": ["bundled"],
+      "expected": {
+        "can_open_in_browser": false,
+        "table_used": "bundled"
+      }
+    }
+  ]
+}
