@@ -666,7 +666,7 @@ export const platform_status = [
 export type PlatformStatus = (typeof platform_status)[number];
 
 /**
- * 返利状态，唯一写者 settlement；VOID、CLAWED_BACK 为终态
+ * 返利状态，唯一写者 settlement；VOID、CLAWED_BACK 为终态——自动事件不得离开，只有人工恢复 R12、R13 可以离开，R3b 在 VOID 上只写归属（BR-FUND-01）
  * Source: 规划/04 §2.3；BR-FUND-01 (contracts/enums/order.yaml).
  */
 export const rebate_status = [
@@ -700,16 +700,17 @@ export type DisplayStatus = (typeof display_status)[number];
 
 /**
  * orders.hold_reason，不改 rebate_status
- * Source: 08 §13.6；BR-FUND-06 (contracts/enums/order.yaml).
+ * Source: 规划/04 §2.3；08 §13.6；BR-FUND-06、BR-FUND-02 (contracts/enums/order.yaml).
  */
 export const order_hold_reason = [
   "RISK", // 风控暂停入账
   "CS", // 客服暂停入账
+  "UNMAPPED_STATUS", // 映射表之外的平台状态码出现时由系统置（BR-FUND-02）
 ] as const;
 export type OrderHoldReason = (typeof order_hold_reason)[number];
 
 /**
- * 订单原因码；NOT_TRACKED、EXPIRED_CLICK、OTHER_TLJ、RELATION_INVALID 不写入 orders.reason。CANCELLED 待 09 实测，启用前不写入
+ * 订单原因码；NOT_TRACKED、EXPIRED_CLICK、OTHER_TLJ、RELATION_INVALID 不写入 orders.reason。CANCELLED 待 09 实测，启用前不写入。rebate_status=CLAWED_BACK 同样写 orders.reason（迁移 R8 同事务写，取值按 BR-FUND-08 细则的映射表）
  * Source: 规划/04 §2.3；BR-TEXT-05；08 §13.2 (contracts/enums/order.yaml).
  */
 export const order_reason = [
@@ -755,6 +756,18 @@ export const order_rights_status = [
   "FAILED", // 维权失败
 ] as const;
 export type OrderRightsStatus = (typeof order_rights_status)[number];
+
+/**
+ * order_rights.type；处罚类平台码与处罚接口写 PUNISH；淘宝维权码到 order_rights.status 的映射待 CAP-TB-08
+ * Source: 规划/04 §2.3；BR-FUND-02、BR-FUND-06 (contracts/enums/order.yaml).
+ */
+export const order_rights_type = [
+  "RIGHTS", // 维权
+  "PUNISH", // 处罚
+  "INVALID_AFTER_SETTLE", // 结算后失效
+  "REFUND_AFTER_SETTLE", // 结算后退款
+] as const;
+export type OrderRightsType = (typeof order_rights_type)[number];
 
 /**
  * claim_status
@@ -1156,6 +1169,7 @@ export const enums = {
   order_reason,
   diff_reason,
   order_rights_status,
+  order_rights_type,
   claim_status,
   claim_evidence_level,
   claim_item_decision,

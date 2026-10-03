@@ -11,7 +11,7 @@ enums:
       INVALID: 已失效
   rebate_status:
     source: 规划/04 §2.3；BR-FUND-01
-    description: 返利状态，唯一写者 settlement；VOID、CLAWED_BACK 为终态
+    description: 返利状态，唯一写者 settlement；VOID、CLAWED_BACK 为终态——自动事件不得离开，只有人工恢复 R12、R13 可以离开，R3b 在 VOID 上只写归属（BR-FUND-01）
     values:
       UNATTRIBUTED: 未归因（不对用户展示）
       ESTIMATED: 预估
@@ -35,14 +35,15 @@ enums:
       INVALID: 见 BR-FUND-17 派生表
       CLAWED_BACK: 见 BR-FUND-17 派生表
   order_hold_reason:
-    source: 08 §13.6；BR-FUND-06
+    source: 规划/04 §2.3；08 §13.6；BR-FUND-06、BR-FUND-02
     description: orders.hold_reason，不改 rebate_status
     values:
       RISK: 风控暂停入账
       CS: 客服暂停入账
+      UNMAPPED_STATUS: 映射表之外的平台状态码出现时由系统置（BR-FUND-02）
   order_reason:
     source: 规划/04 §2.3；BR-TEXT-05；08 §13.2
-    description: 订单原因码；NOT_TRACKED、EXPIRED_CLICK、OTHER_TLJ、RELATION_INVALID 不写入 orders.reason。CANCELLED 待 09 实测，启用前不写入
+    description: 订单原因码；NOT_TRACKED、EXPIRED_CLICK、OTHER_TLJ、RELATION_INVALID 不写入 orders.reason。CANCELLED 待 09 实测，启用前不写入。rebate_status=CLAWED_BACK 同样写 orders.reason（迁移 R8 同事务写，取值按 BR-FUND-08 细则的映射表）
     values:
       REFUND: 退款
       RIGHTS: 维权
@@ -76,6 +77,14 @@ enums:
       WAIT_COMMISSION: 待扣佣
       SUCCEEDED: 维权成功
       FAILED: 维权失败
+  order_rights_type:
+    source: 规划/04 §2.3；BR-FUND-02、BR-FUND-06
+    description: order_rights.type；处罚类平台码与处罚接口写 PUNISH；淘宝维权码到 order_rights.status 的映射待 CAP-TB-08
+    values:
+      RIGHTS: 维权
+      PUNISH: 处罚
+      INVALID_AFTER_SETTLE: 结算后失效
+      REFUND_AFTER_SETTLE: 结算后退款
   claim_status:
     source: 规划/04 §2.5；BR-ATTR-16、BR-ATTR-18
     values:
