@@ -26,10 +26,23 @@ import {
 const SECRET_PLAINTEXT = '13877776666';
 const SECRET_ID_NO = '11010519491231002X';
 
-it('[BR-ID-33] 报错不带明文：加密、建索引被拒时，错误的 message、stack、JSON 与 inspect 输出里都找不到传入的值', async () => {
+/**
+ * Each named value as text and as its UTF-8 bytes: kept bytes print as hex (inspect of a
+ * Buffer), as a number array (JSON, inspect of a Uint8Array) or as base64, never as the text
+ * itself; leaksIn checks every encoding of a byte secret.
+ */
+function withBytes(values: Readonly<Record<string, string>>): Record<string, string | Uint8Array> {
+  const secrets: Record<string, string | Uint8Array> = { ...values };
+  for (const [name, value] of Object.entries(values)) {
+    secrets[`${name} (utf-8)`] = Buffer.from(value, 'utf8');
+  }
+  return secrets;
+}
+
+it('[BR-ID-33] 报错不带明文：加密、建索引被拒时，错误的 message、stack、JSON 与 inspect 输出里都找不到传入的值，字符串与 UTF-8 字节的各种编码都没有', async () => {
   const kms = new FakeKms();
   const crypto = await openFieldCrypto(knownKeyring(kms, [1], 1).doc, kms);
-  const secrets = { plaintext: SECRET_PLAINTEXT, idNo: SECRET_ID_NO };
+  const secrets = withBytes({ plaintext: SECRET_PLAINTEXT, idNo: SECRET_ID_NO });
   const errors: Record<string, unknown> = {
     encryptBadContext: errorOf(() => crypto.encrypt(SECRET_PLAINTEXT, 'users phone')),
     encryptEmptyContext: errorOf(() => crypto.encrypt(SECRET_ID_NO, '')),
@@ -48,13 +61,13 @@ it('[BR-ID-33] 报错不带明文：加密、建索引被拒时，错误的 mess
   ).toEqual(Object.fromEntries(Object.keys(errors).map((name) => [name, []])));
 });
 
-it('[BR-ID-33] 解密失败的报错不带明文也不带密钥：密文被改、context 不对、版本不存在时，错误输出里找不到原文与任何密钥字节', async () => {
+it('[BR-ID-33] 解密失败的报错不带明文也不带密钥：密文被改、context 不对、版本不存在时，错误输出里找不到原文（字符串与 UTF-8 字节）与任何密钥字节', async () => {
   const kms = new FakeKms();
   const known = knownKeyring(kms, [1, 2], 2);
   const crypto = await openFieldCrypto(known.doc, kms);
   const ciphertext = crypto.encrypt(SECRET_PLAINTEXT, 'users.phone');
   const secrets = {
-    plaintext: SECRET_PLAINTEXT,
+    ...withBytes({ plaintext: SECRET_PLAINTEXT }),
     dataKey1: known.dataKey(1),
     dataKey2: known.dataKey(2),
     blindKey: known.blindKey,
@@ -106,7 +119,7 @@ it('[BR-ID-33] FieldCrypto 对象进日志不泄密钥：JSON.stringify 与 util
   }).toEqual({ stillWorks: SAMPLES.phone, object: [], methods: [], wrapped: [] });
 });
 
-it('[BR-ID-33] 用过的 FieldCrypto 不留明文：加密、解密、重新加密、建索引成功之后，对象的 JSON 与 inspect 输出里找不到经手的手机号、身份证号、收款账号', async () => {
+it('[BR-ID-33] 用过的 FieldCrypto 不留明文：加密、解密、重新加密、建索引成功之后，对象的 JSON 与 inspect 输出里找不到经手的手机号、身份证号、收款账号，原文字符串与 UTF-8 字节的十六进制、base64、数字数组形式都没有', async () => {
   const kms = new FakeKms();
   const known = knownKeyring(kms, [1, 2], 2);
   const crypto = await openFieldCrypto(known.doc, kms);
@@ -116,9 +129,18 @@ it('[BR-ID-33] 用过的 FieldCrypto 不留明文：加密、解密、重新加�
     alipay: 'payee-rule-test@example.com',
     bankCard: '6200000000000077777',
   };
+  const secrets = withBytes(values);
+  // The check itself must see bytes: an object that keeps them in a public property, in any
+  // of the usual forms, is reported.
+  const keepsBytes = {
+    lastPlaintext: Buffer.from(values.phone, 'utf8'),
+    lastIdNo: new Uint8Array(Buffer.from(values.idNo, 'utf8')),
+    lastPayeeHex: Buffer.from(values.alipay, 'utf8').toString('hex'),
+    lastCardBase64: Buffer.from(values.bankCard, 'utf8').toString('base64'),
+  };
   const leaksAfter: Record<string, string[]> = {};
   const check = (step: string): void => {
-    leaksAfter[step] = leaksIn({ crypto, methods: [crypto.encrypt, crypto.decrypt] }, values);
+    leaksAfter[step] = leaksIn({ crypto, methods: [crypto.encrypt, crypto.decrypt] }, secrets);
   };
   const phoneCiphertext = crypto.encrypt(values.phone, 'users.phone');
   check('encrypt');
@@ -136,10 +158,12 @@ it('[BR-ID-33] 用过的 FieldCrypto 不留明文：加密、解密、重新加�
     decrypted,
     reencrypted: crypto.decrypt(reencrypted, 'payout_accounts.alipay'),
     leaksAfter,
+    checkSeesKeptBytes: leaksIn(keepsBytes, secrets),
   }).toEqual({
     decrypted: values.phone,
     reencrypted: values.alipay,
     leaksAfter: { encrypt: [], decrypt: [], blindIndex: [], reencrypt: [], afterEverything: [] },
+    checkSeesKeptBytes: ['phone (utf-8)', 'idNo (utf-8)', 'alipay (utf-8)', 'bankCard (utf-8)'],
   });
 });
 

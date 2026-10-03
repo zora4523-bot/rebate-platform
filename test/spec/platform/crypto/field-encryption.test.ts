@@ -177,6 +177,25 @@ it('[BR-ID-33] 篡改密文任何一处都解不开：改 IV、密文体、tag �
   });
 });
 
+it('[BR-ID-33] 穷举单比特篡改：手机号、身份证号、中文姓名三份密文的载荷每一位各翻转一次，没有一次解得开，全部抛 decrypt_failed', async () => {
+  const { crypto } = await open([1], 1);
+  const survivors: string[] = [];
+  let flipped = 0;
+  for (const field of ['phone', 'idNo', 'name'] as const) {
+    const ciphertext = crypto.encrypt(SAMPLES[field], CONTEXTS[field]);
+    const bits = parseV1(ciphertext).payload.length * 8;
+    for (let bit = 0; bit < bits; bit += 1) {
+      flipped += 1;
+      const outcome = outcomeOf(() =>
+        crypto.decrypt(flipPayloadBit(ciphertext, bit), CONTEXTS[field]),
+      );
+      if (outcome !== 'decrypt_failed') survivors.push(`${field} bit ${String(bit)}: ${outcome}`);
+    }
+  }
+  // (12 + 11 + 16) + (12 + 18 + 16) + (12 + 9 + 16) bytes.
+  expect({ flipped, survivors }).toEqual({ flipped: (39 + 46 + 37) * 8, survivors: [] });
+});
+
 it('[BR-ID-33] 密文只在加密时的 context 下能解：换成别的字段、别的行、大小写不同的 context 都抛 decrypt_failed', async () => {
   const { crypto } = await open([1], 1);
   const ciphertext = crypto.encrypt(SAMPLES.alipay, CONTEXTS.alipay);
@@ -190,6 +209,37 @@ it('[BR-ID-33] 密文只在加密时的 context 下能解：换成别的字段�
     same: crypto.decrypt(ciphertext, CONTEXTS.alipay),
     others: others.map((context) => outcomeOf(() => crypto.decrypt(ciphertext, context))),
   }).toEqual({ same: SAMPLES.alipay, others: others.map(() => 'decrypt_failed') });
+});
+
+it('[BR-ID-33] context 差一个字符也解不开：在原 context 后面接上 94 个可见 ASCII 字符中的任意一个、或去掉任意一个位置的字符，全部抛 decrypt_failed', async () => {
+  const { crypto } = await open([1], 1);
+  const context = CONTEXTS.idNo;
+  const ciphertext = crypto.encrypt(SAMPLES.idNo, context);
+  const others: string[] = [];
+  for (let code = 0x21; code <= 0x7e; code += 1) others.push(context + String.fromCharCode(code));
+  for (let at = 0; at < context.length; at += 1) {
+    others.push(context.slice(0, at) + context.slice(at + 1));
+  }
+  const decryptable = others.filter(
+    (other) => outcomeOf(() => crypto.decrypt(ciphertext, other)) !== 'decrypt_failed',
+  );
+  // And the other way round: encrypted under a neighbouring context, not readable under this one.
+  const movedBack = others.filter(
+    (other) =>
+      outcomeOf(() => crypto.decrypt(crypto.encrypt(SAMPLES.idNo, other), context)) !==
+      'decrypt_failed',
+  );
+  expect({
+    tried: others.length,
+    decryptable,
+    movedBack,
+    original: crypto.decrypt(ciphertext, context),
+  }).toEqual({
+    tried: 94 + context.length,
+    decryptable: [],
+    movedBack: [],
+    original: SAMPLES.idNo,
+  });
 });
 
 it('[BR-ID-33] 改 key_version 前缀换不来别的密钥解密：指到 keyring 里另一版本抛 decrypt_failed，指到没有的版本抛 unknown_key_version', async () => {

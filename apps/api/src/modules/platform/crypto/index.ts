@@ -33,6 +33,13 @@
 // - This directory is also compiled by the `test` project: erasable syntax only (no parameter
 //   properties, no enum, no namespace, no decorators), `import type` for type-only imports,
 //   relative imports with the `.ts` extension, no NestJS, no `process.env`, no logging.
+// - The restart rule tests also start plain `node` on this file in new processes (Node's own
+//   type stripping, no build step, no bundler): besides the rules above, import nothing but
+//   `node:` modules and files of this directory.
+// - A new process that has the master key, the stored keyring and the ciphertexts — and nothing
+//   else — must decrypt them and compute the same blind indexes, and IVs must not repeat across
+//   processes that share a keyring: no state that only lives in memory (no table of wrapped
+//   keys, no IV counter).
 // - Only `node:crypto` (no new dependency). Random bytes come from `randomBytes`.
 // - Errors are `FieldCryptoError` with a stable `code` and a fixed message that never echoes an
 //   argument (not the plaintext, not the text given as ciphertext, not even a rejected context:
