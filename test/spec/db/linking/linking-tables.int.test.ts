@@ -86,21 +86,23 @@ it('[AC-B1-06a#4] the quote snapshot of a link cannot be changed once written (B
   const linkId = await newLink({
     quoted_final_price_fen: 2990,
     quoted_coupon_fen: 500,
+    quoted_coupon_id: 'coupon-one',
     quoted_at: new Date('2026-10-04T07:59:00Z'),
   });
   for (const change of [
+    sql`UPDATE app.links SET quoted_coupon_id = 'coupon-two' WHERE link_id = ${linkId}`,
     sql`UPDATE app.links SET quoted_final_price_fen = 2890 WHERE link_id = ${linkId}`,
     sql`UPDATE app.links SET quoted_coupon_fen = 600 WHERE link_id = ${linkId}`,
     sql`UPDATE app.links SET quoted_at = ${new Date('2026-10-04T08:30:00Z')} WHERE link_id = ${linkId}`,
   ]) {
     expect(await sqlState(change.execute(app))).not.toBe('no error');
   }
-  const stored = await sql<{ quoted_final_price_fen: string; quoted_coupon_fen: string }>`
-    SELECT quoted_final_price_fen::text AS quoted_final_price_fen,
-           quoted_coupon_fen::text AS quoted_coupon_fen
+  const stored = await sql<{ price: string; coupon: string; coupon_id: string }>`
+    SELECT quoted_final_price_fen::text AS price, quoted_coupon_fen::text AS coupon,
+           quoted_coupon_id::text AS coupon_id
     FROM app.links WHERE link_id = ${linkId}
   `.execute(app);
-  expect(stored.rows).toEqual([{ quoted_final_price_fen: '2990', quoted_coupon_fen: '500' }]);
+  expect(stored.rows).toEqual([{ price: '2990', coupon: '500', coupon_id: 'coupon-one' }]);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -174,6 +176,9 @@ it('[AC-B1-06a#9] attempts are indexed by (app_id, user_id, opened_at)', async (
 
 for (const column of ['jump_reported_at', 'dismissed_at'] as const) {
   it(`[AC-B1-06a#${column === 'jump_reported_at' ? '10' : '11'}] ${column} is written once and never changed or cleared`, async () => {
+    expect((await columns('link_open_attempts')).find((c) => c.name === column)?.type).toBe(
+      'timestamptz',
+    );
     const attemptId = await newAttempt();
     const first = new Date('2026-10-04T08:00:05Z');
     expect(
@@ -194,12 +199,36 @@ for (const column of ['jump_reported_at', 'dismissed_at'] as const) {
             WHERE attempt_id = ${attemptId}`.execute(app),
       ),
     ).not.toBe('no error');
-    const stored = await sql<{ at: Date }>`
-      SELECT ${sql.ref(column)} AS at FROM app.link_open_attempts WHERE attempt_id = ${attemptId}
+    const stored = await sql<{ same: boolean | null }>`
+      SELECT ${sql.ref(column)} = ${first}::timestamptz AS same
+      FROM app.link_open_attempts WHERE attempt_id = ${attemptId}
     `.execute(app);
-    expect(stored.rows[0]?.at.toISOString()).toBe(first.toISOString());
+    expect(stored.rows).toEqual([{ same: true }]);
   });
 }
+
+it('[AC-B1-06a#13] the jump report and the dismissal of one attempt are written independently, in either order', async () => {
+  for (const order of [
+    ['jump_reported_at', 'dismissed_at'],
+    ['dismissed_at', 'jump_reported_at'],
+  ] as const) {
+    const attemptId = await newAttempt();
+    for (const column of order) {
+      expect(
+        await sqlState(
+          sql`UPDATE app.link_open_attempts SET ${sql.ref(column)} = ${new Date('2026-10-04T08:01:00Z')}
+              WHERE attempt_id = ${attemptId}`.execute(app),
+        ),
+        `${order.join(' then ')}: ${column}`,
+      ).toBe('no error');
+    }
+    const stored = await sql<{ both: boolean }>`
+      SELECT jump_reported_at IS NOT NULL AND dismissed_at IS NOT NULL AS both
+      FROM app.link_open_attempts WHERE attempt_id = ${attemptId}
+    `.execute(app);
+    expect(stored.rows).toEqual([{ both: true }]);
+  }
+});
 
 it('[AC-B1-06a#12] the attempt keeps its link, user and open time', async () => {
   const attemptId = await newAttempt();

@@ -77,25 +77,39 @@ export async function checkedLiteral(table: string, column: string): Promise<str
   return null;
 }
 
-/** Table referenced by a single-column foreign key on the column, if any. */
-async function referencedTable(table: string, column: string): Promise<string | null> {
-  const rows = await sql<{ target: string }>`
-    SELECT ft.relname AS target
+/**
+ * Table and column referenced by a foreign key that contains the column (single-column keys, and
+ * composite keys such as (app_id, user_id) → users (app_id, id): the column's own counterpart).
+ */
+async function referencedColumn(
+  table: string,
+  column: string,
+): Promise<{ target: string; column: string } | null> {
+  const rows = await sql<{ target: string; ref: string }>`
+    SELECT ft.relname AS target, fa.attname AS ref
     FROM pg_constraint c
     JOIN pg_class t ON t.oid = c.conrelid
     JOIN pg_namespace n ON n.oid = t.relnamespace
     JOIN pg_class ft ON ft.oid = c.confrelid
-    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+    CROSS JOIN LATERAL unnest(c.conkey, c.confkey) AS k(attnum, fattnum)
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+    JOIN pg_attribute fa ON fa.attrelid = c.confrelid AND fa.attnum = k.fattnum
     WHERE n.nspname = 'app' AND t.relname = ${table} AND c.contype = 'f'
-      AND array_length(c.conkey, 1) = 1 AND a.attname = ${column}
+      AND a.attname = ${column} AND a.attname <> 'app_id'
   `.execute(app);
-  return rows.rows[0]?.target ?? null;
+  const first = rows.rows[0];
+  return first === undefined ? null : { target: first.target, column: first.ref };
 }
 
 async function filler(table: string, column: Column): Promise<unknown> {
-  const target = await referencedTable(table, column.name);
-  if (target === 'users') return newUser();
-  if (target === 'links') return newLink();
+  const ref = await referencedColumn(table, column.name);
+  if (ref !== null) {
+    // Any referenced table: insert a row there (recursively filled) and use its key.
+    if (ref.target === 'users') return newUser();
+    const row = await insertRow(ref.target, { app_id: 'couli' });
+    return row[ref.column];
+  }
+  if (column.name.endsWith('_hash') && column.name.startsWith('device')) return hex64();
   const literal = await checkedLiteral(table, column.name);
   if (literal !== null) return literal;
   switch (column.type) {
