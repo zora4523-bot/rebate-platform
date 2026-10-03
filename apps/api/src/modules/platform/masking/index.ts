@@ -64,11 +64,12 @@
 // - Free text gets a safety net. Free text is: `msg` as finally written (the message argument,
 //   a number or boolean one written as its text, after printf formatting, with a child's
 //   msgPrefix in front); every string or number written under a key named exactly msg, message
-//   or stack, at any depth, a number then written as its text (so the message and stack of
-//   every Error, causes and aggregateErrors included, the msg of a logged object that pino
-//   writes when the call gives no message, and the message under err that pino falls back to);
-//   and the Nest adapter's context and string items of `params` (its stack parameter is written
-//   under stack). In free text each match of the two patterns below
+//   or stack, at any depth of the logged object, of the bindings (child() and setBindings() at
+//   every level) and of the Nest adapter's parameters alike, a number then written as its text
+//   (so the message and stack of every Error, causes and aggregateErrors included, the msg of a
+//   logged object that pino writes when the call gives no message, and the message under err
+//   that pino falls back to); and the Nest adapter's context and string items of `params` (its
+//   stack parameter is written under stack). In free text each match of the two patterns below
 //   is replaced by "[REDACTED]" as a whole, e-mail addresses in a first pass, numbers in a
 //   second; every other character is kept exactly:
 //     1. an e-mail address: one or more of A-Z a-z 0-9 . _ % + -, then "@", then labels of

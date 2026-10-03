@@ -575,3 +575,77 @@ it('[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg（字符�
   expectLine(nestLines[5], { level: 30, context: SCRUBBED, msg: 'context check' });
   expectLine(nestLines[6], { level: 30, context: 'Payout', msg: REDACTED });
 });
+
+it('[BR-ID-33] 日志：自由文本安全网同样覆盖绑定与任意深度：child() 与 setBindings()（根、子、孙 logger）绑定里 message / stack / msg 键下的文本与数字、绑定的错误对象，日志对象与 Nest 附加参数里任意深度（嵌套、数组、第 12 层）msg / message / stack 键下的文本与数字；调用方的对象不被改动', () => {
+  const { logger, lines } = capture();
+  const boundError = new Error(FREE);
+  const bindings = { message: FREE, order_id: KEPT.order_id };
+  const more = {
+    stack: FREE,
+    detail: { message: FREE, stack: 13987654321 },
+    failure: boundError,
+  };
+  const rootSet = { status: { message: 13987654321, code: 'E_PAYEE' } };
+  const childSet = { trace: [{ stack: FREE }, { message: 13987654321 }] };
+  const grandSet = { step: { msg: FREE, message: 13987654321 } };
+  const fields = {
+    result: { msg: FREE, message: 13987654321, stack: 13987654321, status: 'failed' },
+    list: [{ message: FREE }, [{ msg: 13987654321, stack: FREE }]],
+    deep: nest(10, { message: FREE, stack: 13987654321, msg: FREE }),
+    ...KEPT,
+  };
+  const params = { result: { message: 13987654321, stack: FREE } };
+  const callerObjects = [bindings, more, rootSet, childSet, grandSet, fields, params, boundError];
+  const before = callerObjects.map(snapshotOf);
+  const child = logger.child(bindings);
+  const grandchild = child.child(more);
+  grandchild.info('bound');
+  logger.setBindings(rootSet);
+  logger.info('root set');
+  child.setBindings(childSet);
+  child.info('child set');
+  grandchild.setBindings(grandSet);
+  grandchild.info('grandchild set');
+  logger.warn(fields, 'nested');
+  const { nest: adapter, lines: nestLines } = captureNest();
+  adapter.warn('payee checked', params, 'Payee');
+  expect({ lines: lines.length, nestLines: nestLines.length }).toEqual({ lines: 5, nestLines: 1 });
+  const childBound = { message: SCRUBBED, order_id: KEPT.order_id };
+  const grandBound = {
+    ...childBound,
+    stack: SCRUBBED,
+    detail: { message: SCRUBBED, stack: REDACTED },
+    failure: { type: 'Error', message: SCRUBBED, stack: scrubbedStack(boundError) },
+  };
+  const rootBound = { status: { message: REDACTED, code: 'E_PAYEE' } };
+  expectLine(lines[0], { level: 30, ...grandBound, msg: 'bound' });
+  expectLine(lines[1], { level: 30, ...rootBound, msg: 'root set' });
+  expectLine(lines[2], {
+    level: 30,
+    ...childBound,
+    trace: [{ stack: SCRUBBED }, { message: REDACTED }],
+    msg: 'child set',
+  });
+  expectLine(lines[3], {
+    level: 30,
+    ...grandBound,
+    step: { msg: SCRUBBED, message: REDACTED },
+    msg: 'grandchild set',
+  });
+  expectLine(lines[4], {
+    level: 40,
+    ...rootBound,
+    result: { msg: SCRUBBED, message: REDACTED, stack: REDACTED, status: 'failed' },
+    list: [{ message: SCRUBBED }, [{ msg: REDACTED, stack: SCRUBBED }]],
+    deep: nest(10, { message: SCRUBBED, stack: REDACTED, msg: SCRUBBED }),
+    ...KEPT,
+    msg: 'nested',
+  });
+  expectLine(nestLines[0], {
+    level: 40,
+    context: 'Payee',
+    params: [{ result: { message: REDACTED, stack: SCRUBBED } }],
+    msg: 'payee checked',
+  });
+  expect(callerObjects.map(snapshotOf)).toEqual(before);
+});
