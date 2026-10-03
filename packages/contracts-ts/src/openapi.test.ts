@@ -83,3 +83,21 @@ it('convert needs exactly one of product_key and url; a parse result needs card 
   expect([neither, byUrl, empty, failed]).toHaveLength(4);
   expect(failed.error_code).toBe(30132);
 });
+
+it('abandon: original is null exactly when outcome is abandoned (04 §6.1)', () => {
+  type Data = Schema<'AbandonIdempotencyKeyData'>;
+  const abandoned: Data = { outcome: 'abandoned', original: null };
+  const completed: Data = {
+    outcome: 'completed',
+    original: { code: 30412, msg: '有进行中的提现', data: { reason: 'x' } },
+  };
+  // @ts-expect-error an abandoned key has no stored result
+  const abandonedWithResult: Data = { outcome: 'abandoned', original: { code: 0, msg: '' } };
+  // @ts-expect-error a completed key returns its stored result
+  const completedWithoutResult: Data = { outcome: 'completed', original: null };
+  expectTypeOf<Schema<'AbandonIdempotencyKeyRequest'>['action']>().toEqualTypeOf<
+    'withdraw' | 'payout_account_change' | 'phone_change' | 'account_deletion'
+  >();
+  expect([abandoned, completed, abandonedWithResult, completedWithoutResult]).toHaveLength(4);
+  expect(completed.original?.code).toBe(30412);
+});

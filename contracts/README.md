@@ -6,7 +6,7 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `openapi.yaml` | OAS 3.1，v0.9：`GET /healthz` 加「登录 → 搜索 → 转链跳转」11 个接口（CT-02a）；其余接口随功能补 |
+| `openapi.yaml` | OAS 3.1，v0.9：`GET /healthz` 加「登录 → 搜索 → 转链跳转」11 个接口（CT-02a）、幂等键作废接口与 `x-step-up` 扩展（CT-16a）；其余接口随功能补 |
 | `redocly.yaml` | lint 规则：`recommended-strict`（推荐规则集，警告一律按错误）；关掉的规则逐条写了原因 |
 | `.redocly.lint-ignore.yaml` | 精确到位置的例外，逐条写原因；手工维护，不用 `--generate-ignore-file` 重新生成 |
 | `error-codes.yaml` | 错误码：码值、HTTP 状态、含义、客户端动作、可重试、`data` 字段形状、来源条目（CT-01；码值只按 08 §13.11） |
@@ -54,7 +54,9 @@ TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载�
 11. 与 `enums/` 同名同义的枚举（平台、场景、排序、rebate_basis 等）取值必须与 `enums/` 完全一致，对应关系登记在 `packages/contracts-ts/scripts/conformance.ts` 的 `ENUM_BINDINGS`；只允许子集的字段（如 parse、convert 的 `scene`，客户端不能自选归因场景）登记在 `ENUM_SUBSETS`。新增枚举字段时一并登记。
 12. 第 4 条的两处例外：错误外壳的 `data`（各码字段见 `error-codes.yaml`）和 `/v1/config` 里形状未定的块（`FreeForm`），由用到它们的任务补形状。
 
-第 10、11 条与金额字段为 int64 由 `pnpm contracts:check` 里的一致性检查（`conformance.ts`）执行。
+13. 需要二次验证的操作在 operation 上写 `x-step-up: <step_up_action>`（04 §5 step-up 行；名称由契约自定，规划侧补登）。只有 04 §5 那四个接口能带，取值按该行的对应关系（`conformance.ts` 的 `STEP_UP_OPERATIONS`）；带它的接口必须 `x-idempotent: true`、列 `StepUpToken` 参数（`X-Step-Up-Token`，schema 里非必填：缺少或不符是业务码 10003，不是 20001）、`x-error-codes` 含 10003 与 20903；不带它的接口不列这个参数，也不列 20903。只对部分请求生效时把条件写在 operation 说明里（`POST /v1/me/phone` 只在更换时要求，首次绑定不要求）。四个接口进契约前，`StepUpToken` 在 `.redocly.lint-ignore.yaml` 里有一条未使用例外，挂上时删掉。
+
+第 10、11、13 条与金额字段为 int64 由 `pnpm contracts:check` 里的一致性检查（`conformance.ts`）执行。
 
 ## 枚举与错误码的写法
 

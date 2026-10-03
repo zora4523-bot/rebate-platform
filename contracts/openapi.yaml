@@ -15,7 +15,15 @@ info:
     `x-error-codes` (business codes the operation may return besides the common ones;
     meaning, client action and data shape per code in contracts/error-codes.yaml),
     `x-implementation: planned` (declared ahead of its route, TECH-05; removed when the route
-    ships, apps/api/src/contract.test.ts enforces both ways).
+    ships, apps/api/src/contract.test.ts enforces both ways),
+    `x-step-up` (the step_up_action the `X-Step-Up-Token` header must carry, 04 §5; only the four
+    operations of the 04 §5 step-up row: POST /v1/withdrawals → withdraw, PUT
+    /v1/me/payout-account → payout_account_change, POST /v1/me/phone → phone_change,
+    POST /v1/me/deletion → account_deletion. Such an operation is idempotent, lists the
+    X-Step-Up-Token parameter and the codes 10003 (token missing, expired or for another action)
+    and 20903 (its Idempotency-Key was abandoned through POST /v1/idempotency-keys/abandon).
+    When only some requests need step-up, the condition is written in the operation
+    description: POST /v1/me/phone needs it only for a change, not for a first binding).
     Common codes any operation may return: 10401, 10402, 10403, 20001, 42901, 44001, 44002,
     50001, 50401; with x-auth login also 10001, 10002, 10006; with Idempotency-Key also 20901,
     40901.
@@ -358,6 +366,92 @@ paths:
                     reason_category: null
                     frozen_until: null
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/idempotency-keys/abandon:
+    post:
+      operationId: abandonIdempotencyKey
+      tags:
+        - identity
+      summary: Abandon the idempotency key of a sensitive operation whose result is unknown
+      description: |
+        Only for the pending state of the four x-step-up operations (04 §5 step-up row) after a
+        send whose result is unknown; the user chose to give up instead of confirming (BR-ID-10
+        细则「敏感操作的幂等键」). The server locates the idempotency record from the token's app_id
+        and user, the method and path that `action` maps to (the x-step-up table in
+        info.description) and `idempotency_key`:
+        - no record for the key → writes an abandoned record, `outcome=abandoned`, `original=null`;
+        - already abandoned → `outcome=abandoned` again (repeated calls give the same result);
+        - a completed record → `outcome=completed` and `original` = the stored response envelope
+          `{code, msg, data}` unchanged (success or a 3xxxx business error); nothing is abandoned;
+        - the original request is still processing → 40901 (the client stays pending).
+        Afterwards a request with that key returns 20903. `action` or a key outside the formats →
+        20001 (`data.fields`). Takes no Idempotency-Key header and needs no step-up. Allowed for
+        frozen and deleting accounts (inside the 10006 and 10007 whitelists, BR-ID-31,
+        BR-ID-27); passing them checks login, signature and subject only and grants no right to
+        run the original operation. Single writer: platform. x-min-version-gate and
+        x-session-scopes are added by CT-17a.
+      x-auth: login
+      x-signed: true
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 20001
+        - 40901
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbandonIdempotencyKeyRequest'
+            example:
+              action: withdraw
+              idempotency_key: example-withdraw-attempt
+      responses:
+        '200':
+          description: The key is abandoned, or its completed result is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AbandonIdempotencyKeyResponse'
+              examples:
+                abandoned:
+                  summary: No record for the key; it is abandoned now
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      outcome: abandoned
+                      original: null
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                completed:
+                  summary: The original request had completed with a 3xxxx business error
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      outcome: completed
+                      original:
+                        code: 30412
+                        msg: 有进行中的提现，暂不能申请注销
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
         4XX:
@@ -923,12 +1017,24 @@ components:
       description: |
         Required on operations marked I (04 §6); missing → 20001. Same key while processing →
         40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
-        the first result (拍板第二批 TRADE-22).
+        the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+        POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+      schema:
+        $ref: '#/components/schemas/IdempotencyKey'
+    StepUpToken:
+      name: X-Step-Up-Token
+      in: header
+      required: false
+      description: |
+        step_up_token from POST /v1/auth/step-up, only on x-step-up operations (04 §5). Sent as a
+        header so that the body hash, and with it the Idempotency-Key, does not change when a
+        replay carries a new token (BR-ID-08). Optional in the schema on purpose: a missing,
+        expired or other-action token is the business code 10003 (the client opens step-up),
+        not a 20001 validation error.
       schema:
         type: string
-        minLength: 8
-        maxLength: 64
-        pattern: '^[A-Za-z0-9_-]+$'
+        minLength: 1
+        maxLength: 2048
     LinkId:
       name: link_id
       in: path
@@ -1420,6 +1526,120 @@ components:
           description: |
             Until when the returned union URL can be used directly (BR-ATTR-05); it does not
             limit opening the link_id again.
+    IdempotencyKey:
+      type: string
+      description: Value of the Idempotency-Key header (04 §5「幂等」).
+      minLength: 8
+      maxLength: 64
+      pattern: '^[A-Za-z0-9_-]+$'
+    StepUpAction:
+      type: string
+      description: Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).
+      enum:
+        - withdraw
+        - payout_account_change
+        - phone_change
+        - account_deletion
+    IdempotencyAbandonOutcome:
+      type: string
+      description: Result of POST /v1/idempotency-keys/abandon (04 §6.1).
+      enum:
+        - abandoned
+        - completed
+    AbandonIdempotencyKeyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - action
+        - idempotency_key
+      properties:
+        action:
+          $ref: '#/components/schemas/StepUpAction'
+        idempotency_key:
+          $ref: '#/components/schemas/IdempotencyKey'
+    AbandonIdempotencyKeyData:
+      type: object
+      description: |
+        `original` is null exactly when `outcome=abandoned`. The oneOf branches declare the
+        properties they constrain (strict Ajv2020, ADR-0001 §4.2 #15).
+      additionalProperties: false
+      required:
+        - outcome
+        - original
+      properties:
+        outcome:
+          $ref: '#/components/schemas/IdempotencyAbandonOutcome'
+        original:
+          type:
+            - object
+            - 'null'
+          description: |
+            The response envelope stored with the completed idempotency record, unchanged
+            (`code` 0 or a 3xxxx business code; 1xxxx and 2xxxx results are never stored,
+            BR-WDR-07). `data` keeps the shape of the original operation, so it is left open.
+          additionalProperties: false
+          required:
+            - code
+            - msg
+          properties:
+            code:
+              type: integer
+              format: int32
+              anyOf:
+                - type: integer
+                  format: int32
+                  enum:
+                    - 0
+                - type: integer
+                  format: int32
+                  minimum: 30000
+                  maximum: 39999
+            msg:
+              type: string
+            data:
+              type: object
+              additionalProperties: true
+      oneOf:
+        - type: object
+          properties:
+            outcome:
+              type: string
+              enum:
+                - abandoned
+            original:
+              type: 'null'
+          required:
+            - outcome
+            - original
+        - type: object
+          properties:
+            outcome:
+              type: string
+              enum:
+                - completed
+            original:
+              type: object
+              additionalProperties: true
+          required:
+            - outcome
+            - original
+    AbandonIdempotencyKeyResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AbandonIdempotencyKeyData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     ErrorEnvelope:
       type: object
       description: |

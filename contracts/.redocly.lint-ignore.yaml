@@ -6,3 +6,8 @@ openapi.yaml:
   # document. The rule stays enabled for every other operation.
   operation-4xx-response:
     - '#/paths/~1healthz/get/responses'
+  # X-Step-Up-Token (04 §5 step-up row) is defined with the x-step-up check (CT-16a) before
+  # any of the four step-up operations is declared (orchestrator decision D-18); the tasks
+  # that declare them (CT-15j, CT-16c) use it and remove this entry.
+  no-unused-components:
+    - '#/components/parameters/StepUpToken'

@@ -33,7 +33,25 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   'ProductTlj/properties/kind': 'tlj_kind',
   'ProductCard/properties/match_tag': 'match_tag',
   'InputHit/properties/kind': 'input_kind',
+  StepUpAction: 'step_up_action',
+  IdempotencyAbandonOutcome: 'idempotency_abandon_outcome',
 };
+
+/**
+ * The four operations that need step-up and the step_up_action each one's X-Step-Up-Token must
+ * carry (规划/04 §5 step-up row; enum step_up_action). An operation in this table must carry
+ * `x-step-up` with exactly this value once it is declared; no other operation may carry it.
+ * Until the four are declared the check has nothing to match (orchestrator decision D-18).
+ */
+export const STEP_UP_OPERATIONS: Readonly<Record<string, string>> = {
+  withdraw: 'POST /v1/withdrawals',
+  payout_account_change: 'PUT /v1/me/payout-account',
+  phone_change: 'POST /v1/me/phone',
+  account_deletion: 'POST /v1/me/deletion',
+};
+
+/** Codes every x-step-up operation lists in x-error-codes (04 §5 step-up and 幂等 rows). */
+const STEP_UP_CODES = [10003, 20903];
 
 /** Inline enums that may only use a subset of an enum of contracts/enums. */
 export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
@@ -90,6 +108,54 @@ function checkAmounts(schemas: Obj, problems: string[]): void {
   visit(schemas, 'components/schemas');
 }
 
+/**
+ * `x-step-up` (04 §5 step-up row): the value is a step_up_action and is the one the table maps
+ * this operation to; the operation is idempotent, lists the X-Step-Up-Token parameter and the
+ * codes 10003 and 20903. Without `x-step-up` an operation lists neither the parameter nor 20903
+ * (20903 only answers a key abandoned on one of these operations).
+ */
+function checkStepUp(
+  op: Obj,
+  where: string,
+  actions: readonly string[],
+  expected: string | undefined,
+  problems: string[],
+): void {
+  const value = op['x-step-up'];
+  const params = Array.isArray(op['parameters'])
+    ? op['parameters'].map((p) => refName(p, 'parameters'))
+    : [];
+  const listed = Array.isArray(op['x-error-codes']) ? op['x-error-codes'] : [];
+  if (value === undefined) {
+    if (expected !== undefined) {
+      problems.push(`${where}: needs x-step-up ${expected} (04 §5 step-up row)`);
+    }
+    if (params.includes('StepUpToken')) {
+      problems.push(`${where}: X-Step-Up-Token is listed only on x-step-up operations`);
+    }
+    if (listed.includes(20903)) {
+      problems.push(`${where}: 20903 is listed only on x-step-up operations`);
+    }
+    return;
+  }
+  if (typeof value !== 'string' || !actions.includes(value)) {
+    problems.push(`${where}: x-step-up must be one of ${actions.join(', ')}`);
+  } else if (value !== expected) {
+    problems.push(
+      `${where}: x-step-up ${value} does not match 04 §5 (expected ${expected ?? 'none'})`,
+    );
+  }
+  if (op['x-idempotent'] !== true) problems.push(`${where}: x-step-up operations are x-idempotent`);
+  if (!params.includes('StepUpToken')) {
+    problems.push(`${where}: x-step-up operations list the X-Step-Up-Token parameter`);
+  }
+  for (const code of STEP_UP_CODES) {
+    if (!listed.includes(code)) {
+      problems.push(`${where}: x-step-up operations list ${code} in x-error-codes`);
+    }
+  }
+}
+
 export function checkConformance(
   enums: readonly EnumDef[],
   codes: readonly ErrorCodeDef[],
@@ -105,6 +171,16 @@ export function checkConformance(
   const enumValues = new Map(enums.map((e) => [e.name, e.values.map((v) => v.value)]));
   const authLevels = enumValues.get('auth_level') ?? [];
   const live = new Map(codes.filter((c) => !c.deprecated).map((c) => [c.code, c]));
+  const stepUpActions = enumValues.get('step_up_action') ?? [];
+  if (!sameSet(Object.keys(STEP_UP_OPERATIONS), stepUpActions)) {
+    problems.push(
+      `conformance.ts STEP_UP_OPERATIONS: actions differ from contracts/enums step_up_action ` +
+        `(${JSON.stringify(Object.keys(STEP_UP_OPERATIONS))} vs ${JSON.stringify(stepUpActions)})`,
+    );
+  }
+  const stepUpByOperation = new Map(
+    Object.entries(STEP_UP_OPERATIONS).map(([action, where]) => [where, action]),
+  );
 
   for (const [pointer, enumName] of Object.entries(ENUM_BINDINGS)) {
     const node = at(schemas, pointer);
@@ -158,6 +234,7 @@ export function checkConformance(
       if (impl !== undefined && impl !== 'planned') {
         problems.push(`${where}: x-implementation may only be "planned"`);
       }
+      checkStepUp(op, where, stepUpActions, stepUpByOperation.get(where), problems);
       if (!path.startsWith('/v1/')) continue;
       if (refName(at(op, 'responses/429'), 'responses') !== 'TooManyRequests') {
         problems.push(
