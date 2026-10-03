@@ -1,10 +1,13 @@
 id: B1-01j
 repo: rebate-platform
-title: 分区维护：worker 定时任务以 couli_maint 预建月分区、DEFAULT 分区有数据即告警、过期分区的删除函数（event_log 留存不少于 190 天）
+title: 分区维护：worker 定时任务以 couli_maint 预建月分区、DEFAULT 分区有数据即告警、过期分区的删除函数（event_log 留存不少于 190 天；订单类表与 ledger_entries 的分区只预建不删除）
 type: migration
 # 从 05 的 B1-01 拆出。依据：ADR-0001 §4.2 第 4、5、16 项；规划/02 §15.1；0003 迁移与
 # packages/db/scripts/partitions.ts 里标给 B1-01 的 TODO。两段式：实现方先只写迁移 SQL，编排者在
 # 沙箱外跑迁移与类型生成并提交生成物，再派实现方写定时任务（规划/11 §2.3）。迁移任务全局串行。
+# SPEC_REF 826f86e：规划/02 §15.1 与 BR-ID-30 ⑫、⑰（功能对照 G-14）定为 orders 等订单类表与
+# ledger_entries 的分区只预建、不删除，保管期限确认前删除函数对它们一律拒绝。refs 仍为空：BR-ID-30
+# 单条连同一跳引用渲染后任务书超过 24KB，由规则测试作者按 08 原文写成规则测试。
 refs: []
 refs_hash: {}
 deps: [B1-01g]

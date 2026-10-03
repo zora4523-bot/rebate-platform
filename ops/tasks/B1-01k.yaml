@@ -5,9 +5,10 @@ type: impl
 # 从 05 的 B1-01 拆出（B1-01a、B1-01b 两个纯库接进 PlatformModule）。依据：ADR-0001 §2「鉴权与密钥」
 # （本地用文件密钥，云上用 KMS）与「配置校验」行；规划/02 §12.6；规划/11 §8「真实密钥被本地栈加载」。
 # 与 B1-01f 都改 platform/config、platform.module.ts、platform/index.ts：两者不同时在途。
+# SPEC_REF 826f86e：BR-ID-33 细则新增的三段（G-87、G-71、G-82）不涉及密钥接线，范围不变。
 refs: [BR-ID-33]
 refs_hash:
-  BR-ID-33: b006e67811a3
+  BR-ID-33: 01b25f773b29
 deps: [B1-01a, B1-01b]
 paths:
   - 'apps/api/src/modules/platform/config/**'
