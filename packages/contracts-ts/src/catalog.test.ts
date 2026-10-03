@@ -94,7 +94,8 @@ it('enums carry the 04 §2 value sets', () => {
   expect(enums.notify_category).toEqual(['service', 'subscription', 'marketing']);
   expect(enums.admin_permission).toContain('user.list');
   expect(enums.admin_permission).toContain('payout.execute');
-  expect(enums.admin_permission).toHaveLength(43);
+  expect(enums.admin_permission).toHaveLength(44);
+  expect(enums.admin_permission).toContain('content.fund_terms');
 });
 
 it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data shapes', () => {
@@ -122,4 +123,19 @@ it('order enums carry the 资金规则对齐 additions (04 §2.3)', () => {
     'INVALID_AFTER_SETTLE',
     'REFUND_AFTER_SETTLE',
   ]);
+});
+
+it('fund enums carry the 资金规则对齐 additions (04 §2.4, §2.5)', () => {
+  expect(enums.recon_diff_type).toContain('estimate_changed_after_credit');
+  expect(enums.settle_batch_item_type).toEqual(['order', 'beneficiary']);
+  expect(enums.settle_adjustment_status).toEqual([
+    'pending',
+    'approved',
+    'rejected',
+    'voided_stale_seq',
+    'voided_by_clawback',
+  ]);
+  expect(enums.beneficiary_credit_kind).toEqual(['first_credit', 'reassign_credit', 'deferred']);
+  expect(enums.beneficiary_credit_status).toEqual(['open', 'done', 'forfeited', 'voided']);
+  expect(enums.payout_batch_item_result).toEqual(['paying', 'skipped', 'blocked', 'moved_out']);
 });

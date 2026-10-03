@@ -16,10 +16,11 @@ export const admin_permission = [
   "export", // 导出
   "content.page", // 首页配置发布 / 回滚、草稿预览二维码
   "content.pool", // 商品池、淘礼金池
-  "content.article", // 帮助中心、返利规则、公告、消息模板
-  "content.agreement", // 协议发布与提高最低版本 / 标记重签（step-up）
+  "content.article", // 帮助中心、返利规则、公告、消息模板（资金类消息模板除外，归 content.fund_terms）
+  "content.agreement", // 协议发布与提高最低版本 / 标记重签；修改隐私与权限文案键（BR-TEXT-14 表 D），要填法务确认人（step-up）
   "content.poster", // 海报背景图上传、审核
-  "config.general", // 普通配置
+  "content.fund_terms", // 修改资金术语键与资金类消息模板（清单见 BR-TEXT-12 细则「资金术语键」与 specs/fund-term-keys.yaml）（step-up）
+  "config.general", // 普通配置（不含 BR-TEXT-14 表 D 的隐私与权限文案键与 BR-TEXT-12 细则所列的资金术语键）
   "config.risk", // 风控规则与阈值（step-up）
   "config.business", // 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
   "switch.all", // 全部紧急开关（step-up）
@@ -41,7 +42,7 @@ export const admin_permission = [
   "ticket.handle", // 客服工单处理
   "ticket.data_export", // 个人信息副本导出（step-up）
   "withdraw.review", // 提现审核、驳回
-  "payout.execute", // 执行打款、needs_manual 处置（step-up）
+  "payout.execute", // 执行打款、needs_manual 处置、W11 凭通道成功证据核销原单（可为本单审核人）（step-up）
   "payout.manual_entry", // 线下打款补录（step-up）
   "settle.bill", // 月结账单确认、撤销定时、驳回、继续执行、补充批次（step-up）
   "settle.statement_upload", // 联盟结算明细上传
@@ -85,7 +86,7 @@ export const referral_credit_sub_type = [
 export type ReferralCreditSubType = (typeof referral_credit_sub_type)[number];
 
 /**
- * clawback_sub_type
+ * 按逆向事件来源取值，映射只在 BR-FUND-08 细则维护
  * Source: 规划/04 §2.4；BR-FUND-08 (contracts/enums/fund.yaml).
  */
 export const clawback_sub_type = [
@@ -176,7 +177,7 @@ export const income_type = [
 export type IncomeType = (typeof income_type)[number];
 
 /**
- * 终态 REJECTED、PAID_API、PAID_MANUAL、FAILED；用户文案见 BR-TEXT-06
+ * 终态 REJECTED、PAID_API、PAID_MANUAL、FAILED；迁移 W1–W11，W11 事件 CHANNEL_SUCCESS_PROVEN（付款方侧失败而通道已成功时核销原单，BR-WDR-17）；用户文案见 BR-TEXT-06
  * Source: 规划/04 §2.4；BR-WDR-08 (contracts/enums/fund.yaml).
  */
 export const withdrawal_status = [
@@ -321,13 +322,59 @@ export type SettleMode = (typeof settle_mode)[number];
 export const settle_batch_item_result = [
   "credited", // 已入账
   "skipped", // 已跳过
-  "deferred", // 已顺延
+  "deferred", // 受益人补记项的受益人仍在暂缓（BR-FUND-04 ⑫）
 ] as const;
 export type SettleBatchItemResult = (typeof settle_batch_item_result)[number];
 
 /**
+ * settle_batch_items.item_type
+ * Source: 规划/04 §2.5；BR-FUND-04 (contracts/enums/fund.yaml).
+ */
+export const settle_batch_item_type = [
+  "order", // 子订单行
+  "beneficiary", // 受益人补记项
+] as const;
+export type SettleBatchItemType = (typeof settle_batch_item_type)[number];
+
+/**
+ * settle_adjustments.status
+ * Source: 规划/04 §2.5；BR-FUND-09、BR-CALC-23 (contracts/enums/fund.yaml).
+ */
+export const settle_adjustment_status = [
+  "pending", // 待审批
+  "approved", // 已批准
+  "rejected", // 已驳回
+  "voided_stale_seq", // 已作废（候选行 seq 已不是当前 seq）
+  "voided_by_clawback", // 已作废（扣回发生时作废，BR-FUND-09 ②）
+] as const;
+export type SettleAdjustmentStatus = (typeof settle_adjustment_status)[number];
+
+/**
+ * beneficiary_credits.kind
+ * Source: 规划/04 §2.5；BR-FUND-04 ⑫ (contracts/enums/fund.yaml).
+ */
+export const beneficiary_credit_kind = [
+  "first_credit", // 入账时暂缓（迁移 R5 开立）
+  "reassign_credit", // 改派重记时新受益人暂缓（R14 开立）
+  "deferred", // 正差被延后
+] as const;
+export type BeneficiaryCreditKind = (typeof beneficiary_credit_kind)[number];
+
+/**
+ * beneficiary_credits.status
+ * Source: 规划/04 §2.5；BR-FUND-04 ⑫ (contracts/enums/fund.yaml).
+ */
+export const beneficiary_credit_status = [
+  "open", // 待补记
+  "done", // 已补记，或执行时金额为 0、不写凭证，或份额已由迁移 R9、R10 同事务补给受益人
+  "forfeited", // 已没收，或份额已由迁移 R9、R10 同事务归平台
+  "voided", // 订单转 CLAWED_BACK 或改派时作废
+] as const;
+export type BeneficiaryCreditStatus = (typeof beneficiary_credit_status)[number];
+
+/**
  * recon_diff_type
- * Source: 规划/04 §2.5；BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23 (contracts/enums/fund.yaml).
+ * Source: 规划/04 §2.5；BR-FUND-01、BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23 (contracts/enums/fund.yaml).
  */
 export const recon_diff_type = [
   "union_mismatch", // 联盟对账差异（R1）
@@ -338,8 +385,21 @@ export const recon_diff_type = [
   "settle_amount_mismatch", // 月结账单金额不一致
   "settle_missing", // 应结未结
   "appeal_restore", // 申诉撤销后恢复订单
+  "estimate_changed_after_credit", // 入账后只有预估佣金变化（BR-FUND-01 R9b；开关关闭时不生成）
 ] as const;
 export type ReconDiffType = (typeof recon_diff_type)[number];
+
+/**
+ * payout_batch_items.result；只插入不改，改挂到别的批次时原批次记一行 moved_out
+ * Source: 规划/04 §2.4；BR-WDR-11、BR-WDR-12 (contracts/enums/fund.yaml).
+ */
+export const payout_batch_item_result = [
+  "paying", // 进入打款
+  "skipped", // 已跳过
+  "blocked", // 受阻，留在 APPROVED
+  "moved_out", // 已移出，改挂到别的批次
+] as const;
+export type PayoutBatchItemResult = (typeof payout_batch_item_result)[number];
 
 /**
  * recon_diff_status
@@ -1137,7 +1197,12 @@ export const enums = {
   settle_batch_status,
   settle_mode,
   settle_batch_item_result,
+  settle_batch_item_type,
+  settle_adjustment_status,
+  beneficiary_credit_kind,
+  beneficiary_credit_status,
   recon_diff_type,
+  payout_batch_item_result,
   recon_diff_status,
   identity_level,
   login_provider,

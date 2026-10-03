@@ -14,10 +14,11 @@ enums:
       export: 导出
       content.page: 首页配置发布 / 回滚、草稿预览二维码
       content.pool: 商品池、淘礼金池
-      content.article: 帮助中心、返利规则、公告、消息模板
-      content.agreement: 协议发布与提高最低版本 / 标记重签（step-up）
+      content.article: 帮助中心、返利规则、公告、消息模板（资金类消息模板除外，归 content.fund_terms）
+      content.agreement: 协议发布与提高最低版本 / 标记重签；修改隐私与权限文案键（BR-TEXT-14 表 D），要填法务确认人（step-up）
       content.poster: 海报背景图上传、审核
-      config.general: 普通配置
+      content.fund_terms: 修改资金术语键与资金类消息模板（清单见 BR-TEXT-12 细则「资金术语键」与 specs/fund-term-keys.yaml）（step-up）
+      config.general: 普通配置（不含 BR-TEXT-14 表 D 的隐私与权限文案键与 BR-TEXT-12 细则所列的资金术语键）
       config.risk: 风控规则与阈值（step-up）
       config.business: 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
       switch.all: 全部紧急开关（step-up）
@@ -39,7 +40,7 @@ enums:
       ticket.handle: 客服工单处理
       ticket.data_export: 个人信息副本导出（step-up）
       withdraw.review: 提现审核、驳回
-      payout.execute: 执行打款、needs_manual 处置（step-up）
+      payout.execute: 执行打款、needs_manual 处置、W11 凭通道成功证据核销原单（可为本单审核人）（step-up）
       payout.manual_entry: 线下打款补录（step-up）
       settle.bill: 月结账单确认、撤销定时、驳回、继续执行、补充批次（step-up）
       settle.statement_upload: 联盟结算明细上传
