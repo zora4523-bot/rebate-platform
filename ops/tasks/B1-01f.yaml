@@ -1,0 +1,26 @@
+id: B1-01f
+repo: rebate-platform
+title: platform/db：主库 db 与只读 dbRead 句柄、按入口的连接池大小与错误监听、DATABASE_URL 与 REDIS_URL 按入口必填、优雅关闭
+type: impl
+# 从 05 的 B1-01 拆出（五个进程入口接上数据库）。依据：ADR-0001 §4.2 第 11、20 项；规划/02 §3.1、
+# §12.6「数据库业务角色的口令」行；packages/db README「已知限制」。五个入口、健康检查、时钟与
+# 配置加载骨架期已交付，这里只接数据库。健康检查仍只做存活探测：就绪探测要先加契约（另开契约任务）。
+refs: []
+refs_hash: {}
+deps: [B1-01e]
+paths:
+  - 'apps/api/src/modules/platform/db/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/scripts/smoke-entries.ts'
+  - 'packages/db/src/index.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/db/**'
+status: todo
+pr: null

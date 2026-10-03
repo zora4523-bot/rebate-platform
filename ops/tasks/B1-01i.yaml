@@ -1,0 +1,23 @@
+id: B1-01i
+repo: rebate-platform
+title: platform/idempotency：Idempotency-Key 处理（主体、请求体哈希、处理中 40901、不同请求体 20901、只存成功与 3xxxx 结果）
+type: impl
+# 从 05 的 B1-01 拆出（幂等）。依据：规划/04 §5「幂等」行与 §3.2 idempotency_keys 行；BR-WDR-07 的
+# 幂等段；规划/02 §18「幂等 API」行；BR-ID-08、BR-ID-10 里关于重放与幂等键的句子。refs 为空：
+# BR-WDR-07 单条渲染后任务书就超过 24KB（规划/11 §5.3），由规则测试作者按 08 原文把幂等段写成规则测试。
+# idempotency_keys 现有列是骨架期的暂定形状：要改表先拆迁移任务（两段式，规划/11 §2.3）。
+refs: []
+refs_hash: {}
+deps: [B1-01f]
+paths:
+  - 'apps/api/src/modules/platform/idempotency/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/bootstrap.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/idempotency/**'
+status: todo
+pr: null

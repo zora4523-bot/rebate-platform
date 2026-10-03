@@ -1,0 +1,24 @@
+id: B1-01a
+repo: rebate-platform
+title: platform/crypto：字段加密（AES-256-GCM 信封加密、密文带 key_version、可轮换）与 HMAC 盲索引；KeyProvider 接口与本地实现
+type: impl
+# 从 05 的 B1-01 拆出（加解密）。依据：BR-ID-33；规划/02 §12.3、§12.6；ADR-0001 §2「鉴权与密钥」。
+# 不依赖数据库。只交付纯库：不读环境变量、不进 PlatformModule、不从 platform/index.ts 导出
+# （接线在 B1-01k）。BR-ID-33 的脱敏格式在 B1-01c；reveal 接口与审计属后台与 identity 的任务。
+# 云上的 KMS 实现要等阿里云账号与 SDK（新依赖），另立任务；这里的 KeyProvider 接口为它留位。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: b006e67811a3
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/crypto/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'pnpm --filter @couli/api test'
+  - 'pnpm --filter @couli/spec-tests test'
+  - 'test/spec/platform/crypto/**'
+  - 'test/properties/platform/**'
+status: todo
+pr: null

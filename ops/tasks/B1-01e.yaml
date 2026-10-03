@@ -1,0 +1,26 @@
+id: B1-01e
+repo: rebate-platform
+title: 依赖与测试底座接入：apps/api 加 @couli/db、kysely、pg、pg-boss；apps/api 与规则测试包接上一次性 PG 的集成测试配置（含保护路径第二类，合并前要批准标签）
+type: deps
+# 从 05 的 B1-01 拆出。依据：ADR-0001 §2（版本线内，版本取 packages/db 已锁定的同一版本）、
+# §4.2 第 9 项；规划/11 §2.3 依赖、§3.4、§4.1、§4.4。测试库底座本身骨架期已有（packages/db/src/testing），
+# 这里只做接入：test/spec 与 test/acceptance 的 README 写着「接入方式随 B1-01」。
+# 会改 pnpm-lock.yaml、package.json 的 scripts、vitest 集成配置、tsconfig，都是保护路径第二类，
+# 按 规划/11 §3.2 进 ask。数据库相关的子任务（B1-01f 起）以它为基线。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'apps/api/tsconfig.json'
+  - 'apps/api/vitest.integration.config.ts'
+  - 'test/package.json'
+  - 'test/tsconfig.json'
+  - 'test/vitest.integration.config.ts'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
