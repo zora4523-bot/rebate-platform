@@ -1,0 +1,25 @@
+id: CT-13
+repo: rebate-platform
+title: 规格：specs/events.yaml——埋点事件、字段与公共字段、游客登录后的关联方式，含功能对照补缺各批的增补事件（link_jump 的 attempt_id 等）
+type: contract
+# 2026-10-04 入账（契约线；编排会话决定 j-03：先入账，排在 B1-08 之前）。依据：05 CT-13 行（拍板第二批 TECH-21、
+# F-OBS-03）与 couli-runs/CT-plan/contract-delta.md §2.3 CT-13 行的附加条目 b1-37、b2-31、b3-33、b4-25、b5-25
+# （external_page_union_host、external_page_nav_host 抽样、external_page_blocked_nav 只记 scheme 类别、
+# route_entry_blocked、link_jump 加 sdk_init_failed 与 attempt_id；各事件不带完整推广 URL / 口令 / 推广位 /
+# relation_id）；m-04 若 CT-18b 没有声明 POST /v1/events，也归本任务。
+# 本任务只做事件表与它的结构校验（放 packages/contracts-ts 的检查脚本，进 pnpm contracts:check）；三端与 H5 的
+# Tracker 生成器归 CT-05。refs 为空：依据在 08 与 05，单条 BR 渲染后超 24KB，由编排者摘入任务书第 2 节。
+# specs/ 不在 risk-map 白名单，按 RV2 评审（D-2）。
+refs: []
+refs_hash: {}
+deps: [CT-01]
+paths:
+  - 'specs/events.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

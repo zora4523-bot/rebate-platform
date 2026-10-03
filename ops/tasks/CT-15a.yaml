@@ -1,0 +1,22 @@
+id: CT-15a
+repo: rebate-platform
+title: 契约：错误码——20004、50305、20001（invalid_device_hash、phone_invalid）、10405、10403 h5_read_only、10004、10001 / 10005、30701（08 §13.11）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b1-19、b1-20、b1-23 + b2-17、b3-14、b3-16、b2-14、b2-15、b3-15。只改 error-codes.yaml 与生成物。
+# 10405 的 http 取 403（编排会话决定 j-05：不是凭证失效，401 会让通用拦截器误判；04 / 08 有明文时以规划为准，冲突停下回报）；retry 取 §13.11 原文，retry_kind never。sources 一律取 §13.11 来源列全列。
+refs: []
+refs_hash: {}
+contract_sections: ['7']
+deps: []
+paths:
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

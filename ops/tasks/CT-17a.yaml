@@ -1,0 +1,27 @@
+id: CT-17a
+repo: rebate-platform
+title: 契约：最低支持版本与受限会话——x-min-version-gate、x-session-scopes、10405 标注、session_scope、h5_token_scope、POST /v1/auth/h5-token、sms-codes 的 action（04 §5）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b3-02、b3-03、b3-17、b3-18 + b3-m02、b3-19、b3-20 + b3-m04、b3-21、b3-22、b3-23、b3-m03、b3-40。
+# 另给 CT-16a 的作废接口与 CT-15b 的新接口补 gate / scopes（取值只照 08 BR-ID-01 细则两张表；conformance 内放一份
+# operationId 白名单，注明以 08 为准）。10405 的列法二选一（公共码一句或 conformance 要求列出），在 PR 说明写明选择。
+# refresh 的 data 是 TokenPair：session_scope 放进 TokenPair 或另建 RefreshData，不能只改 LoginData。
+# §6.1 的 h5-token、sms-codes、登录各行由编排者摘入任务书（只带 §5 一节以控制 24KB）。
+refs: []
+refs_hash: {}
+contract_sections: ['5']
+deps: [CT-15a, CT-15b, CT-16a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

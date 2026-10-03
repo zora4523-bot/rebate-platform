@@ -1,0 +1,24 @@
+id: CT-16b
+repo: rebate-platform
+title: 迁移：idempotency_keys 支持 abandoned 行——request_hash 可空、status 取值约束、abandoned 行 request_hash 与 response 为空（04 §3.2）
+type: migration
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目：b2-36。
+# 解开 B1-01i 的表结构前置。新迁移 0004（不改 0003）：request_hash 去 NOT NULL；status CHECK (processing /
+# completed / abandoned)；CHECK：abandoned 行 request_hash 与 response 都为空、其余行 request_hash 非空。
+# 两段式（规划/11 §2.3）：Codex 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物。迁移全局串行。
+# 规则测试（Claude）连库，写成 test/spec/db/idempotency-keys/*.int.test.ts（由 pnpm test:int 运行）：abandoned 行可插入；非 abandoned 行缺 request_hash 被拒；status 取值外被拒。
+# refs 为空：依据是 04 §3.2 idempotency_keys 行与 BR-ID-10 细则「敏感操作的幂等键」，由编排者摘入任务书第 2 节。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/idempotency-keys/**'
+status: todo
+pr: null

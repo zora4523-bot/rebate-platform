@@ -1,0 +1,24 @@
+id: CT-18b
+repo: rebate-platform
+title: 契约：订单——GET /v1/orders（status_group、platform、q、paid_month）、GET /v1/orders/{order_id}、pending-tracks 与 dismiss（04 §6.4）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b2-03 + b4-05 + b4-06 + b4-07、b4-12 + m-07、b4-04、m-05（时间线部分）；m-04 只在同时声明 POST /v1/events 时做。
+# 首次声明按 04 §6.4 当前行全量写，增量条目是必须包含的部分。分组成员不进契约（BR-TEXT-02 细则）。
+# CT-17a 已合并时：dismiss 等写接口按 BR-ID-01 接口表标 x-min-version-gate。
+refs: []
+refs_hash: {}
+contract_sections: ['6.4']
+deps: [CT-18a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/order.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

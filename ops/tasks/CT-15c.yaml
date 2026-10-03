@@ -1,0 +1,21 @@
+id: CT-15c
+repo: rebate-platform
+title: 规格：设备哈希、手机号规范化、收款支付宝登录号的共用测试向量与无效设备哈希种子（BR-ID-05、BR-ID-09、BR-WDR-02）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目：b1-39、b2-28、b2-29。
+# 依据都在 08（BR-ID-05 细则「手机号规范化」四步、BR-ID-09 细则「设备标识的无效值」、BR-WDR-02 细则「支付宝登录号的
+# 规范化」）；04 无对应节。refs 为空是因为 BR 单条渲染后超 24KB，依据摘录由编排者放进任务书第 2 节。
+# specs/ 不在 risk-map 白名单，按 RV2 评审（contract-delta §3 D-2）。向量里不可见字符一律写 \u 转义。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'specs/device-hash.vectors.json'
+  - 'specs/phone-normalize.vectors.json'
+  - 'specs/payout-logon-normalize.vectors.json'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

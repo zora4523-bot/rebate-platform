@@ -1,0 +1,26 @@
+id: CT-15d
+repo: rebate-platform
+title: 契约：联盟授权——GET /v1/unions/bindings、auth-url、POST bindings、AuthJumpStep / AuthJumpPlan、30101 / 30102 / 30111 / 30104 / 30153 与 open、convert 的授权示例（04 §6.3、§7）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b1-09 + b4-09、b1-10 + b4-08、b1-11、b4-10、b1-16、b1-m01、b1-25、b1-21 + b4-16、b1-22、b4-15、b1-43（本组）。
+# auth-url 的 installed 参数只写指针 BR-ID-22 细则，不带出 InstalledState 的「default unknown」。
+# 30111 的 action 照 §13.11 写「同 30101」，auth_jump 的执行顺序写进 data 说明（contract-delta §4 S-08）。
+# CT-17a 已合并时：POST bindings 按 BR-ID-01 接口表标 x-min-version-gate。
+refs: []
+refs_hash: {}
+contract_sections: ['6.3']
+deps: [CT-17a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

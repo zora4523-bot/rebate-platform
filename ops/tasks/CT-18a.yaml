@@ -1,0 +1,25 @@
+id: CT-18a
+repo: rebate-platform
+title: 契约：搜索开关与转链响应——50304 search_disabled、ProductCard 与 open / convert 的 no_rebate_cause、attempt_id（04 §6.3、§8.3、§8.4）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b4-01、b4-14、b2-01、b2-02、b2-22、b4-11、b2-41（NoRebateCause 绑定）。
+# no_rebate_cause 用命名非空 schema NoRebateCause + anyOf [$ref, null]，ENUM_BINDINGS 登记 NoRebateCause。
+# attempt_id 进 OpenLinkResult、ConvertLinkData 的 required，三个成功 example 都带上。§8.3 卡片行由编排者摘入。
+refs: []
+refs_hash: {}
+contract_sections: ['6.3', '8.4']
+deps: [CT-15d]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/trade.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
