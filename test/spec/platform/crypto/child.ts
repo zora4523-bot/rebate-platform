@@ -13,6 +13,7 @@ import {
   type WrappedKeyring,
   createWrappedKeyring,
   openFieldCrypto,
+  rotateDataKey,
 } from '../../../../apps/api/src/modules/platform/crypto/index.ts';
 import { FakeKms } from './kit.ts';
 
@@ -53,6 +54,18 @@ export type ChildRequest =
       readonly keyId: string;
       readonly encrypt: readonly FieldValue[];
       readonly wrapHex: readonly string[];
+    }
+  /**
+   * Runs every operation once per value, successful and refused ones, and replies only with the
+   * outcomes of the refused calls: the parent checks what the process printed besides that.
+   */
+  | {
+      readonly mode: 'exercise';
+      readonly masterKeyHex: string;
+      readonly keyId: string;
+      readonly keyring: string;
+      readonly values: readonly FieldValue[];
+      readonly wrapHex: string;
     };
 
 export type ChildReply =
@@ -64,7 +77,8 @@ export type ChildReply =
       readonly indexes: string[];
       readonly unwrappedHex: string[];
     }
-  | { readonly keyring: string; readonly ciphertexts: string[]; readonly wrapped: string[] };
+  | { readonly keyring: string; readonly ciphertexts: string[]; readonly wrapped: string[] }
+  | { readonly outcomes: string[] };
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -78,7 +92,51 @@ function localProvider(masterKeyHex: string, keyId: string): KeyProvider {
   return new LocalKeyProvider(Buffer.from(masterKeyHex, 'hex'), keyId);
 }
 
+/** The FieldCryptoError code of a refused call, `refused` for a FieldCryptoError without a
+ * fixed code, `returned` when it was not refused, `other error` for anything else. */
+async function outcomeOf(run: () => unknown, anyCode = false): Promise<string> {
+  try {
+    await run();
+  } catch (error) {
+    if (!(error instanceof FieldCryptoError)) return 'other error';
+    return anyCode ? 'refused' : error.code;
+  }
+  return 'returned';
+}
+
+async function exercise(request: Extract<ChildRequest, { mode: 'exercise' }>): Promise<ChildReply> {
+  const provider = localProvider(request.masterKeyHex, request.keyId);
+  const stored = JSON.parse(request.keyring) as WrappedKeyring;
+  const crypto = await openFieldCrypto(stored, provider);
+  const rotated = await openFieldCrypto(await rotateDataKey(stored, provider), provider);
+  const outcomes: string[] = [];
+  for (const { text, context } of request.values) {
+    const ciphertext = crypto.encrypt(text, context);
+    crypto.decrypt(ciphertext, context);
+    crypto.keyVersionOf(ciphertext);
+    crypto.needsReencrypt(ciphertext);
+    crypto.blindIndex(text, context);
+    rotated.decrypt(rotated.reencrypt(ciphertext, context), context);
+    outcomes.push(
+      await outcomeOf(() => crypto.decrypt(ciphertext, `${context}.other`)),
+      await outcomeOf(() => crypto.encrypt(text, `${context} with space`)),
+      await outcomeOf(() => crypto.blindIndex(`${text}\ud800`, context)),
+      await outcomeOf(() => crypto.decrypt(text, context)),
+    );
+  }
+  const wrapped = await provider.wrapKey(Buffer.from(request.wrapHex, 'hex'));
+  await provider.unwrapKey(wrapped);
+  const otherMaster = Buffer.from(request.masterKeyHex, 'hex').map((byte) => byte ^ 0xff);
+  const wrongProvider = new LocalKeyProvider(otherMaster, request.keyId);
+  outcomes.push(
+    await outcomeOf(() => wrongProvider.unwrapKey(wrapped), true),
+    await outcomeOf(() => openFieldCrypto(stored, wrongProvider), true),
+  );
+  return { outcomes };
+}
+
 async function handle(request: ChildRequest): Promise<ChildReply> {
+  if (request.mode === 'exercise') return exercise(request);
   if (request.mode === 'encrypt') {
     const crypto = await openFieldCrypto(
       JSON.parse(request.keyring) as WrappedKeyring,

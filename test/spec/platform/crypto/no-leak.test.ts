@@ -20,24 +20,12 @@ import {
   leaksIn,
   referenceEncrypt,
   testKey,
+  withBytes,
 } from './kit.ts';
 
 // Distinctive synthetic values: none of them is a substring of an error message by accident.
 const SECRET_PLAINTEXT = '13877776666';
 const SECRET_ID_NO = '11010519491231002X';
-
-/**
- * Each named value as text and as its UTF-8 bytes: kept bytes print as hex (inspect of a
- * Buffer), as a number array (JSON, inspect of a Uint8Array) or as base64, never as the text
- * itself; leaksIn checks every encoding of a byte secret.
- */
-function withBytes(values: Readonly<Record<string, string>>): Record<string, string | Uint8Array> {
-  const secrets: Record<string, string | Uint8Array> = { ...values };
-  for (const [name, value] of Object.entries(values)) {
-    secrets[`${name} (utf-8)`] = Buffer.from(value, 'utf8');
-  }
-  return secrets;
-}
 
 it('[BR-ID-33] 报错不带明文：加密、建索引被拒时，错误的 message、stack、JSON 与 inspect 输出里都找不到传入的值，字符串与 UTF-8 字节的各种编码都没有', async () => {
   const kms = new FakeKms();

@@ -20,6 +20,7 @@ import {
   knownKeyring,
   outcomeOf,
   parseV1,
+  referenceBlindIndex,
   referenceDecrypt,
   referenceEncrypt,
   testBytes,
@@ -58,6 +59,43 @@ it('[BR-ID-33] 加密结果是 AES-256-GCM：按 v1 格式用 node:crypto 和 32
     expectedBytes[field] = IV_BYTES + Buffer.byteLength(SAMPLES[field], 'utf8') + TAG_BYTES;
   }
   expect({ decrypted, payloadBytes }).toEqual({ decrypted: SAMPLES, payloadBytes: expectedBytes });
+});
+
+it('[BR-ID-33] 长值不截断：140 个字符的收款邮箱，以及 ASCII、三字节汉字、四字节字符各 1 到 4096 个字符的长度档（跨 16、32、64、128、256、512、1024 的边界），加密后 node:crypto 独立解密得到完整原文、载荷长度对得上，盲索引等于完整原文的 HMAC', async () => {
+  const kms = new FakeKms();
+  const known = knownKeyring(kms, [1], 1);
+  const crypto = await openFieldCrypto(known.doc, kms);
+  const lengths = [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 511];
+  lengths.push(512, 513, 1023, 1024, 1025, 4096);
+  const units = { ascii: 'k', cjk: '测', astral: '\u{1F600}' } as const;
+  const values: Record<string, string> = {
+    // A payee e-mail longer than 128 characters: 64 + 1 + 63 + 12.
+    longEmail: `${'a'.repeat(64)}@${'b'.repeat(63)}.example.com`,
+  };
+  for (const [name, unit] of Object.entries(units)) {
+    // The first and last characters differ from the rest, so a cut at either end shows.
+    for (const n of lengths) values[`${name}${String(n)}`] = `<${unit.repeat(n)}>`;
+  }
+  const wrong: string[] = [];
+  for (const [name, text] of Object.entries(values)) {
+    const context = 'payout_accounts.alipay_logon_id';
+    const ciphertext = crypto.encrypt(text, context);
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (parseV1(ciphertext).payload.length !== IV_BYTES + bytes + TAG_BYTES) {
+      wrong.push(`${name}: payload length`);
+    }
+    if (referenceDecrypt(known.dataKey(1), ciphertext, context) !== text) {
+      wrong.push(`${name}: node:crypto`);
+    }
+    if (crypto.decrypt(ciphertext, context) !== text) wrong.push(`${name}: decrypt`);
+    if (crypto.blindIndex(text, context) !== referenceBlindIndex(known.blindKey, text, context)) {
+      wrong.push(`${name}: blind index`);
+    }
+  }
+  expect({ checked: Object.keys(values).length, wrong }).toEqual({
+    checked: 1 + 3 * lengths.length,
+    wrong: [],
+  });
 });
 
 it('[BR-ID-33] 按 v1 格式用 node:crypto 独立加密的密文，decrypt 解出原文（格式与算法互通）', async () => {

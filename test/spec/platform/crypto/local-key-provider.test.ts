@@ -60,6 +60,24 @@ it('[BR-ID-33] LocalKeyProvider：wrapKey 之后 unwrapKey 还原出同一把密
   });
 });
 
+it('[BR-ID-33] LocalKeyProvider 每次包裹都用新的随机 IV：同一把主密钥把同一把密钥包裹 20 次（一个实例 10 次、同一主密钥的另一个实例 10 次），20 份包裹文本两两不同，全都解得开', async () => {
+  // AES-256-GCM under one master key: a fixed or repeated IV would let two wrapped keys be
+  // combined into the plaintext of one another. The same input wrapped twice must differ.
+  const first = new LocalKeyProvider(testKey(MASTER_A), 'local-dev');
+  const second = new LocalKeyProvider(Buffer.from(testKey(MASTER_A)), 'local-dev');
+  const key = testKey(1);
+  const wrapped: string[] = [];
+  for (let i = 0; i < 10; i += 1) wrapped.push(await first.wrapKey(key));
+  for (let i = 0; i < 10; i += 1) wrapped.push(await second.wrapKey(key));
+  const unwrapped = await Promise.all(
+    wrapped.map(async (text) => Buffer.from(await first.unwrapKey(text)).toString('hex')),
+  );
+  expect({ distinct: new Set(wrapped).size, unwrapped }).toEqual({
+    distinct: 20,
+    unwrapped: wrapped.map(() => key.toString('hex')),
+  });
+});
+
 it('[BR-ID-33] LocalKeyProvider 的主密钥必须是 32 字节（AES-256）：0、16、31、33、64 字节一律 invalid_key', () => {
   const lengths = [0, 16, 31, 33, 64];
   expect({

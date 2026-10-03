@@ -273,6 +273,21 @@ export function encodingsOf(bytes: Uint8Array): string[] {
 }
 
 /**
+ * Each named value as text and as its UTF-8 bytes: kept bytes print as hex (inspect of a
+ * Buffer), as a number array (JSON, inspect of a Uint8Array) or as base64, never as the text
+ * itself; leaksIn checks every encoding of a byte secret.
+ */
+export function withBytes(
+  values: Readonly<Record<string, string>>,
+): Record<string, string | Uint8Array> {
+  const secrets: Record<string, string | Uint8Array> = { ...values };
+  for (const [name, value] of Object.entries(values)) {
+    secrets[`${name} (utf-8)`] = Buffer.from(value, 'utf8');
+  }
+  return secrets;
+}
+
+/**
  * The secrets (strings as they are, bytes in every encoding of `encodingsOf`) that show up in
  * the printed forms of `value`, matched case-insensitively with all whitespace removed. An empty
  * list means nothing leaked.
