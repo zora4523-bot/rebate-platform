@@ -1,0 +1,109 @@
+# 禁用词表（规划/08 BR-TEXT-13 正文与细则；清单与匹配规则只在 08 BR-TEXT-13 维护，本文件按它转写，
+# 改词先改 08）。CI 文案扫描（字典、config.texts、推送与站内信模板、短信、分享模板、SDUI 页面、规则文章、
+# 商品池自定义标题、Agent 固定话术、应用商店描述）与后台保存校验读同一份；命中即失败，后台返回 20001
+# （data.fields 指出字段与命中词）。语义预检（Jev，只标黄不拦截）不读本文件。
+#
+# 结构：
+#   version      每次改动递增
+#   scopes       判定范围：user_visible = 用户可见文案；admin_report = 后台与报表字段
+#   words        每条 {word, category, scopes, allow_keys?, allow_articles?, note?}
+#     category     price_rebate（价格与返利类）/ ranking（榜单类）/ fund（资金类）/ field_limited（只在 allow_keys 里允许）
+#     scopes       该词在哪些范围校验。按 BR-TEXT-13 正文逐词列出的豁免：资金类的佣金、待结算、结算中、返现、
+#                  充值、备付金与榜单类的高佣、收益榜只校验 user_visible；其余（价格与返利类、返利到账、
+#                  比价）在 user_visible 与 admin_report 都校验。比价在后台与报表字段也校验是代理按正文
+#                  未豁免取的默认，08 若另有规定以 08 为准
+#     allow_keys   放行的字段位置：字典键，「*」通配一段；放行按原文匹配，该字段的文本整体剔除后再对剩余
+#                  文本做归一化与匹配
+#     allow_rendered_in  通知模板编码（contracts/enums/ops.yaml notify_template_code）：模板里由 allow_keys
+#                  所列字段渲染进来的片段同样剔除；模板自己的固定文字照常校验
+#     allow_articles  按文章放行：取配置键当时指向的文章（config_key），只放行列出的字段；不写死文章 ID
+#                  （文章 ID 是运营配置）
+# 匹配：先按字段位置剔除白名单片段（原文匹配），再按 specs/banned-words.vectors.json 的步骤归一化后做子串匹配；
+# 归一化只用于匹配，展示的原文不变。
+# 降价表述的白名单模板等法务确认后再加（BR-TEXT-13 细则「降价表述」），现在没有。
+# TODO(规划/05 F1-02): order_status.PAID.hint.price_compare 是 08「rebate_basis=price_compare_risk 的订单状态
+#   hint（order_status.PAID.hint 的比价变体）」的占位键名 — blocked on 字典键定稿（BR-TEXT-02 / 字典落地时按实际键改）。
+version: '1'
+scopes: [user_visible, admin_report]
+words:
+  - word: 全网最低
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+  - word: 历史最低
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+  - word: 最低价
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+  - word: 最便宜
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+  - word: 最高返利
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+  - word: 稳赚
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+  - word: 必返
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+  - word: 返利最高
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+    note: 待法务确认，确认前启用（BR-PRICE-18）
+  - word: 最高返
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+    note: 待法务确认，确认前启用（BR-PRICE-18）
+  - word: 原价
+    category: price_rebate
+    scopes: [user_visible, admin_report]
+    note: 待法务确认，确认前启用（BR-PRICE-18）
+  - word: 高佣
+    category: ranking
+    scopes: [user_visible]
+    note: 榜单类（BR-TEXT-13 细则「榜单类词」，功能对照 Q-27 默认 A，待负责人确认）
+  - word: 收益榜
+    category: ranking
+    scopes: [user_visible]
+    note: 榜单类（同上）
+  - word: 返利到账
+    category: fund
+    scopes: [user_visible, admin_report]
+    note: 08 正文的后台与报表豁免逐词列出（佣金、待结算、结算中、返现、充值、备付金），不含本词，所以后台与报表字段同样校验
+  - word: 佣金
+    category: fund
+    scopes: [user_visible]
+    allow_keys:
+      - agent.disclaimer.commission
+    note: 唯一例外是 Agent 佣金披露文案（BR-AI-10，拍板第二批 AI-17），只按原文整体剔除
+  - word: 待结算
+    category: fund
+    scopes: [user_visible]
+  - word: 结算中
+    category: fund
+    scopes: [user_visible]
+  - word: 返现
+    category: fund
+    scopes: [user_visible]
+  - word: 充值
+    category: fund
+    scopes: [user_visible]
+  - word: 备付金
+    category: fund
+    scopes: [user_visible]
+  - word: 比价
+    category: field_limited
+    scopes: [user_visible, admin_report]
+    allow_keys:
+      - order_reason.PRICE_COMPARE.title
+      - order_reason.PRICE_COMPARE.desc
+      - order_status.PAID.hint.price_compare
+      - no_rebate.price_compare
+      - no_rebate.price_compare.confirm
+      - order.price_compare.hint
+    allow_rendered_in: [ORDER_INVALID, CLAWBACK]
+    allow_articles:
+      - config_key: help_links.price_compare
+        fields: [title, body]
+    note: 只允许出现在这些字段；卖点、广告位、分享标题、应用商店描述命中

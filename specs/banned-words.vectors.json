@@ -1,0 +1,137 @@
+{
+  "$comment": "Normalisation and matching test vectors of the banned-word check (08 BR-TEXT-13 细则「归一化」). Run by the CI text scan and the admin save check with the same function and the same Unicode character data (the function itself belongs to F1-02 / CT-06). The vectors cover only the step after the allow-list removal: allow_keys and allowed articles are matched on the original text. normalized is what the match runs on; displayed, stored and delivered text is never changed. Invisible characters are written as \\u escapes.",
+  "version": 1,
+  "steps": [
+    "Unicode NFKC",
+    "remove Default_Ignorable_Code_Point characters",
+    "remove every character of the general categories Z, P, S, Mn, Mc, Me, Cf and Cc",
+    "lower-case",
+    "substring match against the words of specs/banned-words.yaml"
+  ],
+  "counts": {
+    "hit": 17,
+    "pass": 3
+  },
+  "cases": [
+    {
+      "input": "全网最~低",
+      "note": "AC-S1-90 ⑦",
+      "normalized": "全网最低",
+      "hits": ["全网最低"]
+    },
+    {
+      "input": "最★低价",
+      "note": "AC-S1-90 ⑦ (CI template)",
+      "normalized": "最低价",
+      "hits": ["最低价"]
+    },
+    {
+      "input": "全 网 最 低！",
+      "note": "08 example",
+      "normalized": "全网最低",
+      "hits": ["全网最低"]
+    },
+    {
+      "input": "全网 最低！！",
+      "note": "08 example",
+      "normalized": "全网最低",
+      "hits": ["全网最低"]
+    },
+    {
+      "input": "佣~金",
+      "note": "08 example: tilde (S)",
+      "normalized": "佣金",
+      "hits": ["佣金"]
+    },
+    {
+      "input": "佣\u200b金",
+      "note": "08 example: zero-width space U+200B (Cf)",
+      "normalized": "佣金",
+      "hits": ["佣金"]
+    },
+    {
+      "input": "佣★金",
+      "note": "08 example: star (S)",
+      "normalized": "佣金",
+      "hits": ["佣金"]
+    },
+    {
+      "input": "佣\u034f金",
+      "note": "08 example: combining grapheme joiner U+034F (default ignorable)",
+      "normalized": "佣金",
+      "hits": ["佣金"]
+    },
+    {
+      "input": "佣\ufe0f金",
+      "note": "08 example: variation selector U+FE0F (default ignorable)",
+      "normalized": "佣金",
+      "hits": ["佣金"]
+    },
+    {
+      "input": "最\u3164低价",
+      "note": "08 example: Hangul filler U+3164 → U+1160 after NFKC (default ignorable, Lo)",
+      "normalized": "最低价",
+      "hits": ["最低价"]
+    },
+    {
+      "input": "佣\u0301金",
+      "note": "08 example: combining acute U+0301 (Mn)",
+      "normalized": "佣金",
+      "hits": ["佣金"]
+    },
+    {
+      "input": "佣\u20dd金",
+      "note": "08 example: combining enclosing circle U+20DD (Me)",
+      "normalized": "佣金",
+      "hits": ["佣金"]
+    },
+    {
+      "input": "最\u0332低价",
+      "note": "08 example: combining low line U+0332 (Mn)",
+      "normalized": "最低价",
+      "hits": ["最低价"]
+    },
+    {
+      "input": "佣\u093e金",
+      "note": "08 example: Devanagari vowel sign U+093E (Mc)",
+      "normalized": "佣金",
+      "hits": ["佣金"]
+    },
+    {
+      "input": "最\u0bbe低价",
+      "note": "08 example: Tamil vowel sign U+0BBE (Mc)",
+      "normalized": "最低价",
+      "hits": ["最低价"]
+    },
+    {
+      "input": "最·低·价",
+      "note": "08 example: middle dot (P)",
+      "normalized": "最低价",
+      "hits": ["最低价"]
+    },
+    {
+      "input": "1\ufe0f\u20e3 号福利",
+      "note": "08 example: keycap 1 (U+FE0F, U+20E3); no banned word, passes, original text unchanged",
+      "normalized": "1号福利",
+      "hits": []
+    },
+    {
+      "input": "ह\u093f\u0902द\u0940",
+      "note": "08 example: Hindi with Mc vowel signs; no banned word, passes",
+      "normalized": "हद",
+      "hits": []
+    },
+    {
+      "input": "双11❤\ufe0f",
+      "note": "AC-S1-90 ⑦: emoji with variation selector; no banned word, passes",
+      "normalized": "双11",
+      "hits": []
+    },
+    {
+      "input": "全网最低价",
+      "note": "two words at once: both 全网最低 and 最低价 are reported (hits lists every word found)",
+      "normalized": "全网最低价",
+      "hits": ["全网最低", "最低价"]
+    }
+  ]
+}

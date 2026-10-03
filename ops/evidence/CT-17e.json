@@ -1,0 +1,60 @@
+{
+  "task": "CT-17e",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "90457b92c8088ebb8c8f821d9cdf2ec786f15d24",
+  "red_tests": [],
+  "risk_note": "RV2 only because specs/** is not on the risk-map whitelist (orchestrator decision D-2). Data-only change: three spec files (banned-word table, normalisation vectors, material channel structure); no code, no money, attribution or user-authorisation path. spec_commit is the base commit of the branch. Written by hand before the evidence generator exists (ops/evidence/README.md).",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "ad22e4bbcb5615729d5d8b4fda0033e777deebef",
+      "tree": "5201bde2c523d8b9975fdbc476b7f08dd31d3c0e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T23:00:33Z",
+      "finished_at": "2026-10-03T23:01:39Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent with its own normaliser: round 1 fail (1 S1: 返利到账 exempted from admin fields), round 2 pass (couli-runs/CT-17e/review-claude.md)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 pass; round 2 (increment) pass, 20 vectors recomputed"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "contract task (ledger tester: codex) with no rule tests"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "f8b511d2eec87c548ad3baa18b07b02d9fe0097b",
+    "specs": "a6a17b1920779a8d40c177480fdbcaba22cca7fb"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 on the CT-17e worktree at the verified head; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
