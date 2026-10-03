@@ -1,0 +1,24 @@
+id: CT-15e
+repo: rebate-platform
+title: 契约：/v1/config 新增键——link_patterns、external_page、external_hosts、app_update、help_links、claim、invite 两开关、features.search_status 与 flags 键说明（04 §10.1）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b1-15、b1-28、b2-04、b3-25、b4-02、b4-03、b5-18（只写 help_links 键说明）。
+# 「客户端取不到按开启处理」只写在 external_page.union_host_block；整数带 format；不设 external_page.trusted_hosts。
+refs: []
+refs_hash: {}
+contract_sections: ['10.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/trade.yaml'
+  - 'contracts/enums/platform.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

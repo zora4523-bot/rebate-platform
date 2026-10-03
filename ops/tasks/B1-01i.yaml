@@ -11,10 +11,11 @@ type: impl
 # 行；作废原语在该键没有记录时插入 abandoned 行（无请求体哈希与响应），已完成返回原结果，处理中 40901；
 # 之后同键请求在幂等检查一步返回 20903、不比较请求体。作废接口本身由 B1-02 实现（规划/02 §4.1）。
 # 开工前要先有：idempotency_keys 的迁移（request_hash、response 对 abandoned 行可空，status 取
-# processing / completed / abandoned）与契约同步（20903 还不在 contracts/error-codes.yaml）。
+# processing / completed / abandoned）与契约同步（20903 还不在 contracts/error-codes.yaml）。2026-10-04 拆为
+# CT-16a（契约）与 CT-16b（迁移），deps 已加上。
 refs: []
 refs_hash: {}
-deps: [B1-01f]
+deps: [B1-01f, CT-16a, CT-16b]
 paths:
   - 'apps/api/src/modules/platform/idempotency/**'
   - 'apps/api/src/modules/platform/platform.module.ts'

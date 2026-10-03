@@ -1,0 +1,21 @@
+id: CT-17e
+repo: rebate-platform
+title: 规格：联盟物料频道白名单、禁用词表（比价放行键、榜单类词）与归一化测试向量（BR-TEXT-13、BR-TEXT-17）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目：b3-31、b2-32 + b3-34 + b5-26。
+# 白名单只收排序依据已记录、不含佣金权重的频道；09 记录不足时可先为空。向量字符一律 \u 转义，
+# 命中 16 条、放行 3 条（双11❤️、1️⃣ 号福利、हिंदी）。归一化函数本身归 F1-02 / CT-06，不在本任务。
+# 依据在 08，refs 为空的原因同 CT-15c；specs/ 按 RV2 评审。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'specs/material-channels.yaml'
+  - 'specs/banned-words.yaml'
+  - 'specs/banned-words.vectors.json'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

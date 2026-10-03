@@ -1,0 +1,23 @@
+id: CT-15g
+repo: rebate-platform
+title: 规格：平台链接形态表的结构、schema 与校验，导航判定共用测试向量（BR-ATTR-29；03 §5.1）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目：b1-33、b1-38 + b2-30。
+# 只建结构：具体域名与路径模式由 B1-07 按真实样本填（不臆造）；向量用自带的合成规则表，不依赖真实域名。
+# category 取 enums link_pattern_category（CT-15e 新增）。校验放 packages/contracts-ts 的检查脚本（不进 tools/）。
+# specs/ 按 RV2 评审（contract-delta §3 D-2）。
+refs: []
+refs_hash: {}
+contract_sections: ['10.1']
+deps: [CT-15e]
+paths:
+  - 'specs/link-patterns.yaml'
+  - 'specs/external-navigation.vectors.json'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

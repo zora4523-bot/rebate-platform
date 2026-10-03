@@ -1,0 +1,24 @@
+id: CT-15b
+repo: rebate-platform
+title: 契约：openapi 设备、短信与第三方登录——devices 的 id_source 与 42901、Phone 放宽、oauth-attempts、login/wechat、apple、huawei、step-up（04 §6.1）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b1-01、b1-26、b2-10、b2-12、b2-m04、b1-02、b1-30、b1-03、b1-04、b1-05、b1-06、b1-43（本组 ENUM_BINDINGS）。
+# 新接口都标 x-implementation: planned；step-up 的 oneOf 分支写 type + properties + required（CONTRACTS-W1 §8）。
+# 华为登录的 PKCE 等字段等 specs/oauth/huawei.md（CT-15i），不臆造。受限登录与 10405 由 CT-17a 补。
+refs: []
+refs_hash: {}
+contract_sections: ['6.1']
+deps: [CT-15a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
