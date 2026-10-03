@@ -74,6 +74,79 @@ export interface IdempotencyKeys {
   user_id: string | null;
 }
 
+export interface LinkLogs {
+  agent_message_id: string | null;
+  agent_session_id: string | null;
+  app_id: string;
+  cache_hit: Generated<boolean>;
+  client: string | null;
+  created_at: Generated<Timestamp>;
+  event: string;
+  expired: Generated<boolean>;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  latency_ms: number | null;
+  link_id: string | null;
+  model: string | null;
+  no_rebate: Generated<boolean>;
+  no_rebate_reason: string | null;
+  opener_user_id: string | null;
+  pid: string | null;
+  pid_scene: string | null;
+  platform: string | null;
+  product_key: string | null;
+  prompt_version: string | null;
+  quoted_price_fen: ColumnType<bigint, bigint, bigint> | null;
+  raw_item_id: string | null;
+  relation_id: string | null;
+  result_code: number;
+  scene: string | null;
+  shop_id: string | null;
+  spm: string | null;
+  user_id: string | null;
+}
+
+export interface LinkOpenAttempts {
+  app_id: string;
+  attempt_id: string;
+  created_at: Generated<Timestamp>;
+  dismissed_at: Timestamp | null;
+  jump_reported_at: Timestamp | null;
+  link_id: string;
+  opened_at: Timestamp;
+  row_version: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
+export interface Links {
+  agent_card_id: string | null;
+  agent_session_id: string | null;
+  app_id: string;
+  cache_hit: Generated<boolean>;
+  convert_result: Buffer | null;
+  created_at: Generated<Timestamp>;
+  device_id: string | null;
+  entry_source: string | null;
+  expire_at: Timestamp;
+  identity_snapshot: Json | null;
+  link_id: string;
+  pid: string | null;
+  pid_scene: string | null;
+  platform: string;
+  product_key: string | null;
+  quoted_at: Timestamp | null;
+  quoted_coupon_fen: ColumnType<bigint, bigint, bigint> | null;
+  quoted_coupon_id: string | null;
+  quoted_final_price_fen: ColumnType<bigint, bigint, bigint> | null;
+  raw_fetched_at: Timestamp | null;
+  raw_item_id: string | null;
+  row_version: Generated<number>;
+  scene: string;
+  sub_scene: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
 export interface LoginLogs {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -134,6 +207,9 @@ export interface DB {
   devices: Devices;
   event_log: EventLog;
   idempotency_keys: IdempotencyKeys;
+  link_logs: LinkLogs;
+  link_open_attempts: LinkOpenAttempts;
+  links: Links;
   login_logs: LoginLogs;
   processed_events: ProcessedEvents;
   user_oauth: UserOauth;

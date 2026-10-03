@@ -1,0 +1,68 @@
+{
+  "task": "B1-06a",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "6a3c11f880ea9389e5fc55f7ef54174f07ca2033",
+  "red_tests": [
+    "[AC-B1-06a#4] the quote snapshot of a link cannot be changed once written (BR-PRICE-12)",
+    "[AC-B1-06a#5] link_logs is range-partitioned on created_at with a DEFAULT partition",
+    "[AC-B1-06a#13] the jump report and the dismissal of one attempt are written independently, in either order"
+  ],
+  "risk_note": "RV2 by path (db/**, packages/db/**). Migration 0006 creates links, link_logs (partitioned by day, DEFAULT partition only) and link_open_attempts (04 §3.2; ADR-0001 §4.2 #5); generated schema.sql and db.gen.ts from pnpm db:snapshot outside the sandbox. The attribution logic itself (linking module) is not part of this task. Written by hand before the evidence generator exists (ops/evidence/README.md).",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "585d77c8f5dbfa55c6f5386b86895b46bd953f54",
+      "tree": "360804e97b0e238626a0bf72b8ca5cfdcd961c49",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T22:51:24Z",
+      "finished_at": "2026-10-03T22:52:55Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent: round 1 fail (1 S1: link_logs constraints blocked failure logs required by BR-ATTR-14), round 2 pass on the increment (couli-runs/B1-06a/review-claude.md)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 (base 6a3c11f): pass, checklist 7/7; round 2 (base 6c197eb, increment): pass, checklist 7/7"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "12 rule tests at 63ef2ef; round 1 fail (2 S1 in the test kit, fixed) plus 2 out-of-scope gaps added as tests; round 2 pass, its 3 out-of-scope gaps added as tests at 6a3c11f (16 in total, reviewed with the code)"
+  },
+  "notes": {
+    "rebased": "rule-test commits rebased onto main before the implementation; spec_commit is the rebased head of the rule tests"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "f8b511d2eec87c548ad3baa18b07b02d9fe0097b",
+    "packages/db": "b32bda156c874e7516e7e66973f8ba9d1c7f1ecb",
+    "db": "7107748f708d153fa5b197c7043f003203890894"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 on the B1-06a worktree at the verified head; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}

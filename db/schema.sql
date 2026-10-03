@@ -156,6 +156,60 @@ $$;
 
 
 --
+-- Name: reject_link_open_attempt_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_link_open_attempt_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.attempt_id, NEW.app_id, NEW.link_id, NEW.user_id, NEW.opened_at)
+      IS DISTINCT FROM
+      ROW(OLD.attempt_id, OLD.app_id, OLD.link_id, OLD.user_id, OLD.opened_at)
+    OR (OLD.jump_reported_at IS NOT NULL
+      AND NEW.jump_reported_at IS DISTINCT FROM OLD.jump_reported_at)
+    OR (OLD.dismissed_at IS NOT NULL
+      AND NEW.dismissed_at IS DISTINCT FROM OLD.dismissed_at)
+  THEN
+    RAISE EXCEPTION 'link_open_attempts identity is immutable and timestamps are write-once'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_link_quote_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_link_quote_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.app_id, NEW.link_id) IS DISTINCT FROM ROW(OLD.app_id, OLD.link_id)
+    OR (OLD.quoted_final_price_fen IS NOT NULL
+      AND NEW.quoted_final_price_fen IS DISTINCT FROM OLD.quoted_final_price_fen)
+    OR (OLD.quoted_coupon_fen IS NOT NULL
+      AND NEW.quoted_coupon_fen IS DISTINCT FROM OLD.quoted_coupon_fen)
+    OR (OLD.quoted_coupon_id IS NOT NULL
+      AND NEW.quoted_coupon_id IS DISTINCT FROM OLD.quoted_coupon_id)
+    OR (OLD.quoted_at IS NOT NULL
+      AND ROW(NEW.quoted_final_price_fen, NEW.quoted_coupon_fen, NEW.quoted_coupon_id, NEW.quoted_at)
+        IS DISTINCT FROM
+        ROW(OLD.quoted_final_price_fen, OLD.quoted_coupon_fen, OLD.quoted_coupon_id, OLD.quoted_at))
+  THEN
+    RAISE EXCEPTION 'links identity and written quote snapshot are immutable'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_update_delete(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -521,6 +575,147 @@ ALTER TABLE app.idempotency_keys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTIT
 
 
 --
+-- Name: link_logs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.link_logs (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    link_id uuid,
+    event text NOT NULL,
+    user_id uuid,
+    opener_user_id uuid,
+    platform text,
+    product_key text,
+    raw_item_id text,
+    shop_id text,
+    scene text,
+    pid_scene text,
+    spm text,
+    pid text,
+    relation_id text,
+    client text,
+    cache_hit boolean DEFAULT false NOT NULL,
+    expired boolean DEFAULT false NOT NULL,
+    quoted_price_fen bigint,
+    no_rebate boolean DEFAULT false NOT NULL,
+    no_rebate_reason text,
+    agent_session_id uuid,
+    agent_message_id uuid,
+    prompt_version text,
+    model text,
+    result_code integer NOT NULL,
+    latency_ms integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT link_logs_event_check CHECK ((event = ANY (ARRAY['convert'::text, 'precompute'::text, 'register'::text, 'open'::text])))
+)
+PARTITION BY RANGE (created_at);
+
+
+--
+-- Name: link_logs_default; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.link_logs_default (
+    id bigint CONSTRAINT link_logs_id_not_null NOT NULL,
+    app_id text CONSTRAINT link_logs_app_id_not_null NOT NULL,
+    link_id uuid,
+    event text CONSTRAINT link_logs_event_not_null NOT NULL,
+    user_id uuid,
+    opener_user_id uuid,
+    platform text,
+    product_key text,
+    raw_item_id text,
+    shop_id text,
+    scene text,
+    pid_scene text,
+    spm text,
+    pid text,
+    relation_id text,
+    client text,
+    cache_hit boolean DEFAULT false CONSTRAINT link_logs_cache_hit_not_null NOT NULL,
+    expired boolean DEFAULT false CONSTRAINT link_logs_expired_not_null NOT NULL,
+    quoted_price_fen bigint,
+    no_rebate boolean DEFAULT false CONSTRAINT link_logs_no_rebate_not_null NOT NULL,
+    no_rebate_reason text,
+    agent_session_id uuid,
+    agent_message_id uuid,
+    prompt_version text,
+    model text,
+    result_code integer CONSTRAINT link_logs_result_code_not_null NOT NULL,
+    latency_ms integer,
+    created_at timestamp with time zone DEFAULT now() CONSTRAINT link_logs_created_at_not_null NOT NULL,
+    CONSTRAINT link_logs_event_check CHECK ((event = ANY (ARRAY['convert'::text, 'precompute'::text, 'register'::text, 'open'::text])))
+);
+
+
+--
+-- Name: link_logs_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.link_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.link_logs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: link_open_attempts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.link_open_attempts (
+    attempt_id uuid NOT NULL,
+    app_id text NOT NULL,
+    link_id uuid NOT NULL,
+    user_id uuid,
+    opened_at timestamp with time zone NOT NULL,
+    jump_reported_at timestamp with time zone,
+    dismissed_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: links; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.links (
+    link_id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid,
+    device_id uuid,
+    platform text NOT NULL,
+    product_key text,
+    raw_item_id text,
+    raw_fetched_at timestamp with time zone,
+    scene text NOT NULL,
+    sub_scene text,
+    pid_scene text,
+    pid text,
+    entry_source text,
+    identity_snapshot jsonb,
+    convert_result bytea,
+    cache_hit boolean DEFAULT false NOT NULL,
+    quoted_final_price_fen bigint,
+    quoted_coupon_fen bigint,
+    quoted_coupon_id text,
+    quoted_at timestamp with time zone,
+    expire_at timestamp with time zone NOT NULL,
+    agent_session_id uuid,
+    agent_card_id text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: login_logs; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -878,6 +1073,13 @@ ALTER TABLE ONLY app.event_log ATTACH PARTITION app.event_log_default DEFAULT;
 
 
 --
+-- Name: link_logs_default; Type: TABLE ATTACH; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.link_logs ATTACH PARTITION app.link_logs_default DEFAULT;
+
+
+--
 -- Name: job_common; Type: TABLE ATTACH; Schema: pgboss; Owner: -
 --
 
@@ -937,6 +1139,46 @@ ALTER TABLE ONLY app.idempotency_keys
 
 ALTER TABLE ONLY app.idempotency_keys
     ADD CONSTRAINT idempotency_keys_scope_key UNIQUE (app_id, subject, method, path, key);
+
+
+--
+-- Name: link_logs link_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.link_logs
+    ADD CONSTRAINT link_logs_pkey PRIMARY KEY (id, created_at);
+
+
+--
+-- Name: link_logs_default link_logs_default_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.link_logs_default
+    ADD CONSTRAINT link_logs_default_pkey PRIMARY KEY (id, created_at);
+
+
+--
+-- Name: link_open_attempts link_open_attempts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.link_open_attempts
+    ADD CONSTRAINT link_open_attempts_pkey PRIMARY KEY (attempt_id);
+
+
+--
+-- Name: links links_app_id_link_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.links
+    ADD CONSTRAINT links_app_id_link_id_key UNIQUE (app_id, link_id);
+
+
+--
+-- Name: links links_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.links
+    ADD CONSTRAINT links_pkey PRIMARY KEY (link_id);
 
 
 --
@@ -1107,6 +1349,13 @@ CREATE INDEX device_registrations_device_created_idx ON app.device_registrations
 
 
 --
+-- Name: devices_app_id_id_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX devices_app_id_id_key ON app.devices USING btree (app_id, id);
+
+
+--
 -- Name: event_log_event_id_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -1118,6 +1367,34 @@ CREATE INDEX event_log_event_id_idx ON ONLY app.event_log USING btree (event_id)
 --
 
 CREATE INDEX event_log_default_event_id_idx ON app.event_log_default USING btree (event_id);
+
+
+--
+-- Name: link_logs_link_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX link_logs_link_created_idx ON ONLY app.link_logs USING btree (app_id, link_id, created_at);
+
+
+--
+-- Name: link_logs_default_app_id_link_id_created_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX link_logs_default_app_id_link_id_created_at_idx ON app.link_logs_default USING btree (app_id, link_id, created_at);
+
+
+--
+-- Name: link_open_attempts_link_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX link_open_attempts_link_idx ON app.link_open_attempts USING btree (app_id, link_id);
+
+
+--
+-- Name: link_open_attempts_user_opened_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX link_open_attempts_user_opened_idx ON app.link_open_attempts USING btree (app_id, user_id, opened_at);
 
 
 --
@@ -1233,6 +1510,20 @@ ALTER INDEX app.event_log_pkey ATTACH PARTITION app.event_log_default_pkey;
 
 
 --
+-- Name: link_logs_default_app_id_link_id_created_at_idx; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.link_logs_link_created_idx ATTACH PARTITION app.link_logs_default_app_id_link_id_created_at_idx;
+
+
+--
+-- Name: link_logs_default_pkey; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.link_logs_pkey ATTACH PARTITION app.link_logs_default_pkey;
+
+
+--
 -- Name: job_common_pkey; Type: INDEX ATTACH; Schema: pgboss; Owner: -
 --
 
@@ -1251,6 +1542,27 @@ CREATE TRIGGER device_registrations_no_rewrite BEFORE UPDATE ON app.device_regis
 --
 
 CREATE TRIGGER event_log_append_only BEFORE DELETE OR UPDATE ON app.event_log FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: link_logs link_logs_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER link_logs_append_only BEFORE DELETE OR UPDATE ON app.link_logs FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: link_open_attempts link_open_attempts_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER link_open_attempts_no_rewrite BEFORE UPDATE ON app.link_open_attempts FOR EACH ROW EXECUTE FUNCTION app.reject_link_open_attempt_rewrite();
+
+
+--
+-- Name: links links_no_quote_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER links_no_quote_rewrite BEFORE UPDATE ON app.links FOR EACH ROW EXECUTE FUNCTION app.reject_link_quote_rewrite();
 
 
 --
@@ -1275,6 +1587,54 @@ ALTER TABLE ONLY app.device_registrations
 
 ALTER TABLE ONLY app.devices
     ADD CONSTRAINT devices_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: link_logs link_logs_opener_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE app.link_logs
+    ADD CONSTRAINT link_logs_opener_user_fkey FOREIGN KEY (app_id, opener_user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: link_logs link_logs_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE app.link_logs
+    ADD CONSTRAINT link_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: link_open_attempts link_open_attempts_link_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.link_open_attempts
+    ADD CONSTRAINT link_open_attempts_link_fkey FOREIGN KEY (app_id, link_id) REFERENCES app.links(app_id, link_id);
+
+
+--
+-- Name: link_open_attempts link_open_attempts_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.link_open_attempts
+    ADD CONSTRAINT link_open_attempts_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: links links_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.links
+    ADD CONSTRAINT links_device_fkey FOREIGN KEY (app_id, device_id) REFERENCES app.devices(app_id, id);
+
+
+--
+-- Name: links links_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.links
+    ADD CONSTRAINT links_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -1383,6 +1743,20 @@ REVOKE ALL ON FUNCTION app.reject_device_registration_rewrite() FROM PUBLIC;
 
 
 --
+-- Name: FUNCTION reject_link_open_attempt_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_link_open_attempt_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_link_quote_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_link_quote_rewrite() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION reject_update_delete(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -1455,6 +1829,65 @@ GRANT SELECT ON TABLE app.event_log TO couli_readonly;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.idempotency_keys TO couli_app;
 GRANT SELECT ON TABLE app.idempotency_keys TO couli_readonly;
+
+
+--
+-- Name: TABLE link_logs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.link_logs TO couli_app;
+GRANT SELECT ON TABLE app.link_logs TO couli_readonly;
+
+
+--
+-- Name: TABLE link_logs_default; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT ON TABLE app.link_logs_default TO couli_readonly;
+
+
+--
+-- Name: TABLE link_open_attempts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.link_open_attempts TO couli_app;
+GRANT SELECT ON TABLE app.link_open_attempts TO couli_readonly;
+
+
+--
+-- Name: COLUMN link_open_attempts.jump_reported_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(jump_reported_at) ON TABLE app.link_open_attempts TO couli_app;
+
+
+--
+-- Name: COLUMN link_open_attempts.dismissed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(dismissed_at) ON TABLE app.link_open_attempts TO couli_app;
+
+
+--
+-- Name: COLUMN link_open_attempts.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.link_open_attempts TO couli_app;
+
+
+--
+-- Name: COLUMN link_open_attempts.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.link_open_attempts TO couli_app;
+
+
+--
+-- Name: TABLE links; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.links TO couli_app;
+GRANT SELECT ON TABLE app.links TO couli_readonly;
 
 
 --
