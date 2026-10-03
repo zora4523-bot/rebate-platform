@@ -110,7 +110,7 @@ function decide(c: NavCase): Outcome {
     table_used: name,
   });
   if (!/^https:/i.test(c.url)) return out('cancel', c.download ? 'download' : null);
-  if (normalise(c.url) === null) return out('cancel', null);
+  if (normalise(c.url) === null) return out('cancel', c.download ? 'download' : null);
   const hits = categories(c.url, table);
   if (hits.has('union_host')) {
     const topLevel = c.frame !== 'subframe';

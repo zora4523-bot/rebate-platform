@@ -5,8 +5,8 @@
     "frame": "initial (first URL the container opens) | main | subframe | new_window",
     "switches": "features.flags external_page.union_host_block (null = unreadable, treated as on) and external_page.product_intercept",
     "basic_mode": "basic mode (BR-ID-01): no device signature, inputs/parse cannot be called",
-    "download": "the request is a download (attachment, unrenderable type, blob: or data: download); a download is always cancelled and carries the download notice, a non-download blob: or data: navigation is cancelled without notice",
-    "order": "scheme (only https) → well-formed https URL (no user info, parsable; otherwise cancel, fail closed) → rule table: union_host hit with a product hit, top-level frame, product_intercept on and not basic mode → parse; other union_host hits → block while union_host_block is on (null = on) → download → allow",
+    "download": "the request is a download (attachment, unrenderable type, blob: or data: download). A download is always cancelled. Its notice is download, except when the URL is a platform page that the rule table blocks first (union_host_blocked, see order). A non-download blob: or data: navigation is cancelled without notice",
+    "order": "scheme (only https; otherwise cancel, with the download notice when it is a download) → well-formed https URL (no user info, parsable; otherwise cancel, fail closed, with the download notice when it is a download) → rule table: union_host hit with a product hit, top-level frame, product_intercept on and not basic mode → parse; other union_host hits → block (union_host_blocked) while union_host_block is on (null = on) → download (cancel, download notice) → allow",
     "matching": "host lower-cased, trailing dot removed, port ignored; path decoded once (valid %XX only, other % kept literally; the decoded bytes are read as UTF-8 and invalid sequences become U+FFFD), case-sensitive, ** matches anything including newlines",
     "tables": "which rule tables the client has, in the order current (/v1/config.link_patterns) → last_good → bundled"
   },
@@ -1038,6 +1038,24 @@
       "expected": {
         "action": "block",
         "notice": "union_host_blocked",
+        "parse_url": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "download from a malformed https URL: cancelled with the download notice",
+      "url": "https://u@www.brand.test/app.apk",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": true,
+      "tables": ["current", "last_good", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": "download",
         "parse_url": null,
         "table_used": "current"
       }
