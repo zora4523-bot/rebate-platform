@@ -1,0 +1,61 @@
+{
+  "task": "CT-15g",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "4e59a2ac01c11aea7e64b40d13689243569f50ff",
+  "red_tests": [],
+  "risk_note": "RV2 only because specs/** is not on the risk-map whitelist (orchestrator decision D-2). Spec files (link pattern table structure, navigation test vectors) and their checks in packages/contracts-ts; no money, attribution or user-authorisation implementation path. A contract task without rule tests: spec_commit is the base commit of the branch (rebased onto main after B1-02a). Written by hand before the evidence generator exists (ops/evidence/README.md).",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "9fd71b6f272232fa60a590854ac6ef390a132f77",
+      "tree": "ebba992429792f0169870b3758934305e8e285b6",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T22:32:54Z",
+      "finished_at": "2026-10-03T22:33:41Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "independent read-only Claude subagent, 3 rounds: round 1 fail (3 S1), round 2 fail (1 S1), round 3 pass with 2 S2 that the last commit also addresses (couli-runs/CT-15g/review-claude.md)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "rounds 1-2 fail (all S1 fixed); round 3 fail with 1 S1 on the wording of inputs.download versus the existing vectors, fixed in the last commit (wording plus one vector); the orchestrator ruled it closed under 规划/11 §3.3 (2026-10-04, option A of couli-runs/CT-15g/blocked.md) without a fourth round"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "contract task (ledger tester: codex) with no rule tests"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "68356218b0be5cfd927e72d8acbd795a4f9c5f9d",
+    "specs": "28f54ff32056777e14249463aceee455f57c8fd2",
+    "packages/contracts-ts": "34dd80f92d4dce317d0a4b0c45b27dde4bd0456e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 on the CT-15g worktree before the rebase; test/properties and packages/money are unchanged by the rebase (same tree)",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
