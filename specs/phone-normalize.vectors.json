@@ -1,0 +1,295 @@
+{
+  "$comment": "normalize_phone test vectors (08 BR-ID-05 细则「手机号规范化」). Shared by the server, the three apps and the H5 landing pages. Also the phone form of the Alipay payout login (08 BR-WDR-02 细则「支付宝登录号的规范化」; that use reports data.fields on the login field instead of phone). Invisible characters are written as \\u escapes.",
+  "version": 1,
+  "steps": [
+    "Unicode NFKC",
+    "remove every whitespace character (including U+3000, U+00A0), zero-width character (U+200B-U+200D, U+FEFF) and hyphen (- and U+2010-U+2015)",
+    "drop the country code: a leading +86; a leading 0086 or 86 only when exactly 11 digits follow",
+    "the result must match ^1[3-9][0-9]{9}$, otherwise 20001 with data.fields=[phone] and data.reason=phone_invalid"
+  ],
+  "applies_to": ["phone", "payout_alipay_login_phone_form"],
+  "cases": [
+    {
+      "input": "13800138000",
+      "note": "plain",
+      "expected": "13800138000"
+    },
+    {
+      "input": "＋８６ １３８-００１３-８０００",
+      "note": "08 example: full-width +86 with spaces and hyphen",
+      "expected": "13800138000"
+    },
+    {
+      "input": "0086 13800138000",
+      "note": "08 example",
+      "expected": "13800138000"
+    },
+    {
+      "input": "8613800138000",
+      "note": "08 example",
+      "expected": "13800138000"
+    },
+    {
+      "input": "12345678901",
+      "note": "08 example: second digit not 3-9",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "+852 5123 4567",
+      "note": "08 example: Hong Kong",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "1380013800",
+      "note": "08 example: 10 digits",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "+86 138 0013 8000",
+      "note": "BR-WDR-02 example",
+      "expected": "13800138000"
+    },
+    {
+      "input": "+86 138-0013-8000",
+      "note": "BR-WDR-02 example",
+      "expected": "13800138000"
+    },
+    {
+      "input": "86 13800138000",
+      "note": "BR-WDR-02 blocklist example",
+      "expected": "13800138000"
+    },
+    {
+      "input": "+8613800138000",
+      "note": "+86 without space",
+      "expected": "13800138000"
+    },
+    {
+      "input": "+86-138-0013-8000",
+      "note": "+86 with hyphens",
+      "expected": "13800138000"
+    },
+    {
+      "input": "138\u300000138000",
+      "note": "ideographic space U+3000",
+      "expected": "13800138000"
+    },
+    {
+      "input": "138\u00a00013\u00a08000",
+      "note": "no-break space U+00A0",
+      "expected": "13800138000"
+    },
+    {
+      "input": "\u200b13800138000\ufeff",
+      "note": "zero-width space and BOM",
+      "expected": "13800138000"
+    },
+    {
+      "input": "138\u200c0013\u200d8000",
+      "note": "zero-width non-joiner and joiner",
+      "expected": "13800138000"
+    },
+    {
+      "input": "138\u20100013\u20118000",
+      "note": "hyphen U+2010 and non-breaking hyphen U+2011",
+      "expected": "13800138000"
+    },
+    {
+      "input": "138\u20120013\u20138000",
+      "note": "figure dash U+2012 and en dash U+2013",
+      "expected": "13800138000"
+    },
+    {
+      "input": "138\u20140013\u20158000",
+      "note": "em dash U+2014 and horizontal bar U+2015",
+      "expected": "13800138000"
+    },
+    {
+      "input": "138−0013−8000",
+      "note": "minus sign U+2212 is not a listed hyphen",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "\t13800138000\n",
+      "note": "tab and newline",
+      "expected": "13800138000"
+    },
+    {
+      "input": "8613800138000 ",
+      "note": "trailing space after 86 prefix",
+      "expected": "13800138000"
+    },
+    {
+      "input": "86138001380001",
+      "note": "86 followed by 12 digits: prefix kept, 14 digits",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "861380013800",
+      "note": "86 followed by 10 digits: prefix kept, 12 digits",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "008613800138000",
+      "note": "0086 followed by 11 digits",
+      "expected": "13800138000"
+    },
+    {
+      "input": "0086138001380000",
+      "note": "0086 followed by 12 digits: prefix kept",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "+8612345678901",
+      "note": "+86 then second digit 2",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "+86+8613800138000",
+      "note": "double +86",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "+086 13800138000",
+      "note": "+086 is not a listed prefix",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "86 86 13800138000",
+      "note": "86 then 86 then 11 digits",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "8618612345678",
+      "note": "86 + 11 digits that start with 186",
+      "expected": "18612345678"
+    },
+    {
+      "input": "18612345678",
+      "note": "number that itself starts with 186",
+      "expected": "18612345678"
+    },
+    {
+      "input": "8613800138000",
+      "note": "same as the 08 example (idempotent re-normalisation)",
+      "expected": "13800138000"
+    },
+    {
+      "input": "13800138000a",
+      "note": "letter",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "1380013800O",
+      "note": "letter O for zero",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "",
+      "note": "empty",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "   ",
+      "note": "spaces only",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "(138)00138000",
+      "note": "parentheses are not removed",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "1３８００１３８０００",
+      "note": "mixed half and full width",
+      "expected": "13800138000"
+    },
+    {
+      "input": "19912345678",
+      "note": "second digit 9",
+      "expected": "19912345678"
+    },
+    {
+      "input": "10012345678",
+      "note": "second digit 0",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    },
+    {
+      "input": "+1 415 555 0100",
+      "note": "US number",
+      "error": {
+        "code": 20001,
+        "fields": ["phone"],
+        "reason": "phone_invalid"
+      }
+    }
+  ]
+}

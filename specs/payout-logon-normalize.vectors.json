@@ -1,0 +1,88 @@
+{
+  "$comment": "Alipay payout login normalisation, email form (08 BR-WDR-02 细则「支付宝登录号的规范化」). A login containing @ is the email form; one without @ uses normalize_phone and its vectors in phone-normalize.vectors.json. fields names the login field of the request (the payout account contract decides its name; payout_login is a placeholder). Invisible characters are written as \\u escapes.",
+  "version": 1,
+  "steps": [
+    "Unicode NFKC",
+    "remove every whitespace and zero-width character (U+200B-U+200D, U+FEFF)",
+    "lower-case the whole value",
+    "exactly one @ with a non-empty local part and a non-empty domain, otherwise 20001 (data.fields points at the login field, no reason)"
+  ],
+  "cases": [
+    {
+      "input": "Zhang.San@Example.com",
+      "note": "08 example",
+      "expected": "zhang.san@example.com"
+    },
+    {
+      "input": "zhang.san@example.com",
+      "note": "already normalised",
+      "expected": "zhang.san@example.com"
+    },
+    {
+      "input": " Zhang.San@Example.com ",
+      "note": "surrounding spaces",
+      "expected": "zhang.san@example.com"
+    },
+    {
+      "input": "zhang san@example.com",
+      "note": "inner space removed",
+      "expected": "zhangsan@example.com"
+    },
+    {
+      "input": "zhang\u200bsan@example.com",
+      "note": "zero-width space removed",
+      "expected": "zhangsan@example.com"
+    },
+    {
+      "input": "ｚｈａｎｇ＠ｅｘａｍｐｌｅ．ｃｏｍ",
+      "note": "full-width letters and at sign (NFKC)",
+      "expected": "zhang@example.com"
+    },
+    {
+      "input": "ZHANG-SAN@EXAMPLE.COM",
+      "note": "hyphen kept in the email form",
+      "expected": "zhang-san@example.com"
+    },
+    {
+      "input": "@example.com",
+      "note": "empty local part",
+      "error": {
+        "code": 20001,
+        "fields": ["payout_login"],
+        "reason": null
+      }
+    },
+    {
+      "input": "zhang.san@",
+      "note": "empty domain",
+      "error": {
+        "code": 20001,
+        "fields": ["payout_login"],
+        "reason": null
+      }
+    },
+    {
+      "input": "zhang@san@example.com",
+      "note": "two at signs",
+      "error": {
+        "code": 20001,
+        "fields": ["payout_login"],
+        "reason": null
+      }
+    },
+    {
+      "input": "@",
+      "note": "at sign only",
+      "error": {
+        "code": 20001,
+        "fields": ["payout_login"],
+        "reason": null
+      }
+    },
+    {
+      "input": "zhang\u3000san@example.com",
+      "note": "ideographic space removed",
+      "expected": "zhangsan@example.com"
+    }
+  ]
+}
