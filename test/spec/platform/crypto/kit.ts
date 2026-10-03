@@ -219,41 +219,59 @@ export class FakeKms implements KeyProvider {
 
 /**
  * A KeyProvider standing for a KMS that fails, with errors that quote a secret (a KMS error may
- * echo the request): `how` says which call fails and whether it rejects or throws synchronously.
- * Successful calls go to the wrapped FakeKms.
+ * echo the request): `how` says which call fails and whether it rejects or throws synchronously;
+ * `call` which call of that kind fails (1 = the first; earlier ones go to the wrapped FakeKms);
+ * `kind` whether the error is a plain Error or a FieldCryptoError coded key_provider_failed, both
+ * with the secret in the message and in a property.
  */
 export class FailingKms implements KeyProvider {
   readonly keyId: string;
   readonly #inner: FakeKms;
   readonly #how: 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap';
   readonly #secret: string;
+  readonly #call: number;
+  readonly #kind: 'error' | 'field-crypto-error';
+  #wraps = 0;
+  #unwraps = 0;
 
   constructor(
     inner: FakeKms,
     how: 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap',
     secret: string,
+    options: { readonly call?: number; readonly kind?: 'error' | 'field-crypto-error' } = {},
   ) {
     this.keyId = inner.keyId;
     this.#inner = inner;
     this.#how = how;
     this.#secret = secret;
+    this.#call = options.call ?? 1;
+    this.#kind = options.kind ?? 'error';
   }
 
   #failure(): Error {
-    return Object.assign(new Error(`kms refused the request for ${this.#secret}`), {
-      request: this.#secret,
-    });
+    const message = `kms refused the request for ${this.#secret}`;
+    const error =
+      this.#kind === 'error'
+        ? new Error(message)
+        : new FieldCryptoError('key_provider_failed', message);
+    return Object.assign(error, { request: this.#secret });
   }
 
   wrapKey(plainKey: Uint8Array): Promise<string> {
-    if (this.#how === 'throw-wrap') throw this.#failure();
-    if (this.#how === 'reject-wrap') return Promise.reject(this.#failure());
+    this.#wraps += 1;
+    if (this.#wraps === this.#call) {
+      if (this.#how === 'throw-wrap') throw this.#failure();
+      if (this.#how === 'reject-wrap') return Promise.reject(this.#failure());
+    }
     return this.#inner.wrapKey(plainKey);
   }
 
   unwrapKey(wrappedKey: string): Promise<Uint8Array> {
-    if (this.#how === 'throw-unwrap') throw this.#failure();
-    if (this.#how === 'reject-unwrap') return Promise.reject(this.#failure());
+    this.#unwraps += 1;
+    if (this.#unwraps === this.#call) {
+      if (this.#how === 'throw-unwrap') throw this.#failure();
+      if (this.#how === 'reject-unwrap') return Promise.reject(this.#failure());
+    }
     return this.#inner.unwrapKey(wrappedKey);
   }
 }

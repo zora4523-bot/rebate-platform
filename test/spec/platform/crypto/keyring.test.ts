@@ -107,7 +107,7 @@ it('[BR-ID-33] 信封加密：openFieldCrypto 把文档里每一个包裹密钥�
   });
 });
 
-it('[BR-ID-33] provider 包裹或解包失败时整体拒绝且不转述它的错误：解包任何一把密钥失败，openFieldCrypto 不返回只带部分密钥的对象；provider 抛出或拒绝（错误里带着手机号与密钥），新建、轮换、打开 keyring 都以 key_provider_failed 拒绝，错误是固定文案、没有 cause，找不到那些值', async () => {
+it('[BR-ID-33] provider 包裹或解包失败时整体拒绝且不转述它的错误：解包任何一把密钥失败，openFieldCrypto 不返回只带部分密钥的对象；provider 在第几次调用抛出或拒绝（错误里带着手机号与密钥，普通 Error 或同码的 FieldCryptoError），新建、轮换、打开 keyring 都以 key_provider_failed 拒绝，错误是固定文案、没有 cause、没有附加属性，找不到那些值', async () => {
   const outcomes: Record<string, string> = {};
   for (const failing of ['oldDataKey', 'currentDataKey', 'blindIndexKey'] as const) {
     const kms = new FakeKms();
@@ -119,16 +119,27 @@ it('[BR-ID-33] provider 包裹或解包失败时整体拒绝且不转述它的�
     outcomes[failing] = await rejectionOf(() => openFieldCrypto(known.doc, kms));
   }
   const secret = `13877776666 key=${testKey(1).toString('hex')}`;
-  const known = knownKeyring(new FakeKms(), [1], 1);
-  const failing = (how: 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap') =>
-    new FailingKms(new FakeKms(), how, secret);
+  const known = knownKeyring(new FakeKms(), [1, 2], 2);
+  type How = 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap';
+  const failing = (how: How, call = 1, kind: 'error' | 'field-crypto-error' = 'error') =>
+    new FailingKms(new FakeKms(), how, secret, { call, kind });
   const calls: Record<string, () => Promise<unknown>> = {
     createRejected: () => createWrappedKeyring(failing('reject-wrap')),
     createThrown: () => createWrappedKeyring(failing('throw-wrap')),
+    // The first of the two keys is wrapped, the second fails.
+    createSecondRejected: () => createWrappedKeyring(failing('reject-wrap', 2)),
+    createSecondThrown: () => createWrappedKeyring(failing('throw-wrap', 2)),
+    // The provider's error is itself a FieldCryptoError with this very code: still not passed on.
+    createCodedError: () => createWrappedKeyring(failing('reject-wrap', 2, 'field-crypto-error')),
     rotateRejected: () => rotateDataKey(known.doc, failing('reject-wrap')),
     rotateThrown: () => rotateDataKey(known.doc, failing('throw-wrap')),
+    rotateCodedError: () =>
+      rotateDataKey(known.doc, failing('throw-wrap', 1, 'field-crypto-error')),
     openRejected: () => openFieldCrypto(known.doc, failing('reject-unwrap')),
     openThrown: () => openFieldCrypto(known.doc, failing('throw-unwrap')),
+    openThirdRejected: () => openFieldCrypto(known.doc, failing('reject-unwrap', 3)),
+    openCodedError: () =>
+      openFieldCrypto(known.doc, failing('reject-unwrap', 2, 'field-crypto-error')),
   };
   const problems: Record<string, string[]> = {};
   for (const [name, call] of Object.entries(calls)) {
