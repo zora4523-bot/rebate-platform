@@ -135,6 +135,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/idempotency-keys/abandon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Abandon the idempotency key of a sensitive operation whose result is unknown
+         * @description Only for the pending state of the four x-step-up operations (04 §5 step-up row) after a
+         *     send whose result is unknown; the user chose to give up instead of confirming (BR-ID-10
+         *     细则「敏感操作的幂等键」). The server locates the idempotency record from the token's app_id
+         *     and user, the method and path that `action` maps to (the x-step-up table in
+         *     info.description) and `idempotency_key`:
+         *     - no record for the key → writes an abandoned record, `outcome=abandoned`, `original=null`;
+         *     - already abandoned → `outcome=abandoned` again (repeated calls give the same result);
+         *     - a completed record → `outcome=completed` and `original` = the stored response envelope
+         *       `{code, msg, data}` unchanged (success or a 3xxxx business error); nothing is abandoned;
+         *     - the original request is still processing → 40901 (the client stays pending).
+         *     Afterwards a request with that key returns 20903. `action` or a key outside the formats →
+         *     20001 (`data.fields`). Takes no Idempotency-Key header and needs no step-up. Allowed for
+         *     frozen and deleting accounts (inside the 10006 and 10007 whitelists, BR-ID-31,
+         *     BR-ID-27); passing them checks login, signature and subject only and grants no right to
+         *     run the original operation. Single writer: platform. x-min-version-gate and
+         *     x-session-scopes are added by CT-17a.
+         */
+        post: operations["abandonIdempotencyKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/config": {
         parameters: {
             query?: never;
@@ -409,6 +444,58 @@ export interface components {
              *     limit opening the link_id again.
              */
             expire_at: string;
+        };
+        /** @description Value of the Idempotency-Key header (04 §5「幂等」). */
+        IdempotencyKey: string;
+        /**
+         * @description Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).
+         * @enum {string}
+         */
+        StepUpAction: "withdraw" | "payout_account_change" | "phone_change" | "account_deletion";
+        /**
+         * @description Result of POST /v1/idempotency-keys/abandon (04 §6.1).
+         * @enum {string}
+         */
+        IdempotencyAbandonOutcome: "abandoned" | "completed";
+        AbandonIdempotencyKeyRequest: {
+            action: components["schemas"]["StepUpAction"];
+            idempotency_key: components["schemas"]["IdempotencyKey"];
+        };
+        /**
+         * @description `original` is null exactly when `outcome=abandoned`. The oneOf branches declare the
+         *     properties they constrain (strict Ajv2020, ADR-0001 §4.2 #15).
+         */
+        AbandonIdempotencyKeyData: {
+            outcome: components["schemas"]["IdempotencyAbandonOutcome"];
+            /**
+             * @description The response envelope stored with the completed idempotency record, unchanged
+             *     (`code` 0 or a 3xxxx business code; 1xxxx and 2xxxx results are never stored,
+             *     BR-WDR-07). `data` keeps the shape of the original operation, so it is left open.
+             */
+            original: {
+                /** Format: int32 */
+                code: number | 0;
+                msg: string;
+                data?: {
+                    [key: string]: unknown;
+                };
+            } | null;
+        } & ({
+            /** @enum {string} */
+            outcome: "abandoned";
+            original: null;
+        } | {
+            /** @enum {string} */
+            outcome: "completed";
+            original: {
+                [key: string]: unknown;
+            };
+        });
+        AbandonIdempotencyKeyResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AbandonIdempotencyKeyData"];
+            trace_id: components["schemas"]["TraceId"];
         };
         /**
          * @description Error response (04 §5, §7). `data` is present only for codes that define it; its fields
@@ -1009,9 +1096,10 @@ export interface components {
         /**
          * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
          *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
-         *     the first result (拍板第二批 TRADE-22).
+         *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+         *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
          */
-        IdempotencyKey: string;
+        IdempotencyKey: components["schemas"]["IdempotencyKey"];
         /** @description link_id from a card; unknown or of another app → 30144. */
         LinkId: components["schemas"]["Id"];
         /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
@@ -1412,6 +1500,63 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    abandonIdempotencyKey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "action": "withdraw",
+                 *       "idempotency_key": "example-withdraw-attempt"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AbandonIdempotencyKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description The key is abandoned, or its completed result is returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AbandonIdempotencyKeyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     getConfig: {
         parameters: {
             query?: never;
@@ -1700,7 +1845,8 @@ export interface operations {
                 /**
                  * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
                  *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
-                 *     the first result (拍板第二批 TRADE-22).
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -1767,7 +1913,8 @@ export interface operations {
                 /**
                  * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
                  *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
-                 *     the first result (拍板第二批 TRADE-22).
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };

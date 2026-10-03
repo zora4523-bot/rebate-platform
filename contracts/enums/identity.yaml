@@ -30,6 +30,12 @@ enums:
       payout_account_change: PUT /v1/me/payout-account
       phone_change: POST /v1/me/phone（更换）
       account_deletion: POST /v1/me/deletion
+  idempotency_abandon_outcome:
+    source: 规划/04 §6.1；BR-ID-10
+    description: POST /v1/idempotency-keys/abandon 的 outcome
+    values:
+      abandoned: 该键已作废（本次写入作废记录，或此前已作废）
+      completed: 该键已有完成的结果，随响应原样返回，不作废
   consent_type:
     source: 08 §13.2；BR-ID-12、BR-WDR-31
     values:

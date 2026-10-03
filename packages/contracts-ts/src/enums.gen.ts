@@ -401,6 +401,16 @@ export const step_up_action = [
 export type StepUpAction = (typeof step_up_action)[number];
 
 /**
+ * POST /v1/idempotency-keys/abandon 的 outcome
+ * Source: 规划/04 §6.1；BR-ID-10 (contracts/enums/identity.yaml).
+ */
+export const idempotency_abandon_outcome = [
+  "abandoned", // 该键已作废（本次写入作废记录，或此前已作废）
+  "completed", // 该键已有完成的结果，随响应原样返回，不作废
+] as const;
+export type IdempotencyAbandonOutcome = (typeof idempotency_abandon_outcome)[number];
+
+/**
  * consent_type
  * Source: 08 §13.2；BR-ID-12、BR-WDR-31 (contracts/enums/identity.yaml).
  */
@@ -1099,6 +1109,7 @@ export const enums = {
   login_provider,
   sms_purpose,
   step_up_action,
+  idempotency_abandon_outcome,
   consent_type,
   union_binding_status,
   union_binding_blocked_reason,

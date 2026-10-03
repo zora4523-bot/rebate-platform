@@ -149,6 +149,13 @@ codes:
     data:
       resource: [order, order_attribution, withdrawal, settle_batch, ticket]
     sources: [BR-FUND-01, BR-FUND-04, BR-ATTR-20, BR-WDR-08, BR-ID-36]
+  - code: 20903
+    http: 409
+    meaning: 幂等键已作废（需要二次验证的四个操作中结果未知的一次提交已被用户放弃，作废接口在该键没有记录时写入作废记录；之后带同一个键的请求在幂等检查一步返回本码，不比较请求体、不执行业务；业务结果写入时发现该键已作废也整笔回滚并返回本码）
+    action: 结束该键的待确认状态，删除本机未决记录，恢复提交入口；不重放，由用户重新提交（新幂等键）
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-01, BR-ID-10, BR-WDR-07]
   - code: 30101
     http: 422
     meaning: 淘宝未授权 / 未备案；站长授权过期或失效期间带 reason=auth_unavailable，不带 auth_url
@@ -640,11 +647,11 @@ codes:
     phase: P1
   - code: 40901
     http: 409
-    meaning: 同一请求正在处理
-    action: 保持加载态，稍后查询结果
+    meaning: 同一请求正在处理（含同一收款账号的付费核验仍在途或复核中；租约与复核期限到期后不再返回；作废接口遇到该键的原请求仍在处理时同码）
+    action: 保持加载态，稍后查询结果；作废请求得到本码时保持待确认状态，稍后由用户再确认或放弃
     retry: 稍后
     retry_kind: later
-    sources: [BR-ID-01, BR-ID-08, BR-WDR-03, BR-WDR-07]
+    sources: [BR-ID-01, BR-ID-08, BR-ID-10, BR-WDR-02, BR-WDR-03, BR-WDR-07]
   - code: 42901
     http: 429
     meaning: 请求过于频繁
