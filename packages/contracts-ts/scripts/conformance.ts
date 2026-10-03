@@ -34,6 +34,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   'ProductCard/properties/match_tag': 'match_tag',
   'InputHit/properties/kind': 'input_kind',
   StepUpAction: 'step_up_action',
+  PlatformSearchStatus: 'platform_search_status',
+  LinkPatternCategory: 'link_pattern_category',
   IdempotencyAbandonOutcome: 'idempotency_abandon_outcome',
 };
 

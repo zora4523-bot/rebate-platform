@@ -469,9 +469,8 @@ paths:
         (04 §10.1, excerpt). Clients keep the last good response (LKG) and fall back to it and
         then to the bundled default when the request fails (03 §4.3). Keys whose inner shape is
         not fixed by 04 yet are free-form objects and get typed by the task that consumes them.
-        x-auth is optional although 04 §6.2 lists none: h5_release buckets by user_id when
-        logged in (拍板第二批 TECH-28) and agent availability depends on the whitelist user
-        (BR-AI-12).
+        x-auth is optional (04 §6.2): h5_release buckets by user_id when logged in (拍板第二批
+        TECH-28) and agent availability depends on the whitelist user (BR-AI-12).
       x-auth: optional
       x-signed: false
       x-idempotent: false
@@ -510,10 +509,16 @@ paths:
                       agent.entry.visible: true
                       clipboard.enabled.taobao: true
                       ui.grayscale: false
+                      external_page.product_intercept: true
+                      external_page.union_host_block: true
+                      earnings.dashboard.visible: false
                     platform_status:
                       taobao: 'on'
                       jd: 'on'
                       pdd: not_launched
+                    search_status:
+                      taobao: 'on'
+                      jd: 'off'
                   texts:
                     withdraw.sla_text: 工作日 24 小时内处理
                   legal:
@@ -525,6 +530,8 @@ paths:
                   invite:
                     required: false
                     backfill_hours: 168
+                    bind_phone_guide: true
+                    before_buy_tip: true
                   agent:
                     enabled: true
                     whitelist_only: true
@@ -541,6 +548,26 @@ paths:
                   auth_tips: {}
                   compliance: {}
                   display: {}
+                  external_page:
+                    nav_host_sample_bp: 100
+                  link_patterns:
+                    version: '2026100401'
+                    rules:
+                      - platform: taobao
+                        category: union_host
+                        hosts:
+                          - taobao.example.test
+                        path_patterns: []
+                  external_hosts: []
+                  app_update:
+                    recheck_interval_sec: 1800
+                  help_links:
+                    price_compare:
+                      route: Help
+                      params:
+                        article_id: example-article-one
+                  claim:
+                    window_days: 30
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -2059,7 +2086,13 @@ components:
           type: object
           description: |
             Client switches by key: agent.entry.visible, clipboard.enabled.<platform>,
-            home.fallback, h5.route.<page>.enabled, ui.grayscale (03 §4.3).
+            home.fallback, h5.route.<page>.enabled, ui.grayscale (03 §4.3);
+            external_page.product_intercept (a platform product page inside the third-party page
+            container goes back to the native product detail) and external_page.union_host_block
+            (the container does not load union platform pages; derived from the server setting of
+            the same name; a client that cannot read it treats it as on) (BR-ATTR-29);
+            earnings.dashboard.visible (earnings dashboard entry, derived from
+            earnings.dashboard.enabled, BR-FUND-25).
           additionalProperties:
             type: boolean
         platform_status:
@@ -2069,6 +2102,21 @@ components:
             $ref: '#/components/schemas/PlatformCode'
           additionalProperties:
             $ref: '#/components/schemas/PlatformPurchaseStatus'
+        search_status:
+          type: object
+          description: |
+            Search switch by platform code, derived from search.enabled.<platform> (04 §10.1);
+            how a client treats a missing platform is in BR-PROD-10 细则.
+          propertyNames:
+            $ref: '#/components/schemas/PlatformCode'
+          additionalProperties:
+            $ref: '#/components/schemas/PlatformSearchStatus'
+    PlatformSearchStatus:
+      type: string
+      description: Whether search is open for a platform (enum platform_search_status).
+      enum:
+        - 'on'
+        - 'off'
     ConfigLegalPrivacy:
       type: object
       additionalProperties: false
@@ -2113,6 +2161,8 @@ components:
       required:
         - required
         - backfill_hours
+        - bind_phone_guide
+        - before_buy_tip
       properties:
         required:
           type: boolean
@@ -2121,6 +2171,12 @@ components:
           type: integer
           format: int32
           description: Window for entering an inviter later (BR-INV-07).
+        bind_phone_guide:
+          type: boolean
+          description: Show the bind-phone guide to new third-party accounts (BR-INV-03 细则).
+        before_buy_tip:
+          type: boolean
+          description: Show the inviter tip before the first purchase (BR-INV-21).
     ConfigAgent:
       type: object
       description: Agent availability and guest quota (04 §10.1; BR-AI-11, BR-AI-12).
@@ -2169,6 +2225,117 @@ components:
         url:
           type: string
           format: uri
+    ConfigExternalPage:
+      type: object
+      description: Third-party page container settings (BR-ATTR-29).
+      additionalProperties: false
+      required:
+        - nav_host_sample_bp
+      properties:
+        nav_host_sample_bp:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10000
+          description: Sampling rate of document-level navigation hosts, 1/10000 (default in BR-ATTR-29).
+    LinkPatternCategory:
+      type: string
+      description: Category of a platform link pattern (enum link_pattern_category, BR-ATTR-29).
+      enum:
+        - product
+        - promo
+        - union_host
+    LinkPatternRule:
+      type: object
+      description: |
+        Hosts and path patterns of one platform and category. How hosts match (union_host by
+        registered domain including subdomains) and the path pattern syntax are defined with the
+        source table specs/link-patterns.yaml (CT-15g); concrete values come from real samples (B1-07).
+      additionalProperties: false
+      required:
+        - platform
+        - category
+        - hosts
+        - path_patterns
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        category:
+          $ref: '#/components/schemas/LinkPatternCategory'
+        hosts:
+          type: array
+          items:
+            type: string
+            minLength: 1
+        path_patterns:
+          type: array
+          items:
+            type: string
+            minLength: 1
+    ConfigLinkPatterns:
+      type: object
+      description: |
+        Client pre-filter subset of the platform link pattern table (source
+        specs/link-patterns.yaml). Clients decide where a document-level navigation in the
+        third-party page container goes (main frame, subframe, new window); product recognition
+        follows the server. When the fetch fails they use the last good version, then the bundled
+        snapshot, and never stop intercepting (BR-ATTR-29).
+      additionalProperties: false
+      required:
+        - version
+        - rules
+      properties:
+        version:
+          type: string
+          minLength: 1
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkPatternRule'
+    ConfigAppUpdate:
+      type: object
+      additionalProperties: false
+      required:
+        - recheck_interval_sec
+      properties:
+        recheck_interval_sec:
+          type: integer
+          format: int32
+          minimum: 1
+          description: |
+            On returning to the foreground, call GET /v1/app-versions/check again when the last
+            successful check is older than this (value and bundled default in BR-ID-01 细则
+            「最低支持版本的接口层拦截」).
+    HelpLinkTarget:
+      type: object
+      description: Jump target {route, params}; route is a route name of contracts/routes.json.
+      additionalProperties: false
+      required:
+        - route
+        - params
+      properties:
+        route:
+          type: string
+          minLength: 1
+        params:
+          type: object
+          additionalProperties: true
+    ConfigClaim:
+      type: object
+      additionalProperties: false
+      required:
+        - window_days
+      properties:
+        window_days:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: |
+            Days within which an order claim may be filed, claim.window_hours rounded down to
+            days; null when below one day or not configured. Only renders the claim form's period
+            sentence (BR-ATTR-17 细则「找回页的填写指引」); claim.window_hours is not sent.
     Config:
       type: object
       description: |
@@ -2193,6 +2360,12 @@ components:
         - auth_tips
         - compliance
         - display
+        - external_page
+        - link_patterns
+        - external_hosts
+        - app_update
+        - help_links
+        - claim
       properties:
         dict_version:
           type: string
@@ -2233,6 +2406,32 @@ components:
           $ref: '#/components/schemas/FreeForm'
         display:
           $ref: '#/components/schemas/FreeForm'
+        external_page:
+          $ref: '#/components/schemas/ConfigExternalPage'
+        link_patterns:
+          $ref: '#/components/schemas/ConfigLinkPatterns'
+        external_hosts:
+          type: array
+          description: |
+            Third-party page hosts a deep link may open in ExternalPage, matched by full host name
+            (values and default in BR-ID-10 细则「深链能打开的第三方页面」); push and in-app
+            targets are not limited by it (03 §4.4).
+          items:
+            type: string
+            minLength: 1
+        app_update:
+          $ref: '#/components/schemas/ConfigAppUpdate'
+        help_links:
+          type: object
+          description: |
+            Native entries to help articles: key → jump target; an entry whose key is not
+            configured is not shown. Keys are defined by the rules that use them: price_compare
+            (BR-TEXT-03), claim_guide.<platform> (BR-ATTR-17 细则), login_help (BR-ID-02 细则),
+            withdraw_rules (BR-WDR-04 细则). Values are operations configuration (article ids).
+          additionalProperties:
+            $ref: '#/components/schemas/HelpLinkTarget'
+        claim:
+          $ref: '#/components/schemas/ConfigClaim'
     ConfigResponse:
       type: object
       additionalProperties: false

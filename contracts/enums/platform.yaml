@@ -30,6 +30,12 @@ enums:
       harmony: 鸿蒙 App
       h5: App 内或 App 外 H5
       admin: 管理后台
+  platform_search_status:
+    source: 规划/04 §2.5、§10.1；BR-PROD-10
+    description: /v1/config.features.search_status 的值，由 search.enabled.<platform> 派生
+    values:
+      'on': 可搜索
+      'off': 搜索关闭
   install_channel:
     source: 规划/04 §5（请求头 X-Channel）；拍板第二批 TECH-18
     description: 安装包渠道
