@@ -438,6 +438,28 @@ export const login_provider = [
 export type LoginProvider = (typeof login_provider)[number];
 
 /**
+ * 设备标识哈希的来源（devices.id_source）
+ * Source: 规划/04 §3.2 devices、§6.1；BR-ID-09 (contracts/enums/identity.yaml).
+ */
+export const device_id_source = [
+  "idfv", // iOS IDFV
+  "android_id", // Android ANDROID_ID（MVP Android 只用它）
+  "oaid", // Android OAID（MVP 不集成获取方式，预留）
+  "odid", // 鸿蒙 ODID
+] as const;
+export type DeviceIdSource = (typeof device_id_source)[number];
+
+/**
+ * 第三方授权尝试的用途（POST /v1/auth/oauth-attempts）
+ * Source: 规划/04 §6.1；BR-ID-04、BR-ID-08 (contracts/enums/identity.yaml).
+ */
+export const oauth_attempt_purpose = [
+  "login", // 登录
+  "step_up", // 二次验证
+] as const;
+export type OauthAttemptPurpose = (typeof oauth_attempt_purpose)[number];
+
+/**
  * sms_purpose
  * Source: 规划/04 §6.1；BR-ID-05 (contracts/enums/identity.yaml).
  */
@@ -1206,6 +1228,8 @@ export const enums = {
   recon_diff_status,
   identity_level,
   login_provider,
+  device_id_source,
+  oauth_attempt_purpose,
   sms_purpose,
   step_up_action,
   idempotency_abandon_outcome,

@@ -37,6 +37,9 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   PlatformSearchStatus: 'platform_search_status',
   LinkPatternCategory: 'link_pattern_category',
   IdempotencyAbandonOutcome: 'idempotency_abandon_outcome',
+  DeviceIdSource: 'device_id_source',
+  LoginProvider: 'login_provider',
+  OauthAttemptPurpose: 'oauth_attempt_purpose',
 };
 
 /**
@@ -59,6 +62,9 @@ const STEP_UP_CODES = [10003, 20903];
 export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'ParseInputRequest/properties/scene': 'scene',
   'ConvertLinkRequest/properties/scene': 'scene',
+  'StepUpByWechatRequest/properties/provider': 'login_provider',
+  'StepUpByAppleRequest/properties/provider': 'login_provider',
+  'StepUpByHuaweiRequest/properties/provider': 'login_provider',
 };
 
 function isObj(v: unknown): v is Obj {

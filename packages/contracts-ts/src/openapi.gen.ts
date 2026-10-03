@@ -38,6 +38,14 @@ export interface paths {
          * @description Issues `device_id` and `install_secret` after the user has agreed to the privacy policy
          *     (BR-ID-09). The client stores install_secret only in Keychain / Keystore / HUKS and signs
          *     later requests with it. Not signed: the device has no secret yet.
+         *     `device_hash` is lowercase_hex(SHA-256(UTF-8 bytes of the identifier with surrounding
+         *     whitespace removed, lower-cased)) and `id_source` names the identifier (BR-ID-09 细则
+         *     「设备标识的无效值」; MVP Android uses ANDROID_ID only). The client never hashes an invalid
+         *     identifier (empty, all zeros, wrong format). A hash of the wrong format, or one on the
+         *     invalid-hash list (config device.invalid_hashes), is 20001 with `data.fields=[device_hash]`
+         *     and no device_id is issued; the client shows nothing and reads the identifier again
+         *     instead of retrying the same value. Reaching the per-IP hourly registration limit is 42901
+         *     with Retry-After (BR-ID-05 细则「发码与设备注册的风控默认值」).
          */
         post: operations["registerDevice"];
         delete?: never;
@@ -57,8 +65,11 @@ export interface paths {
         put?: never;
         /**
          * Send an SMS verification code
-         * @description Order of checks: signature 10401 / 10402 → 44001 → 44003 → 42901 (BR-ID-05). Limits per
+         * @description Order of checks: signature 10401 / 10402 → 20001 → 44001 → 44003 → 42901 (BR-ID-05). Limits per
          *     phone: 1 per 60 s, 10 per natural day (+08:00); a code is 6 digits and valid 5 minutes.
+         *     `phone` is normalised by the server (BR-ID-05 细则「手机号规范化」); when the result is not
+         *     a mainland mobile number the answer is 20001 with `data.fields=[phone]` and
+         *     `data.reason=phone_invalid`, no SMS is sent and nothing counts towards the limits.
          */
         post: operations["sendSmsCode"];
         delete?: never;
@@ -81,9 +92,145 @@ export interface paths {
          * @description Creates the account on first login. The request carries the legal versions the user
          *     agreed to and the time of agreement (BR-ID-04). An `invite_code` is ignored for an
          *     existing account; `invite_bind` is present only when a non-empty invite_code was sent
-         *     (BR-INV-06). Errors: 20002 wrong code, 20003 expired code (BR-ID-05).
+         *     (BR-INV-06). Errors: 20002 wrong code, 20003 expired code (BR-ID-05). `phone` is
+         *     normalised by the server; a number that does not normalise to a mainland mobile number is
+         *     20001 with `data.fields=[phone]`, `data.reason=phone_invalid` (BR-ID-05 细则「手机号规范化」).
+         *     Creating the account checks the same-device registration limit (44001, BR-ID-05).
          */
         post: operations["loginBySms"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/oauth-attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a one-time third-party authorization attempt
+         * @description Called before every WeChat, Apple or Huawei authorization (BR-ID-04 细则「第三方身份只信
+         *     服务端换取或验签的结果」). The attempt is bound to the provider, the purpose and this
+         *     device_id (purpose=step_up also to the user and `action`); it is valid once and for the
+         *     configured lifetime (auth.oauth_attempt_ttl_sec). A submission checks it first and
+         *     consumes it only after every check passed. The client passes `nonce` to the provider SDK.
+         *     purpose=step_up requires a logged-in user (otherwise 10001) and `action`; it is issued only
+         *     to an account without a bound phone (a bound phone → 20001 with `data.fields=[provider]`,
+         *     BR-ID-08). purpose=step_up with action=account_deletion is inside the 10006 whitelist
+         *     (BR-ID-31). Storage unavailable → 50001.
+         */
+        post: operations["createOauthAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/login/wechat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log in (or register) with WeChat
+         * @description Besides the fields every login carries, the body takes only `attempt_id` and the
+         *     authorization `code`; any other field (union_id, open_id, nickname, avatar, phone…) is
+         *     20001 and no account is created. The identity is what the server obtains with the code,
+         *     which is valid once (BR-ID-04 细则). A code or attempt that is invalid, expired, used or does
+         *     not match is 20004 (reasons are not told apart); the provider being unavailable, or its
+         *     answer lacking the unionid, is 50305 with `data.provider`. A first login creates the account
+         *     and checks the same-device registration limit (44001, BR-ID-05). Restricted login for clients
+         *     below the minimum version (10405) is added by CT-17a.
+         */
+        post: operations["loginByWechat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/login/apple": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log in (or register) with Sign in with Apple
+         * @description Besides the fields every login carries, the body takes only `attempt_id`,
+         *     `identity_token` and `authorization_code`; no client nonce. The identity is the one in the
+         *     identity token the server obtains by exchanging the authorization code, verified for
+         *     signature, iss, aud, exp and the attempt's nonce; the submitted identity_token is checked
+         *     the same way and its subject must equal that one, otherwise 20004 (BR-ID-04 细则). Otherwise
+         *     as WeChat login.
+         */
+        post: operations["loginByApple"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/login/huawei": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log in (or register) with a Huawei account
+         * @description Phase M-公开. Besides the fields every login carries, the body takes only `attempt_id` and
+         *     `authorization_code`; otherwise as WeChat login (BR-ID-04 细则). Whether Huawei supports
+         *     PKCE or returns the nonce is still to be checked (specs/oauth/huawei.md, CT-15i); no field
+         *     for it is declared until then.
+         */
+        post: operations["loginByHuawei"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/step-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Second verification for a sensitive operation
+         * @description Returns a step_up_token bound to `action` (BR-ID-08); the client sends it as the
+         *     X-Step-Up-Token header of the matching operation (04 §5 step-up row). Exactly one way:
+         *     an SMS code (`action`, `code`; only for an account with a bound phone; 20002 wrong code,
+         *     20003 expired), or a new third-party authorization (`action`, `provider`, `attempt_id` and
+         *     the credential fields of that provider's login: WeChat `code`, Apple `identity_token` and
+         *     `authorization_code`, Huawei `authorization_code`), which is open only to an account
+         *     without a bound phone (a bound phone → 20001). The server checks the credential as at
+         *     login and accepts only an attempt with purpose=step_up and the same user and action; an
+         *     identity other than the one this account bound for that provider is 20004 with
+         *     `data.reason=identity_mismatch`, an invalid credential or attempt is 20004, the provider
+         *     being unavailable is 50305.
+         */
+        post: operations["stepUp"];
         delete?: never;
         options?: never;
         head?: never;
@@ -514,9 +661,18 @@ export interface components {
         FreeForm: {
             [key: string]: unknown;
         };
+        /**
+         * @description Which device identifier was hashed (enum device_id_source, BR-ID-09).
+         * @enum {string}
+         */
+        DeviceIdSource: "idfv" | "android_id" | "oaid" | "odid";
         RegisterDeviceRequest: {
-            /** @description SHA-256 (lowercase hex) of IDFV / OAID (ANDROID_ID fallback) / ODID (BR-ID-09). */
+            /**
+             * @description lowercase_hex(SHA-256(UTF-8 bytes of the identifier, trimmed and lower-cased)) of IDFV
+             *     (iOS), ANDROID_ID (Android, MVP) or ODID (Harmony) (BR-ID-09 细则「设备标识的无效值」).
+             */
             device_hash: string;
+            id_source: components["schemas"]["DeviceIdSource"];
         };
         RegisterDeviceData: {
             device_id: components["schemas"]["Id"];
@@ -529,7 +685,11 @@ export interface components {
             data: components["schemas"]["RegisterDeviceData"];
             trace_id: components["schemas"]["TraceId"];
         };
-        /** @description Mainland mobile number, 11 digits. */
+        /**
+         * @description Phone number as typed or pasted; it may carry spaces, hyphens and +86 / 0086 / 86. The
+         *     server normalises it (BR-ID-05 细则「手机号规范化」); a result that is not a mainland mobile
+         *     number is 20001 with `data.fields=[phone]` and `data.reason=phone_invalid`.
+         */
         Phone: string;
         SendSmsCodeRequest: {
             phone: components["schemas"]["Phone"];
@@ -577,6 +737,112 @@ export interface components {
             consent_at: string;
             /** @description Optional invite code; ignored for an existing account (BR-INV-06). */
             invite_code?: string;
+        };
+        /**
+         * @description Third-party identity provider (enum login_provider, BR-ID-04).
+         * @enum {string}
+         */
+        LoginProvider: "wechat" | "apple" | "huawei";
+        /**
+         * @description What a third-party authorization attempt is for (enum oauth_attempt_purpose).
+         * @enum {string}
+         */
+        OauthAttemptPurpose: "login" | "step_up";
+        /**
+         * @description `action` is required exactly for purpose=step_up. The oneOf branches declare the
+         *     properties they constrain (strict Ajv2020, ADR-0001 §4.2 #15).
+         */
+        CreateOauthAttemptRequest: {
+            provider: components["schemas"]["LoginProvider"];
+            purpose: components["schemas"]["OauthAttemptPurpose"];
+            action?: components["schemas"]["StepUpAction"];
+        } & ({
+            /** @enum {string} */
+            purpose: "login";
+        } | {
+            /** @enum {string} */
+            purpose: "step_up";
+            action: components["schemas"]["StepUpAction"];
+        });
+        OauthAttemptData: {
+            attempt_id: components["schemas"]["Id"];
+            /** @description At least 128 random bits, passed to the provider SDK (BR-ID-04 细则). */
+            nonce: string;
+            /** Format: date-time */
+            expire_at: string;
+        };
+        OauthAttemptResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["OauthAttemptData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description An authorization credential from the provider SDK; never stored or logged. */
+        OauthCredential: string;
+        LoginByWechatRequest: {
+            attempt_id: components["schemas"]["Id"];
+            code: components["schemas"]["OauthCredential"];
+            legal_versions: components["schemas"]["LegalVersions"];
+            /** Format: date-time */
+            consent_at: string;
+        };
+        LoginByAppleRequest: {
+            attempt_id: components["schemas"]["Id"];
+            identity_token: components["schemas"]["OauthCredential"];
+            authorization_code: components["schemas"]["OauthCredential"];
+            legal_versions: components["schemas"]["LegalVersions"];
+            /** Format: date-time */
+            consent_at: string;
+        };
+        LoginByHuaweiRequest: {
+            attempt_id: components["schemas"]["Id"];
+            authorization_code: components["schemas"]["OauthCredential"];
+            legal_versions: components["schemas"]["LegalVersions"];
+            /** Format: date-time */
+            consent_at: string;
+        };
+        StepUpBySmsRequest: {
+            action: components["schemas"]["StepUpAction"];
+            code: string;
+        };
+        StepUpByWechatRequest: {
+            action: components["schemas"]["StepUpAction"];
+            /** @enum {string} */
+            provider: "wechat";
+            attempt_id: components["schemas"]["Id"];
+            code: components["schemas"]["OauthCredential"];
+        };
+        StepUpByAppleRequest: {
+            action: components["schemas"]["StepUpAction"];
+            /** @enum {string} */
+            provider: "apple";
+            attempt_id: components["schemas"]["Id"];
+            identity_token: components["schemas"]["OauthCredential"];
+            authorization_code: components["schemas"]["OauthCredential"];
+        };
+        StepUpByHuaweiRequest: {
+            action: components["schemas"]["StepUpAction"];
+            /** @enum {string} */
+            provider: "huawei";
+            attempt_id: components["schemas"]["Id"];
+            authorization_code: components["schemas"]["OauthCredential"];
+        };
+        /**
+         * @description Exactly one way of second verification: an SMS code, or a new authorization with one
+         *     provider carrying that provider's login credential fields (BR-ID-08). Each branch is a
+         *     closed object, so a body mixing two ways matches none.
+         */
+        StepUpRequest: components["schemas"]["StepUpBySmsRequest"] | components["schemas"]["StepUpByWechatRequest"] | components["schemas"]["StepUpByAppleRequest"] | components["schemas"]["StepUpByHuaweiRequest"];
+        StepUpData: {
+            step_up_token: string;
+            /** Format: date-time */
+            expire_at: string;
+        };
+        StepUpResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["StepUpData"];
+            trace_id: components["schemas"]["TraceId"];
         };
         TokenPair: {
             access_token: string;
@@ -1283,7 +1549,8 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "device_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                 *       "device_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                 *       "id_source": "idfv"
                  *     }
                  */
                 "application/json": components["schemas"]["RegisterDeviceRequest"];
@@ -1460,6 +1727,375 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    createOauthAttempt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "provider": "wechat",
+                 *       "purpose": "login"
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreateOauthAttemptRequest"];
+            };
+        };
+        responses: {
+            /** @description A new attempt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "attempt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71",
+                     *         "nonce": "example-attempt-nonce-value",
+                     *         "expire_at": "2026-10-02T09:40:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["OauthAttemptResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    loginByWechat: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "attempt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71",
+                 *       "code": "example-wechat-auth-code",
+                 *       "legal_versions": {
+                 *         "privacy": 3,
+                 *         "agreement": 2
+                 *       },
+                 *       "consent_at": "2026-10-02T09:30:00+08:00"
+                 *     }
+                 */
+                "application/json": components["schemas"]["LoginByWechatRequest"];
+            };
+        };
+        responses: {
+            /** @description Logged in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a61",
+                     *         "is_new_user": false,
+                     *         "tokens": {
+                     *           "access_token": "example-access-token-one",
+                     *           "access_expires_at": "2026-10-02T11:30:00+08:00",
+                     *           "refresh_token": "example-refresh-token-one",
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00"
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    loginByApple: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "attempt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71",
+                 *       "identity_token": "example-apple-identity-token",
+                 *       "authorization_code": "example-apple-authorization-code",
+                 *       "legal_versions": {
+                 *         "privacy": 3,
+                 *         "agreement": 2
+                 *       },
+                 *       "consent_at": "2026-10-02T09:30:00+08:00"
+                 *     }
+                 */
+                "application/json": components["schemas"]["LoginByAppleRequest"];
+            };
+        };
+        responses: {
+            /** @description Logged in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a61",
+                     *         "is_new_user": false,
+                     *         "tokens": {
+                     *           "access_token": "example-access-token-one",
+                     *           "access_expires_at": "2026-10-02T11:30:00+08:00",
+                     *           "refresh_token": "example-refresh-token-one",
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00"
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    loginByHuawei: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "attempt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71",
+                 *       "authorization_code": "example-huawei-authorization-code",
+                 *       "legal_versions": {
+                 *         "privacy": 3,
+                 *         "agreement": 2
+                 *       },
+                 *       "consent_at": "2026-10-02T09:30:00+08:00"
+                 *     }
+                 */
+                "application/json": components["schemas"]["LoginByHuaweiRequest"];
+            };
+        };
+        responses: {
+            /** @description Logged in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a61",
+                     *         "is_new_user": false,
+                     *         "tokens": {
+                     *           "access_token": "example-access-token-one",
+                     *           "access_expires_at": "2026-10-02T11:30:00+08:00",
+                     *           "refresh_token": "example-refresh-token-one",
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00"
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    stepUp: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StepUpRequest"];
+            };
+        };
+        responses: {
+            /** @description A step-up token for the action. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "step_up_token": "example-step-up-token",
+                     *         "expire_at": "2026-10-02T09:35:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["StepUpResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
