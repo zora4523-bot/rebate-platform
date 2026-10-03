@@ -1,0 +1,19 @@
+id: B1-01m
+repo: rebate-platform
+title: platform/http：单元测试 [AC-B1-01b#17] 在 GitHub runner 上超过 vitest 默认的 5 秒（本机约 1.2 秒），给这一条测试显式超时 30 秒；不改断言、不减少样本、不改 vitest 配置
+type: test-change
+# B1-01b 的后续修正（couli-runs/followups/B1-01b-http-test-timeout.md）。B1-01d 合并后 main 的 CI
+# 与之后每个 PR 的 verify-fast 都因这条测试超时而红（runner 上 5.3–6.4 秒，比本机慢 4–5 倍）。
+# 只给这条测试加第三个参数（超时毫秒数）；断言、500 组样本、vitest 配置（保护路径第二类）都不动。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/http/http.test.ts'
+impl: codex
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm --filter @couli/api test'
+status: done
+pr: 17

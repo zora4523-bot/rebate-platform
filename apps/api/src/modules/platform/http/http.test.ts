@@ -456,7 +456,7 @@ it('[AC-B1-01b#17] 固定种子 500 组配置、每组 60 次时刻推进及突�
     }
   }
   expect(borrowed).toBeGreaterThan(0);
-});
+}, 30_000);
 
 it.each([1e307, Number.MAX_SAFE_INTEGER, 2 ** 53])(
   '[AC-B1-01b#18] 容量 %s 的全额在线桶在固定时钟下连续取用 1000 次均成功',
