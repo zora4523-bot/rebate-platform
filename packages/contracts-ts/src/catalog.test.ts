@@ -96,3 +96,20 @@ it('enums carry the 04 §2 value sets', () => {
   expect(enums.admin_permission).toContain('payout.execute');
   expect(enums.admin_permission).toHaveLength(43);
 });
+
+it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data shapes', () => {
+  // 10405 is not a credential failure: 403, so that a 401 interceptor does not clear the session
+  // (orchestrator decision j-05; 04 and 08 fix no HTTP status for it).
+  expect(errorCodes[10405].http).toBe(403);
+  expect(errorCodes[10405].data).toEqual({ min_supported_version: null, reason: ['no_account'] });
+  expect(errorCodes[10403].data).toEqual({ reason: ['h5_read_only'] });
+  expect(errorCodes[20004].data).toEqual({ reason: ['identity_mismatch'] });
+  expect(errorCodes[50305].data).toEqual({ provider: ['wechat', 'apple', 'huawei'] });
+  expect(errorCodes[20001].data.reason).toEqual([
+    'watch_target_invalid',
+    'nickname_sensitive',
+    'invalid_device_hash',
+    'phone_invalid',
+  ]);
+  expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10']);
+});
