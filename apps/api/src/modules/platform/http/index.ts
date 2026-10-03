@@ -247,7 +247,7 @@ export function createMemoryQuotaLimiter(
   const startedAt = scheduler.now();
   const buckets = new Map(
     PURPOSES.map((purpose) => {
-      const capacity = Math.floor((config.capacity * config.shares[purpose]) / 100);
+      const capacity = (BigInt(config.capacity) * BigInt(config.shares[purpose])) / 100n;
       return [
         purpose,
         {
@@ -261,7 +261,7 @@ export function createMemoryQuotaLimiter(
   );
   const take = (purpose: QuotaPurpose, now: number): boolean => {
     const bucket = buckets.get(purpose);
-    if (bucket === undefined || bucket.capacity < 1) return false;
+    if (bucket === undefined || bucket.capacity < 1n) return false;
     // Recompute from a fixed origin; acquisitions subtract only whole tokens, so polling
     // cannot accumulate fractional refill errors. Reset the origin only when full, discarding
     // any overflow instead of banking tokens beyond capacity.
@@ -270,7 +270,7 @@ export function createMemoryQuotaLimiter(
     if (refilled >= bucket.consumed * denominator) {
       bucket.startedAt = now;
       bucket.consumed = 0n;
-    } else if (BigInt(bucket.capacity) - bucket.consumed + refilled / denominator < 1n) {
+    } else if (bucket.capacity - bucket.consumed + refilled / denominator < 1n) {
       return false;
     }
     bucket.consumed += 1n;

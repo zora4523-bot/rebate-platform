@@ -457,3 +457,39 @@ it('[AC-B1-01b#17] 固定种子 500 组配置、每组 60 次时刻推进及突�
   }
   expect(borrowed).toBeGreaterThan(0);
 });
+
+it.each([1e307, Number.MAX_SAFE_INTEGER, 2 ** 53])(
+  '[AC-B1-01b#18] 容量 %s 的全额在线桶在固定时钟下连续取用 1000 次均成功',
+  (capacity) => {
+    const limiter = createMemoryQuotaLimiter(
+      {
+        bucketKey: 'large-capacity',
+        capacity,
+        refillPerSecond: 1,
+        shares: { online: 100, order_sync: 0, pool_refresh: 0, watch: 0 },
+      },
+      { now: () => 0, sleep: systemScheduler().sleep },
+    );
+    for (let token = 0; token < 1000; token += 1) {
+      expect(limiter.tryAcquire('online')).toBe(true);
+    }
+  },
+);
+
+it('[AC-B1-01b#19] 最大有限容量按 60/30/10/0 分桶后各连续取用 100 次，零份额始终拒绝', () => {
+  const limiter = createMemoryQuotaLimiter(
+    {
+      bucketKey: 'maximum-capacity',
+      capacity: Number.MAX_VALUE,
+      refillPerSecond: 1,
+      shares: quotaShares('mvp'),
+    },
+    { now: () => 0, sleep: systemScheduler().sleep },
+  );
+  const purposes: readonly QuotaPurpose[] = ['online', 'order_sync', 'pool_refresh', 'watch'];
+  for (const purpose of purposes) {
+    for (let token = 0; token < 100; token += 1) {
+      expect(limiter.tryAcquire(purpose)).toBe(purpose !== 'watch');
+    }
+  }
+});
