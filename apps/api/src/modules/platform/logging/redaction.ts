@@ -1,3 +1,5 @@
+import { isBigIntObject, isBooleanObject, isNumberObject, isStringObject } from 'node:util/types';
+
 /** BR-ID-33: logs discard sensitive values entirely; display masks are not log masks. */
 export const REDACTED = '[REDACTED]';
 
@@ -43,7 +45,7 @@ const freeTextKeys = new Set(['msg', 'message', 'stack']);
 const email =
   /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
 const digit = '[0-9０-９]';
-const id18 = `${digit}(?:[ -]?${digit}){16}[0-9０-９Xx]`;
+const id18 = `${digit}(?:[ -]?${digit}){16}(?:[ -]?${digit}|[Xx])`;
 const bankCard = `${digit}(?:[ -]?${digit}){15,18}`;
 const id15 = `${digit}(?:[ -]?${digit}){14}`;
 const phone = `(?:(?:\\+[8８][6６]|[0０][0０][8８][6６]|[8８][6６])[ -]?)?[1１](?:[ -]?${digit}){10}`;
@@ -102,8 +104,17 @@ export function redactValue(
       if (Object.hasOwn(value, 'cause')) fields['cause'] = field('cause');
       return fields;
     }
-    const toJSON: unknown = Reflect.get(value, 'toJSON');
+    // URLs expose credentials through their built-in toJSON; only copy enumerable fields.
+    const toJSON: unknown = value instanceof URL ? undefined : Reflect.get(value, 'toJSON');
     if (typeof toJSON === 'function') return visit(toJSON.call(value));
+    if (
+      isStringObject(value) ||
+      isNumberObject(value) ||
+      isBooleanObject(value) ||
+      isBigIntObject(value)
+    ) {
+      return visit(value.valueOf());
+    }
     if (typeof value === 'function') return undefined;
     if (Array.isArray(value)) {
       return Array.from({ length: value.length }, (_, index) => field(String(index)));
@@ -133,25 +144,30 @@ export function redactRecord(
   value: object,
   serializers: FieldSerializers = {},
 ): Record<string, unknown> {
-  const result = attempt(() =>
-    Object.fromEntries(
-      Object.keys(value).map((key) => [
+  const result = attempt(() => {
+    const toJSON: unknown = value instanceof URL ? undefined : Reflect.get(value, 'toJSON');
+    const record: unknown = typeof toJSON === 'function' ? toJSON.call(value) : value;
+    // A log record/binding contributes fields, not a primitive message. In particular, do
+    // not split a string result into indexed characters that bypass free-text redaction.
+    if (record === null || typeof record !== 'object') return {};
+    return Object.fromEntries(
+      Object.keys(record).map((key) => [
         key,
         sensitiveNames.has(normalizedKey(key))
           ? REDACTED
           : attempt(() => {
-              const original: unknown = Reflect.get(value, key);
+              const original: unknown = Reflect.get(record, key);
               const serializer = Object.hasOwn(serializers, key) ? serializers[key] : undefined;
               return redactValue(
                 serializer ? serializer(original) : original,
                 key,
-                new Set([value]),
+                new Set([value, record]),
                 1,
               );
             }),
       ]),
-    ),
-  );
+    );
+  });
   return typeof result === 'object' && result !== null
     ? (result as Record<string, unknown>)
     : { message: UNSERIALIZABLE };

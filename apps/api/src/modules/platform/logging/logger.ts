@@ -1,6 +1,12 @@
 // Root logger (ADR-0001 §2 日志与监控): pino, JSON lines on stdout. Application code logs only
 // through this logger or children of it; `console` is not used.
-import { pino, type DestinationStream, type Logger, type LoggerOptions } from 'pino';
+import {
+  pino,
+  type ChildLoggerOptions,
+  type DestinationStream,
+  type Logger,
+  type LoggerOptions,
+} from 'pino';
 import type { LogLevel } from '../config/index.ts';
 import {
   REDACTED,
@@ -9,6 +15,7 @@ import {
   redactMessage,
   redactRecord,
   redactValue,
+  stringifyValue,
   type FieldSerializers,
 } from './redaction.ts';
 
@@ -54,9 +61,10 @@ function serializeRequest(value: unknown): unknown {
       ip: unknown;
       socket?: { remotePort?: unknown };
     };
+    const url = request.url;
     return redactRecord({
       method: request.method,
-      url: request.url,
+      url: typeof url === 'string' ? url.split(/[?#]/, 1)[0] : url,
       hostname: request.hostname,
       remoteAddress: request.ip,
       remotePort: request.socket?.remotePort,
@@ -70,6 +78,10 @@ export function createRootLogger(
   destination?: DestinationStream,
 ): RootLogger {
   const configurations = new WeakMap<object, FieldSerializers>();
+  const formatters = new WeakMap<
+    object,
+    { [Key in 'log' | 'bindings']: NonNullable<ChildLoggerOptions['formatters']>[Key] }
+  >();
   // msg is always serialized by pino after printf expansion and msgPrefix. Other serializers
   // run once, on the original field values, in the hook/bindings formatter before redaction.
   const withoutMessage = (serializers: FieldSerializers): FieldSerializers =>
@@ -108,24 +120,19 @@ export function createRootLogger(
         for (let index = messageIndex + 1; index < args.length; index++) {
           safeArgs[index] = redactValue(args[index]);
         }
-        // Preserve %s's useful Error/custom toString text without invoking caller methods for
-        // JSON placeholders. Escaped %% consumes no argument.
+        // Only Error gets human-readable %s text. Other objects use the safe JSON copy,
+        // never caller toString methods. Every %<character> except %% consumes an argument.
         if (typeof message === 'string') {
           let index = messageIndex + 1;
-          for (const match of message.matchAll(/%[%sdifjoO]/g)) {
+          for (const match of message.matchAll(/%[\s\S]/g)) {
             if (match[0] === '%%') continue;
             if (index >= args.length) break;
             const original = args[index];
             if (match[0] === '%s') {
               safeArgs[index] = attempt(() => {
                 if (original instanceof Error) return `${original.name}: ${original.message}`;
-                if (
-                  original !== null &&
-                  typeof original === 'object' &&
-                  original.toString !== Object.prototype.toString &&
-                  typeof original.toString === 'function'
-                )
-                  return original.toString();
+                if (original !== null && typeof original === 'object')
+                  return stringifyValue(safeArgs[index]) ?? '';
                 return String(safeArgs[index]);
               });
             }
@@ -142,8 +149,8 @@ export function createRootLogger(
   const child = logger.child;
   logger.child = function (this: RootLogger, bindings, options) {
     const serializers = { ...configurations.get(this), ...options?.serializers };
-    const bindingFormatter = options?.formatters?.bindings;
-    const logFormatter = options?.formatters?.log;
+    const bindingFormatter = options?.formatters?.bindings ?? formatters.get(this)?.bindings;
+    const logFormatter = options?.formatters?.log ?? formatters.get(this)?.log;
     const result = child.call(this, bindings, {
       ...options,
       serializers: finalSerializers(serializers),
@@ -158,6 +165,7 @@ export function createRootLogger(
       },
     });
     configurations.set(result, serializers);
+    formatters.set(result, { bindings: bindingFormatter, log: logFormatter });
     return result;
   } as typeof logger.child;
   return logger;
