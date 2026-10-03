@@ -1,24 +1,26 @@
-// Shared helpers of the platform/masking rule tests (规划/08 BR-ID-33: 日志中不得出现明文; 默认脱敏
-// 格式). The logger under test is the real root logger writing JSON lines into memory; nothing is
-// mocked. Leaks are searched in the RAW line (so a duplicated key cannot hide one), after
-// removing the base fields (time, pid, hostname, entry, env). Each sample has the positions its
-// default masking may show (phone: first 3 and last 4; ID number: first and last; name: last;
-// anything else: none). A line leaks a sample when any of these holds:
-//   - anywhere, `stack` values included: the whole value, a run of 5 of its digits, or its
-//     UTF-8 bytes as hex, base64 or a JSON number list (a number or Buffer value);
-//   - in a string or number outside `stack` values (stack traces carry line numbers, so short
-//     pieces are not searched there): a piece of the value (3 or more characters, 2 for a name)
-//     that covers a hidden position; for a name, any hidden character at all;
-//   - in such a string or number, or in a run of masking-like characters inside it (digits, X,
-//     masking marks; other letters for e-mail addresses and credentials), of the value's
-//     length: one of the value's characters repeated at a hidden position (1398***4321,
-//     11**************2X, 张*三, also inside a longer message); two of them for a value without
-//     a default masking.
+// Shared helpers of the platform/masking rule tests (规划/08 BR-ID-33: 日志中不得出现明文). The
+// logger under test is the real root logger writing JSON lines into memory; nothing is mocked.
+//
+// How a log line is judged (contract in apps/api/src/modules/platform/masking/index.ts):
+//   1. `expectLine` parses the raw line with `parseStrict`, which rejects an object that has a
+//      key twice (JSON.parse would silently keep the last one), checks `time` and `pid`, and
+//      compares everything else with a hand-built expected record by deep equality. Every
+//      sensitive value must be exactly "[REDACTED]"; `msg`, error messages and stacks must be
+//      exactly what the test passed; no field may be added, dropped or changed. This pins every
+//      key and value of the line; only the order of keys and the JSON spelling are free.
+//   2. Independently of how the expected record was built, every key with a sensitive name, at
+//      any depth of the parsed line, must hold exactly "[REDACTED]".
+//   3. `leaksIn` is only a second net: it searches the raw line for plaintext pieces of the
+//      samples. The verdict never depends on it alone.
+import { expect } from 'vitest';
 import {
   PinoNestLogger,
   createRootLogger,
   type RootLogger,
 } from '../../../../apps/api/src/modules/platform/logging/index.ts';
+
+/** The only value a sensitive field may have in a log line. */
+export const REDACTED = '[REDACTED]';
 
 /** Distinctive synthetic values; none shares a piece with another field by accident. */
 export const SAMPLES = {
@@ -39,159 +41,13 @@ export const SAMPLES = {
 
 export type SampleName = keyof typeof SAMPLES;
 
-type Kind = 'phone' | 'id' | 'name' | 'secret';
-
-const KIND: Record<SampleName, Kind> = {
-  phone: 'phone',
-  alipayPhone: 'secret',
-  contactPhone: 'phone',
-  alertPhone: 'phone',
-  idNo: 'id',
-  idNo15: 'id',
-  birthDate: 'secret',
-  realName: 'name',
-  payeeName: 'name',
-  alipayEmail: 'secret',
-  bankCard: 'secret',
-  cardNo: 'secret',
-  credential: 'secret',
-};
-
-/** Positions (code points) of `name`'s value that its default masking does not show. */
-export function hiddenPositions(name: SampleName): Set<number> {
-  const length = [...SAMPLES[name]].length;
-  const all = Array.from({ length }, (_, i) => i);
-  switch (KIND[name]) {
-    case 'phone':
-      return new Set(all.filter((i) => i >= 3 && i < length - 4));
-    case 'id':
-      return new Set(all.filter((i) => i > 0 && i < length - 1));
-    case 'name':
-      return new Set(all.filter((i) => i < length - 1));
-    default:
-      return new Set(all);
-  }
-}
-
-/** Strong fragments searched in the raw text: whole value, runs of 5 digits, UTF-8 bytes. */
-export function fragmentsOf(value: string): string[] {
-  const out = new Set<string>([value]);
-  const flat = value.replace(/[-\s]/g, '');
-  if (/^[0-9Xx]+$/.test(flat)) {
-    for (let i = 0; i + 5 <= flat.length; i += 1) out.add(flat.slice(i, i + 5));
-  }
-  const bytes = Buffer.from(value, 'utf8');
-  out.add(bytes.toString('hex'));
-  out.add(bytes.toString('base64').replace(/=+$/, ''));
-  out.add(Array.from(bytes).join(','));
-  return [...out];
-}
-
-/** The raw line without the base fields, whose digits could match by chance. */
-export function searchable(line: string): string {
-  return line
-    .replace(/"(time|hostname|entry|env)":"(?:[^"\\]|\\.)*"/g, '')
-    .replace(/"pid":-?\d+/g, '');
-}
-
-/** `text` without `stack` values. */
-export function withoutStacks(text: string): string {
-  return text.replace(/"stack":"(?:[^"\\]|\\.)*"/g, '');
-}
-
-/** Every string literal (decoded, keys included, duplicates kept) and number of a raw line. */
-export function tokensOf(text: string): string[] {
-  const strings = [...text.matchAll(/"(?:[^"\\]|\\.)*"/g)].map((m) => JSON.parse(m[0]) as string);
-  const rest = text.replace(/"(?:[^"\\]|\\.)*"/g, '""');
-  const numbers = [...rest.matchAll(/-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?/g)].map((m) => m[0]);
-  return [...strings, ...numbers];
-}
-
-/** Runs of characters a masked copy of a value of this kind is made of. */
-const RUN: Record<Kind, RegExp> = {
-  phone: /[0-9Xx*#•]+/g,
-  id: /[0-9Xx*#•]+/g,
-  name: /[*#•\u0080-\uffff]+/gu,
-  secret: /[^\s"'{}[\],:]+/g,
-};
-
-function leaksSample(full: string, tokens: readonly string[], name: SampleName): boolean {
-  const value = SAMPLES[name];
-  if (fragmentsOf(value).some((fragment) => full.includes(fragment))) return true;
-  const chars = [...value];
-  const hidden = hiddenPositions(name);
-  const kind = KIND[name];
-  const minPiece = kind === 'name' ? 2 : 3;
-  const pieces: string[] = [];
-  for (let from = 0; from < chars.length; from += 1) {
-    for (let to = from + minPiece; to <= chars.length; to += 1) {
-      let coversHidden = false;
-      for (let i = from; i < to; i += 1) if (hidden.has(i)) coversHidden = true;
-      if (coversHidden) pieces.push(chars.slice(from, to).join(''));
-    }
-  }
-  const hiddenChars = [...hidden].map((i) => chars[i] ?? '');
-  // A value without a default masking (account, e-mail, credential) needs two repeated hidden
-  // characters, so that an unrelated text of the same length cannot match by one letter.
-  const enough = kind === 'secret' ? 2 : 1;
-  const repeatsHidden = (candidate: string): boolean => {
-    const got = [...candidate];
-    if (got.length !== chars.length) return false;
-    return [...hidden].filter((i) => got[i] === chars[i]).length >= enough;
-  };
-  return tokens.some((token) => {
-    if (pieces.some((piece) => token.includes(piece))) return true;
-    if (kind === 'name' && hiddenChars.some((c) => token.includes(c))) return true;
-    if (repeatsHidden(token)) return true;
-    return [...token.matchAll(RUN[kind])].some((run) => repeatsHidden(run[0]));
-  });
-}
-
-/** Names of the samples that leak into `line` (empty when nothing leaks). */
-export function leaksIn(line: string, names: readonly SampleName[] = sampleNames()): string[] {
-  const full = searchable(line);
-  const tokens = tokensOf(withoutStacks(full));
-  return names.filter((name) => leaksSample(full, tokens, name));
-}
-
 export function sampleNames(): SampleName[] {
   return Object.keys(SAMPLES) as SampleName[];
 }
 
-export interface Captured {
-  readonly logger: RootLogger;
-  readonly lines: string[];
-  records(): Record<string, unknown>[];
-}
-
-/** The real root logger writing into memory (level `trace`, so every level is kept). */
-export function capture(): Captured {
-  const lines: string[] = [];
-  const logger = createRootLogger(
-    { level: 'trace', entry: 'spec', appEnv: 'test' },
-    {
-      write(chunk: string): void {
-        lines.push(chunk);
-      },
-    },
-  );
-  return {
-    logger,
-    lines,
-    records: () => lines.map((line) => JSON.parse(line) as Record<string, unknown>),
-  };
-}
-
-/** A Nest logger adapter over a fresh in-memory root logger. */
-export function captureNest(): Captured & { readonly nest: PinoNestLogger } {
-  const captured = capture();
-  return { ...captured, nest: new PinoNestLogger(captured.logger) };
-}
-
 /**
- * Every sensitive name of the contract (apps/api/src/modules/platform/masking/index.ts) with a
- * sample value of its kind. Kept here, not imported, so the contract cannot shrink under the
- * tests.
+ * Every sensitive name of the contract with a sample value of its kind. Kept here, not imported,
+ * so the contract cannot shrink under the tests.
  */
 export function sensitiveFields(): Record<string, unknown> {
   return {
@@ -229,6 +85,11 @@ export function sensitiveFields(): Record<string, unknown> {
   };
 }
 
+/** What `sensitiveFields()` must look like in a log line: the same keys, each "[REDACTED]". */
+export function redactedFields(): Record<string, unknown> {
+  return Object.fromEntries(Object.keys(sensitiveFields()).map((key) => [key, REDACTED]));
+}
+
 /** Non-sensitive fields that must come out unchanged next to the sensitive ones. */
 export const KEPT = {
   order_id: 'order-kept-a',
@@ -247,10 +108,10 @@ export function respell(key: string, style: 'camel' | 'upper' | 'kebab'): string
 }
 
 /** `value` wrapped in `depth` levels of objects (depth 1 = { level1: value }). */
-export function nest(depth: number, value: Record<string, unknown>): Record<string, unknown> {
-  let current: Record<string, unknown> = value;
+export function nest(depth: number, value: unknown): Record<string, unknown> {
+  let current = value;
   for (let level = depth; level >= 1; level -= 1) current = { [`level${String(level)}`]: current };
-  return current;
+  return current as Record<string, unknown>;
 }
 
 /** An error carrying every kind of personal data as enumerable own properties. */
@@ -262,4 +123,218 @@ export function errorWithPersonalData(message: string): Error {
     bank_card_no: SAMPLES.bankCard,
     details: { alipay_logon_id: SAMPLES.alipayEmail, payee_name: SAMPLES.payeeName },
   });
+}
+
+/** The enumerable own properties of `errorWithPersonalData` as they must be written. */
+export function redactedErrorProps(): Record<string, unknown> {
+  return {
+    phone: REDACTED,
+    id_no: REDACTED,
+    real_name: REDACTED,
+    bank_card_no: REDACTED,
+    details: { alipay_logon_id: REDACTED, payee_name: REDACTED },
+  };
+}
+
+/** An error as the contract writes it: type, its own message and stack unchanged, then `more`. */
+export function errorShape(
+  type: string,
+  error: Error,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { type, message: error.message, stack: error.stack, ...more };
+}
+
+/** Own keys (symbols included), message, stack and enumerable content: to prove nothing changed. */
+export function snapshotOf(value: object): unknown {
+  return {
+    keys: Reflect.ownKeys(value).map((key) => String(key)),
+    json: JSON.stringify(value),
+    message: value instanceof Error ? value.message : null,
+    stack: value instanceof Error ? (value.stack ?? null) : null,
+  };
+}
+
+/** JSON.parse that throws when one object has the same key twice, at any depth. */
+export function parseStrict(text: string): unknown {
+  let at = 0;
+  const fail = (what: string): never => {
+    throw new SyntaxError(`${what} at ${String(at)}`);
+  };
+  const skip = (): void => {
+    while (' \t\n\r'.includes(text.charAt(at)) && at < text.length) at += 1;
+  };
+  const token = (pattern: RegExp): string => {
+    const sticky = new RegExp(pattern.source, 'y');
+    sticky.lastIndex = at;
+    const match = sticky.exec(text);
+    if (match === null) return fail('unexpected token');
+    at = sticky.lastIndex;
+    return match[0];
+  };
+  // JSON.parse of each string token rejects raw control characters and bad escapes.
+  const STRING = /"(?:[^"\\]|\\.)*"/;
+  const NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?/;
+  const WORD = /true|false|null/;
+  const value = (): unknown => {
+    skip();
+    const c = text.charAt(at);
+    if (c === '{') {
+      at += 1;
+      const out: Record<string, unknown> = {};
+      const seen = new Set<string>();
+      skip();
+      if (text.charAt(at) === '}') {
+        at += 1;
+        return out;
+      }
+      for (;;) {
+        skip();
+        const key = JSON.parse(token(STRING)) as string;
+        if (seen.has(key)) fail(`duplicate key ${JSON.stringify(key)}`);
+        seen.add(key);
+        skip();
+        if (text.charAt(at) !== ':') fail('expected ":"');
+        at += 1;
+        Object.defineProperty(out, key, {
+          value: value(),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+        skip();
+        if (text.charAt(at) === ',') {
+          at += 1;
+          continue;
+        }
+        if (text.charAt(at) !== '}') fail('expected "," or "}"');
+        at += 1;
+        return out;
+      }
+    }
+    if (c === '[') {
+      at += 1;
+      const out: unknown[] = [];
+      skip();
+      if (text.charAt(at) === ']') {
+        at += 1;
+        return out;
+      }
+      for (;;) {
+        out.push(value());
+        skip();
+        if (text.charAt(at) === ',') {
+          at += 1;
+          continue;
+        }
+        if (text.charAt(at) !== ']') fail('expected "," or "]"');
+        at += 1;
+        return out;
+      }
+    }
+    if (c === '"') return JSON.parse(token(STRING)) as unknown;
+    if (c === 't' || c === 'f' || c === 'n') return JSON.parse(token(WORD)) as unknown;
+    return JSON.parse(token(NUMBER)) as unknown;
+  };
+  const result = value();
+  skip();
+  if (at !== text.length) fail('trailing text');
+  return result;
+}
+
+/** A sensitive name of the contract, compared the contract's way (lower case, letters and digits). */
+const SENSITIVE_NAMES = new Set(Object.keys(sensitiveFields()).map(normalizedName));
+
+function normalizedName(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** Values found under sensitive names anywhere in a parsed line that are not "[REDACTED]". */
+export function unredacted(value: unknown, path = '$'): string[] {
+  if (Array.isArray(value))
+    return value.flatMap((item, i) => unredacted(item, `${path}[${String(i)}]`));
+  if (value === null || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, item]) => {
+    const here = `${path}.${key}`;
+    if (SENSITIVE_NAMES.has(normalizedName(key)) && item !== REDACTED) return [here];
+    return unredacted(item, here);
+  });
+}
+
+const NAMES: readonly SampleName[] = ['realName', 'payeeName'];
+
+/** Plaintext pieces of a sample: whole value, runs of 5 digits, 2 characters of a name, bytes. */
+export function fragmentsOf(name: SampleName): string[] {
+  const value = SAMPLES[name];
+  const out = new Set<string>([value]);
+  const flat = value.replace(/[-\s]/g, '');
+  out.add(flat);
+  if (/^[0-9Xx]+$/.test(flat)) {
+    for (let i = 0; i + 5 <= flat.length; i += 1) out.add(flat.slice(i, i + 5));
+  }
+  if (NAMES.includes(name)) {
+    const chars = [...value];
+    for (let i = 0; i + 2 <= chars.length; i += 1) out.add(chars.slice(i, i + 2).join(''));
+  }
+  const bytes = Buffer.from(value, 'utf8');
+  out.add(bytes.toString('hex'));
+  out.add(bytes.toString('base64').replace(/=+$/, ''));
+  out.add(Array.from(bytes).join(','));
+  return [...out];
+}
+
+/** The raw line without the base fields, whose digits could match by chance. */
+export function searchable(line: string): string {
+  return line
+    .replace(/"(time|hostname|entry|env)":"(?:[^"\\]|\\.)*"/g, '')
+    .replace(/"pid":-?\d+/g, '');
+}
+
+/** Second net only: names of the samples whose plaintext pieces occur in the raw `line`. */
+export function leaksIn(line: string, names: readonly SampleName[] = sampleNames()): string[] {
+  const text = searchable(line);
+  return names.filter((name) => fragmentsOf(name).some((fragment) => text.includes(fragment)));
+}
+
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * The exact check of one log line: one JSON document ending in "\n", no key twice in an object,
+ * `time` an ISO instant, `pid` this process, and everything else deep-equal to
+ * { entry: 'spec', env: 'test', ...expected }. Then the independent sensitive-name walk and the
+ * plaintext search.
+ */
+export function expectLine(line: string | undefined, expected: Record<string, unknown>): void {
+  expect(typeof line === 'string' && line.endsWith('\n')).toBe(true);
+  const record = parseStrict(line ?? '') as Record<string, unknown>;
+  const { time, pid, ...rest } = record;
+  expect({ time: ISO_TIME.test(String(time)), pid }).toEqual({ time: true, pid: process.pid });
+  expect(rest).toStrictEqual({ entry: 'spec', env: 'test', ...expected });
+  expect(unredacted(record)).toEqual([]);
+  expect(leaksIn(line ?? '')).toEqual([]);
+}
+
+export interface Captured {
+  readonly logger: RootLogger;
+  readonly lines: string[];
+}
+
+/** The real root logger writing into memory (level `trace`, so every level is kept). */
+export function capture(): Captured {
+  const lines: string[] = [];
+  const logger = createRootLogger(
+    { level: 'trace', entry: 'spec', appEnv: 'test' },
+    {
+      write(chunk: string): void {
+        lines.push(chunk);
+      },
+    },
+  );
+  return { logger, lines };
+}
+
+/** A Nest logger adapter over a fresh in-memory root logger. */
+export function captureNest(): Captured & { readonly nest: PinoNestLogger } {
+  const captured = capture();
+  return { ...captured, nest: new PinoNestLogger(captured.logger) };
 }

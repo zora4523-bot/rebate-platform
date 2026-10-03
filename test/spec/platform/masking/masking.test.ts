@@ -4,7 +4,7 @@
 // apps/api/src/modules/platform/masking/index.ts). Lengths count code points. Expected values
 // are written out by hand. Top-level it() only (规划/11 §4.3); property runs and seed only from
 // @couli/testing.
-import { propParams } from '@couli/testing';
+import { propParams, propRuns } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import {
@@ -91,6 +91,10 @@ const anyText = fc.string({ unit: 'binary', maxLength: 24 });
 const phoneShape = fc.stringMatching(/^1[0-9]{10}$/);
 const idShape = fc.oneof(fc.stringMatching(/^[0-9]{17}[0-9Xx]$/), fc.stringMatching(/^[0-9]{15}$/));
 
+// GitHub runners are several times slower than a laptop: the property tests get a timeout that
+// grows with PROP_RUNS (10 000 locally, 100 000 in CI) instead of the default 5 seconds.
+const PROPERTY_TIMEOUT_MS: number = Math.max(30_000, Math.ceil(propRuns() * 0.3));
+
 function isPhone(text: string): boolean {
   return /^1[0-9]{10}$/.test(text);
 }
@@ -99,49 +103,61 @@ function isIdNo(text: string): boolean {
   return /^[0-9]{17}[0-9Xx]$/.test(text) || /^[0-9]{15}$/.test(text);
 }
 
-it('[BR-ID-33] 任意字符串：手机号脱敏不抛错、码点数不变，合规号码只露前 3 后 4，其余全是 *', () => {
-  // Every run checks one arbitrary string and one string of the valid shape.
-  fc.assert(
-    fc.property(anyText, phoneShape, (text, phone) =>
-      [text, phone].every((input) =>
-        isPhone(input)
-          ? maskPhone(input) === `${input.slice(0, 3)}****${input.slice(7)}`
-          : maskPhone(input) === stars(input),
+it(
+  '[BR-ID-33] 任意字符串：手机号脱敏不抛错、码点数不变，合规号码只露前 3 后 4，其余全是 *',
+  () => {
+    // Every run checks one arbitrary string and one string of the valid shape.
+    fc.assert(
+      fc.property(anyText, phoneShape, (text, phone) =>
+        [text, phone].every((input) =>
+          isPhone(input)
+            ? maskPhone(input) === `${input.slice(0, 3)}****${input.slice(7)}`
+            : maskPhone(input) === stars(input),
+        ),
       ),
-    ),
-    propParams(),
-  );
-  expect(maskPhone('13812345678')).toBe('138****5678');
-});
+      propParams(),
+    );
+    expect(maskPhone('13812345678')).toBe('138****5678');
+  },
+  PROPERTY_TIMEOUT_MS,
+);
 
-it('[BR-ID-33] 任意字符串：身份证脱敏不抛错、码点数不变，合规号码只露首末各 1 位，其余全是 *', () => {
-  fc.assert(
-    fc.property(anyText, idShape, (text, idNo) =>
-      [text, idNo].every((input) =>
-        isIdNo(input)
-          ? maskIdNo(input) ===
-            `${input.charAt(0)}${'*'.repeat(input.length - 2)}${input.charAt(input.length - 1)}`
-          : maskIdNo(input) === stars(input),
+it(
+  '[BR-ID-33] 任意字符串：身份证脱敏不抛错、码点数不变，合规号码只露首末各 1 位，其余全是 *',
+  () => {
+    fc.assert(
+      fc.property(anyText, idShape, (text, idNo) =>
+        [text, idNo].every((input) =>
+          isIdNo(input)
+            ? maskIdNo(input) ===
+              `${input.charAt(0)}${'*'.repeat(input.length - 2)}${input.charAt(input.length - 1)}`
+            : maskIdNo(input) === stars(input),
+        ),
       ),
-    ),
-    propParams(),
-  );
-  expect(maskIdNo('11010519491231002X')).toBe('1****************X');
-});
+      propParams(),
+    );
+    expect(maskIdNo('11010519491231002X')).toBe('1****************X');
+  },
+  PROPERTY_TIMEOUT_MS,
+);
 
-it('[BR-ID-33] 任意字符串：姓名脱敏不抛错、码点数不变，只有末一个码点保留（单字全遮）', () => {
-  fc.assert(
-    fc.property(anyText, (text) => {
-      const chars = [...text];
-      const out = [...maskName(text)];
-      if (chars.length <= 1) return out.join('') === stars(text);
-      return (
-        out.length === chars.length &&
-        out.slice(0, -1).every((c) => c === '*') &&
-        out[out.length - 1] === chars[chars.length - 1]
-      );
-    }),
-    propParams(),
-  );
-  expect(maskName('张小三')).toBe('**三');
-});
+it(
+  '[BR-ID-33] 任意字符串：姓名脱敏不抛错、码点数不变，只有末一个码点保留（单字全遮）',
+  () => {
+    fc.assert(
+      fc.property(anyText, (text) => {
+        const chars = [...text];
+        const out = [...maskName(text)];
+        if (chars.length <= 1) return out.join('') === stars(text);
+        return (
+          out.length === chars.length &&
+          out.slice(0, -1).every((c) => c === '*') &&
+          out[out.length - 1] === chars[chars.length - 1]
+        );
+      }),
+      propParams(),
+    );
+    expect(maskName('张小三')).toBe('**三');
+  },
+  PROPERTY_TIMEOUT_MS,
+);
