@@ -8,6 +8,7 @@ import type { EnumDef } from './catalog.ts';
 import { repoRoot } from './paths.ts';
 
 export const linkPatternsFile = join(repoRoot, 'specs', 'link-patterns.yaml');
+export const navigationVectorsFile = join(repoRoot, 'specs', 'external-navigation.vectors.json');
 
 type Obj = Record<string, unknown>;
 
@@ -23,18 +24,41 @@ function covers(domain: string, host: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
 }
 
+/**
+ * Checks specs/link-patterns.yaml and the synthetic rule tables of
+ * specs/external-navigation.vectors.json against the same structure rules.
+ */
 export function checkLinkPatterns(
   enums: readonly EnumDef[],
   file: string = linkPatternsFile,
+  vectorsFile: string | null = navigationVectorsFile,
 ): string[] {
   const where = 'specs/link-patterns.yaml';
-  const problems: string[] = [];
   let doc: unknown;
   try {
     doc = parseYamlLite(readFileSync(file, 'utf8'));
   } catch (err) {
     return [`${where}: ${err instanceof Error ? err.message : String(err)}`];
   }
+  const problems = checkTable(doc, enums, where);
+  if (vectorsFile !== null) {
+    const vwhere = 'specs/external-navigation.vectors.json';
+    try {
+      const vectors: unknown = JSON.parse(readFileSync(vectorsFile, 'utf8'));
+      const tables = isObj(vectors) && isObj(vectors['rule_tables']) ? vectors['rule_tables'] : {};
+      if (Object.keys(tables).length === 0) problems.push(`${vwhere}: rule_tables missing`);
+      for (const [name, table] of Object.entries(tables)) {
+        problems.push(...checkTable(table, enums, `${vwhere}: rule_tables.${name}`));
+      }
+    } catch (err) {
+      problems.push(`${vwhere}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return problems;
+}
+
+function checkTable(doc: unknown, enums: readonly EnumDef[], where: string): string[] {
+  const problems: string[] = [];
   if (!isObj(doc)) return [`${where}: top level must be a mapping`];
   const extra = Object.keys(doc).filter((k) => k !== 'version' && k !== 'rules');
   if (extra.length > 0) problems.push(`${where}: unknown top-level keys ${extra.join(', ')}`);
@@ -66,10 +90,14 @@ export function checkLinkPatterns(
       problems.push(`${at}: hosts must be a non-empty list`);
     } else {
       for (const h of hosts) {
-        if (typeof h !== 'string' || !HOST.test(h)) {
-          problems.push(`${at}: host ${JSON.stringify(h)} is not a lower-case host name`);
+        if (typeof h !== 'string' || !HOST.test(h) || !h.includes('.') || /^[0-9.]+$/.test(h)) {
+          problems.push(
+            `${at}: host ${JSON.stringify(h)} is not a lower-case domain name with a dot (no IP)`,
+          );
         }
       }
+      const seen = hosts.filter((h, j) => hosts.indexOf(h) !== j);
+      if (seen.length > 0) problems.push(`${at}: duplicate hosts ${seen.join(', ')}`);
       if (category === 'union_host' && typeof platform === 'string') {
         unionHosts.set(platform, [...(unionHosts.get(platform) ?? []), ...hosts.map(String)]);
       }
@@ -82,8 +110,10 @@ export function checkLinkPatterns(
       problems.push(`${at}: ${String(category)} needs at least one path pattern`);
     } else {
       for (const p of patterns) {
-        if (typeof p !== 'string' || !p.startsWith('/')) {
-          problems.push(`${at}: path pattern ${JSON.stringify(p)} must start with /`);
+        if (typeof p !== 'string' || !p.startsWith('/') || /[?#%\s]/.test(p)) {
+          problems.push(
+            `${at}: path pattern ${JSON.stringify(p)} must start with / and hold no ?, #, % or space`,
+          );
         }
       }
     }

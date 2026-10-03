@@ -10,6 +10,12 @@ type Rule = { platform: string; category: string; hosts: string[]; path_patterns
 type Table = { version: string; rules: Rule[] };
 type TableName = 'current' | 'last_good' | 'bundled';
 type Switches = { union_host_block: boolean | null; product_intercept: boolean };
+type Outcome = {
+  action: string;
+  notice: string | null;
+  parse_url: string | null;
+  table_used: TableName;
+};
 type NavCase = {
   note: string;
   url: string;
@@ -18,7 +24,7 @@ type NavCase = {
   basic_mode: boolean;
   download: boolean;
   tables: TableName[];
-  expected: { action: string; notice: string | null; table_used: TableName };
+  expected: Outcome;
 };
 type BrowserCase = {
   note: string;
@@ -27,7 +33,7 @@ type BrowserCase = {
   expected: { can_open_in_browser: boolean; table_used: TableName };
 };
 type Vectors = {
-  rule_tables: { current: Table; bundled: Table };
+  rule_tables: Record<TableName, Table>;
   navigation_cases: NavCase[];
   open_in_browser_cases: BrowserCase[];
 };
@@ -37,19 +43,43 @@ const vectors = JSON.parse(
 ) as Vectors;
 
 function tableFor(names: TableName[]): { name: TableName; table: Table } {
-  // last_good, when present, is the same synthetic table as current (the vectors only vary which
-  // tables exist); the bundled snapshot holds union_host domains only.
   const name = (['current', 'last_good', 'bundled'] as const).find((n) => names.includes(n));
   if (name === undefined) throw new Error('a case without any rule table');
-  const table = name === 'bundled' ? vectors.rule_tables.bundled : vectors.rule_tables.current;
-  return { name, table };
+  return { name, table: vectors.rule_tables[name] };
+}
+
+/** Decodes valid %XX once (as UTF-8); any other % stays literal. */
+function decodeOnce(path: string): string {
+  const raw = Buffer.from(path, 'utf8');
+  const bytes: number[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const hex = raw.subarray(i + 1, i + 3).toString('latin1');
+    if (raw[i] === 0x25 && /^[0-9a-fA-F]{2}$/.test(hex)) {
+      bytes.push(parseInt(hex, 16));
+      i += 2;
+    } else bytes.push(raw[i] ?? 0);
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+/** Host and decoded path of a well-formed https URL, or null (fail closed). */
+function normalise(raw: string): { host: string; path: string } | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
+  const host = url.hostname.replace(/\.$/, '').toLowerCase();
+  return host === '' ? null : { host, path: decodeOnce(url.pathname) };
 }
 
 function globToRegExp(pattern: string): RegExp {
   let source = '';
   for (let i = 0; i < pattern.length; i++) {
     if (pattern.startsWith('**', i)) {
-      source += '.*';
+      source += '[\\s\\S]*';
       i++;
     } else if (pattern[i] === '*') source += '[^/]*';
     else source += (pattern[i] ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -58,62 +88,78 @@ function globToRegExp(pattern: string): RegExp {
 }
 
 function categories(raw: string, table: Table): Set<string> {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return new Set();
-  }
-  if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') return new Set();
-  const host = url.hostname.replace(/\.$/, '').toLowerCase();
-  const path = decodeURIComponent(url.pathname);
+  const parts = normalise(raw);
   const hits = new Set<string>();
+  if (parts === null) return hits;
   for (const rule of table.rules) {
-    if (!rule.hosts.some((h) => host === h || host.endsWith(`.${h}`))) continue;
+    if (!rule.hosts.some((h) => parts.host === h || parts.host.endsWith(`.${h}`))) continue;
     if (rule.category === 'union_host') hits.add('union_host');
-    else if (rule.path_patterns.some((p) => globToRegExp(p).test(path))) hits.add(rule.category);
+    else if (rule.path_patterns.some((p) => globToRegExp(p).test(parts.path))) {
+      hits.add(rule.category);
+    }
   }
   return hits;
 }
 
-function decide(c: NavCase): NavCase['expected'] {
+function decide(c: NavCase): Outcome {
   const { name, table } = tableFor(c.tables);
-  if (c.download) return { action: 'cancel', notice: 'download', table_used: name };
-  if (!/^https:/i.test(c.url)) return { action: 'cancel', notice: null, table_used: name };
+  const out = (action: string, notice: string | null, parseUrl: string | null = null) => ({
+    action,
+    notice,
+    parse_url: parseUrl,
+    table_used: name,
+  });
+  if (!/^https:/i.test(c.url) || normalise(c.url) === null) return out('cancel', null);
   const hits = categories(c.url, table);
-  const blockOn = c.switches.union_host_block ?? true;
-  if (!hits.has('union_host') || !blockOn)
-    return { action: 'allow', notice: null, table_used: name };
-  const topLevel = c.frame !== 'subframe';
-  if (topLevel && hits.has('product') && c.switches.product_intercept && !c.basic_mode) {
-    return { action: 'parse', notice: null, table_used: name };
+  if (hits.has('union_host')) {
+    const topLevel = c.frame !== 'subframe';
+    if (topLevel && hits.has('product') && c.switches.product_intercept && !c.basic_mode) {
+      return out('parse', null, c.url.split('#')[0] ?? c.url);
+    }
+    if (c.switches.union_host_block ?? true) return out('block', 'union_host_blocked');
   }
-  return { action: 'block', notice: 'union_host_blocked', table_used: name };
+  if (c.download) return out('cancel', 'download');
+  return out('allow', null);
 }
 
 it('every navigation vector matches an independent reading of BR-ATTR-29 ②', () => {
-  expect(vectors.navigation_cases.length).toBeGreaterThan(20);
+  expect(vectors.navigation_cases.length).toBeGreaterThan(40);
   for (const c of vectors.navigation_cases) expect(decide(c), c.note).toEqual(c.expected);
 });
 
-it('the system browser exit is offered only for https pages that hit no category', () => {
+it('the system browser exit is offered only for well-formed https pages that hit no category', () => {
   for (const c of vectors.open_in_browser_cases) {
     const { name, table } = tableFor(c.tables);
-    const ok = /^https:/i.test(c.url) && categories(c.url, table).size === 0;
+    const ok = normalise(c.url) !== null && categories(c.url, table).size === 0;
     expect({ can_open_in_browser: ok, table_used: name }, c.note).toEqual(c.expected);
   }
 });
 
 it('the vectors cover the cases 03 §5.1 and BR-ATTR-29 name', () => {
-  const actions = new Set(vectors.navigation_cases.map((c) => c.expected.action));
-  expect([...actions].sort()).toEqual(['allow', 'block', 'cancel', 'parse']);
-  const frames = new Set(vectors.navigation_cases.map((c) => c.frame));
-  expect([...frames].sort()).toEqual(['initial', 'main', 'new_window', 'subframe']);
-  const used = new Set(vectors.navigation_cases.map((c) => c.expected.table_used));
-  expect([...used].sort()).toEqual(['bundled', 'current', 'last_good']);
-  // Switching product interception off never turns a platform page into an allowed one.
-  for (const c of vectors.navigation_cases.filter((v) => !v.switches.product_intercept)) {
-    expect(c.expected.action, c.note).not.toBe('allow');
+  const cases = vectors.navigation_cases;
+  expect([...new Set(cases.map((c) => c.expected.action))].sort()).toEqual([
+    'allow',
+    'block',
+    'cancel',
+    'parse',
+  ]);
+  expect([...new Set(cases.map((c) => c.frame))].sort()).toEqual([
+    'initial',
+    'main',
+    'new_window',
+    'subframe',
+  ]);
+  expect([...new Set(cases.map((c) => c.expected.table_used))].sort()).toEqual([
+    'bundled',
+    'current',
+    'last_good',
+  ]);
+  // While union_host_block is on (or unreadable), no platform page is ever allowed.
+  for (const c of cases.filter((v) => v.switches.union_host_block !== false)) {
+    if (categories(c.url, tableFor(c.tables).table).has('union_host')) {
+      expect(c.expected.action, c.note).not.toBe('allow');
+    }
   }
-  expect(vectors.navigation_cases.some((c) => c.url.startsWith('intent://'))).toBe(true);
+  expect(cases.some((c) => c.url.startsWith('intent://'))).toBe(true);
+  expect(cases.some((c) => c.url.includes('@'))).toBe(true);
 });
