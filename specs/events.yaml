@@ -1,0 +1,234 @@
+# 埋点事件表（规划/03 §4.7；拍板第二批 TECH-21；F-OBS-03）。三端与 H5 的事件类型与构造函数由 CT-05 的生成器
+# 从本文件生成，业务代码只能调用生成函数；/v1/events 的服务端校验读同一份。
+#
+# 结构（packages/contracts-ts/scripts/events.ts 校验，pnpm contracts:check 里跑）：
+#   version          每次改动递增
+#   common_fields    每个事件都带的公共字段（03 §4.7）
+#   events           事件名 → {description, source, fields}；fields 是字段名 → {type, required, values?, note?}
+#     type           string / integer / boolean / enum（enum 时 values 列出取值）
+#     事件名只用小写字母、数字、下划线；「funnel_first_order.*」「agent_*」这类族名写成 family，具体事件随定义它们的
+#     任务补进来。
+# 约束（02 §12.6，03 §4.7）：事件字段不带完整推广 URL、口令、推广位或 relation_id 等渠道标识；URL 类信息只记平台与
+# 类别。本文件不设这类字段（字段名不得是 url、tpwd、pid、relation_id、promo_url 之类，校验会拒绝）。
+# 游客事件只带 device_id；登录后由服务端按 device_id 与登录时刻在报表层关联 user_id，不回写原事件。
+#
+# TODO(规划/05 CT-13): app_launch、page_view、exposure、click、search、convert、h5_white_screen 与 funnel_first_order.*、
+#   agent_* 两族的事件字段 — blocked on 用到它们的任务（首页、搜索、Agent、漏斗）给出字段；现在只登记名字与出处。
+version: '1'
+common_fields:
+  event_id:
+    type: string
+    required: true
+    note: 客户端生成，服务端按它去重
+  name:
+    type: string
+    required: true
+  client_at:
+    type: string
+    required: true
+    note: 客户端时刻，ISO 8601 带时区
+  session_id:
+    type: string
+    required: true
+  device_id:
+    type: string
+    required: true
+  user_id:
+    type: string
+    required: false
+    note: 游客为空
+  platform:
+    type: enum
+    required: true
+    values: [ios, android, harmony, h5]
+    note: 客户端端别（contracts/enums/platform.yaml client_platform 的端侧取值）
+  app_version:
+    type: string
+    required: true
+  channel:
+    type: string
+    required: false
+    note: 安装渠道（install_channel）；H5 为空
+  page:
+    type: string
+    required: true
+  spm:
+    type: string
+    required: false
+    note: 页面.模块.坑位（03 §4.7）
+  trace_id:
+    type: string
+    required: false
+events:
+  link_jump:
+    description: 外跳的每一步结果（BR-ATTR-27 ③；BR-ATTR-21 细则「待跟单卡按实际外跳选」）
+    source: 规划/03 §4.5、§4.7；08 BR-ATTR-21、BR-ATTR-27
+    fields:
+      attempt_id:
+        type: string
+        required: false
+        note: 本次 open（或 H5 经 convert）响应里的 attempt_id，同一次外跳的各步用同一个；只有带本人令牌、编号属于本人的上报才用于待跟单卡，其余只当埋点
+      link_id:
+        type: string
+        required: true
+      union_platform:
+        type: enum
+        required: true
+        values: [taobao, jd, pdd, meituan, vip, douyin, eleme, kuaishou, suning]
+        note: 电商平台（contracts/enums/platform.yaml platform）
+      step:
+        type: enum
+        required: true
+        values: [sdk, scheme, universal_link, h5, copy_tpwd]
+        note: 只记步骤类型，不带完整推广 URL、口令、推广位或 relation_id
+      result:
+        type: enum
+        required: true
+        values: [launched, failed, sdk_init_failed, copied]
+        note: launched 拉起了目标 App 或页面；copied 已复制口令；sdk_init_failed 百川初始化失败（与已初始化但拉起失败的 failed 分开，BR-ATTR-27 淘宝行）
+      duration_ms:
+        type: integer
+        required: true
+      installed:
+        type: enum
+        required: true
+        values: ['true', 'false', unknown]
+        note: 请求体里 installed 的同一取值（contracts/enums/trade.yaml installed_state）
+  external_page_union_host:
+    description: 第三方页容器里命中联盟平台网页域名的导航（BR-ATTR-29 ②，每次命中一条）
+    source: 规划/03 §5.1；08 BR-ATTR-29
+    fields:
+      union_platform:
+        type: enum
+        required: true
+        values: [taobao, jd, pdd, meituan, vip, douyin, eleme, kuaishou, suning]
+      category:
+        type: enum
+        required: true
+        values: [product, promo, union_host]
+        note: 命中的链接形态类别（link_pattern_category）
+      frame:
+        type: enum
+        required: true
+        values: [initial, main, subframe, new_window]
+      outcome:
+        type: enum
+        required: true
+        values: [parse, block]
+        note: 与 specs/external-navigation.vectors.json 的 action 一致；不带完整 URL
+  external_page_nav_host:
+    description: 容器内文档级导航的抽样埋点（采样率 /v1/config external_page.nav_host_sample_bp；BR-ATTR-29 细则「覆盖限制与待定事项」）
+    source: 规划/03 §5.1；08 BR-ATTR-29
+    fields:
+      registered_domain:
+        type: string
+        required: true
+        note: 只记注册域，不带路径、参数与来源页
+      frame:
+        type: enum
+        required: true
+        values: [initial, main, subframe, new_window]
+      hit:
+        type: boolean
+        required: true
+        note: 是否命中链接形态表
+  external_page_blocked_nav:
+    description: 第三方页容器取消的非 https 跳转与下载（只记类别）
+    source: 规划/03 §5.1
+    fields:
+      kind:
+        type: enum
+        required: true
+        values: [http, app_scheme, intent, market, tel, sms, mailto, other_scheme, download]
+        note: 只记 scheme 类别（下载另记 download），不带完整 URL
+      frame:
+        type: enum
+        required: true
+        values: [initial, main, subframe, new_window]
+  route_entry_blocked:
+    description: 深链或推送命中不允许的入口（BR-ID-10 细则「路由入口矩阵」）
+    source: 规划/03 §4.4；08 BR-ID-10
+    fields:
+      route:
+        type: string
+        required: true
+        note: contracts/routes.json 的路由名，不带参数
+      entry:
+        type: enum
+        required: true
+        values: [in_app, push, deeplink]
+  route_params_dropped:
+    description: 打开不接受参数的资金与实名页面时丢弃了参数（功能对照 G-69）
+    source: 规划/03 §4.4；08 BR-WDR 细则「资金与实名页面不接受外部预填」
+    fields:
+      route:
+        type: enum
+        required: true
+        values: [Withdraw, PayoutAccount, LaborAgreement, RealName]
+      dropped_count:
+        type: integer
+        required: true
+        note: 只记个数，不记参数名与值
+  bridge_call:
+    description: JSBridge 调用被拒（规划/03 §5.3；BR-ATTR-29 细则「桥方法不留没有归因的打开入口」）
+    source: 规划/03 §5.3；08 BR-ATTR-29
+    fields:
+      method:
+        type: string
+        required: true
+        note: 桥方法名（contracts/bridge.schema.json），不带参数与 url
+      code:
+        type: integer
+        required: true
+        note: 桥错误码（90001–90500）
+  sdui_card_error:
+    description: SDUI 卡片解码失败，只丢弃这一项（规划/03 §6 解码隔离）
+    source: 规划/03 §6
+    fields:
+      type:
+        type: string
+        required: true
+      version:
+        type: integer
+        required: true
+      page_version:
+        type: string
+        required: true
+      reason:
+        type: string
+        required: true
+  app_launch:
+    description: App 启动（字段待定）
+    source: 规划/03 §4.7
+    fields: {}
+  page_view:
+    description: 页面浏览（字段待定）
+    source: 规划/03 §4.7
+    fields: {}
+  exposure:
+    description: 卡片曝光（字段待定）
+    source: 规划/03 §4.7
+    fields: {}
+  click:
+    description: 点击（字段待定）
+    source: 规划/03 §4.7
+    fields: {}
+  search:
+    description: 搜索（字段待定）
+    source: 规划/03 §4.7
+    fields: {}
+  convert:
+    description: 转链（字段待定）
+    source: 规划/03 §4.7
+    fields: {}
+  h5_white_screen:
+    description: H5 白屏（字段待定）
+    source: 规划/03 §4.7
+    fields: {}
+families:
+  funnel_first_order:
+    description: 首单漏斗事件族 funnel_first_order.*（具体事件随漏斗任务补）
+    source: 规划/03 §4.7
+  agent:
+    description: Agent 事件族 agent_*（具体事件随 Agent 任务补）
+    source: 规划/03 §4.7
