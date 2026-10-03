@@ -237,6 +237,13 @@ export function createMemoryQuotaLimiter(
     throw new GovernanceError('invalid_policy', config?.bucketKey ?? '', 'Invalid quota policy');
   }
   // Snapshot the values: mutating the input after validation cannot alter a live limiter.
+  // Parse the shortest decimal representation, including exponent notation, before doing
+  // any arithmetic on the rate. Multiplying a binary fraction first can lose a whole token.
+  const [mantissa = '', exponent = '0'] = String(config.refillPerSecond).split('e');
+  const [whole = '', fraction = ''] = mantissa.split('.');
+  const scale = fraction.length - Number(exponent);
+  const numerator = BigInt(whole + fraction) * 10n ** BigInt(Math.max(0, -scale));
+  const denominator = 10n ** BigInt(Math.max(0, scale)) * 100n * 1_000_000_000n;
   const startedAt = scheduler.now();
   const buckets = new Map(
     PURPOSES.map((purpose) => {
@@ -245,9 +252,9 @@ export function createMemoryQuotaLimiter(
         purpose,
         {
           capacity,
-          consumed: 0,
+          consumed: 0n,
           startedAt,
-          rate: (config.refillPerSecond * config.shares[purpose]) / 100,
+          rateNumerator: numerator * BigInt(config.shares[purpose]),
         },
       ];
     }),
@@ -258,14 +265,15 @@ export function createMemoryQuotaLimiter(
     // Recompute from a fixed origin; acquisitions subtract only whole tokens, so polling
     // cannot accumulate fractional refill errors. Reset the origin only when full, discarding
     // any overflow instead of banking tokens beyond capacity.
-    const refilled = ((now - bucket.startedAt) * bucket.rate) / 1000;
-    if (refilled >= bucket.consumed) {
+    const elapsedNs = BigInt(Math.round((now - bucket.startedAt) * 1_000_000));
+    const refilled = elapsedNs * bucket.rateNumerator;
+    if (refilled >= bucket.consumed * denominator) {
       bucket.startedAt = now;
-      bucket.consumed = 0;
-    } else if (bucket.capacity - bucket.consumed + Math.floor(refilled) < 1) {
+      bucket.consumed = 0n;
+    } else if (BigInt(bucket.capacity) - bucket.consumed + refilled / denominator < 1n) {
       return false;
     }
-    bucket.consumed += 1;
+    bucket.consumed += 1n;
     return true;
   };
   return {

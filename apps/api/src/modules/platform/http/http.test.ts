@@ -6,7 +6,7 @@ import {
   systemScheduler,
   unionPolicy,
 } from './index.ts';
-import type { Scheduler } from './index.ts';
+import type { QuotaPurpose, Scheduler } from './index.ts';
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
@@ -301,4 +301,159 @@ it('[AC-B1-01b#13] 无限等待不创建定时器，只在信号中止时以原�
   expect(done).toHaveBeenCalledExactlyOnceWith(reason);
   expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it('[AC-B1-01b#14] 76% 的每秒 3 个令牌在 25 秒回填恰好 57 个，并在最早整数毫秒取得第 58 个', () => {
+  let now = 0;
+  const limiter = createMemoryQuotaLimiter(
+    {
+      bucketKey: 'exact-refill',
+      capacity: 100,
+      refillPerSecond: 3,
+      shares: { online: 24, order_sync: 76, pool_refresh: 0, watch: 0 },
+    },
+    { now: () => now, sleep: systemScheduler().sleep },
+  );
+  for (let token = 0; token < 76; token += 1) expect(limiter.tryAcquire('order_sync')).toBe(true);
+  expect(limiter.tryAcquire('order_sync')).toBe(false);
+  now = 25_000;
+  for (let token = 0; token < 57; token += 1) expect(limiter.tryAcquire('order_sync')).toBe(true);
+  expect(limiter.tryAcquire('order_sync')).toBe(false);
+  now = Math.ceil((58 * 100_000) / 228) - 1;
+  expect(limiter.tryAcquire('order_sync')).toBe(false);
+  now += 1;
+  expect(limiter.tryAcquire('order_sync')).toBe(true);
+  expect(limiter.tryAcquire('order_sync')).toBe(false);
+});
+
+it('[AC-B1-01b#15] 70% 的每秒 3 个令牌在十秒回填 21 个，10% 的每秒 10 个令牌在轮询中保留余数', () => {
+  let now = 0;
+  const scheduler: Scheduler = { now: () => now, sleep: systemScheduler().sleep };
+  const online = createMemoryQuotaLimiter(
+    {
+      bucketKey: 'online',
+      capacity: 100,
+      refillPerSecond: 3,
+      shares: { online: 70, order_sync: 30, pool_refresh: 0, watch: 0 },
+    },
+    scheduler,
+  );
+  const pool = createMemoryQuotaLimiter(
+    { bucketKey: 'pool', capacity: 100, refillPerSecond: 10, shares: quotaShares('mvp') },
+    scheduler,
+  );
+  for (let token = 0; token < 70; token += 1) expect(online.tryAcquire('online')).toBe(true);
+  for (let token = 0; token < 10; token += 1) expect(pool.tryAcquire('pool_refresh')).toBe(true);
+  for (now = 100; now < 1000; now += 100) expect(pool.tryAcquire('pool_refresh')).toBe(false);
+  expect(pool.tryAcquire('pool_refresh')).toBe(true);
+  expect(pool.tryAcquire('pool_refresh')).toBe(false);
+  now = 10_000;
+  for (let token = 0; token < 21; token += 1) expect(online.tryAcquire('online')).toBe(true);
+  expect(online.tryAcquire('online')).toBe(false);
+});
+
+it.each([
+  { rate: 1e-7, boundary: 10_000_000_000, before: 1 },
+  { rate: 2.5e-7, boundary: 4_000_000_000, before: 1 },
+  { rate: 0.01, boundary: 100_000, before: 1 },
+  { rate: 2000, boundary: 0.5, before: 0.1 },
+  { rate: 10_000, boundary: 0.1, before: 0.01 },
+  { rate: 10_000, boundary: 0.7, before: 0.01 },
+  { rate: 1e21, boundary: 0.000001, before: 0.000001 },
+])(
+  '[AC-B1-01b#16] 速率 $rate 与小数毫秒边界 $boundary 保留精确回填且丢弃溢出',
+  ({ rate, boundary, before }) => {
+    let now = 0;
+    const limiter = createMemoryQuotaLimiter(
+      {
+        bucketKey: 'decimal-refill',
+        capacity: 10,
+        refillPerSecond: rate,
+        shares: { online: 100, order_sync: 0, pool_refresh: 0, watch: 0 },
+      },
+      { now: () => now, sleep: systemScheduler().sleep },
+    );
+    const drain = (): number =>
+      Array.from({ length: 11 }, () => limiter.tryAcquire('online')).filter(Boolean).length;
+    expect(drain()).toBe(10);
+    now = boundary - before;
+    const earlier = drain();
+    now = boundary;
+    // The 0.7 ms case has six tokens available just before its seventh token arrives.
+    expect(earlier).toBe(boundary === 0.7 ? 6 : 0);
+    expect(drain()).toBe(rate === 1e21 ? 10 : 1);
+    now = boundary * 100;
+    expect(drain()).toBe(10);
+    expect(limiter.tryAcquire('online')).toBe(false);
+  },
+);
+
+it('[AC-B1-01b#17] 固定种子 500 组配置、每组 60 次时刻推进及突发取用与独立 BigInt 余额模型一致', () => {
+  const purposes: readonly QuotaPurpose[] = ['online', 'order_sync', 'pool_refresh', 'watch'];
+  let seed = 0xb101b;
+  const random = (limit: number): number => {
+    seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+    return seed % limit;
+  };
+  let borrowed = 0;
+  for (let sample = 0; sample < 500; sample += 1) {
+    const capacity = 1 + random(1000);
+    const rateHundredths = sample % 2 === 0 ? (1 + random(1000)) * 100 : 100 + random(99_901);
+    const online = random(101);
+    const orderSync = random(101 - online);
+    const poolRefresh = random(101 - online - orderSync);
+    const shares = {
+      online,
+      order_sync: orderSync,
+      pool_refresh: poolRefresh,
+      watch: 100 - online - orderSync - poolRefresh,
+    };
+    let now = 0;
+    const limiter = createMemoryQuotaLimiter(
+      { bucketKey: `sample-${sample}`, capacity, refillPerSecond: rateHundredths / 100, shares },
+      { now: () => now, sleep: systemScheduler().sleep },
+    );
+    // Independent incremental balance model: one token = 100 (rate hundredths) ×
+    // 100 (share percent) × 1000 (milliseconds). Update every bucket at every call.
+    const unit = 10_000_000n;
+    const balances = purposes.map((purpose) => {
+      const cap = ((BigInt(capacity) * BigInt(shares[purpose])) / 100n) * unit;
+      return { cap, balance: cap, refill: BigInt(rateHundredths) * BigInt(shares[purpose]) };
+    });
+    let previous = 0;
+    const modelTake = (purpose: QuotaPurpose): boolean => {
+      const elapsed = BigInt(now - previous);
+      previous = now;
+      for (const bucket of balances) {
+        bucket.balance += elapsed * bucket.refill;
+        if (bucket.balance > bucket.cap) bucket.balance = bucket.cap;
+      }
+      const take = (target: QuotaPurpose): boolean => {
+        const bucket = balances[purposes.indexOf(target)];
+        if (bucket === undefined || bucket.balance < unit) return false;
+        bucket.balance -= unit;
+        return true;
+      };
+      if (take(purpose)) return true;
+      if (purpose === 'online' && take('pool_refresh')) {
+        borrowed += 1;
+        return true;
+      }
+      return false;
+    };
+    const compare = (purpose: QuotaPurpose, count: number): void => {
+      const expected = Array.from({ length: count }, () => modelTake(purpose));
+      const actual = Array.from({ length: count }, () => limiter.tryAcquire(purpose));
+      expect(actual, `sample=${sample}, now=${now}, purpose=${purpose}`).toEqual(expected);
+    };
+    // Exhaust all starting balances, including online borrowing pool-refresh tokens.
+    for (const purpose of purposes) compare(purpose, capacity + 1);
+    for (let step = 0; step < 60; step += 1) {
+      now += step % 10 === 0 ? 0 : step % 10 === 1 ? 5000 : random(5001);
+      const purpose = purposes[random(purposes.length)];
+      if (purpose === undefined) throw new Error('Missing purpose');
+      compare(purpose, 1 + random(20));
+    }
+  }
+  expect(borrowed).toBeGreaterThan(0);
 });
