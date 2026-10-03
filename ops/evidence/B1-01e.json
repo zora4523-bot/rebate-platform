@@ -1,0 +1,61 @@
+{
+  "task": "B1-01e",
+  "spec_ref": "c288e25ea6228c3e3b24a05c8c2f13ed1a61a8eb",
+  "spec_commit": "312856b943f5080ac6be000244e20c3901a05f5e",
+  "red_tests": [],
+  "risk_note": "RV2 by path (pnpm-lock.yaml, apps/api/package.json, apps/api/tsconfig.json, test/** are outside the risk-map allow list). A deps task (impl claude, no rule tests): spec_commit is the base, the ledger amendment it relies on was merged alone as #16. Protected class 2: lockfile importer entries only, two test:int scripts, two tsconfig references, two new integration vitest configs; approval label by the orchestrator. No money, attribution or user-authorisation path changed; no existing check removed or relaxed.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "601bd310e4089530bcbe990bec9f4622b0cc1a07",
+      "tree": "11a7d3f4697285b0d74edd7d5a5a44295653fa4d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T15:54:07Z",
+      "finished_at": "2026-10-03T15:54:55Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent. Round 1 (faa6e69..f351bb4): fail, 1 S1 (ledger amendment in the same branch, CI guard-git reads the base ledger) + 1 S2 (globalSetup loaded packages/db/dist). Round 2 (de7a833..601bd31 after #16 and the rebase): pass, both closed: guard git path-guard passes with only the 6 expected class-2 hits left; test:int of apps/api and the rule-test package pass in a fresh detached worktree without any build. 1 new S2 outside the task paths (packages/db README and testing error text still recommend the package specifier) recorded as a follow-up."
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 (base faa6e69, ledger amendment + implementation): pass, 1 S2 (globalSetup loaded packages/db/dist); round 2 (base de7a833, the fix and the ledger): pass, 0 findings, checklist 7/7"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "deps task (ledger tester: none): no rule tests"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "833352e1f5760a722404dbc8f911918f6fda1490",
+    "test/spec": "448ff07e4f4ad6b7fb76edf6c277a45abeee14e5",
+    "apps/api/src": "b54f790d07add5d851b6490311c30ed35f6fd0ad"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 30,
+    "files": 5,
+    "note": "PROP_RUNS=1000000 on the B1-01e worktree at 601bd31, 2026-10-03 23:56 (+08:00); packages/money and test/properties are unchanged from main",
+    "tree": "833352e1f5760a722404dbc8f911918f6fda1490"
+  },
+  "follow_ups": "test/acceptance/README.md says the directory is in no vitest include and carries a TODO blocked on B1-01; both are stale after this task, the directory is add-only, so a test-change task has to update it; packages/db/README.md:39 and packages/db/src/testing/index.ts (header, error text) still tell other packages to use the specifier '@couli/db/testing/global-setup', which Vitest resolves to dist: point them to the source file path (packages/db follow-up)"
+}
