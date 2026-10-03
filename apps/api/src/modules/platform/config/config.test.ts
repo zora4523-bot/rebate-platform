@@ -12,7 +12,7 @@ function problemsOf(env: Record<string, string | undefined>): readonly string[] 
 }
 
 describe('loadConfig', () => {
-  it('applies the documented defaults when only APP_ENV is set', () => {
+  it('[AC-B1-01f] applies the documented defaults when only APP_ENV is set', () => {
     expect(loadConfig({ APP_ENV: 'local' })).toEqual({
       appEnv: 'local',
       logLevel: 'info',
@@ -22,12 +22,10 @@ describe('loadConfig', () => {
       apiPort: 3100,
       streamPort: 3101,
       adminPort: 3102,
-      databaseUrl: undefined,
-      redisUrl: undefined,
     });
   });
 
-  it('reads every variable and ignores unrelated ones', () => {
+  it('[AC-B1-01f] reads every variable and ignores unrelated ones', () => {
     expect(
       loadConfig({
         APP_ENV: 'staging',
@@ -51,24 +49,22 @@ describe('loadConfig', () => {
       apiPort: 8080,
       streamPort: 8081,
       adminPort: 8082,
-      databaseUrl: 'postgres://couli_app@127.0.0.1:54329/couli',
-      redisUrl: 'redis://127.0.0.1:63790',
     });
   });
 
-  it('treats empty strings as unset', () => {
+  it('[AC-B1-01f] treats empty strings as unset', () => {
     const config = loadConfig({ APP_ENV: 'test', LOG_LEVEL: '', CLOCK_NOW: '', API_PORT: '' });
     expect(config).toMatchObject({ logLevel: 'info', clockNow: undefined, apiPort: 3100 });
   });
 
-  it('requires APP_ENV', () => {
+  it('[AC-B1-01f] requires APP_ENV', () => {
     expect(() => loadConfig({})).toThrow(ConfigError);
     expect(problemsOf({})).toHaveLength(1);
     expect(problemsOf({})[0]).toMatch(/^APP_ENV: /);
     expect(problemsOf({ APP_ENV: 'production' })[0]).toMatch(/^APP_ENV: /);
   });
 
-  it('aggregates every problem into one readable error without echoing values', () => {
+  it('[AC-B1-01f] aggregates every problem into one readable error without echoing values', () => {
     const env = {
       APP_ENV: 'test',
       LOG_LEVEL: 'loud',
@@ -81,7 +77,6 @@ describe('loadConfig', () => {
     expect(problems.map((problem) => problem.split(':')[0]).sort()).toEqual([
       'API_PORT',
       'CLOCK_NOW',
-      'DATABASE_URL',
       'LOG_LEVEL',
       'STREAM_PORT',
     ]);
@@ -96,7 +91,7 @@ describe('loadConfig', () => {
   });
 
   it.each(['2026-10-01T12:00:00Z', '2026-10-01T12:00:00.123+08:00', '2026-10-01T04:00:00-05:00'])(
-    'accepts CLOCK_NOW=%s outside prod',
+    '[AC-B1-01f] accepts CLOCK_NOW=%s outside prod',
     (clockNow) => {
       for (const appEnv of ['local', 'test', 'staging']) {
         expect(loadConfig({ APP_ENV: appEnv, CLOCK_NOW: clockNow }).clockNow).toBe(clockNow);
@@ -105,13 +100,13 @@ describe('loadConfig', () => {
   );
 
   it.each(['2026-10-01T12:00:00', '2026-10-01', '1790000000000', 'now'])(
-    'rejects CLOCK_NOW=%s (no explicit offset or not ISO-8601)',
+    '[AC-B1-01f] rejects CLOCK_NOW=%s (no explicit offset or not ISO-8601)',
     (clockNow) => {
       expect(problemsOf({ APP_ENV: 'test', CLOCK_NOW: clockNow })[0]).toMatch(/^CLOCK_NOW: /);
     },
   );
 
-  it('refuses to start in prod when CLOCK_NOW is set (ADR-0001 §4.2 #10)', () => {
+  it('[AC-B1-01f] refuses to start in prod when CLOCK_NOW is set (ADR-0001 §4.2 #10)', () => {
     expect(problemsOf({ APP_ENV: 'prod', CLOCK_NOW: '2026-10-01T12:00:00Z' })).toEqual([
       'CLOCK_NOW: must not be set when APP_ENV=prod (the production clock is real time)',
     ]);
@@ -121,7 +116,7 @@ describe('loadConfig', () => {
   });
 
   it.each(['local', 'test'])(
-    'refuses to start in %s when a credential-looking variable is set (规划/11 §8)',
+    '[AC-B1-01f] refuses to start in %s when a credential-looking variable is set (规划/11 §8)',
     (appEnv) => {
       const problems = problemsOf({
         APP_ENV: appEnv,
@@ -135,11 +130,11 @@ describe('loadConfig', () => {
     },
   );
 
-  it.each(['staging', 'prod'])('allows credential variables in %s', (appEnv) => {
+  it.each(['staging', 'prod'])('[AC-B1-01f] allows credential variables in %s', (appEnv) => {
     expect(loadConfig({ APP_ENV: appEnv, ALIPAY_PRIVATE_KEY: 'k' }).appEnv).toBe(appEnv);
   });
 
-  it('ignores credential-looking variables that are empty', () => {
+  it('[AC-B1-01f] ignores credential-looking variables that are empty', () => {
     expect(loadConfig({ APP_ENV: 'local', UNION_SECRET: '' }).appEnv).toBe('local');
   });
 });

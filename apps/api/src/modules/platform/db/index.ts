@@ -1,7 +1,6 @@
 // Database handles of the five process entries (ADR-0001 §2 数据访问, §4.2 第 11 项 连接池,
 // 第 20 项 payout 进程; ADR-0002 §5 连接方式; 规划/02 §3.1 生产拓扑, §12.6「数据库业务角色的口令」,
-// §14 PostgreSQL 主库一行). SKELETON written by the rule-test author: every function below throws
-// `NotImplemented` until task B1-01f implements it. The rule tests in test/spec/platform/db/**
+// §14 PostgreSQL 主库一行). The rule tests in test/spec/platform/db/**
 // import this file by path; the names, signatures and semantics written here are the contract.
 //
 // 1. Variables per entry — `loadConnectionConfig(entry, env)`
@@ -169,7 +168,10 @@
 //      files of this directory; `../entries.ts` and `../logging/logger.ts` type-only.
 //    - No `process.env`; no wall clock (a timer for the close timeout is fine); logs only through
 //      `options.logger`.
-import type { DB } from '@couli/db';
+import { inspect } from 'node:util';
+import { createDb, type DB } from '@couli/db';
+import pg from 'pg';
+import { ConfigError } from '../config/index.ts';
 import type { Kysely } from 'kysely';
 import type { EntryName } from '../entries.ts';
 import type { RootLogger } from '../logging/logger.ts';
@@ -187,28 +189,35 @@ export const POOL_SIZES: Readonly<
 
 /** A connection URL whose password never shows (section 3). Created by loadConnectionConfig. */
 export class ConnectionUrl {
+  #url: URL;
   /** For this module only: `href` is a URL loadConnectionConfig has validated. */
   constructor(href: string) {
-    void href;
-    throw new Error('NotImplemented: ConnectionUrl');
+    this.#url = new URL(href);
+    Object.freeze(this);
   }
 
   /** The URL without password, query string or fragment. */
   get redacted(): string {
-    throw new Error('NotImplemented: ConnectionUrl.redacted');
+    const url = this.#url;
+    const auth = `${url.username}${url.password ? ':***' : ''}${url.username || url.password ? '@' : ''}`;
+    return `${url.protocol}//${auth}${url.host}${url.pathname}`;
   }
 
   /** The full URL (`new URL(value).href`), for the driver or client that connects. */
   reveal(): string {
-    throw new Error('NotImplemented: ConnectionUrl.reveal');
+    return this.#url.href;
   }
 
   toString(): string {
-    throw new Error('NotImplemented: ConnectionUrl.toString');
+    return this.redacted;
   }
 
   toJSON(): string {
-    throw new Error('NotImplemented: ConnectionUrl.toJSON');
+    return this.redacted;
+  }
+
+  [inspect.custom](): string {
+    return `ConnectionUrl(${this.redacted})`;
   }
 }
 
@@ -239,9 +248,60 @@ export function loadConnectionConfig(
   entry: EntryName,
   env: Readonly<Record<string, string | undefined>>,
 ): ConnectionConfig {
-  void entry;
-  void env;
-  throw new Error('NotImplemented: loadConnectionConfig');
+  const problems: string[] = [];
+  const read = (name: 'DATABASE_URL' | 'DATABASE_READ_URL' | 'REDIS_URL'): ConnectionUrl | null => {
+    const value = env[name];
+    if (value === undefined || value === '') {
+      problems.push(`${name}: must be set for the ${entry} entry`);
+      return null;
+    }
+    const redis = name === 'REDIS_URL';
+    try {
+      const url = new URL(value);
+      const valid = redis
+        ? ['redis:', 'rediss:'].includes(url.protocol) && url.hostname !== ''
+        : ['postgres:', 'postgresql:'].includes(url.protocol) &&
+          url.username !== '' &&
+          url.hostname !== '' &&
+          url.pathname.length > 1;
+      if (valid) return new ConnectionUrl(url.href);
+    } catch {
+      // Never propagate URL's error: it includes the unredacted input.
+    }
+    problems.push(
+      `${name}: ${
+        redis
+          ? 'must be a redis:// or rediss:// URL with a host'
+          : 'must be a postgres:// or postgresql:// URL with a user, a host and a database name'
+      }`,
+    );
+    return null;
+  };
+  const primary = read('DATABASE_URL');
+  const replica = entry === 'admin' ? read('DATABASE_READ_URL') : null;
+  const redisUrl = entry === 'payout' ? null : read('REDIS_URL');
+  if (problems.length > 0) throw new ConfigError(problems);
+  return Object.freeze({
+    entry,
+    db: Object.freeze({
+      name: 'db',
+      url: primary as ConnectionUrl,
+      max: POOL_SIZES[entry].db,
+      applicationName: `couli-${entry}`,
+      readOnly: false,
+    }),
+    dbRead:
+      replica === null
+        ? null
+        : Object.freeze({
+            name: 'dbRead',
+            url: replica,
+            max: POOL_SIZES.admin.dbRead as number,
+            applicationName: 'couli-admin-read',
+            readOnly: true,
+          }),
+    redisUrl,
+  });
 }
 
 export type DbErrorCode = 'closed' | 'invalid_option';
@@ -280,7 +340,188 @@ export interface DbHandles {
 
 /** Creates the pools of `config.entry` without connecting (section 4). */
 export function createDbHandles(config: ConnectionConfig, options: DbHandlesOptions): DbHandles {
-  void config;
-  void options;
-  throw new Error('NotImplemented: createDbHandles');
+  const timeout = options.closeTimeoutMs === undefined ? 5000 : options.closeTimeoutMs;
+  if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60000) {
+    throw new DbError('invalid_option');
+  }
+  let closing = false;
+  let closed: Promise<void> | undefined;
+  const pools: ManagedPool[] = [];
+  const make = (settings: DbPoolConfig): Kysely<DB> =>
+    createDb({
+      connectionString: settings.url.reveal(),
+      max: settings.max,
+      applicationName: settings.applicationName,
+      poolFactory(poolConfig) {
+        const managed = managePool(poolConfig, settings, options.logger, () => closing);
+        pools.push(managed);
+        return managed.adapter;
+      },
+    });
+  const db = make(config.db);
+  const dbRead = config.dbRead === null ? null : make(config.dbRead);
+  return Object.freeze({
+    db,
+    dbRead,
+    close(): Promise<void> {
+      if (closed !== undefined) return closed;
+      closing = true;
+      // End pools directly: Kysely.destroy() does nothing before the first query, and
+      // replaces our stable closed error with its own destroyed-driver error later.
+      closed = new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          void Promise.allSettled(pools.map((pool) => pool.forceClose())).then(() => resolve());
+        }, timeout);
+        void Promise.allSettled(pools.map((pool) => pool.end())).then(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+      return closed;
+    },
+  });
+}
+
+interface ManagedPool {
+  readonly adapter: import('kysely').PostgresPool;
+  end(): Promise<void>;
+  forceClose(): Promise<void>;
+}
+
+/** Keeps pg objects private and owns all lifecycle handling outside Kysely. */
+function managePool(
+  config: pg.PoolConfig,
+  settings: DbPoolConfig,
+  logger: RootLogger,
+  isClosing: () => boolean,
+): ManagedPool {
+  const clients = new Set<pg.Client>();
+  const socketEnds = new Map<pg.Client, Promise<void>>();
+  const ready = new WeakSet<pg.Client>();
+  const failed = new WeakSet<pg.Client>();
+  const leases = new Map<pg.Client, (destroy?: boolean) => void>();
+  const pending = new Set<(error: Error) => void>();
+  let forcing = false;
+  let ending: Promise<void> | undefined;
+  const reportError = (error: unknown, client: pg.Client): void => {
+    if (!ready.has(client) || failed.has(client) || forcing) return;
+    failed.add(client);
+    const code = (error as { code?: unknown } | null)?.code;
+    logger.error(
+      { pool: settings.name, code: typeof code === 'string' ? code : null },
+      'db_pool_error',
+    );
+    // A dead checked-out session must not occupy a slot while application code waits.
+    leases.get(client)?.(true);
+  };
+  class TrackedClient extends pg.Client {
+    constructor(clientConfig?: pg.ClientConfig) {
+      super(clientConfig);
+      clients.add(this);
+      this.on('error', (error: Error) => reportError(error, this));
+      socketEnds.set(
+        this,
+        new Promise<void>((resolve) => {
+          this.once('end', () => {
+            clients.delete(this);
+            socketEnds.delete(this);
+            resolve();
+          });
+        }),
+      );
+    }
+  }
+  const pool = new pg.Pool({ ...config, keepAlive: true, Client: TrackedClient });
+  pool.on('connect', (client) => ready.add(client));
+  pool.on('error', reportError);
+  const initialized = new WeakSet<pg.Client>();
+  const end = (): Promise<void> => {
+    if (ending !== undefined) return ending;
+    for (const reject of pending) reject(new DbError('closed'));
+    pending.clear();
+    // pg-pool removes idle clients from its count before their sockets finish closing.
+    ending = pool.end().then(async () => {
+      await Promise.allSettled(socketEnds.values());
+    });
+    return ending;
+  };
+  return {
+    adapter: {
+      // No raw options or control client capable of bypassing the lifecycle gate.
+      options: {},
+      connect() {
+        if (isClosing() || ending !== undefined) return Promise.reject(new DbError('closed'));
+        return new Promise<pg.PoolClient>((resolve, reject) => {
+          pending.add(reject);
+          pool.connect((error, client) => {
+            if (error || client === undefined) {
+              pending.delete(reject);
+              reject(error ?? new DbError('closed'));
+              return;
+            }
+            const release = client.release.bind(client);
+            let released = false;
+            client.release = (destroy?: boolean | Error) => {
+              if (released) return;
+              released = true;
+              leases.delete(client);
+              release(destroy || failed.has(client));
+            };
+            leases.set(client, client.release);
+            if (isClosing() || ending !== undefined) {
+              pending.delete(reject);
+              client.release(true);
+              reject(new DbError('closed'));
+              return;
+            }
+            // SET overrides URL options while preserving TLS and other URL settings.
+            // Initialize here so a failed SET releases its lease (Kysely's hook does not).
+            const initialize = initialized.has(client)
+              ? Promise.resolve()
+              : client
+                  .query(
+                    "SELECT set_config('application_name', $1, false), set_config('default_transaction_read_only', $2, false)",
+                    [settings.applicationName, settings.readOnly ? 'on' : 'off'],
+                  )
+                  .then(() => {
+                    initialized.add(client);
+                  });
+            void initialize.then(
+              () => {
+                pending.delete(reject);
+                if (isClosing() || ending !== undefined) {
+                  client.release(true);
+                  reject(new DbError('closed'));
+                } else {
+                  resolve(client);
+                }
+              },
+              (error: unknown) => {
+                pending.delete(reject);
+                client.release(true);
+                reject(error);
+              },
+            );
+          });
+        });
+      },
+      end,
+    },
+    end,
+    async forceClose() {
+      const busy = pool.totalCount - pool.idleCount;
+      if (busy > 0) logger.warn({ pool: settings.name, busy }, 'db_close_timeout');
+      forcing = true;
+      const live = [...clients];
+      // end() interrupts queries and PG rolls back; release lets pool.end finish even if
+      // a transaction callback never returns. Later Kysely releases are harmless.
+      await Promise.allSettled(
+        live.map(async (client) => {
+          const ended = client.end();
+          leases.get(client)?.(true);
+          await ended;
+        }),
+      );
+    },
+  };
 }

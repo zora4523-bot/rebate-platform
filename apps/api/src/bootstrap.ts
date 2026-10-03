@@ -13,6 +13,7 @@ import {
 import {
   type AppConfig,
   type Clock,
+  type DbHandles,
   type EntryName,
   type HttpEntry,
   PinoNestLogger,
@@ -26,6 +27,8 @@ import {
 } from './modules/platform/index.ts';
 
 export interface BootstrapOverrides {
+  /** Process-owned handles; omitted when building isolated HTTP unit tests. */
+  readonly dbHandles?: DbHandles;
   /** Defaults to `loadConfig(process.env)`. */
   readonly config?: AppConfig;
   /** Defaults to `clockFromConfig(config)`. */
@@ -52,6 +55,7 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
   return {
     entry,
     config,
+    ...(overrides.dbHandles === undefined ? {} : { dbHandles: overrides.dbHandles }),
     clock: overrides.clock ?? clockFromConfig(config),
     logger:
       overrides.logger ??
@@ -68,22 +72,27 @@ export async function createHttpApp(
   entry: HttpEntry,
   overrides: BootstrapOverrides = {},
 ): Promise<NestFastifyApplication> {
-  const options = platformOptions(entry, overrides);
-  const adapter = new FastifyAdapter({
-    loggerInstance: options.logger,
-    genReqId: (request: IncomingMessage) => resolveTraceId(request.headers['x-trace-id']),
-  });
-  adapter.getInstance().setValidatorCompiler(createValidatorCompiler());
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule.forEntry(options),
-    adapter,
-    {
-      logger: new PinoNestLogger(options.logger),
-      abortOnError: false,
-    },
-  );
-  app.useGlobalFilters(new RequestValidationFilter(app.getHttpAdapter()));
-  return app;
+  try {
+    const options = platformOptions(entry, overrides);
+    const adapter = new FastifyAdapter({
+      loggerInstance: options.logger,
+      genReqId: (request: IncomingMessage) => resolveTraceId(request.headers['x-trace-id']),
+    });
+    adapter.getInstance().setValidatorCompiler(createValidatorCompiler());
+    const app = await NestFactory.create<NestFastifyApplication>(
+      AppModule.forEntry(options),
+      adapter,
+      {
+        logger: new PinoNestLogger(options.logger),
+        abortOnError: false,
+      },
+    );
+    app.useGlobalFilters(new RequestValidationFilter(app.getHttpAdapter()));
+    return app;
+  } catch (error) {
+    await overrides.dbHandles?.close();
+    throw error;
+  }
 }
 
 /**
@@ -93,9 +102,14 @@ export async function createWorkerContext(
   entry: WorkerEntry,
   overrides: BootstrapOverrides = {},
 ): Promise<INestApplicationContext> {
-  const options = platformOptions(entry, overrides);
-  return NestFactory.createApplicationContext(AppModule.forEntry(options), {
-    logger: new PinoNestLogger(options.logger),
-    abortOnError: false,
-  });
+  try {
+    const options = platformOptions(entry, overrides);
+    return await NestFactory.createApplicationContext(AppModule.forEntry(options), {
+      logger: new PinoNestLogger(options.logger),
+      abortOnError: false,
+    });
+  } catch (error) {
+    await overrides.dbHandles?.close();
+    throw error;
+  }
 }
