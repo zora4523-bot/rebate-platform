@@ -152,7 +152,7 @@ it('[BR-ID-33] 日志：敏感字段的值是数字、字节（Buffer）、数�
   });
 });
 
-it('[BR-ID-33] 日志：错误对象（直接记录、err 下、其他键下、数组里、cause 链、AggregateError）的敏感属性只写 [REDACTED]，message 与 stack 原样，错误本身不被改动', () => {
+it('[BR-ID-33] 日志：错误对象（直接记录、err 下、其他键下、数组里、cause 链、AggregateError）的敏感属性只写 [REDACTED]，message 与 stack 不被改写，错误本身不被改动', () => {
   const { logger, lines } = capture();
   const direct = errorWithPersonalData('payout failed');
   const underErr = errorWithPersonalData('payout failed');
@@ -222,25 +222,35 @@ it('[BR-ID-33] 日志：错误对象（直接记录、err 下、其他键下、�
   expect(errors.map(snapshotOf)).toEqual(before);
 });
 
-it('[BR-ID-33] 日志：子 logger 与孙 logger 的绑定字段（含嵌套）只写 [REDACTED]，绑定对象不被改动', () => {
+it('[BR-ID-33] 日志：child() 与 setBindings() 给根 logger、子 logger、孙 logger 的绑定字段（含嵌套）只写 [REDACTED]，绑定对象不被改动', () => {
   const { logger, lines } = capture();
   const bindings = {
     phone: SAMPLES.phone,
     payee: { bank_card_no: SAMPLES.bankCard, payee_name: SAMPLES.payeeName },
   };
   const more = { user: { realname: { name: SAMPLES.realName, id_no: SAMPLES.idNo } } };
-  const before = JSON.stringify([bindings, more]);
+  const rootSet = { account: { alipay_logon_id: SAMPLES.alipayEmail, card_no: SAMPLES.cardNo } };
+  const childSet = { contact: { mobile: SAMPLES.contactPhone, id_card: SAMPLES.idNo15 } };
+  const grandSet = { auth: { token: SAMPLES.credential } };
+  const before = JSON.stringify([bindings, more, rootSet, childSet, grandSet]);
   const child = logger.child(bindings);
   const grandchild = child.child(more);
   grandchild.info({ order_id: KEPT.order_id }, 'bound');
   child.warn({ amount_fen: KEPT.amount_fen }, 'bound too');
+  logger.setBindings(rootSet);
+  logger.info({ user_id: KEPT.user_id }, 'root set');
+  child.setBindings(childSet);
+  child.info('child set');
+  grandchild.setBindings(grandSet);
+  grandchild.info('grandchild set');
   const payee = { bank_card_no: REDACTED, payee_name: REDACTED };
-  expect(lines).toHaveLength(2);
+  const user = { realname: REDACTED };
+  expect(lines).toHaveLength(5);
   expectLine(lines[0], {
     level: 30,
     phone: REDACTED,
     payee,
-    user: { realname: REDACTED },
+    user,
     order_id: KEPT.order_id,
     msg: 'bound',
   });
@@ -251,7 +261,28 @@ it('[BR-ID-33] 日志：子 logger 与孙 logger 的绑定字段（含嵌套）�
     amount_fen: KEPT.amount_fen,
     msg: 'bound too',
   });
-  expect(JSON.stringify([bindings, more])).toBe(before);
+  expectLine(lines[2], {
+    level: 30,
+    account: { alipay_logon_id: REDACTED, card_no: REDACTED },
+    user_id: KEPT.user_id,
+    msg: 'root set',
+  });
+  expectLine(lines[3], {
+    level: 30,
+    phone: REDACTED,
+    payee,
+    contact: { mobile: REDACTED, id_card: REDACTED },
+    msg: 'child set',
+  });
+  expectLine(lines[4], {
+    level: 30,
+    phone: REDACTED,
+    payee,
+    user,
+    auth: { token: REDACTED },
+    msg: 'grandchild set',
+  });
+  expect(JSON.stringify([bindings, more, rootSet, childSet, grandSet])).toBe(before);
 });
 
 it('[BR-ID-33] 日志：toJSON 返回的敏感字段同样只写 [REDACTED]；循环引用写成 [Circular] 而不抛错', () => {
@@ -291,11 +322,19 @@ it('[BR-ID-33] 日志：toJSON 返回的敏感字段同样只写 [REDACTED]；�
 
 it('[BR-ID-33] 日志：printf 风格参数（%j、%o、%O）的对象按规则替换后再写进 msg，整条 msg 等于期望串', () => {
   const { logger, lines } = capture();
+  // Nested names and credentials too: the free-text safety net cannot recognise those, so only
+  // the rules for values keep them out of msg.
   const args = [
     { bank_card_no: SAMPLES.bankCard, payee_name: SAMPLES.payeeName },
-    { phone: SAMPLES.phone, nested: { alipay_logon_id: SAMPLES.alipayEmail } },
+    {
+      phone: SAMPLES.phone,
+      nested: { alipay_logon_id: SAMPLES.alipayEmail, payee_name: SAMPLES.payeeName },
+    },
     { id_no: SAMPLES.idNo, real_name: SAMPLES.realName },
-    { card_no: SAMPLES.cardNo, list: [{ mobile: SAMPLES.phone }] },
+    {
+      card_no: SAMPLES.cardNo,
+      list: [{ mobile: SAMPLES.phone, real_name: SAMPLES.realName, token: SAMPLES.credential }],
+    },
   ] as const;
   const before = JSON.stringify(args);
   logger.info('payee %j, user %o, realname %O', args[0], args[1], args[2]);
@@ -305,13 +344,13 @@ it('[BR-ID-33] 日志：printf 风格参数（%j、%o、%O）的对象按规则�
     level: 30,
     msg:
       'payee {"bank_card_no":"[REDACTED]","payee_name":"[REDACTED]"}, ' +
-      'user {"phone":"[REDACTED]","nested":{"alipay_logon_id":"[REDACTED]"}}, ' +
+      'user {"phone":"[REDACTED]","nested":{"alipay_logon_id":"[REDACTED]","payee_name":"[REDACTED]"}}, ' +
       'realname {"id_no":"[REDACTED]","real_name":"[REDACTED]"}',
   });
   expectLine(lines[1], {
     level: 40,
     ...KEPT,
-    msg: 'card {"card_no":"[REDACTED]","list":[{"mobile":"[REDACTED]"}]}',
+    msg: 'card {"card_no":"[REDACTED]","list":[{"mobile":"[REDACTED]","real_name":"[REDACTED]","token":"[REDACTED]"}]}',
   });
   expect(JSON.stringify(args)).toBe(before);
 });
@@ -358,4 +397,137 @@ it('[BR-ID-33] Nest 日志适配器：对象消息写成替换后的 JSON、附�
   });
   expectLine(lines[5], { level: 50, context: 'Payout', stack: stackText, msg: 'payout failed' });
   expectLine(lines[6], { level: 10, context: 'Router', msg: 'route mapped' });
+});
+
+// Free text (contract: the safety net). One string with every kind the net recognises, in the
+// spellings the contract names, pushed through every free-text channel.
+const FREE =
+  '手机号13987654321，又 139 8765 4321，证件 11010519491231002X，' +
+  '卡 6222 0212 3456 7890 123，邮箱 qzx7.vwk3@exmpl-host.cn，全角１３９８７６５４３２１';
+const SCRUBBED =
+  '手机号[REDACTED]，又 [REDACTED]，证件 [REDACTED]，' +
+  '卡 [REDACTED]，邮箱 [REDACTED]，全角[REDACTED]';
+
+/** `error`'s stack with the free text in its first line scrubbed: the frames stay as they are. */
+function scrubbedStack(error: Error): string {
+  return (error.stack ?? '').split(FREE).join(SCRUBBED);
+}
+
+it('[BR-ID-33] 日志：自由文本安全网逐种写法替换手机号（含 +86、空格、连字符、全角）、身份证号（18 位含 X、15 位）、银行卡号（16～19 位）与邮箱，别的数字与文字原样', () => {
+  const { logger, lines } = capture();
+  const cases: readonly (readonly [string, string])[] = [
+    ['手机号13987654321核验失败', '手机号[REDACTED]核验失败'],
+    ['电话 139 8765 4321。', '电话 [REDACTED]。'],
+    ['电话 139-8765-4321', '电话 [REDACTED]'],
+    [
+      '+86 13987654321 / 8613987654321 / 0086-139-8765-4321',
+      '[REDACTED] / [REDACTED] / [REDACTED]',
+    ],
+    ['全角１３９８７６５４３２１号', '全角[REDACTED]号'],
+    [
+      '证件 11010519491231002X，11010519491231002x，110105 19491231 002X，320105791231247',
+      '证件 [REDACTED]，[REDACTED]，[REDACTED]，[REDACTED]',
+    ],
+    [
+      '卡 6222021234567890123，4392 2600 1234 5678，6222-0212-3456-7890-123',
+      '卡 [REDACTED]，[REDACTED]，[REDACTED]',
+    ],
+    ['邮箱 qzx7.vwk3@exmpl-host.cn，zh.san@example.com', '邮箱 [REDACTED]，[REDACTED]'],
+    // Not a match: too short or too long, a mobile number must start with 1, a domain must end in
+    // letters, dates and amounts. Nothing here may change.
+    [
+      '1357924680，135792468024，23579246801，35792468013579，35792468013579246801',
+      '1357924680，135792468024，23579246801，35792468013579，35792468013579246801',
+    ],
+    [
+      '订单 135792468，金额 1999 分，版本 v10.3.1，pino@10.3.1，时间 2026-10-04 08:00:00',
+      '订单 135792468，金额 1999 分，版本 v10.3.1，pino@10.3.1，时间 2026-10-04 08:00:00',
+    ],
+  ];
+  for (const [text] of cases) logger.info(text);
+  expect(lines).toHaveLength(cases.length);
+  cases.forEach(([, expected], i) => {
+    expectLine(lines[i], { level: 30, msg: expected });
+  });
+});
+
+it('[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg、printf 结果、子 logger 的 msgPrefix、错误（直接记录、err 下、其他键下、cause、AggregateError）的 message 与 stack，Nest 的消息、context、stack 参数与字符串参数', () => {
+  const { logger, lines } = capture();
+  const direct = new Error(FREE);
+  const cause = new Error(FREE);
+  const outer = new Error('outer', { cause });
+  const listed = new Error(FREE);
+  const aggregate = new AggregateError([listed], FREE);
+  const nested = new Error(FREE);
+  logger.warn(FREE);
+  logger.info('note %s; data %j', FREE, { text: FREE });
+  logger.child({ order_id: KEPT.order_id }, { msgPrefix: `${FREE}: ` }).info('checked');
+  logger.error(direct);
+  logger.error({ err: outer }, 'cause chain');
+  logger.error({ err: aggregate }, 'aggregate');
+  logger.warn({ ctx: { failure: nested }, ...KEPT }, 'other key');
+  const { nest: adapter, lines: nestLines } = captureNest();
+  const nestError = new Error(FREE);
+  adapter.log(FREE, 'Payout');
+  adapter.warn('payee checked', FREE, 'Payee');
+  adapter.error('payout failed', `Error: ${FREE}\n    at Payout.run (payout.ts:10:5)`, 'Payout');
+  adapter.error(nestError, 'Payout');
+  adapter.debug({ text: FREE });
+  adapter.log('context check', FREE);
+  expect({ lines: lines.length, nestLines: nestLines.length }).toEqual({ lines: 7, nestLines: 6 });
+  expectLine(lines[0], { level: 40, msg: SCRUBBED });
+  expectLine(lines[1], {
+    level: 30,
+    msg: `note ${SCRUBBED}; data {"text":"${SCRUBBED}"}`,
+  });
+  expectLine(lines[2], { level: 30, order_id: KEPT.order_id, msg: `${SCRUBBED}: checked` });
+  expectLine(lines[3], {
+    level: 50,
+    err: { type: 'Error', message: SCRUBBED, stack: scrubbedStack(direct) },
+    msg: SCRUBBED,
+  });
+  expectLine(lines[4], {
+    level: 50,
+    err: errorShape('Error', outer, {
+      cause: { type: 'Error', message: SCRUBBED, stack: scrubbedStack(cause) },
+    }),
+    msg: 'cause chain',
+  });
+  expectLine(lines[5], {
+    level: 50,
+    err: {
+      type: 'AggregateError',
+      message: SCRUBBED,
+      stack: scrubbedStack(aggregate),
+      aggregateErrors: [{ type: 'Error', message: SCRUBBED, stack: scrubbedStack(listed) }],
+    },
+    msg: 'aggregate',
+  });
+  expectLine(lines[6], {
+    level: 40,
+    ctx: { failure: { type: 'Error', message: SCRUBBED, stack: scrubbedStack(nested) } },
+    ...KEPT,
+    msg: 'other key',
+  });
+  expectLine(nestLines[0], { level: 30, context: 'Payout', msg: SCRUBBED });
+  expectLine(nestLines[1], {
+    level: 40,
+    context: 'Payee',
+    params: [SCRUBBED],
+    msg: 'payee checked',
+  });
+  expectLine(nestLines[2], {
+    level: 50,
+    context: 'Payout',
+    stack: `Error: ${SCRUBBED}\n    at Payout.run (payout.ts:10:5)`,
+    msg: 'payout failed',
+  });
+  expectLine(nestLines[3], {
+    level: 50,
+    context: 'Payout',
+    err: { type: 'Error', message: SCRUBBED, stack: scrubbedStack(nestError) },
+    msg: SCRUBBED,
+  });
+  expectLine(nestLines[4], { level: 20, msg: `{"text":"${SCRUBBED}"}` });
+  expectLine(nestLines[5], { level: 30, context: SCRUBBED, msg: 'context check' });
 });

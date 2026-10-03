@@ -36,15 +36,15 @@
 //                    refresh_token, step_up_token, x-step-up-token, x-sign, secret
 //   `name` is not on the list (too generic: a route, a product, a file); a person's name is
 //   logged as real_name / payee_name, or inside a realname object.
-// - Every value that reaches the line (fields of the logged object, child-logger bindings at
-//   every level, printf arguments, the Nest adapter's parameters) is written by the first of
-//   these rules that applies, at any depth:
+// - Every value that reaches the line (fields of the logged object, bindings given to child() or
+//   setBindings() on the root logger or on any child at any level, printf arguments, the Nest
+//   adapter's parameters) is written by the first of these rules that applies, at any depth:
 //     under a sensitive name   "[REDACTED]", whatever the value (string, number, Buffer, array,
 //                              object, Map, Set, Error): nothing of it, no partial mask
 //     string, number, boolean, null   as it is
 //     an object that recurs inside itself (a circular reference)   "[Circular]" where it recurs
 //     an Error                 an object: type (the name of its constructor), message and stack
-//                              (exactly as they are), its enumerable own properties by these
+//                              (free text, see below), its enumerable own properties by these
 //                              rules, aggregateErrors (its `errors` by these rules, when that is
 //                              an array: AggregateError), cause (its own `cause` property by
 //                              these rules, when it has one)
@@ -54,22 +54,41 @@
 //     any other object         its enumerable own string-keyed properties by these rules (plain
 //                              objects, objects without a prototype, class instances)
 //   Otherwise a function or an undefined property is left out, as JSON.stringify does.
-// - Values under other names are not inspected for personal data: personal data is logged only
-//   under a sensitive name, never under another name and never in free text.
+// - Values under other names are structured data (order numbers, ids, amounts) and are written
+//   as they are: personal data is logged only under a sensitive name (规划/02 §19;
+//   apps/api/AGENTS.md 硬规则 3, 只打平铺字段).
 // - An Error passed as the first argument is written under `err`, and its message is `msg` when
 //   no message is given. printf-style %j, %o and %O are replaced by JSON.stringify of the
 //   argument written by these rules (keys in insertion order); the rest of the message is kept.
-// - Free text is never changed and never scanned: the message, string values under other keys,
-//   an error's message and stack. Personal data never goes into free text (规划/02 §19;
-//   apps/api/AGENTS.md 硬规则 3, 只打平铺字段).
+// - Free text gets a safety net. Free text is: `msg` as finally written (after printf
+//   formatting, with a child's msgPrefix in front), the `message` and `stack` of every Error
+//   written (causes and aggregateErrors included), and the Nest adapter's context, stack
+//   parameter and string items of `params`. In free text each match of the two patterns below
+//   is replaced by "[REDACTED]" as a whole, e-mail addresses in a first pass, numbers in a
+//   second; every other character is kept exactly:
+//     1. an e-mail address: one or more of A-Z a-z 0-9 . _ % + -, then "@", then labels of
+//        A-Z a-z 0-9 - joined by dots, the last label two or more letters (zh.san@example.com);
+//     2. a number: a run of digits (ASCII 0-9 or full-width ０-９; between any two digits one
+//        space or one hyphen-minus may stand) that has no digit directly before or after it and
+//        is one of:
+//          - a mainland mobile number: 11 digits starting with 1, optionally preceded by +86,
+//            0086 or 86 and one optional space or hyphen (13987654321, 139 8765 4321,
+//            139-8765-4321, +86 13987654321, 8613987654321);
+//          - an ID number: 15 digits, or 17 digits followed by a digit, X or x;
+//          - a bank card number: 16 to 19 digits (6222 0212 3456 7890 123).
+//        Numbers are matched left to right; at each position the first kind that fits wins, in
+//        the order: ID number of 18, bank card number (the longest that fits), ID number of 15,
+//        mobile number.
+//   Other spellings (other separators, numbers in words) and names cannot be recognised in free
+//   text: they must not be put there. Free text that matches nothing is never changed.
 // - After a call the caller's objects, errors and bindings are exactly as before (same own
 //   properties, symbols included, and values).
 // - PinoNestLogger: the last string parameter is `context`; an Error message is written under
 //   `err` with its message as `msg`; a string message is `msg`; any other message becomes `msg` =
 //   JSON.stringify of it written by these rules; for error and fatal a string first optional
-//   parameter is `stack` (kept as it is); the optional parameters left are `params`, an array
-//   written by these rules. Levels: log info, warn warn, error error, debug debug, verbose trace,
-//   fatal fatal.
+//   parameter is `stack`; the optional parameters left are `params`, an array written by these
+//   rules (context, stack and string items of params get the free-text safety net). Levels: log
+//   info, warn warn, error error, debug debug, verbose trace, fatal fatal.
 //
 // Rules for the implementation: this directory is also compiled by the `test` project: erasable
 // syntax only (no parameter properties, no enum, no namespace, no decorators), `import type` for
