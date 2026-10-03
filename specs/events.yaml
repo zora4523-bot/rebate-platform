@@ -4,10 +4,12 @@
 # 结构（packages/contracts-ts/scripts/events.ts 校验，pnpm contracts:check 里跑）：
 #   version          每次改动递增
 #   common_fields    每个事件都带的公共字段（03 §4.7）
-#   events           事件名 → {description, source, fields}；fields 是字段名 → {type, required, values?, note?}
-#     type           string / integer / boolean / enum（enum 时 values 列出取值）
-#     事件名只用小写字母、数字、下划线；「funnel_first_order.*」「agent_*」这类族名写成 family，具体事件随定义它们的
-#     任务补进来。
+#   events           事件名 → {description, source, fields}；fields 是字段名 →
+#                    {type, required | required_when, values?, note?}
+#     type           string / integer / boolean / enum（enum 时 values 列出取值，取值一律是字符串）
+#     required       true / false；required_when 写成 {字段: 取值}，表示那个字段取该值时必填
+#     事件名只用小写字母、数字、下划线；族里的事件写成「族名.事件」（如 funnel_first_order.click_buy），族名先在
+#     families 登记；agent_* 族的事件直接以 agent_ 开头。具体事件随定义它们的任务补进来。
 # 约束（02 §12.6，03 §4.7）：事件字段不带完整推广 URL、口令、推广位或 relation_id 等渠道标识；URL 类信息只记平台与
 # 类别。本文件不设这类字段（字段名不得是 url、tpwd、pid、relation_id、promo_url 之类，校验会拒绝）。
 # 游客事件只带 device_id；登录后由服务端按 device_id 与登录时刻在报表层关联 user_id，不回写原事件。
@@ -61,16 +63,23 @@ common_fields:
     required: false
 events:
   link_jump:
-    description: 外跳的每一步结果（BR-ATTR-27 ③；BR-ATTR-21 细则「待跟单卡按实际外跳选」）
+    description: 外跳的每一步结果（BR-ATTR-27 ③；BR-ATTR-21 细则「待跟单卡按实际外跳选」）；另记百川初始化失败（BR-ATTR-27 淘宝行）
     source: 规划/03 §4.5、§4.7；08 BR-ATTR-21、BR-ATTR-27
     fields:
+      phase:
+        type: enum
+        required: true
+        values: [purchase, startup]
+        note: purchase 是一次购买外跳的某一步；startup 只用于同意隐私政策后、还没有购买时的百川初始化失败（result=sdk_init_failed），这时没有 link 与尝试
       attempt_id:
         type: string
-        required: false
-        note: 本次 open（或 H5 经 convert）响应里的 attempt_id，同一次外跳的各步用同一个；只有带本人令牌、编号属于本人的上报才用于待跟单卡，其余只当埋点
+        required_when:
+          phase: purchase
+        note: 本次 open（或 H5 经 convert）响应里的 attempt_id，购买外跳的每一步都必须带、同一次外跳的各步用同一个；服务端仍接受不带编号的上报，但只当埋点、不参与待跟单卡（BR-ATTR-21 细则）
       link_id:
         type: string
-        required: true
+        required_when:
+          phase: purchase
       union_platform:
         type: enum
         required: true
@@ -88,10 +97,12 @@ events:
         note: launched 拉起了目标 App 或页面；copied 已复制口令；sdk_init_failed 百川初始化失败（与已初始化但拉起失败的 failed 分开，BR-ATTR-27 淘宝行）
       duration_ms:
         type: integer
-        required: true
+        required_when:
+          phase: purchase
       installed:
         type: enum
-        required: true
+        required_when:
+          phase: purchase
         values: ['true', 'false', unknown]
         note: 请求体里 installed 的同一取值（contracts/enums/trade.yaml installed_state）
   external_page_union_host:
@@ -114,8 +125,8 @@ events:
       outcome:
         type: enum
         required: true
-        values: [parse, block]
-        note: 与 specs/external-navigation.vectors.json 的 action 一致；不带完整 URL
+        values: [parse_ok, parse_failed, block]
+        note: parse_ok / parse_failed 是交识别后成功转回原生详情或留在原页提示；block 是拦下（与 specs/external-navigation.vectors.json 的 action 对应）；不带完整 URL
   external_page_nav_host:
     description: 容器内文档级导航的抽样埋点（采样率 /v1/config external_page.nav_host_sample_bp；BR-ATTR-29 细则「覆盖限制与待定事项」）
     source: 规划/03 §5.1；08 BR-ATTR-29
@@ -170,7 +181,7 @@ events:
         required: true
         note: 只记个数，不记参数名与值
   bridge_call:
-    description: JSBridge 调用被拒（规划/03 §5.3；BR-ATTR-29 细则「桥方法不留没有归因的打开入口」）
+    description: JSBridge 调用被拒（规划/03 §5.3；BR-ATTR-29 细则「桥方法不留没有归因的打开入口」）；当前只记拒绝，强更状态未知时以 90500 拒绝的调用要不要记待定
     source: 规划/03 §5.3；08 BR-ATTR-29
     fields:
       method:
@@ -190,10 +201,12 @@ events:
         required: true
       version:
         type: integer
-        required: true
+        required: false
+        note: 卡片自带的版本；正是因为缺它而解码失败时不带
       page_version:
-        type: string
+        type: integer
         required: true
+        note: 页面配置的 version（整数，规划/03 §6）
       reason:
         type: string
         required: true
