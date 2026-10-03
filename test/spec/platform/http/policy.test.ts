@@ -20,10 +20,13 @@ it('[规划/02 §6.2] 超时：在线调用 3 秒，离线调用（同步、刷�
 });
 
 it('[规划/02 §6.2] 重试：最多 2 次，指数退避（200 毫秒起，单次不超过 2 秒）；在线与离线相同', () => {
-  const retry = { maxRetries: 2, baseDelayMs: 200, maxDelayMs: 2000 };
-  expect({ online: unionPolicy('online').retry, offline: unionPolicy('offline').retry }).toEqual({
-    online: retry,
-    offline: retry,
+  const retries = { maxRetries: 2, baseDelayMs: 200, maxDelayMs: 2000 };
+  expect({
+    online: unionPolicy('online').retries,
+    offline: unionPolicy('offline').retries,
+  }).toEqual({
+    online: retries,
+    offline: retries,
   });
 });
 
@@ -43,25 +46,25 @@ it('[规划/02 §6.2] 配额按用途切分：MVP 在线 60%、订单同步 30%�
 });
 
 it('[规划/02 §6.2] unionPolicy 每次返回新的对象：改动返回值不影响下一次取到的策略', () => {
-  const first = unionPolicy('online') as { timeoutMs: number; retry: { maxRetries: number } };
+  const first = unionPolicy('online') as { timeoutMs: number; retries: { maxRetries: number } };
   try {
     first.timeoutMs = 1;
-    first.retry.maxRetries = 9;
+    first.retries.maxRetries = 9;
   } catch {
     // A frozen object is fine too: then nothing was changed.
   }
   expect({
     timeoutMs: unionPolicy('online').timeoutMs,
-    maxRetries: unionPolicy('online').retry.maxRetries,
+    maxRetries: unionPolicy('online').retries.maxRetries,
   }).toEqual({ timeoutMs: 3000, maxRetries: 2 });
 });
 
 it('[规划/02 §6.2] createGovernor 拒绝不合法的策略与空的依赖名：一律 invalid_policy，不带病运行', () => {
   const scheduler = new ManualScheduler();
   const base = unionPolicy('online');
-  const withRetry = (retry: Partial<GovernancePolicy['retry']>): GovernancePolicy => ({
+  const withRetry = (patch: Partial<GovernancePolicy['retries']>): GovernancePolicy => ({
     ...base,
-    retry: { ...base.retry, ...retry },
+    retries: { ...base.retries, ...patch },
   });
   const withBreaker = (breaker: Partial<GovernancePolicy['breaker']>): GovernancePolicy => ({
     ...base,

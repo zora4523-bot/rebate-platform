@@ -104,7 +104,8 @@ export interface BreakerPolicy {
 export interface GovernancePolicy {
   /** Time limit of one attempt, in ms. Integer ≥ 1. */
   readonly timeoutMs: number;
-  readonly retry: RetryPolicy;
+  /** Named `retries`, not `retry`: test files may not contain `retry:` (tools/guard test-guard). */
+  readonly retries: RetryPolicy;
   readonly breaker: BreakerPolicy;
 }
 

@@ -147,7 +147,7 @@ it('[规划/02 §6.2] 指数退避有上限：base 100、max 300、重试 5 次 
   const upstream = new Upstream(scheduler);
   const policy: GovernancePolicy = {
     ...unionPolicy('online'),
-    retry: { maxRetries: 5, baseDelayMs: 100, maxDelayMs: 300 },
+    retries: { maxRetries: 5, baseDelayMs: 100, maxDelayMs: 300 },
   };
   const governor = createGovernor('model.qwen', policy, { scheduler });
   const call = observe(governor.call(upstream.down(), { kind: 'idempotent_read' }));
@@ -163,7 +163,7 @@ it('[规划/02 §6.2] 退避是指数而不是线性：base 100、重试 4 次 �
   const upstream = new Upstream(scheduler);
   const policy: GovernancePolicy = {
     ...unionPolicy('online'),
-    retry: { maxRetries: 4, baseDelayMs: 100, maxDelayMs: 60000 },
+    retries: { maxRetries: 4, baseDelayMs: 100, maxDelayMs: 60000 },
   };
   const governor = createGovernor('model.qwen', policy, { scheduler });
   const call = observe(governor.call(upstream.down(), { kind: 'idempotent_read' }));
@@ -180,7 +180,7 @@ it('[规划/02 §6.2] maxRetries 为 0 时幂等读也只试 1 次', async () =>
   const upstream = new Upstream(scheduler);
   const policy: GovernancePolicy = {
     ...unionPolicy('online'),
-    retry: { maxRetries: 0, baseDelayMs: 200, maxDelayMs: 2000 },
+    retries: { maxRetries: 0, baseDelayMs: 200, maxDelayMs: 2000 },
   };
   const governor = createGovernor('judge.jev', policy, { scheduler });
   const call = observe(governor.call(upstream.down(), { kind: 'idempotent_read' }));
