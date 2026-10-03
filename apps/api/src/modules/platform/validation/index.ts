@@ -1,5 +1,5 @@
 // Request validation from the contract (ADR-0001 §2 契约行, §4.2 第 15 项; 规划/04 §5 请求头,
-// §7 错误码 20001). Every function below throws `NotImplemented` until task B1-01d implements it.
+// §7 错误码 20001).
 // The rule tests in test/spec/platform/validation/** import this file by path; names, signatures
 // and the semantics written here are the contract.
 //
@@ -57,6 +57,9 @@
 // only (no parameter properties, no enum, no namespace, no decorators), `import type` for
 // type-only imports, relative imports with the `.ts` extension, no NestJS import, no
 // `process.env`. Allowed packages: ajv, ajv-formats (already dependencies of @couli/api).
+
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import ajvFormats from 'ajv-formats';
 
 /** A JSON Schema object (draft 2020-12 as used by OAS 3.1). */
 export type JsonSchema = { readonly [keyword: string]: unknown };
@@ -131,20 +134,124 @@ export function routeSchemaOf(
   operation: ContractOperation,
   pathItemParameters?: readonly ContractParameter[],
 ): RouteSchema {
-  void operation;
-  void pathItemParameters;
-  throw new Error('NotImplemented');
+  const fail = (reason: string): never => {
+    throw new Error(`${operation.operationId ?? '(unnamed operation)'}: ${reason}`);
+  };
+  const parameters = new Map<string, ContractParameter>();
+  for (const parameter of [...(pathItemParameters ?? []), ...(operation.parameters ?? [])]) {
+    const name = parameter.in === 'header' ? parameter.name.toLowerCase() : parameter.name;
+    parameters.set(`${parameter.in}:${name}`, { ...parameter, name });
+  }
+  const groups = new Map<'params' | 'querystring' | 'headers', ContractParameter[]>();
+  for (const parameter of parameters.values()) {
+    if (parameter.in === 'cookie' || !['path', 'query', 'header'].includes(parameter.in)) {
+      fail(`unsupported parameter location: ${parameter.in}`);
+    }
+    if (['style', 'explode', 'content'].some((key) => key in parameter)) {
+      fail(`unsupported serialization for ${parameter.name}`);
+    }
+    const schema = parameter.schema;
+    if (schema === undefined || hasStructuredType(schema)) {
+      fail(`unsupported parameter schema for ${parameter.name}`);
+    }
+    const part =
+      parameter.in === 'path' ? 'params' : parameter.in === 'query' ? 'querystring' : 'headers';
+    const group = groups.get(part) ?? [];
+    group.push(parameter);
+    groups.set(part, group);
+  }
+  const result: {
+    params?: JsonSchema;
+    querystring?: JsonSchema;
+    headers?: JsonSchema;
+    body?: JsonSchema;
+  } = {};
+  for (const [part, group] of groups) {
+    result[part] = {
+      type: 'object',
+      properties: Object.fromEntries(group.map((parameter) => [parameter.name, parameter.schema])),
+      required: group
+        .filter((parameter) => part === 'params' || parameter.required === true)
+        .map((parameter) => parameter.name),
+      ...(part === 'headers' ? {} : { additionalProperties: false }),
+    };
+  }
+  if (operation.requestBody !== undefined) {
+    const { required, content } = operation.requestBody;
+    const schema = content?.['application/json']?.schema;
+    if (required !== true || Object.keys(content ?? {}).length !== 1 || schema === undefined) {
+      return fail('request body must be required and contain only application/json with a schema');
+    }
+    result.body = schema;
+  }
+  return result;
 }
 
-export function createValidatorCompiler(): (route: ValidatorRoute) => ValidateFunction {
-  throw new Error('NotImplemented');
+function hasStructuredType(schema: JsonSchema): boolean {
+  const types = Array.isArray(schema['type']) ? schema['type'] : [schema['type']];
+  if (types.includes('array') || types.includes('object')) return true;
+  return ['allOf', 'anyOf', 'oneOf'].some((keyword) => {
+    const branches = schema[keyword];
+    return (
+      Array.isArray(branches) && branches.some((branch: JsonSchema) => hasStructuredType(branch))
+    );
+  });
+}
+
+export function createValidatorCompiler(): (
+  route: ValidatorRoute,
+) => ReturnType<Ajv2020['compile']> {
+  const create = (coerceTypes: boolean): Ajv2020 => {
+    const ajv = new Ajv2020({ strict: true, allErrors: true, coerceTypes });
+    ajvFormats.default(ajv);
+    ajv.addFormat('int32', {
+      type: 'number',
+      validate: (value: number) =>
+        Number.isInteger(value) && value >= -(2 ** 31) && value <= 2 ** 31 - 1,
+    });
+    ajv.addFormat('int64', { type: 'number', validate: Number.isSafeInteger });
+    return ajv;
+  };
+  const body = create(false);
+  const parameters = create(true);
+  return ({ schema, httpPart }) => (httpPart === 'body' ? body : parameters).compile(schema);
 }
 
 export function validationErrorEnvelope(
   error: unknown,
   traceId: string,
 ): ValidationErrorResponse | undefined {
-  void error;
-  void traceId;
-  throw new Error('NotImplemented');
+  if (
+    typeof error !== 'object' ||
+    error === null ||
+    !('code' in error) ||
+    error.code !== 'FST_ERR_VALIDATION' ||
+    !('validation' in error) ||
+    !Array.isArray(error.validation)
+  )
+    return undefined;
+
+  const part = 'validationContext' in error ? String(error.validationContext) : 'body';
+  const fields = new Set<string>();
+  for (const issue of error.validation as ValidationIssue[]) {
+    const segments =
+      issue.instancePath === ''
+        ? []
+        : issue.instancePath
+            .slice(1)
+            .split('/')
+            .map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+    const property =
+      issue.keyword === 'required'
+        ? issue.params['missingProperty']
+        : issue.keyword === 'additionalProperties'
+          ? issue.params['additionalProperty']
+          : undefined;
+    if (typeof property === 'string') segments.push(property);
+    fields.add(segments.length > 0 ? segments.join('.') : part);
+  }
+  return {
+    statusCode: 400,
+    body: { code: 20001, msg: '参数校验失败', data: { fields: [...fields] }, trace_id: traceId },
+  };
 }
