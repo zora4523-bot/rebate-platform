@@ -1100,14 +1100,6 @@ export interface components {
          *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
          */
         IdempotencyKey: components["schemas"]["IdempotencyKey"];
-        /**
-         * @description step_up_token from POST /v1/auth/step-up, only on x-step-up operations (04 §5). Sent as a
-         *     header so that the body hash, and with it the Idempotency-Key, does not change when a
-         *     replay carries a new token (BR-ID-08). Optional in the schema on purpose: a missing,
-         *     expired or other-action token is the business code 10003 (the client opens step-up),
-         *     not a 20001 validation error.
-         */
-        StepUpToken: string;
         /** @description link_id from a card; unknown or of another app → 30144. */
         LinkId: components["schemas"]["Id"];
         /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */

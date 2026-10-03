@@ -54,7 +54,7 @@ TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载�
 11. 与 `enums/` 同名同义的枚举（平台、场景、排序、rebate_basis 等）取值必须与 `enums/` 完全一致，对应关系登记在 `packages/contracts-ts/scripts/conformance.ts` 的 `ENUM_BINDINGS`；只允许子集的字段（如 parse、convert 的 `scene`，客户端不能自选归因场景）登记在 `ENUM_SUBSETS`。新增枚举字段时一并登记。
 12. 第 4 条的两处例外：错误外壳的 `data`（各码字段见 `error-codes.yaml`）和 `/v1/config` 里形状未定的块（`FreeForm`），由用到它们的任务补形状。
 
-13. 需要二次验证的操作在 operation 上写 `x-step-up: <step_up_action>`（04 §5 step-up 行；名称由契约自定，规划侧补登）。只有 04 §5 那四个接口能带，取值按该行的对应关系（`conformance.ts` 的 `STEP_UP_OPERATIONS`）；带它的接口必须 `x-idempotent: true`、列 `StepUpToken` 参数（`X-Step-Up-Token`，schema 里非必填：缺少或不符是业务码 10003，不是 20001）、`x-error-codes` 含 10003 与 20903；不带它的接口不列这个参数，也不列 20903。只对部分请求生效时把条件写在 operation 说明里（`POST /v1/me/phone` 只在更换时要求，首次绑定不要求）。四个接口进契约前，`StepUpToken` 在 `.redocly.lint-ignore.yaml` 里有一条未使用例外，挂上时删掉。
+13. 需要二次验证的操作在 operation 上写 `x-step-up: <step_up_action>`（04 §5 step-up 行；名称由契约自定，规划侧补登）。只有 04 §5 那四个接口能带，取值按该行的对应关系（`conformance.ts` 的 `STEP_UP_OPERATIONS`）；带它的接口必须 `x-idempotent: true`、列 `components/parameters/StepUpToken` 参数（`X-Step-Up-Token` 请求头，`required: false`、字符串 1–2048 字符：缺少、过期或 action 不符是业务码 10003，写成必填会被请求校验先拦成 20001）、`x-error-codes` 含 10003 与 20903；不带它的接口不列这个参数，也不列 20903。只对部分请求生效时把条件写在 operation 说明里（`POST /v1/me/phone` 只在更换时要求，首次绑定不要求）。这个参数组件由第一个挂 x-step-up 的任务（CT-15j / CT-16c）按上面的形状新建（现在建会成为未使用组件，lint 不过）。
 
 第 10、11、13 条与金额字段为 int64 由 `pnpm contracts:check` 里的一致性检查（`conformance.ts`）执行。
 
