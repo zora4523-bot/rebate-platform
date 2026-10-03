@@ -1,6 +1,9 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
+import { inspect } from 'node:util';
 import { expect, it } from 'vitest';
 import {
+  FIELD_CRYPTO_MESSAGES,
+  FieldCryptoError,
   LocalKeyProvider,
   createWrappedKeyring,
   openFieldCrypto,
@@ -10,18 +13,20 @@ import {
 
 it('[AC-B1-01a#1] 主密钥与解包密钥不保留调用方的可变字节引用', async () => {
   const master = randomBytes(32);
-  const originalMaster = Buffer.from(master);
+  const originalMaster = new Uint8Array(master);
   const local = new LocalKeyProvider(master);
   master.fill(0);
   const doc = await createWrappedKeyring(local);
   const reopened = await openFieldCrypto(doc, new LocalKeyProvider(originalMaster));
   const buffers: Uint8Array[] = [];
+  const references: Uint8Array[] = [];
   const provider: KeyProvider = {
     keyId: local.keyId,
     wrapKey: (key) => local.wrapKey(key),
     async unwrapKey(wrapped) {
       const key = await local.unwrapKey(wrapped);
       buffers.push(key);
+      references.push(new Uint8Array(key));
       return key;
     },
   };
@@ -29,6 +34,7 @@ it('[AC-B1-01a#1] 主密钥与解包密钥不保留调用方的可变字节引�
   const value = 'synthetic-value';
   const cipher = crypto.encrypt(value, 'unit.field');
   const index = crypto.blindIndex(value, 'unit.field');
+  expect(buffers.map((buffer) => new Uint8Array(buffer))).toEqual(references);
   for (const buffer of buffers) buffer.fill(0);
   expect({
     decrypted: crypto.decrypt(cipher, 'unit.field'),
@@ -36,6 +42,122 @@ it('[AC-B1-01a#1] 主密钥与解包密钥不保留调用方的可变字节引�
     index: crypto.blindIndex(value, 'unit.field'),
     referenceIndex: reopened.blindIndex(value, 'unit.field'),
   }).toEqual({ decrypted: value, reopened: value, index, referenceIndex: index });
+});
+
+it('[AC-B1-01a#5] 打开多版本密钥环及加解密、盲索引后共享池中没有任何密钥', async () => {
+  const master = randomBytes(32);
+  const references: Uint8Array[] = [new Uint8Array(master)];
+  // Retain every pool seen around the operations, including a pool replaced along the way.
+  const pools = new Set<ArrayBufferLike>();
+  function probePool(): void {
+    pools.add(Buffer.from('x').buffer);
+  }
+  probePool();
+  const provider = new LocalKeyProvider(master);
+  probePool();
+  let doc = await createWrappedKeyring(provider);
+  probePool();
+  doc = await rotateDataKey(doc, provider);
+  probePool();
+  for (const wrapped of [...doc.data_keys.map((entry) => entry.wrapped), doc.blind_index_key]) {
+    const key = await provider.unwrapKey(wrapped);
+    references.push(new Uint8Array(key));
+    key.fill(0);
+    probePool();
+  }
+  const crypto = await openFieldCrypto(doc, provider);
+  probePool();
+  function poolHasKey(): boolean {
+    return [...pools].some((pool) =>
+      references.some((key) =>
+        Buffer.from(pool).includes(Buffer.from(key.buffer, key.byteOffset, key.byteLength)),
+      ),
+    );
+  }
+  expect(poolHasKey()).toBe(false);
+  const ciphertext = crypto.encrypt('synthetic-secret-value', 'unit.field');
+  probePool();
+  expect(poolHasKey()).toBe(false);
+  expect(crypto.decrypt(ciphertext, 'unit.field')).toBe('synthetic-secret-value');
+  probePool();
+  expect(poolHasKey()).toBe(false);
+  expect(crypto.blindIndex('synthetic-secret-value', 'unit.field')).toMatch(/^[a-f0-9]{64}$/u);
+  probePool();
+  expect(poolHasKey()).toBe(false);
+});
+
+it('[AC-B1-01a#6] 解包返回的底层内存只容纳该密钥，不含主密钥且不改调用方字节', async () => {
+  const master = randomBytes(32);
+  const masterReference = new Uint8Array(master);
+  const provider = new LocalKeyProvider(master);
+  for (const size of [1, 32, 64, 8193]) {
+    const key = randomBytes(size);
+    const reference = new Uint8Array(key);
+    const unwrapped = await provider.unwrapKey(await provider.wrapKey(key));
+    expect(unwrapped.buffer.byteLength).toBe(size);
+    expect(unwrapped.byteOffset).toBe(0);
+    expect(new Uint8Array(unwrapped)).toEqual(reference);
+    expect(Buffer.from(unwrapped.buffer).includes(Buffer.from(masterReference.buffer))).toBe(false);
+    expect(new Uint8Array(key)).toEqual(reference);
+    unwrapped.fill(0);
+    expect(new Uint8Array(key)).toEqual(reference);
+  }
+  expect(new Uint8Array(master)).toEqual(masterReference);
+});
+
+it('[AC-B1-01a#7] 三个入口丢弃 keyId getter 的原始错误及其中的手机号', async () => {
+  const local = new LocalKeyProvider(randomBytes(32));
+  const doc = await createWrappedKeyring(local);
+  const phone = '13877776666';
+  const provider: KeyProvider = {
+    get keyId(): string {
+      throw new Error(`kms config for ${phone}`);
+    },
+    wrapKey: (key) => local.wrapKey(key),
+    unwrapKey: (wrapped) => local.unwrapKey(wrapped),
+  };
+  for (const attempt of [
+    () => createWrappedKeyring(provider),
+    () => openFieldCrypto(doc, provider),
+    () => rotateDataKey(doc, provider),
+  ]) {
+    const error: unknown = await attempt().catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(FieldCryptoError);
+    expect(error).toMatchObject({
+      code: 'key_provider_failed',
+      message: FIELD_CRYPTO_MESSAGES.key_provider_failed,
+    });
+    expect(inspect(error, { showHidden: true })).not.toContain(phone);
+    expect(Object.getOwnPropertyDescriptors(error)).not.toHaveProperty('cause');
+    expect(inspect(Object.getOwnPropertyDescriptors(error), { depth: null })).not.toContain(phone);
+  }
+});
+
+it('[AC-B1-01a#8] 三个入口拒绝空 provider 及非法 keyId，统一返回 FieldCryptoError', async () => {
+  const local = new LocalKeyProvider(randomBytes(32));
+  const doc = await createWrappedKeyring(local);
+  for (const invalid of [
+    null,
+    undefined,
+    { keyId: null },
+    { keyId: 1 },
+    { keyId: '' },
+    { keyId: '\ud800' },
+  ]) {
+    const provider = invalid as unknown as KeyProvider;
+    for (const attempt of [
+      () => createWrappedKeyring(provider),
+      () => openFieldCrypto(doc, provider),
+      () => rotateDataKey(doc, provider),
+    ]) {
+      const error: unknown = await attempt().catch((reason: unknown) => reason);
+      expect(error).toBeInstanceOf(FieldCryptoError);
+      expect(error).toMatchObject({
+        code: 'invalid_keyring',
+        message: FIELD_CRYPTO_MESSAGES.invalid_keyring,
+      });
+    }
+  }
 });
 
 it('[AC-B1-01a#2] 异步解包期间修改原文档不会替换已校验的版本与条目', async () => {
