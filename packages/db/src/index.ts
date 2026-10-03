@@ -23,13 +23,14 @@ export type { PgUrlOverrides, PgUrlParts } from './pg-url.ts';
 export const APP_SCHEMA = 'app';
 
 export type CreateDbOptions = {
-  connectionString: string;
   /** Pool size; per-process values are listed in ADR-0001 §4.2 #11. */
   max?: number;
   applicationName?: string;
-  /** Platform infrastructure can own the pool lifecycle; business modules omit this. */
-  poolFactory?: (config: pg.PoolConfig) => PostgresPool;
-};
+} & (
+  | { connectionString: string; poolFactory?: (config: pg.PoolConfig) => PostgresPool }
+  // Platform infrastructure supplies its own discrete connection fields and lifecycle.
+  | { connectionString?: never; poolFactory: (config: pg.PoolConfig) => PostgresPool }
+);
 
 const INT8_ARRAY_OID = 1016;
 
@@ -51,9 +52,11 @@ function int8AsBigInt(): pg.TypeOverrides {
  */
 export function createDb(opts: CreateDbOptions): Kysely<DB> {
   const config: pg.PoolConfig = {
-    connectionString: opts.connectionString,
     types: int8AsBigInt(),
   };
+  if (opts.connectionString !== undefined) {
+    config.connectionString = opts.connectionString;
+  }
   if (opts.max !== undefined) {
     config.max = opts.max;
   }

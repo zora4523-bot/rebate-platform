@@ -156,8 +156,9 @@
 //      local port nothing listens on); every entry still starts and exits 0. Also check that an
 //      entry missing one required variable exits 1 with one `config_invalid` line.
 //    - Not in this task: the start-up self-check that connections bypass PgBouncer (ADR-0002 §5,
-//      method decided on staging, §10 #4); readiness probes (need a contract first); TLS
-//      parameters of the URLs (`sslmode`, …) are passed to pg as given.
+//      method decided on staging, §10 #4); readiness probes (need a contract first).
+//      TLS parameters follow contract addendum 2 in connection-tls.test.ts: literal query names,
+//      percent-decoded fields and explicit TLS settings, never a driver-parsed URL.
 //
 // 9. Rules for the implementation
 //    - This directory is compiled by the `test` project too (erasableSyntaxOnly, no decorators)
@@ -168,6 +169,7 @@
 //      files of this directory; `../entries.ts` and `../logging/logger.ts` type-only.
 //    - No `process.env`; no wall clock (a timer for the close timeout is fine); logs only through
 //      `options.logger`.
+import { readFileSync } from 'node:fs';
 import { inspect } from 'node:util';
 import { createDb, type DB } from '@couli/db';
 import pg from 'pg';
@@ -247,9 +249,12 @@ const DATABASE_QUERY_NAMES = new Set([
   'password',
   'sslpassword',
 ]);
-const SSL_MODES = new Set(['disable', 'prefer', 'require', 'verify-ca', 'verify-full']);
+const SSL_MODES = new Set(['disable', 'require', 'verify-ca', 'verify-full']);
 const DATABASE_QUERY_PROBLEM =
-  'query parameters may only be sslmode (disable, prefer, require, verify-ca or verify-full), sslrootcert, options, password or sslpassword, each at most once';
+  'query parameters may only be sslmode (disable, require, verify-ca or verify-full), sslrootcert (required by verify-ca, allowed with verify-full), options, password or sslpassword, each at most once and with a literal name';
+
+// Keep decoded credentials and startup-time CA contents off all public config objects.
+const databaseParameters = new WeakMap<ConnectionUrl, pg.ClientConfig>();
 
 function validDatabaseQuery(url: URL): boolean {
   // URLSearchParams treats a missing equals sign as an empty value; the contract rejects it.
@@ -257,7 +262,11 @@ function validDatabaseQuery(url: URL): boolean {
     url.search
       .slice(1)
       .split('&')
-      .some((part) => part !== '' && !part.includes('='))
+      .some((part) => {
+        if (part === '') return false;
+        const equals = part.indexOf('=');
+        return equals < 0 || /[%+]/.test(part.slice(0, equals));
+      })
   ) {
     return false;
   }
@@ -267,7 +276,49 @@ function validDatabaseQuery(url: URL): boolean {
     if (name === 'sslmode' && !SSL_MODES.has(value)) return false;
     seen.add(name);
   }
-  return true;
+  const mode = url.searchParams.get('sslmode') ?? 'disable';
+  const hasRoot = url.searchParams.has('sslrootcert');
+  return (
+    (mode !== 'verify-ca' || hasRoot) &&
+    (!hasRoot || mode === 'verify-ca' || mode === 'verify-full')
+  );
+}
+
+/** Parse only known fields; never let pg reinterpret a connection string. */
+function parseDatabaseParameters(url: URL, name: string): pg.ClientConfig {
+  // Decode before query validation, so malformed escapes always report the URL problem.
+  const user = decodeURIComponent(url.username);
+  const password = decodeURIComponent(url.password);
+  const database = decodeURIComponent(url.pathname.slice(1));
+  if (!validDatabaseQuery(url)) {
+    throw new ConfigError([`${name}: ${DATABASE_QUERY_PROBLEM}`]);
+  }
+  const mode = url.searchParams.get('sslmode') ?? 'disable';
+  let ca: string | undefined;
+  if (url.searchParams.has('sslrootcert')) {
+    try {
+      ca = readFileSync(url.searchParams.get('sslrootcert')!, 'utf8');
+    } catch {
+      throw new ConfigError([`${name}: sslrootcert could not be read`]);
+    }
+  }
+  const ssl: pg.ClientConfig['ssl'] =
+    mode === 'disable'
+      ? false
+      : {
+          rejectUnauthorized: mode !== 'require',
+          ...(ca === undefined ? {} : { ca }),
+          ...(mode === 'verify-ca' ? { checkServerIdentity: () => undefined } : {}),
+        };
+  return {
+    host: url.hostname,
+    port: url.port === '' ? 5432 : Number(url.port),
+    user,
+    password: url.searchParams.get('password') ?? password,
+    database,
+    ssl,
+    options: url.searchParams.get('options') ?? '',
+  };
 }
 
 /**
@@ -295,13 +346,15 @@ export function loadConnectionConfig(
           url.hostname !== '' &&
           url.pathname.length > 1;
       if (valid) {
-        if (!redis && !validDatabaseQuery(url)) {
-          problems.push(`${name}: ${DATABASE_QUERY_PROBLEM}`);
-          return null;
-        }
-        return new ConnectionUrl(url.href);
+        const connectionUrl = new ConnectionUrl(url.href);
+        if (!redis) databaseParameters.set(connectionUrl, parseDatabaseParameters(url, name));
+        return connectionUrl;
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof ConfigError) {
+        problems.push(...error.problems);
+        return null;
+      }
       // Never propagate URL's error: it includes the unredacted input.
     }
     problems.push(
@@ -385,22 +438,11 @@ export function createDbHandles(config: ConnectionConfig, options: DbHandlesOpti
   const pools: ManagedPool[] = [];
   const make = (settings: DbPoolConfig): Kysely<DB> => {
     return createDb({
-      connectionString: settings.url.reveal(),
       max: settings.max,
       applicationName: settings.applicationName,
       poolFactory(poolConfig) {
-        // Use pg's own parsing without connecting or re-encoding the URL. In particular,
-        // a literal % in a password must not cause options to be encoded a second time.
-        let parsed: pg.ClientConfig;
-        try {
-          parsed = (
-            new pg.Client(poolConfig) as pg.Client & { connectionParameters: pg.ClientConfig }
-          ).connectionParameters;
-        } catch {
-          // Driver parse errors can contain URL values; expose neither them nor a cause.
-          const name = settings.readOnly ? 'DATABASE_READ_URL' : 'DATABASE_URL';
-          throw new ConfigError([`${name}: could not parse database connection parameters`]);
-        }
+        const parsed = databaseParameters.get(settings.url);
+        if (parsed === undefined) throw new DbError('invalid_option');
         // Never pass through the entire parsed object or connectionString: pg accepts
         // fields such as binary that can bypass the BigInt text parsers.
         const connection: pg.PoolConfig = {

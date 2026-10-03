@@ -1,4 +1,6 @@
 import { inspect } from 'node:util';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { createDb } from '@couli/db';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ConfigError } from '../config/index.ts';
@@ -9,7 +11,6 @@ type PoolConfig = Parameters<NonNullable<Parameters<typeof createDb>[0]['poolFac
 
 const driver = vi.hoisted(() => ({
   pools: [] as PoolConfig[],
-  parseError: undefined as Error | undefined,
   parameters: undefined as unknown as (config: PoolConfig) => PoolConfig,
   connect: vi.fn(() => {
     throw new Error('Unit tests must not connect to PostgreSQL');
@@ -27,7 +28,6 @@ vi.mock('pg', async (importOriginal) => {
   }>();
   class Client extends actual.default.Client {
     constructor(config: PoolConfig) {
-      if (driver.parseError) throw driver.parseError;
       super(config);
     }
     connect = driver.connect;
@@ -44,7 +44,6 @@ vi.mock('pg', async (importOriginal) => {
 
 beforeEach(() => {
   driver.pools = [];
-  driver.parseError = undefined;
   driver.connect.mockClear();
 });
 
@@ -55,18 +54,16 @@ const suffix = '-c default_transaction_read_only=on';
 const int8ArrayOid = 1016 as Parameters<NonNullable<PoolConfig['types']>['getTypeParser']>[0];
 
 it.each(['p%word', 'p@word', 'p:word', 'p#word', 'p word', 'p\\word'])(
-  '[AC-B1-01f#8] 密码 %s 的解析与直接交给 pg 相同，保留连接参数且不暴露密码',
+  '[AC-B1-01f#8] 密码 %s 按 URL 解码，保留连接参数且不暴露密码',
   async (password) => {
     const url = new URL('postgres://couli_readonly@db.example:5434/couli');
-    url.password = password;
-    // Keep the original equals signs: pg re-encodes the entire URL for a literal %.
+    url.password = encodeURIComponent(password);
     const readUrl = `${url.href}?options=-c%20statement_timeout=12345&sslmode=disable`;
     const config = loadConnectionConfig('admin', {
       DATABASE_URL: readUrl.replace('couli_readonly', 'couli_app'),
       DATABASE_READ_URL: readUrl,
       REDIS_URL: 'redis://127.0.0.1:1/0',
     });
-    const direct = driver.parameters({ connectionString: config.dbRead!.url.reveal() });
     const logger = createRootLogger({ entry: 'admin', appEnv: 'test', level: 'silent' });
     const error = vi.spyOn(logger, 'error');
     const handles = createDbHandles(config, { logger });
@@ -75,11 +72,13 @@ it.each(['p%word', 'p@word', 'p:word', 'p#word', 'p word', 'p\\word'])(
       const supplied = driver.pools[1]!;
       expect(supplied.connectionString).toBeUndefined();
       const actual = driver.parameters(supplied);
-      expect(actual.password).toBe(direct.password);
-      expect({ ...actual, password: actual.password }).toEqual({
-        ...direct,
-        password: direct.password,
-        options: `${direct.options} ${suffix}`,
+      expect(actual).toMatchObject({
+        host: 'db.example',
+        port: 5434,
+        user: 'couli_readonly',
+        password,
+        database: 'couli',
+        ssl: false,
         application_name: 'couli-admin-read',
         keepalives: 1,
       });
@@ -87,13 +86,13 @@ it.each(['p%word', 'p@word', 'p:word', 'p#word', 'p word', 'p\\word'])(
       expect(supplied.max).toBe(5);
       const primary = driver.pools[0]!;
       expect(primary.connectionString).toBeUndefined();
-      expect(driver.parameters(primary)).toEqual({
-        ...direct,
+      expect(driver.parameters(primary)).toMatchObject({
+        password,
+        options: '-c statement_timeout=12345',
         user: 'couli_app',
         application_name: 'couli-admin',
         keepalives: 1,
       });
-      expect(driver.parameters(primary).password).toBe(direct.password);
       for (const pool of driver.pools) {
         expect(pool).not.toHaveProperty('binary');
         expect(pool).not.toHaveProperty('client_encoding');
@@ -109,7 +108,6 @@ it.each(['p%word', 'p@word', 'p:word', 'p#word', 'p word', 'p\\word'])(
         JSON.stringify(handles),
       ]) {
         expect(value).not.toContain(password);
-        expect(value).not.toContain(String(direct.password));
       }
       expect(error).not.toHaveBeenCalled();
     } finally {
@@ -146,26 +144,23 @@ it.each([
   },
 );
 
-it('[AC-B1-01f#10] pg 解析连接参数失败时错误不带 URL、口令或原始 cause', () => {
-  const secret = 'parse-secret-value';
-  const config = loadConnectionConfig('admin', {
-    DATABASE_URL: 'postgres://couli_app@db.example/couli',
-    DATABASE_READ_URL: `postgres://couli_readonly:${secret}@db.example/couli`,
-    REDIS_URL: 'redis://127.0.0.1:1/0',
-  });
+it.each([
+  'couli%xx:p@db.example/couli',
+  'couli:p%word@db.example/couli',
+  'couli:p@db.example/cou%li',
+])('[AC-B1-01f#10] 非法转义 %s 在加载配置时拒绝，不带原始 cause', (authority) => {
   let error: unknown;
-  driver.parseError = new Error(`Driver error containing ${secret}`);
   try {
-    createDbHandles(config, {
-      logger: createRootLogger({ entry: 'admin', appEnv: 'test', level: 'silent' }),
-    });
+    loadConnectionConfig('payout', { DATABASE_URL: `postgres://${authority}` });
   } catch (caught) {
     error = caught;
   }
   expect(error).toBeInstanceOf(ConfigError);
+  expect((error as ConfigError).problems).toEqual([
+    'DATABASE_URL: must be a postgres:// or postgresql:// URL with a user, a host and a database name',
+  ]);
   expect(error).not.toHaveProperty('cause');
-  expect(inspect(error, { showHidden: true, depth: null })).not.toContain(secret);
-  expect(JSON.stringify(error)).not.toContain(secret);
+  expect(inspect(error, { showHidden: true, depth: null })).not.toContain(authority);
 });
 
 it.each(['DATABASE_URL', 'DATABASE_READ_URL'] as const)(
@@ -178,6 +173,10 @@ it.each(['DATABASE_URL', 'DATABASE_READ_URL'] as const)(
       'client_encoding=SQL_ASCII',
       'sslmode=require&%73slmode=disable',
       'options',
+      'ssl%6dode=verify-full',
+      'opti%6Fns=-c%20search_path%3Dapp',
+      'ssl+mode=require',
+      'sslmode=prefer',
     ]) {
       let error: unknown;
       try {
@@ -192,7 +191,7 @@ it.each(['DATABASE_URL', 'DATABASE_READ_URL'] as const)(
       }
       expect(error).toBeInstanceOf(ConfigError);
       expect((error as ConfigError).problems).toEqual([
-        `${name}: query parameters may only be sslmode (disable, prefer, require, verify-ca or verify-full), sslrootcert, options, password or sslpassword, each at most once`,
+        `${name}: query parameters may only be sslmode (disable, require, verify-ca or verify-full), sslrootcert (required by verify-ca, allowed with verify-full), options, password or sslpassword, each at most once and with a literal name`,
       ]);
       expect(error).not.toHaveProperty('cause');
       expect(inspect(error, { showHidden: true, depth: null })).not.toContain(secret);
@@ -201,9 +200,56 @@ it.each(['DATABASE_URL', 'DATABASE_READ_URL'] as const)(
   },
 );
 
-it('[AC-B1-01f#12] 编码后的白名单参数名可用，两个池都保留解码后的 options', async () => {
-  const url =
-    'postgres://couli_app@db.example/couli?%73slmode=disable&%6Fptions=-c%20statement_timeout=7000';
+it('[AC-B1-01f#12] 用户名、口令、库名解码一次，查询口令优先且 options 用表单解码', async () => {
+  const config = loadConnectionConfig('admin', {
+    DATABASE_URL:
+      'postgres://couli%2Fapp:p%25word@db.example/couli%2Freport?options=-c+statement_timeout%3D7000',
+    DATABASE_READ_URL:
+      'postgres://couli_readonly:ignored@db.example/couli%252Freport?password=query%25%40%3A%23%2F+word',
+    REDIS_URL: 'redis://127.0.0.1:1/0',
+  });
+  const handles = createDbHandles(config, {
+    logger: createRootLogger({ entry: 'admin', appEnv: 'test', level: 'silent' }),
+  });
+  try {
+    expect(driver.pools[0]).toMatchObject({
+      host: 'db.example',
+      port: 5432,
+      user: 'couli/app',
+      password: 'p%word',
+      database: 'couli/report',
+      options: '-c statement_timeout=7000',
+      ssl: false,
+    });
+    expect(driver.pools[1]).toMatchObject({
+      password: 'query%@:#/ word',
+      database: 'couli%2Freport',
+      ssl: false,
+    });
+    expect(driver.pools.every((pool) => !('connectionString' in pool))).toBe(true);
+    expect(driver.connect).not.toHaveBeenCalled();
+  } finally {
+    await handles.close();
+  }
+});
+
+const rootPath = fileURLToPath(import.meta.url);
+const ca = readFileSync(rootPath, 'utf8');
+it.each([
+  ['', false],
+  ['sslmode=disable', false],
+  ['sslmode=require', { rejectUnauthorized: false }],
+  ['sslmode=verify-full', { rejectUnauthorized: true }],
+  [
+    `sslmode=verify-full&sslrootcert=${encodeURIComponent(rootPath)}`,
+    { rejectUnauthorized: true, ca },
+  ],
+  [
+    `sslmode=verify-ca&sslrootcert=${encodeURIComponent(rootPath)}`,
+    { rejectUnauthorized: true, ca, checkServerIdentity: expect.any(Function) },
+  ],
+])('[AC-B1-01f#13] TLS 设置显式构造：%s', async (query, expected) => {
+  const url = `postgres://couli_app:p%25word@db.example/couli?${query}`;
   const config = loadConnectionConfig('admin', {
     DATABASE_URL: url,
     DATABASE_READ_URL: url,
@@ -213,14 +259,32 @@ it('[AC-B1-01f#12] 编码后的白名单参数名可用，两个池都保留解�
     logger: createRootLogger({ entry: 'admin', appEnv: 'test', level: 'silent' }),
   });
   try {
-    expect(config.db.url.reveal()).toBe(url);
-    expect(driver.pools.map((pool) => driver.parameters(pool).options)).toEqual([
-      '-c statement_timeout=7000',
-      `-c statement_timeout=7000 ${suffix}`,
-    ]);
-    expect(driver.pools.map((pool) => pool.ssl)).toEqual([false, false]);
+    for (const pool of driver.pools) {
+      expect(pool.ssl).toEqual(expected);
+      expect(pool).not.toHaveProperty('connectionString');
+      if (typeof pool.ssl === 'object' && pool.ssl.checkServerIdentity) {
+        expect(pool.ssl.checkServerIdentity('mismatched.example', {} as never)).toBeUndefined();
+      }
+    }
     expect(driver.connect).not.toHaveBeenCalled();
   } finally {
     await handles.close();
   }
+});
+
+it('[AC-B1-01f#14] 根证书读取失败在配置加载时报固定错误，不暴露路径', () => {
+  let error: unknown;
+  try {
+    loadConnectionConfig('payout', {
+      DATABASE_URL:
+        'postgres://couli_payout@db.example/couli?sslmode=verify-full&sslrootcert=missing-private-ca.pem',
+    });
+  } catch (caught) {
+    error = caught;
+  }
+  expect(error).toBeInstanceOf(ConfigError);
+  expect((error as ConfigError).problems).toEqual(['DATABASE_URL: sslrootcert could not be read']);
+  expect(error).not.toHaveProperty('cause');
+  expect(inspect(error, { showHidden: true, depth: null })).not.toContain('missing-private-ca.pem');
+  expect(driver.pools).toHaveLength(0);
 });
