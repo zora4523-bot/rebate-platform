@@ -6,6 +6,9 @@
 -- Unspecified business vocabularies remain text; link_logs.event follows contracts/enums/trade.yaml.
 -- apps, platform and Agent entity foreign keys await their respective baseline tables.
 -- User, device and link references include app_id to prevent cross-app associations.
+-- Exception: link_logs must record failed open/convert requests (BR-ATTR-14), including
+-- unknown/cross-app link IDs and missing fields. Its link_id has no FK; link_id, platform
+-- and scene are nullable so failures 30144, 30131 and 20001 can still be logged.
 -- A supporting device index supplies the composite foreign-key target without changing 0005.
 --
 -- Prohibitive UPDATE guards only (db/AGENTS.md #8): no business writes or SQL clock reads.
@@ -95,15 +98,15 @@ CREATE TRIGGER links_no_quote_rewrite
 CREATE TABLE app.link_logs (
   id               bigint GENERATED ALWAYS AS IDENTITY,
   app_id           text NOT NULL,
-  link_id          uuid NOT NULL,
+  link_id          uuid,
   event            text NOT NULL,
   user_id          uuid,
   opener_user_id   uuid,
-  platform         text NOT NULL,
+  platform         text,
   product_key      text,
   raw_item_id      text,
   shop_id          text,
-  scene            text NOT NULL,
+  scene            text,
   pid_scene        text,
   spm              text,
   pid              text,
@@ -123,8 +126,6 @@ CREATE TABLE app.link_logs (
   created_at       timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT link_logs_pkey PRIMARY KEY (id, created_at),
   CONSTRAINT link_logs_event_check CHECK (event IN ('convert', 'precompute', 'register', 'open')),
-  CONSTRAINT link_logs_link_fkey FOREIGN KEY (app_id, link_id)
-    REFERENCES app.links (app_id, link_id),
   CONSTRAINT link_logs_user_fkey FOREIGN KEY (app_id, user_id)
     REFERENCES app.users (app_id, id),
   CONSTRAINT link_logs_opener_user_fkey FOREIGN KEY (app_id, opener_user_id)

@@ -581,15 +581,15 @@ ALTER TABLE app.idempotency_keys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTIT
 CREATE TABLE app.link_logs (
     id bigint NOT NULL,
     app_id text NOT NULL,
-    link_id uuid NOT NULL,
+    link_id uuid,
     event text NOT NULL,
     user_id uuid,
     opener_user_id uuid,
-    platform text NOT NULL,
+    platform text,
     product_key text,
     raw_item_id text,
     shop_id text,
-    scene text NOT NULL,
+    scene text,
     pid_scene text,
     spm text,
     pid text,
@@ -619,15 +619,15 @@ PARTITION BY RANGE (created_at);
 CREATE TABLE app.link_logs_default (
     id bigint CONSTRAINT link_logs_id_not_null NOT NULL,
     app_id text CONSTRAINT link_logs_app_id_not_null NOT NULL,
-    link_id uuid CONSTRAINT link_logs_link_id_not_null NOT NULL,
+    link_id uuid,
     event text CONSTRAINT link_logs_event_not_null NOT NULL,
     user_id uuid,
     opener_user_id uuid,
-    platform text CONSTRAINT link_logs_platform_not_null NOT NULL,
+    platform text,
     product_key text,
     raw_item_id text,
     shop_id text,
-    scene text CONSTRAINT link_logs_scene_not_null NOT NULL,
+    scene text,
     pid_scene text,
     spm text,
     pid text,
@@ -1587,14 +1587,6 @@ ALTER TABLE ONLY app.device_registrations
 
 ALTER TABLE ONLY app.devices
     ADD CONSTRAINT devices_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
-
-
---
--- Name: link_logs link_logs_link_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE app.link_logs
-    ADD CONSTRAINT link_logs_link_fkey FOREIGN KEY (app_id, link_id) REFERENCES app.links(app_id, link_id);
 
 
 --
