@@ -1,50 +1,82 @@
 // Shared helpers of the platform/masking rule tests (规划/08 BR-ID-33: 日志中不得出现明文; 默认脱敏
 // 格式). The logger under test is the real root logger writing JSON lines into memory; nothing is
-// mocked. A "leak" is any fragment of a sample value that the default masking would not show:
-// for digit strings every run of 5 consecutive characters of the value, for names the whole name
-// and the name without its last character, for e-mail addresses the address and its local part,
-// and for every value its UTF-8 bytes printed as hex, base64 or a JSON number list (a Buffer
-// value). The base fields `time`, `pid` and `hostname` are dropped before searching, so their
-// digits cannot match by accident.
+// mocked. Leaks are searched in the RAW line (so a duplicated key cannot hide one), after
+// removing the base fields (time, pid, hostname, entry, env) and every `stack` value (free text
+// with line numbers). Each sample has the positions its default masking may show (phone: first
+// 3 and last 4; ID number: first and last; name: last; anything else: none). A line leaks a
+// sample when any of these holds:
+//   - it contains the whole value, a run of 5 of its digits, or its UTF-8 bytes as hex, base64
+//     or a JSON number list (a number or Buffer value);
+//   - a string or number in it contains a piece of the value (3 or more characters, 2 for a
+//     name) that covers a hidden position;
+//   - a string or number in it has the value's length and repeats one of its characters at a
+//     hidden position (1398***4321, 11**************2X, 张*三); two of them for a value without
+//     a default masking.
 import {
   PinoNestLogger,
   createRootLogger,
   type RootLogger,
 } from '../../../../apps/api/src/modules/platform/logging/index.ts';
 
-/** Distinctive synthetic values; none is a substring of another field by accident. */
+/** Distinctive synthetic values; none shares a piece with another field by accident. */
 export const SAMPLES = {
   phone: '13987654321',
   alipayPhone: '18603159742',
   contactPhone: '15822446688',
-  alertPhone: '17751239876',
+  alertPhone: '17705162430',
   idNo: '11010519491231002X',
   idNo15: '320105791231247',
   birthDate: '1949-12-31',
   realName: '张小三',
   payeeName: '欧阳明月',
-  alipayEmail: 'payee.rule.test@example.com',
+  alipayEmail: 'qzx7.vwk3@exmpl-host.cn',
   bankCard: '6222021234567890123',
   cardNo: '4392260012345678',
-  credential: 'Bearer zq7Xv2Lk9Pw4Rt6Y',
+  credential: 'zq7X v2Lk 9Pw4 Rt6Y',
 } as const;
 
 export type SampleName = keyof typeof SAMPLES;
 
-/** Fragments of `value` that must not appear in a log line. */
+type Kind = 'phone' | 'id' | 'name' | 'secret';
+
+const KIND: Record<SampleName, Kind> = {
+  phone: 'phone',
+  alipayPhone: 'secret',
+  contactPhone: 'phone',
+  alertPhone: 'phone',
+  idNo: 'id',
+  idNo15: 'id',
+  birthDate: 'secret',
+  realName: 'name',
+  payeeName: 'name',
+  alipayEmail: 'secret',
+  bankCard: 'secret',
+  cardNo: 'secret',
+  credential: 'secret',
+};
+
+/** Positions (code points) of `name`'s value that its default masking does not show. */
+export function hiddenPositions(name: SampleName): Set<number> {
+  const length = [...SAMPLES[name]].length;
+  const all = Array.from({ length }, (_, i) => i);
+  switch (KIND[name]) {
+    case 'phone':
+      return new Set(all.filter((i) => i >= 3 && i < length - 4));
+    case 'id':
+      return new Set(all.filter((i) => i > 0 && i < length - 1));
+    case 'name':
+      return new Set(all.filter((i) => i < length - 1));
+    default:
+      return new Set(all);
+  }
+}
+
+/** Strong fragments searched in the raw text: whole value, runs of 5 digits, UTF-8 bytes. */
 export function fragmentsOf(value: string): string[] {
   const out = new Set<string>([value]);
-  const chars = [...value];
   const flat = value.replace(/[-\s]/g, '');
   if (/^[0-9Xx]+$/.test(flat)) {
     for (let i = 0; i + 5 <= flat.length; i += 1) out.add(flat.slice(i, i + 5));
-  } else if (value.includes('@')) {
-    out.add(value.slice(0, value.indexOf('@')));
-  } else if (chars.length >= 2 && !value.includes(' ')) {
-    out.add(chars.slice(0, -1).join(''));
-  } else if (value.includes(' ')) {
-    // A credential such as "Bearer <token>": the token part alone is enough to leak.
-    out.add(value.slice(value.lastIndexOf(' ') + 1));
   }
   const bytes = Buffer.from(value, 'utf8');
   out.add(bytes.toString('hex'));
@@ -53,19 +85,52 @@ export function fragmentsOf(value: string): string[] {
   return [...out];
 }
 
-/** The line without the base fields whose digits could collide with a sample (time, pid, host). */
+/** The raw line without base fields and `stack` values (their digits could match by chance). */
 export function searchable(line: string): string {
-  const record = JSON.parse(line) as Record<string, unknown>;
-  delete record['time'];
-  delete record['pid'];
-  delete record['hostname'];
-  return JSON.stringify(record);
+  return line
+    .replace(/"(time|hostname|entry|env)":"(?:[^"\\]|\\.)*"/g, '')
+    .replace(/"pid":-?\d+/g, '')
+    .replace(/"stack":"(?:[^"\\]|\\.)*"/g, '');
+}
+
+/** Every string literal (decoded, keys included, duplicates kept) and number of a raw line. */
+export function tokensOf(text: string): string[] {
+  const strings = [...text.matchAll(/"(?:[^"\\]|\\.)*"/g)].map((m) => JSON.parse(m[0]) as string);
+  const rest = text.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  const numbers = [...rest.matchAll(/-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?/g)].map((m) => m[0]);
+  return [...strings, ...numbers];
+}
+
+function leaksSample(text: string, tokens: readonly string[], name: SampleName): boolean {
+  const value = SAMPLES[name];
+  if (fragmentsOf(value).some((fragment) => text.includes(fragment))) return true;
+  const chars = [...value];
+  const hidden = hiddenPositions(name);
+  const minPiece = KIND[name] === 'name' ? 2 : 3;
+  const pieces: string[] = [];
+  for (let from = 0; from < chars.length; from += 1) {
+    for (let to = from + minPiece; to <= chars.length; to += 1) {
+      let coversHidden = false;
+      for (let i = from; i < to; i += 1) if (hidden.has(i)) coversHidden = true;
+      if (coversHidden) pieces.push(chars.slice(from, to).join(''));
+    }
+  }
+  // A value without a default masking (account, e-mail, credential) needs two repeated hidden
+  // characters, so that an unrelated text of the same length cannot match by one letter.
+  const enough = KIND[name] === 'secret' ? 2 : 1;
+  return tokens.some((token) => {
+    if (pieces.some((piece) => token.includes(piece))) return true;
+    const got = [...token];
+    if (got.length !== chars.length) return false;
+    return [...hidden].filter((i) => got[i] === chars[i]).length >= enough;
+  });
 }
 
 /** Names of the samples that leak into `line` (empty when nothing leaks). */
 export function leaksIn(line: string, names: readonly SampleName[] = sampleNames()): string[] {
   const text = searchable(line);
-  return names.filter((name) => fragmentsOf(SAMPLES[name]).some((f) => text.includes(f)));
+  const tokens = tokensOf(text);
+  return names.filter((name) => leaksSample(text, tokens, name));
 }
 
 export function sampleNames(): SampleName[] {
@@ -145,7 +210,7 @@ export function sensitiveFields(): Record<string, unknown> {
 
 /** Non-sensitive fields that must come out unchanged next to the sensitive ones. */
 export const KEPT = {
-  order_id: 'o-20261003-0001',
+  order_id: 'order-kept-a',
   amount_fen: 1999,
   user_id: 42,
   name: 'route-a',

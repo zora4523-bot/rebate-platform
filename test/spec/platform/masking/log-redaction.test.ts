@@ -18,12 +18,32 @@ import {
   sensitiveFields,
 } from './kit.ts';
 
-it('[BR-ID-33] 日志：顶层的手机号、身份证号、姓名、收款账号与凭据字段都不出明文，其他字段原样保留', () => {
+it('[BR-ID-33] 日志：顶层的手机号、身份证号、姓名、收款账号与凭据字段都不出明文，其他字段原样保留（检测器能认出多露字符的掩码与重复键）', () => {
   const { logger, lines, records } = capture();
   logger.info({ ...sensitiveFields(), ...KEPT }, 'payout requested');
-  expect({ lines: lines.length, leaks: leaksIn(lines[0] ?? '{}') }).toEqual({
+  const detector = {
+    partialPhone: leaksIn('{"level":30,"phone":"1398***4321"}', ['phone']),
+    partialId: leaksIn('{"level":30,"id_no":"11**************2X"}', ['idNo']),
+    partialName: leaksIn('{"level":30,"real_name":"张*三"}', ['realName']),
+    partialCard: leaksIn('{"level":30,"card_no":"4*9*2*0*1*3*5*7*"}', ['cardNo']),
+    duplicateKey: leaksIn(`{"level":30,"bank_card_no":"${SAMPLES.bankCard}","bank_card_no":"x"}`, [
+      'bankCard',
+    ]),
+    defaultMasks: leaksIn(
+      '{"level":30,"phone":"139****4321","id_no":"1****************X","real_name":"**三","payee_name":"***月","bank_card_no":"[REDACTED]"}',
+    ),
+  };
+  expect({ lines: lines.length, leaks: leaksIn(lines[0] ?? '{}'), detector }).toEqual({
     lines: 1,
     leaks: [],
+    detector: {
+      partialPhone: ['phone'],
+      partialId: ['idNo'],
+      partialName: ['realName'],
+      partialCard: ['cardNo'],
+      duplicateKey: ['bankCard'],
+      defaultMasks: [],
+    },
   });
   expect(records()[0]).toMatchObject({ ...KEPT, level: 30, msg: 'payout requested' });
 });

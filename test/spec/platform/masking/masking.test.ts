@@ -100,33 +100,33 @@ function isIdNo(text: string): boolean {
 }
 
 it('[BR-ID-33] 任意字符串：手机号脱敏不抛错、码点数不变，合规号码只露前 3 后 4，其余全是 *', () => {
-  let shaped = 0;
+  // Every run checks one arbitrary string and one string of the valid shape.
   fc.assert(
-    fc.property(fc.oneof(anyText, phoneShape), (text) => {
-      const out = maskPhone(text);
-      if (!isPhone(text)) return out === stars(text);
-      shaped += 1;
-      return out === `${text.slice(0, 3)}****${text.slice(7)}`;
-    }),
+    fc.property(anyText, phoneShape, (text, phone) =>
+      [text, phone].every((input) =>
+        isPhone(input)
+          ? maskPhone(input) === `${input.slice(0, 3)}****${input.slice(7)}`
+          : maskPhone(input) === stars(input),
+      ),
+    ),
     propParams(),
   );
-  expect(shaped).toBeGreaterThan(0);
+  expect(maskPhone('13812345678')).toBe('138****5678');
 });
 
 it('[BR-ID-33] 任意字符串：身份证脱敏不抛错、码点数不变，合规号码只露首末各 1 位，其余全是 *', () => {
-  let shaped = 0;
   fc.assert(
-    fc.property(fc.oneof(anyText, idShape), (text) => {
-      const out = maskIdNo(text);
-      if (!isIdNo(text)) return out === stars(text);
-      shaped += 1;
-      return (
-        out === `${text.charAt(0)}${'*'.repeat(text.length - 2)}${text.charAt(text.length - 1)}`
-      );
-    }),
+    fc.property(anyText, idShape, (text, idNo) =>
+      [text, idNo].every((input) =>
+        isIdNo(input)
+          ? maskIdNo(input) ===
+            `${input.charAt(0)}${'*'.repeat(input.length - 2)}${input.charAt(input.length - 1)}`
+          : maskIdNo(input) === stars(input),
+      ),
+    ),
     propParams(),
   );
-  expect(shaped).toBeGreaterThan(0);
+  expect(maskIdNo('11010519491231002X')).toBe('1****************X');
 });
 
 it('[BR-ID-33] 任意字符串：姓名脱敏不抛错、码点数不变，只有末一个码点保留（单字全遮）', () => {
