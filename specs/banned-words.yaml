@@ -8,15 +8,21 @@
 #   scopes       判定范围：user_visible = 用户可见文案；admin_report = 后台与报表字段
 #   words        每条 {word, category, scopes, allow_keys?, allow_articles?, note?}
 #     category     price_rebate（价格与返利类）/ ranking（榜单类）/ fund（资金类）/ field_limited（只在 allow_keys 里允许）
-#     scopes       该词在哪些范围校验：价格与返利类、「比价」在 user_visible 与 admin_report 都校验；
-#                  资金类与榜单类只校验 user_visible（后台与报表字段不校验，BR-TEXT-13 正文）
-#     allow_keys   放行的字段位置：字典键或模板键，「*」通配一段；放行按原文匹配，命中片段整体剔除后
-#                  再对剩余文本做归一化与匹配
+#     scopes       该词在哪些范围校验。按 BR-TEXT-13 正文逐词列出的豁免：资金类的佣金、待结算、结算中、返现、
+#                  充值、备付金与榜单类的高佣、收益榜只校验 user_visible；其余（价格与返利类、返利到账、
+#                  比价）在 user_visible 与 admin_report 都校验。比价在后台与报表字段也校验是代理按正文
+#                  未豁免取的默认，08 若另有规定以 08 为准
+#     allow_keys   放行的字段位置：字典键，「*」通配一段；放行按原文匹配，该字段的文本整体剔除后再对剩余
+#                  文本做归一化与匹配
+#     allow_rendered_in  通知模板编码（contracts/enums/ops.yaml notify_template_code）：模板里由 allow_keys
+#                  所列字段渲染进来的片段同样剔除；模板自己的固定文字照常校验
 #     allow_articles  按文章放行：取配置键当时指向的文章（config_key），只放行列出的字段；不写死文章 ID
 #                  （文章 ID 是运营配置）
 # 匹配：先按字段位置剔除白名单片段（原文匹配），再按 specs/banned-words.vectors.json 的步骤归一化后做子串匹配；
 # 归一化只用于匹配，展示的原文不变。
 # 降价表述的白名单模板等法务确认后再加（BR-TEXT-13 细则「降价表述」），现在没有。
+# TODO(规划/05 F1-02): order_status.PAID.hint.price_compare 是 08「rebate_basis=price_compare_risk 的订单状态
+#   hint（order_status.PAID.hint 的比价变体）」的占位键名 — blocked on 字典键定稿（BR-TEXT-02 / 字典落地时按实际键改）。
 version: '1'
 scopes: [user_visible, admin_report]
 words:
@@ -63,7 +69,8 @@ words:
     note: 榜单类（同上）
   - word: 返利到账
     category: fund
-    scopes: [user_visible]
+    scopes: [user_visible, admin_report]
+    note: 08 正文的后台与报表豁免逐词列出（佣金、待结算、结算中、返现、充值、备付金），不含本词，所以后台与报表字段同样校验
   - word: 佣金
     category: fund
     scopes: [user_visible]
@@ -92,12 +99,11 @@ words:
       - order_reason.PRICE_COMPARE.title
       - order_reason.PRICE_COMPARE.desc
       - order_status.PAID.hint.price_compare
-      - notify.ORDER_INVALID.*
-      - notify.CLAWBACK.*
       - no_rebate.price_compare
       - no_rebate.price_compare.confirm
       - order.price_compare.hint
+    allow_rendered_in: [ORDER_INVALID, CLAWBACK]
     allow_articles:
       - config_key: help_links.price_compare
         fields: [title, body]
-    note: 只允许出现在这些字段；卖点、广告位、分享标题、应用商店描述命中。order_status.PAID.hint.price_compare 指 rebate_basis=price_compare_risk 时订单状态 hint 的比价变体，notify.ORDER_INVALID.* 与 notify.CLAWBACK.* 指渲染了上述字段的推送与站内信模板；键名以字典与模板实际键为准，落地时核对
+    note: 只允许出现在这些字段；卖点、广告位、分享标题、应用商店描述命中

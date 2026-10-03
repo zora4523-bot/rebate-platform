@@ -8,8 +8,9 @@
 #   channels   每条 {platform, channel_id, name, sort_basis, selectable, source}
 #     platform     contracts/enums/platform.yaml 的 platform
 #     channel_id   联盟接口里的频道或物料标识，按接口原样记
-#     sort_basis   排序依据：sales（销量）/ popularity（热度）/ personalized（猜你喜欢一类）；
-#                  按佣金或收益排序、或带佣金权重的频道不进本表
+#     sort_basis   排序依据，按 CAP 记录原样归类：sales（销量）/ popularity（热度）/ personalized（猜你喜欢一类）
+#                  三类以外的写法先由 规划/08 BR-TEXT-17 补登再用；按佣金或收益排序、或带佣金权重的频道不进本表
+#                  （验收 AC-S1-90 的「按佣金排序、标为不可选」频道只在测试 fixture 里，不进本文件）
 #     selectable   true 才能被首页选用；把频道改为 false 后，已发布配置在取数时停用（BR-TEXT-17 细则）
 #     source       排序依据的记录出处（规划/09 CAP-TB-10、CAP-JD-10、CAP-PDD-10 的记录）
 # 收录条件：排序依据已在 规划/09 对应 CAP 逐个记下、且不含佣金权重；说不清的不进。本系统合并与混排时也不加

@@ -9,7 +9,7 @@
     "substring match against the words of specs/banned-words.yaml"
   ],
   "counts": {
-    "hit": 16,
+    "hit": 17,
     "pass": 3
   },
   "cases": [
@@ -123,9 +123,15 @@
     },
     {
       "input": "双11❤\ufe0f",
-      "note": "ledger example: emoji with variation selector; no banned word, passes",
+      "note": "AC-S1-90 ⑦: emoji with variation selector; no banned word, passes",
       "normalized": "双11",
       "hits": []
+    },
+    {
+      "input": "全网最低价",
+      "note": "two words at once: both 全网最低 and 最低价 are reported (hits lists every word found)",
+      "normalized": "全网最低价",
+      "hits": ["全网最低", "最低价"]
     }
   ]
 }
