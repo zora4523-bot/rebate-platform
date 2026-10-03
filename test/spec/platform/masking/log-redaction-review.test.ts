@@ -7,6 +7,9 @@
 // review-*-round{1,2,3}.json); the rule tests below pin each of them with kit.ts `expectLine`
 // (strict parse, hand-built expected record, toStrictEqual, the sensitive-name walk and the
 // plaintext search as a second net). "Level 1" is a field of the logged object or of a binding.
+// Round 2 of path B (2026-10-04, decision-orchestrator.md): the values of F and G are
+// confirmed; D is corrected to what pino writes for %j / %o / %O; K and L replace the two
+// known gaps of round 1 (binary values, non-Error values under err).
 //
 // A. toJSON, layer by layer. Wherever a value is written (a field at any depth, an array
 //    element, a printf argument, a Nest parameter, and also the logged object itself and the
@@ -19,22 +22,30 @@
 //    in arrays, printf arguments and the message argument, a wrapper is first unwrapped to its
 //    primitive and written by the rule for that primitive (so under msg / message / stack it is
 //    free text, under a sensitive name "[REDACTED]", elsewhere the primitive as it is). When the
-//    logged object itself or a binding is a wrapper, or its toJSON chain (A) ends in anything
-//    that is not an object (a primitive, a wrapper, a URL — see G), it contributes no field: the
-//    line is written as if {} had been passed.
-// C. BigInt. Under msg / message / stack (any depth, see E) a bigint is free text: its decimal
-//    text goes through the safety net and is written as a string. A bigint message argument is
-//    `msg` the same way. Under any other non-sensitive name it is written as a JSON number with
-//    every digit (999999999999999999999999999999n → 999999999999999999999999999999); the call
-//    neither throws nor loses the line.
+//    logged object itself or a binding is a wrapper, a binary value (K) or a URL (G), or its
+//    toJSON chain (A) ends in anything that is not such an object or a plain object (a
+//    primitive, a wrapper, a binary value, a URL), it contributes no field: the line is written
+//    as if {} had been passed.
+// C. BigInt. Under msg / message / stack (any depth, see E) and under err (see L) a bigint is
+//    free text: its decimal text goes through the safety net and is written as a string. A
+//    bigint message argument is `msg` the same way. Under any other non-sensitive name it is
+//    written as a JSON number with every digit (999999999999999999999999999999n →
+//    999999999999999999999999999999); the call neither throws nor loses the line.
 //    Functions. A function with a callable toJSON is written by A. Any other function is left
 //    out of an object and written as null in an array, as JSON.stringify does.
-// D. printf. %s of an Error is `<name>: <message>` (the safety net then applies to the whole
-//    msg); %s of any other object is the JSON text of its rule copy (the same text %j writes) —
-//    the caller's toString is never called; %s of a primitive is its text. A name or message
-//    getter that throws makes that %s "[Unserializable]". Every %<character> except %% consumes
-//    one argument (as pino's quick-format-unescaped does, including ones it does not expand,
-//    such as %x, which stays in the text); %% writes "%".
+// D. printf. Every argument is first replaced by its rule copy (the value these rules write).
+//    Then, as pino's quick-format-unescaped writes it:
+//      %s  an Error: `<name>: <message>`; any other value: its rule copy, a string, number,
+//          boolean or bigint copy as its text (no quotes), anything else as its JSON text (keys in
+//          insertion order). The caller's toString is never called. A name or message getter that
+//          throws makes that %s "[Unserializable]".
+//      %j, %o, %O  a string copy in single quotes, unescaped ('[Binary 16 bytes]',
+//          'text'); an undefined copy (a function without toJSON) leaves the placeholder in the
+//          text; anything else its JSON text.
+//      %d, %f  Number(copy); %i  Math.floor(Number(copy)); a null or undefined copy leaves the
+//          placeholder.
+//    Every %<character> except %% consumes one argument (including ones not expanded, such as
+//    %x, which stays in the text); %% writes "%". The safety net then applies to the whole msg.
 // E. Free text at any depth. Every string, number and bigint at any depth below a key named
 //    exactly msg, message or stack (inside arrays, nested arrays and nested objects) is free text
 //    and written as a string after the safety net; booleans and null stay as they are. A message
@@ -48,12 +59,11 @@
 //    is left out when the socket has none (Fastify inject). `url` is the route template that
 //    matched (Fastify routeOptions.url, e.g. /v1/users/:id); when no route matched it is the
 //    fixed string "[unmatched]". The raw path, the query string and the fragment are never
-//    written. (待编排会话确认: the template / "[unmatched]" values.)
+//    written.
 // G. A URL object (instanceof URL), wherever it is written below level 0, is the string
 //    origin + pathname: no userinfo, no query string, no fragment (https://x.example:8443/cb/path).
 //    This rule comes before A (URL's own toJSON returns the full href and is not used); under
 //    msg / message / stack the string is free text. As the logged object or a binding, see B.
-//    (待编排会话确认.)
 // H. A log call never throws because of a value. A getter that throws, a toJSON (or a getter of
 //    toJSON) that throws, and a serializer given to child() that throws are written as the string
 //    "[Unserializable]" at that place (a getter under a sensitive name is not even called: the
@@ -72,11 +82,20 @@
 // J. 18-digit ID numbers in free text: between the 17th digit and a final digit one space or
 //    hyphen-minus may stand; before a final X or x none may (11010519491231002 1 → one ID
 //    number; 11010519491231002 X → 17 digits, a bank card number, then " X" kept).
-//
-// Known gaps, registered here only (待编排会话定; no rule test pins them):
-//   - a Buffer is written by its toJSON ({"type":"Buffer","data":[…]}), so its bytes can be
-//     read back from the line;
-//   - { err: 13987654321n } writes err as the number 13987654321 (err is not a free-text key).
+// K. Binary values: a Buffer, any other TypedArray, a DataView, an ArrayBuffer or a
+//    SharedArrayBuffer is written as the string "[Binary <byteLength> bytes]" (the byteLength of
+//    that view or buffer, in decimal: Buffer.from('11010519491231002X') → "[Binary 18 bytes]"),
+//    never its content. This comes before A (Buffer's own toJSON is not used) and holds at every
+//    place a value is written: fields at any depth, arrays, toJSON results, Error properties,
+//    serializer output, bindings, the message argument, printf arguments (by D: %s writes the
+//    text, %j / %o / %O the text in single quotes) and Nest parameters. Under a sensitive name
+//    the value is still "[REDACTED]"; as the logged object or a binding, see B.
+// L. err. A value under a key named exactly err (at any depth, in the logged object and in
+//    bindings) that is not an Error is free text by E: strings, numbers and bigints at any depth
+//    below it go through the safety net and are written as strings ({ err: 13987654321n } →
+//    { err: "[REDACTED]" }; { err: { status: 500 } } → { err: { status: "500" } }). An Error under
+//    err is written by the Error rule as before (its own properties other than message and stack
+//    are not free text).
 //
 // Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
@@ -634,7 +653,7 @@ it('[BR-ID-33] 日志（评审补充 H）：getter、toJSON、toJSON 的 getter�
   });
   expectLine(lines[6], {
     level: 30,
-    msg: `bad "${UNSERIALIZABLE}" and ["${UNSERIALIZABLE}"]`,
+    msg: `bad ${UNSERIALIZABLE} and ["${UNSERIALIZABLE}"]`,
   });
   expectLine(fresh.lines[0], { level: 30, ...written, msg: 'set' });
   expect(sensitiveGetterCalls).toBe(0);
@@ -808,7 +827,7 @@ it('[BR-ID-33] 日志（评审补充 G）：URL 对象写 origin + pathname（�
     msg: 'urls',
   });
   expectLine(lines[1], { level: 30, link: written, msg: 'bound' });
-  expectLine(lines[2], { level: 30, msg: `redirect "${written}" then ["${written}"]` });
+  expectLine(lines[2], { level: 30, msg: `redirect ${written} then ["${written}"]` });
   expectLine(nestCapture.lines[0], {
     level: 40,
     context: 'Callback',
@@ -817,4 +836,169 @@ it('[BR-ID-33] 日志（评审补充 G）：URL 对象写 origin + pathname（�
   });
   expectChannels(throughChannels(link, 'wrap'), 'wrap', {}, written);
   expect(link.username).toBe('ops');
+});
+
+it('[BR-ID-33] 日志（评审补充 D，第 2 轮）：%j、%o、%O 按 pino 的写法：字符串规则副本写单引号、不转义，没有规则副本的函数保留占位符，其余写 JSON；%d 写数字；整条 msg 再过安全网', () => {
+  const { logger, lines } = capture();
+  const fail = (): never => {
+    throw new Error(PHONE_TEXT);
+  };
+  loose(logger)(
+    'a %j b %j c %o d %d e %O f %j',
+    `text ${PHONE_TEXT}`,
+    (): void => undefined,
+    { phone: SAMPLES.phone, n: 1 },
+    Number(SAMPLES.phone),
+    { toJSON: fail },
+    [Object(PHONE_TEXT) as object, null],
+  );
+  expect(lines).toHaveLength(1);
+  expectLine(lines[0], {
+    level: 30,
+    msg:
+      `a 'text ${PHONE_SCRUBBED}' b %j c {"phone":"[REDACTED]","n":1} d ${REDACTED} ` +
+      `e '${UNSERIALIZABLE}' f ["${PHONE_TEXT}",null]`.replace(PHONE_TEXT, PHONE_SCRUBBED),
+  });
+});
+
+/** A fresh ArrayBuffer (not Node's shared pool) holding the UTF-8 bytes of `text`. */
+function ownBytes(text: string): ArrayBuffer {
+  return Uint8Array.from(Buffer.from(text, 'utf8')).buffer;
+}
+
+function binary(bytes: number): string {
+  return `[Binary ${String(bytes)} bytes]`;
+}
+
+it('[BR-ID-33] 日志（评审补充 K）：Buffer、TypedArray、DataView、ArrayBuffer、SharedArrayBuffer 在任意深度、数组、toJSON 返回值、错误属性、序列化器输出与绑定里只写 [Binary <字节数> bytes]，敏感名下仍是 [REDACTED]', () => {
+  const { logger, lines } = capture();
+  const failure = Object.assign(new Error('upload failed'), {
+    body: Buffer.from(SAMPLES.alipayEmail, 'utf8'),
+  });
+  logger.info(
+    {
+      payload: Buffer.from(SAMPLES.idNo, 'utf8'),
+      view: new Uint8Array(ownBytes(SAMPLES.bankCard)),
+      raw: ownBytes(SAMPLES.realName),
+      window: new DataView(ownBytes(SAMPLES.phone), 2, 5),
+      floats: new Float64Array([Number(SAMPLES.phone)]),
+      shared: new SharedArrayBuffer(4),
+      list: [Buffer.from(SAMPLES.cardNo, 'utf8')],
+      message: Buffer.from(PHONE_TEXT, 'utf8'),
+      id_no: Buffer.from(SAMPLES.idNo, 'utf8'),
+      holder: { toJSON: (): unknown => Buffer.from(SAMPLES.payeeName, 'utf8') },
+      failure,
+    },
+    'binary',
+  );
+  logger
+    .child({ upload: new Uint16Array(3) }, { serializers: { body: (body: unknown) => body } })
+    .info({ body: Buffer.from(SAMPLES.contactPhone, 'utf8') }, 'serialized');
+  expect(lines).toHaveLength(2);
+  expectLine(lines[0], {
+    level: 30,
+    payload: binary(18),
+    view: binary(19),
+    raw: binary(9),
+    window: binary(5),
+    floats: binary(8),
+    shared: binary(4),
+    list: [binary(16)],
+    message: binary(20),
+    id_no: REDACTED,
+    holder: binary(12),
+    failure: errorShape('Error', failure, { body: binary(23) }),
+    msg: 'binary',
+  });
+  expectLine(lines[1], { level: 30, upload: binary(6), body: binary(11), msg: 'serialized' });
+  expectChannels(
+    throughChannels(Buffer.from(SAMPLES.idNo, 'utf8'), 'wrap'),
+    'wrap',
+    {},
+    binary(18),
+  );
+  expectChannels(
+    throughChannels(new Uint8Array(ownBytes(SAMPLES.bankCard)), 'message'),
+    'message',
+    {},
+    binary(19),
+  );
+});
+
+it('[BR-ID-33] 日志（评审补充 K）：二进制值作消息参数、printf 参数（%s、%j、%o、%O）与 Nest 的消息和参数时同样只写 [Binary <字节数> bytes]', () => {
+  const { logger, lines } = capture();
+  const log = loose(logger);
+  const card = Buffer.from(SAMPLES.cardNo, 'utf8');
+  log('body %s, %j, %o, %O', card, card, new Uint8Array(ownBytes(SAMPLES.idNo15)), [
+    card,
+    ownBytes(SAMPLES.realName),
+  ]);
+  log({ order_id: KEPT.order_id }, Buffer.from(PHONE_TEXT, 'utf8'));
+  const nestCapture = capture();
+  const adapter = new PinoNestLogger(nestCapture.logger);
+  adapter.warn('upload', Buffer.from(SAMPLES.idNo, 'utf8'), 'Upload');
+  adapter.log(Buffer.from(SAMPLES.idNo, 'utf8'), 'Upload');
+  expect({ lines: lines.length, nest: nestCapture.lines.length }).toEqual({ lines: 2, nest: 2 });
+  expectLine(lines[0], {
+    level: 30,
+    msg: `body ${binary(16)}, '${binary(16)}', '${binary(15)}', ["${binary(16)}","${binary(9)}"]`,
+  });
+  expectLine(lines[1], { level: 30, order_id: KEPT.order_id, msg: binary(20) });
+  expectLine(nestCapture.lines[0], {
+    level: 40,
+    context: 'Upload',
+    params: [binary(18)],
+    msg: 'upload',
+  });
+  expectLine(nestCapture.lines[1], { level: 30, context: 'Upload', msg: `"${binary(18)}"` });
+});
+
+it('[BR-ID-33] 日志（评审补充 L）：err 键下不是 Error 的值（字符串、数字、bigint、数组、普通对象）按自由文本写，任意深度与绑定里一样；err 下的 Error 仍按错误规则写', () => {
+  const { logger, lines } = capture();
+  const coded = Object.assign(new Error('boom'), { code: 500 });
+  logger.error({ err: BigInt(SAMPLES.phone) }, 'bigint');
+  logger.error({ err: Number(SAMPLES.phone) }, 'number');
+  logger.error({ err: `payout failed ${PHONE_TEXT}` }, 'string');
+  logger.error({ err: [PHONE_TEXT, 500, true] }, 'array');
+  logger.error(
+    {
+      err: {
+        code: 'E_PAYEE',
+        status: 500,
+        detail: { contact: SAMPLES.phone, list: [BigInt(SAMPLES.phone)] },
+        ok: true,
+        phone: SAMPLES.phone,
+      },
+    },
+    'object',
+  );
+  logger.warn({ ctx: { err: BigInt(SAMPLES.phone) } }, 'nested');
+  logger.child({ err: PHONE_TEXT }).info('bound');
+  logger.error({ err: coded }, 'error');
+  logger.child({}).child({ user_id: KEPT.user_id }).error({ err: coded }, 'grandchild error');
+  expect(lines).toHaveLength(9);
+  expectLine(lines[0], { level: 50, err: REDACTED, msg: 'bigint' });
+  expectLine(lines[1], { level: 50, err: REDACTED, msg: 'number' });
+  expectLine(lines[2], { level: 50, err: `payout failed ${PHONE_SCRUBBED}`, msg: 'string' });
+  expectLine(lines[3], { level: 50, err: [PHONE_SCRUBBED, '500', true], msg: 'array' });
+  expectLine(lines[4], {
+    level: 50,
+    err: {
+      code: 'E_PAYEE',
+      status: '500',
+      detail: { contact: REDACTED, list: [REDACTED] },
+      ok: true,
+      phone: REDACTED,
+    },
+    msg: 'object',
+  });
+  expectLine(lines[5], { level: 40, ctx: { err: REDACTED }, msg: 'nested' });
+  expectLine(lines[6], { level: 30, err: PHONE_SCRUBBED, msg: 'bound' });
+  expectLine(lines[7], { level: 50, err: errorShape('Error', coded, { code: 500 }), msg: 'error' });
+  expectLine(lines[8], {
+    level: 50,
+    user_id: KEPT.user_id,
+    err: errorShape('Error', coded, { code: 500 }),
+    msg: 'grandchild error',
+  });
 });
