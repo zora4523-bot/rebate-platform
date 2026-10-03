@@ -23,6 +23,31 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface DeviceRegistrations {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  device_hash: string;
+  merged_into_user_id: string | null;
+  register_method: string;
+  user_id: string;
+}
+
+export interface Devices {
+  app_id: string;
+  app_version: string;
+  created_at: Generated<Timestamp>;
+  device_hash: string;
+  id: string;
+  id_source: string;
+  install_secret_hash: string;
+  last_login_sid: string | null;
+  last_seen_at: Timestamp;
+  platform: string;
+  revoked_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
 export interface EventLog {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -48,14 +73,66 @@ export interface IdempotencyKeys {
   user_id: string | null;
 }
 
+export interface LoginLogs {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  device_id_hash: string;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  ip: string;
+  method: string;
+  user_id: string;
+}
+
 export interface ProcessedEvents {
   consumer: string;
   created_at: Generated<Timestamp>;
   event_id: string;
 }
 
+export interface UserOauth {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  merged_from_user_id: string | null;
+  open_id: string | null;
+  provider: string;
+  union_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface Users {
+  app_id: string;
+  attr_code: string;
+  avatar: string;
+  created_at: Generated<Timestamp>;
+  deleted_reason: string | null;
+  id: string;
+  invite_code: string;
+  level: string;
+  nickname: string;
+  nickname_change_count: Generated<number>;
+  nickname_change_month: string | null;
+  parent_bind_source: string | null;
+  parent_bound_at: Timestamp | null;
+  parent_id: string | null;
+  personalization_off: Generated<boolean>;
+  phone_cipher: Buffer | null;
+  phone_hmac: string | null;
+  register_method: string;
+  registered_channel: string | null;
+  self_bind_used: Generated<boolean>;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DB {
+  device_registrations: DeviceRegistrations;
+  devices: Devices;
   event_log: EventLog;
   idempotency_keys: IdempotencyKeys;
+  login_logs: LoginLogs;
   processed_events: ProcessedEvents;
+  user_oauth: UserOauth;
+  users: Users;
 }

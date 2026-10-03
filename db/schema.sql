@@ -133,6 +133,29 @@ $$;
 
 
 --
+-- Name: reject_device_registration_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_device_registration_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.merged_into_user_id IS NOT NULL
+    OR NEW.merged_into_user_id IS NULL
+    OR ROW(NEW.app_id, NEW.device_hash, NEW.user_id, NEW.register_method, NEW.created_at)
+      IS DISTINCT FROM
+      ROW(OLD.app_id, OLD.device_hash, OLD.user_id, OLD.register_method, OLD.created_at)
+  THEN
+    RAISE EXCEPTION 'device_registrations only permits setting an empty merge target once'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_update_delete(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -376,6 +399,45 @@ CREATE FUNCTION pgboss.job_table_run_async(command_name text, version integer, c
 
 SET default_tablespace = '';
 
+SET default_table_access_method = heap;
+
+--
+-- Name: device_registrations; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.device_registrations (
+    app_id text NOT NULL,
+    device_hash text NOT NULL,
+    user_id uuid NOT NULL,
+    register_method text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    merged_into_user_id uuid
+);
+
+
+--
+-- Name: devices; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.devices (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid,
+    device_hash text NOT NULL,
+    id_source text NOT NULL,
+    install_secret_hash text NOT NULL,
+    platform text NOT NULL,
+    app_version text NOT NULL,
+    last_login_sid text,
+    revoked_at timestamp with time zone,
+    last_seen_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT devices_device_hash_check CHECK ((device_hash ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT devices_id_source_check CHECK ((id_source = ANY (ARRAY['idfv'::text, 'android_id'::text, 'oaid'::text, 'odid'::text])))
+);
+
+
 --
 -- Name: event_log; Type: TABLE; Schema: app; Owner: -
 --
@@ -391,8 +453,6 @@ CREATE TABLE app.event_log (
 )
 PARTITION BY RANGE (occurred_at);
 
-
-SET default_table_access_method = heap;
 
 --
 -- Name: event_log_default; Type: TABLE; Schema: app; Owner: -
@@ -460,6 +520,35 @@ ALTER TABLE app.idempotency_keys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTIT
 
 
 --
+-- Name: login_logs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.login_logs (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    device_id_hash text NOT NULL,
+    ip inet NOT NULL,
+    method text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: login_logs_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.login_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.login_logs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: processed_events; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -467,6 +556,55 @@ CREATE TABLE app.processed_events (
     consumer text NOT NULL,
     event_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: user_oauth; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.user_oauth (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    provider text NOT NULL,
+    union_id text NOT NULL,
+    open_id text,
+    merged_from_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT user_oauth_provider_check CHECK ((provider = ANY (ARRAY['wechat'::text, 'apple'::text, 'huawei'::text])))
+);
+
+
+--
+-- Name: users; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.users (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    phone_cipher bytea,
+    phone_hmac text,
+    nickname text NOT NULL,
+    avatar text NOT NULL,
+    nickname_change_month text,
+    nickname_change_count integer DEFAULT 0 NOT NULL,
+    invite_code text NOT NULL,
+    attr_code text NOT NULL,
+    parent_id uuid,
+    parent_bind_source text,
+    parent_bound_at timestamp with time zone,
+    self_bind_used boolean DEFAULT false NOT NULL,
+    level text NOT NULL,
+    status text DEFAULT 'normal'::text NOT NULL,
+    deleted_reason text,
+    personalization_off boolean DEFAULT false NOT NULL,
+    register_method text NOT NULL,
+    registered_channel text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT users_nickname_change_month_check CHECK ((nickname_change_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text))
 );
 
 
@@ -751,6 +889,22 @@ ALTER TABLE ONLY public.pgmigrations ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: device_registrations device_registrations_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.device_registrations
+    ADD CONSTRAINT device_registrations_pkey PRIMARY KEY (app_id, user_id);
+
+
+--
+-- Name: devices devices_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.devices
+    ADD CONSTRAINT devices_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: event_log event_log_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -783,11 +937,75 @@ ALTER TABLE ONLY app.idempotency_keys
 
 
 --
+-- Name: login_logs login_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.login_logs
+    ADD CONSTRAINT login_logs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: processed_events processed_events_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
 ALTER TABLE ONLY app.processed_events
     ADD CONSTRAINT processed_events_pkey PRIMARY KEY (consumer, event_id);
+
+
+--
+-- Name: user_oauth user_oauth_identity_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_oauth
+    ADD CONSTRAINT user_oauth_identity_key UNIQUE (app_id, provider, union_id);
+
+
+--
+-- Name: user_oauth user_oauth_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_oauth
+    ADD CONSTRAINT user_oauth_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_oauth user_oauth_user_provider_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_oauth
+    ADD CONSTRAINT user_oauth_user_provider_key UNIQUE (app_id, user_id, provider);
+
+
+--
+-- Name: users users_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.users
+    ADD CONSTRAINT users_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: users users_attr_code_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.users
+    ADD CONSTRAINT users_attr_code_key UNIQUE (app_id, attr_code);
+
+
+--
+-- Name: users users_invite_code_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.users
+    ADD CONSTRAINT users_invite_code_key UNIQUE (app_id, invite_code);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
 
 
 --
@@ -879,6 +1097,13 @@ ALTER TABLE ONLY public.pgmigrations
 
 
 --
+-- Name: device_registrations_device_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX device_registrations_device_created_idx ON app.device_registrations USING btree (app_id, device_hash, created_at);
+
+
+--
 -- Name: event_log_event_id_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -890,6 +1115,13 @@ CREATE INDEX event_log_event_id_idx ON ONLY app.event_log USING btree (event_id)
 --
 
 CREATE INDEX event_log_default_event_id_idx ON app.event_log_default USING btree (event_id);
+
+
+--
+-- Name: users_phone_hmac_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX users_phone_hmac_key ON app.users USING btree (app_id, phone_hmac) WHERE (status <> 'deleted'::text);
 
 
 --
@@ -1005,10 +1237,73 @@ ALTER INDEX pgboss.job_pkey ATTACH PARTITION pgboss.job_common_pkey;
 
 
 --
+-- Name: device_registrations device_registrations_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER device_registrations_no_rewrite BEFORE UPDATE ON app.device_registrations FOR EACH ROW EXECUTE FUNCTION app.reject_device_registration_rewrite();
+
+
+--
 -- Name: event_log event_log_append_only; Type: TRIGGER; Schema: app; Owner: -
 --
 
 CREATE TRIGGER event_log_append_only BEFORE DELETE OR UPDATE ON app.event_log FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: device_registrations device_registrations_merged_into_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.device_registrations
+    ADD CONSTRAINT device_registrations_merged_into_fkey FOREIGN KEY (app_id, merged_into_user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: device_registrations device_registrations_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.device_registrations
+    ADD CONSTRAINT device_registrations_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: devices devices_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.devices
+    ADD CONSTRAINT devices_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: login_logs login_logs_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.login_logs
+    ADD CONSTRAINT login_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: user_oauth user_oauth_merged_from_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_oauth
+    ADD CONSTRAINT user_oauth_merged_from_fkey FOREIGN KEY (app_id, merged_from_user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: user_oauth user_oauth_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_oauth
+    ADD CONSTRAINT user_oauth_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: users users_parent_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.users
+    ADD CONSTRAINT users_parent_fkey FOREIGN KEY (app_id, parent_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -1078,10 +1373,75 @@ GRANT ALL ON FUNCTION app.ensure_month_partition(p_table text, p_month date) TO 
 
 
 --
+-- Name: FUNCTION reject_device_registration_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_device_registration_rewrite() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION reject_update_delete(); Type: ACL; Schema: app; Owner: -
 --
 
 REVOKE ALL ON FUNCTION app.reject_update_delete() FROM PUBLIC;
+
+
+--
+-- Name: TABLE device_registrations; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT ON TABLE app.device_registrations TO couli_app;
+GRANT SELECT ON TABLE app.device_registrations TO couli_readonly;
+
+
+--
+-- Name: COLUMN device_registrations.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(app_id) ON TABLE app.device_registrations TO couli_app;
+
+
+--
+-- Name: COLUMN device_registrations.device_hash; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(device_hash) ON TABLE app.device_registrations TO couli_app;
+
+
+--
+-- Name: COLUMN device_registrations.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(user_id) ON TABLE app.device_registrations TO couli_app;
+
+
+--
+-- Name: COLUMN device_registrations.register_method; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(register_method) ON TABLE app.device_registrations TO couli_app;
+
+
+--
+-- Name: COLUMN device_registrations.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(created_at) ON TABLE app.device_registrations TO couli_app;
+
+
+--
+-- Name: COLUMN device_registrations.merged_into_user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(merged_into_user_id) ON TABLE app.device_registrations TO couli_app;
+
+
+--
+-- Name: TABLE devices; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.devices TO couli_app;
+GRANT SELECT ON TABLE app.devices TO couli_readonly;
 
 
 --
@@ -1102,12 +1462,36 @@ GRANT SELECT ON TABLE app.idempotency_keys TO couli_readonly;
 
 
 --
+-- Name: TABLE login_logs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.login_logs TO couli_app;
+GRANT SELECT ON TABLE app.login_logs TO couli_readonly;
+
+
+--
 -- Name: TABLE processed_events; Type: ACL; Schema: app; Owner: -
 --
 
 GRANT SELECT,INSERT ON TABLE app.processed_events TO couli_app;
 GRANT SELECT,INSERT ON TABLE app.processed_events TO couli_payout;
 GRANT SELECT ON TABLE app.processed_events TO couli_readonly;
+
+
+--
+-- Name: TABLE user_oauth; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.user_oauth TO couli_app;
+GRANT SELECT ON TABLE app.user_oauth TO couli_readonly;
+
+
+--
+-- Name: TABLE users; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.users TO couli_app;
+GRANT SELECT ON TABLE app.users TO couli_readonly;
 
 
 --
