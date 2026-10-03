@@ -100,6 +100,32 @@ function expectedPool(
   };
 }
 
+/** What loadConnectionConfig must return for a complete environment, written out by hand. */
+function expectedConfig(entry: Entry, env: Record<VarName, string>): unknown {
+  const sizes = SIZES[entry];
+  return {
+    plain: true,
+    frozen: true,
+    keys: ['db', 'dbRead', 'entry', 'redisUrl'],
+    entry,
+    db: expectedPool('db', env.DATABASE_URL, pgRedactedOf('couli_app'), sizes.db, `couli-${entry}`),
+    dbRead:
+      entry === 'admin'
+        ? expectedPool(
+            'dbRead',
+            env.DATABASE_READ_URL,
+            pgRedactedOf('couli_readonly'),
+            5,
+            'couli-admin-read',
+          )
+        : null,
+    redisUrl:
+      entry === 'payout'
+        ? null
+        : { isConnectionUrl: true, redacted: REDIS_REDACTED, reveal: env.REDIS_URL },
+  };
+}
+
 for (const entry of ENTRIES) {
   it(`[ADR-0001 §4.2 #11, #20; ADR-0002 §5] ${entry}：变量齐全时得到确切的连接配置——主库池大小 ${String(SIZES[entry].db)}${entry === 'admin' ? '、只读池 5' : '、没有 dbRead'}${entry === 'payout' ? '、不带 Redis' : ''}，POOL_SIZES 同值且冻结`, () => {
     const { env } = urlsOf(`config.${entry}`);
@@ -111,33 +137,7 @@ for (const entry of ENTRIES) {
     }).toStrictEqual({
       poolSizes: sizes,
       frozen: true,
-      config: {
-        plain: true,
-        frozen: true,
-        keys: ['db', 'dbRead', 'entry', 'redisUrl'],
-        entry,
-        db: expectedPool(
-          'db',
-          env.DATABASE_URL,
-          pgRedactedOf('couli_app'),
-          sizes.db,
-          `couli-${entry}`,
-        ),
-        dbRead:
-          entry === 'admin'
-            ? expectedPool(
-                'dbRead',
-                env.DATABASE_READ_URL,
-                pgRedactedOf('couli_readonly'),
-                5,
-                'couli-admin-read',
-              )
-            : null,
-        redisUrl:
-          entry === 'payout'
-            ? null
-            : { isConnectionUrl: true, redacted: REDIS_REDACTED, reveal: env.REDIS_URL },
-      },
+      config: expectedConfig(entry, env),
     });
   });
 }
@@ -367,12 +367,13 @@ for (const entry of ENTRIES) {
     for (const name of ignoredBy(entry)) extra[name] = junk;
     const withGoodIgnored: Record<string, string> = { ...plain };
     for (const name of ignoredBy(entry)) withGoodIgnored[name] = env[name];
-    const reference = view(() => loadConnectionConfig(entry, plain));
+    // The expectation is written out by hand, never taken from the function under test.
+    const expected = expectedConfig(entry, env);
     expect({
+      plain: view(() => loadConnectionConfig(entry, plain)),
       junk: view(() => loadConnectionConfig(entry, { ...plain, ...extra })),
       good: view(() => loadConnectionConfig(entry, withGoodIgnored)),
-      referenceOk: typeof reference === 'object',
-    }).toStrictEqual({ junk: reference, good: reference, referenceOk: true });
+    }).toStrictEqual({ plain: expected, junk: expected, good: expected });
   });
 }
 
