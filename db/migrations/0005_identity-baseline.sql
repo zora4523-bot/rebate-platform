@@ -18,6 +18,16 @@
 -- app_id is text, consistent with 0003; the apps table does not exist yet. Its foreign
 -- keys belong to the later apps baseline migration. User references include app_id.
 -- All five tables are unpartitioned (ADR-0001 §4.2 #5). Retention deletion is a later task.
+--
+-- CAS (ADR-0001 §4.1 / 规划/02 §18): users has mutable account status; devices has
+-- mutable session/revocation state; user_oauth has mutable identity ownership on merge.
+-- These entities start row_version at 0; writers must compare the old state and version
+-- and increment row_version in the same UPDATE. No trigger performs state transitions.
+-- login_logs is insert-only, so needs no row_version. device_registrations has no mutable
+-- lifecycle status: its only UPDATE fills a NULL merge target once, guarded below under
+-- the row lock; there is no repeatable transition or version field to update.
+-- device_registrations.created_at uses only the database default: couli_app cannot insert
+-- or update it, preventing backdating a registration outside the BR-ID-05 counting window.
 
 CREATE TABLE app.users (
   id                    uuid NOT NULL,
@@ -36,6 +46,7 @@ CREATE TABLE app.users (
   self_bind_used        boolean NOT NULL DEFAULT false,
   level                 text NOT NULL,
   status                text NOT NULL DEFAULT 'normal',
+  row_version           integer NOT NULL DEFAULT 0,
   deleted_reason        text,
   personalization_off   boolean NOT NULL DEFAULT false,
   register_method       text NOT NULL,
@@ -69,6 +80,7 @@ CREATE TABLE app.devices (
   last_login_sid      text,
   revoked_at          timestamptz,
   last_seen_at        timestamptz NOT NULL,
+  row_version         integer NOT NULL DEFAULT 0,
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT devices_pkey PRIMARY KEY (id),
@@ -86,6 +98,7 @@ CREATE TABLE app.user_oauth (
   union_id            text NOT NULL,
   open_id             text,
   merged_from_user_id  uuid,
+  row_version         integer NOT NULL DEFAULT 0,
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT user_oauth_pkey PRIMARY KEY (id),
@@ -161,7 +174,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON app.users, app.devices, app.user_oauth T
 GRANT SELECT, INSERT ON app.login_logs TO couli_app;
 GRANT SELECT ON app.device_registrations TO couli_app;
 -- A new registration starts with no merge target; only the later one-time UPDATE can set it.
-GRANT INSERT (app_id, device_hash, user_id, register_method, created_at)
+GRANT INSERT (app_id, device_hash, user_id, register_method)
   ON app.device_registrations TO couli_app;
 GRANT UPDATE (merged_into_user_id) ON app.device_registrations TO couli_app;
 GRANT SELECT ON app.users, app.devices, app.user_oauth, app.login_logs, app.device_registrations

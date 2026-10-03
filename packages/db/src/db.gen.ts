@@ -44,6 +44,7 @@ export interface Devices {
   last_seen_at: Timestamp;
   platform: string;
   revoked_at: Timestamp | null;
+  row_version: Generated<number>;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
 }
@@ -96,6 +97,7 @@ export interface UserOauth {
   merged_from_user_id: string | null;
   open_id: string | null;
   provider: string;
+  row_version: Generated<number>;
   union_id: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
@@ -121,6 +123,7 @@ export interface Users {
   phone_hmac: string | null;
   register_method: string;
   registered_channel: string | null;
+  row_version: Generated<number>;
   self_bind_used: Generated<boolean>;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;

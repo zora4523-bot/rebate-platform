@@ -431,6 +431,7 @@ CREATE TABLE app.devices (
     last_login_sid text,
     revoked_at timestamp with time zone,
     last_seen_at timestamp with time zone NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT devices_device_hash_check CHECK ((device_hash ~ '^[0-9a-f]{64}$'::text)),
@@ -571,6 +572,7 @@ CREATE TABLE app.user_oauth (
     union_id text NOT NULL,
     open_id text,
     merged_from_user_id uuid,
+    row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT user_oauth_provider_check CHECK ((provider = ANY (ARRAY['wechat'::text, 'apple'::text, 'huawei'::text])))
@@ -598,6 +600,7 @@ CREATE TABLE app.users (
     self_bind_used boolean DEFAULT false NOT NULL,
     level text NOT NULL,
     status text DEFAULT 'normal'::text NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
     deleted_reason text,
     personalization_off boolean DEFAULT false NOT NULL,
     register_method text NOT NULL,
@@ -1420,13 +1423,6 @@ GRANT INSERT(user_id) ON TABLE app.device_registrations TO couli_app;
 --
 
 GRANT INSERT(register_method) ON TABLE app.device_registrations TO couli_app;
-
-
---
--- Name: COLUMN device_registrations.created_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT INSERT(created_at) ON TABLE app.device_registrations TO couli_app;
 
 
 --
