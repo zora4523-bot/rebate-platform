@@ -347,9 +347,17 @@ export function createDbHandles(config: ConnectionConfig, options: DbHandlesOpti
   let closing = false;
   let closed: Promise<void> | undefined;
   const pools: ManagedPool[] = [];
-  const make = (settings: DbPoolConfig): Kysely<DB> =>
-    createDb({
-      connectionString: settings.url.reveal(),
+  const make = (settings: DbPoolConfig): Kysely<DB> => {
+    const url = new URL(settings.url.reveal());
+    if (settings.readOnly) {
+      // pg gives URL options precedence over pool options. The last startup setting wins
+      // and becomes the RESET / DISCARD default, unlike a session-level SET alone.
+      const original = url.searchParams.getAll('options').at(-1) ?? '';
+      // Two spaces keep the separator intact even if the original ends in a backslash.
+      url.searchParams.set('options', `${original}  -c default_transaction_read_only=on`);
+    }
+    return createDb({
+      connectionString: url.href,
       max: settings.max,
       applicationName: settings.applicationName,
       poolFactory(poolConfig) {
@@ -358,6 +366,7 @@ export function createDbHandles(config: ConnectionConfig, options: DbHandlesOpti
         return managed.adapter;
       },
     });
+  };
   const db = make(config.db);
   const dbRead = config.dbRead === null ? null : make(config.dbRead);
   return Object.freeze({
@@ -400,6 +409,7 @@ function managePool(
   const ready = new WeakSet<pg.Client>();
   const failed = new WeakSet<pg.Client>();
   const leases = new Map<pg.Client, (destroy?: boolean) => void>();
+  const borrowed = new Set<pg.Client>();
   const pending = new Set<(error: Error) => void>();
   let forcing = false;
   let ending: Promise<void> | undefined;
@@ -465,6 +475,7 @@ function managePool(
               if (released) return;
               released = true;
               leases.delete(client);
+              borrowed.delete(client);
               release(destroy || failed.has(client));
             };
             leases.set(client, client.release);
@@ -493,6 +504,7 @@ function managePool(
                   client.release(true);
                   reject(new DbError('closed'));
                 } else {
+                  borrowed.add(client);
                   resolve(client);
                 }
               },
@@ -508,20 +520,18 @@ function managePool(
       end,
     },
     end,
-    async forceClose() {
-      const busy = pool.totalCount - pool.idleCount;
+    forceClose() {
+      // Connecting and initializing clients have not been handed to a caller yet.
+      const busy = borrowed.size;
       if (busy > 0) logger.warn({ pool: settings.name, busy }, 'db_close_timeout');
       forcing = true;
-      const live = [...clients];
-      // end() interrupts queries and PG rolls back; release lets pool.end finish even if
-      // a transaction callback never returns. Later Kysely releases are harmless.
-      await Promise.allSettled(
-        live.map(async (client) => {
-          const ended = client.end();
-          leases.get(client)?.(true);
-          await ended;
-        }),
-      );
+      // end() can wait for the peer's FIN forever, including during connection setup.
+      // Destroy every live socket locally; neither end() nor socket 'end' is awaited.
+      for (const client of clients) {
+        client.connection.stream.destroy();
+        leases.get(client)?.(true);
+      }
+      return Promise.resolve();
     },
   };
 }
