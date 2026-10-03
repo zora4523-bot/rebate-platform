@@ -20,6 +20,21 @@ function isObj(v: unknown): v is Obj {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/**
+ * A lower-case dotted domain name that a URL parser keeps as it is: no single label, no IPv4 in
+ * any notation (0x7f.1, 127.1 …) and no IPv6.
+ */
+function isDomainName(h: string): boolean {
+  if (!HOST.test(h) || !h.includes('.')) return false;
+  let parsed: string;
+  try {
+    parsed = new URL(`https://${h}/`).hostname;
+  } catch {
+    return false;
+  }
+  return parsed === h && !/^[0-9.]+$/.test(parsed) && !/^[0-9]+$/.test(h.split('.').at(-1) ?? '');
+}
+
 function covers(domain: string, host: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
 }
@@ -90,7 +105,7 @@ function checkTable(doc: unknown, enums: readonly EnumDef[], where: string): str
       problems.push(`${at}: hosts must be a non-empty list`);
     } else {
       for (const h of hosts) {
-        if (typeof h !== 'string' || !HOST.test(h) || !h.includes('.') || /^[0-9.]+$/.test(h)) {
+        if (typeof h !== 'string' || !isDomainName(h)) {
           problems.push(
             `${at}: host ${JSON.stringify(h)} is not a lower-case domain name with a dot (no IP)`,
           );

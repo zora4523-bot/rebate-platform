@@ -5,9 +5,9 @@
     "frame": "initial (first URL the container opens) | main | subframe | new_window",
     "switches": "features.flags external_page.union_host_block (null = unreadable, treated as on) and external_page.product_intercept",
     "basic_mode": "basic mode (BR-ID-01): no device signature, inputs/parse cannot be called",
-    "download": "the response of an allowed navigation is a download (attachment, unrenderable type); a blob: or data: URL is already cancelled by its scheme",
+    "download": "the request is a download (attachment, unrenderable type, blob: or data: download); a download is always cancelled and carries the download notice, a non-download blob: or data: navigation is cancelled without notice",
     "order": "scheme (only https) → well-formed https URL (no user info, parsable; otherwise cancel, fail closed) → rule table: union_host hit with a product hit, top-level frame, product_intercept on and not basic mode → parse; other union_host hits → block while union_host_block is on (null = on) → download → allow",
-    "matching": "host lower-cased, trailing dot removed, port ignored; path decoded once (valid %XX only, other % kept literally), case-sensitive, ** matches anything including newlines",
+    "matching": "host lower-cased, trailing dot removed, port ignored; path decoded once (valid %XX only, other % kept literally; the decoded bytes are read as UTF-8 and invalid sequences become U+FFFD), case-sensitive, ** matches anything including newlines",
     "tables": "which rule tables the client has, in the order current (/v1/config.link_patterns) → last_good → bundled"
   },
   "outputs": {
@@ -503,7 +503,7 @@
       }
     },
     {
-      "note": "both switches off: product page loads (only after option B)",
+      "note": "both switches off: product page loads. Derived from 08 (union_host_block governs ① and ②(b), product_intercept only ②(a)); to be re-checked when option B is written back, since 08 also says platform pages are never loaded directly",
       "url": "https://item.shop-a.test/item.htm",
       "frame": "main",
       "switches": {
@@ -1043,7 +1043,7 @@
       }
     },
     {
-      "note": "blob: download is cancelled",
+      "note": "blob: download is cancelled with the download notice",
       "url": "blob:https://www.brand.test/uuid",
       "frame": "main",
       "switches": {
@@ -1055,7 +1055,43 @@
       "tables": ["current", "last_good", "bundled"],
       "expected": {
         "action": "cancel",
-        "notice": null,
+        "notice": "download",
+        "parse_url": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "data: download is cancelled with the download notice",
+      "url": "data:application/octet-stream;base64,AAAA",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": true,
+      "tables": ["current", "last_good", "bundled"],
+      "expected": {
+        "action": "cancel",
+        "notice": "download",
+        "parse_url": null,
+        "table_used": "current"
+      }
+    },
+    {
+      "note": "invalid UTF-8 after decoding (%FF) becomes U+FFFD and matches nothing more specific; the union_host domain still blocks",
+      "url": "https://item.shop-a.test/%FF.htm",
+      "frame": "main",
+      "switches": {
+        "union_host_block": true,
+        "product_intercept": true
+      },
+      "basic_mode": false,
+      "download": false,
+      "tables": ["current", "last_good", "bundled"],
+      "expected": {
+        "action": "block",
+        "notice": "union_host_blocked",
         "parse_url": null,
         "table_used": "current"
       }
