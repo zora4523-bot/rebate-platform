@@ -23,5 +23,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/db/idempotency-keys/**'
-status: todo
-pr: null
+status: done
+pr: 22
