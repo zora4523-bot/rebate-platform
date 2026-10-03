@@ -8,8 +8,10 @@
 #                    {type, required | required_when, values?, note?}
 #     type           string / integer / boolean / enum（enum 时 values 列出取值，取值一律是字符串）
 #     required       true / false；required_when 写成 {字段: 取值}，表示那个字段取该值时必填
-#     事件名只用小写字母、数字、下划线；族里的事件写成「族名.事件」（如 funnel_first_order.click_buy），族名先在
-#     families 登记；agent_* 族的事件直接以 agent_ 开头。具体事件随定义它们的任务补进来。
+#     事件名只用小写字母、数字、下划线；families 里登记的族，其事件写成「族名.事件」（如 funnel_first_order.click_buy）；
+#     Agent 事件按 03 §4.7 的写法直接以 agent_ 开头（不是族，不用点）。具体事件随定义它们的任务补进来。
+# 字段名不得含 url、href、link、deeplink、tpwd、pid、adzone、relation、promo 这些分段（link_id、pid_scene 例外），
+# 也不得含 sub_union_id、custom_parameters。
 # 约束（02 §12.6，03 §4.7）：事件字段不带完整推广 URL、口令、推广位或 relation_id 等渠道标识；URL 类信息只记平台与
 # 类别。本文件不设这类字段（字段名不得是 url、tpwd、pid、relation_id、promo_url 之类，校验会拒绝）。
 # 游客事件只带 device_id；登录后由服务端按 device_id 与登录时刻在报表层关联 user_id，不回写原事件。
@@ -241,7 +243,4 @@ events:
 families:
   funnel_first_order:
     description: 首单漏斗事件族 funnel_first_order.*（具体事件随漏斗任务补）
-    source: 规划/03 §4.7
-  agent:
-    description: Agent 事件族 agent_*（具体事件随 Agent 任务补）
     source: 规划/03 §4.7

@@ -17,19 +17,25 @@ const TYPES = ['string', 'integer', 'boolean', 'enum'];
 const FIELD_NAME = /^[a-z][a-z0-9_]*$/;
 /** An event name, or `<family>.<event>` for a member of a declared family. */
 const EVENT_NAME = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)?$/;
-/** Field names that would carry a promotion URL, tpwd or channel identifiers (02 §12.6). */
-const FORBIDDEN_NAMES = [
+/**
+ * Name segments (split on `_`) that mark a field able to carry a promotion URL, tpwd or channel
+ * identifier (02 §12.6); any field with such a segment is refused, except the exact names in
+ * ALLOWED_NAMES whose meaning is known to be harmless.
+ */
+const FORBIDDEN_SEGMENTS = [
   'url',
   'href',
   'link',
   'deeplink',
   'tpwd',
   'pid',
-  'adzone_id',
-  'relation_id',
-  'sub_union_id',
-  'custom_parameters',
+  'adzone',
+  'relation',
+  'promo',
 ];
+const FORBIDDEN_JOINED = ['sub_union_id', 'custom_parameters'];
+/** Harmless names that contain a forbidden segment: link_id is the server-issued link, pid_scene the scene code. */
+const ALLOWED_NAMES = ['link_id', 'pid_scene'];
 /** Common fields that 03 §4.7 names. */
 const COMMON = [
   'event_id',
@@ -76,7 +82,9 @@ function isObj(v: unknown): v is Obj {
 }
 
 function forbidden(name: string): boolean {
-  return FORBIDDEN_NAMES.includes(name) || /_(url|href|deeplink|tpwd)$/.test(name);
+  if (ALLOWED_NAMES.includes(name)) return false;
+  if (FORBIDDEN_JOINED.some((j) => name.includes(j))) return true;
+  return name.split('_').some((segment) => FORBIDDEN_SEGMENTS.includes(segment));
 }
 
 function checkFields(
@@ -116,8 +124,21 @@ function checkFields(
       const ok =
         isObj(when) &&
         Object.keys(when).length === 1 &&
-        Object.entries(when).every(([f, v]) => typeof v === 'string' && isObj(fields[f]));
-      if (!ok) problems.push(`${at}: required_when is {field: value} of a field of the same event`);
+        Object.entries(when).every(([f, v]) => {
+          const target = fields[f];
+          return (
+            typeof v === 'string' &&
+            isObj(target) &&
+            target['type'] === 'enum' &&
+            Array.isArray(target['values']) &&
+            target['values'].includes(v)
+          );
+        });
+      if (!ok) {
+        problems.push(
+          `${at}: required_when is {field: value} where field is an enum of the same event and value one of its values`,
+        );
+      }
     }
     const listed = def['values'];
     if (def['type'] !== 'enum') {
@@ -191,6 +212,20 @@ export function checkEvents(enums: readonly EnumDef[], file: string = eventsFile
   if (!isObj(events)) return [...problems, `${where}: events must be a mapping`];
   for (const e of REQUIRED_EVENTS) {
     if (!(e in events)) problems.push(`${where}: events.${e} is missing (03 §4.7)`);
+  }
+  // link_jump carries the attempt_id of the open response, required on every purchase step
+  // (04 §6.4 POST /v1/events, §8.4; 08 BR-ATTR-21 细则).
+  const jump = events['link_jump'];
+  const attempt = isObj(jump) && isObj(jump['fields']) ? jump['fields']['attempt_id'] : undefined;
+  if (
+    !isObj(attempt) ||
+    attempt['type'] !== 'string' ||
+    !isObj(attempt['required_when']) ||
+    attempt['required_when']['phase'] !== 'purchase'
+  ) {
+    problems.push(
+      `${where}: events.link_jump.fields.attempt_id must be a string required when phase is purchase`,
+    );
   }
   for (const [name, event] of Object.entries(events)) {
     const at = `${where}: events.${name}`;
