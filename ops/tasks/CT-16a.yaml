@@ -21,6 +21,7 @@ paths:
   - 'contracts/error-codes.yaml'
   - 'contracts/enums/identity.yaml'
   - 'contracts/openapi.yaml'
+  - 'contracts/.redocly.lint-ignore.yaml'
   - 'contracts/README.md'
   - 'packages/contracts-ts/**'
 impl: claude
