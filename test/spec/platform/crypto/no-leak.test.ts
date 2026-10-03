@@ -18,6 +18,7 @@ import {
   flipPayloadBit,
   knownKeyring,
   leaksIn,
+  referenceEncrypt,
   testKey,
 } from './kit.ts';
 
@@ -103,6 +104,43 @@ it('[BR-ID-33] FieldCrypto 对象进日志不泄密钥：JSON.stringify 与 util
     ),
     wrapped: leaksIn({ crypto, note: 'as a logger would receive it' }, secrets),
   }).toEqual({ stillWorks: SAMPLES.phone, object: [], methods: [], wrapped: [] });
+});
+
+it('[BR-ID-33] 用过的 FieldCrypto 不留明文：加密、解密、重新加密、建索引成功之后，对象的 JSON 与 inspect 输出里找不到经手的手机号、身份证号、收款账号', async () => {
+  const kms = new FakeKms();
+  const known = knownKeyring(kms, [1, 2], 2);
+  const crypto = await openFieldCrypto(known.doc, kms);
+  const values = {
+    phone: '13877776666',
+    idNo: '11010519491231002X',
+    alipay: 'payee-rule-test@example.com',
+    bankCard: '6200000000000077777',
+  };
+  const leaksAfter: Record<string, string[]> = {};
+  const check = (step: string): void => {
+    leaksAfter[step] = leaksIn({ crypto, methods: [crypto.encrypt, crypto.decrypt] }, values);
+  };
+  const phoneCiphertext = crypto.encrypt(values.phone, 'users.phone');
+  check('encrypt');
+  const decrypted = crypto.decrypt(phoneCiphertext, 'users.phone');
+  check('decrypt');
+  crypto.blindIndex(values.idNo, 'realname.id_no');
+  check('blindIndex');
+  const old = referenceEncrypt(known.dataKey(1), 1, values.alipay, 'payout_accounts.alipay');
+  const reencrypted = crypto.reencrypt(old, 'payout_accounts.alipay');
+  check('reencrypt');
+  crypto.encrypt(values.bankCard, 'payout_accounts.bank_card');
+  crypto.blindIndex(values.bankCard, 'payout_accounts.bank_card');
+  check('afterEverything');
+  expect({
+    decrypted,
+    reencrypted: crypto.decrypt(reencrypted, 'payout_accounts.alipay'),
+    leaksAfter,
+  }).toEqual({
+    decrypted: values.phone,
+    reencrypted: values.alipay,
+    leaksAfter: { encrypt: [], decrypt: [], blindIndex: [], reencrypt: [], afterEverything: [] },
+  });
 });
 
 it('[BR-ID-33] LocalKeyProvider 对象进日志不泄主密钥，也不泄经它包裹、解包过的密钥；用它打开的 FieldCrypto 同样不泄', async () => {

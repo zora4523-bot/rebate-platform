@@ -84,6 +84,32 @@ it('[BR-ID-33] 同一明文、同一 context 加密 50 次：IV 两两不同、�
   }).toEqual({ distinctCiphertexts: 50, distinctIvs: 50, decrypted: [SAMPLES.phone] });
 });
 
+it('[BR-ID-33] 同一把数据密钥下 IV 不重复、且是随机的：同一份 keyring 先后打开 5 个实例各加密 20 次，100 个 IV 两两不同，96 位里每一位都出现过 0 和 1', async () => {
+  const known = knownKeyring(new FakeKms(), [1], 1);
+  const ivs: Buffer[] = [];
+  for (let instance = 0; instance < 5; instance += 1) {
+    // A fresh instance every time, as after a process restart: a per-instance counter or a
+    // fixed prefix would repeat here, and a repeated IV under one key breaks AES-GCM.
+    const crypto = await openFieldCrypto(structuredClone(known.doc), new FakeKms());
+    for (let i = 0; i < 20; i += 1) {
+      const text = i % 2 === 0 ? SAMPLES.phone : `139${String(10000000 + instance * 100 + i)}`;
+      const ciphertext = crypto.encrypt(text, CONTEXTS.phone);
+      ivs.push(Buffer.from(parseV1(ciphertext).payload.subarray(0, IV_BYTES)));
+    }
+  }
+  const stuckBits: number[] = [];
+  for (let bit = 0; bit < IV_BYTES * 8; bit += 1) {
+    const ones = ivs.filter((iv) => ((iv[bit >> 3] ?? 0) >> (bit & 7)) % 2 === 1).length;
+    // For random IVs a bit that never changes in 100 samples has probability 2^-99.
+    if (ones === 0 || ones === ivs.length) stuckBits.push(bit);
+  }
+  expect({
+    total: ivs.length,
+    distinct: new Set(ivs.map((iv) => iv.toString('hex'))).size,
+    stuckBits,
+  }).toEqual({ total: 100, distinct: 100, stuckBits: [] });
+});
+
 it('[BR-ID-33] 密文里找不到明文：密文文本和解码后的载荷都不含明文字节', async () => {
   const { crypto } = await open([1], 1);
   const found: string[] = [];

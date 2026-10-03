@@ -129,6 +129,45 @@ it('[BR-ID-33] 本地走的是同一条信封路径：LocalKeyProvider 建 keyri
   });
 });
 
+it('[BR-ID-33] 进程重启后照常可用：用同一把主密钥、同一 keyId 新建的 LocalKeyProvider 能打开存下来的 keyring，解开重启前各版本的密文，盲索引不变', async () => {
+  const beforeRestart = new LocalKeyProvider(testKey(MASTER_A), 'local-dev');
+  const created = await createWrappedKeyring(beforeRestart);
+  const firstCrypto = await openFieldCrypto(created, beforeRestart);
+  const version1 = firstCrypto.encrypt(SAMPLES.idNo, 'realname.id_no');
+  const index = firstCrypto.blindIndex(SAMPLES.idNo, 'realname.id_no');
+  const rotated = await rotateDataKey(created, beforeRestart);
+  const version2 = (await openFieldCrypto(rotated, beforeRestart)).encrypt(
+    SAMPLES.idNo,
+    'realname.id_no',
+  );
+  const looseWrapped = await beforeRestart.wrapKey(testKey(1));
+  // Only text survives a restart: the stored keyring and the wrapped key.
+  const storedKeyring = JSON.stringify(rotated);
+
+  // A new provider object built from the same master key bytes: nothing of the old instance
+  // (no in-memory table of wrapped keys) is available to it.
+  const afterRestart = new LocalKeyProvider(Buffer.from(testKey(MASTER_A)), 'local-dev');
+  const crypto = await openFieldCrypto(JSON.parse(storedKeyring) as WrappedKeyring, afterRestart);
+  expect({
+    versions: [crypto.keyVersionOf(version1), crypto.keyVersionOf(version2)],
+    version1: crypto.decrypt(version1, 'realname.id_no'),
+    version2: crypto.decrypt(version2, 'realname.id_no'),
+    index: crypto.blindIndex(SAMPLES.idNo, 'realname.id_no'),
+    looseKey: Buffer.from(await afterRestart.unwrapKey(looseWrapped)).equals(testKey(1)),
+    // And the other way round: what the new instance wraps, the old one unwraps.
+    wrappedAfterRestart: Buffer.from(
+      await beforeRestart.unwrapKey(await afterRestart.wrapKey(testKey(2))),
+    ).equals(testKey(2)),
+  }).toEqual({
+    versions: [1, 2],
+    version1: SAMPLES.idNo,
+    version2: SAMPLES.idNo,
+    index,
+    looseKey: true,
+    wrappedAfterRestart: true,
+  });
+});
+
 it('[BR-ID-33] 主密钥不对就打不开 keyring：另一把主密钥的 LocalKeyProvider（keyId 相同）打开时被拒绝，拿不到任何可用的密钥', async () => {
   const right = new LocalKeyProvider(testKey(MASTER_A), 'local-dev');
   const wrong = new LocalKeyProvider(testKey(MASTER_B), 'local-dev');
