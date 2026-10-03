@@ -741,10 +741,13 @@ export interface components {
              * @description Window for entering an inviter later (BR-INV-07).
              */
             backfill_hours: number;
-            /** @description Show the bind-phone guide to new third-party accounts (BR-INV-03 细则). */
-            bind_phone_guide: boolean;
+            /**
+             * @description Show the bind-phone guide to new third-party accounts (BR-INV-03 细则). Optional in
+             *     the schema like every key added after v0.9; the server always sends it.
+             */
+            bind_phone_guide?: boolean;
             /** @description Show the inviter tip before the first purchase (BR-INV-21). */
-            before_buy_tip: boolean;
+            before_buy_tip?: boolean;
         };
         /** @description Agent availability and guest quota (04 §10.1; BR-AI-11, BR-AI-12). */
         ConfigAgent: {
@@ -809,11 +812,17 @@ export interface components {
              */
             recheck_interval_sec: number;
         };
-        /** @description Jump target {route, params}; route is a route name of contracts/routes.json. */
+        /**
+         * @description Jump target {route, params} of a help_links entry: always one help article, the Help
+         *     route of contracts/routes.json with its article_id (04 §10.1「原生页到帮助文章的入口表」).
+         *     conformance.ts checks that the route exists there and that params is a subset of that
+         *     route's params schema.
+         */
         HelpLinkTarget: {
-            route: string;
+            /** @enum {string} */
+            route: "Help";
             params: {
-                [key: string]: unknown;
+                article_id: string;
             };
         };
         ConfigClaim: {
@@ -826,9 +835,12 @@ export interface components {
             window_days: number | null;
         };
         /**
-         * @description Top-level keys of /v1/config (04 §10.1, excerpt). jump_tip, clipboard, bridge_origins,
-         *     auth_tips, compliance and display are not shaped by 04 yet and stay free-form; the task
-         *     that consumes each one types it (bridge_origins with CT-03, clipboard with B1-07).
+         * @description Top-level keys of /v1/config (04 §10.1, excerpt). Keys added after v0.9 (external_page,
+         *     link_patterns, external_hosts, app_update, help_links, claim) are optional, so a client
+         *     keeps reading an older last-good configuration (04 §5「兼容」); the server always sends
+         *     them. jump_tip, clipboard, bridge_origins, auth_tips, compliance and display are not
+         *     shaped by 04 yet and stay free-form; the task that consumes each one types it
+         *     (bridge_origins with CT-03, clipboard with B1-07).
          */
         Config: {
             /** @description Version of the /v1/dict dictionary (BR-TEXT-12). */
@@ -852,25 +864,25 @@ export interface components {
             auth_tips: components["schemas"]["FreeForm"];
             compliance: components["schemas"]["FreeForm"];
             display: components["schemas"]["FreeForm"];
-            external_page: components["schemas"]["ConfigExternalPage"];
-            link_patterns: components["schemas"]["ConfigLinkPatterns"];
+            external_page?: components["schemas"]["ConfigExternalPage"];
+            link_patterns?: components["schemas"]["ConfigLinkPatterns"];
             /**
              * @description Third-party page hosts a deep link may open in ExternalPage, matched by full host name
              *     (values and default in BR-ID-10 细则「深链能打开的第三方页面」); push and in-app
              *     targets are not limited by it (03 §4.4).
              */
-            external_hosts: string[];
-            app_update: components["schemas"]["ConfigAppUpdate"];
+            external_hosts?: string[];
+            app_update?: components["schemas"]["ConfigAppUpdate"];
             /**
              * @description Native entries to help articles: key → jump target; an entry whose key is not
              *     configured is not shown. Keys are defined by the rules that use them: price_compare
              *     (BR-TEXT-03), claim_guide.<platform> (BR-ATTR-17 细则), login_help (BR-ID-02 细则),
              *     withdraw_rules (BR-WDR-04 细则). Values are operations configuration (article ids).
              */
-            help_links: {
+            help_links?: {
                 [key: string]: components["schemas"]["HelpLinkTarget"];
             };
-            claim: components["schemas"]["ConfigClaim"];
+            claim?: components["schemas"]["ConfigClaim"];
         };
         ConfigResponse: {
             code: components["schemas"]["SuccessCode"];

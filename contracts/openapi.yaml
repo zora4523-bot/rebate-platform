@@ -2161,8 +2161,6 @@ components:
       required:
         - required
         - backfill_hours
-        - bind_phone_guide
-        - before_buy_tip
       properties:
         required:
           type: boolean
@@ -2173,7 +2171,9 @@ components:
           description: Window for entering an inviter later (BR-INV-07).
         bind_phone_guide:
           type: boolean
-          description: Show the bind-phone guide to new third-party accounts (BR-INV-03 细则).
+          description: |
+            Show the bind-phone guide to new third-party accounts (BR-INV-03 细则). Optional in
+            the schema like every key added after v0.9; the server always sends it.
         before_buy_tip:
           type: boolean
           description: Show the inviter tip before the first purchase (BR-INV-21).
@@ -2308,7 +2308,11 @@ components:
             「最低支持版本的接口层拦截」).
     HelpLinkTarget:
       type: object
-      description: Jump target {route, params}; route is a route name of contracts/routes.json.
+      description: |
+        Jump target {route, params} of a help_links entry: always one help article, the Help
+        route of contracts/routes.json with its article_id (04 §10.1「原生页到帮助文章的入口表」).
+        conformance.ts checks that the route exists there and that params is a subset of that
+        route's params schema.
       additionalProperties: false
       required:
         - route
@@ -2316,10 +2320,17 @@ components:
       properties:
         route:
           type: string
-          minLength: 1
+          enum:
+            - Help
         params:
           type: object
-          additionalProperties: true
+          additionalProperties: false
+          required:
+            - article_id
+          properties:
+            article_id:
+              type: string
+              minLength: 1
     ConfigClaim:
       type: object
       additionalProperties: false
@@ -2339,9 +2350,12 @@ components:
     Config:
       type: object
       description: |
-        Top-level keys of /v1/config (04 §10.1, excerpt). jump_tip, clipboard, bridge_origins,
-        auth_tips, compliance and display are not shaped by 04 yet and stay free-form; the task
-        that consumes each one types it (bridge_origins with CT-03, clipboard with B1-07).
+        Top-level keys of /v1/config (04 §10.1, excerpt). Keys added after v0.9 (external_page,
+        link_patterns, external_hosts, app_update, help_links, claim) are optional, so a client
+        keeps reading an older last-good configuration (04 §5「兼容」); the server always sends
+        them. jump_tip, clipboard, bridge_origins, auth_tips, compliance and display are not
+        shaped by 04 yet and stay free-form; the task that consumes each one types it
+        (bridge_origins with CT-03, clipboard with B1-07).
       additionalProperties: false
       required:
         - dict_version
@@ -2360,12 +2374,6 @@ components:
         - auth_tips
         - compliance
         - display
-        - external_page
-        - link_patterns
-        - external_hosts
-        - app_update
-        - help_links
-        - claim
       properties:
         dict_version:
           type: string
