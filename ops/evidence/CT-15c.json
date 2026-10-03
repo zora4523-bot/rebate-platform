@@ -1,0 +1,60 @@
+{
+  "task": "CT-15c",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "34fa8e9d7a89f78523bcacd6cc79f804d0ab4662",
+  "red_tests": [],
+  "risk_note": "RV2 only because specs/** is not on the risk-map whitelist (orchestrator decision D-2). Data-only change: three test-vector files under specs/; no code, no money, attribution or user-authorisation path. A contract task without rule tests: spec_commit is the base commit the branch was created from. Written by hand before the evidence generator exists (ops/evidence/README.md).",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "5aefd7d06ddafb38a279ef74357e6fd771198a19",
+      "tree": "9f618f15259e80d79d9a14b4b7d99a04ff7db110",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T21:16:58Z",
+      "finished_at": "2026-10-03T21:17:43Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: own Python implementation recomputed all vectors (0 mismatches) and checked them against 08 BR-ID-05, BR-ID-09, BR-WDR-02 (couli-runs/CT-15c/review-claude.md); its S2 notes on the email reason and the seed list were applied in 5aefd7d"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 (base 34fa8e9): pass, 0 findings; its out-of-scope note (the hash of ---- missing from the seeds) was applied in 5aefd7d"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "contract task (ledger tester: codex) with no rule tests"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "39a03b394c950174f6fb1b842040e2431dcdada8",
+    "specs": "03d88c5c53ef6e2ca8e6001d38f238a033c2df38"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 on the CT-15c worktree at 5aefd7d, 2026-10-04 05:17 (+08:00); packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}

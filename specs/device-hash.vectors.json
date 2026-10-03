@@ -1,0 +1,128 @@
+{
+  "$comment": "Device identifier hash test vectors and the initial invalid-hash list (08 BR-ID-09 细则「设备标识的无效值」). device_hash = lowercase_hex(SHA-256(UTF-8 bytes of the identifier with leading and trailing whitespace removed and lower-cased)). Clients decide invalidity before hashing and never hash an invalid identifier; the server rejects a hash on the invalid list with 20001 (data.fields=[device_hash]). invalid_hash_seeds is the initial value of config device.invalid_hashes; operations may add to it. The vectors use ASCII whitespace only; per-identifier format checks (length, character set) are not specified by 08 and are not covered here.",
+  "version": 1,
+  "hash_cases": [
+    {
+      "input": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+      "id_source": "idfv",
+      "note": "IDFV, upper case",
+      "device_hash": "b693983458c90a77f7e7b8e16b6e1f77e5c2a299513bc32320f127e5cc8754f2"
+    },
+    {
+      "input": "e621e1f8-c36c-495a-93fc-0c247a3e6e5f",
+      "id_source": "idfv",
+      "note": "same IDFV, lower case: same hash",
+      "device_hash": "b693983458c90a77f7e7b8e16b6e1f77e5c2a299513bc32320f127e5cc8754f2"
+    },
+    {
+      "input": "  E621E1F8-C36C-495A-93FC-0C247A3E6E5F\n",
+      "id_source": "idfv",
+      "note": "surrounding ASCII whitespace trimmed",
+      "device_hash": "b693983458c90a77f7e7b8e16b6e1f77e5c2a299513bc32320f127e5cc8754f2"
+    },
+    {
+      "input": "9774D56D682E549D",
+      "id_source": "android_id",
+      "note": "ANDROID_ID, upper case",
+      "device_hash": "5bfed3d9319786b0c7181a2ece549a6b3330e28ba54ddc4185a12e6f7295dd31"
+    },
+    {
+      "input": "9774d56d682e549d",
+      "id_source": "android_id",
+      "note": "ANDROID_ID, lower case: same hash",
+      "device_hash": "5bfed3d9319786b0c7181a2ece549a6b3330e28ba54ddc4185a12e6f7295dd31"
+    },
+    {
+      "input": "a1b2c3d4e5f60718",
+      "id_source": "android_id",
+      "note": "ANDROID_ID",
+      "device_hash": "b82efc46c073d9d8f6dfd0ad738a7074df7789847dd8f041c62e96000323260c"
+    },
+    {
+      "input": "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+      "id_source": "odid",
+      "note": "ODID",
+      "device_hash": "d1bfaf4aff653cb27984b7d978e51a7d406d1572df95d205c254beb18dc134d3"
+    },
+    {
+      "input": "6a2f1c9e-0b7d-4e55-8c3a-2f9d1e0b4c77",
+      "id_source": "oaid",
+      "note": "OAID (reserved: MVP does not collect OAID)",
+      "device_hash": "e0a088c73623e470b688ddf26d9567471fd91bce792b87465fd8021fe68329c9"
+    }
+  ],
+  "invalid_identifier_cases": [
+    {
+      "input": "",
+      "note": "empty",
+      "valid": false
+    },
+    {
+      "input": "   ",
+      "note": "whitespace only",
+      "valid": false
+    },
+    {
+      "input": "0",
+      "note": "single zero",
+      "valid": false
+    },
+    {
+      "input": "0000000000000000",
+      "note": "all zeros, ANDROID_ID length",
+      "valid": false
+    },
+    {
+      "input": "00000000000000000000000000000000",
+      "note": "all zeros, 32 characters",
+      "valid": false
+    },
+    {
+      "input": "00000000-0000-0000-0000-000000000000",
+      "note": "all zeros, UUID form (IDFV, OAID, ODID)",
+      "valid": false
+    },
+    {
+      "input": "----",
+      "note": "hyphens only",
+      "valid": false
+    }
+  ],
+  "invalid_hash_seeds": [
+    {
+      "source_value": "",
+      "note": "empty string",
+      "device_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source_value": "0",
+      "note": "single zero",
+      "device_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source_value": "0000000000000000",
+      "note": "all zeros, 16 characters",
+      "device_hash": "fcdb4b423f4e5283afa249d762ef6aef150e91fccd810d43e5e719d14512dec7"
+    },
+    {
+      "source_value": "00000000000000000000000000000000",
+      "note": "all zeros, 32 characters",
+      "device_hash": "84e0c0eafaa95a34c293f278ac52e45ce537bab5e752a00e6959a13ae103b65a"
+    },
+    {
+      "source_value": "00000000-0000-0000-0000-000000000000",
+      "note": "all zeros, UUID form",
+      "device_hash": "12b9377cbe7e5c94e8a70d9d23929523d14afa954793130f8a3959c7b849aca8"
+    },
+    {
+      "source_value": "----",
+      "note": "hyphens only (empty once zeros and hyphens are removed)",
+      "device_hash": "bd64bb8efa5b3f27e6442f23600c3b516127ea17e23724b41e50da4c22883edd"
+    },
+    {
+      "source_value": "9774d56d682e549c",
+      "note": "ANDROID_ID shared by many Android 2.2 devices (well-known public fixed value)",
+      "device_hash": "4d853cd5e7d688e75b3dca9abc2fa52ac8bafb750b6d4dc01b78e2e7bb335f8f"
+    }
+  ]
+}
