@@ -1,11 +1,17 @@
 id: B1-01i
 repo: rebate-platform
-title: platform/idempotency：Idempotency-Key 处理（主体、请求体哈希、处理中 40901、不同请求体 20901、只存成功与 3xxxx 结果）
+title: platform/idempotency：Idempotency-Key 处理（主体、请求体哈希、处理中 40901、不同请求体 20901、已作废 20903、只存成功与 3xxxx 结果）与敏感操作幂等键的作废原语
 type: impl
 # 从 05 的 B1-01 拆出（幂等）。依据：规划/04 §5「幂等」行与 §3.2 idempotency_keys 行；BR-WDR-07 的
 # 幂等段；规划/02 §18「幂等 API」行；BR-ID-08、BR-ID-10 里关于重放与幂等键的句子。refs 为空：
 # BR-WDR-07 单条渲染后任务书就超过 24KB（规划/11 §5.3），由规则测试作者按 08 原文把幂等段写成规则测试。
 # idempotency_keys 现有列是骨架期的暂定形状：要改表先拆迁移任务（两段式，规划/11 §2.3）。
+# SPEC_REF 826f86e 起的依据另有 BR-ID-10 细则「敏感操作的幂等键」与 规划/04 §3.2、§5、§7（20903）：
+# 需要二次验证的四个操作，业务结果与幂等记录同事务写入、以唯一约束为准，不提前单独提交 processing
+# 行；作废原语在该键没有记录时插入 abandoned 行（无请求体哈希与响应），已完成返回原结果，处理中 40901；
+# 之后同键请求在幂等检查一步返回 20903、不比较请求体。作废接口本身由 B1-02 实现（规划/02 §4.1）。
+# 开工前要先有：idempotency_keys 的迁移（request_hash、response 对 abandoned 行可空，status 取
+# processing / completed / abandoned）与契约同步（20903 还不在 contracts/error-codes.yaml）。
 refs: []
 refs_hash: {}
 deps: [B1-01f]

@@ -6,9 +6,11 @@ type: impl
 # 不依赖数据库。只交付纯库：不读环境变量、不进 PlatformModule、不从 platform/index.ts 导出
 # （接线在 B1-01k）。BR-ID-33 的脱敏格式在 B1-01c；reveal 接口与审计属后台与 identity 的任务。
 # 云上的 KMS 实现要等阿里云账号与 SDK（新依赖），另立任务；这里的 KeyProvider 接口为它留位。
+# SPEC_REF 826f86e：BR-ID-33 细则新增崩溃上报白名单、收款账号的脱敏格式、外链不带个人数据（功能对照
+# G-87、G-71、G-82），都不涉及字段加密，本任务范围与规则测试不变（只同步 refs_hash）。
 refs: [BR-ID-33]
 refs_hash:
-  BR-ID-33: b006e67811a3
+  BR-ID-33: 01b25f773b29
 deps: []
 paths:
   - 'apps/api/src/modules/platform/crypto/**'
