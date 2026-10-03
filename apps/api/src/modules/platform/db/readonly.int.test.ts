@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
+import pg from 'pg';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createRootLogger } from '../logging/index.ts';
 import { createDbHandles, loadConnectionConfig } from './index.ts';
@@ -56,6 +57,70 @@ it.each(['RESET ALL', 'DISCARD ALL', 'RESET default_transaction_read_only'])(
       ).rejects.toMatchObject({ code: '25006' });
       expect((await write.execute(handles.db)).numAffectedRows).toBe(1n);
     } finally {
+      await handles.close();
+    }
+  },
+);
+
+it('[AC-B1-01f#11] dbRead 的 URL 密码含裸 % 时 couli_readonly 仍能建连且只读', async () => {
+  const url = new URL(database.urlFor('couli_readonly'));
+  // Retain the fixture's actual password through pg's query-password precedence. This
+  // exercises its whole-URL re-encoding on a literal % in userinfo without changing the
+  // cluster-wide role password and breaking other integration suites running in parallel.
+  const password = url.password;
+  url.password = 'p%word';
+  const config = loadConnectionConfig('admin', {
+    DATABASE_URL: database.urlFor('couli_app'),
+    DATABASE_READ_URL: `${url.href}?password=${password}&options=-c%20statement_timeout=12345`,
+    REDIS_URL: 'redis://127.0.0.1:1/0',
+  });
+  const handles = createDbHandles(config, {
+    logger: createRootLogger({ entry: 'admin', appEnv: 'test', level: 'silent' }),
+  });
+  try {
+    expect(
+      (
+        await sql`SELECT current_user AS role,
+        current_setting('default_transaction_read_only') AS ro,
+        current_setting('statement_timeout') AS timeout`.execute(handles.dbRead!)
+      ).rows,
+    ).toEqual([{ role: 'couli_readonly', ro: 'on', timeout: '12345ms' }]);
+    await expect(
+      sql`CREATE TEMP TABLE readonly_probe (id int)`.execute(handles.dbRead!),
+    ).rejects.toMatchObject({ code: '25006' });
+  } finally {
+    await handles.close();
+  }
+});
+
+it.each([1, 2, 3, 4])(
+  '[AC-B1-01f#12] options 末尾 %i 个反斜杠的 search_path 与 pg 直连一致',
+  async (count) => {
+    const url = new URL(database.urlFor('couli_app'));
+    url.searchParams.set('options', `-c search_path=x${'\\'.repeat(count)}`);
+    const direct = new pg.Client({ connectionString: url.href });
+    const handles = createDbHandles(
+      loadConnectionConfig('admin', {
+        DATABASE_URL: database.urlFor('couli_app'),
+        DATABASE_READ_URL: url.href,
+        REDIS_URL: 'redis://127.0.0.1:1/0',
+      }),
+      { logger: createRootLogger({ entry: 'admin', appEnv: 'test', level: 'silent' }) },
+    );
+    try {
+      await direct.connect();
+      const original = await direct.query<{ search_path: string }>('SHOW search_path');
+      await handles.dbRead!.connection().execute(async (connection) => {
+        const settings = sql<{ search_path: string }>`SHOW search_path`;
+        expect((await settings.execute(connection)).rows).toEqual(original.rows);
+        await sql`RESET ALL`.execute(connection);
+        expect((await settings.execute(connection)).rows).toEqual(original.rows);
+        expect((await sql`SHOW default_transaction_read_only`.execute(connection)).rows).toEqual([
+          { default_transaction_read_only: 'on' },
+        ]);
+      });
+    } finally {
+      await direct.end();
       await handles.close();
     }
   },

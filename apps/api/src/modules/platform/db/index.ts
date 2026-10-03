@@ -348,19 +348,40 @@ export function createDbHandles(config: ConnectionConfig, options: DbHandlesOpti
   let closed: Promise<void> | undefined;
   const pools: ManagedPool[] = [];
   const make = (settings: DbPoolConfig): Kysely<DB> => {
-    const url = new URL(settings.url.reveal());
-    if (settings.readOnly) {
-      // pg gives URL options precedence over pool options. The last startup setting wins
-      // and becomes the RESET / DISCARD default, unlike a session-level SET alone.
-      const original = url.searchParams.getAll('options').at(-1) ?? '';
-      // Two spaces keep the separator intact even if the original ends in a backslash.
-      url.searchParams.set('options', `${original}  -c default_transaction_read_only=on`);
-    }
     return createDb({
-      connectionString: url.href,
+      connectionString: settings.url.reveal(),
       max: settings.max,
       applicationName: settings.applicationName,
       poolFactory(poolConfig) {
+        if (settings.readOnly) {
+          // Use pg's own parsing without connecting or re-encoding the URL. In particular,
+          // a literal % in a password must not cause options to be encoded a second time.
+          let parsed: pg.ClientConfig;
+          try {
+            parsed = (
+              new pg.Client(poolConfig) as pg.Client & { connectionParameters: pg.ClientConfig }
+            ).connectionParameters;
+          } catch {
+            // Driver parse errors can contain URL values; expose neither them nor a cause.
+            throw new ConfigError([
+              'DATABASE_READ_URL: could not parse database connection parameters',
+            ]);
+          }
+          let original = parsed.options ?? '';
+          const trailingSlashes = /\\+$/.exec(original)?.[0].length ?? 0;
+          // PostgreSQL ignores a final unpaired backslash. Remove it before appending a
+          // separator, otherwise it would escape that space into the preceding value.
+          if (trailingSlashes % 2 === 1) original = original.slice(0, -1);
+          poolConfig = {
+            ...poolConfig,
+            ...parsed,
+            // pg deliberately makes the parsed password non-enumerable.
+            password: parsed.password,
+            options: `${original ? `${original} ` : ''}-c default_transaction_read_only=on`,
+          };
+          // A connectionString would take precedence over the merged fields in pg.
+          delete poolConfig.connectionString;
+        }
         const managed = managePool(poolConfig, settings, options.logger, () => closing);
         pools.push(managed);
         return managed.adapter;
