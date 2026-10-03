@@ -6,6 +6,7 @@
 // Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import {
+  type KeyProvider,
   type WrappedKeyring,
   createWrappedKeyring,
   openFieldCrypto,
@@ -120,27 +121,27 @@ it('[BR-ID-33] provider 包裹或解包失败时整体拒绝且不转述它的�
   }
   const secret = `13877776666 key=${testKey(1).toString('hex')}`;
   const known = knownKeyring(new FakeKms(), [1, 2], 2);
-  type How = 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap';
-  const failing = (how: How, call = 1, kind: 'error' | 'field-crypto-error' = 'error') =>
-    new FailingKms(new FakeKms(), how, secret, { call, kind });
-  const calls: Record<string, () => Promise<unknown>> = {
-    createRejected: () => createWrappedKeyring(failing('reject-wrap')),
-    createThrown: () => createWrappedKeyring(failing('throw-wrap')),
-    // The first of the two keys is wrapped, the second fails.
-    createSecondRejected: () => createWrappedKeyring(failing('reject-wrap', 2)),
-    createSecondThrown: () => createWrappedKeyring(failing('throw-wrap', 2)),
-    // The provider's error is itself a FieldCryptoError with this very code: still not passed on.
-    createCodedError: () => createWrappedKeyring(failing('reject-wrap', 2, 'field-crypto-error')),
-    rotateRejected: () => rotateDataKey(known.doc, failing('reject-wrap')),
-    rotateThrown: () => rotateDataKey(known.doc, failing('throw-wrap')),
-    rotateCodedError: () =>
-      rotateDataKey(known.doc, failing('throw-wrap', 1, 'field-crypto-error')),
-    openRejected: () => openFieldCrypto(known.doc, failing('reject-unwrap')),
-    openThrown: () => openFieldCrypto(known.doc, failing('throw-unwrap')),
-    openThirdRejected: () => openFieldCrypto(known.doc, failing('reject-unwrap', 3)),
-    openCodedError: () =>
-      openFieldCrypto(known.doc, failing('reject-unwrap', 2, 'field-crypto-error')),
-  };
+  // Every provider call of every operation fails once, each way: creating wraps two keys,
+  // rotating wraps one, opening this keyring unwraps three (two data keys and the blind-index
+  // key). Call n × thrown or rejected × plain Error or a FieldCryptoError with this very code,
+  // so an implementation that guards only some calls, only promise rejections, or passes its own
+  // error type through still fails.
+  const operations = {
+    create: { kind: 'wrap', count: 2, run: (kms: KeyProvider) => createWrappedKeyring(kms) },
+    rotate: { kind: 'wrap', count: 1, run: (kms: KeyProvider) => rotateDataKey(known.doc, kms) },
+    open: { kind: 'unwrap', count: 3, run: (kms: KeyProvider) => openFieldCrypto(known.doc, kms) },
+  } as const;
+  const calls: Record<string, () => Promise<unknown>> = {};
+  for (const [name, op] of Object.entries(operations)) {
+    for (let call = 1; call <= op.count; call += 1) {
+      for (const way of ['reject', 'throw'] as const) {
+        for (const kind of ['error', 'field-crypto-error'] as const) {
+          const kms = new FailingKms(new FakeKms(), `${way}-${op.kind}`, secret, { call, kind });
+          calls[`${name}-${way}-call${String(call)}-${kind}`] = () => op.run(kms);
+        }
+      }
+    }
+  }
   const problems: Record<string, string[]> = {};
   for (const [name, call] of Object.entries(calls)) {
     let error: unknown = 'the call succeeded';
