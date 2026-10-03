@@ -2,7 +2,15 @@
 // through this logger or children of it; `console` is not used.
 import { pino, type DestinationStream, type Logger, type LoggerOptions } from 'pino';
 import type { LogLevel } from '../config/index.ts';
-import { REDACTED, SENSITIVE_KEYS, redactRecord, redactText, redactValue } from './redaction.ts';
+import {
+  REDACTED,
+  SENSITIVE_KEYS,
+  attempt,
+  redactMessage,
+  redactRecord,
+  redactValue,
+  type FieldSerializers,
+} from './redaction.ts';
 
 export { REDACTED, SENSITIVE_KEYS } from './redaction.ts';
 
@@ -33,44 +41,124 @@ export interface RootLoggerOptions {
   readonly appEnv: string;
 }
 
+/** Fastify Request getters must be read before copying; plain req records retain their shape. */
+function serializeRequest(value: unknown): unknown {
+  return attempt(() => {
+    if (value === null || typeof value !== 'object' || !('raw' in value) || !('ip' in value)) {
+      return redactValue(value);
+    }
+    const request = value as {
+      method?: unknown;
+      url?: unknown;
+      hostname?: unknown;
+      ip: unknown;
+      socket?: { remotePort?: unknown };
+    };
+    return redactRecord({
+      method: request.method,
+      url: request.url,
+      hostname: request.hostname,
+      remoteAddress: request.ip,
+      remotePort: request.socket?.remotePort,
+    });
+  });
+}
+
 /** `destination` defaults to stdout; tests pass an in-memory stream. */
 export function createRootLogger(
   options: RootLoggerOptions,
   destination?: DestinationStream,
 ): RootLogger {
+  const configurations = new WeakMap<object, FieldSerializers>();
+  // msg is always serialized by pino after printf expansion and msgPrefix. Other serializers
+  // run once, on the original field values, in the hook/bindings formatter before redaction.
+  const withoutMessage = (serializers: FieldSerializers): FieldSerializers =>
+    Object.fromEntries(Object.entries(serializers).filter(([key]) => key !== 'msg'));
+  const finalSerializers = (serializers: FieldSerializers) => ({
+    err: (value: unknown) => value,
+    msg: (value: unknown) =>
+      redactMessage(serializers['msg'] ? attempt(() => serializers['msg']!(value)) : value),
+  });
   const loggerOptions: LoggerOptions = {
     level: options.level,
     base: { entry: options.entry, env: options.appEnv, pid: process.pid },
     timestamp: pino.stdTimeFunctions.isoTime,
+    // Pino's bigint fallback must not impose its default five-level/100-field truncation.
+    depthLimit: 110,
+    edgeLimit: Number.MAX_SAFE_INTEGER,
     redact: { paths: [...REDACT_PATHS], censor: REDACTED },
-    // Pino invokes the msg serializer after printf formatting and child msgPrefix expansion.
-    serializers: {
-      err: (value: unknown) => redactValue(value),
-      msg: (value: unknown) =>
-        typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-          ? redactText(String(value))
-          : redactValue(value),
-    },
+    serializers: { ...finalSerializers({}), req: serializeRequest },
     formatters: { log: redactRecord, bindings: redactRecord },
     hooks: {
       logMethod(args, method) {
-        const safeArgs = args.map((value) => redactValue(value));
-        // Preserve pino's direct Error shape and its message fallback after copying the Error.
-        if (args[0] instanceof Error) safeArgs[0] = { err: safeArgs[0] };
+        const first = args[0];
+        const hasFields = typeof first === 'object' && first !== null;
+        const messageIndex = hasFields || first === null || first === undefined ? 1 : 0;
+        const safeArgs: unknown[] = [...args];
+        if (hasFields) {
+          safeArgs[0] = redactRecord(
+            first instanceof Error ? { err: first } : first,
+            withoutMessage(configurations.get(this) ?? {}),
+          );
+        }
+        const message = args[messageIndex];
+        if (message !== undefined && typeof message !== 'string') {
+          safeArgs[messageIndex] = redactMessage(message);
+        }
+        for (let index = messageIndex + 1; index < args.length; index++) {
+          safeArgs[index] = redactValue(args[index]);
+        }
+        // Preserve %s's useful Error/custom toString text without invoking caller methods for
+        // JSON placeholders. Escaped %% consumes no argument.
+        if (typeof message === 'string') {
+          let index = messageIndex + 1;
+          for (const match of message.matchAll(/%[%sdifjoO]/g)) {
+            if (match[0] === '%%') continue;
+            if (index >= args.length) break;
+            const original = args[index];
+            if (match[0] === '%s') {
+              safeArgs[index] = attempt(() => {
+                if (original instanceof Error) return `${original.name}: ${original.message}`;
+                if (
+                  original !== null &&
+                  typeof original === 'object' &&
+                  original.toString !== Object.prototype.toString &&
+                  typeof original.toString === 'function'
+                )
+                  return original.toString();
+                return String(safeArgs[index]);
+              });
+            }
+            index++;
+          }
+        }
         method.apply(this, safeArgs as Parameters<typeof method>);
       },
     },
   };
   const logger = destination === undefined ? pino(loggerOptions) : pino(loggerOptions, destination);
-  // Pino resets the bindings formatter when creating children. Intercept its public entry
-  // points so every generation and setBindings() is sanitized before bindings are serialized.
+  configurations.set(logger, { req: serializeRequest });
+  // Children inherit this wrapper; closures for binding formatters also cover setBindings().
   const child = logger.child;
   logger.child = function (this: RootLogger, bindings, options) {
-    return child.call(this, redactRecord(bindings), options);
+    const serializers = { ...configurations.get(this), ...options?.serializers };
+    const bindingFormatter = options?.formatters?.bindings;
+    const logFormatter = options?.formatters?.log;
+    const result = child.call(this, bindings, {
+      ...options,
+      serializers: finalSerializers(serializers),
+      formatters: {
+        ...options?.formatters,
+        bindings: (value) =>
+          redactRecord(
+            bindingFormatter ? bindingFormatter(value) : value,
+            withoutMessage(serializers),
+          ),
+        log: (value) => redactRecord(logFormatter ? logFormatter(value) : value),
+      },
+    });
+    configurations.set(result, serializers);
+    return result;
   } as typeof logger.child;
-  const setBindings = logger.setBindings;
-  logger.setBindings = function (bindings) {
-    setBindings.call(this, redactRecord(bindings));
-  };
   return logger;
 }

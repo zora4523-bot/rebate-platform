@@ -1,7 +1,7 @@
 // Adapter that routes NestJS framework logs into the pino root logger.
 import type { LoggerService } from '@nestjs/common';
 import type { RootLogger } from './logger.ts';
-import { redactText, redactValue } from './redaction.ts';
+import { attempt, redactText, redactValue, stringifyValue } from './redaction.ts';
 
 type Level = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
 
@@ -57,10 +57,10 @@ export class PinoNestLogger implements LoggerService {
     }
     const text =
       message instanceof Error
-        ? message.message
+        ? String(attempt(() => message.message))
         : typeof message === 'string'
           ? message
-          : JSON.stringify(redactValue(message));
+          : stringifyValue(redactValue(message));
     this.logger[level](fields, text);
   }
 }
