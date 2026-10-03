@@ -62,13 +62,13 @@ it.each(['RESET ALL', 'DISCARD ALL', 'RESET default_transaction_read_only'])(
   },
 );
 
-it('[AC-B1-01f#11] dbRead 的 URL 密码含裸 % 时 couli_readonly 仍能建连且只读', async () => {
+it('[AC-B1-01f#11] dbRead 的 URL 密码含 %（按 URL 规则编码为 %25）时 couli_readonly 仍能建连且只读', async () => {
   const url = new URL(database.urlFor('couli_readonly'));
-  // Retain the fixture's actual password through pg's query-password precedence. This
-  // exercises its whole-URL re-encoding on a literal % in userinfo without changing the
-  // cluster-wide role password and breaking other integration suites running in parallel.
+  // Retain the fixture's actual password through the query-password precedence, without
+  // changing the cluster-wide role password used by parallel suites. A bare % in userinfo is a
+  // URL format error under contract addendum 2 (connection-tls.test.ts); %25 decodes to %.
   const password = url.password;
-  url.password = 'p%word';
+  url.password = 'p%25word';
   const config = loadConnectionConfig('admin', {
     DATABASE_URL: database.urlFor('couli_app'),
     DATABASE_READ_URL: `${url.href}?password=${password}&options=-c%20statement_timeout=12345`,
