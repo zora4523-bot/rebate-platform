@@ -124,6 +124,13 @@ enums:
       sales_desc: 销量从高到低
       final_price_asc: 券后价从低到高
       rebate_desc: 返利从高到低
+  link_pattern_category:
+    source: 规划/04 §10.1 link_patterns；BR-ATTR-29
+    description: 平台链接形态表的类别（specs/link-patterns.yaml）
+    values:
+      product: 平台商品页
+      promo: 推广短链与落地页
+      union_host: 联盟平台网页（按注册域含子域）
   tlj_kind:
     source: 规划/04 §2.5；BR-TEXT-15
     description: 素材淘礼金出资方判定；unknown 不宣称已判定为 third_party

@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { parseYamlLite } from '../../../tools/lib/yaml-lite.ts';
 import type { EnumDef, ErrorCodeDef } from './catalog.ts';
-import { openapiFile } from './paths.ts';
+import { openapiFile, routesFile } from './paths.ts';
 
 type Obj = Record<string, unknown>;
 
@@ -34,6 +34,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   'ProductCard/properties/match_tag': 'match_tag',
   'InputHit/properties/kind': 'input_kind',
   StepUpAction: 'step_up_action',
+  PlatformSearchStatus: 'platform_search_status',
+  LinkPatternCategory: 'link_pattern_category',
   IdempotencyAbandonOutcome: 'idempotency_abandon_outcome',
 };
 
@@ -156,6 +158,41 @@ function checkStepUp(
   }
 }
 
+/**
+ * help_links targets (04 §10.1) are routes of contracts/routes.json: every route the
+ * HelpLinkTarget schema allows exists there, and each declared param has exactly that route's
+ * param schema (a subset of the route's params, so a valid target is a valid RouteTarget).
+ */
+function checkHelpLinkTarget(schemas: Obj, problems: string[], routes: string = routesFile): void {
+  const target = schemas['HelpLinkTarget'];
+  if (!isObj(target)) return;
+  const doc: unknown = JSON.parse(readFileSync(routes, 'utf8'));
+  const table = isObj(doc) && isObj(doc['routes']) ? doc['routes'] : {};
+  const allowed = at(target, 'properties/route/enum');
+  const params = at(target, 'properties/params/properties');
+  if (!Array.isArray(allowed) || allowed.length === 0) {
+    problems.push('components/schemas/HelpLinkTarget: route must be an enum of routes.json names');
+    return;
+  }
+  for (const name of allowed) {
+    const route = typeof name === 'string' ? table[name] : undefined;
+    const routeParams = isObj(route) ? at(route, 'params/properties') : undefined;
+    if (!isObj(route) || !isObj(routeParams)) {
+      problems.push(
+        `components/schemas/HelpLinkTarget: route ${String(name)} is not in routes.json`,
+      );
+      continue;
+    }
+    for (const [param, schema] of Object.entries(isObj(params) ? params : {})) {
+      if (JSON.stringify(routeParams[param]) !== JSON.stringify(schema)) {
+        problems.push(
+          `components/schemas/HelpLinkTarget: param ${param} differs from routes.json ${String(name)}`,
+        );
+      }
+    }
+  }
+}
+
 export function checkConformance(
   enums: readonly EnumDef[],
   codes: readonly ErrorCodeDef[],
@@ -273,5 +310,6 @@ export function checkConformance(
     }
   }
   checkAmounts(schemas, problems);
+  checkHelpLinkTarget(schemas, problems);
   return problems;
 }

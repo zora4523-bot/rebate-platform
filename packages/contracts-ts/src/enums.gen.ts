@@ -851,6 +851,16 @@ export const client_platform = [
 export type ClientPlatform = (typeof client_platform)[number];
 
 /**
+ * /v1/config.features.search_status 的值，由 search.enabled.<platform> 派生
+ * Source: 规划/04 §2.5、§10.1；BR-PROD-10 (contracts/enums/platform.yaml).
+ */
+export const platform_search_status = [
+  "on", // 可搜索
+  "off", // 搜索关闭
+] as const;
+export type PlatformSearchStatus = (typeof platform_search_status)[number];
+
+/**
  * 安装包渠道
  * Source: 规划/04 §5（请求头 X-Channel）；拍板第二批 TECH-18 (contracts/enums/platform.yaml).
  */
@@ -1066,6 +1076,17 @@ export const sort = [
 export type Sort = (typeof sort)[number];
 
 /**
+ * 平台链接形态表的类别（specs/link-patterns.yaml）
+ * Source: 规划/04 §10.1 link_patterns；BR-ATTR-29 (contracts/enums/trade.yaml).
+ */
+export const link_pattern_category = [
+  "product", // 平台商品页
+  "promo", // 推广短链与落地页
+  "union_host", // 联盟平台网页（按注册域含子域）
+] as const;
+export type LinkPatternCategory = (typeof link_pattern_category)[number];
+
+/**
  * 素材淘礼金出资方判定；unknown 不宣称已判定为 third_party
  * Source: 规划/04 §2.5；BR-TEXT-15 (contracts/enums/trade.yaml).
  */
@@ -1142,6 +1163,7 @@ export const enums = {
   platform,
   key_stability,
   client_platform,
+  platform_search_status,
   install_channel,
   auth_level,
   scene,
@@ -1159,6 +1181,7 @@ export const enums = {
   match_tag,
   benefit,
   sort,
+  link_pattern_category,
   tlj_kind,
 } as const;
 export type EnumName = keyof typeof enums;

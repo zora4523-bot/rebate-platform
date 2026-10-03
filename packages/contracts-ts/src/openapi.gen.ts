@@ -183,9 +183,8 @@ export interface paths {
          *     (04 §10.1, excerpt). Clients keep the last good response (LKG) and fall back to it and
          *     then to the bundled default when the request fails (03 §4.3). Keys whose inner shape is
          *     not fixed by 04 yet are free-form objects and get typed by the task that consumes them.
-         *     x-auth is optional although 04 §6.2 lists none: h5_release buckets by user_id when
-         *     logged in (拍板第二批 TECH-28) and agent availability depends on the whitelist user
-         *     (BR-AI-12).
+         *     x-auth is optional (04 §6.2): h5_release buckets by user_id when logged in (拍板第二批
+         *     TECH-28) and agent availability depends on the whitelist user (BR-AI-12).
          */
         get: operations["getConfig"];
         put?: never;
@@ -688,7 +687,13 @@ export interface components {
         ConfigFeatures: {
             /**
              * @description Client switches by key: agent.entry.visible, clipboard.enabled.<platform>,
-             *     home.fallback, h5.route.<page>.enabled, ui.grayscale (03 §4.3).
+             *     home.fallback, h5.route.<page>.enabled, ui.grayscale (03 §4.3);
+             *     external_page.product_intercept (a platform product page inside the third-party page
+             *     container goes back to the native product detail) and external_page.union_host_block
+             *     (the container does not load union platform pages; derived from the server setting of
+             *     the same name; a client that cannot read it treats it as on) (BR-ATTR-29);
+             *     earnings.dashboard.visible (earnings dashboard entry, derived from
+             *     earnings.dashboard.enabled, BR-FUND-25).
              */
             flags: {
                 [key: string]: boolean;
@@ -697,7 +702,19 @@ export interface components {
             platform_status: {
                 [key: string]: components["schemas"]["PlatformPurchaseStatus"];
             };
+            /**
+             * @description Search switch by platform code, derived from search.enabled.<platform> (04 §10.1);
+             *     how a client treats a missing platform is in BR-PROD-10 细则.
+             */
+            search_status?: {
+                [key: string]: components["schemas"]["PlatformSearchStatus"];
+            };
         };
+        /**
+         * @description Whether search is open for a platform (enum platform_search_status).
+         * @enum {string}
+         */
+        PlatformSearchStatus: "on" | "off";
         ConfigLegalPrivacy: {
             /** Format: int32 */
             version: number;
@@ -724,6 +741,13 @@ export interface components {
              * @description Window for entering an inviter later (BR-INV-07).
              */
             backfill_hours: number;
+            /**
+             * @description Show the bind-phone guide to new third-party accounts (BR-INV-03 细则). Optional in
+             *     the schema like every key added after v0.9; the server always sends it.
+             */
+            bind_phone_guide?: boolean;
+            /** @description Show the inviter tip before the first purchase (BR-INV-21). */
+            before_buy_tip?: boolean;
         };
         /** @description Agent availability and guest quota (04 §10.1; BR-AI-11, BR-AI-12). */
         ConfigAgent: {
@@ -744,10 +768,79 @@ export interface components {
             /** Format: uri */
             url: string;
         };
+        /** @description Third-party page container settings (BR-ATTR-29). */
+        ConfigExternalPage: {
+            /**
+             * Format: int32
+             * @description Sampling rate of document-level navigation hosts, 1/10000 (default in BR-ATTR-29).
+             */
+            nav_host_sample_bp: number;
+        };
         /**
-         * @description Top-level keys of /v1/config (04 §10.1, excerpt). jump_tip, clipboard, bridge_origins,
-         *     auth_tips, compliance and display are not shaped by 04 yet and stay free-form; the task
-         *     that consumes each one types it (bridge_origins with CT-03, clipboard with B1-07).
+         * @description Category of a platform link pattern (enum link_pattern_category, BR-ATTR-29).
+         * @enum {string}
+         */
+        LinkPatternCategory: "product" | "promo" | "union_host";
+        /**
+         * @description Hosts and path patterns of one platform and category. How hosts match (union_host by
+         *     registered domain including subdomains) and the path pattern syntax are defined with the
+         *     source table specs/link-patterns.yaml (CT-15g); concrete values come from real samples (B1-07).
+         */
+        LinkPatternRule: {
+            platform: components["schemas"]["PlatformCode"];
+            category: components["schemas"]["LinkPatternCategory"];
+            hosts: string[];
+            path_patterns: string[];
+        };
+        /**
+         * @description Client pre-filter subset of the platform link pattern table (source
+         *     specs/link-patterns.yaml). Clients decide where a document-level navigation in the
+         *     third-party page container goes (main frame, subframe, new window); product recognition
+         *     follows the server. When the fetch fails they use the last good version, then the bundled
+         *     snapshot, and never stop intercepting (BR-ATTR-29).
+         */
+        ConfigLinkPatterns: {
+            version: string;
+            rules: components["schemas"]["LinkPatternRule"][];
+        };
+        ConfigAppUpdate: {
+            /**
+             * Format: int32
+             * @description On returning to the foreground, call GET /v1/app-versions/check again when the last
+             *     successful check is older than this (value and bundled default in BR-ID-01 细则
+             *     「最低支持版本的接口层拦截」).
+             */
+            recheck_interval_sec: number;
+        };
+        /**
+         * @description Jump target {route, params} of a help_links entry: always one help article, the Help
+         *     route of contracts/routes.json with its article_id (04 §10.1「原生页到帮助文章的入口表」).
+         *     conformance.ts checks that the route exists there and that params is a subset of that
+         *     route's params schema.
+         */
+        HelpLinkTarget: {
+            /** @enum {string} */
+            route: "Help";
+            params: {
+                article_id: string;
+            };
+        };
+        ConfigClaim: {
+            /**
+             * Format: int32
+             * @description Days within which an order claim may be filed, claim.window_hours rounded down to
+             *     days; null when below one day or not configured. Only renders the claim form's period
+             *     sentence (BR-ATTR-17 细则「找回页的填写指引」); claim.window_hours is not sent.
+             */
+            window_days: number | null;
+        };
+        /**
+         * @description Top-level keys of /v1/config (04 §10.1, excerpt). Keys added after v0.9 (external_page,
+         *     link_patterns, external_hosts, app_update, help_links, claim) are optional, so a client
+         *     keeps reading an older last-good configuration (04 §5「兼容」); the server always sends
+         *     them. jump_tip, clipboard, bridge_origins, auth_tips, compliance and display are not
+         *     shaped by 04 yet and stay free-form; the task that consumes each one types it
+         *     (bridge_origins with CT-03, clipboard with B1-07).
          */
         Config: {
             /** @description Version of the /v1/dict dictionary (BR-TEXT-12). */
@@ -771,6 +864,25 @@ export interface components {
             auth_tips: components["schemas"]["FreeForm"];
             compliance: components["schemas"]["FreeForm"];
             display: components["schemas"]["FreeForm"];
+            external_page?: components["schemas"]["ConfigExternalPage"];
+            link_patterns?: components["schemas"]["ConfigLinkPatterns"];
+            /**
+             * @description Third-party page hosts a deep link may open in ExternalPage, matched by full host name
+             *     (values and default in BR-ID-10 细则「深链能打开的第三方页面」); push and in-app
+             *     targets are not limited by it (03 §4.4).
+             */
+            external_hosts?: string[];
+            app_update?: components["schemas"]["ConfigAppUpdate"];
+            /**
+             * @description Native entries to help articles: key → jump target; an entry whose key is not
+             *     configured is not shown. Keys are defined by the rules that use them: price_compare
+             *     (BR-TEXT-03), claim_guide.<platform> (BR-ATTR-17 细则), login_help (BR-ID-02 细则),
+             *     withdraw_rules (BR-WDR-04 细则). Values are operations configuration (article ids).
+             */
+            help_links?: {
+                [key: string]: components["schemas"]["HelpLinkTarget"];
+            };
+            claim?: components["schemas"]["ConfigClaim"];
         };
         ConfigResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -1604,12 +1716,19 @@ export interface operations {
                      *           "flags": {
                      *             "agent.entry.visible": true,
                      *             "clipboard.enabled.taobao": true,
-                     *             "ui.grayscale": false
+                     *             "ui.grayscale": false,
+                     *             "external_page.product_intercept": true,
+                     *             "external_page.union_host_block": true,
+                     *             "earnings.dashboard.visible": false
                      *           },
                      *           "platform_status": {
                      *             "taobao": "on",
                      *             "jd": "on",
                      *             "pdd": "not_launched"
+                     *           },
+                     *           "search_status": {
+                     *             "taobao": "on",
+                     *             "jd": "off"
                      *           }
                      *         },
                      *         "texts": {
@@ -1626,7 +1745,9 @@ export interface operations {
                      *         },
                      *         "invite": {
                      *           "required": false,
-                     *           "backfill_hours": 168
+                     *           "backfill_hours": 168,
+                     *           "bind_phone_guide": true,
+                     *           "before_buy_tip": true
                      *         },
                      *         "agent": {
                      *           "enabled": true,
@@ -1646,7 +1767,38 @@ export interface operations {
                      *         "bridge_origins": {},
                      *         "auth_tips": {},
                      *         "compliance": {},
-                     *         "display": {}
+                     *         "display": {},
+                     *         "external_page": {
+                     *           "nav_host_sample_bp": 100
+                     *         },
+                     *         "link_patterns": {
+                     *           "version": "2026100401",
+                     *           "rules": [
+                     *             {
+                     *               "platform": "taobao",
+                     *               "category": "union_host",
+                     *               "hosts": [
+                     *                 "taobao.example.test"
+                     *               ],
+                     *               "path_patterns": []
+                     *             }
+                     *           ]
+                     *         },
+                     *         "external_hosts": [],
+                     *         "app_update": {
+                     *           "recheck_interval_sec": 1800
+                     *         },
+                     *         "help_links": {
+                     *           "price_compare": {
+                     *             "route": "Help",
+                     *             "params": {
+                     *               "article_id": "example-article-one"
+                     *             }
+                     *           }
+                     *         },
+                     *         "claim": {
+                     *           "window_days": 30
+                     *         }
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }
