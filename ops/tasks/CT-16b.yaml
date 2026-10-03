@@ -8,6 +8,8 @@ type: migration
 # 两段式（规划/11 §2.3）：Codex 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物。迁移全局串行。
 # 规则测试（Claude）连库，写成 test/spec/db/idempotency-keys/*.int.test.ts（由 pnpm test:int 运行）：abandoned 行可插入；非 abandoned 行缺 request_hash 被拒；status 取值外被拒。
 # refs 为空：依据是 04 §3.2 idempotency_keys 行与 BR-ID-10 细则「敏感操作的幂等键」，由编排者摘入任务书第 2 节。
+# 容器验证发现：0003 的基线集成测试把 status 改成 'done'，新约束下必须改为 04 的取值（completed），
+# 所以 paths 加 packages/db/src/platform-baseline.int.test.ts（只改这一处取值）。
 refs: []
 refs_hash: {}
 deps: []
@@ -15,6 +17,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'packages/db/src/platform-baseline.int.test.ts'
 impl: codex
 tester: claude
 accept:
