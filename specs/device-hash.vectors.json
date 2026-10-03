@@ -115,6 +115,11 @@
       "device_hash": "12b9377cbe7e5c94e8a70d9d23929523d14afa954793130f8a3959c7b849aca8"
     },
     {
+      "source_value": "----",
+      "note": "hyphens only (empty once zeros and hyphens are removed)",
+      "device_hash": "bd64bb8efa5b3f27e6442f23600c3b516127ea17e23724b41e50da4c22883edd"
+    },
+    {
       "source_value": "9774d56d682e549c",
       "note": "ANDROID_ID shared by many Android 2.2 devices (well-known public fixed value)",
       "device_hash": "4d853cd5e7d688e75b3dca9abc2fa52ac8bafb750b6d4dc01b78e2e7bb335f8f"
