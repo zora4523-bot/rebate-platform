@@ -13,6 +13,7 @@
   "references": [
     { "path": "../packages/testing" },
     { "path": "../packages/money" },
-    { "path": "../packages/domain" }
+    { "path": "../packages/domain" },
+    { "path": "../packages/db" }
   ]
 }

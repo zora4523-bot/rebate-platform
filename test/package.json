@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "test:int": "vitest run --config vitest.integration.config.ts",
     "test:longrun": "vitest run --config vitest.longrun.config.ts"
   },
   "devDependencies": {
+    "@couli/db": "workspace:*",
     "@couli/domain": "workspace:*",
     "@couli/money": "workspace:*",
     "@couli/testing": "workspace:*",
-    "fast-check": "4.10.2"
+    "fast-check": "4.10.2",
+    "kysely": "0.29.6"
   }
 }
