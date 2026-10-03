@@ -12,13 +12,16 @@ import {
   rotateDataKey,
 } from '../../../../apps/api/src/modules/platform/crypto/index.ts';
 import {
+  FailingKms,
   FakeKms,
   KEY_BYTES,
   SAMPLES,
   encodingsOf,
+  errorProblems,
   fakeUnwrap,
   fakeWrap,
   knownKeyring,
+  leaksIn,
   outcomeOf,
   referenceDecrypt,
   rejectionOf,
@@ -104,7 +107,7 @@ it('[BR-ID-33] 信封加密：openFieldCrypto 把文档里每一个包裹密钥�
   });
 });
 
-it('[BR-ID-33] provider 解包任何一把密钥失败，openFieldCrypto 整体拒绝，不返回只带部分密钥的对象', async () => {
+it('[BR-ID-33] provider 包裹或解包失败时整体拒绝且不转述它的错误：解包任何一把密钥失败，openFieldCrypto 不返回只带部分密钥的对象；provider 抛出或拒绝（错误里带着手机号与密钥），新建、轮换、打开 keyring 都以 key_provider_failed 拒绝，错误是固定文案、没有 cause，找不到那些值', async () => {
   const outcomes: Record<string, string> = {};
   for (const failing of ['oldDataKey', 'currentDataKey', 'blindIndexKey'] as const) {
     const kms = new FakeKms();
@@ -115,11 +118,38 @@ it('[BR-ID-33] provider 解包任何一把密钥失败，openFieldCrypto 整体�
         : (wrappedOf(known.doc, failing === 'oldDataKey' ? 1 : 2) ?? null);
     outcomes[failing] = await rejectionOf(() => openFieldCrypto(known.doc, kms));
   }
-  // The provider's own error comes through; what matters is that nothing is returned.
-  expect(outcomes).toEqual({
-    oldDataKey: 'other error: Error: fake kms: unwrap refused',
-    currentDataKey: 'other error: Error: fake kms: unwrap refused',
-    blindIndexKey: 'other error: Error: fake kms: unwrap refused',
+  const secret = `13877776666 key=${testKey(1).toString('hex')}`;
+  const known = knownKeyring(new FakeKms(), [1], 1);
+  const failing = (how: 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap') =>
+    new FailingKms(new FakeKms(), how, secret);
+  const calls: Record<string, () => Promise<unknown>> = {
+    createRejected: () => createWrappedKeyring(failing('reject-wrap')),
+    createThrown: () => createWrappedKeyring(failing('throw-wrap')),
+    rotateRejected: () => rotateDataKey(known.doc, failing('reject-wrap')),
+    rotateThrown: () => rotateDataKey(known.doc, failing('throw-wrap')),
+    openRejected: () => openFieldCrypto(known.doc, failing('reject-unwrap')),
+    openThrown: () => openFieldCrypto(known.doc, failing('throw-unwrap')),
+  };
+  const problems: Record<string, string[]> = {};
+  for (const [name, call] of Object.entries(calls)) {
+    let error: unknown = 'the call succeeded';
+    try {
+      await call();
+    } catch (caught) {
+      error = caught;
+    }
+    problems[name] = [
+      ...errorProblems(error, 'key_provider_failed'),
+      ...leaksIn(error, { secret, phone: '13877776666', key: testKey(1) }),
+    ];
+  }
+  expect({ outcomes, problems }).toEqual({
+    outcomes: {
+      oldDataKey: 'key_provider_failed',
+      currentDataKey: 'key_provider_failed',
+      blindIndexKey: 'key_provider_failed',
+    },
+    problems: Object.fromEntries(Object.keys(calls).map((name) => [name, []])),
   });
 });
 

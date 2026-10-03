@@ -207,12 +207,12 @@ it('[BR-ID-33] 进程重启后照常可用：用同一把主密钥、同一 keyI
   });
 });
 
-it('[BR-ID-33] 主密钥不对就打不开 keyring：另一把主密钥的 LocalKeyProvider（keyId 相同）打开时以 decrypt_failed 拒绝，拿不到任何可用的密钥', async () => {
+it('[BR-ID-33] 主密钥不对就打不开 keyring：另一把主密钥的 LocalKeyProvider（keyId 相同）解不开包裹，打开时以 key_provider_failed 拒绝，拿不到任何可用的密钥', async () => {
   const right = new LocalKeyProvider(testKey(MASTER_A), 'local-dev');
   const wrong = new LocalKeyProvider(testKey(MASTER_B), 'local-dev');
   const doc = await createWrappedKeyring(right);
   expect({
     right: await rejectionOf(() => openFieldCrypto(doc, right)),
     wrong: await rejectionOf(() => openFieldCrypto(doc, wrong)),
-  }).toEqual({ right: 'resolved', wrong: 'decrypt_failed' });
+  }).toEqual({ right: 'resolved', wrong: 'key_provider_failed' });
 });

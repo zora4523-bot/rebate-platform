@@ -30,13 +30,14 @@ export const MESSAGES: Readonly<Record<FieldCryptoErrorCode, string>> = {
   malformed_ciphertext: 'text is not a v1 ciphertext',
   unknown_key_version: 'the keyring does not hold this key version',
   decrypt_failed: 'decryption failed',
+  key_provider_failed: 'the key provider failed',
 };
 
 const ERROR_KEYS = new Set<PropertyKey>(['stack', 'message', 'name', 'code']);
 
-/** One V8 stack frame: `    at [function (]location[)]`, the location a file, node or native. */
+/** One V8 stack frame: `    at [async ][function (]location[)]`, the location a file, node or native. */
 const FRAME =
-  /^ {4}at (?:.+ \()?(?:file:\/\/\S+:\d+:\d+|node:\S+:\d+:\d+|\/\S+:\d+:\d+|<anonymous>|native|index \d+)\)?$/;
+  /^ {4}at (?:async )?(?:.+ \()?(?:file:\/\/\S+:\d+:\d+|node:\S+:\d+:\d+|\/\S+:\d+:\d+|<anonymous>|native|index \d+)\)?$/;
 
 /**
  * Why `error` is not exactly a contract error of `code`: an empty list when it is a
@@ -213,6 +214,47 @@ export class FakeKms implements KeyProvider {
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
+  }
+}
+
+/**
+ * A KeyProvider standing for a KMS that fails, with errors that quote a secret (a KMS error may
+ * echo the request): `how` says which call fails and whether it rejects or throws synchronously.
+ * Successful calls go to the wrapped FakeKms.
+ */
+export class FailingKms implements KeyProvider {
+  readonly keyId: string;
+  readonly #inner: FakeKms;
+  readonly #how: 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap';
+  readonly #secret: string;
+
+  constructor(
+    inner: FakeKms,
+    how: 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap',
+    secret: string,
+  ) {
+    this.keyId = inner.keyId;
+    this.#inner = inner;
+    this.#how = how;
+    this.#secret = secret;
+  }
+
+  #failure(): Error {
+    return Object.assign(new Error(`kms refused the request for ${this.#secret}`), {
+      request: this.#secret,
+    });
+  }
+
+  wrapKey(plainKey: Uint8Array): Promise<string> {
+    if (this.#how === 'throw-wrap') throw this.#failure();
+    if (this.#how === 'reject-wrap') return Promise.reject(this.#failure());
+    return this.#inner.wrapKey(plainKey);
+  }
+
+  unwrapKey(wrappedKey: string): Promise<Uint8Array> {
+    if (this.#how === 'throw-unwrap') throw this.#failure();
+    if (this.#how === 'reject-unwrap') return Promise.reject(this.#failure());
+    return this.#inner.unwrapKey(wrappedKey);
   }
 }
 

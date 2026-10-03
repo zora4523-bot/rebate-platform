@@ -10,6 +10,7 @@
 // What a process prints is checked in restart.test.ts. Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import {
+  FieldCryptoError,
   type FieldCryptoErrorCode,
   LocalKeyProvider,
   type WrappedKeyring,
@@ -19,7 +20,9 @@ import {
 } from '../../../../apps/api/src/modules/platform/crypto/index.ts';
 import {
   BLIND_KEY_LABEL,
+  FailingKms,
   FakeKms,
+  MESSAGES,
   SAMPLES,
   errorProblems,
   fakeWrap,
@@ -49,7 +52,7 @@ async function failureOf(run: () => unknown): Promise<unknown> {
   return 'the call succeeded';
 }
 
-it('[BR-ID-33] 报错不带明文也不带密钥：每一种被拒的调用（加密、建索引、解密、重新加密、读版本、打开与轮换 keyring、本地主密钥与解包）抛出的都正好是 FieldCryptoError：该错误码的固定文案、普通的堆栈、除 code 外没有别的属性（没有 cause），各种输出形式里也找不到传入的值与任何密钥', async () => {
+it('[BR-ID-33] 报错不带明文也不带密钥：每一种被拒的调用（加密、建索引、解密、重新加密、读版本、判断是否要重新加密、打开与轮换 keyring、provider 失败、本地主密钥、包裹与解包）抛出的都正好是 FieldCryptoError：该错误码的固定文案、普通的堆栈、除 code 外没有别的属性（没有 cause），各种输出形式里也找不到传入的值与任何密钥', async () => {
   const kms = new FakeKms();
   const known = knownKeyring(kms, [1, 2], 2);
   const crypto = await openFieldCrypto(known.doc, kms);
@@ -88,6 +91,17 @@ it('[BR-ID-33] 报错不带明文也不带密钥：每一种被拒的调用（�
       () => crypto.decrypt(SECRET_PLAINTEXT, 'users.phone'),
     ],
     versionOfPlaintext: ['malformed_ciphertext', () => crypto.keyVersionOf(SECRET_ID_NO)],
+    needsReencryptOfPlaintext: [
+      'malformed_ciphertext',
+      () => crypto.needsReencrypt(SECRET_PLAINTEXT),
+    ],
+    reencryptPlaintext: ['malformed_ciphertext', () => crypto.reencrypt(SECRET_ID_NO, 'x')],
+    reencryptBadContext: [
+      'invalid_context',
+      () => crypto.reencrypt(ciphertext, `${SECRET_ID_NO} `),
+    ],
+    // The value given where the context belongs is itself a valid context: decryption fails.
+    decryptValueAsContext: ['decrypt_failed', () => crypto.decrypt(ciphertext, SECRET_PLAINTEXT)],
     reencryptWrongContext: ['decrypt_failed', () => crypto.reencrypt(ciphertext, 'users.mobile')],
     openNoDataKey: ['invalid_keyring', () => openFieldCrypto({ ...known.doc, data_keys: [] }, kms)],
     openOtherKeyId: [
@@ -101,6 +115,21 @@ it('[BR-ID-33] 报错不带明文也不带密钥：每一种被拒的调用（�
     ],
     localShortMaster: ['invalid_key', () => new LocalKeyProvider(testBytes(5, 16), 'local-dev')],
     unwrapNotWrapped: ['invalid_keyring', () => local.unwrapKey(testKey(1).toString('hex'))],
+    unwrapPlaintext: ['invalid_keyring', () => local.unwrapKey(SECRET_PLAINTEXT)],
+    wrapNotBytes: ['invalid_key', () => local.wrapKey(SECRET_ID_NO as unknown as Uint8Array)],
+    wrapEmpty: ['invalid_key', () => local.wrapKey(new Uint8Array(0))],
+    openForeignKeyId: [
+      'invalid_keyring',
+      () => openFieldCrypto({ ...known.doc, key_id: SECRET_PLAINTEXT }, kms),
+    ],
+    openFailingProvider: [
+      'key_provider_failed',
+      () =>
+        openFieldCrypto(
+          known.doc,
+          new FailingKms(kms, 'reject-unwrap', `${SECRET_ID_NO} ${master.toString('hex')}`),
+        ),
+    ],
     unwrapOtherMaster: [
       'decrypt_failed',
       () => new LocalKeyProvider(testKey(241), 'local-dev').unwrapKey(wrapped),
@@ -125,8 +154,42 @@ it('[BR-ID-33] 报错不带明文也不带密钥：每一种被拒的调用（�
     problems[name] = errorProblems(error, code);
     leaks[name] = leaksIn(error, secrets);
   }
+  // The exact check itself: it accepts real stacks, also the `at async …` frames V8 writes for an
+  // error raised after awaits (with or without a function name), and rejects a stack with
+  // something appended.
+  const raise = async (): Promise<never> => {
+    await Promise.resolve();
+    throw new FieldCryptoError('decrypt_failed', MESSAGES.decrypt_failed);
+  };
+  const raisedAfterAwait = await failureOf(async () => {
+    await Promise.resolve();
+    return raise();
+  });
+  const asyncFrames = new FieldCryptoError('decrypt_failed', MESSAGES.decrypt_failed);
+  asyncFrames.stack = [
+    `FieldCryptoError: ${MESSAGES.decrypt_failed}`,
+    '    at unwrap (file:///work/apps/api/src/modules/platform/crypto/index.ts:120:11)',
+    '    at async openFieldCrypto (/work/apps/api/src/modules/platform/crypto/index.ts:250:7)',
+    '    at async file:///work/test/spec/platform/crypto/no-leak.test.ts:124:19',
+    '    at async Promise.all (index 0)',
+    '    at processTicksAndRejections (node:internal/process/task_queues:104:5)',
+  ].join('\n');
+  const appended = new FieldCryptoError('decrypt_failed', MESSAGES.decrypt_failed);
+  appended.stack = `${appended.stack ?? ''}\n    at ${SECRET_PLAINTEXT}`;
   const none = Object.fromEntries(Object.keys(cases).map((name) => [name, []]));
-  expect({ problems, leaks }).toEqual({ problems: none, leaks: none });
+  expect({
+    problems,
+    leaks,
+    check: {
+      raisedAfterAwait: errorProblems(raisedAfterAwait, 'decrypt_failed'),
+      asyncFrames: errorProblems(asyncFrames, 'decrypt_failed'),
+      appended: errorProblems(appended, 'decrypt_failed'),
+    },
+  }).toEqual({
+    problems: none,
+    leaks: none,
+    check: { raisedAfterAwait: [], asyncFrames: [], appended: ['stack frames'] },
+  });
 });
 
 it('[BR-ID-33] FieldCrypto 进日志既不泄密钥也不留明文：打开后、加密、解密、重新加密、建索引之后，对象只有 currentKeyVersion 和六个方法（不是 Proxy、方法上没有附带数据），JSON 与 inspect（含隐藏属性、不限深度）里找不到任何密钥与经手的手机号、身份证号、收款账号（原文与 UTF-8 字节的各种编码）', async () => {

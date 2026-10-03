@@ -45,7 +45,11 @@
 // property, the stack is the plain stack of that message). `LocalKeyProvider.unwrapKey` rejects
 // text that is not `lk1.<payload>` (payload shorter than 12 + 1 + 16 bytes included) with
 // `invalid_keyring`, and text that does not authenticate (another master key, another `keyId`,
-// altered) with `decrypt_failed`.
+// altered) with `decrypt_failed`; `LocalKeyProvider.wrapKey` rejects anything but a non-empty
+// Uint8Array with `invalid_key`. A provider's failure is never passed on: when the provider's
+// `wrapKey` or `unwrapKey` throws or rejects (with whatever error, a `FieldCryptoError` included),
+// `createWrappedKeyring`, `rotateDataKey` and `openFieldCrypto` reject with `key_provider_failed`
+// and keep nothing of the provider's error (a KMS error may quote the request).
 //
 // What a logger can see. A `LocalKeyProvider` has exactly one own property, `keyId`; a
 // `FieldCrypto` has no own properties but `currentKeyVersion` and the six methods; neither is a
@@ -93,7 +97,9 @@ export type FieldCryptoErrorCode =
   /** The ciphertext names a key version the keyring does not hold. */
   | 'unknown_key_version'
   /** Authentication failed: wrong key, wrong context, or altered data. Nothing is returned. */
-  | 'decrypt_failed';
+  | 'decrypt_failed'
+  /** The provider's wrapKey / unwrapKey failed; its own error is dropped. */
+  | 'key_provider_failed';
 
 /** The one message of each code (the rule tests keep their own copy of this table). */
 export const FIELD_CRYPTO_MESSAGES: Readonly<Record<FieldCryptoErrorCode, string>> = {
@@ -104,6 +110,7 @@ export const FIELD_CRYPTO_MESSAGES: Readonly<Record<FieldCryptoErrorCode, string
   malformed_ciphertext: 'text is not a v1 ciphertext',
   unknown_key_version: 'the keyring does not hold this key version',
   decrypt_failed: 'decryption failed',
+  key_provider_failed: 'the key provider failed',
 };
 
 export class FieldCryptoError extends Error {
@@ -215,8 +222,8 @@ export function rotateDataKey(
  * Validates the document, unwraps every key through `provider` and returns the cipher.
  * Rejects with `invalid_keyring` when the shape is wrong (current version missing, duplicate or
  * out-of-range versions, no data key, `key_id` different from `provider.keyId`), with
- * `invalid_key` when an unwrapped key has the wrong length, and with the provider's own error
- * when unwrapping fails. It never returns a cipher that holds only part of the keys.
+ * `invalid_key` when an unwrapped key has the wrong length, and with `key_provider_failed` when
+ * the provider fails to unwrap a key. It never returns a cipher that holds only part of the keys.
  */
 export function openFieldCrypto(
   keyring: WrappedKeyring,

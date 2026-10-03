@@ -163,6 +163,7 @@ async function outcomeOf(mod: CryptoModule, run: () => unknown): Promise<string>
 
 async function exercise(
   mod: CryptoModule,
+  kit: KitModule,
   request: Extract<ChildRequest, { mode: 'exercise' }>,
 ): Promise<ChildReply> {
   const provider = new mod.LocalKeyProvider(
@@ -188,6 +189,10 @@ async function exercise(
       await outcomeOf(mod, () => crypto.decrypt(text, context)),
       await outcomeOf(mod, () => crypto.encrypt(text, `${context} with space`)),
       await outcomeOf(mod, () => crypto.blindIndex(`${text}\ud800`, context)),
+      await outcomeOf(mod, () => crypto.keyVersionOf(text)),
+      await outcomeOf(mod, () => crypto.needsReencrypt(text)),
+      await outcomeOf(mod, () => crypto.reencrypt(text, context)),
+      await outcomeOf(mod, () => crypto.reencrypt(ciphertext, `${context} with space`)),
     );
   }
   const key = Buffer.from(request.wrapHex, 'hex');
@@ -195,12 +200,20 @@ async function exercise(
   await provider.unwrapKey(wrapped);
   const otherMaster = Buffer.from(request.masterKeyHex, 'hex').map((byte) => byte ^ 0xff);
   const wrongProvider = new mod.LocalKeyProvider(otherMaster, request.keyId);
+  const secret = request.values.map((v) => v.text).join(' ');
+  const failing = (how: 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap') =>
+    new kit.FailingKms(new kit.FakeKms(request.keyId), how, secret);
   outcomes.push(
     await outcomeOf(mod, () => wrongProvider.unwrapKey(wrapped)),
     await outcomeOf(mod, () => provider.unwrapKey(request.wrapHex)),
+    await outcomeOf(mod, () => provider.wrapKey(new Uint8Array(0))),
     await outcomeOf(mod, () => mod.openFieldCrypto(stored, wrongProvider)),
     await outcomeOf(mod, () => mod.openFieldCrypto({ ...stored, data_keys: [] }, provider)),
     await outcomeOf(mod, () => new mod.LocalKeyProvider(key.subarray(0, 16), request.keyId)),
+    await outcomeOf(mod, () => mod.createWrappedKeyring(failing('reject-wrap'))),
+    await outcomeOf(mod, () => mod.rotateDataKey(stored, failing('throw-wrap'))),
+    await outcomeOf(mod, () => mod.openFieldCrypto(stored, failing('reject-unwrap'))),
+    await outcomeOf(mod, () => mod.openFieldCrypto(stored, failing('throw-unwrap'))),
   );
   return { outcomes };
 }
@@ -278,7 +291,7 @@ async function handle(request: ChildRequest): Promise<ChildReply> {
   const mod = (await import(MODULE_UNDER_TEST)) as CryptoModule;
   const kit = (await import('./kit.ts')) as KitModule;
   if (request.mode === 'random') return random(mod, kit, calls, request);
-  if (request.mode === 'exercise') return exercise(mod, request);
+  if (request.mode === 'exercise') return exercise(mod, kit, request);
   if (request.mode === 'encrypt') {
     const crypto = await mod.openFieldCrypto(
       JSON.parse(request.keyring) as Parameters<CryptoModule['openFieldCrypto']>[0],

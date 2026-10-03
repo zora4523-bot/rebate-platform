@@ -252,7 +252,7 @@ it('[BR-ID-33] 换一个进程新生成的密钥也是新的随机密钥：本�
   });
 });
 
-it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建、轮换、打开 keyring，加密、解密、重新加密、建索引、读版本，包裹与解包，以及每一种错误码的被拒调用之后，标准错误一个字节也没有，标准输出正好是进程自己的那一份 JSON 回复', () => {
+it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建、轮换、打开 keyring，加密、解密、重新加密、建索引、读版本，包裹与解包，以及每一种错误码的被拒调用（含 provider 失败）之后，标准错误一个字节也没有，标准输出正好是进程自己的那一份 JSON 回复', () => {
   const values = [
     { text: '13877776666', context: PHONE_CONTEXT },
     { text: '11010519491231002X', context: ID_CONTEXT },
@@ -274,6 +274,10 @@ it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建�
     'malformed_ciphertext',
     'invalid_context',
     'invalid_plaintext',
+    'malformed_ciphertext',
+    'malformed_ciphertext',
+    'malformed_ciphertext',
+    'invalid_context',
   ];
   expect({
     status: run.status,
@@ -289,9 +293,14 @@ it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建�
         ...values.flatMap(() => perValue),
         'decrypt_failed',
         'invalid_keyring',
-        'decrypt_failed',
+        'invalid_key',
+        'key_provider_failed',
         'invalid_keyring',
         'invalid_key',
+        'key_provider_failed',
+        'key_provider_failed',
+        'key_provider_failed',
+        'key_provider_failed',
       ],
     },
   });
