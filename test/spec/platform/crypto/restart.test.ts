@@ -1,10 +1,11 @@
-// Rule tests for 规划/08 BR-ID-33 across a process restart: AES-256-GCM needs an IV that never
-// repeats under one data key, and KMS 信封加密 means that what was stored (the wrapped keyring,
-// the ciphertexts) is all a new process needs, together with the master key. Within one process
-// a module-level counter or an in-memory table of wrapped keys passes every other test, so the
-// second half of each scenario runs in a new `node` process (child.ts) that only receives text.
-// The same processes show what the module prints: nothing but the child's own JSON reply may
-// reach stdout, and stderr must not carry a plaintext or a key (日志中不得出现明文).
+// Rule tests for 规划/08 BR-ID-33 across process restarts: AES-256-GCM needs an IV that never
+// repeats under one key (the data keys, and the master key that wraps them), new keys must be new
+// random keys, and KMS 信封加密 means that what was stored (the wrapped keyring, the ciphertexts)
+// is all a new process needs, together with the master key. Within one process a module-level
+// counter or an in-memory table of wrapped keys passes every other test, so the second half of
+// each scenario runs in a new `node` process (child.ts) that only receives text.
+// The same processes show what the module prints (日志中不得出现明文): a process that runs every
+// operation, successful and refused, writes exactly its own JSON reply and nothing else.
 // Top-level it() only (规划/11 §4.3).
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -20,46 +21,46 @@ import type { ChildReply, ChildRequest } from './child.ts';
 import {
   FakeKms,
   IV_BYTES,
+  KEY_BYTES,
   SAMPLES,
+  ivOfLk1,
   knownKeyring,
   parseV1,
   referenceBlindIndex,
-  leaksIn,
   referenceDecrypt,
+  referenceUnwrap,
+  stuckBits,
   testKey,
-  withBytes,
 } from './kit.ts';
 
 const CHILD = fileURLToPath(new URL('./child.ts', import.meta.url));
 
 interface ChildRun {
-  /** The JSON reply; a crash, or stdout that is not exactly one JSON value, is an error reply. */
+  /** The JSON reply; a crash, or stdout that is not one JSON value, is an error reply. */
   readonly reply: ChildReply;
-  /** Everything the process wrote, stdout and stderr, kept for the leak checks. */
-  readonly printed: string;
+  readonly status: number | null;
+  readonly stdout: string;
+  readonly stderr: string;
 }
 
-/** Runs child.ts in a new node process and keeps what it printed. */
+/** Runs child.ts in a new node process and keeps everything it printed. */
 function runChild(request: ChildRequest): ChildRun {
   const run = spawnSync(process.execPath, [CHILD], {
     input: JSON.stringify(request),
     encoding: 'utf8',
     timeout: 30_000,
   });
-  const printed = `${run.stdout}\n${run.stderr}`;
+  const common = { status: run.status, stdout: run.stdout, stderr: run.stderr };
   if (run.status !== 0) {
     const detail = `${run.error?.message ?? ''} ${run.stderr.slice(-400)}`.trim();
-    return {
-      reply: { error: `child exited with ${String(run.status ?? run.signal)}: ${detail}` },
-      printed,
-    };
+    return { ...common, reply: { error: `child exited with ${String(run.status)}: ${detail}` } };
   }
   try {
-    return { reply: JSON.parse(run.stdout) as ChildReply, printed };
+    return { ...common, reply: JSON.parse(run.stdout) as ChildReply };
   } catch {
     return {
+      ...common,
       reply: { error: `stdout is not one JSON reply: ${run.stdout.slice(0, 200)}` },
-      printed,
     };
   }
 }
@@ -73,11 +74,17 @@ function ciphertextsOf(reply: ChildReply): string[] {
   throw new Error(`child process failed: ${JSON.stringify(reply)}`);
 }
 
+function producedOf(reply: ChildReply): { keyrings: string[]; wrapped: string[] } {
+  if ('keyrings' in reply) return reply;
+  throw new Error(`child process failed: ${JSON.stringify(reply)}`);
+}
+
 const PHONE_CONTEXT = 'users.phone';
 const ID_CONTEXT = 'realname.id_no';
 const MASTER = 240;
+const KEY_ID = 'local-dev';
 
-it('[BR-ID-33] 换一个进程 IV 也不重复：两个新进程只拿到同一份存下来的 keyring，与本进程各加密 50 次，150 个 IV 两两不同、96 位里每一位都出现过 0 和 1，每份密文都用 keyring 里的数据密钥解得开', async () => {
+it('[BR-ID-33] 换一个进程字段加密的 IV 也不重复：两个新进程只拿到同一份存下来的 keyring，与本进程各加密 50 次，150 个 IV 两两不同、96 位里每一位都出现过 0 和 1，每份密文都用 keyring 里的数据密钥解得开', async () => {
   const kms = new FakeKms();
   const known = knownKeyring(kms, [1], 1);
   const stored = JSON.stringify(known.doc);
@@ -86,36 +93,33 @@ it('[BR-ID-33] 换一个进程 IV 也不重复：两个新进程只拿到同一�
     context: PHONE_CONTEXT,
   }));
   const here = await openFieldCrypto(JSON.parse(stored) as WrappedKeyring, new FakeKms());
-  const runs = {
-    // One after the other, like a restart: the second process starts after the first has ended.
-    firstProcess: inNewProcess({ mode: 'encrypt', keyring: stored, kmsKeyId: kms.keyId, values }),
-    secondProcess: inNewProcess({ mode: 'encrypt', keyring: stored, kmsKeyId: kms.keyId, values }),
-  };
+  // One after the other, like a restart: the second process starts after the first has ended.
+  const first = inNewProcess({ mode: 'encrypt', keyring: stored, kmsKeyId: kms.keyId, values });
+  const second = inNewProcess({ mode: 'encrypt', keyring: stored, kmsKeyId: kms.keyId, values });
   const ciphertexts = [
     ...values.map((v) => here.encrypt(v.text, v.context)),
-    ...ciphertextsOf(runs.firstProcess),
-    ...ciphertextsOf(runs.secondProcess),
+    ...ciphertextsOf(first),
+    ...ciphertextsOf(second),
   ];
   const ivs = ciphertexts.map((c) => Buffer.from(parseV1(c).payload.subarray(0, IV_BYTES)));
-  const stuckBits: number[] = [];
-  for (let bit = 0; bit < IV_BYTES * 8; bit += 1) {
-    const ones = ivs.filter((iv) => ((iv[bit >> 3] ?? 0) >> (bit & 7)) % 2 === 1).length;
-    if (ones === 0 || ones === ivs.length) stuckBits.push(bit);
-  }
-  const expectedTexts = [...values, ...values, ...values].map((v) => v.text);
   expect({
     total: ivs.length,
     distinct: new Set(ivs.map((iv) => iv.toString('hex'))).size,
-    stuckBits,
+    stuckBits: stuckBits(ivs, IV_BYTES * 8),
     decryptedWithStoredKey: ciphertexts.map((c) =>
       referenceDecrypt(known.dataKey(1), c, PHONE_CONTEXT),
     ),
-  }).toEqual({ total: 150, distinct: 150, stuckBits: [], decryptedWithStoredKey: expectedTexts });
+  }).toEqual({
+    total: 150,
+    distinct: 150,
+    stuckBits: [],
+    decryptedWithStoredKey: [...values, ...values, ...values].map((v) => v.text),
+  });
 });
 
 it('[BR-ID-33] 进程重启后照常可用（新进程验证）：新进程只凭主密钥字节、keyId、存下来的 keyring 与密文，解开重启前两个版本的密文、算出相同的盲索引、解开包裹过的密钥；新进程用同一把主密钥建的 keyring 与密文，本进程也打得开', async () => {
   const masterKey = testKey(MASTER);
-  const before = new LocalKeyProvider(masterKey, 'local-dev');
+  const before = new LocalKeyProvider(masterKey, KEY_ID);
   const created = await createWrappedKeyring(before);
   const version1 = (await openFieldCrypto(created, before)).encrypt(SAMPLES.idNo, ID_CONTEXT);
   const rotated = await rotateDataKey(created, before);
@@ -123,13 +127,13 @@ it('[BR-ID-33] 进程重启后照常可用（新进程验证）：新进程只�
   const version2 = second.encrypt(SAMPLES.idNo, ID_CONTEXT);
   const index = second.blindIndex(SAMPLES.idNo, ID_CONTEXT);
   const looseWrapped = await before.wrapKey(testKey(1));
-  const blindKey = await before.unwrapKey(rotated.blind_index_key);
+  const blindKey = referenceUnwrap(masterKey, KEY_ID, rotated.blind_index_key);
 
   // Restart: a new process gets the master key bytes, the key id and stored text, nothing else.
   const recovered = inNewProcess({
     mode: 'recover',
     masterKeyHex: masterKey.toString('hex'),
-    keyId: 'local-dev',
+    keyId: KEY_ID,
     keyring: JSON.stringify(rotated),
     decrypt: [
       { ciphertext: version1, context: ID_CONTEXT },
@@ -144,14 +148,16 @@ it('[BR-ID-33] 进程重启后照常可用（新进程验证）：新进程只�
   const produced = inNewProcess({
     mode: 'produce',
     masterKeyHex: masterKey.toString('hex'),
-    keyId: 'local-dev',
+    keyId: KEY_ID,
+    keyrings: 1,
     encrypt: [{ text: SAMPLES.phone, context: PHONE_CONTEXT }],
     wrapHex: [testKey(2).toString('hex')],
   });
   let openedHere: Record<string, unknown> = { error: JSON.stringify(produced) };
-  if ('keyring' in produced) {
-    const provider = new LocalKeyProvider(Buffer.from(masterKey), 'local-dev');
-    const crypto = await openFieldCrypto(JSON.parse(produced.keyring) as WrappedKeyring, provider);
+  if ('keyrings' in produced) {
+    const provider = new LocalKeyProvider(Buffer.from(masterKey), KEY_ID);
+    const keyring = JSON.parse(produced.keyrings[0] ?? '{}') as WrappedKeyring;
+    const crypto = await openFieldCrypto(keyring, provider);
     openedHere = {
       decrypted: produced.ciphertexts.map((c) => crypto.decrypt(c, PHONE_CONTEXT)),
       unwrapped: await Promise.all(
@@ -173,71 +179,120 @@ it('[BR-ID-33] 进程重启后照常可用（新进程验证）：新进程只�
   });
 });
 
-it('[BR-ID-33] 换一个进程包裹也不重复：两个新进程用同一把主密钥各把同一把密钥包裹 10 次，与本进程的 10 次合起来 30 份包裹文本两两不同（每次包裹都用新的随机 IV），本进程都解得开', async () => {
+it('[BR-ID-33] 换一个进程包裹密钥的 IV 也不重复：本进程与两个新进程用同一把主密钥各把同一把密钥包裹 10 次，30 份 lk1 包裹文本的 IV 两两不同、96 位里每一位都出现过 0 和 1，每份都按 lk1 格式用主密钥独立解开、正好是那把密钥', async () => {
   const masterKey = testKey(MASTER);
-  const here = new LocalKeyProvider(masterKey, 'local-dev');
+  const here = new LocalKeyProvider(masterKey, KEY_ID);
   const key = testKey(1);
-  const wrapHex = Array.from({ length: 10 }, () => key.toString('hex'));
   const request: ChildRequest = {
     mode: 'produce',
     masterKeyHex: masterKey.toString('hex'),
-    keyId: 'local-dev',
+    keyId: KEY_ID,
+    keyrings: 0,
     encrypt: [],
-    wrapHex,
-  };
-  const wrappedIn = (reply: ChildReply): string[] => {
-    if ('wrapped' in reply) return reply.wrapped;
-    throw new Error(`child process failed: ${JSON.stringify(reply)}`);
+    wrapHex: Array.from({ length: 10 }, () => key.toString('hex')),
   };
   const wrapped: string[] = [];
   for (let i = 0; i < 10; i += 1) wrapped.push(await here.wrapKey(key));
   // One after the other, like a restart.
-  wrapped.push(...wrappedIn(inNewProcess(request)), ...wrappedIn(inNewProcess(request)));
-  const unwrapped = await Promise.all(
-    wrapped.map(async (text) => Buffer.from(await here.unwrapKey(text)).toString('hex')),
-  );
-  expect({ total: wrapped.length, distinct: new Set(wrapped).size, unwrapped }).toEqual({
+  wrapped.push(...producedOf(inNewProcess(request)).wrapped);
+  wrapped.push(...producedOf(inNewProcess(request)).wrapped);
+  const ivs = wrapped.map((text) => ivOfLk1(text));
+  expect({
+    total: wrapped.length,
+    distinctIvs: new Set(ivs.map((iv) => iv.toString('hex'))).size,
+    stuckBits: stuckBits(ivs, IV_BYTES * 8),
+    unwrapped: wrapped.map((text) => referenceUnwrap(masterKey, KEY_ID, text).toString('hex')),
+  }).toEqual({
     total: 30,
-    distinct: 30,
+    distinctIvs: 30,
+    stuckBits: [],
     unwrapped: wrapped.map(() => key.toString('hex')),
   });
 });
 
-it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里加密、解密、重新加密、建索引、轮换、包裹与解包，以及各种被拒的调用之后，进程只输出它自己的一份 JSON 回复，输出里找不到明文（字符串与 UTF-8 字节）和任何密钥字节', async () => {
+it('[BR-ID-33] 换一个进程新生成的密钥也是新的随机密钥：本进程与两个新进程各新建 5 份 keyring 并各轮换一次，45 把数据密钥与盲索引密钥（按 lk1 格式用主密钥独立解包）都是 32 字节、两两不同、256 位里每一位都出现过 0 和 1，它们的 45 个包裹 IV 也两两不同', async () => {
   const masterKey = testKey(MASTER);
-  const provider = new LocalKeyProvider(masterKey, 'local-dev');
-  const stored = await rotateDataKey(await createWrappedKeyring(provider), provider);
+  const here = new LocalKeyProvider(masterKey, KEY_ID);
+  const keyrings: WrappedKeyring[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    keyrings.push(await rotateDataKey(await createWrappedKeyring(here), here));
+  }
+  const request: ChildRequest = {
+    mode: 'produce',
+    masterKeyHex: masterKey.toString('hex'),
+    keyId: KEY_ID,
+    keyrings: 5,
+    encrypt: [],
+    wrapHex: [],
+  };
+  for (const reply of [inNewProcess(request), inNewProcess(request)]) {
+    keyrings.push(...producedOf(reply).keyrings.map((text) => JSON.parse(text) as WrappedKeyring));
+  }
+  const wrappedTexts = keyrings.flatMap((doc) => [
+    ...doc.data_keys.map((entry) => entry.wrapped),
+    doc.blind_index_key,
+  ]);
+  const keys = wrappedTexts.map((text) => referenceUnwrap(masterKey, KEY_ID, text));
+  expect({
+    keyrings: keyrings.length,
+    versions: keyrings.map((doc) => doc.data_keys.map((entry) => entry.version)),
+    keys: keys.length,
+    lengths: [...new Set(keys.map((key) => key.length))],
+    distinctKeys: new Set(keys.map((key) => key.toString('hex'))).size,
+    stuckBits: stuckBits(keys, KEY_BYTES * 8),
+    distinctIvs: new Set(wrappedTexts.map((text) => ivOfLk1(text).toString('hex'))).size,
+  }).toEqual({
+    keyrings: 15,
+    versions: keyrings.map(() => [1, 2]),
+    keys: 45,
+    lengths: [KEY_BYTES],
+    distinctKeys: 45,
+    stuckBits: [],
+    distinctIvs: 45,
+  });
+});
+
+it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建、轮换、打开 keyring，加密、解密、重新加密、建索引、读版本，包裹与解包，以及每一种错误码的被拒调用之后，标准错误一个字节也没有，标准输出正好是进程自己的那一份 JSON 回复', () => {
   const values = [
     { text: '13877776666', context: PHONE_CONTEXT },
     { text: '11010519491231002X', context: ID_CONTEXT },
     { text: 'payee-rule-test@example.com', context: 'payout_accounts.alipay_logon_id' },
     { text: '6200000000000077777', context: 'payout_accounts.bank_card_no' },
     { text: SAMPLES.name, context: 'realname.name' },
+    { text: SAMPLES.astral, context: 'payout_accounts.payee_name' },
   ];
   const run = runChild({
     mode: 'exercise',
-    masterKeyHex: masterKey.toString('hex'),
-    keyId: 'local-dev',
-    keyring: JSON.stringify(stored),
+    masterKeyHex: testKey(MASTER).toString('hex'),
+    keyId: KEY_ID,
     values,
     wrapHex: testKey(3).toString('hex'),
   });
-  const secrets = {
-    ...withBytes(Object.fromEntries(values.map((v, i) => [`value${String(i)}`, v.text]))),
-    masterKey,
-    wrappedKey: testKey(3),
-    dataKey1: await provider.unwrapKey(stored.data_keys[0]?.wrapped ?? ''),
-    dataKey2: await provider.unwrapKey(stored.data_keys[1]?.wrapped ?? ''),
-    blindKey: await provider.unwrapKey(stored.blind_index_key),
-  };
   const perValue = [
     'decrypt_failed',
+    'unknown_key_version',
+    'malformed_ciphertext',
     'invalid_context',
     'invalid_plaintext',
-    'malformed_ciphertext',
   ];
-  expect({ reply: run.reply, printedLeaks: leaksIn(run.printed, secrets) }).toEqual({
-    reply: { outcomes: [...values.flatMap(() => perValue), 'refused', 'refused'] },
-    printedLeaks: [],
+  expect({
+    status: run.status,
+    stderr: run.stderr,
+    stdoutIsExactlyTheReply: run.stdout === JSON.stringify(run.reply),
+    reply: run.reply,
+  }).toEqual({
+    status: 0,
+    stderr: '',
+    stdoutIsExactlyTheReply: true,
+    reply: {
+      outcomes: [
+        ...values.flatMap(() => perValue),
+        'decrypt_failed',
+        'invalid_keyring',
+        'decrypt_failed',
+        'invalid_keyring',
+        'invalid_key',
+      ],
+    },
   });
 });

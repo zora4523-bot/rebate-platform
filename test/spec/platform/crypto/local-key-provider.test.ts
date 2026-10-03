@@ -2,10 +2,11 @@
 // the KeyProvider is a file / in-memory key locally and KMS in the cloud. LocalKeyProvider is
 // the local one: it must behave like a master key holder (wrap, unwrap, refuse foreign or
 // altered text), so that local and test runs go through the same envelope path as production.
+// Its wrapped-key format (`lk1.<base64url(IV ‖ ciphertext ‖ tag)>`, AES-256-GCM under the master
+// key, AAD = keyId) is part of the contract, so the tests read the IV and decrypt with node:crypto.
 // Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import {
-  FieldCryptoError,
   LocalKeyProvider,
   type WrappedKeyring,
   createWrappedKeyring,
@@ -13,10 +14,16 @@ import {
   rotateDataKey,
 } from '../../../../apps/api/src/modules/platform/crypto/index.ts';
 import {
+  IV_BYTES,
   SAMPLES,
-  encodingsOf,
+  TAG_BYTES,
+  b64url,
+  ivOfLk1,
   outcomeOf,
+  parseLk1,
   referenceBlindIndex,
+  referenceUnwrap,
+  referenceWrap,
   rejectionOf,
   testBytes,
   testKey,
@@ -25,57 +32,50 @@ import {
 const MASTER_A = 240;
 const MASTER_B = 241;
 
-/** One character of `text` replaced so that the decoded value differs or the text is invalid. */
-function alterOneCharacter(text: string): string {
-  for (let at = Math.floor(text.length / 2); at < text.length; at += 1) {
-    const ch = text[at] ?? '';
-    let replacement: string | null = null;
-    if (/[0-9]/.test(ch)) replacement = String((Number(ch) + 1) % 10);
-    else if (/[a-y]/.test(ch) || /[A-Y]/.test(ch)) {
-      replacement = String.fromCharCode(ch.charCodeAt(0) + 1);
-    } else if (ch === 'z') replacement = 'a';
-    else if (ch === 'Z') replacement = 'A';
-    if (replacement !== null) return text.slice(0, at) + replacement + text.slice(at + 1);
-  }
-  throw new Error('no letter or digit to alter in the second half of the text');
-}
-
-it('[BR-ID-33] LocalKeyProvider：wrapKey 之后 unwrapKey 还原出同一把密钥，包裹文本里找不到明文密钥与主密钥的编码', async () => {
-  const provider = new LocalKeyProvider(testKey(MASTER_A));
-  const keys = [testKey(1), testBytes(3, 32), testBytes(4, 64)];
-  const restored: string[] = [];
-  const leaked: string[] = [];
+it('[BR-ID-33] LocalKeyProvider 按 lk1 格式包裹：wrapKey 写出 lk1.<base64url(IV ‖ 密文 ‖ tag)>，密文与被包裹的密钥一样长（1、16、32、64 字节），node:crypto 用主密钥、AAD = keyId 独立解开正好是那把密钥；node:crypto 按同一格式包裹的文本 unwrapKey 也还原得出', async () => {
+  const master = testKey(MASTER_A);
+  const provider = new LocalKeyProvider(master, 'local-dev');
+  const keys = [testBytes(3, 1), testBytes(4, 16), testKey(1), testBytes(5, 64)];
+  const written: Record<string, unknown>[] = [];
+  const readBack: string[] = [];
   for (const key of keys) {
     const wrapped = await provider.wrapKey(key);
-    restored.push(Buffer.from(await provider.unwrapKey(wrapped)).toString('hex'));
-    const text = wrapped.toLowerCase();
-    for (const secret of [key, testKey(MASTER_A)]) {
-      leaked.push(...encodingsOf(secret).filter((e) => text.includes(e.toLowerCase())));
-    }
+    written.push({
+      shape: /^lk1\.[A-Za-z0-9_-]+$/.test(wrapped),
+      payloadBytes: parseLk1(wrapped).length,
+      byNodeCrypto: referenceUnwrap(master, 'local-dev', wrapped).toString('hex'),
+      byProvider: Buffer.from(await provider.unwrapKey(wrapped)).toString('hex'),
+    });
+    const fromReference = referenceWrap(master, 'local-dev', key);
+    readBack.push(Buffer.from(await provider.unwrapKey(fromReference)).toString('hex'));
   }
-  expect({ keyId: provider.keyId, restored, leaked }).toEqual({
-    keyId: 'local',
-    restored: keys.map((key) => key.toString('hex')),
-    leaked: [],
+  expect({ keyId: provider.keyId, written, readBack }).toEqual({
+    keyId: 'local-dev',
+    written: keys.map((key) => ({
+      shape: true,
+      payloadBytes: IV_BYTES + key.length + TAG_BYTES,
+      byNodeCrypto: key.toString('hex'),
+      byProvider: key.toString('hex'),
+    })),
+    readBack: keys.map((key) => key.toString('hex')),
   });
 });
 
-it('[BR-ID-33] LocalKeyProvider 每次包裹都用新的随机 IV：同一把主密钥把同一把密钥包裹 20 次（一个实例 10 次、同一主密钥的另一个实例 10 次），20 份包裹文本两两不同，全都解得开', async () => {
+it('[BR-ID-33] LocalKeyProvider 每次包裹都用新的随机 IV：同一把主密钥把同一把密钥包裹 20 次（一个实例 10 次、同一主密钥的另一个实例 10 次），20 份 lk1 文本的 IV 两两不同，每份都正好解出那把密钥', async () => {
   // AES-256-GCM under one master key: a fixed or repeated IV would let two wrapped keys be
-  // combined into the plaintext of one another. The same input wrapped twice must differ.
-  const first = new LocalKeyProvider(testKey(MASTER_A), 'local-dev');
-  const second = new LocalKeyProvider(Buffer.from(testKey(MASTER_A)), 'local-dev');
+  // combined into the plaintext of one another. The IV is read from the format, so a fixed IV
+  // hidden behind a random suffix shows.
+  const master = testKey(MASTER_A);
+  const first = new LocalKeyProvider(master, 'local-dev');
+  const second = new LocalKeyProvider(Buffer.from(master), 'local-dev');
   const key = testKey(1);
   const wrapped: string[] = [];
   for (let i = 0; i < 10; i += 1) wrapped.push(await first.wrapKey(key));
   for (let i = 0; i < 10; i += 1) wrapped.push(await second.wrapKey(key));
-  const unwrapped = await Promise.all(
-    wrapped.map(async (text) => Buffer.from(await first.unwrapKey(text)).toString('hex')),
-  );
-  expect({ distinct: new Set(wrapped).size, unwrapped }).toEqual({
-    distinct: 20,
-    unwrapped: wrapped.map(() => key.toString('hex')),
-  });
+  expect({
+    distinctIvs: new Set(wrapped.map((text) => ivOfLk1(text).toString('hex'))).size,
+    unwrapped: wrapped.map((text) => referenceUnwrap(master, 'local-dev', text).toString('hex')),
+  }).toEqual({ distinctIvs: 20, unwrapped: wrapped.map(() => key.toString('hex')) });
 });
 
 it('[BR-ID-33] LocalKeyProvider 的主密钥必须是 32 字节（AES-256）：0、16、31、33、64 字节一律 invalid_key', () => {
@@ -87,30 +87,51 @@ it('[BR-ID-33] LocalKeyProvider 的主密钥必须是 32 字节（AES-256）：0
   }).toEqual({ bad: lengths.map(() => 'invalid_key'), good: 'returned', keyId: 'local-dev' });
 });
 
-it('[BR-ID-33] LocalKeyProvider：换一把主密钥、或包裹文本被改动，unwrapKey 以 FieldCryptoError 拒绝，不返回错误的密钥', async () => {
-  const a = new LocalKeyProvider(testKey(MASTER_A));
-  const b = new LocalKeyProvider(testKey(MASTER_B));
+it('[BR-ID-33] LocalKeyProvider 不返回错误的密钥：换一把主密钥、换一个 keyId、包裹文本被改动一个字符，unwrapKey 以 decrypt_failed 拒绝；不是 lk1.<payload> 的文本（空串、十六进制、别的前缀、带换行或补位、载荷不足 12 + 1 + 16 字节）以 invalid_keyring 拒绝', async () => {
+  const master = testKey(MASTER_A);
+  const a = new LocalKeyProvider(master, 'local-dev');
   const wrapped = await a.wrapKey(testKey(1));
+  const payload = parseLk1(wrapped);
+  const altered = Buffer.from(payload);
+  altered[IV_BYTES + 3] = (altered[IV_BYTES + 3] ?? 0) ^ 0x01;
   const attempts: Record<string, () => Promise<Uint8Array>> = {
-    otherMasterKey: () => b.unwrapKey(wrapped),
-    alteredText: () => a.unwrapKey(alterOneCharacter(wrapped)),
-    truncatedText: () => a.unwrapKey(wrapped.slice(0, Math.floor(wrapped.length / 2))),
-    emptyText: () => a.unwrapKey(''),
-    notWrappedAtAll: () => a.unwrapKey(testKey(1).toString('hex')),
+    otherMasterKey: () => new LocalKeyProvider(testKey(MASTER_B), 'local-dev').unwrapKey(wrapped),
+    otherKeyId: () => new LocalKeyProvider(master, 'local-other').unwrapKey(wrapped),
+    alteredByte: () => a.unwrapKey(`lk1.${b64url(altered)}`),
+    alteredIv: () =>
+      a.unwrapKey(
+        `lk1.${b64url(Buffer.concat([Buffer.alloc(IV_BYTES), payload.subarray(IV_BYTES)]))}`,
+      ),
+    empty: () => a.unwrapKey(''),
+    hex: () => a.unwrapKey(testKey(1).toString('hex')),
+    otherPrefix: () => a.unwrapKey(`lk2.${b64url(payload)}`),
+    noPrefix: () => a.unwrapKey(b64url(payload)),
+    trailingNewline: () => a.unwrapKey(`${wrapped}\n`),
+    padded: () => a.unwrapKey(`${wrapped}=`),
+    payloadTooShort: () => a.unwrapKey(`lk1.${b64url(payload.subarray(0, IV_BYTES + TAG_BYTES))}`),
   };
-  const refused: Record<string, boolean> = {};
+  const outcomes: Record<string, string> = {};
   for (const [name, attempt] of Object.entries(attempts)) {
-    refused[name] = await attempt().then(
-      () => false,
-      (error: unknown) => error instanceof FieldCryptoError,
-    );
+    outcomes[name] = await rejectionOf(attempt);
   }
   expect({
     sameMasterKey: Buffer.from(await a.unwrapKey(wrapped)).equals(testKey(1)),
-    refused,
+    outcomes,
   }).toEqual({
     sameMasterKey: true,
-    refused: Object.fromEntries(Object.keys(attempts).map((name) => [name, true])),
+    outcomes: {
+      otherMasterKey: 'decrypt_failed',
+      otherKeyId: 'decrypt_failed',
+      alteredByte: 'decrypt_failed',
+      alteredIv: 'decrypt_failed',
+      empty: 'invalid_keyring',
+      hex: 'invalid_keyring',
+      otherPrefix: 'invalid_keyring',
+      noPrefix: 'invalid_keyring',
+      trailingNewline: 'invalid_keyring',
+      padded: 'invalid_keyring',
+      payloadTooShort: 'invalid_keyring',
+    },
   });
 });
 
@@ -186,15 +207,12 @@ it('[BR-ID-33] 进程重启后照常可用：用同一把主密钥、同一 keyI
   });
 });
 
-it('[BR-ID-33] 主密钥不对就打不开 keyring：另一把主密钥的 LocalKeyProvider（keyId 相同）打开时被拒绝，拿不到任何可用的密钥', async () => {
+it('[BR-ID-33] 主密钥不对就打不开 keyring：另一把主密钥的 LocalKeyProvider（keyId 相同）打开时以 decrypt_failed 拒绝，拿不到任何可用的密钥', async () => {
   const right = new LocalKeyProvider(testKey(MASTER_A), 'local-dev');
   const wrong = new LocalKeyProvider(testKey(MASTER_B), 'local-dev');
   const doc = await createWrappedKeyring(right);
   expect({
     right: await rejectionOf(() => openFieldCrypto(doc, right)),
-    wrongIsRefused: await openFieldCrypto(doc, wrong).then(
-      () => false,
-      (error: unknown) => error instanceof FieldCryptoError,
-    ),
-  }).toEqual({ right: 'resolved', wrongIsRefused: true });
+    wrong: await rejectionOf(() => openFieldCrypto(doc, wrong)),
+  }).toEqual({ right: 'resolved', wrong: 'decrypt_failed' });
 });

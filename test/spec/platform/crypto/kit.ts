@@ -2,8 +2,11 @@
 // Nothing here calls the code under test: the reference functions use node:crypto directly, so
 // expected values never come from the implementation (规划/11 §2.3 step 4).
 // Key bytes are derived by code from small numbers; no key literal appears in the rule tests.
+// Leaks are checked exactly wherever the contract allows it (the error's message, stack and
+// properties; the own properties of the objects; everything a process prints), and by searching
+// printed forms for secrets only as a second net.
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
-import { inspect } from 'node:util';
+import { inspect, types } from 'node:util';
 import {
   FieldCryptoError,
   type FieldCryptoErrorCode,
@@ -14,6 +17,109 @@ import {
 export const IV_BYTES = 12;
 export const TAG_BYTES = 16;
 export const KEY_BYTES = 32;
+
+/**
+ * The fixed message of every error code, copied from the contract (not imported, so that the
+ * contract cannot change under the tests).
+ */
+export const MESSAGES: Readonly<Record<FieldCryptoErrorCode, string>> = {
+  invalid_key: 'key has the wrong length',
+  invalid_keyring: 'keyring or wrapped key is malformed or belongs to another master key',
+  invalid_context: 'context must be 1 to 200 printable ASCII characters',
+  invalid_plaintext: 'value must be a non-empty well-formed string',
+  malformed_ciphertext: 'text is not a v1 ciphertext',
+  unknown_key_version: 'the keyring does not hold this key version',
+  decrypt_failed: 'decryption failed',
+};
+
+const ERROR_KEYS = new Set<PropertyKey>(['stack', 'message', 'name', 'code']);
+
+/** One V8 stack frame: `    at [function (]location[)]`, the location a file, node or native. */
+const FRAME =
+  /^ {4}at (?:.+ \()?(?:file:\/\/\S+:\d+:\d+|node:\S+:\d+:\d+|\/\S+:\d+:\d+|<anonymous>|native|index \d+)\)?$/;
+
+/**
+ * Why `error` is not exactly a contract error of `code`: an empty list when it is a
+ * FieldCryptoError named 'FieldCryptoError' with that code, exactly the fixed message, a stack
+ * that is that message followed by plain `at …` frames, and no property besides stack, message,
+ * name and code (no `cause`). Such an error cannot carry a value into a log.
+ */
+export function errorProblems(error: unknown, code: FieldCryptoErrorCode): string[] {
+  if (!(error instanceof FieldCryptoError)) return [`not a FieldCryptoError: ${String(error)}`];
+  const problems: string[] = [];
+  if (error.name !== 'FieldCryptoError') problems.push('name');
+  if (error.code !== code) problems.push(`code ${String(error.code)}`);
+  if (error.message !== MESSAGES[code]) problems.push('message');
+  const [first, ...frames] = (error.stack ?? '').split('\n');
+  if (first !== `FieldCryptoError: ${MESSAGES[code]}`) problems.push('stack head');
+  if (frames.length === 0 || frames.some((line) => !FRAME.test(line))) {
+    problems.push('stack frames');
+  }
+  const extra = Reflect.ownKeys(error).filter((key) => !ERROR_KEYS.has(key));
+  if (extra.length > 0) problems.push(`own properties ${extra.map(String).join(',')}`);
+  if ('cause' in error) problems.push('cause');
+  return problems;
+}
+
+/** Own properties a function may have: anything else could hold data. */
+const FUNCTION_KEYS = new Set<PropertyKey>(['length', 'name', 'prototype']);
+
+const FIELD_CRYPTO_KEYS = new Set<PropertyKey>([
+  'currentKeyVersion',
+  'encrypt',
+  'decrypt',
+  'keyVersionOf',
+  'needsReencrypt',
+  'reencrypt',
+  'blindIndex',
+]);
+
+/**
+ * Why the object handed out is not exactly the contract's shape: a LocalKeyProvider has only the
+ * own property `keyId` (with the given value), a FieldCrypto only `currentKeyVersion` and its six
+ * methods; neither is a Proxy and no method carries own data. An empty list means a logger that
+ * prints the object (JSON or util.inspect, hidden properties included) sees no key and no value.
+ */
+export function shapeProblems(
+  value: object,
+  kind: { readonly provider: string } | { readonly fieldCrypto: number },
+): string[] {
+  const problems: string[] = [];
+  if (types.isProxy(value)) problems.push('proxy');
+  const own = Reflect.ownKeys(value);
+  if ('provider' in kind) {
+    if (own.length !== 1 || own[0] !== 'keyId') problems.push(`own ${own.map(String).join(',')}`);
+    if ((value as { keyId?: unknown }).keyId !== kind.provider) problems.push('keyId');
+    return problems;
+  }
+  const extra = own.filter((key) => !FIELD_CRYPTO_KEYS.has(key));
+  if (extra.length > 0) problems.push(`own ${extra.map(String).join(',')}`);
+  const record = value as Record<PropertyKey, unknown>;
+  if (record['currentKeyVersion'] !== kind.fieldCrypto) problems.push('currentKeyVersion');
+  for (const key of own) {
+    if (key === 'currentKeyVersion' || !FIELD_CRYPTO_KEYS.has(key)) continue;
+    const method = record[key];
+    if (typeof method !== 'function') {
+      problems.push(`${String(key)} is not a function`);
+    } else if (
+      types.isProxy(method) ||
+      Reflect.ownKeys(method).some((k) => !FUNCTION_KEYS.has(k))
+    ) {
+      problems.push(`${String(key)} carries data`);
+    }
+  }
+  return problems;
+}
+
+/** Bits (0 = lowest bit of the first byte) that have the same value in every sample. */
+export function stuckBits(samples: readonly Uint8Array[], bits: number): number[] {
+  const stuck: number[] = [];
+  for (let bit = 0; bit < bits; bit += 1) {
+    const ones = samples.filter((s) => ((s[bit >> 3] ?? 0) >> (bit & 7)) % 2 === 1).length;
+    if (ones === 0 || ones === samples.length) stuck.push(bit);
+  }
+  return stuck;
+}
 
 /** Synthetic sample values (no real person): the three kinds of field BR-ID-33 names, plus text
  * with multi-byte characters (3-byte CJK and a 4-byte code point written as an escape). */
@@ -192,6 +298,45 @@ export function referenceDecrypt(key: Uint8Array, ciphertext: string, context: s
   return Buffer.concat([decipher.update(body), decipher.final()]).toString('utf8');
 }
 
+const LK1 = /^lk1\.([A-Za-z0-9_-]+)$/;
+
+/** IV ‖ ciphertext ‖ tag of a `lk1.<payload>` wrapped key; throws when the text has another shape. */
+export function parseLk1(wrapped: string): Buffer {
+  const match = LK1.exec(wrapped);
+  if (match === null) throw new Error('reference: not a lk1 wrapped key');
+  return Buffer.from(match[1] ?? '', 'base64url');
+}
+
+/** The IV of a `lk1.<payload>` wrapped key. */
+export function ivOfLk1(wrapped: string): Buffer {
+  return Buffer.from(parseLk1(wrapped).subarray(0, IV_BYTES));
+}
+
+/** Reference key wrapping of LocalKeyProvider: AES-256-GCM under the master key, AAD = keyId. */
+export function referenceWrap(
+  masterKey: Uint8Array,
+  keyId: string,
+  plainKey: Uint8Array,
+  iv: Uint8Array = randomBytes(IV_BYTES),
+): string {
+  const cipher = createCipheriv('aes-256-gcm', masterKey, iv);
+  cipher.setAAD(Buffer.from(keyId, 'utf8'));
+  const body = Buffer.concat([cipher.update(plainKey), cipher.final()]);
+  return `lk1.${b64url(Buffer.concat([iv, body, cipher.getAuthTag()]))}`;
+}
+
+/** Reference unwrapping of a `lk1.<payload>` text; throws when it does not authenticate. */
+export function referenceUnwrap(masterKey: Uint8Array, keyId: string, wrapped: string): Buffer {
+  const payload = parseLk1(wrapped);
+  const decipher = createDecipheriv('aes-256-gcm', masterKey, payload.subarray(0, IV_BYTES));
+  decipher.setAAD(Buffer.from(keyId, 'utf8'));
+  decipher.setAuthTag(payload.subarray(payload.length - TAG_BYTES));
+  return Buffer.concat([
+    decipher.update(payload.subarray(IV_BYTES, payload.length - TAG_BYTES)),
+    decipher.final(),
+  ]);
+}
+
 /** Reference blind index: HMAC-SHA256(key, utf8(context) ‖ 0x00 ‖ utf8(value)), lowercase hex. */
 export function referenceBlindIndex(key: Uint8Array, value: string, context: string): string {
   return createHmac('sha256', key)
@@ -248,8 +393,13 @@ export function errorOf(run: () => unknown): unknown {
   throw new Error('expected the call to throw, but it returned');
 }
 
-/** Every text form in which a logger could print an object or an error. */
+/**
+ * Every text form in which a logger could print an object or an error. Text that was already
+ * printed (a captured output) is searched as it is: serialising it again would turn its line
+ * breaks into `\n` escapes and hide a multi-line leak.
+ */
 export function printedForms(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
   const forms = [inspect(value, { depth: null, showHidden: true, maxArrayLength: null })];
   try {
     forms.push(JSON.stringify(value) ?? '');
