@@ -5,7 +5,8 @@
 //   src/bridge.gen.ts        from contracts/bridge.schema.json, routes.json, apps.json
 //   node scripts/codegen.ts           write the generated files
 //   node scripts/codegen.ts --check   exit 1 when a committed file differs from a fresh run
-// Both modes first run the cross-file conformance checks (conformance.ts) and stop on a problem.
+// Both modes first run the cross-file conformance checks (conformance.ts) and the link pattern
+// table check (link-patterns.ts, specs/link-patterns.yaml) and stop on a problem.
 // Works offline: the contract has no remote $ref and openapi-typescript does not phone home.
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,6 +16,7 @@ import openapiTS, { astToString } from 'openapi-typescript';
 import { loadEnums, loadErrorCodes, renderEnums, renderErrorCodes } from './catalog.ts';
 import { loadBridgeCatalog, renderBridge } from './bridge.ts';
 import { checkConformance } from './conformance.ts';
+import { checkLinkPatterns } from './link-patterns.ts';
 import {
   bridgeGeneratedFile,
   enumsGeneratedFile,
@@ -56,7 +58,7 @@ let outputs: Array<{ file: string; content: string }>;
 try {
   const errors = loadErrorCodes();
   const enumDefs = loadEnums();
-  const problems = checkConformance(enumDefs, errors.codes);
+  const problems = [...checkConformance(enumDefs, errors.codes), ...checkLinkPatterns(enumDefs)];
   if (problems.length > 0) {
     for (const p of problems) console.error(`codegen: conformance: ${p}`);
     process.exit(1);

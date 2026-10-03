@@ -1,0 +1,27 @@
+# 平台链接形态表（唯一一份；规划/08 BR-ATTR-29 及细则「平台链接形态表」；规划/04 §10.1 link_patterns 的来源）。
+# 用途：服务端 parsing 与后台保存校验直接读；客户端经 /v1/config.link_patterns（带 version）取用，
+# 包内内置快照在构建时由本文件生成（至少含各联盟平台网页的注册域）。商品识别一律以服务端结果为准。
+#
+# 结构（packages/contracts-ts/scripts/link-patterns.ts 校验，pnpm contracts:check 里跑）：
+#   version   字符串，每次改动递增；/v1/config.link_patterns.version 取它
+#   rules     列表，每条 {platform, category, hosts, path_patterns}
+#     platform       contracts/enums/platform.yaml 的 platform
+#     category       contracts/enums/trade.yaml 的 link_pattern_category：
+#                    union_host（联盟平台网页域名）、product（商品详情页）、promo（推广短链与落地域名）
+#     hosts          小写主机名，不带 scheme、端口、路径与末尾的「.」；一个 URL 的主机等于某一项、或是它的子域
+#                    （以「.<项>」结尾）即算命中这一项
+#     path_patterns  union_host 一律为空（整域命中）；product、promo 至少一项。模式与 URL 的路径整体匹配：
+#                    「**」匹配任意字符（含 / 与换行），「*」匹配不含 / 的任意字符，其余字符按字面、
+#                    区分大小写比对；模式里不写 ?、#、%、空白（匹配的是解码后的路径）
+#   匹配前的规范化：只认 https；带用户信息（user@host）或解析不了的地址不算合法地址，一律不放行
+#   （判定向量里是 cancel）；主机名转小写、去掉末尾的「.」，端口不参与；路径只把合法的 %XX 解码一次
+#   （解出的字节按 UTF-8 读，不合法的序列换成 U+FFFD），其余「%」按字面保留；只看主机与路径，查询串与片段不参与匹配（细则「桥方法不留没有
+#   归因的打开入口」第 1 步）。hosts 只收带「.」、经 URL 解析保持原样的域名（不收任何写法的 IP，如 0x7f.1，也不收单段主机名），同一条里不重复。
+#   约束：product 规则的每个主机都要落在同一平台某条 union_host 规则的域名里（商品页只在联盟平台网页
+#   域名内才交识别，BR-ATTR-29 ②(a)）。
+# 判定共用测试向量：specs/external-navigation.vectors.json（合成规则表，不依赖本文件的真实域名）。
+#
+# TODO(规划/05 B1-07): 各平台的注册域、商品页与推广链接形态 — blocked on 真实样本（B1-07 按样本整理，
+#   MVP 的 union_host 至少覆盖淘宝 / 天猫、京东、拼多多；本任务只建结构、不臆造域名）。
+version: '0'
+rules: []
