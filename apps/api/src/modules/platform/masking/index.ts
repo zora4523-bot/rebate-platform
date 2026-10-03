@@ -1,5 +1,5 @@
 // Display masking of personal data, and the contract of log redaction (规划/08 BR-ID-33; 规划/02
-// §12.3, §19 日志). Every function below throws `NotImplemented` until task B1-01c implements it.
+// §12.3, §19 日志).
 // The rule tests in test/spec/platform/masking/** import this file and
 // apps/api/src/modules/platform/logging/index.ts by path; names, signatures and the semantics
 // written here are the contract.
@@ -103,18 +103,23 @@
 
 /** BR-ID-33 default: 138****5678; anything that is not an 11-digit mainland number is all "*". */
 export function maskPhone(phone: string): string {
-  void phone;
-  throw new Error('NotImplemented');
+  return phone.length === 11 && /^1[0-9]{10}$/.test(phone)
+    ? `${phone.slice(0, 3)}****${phone.slice(7)}`
+    : '*'.repeat([...phone].length);
 }
 
 /** BR-ID-33 default: first 1 + last 1 of an 18- or 15-character ID number; otherwise all "*". */
 export function maskIdNo(idNo: string): string {
-  void idNo;
-  throw new Error('NotImplemented');
+  const valid =
+    (idNo.length === 18 && /^[0-9]{17}[0-9Xx]$/.test(idNo)) ||
+    (idNo.length === 15 && /^[0-9]{15}$/.test(idNo));
+  return valid
+    ? `${idNo.charAt(0)}${'*'.repeat(idNo.length - 2)}${idNo.slice(-1)}`
+    : '*'.repeat([...idNo].length);
 }
 
 /** BR-ID-33 default: only the last character of a name stays (**三); one character becomes "*". */
 export function maskName(name: string): string {
-  void name;
-  throw new Error('NotImplemented');
+  const chars = [...name];
+  return chars.length < 2 ? '*'.repeat(chars.length) : '*'.repeat(chars.length - 1) + chars.at(-1);
 }
