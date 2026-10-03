@@ -1,0 +1,60 @@
+{
+  "task": "B1-01m",
+  "spec_ref": "c288e25ea6228c3e3b24a05c8c2f13ed1a61a8eb",
+  "spec_commit": "3b608a0cba9b25ce33392e4d623e1a91854f0f64",
+  "red_tests": [],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). Test-only change: an explicit 30 s timeout for one unit test of B1-01b that exceeds Vitest's default 5 s on GitHub runners; assertions, samples and the Vitest configuration are unchanged; no protected path, no money, attribution or user-authorisation path changed. A test-change task without rule tests: spec_commit is the ledger commit.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "78954ef2faea8840af4b86794628aac3c616c5aa",
+      "tree": "c2d381011f61dc18f4ea93e62573be8a95bba548",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T15:16:26Z",
+      "finished_at": "2026-10-03T15:17:12Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent on faa6e69..78954ef: pass, 0 findings; only the third argument 30_000 of [AC-B1-01b#17] changed (Vitest 5 parses it as a per-test timeout, retry stays 0; the test still passes with --testTimeout=100, so the per-test value is in effect); api unit 130/130; task check, guard git and guard static pass; container verify/2 tree equals 78954ef^{tree}"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 (base faa6e69) on 78954ef: pass, 0 findings, checklist 7/7"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "test-change task (ledger tester: none): no rule tests"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "833352e1f5760a722404dbc8f911918f6fda1490",
+    "test/spec": "448ff07e4f4ad6b7fb76edf6c277a45abeee14e5",
+    "apps/api/src/modules/platform/http": "05b792ec5b6fe9e57feb06167fc971085c37fed0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 30,
+    "files": 5,
+    "note": "PROP_RUNS=1000000 on the B1-01m worktree at 78954ef, 2026-10-03 23:18 (+08:00); packages/money and test/properties are unchanged from main",
+    "tree": "833352e1f5760a722404dbc8f911918f6fda1490"
+  }
+}
