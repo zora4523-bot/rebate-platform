@@ -23,6 +23,21 @@ const SKIP_OR_ONLY = /\.\s*(skip|only|skipIf|runIf|todo)\b(?=\s*[(.`])/;
 const X_PREFIXED = /(?<![\w$.])(xit|xtest|xdescribe|fit|fdescribe)\s*\(/;
 const RETRY_KEY = /\bretry\s*:\s*([^\s,})]+)/;
 const RETRY_SHORTHAND = /[{,]\s*retry\s*[,}]/;
+// Vitest's test API: the options object (with `retry`) is the second argument of these calls,
+// of their modifier chains (`.concurrent`, `.each(table)`, `.for(cases)`, `.skipIf(c)`, …) and
+// of the test functions made from them with `.extend(...)`.
+const TEST_API_ROOTS = ['it', 'test', 'describe', 'suite'];
+const CALL_ROOT = /(?<![\w$.])([A-Za-z_$][\w$]*)((?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*(?=[(`])/g;
+const EXTENDED_TEST =
+  /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*\.\s*extend\b/g;
+const NOT_A_CALLEE = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return']);
+const RETRY_PROPERTY = /^(?:retry|'retry'|"retry"|\[\s*(['"`])retry\1\s*\])\s*(?::([\s\S]*))?$/;
+const FUNCTION_LITERAL = /^(?:async\b|function\b|\(|[A-Za-z_$][\w$]*\s*=>)/;
+// Funds and attribution test files keep the plain line rule: no `retry` key anywhere in the file
+// (规划/11 §4.2「守卫禁止 vitest 配置和资金、归属测试文件里出现 retry」). Other test files may
+// use `retry` as an ordinary field name; there only Vitest's retry option is refused.
+const FUNDS_STEM =
+  /^(?:money|domain|ledger|commission|settlement|payout|withdraw|reconcil|order|linking|union|attribution|fund|clawback)/i;
 const PASS_WITH_NO_TESTS = /\bpassWithNoTests\s*:\s*(?!\s|false\b)/;
 const ALLOW_ONLY = /\ballowOnly\s*:\s*(?!\s|false\b)/;
 const IMPORT_SPECIFIER =
@@ -61,6 +76,22 @@ function lineOfOffset(text: string, offset: number): number {
   let line = 1;
   for (let i = 0; i < offset && i < text.length; i++) if (text[i] === '\n') line++;
   return line;
+}
+
+/**
+ * Funds and attribution test files (规划/11 §4.2): the money and domain packages, the funds and
+ * attribution modules of apps/api (the MONEY_PATHS of tools/ci/evidence-check.ts, matched by
+ * stem), rule tests whose directories or file name carry such a stem, the acceptance and replay
+ * suites, and db/.
+ */
+export function isFundsTestFile(file: string): boolean {
+  if (/^(?:db|test\/acceptance|test\/replay)\//.test(file)) return true;
+  if (/^packages\/(?:money|domain)\//.test(file)) return true;
+  const module = /^apps\/api\/src\/modules\/([^/]+)\//.exec(file);
+  if (module) return FUNDS_STEM.test(module[1] ?? '');
+  const rule = /^test\/(?:spec|properties)\/(.+)$/.exec(file);
+  if (rule) return (rule[1] ?? '').split('/').some((segment) => FUNDS_STEM.test(segment));
+  return false;
 }
 
 /** Index just after the string literal starting at `start` (a quote or backtick), or -1. */
@@ -131,9 +162,254 @@ export function testTitles(text: string): { line: number; title: string | null }
   return out;
 }
 
+function skipSpace(text: string, i: number): number {
+  let j = i;
+  while (j < text.length && /\s/.test(text[j] ?? '')) j++;
+  return j;
+}
+
+/** A `/` at `i` starts a regular expression when the token before it cannot end an operand. */
+function startsRegex(text: string, i: number): boolean {
+  let j = i - 1;
+  while (j >= 0 && /\s/.test(text[j] ?? '')) j--;
+  return j < 0 || /[(,=:[!&|?{};+\-*%<>~^]/.test(text[j] ?? '');
+}
+
+/** Index just after the regular expression literal starting at `start`, or -1. */
+function skipRegex(text: string, start: number): number {
+  let inClass = false;
+  for (let i = start + 1; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\\') i++;
+    else if (c === '\n') return -1;
+    else if (inClass) inClass = c !== ']';
+    else if (c === '[') inClass = true;
+    else if (c === '/') {
+      let j = i + 1;
+      while (/[a-z]/i.test(text[j] ?? '')) j++;
+      return j;
+    }
+  }
+  return -1;
+}
+
+/** Index just after the template literal starting at `start` (with `${…}` nesting), or -1. */
+function skipTemplate(text: string, start: number): number {
+  for (let i = start + 1; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\\') i++;
+    else if (c === '`') return i + 1;
+    else if (c === '$' && text[i + 1] === '{') {
+      const end = skipBalanced(text, i + 1);
+      if (end === -1) return -1;
+      i = end - 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Index just after the comment, string, template or regular expression literal starting at
+ * `i`; `i` itself when none starts there; -1 when it is not terminated.
+ */
+function skipTrivia(text: string, i: number): number {
+  const c = text[i];
+  if (c === '/' && text[i + 1] === '/') {
+    const end = text.indexOf('\n', i);
+    return end === -1 ? text.length : end;
+  }
+  if (c === '/' && text[i + 1] === '*') {
+    const end = text.indexOf('*/', i + 2);
+    return end === -1 ? -1 : end + 2;
+  }
+  if (c === "'" || c === '"') return skipString(text, i);
+  if (c === '`') return skipTemplate(text, i);
+  if (c === '/' && startsRegex(text, i)) return skipRegex(text, i);
+  return i;
+}
+
+/** Index just after the bracket closing the `(`, `[` or `{` at `open`, or -1. */
+function skipBalanced(text: string, open: number): number {
+  const closers: string[] = [];
+  for (let i = open; i < text.length; i++) {
+    const end = skipTrivia(text, i);
+    if (end === -1) return -1;
+    if (end !== i) {
+      i = end - 1;
+      continue;
+    }
+    const c = text[i];
+    if (c === '(') closers.push(')');
+    else if (c === '[') closers.push(']');
+    else if (c === '{') closers.push('}');
+    else if (c === ')' || c === ']' || c === '}') {
+      if (closers.pop() !== c) return -1;
+      if (closers.length === 0) return i + 1;
+    }
+  }
+  return -1;
+}
+
+/** Offsets of the top-level comma-separated parts of text[from, to); null when unbalanced. */
+function splitTopLevel(text: string, from: number, to: number): [number, number][] | null {
+  const parts: [number, number][] = [];
+  let start = from;
+  for (let i = from; i < to; i++) {
+    const end = skipTrivia(text, i);
+    if (end === -1 || end > to) return null;
+    if (end !== i) {
+      i = end - 1;
+      continue;
+    }
+    const c = text[i];
+    if (c === '(' || c === '[' || c === '{') {
+      const close = skipBalanced(text, i);
+      if (close === -1 || close > to) return null;
+      i = close - 1;
+    } else if (c === ',') {
+      parts.push([start, i]);
+      start = i + 1;
+    }
+  }
+  parts.push([start, to]);
+  return parts;
+}
+
+/** Offset of the first character of text[from, to) that is neither whitespace nor a comment. */
+function partStart(text: string, from: number, to: number): number {
+  let i = skipSpace(text, from);
+  while (i < to && text[i] === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
+    const end = skipTrivia(text, i);
+    if (end === -1) return to;
+    i = skipSpace(text, end);
+  }
+  return Math.min(i, to);
+}
+
+/** Names that call Vitest's test API: the roots and every `const x = <one of them>.extend(…)`. */
+function testApiNames(text: string): Set<string> {
+  const names = new Set(TEST_API_ROOTS);
+  for (let grew = true; grew;) {
+    grew = false;
+    EXTENDED_TEST.lastIndex = 0;
+    for (let m = EXTENDED_TEST.exec(text); m !== null; m = EXTENDED_TEST.exec(text)) {
+      const [, name = '', base = ''] = m;
+      if (names.has(base) && !names.has(name)) {
+        names.add(name);
+        grew = true;
+      }
+    }
+  }
+  return names;
+}
+
+/** Every call in `text`: its root identifier and the parentheses of the last call of its chain. */
+function callsIn(text: string): { root: string; open: number; close: number }[] {
+  const out: { root: string; open: number; close: number }[] = [];
+  const member = /^\.\s*[A-Za-z_$][\w$]*\s*/;
+  CALL_ROOT.lastIndex = 0;
+  for (let m = CALL_ROOT.exec(text); m !== null; m = CALL_ROOT.exec(text)) {
+    const root = m[1] ?? '';
+    if (NOT_A_CALLEE.has(root)) continue;
+    let i = m.index + m[0].length;
+    for (;;) {
+      const tagged = text[i] === '`';
+      const end = tagged ? skipTemplate(text, i) : text[i] === '(' ? skipBalanced(text, i) : -1;
+      if (end === -1) break;
+      const next = skipSpace(text, end);
+      if (text[next] === '(' || text[next] === '`') {
+        i = next;
+        continue;
+      }
+      const chained = member.exec(text.slice(next, next + 200));
+      if (chained !== null && /[(`]/.test(text[next + chained[0].length] ?? '')) {
+        i = next + chained[0].length;
+        continue;
+      }
+      if (!tagged) out.push({ root, open: i, close: end });
+      break;
+    }
+  }
+  return out;
+}
+
+/** Offset of the `{` of `const <name> = { … }` (also let / var, with a type annotation), or -1. */
+function localObjectLiteral(text: string, name: string): number {
+  const escaped = name.replace(/\$/g, '\\$');
+  const m = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\s*(?::[^=;]*)?=\\s*(?=\\{)`).exec(text);
+  return m === null ? -1 : m.index + m[0].length;
+}
+
+/**
+ * Vitest retry options in a test file that is not a funds or attribution test: a `retry` key
+ * (other than an explicit 0) in the options object, the second argument of a test API call;
+ * options the guard cannot read (a spread, a variable that is not an object literal of this
+ * file); and the same `retry` key in a call shaped like a custom test function (title literal,
+ * options object, function literal).
+ */
+function retryOptionFindings(file: string, text: string): Finding[] {
+  const findings: Finding[] = [];
+  const report = (offset: number, message: string): void => {
+    findings.push({ file, line: lineOfOffset(text, offset), rule: 'no-retry', message });
+  };
+  const checkOptions = (open: number, strict: boolean): void => {
+    const close = skipBalanced(text, open);
+    if (close === -1) return;
+    for (const [from, to] of splitTopLevel(text, open + 1, close - 1) ?? []) {
+      const start = partStart(text, from, to);
+      const property = text.slice(start, to).trim();
+      if (strict && property.startsWith('...')) {
+        report(start, 'test options must not spread another object, so that retry can be checked');
+        continue;
+      }
+      const retry = RETRY_PROPERTY.exec(property);
+      if (retry === null || (retry[2] !== undefined && isZeroLiteral(retry[2].trim()))) continue;
+      report(start, 'tests must not use retry');
+    }
+  };
+  const api = testApiNames(text);
+  for (const call of callsIn(text)) {
+    const parts = splitTopLevel(text, call.open + 1, call.close - 1);
+    if (parts === null) continue;
+    const args = parts
+      .map(([from, to]) => ({ from: partStart(text, from, to), to }))
+      .filter(({ from, to }) => text.slice(from, to).trim() !== '');
+    const [first, second, third] = args;
+    if (second === undefined) continue;
+    const isFunction = (arg: { from: number; to: number } | undefined): boolean =>
+      arg !== undefined && FUNCTION_LITERAL.test(text.slice(arg.from, arg.to).trim());
+    const isObject = text[second.from] === '{';
+    if (!api.has(call.root)) {
+      // A custom test function the guard cannot trace (for example an imported one).
+      if (isObject && /^['"`]/.test(text[first?.from ?? -1] ?? '') && isFunction(third)) {
+        checkOptions(second.from, false);
+      }
+      continue;
+    }
+    if (isObject) {
+      checkOptions(second.from, true);
+      continue;
+    }
+    // (title, fn) and (title, fn, timeout) carry no options; (title, x, () => {}) does.
+    if (isFunction(second) || !isFunction(third)) continue;
+    const name = text.slice(second.from, second.to).trim();
+    const literal = /^[A-Za-z_$][\w$]*$/.test(name) ? localObjectLiteral(text, name) : -1;
+    if (literal === -1) {
+      report(
+        second.from,
+        'test options must be an object literal written in this file, so that retry can be checked',
+      );
+    } else {
+      checkOptions(literal, true);
+    }
+  }
+  return findings;
+}
+
 function scanTestFile(file: string, text: string): Finding[] {
   const findings: Finding[] = [];
   const isInt = INT_TEST_FILE.test(file);
+  const strictRetry = isFundsTestFile(file);
   text.split('\n').forEach((lineText, index) => {
     const line = index + 1;
     if (SKIP_OR_ONLY.test(lineText) || X_PREFIXED.test(lineText)) {
@@ -144,8 +420,11 @@ function scanTestFile(file: string, text: string): Finding[] {
         message: 'tests must not be skipped, focused or left as todo',
       });
     }
-    const retry = RETRY_KEY.exec(lineText);
-    if ((retry && !isZeroLiteral(retry[1] ?? '')) || RETRY_SHORTHAND.test(lineText)) {
+    const retry = strictRetry ? RETRY_KEY.exec(lineText) : null;
+    if (
+      strictRetry &&
+      ((retry && !isZeroLiteral(retry[1] ?? '')) || RETRY_SHORTHAND.test(lineText))
+    ) {
       findings.push({ file, line, rule: 'no-retry', message: 'tests must not use retry' });
     }
     const references = lineText.match(ADMIN_URL)?.length ?? 0;
@@ -179,7 +458,9 @@ function scanTestFile(file: string, text: string): Finding[] {
       }
     }
   });
-  return findings;
+  if (strictRetry) return findings;
+  // Stable sort: findings of one line keep the order in which the rules are listed above.
+  return [...findings, ...retryOptionFindings(file, text)].sort((a, b) => a.line - b.line);
 }
 
 function scanVitestConfig(file: string, text: string): Finding[] {

@@ -3,7 +3,13 @@ import { repoRoot } from '../../lib/paths.ts';
 import { cleanupFixtures, makeTree } from './fixture-kit.ts';
 import { loadProtected } from './protected.ts';
 import * as fx from './test-guard.fixtures.ts';
-import { addOnlyViolations, scanFile, scanTree, testTitles } from './test-guard.ts';
+import {
+  addOnlyViolations,
+  isFundsTestFile,
+  scanFile,
+  scanTree,
+  testTitles,
+} from './test-guard.ts';
 
 afterAll(cleanupFixtures);
 
@@ -32,6 +38,78 @@ describe('test files', () => {
     expect(rules(unit, fx.RETRY_OPTION)).toEqual(['no-retry']);
     expect(rules(unit, fx.RETRY_SHORTHAND)).toEqual(['no-retry']);
     expect(rules(unit, fx.RETRY_ZERO)).toEqual([]);
+  });
+
+  it('keeps refusing any retry key in funds and attribution test files', () => {
+    for (const file of [
+      unit,
+      'packages/domain/src/settle.test.ts',
+      'apps/api/src/modules/ledger/post.test.ts',
+      'apps/api/src/modules/withdrawals/request.test.ts',
+      'test/spec/money/round.test.ts',
+      'test/properties/money/split.prop.test.ts',
+      'test/spec/payout/timeout.test.ts',
+      'test/acceptance/search.test.ts',
+      'test/replay/orders.test.ts',
+    ]) {
+      expect(isFundsTestFile(file)).toBe(true);
+      expect(scanFile(file, fx.RETRY_FIELD).filter((f) => f.rule === 'no-retry')).toHaveLength(5);
+    }
+  });
+
+  describe('other test files: only Vitest retry options', () => {
+    const files = [
+      'apps/api/src/modules/platform/http/http.test.ts',
+      'test/spec/platform/http/policy.test.ts',
+      'tools/agent/dispatch.test.ts',
+    ];
+
+    it('accepts retry as an ordinary field name', () => {
+      for (const file of files) {
+        expect(isFundsTestFile(file)).toBe(false);
+        expect(rules(file, fx.RETRY_FIELD)).toEqual([]);
+      }
+    });
+
+    it('flags the retry option of it, test, describe and suite, with their modifiers', () => {
+      const [file = ''] = files;
+      expect(rules(file, fx.RETRY_OPTION)).toEqual(['no-retry']);
+      expect(rules(file, fx.RETRY_SHORTHAND)).toEqual(['no-retry']);
+      expect(rules(file, fx.RETRY_ZERO)).toEqual([]);
+      expect(scanFile(file, fx.RETRY_OPTION_MULTILINE).map((f) => `${f.line}:${f.rule}`)).toEqual([
+        '5:no-retry',
+      ]);
+      expect(scanFile(file, fx.RETRY_OPTION_CHAINS).map((f) => `${f.line}:${f.rule}`)).toEqual([
+        '1:no-retry',
+        '2:no-retry',
+        '3:no-retry',
+        '4:no-retry',
+        '6:no-retry',
+      ]);
+      expect(scanFile(file, fx.RETRY_NESTED).map((f) => f.line)).toEqual([2]);
+    });
+
+    it('flags the retry option of extended and imported test functions', () => {
+      const [file = ''] = files;
+      expect(scanFile(file, fx.RETRY_EXTENDED_TEST).map((f) => `${f.line}:${f.rule}`)).toEqual([
+        '2:no-retry',
+      ]);
+      expect(scanFile(file, fx.RETRY_IMPORTED_TEST).map((f) => `${f.line}:${f.rule}`)).toEqual([
+        '2:no-retry',
+      ]);
+    });
+
+    it('reads options kept in a local object and refuses options it cannot read', () => {
+      const [file = ''] = files;
+      expect(rules(file, fx.OPTIONS_VARIABLE_LOCAL)).toEqual([]);
+      expect(scanFile(file, fx.OPTIONS_VARIABLE_RETRY).map((f) => `${f.line}:${f.rule}`)).toEqual([
+        '1:no-retry',
+      ]);
+      expect(
+        scanFile(file, fx.OPTIONS_VARIABLE_IMPORTED).map((f) => `${f.line}:${f.rule}`),
+      ).toEqual(['2:no-retry']);
+      expect(rules(file, fx.OPTIONS_SPREAD)).toEqual(['no-retry']);
+    });
   });
 
   it('keeps the superuser URL out of test files, except to assert it is absent', () => {

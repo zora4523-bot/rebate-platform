@@ -30,7 +30,7 @@
 | `risk-of-paths.ts [--json] [--stdin \| <路径>…]` | 按 `ops/risk-map.yaml` 算风险级（默认 RV2，先匹配先得）和保护路径类别。输入可以是改动文件，也可以是任务的 glob；glob 必须整体落在某条白名单规则内才不是 RV2。类别只按路径判断（`package.json` 一律报第二类），是否真的动了 `scripts` 由 `protected-paths.ts` 看差异决定 | 11 §1.2 |
 | `path-guard.ts (--task <编号> \| --paths <glob,glob>) --base <提交> [--cwd] [--json]` | 相对 `--base` 的全部改动（含未跟踪文件、改名的两侧）必须落在任务 `paths` 内；`ops/`、`docs/` 下的越界改动单独列出、不算失败 | 11 §2.3 第 6 步 |
 | `protected-paths.ts --base <提交> [--cwd] [--task-type <类型>] [--json]` | 第一类：已有文件被改、删、改名；第二、三类：任何改动；`package.json` 只比较 `scripts`；`deps` 任务可改 `pnpm-lock.yaml`。匹配不分大小写 | 11 §4.4 |
-| `test-guard.ts [--base <提交>] [--cwd] [--json]` | 测试文件、vitest 配置、package scripts 里不得有 skip / only / todo / retry / passWithNoTests；单元测试不得引用 `pg`、`pg-boss`、`testcontainers`、`@couli/db/testing`，不得 `listen`；测试文件不得读 `TEST_PG_ADMIN_URL`；`test/spec`、`test/properties` 不用 `describe`、不 mock 资金核心；`test/acceptance` 标题带 `[AC-…]`。带 `--base` 时加第一类「只增不改」 | 11 §2.3 第 5 步、§4.1–§4.3 |
+| `test-guard.ts [--base <提交>] [--cwd] [--json]` | 测试文件、vitest 配置、package scripts 里不得有 skip / only / todo / retry / passWithNoTests（retry 的口径见下文「retry 怎么查」）；单元测试不得引用 `pg`、`pg-boss`、`testcontainers`、`@couli/db/testing`，不得 `listen`；测试文件不得读 `TEST_PG_ADMIN_URL`；`test/spec`、`test/properties` 不用 `describe`、不 mock 资金核心；`test/acceptance` 标题带 `[AC-…]`。带 `--base` 时加第一类「只增不改」 | 11 §2.3 第 5 步、§4.1–§4.3 |
 | `schema-lint.ts [--cwd] [文件…]` | `tools/agent/schemas/*.json` 每个 object 有 `additionalProperties:false`、全部字段进 `required`，只用约定的关键字 | 11 §2.4 |
 | `banned-terms.ts (--spec \| --file <路径>…)` | 禁用词：`--spec` 扫 `SPEC_REF` 版本的 `规划/**`（只经 `git show`），`--file` 扫任务书 | 11 §5.5 |
 | `approvals.ts --require <编号>` | `ops/approvals.yaml` 里该条为 `granted: true` 才返回 0 | 11 §3.2、§7.3 |
@@ -55,12 +55,18 @@
 
 任务分支自带的台账（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 17 条）：`run.ts git --task <编号>` 的台账照旧从可信根读；只有可信根没有 `ops/tasks/<编号>.yaml`、而 PR 自己新增了它（`--base` 里没有、`--cwd` 的头提交里有，未提交的不算）时，才从头提交读，并在 path-guard 的提示里写明。编号只来自 `task/<编号>` 分支名，所以一个分支只能带上自己任务的台账，改不了基线上已有的台账；protected-paths、test-guard 与其余数据仍从可信根读。基线上已有这份台账而可信根没有（可信副本过期）时直接报错。实现是 `guard/lib/checks.ts` 的 `guardTask`。台账目录 `ops/tasks/**` 在 `ops/risk-map.yaml` 里是 RV0，只改台账的 PR 不需要证据文件。
 
+retry 怎么查（`guard/lib/test-guard.ts`；编排会话 2026-10-03 按 `ops/approvals.yaml` 第 16 条收窄，原先把测试文件里任何一行 `retry:` 都当成 Vitest 的重试选项，被测接口的字段叫 `retry` 也会被拦）：
+
+- vitest 配置文件与 package scripts：不变，`retry` 只能是 0，脚本不得带 `--retry`。
+- 资金与归属测试文件（`isFundsTestFile`：`packages/money`、`packages/domain`、`apps/api/src/modules/` 下资金与归属模块（按词干匹配，覆盖 `tools/ci/evidence-check.ts` 的 MONEY_PATHS）、`test/spec` 与 `test/properties` 下目录或文件名带这些词干的、`test/acceptance`、`test/replay`、`db/`）：不变，任何一行出现非 0 的 `retry:` 或简写 `{ retry }` 都失败（规划/11 §4.2）。
+- 其他测试文件：只拦 Vitest 的重试选项，即 `it` / `test` / `describe` / `suite`（含 `.concurrent`、`.each(…)`、`.for(…)`、`.skipIf(…)` 等修饰链，以及本文件里 `const x = test.extend(…)` 得到的 `x`）第二个参数（选项对象）里非 0 的 `retry`（含简写与带引号的键），跨行也查；选项写成本文件里的对象常量时读那个常量，读不到（导入的、成员表达式、展开 `...`）一律失败；形如「标题字面量、含 `retry` 的对象、函数字面量」的其他调用（比如从别的文件导入的自定义测试函数）同样失败。`retry` 作普通字段名、参数名不再报。
+
 数据文件：`ops/risk-map.yaml`；`guard/protected-paths.json`（11 §4.4 的唯一来源）；`guard/banned-terms.txt` 与 `guard/banned-terms.allow.txt`（每行「路径 glob、制表符、正则」，只放禁止句和历史对照句）；`guard/hooks/prod-hosts.txt`。
 
 已知限制：
 
 - 路径守卫和保护路径守卫看的是 `git diff` 加未跟踪文件，被 `.gitignore` 忽略的文件（`node_modules`、`dist`、`.turbo`、`.tmp`、`*.tsbuildinfo`、`.env`）不在其中。所以验证一侧不能使用 worktree 里的这些文件：verify 容器自己装依赖、自己构建（11 §2.3 第 7 步）。
-- `test-guard.ts` 是按行的文本检查，不解析语法；它和根 `eslint.config.js` 的同类规则互为补充。
+- `test-guard.ts` 基本是按行的文本检查；只有非资金测试文件的 retry 检查会跨行读调用的参数（不是完整的语法解析，见「retry 怎么查」）。它和根 `eslint.config.js` 的同类规则互为补充。
 - 拦截钩子按 codex-cli 0.154.0 的参数表写的（`codex --help`、`codex exec --help`）；升级 Codex 后要重新对照一遍参数表。
 
 ## 还没有的守卫

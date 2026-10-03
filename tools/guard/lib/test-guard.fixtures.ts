@@ -10,6 +10,53 @@ export const CONTEXT_SKIP = "it('x', (ctx) => {\n  ctx.skip();\n});\n";
 export const RETRY_OPTION = "it('flaky', { retry: 3 }, () => {});\n";
 export const RETRY_ZERO = "it('steady', { retry: 0 }, () => {});\n";
 export const RETRY_SHORTHAND = "it('flaky', { retry }, () => {});\n";
+// `retry` as an ordinary field name (a retry policy under test), not a Vitest option.
+export const RETRY_FIELD = [
+  'const policy = { retry: { maxRetries: 2 } };',
+  "const governor = createGovernor('union', { retry: policy.retry }, deps);",
+  'function withRetry(retry: Partial<RetryPolicy>) {',
+  '  return { ...policy, retry };',
+  '}',
+  "it('keeps the retry policy', () => {",
+  '  expect(withRetry({ retry: 1 } as never)).toEqual({ retry: { maxRetries: 2 } });',
+  '});',
+  '',
+].join('\n');
+export const RETRY_OPTION_MULTILINE = [
+  'it(',
+  "  'flaky', // don't retry (comment with a quote)",
+  '  {',
+  '    timeout: 5_000,',
+  '    /* the option */ retry: 2,',
+  '  },',
+  '  () => {',
+  "    expect(/can't/.test('a')).toBe(false);",
+  '  },',
+  ');',
+  '',
+].join('\n');
+export const RETRY_OPTION_CHAINS = [
+  "describe.concurrent('suite', { retry: 1 }, () => {});",
+  "test.each([1, 2])('n %i', { retry: 1 }, () => {});",
+  "test.for([1])('n', { retry: { count: 2 } }, () => {});",
+  "suite.sequential('s', { 'retry': 1 }, () => {});",
+  'it.each`a',
+  "${1}`('t', { retry: 1 }, () => {});",
+  '',
+].join('\n');
+export const RETRY_NESTED =
+  "describe('s', () => {\n  it('t', { timeout: 1, retry: 4 }, () => {});\n});\n";
+export const RETRY_EXTENDED_TEST =
+  "const myTest = test.extend({ db: async ({}, use) => use(1) });\nmyTest('t', { retry: 2 }, () => {});\n";
+export const RETRY_IMPORTED_TEST =
+  "import { myTest } from './kit.ts';\nmyTest('t', { retry: 2 }, async () => {});\n";
+export const OPTIONS_VARIABLE_LOCAL =
+  "const LONG = { timeout: 60_000 };\nit('t', LONG, () => {});\nit('u', () => {}, 5_000);\n";
+export const OPTIONS_VARIABLE_RETRY =
+  "const OPTS: TestOptions = { timeout: 1, retry: 3 } as const;\nit('t', OPTS, () => {});\n";
+export const OPTIONS_VARIABLE_IMPORTED =
+  "import { OPTS } from './kit.ts';\nit('t', OPTS, () => {});\n";
+export const OPTIONS_SPREAD = "it('t', { ...base, timeout: 1 }, () => {});\n";
 export const ADMIN_URL_READ = "const url = process.env['TEST_PG_ADMIN_URL'];\n";
 export const ADMIN_URL_ABSENT = "expect(process.env['TEST_PG_ADMIN_URL']).toBeUndefined();\n";
 export const ADMIN_URL_ABSENT_AND_READ =
