@@ -10,9 +10,16 @@ import {
   validationErrorEnvelope,
   type JsonSchema,
 } from '../../../../apps/api/src/modules/platform/validation/index.ts';
-import { APP_ID, BODY_SCHEMA, compile, fastifyValidationError, sampleOperation } from './kit.ts';
+import {
+  APP_ID,
+  BODY_SCHEMA,
+  compile,
+  deepFreeze,
+  fastifyValidationError,
+  sampleOperation,
+} from './kit.ts';
 
-const QUERY_SCHEMA: JsonSchema = {
+const QUERY_SCHEMA: JsonSchema = deepFreeze({
   type: 'object',
   additionalProperties: false,
   required: ['limit'],
@@ -21,7 +28,7 @@ const QUERY_SCHEMA: JsonSchema = {
     with_tips: { type: 'boolean' },
     total_fen: { type: 'integer', format: 'int64' },
   },
-};
+});
 
 const GOOD_BODY = { quantity: 2, payee: { bank_name: '招商银行' }, items: [{ price_fen: 1999 }] };
 
@@ -66,9 +73,33 @@ it('[ADR-0001 §4.2 #15] querystring、params、headers 开类型转换：字符
     compile(headerSchema, 'headers')({ 'x-app-id': 'couli' }),
     compile(QUERY_SCHEMA, 'querystring')({ limit: '10', unknown: '1' }),
   ];
-  expect({ results, query }).toEqual({
+  const page = { page: '2' };
+  const pageSize = { 'x-page-size': '20', accept: '*/*' };
+  const typed = [
+    compile(
+      deepFreeze({
+        type: 'object',
+        additionalProperties: false,
+        required: ['page'],
+        properties: { page: { type: 'integer', minimum: 1 } },
+      }),
+      'params',
+    )(page),
+    compile(
+      deepFreeze({
+        type: 'object',
+        required: ['x-page-size'],
+        properties: { 'x-page-size': { type: 'integer', maximum: 50 } },
+      }),
+      'headers',
+    )(pageSize),
+  ];
+  expect({ results, query, typed, page, pageSize }).toEqual({
     results: [true, false, true, true, false, false],
     query: { limit: 10, with_tips: true },
+    typed: [true, true],
+    page: { page: 2 },
+    pageSize: { 'x-page-size': 20, accept: '*/*' },
   });
 });
 

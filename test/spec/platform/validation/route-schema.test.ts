@@ -8,27 +8,38 @@ import {
   type ContractOperation,
   type ContractParameter,
 } from '../../../../apps/api/src/modules/platform/validation/index.ts';
-import { APP_ID, BODY_SCHEMA, LIMIT_PATH_ITEM, PRODUCT_ID, sampleOperation } from './kit.ts';
+import {
+  APP_ID,
+  BODY_SCHEMA,
+  LIMIT_PATH_ITEM,
+  PRODUCT_ID,
+  compile,
+  deepFreeze,
+  sampleOperation,
+} from './kit.ts';
 
-const TRACE_PATH_ITEM: ContractParameter = {
+// Every input is deeply frozen (kit.ts deepFreeze): an implementation that edits the contract
+// objects it is given throws instead of making the expected values follow its edits.
+const TRACE_PATH_ITEM: ContractParameter = deepFreeze({
   name: 'X-Trace-Id',
   in: 'header',
   required: true,
   schema: { type: 'string' },
-};
+});
 
 it('[ADR-0001 §4.2 #15] 由契约操作生成 params、querystring、headers（参数名转小写）与 body 四部分；操作级参数替换路径级同名参数', () => {
   const operation = sampleOperation();
-  const traceOverride: ContractParameter = {
+  const traceOverride: ContractParameter = deepFreeze({
     name: 'x-trace-id',
     in: 'header',
     required: false,
     schema: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
-  };
+  });
   const schema = routeSchemaOf(
-    { ...operation, parameters: [...(operation.parameters ?? []), traceOverride] },
-    [APP_ID, LIMIT_PATH_ITEM, TRACE_PATH_ITEM],
+    deepFreeze({ ...operation, parameters: [...(operation.parameters ?? []), traceOverride] }),
+    deepFreeze([APP_ID, LIMIT_PATH_ITEM, TRACE_PATH_ITEM]),
   );
+  const params = compile(schema.params ?? {}, 'params');
   expect(schema).toEqual({
     params: {
       type: 'object',
@@ -57,7 +68,10 @@ it('[ADR-0001 §4.2 #15] 由契约操作生成 params、querystring、headers（
     },
     body: BODY_SCHEMA,
   });
-  expect(Object.keys(schema)).not.toContain('response');
+  expect({
+    response: Object.keys(schema).includes('response'),
+    pathPattern: [params({ product_id: 'abc123' }), params({ product_id: '!' })],
+  }).toEqual({ response: false, pathPattern: [true, false] });
 });
 
 it('[ADR-0001 §4.2 #15] 没有参数与请求体的操作得到空的路由 schema；无论操作写了什么响应，结果里都没有 response', () => {
@@ -80,8 +94,8 @@ it('[ADR-0001 §4.2 #15] 没有参数与请求体的操作得到空的路由 sch
 });
 
 it('[ADR-0001 §4.2 #15] 只有路径级参数时同样生成；路径参数一律必填、查询参数不认识的键被拒（additionalProperties: false）', () => {
-  const operation: ContractOperation = { operationId: 'getThing' };
-  expect(routeSchemaOf(operation, [PRODUCT_ID, LIMIT_PATH_ITEM])).toEqual({
+  const operation: ContractOperation = deepFreeze({ operationId: 'getThing' });
+  expect(routeSchemaOf(operation, deepFreeze([PRODUCT_ID, LIMIT_PATH_ITEM]))).toEqual({
     params: {
       type: 'object',
       properties: { product_id: PRODUCT_ID.schema },

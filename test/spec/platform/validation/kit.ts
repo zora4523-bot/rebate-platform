@@ -11,6 +11,18 @@ import {
   type ValidateFunction,
 } from '../../../../apps/api/src/modules/platform/validation/index.ts';
 
+/**
+ * Freezes `value` and everything reachable from it. The fixtures below are frozen, so an
+ * implementation that edits the contract objects it is given throws (ES modules are strict).
+ */
+export function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const inner of Object.values(value)) deepFreeze(inner);
+  }
+  return value;
+}
+
 /** Compiles `schema` for `part` with a fresh validator compiler. */
 export function compile(schema: JsonSchema, part: HttpPart): ValidateFunction {
   return createValidatorCompiler()({ schema, httpPart: part, method: 'POST', url: '/v1/things' });
@@ -32,27 +44,27 @@ export function fastifyValidationError(
   });
 }
 
-export const PRODUCT_ID: ContractParameter = {
+export const PRODUCT_ID: ContractParameter = deepFreeze({
   name: 'product_id',
   in: 'path',
   required: true,
   schema: { type: 'string', pattern: '^[a-z0-9]{1,32}$' },
-};
+});
 
-export const APP_ID: ContractParameter = {
+export const APP_ID: ContractParameter = deepFreeze({
   name: 'X-App-Id',
   in: 'header',
   required: true,
   schema: { type: 'string', enum: ['couli', 'second'] },
-};
+});
 
-export const LIMIT_PATH_ITEM: ContractParameter = {
+export const LIMIT_PATH_ITEM: ContractParameter = deepFreeze({
   name: 'limit',
   in: 'query',
   schema: { type: 'integer', minimum: 1, maximum: 20 },
-};
+});
 
-export const BODY_SCHEMA: JsonSchema = {
+export const BODY_SCHEMA: JsonSchema = deepFreeze({
   type: 'object',
   additionalProperties: false,
   required: ['quantity', 'payee'],
@@ -74,11 +86,11 @@ export const BODY_SCHEMA: JsonSchema = {
       },
     },
   },
-};
+});
 
 /** A dereferenced operation using every supported part; `limit` overrides the path item's. */
 export function sampleOperation(): ContractOperation {
-  return {
+  return deepFreeze({
     operationId: 'updateThing',
     parameters: [
       { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 50 } },
@@ -99,5 +111,5 @@ export function sampleOperation(): ContractOperation {
         content: { 'application/json': { schema: { type: 'object', properties: {} } } },
       },
     },
-  };
+  });
 }
