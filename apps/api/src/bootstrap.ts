@@ -2,10 +2,14 @@
 // files decide whether to listen, and tests drive HTTP entries through Fastify `inject`.
 import 'reflect-metadata';
 import type { IncomingMessage } from 'node:http';
-import type { INestApplicationContext } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
+import { Catch, type ArgumentsHost, type INestApplicationContext } from '@nestjs/common';
+import { BaseExceptionFilter, NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module.ts';
+import {
+  createValidatorCompiler,
+  validationErrorEnvelope,
+} from './modules/platform/validation/index.ts';
 import {
   type AppConfig,
   type Clock,
@@ -28,6 +32,19 @@ export interface BootstrapOverrides {
   readonly clock?: Clock;
   /** Defaults to a pino root logger on stdout at `config.logLevel`. */
   readonly logger?: RootLogger;
+}
+
+@Catch()
+class RequestValidationFilter extends BaseExceptionFilter<unknown> {
+  override catch(error: unknown, host: ArgumentsHost): void {
+    const http = host.switchToHttp();
+    const response = validationErrorEnvelope(error, http.getRequest<{ id: string }>().id);
+    if (response === undefined) {
+      super.catch(error, host);
+      return;
+    }
+    this.applicationRef?.reply(http.getResponse(), response.body, response.statusCode);
+  }
 }
 
 function platformOptions(entry: EntryName, overrides: BootstrapOverrides): PlatformOptions {
@@ -56,11 +73,17 @@ export async function createHttpApp(
     loggerInstance: options.logger,
     genReqId: (request: IncomingMessage) => resolveTraceId(request.headers['x-trace-id']),
   });
-  // TODO(ADR-0001 §4.2 #15): register the FST_ERR_VALIDATION exception filter and `@RouteSchema` request validation here — blocked on B1-01.
-  return NestFactory.create<NestFastifyApplication>(AppModule.forEntry(options), adapter, {
-    logger: new PinoNestLogger(options.logger),
-    abortOnError: false,
-  });
+  adapter.getInstance().setValidatorCompiler(createValidatorCompiler());
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule.forEntry(options),
+    adapter,
+    {
+      logger: new PinoNestLogger(options.logger),
+      abortOnError: false,
+    },
+  );
+  app.useGlobalFilters(new RequestValidationFilter(app.getHttpAdapter()));
+  return app;
 }
 
 /**

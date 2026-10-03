@@ -1,6 +1,8 @@
 import { Controller, Get, Inject, Req } from '@nestjs/common';
+import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Schema } from '@couli/contracts-ts';
 import { APP_ENTRY, CLOCK, type Clock, type EntryName } from '../../../platform/index.ts';
+import { healthRouteSchema } from './health.schema.gen.ts';
 
 type HealthzResponse = Schema<'HealthzResponse'>;
 
@@ -21,6 +23,7 @@ export class HealthController {
 
   /** Contract operation `getHealthz`: liveness only, checks no dependency. */
   @Get('healthz')
+  @RouteSchema(healthRouteSchema)
   getHealthz(@Req() request: RequestWithId): HealthzResponse {
     return {
       code: 0,
