@@ -41,7 +41,7 @@ export interface IdempotencyKeys {
   key: string;
   method: string;
   path: string;
-  request_hash: string;
+  request_hash: string | null;
   response: Json | null;
   status: string;
   subject: string;
