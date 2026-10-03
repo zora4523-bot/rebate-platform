@@ -29,6 +29,19 @@ it('[BR-ID-33] 日志：顶层的手机号、身份证号、姓名、收款账�
     duplicateKey: leaksIn(`{"level":30,"bank_card_no":"${SAMPLES.bankCard}","bank_card_no":"x"}`, [
       'bankCard',
     ]),
+    stackCarriesPhone: leaksIn(
+      `{"level":50,"err":{"type":"Error","message":"payout failed","stack":"Error: payout failed\\nphone=${SAMPLES.phone}"}}`,
+      ['phone'],
+    ),
+    partialNameInMsg: leaksIn('{"level":30,"msg":"realname {\\"real_name\\":\\"张*三\\"}"}', [
+      'realName',
+    ]),
+    partialPhoneInMsg: leaksIn('{"level":30,"msg":"user {\\"phone\\":\\"1398***4321\\"}"}', [
+      'phone',
+    ]),
+    defaultMasksInMsg: leaksIn(
+      '{"level":30,"msg":"user {\\"phone\\":\\"139****4321\\",\\"contact_phone\\":\\"158****6688\\",\\"real_name\\":\\"**三\\",\\"id_no\\":\\"1****************X\\"}"}',
+    ),
     defaultMasks: leaksIn(
       '{"level":30,"phone":"139****4321","id_no":"1****************X","real_name":"**三","payee_name":"***月","bank_card_no":"[REDACTED]"}',
     ),
@@ -42,6 +55,10 @@ it('[BR-ID-33] 日志：顶层的手机号、身份证号、姓名、收款账�
       partialName: ['realName'],
       partialCard: ['cardNo'],
       duplicateKey: ['bankCard'],
+      stackCarriesPhone: ['phone'],
+      partialNameInMsg: ['realName'],
+      partialPhoneInMsg: ['phone'],
+      defaultMasksInMsg: [],
       defaultMasks: [],
     },
   });

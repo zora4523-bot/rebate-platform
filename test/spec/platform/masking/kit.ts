@@ -1,16 +1,18 @@
 // Shared helpers of the platform/masking rule tests (规划/08 BR-ID-33: 日志中不得出现明文; 默认脱敏
 // 格式). The logger under test is the real root logger writing JSON lines into memory; nothing is
 // mocked. Leaks are searched in the RAW line (so a duplicated key cannot hide one), after
-// removing the base fields (time, pid, hostname, entry, env) and every `stack` value (free text
-// with line numbers). Each sample has the positions its default masking may show (phone: first
-// 3 and last 4; ID number: first and last; name: last; anything else: none). A line leaks a
-// sample when any of these holds:
-//   - it contains the whole value, a run of 5 of its digits, or its UTF-8 bytes as hex, base64
-//     or a JSON number list (a number or Buffer value);
-//   - a string or number in it contains a piece of the value (3 or more characters, 2 for a
-//     name) that covers a hidden position;
-//   - a string or number in it has the value's length and repeats one of its characters at a
-//     hidden position (1398***4321, 11**************2X, 张*三); two of them for a value without
+// removing the base fields (time, pid, hostname, entry, env). Each sample has the positions its
+// default masking may show (phone: first 3 and last 4; ID number: first and last; name: last;
+// anything else: none). A line leaks a sample when any of these holds:
+//   - anywhere, `stack` values included: the whole value, a run of 5 of its digits, or its
+//     UTF-8 bytes as hex, base64 or a JSON number list (a number or Buffer value);
+//   - in a string or number outside `stack` values (stack traces carry line numbers, so short
+//     pieces are not searched there): a piece of the value (3 or more characters, 2 for a name)
+//     that covers a hidden position; for a name, any hidden character at all;
+//   - in such a string or number, or in a run of masking-like characters inside it (digits, X,
+//     masking marks; other letters for e-mail addresses and credentials), of the value's
+//     length: one of the value's characters repeated at a hidden position (1398***4321,
+//     11**************2X, 张*三, also inside a longer message); two of them for a value without
 //     a default masking.
 import {
   PinoNestLogger,
@@ -85,12 +87,16 @@ export function fragmentsOf(value: string): string[] {
   return [...out];
 }
 
-/** The raw line without base fields and `stack` values (their digits could match by chance). */
+/** The raw line without the base fields, whose digits could match by chance. */
 export function searchable(line: string): string {
   return line
     .replace(/"(time|hostname|entry|env)":"(?:[^"\\]|\\.)*"/g, '')
-    .replace(/"pid":-?\d+/g, '')
-    .replace(/"stack":"(?:[^"\\]|\\.)*"/g, '');
+    .replace(/"pid":-?\d+/g, '');
+}
+
+/** `text` without `stack` values. */
+export function withoutStacks(text: string): string {
+  return text.replace(/"stack":"(?:[^"\\]|\\.)*"/g, '');
 }
 
 /** Every string literal (decoded, keys included, duplicates kept) and number of a raw line. */
@@ -101,12 +107,21 @@ export function tokensOf(text: string): string[] {
   return [...strings, ...numbers];
 }
 
-function leaksSample(text: string, tokens: readonly string[], name: SampleName): boolean {
+/** Runs of characters a masked copy of a value of this kind is made of. */
+const RUN: Record<Kind, RegExp> = {
+  phone: /[0-9Xx*#•]+/g,
+  id: /[0-9Xx*#•]+/g,
+  name: /[*#•\u0080-\uffff]+/gu,
+  secret: /[^\s"'{}[\],:]+/g,
+};
+
+function leaksSample(full: string, tokens: readonly string[], name: SampleName): boolean {
   const value = SAMPLES[name];
-  if (fragmentsOf(value).some((fragment) => text.includes(fragment))) return true;
+  if (fragmentsOf(value).some((fragment) => full.includes(fragment))) return true;
   const chars = [...value];
   const hidden = hiddenPositions(name);
-  const minPiece = KIND[name] === 'name' ? 2 : 3;
+  const kind = KIND[name];
+  const minPiece = kind === 'name' ? 2 : 3;
   const pieces: string[] = [];
   for (let from = 0; from < chars.length; from += 1) {
     for (let to = from + minPiece; to <= chars.length; to += 1) {
@@ -115,22 +130,28 @@ function leaksSample(text: string, tokens: readonly string[], name: SampleName):
       if (coversHidden) pieces.push(chars.slice(from, to).join(''));
     }
   }
+  const hiddenChars = [...hidden].map((i) => chars[i] ?? '');
   // A value without a default masking (account, e-mail, credential) needs two repeated hidden
   // characters, so that an unrelated text of the same length cannot match by one letter.
-  const enough = KIND[name] === 'secret' ? 2 : 1;
-  return tokens.some((token) => {
-    if (pieces.some((piece) => token.includes(piece))) return true;
-    const got = [...token];
+  const enough = kind === 'secret' ? 2 : 1;
+  const repeatsHidden = (candidate: string): boolean => {
+    const got = [...candidate];
     if (got.length !== chars.length) return false;
     return [...hidden].filter((i) => got[i] === chars[i]).length >= enough;
+  };
+  return tokens.some((token) => {
+    if (pieces.some((piece) => token.includes(piece))) return true;
+    if (kind === 'name' && hiddenChars.some((c) => token.includes(c))) return true;
+    if (repeatsHidden(token)) return true;
+    return [...token.matchAll(RUN[kind])].some((run) => repeatsHidden(run[0]));
   });
 }
 
 /** Names of the samples that leak into `line` (empty when nothing leaks). */
 export function leaksIn(line: string, names: readonly SampleName[] = sampleNames()): string[] {
-  const text = searchable(line);
-  const tokens = tokensOf(text);
-  return names.filter((name) => leaksSample(text, tokens, name));
+  const full = searchable(line);
+  const tokens = tokensOf(withoutStacks(full));
+  return names.filter((name) => leaksSample(full, tokens, name));
 }
 
 export function sampleNames(): SampleName[] {
