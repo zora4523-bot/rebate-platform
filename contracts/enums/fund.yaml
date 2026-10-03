@@ -25,6 +25,7 @@ enums:
       INDIRECT: 间推
   clawback_sub_type:
     source: 规划/04 §2.4；BR-FUND-08
+    description: 按逆向事件来源取值，映射只在 BR-FUND-08 细则维护
     values:
       FULL: 全额扣回
       PART_REFUND: 入账后部分退款
@@ -80,7 +81,7 @@ enums:
       INCIDENTAL: 活动奖励（偶然所得，P1）
   withdrawal_status:
     source: 规划/04 §2.4；BR-WDR-08
-    description: 终态 REJECTED、PAID_API、PAID_MANUAL、FAILED；用户文案见 BR-TEXT-06
+    description: 终态 REJECTED、PAID_API、PAID_MANUAL、FAILED；迁移 W1–W11，W11 事件 CHANNEL_SUCCESS_PROVEN（付款方侧失败而通道已成功时核销原单，BR-WDR-17）；用户文案见 BR-TEXT-06
     values:
       PENDING_REVIEW: 审核中
       APPROVED: 已审核待执行
@@ -169,9 +170,39 @@ enums:
     values:
       credited: 已入账
       skipped: 已跳过
-      deferred: 已顺延
+      deferred: 受益人补记项的受益人仍在暂缓（BR-FUND-04 ⑫）
+  settle_batch_item_type:
+    source: 规划/04 §2.5；BR-FUND-04
+    description: settle_batch_items.item_type
+    values:
+      order: 子订单行
+      beneficiary: 受益人补记项
+  settle_adjustment_status:
+    source: 规划/04 §2.5；BR-FUND-09、BR-CALC-23
+    description: settle_adjustments.status
+    values:
+      pending: 待审批
+      approved: 已批准
+      rejected: 已驳回
+      voided_stale_seq: 已作废（候选行 seq 已不是当前 seq）
+      voided_by_clawback: 已作废（扣回发生时作废，BR-FUND-09 ②）
+  beneficiary_credit_kind:
+    source: 规划/04 §2.5；BR-FUND-04 ⑫
+    description: beneficiary_credits.kind
+    values:
+      first_credit: 入账时暂缓（迁移 R5 开立）
+      reassign_credit: 改派重记时新受益人暂缓（R14 开立）
+      deferred: 正差被延后
+  beneficiary_credit_status:
+    source: 规划/04 §2.5；BR-FUND-04 ⑫
+    description: beneficiary_credits.status
+    values:
+      open: 待补记
+      done: 已补记，或执行时金额为 0、不写凭证，或份额已由迁移 R9、R10 同事务补给受益人
+      forfeited: 已没收，或份额已由迁移 R9、R10 同事务归平台
+      voided: 订单转 CLAWED_BACK 或改派时作废
   recon_diff_type:
-    source: 规划/04 §2.5；BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23
+    source: 规划/04 §2.5；BR-FUND-01、BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23
     values:
       union_mismatch: 联盟对账差异（R1）
       channel_mismatch: 通道对账差异（R2）
@@ -181,6 +212,15 @@ enums:
       settle_amount_mismatch: 月结账单金额不一致
       settle_missing: 应结未结
       appeal_restore: 申诉撤销后恢复订单
+      estimate_changed_after_credit: 入账后只有预估佣金变化（BR-FUND-01 R9b；开关关闭时不生成）
+  payout_batch_item_result:
+    source: 规划/04 §2.4；BR-WDR-11、BR-WDR-12
+    description: payout_batch_items.result；只插入不改，改挂到别的批次时原批次记一行 moved_out
+    values:
+      paying: 进入打款
+      skipped: 已跳过
+      blocked: 受阻，留在 APPROVED
+      moved_out: 已移出，改挂到别的批次
   recon_diff_status:
     source: 规划/04 §2.5；08 §13.6
     values:
