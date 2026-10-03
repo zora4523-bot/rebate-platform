@@ -242,7 +242,7 @@ describe('platform baseline as business roles', () => {
     );
     const updated = await app
       .updateTable('idempotency_keys')
-      .set({ status: 'done', response: JSON.stringify({ ok: true }) })
+      .set({ status: 'completed', response: JSON.stringify({ ok: true }) })
       .where('key', '=', 'k-1')
       .executeTakeFirstOrThrow();
     expect(updated.numUpdatedRows).toBe(1n);
