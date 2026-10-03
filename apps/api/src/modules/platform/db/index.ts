@@ -240,6 +240,36 @@ export interface ConnectionConfig {
   readonly redisUrl: ConnectionUrl | null;
 }
 
+const DATABASE_QUERY_NAMES = new Set([
+  'sslmode',
+  'sslrootcert',
+  'options',
+  'password',
+  'sslpassword',
+]);
+const SSL_MODES = new Set(['disable', 'prefer', 'require', 'verify-ca', 'verify-full']);
+const DATABASE_QUERY_PROBLEM =
+  'query parameters may only be sslmode (disable, prefer, require, verify-ca or verify-full), sslrootcert, options, password or sslpassword, each at most once';
+
+function validDatabaseQuery(url: URL): boolean {
+  // URLSearchParams treats a missing equals sign as an empty value; the contract rejects it.
+  if (
+    url.search
+      .slice(1)
+      .split('&')
+      .some((part) => part !== '' && !part.includes('='))
+  ) {
+    return false;
+  }
+  const seen = new Set<string>();
+  for (const [name, value] of url.searchParams) {
+    if (!DATABASE_QUERY_NAMES.has(name) || seen.has(name)) return false;
+    if (name === 'sslmode' && !SSL_MODES.has(value)) return false;
+    seen.add(name);
+  }
+  return true;
+}
+
 /**
  * Reads DATABASE_URL, DATABASE_READ_URL and REDIS_URL for `entry` from `env` (section 1).
  * Throws the `ConfigError` of platform/config listing every problem.
@@ -264,7 +294,13 @@ export function loadConnectionConfig(
           url.username !== '' &&
           url.hostname !== '' &&
           url.pathname.length > 1;
-      if (valid) return new ConnectionUrl(url.href);
+      if (valid) {
+        if (!redis && !validDatabaseQuery(url)) {
+          problems.push(`${name}: ${DATABASE_QUERY_PROBLEM}`);
+          return null;
+        }
+        return new ConnectionUrl(url.href);
+      }
     } catch {
       // Never propagate URL's error: it includes the unredacted input.
     }
@@ -353,36 +389,41 @@ export function createDbHandles(config: ConnectionConfig, options: DbHandlesOpti
       max: settings.max,
       applicationName: settings.applicationName,
       poolFactory(poolConfig) {
+        // Use pg's own parsing without connecting or re-encoding the URL. In particular,
+        // a literal % in a password must not cause options to be encoded a second time.
+        let parsed: pg.ClientConfig;
+        try {
+          parsed = (
+            new pg.Client(poolConfig) as pg.Client & { connectionParameters: pg.ClientConfig }
+          ).connectionParameters;
+        } catch {
+          // Driver parse errors can contain URL values; expose neither them nor a cause.
+          const name = settings.readOnly ? 'DATABASE_READ_URL' : 'DATABASE_URL';
+          throw new ConfigError([`${name}: could not parse database connection parameters`]);
+        }
+        // Never pass through the entire parsed object or connectionString: pg accepts
+        // fields such as binary that can bypass the BigInt text parsers.
+        const connection: pg.PoolConfig = {
+          host: parsed.host,
+          port: parsed.port,
+          user: parsed.user,
+          password: parsed.password,
+          database: parsed.database,
+          ssl: parsed.ssl,
+          options: parsed.options,
+          max: settings.max,
+          application_name: settings.applicationName,
+          types: poolConfig.types,
+        };
         if (settings.readOnly) {
-          // Use pg's own parsing without connecting or re-encoding the URL. In particular,
-          // a literal % in a password must not cause options to be encoded a second time.
-          let parsed: pg.ClientConfig;
-          try {
-            parsed = (
-              new pg.Client(poolConfig) as pg.Client & { connectionParameters: pg.ClientConfig }
-            ).connectionParameters;
-          } catch {
-            // Driver parse errors can contain URL values; expose neither them nor a cause.
-            throw new ConfigError([
-              'DATABASE_READ_URL: could not parse database connection parameters',
-            ]);
-          }
           let original = parsed.options ?? '';
           const trailingSlashes = /\\+$/.exec(original)?.[0].length ?? 0;
           // PostgreSQL ignores a final unpaired backslash. Remove it before appending a
           // separator, otherwise it would escape that space into the preceding value.
           if (trailingSlashes % 2 === 1) original = original.slice(0, -1);
-          poolConfig = {
-            ...poolConfig,
-            ...parsed,
-            // pg deliberately makes the parsed password non-enumerable.
-            password: parsed.password,
-            options: `${original ? `${original} ` : ''}-c default_transaction_read_only=on`,
-          };
-          // A connectionString would take precedence over the merged fields in pg.
-          delete poolConfig.connectionString;
+          connection.options = `${original ? `${original} ` : ''}-c default_transaction_read_only=on`;
         }
-        const managed = managePool(poolConfig, settings, options.logger, () => closing);
+        const managed = managePool(connection, settings, options.logger, () => closing);
         pools.push(managed);
         return managed.adapter;
       },

@@ -17,9 +17,18 @@ const driver = vi.hoisted(() => ({
 // Use the real pg Pool and Kysely, replacing only the client transport. Graceful end
 // deliberately never completes and no 'end' event is emitted, like an unresponsive peer.
 vi.mock('pg', async (importOriginal) => {
-  const actual = await importOriginal<{ default: Record<string, unknown> }>();
+  const actual = await importOriginal<{
+    default: { Client: new (config?: unknown) => { connectionParameters: unknown } };
+  }>();
   const { EventEmitter } = await import('node:events');
   class Client extends EventEmitter {
+    connectionParameters: unknown;
+
+    constructor(config?: unknown) {
+      super();
+      this.connectionParameters = new actual.default.Client(config).connectionParameters;
+    }
+
     _queryable = true;
     destroyed = false;
     rejectQuery?: (error: Error) => void;
