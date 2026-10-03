@@ -1,0 +1,24 @@
+id: B1-01g
+repo: rebate-platform
+title: platform/queue：JobQueue 接口与 pg-boss 实现——与业务写入同一事务入队、至少一次投递、singletonKey 去重、worker 与 payout 入口的任务执行器
+type: impl
+# 从 05 的 B1-01 拆出。依据：ADR-0001 §2 队列行、§3、§4.2 第 14、19 项（singletonKey 是否等价于
+# 「排队期间静默丢弃」在这里实测并回写 ADR）；规划/02 §11、§18。业务代码只依赖 JobQueue，
+# pg-boss 只出现在 platform 与 packages/db；进程 migrate:false，库与 schema 版本不一致时拒绝启动。
+refs: []
+refs_hash: {}
+deps: [B1-01f]
+paths:
+  - 'apps/api/src/modules/platform/queue/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/main.worker.ts'
+  - 'apps/api/src/main.payout.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/queue/**'
+status: todo
+pr: null

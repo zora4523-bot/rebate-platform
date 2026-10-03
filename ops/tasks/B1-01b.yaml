@@ -1,0 +1,22 @@
+id: B1-01b
+repo: rebate-platform
+title: platform/http：外部调用治理——超时、只对幂等读重试（指数退避）、熔断、按用途配额的配置形状与进程内实现
+type: impl
+# 从 05 的 B1-01 拆出（HTTP 治理）。依据不是 BR 表格行，所以 refs 为空：规划/02 §1 原则 4、
+# §6.2 治理层（超时、重试、熔断、配额的取值）、§14 降级表；时间只读注入的 Clock。不依赖数据库。
+# 配额只交付接口与进程内令牌桶：Redis 令牌桶要先装 ioredis（deps 任务），桶的键口径等 CAP-*-12。
+# 只交付纯库，不从 platform/index.ts 导出（接线在 B1-01k）；降级表落地是 05 的 B1-14。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/http/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'pnpm --filter @couli/api test'
+  - 'pnpm --filter @couli/spec-tests test'
+  - 'test/spec/platform/http/**'
+status: done
+pr: 13

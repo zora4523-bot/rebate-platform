@@ -1,0 +1,23 @@
+id: B1-01c
+repo: rebate-platform
+title: platform/masking：手机号、身份证号、姓名的脱敏纯函数（BR-ID-33 默认格式）与日志脱敏字段清单
+type: impl
+# 从 05 的 B1-01 拆出。依据：BR-ID-33 的默认脱敏格式与「日志中不得出现明文」；规划/02 §12.3、
+# §19 日志行。不依赖数据库。日志部分只补 platform/logging 的脱敏字段名（规划/04 §3.2 里密文列
+# 对应的明文字段）。接口与后台怎样调用这些函数，由 identity、payout、后台各自的任务负责。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: b006e67811a3
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/masking/**'
+  - 'apps/api/src/modules/platform/logging/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'pnpm --filter @couli/api test'
+  - 'pnpm --filter @couli/spec-tests test'
+  - 'test/spec/platform/masking/**'
+status: todo
+pr: null

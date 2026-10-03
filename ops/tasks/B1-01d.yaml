@@ -1,0 +1,24 @@
+id: B1-01d
+repo: rebate-platform
+title: 请求校验：路由 schema 取自契约，Ajv2020 strict 校验 body、query、params、headers，校验失败统一回 400 与参数错误码
+type: impl
+# 从 05 的 B1-01 拆出。依据：ADR-0001 §2 契约行、§4.2 第 15 项（@RouteSchema、两个 Ajv 实例、
+# header 名转小写、FST_ERR_VALIDATION 的映射、路由 schema 不放 response）；规划/04 §5、§7。
+# 不依赖数据库。规则测试对着 validation 里的纯函数写；Nest 接线由实现方用 inject 单测覆盖。
+# 生成路由 schema 若要改 packages/contracts-ts 的生成脚本，另拆契约任务（那边的实现方是 Claude）。
+refs: []
+refs_hash: {}
+deps: [CT-02a]
+paths:
+  - 'apps/api/src/modules/platform/validation/**'
+  - 'apps/api/src/modules/health/**'
+  - 'apps/api/src/bootstrap.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'pnpm --filter @couli/api test'
+  - 'pnpm --filter @couli/spec-tests test'
+  - 'test/spec/platform/validation/**'
+status: todo
+pr: null

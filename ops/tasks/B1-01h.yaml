@@ -1,0 +1,21 @@
+id: B1-01h
+repo: rebate-platform
+title: platform/events：领域事件与业务写入同一事务入队（evt.<consumer>，任务 ID 取 event_id）、event_log 留痕、processed_events 消费去重
+type: impl
+# 从 05 的 B1-01 拆出。依据：规划/02 §11、§18 领域事件行；ADR-0001 §3、§4.2 第 16、22 项；
+# 规划/04 §3.2 的 processed_events、event_log 两行（event_log 的字段在这里定稿，要改表先拆迁移任务）。
+# 资金不依赖事件：事件只驱动推送、风控、看板、trace。
+refs: []
+refs_hash: {}
+deps: [B1-01g]
+paths:
+  - 'apps/api/src/modules/platform/events/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/events/**'
+status: todo
+pr: null

@@ -1,0 +1,121 @@
+{
+  "task": "B1-01b",
+  "spec_ref": "c288e25ea6228c3e3b24a05c8c2f13ed1a61a8eb",
+  "spec_commit": "7a14a302b1f86414b95b6968c1b8d5c8032388ca",
+  "red_tests": [
+    "[规划/02 §6.2] 错误率正好 50% 不熔断（20 次里失败 10 次）；再失败 1 次（21 次里 11 次）才熔断",
+    "[规划/02 §6.2] 请求不足 20 次不熔断：19 次全部失败仍放行；第 20 次失败后熔断",
+    "[规划/02 §6.2] 熔断 30 秒：29999 毫秒时仍拒绝，30000 毫秒时放行，并从空窗口重新计数",
+    "[规划/02 §6.2] 熔断结束后从空窗口重新计数：熔断时间比窗口短时，熔断前的失败也不会让它马上再次熔断",
+    "[规划/02 §6.2] 窗口是 10 秒：9999 毫秒前的失败还算数，满 10000 毫秒的不再计入",
+    "[规划/02 §6.2] 成功与对方明确答复的拒绝都算正常请求：10 次拒绝 + 10 次故障是 50%，不熔断；换成 9 次拒绝 + 11 次故障就熔断",
+    "[规划/02 §6.2] 超时按故障计入熔断：20 次调用全部超时后熔断",
+    "[规划/02 §6.2] 每次尝试都计数，重试途中熔断即停：窗口里已有 19 次失败，幂等读第 1 次尝试失败后熔断，不再重试，以 circuit_open 结束",
+    "[规划/02 §6.2] 熔断期间被拒的调用不取配额令牌，也不计入窗口",
+    "[规划/02 §6.2] 每个依赖各有自己的熔断器：一个平台熔断不影响另一个平台",
+    "[规划/02 §6.2] 超时：在线调用 3 秒，离线调用（同步、刷新）10 秒",
+    "[规划/02 §6.2] 重试：最多 2 次，指数退避（200 毫秒起，单次不超过 2 秒）；在线与离线相同",
+    "[规划/02 §6.2] 熔断：10 秒窗口内请求不少于 20 次且错误率超过 50%，熔断 30 秒；在线与离线相同",
+    "[规划/02 §6.2] 配额按用途切分：MVP 在线 60%、订单同步 30%、商品池刷新 10%；P1 提醒开启后商品池刷新 5%、提醒 5%",
+    "[规划/02 §6.2] unionPolicy 每次返回新的对象：改动返回值不影响下一次取到的策略",
+    "[规划/02 §6.2] createGovernor 拒绝不合法的策略与空的依赖名：一律 invalid_policy，不带病运行",
+    "[规划/02 §6.2] 按用途切分令牌：容量 100 时订单同步 30、商品池刷新 10、提醒 0、在线 60，桶初始是满的",
+    "[规划/02 §6.2] P1 的切分：容量 100 时商品池刷新 5、提醒 5、订单同步 30、在线 60",
+    "[规划/02 §6.2] 在线余量不足时先让出商品池刷新：在线用完自己的 60 个后再取走商品池刷新的 10 个，商品池刷新随之暂停；订单同步的 30 个不受影响",
+    "[规划/02 §6.2] 只有在线能借、只借商品池刷新：订单同步、提醒、商品池刷新用完自己的就被拒，不动别人的令牌",
+    "[规划/02 §6.2] 令牌按速率回填且不超过容量：订单同步每秒回填 总速率 × 30%，停一小时也只有 30 个",
+    "[规划/02 §6.2] 份额算出的容量向下取整：容量 15 时在线 9、订单同步 4、商品池刷新 1、提醒 0",
+    "[规划/02 §6.2] 桶的键可配置：limiter 带着配置的键，不同键的桶互不影响",
+    "[规划/02 §6.2] 不合法的配额配置一律 invalid_policy：份额不是 0 到 100 的整数或合计不是 100、容量不是正整数、速率不是正数、键为空",
+    "[规划/02 §6.2] Governor 每次尝试取 1 个令牌：幂等读重试 2 次共取 3 个；令牌不够时以 quota_exceeded 结束，不调用对方",
+    "[规划/02 §6.2] 被配额拒绝不算对方故障：再多的 quota_exceeded 也不会让熔断器打开；不带 purpose 的调用不取令牌",
+    "[规划/02 §6.2] 幂等读失败后最多再试 2 次（共 3 次），退避 200、400 毫秒；都失败则以最后一次的错误结束",
+    "[规划/02 §6.2] 写调用（转链等非幂等调用）失败不重试：只调用 1 次，错误原样抛出",
+    "[规划/02 §6.2] 重试成功就返回：第 2 次成功不再试第 3 次；第 3 次才成功也返回结果",
+    "[规划/02 §6.2] 第一次就成功的幂等读不重试、不等待",
+    "[规划/02 §6.2] 对方明确答复的拒绝（classify 返回 rejected）不是故障：不重试，错误原样抛出",
+    "[规划/02 §6.2] classify 返回 failure 时照常重试；超时永远按故障算，不交给 classify 改判",
+    "[规划/02 §6.2] 指数退避有上限：base 100、max 300、重试 5 次 → 等待 100、200、300、300、300 毫秒",
+    "[规划/02 §6.2] 退避是指数而不是线性：base 100、重试 4 次 → 等待 100、200、400、800 毫秒",
+    "[规划/02 §6.2] maxRetries 为 0 时幂等读也只试 1 次",
+    "[规划/02 §6.2] 在线调用 3 秒超时：2999 毫秒时还在等，3000 毫秒时中止信号触发并以 timeout 结束",
+    "[规划/02 §6.2] 离线调用 10 秒超时：9999 毫秒时还在等，10000 毫秒时以 timeout 结束",
+    "[规划/02 §6.2] 限时内返回的调用：结果原样返回，信号不被中止，超时的等待被取消（调度器里不留等待）",
+    "[规划/02 §6.2] 超时之后才到的回答被丢弃：调用仍以 timeout 结束，不会事后变成成功",
+    "[规划/02 §6.2] 超时按每次尝试计：一次调用里每个尝试各有自己的 3 秒"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). External-call governance (timeout, retry of idempotent reads, breaker, quota); no money, attribution or user-authorisation path changed. The rule source is 规划/02 §6.2 (not a BR row), so the ledger refs are empty.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "07389129cd68a5a604f04ebcb8334a7e4c5efe9c",
+      "tree": "7563983f60e12b1528ec77a1a5e368e5f5477981",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T09:55:02Z",
+      "finished_at": "2026-10-03T09:55:50Z"
+    },
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "0f0268526550b8b89faf389c1e43211f0e89cd00",
+      "tree": "b41de60905f52bf860f2ecaaabac8949fc94249b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T10:42:11Z",
+      "finished_at": "2026-10-03T10:42:54Z"
+    },
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "bbfe172eba2fce066fd2880a4063cded321d1ac9",
+      "tree": "bbfff34f237078cd06ccb9cd04c09bf90ffdc67c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T12:40:36Z",
+      "finished_at": "2026-10-03T12:41:21Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "scope": "independent read-only Claude subagent each round; rounds 1-3 pass with S2 only; round 4 on the increment 0f02685..bbfe172: pass, 0 findings (round-3 capacity-overflow note closed; 44.9M acquisitions against an exact model, 0 mismatches, 0 throws)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 4,
+      "note": "round 1 fail (2 S1), round 2 fail (1 S1: float refill), round 3 fail (1 S1: capacity overflow to Infinity, RangeError); round 4 (base 0f02685) on bbfe172: pass, 0 findings, checklist 7/7"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "round 1 pass; the policy field was then renamed retry -> retries (7a14a30, test-guard) and round 2 passed"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "833352e1f5760a722404dbc8f911918f6fda1490",
+    "test/spec": "00a636e85960b22762cd4bee38609728c5aaeeb6",
+    "apps/api/src/modules/platform/http": "23b5b14b87f6031e300e3140a9d9e09fc638c684"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 30,
+    "files": 5,
+    "note": "PROP_RUNS=1000000 on the B1-01b worktree at bbfe172, 2026-10-03 20:42 (+08:00); packages/money and test/properties are unchanged from main",
+    "tree": "833352e1f5760a722404dbc8f911918f6fda1490"
+  },
+  "exceptions": "implementation attempts 4 and 5 and code review round 4 were approved by the orchestrator session under ops/approvals.yaml id 16 (one exception each, recorded in couli-runs/B1-01b/exception-impl-attempt4.md and exception-impl-attempt5.md); 11 Codex calls in total",
+  "ledger_split": "the first commit carries the B1-01 sub-task ledgers B1-01a..B1-01k (规划/11 §2.1: ledgers ride with the first sub-task PR)"
+}
