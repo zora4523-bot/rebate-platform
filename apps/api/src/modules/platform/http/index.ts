@@ -163,12 +163,9 @@ export function systemScheduler(): Scheduler {
           reject(signal.reason);
           return;
         }
-        if (!Number.isFinite(ms) || ms < 0) {
-          reject(new RangeError('Sleep duration must be finite and non-negative'));
-          return;
-        }
+        const duration = Number.isNaN(ms) ? 0 : Math.max(0, ms);
         const started = performance.now();
-        let timer: ReturnType<typeof setTimeout>;
+        let timer: ReturnType<typeof setTimeout> | undefined;
         const cancel = (): void => {
           clearTimeout(timer);
           signal?.removeEventListener('abort', cancel);
@@ -179,7 +176,7 @@ export function systemScheduler(): Scheduler {
           timer = setTimeout(tick, Math.min(2_147_483_647, Math.ceil(remaining)));
         };
         const tick = (): void => {
-          const remaining = ms - (performance.now() - started);
+          const remaining = duration - (performance.now() - started);
           if (remaining > 0) {
             schedule(remaining);
           } else {
@@ -188,7 +185,7 @@ export function systemScheduler(): Scheduler {
           }
         };
         signal?.addEventListener('abort', cancel, { once: true });
-        schedule(ms);
+        if (duration !== Infinity) schedule(duration);
       });
     },
   };
@@ -240,30 +237,42 @@ export function createMemoryQuotaLimiter(
     throw new GovernanceError('invalid_policy', config?.bucketKey ?? '', 'Invalid quota policy');
   }
   // Snapshot the values: mutating the input after validation cannot alter a live limiter.
+  const startedAt = scheduler.now();
   const buckets = new Map(
     PURPOSES.map((purpose) => {
-      const fraction = config.shares[purpose] / 100;
       const capacity = Math.floor((config.capacity * config.shares[purpose]) / 100);
-      return [purpose, { capacity, tokens: capacity, rate: config.refillPerSecond * fraction }];
+      return [
+        purpose,
+        {
+          capacity,
+          consumed: 0,
+          startedAt,
+          rate: (config.refillPerSecond * config.shares[purpose]) / 100,
+        },
+      ];
     }),
   );
-  let updatedAt = scheduler.now();
-  const take = (purpose: QuotaPurpose): boolean => {
+  const take = (purpose: QuotaPurpose, now: number): boolean => {
     const bucket = buckets.get(purpose);
-    if (bucket === undefined || bucket.tokens < 1) return false;
-    bucket.tokens -= 1;
+    if (bucket === undefined || bucket.capacity < 1) return false;
+    // Recompute from a fixed origin; acquisitions subtract only whole tokens, so polling
+    // cannot accumulate fractional refill errors. Reset the origin only when full, discarding
+    // any overflow instead of banking tokens beyond capacity.
+    const refilled = ((now - bucket.startedAt) * bucket.rate) / 1000;
+    if (refilled >= bucket.consumed) {
+      bucket.startedAt = now;
+      bucket.consumed = 0;
+    } else if (bucket.capacity - bucket.consumed + Math.floor(refilled) < 1) {
+      return false;
+    }
+    bucket.consumed += 1;
     return true;
   };
   return {
     bucketKey: config.bucketKey,
     tryAcquire(purpose) {
       const now = scheduler.now();
-      const elapsedSeconds = (now - updatedAt) / 1000;
-      for (const bucket of buckets.values()) {
-        bucket.tokens = Math.min(bucket.capacity, bucket.tokens + elapsedSeconds * bucket.rate);
-      }
-      updatedAt = now;
-      return take(purpose) || (purpose === 'online' && take('pool_refresh'));
+      return take(purpose, now) || (purpose === 'online' && take('pool_refresh', now));
     },
   };
 }
@@ -276,6 +285,7 @@ function attempt<T>(
   timeoutError: GovernanceError,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    const deadline = scheduler.now() + timeoutMs;
     const operationController = new AbortController();
     const timerController = new AbortController();
     let settled = false;
@@ -285,21 +295,25 @@ function attempt<T>(
       timerController.abort();
       settle();
     };
-    void scheduler.sleep(timeoutMs, timerController.signal).then(
-      () => {
-        if (settled) return;
-        finish(() => reject(timeoutError));
-        operationController.abort(timeoutError);
-      },
-      (error: unknown) => finish(() => reject(error)),
-    );
+    const expire = (): void => {
+      if (settled) return;
+      finish(() => reject(timeoutError));
+      operationController.abort(timeoutError);
+    };
+    const accept = (settle: () => void): void => {
+      if (scheduler.now() >= deadline) expire();
+      else finish(settle);
+    };
+    void scheduler
+      .sleep(timeoutMs, timerController.signal)
+      .then(expire, (error: unknown) => finish(() => reject(error)));
     try {
       void operation(operationController.signal).then(
-        (value) => finish(() => resolve(value)),
-        (error: unknown) => finish(() => reject(error)),
+        (value) => accept(() => resolve(value)),
+        (error: unknown) => accept(() => reject(error)),
       );
     } catch (error) {
-      finish(() => reject(error));
+      accept(() => reject(error));
     }
   });
 }
@@ -388,7 +402,14 @@ export function createGovernor(
             record(false);
             return value;
           } catch (error) {
-            const failed = error === timeoutError || classify?.(error) !== 'rejected';
+            let failed = true;
+            if (error !== timeoutError) {
+              try {
+                failed = classify?.(error) !== 'rejected';
+              } catch {
+                // A broken classifier must not hide the upstream error or bypass the breaker.
+              }
+            }
             record(failed);
             if (!failed || kind !== 'idempotent_read' || retried >= retries.maxRetries) throw error;
           }
