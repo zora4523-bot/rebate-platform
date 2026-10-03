@@ -1,0 +1,75 @@
+{
+  "task": "B1-01d",
+  "spec_ref": "c288e25ea6228c3e3b24a05c8c2f13ed1a61a8eb",
+  "spec_commit": "131f6486014f0b9246a2d9eedd0978bb1510bca2",
+  "red_tests": [
+    "[ADR-0001 §4.2 #15] 由契约操作生成 params、querystring、headers（参数名转小写）与 body 四部分；操作级参数替换路径级同名参数",
+    "[ADR-0001 §4.2 #15] 没有参数与请求体的操作得到空的路由 schema；无论操作写了什么响应，结果里都没有 response",
+    "[ADR-0001 §4.2 #15] 只有路径级参数时同样生成；路径参数一律必填、查询参数不认识的键被拒（additionalProperties: false）",
+    "[ADR-0001 §4.2 #15] 不支持的契约写法在生成时就报错并写出 operationId：cookie 参数、数组或对象参数、style / explode / content、非必填或非 JSON 的请求体",
+    "[ADR-0001 §4.2 #15] body 不做类型转换：字符串数字被拒，多余字段、缺字段、没有 body 都被拒，合规 body 原样通过",
+    "[ADR-0001 §4.2 #15] querystring、params、headers 开类型转换：字符串原地转成整数与布尔，转不了的被拒；headers 允许 schema 之外的头",
+    "[ADR-0001 §4.2 #15] 严格模式：未知关键字、properties 不带 type: object、prefixItems 不带 minItems、required 里有 properties 没有的名字，编译即报错",
+    "[ADR-0001 §4.2 #15] int64 只收 ±(2^53−1) 以内的整数，int32 只收 −2^31 … 2^31−1；查询串里的数字先转换再判",
+    "[ADR-0001 §4.2 #15] ajv-formats 的格式照常生效（date-time、uuid），且一次报出全部错误（allErrors）",
+    "[规划/04 §7 20001] 校验失败回 400 与 ErrorEnvelope：code 20001、data.fields 按出错顺序列出每个字段一次（嵌套用点连接、数组下标在内）、带 trace_id，msg 不回显提交的值",
+    "[规划/04 §7 20001] fields 的名字：JSON pointer 转义还原（~1 → /，~0 → ~），重复只列一次，整段缺失时写段名，headers 与 querystring 写参数名",
+    "[规划/04 §7 20001] 不是 FST_ERR_VALIDATION 的错误不处理（返回 undefined），交给原有的异常处理",
+    "[ADR-0001 §4.2 #15] 从契约操作生成的各段 schema 编译后能直接校验请求，出错时得到对应段的 20001"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**, apps/api/src/bootstrap.ts, apps/api/src/modules/health/**). Request validation from the contract (ADR-0001 §4.2 #15, 规划/04 §7 20001); no money, attribution or user-authorisation path changed. The rule source is ADR-0001 and 规划/04, not a BR row, so the ledger refs are empty.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "22143d81489bdb5ad396ea892a0b893ca757dea6",
+      "tree": "ef42a3da3b0f69e1f8efb4247ae0f61bbb22448b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-03T13:56:29Z",
+      "finished_at": "2026-10-03T13:57:23Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent on 131f648..22143d8: pass, 0 S0/S1, 1 S2 (createValidatorCompiler return type drifted from the skeleton's contract type; types only, recorded as follow-up)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 (base 131f648) on 77fa3a4 + ledger: pass, 0 findings, checklist 7/7"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "round 1 fail (1 S1: expected schemas aliased the inputs; 1 S1 out of scope: params / headers coercion untested), both fixed in 131f648; round 2 pass"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "833352e1f5760a722404dbc8f911918f6fda1490",
+    "test/spec": "448ff07e4f4ad6b7fb76edf6c277a45abeee14e5",
+    "apps/api/src/modules/platform/validation": "7c3a70454c7b636c1630b6846913329a3d5efbd8"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 30,
+    "files": 5,
+    "note": "PROP_RUNS=1000000 on the B1-01d worktree at 22143d8, 2026-10-03 22:02 (+08:00); packages/money and test/properties are unchanged from main",
+    "tree": "833352e1f5760a722404dbc8f911918f6fda1490"
+  },
+  "follow_ups": "S2 from the Claude review: align the ValidateFunction contract type with Fastify's validator compiler type (couli-runs/B1-01d/review-claude-round1.json)"
+}
