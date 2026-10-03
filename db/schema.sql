@@ -435,11 +435,13 @@ CREATE TABLE app.idempotency_keys (
     method text NOT NULL,
     path text NOT NULL,
     key text NOT NULL,
-    request_hash text NOT NULL,
+    request_hash text,
     status text NOT NULL,
     response jsonb,
     expire_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT idempotency_keys_request_data_check CHECK ((((status = 'abandoned'::text) AND (request_hash IS NULL) AND (response IS NULL)) OR ((status = ANY (ARRAY['processing'::text, 'completed'::text])) AND (request_hash IS NOT NULL)))),
+    CONSTRAINT idempotency_keys_status_check CHECK ((status = ANY (ARRAY['processing'::text, 'completed'::text, 'abandoned'::text])))
 );
 
 
