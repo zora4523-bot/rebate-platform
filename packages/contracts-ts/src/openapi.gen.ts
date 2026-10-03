@@ -46,6 +46,9 @@ export interface paths {
          *     and no device_id is issued; the client shows nothing and reads the identifier again
          *     instead of retrying the same value. Reaching the per-IP hourly registration limit is 42901
          *     with Retry-After (BR-ID-05 细则「发码与设备注册的风控默认值」).
+         *     `id_source` is required from the first release: this operation is still planned (no route,
+         *     no client has shipped), so making it required breaks no caller (orchestrator decision
+         *     j-05, 2026-10-04); after the first release only optional fields may be added (04 §5「兼容」).
          */
         post: operations["registerDevice"];
         delete?: never;
@@ -688,7 +691,8 @@ export interface components {
         /**
          * @description Phone number as typed or pasted; it may carry spaces, hyphens and +86 / 0086 / 86. The
          *     server normalises it (BR-ID-05 细则「手机号规范化」); a result that is not a mainland mobile
-         *     number is 20001 with `data.fields=[phone]` and `data.reason=phone_invalid`.
+         *     number is 20001 with `data.fields=[phone]` and `data.reason=phone_invalid`. The length
+         *     limit only bounds the raw input; it leaves room for any spacing of a valid number.
          */
         Phone: string;
         SendSmsCodeRequest: {
