@@ -46,9 +46,10 @@ export interface paths {
          *     and no device_id is issued; the client shows nothing and reads the identifier again
          *     instead of retrying the same value. Reaching the per-IP hourly registration limit is 42901
          *     with Retry-After (BR-ID-05 细则「发码与设备注册的风控默认值」).
-         *     `id_source` is required from the first release: this operation is still planned (no route,
-         *     no client has shipped), so making it required breaks no caller (orchestrator decision
-         *     j-05, 2026-10-04); after the first release only optional fields may be added (04 §5「兼容」).
+         *     `id_source` must be sent (04 §6.1, §3.2 devices): a request without it is 20001 with
+         *     `data.fields=[id_source]` and no device_id is issued. It is optional in the schema only
+         *     because a new required request property is a breaking change under 04 §5「兼容」 (oasdiff
+         *     in CI), even though this operation is still planned and has no caller.
          */
         post: operations["registerDevice"];
         delete?: never;
@@ -675,7 +676,8 @@ export interface components {
              *     (iOS), ANDROID_ID (Android, MVP) or ODID (Harmony) (BR-ID-09 细则「设备标识的无效值」).
              */
             device_hash: string;
-            id_source: components["schemas"]["DeviceIdSource"];
+            /** @description Required by the server (missing → 20001, `data.fields=[id_source]`). */
+            id_source?: components["schemas"]["DeviceIdSource"];
         };
         RegisterDeviceData: {
             device_id: components["schemas"]["Id"];
@@ -691,8 +693,9 @@ export interface components {
         /**
          * @description Phone number as typed or pasted; it may carry spaces, hyphens and +86 / 0086 / 86. The
          *     server normalises it (BR-ID-05 细则「手机号规范化」); a result that is not a mainland mobile
-         *     number is 20001 with `data.fields=[phone]` and `data.reason=phone_invalid`. The length
-         *     limit only bounds the raw input; it leaves room for any spacing of a valid number.
+         *     number is 20001 with `data.fields=[phone]` and `data.reason=phone_invalid` (an empty
+         *     string included). No length bound in the schema: any spacing of a valid number must reach
+         *     the normaliser, and adding a bound to a request property is a breaking change (oasdiff).
          */
         Phone: string;
         SendSmsCodeRequest: {

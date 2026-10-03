@@ -127,7 +127,7 @@ it('step-up takes exactly one way; an oauth attempt for step_up names the action
     provider: 'wechat',
     purpose: 'step_up',
   };
-  expectTypeOf<Schema<'RegisterDeviceRequest'>['id_source']>().toEqualTypeOf<
+  expectTypeOf<NonNullable<Schema<'RegisterDeviceRequest'>['id_source']>>().toEqualTypeOf<
     'idfv' | 'android_id' | 'oaid' | 'odid'
   >();
   expect([bySms, byApple, mixed, loginAttempt, stepUpAttempt]).toHaveLength(5);
