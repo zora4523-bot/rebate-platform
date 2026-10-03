@@ -1,0 +1,21 @@
+# 联盟物料频道白名单（规划/08 BR-TEXT-17 细则「联盟物料频道」；功能对照 Q-27 默认 A，待负责人确认）。
+# 用途：首页 feed_infinite、product_scroll、product_grid 的 union_material 数据源只能选这里 selectable: true 的
+# 频道；后台的频道下拉只列它们，服务端保存首页配置时再校验（不在白名单 → 20001），每次取物料前还要再核对一次
+# （频道不在或已不可选 → 不取、按没有数据处理并告警）。P1 的榜单页、品牌页立项时同样适用。
+#
+# 结构：
+#   version    每次改动递增
+#   channels   每条 {platform, channel_id, name, sort_basis, selectable, source}
+#     platform     contracts/enums/platform.yaml 的 platform
+#     channel_id   联盟接口里的频道或物料标识，按接口原样记
+#     sort_basis   排序依据：sales（销量）/ popularity（热度）/ personalized（猜你喜欢一类）；
+#                  按佣金或收益排序、或带佣金权重的频道不进本表
+#     selectable   true 才能被首页选用；把频道改为 false 后，已发布配置在取数时停用（BR-TEXT-17 细则）
+#     source       排序依据的记录出处（规划/09 CAP-TB-10、CAP-JD-10、CAP-PDD-10 的记录）
+# 收录条件：排序依据已在 规划/09 对应 CAP 逐个记下、且不含佣金权重；说不清的不进。本系统合并与混排时也不加
+# 佣金或返利权重。要用按佣金排序的频道须负责人决定（改选 B 或逐个放行），放行的卡片一律 ad_label=「推广」。
+#
+# TODO(规划/09 CAP-TB-10、CAP-JD-10、CAP-PDD-10): 各平台频道的排序依据 — blocked on 联盟接口实测记录
+#   （记录之前白名单为空，首页 union_material 数据源没有可选频道）。
+version: '0'
+channels: []
