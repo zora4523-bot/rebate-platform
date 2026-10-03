@@ -252,7 +252,7 @@ it('[BR-ID-33] 换一个进程新生成的密钥也是新的随机密钥：本�
   });
 });
 
-it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建、轮换、打开 keyring，加密、解密、重新加密、建索引、读版本，包裹与解包，以及每一种错误码的被拒调用（含 provider 失败）之后，标准错误一个字节也没有，标准输出正好是进程自己的那一份 JSON 回复', () => {
+it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建、轮换、打开 keyring，加密、解密、重新加密、建索引、读版本，包裹与解包，以及每一种错误码的被拒调用（含 provider 失败：新建、轮换、打开 keyring 时 provider 第几次调用抛出或拒绝 × 普通 Error 或同码的 FieldCryptoError，共 24 种）之后，标准错误一个字节也没有，标准输出正好是进程自己的那一份 JSON 回复', () => {
   const values = [
     { text: '13877776666', context: PHONE_CONTEXT },
     { text: '11010519491231002X', context: ID_CONTEXT },
@@ -268,6 +268,9 @@ it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建�
     values,
     wrapHex: testKey(3).toString('hex'),
   });
+  // Provider failures (child.ts): creating wraps 2 keys, rotating wraps 1, opening unwraps 3;
+  // each call × thrown or rejected × plain Error or FieldCryptoError = 6 × 2 × 2 refused calls.
+  const providerFailures = Array.from({ length: 24 }, () => 'key_provider_failed');
   const perValue = [
     'decrypt_failed',
     'unknown_key_version',
@@ -297,10 +300,7 @@ it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建�
         'key_provider_failed',
         'invalid_keyring',
         'invalid_key',
-        'key_provider_failed',
-        'key_provider_failed',
-        'key_provider_failed',
-        'key_provider_failed',
+        ...providerFailures,
       ],
     },
   });

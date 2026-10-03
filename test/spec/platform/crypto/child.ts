@@ -74,9 +74,10 @@ export type ChildRequest =
       readonly wrapHex: readonly string[];
     }
   /**
-   * Runs every operation of the module, successful and refused ones (every error code), and
-   * replies only with the outcomes of the refused calls: the parent checks that the process
-   * printed nothing else.
+   * Runs every operation of the module, successful and refused ones (every error code, and every
+   * provider failure: each provider call of creating, rotating and opening a keyring thrown or
+   * rejected, with a plain Error or a FieldCryptoError), and replies only with the outcomes of the
+   * refused calls: the parent checks that the process printed nothing else.
    */
   | {
       readonly mode: 'exercise';
@@ -201,8 +202,6 @@ async function exercise(
   const otherMaster = Buffer.from(request.masterKeyHex, 'hex').map((byte) => byte ^ 0xff);
   const wrongProvider = new mod.LocalKeyProvider(otherMaster, request.keyId);
   const secret = request.values.map((v) => v.text).join(' ');
-  const failing = (how: 'reject-wrap' | 'throw-wrap' | 'reject-unwrap' | 'throw-unwrap') =>
-    new kit.FailingKms(new kit.FakeKms(request.keyId), how, secret);
   outcomes.push(
     await outcomeOf(mod, () => wrongProvider.unwrapKey(wrapped)),
     await outcomeOf(mod, () => provider.unwrapKey(request.wrapHex)),
@@ -210,11 +209,34 @@ async function exercise(
     await outcomeOf(mod, () => mod.openFieldCrypto(stored, wrongProvider)),
     await outcomeOf(mod, () => mod.openFieldCrypto({ ...stored, data_keys: [] }, provider)),
     await outcomeOf(mod, () => new mod.LocalKeyProvider(key.subarray(0, 16), request.keyId)),
-    await outcomeOf(mod, () => mod.createWrappedKeyring(failing('reject-wrap'))),
-    await outcomeOf(mod, () => mod.rotateDataKey(stored, failing('throw-wrap'))),
-    await outcomeOf(mod, () => mod.openFieldCrypto(stored, failing('reject-unwrap'))),
-    await outcomeOf(mod, () => mod.openFieldCrypto(stored, failing('throw-unwrap'))),
   );
+  // Provider failures, the same matrix as keyring.test.ts: under a keyring wrapped by the in-test
+  // KMS stand-in every provider call is really made (creating wraps two keys, rotating wraps one,
+  // opening unwraps three: two data keys and the blind-index key), and each call n fails once,
+  // thrown or rejected, with a plain Error or a FieldCryptoError of the provider-failure code,
+  // both quoting the values. 24 refused calls, in this order.
+  type Provider = Parameters<CryptoModule['createWrappedKeyring']>[0];
+  const kmsKeyring = kit.knownKeyring(new kit.FakeKms(request.keyId), [1, 2], 2).doc;
+  const operations = [
+    { kind: 'wrap', count: 2, run: (kms: Provider) => mod.createWrappedKeyring(kms) },
+    { kind: 'wrap', count: 1, run: (kms: Provider) => mod.rotateDataKey(kmsKeyring, kms) },
+    { kind: 'unwrap', count: 3, run: (kms: Provider) => mod.openFieldCrypto(kmsKeyring, kms) },
+  ] as const;
+  for (const op of operations) {
+    for (let call = 1; call <= op.count; call += 1) {
+      for (const way of ['reject', 'throw'] as const) {
+        for (const kind of ['error', 'field-crypto-error'] as const) {
+          const failing = new kit.FailingKms(
+            new kit.FakeKms(request.keyId),
+            `${way}-${op.kind}`,
+            secret,
+            { call, kind },
+          );
+          outcomes.push(await outcomeOf(mod, () => op.run(failing)));
+        }
+      }
+    }
+  }
   return { outcomes };
 }
 
