@@ -1,8 +1,7 @@
 // Governance of calls to external dependencies (规划/02 §1 原则 4, §6.2 治理层, §14): every
 // adapter (union platforms, model, payment channels, SMS, push, Jev) runs its upstream call
 // through a `Governor`, which applies one timeout per attempt, retries only idempotent reads,
-// trips a circuit breaker and takes a quota token. SKELETON written by the rule-test author:
-// every function below throws `NotImplemented` until task B1-01b implements it. The rule tests
+// trips a circuit breaker and takes a quota token. The rule tests
 // in test/spec/platform/http/** import this file by path; names, signatures and the semantics
 // written here are the contract.
 //
@@ -156,19 +155,68 @@ export interface Governor {
 
 /** The scheduler used outside tests: `performance.now()` and cancellable timers. */
 export function systemScheduler(): Scheduler {
-  throw new Error('NotImplemented');
+  return {
+    now: () => performance.now(),
+    sleep(ms, signal) {
+      return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted === true) {
+          reject(signal.reason);
+          return;
+        }
+        if (!Number.isFinite(ms) || ms < 0) {
+          reject(new RangeError('Sleep duration must be finite and non-negative'));
+          return;
+        }
+        const started = performance.now();
+        let timer: ReturnType<typeof setTimeout>;
+        const cancel = (): void => {
+          clearTimeout(timer);
+          signal?.removeEventListener('abort', cancel);
+          reject(signal?.reason);
+        };
+        const schedule = (remaining: number): void => {
+          // Node otherwise turns delays above the signed 32-bit limit into 1 ms.
+          timer = setTimeout(tick, Math.min(2_147_483_647, Math.ceil(remaining)));
+        };
+        const tick = (): void => {
+          const remaining = ms - (performance.now() - started);
+          if (remaining > 0) {
+            schedule(remaining);
+          } else {
+            signal?.removeEventListener('abort', cancel);
+            resolve();
+          }
+        };
+        signal?.addEventListener('abort', cancel, { once: true });
+        schedule(ms);
+      });
+    },
+  };
 }
 
 /** The policy of 规划/02 §6.2 for union platform calls. */
 export function unionPolicy(mode: 'online' | 'offline'): GovernancePolicy {
-  void mode;
-  throw new Error('NotImplemented');
+  return {
+    timeoutMs: mode === 'online' ? 3000 : 10000,
+    retries: { maxRetries: 2, baseDelayMs: 200, maxDelayMs: 2000 },
+    breaker: { windowMs: 10000, minRequests: 20, failureRatePercent: 50, openMs: 30000 },
+  };
 }
 
 /** The split of 规划/02 §6.2: `mvp` 60 / 30 / 10 / 0, `p1` (reminders on) 60 / 30 / 5 / 5. */
 export function quotaShares(stage: 'mvp' | 'p1'): QuotaShares {
-  void stage;
-  throw new Error('NotImplemented');
+  return {
+    online: 60,
+    order_sync: 30,
+    pool_refresh: stage === 'mvp' ? 10 : 5,
+    watch: stage === 'mvp' ? 0 : 5,
+  };
+}
+
+const PURPOSES: readonly QuotaPurpose[] = ['online', 'order_sync', 'pool_refresh', 'watch'];
+
+function integerInRange(value: number, min: number, max: number = Number.MAX_VALUE): boolean {
+  return Number.isInteger(value) && value >= min && value <= max;
 }
 
 /**
@@ -176,10 +224,84 @@ export function quotaShares(stage: 'mvp' | 'p1'): QuotaShares {
  * the configuration breaks a constraint written on `QuotaConfig` / `QuotaShares`. A Redis-backed
  * limiter with the same interface arrives with a later task.
  */
-export function createMemoryQuotaLimiter(config: QuotaConfig, scheduler?: Scheduler): QuotaLimiter {
-  void config;
-  void scheduler;
-  throw new Error('NotImplemented');
+export function createMemoryQuotaLimiter(
+  config: QuotaConfig,
+  scheduler: Scheduler = systemScheduler(),
+): QuotaLimiter {
+  if (
+    typeof config?.bucketKey !== 'string' ||
+    config.bucketKey.trim() === '' ||
+    !integerInRange(config.capacity, 1) ||
+    !Number.isFinite(config.refillPerSecond) ||
+    config.refillPerSecond <= 0 ||
+    !PURPOSES.every((purpose) => integerInRange(config.shares?.[purpose], 0, 100)) ||
+    PURPOSES.reduce((sum, purpose) => sum + config.shares[purpose], 0) !== 100
+  ) {
+    throw new GovernanceError('invalid_policy', config?.bucketKey ?? '', 'Invalid quota policy');
+  }
+  // Snapshot the values: mutating the input after validation cannot alter a live limiter.
+  const buckets = new Map(
+    PURPOSES.map((purpose) => {
+      const fraction = config.shares[purpose] / 100;
+      const capacity = Math.floor((config.capacity * config.shares[purpose]) / 100);
+      return [purpose, { capacity, tokens: capacity, rate: config.refillPerSecond * fraction }];
+    }),
+  );
+  let updatedAt = scheduler.now();
+  const take = (purpose: QuotaPurpose): boolean => {
+    const bucket = buckets.get(purpose);
+    if (bucket === undefined || bucket.tokens < 1) return false;
+    bucket.tokens -= 1;
+    return true;
+  };
+  return {
+    bucketKey: config.bucketKey,
+    tryAcquire(purpose) {
+      const now = scheduler.now();
+      const elapsedSeconds = (now - updatedAt) / 1000;
+      for (const bucket of buckets.values()) {
+        bucket.tokens = Math.min(bucket.capacity, bucket.tokens + elapsedSeconds * bucket.rate);
+      }
+      updatedAt = now;
+      return take(purpose) || (purpose === 'online' && take('pool_refresh'));
+    },
+  };
+}
+
+/** Settle before aborting: an upstream abort handler must not turn a timeout into success. */
+function attempt<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  scheduler: Scheduler,
+  timeoutMs: number,
+  timeoutError: GovernanceError,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const operationController = new AbortController();
+    const timerController = new AbortController();
+    let settled = false;
+    const finish = (settle: () => void): void => {
+      if (settled) return;
+      settled = true;
+      timerController.abort();
+      settle();
+    };
+    void scheduler.sleep(timeoutMs, timerController.signal).then(
+      () => {
+        if (settled) return;
+        finish(() => reject(timeoutError));
+        operationController.abort(timeoutError);
+      },
+      (error: unknown) => finish(() => reject(error)),
+    );
+    try {
+      void operation(operationController.signal).then(
+        (value) => finish(() => resolve(value)),
+        (error: unknown) => finish(() => reject(error)),
+      );
+    } catch (error) {
+      finish(() => reject(error));
+    }
+  });
 }
 
 /**
@@ -191,8 +313,93 @@ export function createGovernor(
   policy: GovernancePolicy,
   deps?: GovernorDeps,
 ): Governor {
-  void dependency;
-  void policy;
-  void deps;
-  throw new Error('NotImplemented');
+  if (
+    typeof dependency !== 'string' ||
+    dependency.trim() === '' ||
+    !integerInRange(policy?.timeoutMs, 1) ||
+    !integerInRange(policy.retries?.maxRetries, 0, 10) ||
+    !integerInRange(policy.retries?.baseDelayMs, 1) ||
+    !integerInRange(policy.retries?.maxDelayMs, policy.retries.baseDelayMs) ||
+    !integerInRange(policy.breaker?.windowMs, 1) ||
+    !integerInRange(policy.breaker?.minRequests, 1) ||
+    !integerInRange(policy.breaker?.failureRatePercent, 0, 99) ||
+    !integerInRange(policy.breaker?.openMs, 1)
+  ) {
+    throw new GovernanceError('invalid_policy', dependency, 'Invalid governance policy');
+  }
+  const { timeoutMs } = policy;
+  const retries = { ...policy.retries };
+  const breaker = { ...policy.breaker };
+  const scheduler = deps?.scheduler ?? systemScheduler();
+  const quota = deps?.quota;
+  let openUntil: number | undefined;
+  let records: { at: number; failed: boolean }[] = [];
+  let head = 0;
+  let failures = 0;
+
+  const breakerState = (): 'closed' | 'open' => {
+    if (openUntil !== undefined) {
+      if (scheduler.now() < openUntil) return 'open';
+      openUntil = undefined;
+      records = [];
+      head = 0;
+      failures = 0;
+    }
+    return 'closed';
+  };
+  const record = (failed: boolean): void => {
+    // In-flight completions must not extend an already open circuit's recovery deadline.
+    if (breakerState() === 'open') return;
+    const now = scheduler.now();
+    while (head < records.length) {
+      const oldest = records[head];
+      if (oldest === undefined || now - oldest.at < breaker.windowMs) break;
+      if (oldest.failed) failures -= 1;
+      head += 1;
+    }
+    if (head > 0 && head * 2 >= records.length) {
+      records = records.slice(head);
+      head = 0;
+    }
+    records.push({ at: now, failed });
+    if (failed) failures += 1;
+    const total = records.length - head;
+    if (total >= breaker.minRequests && failures * 100 > breaker.failureRatePercent * total) {
+      openUntil = now + breaker.openMs;
+    }
+  };
+  return {
+    dependency,
+    breakerState,
+    async call(operation, options) {
+      const { kind, purpose, classify } = options;
+      const waits = new AbortController();
+      try {
+        for (let retried = 0; ; retried += 1) {
+          if (breakerState() === 'open') {
+            throw new GovernanceError('circuit_open', dependency, 'Dependency circuit is open');
+          }
+          if (quota !== undefined && purpose !== undefined && !quota.tryAcquire(purpose)) {
+            throw new GovernanceError('quota_exceeded', dependency, 'Dependency quota exhausted');
+          }
+          const timeoutError = new GovernanceError('timeout', dependency, 'Dependency timed out');
+          try {
+            const value = await attempt(operation, scheduler, timeoutMs, timeoutError);
+            record(false);
+            return value;
+          } catch (error) {
+            const failed = error === timeoutError || classify?.(error) !== 'rejected';
+            record(failed);
+            if (!failed || kind !== 'idempotent_read' || retried >= retries.maxRetries) throw error;
+          }
+          await scheduler.sleep(
+            Math.min(retries.maxDelayMs, retries.baseDelayMs * 2 ** retried),
+            waits.signal,
+          );
+        }
+      } finally {
+        waits.abort();
+      }
+    },
+  };
 }
