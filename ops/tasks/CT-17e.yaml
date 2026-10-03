@@ -6,6 +6,8 @@ type: contract
 # 白名单只收排序依据已记录、不含佣金权重的频道；09 记录不足时可先为空。向量字符一律 \u 转义，
 # 命中 16 条、放行 3 条（双11❤️、1️⃣ 号福利、हिंदी）。归一化函数本身归 F1-02 / CT-06，不在本任务。
 # 依据在 08，refs 为空的原因同 CT-15c；specs/ 按 RV2 评审。
+# 批评后补（contract-delta §5 c-09）：specs/banned-words.yaml 是首建，按 BR-TEXT-13 写全部词表与既有 allow_keys；
+# help_links.price_compare 那篇文章写成对该配置键的引用，不写死文章 ID。
 refs: []
 refs_hash: {}
 deps: []

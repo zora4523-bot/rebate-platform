@@ -1,20 +1,19 @@
 id: CT-01a
 repo: rebate-platform
-title: 契约：枚举——资金规则对齐写回（hold_reason、维权类型、对账差错、结算调整、批次明细、待补记、打款批次明细）与后台权限点 content.fund_terms（04 §2.3、§2.4、§2.5、§11.2）
+title: 契约：订单枚举——order_hold_reason 加 UNMAPPED_STATUS、rebate_status 终态说明、新增 order_rights_type、order_reason 说明（资金规则对齐写回，04 §2.3）
 type: contract
-# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# 编排会话决定 j-04：原 CT-01a 拆两份，本任务只做 order.yaml（B1-08 用 UNMAPPED_STATUS，先做）；fund.yaml 与
+# admin.yaml 归 CT-01b。决定原文写的是 CT-01a1 / CT-01a2，但 task.ts 的编号前缀规则只去掉末尾字母，带数字后缀的
+# 编号在 05 里找不到前缀，所以用 CT-01a / CT-01b。
 # refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
-# 条目：fa-01、fa-02、fa-m01、fa-03、fa-04、fa-05、fa-06、fa-07、fa-m02、fa-08、b5-06、b3-38（admin.yaml 部分）、fa-09。
-# 只改 enums 的值与说明；catalog.test.ts 的 admin_permission 个数 43→44。fa-02 说明照 04：映射的是 status。
-# §2.5 与 §11.2 的相关行由编排者摘入（只带 §2.3、§2.4 两节以控制 24KB）。
+# 条目：fa-01、fa-02、fa-m01、fa-09（order 部分的生成物）。只改 enums 的值与说明。fa-02 说明照 04：映射的是 status。
 refs: []
 refs_hash: {}
-contract_sections: ['2.3', '2.4']
+contract_sections: ['2.3']
 deps: []
 paths:
   - 'contracts/enums/order.yaml'
-  - 'contracts/enums/fund.yaml'
-  - 'contracts/enums/admin.yaml'
   - 'packages/contracts-ts/**'
 impl: claude
 tester: codex

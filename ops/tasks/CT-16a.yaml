@@ -11,6 +11,7 @@ type: contract
 # 须 x-idempotent true、x-error-codes 含 20903、列 X-Step-Up-Token 头（最后一项代理按 04 §5 推出）。
 # 决定（decision-orchestrator.md）：D-9 扩展名定为 x-step-up；D-10 POST /v1/me/phone 只对更换生效，条件写在 operation
 # 说明里（仿 conditional）；D-18 四个接口进契约前检查是空跑，可接受。
+# 批评后改（contract-delta §5 c-06）：x-step-up 检查另要求 x-error-codes 含 10003（04 §5 step-up 行；10003 不是公共码）。
 # 04 §5、§7 未在 contract_sections 内（任务书 24KB）：§5 幂等与 step-up 两行、§7 20903 行由编排者摘入任务书第 2 节。
 refs: []
 refs_hash: {}

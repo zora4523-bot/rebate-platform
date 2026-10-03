@@ -5,7 +5,7 @@ type: contract
 # 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目编号见该文件 §1、§2.2。
 # refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
 # 条目：b1-19、b1-20、b1-23 + b2-17、b3-14、b3-16、b2-14、b2-15、b3-15。只改 error-codes.yaml 与生成物。
-# 10405 的 http 按码段在 401 / 403 里取；retry 取 §13.11 原文，retry_kind never。sources 一律取 §13.11 来源列全列。
+# 10405 的 http 取 403（编排会话决定 j-05：不是凭证失效，401 会让通用拦截器误判；04 / 08 有明文时以规划为准，冲突停下回报）；retry 取 §13.11 原文，retry_kind never。sources 一律取 §13.11 来源列全列。
 refs: []
 refs_hash: {}
 contract_sections: ['7']
