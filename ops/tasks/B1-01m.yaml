@@ -15,5 +15,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'pnpm --filter @couli/api test'
-status: todo
-pr: null
+status: done
+pr: 17
