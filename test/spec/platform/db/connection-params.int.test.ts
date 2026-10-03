@@ -24,7 +24,7 @@ import {
 } from './kit.ts';
 
 const QUERY_MESSAGE =
-  'query parameters may only be sslmode (disable, prefer, require, verify-ca or verify-full), sslrootcert, options, password or sslpassword, each at most once';
+  'query parameters may only be sslmode (disable, require, verify-ca or verify-full), sslrootcert (required by verify-ca, allowed with verify-full), options, password or sslpassword, each at most once and with a literal name';
 
 let database: TestDatabase;
 

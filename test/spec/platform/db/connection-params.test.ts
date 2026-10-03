@@ -7,10 +7,14 @@
 // hence true) switches results to the binary format, which bypasses the text int8 → BigInt
 // parsers: 9007199254740993 came back as 9007199254740992 and −1 as 17275735533028241000.
 //
+//   Amended by addendum 2 (connection-tls.test.ts, code review round 4): names are compared in
+//   their literal form (no percent-encoding), `prefer` is refused, sslrootcert goes only with
+//   verify-ca (required) or verify-full (optional) and must be readable; the message below is
+//   the amended one.
 //   - DATABASE_URL (every entry) and DATABASE_READ_URL (admin) may carry only these query
-//     parameters, each at most once, names compared exactly after percent-decoding (as pg does):
-//       sslmode      one of disable, prefer, require, verify-ca, verify-full
-//       sslrootcert  any value (path of the CA certificate; ADR-0002 §5 强制 SSL)
+//     parameters, each at most once, names compared exactly in their literal form:
+//       sslmode      one of disable, require, verify-ca, verify-full
+//       sslrootcert  path of the CA certificate (ADR-0002 §5 强制 SSL), see addendum 2
 //       options      any value (startup options; the read-only merge of dbRead stays as it is:
 //                    `-c default_transaction_read_only=on` appended, a final odd backslash
 //                    removed first)
@@ -22,7 +26,7 @@
 //     differently cased name, a parameter without `=`, an empty name, a repeated parameter and
 //     an sslmode value not in the list.
 //   - A refused URL is one problem of `loadConnectionConfig`, in the usual order, exactly:
-//       `<NAME>: query parameters may only be sslmode (disable, prefer, require, verify-ca or verify-full), sslrootcert, options, password or sslpassword, each at most once`
+//       `<NAME>: query parameters may only be sslmode (disable, require, verify-ca or verify-full), sslrootcert (required by verify-ca, allowed with verify-full), options, password or sslpassword, each at most once and with a literal name`
 //     A URL that is malformed (section 1) reports the malformed problem only. The message never
 //     contains any part of the value; ConfigError as in section 1 (no cause).
 //   - The fragment is not a query parameter and stays ignored. REDIS_URL is not affected.
@@ -30,6 +34,7 @@
 //     database, ssl, options, application_name, keepalive, types) — it never spreads a whole
 //     parsed configuration into the pool configuration.
 // Unit tests: no database, no port. Top-level it() only (规划/11 §4.3).
+import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import {
   ConnectionUrl,
@@ -48,8 +53,11 @@ import {
   type VarName,
 } from './kit.ts';
 
+/** A readable file standing in for a CA certificate (only its contents are read here). */
+const READABLE = fileURLToPath(import.meta.url);
+
 const QUERY_MESSAGE =
-  'query parameters may only be sslmode (disable, prefer, require, verify-ca or verify-full), sslrootcert, options, password or sslpassword, each at most once';
+  'query parameters may only be sslmode (disable, require, verify-ca or verify-full), sslrootcert (required by verify-ca, allowed with verify-full), options, password or sslpassword, each at most once and with a literal name';
 
 function refused(name: VarName): string {
   return `${name}: ${QUERY_MESSAGE}`;
@@ -88,6 +96,12 @@ function refusedQueries(pw: string): string[] {
     'binary%3Dfalse',
     '=x',
     'sslmode=allow',
+    'sslmode=prefer',
+    'ssl%6dode=verify-full',
+    'opti%6Fns=-c%20search_path%3Dapp',
+    `sslrootcert=${encodeURIComponent(READABLE)}`,
+    `sslmode=require&sslrootcert=${encodeURIComponent(READABLE)}`,
+    'sslmode=verify-ca',
     'sslmode=no-verify',
     'sslmode=',
     'sslmode=REQUIRE',
@@ -104,15 +118,13 @@ function acceptedQueries(pw: string): string[] {
   return [
     '',
     'sslmode=disable',
-    'sslmode=prefer',
     'sslmode=require',
-    'sslmode=verify-ca',
     'sslmode=verify-full',
-    'sslrootcert=/etc/couli/pg-ca.pem',
+    `sslmode=verify-ca&sslrootcert=${encodeURIComponent(READABLE)}`,
     'options=-c%20statement_timeout%3D5000',
     `password=${pw}`,
     `sslpassword=${pw}`,
-    `sslmode=verify-full&sslrootcert=/etc/couli/pg-ca.pem&options=-c%20search_path%3Dapp&password=${pw}&sslpassword=${pw}`,
+    `sslmode=verify-full&sslrootcert=${encodeURIComponent(READABLE)}&options=-c%20search_path%3Dapp&password=${pw}&sslpassword=${pw}`,
   ];
 }
 
@@ -141,7 +153,7 @@ const CASES: readonly (readonly [VarName, Entry])[] = [
 ];
 
 for (const [name, entry] of CASES) {
-  it(`[ADR-0001 §4.2 #3, #11; 路径 B 契约补充] ${entry} 的 ${name} 查询参数只认白名单：binary（含 false）、types、client_encoding、replication、application_name、改连接目标的参数、未知名、大小写不同、编码过的名、无值、重复、不在列表里的 sslmode 都拒绝，只报这一条固定文案；白名单内的写法照收并原样保留`, () => {
+  it(`[ADR-0001 §4.2 #3, #11; 路径 B 契约补充] ${entry} 的 ${name} 查询参数只认白名单：binary（含 false）、types、client_encoding、replication、application_name、改连接目标的参数、未知名、大小写不同、编码过的名、无值、重复、不在列表里的 sslmode（含 prefer）、不配 verify-ca / verify-full 的 sslrootcert 都拒绝，只报这一条固定文案；白名单内的写法照收并原样保留`, () => {
     const { env } = urlsOf(`params.${entry}.${name}`);
     const pw = encodeURIComponent(phraseOf(`params.${entry}.${name}.value`));
     const base = env[name];
