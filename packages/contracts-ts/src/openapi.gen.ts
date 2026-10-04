@@ -46,10 +46,9 @@ export interface paths {
          *     and no device_id is issued; the client shows nothing and reads the identifier again
          *     instead of retrying the same value. Reaching the per-IP hourly registration limit is 42901
          *     with Retry-After (BR-ID-05 细则「发码与设备注册的风控默认值」).
-         *     `id_source` must be sent (04 §6.1, §3.2 devices): a request without it is 20001 with
-         *     `data.fields=[id_source]` and no device_id is issued. It is optional in the schema only
-         *     because a new required request property is a breaking change under 04 §5「兼容」 (oasdiff
-         *     in CI), even though this operation is still planned and has no caller.
+         *     `id_source` is required (04 §6.1, §3.2 devices). Making it required is not a breaking
+         *     change: the operation is still planned (no route, no caller), and the oasdiff check leaves
+         *     planned operations out of the base contract (tools/ci/oasdiff-base.ts).
          */
         post: operations["registerDevice"];
         delete?: never;
@@ -676,8 +675,7 @@ export interface components {
              *     (iOS), ANDROID_ID (Android, MVP) or ODID (Harmony) (BR-ID-09 细则「设备标识的无效值」).
              */
             device_hash: string;
-            /** @description Required by the server (missing → 20001, `data.fields=[id_source]`). */
-            id_source?: components["schemas"]["DeviceIdSource"];
+            id_source: components["schemas"]["DeviceIdSource"];
         };
         RegisterDeviceData: {
             device_id: components["schemas"]["Id"];
