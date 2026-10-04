@@ -227,6 +227,8 @@ export interface PartitionMaintenanceOptions {
   readonly logger: RootLogger;
   readonly clock: Clock;
   readonly intervalMs?: number;
+  /** Tables with expected DEFAULT rows (worker contract addendum). */
+  readonly quietDefaultTables?: readonly string[];
 }
 
 export interface DefaultRows {
@@ -276,9 +278,23 @@ function validateOptions(options: unknown): asserts options is PartitionMaintena
   if (!isObject(options) || Object.getPrototypeOf(options) !== Object.prototype) {
     throw new MaintenanceError('invalid_option');
   }
-  const allowed = new Set<PropertyKey>(['db', 'logger', 'clock', 'intervalMs']);
+  const allowed = new Set<PropertyKey>([
+    'db',
+    'logger',
+    'clock',
+    'intervalMs',
+    'quietDefaultTables',
+  ]);
   const logger = options['logger'];
+  const quiet = options['quietDefaultTables'];
   if (
+    (Object.hasOwn(options, 'quietDefaultTables') &&
+      (!Array.isArray(quiet) ||
+        quiet.length > 32 ||
+        Array.from(quiet).some(
+          (name: unknown) => typeof name !== 'string' || !/^[a-z][a-z0-9_]{0,62}$/.test(name),
+        ) ||
+        new Set(quiet).size !== quiet.length)) ||
     Reflect.ownKeys(options).some((key) => !allowed.has(key)) ||
     !['db', 'logger', 'clock'].every((key) => Object.hasOwn(options, key)) ||
     !isObject(options['db']) ||
@@ -307,6 +323,7 @@ export function createPartitionMaintenance(
 ): PartitionMaintenance {
   validateOptions(options);
   const { db, logger, clock, intervalMs = MAINTENANCE_INTERVAL_MS } = options;
+  const quietDefaultTables = new Set(options.quietDefaultTables ?? []);
   let started = false;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -379,7 +396,11 @@ export function createPartitionMaintenance(
         if (rows > 0) {
           const alert = { table: row.table_name, partition: row.default_partition, rows };
           defaultRows.push(alert);
-          logger.warn(alert, 'partition_default_has_rows');
+          if (quietDefaultTables.has(row.table_name)) {
+            logger.info(alert, 'partition_default_rows_expected');
+          } else {
+            logger.warn(alert, 'partition_default_has_rows');
+          }
         }
       }
     } catch (error) {
