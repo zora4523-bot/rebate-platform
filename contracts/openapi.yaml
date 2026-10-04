@@ -50,6 +50,8 @@ tags:
     description: Search, product detail, input parsing and link open / convert (04 §6.3).
   - name: union
     description: Union authorization and binding (04 §6.3).
+  - name: order
+    description: Orders and pending-track cards (04 §6.4).
 paths:
   /healthz:
     get:
@@ -1054,6 +1056,306 @@ paths:
                 data:
                   platform: taobao
                   status: active
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/orders:
+    get:
+      operationId: listOrders
+      tags:
+        - order
+      summary: My orders (self-purchase or shared)
+      description: |
+        Orders of the current account in the visible range, newest paid first. scope=self gives the
+        full order_no (copyable); scope=share gives only masked_order_no, and an item whose bought
+        product is not the shared one (is_other_product=true) has title and image_url null — both
+        trimmed by the server. Shared orders exclude referral-commission orders. status_group
+        groups display_status on the server; q matches a self-purchase order by its exact parent or
+        child order number, otherwise titles; shared orders are matched by the visible title only.
+        Grouping, search and projection rules are only in BR-TEXT-02 细则「订单列表的状态分组与查找」
+        「订单的检索范围与分享单的投影」. earliest_visible_date is the first day in range
+        (null when unlimited; BR-ID-30 细则「订单类记录」). For a pre-sale order in DEPOSIT_PAID,
+        pay_amount_fen is the deposit paid, null when the platform does not report it
+        (BR-TEXT-02 细则「预售单的付款金额」, wording pending CAP-*-07).
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes: []
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - name: scope
+          in: query
+          required: true
+          description: self = my own purchases; share = orders bought through my shares.
+          schema:
+            $ref: '#/components/schemas/OrderScope'
+        - name: status_group
+          in: query
+          required: false
+          description: Status group (enum order_status_group); absent = all.
+          schema:
+            $ref: '#/components/schemas/OrderStatusGroup'
+        - name: display_status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/OrderDisplayStatus'
+        - name: platform
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/PlatformCode'
+        - name: q
+          in: query
+          required: false
+          description: Order number or title words, at most 40 characters (BR-TEXT-02 细则).
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 40
+        - name: paid_month
+          in: query
+          required: false
+          description: Month of payment, YYYY-MM in +08:00; only months in the visible range.
+          schema:
+            type: string
+            pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90
+                      platform: taobao
+                      title: 降噪蓝牙耳机
+                      image_url: https://img.example.test/p/1.jpg
+                      pay_amount_fen: 2990
+                      quantity: 1
+                      order_no: '3712345678901234567'
+                      display_status: WAITING
+                      reason: null
+                      est_rebate_fen: 269
+                      paid_at: '2026-10-02T09:31:00+08:00'
+                      is_other_product: false
+                  next_cursor: null
+                  earliest_visible_date: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/orders/pending-tracks:
+    get:
+      operationId: listPendingTracks
+      tags:
+        - order
+      summary: Pending-track cards
+      description: |
+        One card per platform at most, chosen per open attempt (link_open_attempts): attempts with
+        a jump report first, the latest open wins; jumped_at is that attempt's open time; whether a
+        card shows, disappears or offers the claim entry is decided by the server (BR-ATTR-21 细则
+        「待跟单卡按实际外跳选」「待跟单卡的完成与关闭按尝试」). dismissed tells whether the user
+        closed this attempt's card.
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes: []
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Pending-track cards.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingTracksResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70
+                      attempt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80
+                      platform: taobao
+                      jumped_at: '2026-10-02T09:30:05+08:00'
+                      show_claim_entry: false
+                      dismissed: false
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/orders/pending-tracks/{link_id}/dismiss:
+    post:
+      operationId: dismissPendingTrack
+      tags:
+        - order
+      summary: Close a pending-track card
+      description: |
+        Closes only the attempt named in the body (link_open_attempts.dismissed_at, written once);
+        other attempts of the same link are untouched. Repeating the call is harmless (no
+        Idempotency-Key). A missing attempt_id, or one that is not the current user's or not of
+        the link in the path, is 20001 with data.fields=[attempt_id] and nothing is written
+        (BR-ATTR-21 细则「待跟单卡的完成与关闭按尝试」). Version gate: applied.
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 20001
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/LinkId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DismissPendingTrackRequest'
+            example:
+              attempt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80
+      responses:
+        '200':
+          description: The card of this attempt is closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              example:
+                code: 0
+                msg: ''
+                data: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/orders/{order_id}:
+    get:
+      operationId: getOrder
+      tags:
+        - order
+      summary: Order detail
+      description: |
+        Same projection as the list (scope by order ownership): full order_no for my own purchase,
+        masked_order_no for a shared order; is_other_product=true trims title, image_url and
+        product_key. product_key is set only for my own purchase and a shared order with
+        is_other_product=false. timeline lists the nodes of BR-TEXT-02 细则「时间线」 (a pre-sale
+        order starts with deposit_paid); a node that has not happened has at null. reason and
+        reason_action explain a missing rebate directly, without AI (拍板第二批 AI-09). An order
+        outside the visible range, not the user's, or unknown is 30701 (BR-ID-30 细则).
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30701
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90
+                  platform: taobao
+                  title: 降噪蓝牙耳机
+                  image_url: https://img.example.test/p/1.jpg
+                  pay_amount_fen: 2990
+                  quantity: 1
+                  order_no: '3712345678901234567'
+                  display_status: WAITING
+                  reason: null
+                  reason_action: []
+                  est_rebate_fen: 269
+                  paid_at: '2026-10-02T09:31:00+08:00'
+                  is_other_product: false
+                  product_key: 'tb:9001'
+                  expected_credit_period: 2026-11
+                  credit_overdue: false
+                  actual_fen: null
+                  clawback_fen: null
+                  appeal_pending: false
+                  is_price_compare: false
+                  timeline:
+                    - node: paid
+                      at: '2026-10-02T09:31:00+08:00'
+                      period: null
+                    - node: received
+                      at: '2026-10-05T12:00:00+08:00'
+                      period: null
+                    - node: credit_expected
+                      at: null
+                      period: 2026-11
+                    - node: credited
+                      at: null
+                      period: null
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -3369,6 +3671,359 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/UnionBindingState'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    OrderScope:
+      type: string
+      enum:
+        - self
+        - share
+    OrderStatusGroup:
+      type: string
+      description: Status group of the order list (enum order_status_group; members in BR-TEXT-02 细则).
+      enum:
+        - all
+        - estimating
+        - credited
+        - no_rebate
+    OrderDisplayStatus:
+      type: string
+      description: User-visible order status (enum display_status; BR-FUND-17); unknown codes map to UNKNOWN.
+      enum:
+        - PAID
+        - DEPOSIT_PAID
+        - WAITING
+        - CREDITING
+        - REVIEWING
+        - RIGHTS_PENDING
+        - CREDITED
+        - CREDITED_PART_CLAWED
+        - NO_REBATE
+        - INVALID
+        - CLAWED_BACK
+    OrderReasonCode:
+      type: string
+      description: Order reason code (enum order_reason); texts and actions come from /v1/dict.
+      enum:
+        - REFUND
+        - RIGHTS
+        - PUNISH
+        - PRESALE_UNPAID
+        - COMMISSION_ZERO
+        - OTHER
+        - BLACKLIST
+        - PART_REFUND
+        - PRICE_COMPARE
+        - PRICE_PROTECT
+        - SETTLE_DIFF
+        - NOT_TRACKED
+        - EXPIRED_CLICK
+        - OTHER_TLJ
+        - RELATION_INVALID
+        - CANCELLED
+    OrderTimelineNode:
+      type: string
+      description: |
+        Timeline node of the order detail (enum order_timeline_node; BR-TEXT-02 细则「时间线」):
+        deposit_paid only on pre-sale orders; invalid / clawed_back / part_clawed_back only when
+        the order reached that state.
+      enum:
+        - deposit_paid
+        - paid
+        - received
+        - credit_expected
+        - credited
+        - invalid
+        - clawed_back
+        - part_clawed_back
+    OrderSummary:
+      type: object
+      description: One row of GET /v1/orders (closed; the fields live in OrderSummaryFields).
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/OrderSummaryFields'
+    OrderSummaryFields:
+      type: object
+      description: |
+        Fields shared by the order list row and the order detail. Exactly one of order_no (my own
+        purchase) and masked_order_no (a shared order); the oneOf branches declare the property
+        they require (strict Ajv2020). Open here; OrderSummary and OrderDetail close it with
+        unevaluatedProperties: false.
+      additionalProperties: true
+      required:
+        - order_id
+        - platform
+        - title
+        - image_url
+        - pay_amount_fen
+        - quantity
+        - display_status
+        - reason
+        - est_rebate_fen
+        - paid_at
+        - is_other_product
+      properties:
+        order_id:
+          $ref: '#/components/schemas/Id'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        title:
+          type:
+            - string
+            - 'null'
+        image_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        pay_amount_fen:
+          $ref: '#/components/schemas/NullableFen'
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+        order_no:
+          type: string
+          minLength: 1
+          description: Full platform order number (self-purchase only, copyable).
+        masked_order_no:
+          type: string
+          minLength: 1
+          description: Masked by the server (BR-TEXT-02 细则「订单号的显示」); shared orders never carry the full number.
+        display_status:
+          $ref: '#/components/schemas/OrderDisplayStatus'
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/OrderReasonCode'
+            - type: 'null'
+        est_rebate_fen:
+          $ref: '#/components/schemas/NullableFen'
+        paid_at:
+          type: string
+          format: date-time
+        is_other_product:
+          type: boolean
+          description: A shared order whose bought product is not the shared one.
+      oneOf:
+        - type: object
+          properties:
+            order_no:
+              type: string
+          required:
+            - order_no
+        - type: object
+          properties:
+            masked_order_no:
+              type: string
+          required:
+            - masked_order_no
+    OrderListData:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+        - earliest_visible_date
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSummary'
+        next_cursor:
+          type:
+            - string
+            - 'null'
+        earliest_visible_date:
+          type:
+            - string
+            - 'null'
+          format: date
+    OrderListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/OrderListData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    OrderTimelineItem:
+      type: object
+      additionalProperties: false
+      required:
+        - node
+        - at
+        - period
+      properties:
+        node:
+          $ref: '#/components/schemas/OrderTimelineNode'
+        at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When it happened; null when it has not (shown greyed) or the platform gives no time.
+        period:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+          description: Expected settlement month (YYYY-MM), only on credit_expected; null otherwise.
+    OrderDetail:
+      type: object
+      description: The list fields plus the detail fields of 04 §6.4.
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/OrderSummaryFields'
+        - type: object
+          additionalProperties: true
+          required:
+            - product_key
+            - reason_action
+            - timeline
+            - expected_credit_period
+            - credit_overdue
+            - actual_fen
+            - clawback_fen
+            - appeal_pending
+            - is_price_compare
+          properties:
+            product_key:
+              anyOf:
+                - $ref: '#/components/schemas/ProductKey'
+                - type: 'null'
+            reason_action:
+              type: array
+              description: Action codes of the reason (the order_reason dictionary's action[], BR-TEXT-05).
+              items:
+                type: string
+            timeline:
+              type: array
+              items:
+                $ref: '#/components/schemas/OrderTimelineItem'
+            expected_credit_period:
+              type:
+                - string
+                - 'null'
+              pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+            credit_overdue:
+              type: boolean
+            actual_fen:
+              $ref: '#/components/schemas/NullableFen'
+            clawback_fen:
+              $ref: '#/components/schemas/NullableFen'
+            appeal_pending:
+              type: boolean
+            is_price_compare:
+              type:
+                - boolean
+                - 'null'
+    OrderDetailResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/OrderDetail'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    PendingTrack:
+      type: object
+      additionalProperties: false
+      required:
+        - link_id
+        - attempt_id
+        - platform
+        - jumped_at
+        - show_claim_entry
+        - dismissed
+      properties:
+        link_id:
+          $ref: '#/components/schemas/Id'
+        attempt_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        jumped_at:
+          type: string
+          format: date-time
+        show_claim_entry:
+          type: boolean
+        dismissed:
+          type: boolean
+    PendingTracksData:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PendingTrack'
+    PendingTracksResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/PendingTracksData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    DismissPendingTrackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - attempt_id
+      properties:
+        attempt_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+    EmptyData:
+      type: object
+      additionalProperties: false
+    EmptyResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/EmptyData'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     RiskInfo:

@@ -169,3 +169,16 @@ it('auth-url carries exactly one of auth_methods and auth_jump (04 §6.3)', () =
   };
   expect([taobao, neither, pdd]).toHaveLength(3);
 });
+
+it('order list and detail (04 §6.4)', () => {
+  expectTypeOf<Schema<'OrderStatusGroup'>>().toEqualTypeOf<
+    'all' | 'estimating' | 'credited' | 'no_rebate'
+  >();
+  expectTypeOf<Schema<'OrderTimelineItem'>['node']>().toEqualTypeOf<Schema<'OrderTimelineNode'>>();
+  expectTypeOf<Schema<'OrderDetail'>['timeline']>().toEqualTypeOf<Schema<'OrderTimelineItem'>[]>();
+  expectTypeOf<Schema<'OrderDetail'>['order_id']>().toEqualTypeOf<
+    Schema<'OrderSummary'>['order_id']
+  >();
+  const group: Schema<'OrderStatusGroup'> = 'no_rebate';
+  expect(group).toBe('no_rebate');
+});

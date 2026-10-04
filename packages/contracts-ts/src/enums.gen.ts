@@ -822,6 +822,34 @@ export const order_hold_reason = [
 export type OrderHoldReason = (typeof order_hold_reason)[number];
 
 /**
+ * GET /v1/orders 的 status_group；各组包含哪些 display_status 只在 BR-TEXT-02 细则
+ * Source: 规划/04 §6.4；BR-TEXT-02 细则「订单列表的状态分组与查找」 (contracts/enums/order.yaml).
+ */
+export const order_status_group = [
+  "all", // 全部（含未知编码）
+  "estimating", // 预估中
+  "credited", // 已结算
+  "no_rebate", // 无返利
+] as const;
+export type OrderStatusGroup = (typeof order_status_group)[number];
+
+/**
+ * 订单详情时间线节点（编码代理自定，04 只点名 deposit_paid）；未发生的节点 at 为空
+ * Source: 规划/04 §6.4；BR-TEXT-02 细则「时间线」 (contracts/enums/order.yaml).
+ */
+export const order_timeline_node = [
+  "deposit_paid", // 付定金（只有预售单）
+  "paid", // 付款（预售单为付尾款）
+  "received", // 收货
+  "credit_expected", // 预计结算月份（period）
+  "credited", // 已结算
+  "invalid", // 失效
+  "clawed_back", // 扣回
+  "part_clawed_back", // 部分扣回
+] as const;
+export type OrderTimelineNode = (typeof order_timeline_node)[number];
+
+/**
  * 订单原因码；NOT_TRACKED、EXPIRED_CLICK、OTHER_TLJ、RELATION_INVALID 不写入 orders.reason。CANCELLED 待 09 实测，启用前不写入。rebate_status=CLAWED_BACK 同样写 orders.reason（迁移 R8 同事务写，取值按 BR-FUND-08 细则的映射表）
  * Source: 规划/04 §2.3；BR-TEXT-05；08 §13.2 (contracts/enums/order.yaml).
  */
@@ -1297,6 +1325,8 @@ export const enums = {
   rebate_status,
   display_status,
   order_hold_reason,
+  order_status_group,
+  order_timeline_node,
   order_reason,
   diff_reason,
   order_rights_status,
