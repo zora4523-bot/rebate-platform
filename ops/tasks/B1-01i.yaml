@@ -26,5 +26,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/idempotency/**'
-status: todo
-pr: null
+status: done
+pr: 43

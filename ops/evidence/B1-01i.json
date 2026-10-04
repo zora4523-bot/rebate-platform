@@ -1,0 +1,123 @@
+{
+  "task": "B1-01i",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "514bfd30eca8455ad48208fbb9f4e13ef8738ed3",
+  "red_tests": [
+    "[规划/04 §5「幂等」] 主体：已登录 u:<user_id>；匿名带设备号 d:<device_id>；落地页 p:<phone_hmac>；按用户 → 设备 → 手机号取第一个非空的",
+    "[规划/04 §5「幂等」] 主体格式：用户与设备是小写规范 UUID，手机号盲索引是 64 位小写十六进制；全空或胜出的值格式不符 → IdempotencyError invalid_subject；落选的值不检查",
+    "[规划/04 §5「幂等」; contracts IdempotencyKey] 缺少或格式不符的 Idempotency-Key → 20001（HTTP 400，data.fields=[idempotency-key]，信封逐字节确切），不调用处理函数、不碰数据库",
+    "[contracts IdempotencyKey] 8 与 64 个字符、含 _ 与 - 的键都合格（通过格式检查后才查库：毒化的句柄被用到）",
+    "[规划/04 §5「幂等」] 20001 等信封的 trace_id 取请求的 traceId，键顺序 code、msg、data、trace_id",
+    "[规划/04 §5 step-up 行; BR-ID-10 细则「敏感操作的幂等键」] 四个需要二次验证的操作（POST /v1/me/phone 含首次绑定）不能走普通模式：execute 抛 IdempotencyError transactional_required，不调用处理函数、不碰数据库",
+    "[规划/04 §5「幂等」] 请求本身有编程错误（appId 空、method 非 POST/PUT/PATCH/DELETE、path 不以 / 开头或带查询串与片段、请求体不是 JSON 值）→ IdempotencyError invalid_request；主体无效 → invalid_subject；都不碰数据库",
+    "[BR-ID-30 ⑤ 处理中租约（待编排会话确认）] processingLeaseMs 只接受 1000～600000 的整数（缺省 60000）；越界、小数、NaN、非数字 → IdempotencyError invalid_option；创建时不碰数据库与时钟",
+    "[规划/04 §6.1 作废接口] 作废原语的输入：action 不是四个之一、键格式不符 → 20001（HTTP 400，data.fields 按 action、idempotency_key 的顺序列出），不碰数据库；userId 无效 → invalid_subject",
+    "[BR-WDR-07] 规范化 JSON：键名逐层排序、无空白、数组保序、null 值的键不丢；哈希是规范化文本 UTF-8 字节的 SHA-256 小写十六进制",
+    "[BR-WDR-07] 同一内容不同键顺序、不同嵌套键顺序得到同一哈希；任何一个字段的值、键名、数组顺序变了哈希就不同",
+    "[BR-WDR-07] 键名按 UTF-16 码元排序（RFC 8785 的顺序，不是码点顺序）；字符串按 JSON.stringify 转义",
+    "[BR-WDR-07] 没有请求体（undefined）规范化为空串，与 null、{}、[]、\"\" 各不相同",
+    "[BR-WDR-07] 原型为 null 的对象按普通对象规范化；只认自有可枚举字符串键",
+    "[BR-WDR-07] 不是 JSON 值的输入（任何深度）一律 IdempotencyError invalid_request，不静默丢弃",
+    "[BR-WDR-07] 大请求体与深嵌套照样规范化（1000 个键、深 50 层）",
+    "[规划/04 §6.1; BR-ID-10 细则「作废接口」] 该键没有记录 → 插入作废记录（status abandoned、无请求体哈希与响应、主体 u:<user>、按 action 定位方法与路径、时钟时刻、提现与收款账号到期 infinity、其余 30 天）并返回 abandoned；再次调用同样返回 abandoned，不多插行",
+    "[规划/04 §6.1「已有完成的记录时返回 completed 与 original」] 该键已有成功记录 → completed，original 是原响应外壳 {code, msg, data}（原样，不带 trace_id），不插入作废记录、不改原记录；原请求随后重放仍是原结果",
+    "[规划/04 §6.1「原样，含 3xxxx」] 该键已有 3xxxx 记录 → completed，original 带原 code、msg、data；原外壳没有 data 时 original 也没有 data",
+    "[规划/04 §6.1「原请求仍在处理返回 40901」; BR-ID-10 细则] 原请求的事务还开着时作废 → 3 秒内 40901，不等它结束、不插行；原请求提交后再作废 → completed",
+    "[规划/04 §6.1; §3.2 processing] 该键有一条已提交的 processing 记录（例如旧数据）→ 作废得到 40901，记录不变",
+    "[规划/04 §6.1「之后带该键的请求返回 20903」; BR-ID-01 ④] 作废定位到 action 对应的方法与路径：同一个键在别的路径、别的用户、别的 app 下不受影响，照常执行",
+    "[规划/04 §6.1; BR-ID-10 细则「主体取自令牌，只能定位本人的键」] 用户 B 作废与用户 A 相同的键：只插入 B 自己的作废记录，A 的已完成记录不变、A 重放照旧；不同 app 同理",
+    "[BR-ID-10 细则「作废与业务结果互斥」] 并发：同一个键的作废与原请求同时到达，结果只有两种——要么作废成功、原请求 20903 或 40901 且不执行；要么原请求执行、作废得到 40901 或 completed；表里只有一行且与回答一致",
+    "[BR-ID-30 ⑤; BR-WDR-07「保留期 ≥ 提现单保留期」（提现单保留期待定，待编排会话确认）] 到期时刻：普通操作与换手机号、注销为写入时刻 + 30 天；提现与收款账号变更（含作废记录）为 infinity",
+    "[BR-ID-30 ⑤「按 expire_at」] purgeExpired 删掉 expire_at 早于时钟当前时刻的行（任何状态、任何 app），恰好到期的与 infinity 的保留；返回删除行数；之后被删的键可以重新使用",
+    "[规划/04 §5「幂等」; BR-WDR-07] 首次执行写入 completed 记录（主体、user_id、方法、路径、键、请求体哈希、{status, body}、时钟时刻与 30 天到期）；同键同体重放原样返回状态码与响应体（逐字节，含原 trace_id、原键顺序），不再调用处理函数，全程不写日志",
+    "[BR-WDR-07; BR-ID-10 细则「恢复执行时用哪个幂等键」] 3xxxx 业务错误写入幂等结果：同键重放返回原 3xxxx（原 HTTP 状态 422），即使处理函数现在会成功也不再调用",
+    "[BR-WDR-07「成功和 3xxxx 写入、1xxxx 2xxxx 不写」; 规划/04 §5] 码 0 与 30000～39999 写入；1xxxx、2xxxx、4xxxx、5xxxx 不写：响应照常返回，记录被删掉，同键可以再发并重新执行",
+    "[BR-ID-08] 1xxxx（如 10003 需要二次验证）不写记录：沿用原键重放时重新执行；成功后同键再发得到成功结果的重放",
+    "[BR-WDR-07; 规划/04 §5] 处理函数抛错：同一个错误对象原样抛出，不写记录（处理中的行被删掉），同键可以再发并执行",
+    "[规划/04 §5「幂等」] 处理函数返回不合规的结果 → IdempotencyError invalid_result，不写记录，同键可以再发",
+    "[BR-WDR-07「同 key、不同哈希 → 20901」] 已完成的键换了请求体 → 20901（HTTP 409，信封确切），不调用处理函数，记录不变",
+    "[BR-WDR-07「同 key 的首个请求还没完成 → 40901」; 规划/04 §5] 普通模式处理中：已提交一条 processing 行（有请求体哈希、无响应）；同键请求（同体或异体）→ 40901，不调用处理函数；完成后同键重放",
+    "[规划/02 §18「幂等 API」; 规划/04 §3.2 唯一约束] 并发：同主体同键同体 8 个请求同时到达，只有 1 个执行处理函数，其余 7 个都得到 40901（不抛唯一约束错误）；表里只有 1 行；之后同键重放",
+    "[规划/04 §5「幂等」唯一 (app_id, subject, method, path, key)] 同一个键在不同主体（用户 A、用户 B、设备、落地页手机号）、不同 app、不同方法、不同路径下互不影响：各自执行、各自一行、各自重放自己的结果",
+    "[规划/04 §5「幂等」处理中租约（待编排会话确认）] 缺省租约 60000 毫秒：processing 行建于 59999 毫秒前 → 40901；满 60000 毫秒 → 被接管并执行（行的哈希、created_at、expire_at 换成接管请求的）",
+    "[规划/04 §5「幂等」处理中租约（待编排会话确认）] 被接管的原请求完成时不覆盖、不删除接管者的记录，只记一行 warn idempotency_record_lost {method, path}（不含请求体、键、哈希、响应），并照常返回自己的响应",
+    "[ADR-0001 §4.2 第 10 项 时钟; BR-ID-30 ⑤] 记录的 created_at 与 expire_at 只取注入的 Clock（不取数据库 now()）；完成时保持认领时的值，处理函数里时钟前进也不变",
+    "[BR-ID-10 细则「作废与业务结果互斥」; BR-WDR-07 ⑧; 规划/04 §3.2] 四个操作各自：业务写入与 completed 记录一起提交（主体、方法、路径、哈希、{status, body}、时钟时刻）；提现与收款账号到期 infinity、换手机号与注销 30 天；同键同体重放逐字节相同且不再执行",
+    "[BR-ID-10 细则「不为这四个操作提前单独提交 processing 行」] 处理函数执行期间别的会话看不到该键的任何行；同键请求（同体、异体）在 3 秒内得到 40901，不等原事务结束、不执行；原事务提交后同键重放",
+    "[BR-ID-10 细则「作废与业务结果互斥」] 处理函数写了业务数据后抛错：同一个错误对象原样抛出，业务写入与幂等记录都回滚；同键再发重新执行并提交",
+    "[BR-WDR-07「1xxxx、2xxxx 不写」; BR-ID-08] 处理函数写了业务数据后返回不写入的码（10003、10405、20001、42901、44001、50001）：响应照常返回，业务写入回滚、没有记录；10003 后沿用原键重放会重新执行",
+    "[BR-WDR-07「成功和 3xxxx 业务错误写入」; BR-ID-10 细则「键怎样结束」] 3xxxx：与处理函数的写入一起提交为 completed；同键重放原 3xxxx，不再执行",
+    "[BR-WDR-07「同 key、不同哈希 → 20901」] 已完成的敏感操作换了请求体 → 20901，不执行、不写业务数据",
+    "[BR-ID-10 细则「作废与业务结果互斥」; BR-WDR-07 ⑧] 键已作废（作废原语写入）后，同键请求不论请求体都得到 20903：不执行、不写业务数据，表里只有那条作废记录",
+    "[规划/02 §18「幂等 API」; BR-ID-10 细则「以唯一约束为准」] 并发：同键 8 个敏感请求同时到达，只有 1 个执行并提交，其余 7 个都得到 40901（不抛唯一约束错误、不等原事务）；业务数据只有 1 行；之后同键重放",
+    "[规划/04 §5「幂等」主体] 敏感操作的同一个键在不同用户下互不影响：用户 B 的请求照常执行，不得到用户 A 的结果；用户 A 作废自己的键不影响用户 B",
+    "[规划/04 §5「幂等」] 敏感操作的处理函数返回不合规结果 → IdempotencyError invalid_result，业务写入回滚、没有记录",
+    "[BR-ID-10 细则「作废与业务结果互斥」; BR-WDR-07 ⑧] 业务写入之后 completed 记录写入失败：调用以驱动错误拒绝、不返回响应外壳；业务数据与幂等记录都没有提交；原键重试只产生一次业务效果，再重试是回放",
+    "[BR-ID-10 细则「服务端的配合」] COMMIT 已在数据库生效但确认丢失（提交结果未知）：调用以 IdempotencyError outcome_unknown 拒绝，不返回响应外壳；业务数据与 completed 记录都已提交；原键重试只回放已提交的结果，不再执行"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). Idempotency-Key handling (subjects, request hash, replay of stored results, 20901 / 20903 / 40901, processing lease, sensitive operations in the business transaction) and the abandon primitive (规划/04 §5, §3.2, §6.1, §7; BR-WDR-07 idempotency paragraph; BR-ID-08, BR-ID-10; 规划/02 §18). No amount or attribution computed; refs empty (basis excerpts in the brief). The abandon HTTP route is B1-02.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "4fcaf37a2c6aa46ab24e090129a560f509a8976b",
+      "tree": "c23a86fbac2f606ffd9abb1f3e4ce656e009731e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T08:36:26Z",
+      "finished_at": "2026-10-04T08:37:36Z"
+    },
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "e67cd190d4812b665cf6efba2a04615834725c77",
+      "tree": "6dff892a14acb010e5a7b8db7ad50e759d1f44b7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T08:49:45Z",
+      "finished_at": "2026-10-04T08:50:49Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent on 8b89845..302ece8 (before the rebase): 35 integration rule tests rerun with Testcontainers; supplementary cases 4fcaf37 shown red against two wrong variants (business commit before the record; 50001 envelope on unknown commit); 5 S2 recorded as follow-ups (couli-runs/followups/B1-01i-review-s2.md)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "money review, base d07f90d (supplementary cases plus implementation): pass, 0 findings, checklist 7/7"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with one in-scope S2 (outer response compared with JSON.stringify) and three out-of-scope S1 test gaps; all four fixed or added as tests in 4fcaf37 (now 514bfd3) and checked by the code review as the supplementary cases"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "8cb72dbe562bbf562a5b11c5bea7b3b2d7a3595d",
+    "apps/api/src/modules/platform/idempotency": "e86639e71ade3c9bd936b22155bf666463946abc"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 on the B1-01i worktree, 2026-10-04 16:49 (+08:00), 20.8 s; this task adds no property tests",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "rebased": "rebased onto main cd50012 after the review: spec_commit 4fcaf37 -> 514bfd3, implementation 302ece8 -> 2ddb23f; container verify run 2 on the rebased tree",
+  "severity_bar": "both reviewers passed under the original S0/S1 definitions; no finding was reclassified",
+  "follow_ups": "couli-runs/followups/B1-01i-review-s2.md (standard-mode duplicate execution when the completed write fails; concurrent replay of a completed key gets 40901; deep nesting stack overflow; cleanup error masks the original; no log on unknown commit)"
+}

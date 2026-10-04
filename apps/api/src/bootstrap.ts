@@ -20,6 +20,7 @@ import {
   type PlatformOptions,
   type RootLogger,
   type WorkerEntry,
+  IdempotencyError,
   clockFromConfig,
   createRootLogger,
   loadConfig,
@@ -41,6 +42,14 @@ export interface BootstrapOverrides {
 class RequestValidationFilter extends BaseExceptionFilter<unknown> {
   override catch(error: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
+    if (error instanceof IdempotencyError && error.code === 'outcome_unknown') {
+      // A lost COMMIT acknowledgement is not a definite business failure. Do not allow Nest
+      // to build a response that could make the client start another sensitive operation.
+      const reply = http.getResponse<{ hijack(): void; raw: { destroy(): void } }>();
+      reply.hijack();
+      reply.raw.destroy();
+      return;
+    }
     const response = validationErrorEnvelope(error, http.getRequest<{ id: string }>().id);
     if (response === undefined) {
       super.catch(error, host);
