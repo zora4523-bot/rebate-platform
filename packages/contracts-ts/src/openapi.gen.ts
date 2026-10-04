@@ -1312,11 +1312,11 @@ export interface components {
         OrderReasonCode: "REFUND" | "RIGHTS" | "PUNISH" | "PRESALE_UNPAID" | "COMMISSION_ZERO" | "OTHER" | "BLACKLIST" | "PART_REFUND" | "PRICE_COMPARE" | "PRICE_PROTECT" | "SETTLE_DIFF" | "NOT_TRACKED" | "EXPIRED_CLICK" | "OTHER_TLJ" | "RELATION_INVALID" | "CANCELLED";
         /**
          * @description Timeline node of the order detail (enum order_timeline_node; BR-TEXT-02 细则「时间线」):
-         *     deposit_paid only on pre-sale orders; invalid / clawed_back / part_clawed_back only when
-         *     the order reached that state.
+         *     a pre-sale order starts with deposit_paid and has final_paid instead of paid; invalid /
+         *     clawed_back / part_clawed_back only when the order reached that state.
          * @enum {string}
          */
-        OrderTimelineNode: "deposit_paid" | "paid" | "received" | "credit_expected" | "credited" | "invalid" | "clawed_back" | "part_clawed_back";
+        OrderTimelineNode: "deposit_paid" | "paid" | "final_paid" | "received" | "credit_expected" | "credited" | "invalid" | "clawed_back" | "part_clawed_back";
         /** @description One row of GET /v1/orders (closed; the fields live in OrderSummaryFields). */
         OrderSummary: components["schemas"]["OrderSummaryFields"];
         /**

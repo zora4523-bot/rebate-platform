@@ -834,12 +834,13 @@ export const order_status_group = [
 export type OrderStatusGroup = (typeof order_status_group)[number];
 
 /**
- * 订单详情时间线节点（编码代理自定，04 只点名 deposit_paid）；未发生的节点 at 为空
+ * 订单详情时间线节点（编码代理自定；04 只点名 deposit_paid，final_paid 与 08 12_TEXT 文案表的键 order_timeline.final_paid 对齐（BR-TEXT-02 细则「时间线」））；未发生的节点 at 为空
  * Source: 规划/04 §6.4；BR-TEXT-02 细则「时间线」 (contracts/enums/order.yaml).
  */
 export const order_timeline_node = [
-  "deposit_paid", // 付定金（只有预售单）
-  "paid", // 付款（预售单为付尾款）
+  "deposit_paid", // 付定金（只有预售单，在最前面；文案键 order_timeline.deposit_paid）
+  "paid", // 付款（非预售单）
+  "final_paid", // 付尾款（预售单用它代替 paid；文案键 order_timeline.final_paid）
   "received", // 收货
   "credit_expected", // 预计结算月份（period）
   "credited", // 已结算

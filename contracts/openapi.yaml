@@ -3725,11 +3725,12 @@ components:
       type: string
       description: |
         Timeline node of the order detail (enum order_timeline_node; BR-TEXT-02 细则「时间线」):
-        deposit_paid only on pre-sale orders; invalid / clawed_back / part_clawed_back only when
-        the order reached that state.
+        a pre-sale order starts with deposit_paid and has final_paid instead of paid; invalid /
+        clawed_back / part_clawed_back only when the order reached that state.
       enum:
         - deposit_paid
         - paid
+        - final_paid
         - received
         - credit_expected
         - credited
