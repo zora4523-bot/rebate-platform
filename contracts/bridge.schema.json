@@ -1,5 +1,5 @@
 {
-  "$comment": "JSBridge contract (CT-03). Methods: 规划/04 §9; protocol, levels, error codes: 规划/03 §5.3. Generated types: packages/contracts-ts/src/bridge.gen.ts. Clients call has() before any method (拍板第二批 TECH-28).",
+  "$comment": "JSBridge contract (CT-03). Methods: 规划/04 §9; protocol, levels, error codes: 规划/03 §5.3. Generated types: packages/contracts-ts/src/bridge.gen.ts. Clients call has() before any method (拍板第二批 TECH-28). Besides level and gesture, every call passes the force-update guard of 03 §4.4 (04 §9 header): while the update check is unknown, read-only methods run as usual, nav.open (and trade.openProduct) only opens the read-only pages of the BR-ID-10 细则「路由入口矩阵」, and every other method ends with 90500; below the minimum version the 03 §4.4 state table applies. A method added later belongs to the third class (90500) unless 03 §4.4 lists it. gesture_required: a non-L2 method that still needs a user click within the last 1 second (same check as L2; missing → 90404). whitelist_90403: the method's own whitelist rejection, answered with 90403 at the same place as the origin, frame and level checks (03 §5.3).",
   "version": 1,
   "envelope": {
     "request": {
@@ -59,7 +59,8 @@
         },
         "data": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": true,
+          "description": "Event data never carries clipboard content, tokens, signing material or device identifiers (04 §9 事件; BR-ID-16, BR-ID-32 细则)"
         }
       },
       "required": ["event"]
@@ -76,9 +77,9 @@
     "90003": "Timeout",
     "90004": "Cancelled by the user",
     "90401": "Not logged in",
-    "90403": "Origin or frame not allowed, or method + path outside signed_paths",
+    "90403": "Origin or frame not allowed, method + path outside signed_paths, or the method's own whitelist rejection (methods with whitelist_90403: ext.openApp trade_only targets, ext.openBrowser addresses matching link_patterns, share.open links outside the allowed range; 03 §5.3)",
     "90404": "User gesture missing",
-    "90500": "Native internal error"
+    "90500": "Native internal error; also for calls not executed under the force-update guard (03 §4.4)"
   },
   "signed_paths": [
     {
@@ -139,6 +140,7 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
+      "note": "No flag such as 'in review' or 'hide rebates' is or will be returned; H5 never hides rebates, withdrawal or similar content by an equality check on app_version (04 §9; 02 §10)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -341,6 +343,7 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
+      "note": "Takes no params: native requests the scope from the force-update state; while the update check is unknown only read_only, which may call GET endpoints only (BR-ID-32 细则「只读作用域」). The token lives only in the H5 page memory; native does not cache it (03 §5.4)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -359,9 +362,14 @@
           "expire_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["standard", "read_only"],
+            "description": "contracts/enums h5_token_scope"
           }
         },
-        "required": ["token", "expire_at"]
+        "required": ["token", "expire_at", "scope"]
       }
     },
     "net.signedRequest": {
@@ -375,6 +383,7 @@
         "harmony": "1.0.0"
       },
       "note": "Native signs with install_secret (BR-ID-09) only for method + path in signed_paths; otherwise 90403 (拍板第二批 TECH-30)",
+      "whitelist_90403": "method + path outside signed_paths (拍板第二批 TECH-30)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -575,7 +584,7 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
-      "note": "Login requirements of the target page are handled by the router",
+      "note": "Login requirements of the target page are handled by the router; the entry category is checked as in_app (03 §4.4). While the update check is unknown, only the read-only pages of the BR-ID-10 细则「路由入口矩阵」 open, without any automatic side effect; other targets end with 90500 and are not replayed once the check has a result (03 §4.4「未知状态下的桥调用」). Withdraw, PayoutAccount, LaborAgreement and RealName take no params: params passed are dropped and the page opens as usual (opened=true), nothing is prefilled (BR-WDR-01 细则)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -637,7 +646,7 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
-      "note": "Opens the native ProductDetail; item_ref passed through unchanged (BR-PROD-11)",
+      "note": "Opens the native ProductDetail; item_ref passed through unchanged (BR-PROD-11). Force-update guard as nav.open: while the update check is unknown ProductDetail is in the read-only page list and opens without any automatic side effect (03 §4.4)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -814,6 +823,23 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
+      "note": "content.type=link: content.url is first normalised (standard URL parsing; unparsable, non-https or with user info → 90403; host lower-cased, trailing dot removed, port 443 removed; path percent-decoded exactly once), then checked in order, each step final: (1) matches any category of link_patterns → 90403; (2) host in /v1/config.share_domains (full host match) → only the share page paths of share_page_paths pass, a non-default port or any other path → 90403 without going on; (3) any other https address passes. On 90403 no share panel is shown. Normalisation and order are kept only in BR-ATTR-29 细则「桥方法不留没有归因的打开入口」. A WeChat channel when WeChat is not installed opens a panel of the available channels with a hint instead of an error (BR-ID-04 细则「未安装微信时」)",
+      "whitelist_90403": "content.url outside the allowed range (link_patterns hit, or a non-share-page path on a share domain; BR-ATTR-29 细则)",
+      "share_page_paths": {
+        "$comment": "Path patterns of the three share pages on share_domains, registered once here and taken by the generators into the three apps (04 §9 方法的补充约束; BR-ATTR-29 细则). path_pattern is an anchored regular expression over the normalised path; null = not fixed yet: 规划/01 §4.2 gives these pages no route or path, so the values come with the pages' routes.",
+        "product_share": {
+          "page": "商品分享中间页 (path carries the server-issued link_id)",
+          "path_pattern": null
+        },
+        "invite_landing": {
+          "page": "邀请落地页",
+          "path_pattern": null
+        },
+        "download_guide": {
+          "page": "下载引导页",
+          "path_pattern": null
+        }
+      },
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -903,6 +929,7 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
+      "note": "Before the first save native asks through the permission component for saving to the photo album (write only, never read; 03 §4.9)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -979,7 +1006,8 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
-      "note": "Native records a hash of the text and does not recognise it later (03 §4.6)",
+      "note": "Level stays L0 (no login), but a user click within the last 1 second is required, checked as for L2; without it 90404 (BR-ID-16 细则「识别前后不改写剪贴板」). Native records a hash of the text and does not recognise it later (03 §4.6)",
+      "gesture_required": true,
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -1063,7 +1091,8 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
-      "note": "Only targets declared in apps.json",
+      "note": "First checks that target is a key of apps.json apps (external targets only; sdk_queries and inbound are not targets), then trade_only: a trade_only target always gets 90403 and nothing opens, whatever the url; H5 calls trade.convertAndOpen instead (BR-ATTR-29 细则「桥方法不留没有归因的打开入口」)",
+      "whitelist_90403": "target marked trade_only in apps.json (BR-ATTR-29 细则)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -1105,6 +1134,8 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
+      "note": "The url is normalised as for share.open; matching any category of link_patterns (union_host, product, promo) → 90403 and nothing opens (BR-ATTR-29 细则)",
+      "whitelist_90403": "normalised url matching link_patterns (BR-ATTR-29 细则)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -1169,6 +1200,7 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
+      "note": "Opens the WeCom support chat. The support link carries only the fixed routes.json name of the calling page; never uid or any account or device identifier, and neither entry nor context is put into the link (BR-ID-33 细则). Without WeChat installed it does not open: native shows a hint with copy-support-link and help-centre entries and returns opened=false (BR-ID-04 细则「未安装微信时」)",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -1180,7 +1212,7 @@
           },
           "context": {
             "type": "object",
-            "description": "Free-form context passed to the support chat",
+            "description": "Page-side context kept by native; never put into the support link (BR-ID-33 细则)",
             "additionalProperties": true
           }
         },
@@ -1207,6 +1239,7 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
+      "note": "Reads the system notification permission state only; never triggers a request",
       "params": {
         "type": "object",
         "additionalProperties": false,
@@ -1234,13 +1267,14 @@
         "android": "1.0.0",
         "harmony": "1.0.0"
       },
+      "note": "Only through the native permission component (03 §4.9): purpose shown first, throttled by BR-ID-13; while throttled or permanently denied it returns granted=false and native owns the guidance. When the push permission is first asked: BR-ID-13 细则「通知权限的申请时机」; MVP H5 pages do not ask on their own. camera comes with P1 media.scan (功能对照 Q-25 default A, pending owner)",
       "params": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["push", "photos", "camera"]
+            "enum": ["push", "photos"]
           }
         },
         "required": ["type"]
@@ -1300,6 +1334,7 @@
         "android": null,
         "harmony": null
       },
+      "note": "P1. A scan result first goes through input recognition; otherwise only https may open, in ExternalWebView with the host shown first, never in the trusted container (03 §13)",
       "params": {
         "type": "object",
         "additionalProperties": false,

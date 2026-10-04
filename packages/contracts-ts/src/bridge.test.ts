@@ -58,3 +58,43 @@ it('every external target is trade_only; SDK queries and inbound start empty (04
   expect(bridge.sdkQueries).toEqual([]);
   expect(bridge.inbound).toEqual([]);
 });
+
+it('clipboard.write stays L0 but needs a user gesture; L2 methods imply one (04 §9, 03 §5.3)', () => {
+  expect(bridge.bridgeMethods['clipboard.write'].level).toBe('L0');
+  expect(bridge.bridgeMethods['clipboard.write'].gesture_required).toBe(true);
+  for (const meta of Object.values(bridge.bridgeMethods)) {
+    if (meta.level === 'L2') expect(meta.gesture_required).toBe(true);
+  }
+  expect(bridge.bridgeMethods['clipboard.setAutoDetect'].gesture_required).toBe(false);
+});
+
+it('the methods with their own 90403 whitelist rejection are exactly those of 03 §5.3', () => {
+  const own = Object.entries(bridge.bridgeMethods)
+    .filter(([, meta]) => meta.whitelist_90403)
+    .map(([name]) => name)
+    .sort();
+  expect(own).toEqual(['ext.openApp', 'ext.openBrowser', 'net.signedRequest', 'share.open']);
+  expect(bridge.bridgeErrorCodes).toContain(90403);
+});
+
+it('share.open registers the three share page path patterns once (04 §9; values not fixed yet)', () => {
+  expect(Object.keys(bridge.sharePagePaths).sort()).toEqual([
+    'download_guide',
+    'invite_landing',
+    'product_share',
+  ]);
+  for (const entry of Object.values(bridge.sharePagePaths)) {
+    expect(entry.page.length).toBeGreaterThan(0);
+    expect(entry.path_pattern).toBeNull();
+  }
+});
+
+it('auth.getH5Token returns its scope; perm.request offers no camera in MVP (04 §9)', () => {
+  expect(bridge.bridgeMethods['auth.getH5Token'].level).toBe('L1');
+  expectTypeOf<bridge.BridgeMethods['auth.getH5Token']['result']['scope']>().toEqualTypeOf<
+    'standard' | 'read_only'
+  >();
+  expectTypeOf<bridge.BridgeMethods['perm.request']['params']['type']>().toEqualTypeOf<
+    'push' | 'photos'
+  >();
+});

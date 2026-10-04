@@ -80,6 +80,11 @@ export interface components {
             token: string;
             /** Format: date-time */
             expire_at: string;
+            /**
+             * @description contracts/enums h5_token_scope
+             * @enum {string}
+             */
+            scope: "standard" | "read_only";
         };
         NetSignedRequestParams: {
             /**
@@ -243,7 +248,7 @@ export interface components {
         };
         CsOpenParams: {
             entry: string;
-            /** @description Free-form context passed to the support chat */
+            /** @description Page-side context kept by native; never put into the support link (BR-ID-33 细则) */
             context?: {
                 [key: string]: unknown;
             };
@@ -257,7 +262,7 @@ export interface components {
         };
         PermRequestParams: {
             /** @enum {string} */
-            type: "push" | "photos" | "camera";
+            type: "push" | "photos";
         };
         PermRequestResult: {
             granted: boolean;
@@ -426,7 +431,7 @@ export interface BridgeMethods {
 }
 export type BridgeMethodName = keyof BridgeMethods;
 
-/** Level, call model, timeout and per-platform `since` of each method (03 §5.3). */
+/** Level, call model, timeout, per-platform `since`, user gesture and own 90403 whitelist of each method (03 §5.3). */
 export const bridgeMethods = {
   "app.getEnv": {
     "level": "L0",
@@ -437,7 +442,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "app.getConfig": {
     "level": "L0",
@@ -448,7 +455,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "auth.getUser": {
     "level": "L1",
@@ -459,7 +468,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "auth.login": {
     "level": "L0",
@@ -470,7 +481,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "auth.getH5Token": {
     "level": "L1",
@@ -481,7 +494,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "net.signedRequest": {
     "level": "L2",
@@ -492,7 +507,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": true,
+    "whitelist_90403": true
   },
   "ui.toast": {
     "level": "L0",
@@ -503,7 +520,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "ui.showLoading": {
     "level": "L0",
@@ -514,7 +533,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "ui.hideLoading": {
     "level": "L0",
@@ -525,7 +546,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "ui.setNavBar": {
     "level": "L0",
@@ -536,7 +559,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "nav.open": {
     "level": "L0",
@@ -547,7 +572,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "nav.close": {
     "level": "L0",
@@ -558,7 +585,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "trade.openProduct": {
     "level": "L0",
@@ -569,7 +598,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "trade.convertAndOpen": {
     "level": "L2",
@@ -580,7 +611,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": true,
+    "whitelist_90403": false
   },
   "trade.authorize": {
     "level": "L2",
@@ -591,7 +624,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": true,
+    "whitelist_90403": false
   },
   "trade.openUnionActivity": {
     "level": "L2",
@@ -602,7 +637,9 @@ export const bridgeMethods = {
       "ios": null,
       "android": null,
       "harmony": null
-    }
+    },
+    "gesture_required": true,
+    "whitelist_90403": false
   },
   "share.open": {
     "level": "L1",
@@ -613,7 +650,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": true
   },
   "media.saveImage": {
     "level": "L1",
@@ -624,7 +663,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "media.previewImage": {
     "level": "L0",
@@ -635,7 +676,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "clipboard.write": {
     "level": "L0",
@@ -646,7 +689,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": true,
+    "whitelist_90403": false
   },
   "clipboard.read": {
     "level": "L2",
@@ -657,7 +702,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": null
-    }
+    },
+    "gesture_required": true,
+    "whitelist_90403": false
   },
   "clipboard.setAutoDetect": {
     "level": "L0",
@@ -668,7 +715,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "ext.openApp": {
     "level": "L1",
@@ -679,7 +728,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": true
   },
   "ext.openBrowser": {
     "level": "L0",
@@ -690,7 +741,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": true
   },
   "ext.openMiniProgram": {
     "level": "L1",
@@ -701,7 +754,9 @@ export const bridgeMethods = {
       "ios": null,
       "android": null,
       "harmony": null
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "cs.open": {
     "level": "L0",
@@ -712,7 +767,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "perm.getPushStatus": {
     "level": "L0",
@@ -723,7 +780,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "perm.request": {
     "level": "L1",
@@ -734,7 +793,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "track.event": {
     "level": "L0",
@@ -745,7 +806,9 @@ export const bridgeMethods = {
       "ios": "1.0.0",
       "android": "1.0.0",
       "harmony": "1.0.0"
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "media.scan": {
     "level": "L1",
@@ -756,7 +819,9 @@ export const bridgeMethods = {
       "ios": null,
       "android": null,
       "harmony": null
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   },
   "media.uploadImage": {
     "level": "L1",
@@ -767,7 +832,9 @@ export const bridgeMethods = {
       "ios": null,
       "android": null,
       "harmony": null
-    }
+    },
+    "gesture_required": false,
+    "whitelist_90403": false
   }
 } as const;
 
@@ -781,6 +848,21 @@ export interface BridgeEvents {
 /** Method + path pairs net.signedRequest may sign (拍板第二批 TECH-30); others → 90403. */
 export const signedPaths = [{"method":"POST","path":"/v1/orders/claims"}] as const;
 export const bridgeErrorCodes = [90001,90002,90003,90004,90401,90403,90404,90500] as const;
+/** Share page path patterns share.open lets through on share_domains (04 §9; BR-ATTR-29 细则); null = not fixed yet. */
+export const sharePagePaths = {
+  "product_share": {
+    "page": "商品分享中间页 (path carries the server-issued link_id)",
+    "path_pattern": null
+  },
+  "invite_landing": {
+    "page": "邀请落地页",
+    "path_pattern": null
+  },
+  "download_guide": {
+    "page": "下载引导页",
+    "path_pattern": null
+  }
+} as const;
 
 /** Route table (contracts/routes.json); jumps are {route, params} (拍板第二批 TECH-04). */
 export const routes = {
