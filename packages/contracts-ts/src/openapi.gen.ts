@@ -506,6 +506,8 @@ export interface paths {
          *     `POST /v1/links/{link_id}/open`. `x-auth` is optional although 04 §6.3 lists none:
          *     rebate amounts are computed for the current user and links are registered per user
          *     (BR-PRICE-11, BR-PRICE-12; 08 wins over 04).
+         *     When the search switch search.enabled.<platform> is off the answer is 50304 with
+         *     data.reason=search_disabled (BR-PROD-10 细则「按平台的搜索开关」).
          */
         get: operations["searchProducts"];
         put?: never;
@@ -703,6 +705,11 @@ export interface components {
          * @enum {string}
          */
         SortCode: "relevance" | "sales_desc" | "final_price_asc" | "rebate_desc";
+        /**
+         * @description Why a card or an open result has no rebate (enum no_rebate_cause).
+         * @enum {string}
+         */
+        NoRebateCause: "price_compare";
         /**
          * @description contracts/enums/trade.yaml rebate_basis. The three 查返利 states are derived from
          *     coupon_fen and rebate_basis only (BR-PRICE-21); amount_unknown and login_required are
@@ -1485,6 +1492,11 @@ export interface components {
             rebate_min_fen: components["schemas"]["NullableFen"];
             rebate_max_fen: components["schemas"]["NullableFen"];
             rebate_basis: components["schemas"]["RebateBasis"];
+            /**
+             * @description May be non-null only when rebate_basis=no_rebate (BR-PRICE-08 细则「无返利原因」);
+             *     unknown values are treated as null. Not the open request's no_rebate_reason.
+             */
+            no_rebate_cause?: components["schemas"]["NoRebateCause"] | null;
             /** @description Server-generated labels (有券, 预售, 标题显示为 X…); no per-card reasons. */
             benefit_tags: string[];
             /**
@@ -1613,9 +1625,21 @@ export interface components {
         /**
          * @description Response of open (04 §8.4). old_final_price_fen is the link's quoted_final_price_fen;
          *     price_changed when |new − old| ≥ 100 fen or ≥ 5 % of old, both directions (BR-PRICE-13).
-         *     Prices and rebates are null on amount_unknown links, which are not re-checked.
+         *     Prices and rebates are null on amount_unknown links, which are not re-checked. There is no
+         *     rebate_basis: no rebate is expressed by new_rebate_max_fen = 0 (BR-PRICE-08, BR-PRICE-13).
          */
         OpenLinkResult: {
+            /**
+             * @description Issued by the server for this open attempt: a new one for every open of a link, the
+             *     same one when the same Idempotency-Key is replayed. The client sends it in every
+             *     link_jump of this jump (BR-ATTR-21 细则「待跟单卡按实际外跳选」).
+             */
+            attempt_id: string;
+            /**
+             * @description Non-null only when new_rebate_max_fen = 0 and the reason is known; unknown values are
+             *     treated as null. Not the request's no_rebate_reason (BR-ID-18).
+             */
+            no_rebate_cause?: components["schemas"]["NoRebateCause"] | null;
             jump: components["schemas"]["JumpPlan"];
             price_changed: boolean;
             old_final_price_fen: components["schemas"]["NullableFen"];
@@ -1668,6 +1692,17 @@ export interface components {
         });
         /** @description The registered link_id plus the same fields as the open result (04 §6.3). */
         ConvertLinkData: {
+            /**
+             * @description Issued by the server for this open attempt: a new one for every open of a link, the
+             *     same one when the same Idempotency-Key is replayed. The client sends it in every
+             *     link_jump of this jump (BR-ATTR-21 细则「待跟单卡按实际外跳选」).
+             */
+            attempt_id: string;
+            /**
+             * @description Non-null only when new_rebate_max_fen = 0 and the reason is known; unknown values are
+             *     treated as null. Not the request's no_rebate_reason (BR-ID-18).
+             */
+            no_rebate_cause?: components["schemas"]["NoRebateCause"] | null;
             link_id: components["schemas"]["Id"];
             jump: components["schemas"]["JumpPlan"];
             price_changed: boolean;

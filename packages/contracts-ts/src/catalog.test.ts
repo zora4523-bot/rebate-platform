@@ -53,7 +53,8 @@ it('data shapes of the link and search path match 04 §7', () => {
     platform: null,
     reason: ['maintenance', 'not_launched'],
   });
-  expect(errorCodes[50304].data).toEqual({ platform: null });
+  expect(errorCodes[50304].data).toEqual({ platform: null, reason: ['search_disabled'] });
+  expect(errorCodes[50304].retry_kind_by_reason).toEqual({ search_disabled: 'never' });
   expect(errorCodes[20902].data.resource).toEqual([
     'order',
     'order_attribution',

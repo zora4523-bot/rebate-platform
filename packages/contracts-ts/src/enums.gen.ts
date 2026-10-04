@@ -1212,6 +1212,15 @@ export const link_pattern_category = [
 export type LinkPatternCategory = (typeof link_pattern_category)[number];
 
 /**
+ * 商品卡与 open / convert 结果的无返利原因（可空，未知值按空处理）；取值规则见 BR-PRICE-08 细则「无返利原因」
+ * Source: 规划/04 §8.3、§8.4；BR-PRICE-08 (contracts/enums/trade.yaml).
+ */
+export const no_rebate_cause = [
+  "price_compare", // 比价预判为比价单
+] as const;
+export type NoRebateCause = (typeof no_rebate_cause)[number];
+
+/**
  * 素材淘礼金出资方判定；unknown 不宣称已判定为 third_party
  * Source: 规划/04 §2.5；BR-TEXT-15 (contracts/enums/trade.yaml).
  */
@@ -1318,6 +1327,7 @@ export const enums = {
   benefit,
   sort,
   link_pattern_category,
+  no_rebate_cause,
   tlj_kind,
 } as const;
 export type EnumName = keyof typeof enums;

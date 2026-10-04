@@ -7,6 +7,7 @@ const opened: OpenLinkResponse = {
   code: 0,
   msg: '',
   data: {
+    attempt_id: 'attempt-1',
     jump: {
       primary: { type: 'sdk', value: 'https://s.click.example.test/t?e=abc' },
       fallbacks: [],
