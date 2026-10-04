@@ -182,3 +182,15 @@ it('order list and detail (04 §6.4)', () => {
   const group: Schema<'OrderStatusGroup'> = 'no_rebate';
   expect(group).toBe('no_rebate');
 });
+
+it('me: invite_backfill, tips and deletion (04 §6.1)', () => {
+  expectTypeOf<Schema<'Me'>['invite_backfill']>().toEqualTypeOf<Schema<'InviteBackfill'>>();
+  expectTypeOf<Schema<'TipKey'>>().toEqualTypeOf<'jump_tip' | 'inviter_before_buy'>();
+  expectTypeOf<Schema<'ResettableTipKey'>>().toEqualTypeOf<'jump_tip'>();
+  expectTypeOf<Schema<'DeletionResponse'>['data']>().toEqualTypeOf<Schema<'Deletion'> | null>();
+  const tips: Schema<'TipsData'> = {
+    jump_tip: { taobao: '2026-10-02T09:30:00+08:00', jd: null },
+    inviter_before_buy: null,
+  };
+  expect(tips.inviter_before_buy).toBeNull();
+});
