@@ -189,8 +189,14 @@
 //      `../clock/clock.ts` and `../logging/logger.ts` type-only. No pg-boss.
 //    - No `process.env`; no wall clock (section C.2); logs only through `options.logger`.
 //    - Implementation-side unit tests go next to the code (`*.test.ts`, no database).
-import type { DB } from '@couli/db';
-import type { Kysely } from 'kysely';
+import {
+  MONTH_PARTITIONED_TABLES,
+  MONTHS_AHEAD,
+  monthStartDate,
+  monthsToEnsure,
+  type DB,
+} from '@couli/db';
+import { sql, type Kysely } from 'kysely';
 import type { Clock } from '../clock/clock.ts';
 import type { RootLogger } from '../logging/logger.ts';
 
@@ -198,7 +204,7 @@ import type { RootLogger } from '../logging/logger.ts';
 export const MAINTENANCE_INTERVAL_MS = 3_600_000;
 
 /** Tables whose expired partitions the run drops (section C.4). */
-export const DROPPABLE_TABLES: readonly string[] = Object.freeze([]);
+export const DROPPABLE_TABLES: readonly string[] = Object.freeze(['event_log']);
 
 export interface PartitionMaintenanceOptions {
   readonly db: Kysely<DB>;
@@ -241,14 +247,164 @@ export class MaintenanceError extends Error {
 
   constructor(code: MaintenanceErrorCode) {
     super(MAINTENANCE_ERROR_MESSAGES[code]);
+    this.name = 'MaintenanceError';
     this.code = code;
-    throw new Error('NotImplemented: MaintenanceError');
   }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function validateOptions(options: unknown): asserts options is PartitionMaintenanceOptions {
+  if (!isObject(options) || Object.getPrototypeOf(options) !== Object.prototype) {
+    throw new MaintenanceError('invalid_option');
+  }
+  const allowed = new Set<PropertyKey>(['db', 'logger', 'clock', 'intervalMs']);
+  const logger = options['logger'];
+  if (
+    Reflect.ownKeys(options).some((key) => !allowed.has(key)) ||
+    !['db', 'logger', 'clock'].every((key) => Object.hasOwn(options, key)) ||
+    !isObject(options['db']) ||
+    !isObject(logger) ||
+    !['info', 'warn', 'error'].every((key) => typeof logger[key] === 'function') ||
+    !isObject(options['clock']) ||
+    typeof options['clock']['now'] !== 'function' ||
+    (Object.hasOwn(options, 'intervalMs') &&
+      (typeof options['intervalMs'] !== 'number' ||
+        !Number.isInteger(options['intervalMs']) ||
+        options['intervalMs'] < 100 ||
+        options['intervalMs'] > 86_400_000))
+  ) {
+    throw new MaintenanceError('invalid_option');
+  }
+}
+
+function sqlstate(error: unknown): string | null {
+  return isObject(error) && typeof error['code'] === 'string' && /^[0-9A-Z]{5}$/.test(error['code'])
+    ? error['code']
+    : null;
 }
 
 export function createPartitionMaintenance(
   options: PartitionMaintenanceOptions,
 ): PartitionMaintenance {
-  void options;
-  throw new Error('NotImplemented: createPartitionMaintenance');
+  validateOptions(options);
+  const { db, logger, clock, intervalMs = MAINTENANCE_INTERVAL_MS } = options;
+  let started = false;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let scheduled: Promise<void> | undefined;
+
+  async function runOnce(): Promise<MaintenanceReport> {
+    const role = await sql<{ role: string }>`SELECT current_user AS role`.execute(db);
+    if (role.rows[0]?.role !== 'couli_maint') throw new MaintenanceError('wrong_role');
+
+    const now = clock.now();
+    const months = monthsToEnsure(now, MONTHS_AHEAD).map(monthStartDate);
+    const ensured: string[] = [];
+    const dropped: string[] = [];
+    const defaultRows: DefaultRows[] = [];
+    let failed = 0;
+
+    // Separate autocommit statements keep one failed month from aborting the whole run.
+    for (const table of MONTH_PARTITIONED_TABLES) {
+      for (const month of months) {
+        try {
+          const result = await sql<{ partition: string }>`
+            SELECT app.ensure_month_partition(${table}, ${month}::date) AS partition
+          `.execute(db);
+          ensured.push(result.rows[0]!.partition);
+        } catch (error) {
+          failed += 1;
+          logger.error({ table, month, sqlstate: sqlstate(error) }, 'partition_ensure_failed');
+        }
+      }
+    }
+
+    // Fixed +08:00 hour, independent of the host/session timezone. SQL owns retention checks.
+    if ((now.getUTCHours() + 8) % 24 >= 4) {
+      for (const table of DROPPABLE_TABLES) {
+        try {
+          const result = await sql<{ partitions: string[] }>`
+            SELECT app.drop_expired_month_partitions(${table}, ${now}::timestamptz) AS partitions
+          `.execute(db);
+          for (const partition of result.rows[0]!.partitions) {
+            dropped.push(partition);
+            logger.info({ table, partition }, 'partition_dropped');
+          }
+        } catch (error) {
+          failed += 1;
+          logger.error({ table, sqlstate: sqlstate(error) }, 'partition_drop_failed');
+        }
+      }
+    }
+
+    try {
+      const result = await sql<{
+        table_name: string;
+        default_partition: string;
+        row_count: bigint;
+      }>`SELECT * FROM app.partition_default_rows()`.execute(db);
+      for (const row of result.rows) {
+        // The report explicitly uses numbers; never silently round a PG bigint count.
+        const rows = Number(row.row_count);
+        if (!Number.isSafeInteger(rows) || rows < 0) {
+          throw new RangeError('partition row count is not a safe non-negative integer');
+        }
+        if (rows > 0) {
+          const alert = { table: row.table_name, partition: row.default_partition, rows };
+          defaultRows.push(alert);
+          logger.warn(alert, 'partition_default_has_rows');
+        }
+      }
+    } catch (error) {
+      failed += 1;
+      logger.error({ sqlstate: sqlstate(error) }, 'partition_default_check_failed');
+    }
+
+    logger.info(
+      { ensured: ensured.length, dropped: dropped.length, failed },
+      'partition_maintenance_done',
+    );
+    return { ensured, dropped, defaultRows, failed };
+  }
+
+  async function scheduledRun(first: boolean): Promise<void> {
+    try {
+      await runOnce();
+    } catch (error) {
+      if (first && error instanceof MaintenanceError && error.code === 'wrong_role') {
+        stopped = true;
+        throw error;
+      }
+      logger.error({ sqlstate: sqlstate(error) }, 'partition_maintenance_failed');
+    } finally {
+      if (!stopped) {
+        timer = setTimeout(() => {
+          timer = undefined;
+          scheduled = scheduledRun(false);
+        }, intervalMs);
+      }
+    }
+  }
+
+  return {
+    runOnce,
+    async start() {
+      if (started || stopped) throw new MaintenanceError('already_started');
+      started = true;
+      scheduled = scheduledRun(true);
+      await scheduled;
+    },
+    async stop() {
+      stopped = true;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      // Includes the initial run, but deliberately excludes callers of runOnce().
+      await scheduled?.catch(() => undefined);
+    },
+  };
 }
