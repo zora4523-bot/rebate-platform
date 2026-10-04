@@ -4,9 +4,10 @@ import type { AppConfig } from './config/index.ts';
 import { openConfiguredFieldCrypto } from './config/keyring-startup.ts';
 import type { DbHandles } from './db/index.ts';
 import type { EntryName } from './entries.ts';
+import { createEventBus } from './events/index.ts';
 import { createIdempotency } from './idempotency/index.ts';
 import type { RootLogger } from './logging/index.ts';
-import { createQueueRuntime } from './queue/index.ts';
+import { createQueueRuntime, type JobQueue } from './queue/index.ts';
 
 /** Nest injection tokens provided by `PlatformModule`. */
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -17,6 +18,7 @@ export const DB_READ = Symbol('DB_READ');
 export const IDEMPOTENCY = Symbol('IDEMPOTENCY');
 export const FIELD_CRYPTO = Symbol('FIELD_CRYPTO');
 export const JOB_QUEUE = Symbol('JOB_QUEUE');
+export const EVENT_BUS = Symbol('EVENT_BUS');
 const DB_LIFECYCLE = Symbol('DB_LIFECYCLE');
 
 export interface PlatformOptions {
@@ -70,6 +72,12 @@ export class PlatformModule {
                 }),
             },
             { provide: JOB_QUEUE, useValue: queue },
+            {
+              provide: EVENT_BUS,
+              inject: [JOB_QUEUE, CLOCK],
+              useFactory: (jobQueue: JobQueue, clock: Clock) =>
+                createEventBus({ queue: jobQueue, clock }),
+            },
             ...(options.entry === 'admin' && handles.dbRead !== null
               ? [{ provide: DB_READ, useValue: handles.dbRead }]
               : []),
@@ -102,7 +110,7 @@ export class PlatformModule {
         CLOCK,
         ROOT_LOGGER,
         ...(keyring === null ? [] : [FIELD_CRYPTO]),
-        ...(handles === undefined ? [] : [DB, IDEMPOTENCY, JOB_QUEUE]),
+        ...(handles === undefined ? [] : [DB, IDEMPOTENCY, JOB_QUEUE, EVENT_BUS]),
         ...(handles !== undefined && options.entry === 'admin' && handles.dbRead !== null
           ? [DB_READ]
           : []),
