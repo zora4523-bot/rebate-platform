@@ -24,7 +24,7 @@
 #
 # TODO(规划/03 §4.9): Android、鸿蒙的对应权限（含通知、相册写入）与各 SDK 带进来的权限 — blocked on 各端
 #   工程接入时按系统文档核对（不臆造权限名）。
-version: '2'
+version: '1'
 permissions:
   - type: photos
     platform: ios
