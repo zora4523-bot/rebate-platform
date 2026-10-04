@@ -35,6 +35,7 @@ import {
   recordingLogger,
   result,
   rowsOf,
+  sameResponse,
   sensitiveRequest,
   sha256Hex,
   userActor,
@@ -347,14 +348,9 @@ it('[规划/02 §18「幂等 API」; BR-ID-10 细则「以唯一约束为准」]
   );
   const winnerBody = `{"code":0,"msg":"","data":{"winner":true},"trace_id":"${TRACE}"}`;
   expect(handled).toBe(1);
+  expect(results.filter((r) => sameResponse(r, RESPONSES.e40901))).toHaveLength(7);
   expect(
-    results.filter((r) => JSON.stringify(r) === JSON.stringify(RESPONSES.e40901)),
-  ).toHaveLength(7);
-  expect(
-    results.filter(
-      (r) =>
-        JSON.stringify(r) === JSON.stringify({ status: 200, body: winnerBody, source: 'handler' }),
-    ),
+    results.filter((r) => sameResponse(r, { status: 200, body: winnerBody, source: 'handler' })),
   ).toHaveLength(1);
   expect(await businessCount(observer, label)).toBe(1);
   expect((await rowsOf(observer, key)).map((row) => row.status)).toEqual(['completed']);

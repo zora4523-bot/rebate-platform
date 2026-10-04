@@ -33,6 +33,7 @@ import {
   request,
   result,
   rowsOf,
+  sameResponse,
   sha256Hex,
   userActor,
   within,
@@ -392,14 +393,9 @@ it('[规划/02 §18「幂等 API」; 规划/04 §3.2 唯一约束] 并发：同�
   const results = await Promise.all(runs);
   const winnerBody = `{"code":0,"msg":"","data":{"winner":true},"trace_id":"${TRACE}"}`;
   expect(handled).toBe(1);
+  expect(results.filter((r) => sameResponse(r, RESPONSES.e40901))).toHaveLength(7);
   expect(
-    results.filter((r) => JSON.stringify(r) === JSON.stringify(RESPONSES.e40901)),
-  ).toHaveLength(7);
-  expect(
-    results.filter(
-      (r) =>
-        JSON.stringify(r) === JSON.stringify({ status: 200, body: winnerBody, source: 'handler' }),
-    ),
+    results.filter((r) => sameResponse(r, { status: 200, body: winnerBody, source: 'handler' })),
   ).toHaveLength(1);
   expect((await rowsOf(observer, key)).map((row) => row.status)).toEqual(['completed']);
   expect(await run(idem, request({ key, body: { same: 1 } }), handler)).toStrictEqual({

@@ -34,10 +34,25 @@ it('[BR-WDR-07] 同一内容不同键顺序、不同嵌套键顺序得到同一�
     { amount_fen: 10000, meta: { A: 1, b: [1, 2] } },
     { amount_fen: 10000 },
   ];
+  // The canonical text of each input, written by hand in the same order.
+  const canonical = [
+    '{"amount_fen":10000,"meta":{"a":1,"b":[1,2]}}',
+    '{"amount_fen":10000,"meta":{"a":1,"b":[1,2]}}',
+    '{"amount_fen":10001,"meta":{"a":1,"b":[1,2]}}',
+    '{"amount_fen":10000,"meta":{"a":1,"b":[2,1]}}',
+    '{"amount_fen":10000,"meta":{"a":1,"b":[1,2],"c":null}}',
+    '{"amount_fen":10000,"meta":{"a":1}}',
+    '{"amount_fen":"10000","meta":{"a":1,"b":[1,2]}}',
+    '{"amount_fen":10000,"meta":{"A":1,"b":[1,2]}}',
+    '{"amount_fen":10000}',
+  ];
   const hashes = [base, reordered, ...variants].map((value) =>
     outcomeSync(() => requestHashOf(value)),
   );
-  expect(hashes[0]).toBe(sha256Hex('{"amount_fen":10000,"meta":{"a":1,"b":[1,2]}}'));
+  for (const hash of hashes) {
+    expect(typeof hash === 'string' && /^[0-9a-f]{64}$/.test(hash) ? 'hex64' : hash).toBe('hex64');
+  }
+  expect(hashes).toEqual(canonical.map((text) => sha256Hex(text)));
   expect(hashes[1]).toBe(hashes[0]);
   expect(new Set(hashes.slice(1)).size).toBe(variants.length + 1);
 });

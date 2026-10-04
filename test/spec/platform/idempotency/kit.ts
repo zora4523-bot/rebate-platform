@@ -4,6 +4,7 @@
 // apps/api/src/modules/platform/idempotency/index.ts, never taken from the implementation.
 // Nothing here imports the test-database base (`@couli/db/testing`): only *.int.test.ts may.
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { sql, type Kysely } from 'kysely';
 import type { DB } from '@couli/db';
 import {
@@ -102,6 +103,15 @@ export function result(code: number, status: number, data?: unknown): HandlerRes
         status,
         envelope: { code, msg: code === 0 ? '' : `m${String(code)}`, data, trace_id: TRACE },
       };
+}
+
+/**
+ * Whether `actual` is the response `expected`: compared by structure (the order of the outer
+ * object's properties does not matter); `body` is a string, so it still has to match byte for
+ * byte.
+ */
+export function sameResponse(actual: unknown, expected: unknown): boolean {
+  return isDeepStrictEqual(actual, expected);
 }
 
 /** Exact bodies of the envelopes the module builds (section 5). */

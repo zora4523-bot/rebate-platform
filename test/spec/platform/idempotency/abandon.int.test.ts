@@ -29,6 +29,7 @@ import {
   request,
   result,
   rowsOf,
+  sameResponse,
   sensitiveRequest,
   sha256Hex,
   userActor,
@@ -302,24 +303,20 @@ it('[BR-ID-10 细则「作废与业务结果互斥」] 并发：同一个键的�
     ]);
     const rows = (await rowsOf(observer, key)).map((row) => row.status);
     const okBody = `{"code":0,"msg":"","data":{"round":${String(round)}},"trace_id":"${TRACE}"}`;
-    if (JSON.stringify(ab) === JSON.stringify(ABANDONED)) {
-      expect([JSON.stringify(RESPONSES.e20903), JSON.stringify(RESPONSES.e40901)]).toContain(
-        JSON.stringify(res),
-      );
+    if (sameResponse(ab, ABANDONED)) {
+      expect(sameResponse(res, RESPONSES.e20903) || sameResponse(res, RESPONSES.e40901)).toBe(true);
       expect(handled).toBe(0);
       expect(rows).toEqual(['abandoned']);
     } else {
       expect(res).toStrictEqual({ status: 200, body: okBody, source: 'handler' });
       expect(handled).toBe(1);
       expect(rows).toEqual(['completed']);
-      expect([
-        JSON.stringify(RESPONSES.e40901),
-        JSON.stringify({
-          status: 200,
-          body: abandonBody('completed', `{"code":0,"msg":"","data":{"round":${String(round)}}}`),
-          source: 'idempotency',
-        }),
-      ]).toContain(JSON.stringify(ab));
+      const completed = {
+        status: 200,
+        body: abandonBody('completed', `{"code":0,"msg":"","data":{"round":${String(round)}}}`),
+        source: 'idempotency',
+      };
+      expect(sameResponse(ab, RESPONSES.e40901) || sameResponse(ab, completed)).toBe(true);
     }
   }
 });
