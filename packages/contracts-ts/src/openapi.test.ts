@@ -196,7 +196,7 @@ it('me: invite_backfill, tips and deletion (04 §6.1)', () => {
 });
 
 it('payout account: masked GET, PUT body by method (04 §6.1)', () => {
-  expectTypeOf<Schema<'PayoutAccount'>['payout_method']>().toEqualTypeOf<'alipay' | 'bank_card'>();
+  expectTypeOf<Schema<'PayoutAccountBankCard'>['bank_name']>().toEqualTypeOf<string>();
   const alipay: Schema<'SavePayoutAccountRequest'> = {
     payout_method: 'alipay',
     alipay_logon_id: 'zhangsan@example.com',

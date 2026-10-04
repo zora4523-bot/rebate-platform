@@ -1757,17 +1757,24 @@ export interface components {
             /** Format: date-time */
             deadline_at: string | null;
         };
-        /**
-         * @description contracts/enums/fund.yaml payout_method (BR-WDR-02).
-         * @enum {string}
-         */
-        PayoutMethod: "alipay" | "bank_card";
-        PayoutAccount: {
-            payout_method: components["schemas"]["PayoutMethod"];
+        /** @description The current payout account, by payout_method (bank_name only for a bank card). */
+        PayoutAccount: components["schemas"]["PayoutAccountAlipay"] | components["schemas"]["PayoutAccountBankCard"];
+        PayoutAccountAlipay: {
+            /** @enum {string} */
+            payout_method: "alipay";
             /** @description Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」). */
             masked_account: string;
-            /** @description Bank card only (from the card BIN); null for Alipay. */
-            bank_name: string | null;
+            masked_payee_name: string;
+            /** Format: int32 */
+            change_remaining_this_month: number;
+        };
+        PayoutAccountBankCard: {
+            /** @enum {string} */
+            payout_method: "bank_card";
+            /** @description Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」). */
+            masked_account: string;
+            /** @description From the card BIN. */
+            bank_name: string;
             masked_payee_name: string;
             /** Format: int32 */
             change_remaining_this_month: number;
@@ -1789,7 +1796,10 @@ export interface components {
         SavePayoutAccountByBankCard: {
             /** @enum {string} */
             payout_method: "bank_card";
-            /** @description Card number; spaces are not allowed (12–19 digits and Luhn are checked by the server, 20001). */
+            /**
+             * @description Card number as typed; the server removes spaces and hyphens, then checks 12–19 digits and
+             *     Luhn (20001 data.fields=[card_no], BR-WDR-02 ⑥ and 细则).
+             */
             card_no: string;
             /** @description Opening bank as chosen by the user (04 §6.1). */
             bank_name: string;
@@ -3964,7 +3974,7 @@ export interface operations {
                      *       "msg": "",
                      *       "data": {
                      *         "payout_method": "bank_card",
-                     *         "masked_account": "尾号 0000",
+                     *         "masked_account": "尾号 0009",
                      *         "bank_name": "示例银行",
                      *         "masked_payee_name": "**三",
                      *         "change_remaining_this_month": 1

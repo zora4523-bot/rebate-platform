@@ -1621,7 +1621,6 @@ paths:
                     data:
                       payout_method: alipay
                       masked_account: 138****5678
-                      bank_name: null
                       masked_payee_name: '**三'
                       change_remaining_this_month: 2
                     trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
@@ -1711,7 +1710,7 @@ paths:
                 summary: Bank card
                 value:
                   payout_method: bank_card
-                  card_no: '6222000000000000'
+                  card_no: '6222 0000 0000 0009'
                   bank_name: 示例银行
                   payee_name: 张三
       responses:
@@ -1726,7 +1725,7 @@ paths:
                 msg: ''
                 data:
                   payout_method: bank_card
-                  masked_account: 尾号 0000
+                  masked_account: 尾号 0009
                   bank_name: 示例银行
                   masked_payee_name: '**三'
                   change_remaining_this_month: 1
@@ -4975,13 +4974,34 @@ components:
             - string
             - 'null'
           format: date-time
-    PayoutMethod:
-      type: string
-      description: contracts/enums/fund.yaml payout_method (BR-WDR-02).
-      enum:
-        - alipay
-        - bank_card
     PayoutAccount:
+      description: The current payout account, by payout_method (bank_name only for a bank card).
+      oneOf:
+        - $ref: '#/components/schemas/PayoutAccountAlipay'
+        - $ref: '#/components/schemas/PayoutAccountBankCard'
+    PayoutAccountAlipay:
+      type: object
+      additionalProperties: false
+      required:
+        - payout_method
+        - masked_account
+        - masked_payee_name
+        - change_remaining_this_month
+      properties:
+        payout_method:
+          type: string
+          enum:
+            - alipay
+        masked_account:
+          type: string
+          description: Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」).
+        masked_payee_name:
+          type: string
+        change_remaining_this_month:
+          type: integer
+          format: int32
+          minimum: 0
+    PayoutAccountBankCard:
       type: object
       additionalProperties: false
       required:
@@ -4992,15 +5012,15 @@ components:
         - change_remaining_this_month
       properties:
         payout_method:
-          $ref: '#/components/schemas/PayoutMethod'
+          type: string
+          enum:
+            - bank_card
         masked_account:
           type: string
           description: Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」).
         bank_name:
-          type:
-            - string
-            - 'null'
-          description: Bank card only (from the card BIN); null for Alipay.
+          type: string
+          description: From the card BIN.
         masked_payee_name:
           type: string
         change_remaining_this_month:
@@ -5063,7 +5083,9 @@ components:
             - bank_card
         card_no:
           type: string
-          description: Card number; spaces are not allowed (12–19 digits and Luhn are checked by the server, 20001).
+          description: |
+            Card number as typed; the server removes spaces and hyphens, then checks 12–19 digits and
+            Luhn (20001 data.fields=[card_no], BR-WDR-02 ⑥ and 细则).
           minLength: 1
           maxLength: 32
         bank_name:
