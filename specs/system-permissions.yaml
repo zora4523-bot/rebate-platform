@@ -1,0 +1,32 @@
+# 系统权限清单（规划/03 §4.9「权限清单」，唯一来源；BR-ID-13 细则「相机权限与权限清单」）。
+# 三端申请的系统权限都登记在这里。生成器据此写 iOS 用途说明、Android 清单里的权限声明、鸿蒙模块配置里的
+# 权限申请，以及隐私中心「系统权限」一节的条目；工程里不手写。CI 断言最终产物里的权限集合与本清单一致，
+# 多一项、少一项都失败。生成器与 CI 断言归 CT-05 / QA-07，本文件只是数据。
+#
+# 结构：
+#   version      每次改动递增
+#   permissions  每条 {type, platform, system_key, feature, purpose_key, phase, source}
+#     type         权限类型（03 §4.9：MVP 为 push、photos；camera 留到 P1）
+#     platform     ios / android / harmony
+#     system_key   iOS 的用途说明键，Android 与鸿蒙的权限名
+#     feature      对应功能（桥方法或原生功能）
+#     purpose_key  用途文案键 perm.<type>.system_purpose（BR-TEXT-14 表 D）
+#     phase        MVP / P1
+#     source       own（自有功能）或 sdk:<SDK 名>（SDK 带进来的，按该 SDK 的实际用途写文案）
+#
+# 已知事实（03 §4.9）：MVP 的自有功能在 iOS 上需要用途说明的只有「保存图片到相册」一项（media.saveImage）。
+# Release 包不声明相机权限、不带相机用途说明、不编译扫码代码（按功能对照 Q-25 默认 A，待负责人确认）；
+# 测试确需 App 内扫码时，相关代码与权限声明只进 Debug、Staging 配置，不登记在本清单。
+# iOS 的通知授权不需要 Info.plist 用途说明键，不在本清单。
+#
+# TODO(规划/03 §4.9): Android、鸿蒙的对应权限（含通知、相册写入）与各 SDK 带进来的权限 — blocked on 各端
+#   工程接入时按系统文档核对（不臆造权限名）。
+version: '1'
+permissions:
+  - type: photos
+    platform: ios
+    system_key: NSPhotoLibraryAddUsageDescription
+    feature: media.saveImage（保存图片到相册，只写不读）
+    purpose_key: perm.photos.system_purpose
+    phase: MVP
+    source: own

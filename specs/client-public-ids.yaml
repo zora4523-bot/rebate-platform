@@ -1,0 +1,84 @@
+# 客户端公开标识清单（规划/02 §12.6「安装包里只放公开标识」；05 QA-09 发布制品密钥扫描的白名单）。
+# 三端安装包、H5 构建产物与后台前端产物里只能出现本清单登记的公开标识；02 §12.6 密钥表里的任何一项、
+# 其他 secret、私钥、服务端 API Key 与共享盐都不得出现。本文件只登记「是什么、为什么能公开」，
+# 不写具体取值（取值在三端工程与配置里，由扫描按类别与格式比对）。
+#
+# 结构：
+#   version          每次改动递增
+#   items            每条 {id, category, name, purpose, platforms, why_public}
+#     category       02 §12.6 公开标识表的类别：request_routing / wechat / system_capability / huawei /
+#                    push_client / union_sdk / crash_report / config_verification
+#     platforms      ios / android / harmony / h5 / admin（contracts/enums/platform.yaml client_platform）
+#   false_positives  误报过滤（命中内容本身不是密钥）：每条 {rule, file, reason}；改动走 PR，由编排者评审，
+#                    评审记录留在 PR 里
+#   exceptions       安全豁免：只收负责人批准的 SDK 随包配置，每条 {sdk, item, scope_if_leaked,
+#                    server_side_limit, approval}；编排者、实现与评审代理都不能自行登记
+#   never_accepted   不可豁免、不接受例外登记的内容（02 §12.6、BR-ID-09）；只作说明，扫描规则不写密钥值
+version: '1'
+items:
+  - id: app_id
+    category: request_routing
+    name: X-App-Id
+    purpose: 请求头里的应用标识，区分品牌 App
+    platforms: [ios, android, harmony, h5]
+    why_public: 只标识是哪个 App，服务端另按设备注册与签名校验，知道它不能冒充请求
+  - id: service_hosts
+    category: request_routing
+    name: API / H5 / 深链域名
+    purpose: 请求与页面加载的地址、深链与通用链接的主机
+    platforms: [ios, android, harmony, h5, admin]
+    why_public: 公开可访问的地址，本身不带凭据
+  - id: custom_scheme
+    category: request_routing
+    name: 自定义 scheme
+    purpose: 授权回跳与深链拉起本 App
+    platforms: [ios, android, harmony]
+    why_public: 系统清单里声明、任何人可读；入站参数另按 03 §4.5 校验（CSB-11）
+  - id: wechat_app_id
+    category: wechat
+    name: 微信开放平台 AppID 与微信用的通用链接
+    purpose: 微信登录与分享
+    platforms: [ios, android, harmony]
+    why_public: AppID 是公开标识；对应的 AppSecret 只在服务端 KMS（02 §12.6）
+  - id: bundle_identity
+    category: system_capability
+    name: Bundle ID、包名、bundleName、Team ID、关联域名声明
+    purpose: 系统能力与深链
+    platforms: [ios, android, harmony]
+    why_public: 写在系统清单与商店信息里，任何人可读
+  - id: huawei_client_id
+    category: huawei
+    name: 华为 / 鸿蒙的 client_id、app_id
+    purpose: 华为账号登录、Push Kit
+    platforms: [android, harmony]
+    why_public: 客户端标识；client secret 与 Push Kit 服务端凭据只在服务端 KMS
+  - id: push_app_key
+    category: push_client
+    name: 推送聚合服务的客户端 AppKey
+    purpose: 推送注册
+    platforms: [ios, android, harmony]
+    why_public: 只能注册设备；推送服务端密钥只在服务端 KMS
+  - id: union_sdk_app_key
+    category: union_sdk
+    name: 联盟客户端 SDK 的应用标识（如百川 App Key）
+    purpose: 联盟授权与外跳
+    platforms: [ios, android, harmony]
+    why_public: SDK 要求随包的应用标识；联盟 appSecret 与授权令牌只在服务端（KMS + union_credentials）
+  - id: crash_report_endpoint
+    category: crash_report
+    name: 崩溃上报地址（Sentry DSN、AGC 配置里的应用标识）
+    purpose: 崩溃与错误上报
+    platforms: [ios, android, harmony, h5]
+    why_public: 只能上报、不能读取；符号文件上传令牌只在 CI protected environment
+  - id: config_public_keys
+    category: config_verification
+    name: 校验 bridge_origins 与配置签名的公钥、包内默认配置
+    purpose: 验签与兜底
+    platforms: [ios, android, harmony]
+    why_public: 公钥只能验签；对应私钥不进任何客户端
+false_positives: []
+exceptions: []
+never_accepted:
+  - 02 §12.6 密钥表里的任何一项服务端密钥（各平台 AppSecret、私钥、服务端 API Key、短信与推送的服务端凭据等）
+  - BR-ID-09 禁止内置的请求签名材料与共享盐（请求签名只用服务端按设备签发的 install_secret）
+  - 其他 secret、私钥、服务端 API Key
