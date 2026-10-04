@@ -1,0 +1,115 @@
+{
+  "task": "B1-01h",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "688c8777efb915de82639598164700f807247fed",
+  "red_tests": [
+    "[规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件名（同序、冻结）；EVENT_SUBSCRIPTIONS 是冻结的空数组；上下界常量正好是 4096 字节、128 个码元、3 层、版本 999",
+    "[contract §9] EventError：每个错误码的 name、code、固定文案、堆栈首行与自有属性都确切，没有 cause；EVENT_ERROR_MESSAGES 与契约逐字一致",
+    "[ADR-0001 §4.2 #1; 规划/02 §11 任务 ID = event_id] newEventId：小写规范 UUIDv7（版本 7、变体 10），前 48 位正好是给定时刻的毫秒数（含 0 与 2^48−1）",
+    "[ADR-0001 §4.2 #1; contract §3] newEventId：同一毫秒 4000 个互不相同；74 个随机位每一位都出现过 0 和 1；不合法的时刻（NaN、负数、2^48、非 Date）抛 EventError invalid_option",
+    "[contract §7] createEventBus：合法选项返回带 publish 的对象且创建时不发任务、不读时钟；选项不对（非普通对象、多键、缺 queue 或 clock、send / now 不是函数、catalog 不是数组）一律同步抛 invalid_option",
+    "[contract §6] 订阅表规则：consumer 名格式、长度（46 可、47 不可）与唯一、events 非空不重复且都在事件清单、每个消费者的 evt.<consumer> 在目录里且是 standard；违反任一条 createEventBus 抛 invalid_subscriptions",
+    "[规划/02 §11 同事务入队; contract §4] publish 的事务检查：null、undefined、空对象、isTransaction 不是 true（false、字符串）、db 句柄一类对象都拒绝 invalid_transaction，不读时钟、不发任务",
+    "[contract §2] 事件形状：非普通对象、缺 appId / name / payload、多出键（occurredAt、id）、访问器、符号键都拒绝 invalid_event；只读过事务的 isTransaction，不读时钟、不发任务",
+    "[contract §2] appId：1..64 个 [A-Za-z0-9._-] 字符；空串、65 个字符、空格、非 ASCII、非字符串都拒绝 invalid_app_id",
+    "[规划/02 §11 事件清单; contract §1] 事件名只认 EVENT_NAMES：清单外的名字、大小写不同、带空白、三段式、非字符串都拒绝 unknown_event",
+    "[contract §2] version：整数 1..999；0、1000、-1、1.5、NaN、Infinity、字符串、null、bigint 都拒绝 invalid_version",
+    "[规划/02 §11 任务 ID = event_id; contract §2] eventId：小写规范 UUID；大写、带花括号、无短横线、少一位、多一位、空串、null、数字都拒绝 invalid_event_id",
+    "[规划/02 §19 类型; contract §2] payload 不是小的 JSON 对象（非普通对象、undefined、小数、NaN、超安全整数、bigint、符号、函数、Date、Map、类实例、空洞数组、带额外属性的数组、U+0000、孤立代理、环、访问器、符号键、非蛇形键、65 字符键、129 码元字符串、第 4 层嵌套）都拒绝 invalid_payload",
+    "[规划/02 §12.3; contract §2] payload 不带个人数据：SENSITIVE_KEYS 的每个名字（蛇形写法）与 email、name、nickname、address、ip、open_id、union_id，在顶层、嵌套对象、数组里的对象中，去掉下划线后同形的写法（phonenumber、idcard、openid）都拒绝 personal_data",
+    "[contract §2] payload 大小：JSON.stringify 的 UTF-8 字节数 4097（多字节字符按字节计）拒绝 payload_too_large；检查顺序为事务、形状、appId、名字、版本、eventId、payload 合法、个人数据、大小",
+    "[ADR-0001 §4.2 #10 时钟; contract §4] 检查都通过后只读一次时钟；时钟给出的不是合法时刻（NaN、2^48 毫秒、负数、字符串）拒绝 invalid_option，不执行语句（事务只被读过 isTransaction）、不发任务",
+    "[规划/02 §11 消费幂等; contract §8] registerEventConsumer：合法时正好一次 register(\"evt.<consumer>\", 函数) 并返回 undefined、不碰 db；选项不对抛 invalid_option，订阅表不对抛 invalid_subscriptions，消费者不在订阅表抛 unknown_consumer（按此顺序）；register 抛的 QueueError 原样传出",
+    "[contract §8.1] 消费端任务检查：id 不是小写 UUID、任务名不是本消费者订阅的（含别的消费者的）、信封缺键或多键、app_id 不合法、v 越界或非整数、occurred_at 不是毫秒 Z 格式、data 不是普通对象，都拒绝 invalid_event，不碰 db、不调处理器、不写日志",
+    "[规划/02 §11 消费幂等; ADR-0001 §3; contract §8] 端到端：api 发布、worker 消费，每个订阅者的处理器正好被调用一次，收到确切的冻结事件对象与事务；processed_events 正好 (alpha, id)、(beta, id)；副作用各一次；任务 completed；不写日志",
+    "[规划/02 §11 消费幂等; ADR-0001 §3 至少一次投递] 同一任务重复投递（依次三次）：处理器只调用一次、副作用一次、processed_events 一行；后两次直接完成并各写一条 event_duplicate（info，字段正好 consumer、eventId、eventName、attempt）；另一消费者同一 event_id 照常生效",
+    "[规划/02 §11 消费幂等; contract §8.2] 同一任务并发投递两次：第二次等第一次的事务结束后才判定，处理器只调用一次、副作用一次、processed_events 一行，两次都完成，正好一条 event_duplicate",
+    "[规划/02 §11 与副作用同事务写入; contract §8.3] 处理器写了副作用后抛错：整个事务回滚（没有副作用、没有 processed_events 行），任务处理函数以同一个错误对象拒绝；下一次投递成功后正好生效一次；不写日志",
+    "[ADR-0001 §3 至少一次投递; 规划/02 §11 消费幂等] 经真实队列：alpha 第一次失败（已写的副作用回滚）、按队列设置重试后成功，最终副作用正好一次；beta 不受影响；日志只有队列的一条 job_failed，不含负载与错误内容",
+    "[规划/02 §7.1 死信、§11; ADR-0001 §3] 消费者之间互不影响：alpha 每次都失败，按 retryLimit 共 3 次后 failed 并进死信、没有副作用、没有 processed_events 行；beta 一次完成并生效；日志正好两条 job_failed 与一条 job_failed_final，不含负载与错误内容",
+    "[规划/02 §11 消费幂等; 规划/04 §3.2 processed_events] 去重键是 (consumer, event_id)：alpha 已处理过该 event_id 时，经真实队列投递的 alpha 任务不调处理器、直接完成并写一条 event_duplicate；beta 照常处理",
+    "[contract §8 日志] event_duplicate 一行只经 options.logger 本身输出（不用子 logger、不加绑定），字段之外不含负载、app_id 与其他内容",
+    "[规划/02 §11 同事务入队、事件留痕; ADR-0001 §4.2 #10、#16; contract §4、§5] 提交：返回冻结的 { eventId, duplicate: false }，eventId 是 UUIDv7 且毫秒等于时钟；event_log 正好一行、字段确切（payload 为 {v, data}，occurred_at 取时钟而非数据库时间）；每个订阅者正好一个 created 任务、id = event_id；提交前别的连接看不到行与任务；时钟只读一次；不写日志",
+    "[规划/02 §11 同事务入队; ADR-0001 §3] 回滚：业务写入与发布同一事务，事务回滚后没有 event_log 行、没有任何 evt.* 任务、业务行也不在",
+    "[规划/02 §11 按消费者入队; contract §4d、§6] 路由：只订阅者得到任务（order.updated 只给 alpha，member.registered 只给 beta，无人订阅的 order.credited 只留 event_log 行）；调用方给的 eventId 原样用作 event_id 与任务 id；version 写进 payload.v",
+    "[规划/02 §11 任务 ID = event_id; contract §4b] 重复发布同一 event_id：内容相同时（另一事务、时钟已前进，或同一事务再发）返回 duplicate: true，不新增 event_log 行、不新增任务，occurred_at 保持第一次；内容不同（payload、名字、版本、appId）拒绝 event_conflict，什么都不写，事务仍可继续提交",
+    "[规划/02 §11 任务 ID = event_id; contract §4a] 两个事务并发发布同一 event_id：先发布的提交后，后者得到 duplicate: true，最终 event_log 一行、每个订阅者一个任务；先发布的回滚时，后者照常发布（duplicate: false），提交后同样一行、每订阅者一个任务",
+    "[contract §2 检查先于一切] 在真实事务里发布被拒（个人数据、超大、未知事件、非事务）后事务仍可用：之前与之后的业务写入都随提交生效，没有 event_log 行、没有任务",
+    "[contract §2 上界] 边界内的事件照常发布并原样留痕：appId 64 个字符、version 999、payload 正好 4096 字节（含多字节字符、128 码元字符串）、第 3 层嵌套、64 字符键、±(2^53−1)、空对象",
+    "[规划/02 §11 按消费者入队; contract §4d] 订阅者收到的任务确切：每个订阅队列正好一次 { id: event_id, queue, name: 事件名, payload: { app_id, v, occurred_at: 时钟的 ISO 毫秒 Z, data }, attempt: 1 }；无人订阅的事件不投递"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). Domain events written in the business transaction (event_log, one evt.<consumer> job per subscriber with id = event_id), consumer dedup with processed_events in the effect's transaction, EVENT_BUS (规划/02 §11, §18; ADR-0001 §3, §4.2 #16, #22; 04 §3.2). Money does not depend on events; no subscribers in production yet.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "8a77979f0ec7f034d109daf32dd059b2cb7f7dbd",
+      "tree": "610ce3c4fcee667f717737460430323c67c6bcae",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T14:44:00Z",
+      "finished_at": "2026-10-04T14:46:12Z"
+    },
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "07cc40f20d0b46e48cd46471fb3245eae4008927",
+      "tree": "fde0231e8dd3f3211edae851e3ed8c4da097c9da",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T14:50:50Z",
+      "finished_at": "2026-10-04T14:52:58Z"
+    },
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "c4fcc693d211a8e9a66efd56769fd6e20712c4f7",
+      "tree": "803fefdd135028c263e70bef264973719d5b6f5b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T14:56:42Z",
+      "finished_at": "2026-10-04T14:58:19Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent Claude subagent on the implementation; 16 integration rule tests run with Testcontainers (the container verify then stopped at a known timeout fixed by #64); 2 S2 reachable only by misuse or crafted conditions recorded as follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "money review, base = B1-01g head at the time: pass under approvals #18, 2 S2 (parallel publish of one eventId in a single transaction; far-future clock years) recorded as follow-ups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, 0 findings"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "623915d9065b5d1a8e7350c9c36354f58df03077",
+    "apps/api/src/modules/platform/events": "4aea12827f26a6a12926bf472d7f95204fd346a4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 on the B1-01h worktree after rebasing onto main 01b8847, 2026-10-04 22:44 (+08:00); this task adds no property tests",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "severity_bar": "ops/approvals.yaml #18; four S2 from both reviewers are crafted-only and listed as follow-ups",
+  "rebased": "written on top of the unmerged B1-01g branch, rebased onto main after #68 merged; code review diff unchanged; rebased again onto main 3d086c2 (CT-16d) for guard-git, run 3",
+  "follow_ups": "couli-runs/followups/B1-01g-queue-test-gaps.md (B1-01h section); the first consumer must add evt.<consumer> to the queue catalog and worker assignment, which needs a test-change of test/spec/platform/queue/contract.test.ts"
+}
