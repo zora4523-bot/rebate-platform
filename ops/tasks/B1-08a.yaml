@@ -26,5 +26,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/db/orders/**'
-status: todo
-pr: null
+status: done
+pr: 52
