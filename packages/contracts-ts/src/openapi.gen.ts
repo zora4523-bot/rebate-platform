@@ -1322,10 +1322,11 @@ export interface components {
         /**
          * @description Fields shared by the order list row and the order detail. Exactly one of order_no (my own
          *     purchase) and masked_order_no (a shared order); the oneOf branches declare the property
-         *     they require (strict Ajv2020). Open here; OrderSummary and OrderDetail close it with
-         *     unevaluatedProperties: false.
+         *     they require (strict Ajv2020). A shared order with is_other_product=true has title and
+         *     image_url null (BR-TEXT-02 细则「订单的检索范围与分享单的投影」). Not closed here;
+         *     OrderSummary and OrderDetail close it with unevaluatedProperties: false.
          */
-        OrderSummaryFields: ({
+        OrderSummaryFields: {
             order_id: components["schemas"]["Id"];
             platform: components["schemas"]["PlatformCode"];
             title: string | null;
@@ -1341,13 +1342,15 @@ export interface components {
             display_status: components["schemas"]["OrderDisplayStatus"];
             reason: components["schemas"]["OrderReasonCode"] | null;
             est_rebate_fen: components["schemas"]["NullableFen"];
-            /** Format: date-time */
-            paid_at: string;
+            /**
+             * Format: date-time
+             * @description Payment time (the final payment of a pre-sale order); null for a pre-sale order still in
+             *     DEPOSIT_PAID (BR-ATTR-25 keeps paid_at for the final payment).
+             */
+            paid_at: string | null;
             /** @description A shared order whose bought product is not the shared one. */
             is_other_product: boolean;
-        } & {
-            [key: string]: unknown;
-        }) & ({
+        } & ({
             order_no: string;
         } | {
             masked_order_no: string;
@@ -1374,8 +1377,11 @@ export interface components {
             /** @description Expected settlement month (YYYY-MM), only on credit_expected; null otherwise. */
             period: string | null;
         };
-        /** @description The list fields plus the detail fields of 04 §6.4. */
-        OrderDetail: components["schemas"]["OrderSummaryFields"] & ({
+        /**
+         * @description The list fields plus the detail fields of 04 §6.4; product_key is null when
+         *     is_other_product=true (and for any order the rules give no product page, BR-TEXT-02 细则).
+         */
+        OrderDetail: components["schemas"]["OrderSummaryFields"] & {
             product_key: components["schemas"]["ProductKey"] | null;
             /** @description Action codes of the reason (the order_reason dictionary's action[], BR-TEXT-05). */
             reason_action: string[];
@@ -1386,9 +1392,7 @@ export interface components {
             clawback_fen: components["schemas"]["NullableFen"];
             appeal_pending: boolean;
             is_price_compare: boolean | null;
-        } & {
-            [key: string]: unknown;
-        });
+        };
         OrderDetailResponse: {
             code: components["schemas"]["SuccessCode"];
             msg: string;
@@ -2035,6 +2039,11 @@ export interface components {
         IdempotencyKey: components["schemas"]["IdempotencyKey"];
         /** @description Platform code (enum platform). */
         UnionPlatform: components["schemas"]["PlatformCode"];
+        /**
+         * @description link_id of the pending-track card. Unlike other link operations an unknown link, or one that
+         *     does not own the attempt_id in the body, is 20001 with data.fields=[attempt_id] (no 30144).
+         */
+        PendingTrackLinkId: components["schemas"]["Id"];
         /** @description link_id from a card; unknown or of another app → 30144. */
         LinkId: components["schemas"]["Id"];
         /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
@@ -3127,8 +3136,11 @@ export interface operations {
                 "X-Device-Id": components["parameters"]["DeviceId"];
             };
             path: {
-                /** @description link_id from a card; unknown or of another app → 30144. */
-                link_id: components["parameters"]["LinkId"];
+                /**
+                 * @description link_id of the pending-track card. Unlike other link operations an unknown link, or one that
+                 *     does not own the attempt_id in the body, is 20001 with data.fields=[attempt_id] (no 30144).
+                 */
+                link_id: components["parameters"]["PendingTrackLinkId"];
             };
             cookie?: never;
         };

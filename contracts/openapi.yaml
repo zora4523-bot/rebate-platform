@@ -1250,7 +1250,7 @@ paths:
         - $ref: '#/components/parameters/Channel'
         - $ref: '#/components/parameters/TraceId'
         - $ref: '#/components/parameters/DeviceId'
-        - $ref: '#/components/parameters/LinkId'
+        - $ref: '#/components/parameters/PendingTrackLinkId'
       requestBody:
         required: true
         content:
@@ -2147,6 +2147,15 @@ components:
       description: Platform code (enum platform).
       schema:
         $ref: '#/components/schemas/PlatformCode'
+    PendingTrackLinkId:
+      name: link_id
+      in: path
+      required: true
+      description: |
+        link_id of the pending-track card. Unlike other link operations an unknown link, or one that
+        does not own the attempt_id in the body, is 20001 with data.fields=[attempt_id] (no 30144).
+      schema:
+        $ref: '#/components/schemas/Id'
     LinkId:
       name: link_id
       in: path
@@ -3748,9 +3757,9 @@ components:
       description: |
         Fields shared by the order list row and the order detail. Exactly one of order_no (my own
         purchase) and masked_order_no (a shared order); the oneOf branches declare the property
-        they require (strict Ajv2020). Open here; OrderSummary and OrderDetail close it with
-        unevaluatedProperties: false.
-      additionalProperties: true
+        they require (strict Ajv2020). A shared order with is_other_product=true has title and
+        image_url null (BR-TEXT-02 细则「订单的检索范围与分享单的投影」). Not closed here;
+        OrderSummary and OrderDetail close it with unevaluatedProperties: false.
       required:
         - order_id
         - platform
@@ -3800,11 +3809,37 @@ components:
         est_rebate_fen:
           $ref: '#/components/schemas/NullableFen'
         paid_at:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
+          description: |
+            Payment time (the final payment of a pre-sale order); null for a pre-sale order still in
+            DEPOSIT_PAID (BR-ATTR-25 keeps paid_at for the final payment).
         is_other_product:
           type: boolean
           description: A shared order whose bought product is not the shared one.
+      not:
+        type: object
+        additionalProperties: true
+        properties:
+          is_other_product:
+            const: true
+        required:
+          - is_other_product
+        anyOf:
+          - type: object
+            properties:
+              title:
+                type: string
+            required:
+              - title
+          - type: object
+            properties:
+              image_url:
+                type: string
+            required:
+              - image_url
       oneOf:
         - type: object
           properties:
@@ -3880,12 +3915,23 @@ components:
           description: Expected settlement month (YYYY-MM), only on credit_expected; null otherwise.
     OrderDetail:
       type: object
-      description: The list fields plus the detail fields of 04 §6.4.
+      description: |
+        The list fields plus the detail fields of 04 §6.4; product_key is null when
+        is_other_product=true (and for any order the rules give no product page, BR-TEXT-02 细则).
       unevaluatedProperties: false
       allOf:
         - $ref: '#/components/schemas/OrderSummaryFields'
         - type: object
-          additionalProperties: true
+          not:
+            type: object
+            properties:
+              is_other_product:
+                const: true
+              product_key:
+                type: string
+            required:
+              - is_other_product
+              - product_key
           required:
             - product_key
             - reason_action
