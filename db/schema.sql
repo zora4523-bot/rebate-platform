@@ -480,6 +480,76 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: app_versions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.app_versions (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    channel text NOT NULL,
+    latest_version text NOT NULL,
+    min_supported_version text,
+    recommended_version text,
+    update_title text NOT NULL,
+    update_notes text NOT NULL,
+    store_url text NOT NULL,
+    default_store text NOT NULL,
+    store_listings jsonb NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_versions_latest_version_check CHECK ((latest_version ~ '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'::text)),
+    CONSTRAINT app_versions_min_supported_version_check CHECK ((min_supported_version ~ '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'::text)),
+    CONSTRAINT app_versions_platform_check CHECK ((platform = ANY (ARRAY['ios'::text, 'android'::text, 'harmony'::text, 'h5'::text, 'admin'::text]))),
+    CONSTRAINT app_versions_recommended_version_check CHECK ((recommended_version ~ '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'::text)),
+    CONSTRAINT app_versions_store_listings_array_check CHECK ((jsonb_typeof(store_listings) = 'array'::text))
+);
+
+
+--
+-- Name: articles; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.articles (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    category text NOT NULL,
+    title text NOT NULL,
+    body text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    status text NOT NULL,
+    published_at timestamp with time zone,
+    notice_closable boolean NOT NULL,
+    notice_content_version integer DEFAULT 1 NOT NULL,
+    notice_end_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT articles_category_check CHECK ((category = ANY (ARRAY['help'::text, 'rule'::text, 'notice'::text, 'agreement'::text]))),
+    CONSTRAINT articles_notice_content_version_check CHECK ((notice_content_version >= 1)),
+    CONSTRAINT articles_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: config_items; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.config_items (
+    app_id text NOT NULL,
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    updated_by text NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT config_items_version_check CHECK ((version >= 1))
+);
+
+
+--
 -- Name: device_registrations; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1498,6 +1568,38 @@ ALTER TABLE ONLY public.pgmigrations ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: app_versions app_versions_app_platform_channel_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.app_versions
+    ADD CONSTRAINT app_versions_app_platform_channel_key UNIQUE (app_id, platform, channel);
+
+
+--
+-- Name: app_versions app_versions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.app_versions
+    ADD CONSTRAINT app_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: articles articles_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.articles
+    ADD CONSTRAINT articles_pkey PRIMARY KEY (id, version);
+
+
+--
+-- Name: config_items config_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.config_items
+    ADD CONSTRAINT config_items_pkey PRIMARY KEY (app_id, key);
+
+
+--
 -- Name: device_registrations device_registrations_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -1871,6 +1973,13 @@ ALTER TABLE ONLY pgboss.warning
 
 ALTER TABLE ONLY public.pgmigrations
     ADD CONSTRAINT pgmigrations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: articles_app_category_published_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX articles_app_category_published_idx ON app.articles USING btree (app_id, category, status, published_at, id, version);
 
 
 --
@@ -2557,6 +2666,31 @@ REVOKE ALL ON FUNCTION app.reject_order_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_update_delete() FROM PUBLIC;
+
+
+--
+-- Name: TABLE app_versions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.app_versions TO couli_app;
+GRANT SELECT ON TABLE app.app_versions TO couli_readonly;
+
+
+--
+-- Name: TABLE articles; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.articles TO couli_app;
+GRANT SELECT ON TABLE app.articles TO couli_readonly;
+
+
+--
+-- Name: TABLE config_items; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.config_items TO couli_app;
+GRANT SELECT ON TABLE app.config_items TO couli_readonly;
+GRANT SELECT ON TABLE app.config_items TO couli_payout;
 
 
 --

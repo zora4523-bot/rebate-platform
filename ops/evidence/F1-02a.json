@@ -1,0 +1,68 @@
+{
+  "task": "F1-02a",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "3da4955f6ad4bcea86d7224c35baf7ee8c1c22e6",
+  "red_tests": [
+    "[AC-F1-02a#1] app_versions carries the version-check columns of 04 §3.2",
+    "[AC-F1-02a#3] app_versions is unique by (app_id, platform, channel)",
+    "[AC-F1-02a#8] a config key appears once per app"
+  ],
+  "risk_note": "RV2 by path (db/**, packages/db/**). Migration 0010 creates app_versions (store listings, no download address), articles (notice columns) and config_items; seed db/seeds/0001_config-defaults.sql writes 08 default values only (D-7 risk thresholds incl. share.tpwd_rate_per_min, D-8 help_links and derived values excluded). Generated schema.sql and db.gen.ts from pnpm db:snapshot outside the sandbox. Written by hand before the evidence generator exists.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "d77de78b64106399068804bad97c069121383c37",
+      "tree": "edd38f6c2de8e25e630f1d5ba8bc8d95e09474e9",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T14:18:58Z",
+      "finished_at": "2026-10-04T14:20:13Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass, every seeded default checked against 08; S2 notes as followups (couli-runs/F1-02a/followups.md)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass; round 2 (increment: share.tpwd_rate_per_min dropped from the seed by the orchestrator's decision) pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "45 rule tests; round 1 pass (S2 filler values fixed, out-of-scope articles base columns added as #46)"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "469a9144de58532025b6ba28b74379b128179a1f",
+    "packages/db": "2e311014b779262dabe24ca3403a24969e7878f7",
+    "db": "5be0a108c81aa7fb5e32dbdf9f5c6bedc96ced0f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 locally; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "notes": {
+    "rebased": "rule-test commits rebased onto main with the branch; spec_commit is the rebased head of the rule tests"
+  }
+}

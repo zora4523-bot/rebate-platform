@@ -23,6 +23,52 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AppVersions {
+  app_id: string;
+  channel: string;
+  created_at: Generated<Timestamp>;
+  default_store: string;
+  id: string;
+  latest_version: string;
+  min_supported_version: string | null;
+  platform: string;
+  recommended_version: string | null;
+  row_version: Generated<number>;
+  store_listings: Json;
+  store_url: string;
+  update_notes: string;
+  update_title: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Articles {
+  app_id: string;
+  body: string;
+  category: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  notice_closable: boolean;
+  notice_content_version: Generated<number>;
+  notice_end_at: Timestamp | null;
+  published_at: Timestamp | null;
+  row_version: Generated<number>;
+  status: string;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface ConfigItems {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  key: string;
+  row_version: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string;
+  value: Json;
+  version: Generated<number>;
+}
+
 export interface DeviceRegistrations {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -402,6 +448,9 @@ export interface UserTipReads {
 }
 
 export interface DB {
+  app_versions: AppVersions;
+  articles: Articles;
+  config_items: ConfigItems;
   device_registrations: DeviceRegistrations;
   devices: Devices;
   event_log: EventLog;
