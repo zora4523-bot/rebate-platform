@@ -4,11 +4,13 @@
 export { fenToYuan, yuanToFen } from './amount.ts';
 export {
   type ChannelResult,
+  describeResult,
   fetchTransport,
   type HttpRequest,
   type HttpResponse,
   type Transport,
   type UnknownReason,
+  type UnknownResult,
 } from './transport.ts';
 export {
   type AppOrderInput,
@@ -33,7 +35,7 @@ export {
   type AlipayConfig,
   type AlipayRefundInput,
   type AlipayTransferInput,
-  extractJsonNode,
+  topLevelMembers,
 } from './alipay/client.ts';
 export {
   alipaySignContent,

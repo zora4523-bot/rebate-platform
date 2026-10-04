@@ -18,26 +18,53 @@ export interface HttpResponse {
 export type Transport = (req: HttpRequest) => Promise<HttpResponse>;
 
 /**
- * - `ok`: the channel answered and the answer passed signature verification.
- * - `rejected`: the channel answered with a business error code. Whether that code means the money
- *   definitely did not move is decided by the caller's verified code lists (BR-WDR-28, BR-PAY-04),
- *   never here.
- * - `unknown`: timeout, transport error, 5xx, throttling, unverifiable or unparsable answer. The
- *   caller must only query, never resend a transfer (BR-WDR-14).
+ * - `ok`: the channel answered, the answer passed verification (signature, key identity,
+ *   freshness) and has the fields this call requires. It means "this is what the channel says",
+ *   not "the money moved": read the state fields in `data`.
+ * - `rejected`: a verified answer carrying a business error code that is not one of the codes the
+ *   channel documents as "still processing / cannot tell". Whether the code proves that no money
+ *   moved is still decided by the caller's verified code lists (BR-WDR-28, BR-PAY-04).
+ * - `unknown`: anything else — timeout, transport error, 5xx, throttling, an answer that cannot
+ *   be verified (including every unsigned error), an unexpected shape, or a documented
+ *   indeterminate code (`reason: 'indeterminate'`, with the code in `code`). The caller must only
+ *   query, never resend a transfer (BR-WDR-14).
+ *
+ * `data` and `message` come from the channel and may hold personal data (openid, account ids,
+ * names). Never log or return them as a whole; use `describeResult` for logs.
  */
 export type ChannelResult<T> =
-  | { readonly kind: 'ok'; readonly data: T; readonly raw: string }
+  | { readonly kind: 'ok'; readonly data: T }
   | {
       readonly kind: 'rejected';
       readonly code: string;
       readonly message: string;
       readonly httpStatus: number;
-      readonly raw: string;
     }
-  | { readonly kind: 'unknown'; readonly reason: UnknownReason; readonly detail: string };
+  | UnknownResult;
+
+export interface UnknownResult {
+  readonly kind: 'unknown';
+  readonly reason: UnknownReason;
+  readonly detail: string;
+  /** Channel code when one was readable. Diagnostic only: it may come from an unverified answer. */
+  readonly code?: string;
+}
 
 export type UnknownReason =
-  'timeout' | 'transport' | 'http_5xx' | 'throttled' | 'bad_signature' | 'bad_body';
+  | 'timeout'
+  | 'transport'
+  | 'http_5xx'
+  | 'throttled'
+  | 'bad_signature'
+  | 'bad_body'
+  | 'indeterminate';
+
+/** Log-safe summary: no channel payload, no free-text message. */
+export function describeResult(r: ChannelResult<unknown>): string {
+  if (r.kind === 'ok') return 'ok';
+  if (r.kind === 'rejected') return `rejected code=${r.code} http=${String(r.httpStatus)}`;
+  return `unknown reason=${r.reason} detail=${r.detail}${r.code === undefined ? '' : ` code=${r.code}`}`;
+}
 
 /** Default transport on the global fetch. One attempt, no retries, no redirects. */
 export const fetchTransport: Transport = async (req) => {
@@ -60,10 +87,7 @@ export const fetchTransport: Transport = async (req) => {
 export async function send(
   transport: Transport,
   req: HttpRequest,
-): Promise<
-  | HttpResponse
-  | { readonly kind: 'unknown'; readonly reason: UnknownReason; readonly detail: string }
-> {
+): Promise<HttpResponse | UnknownResult> {
   try {
     return await transport(req);
   } catch (err) {

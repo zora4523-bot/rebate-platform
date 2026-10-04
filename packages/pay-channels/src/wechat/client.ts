@@ -2,7 +2,13 @@
 // One HTTP attempt per call; no retries here. Amounts are integers of fen.
 import { randomBytes } from 'node:crypto';
 
-import { type ChannelResult, fetchTransport, send, type Transport } from '../transport.ts';
+import {
+  type ChannelResult,
+  fetchTransport,
+  send,
+  type Transport,
+  type UnknownResult,
+} from '../transport.ts';
 import {
   decryptWechatResource,
   type EncryptedResource,
@@ -89,6 +95,31 @@ type Json = Record<string, unknown>;
 
 const MAX_CLOCK_SKEW_SECONDS = 300;
 
+/**
+ * Codes the docs describe as "cannot tell yet": the request may have been or may still be
+ * executed, or the bill may not be visible yet. Never a definite failure.
+ */
+const INDETERMINATE_CODES = new Set([
+  'SYSTEM_ERROR',
+  'ALREADY_EXISTS',
+  'OUT_TRADE_NO_USED',
+  'FREQUENCY_LIMIT_EXCEED',
+  'RATELIMIT_EXCEEDED',
+  'FREQUENCY_LIMIT',
+  'NOT_FOUND',
+  'ORDER_NOT_EXIST',
+]);
+
+/** What a successful answer of one call must look like. */
+interface Expect {
+  readonly status: number;
+  /** String fields that must be present and non-empty; empty list with status 204 = empty body. */
+  readonly required: readonly string[];
+}
+
+const BILL: Expect = { status: 200, required: ['out_bill_no', 'state'] };
+const REFUND: Expect = { status: 200, required: ['out_refund_no', 'status'] };
+
 export class WechatPayClient {
   readonly #c: WechatPayConfig;
   readonly #base: string;
@@ -117,7 +148,12 @@ export class WechatPayClient {
       amount: { total: i.totalFen, currency: 'CNY' },
     };
     if (i.timeExpire !== undefined) body['time_expire'] = i.timeExpire;
-    return this.#call('POST', '/v3/pay/transactions/app', body);
+    return this.#call(
+      'POST',
+      '/v3/pay/transactions/app',
+      { status: 200, required: ['prepay_id'] },
+      body,
+    );
   }
 
   /** Launch parameters for the native SDK. Signed here; the private key never leaves the server. */
@@ -143,13 +179,13 @@ export class WechatPayClient {
 
   queryOrder(outTradeNo: string): Promise<ChannelResult<Json>> {
     const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}?mchid=${encodeURIComponent(this.#c.mchid)}`;
-    return this.#call('GET', path);
+    return this.#call('GET', path, { status: 200, required: ['out_trade_no', 'trade_state'] });
   }
 
-  /** 204 on success. */
+  /** 204 with an empty body on success. */
   closeOrder(outTradeNo: string): Promise<ChannelResult<Json>> {
     const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}/close`;
-    return this.#call('POST', path, { mchid: this.#c.mchid });
+    return this.#call('POST', path, { status: 204, required: [] }, { mchid: this.#c.mchid });
   }
 
   refund(i: RefundInput): Promise<ChannelResult<Json>> {
@@ -162,11 +198,15 @@ export class WechatPayClient {
     };
     if (i.reason !== undefined) body['reason'] = i.reason;
     if (i.notifyUrl !== undefined) body['notify_url'] = i.notifyUrl;
-    return this.#call('POST', '/v3/refund/domestic/refunds', body);
+    return this.#call('POST', '/v3/refund/domestic/refunds', REFUND, body);
   }
 
   queryRefund(outRefundNo: string): Promise<ChannelResult<Json>> {
-    return this.#call('GET', `/v3/refund/domestic/refunds/${encodeURIComponent(outRefundNo)}`);
+    return this.#call(
+      'GET',
+      `/v3/refund/domestic/refunds/${encodeURIComponent(outRefundNo)}`,
+      REFUND,
+    );
   }
 
   // ---- payout: merchant transfer to balance
@@ -185,20 +225,19 @@ export class WechatPayClient {
         info_content: r.infoContent,
       })),
     };
-    const extraHeaders: Record<string, string> = {};
     if (i.userName !== undefined) {
       body['user_name'] = encryptSensitive(this.#c.platformPublicKeyPem, i.userName);
-      extraHeaders['Wechatpay-Serial'] = this.#c.platformPublicKeyId;
     }
     if (i.notifyUrl !== undefined) body['notify_url'] = i.notifyUrl;
     if (i.userRecvPerception !== undefined) body['user_recv_perception'] = i.userRecvPerception;
-    return this.#call('POST', '/v3/fund-app/mch-transfer/transfer-bills', body, extraHeaders);
+    return this.#call('POST', '/v3/fund-app/mch-transfer/transfer-bills', BILL, body);
   }
 
   queryTransfer(outBillNo: string): Promise<ChannelResult<Json>> {
     return this.#call(
       'GET',
       `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${encodeURIComponent(outBillNo)}`,
+      BILL,
     );
   }
 
@@ -206,6 +245,7 @@ export class WechatPayClient {
     return this.#call(
       'POST',
       `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${encodeURIComponent(outBillNo)}/cancel`,
+      BILL,
     );
   }
 
@@ -227,25 +267,8 @@ export class WechatPayClient {
     headers: Readonly<Record<string, string>>,
     rawBody: string,
   ): NotificationResult {
-    const timestamp = headers['wechatpay-timestamp'] ?? '';
-    const nonce = headers['wechatpay-nonce'] ?? '';
-    const signature = headers['wechatpay-signature'] ?? '';
-    const serial = headers['wechatpay-serial'] ?? '';
-    if (
-      !/^\d{1,12}$/.test(timestamp) ||
-      Math.abs(this.#now() - Number(timestamp)) > MAX_CLOCK_SKEW_SECONDS
-    ) {
-      return { ok: false, reason: 'stale' };
-    }
-    if (serial !== this.#c.platformPublicKeyId) return { ok: false, reason: 'wrong_key_id' };
-    const verified = verifyWechatSignature({
-      publicKeyPem: this.#c.platformPublicKeyPem,
-      timestamp,
-      nonce,
-      body: rawBody,
-      signature,
-    });
-    if (!verified) return { ok: false, reason: 'bad_signature' };
+    const failure = this.#verifyEnvelope(headers, rawBody);
+    if (failure !== undefined) return { ok: false, reason: failure };
     try {
       const outer = JSON.parse(rawBody) as {
         id?: unknown;
@@ -265,11 +288,41 @@ export class WechatPayClient {
 
   // ---- internals
 
+  /**
+   * Signature, key identity and freshness of a response or notification. Every header must be
+   * present. Returns the failure, or `undefined` when the envelope is trustworthy.
+   */
+  #verifyEnvelope(
+    headers: Readonly<Record<string, string>>,
+    body: string,
+  ): 'stale' | 'wrong_key_id' | 'bad_signature' | undefined {
+    const timestamp = headers['wechatpay-timestamp'] ?? '';
+    const nonce = headers['wechatpay-nonce'] ?? '';
+    const signature = headers['wechatpay-signature'] ?? '';
+    const serial = headers['wechatpay-serial'] ?? '';
+    if (nonce === '' || signature === '') return 'bad_signature';
+    if (
+      !/^\d{1,12}$/.test(timestamp) ||
+      Math.abs(this.#now() - Number(timestamp)) > MAX_CLOCK_SKEW_SECONDS
+    ) {
+      return 'stale';
+    }
+    if (serial !== this.#c.platformPublicKeyId) return 'wrong_key_id';
+    const verified = verifyWechatSignature({
+      publicKeyPem: this.#c.platformPublicKeyPem,
+      timestamp,
+      nonce,
+      body,
+      signature,
+    });
+    return verified ? undefined : 'bad_signature';
+  }
+
   async #call<T>(
     method: 'GET' | 'POST',
     pathWithQuery: string,
+    expect: Expect,
     body?: Json,
-    extraHeaders: Readonly<Record<string, string>> = {},
   ): Promise<ChannelResult<T>> {
     const bodyText = body === undefined ? '' : JSON.stringify(body);
     const authorization = wechatAuthorization({
@@ -286,7 +339,9 @@ export class WechatPayClient {
       Authorization: authorization,
       Accept: 'application/json',
       'User-Agent': 'couli-pay-channels',
-      ...extraHeaders,
+      // Tells WeChat Pay to sign the answer with this public key (and names the key used to
+      // encrypt sensitive fields). Sent on every request, not only on those with encrypted fields.
+      'Wechatpay-Serial': this.#c.platformPublicKeyId,
     };
     if (method === 'POST') headers['Content-Type'] = 'application/json';
     const req = {
@@ -299,43 +354,60 @@ export class WechatPayClient {
     const res = await send(this.#transport, req);
     if ('kind' in res) return res;
 
-    if (res.status >= 500)
-      return { kind: 'unknown', reason: 'http_5xx', detail: String(res.status) };
-    if (res.status === 429) return { kind: 'unknown', reason: 'throttled', detail: '429' };
+    const status = String(res.status);
+    if (res.status >= 500) return { kind: 'unknown', reason: 'http_5xx', detail: status };
+    if (res.status === 429) return { kind: 'unknown', reason: 'throttled', detail: status };
+
+    const parsed = parseObject(res.body);
+    const code = typeof parsed?.['code'] === 'string' ? parsed['code'] : undefined;
+
+    // Nothing below is trusted unless the envelope verifies: an error code alone proves neither
+    // who sent the answer nor that the request was not executed.
+    const failure = this.#verifyEnvelope(res.headers, res.body);
+    if (failure !== undefined) {
+      return unknown('bad_signature', `${status} ${failure}`, code);
+    }
 
     if (res.status >= 200 && res.status < 300) {
-      const verified = verifyWechatSignature({
-        publicKeyPem: this.#c.platformPublicKeyPem,
-        timestamp: res.headers['wechatpay-timestamp'] ?? '',
-        nonce: res.headers['wechatpay-nonce'] ?? '',
-        body: res.body,
-        signature: res.headers['wechatpay-signature'] ?? '',
-      });
-      if (!verified)
-        return { kind: 'unknown', reason: 'bad_signature', detail: String(res.status) };
-      if (res.body === '') return { kind: 'ok', data: {} as T, raw: '' };
-      try {
-        return { kind: 'ok', data: JSON.parse(res.body) as T, raw: res.body };
-      } catch {
-        return { kind: 'unknown', reason: 'bad_body', detail: String(res.status) };
+      if (res.status !== expect.status) return unknown('bad_body', `${status} unexpected status`);
+      if (expect.status === 204) {
+        return res.body === ''
+          ? { kind: 'ok', data: {} as T }
+          : unknown('bad_body', `${status} body not empty`);
       }
+      if (parsed === undefined) return unknown('bad_body', `${status} not an object`);
+      for (const field of expect.required) {
+        const v = parsed[field];
+        if (typeof v !== 'string' || v === '')
+          return unknown('bad_body', `${status} missing ${field}`);
+      }
+      return { kind: 'ok', data: parsed as T };
     }
 
-    try {
-      const err = JSON.parse(res.body) as { code?: unknown; message?: unknown };
-      if (typeof err.code === 'string') {
-        return {
-          kind: 'rejected',
-          code: err.code,
-          message: typeof err.message === 'string' ? err.message : '',
-          httpStatus: res.status,
-          raw: res.body,
-        };
-      }
-    } catch {
-      // fall through
-    }
-    return { kind: 'unknown', reason: 'bad_body', detail: String(res.status) };
+    if (code === undefined || code === '') return unknown('bad_body', `${status} no code`);
+    if (INDETERMINATE_CODES.has(code)) return unknown('indeterminate', status, code);
+    return {
+      kind: 'rejected',
+      code,
+      message: typeof parsed?.['message'] === 'string' ? parsed['message'] : '',
+      httpStatus: res.status,
+    };
+  }
+}
+
+function unknown(reason: UnknownResult['reason'], detail: string, code?: string): UnknownResult {
+  return code === undefined
+    ? { kind: 'unknown', reason, detail }
+    : { kind: 'unknown', reason, detail, code };
+}
+
+/** Parses a JSON object; anything else (null, array, primitive, invalid JSON) is `undefined`. */
+function parseObject(text: string): Json | undefined {
+  try {
+    const v: unknown = JSON.parse(text);
+    return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Json) : undefined;
+  } catch {
+    return undefined;
   }
 }
 

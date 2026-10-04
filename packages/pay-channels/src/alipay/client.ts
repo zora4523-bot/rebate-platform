@@ -1,7 +1,13 @@
 // Alipay OpenAPI client (certificate mode): APP pay (collect) and transfer to an Alipay account
 // (payout). One HTTP attempt per call; no retries here. Amounts are integers of fen.
 import { fenToYuan } from '../amount.ts';
-import { type ChannelResult, fetchTransport, send, type Transport } from '../transport.ts';
+import {
+  type ChannelResult,
+  fetchTransport,
+  send,
+  type Transport,
+  type UnknownResult,
+} from '../transport.ts';
 import { alipaySignContent, alipayTimestamp, rsa2Sign, rsa2Verify } from './crypto.ts';
 
 export interface AlipayConfig {
@@ -13,6 +19,8 @@ export interface AlipayConfig {
   readonly alipayRootCertSn: string;
   /** From `publicKeyFromCert(alipayCertPublicKey)`. */
   readonly alipayPublicKeyPem: string;
+  /** From `certSn(alipayCertPublicKey)`: answers signed under any other certificate are not trusted. */
+  readonly alipayCertSn: string;
   readonly gateway?: string;
   readonly timeoutMs?: number;
   readonly transport?: Transport;
@@ -56,15 +64,21 @@ export interface AlipayTransferInput {
 
 type Json = Record<string, unknown>;
 
-/** Gateway-level refusals that may arrive unsigned: the request was never accepted. */
-const UNSIGNED_REFUSALS = new Set(['40001', '40002', '40003', '40006']);
-/** Answers that do not tell whether the operation happened. */
-const UNKNOWN_CODES = new Set(['20000']);
-const UNKNOWN_SUB_CODES = new Set([
+/**
+ * Codes the docs describe as "cannot tell yet": still processing, system error, or a bill that is
+ * not visible (which the transfer-query doc says may simply mean "still processing").
+ */
+const INDETERMINATE_CODES = new Set(['20000']);
+const INDETERMINATE_SUB_CODES = new Set([
   'SYSTEM_ERROR',
   'ACQ.SYSTEM_ERROR',
   'aop.unknow-error',
   'isp.unknow-error',
+  'REQUEST_PROCESSING',
+  'TRANS_ORDER_DEALING',
+  'PROMO_TRANS_ORDER_DEALING',
+  'ORDER_NOT_EXIST',
+  'ACQ.TRADE_NOT_EXIST',
 ]);
 
 const DEFAULT_PRODUCT_CODE = 'TRANS_ACCOUNT_NO_PWD';
@@ -105,11 +119,14 @@ export class AlipayClient {
   }
 
   tradeQuery(outTradeNo: string): Promise<ChannelResult<Json>> {
-    return this.#call('alipay.trade.query', { out_trade_no: outTradeNo });
+    return this.#call('alipay.trade.query', { out_trade_no: outTradeNo }, [
+      'out_trade_no',
+      'trade_status',
+    ]);
   }
 
   tradeClose(outTradeNo: string): Promise<ChannelResult<Json>> {
-    return this.#call('alipay.trade.close', { out_trade_no: outTradeNo });
+    return this.#call('alipay.trade.close', { out_trade_no: outTradeNo }, ['out_trade_no']);
   }
 
   tradeRefund(i: AlipayRefundInput): Promise<ChannelResult<Json>> {
@@ -119,14 +136,17 @@ export class AlipayClient {
       refund_amount: fenToYuan(positiveFen(i.refundFen)),
     };
     if (i.reason !== undefined) biz['refund_reason'] = i.reason;
-    return this.#call('alipay.trade.refund', biz);
+    return this.#call('alipay.trade.refund', biz, ['out_trade_no', 'refund_fee']);
   }
 
   refundQuery(outTradeNo: string, outRequestNo: string): Promise<ChannelResult<Json>> {
-    return this.#call('alipay.trade.fastpay.refund.query', {
-      out_trade_no: outTradeNo,
-      out_request_no: outRequestNo,
-    });
+    // The doc notes that a refund which does not exist answers 10000 with no refund fields, so
+    // nothing is required here: the caller reads `refund_status` / `refund_amount` itself.
+    return this.#call(
+      'alipay.trade.fastpay.refund.query',
+      { out_trade_no: outTradeNo, out_request_no: outRequestNo },
+      [],
+    );
   }
 
   // ---- payout: transfer to an Alipay account
@@ -148,7 +168,7 @@ export class AlipayClient {
         info_content: r.infoContent,
       }));
     }
-    return this.#call('alipay.fund.trans.uni.transfer', biz);
+    return this.#call('alipay.fund.trans.uni.transfer', biz, ['out_biz_no', 'status']);
   }
 
   transferQuery(
@@ -156,11 +176,15 @@ export class AlipayClient {
     productCode?: string,
     bizScene?: string,
   ): Promise<ChannelResult<Json>> {
-    return this.#call('alipay.fund.trans.common.query', {
-      out_biz_no: outBizNo,
-      product_code: productCode ?? DEFAULT_PRODUCT_CODE,
-      biz_scene: bizScene ?? DEFAULT_BIZ_SCENE,
-    });
+    return this.#call(
+      'alipay.fund.trans.common.query',
+      {
+        out_biz_no: outBizNo,
+        product_code: productCode ?? DEFAULT_PRODUCT_CODE,
+        biz_scene: bizScene ?? DEFAULT_BIZ_SCENE,
+      },
+      ['status'],
+    );
   }
 
   // ---- notifications
@@ -200,82 +224,187 @@ export class AlipayClient {
     return params;
   }
 
-  async #call(method: string, biz: Json): Promise<ChannelResult<Json>> {
+  async #call(
+    method: string,
+    biz: Json,
+    required: readonly string[],
+  ): Promise<ChannelResult<Json>> {
     const params = this.#signedParams(method, biz);
+    // Public parameters travel in the query string, the business payload in the form body; the
+    // signature covers both.
+    const { biz_content: bizContent, ...publicParams } = params;
     const res = await send(this.#transport, {
       method: 'POST',
-      url: this.#gateway,
+      url: `${this.#gateway}?${new URLSearchParams(publicParams).toString()}`,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
-      body: new URLSearchParams(params).toString(),
+      body: new URLSearchParams({ biz_content: bizContent ?? '' }).toString(),
       timeoutMs: this.#c.timeoutMs ?? 10_000,
     });
     if ('kind' in res) return res;
-    if (res.status >= 500)
-      return { kind: 'unknown', reason: 'http_5xx', detail: String(res.status) };
-    if (res.status !== 200)
-      return { kind: 'unknown', reason: 'bad_body', detail: String(res.status) };
+    const status = String(res.status);
+    if (res.status >= 500) return { kind: 'unknown', reason: 'http_5xx', detail: status };
+    if (res.status !== 200) return unknown('bad_body', status);
 
+    const members = topLevelMembers(res.body);
+    if (members === undefined) return unknown('bad_body', 'not a JSON object');
     const nodeKey = `${method.replaceAll('.', '_')}_response`;
-    const nodeRaw =
-      extractJsonNode(res.body, nodeKey) ?? extractJsonNode(res.body, 'error_response');
-    let outer: Json;
+    const one = (key: string): string | undefined => {
+      const hits = members.filter((m) => m.key === key);
+      return hits.length === 1 ? hits[0]?.raw : undefined;
+    };
+    const count = (key: string): number => members.filter((m) => m.key === key).length;
+
+    // Readable code for diagnostics only; nothing is trusted before the signature check.
+    const errorRaw = one('error_response');
+    const nodeRaw = one(nodeKey);
+    const hint = diagnosticCode(nodeRaw ?? errorRaw);
+
+    if (count(nodeKey) !== 1 || count('error_response') !== 0 || count('sign') !== 1) {
+      return unknown('bad_signature', 'missing, duplicated or conflicting response members', hint);
+    }
+    if (nodeRaw === undefined || !nodeRaw.startsWith('{'))
+      return unknown('bad_body', 'response node is not an object', hint);
+    const signature = parseString(one('sign'));
+    const certSnValue = parseString(one('alipay_cert_sn'));
+    if (signature === undefined || signature === '')
+      return unknown('bad_signature', 'no signature', hint);
+    if (certSnValue !== this.#c.alipayCertSn)
+      return unknown('bad_signature', 'certificate serial mismatch', hint);
+    if (!rsa2Verify(nodeRaw, signature, this.#c.alipayPublicKeyPem)) {
+      return unknown('bad_signature', 'signature mismatch', hint);
+    }
+
     let node: Json;
     try {
-      outer = JSON.parse(res.body) as Json;
-      if (nodeRaw === undefined) throw new Error('no response node');
       node = JSON.parse(nodeRaw) as Json;
     } catch {
-      return { kind: 'unknown', reason: 'bad_body', detail: '200' };
+      return unknown('bad_body', 'response node is not valid JSON');
     }
     const code = typeof node['code'] === 'string' ? node['code'] : '';
     const subCode = typeof node['sub_code'] === 'string' ? node['sub_code'] : '';
-    const signature = typeof outer['sign'] === 'string' ? outer['sign'] : '';
-    const verified = signature !== '' && rsa2Verify(nodeRaw, signature, this.#c.alipayPublicKeyPem);
+    if (code === '') return unknown('bad_body', 'no code');
+    const shown = subCode === '' ? code : subCode;
 
-    if (!verified && !(signature === '' && UNSIGNED_REFUSALS.has(code))) {
-      return { kind: 'unknown', reason: 'bad_signature', detail: code };
+    if (code === '10000') {
+      if (subCode !== '') return unknown('bad_body', 'success code with a sub_code', shown);
+      for (const field of required) {
+        const v = node[field];
+        if (typeof v !== 'string' || v === '') return unknown('bad_body', `missing ${field}`);
+      }
+      return { kind: 'ok', data: node };
     }
-    if (code === '10000') return { kind: 'ok', data: node, raw: res.body };
-    if (UNKNOWN_CODES.has(code) || UNKNOWN_SUB_CODES.has(subCode)) {
-      return { kind: 'unknown', reason: 'http_5xx', detail: subCode === '' ? code : subCode };
+    if (INDETERMINATE_CODES.has(code) || INDETERMINATE_SUB_CODES.has(subCode)) {
+      return unknown('indeterminate', code, shown);
     }
     const message =
       typeof node['sub_msg'] === 'string' ? node['sub_msg'] : String(node['msg'] ?? '');
-    return {
-      kind: 'rejected',
-      code: subCode === '' ? code : subCode,
-      message,
-      httpStatus: 200,
-      raw: res.body,
-    };
+    return { kind: 'rejected', code: shown, message, httpStatus: 200 };
   }
 }
 
-/**
- * Returns the exact text of the JSON object stored under a top-level key. The response signature
- * covers this text byte for byte, so it must not be re-serialised.
- */
-export function extractJsonNode(raw: string, key: string): string | undefined {
-  const marker = `"${key}":`;
-  const at = raw.indexOf(marker);
-  if (at < 0) return undefined;
-  const start = raw.indexOf('{', at + marker.length);
-  if (start < 0) return undefined;
-  let depth = 0;
-  let inString = false;
-  for (let i = start; i < raw.length; i += 1) {
-    const ch = raw[i];
-    if (inString) {
-      if (ch === '\\') i += 1;
-      else if (ch === '"') inString = false;
-    } else if (ch === '"') inString = true;
-    else if (ch === '{') depth += 1;
-    else if (ch === '}') {
-      depth -= 1;
-      if (depth === 0) return raw.slice(start, i + 1);
-    }
+function unknown(reason: UnknownResult['reason'], detail: string, code?: string): UnknownResult {
+  return code === undefined
+    ? { kind: 'unknown', reason, detail }
+    : { kind: 'unknown', reason, detail, code };
+}
+
+function parseString(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  try {
+    const v: unknown = JSON.parse(raw);
+    return typeof v === 'string' ? v : undefined;
+  } catch {
+    return undefined;
   }
-  return undefined;
+}
+
+function diagnosticCode(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  try {
+    const v = JSON.parse(raw) as { code?: unknown; sub_code?: unknown } | null;
+    if (v === null || typeof v !== 'object') return undefined;
+    if (typeof v.sub_code === 'string' && v.sub_code !== '') return v.sub_code;
+    return typeof v.code === 'string' && v.code !== '' ? v.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export interface TopLevelMember {
+  readonly key: string;
+  /** Exact text of the value. The response signature covers this text byte for byte. */
+  readonly raw: string;
+}
+
+/**
+ * Splits a JSON object into its top-level members without re-serialising anything. Nested keys
+ * are never returned, duplicate keys are all returned (the caller rejects them), and whitespace
+ * around tokens is tolerated. Returns `undefined` when the text is not a single JSON object.
+ */
+export function topLevelMembers(text: string): TopLevelMember[] | undefined {
+  const ws = (i: number): number => {
+    let j = i;
+    while (j < text.length && ' \t\r\n'.includes(text[j] ?? '')) j += 1;
+    return j;
+  };
+  const stringEnd = (i: number): number => {
+    // text[i] is the opening quote; returns the index just past the closing quote, or -1.
+    for (let j = i + 1; j < text.length; j += 1) {
+      const ch = text[j];
+      if (ch === '\\') j += 1;
+      else if (ch === '"') return j + 1;
+    }
+    return -1;
+  };
+  const valueEnd = (i: number): number => {
+    const ch = text[i];
+    if (ch === '"') return stringEnd(i);
+    if (ch === '{' || ch === '[') {
+      let depth = 0;
+      for (let j = i; j < text.length; j += 1) {
+        const c = text[j];
+        if (c === '"') {
+          const end = stringEnd(j);
+          if (end < 0) return -1;
+          j = end - 1;
+        } else if (c === '{' || c === '[') depth += 1;
+        else if (c === '}' || c === ']') {
+          depth -= 1;
+          if (depth === 0) return j + 1;
+        }
+      }
+      return -1;
+    }
+    let j = i;
+    while (j < text.length && !',} \t\r\n'.includes(text[j] ?? '')) j += 1;
+    return j > i ? j : -1;
+  };
+
+  let i = ws(0);
+  if (text[i] !== '{') return undefined;
+  i = ws(i + 1);
+  const out: TopLevelMember[] = [];
+  if (text[i] === '}') return ws(i + 1) === text.length ? out : undefined;
+  for (;;) {
+    if (text[i] !== '"') return undefined;
+    const keyEnd = stringEnd(i);
+    if (keyEnd < 0) return undefined;
+    const key = parseString(text.slice(i, keyEnd));
+    if (key === undefined) return undefined;
+    i = ws(keyEnd);
+    if (text[i] !== ':') return undefined;
+    i = ws(i + 1);
+    const end = valueEnd(i);
+    if (end < 0) return undefined;
+    out.push({ key, raw: text.slice(i, end) });
+    i = ws(end);
+    if (text[i] === ',') {
+      i = ws(i + 1);
+      continue;
+    }
+    if (text[i] === '}') return ws(i + 1) === text.length ? out : undefined;
+    return undefined;
+  }
 }
 
 function positiveFen(n: number): number {

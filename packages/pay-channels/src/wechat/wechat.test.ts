@@ -41,8 +41,8 @@ function platformSign(timestamp: string, nonce: string, body: string): string {
     .sign(platform.privateKey, 'base64');
 }
 
-function signedResponse(status: number, body: string): HttpResponse {
-  const timestamp = String(NOW);
+function signedResponse(status: number, body: string, at: number = NOW): HttpResponse {
+  const timestamp = String(at);
   return {
     status,
     headers: {
@@ -138,6 +138,19 @@ describe('wechat pay primitives', () => {
 });
 
 describe('wechat pay client', () => {
+  const transferInput = {
+    outBillNo: 'W1',
+    transferSceneId: '1005',
+    openid: 'o1',
+    amountFen: 100,
+    remark: 'r',
+    sceneReportInfos: [],
+  };
+  const answer =
+    (res: HttpResponse): Transport =>
+    () =>
+      Promise.resolve(res);
+
   it('creates an APP order and returns verified data', async () => {
     const seen: HttpRequest[] = [];
     const c = client((req) => {
@@ -152,14 +165,27 @@ describe('wechat pay client', () => {
       totalFen: 1,
       notifyUrl: 'https://example.test/notify/pay/wechat',
     });
-    expect(r).toMatchObject({
-      kind: 'ok',
-      data: { prepay_id: 'wx201410272009395522657a690389285100' },
-    });
+    expect(r).toEqual({ kind: 'ok', data: { prepay_id: 'wx201410272009395522657a690389285100' } });
     const sent = JSON.parse(seen[0]?.body ?? '{}') as { amount: { total: number }; mchid: string };
     expect(sent.amount.total).toBe(1);
     expect(sent.mchid).toBe('1900000001');
     expect(seen[0]?.url).toBe('https://api.mch.weixin.qq.com/v3/pay/transactions/app');
+  });
+
+  it('names the public key id on every request, with or without encrypted fields', async () => {
+    const seen: HttpRequest[] = [];
+    const c = client((req) => {
+      seen.push(req);
+      return Promise.resolve(signedResponse(204, ''));
+    });
+    await c.closeOrder('P1');
+    await c.queryOrder('P1');
+    await c.createTransfer(transferInput);
+    expect(seen.map((r) => r.headers['Wechatpay-Serial'])).toEqual([
+      'PUB_KEY_ID_TEST',
+      'PUB_KEY_ID_TEST',
+      'PUB_KEY_ID_TEST',
+    ]);
   });
 
   it('signs launch parameters with the documented message', () => {
@@ -176,66 +202,165 @@ describe('wechat pay client', () => {
   });
 
   it('treats an unverifiable 2xx answer as unknown, never as success', async () => {
-    const c = client(() =>
-      Promise.resolve({ ...signedResponse(200, '{"state":"SUCCESS"}'), body: '{"state":"FAIL"}' }),
-    );
-    expect(await c.queryTransfer('W1')).toEqual({
+    const tampered = {
+      ...signedResponse(200, '{"out_bill_no":"W1","state":"SUCCESS"}'),
+      body: '{"out_bill_no":"W1","state":"FAIL"}',
+    };
+    expect(await client(answer(tampered)).queryTransfer('W1')).toMatchObject({
       kind: 'unknown',
       reason: 'bad_signature',
-      detail: '200',
     });
   });
 
-  it('maps business errors, 5xx, throttling and timeouts', async () => {
-    const rejected = await client(() =>
-      Promise.resolve({ status: 400, headers: {}, body: '{"code":"PARAM_ERROR","message":"bad"}' }),
-    ).closeOrder('P1');
-    expect(rejected).toMatchObject({ kind: 'rejected', code: 'PARAM_ERROR', httpStatus: 400 });
-    const fiveXx = await client(() =>
-      Promise.resolve({ status: 500, headers: {}, body: '{"code":"SYSTEM_ERROR"}' }),
-    ).queryOrder('P1');
-    expect(fiveXx).toEqual({ kind: 'unknown', reason: 'http_5xx', detail: '500' });
-    const throttled = await client(() =>
-      Promise.resolve({ status: 429, headers: {}, body: '' }),
-    ).queryOrder('P1');
-    expect(throttled).toEqual({ kind: 'unknown', reason: 'throttled', detail: '429' });
+  it('refuses stale, future, foreign-key and header-less answers even when the signature is valid', async () => {
+    const body = '{"out_bill_no":"W1","state":"SUCCESS"}';
+    const fresh = signedResponse(200, body);
+    const cases: [string, HttpResponse][] = [
+      ['a day old', signedResponse(200, body, NOW - 86_400)],
+      ['from the future', signedResponse(200, body, NOW + 3_600)],
+      [
+        'other key id',
+        { ...fresh, headers: { ...fresh.headers, 'wechatpay-serial': 'PUB_KEY_ID_OTHER' } },
+      ],
+      ['no key id', { ...fresh, headers: { ...fresh.headers, 'wechatpay-serial': '' } }],
+      ['no signature headers', { status: 200, headers: {}, body }],
+    ];
+    for (const [name, res] of cases) {
+      expect(await client(answer(res)).queryTransfer('W1'), name).toMatchObject({
+        kind: 'unknown',
+        reason: 'bad_signature',
+      });
+    }
+    expect(await client(answer(fresh)).queryTransfer('W1')).toMatchObject({
+      kind: 'ok',
+      data: { state: 'SUCCESS' },
+    });
+  });
+
+  it('never turns an unsigned or wrongly signed error into a rejection', async () => {
+    const error = '{"code":"PARAM_ERROR","message":"bad"}';
+    const unsigned = await client(answer({ status: 400, headers: {}, body: error })).createTransfer(
+      transferInput,
+    );
+    expect(unsigned).toEqual({
+      kind: 'unknown',
+      reason: 'bad_signature',
+      detail: '400 bad_signature',
+      code: 'PARAM_ERROR',
+    });
+    const wrong = { ...signedResponse(400, error), body: '{"code":"NOT_ENOUGH","message":"x"}' };
+    expect(await client(answer(wrong)).createTransfer(transferInput)).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_signature',
+    });
+  });
+
+  it('classifies verified errors: rejected or indeterminate', async () => {
+    const run = (status: number, code: string) =>
+      client(answer(signedResponse(status, `{"code":"${code}","message":"m"}`))).createTransfer(
+        transferInput,
+      );
+    expect(await run(400, 'PARAM_ERROR')).toEqual({
+      kind: 'rejected',
+      code: 'PARAM_ERROR',
+      message: 'm',
+      httpStatus: 400,
+    });
+    expect(await run(403, 'NOT_ENOUGH')).toMatchObject({ kind: 'rejected', code: 'NOT_ENOUGH' });
+    for (const code of [
+      'ALREADY_EXISTS',
+      'SYSTEM_ERROR',
+      'NOT_FOUND',
+      'ORDER_NOT_EXIST',
+      'OUT_TRADE_NO_USED',
+    ]) {
+      expect(await run(400, code), code).toEqual({
+        kind: 'unknown',
+        reason: 'indeterminate',
+        detail: '400',
+        code,
+      });
+    }
+    expect(
+      await client(answer(signedResponse(400, '{"message":"no code"}'))).createTransfer(
+        transferInput,
+      ),
+    ).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
+  });
+
+  it('checks the shape each call requires, even when the signature is valid', async () => {
+    // a query must not accept an empty 204, null, or an object without its state field
+    expect(await client(answer(signedResponse(204, ''))).queryTransfer('W1')).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+    });
+    expect(await client(answer(signedResponse(200, 'null'))).queryOrder('P1')).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+    });
+    expect(
+      await client(answer(signedResponse(200, '{"out_trade_no":"P1"}'))).queryOrder('P1'),
+    ).toMatchObject({ kind: 'unknown', reason: 'bad_body', detail: '200 missing trade_state' });
+    expect(
+      await client(answer(signedResponse(200, '{}'))).createAppOrder({
+        outTradeNo: 'P',
+        description: 'd',
+        totalFen: 1,
+        notifyUrl: 'https://example.test',
+      }),
+    ).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
+    // closing an order succeeds only with a verified, empty 204
+    expect(await client(answer(signedResponse(204, ''))).closeOrder('P1')).toEqual({
+      kind: 'ok',
+      data: {},
+    });
+    expect(await client(answer(signedResponse(200, '{"x":"y"}'))).closeOrder('P1')).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+    });
+  });
+
+  it('maps 5xx, throttling and timeouts to unknown', async () => {
+    expect(
+      await client(
+        answer({ status: 500, headers: {}, body: '{"code":"SYSTEM_ERROR"}' }),
+      ).queryOrder('P1'),
+    ).toEqual({ kind: 'unknown', reason: 'http_5xx', detail: '500' });
+    expect(await client(answer({ status: 429, headers: {}, body: '' })).queryOrder('P1')).toEqual({
+      kind: 'unknown',
+      reason: 'throttled',
+      detail: '429',
+    });
     const timeout = await client(() =>
       Promise.reject(Object.assign(new Error('t'), { name: 'TimeoutError' })),
-    ).createTransfer({
-      outBillNo: 'W1',
-      transferSceneId: '1005',
-      openid: 'o1',
-      amountFen: 100,
-      remark: 'r',
-      sceneReportInfos: [],
-    });
+    ).createTransfer(transferInput);
     expect(timeout).toEqual({ kind: 'unknown', reason: 'timeout', detail: 'TimeoutError' });
   });
 
-  it('encrypts the payee name and names the key id when a transfer carries one', async () => {
+  it('encrypts the payee name when a transfer carries one', async () => {
     const seen: HttpRequest[] = [];
     const c = client((req) => {
       seen.push(req);
       return Promise.resolve(
-        signedResponse(200, '{"state":"WAIT_USER_CONFIRM","package_info":"pkg"}'),
+        signedResponse(
+          200,
+          '{"out_bill_no":"W2","state":"WAIT_USER_CONFIRM","package_info":"pkg"}',
+        ),
       );
     });
-    await c.createTransfer({
+    const r = await c.createTransfer({
+      ...transferInput,
       outBillNo: 'W2',
-      transferSceneId: '1005',
-      openid: 'o1',
-      amountFen: 100,
-      remark: 'r',
       sceneReportInfos: [{ infoType: '岗位类型', infoContent: '推广' }],
       userName: '张三',
     });
+    expect(r).toMatchObject({ kind: 'ok', data: { state: 'WAIT_USER_CONFIRM' } });
     const body = JSON.parse(seen[0]?.body ?? '{}') as {
       user_name: string;
       transfer_amount: number;
     };
     expect(body.user_name).not.toContain('张三');
     expect(body.transfer_amount).toBe(100);
-    expect(seen[0]?.headers['Wechatpay-Serial']).toBe('PUB_KEY_ID_TEST');
     expect(c.buildTransferConfirmQuery('a b&c')).toBe(
       'mchId=1900000001&appId=wxtestappid000001&package=a%20b%26c',
     );

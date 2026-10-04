@@ -29,28 +29,132 @@ export function rsa2Verify(content: string, signature: string, publicKeyPem: str
 
 const PEM_CERT = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
 
-/** md5(issuer in RFC 2253 order + decimal serial number). */
-export function certSn(certPem: string): string {
-  const cert = new X509Certificate(certPem);
-  // Node prints the issuer one RDN per line in certificate order; RFC 2253 is the reverse.
-  const issuer = cert.issuer.split('\n').reverse().join(',');
-  const serial = BigInt(`0x${cert.serialNumber}`).toString(10);
+/** Attribute short names, as the official SDKs print them. Unknown types fail closed. */
+const SHORT_NAMES: Readonly<Record<string, string>> = {
+  '2.5.4.3': 'CN',
+  '2.5.4.6': 'C',
+  '2.5.4.7': 'L',
+  '2.5.4.8': 'ST',
+  '2.5.4.10': 'O',
+  '2.5.4.11': 'OU',
+};
+
+interface Tlv {
+  readonly tag: number;
+  readonly value: Buffer;
+  /** Offset just past this element. */
+  readonly end: number;
+}
+
+function readTlv(buf: Buffer, at: number): Tlv {
+  const tag = buf[at];
+  const first = buf[at + 1];
+  if (tag === undefined || first === undefined) throw new Error('truncated DER');
+  let length = first;
+  let start = at + 2;
+  if (first & 0x80) {
+    const n = first & 0x7f;
+    if (n === 0 || n > 4) throw new Error('unsupported DER length');
+    length = 0;
+    for (let i = 0; i < n; i += 1) {
+      const b = buf[start + i];
+      if (b === undefined) throw new Error('truncated DER');
+      length = length * 256 + b;
+    }
+    start += n;
+  }
+  if (start + length > buf.length) throw new Error('truncated DER');
+  return { tag, value: buf.subarray(start, start + length), end: start + length };
+}
+
+function children(buf: Buffer): Tlv[] {
+  const out: Tlv[] = [];
+  for (let at = 0; at < buf.length;) {
+    const tlv = readTlv(buf, at);
+    out.push(tlv);
+    at = tlv.end;
+  }
+  return out;
+}
+
+function decodeOid(value: Buffer): string {
+  const first = value[0];
+  if (first === undefined) throw new Error('empty OID');
+  const parts = [Math.floor(first / 40), first % 40];
+  let acc = 0;
+  for (const b of value.subarray(1)) {
+    acc = acc * 128 + (b & 0x7f);
+    if ((b & 0x80) === 0) {
+      parts.push(acc);
+      acc = 0;
+    }
+  }
+  return parts.join('.');
+}
+
+function decodeString(tlv: Tlv): string {
+  // 0x1e BMPString is UTF-16BE; UTF8String, PrintableString, IA5String, TeletexString read as UTF-8.
+  if (tlv.tag === 0x1e) return Buffer.from(tlv.value).swap16().toString('utf16le');
+  return tlv.value.toString('utf8');
+}
+
+interface CertFields {
+  /** Issuer attributes in certificate order. */
+  readonly issuer: readonly { readonly shortName: string; readonly value: string }[];
+  readonly serialHex: string;
+  readonly signatureOid: string;
+}
+
+function parseCert(certPem: string): CertFields {
+  const der = new X509Certificate(certPem).raw;
+  const [tbs, sigAlg] = children(readTlv(der, 0).value);
+  if (tbs === undefined || sigAlg === undefined) throw new Error('malformed certificate');
+  const fields = children(tbs.value);
+  // tbsCertificate: [0] version (optional), serialNumber, signature, issuer, ...
+  const offset = fields[0]?.tag === 0xa0 ? 1 : 0;
+  const serial = fields[offset];
+  const issuerSeq = fields[offset + 2];
+  const sigOid = children(sigAlg.value)[0];
+  if (serial === undefined || issuerSeq === undefined || sigOid === undefined)
+    throw new Error('malformed certificate');
+  const issuer: { shortName: string; value: string }[] = [];
+  for (const rdn of children(issuerSeq.value)) {
+    for (const attr of children(rdn.value)) {
+      const [type, value] = children(attr.value);
+      if (type === undefined || value === undefined) throw new Error('malformed issuer');
+      const oid = decodeOid(type.value);
+      const shortName = SHORT_NAMES[oid];
+      if (shortName === undefined) throw new Error(`issuer attribute ${oid} is not supported`);
+      issuer.push({ shortName, value: decodeString(value) });
+    }
+  }
+  return { issuer, serialHex: serial.value.toString('hex'), signatureOid: decodeOid(sigOid.value) };
+}
+
+function snOf(fields: CertFields): string {
+  // Same rule as the official SDKs: attributes in reverse order as `shortName=value`, joined by
+  // commas with the raw values (no escaping), followed by the decimal serial number.
+  const issuer = [...fields.issuer]
+    .reverse()
+    .map((a) => `${a.shortName}=${a.value}`)
+    .join(',');
+  const serial = BigInt(`0x${fields.serialHex}`).toString(10);
   return createHash('md5')
     .update(issuer + serial, 'utf8')
     .digest('hex');
+}
+
+/** md5(issuer attributes reversed + decimal serial number). */
+export function certSn(certPem: string): string {
+  return snOf(parseCert(certPem));
 }
 
 /** Root bundle: serial numbers of the RSA-signed certificates, joined with `_`. */
 export function rootCertSn(bundlePem: string): string {
   const sns: string[] = [];
   for (const pem of bundlePem.match(PEM_CERT) ?? []) {
-    const cert = new X509Certificate(pem);
-    const oid = (cert as { signatureAlgorithmOid?: string }).signatureAlgorithmOid;
-    const isRsa =
-      oid === undefined
-        ? cert.publicKey.asymmetricKeyType === 'rsa'
-        : oid.startsWith('1.2.840.113549.1.1');
-    if (isRsa) sns.push(certSn(pem));
+    const fields = parseCert(pem);
+    if (fields.signatureOid.startsWith('1.2.840.113549.1.1')) sns.push(snOf(fields));
   }
   if (sns.length === 0) throw new Error('no RSA certificate in the root bundle');
   return sns.join('_');
