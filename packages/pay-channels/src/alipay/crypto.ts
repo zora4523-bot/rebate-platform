@@ -97,7 +97,7 @@ function decodeOid(value: Buffer): string {
 export function decodeDerString(tag: number, value: Buffer): string {
   switch (tag) {
     case 0x0c: // UTF8String
-      return new TextDecoder('utf-8', { fatal: true }).decode(value);
+      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(value);
     case 0x13: // PrintableString
     case 0x16: // IA5String
       if (value.some((b) => b > 0x7f)) throw new Error('non-ASCII byte in an ASCII string');

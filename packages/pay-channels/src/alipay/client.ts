@@ -8,7 +8,7 @@ import {
   type Shape,
   shapeViolation,
   type Transport,
-  type UnknownResult,
+  unknownResult as unknown,
 } from '../transport.ts';
 import { alipaySignContent, alipayTimestamp, rsa2Sign, rsa2Verify } from './crypto.ts';
 
@@ -28,8 +28,6 @@ export interface AlipayConfig {
   readonly transport?: Transport;
   /** Epoch milliseconds. */
   readonly now?: () => number;
-  /** Overrides `ALIPAY_DEFAULT_REJECT_CODES` (matched against `sub_code`). */
-  readonly rejectCodes?: ReadonlySet<string>;
 }
 
 export interface AlipayAppPayInput {
@@ -68,17 +66,6 @@ export interface AlipayTransferInput {
 
 type Json = Record<string, unknown>;
 
-/**
- * `sub_code`s the docs describe as "the request was refused". A verified answer with one of these
- * is `rejected`; every other code — still processing, system error, conflicting duplicate, bill
- * not visible, or simply not on this list — is `unknown` with the code kept for the caller.
- */
-export const ALIPAY_DEFAULT_REJECT_CODES: ReadonlySet<string> = new Set([
-  'INVALID_PARAMETER',
-  'PAYEE_NOT_EXIST',
-  'BALANCE_IS_NOT_ENOUGH',
-]);
-
 /** Largest response accepted; anything bigger is treated as malformed. */
 const MAX_RESPONSE_CHARS = 1_000_000;
 
@@ -94,14 +81,12 @@ export class AlipayClient {
   readonly #gateway: string;
   readonly #transport: Transport;
   readonly #now: () => number;
-  readonly #rejectCodes: ReadonlySet<string>;
 
   constructor(config: AlipayConfig) {
     this.#c = config;
     this.#gateway = config.gateway ?? 'https://openapi.alipay.com/gateway.do';
     this.#transport = config.transport ?? fetchTransport;
     this.#now = config.now ?? (() => Date.now());
-    this.#rejectCodes = config.rejectCodes ?? ALIPAY_DEFAULT_REJECT_CODES;
   }
 
   // ---- collect: APP pay
@@ -130,21 +115,35 @@ export class AlipayClient {
       'alipay.trade.query',
       { out_trade_no: outTradeNo },
       {
-        strings: ['out_trade_no', 'trade_no', 'trade_status', 'total_amount'],
+        strings: ['out_trade_no', 'trade_no', 'trade_status'],
+        amounts: ['total_amount'],
         enums: { trade_status: TRADE_STATUS },
         echo: { out_trade_no: outTradeNo },
       },
     );
   }
 
+  /**
+   * An `ok` here only says the close call was answered. The answer has nothing but order numbers
+   * and Alipay signatures do not cover which interface was called, so confirm the closed state
+   * with `tradeQuery` before releasing anything.
+   */
   tradeClose(outTradeNo: string): Promise<ChannelResult<Json>> {
     return this.#call(
       'alipay.trade.close',
       { out_trade_no: outTradeNo },
-      { strings: ['out_trade_no'], echo: { out_trade_no: outTradeNo } },
+      {
+        strings: ['out_trade_no'],
+        echo: { out_trade_no: outTradeNo },
+        exactKeys: ['code', 'msg', 'trade_no', 'out_trade_no'],
+      },
     );
   }
 
+  /**
+   * An `ok` here is tied to the payment order but not to this refund request: the answer does not
+   * echo `out_request_no`. Confirm the refund with `refundQuery` before recording it.
+   */
   tradeRefund(i: AlipayRefundInput): Promise<ChannelResult<Json>> {
     const biz: Json = {
       out_trade_no: i.outTradeNo,
@@ -153,18 +152,33 @@ export class AlipayClient {
     };
     if (i.reason !== undefined) biz['refund_reason'] = i.reason;
     return this.#call('alipay.trade.refund', biz, {
-      strings: ['out_trade_no', 'refund_fee'],
+      strings: ['out_trade_no'],
+      amounts: ['refund_fee'],
       echo: { out_trade_no: i.outTradeNo },
     });
   }
 
+  /**
+   * Two valid answers: no refund fields at all (the doc: a refund that does not exist answers
+   * 10000 with nothing else), or refund fields together with both identifiers of this request.
+   */
   refundQuery(outTradeNo: string, outRequestNo: string): Promise<ChannelResult<Json>> {
-    // The doc notes that a refund which does not exist answers 10000 with no refund fields, so
-    // nothing is required here: the caller reads `refund_status` / `refund_amount` itself.
     return this.#call(
       'alipay.trade.fastpay.refund.query',
       { out_trade_no: outTradeNo, out_request_no: outRequestNo },
-      { echo: { out_trade_no: outTradeNo, out_request_no: outRequestNo } },
+      {
+        optionalAmounts: ['refund_amount', 'total_amount'],
+        echo: { out_trade_no: outTradeNo, out_request_no: outRequestNo },
+        check: (node) => {
+          const status = node['refund_status'];
+          if (status !== undefined && typeof status !== 'string') return 'invalid refund_status';
+          const hasRefund = status !== undefined || node['refund_amount'] !== undefined;
+          if (!hasRefund) return undefined;
+          if (typeof node['out_trade_no'] !== 'string') return 'missing out_trade_no';
+          if (typeof node['out_request_no'] !== 'string') return 'missing out_request_no';
+          return undefined;
+        },
+      },
     );
   }
 
@@ -188,7 +202,7 @@ export class AlipayClient {
       }));
     }
     return this.#call('alipay.fund.trans.uni.transfer', biz, {
-      strings: ['out_biz_no', 'status'],
+      strings: ['out_biz_no', 'order_id', 'status'],
       enums: { status: TRANSFER_STATUS },
       echo: { out_biz_no: i.outBizNo },
     });
@@ -207,7 +221,8 @@ export class AlipayClient {
         biz_scene: bizScene ?? DEFAULT_BIZ_SCENE,
       },
       {
-        strings: ['out_biz_no', 'status'],
+        strings: ['out_biz_no', 'order_id', 'status'],
+        optionalAmounts: ['trans_amount'],
         enums: { status: TRANSFER_QUERY_STATUS },
         echo: { out_biz_no: outBizNo },
       },
@@ -265,8 +280,11 @@ export class AlipayClient {
     });
     if ('kind' in res) return res;
     const status = String(res.status);
-    if (res.status >= 500) return unknown('http_5xx', status);
-    if (res.status !== 200) return unknown('bad_body', status);
+    if (res.status !== 200) {
+      // Diagnostic hint only: nothing about a non-200 answer is trusted.
+      const hint = res.body.length <= MAX_RESPONSE_CHARS ? hintFromBody(res.body) : undefined;
+      return unknown(res.status >= 500 ? 'http_5xx' : 'bad_body', status, hint);
+    }
 
     // The whole answer must be valid JSON before any part of it is looked at; the scanner only
     // keeps the exact text of each member, which is what the signature covers.
@@ -318,10 +336,22 @@ export class AlipayClient {
       if (violation !== undefined) return unknown('bad_body', violation);
       return { kind: 'ok', data: node };
     }
-    if (!this.#rejectCodes.has(subCode)) return unknown('indeterminate', code, shown);
-    const message = typeof node['sub_msg'] === 'string' ? node['sub_msg'] : '';
-    return { kind: 'rejected', code: subCode, message, httpStatus: 200 };
+    // A verified error. It is not tied to this request (Alipay signs the response node only, and
+    // error nodes carry no order number), so it is never reported as a failure.
+    return unknown('channel_error', /^\d{1,6}$/.test(code) ? code : 'error', shown, true);
   }
+}
+
+function hintFromBody(text: string): string | undefined {
+  const members = isJsonObject(text) ? topLevelMembers(text) : undefined;
+  if (members === undefined) return undefined;
+  for (const m of members) {
+    if (m.key.endsWith('_response')) {
+      const hint = diagnosticCode(m.raw);
+      if (hint !== undefined) return hint;
+    }
+  }
+  return undefined;
 }
 
 function withQuery(gateway: string, params: Readonly<Record<string, string>>): string {
@@ -337,12 +367,6 @@ function isJsonObject(text: string): boolean {
   } catch {
     return false;
   }
-}
-
-function unknown(reason: UnknownResult['reason'], detail: string, code?: string): UnknownResult {
-  return code === undefined
-    ? { kind: 'unknown', reason, detail }
-    : { kind: 'unknown', reason, detail, code };
 }
 
 function parseString(raw: string | undefined): string | undefined {
@@ -374,9 +398,10 @@ export interface TopLevelMember {
 }
 
 /**
- * Splits a JSON object into its top-level members without re-serialising anything. Nested keys
- * are never returned, duplicate keys are all returned (the caller rejects them), and whitespace
- * around tokens is tolerated. Returns `undefined` when the text is not a single JSON object.
+ * Splits a JSON object into its top-level members without re-serialising anything. The input must
+ * already have passed `JSON.parse`: this scanner only finds member boundaries and does not
+ * validate values. Nested keys are never returned and duplicate keys are all returned (the caller
+ * rejects them). Not part of the package API.
  */
 export function topLevelMembers(text: string): TopLevelMember[] | undefined {
   const ws = (i: number): number => {

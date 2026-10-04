@@ -150,22 +150,35 @@ describe('wechat pay client', () => {
     (res: HttpResponse): Transport =>
     () =>
       Promise.resolve(res);
-  const bill = (no: string, state: string, extra: Record<string, unknown> = {}): string =>
-    JSON.stringify({ out_bill_no: no, transfer_bill_no: 'T1', state, ...extra });
+  const TIME = '2026-10-04T18:00:00+08:00';
+  const created = (no: string, state: string, extra: Record<string, unknown> = {}): string =>
+    JSON.stringify({ out_bill_no: no, transfer_bill_no: 'T1', create_time: TIME, state, ...extra });
   const queried = (no: string, state: string, extra: Record<string, unknown> = {}): string =>
-    bill(no, state, {
+    JSON.stringify({
       mch_id: '1900000001',
       appid: 'wxtestappid000001',
+      out_bill_no: no,
+      transfer_bill_no: 'T1',
+      state,
       transfer_amount: 100,
+      create_time: TIME,
+      update_time: TIME,
       ...extra,
     });
-  const order = (no: string, state: string, extra: Record<string, unknown> = {}): string =>
+  const order = (no: string, state: string): string =>
     JSON.stringify({
       appid: 'wxtestappid000001',
       mchid: '1900000001',
       out_trade_no: no,
       trade_state: state,
-      ...extra,
+    });
+  const refunded = (refundNo: string, amount: unknown): string =>
+    JSON.stringify({
+      refund_id: 'r',
+      out_refund_no: refundNo,
+      out_trade_no: 'P1',
+      status: 'PROCESSING',
+      amount,
     });
   const appOrder = {
     outTradeNo: 'P1',
@@ -173,6 +186,8 @@ describe('wechat pay client', () => {
     totalFen: 1,
     notifyUrl: 'https://example.test/n',
   };
+  const queryWith = (body: string, status = 200, no = 'W1') =>
+    client(answer(signedResponse(status, body))).queryTransfer(no);
 
   it('creates an APP order and returns verified data', async () => {
     const seen: HttpRequest[] = [];
@@ -261,36 +276,31 @@ describe('wechat pay client', () => {
   });
 
   it('does not accept a valid answer that belongs to another bill, merchant or app', async () => {
-    const other = signedResponse(200, queried('W_OLD', 'SUCCESS'));
-    expect(await client(answer(other)).queryTransfer('W_NEW')).toMatchObject({
+    expect(await queryWith(queried('W_OLD', 'SUCCESS'), 200, 'W_NEW')).toMatchObject({
       kind: 'unknown',
       reason: 'bad_body',
       detail: '200 mismatched out_bill_no',
     });
-    const otherMch = signedResponse(200, queried('W1', 'SUCCESS', { mch_id: '1900000999' }));
-    expect(await client(answer(otherMch)).queryTransfer('W1')).toMatchObject({
+    expect(await queryWith(queried('W1', 'SUCCESS', { mch_id: '1900000999' }))).toMatchObject({
+      kind: 'unknown',
+    });
+    expect(await queryWith(queried('W1', 'SUCCESS', { appid: 'wxother' }))).toMatchObject({
+      kind: 'unknown',
+    });
+    expect(
+      await client(answer(signedResponse(200, order('P_OLD', 'SUCCESS')))).queryOrder('P_NEW'),
+    ).toMatchObject({
       kind: 'unknown',
       reason: 'bad_body',
     });
-    const otherOrder = signedResponse(200, order('P_OLD', 'SUCCESS'));
-    expect(await client(answer(otherOrder)).queryOrder('P_NEW')).toMatchObject({
-      kind: 'unknown',
-      reason: 'bad_body',
-    });
-    const refund = JSON.stringify({
-      refund_id: 'r',
-      out_refund_no: 'R_OLD',
-      out_trade_no: 'P1',
-      status: 'SUCCESS',
-      amount: {},
-    });
+    const refund = refunded('R_OLD', { refund: 1, total: 1, currency: 'CNY' });
     expect(await client(answer(signedResponse(200, refund))).queryRefund('R_NEW')).toMatchObject({
       kind: 'unknown',
       reason: 'bad_body',
     });
   });
 
-  it('never turns an unsigned or wrongly signed error into a rejection', async () => {
+  it('never reports an error answer as a failure: verified or not, it is unknown', async () => {
     const error = '{"code":"PARAM_ERROR","message":"bad"}';
     const unsigned = await client(answer({ status: 400, headers: {}, body: error })).createTransfer(
       transferInput,
@@ -301,40 +311,24 @@ describe('wechat pay client', () => {
       detail: '400 bad_signature',
       code: 'PARAM_ERROR',
     });
-    const wrong = { ...signedResponse(400, error), body: '{"code":"NOT_ENOUGH","message":"x"}' };
-    expect(await client(answer(wrong)).createTransfer(transferInput)).toMatchObject({
-      kind: 'unknown',
-      reason: 'bad_signature',
-    });
-  });
-
-  it('rejects only allowlisted codes; every other verified code is indeterminate', async () => {
     const run = (status: number, code: string) =>
-      client(answer(signedResponse(status, `{"code":"${code}","message":"m"}`))).createTransfer(
-        transferInput,
-      );
-    expect(await run(400, 'PARAM_ERROR')).toEqual({
-      kind: 'rejected',
-      code: 'PARAM_ERROR',
-      message: 'm',
-      httpStatus: 400,
-    });
-    expect(await run(403, 'NOT_ENOUGH')).toMatchObject({ kind: 'rejected', code: 'NOT_ENOUGH' });
-    const indeterminate = [
-      'ALREADY_EXISTS',
-      'SYSTEM_ERROR',
-      'NOT_FOUND',
-      'ORDER_NOT_EXIST',
-      'OUT_TRADE_NO_USED',
-      'RESOURCE_NOT_EXISTS',
-      'A_CODE_NOBODY_HAS_SEEN',
-    ];
-    for (const code of indeterminate) {
-      expect(await run(400, code), code).toEqual({
+      client(
+        answer(signedResponse(status, `{"code":"${code}","message":"m","out_bill_no":"W_OLD"}`)),
+      ).createTransfer(transferInput);
+    for (const [status, code] of [
+      [400, 'PARAM_ERROR'],
+      [403, 'NOT_ENOUGH'],
+      [302, 'NOT_ENOUGH'],
+      [400, 'ALREADY_EXISTS'],
+      [404, 'NOT_FOUND'],
+      [400, 'A_CODE_NOBODY_HAS_SEEN'],
+    ] as const) {
+      expect(await run(status, code), code).toEqual({
         kind: 'unknown',
-        reason: 'indeterminate',
-        detail: '400',
+        reason: 'channel_error',
+        detail: String(status),
         code,
+        verified: true,
       });
     }
     expect(
@@ -344,25 +338,34 @@ describe('wechat pay client', () => {
     ).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
   });
 
-  it('checks the shape each call requires, even when the signature is valid', async () => {
-    const q = (body: string, status = 200) =>
-      client(answer(signedResponse(status, body))).queryTransfer('W1');
-    expect(await q('', 204)).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
-    expect(await q('null')).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
-    expect(await q(bill('W1', 'SUCCESS'))).toMatchObject({
+  it('checks the fields, types and ranges each call requires, even when the signature is valid', async () => {
+    expect(await queryWith('', 204)).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
+    expect(await queryWith('null')).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
+    expect(await queryWith(created('W1', 'SUCCESS'))).toMatchObject({
       kind: 'unknown',
-      detail: '200 missing transfer_amount',
+      detail: '200 missing mch_id',
     });
-    expect(await q(queried('W1', 'SUCCESS', { transfer_amount: '100' }))).toMatchObject({
+    for (const bad of [
+      { transfer_amount: '100' },
+      { transfer_amount: -10 },
+      { transfer_amount: 0 },
+      { transfer_amount: 1.5 },
+    ]) {
+      expect(await queryWith(queried('W1', 'SUCCESS', bad)), JSON.stringify(bad)).toMatchObject({
+        kind: 'unknown',
+        detail: '200 invalid transfer_amount',
+      });
+    }
+    expect(await queryWith(queried('W1', 'SUCCESS', { update_time: undefined }))).toMatchObject({
       kind: 'unknown',
+      detail: '200 missing update_time',
     });
-    expect(await q(queried('W1', 'A_NEW_STATE'))).toMatchObject({
+    expect(await queryWith(queried('W1', 'A_NEW_STATE'))).toMatchObject({
       kind: 'unknown',
       detail: '200 unexpected state',
     });
-    expect(await q(queried('W1', 'SUCCESS', { code: 'SYSTEM_ERROR' }))).toMatchObject({
+    expect(await queryWith(queried('W1', 'SUCCESS', { code: 'SYSTEM_ERROR' }))).toMatchObject({
       kind: 'unknown',
-      reason: 'bad_body',
       detail: '200 success with a code',
     });
     expect(
@@ -392,7 +395,29 @@ describe('wechat pay client', () => {
     });
   });
 
-  it('maps 5xx, throttling and timeouts to unknown, keeping a readable code', async () => {
+  it('checks refund amounts against the request', async () => {
+    const input = { outTradeNo: 'P1', outRefundNo: 'R1', refundFen: 10, totalFen: 100 };
+    const run = (amount: unknown) =>
+      client(answer(signedResponse(200, refunded('R1', amount)))).refund(input);
+    expect(await run({ refund: 10, total: 100, currency: 'CNY' })).toMatchObject({ kind: 'ok' });
+    expect(await run({})).toMatchObject({ kind: 'unknown', detail: '200 invalid amount' });
+    expect(await run({ refund: 999, total: 100, currency: 'CNY' })).toMatchObject({
+      kind: 'unknown',
+    });
+    expect(await run({ refund: 10, total: 999, currency: 'CNY' })).toMatchObject({
+      kind: 'unknown',
+      detail: '200 mismatched amount',
+    });
+    expect(await run({ refund: 10, total: 100, currency: 'USD' })).toMatchObject({
+      kind: 'unknown',
+    });
+    expect(await run({ refund: -10, total: 100, currency: 'CNY' })).toMatchObject({
+      kind: 'unknown',
+    });
+    expect(await run(undefined)).toMatchObject({ kind: 'unknown', detail: '200 missing amount' });
+  });
+
+  it('maps 5xx, throttling and transport failures to unknown without leaking error text', async () => {
     expect(
       await client(
         answer({ status: 500, headers: {}, body: '{"code":"SYSTEM_ERROR"}' }),
@@ -406,7 +431,13 @@ describe('wechat pay client', () => {
     const timeout = await client(() =>
       Promise.reject(Object.assign(new Error('t'), { name: 'TimeoutError' })),
     ).createTransfer(transferInput);
-    expect(timeout).toEqual({ kind: 'unknown', reason: 'timeout', detail: 'TimeoutError' });
+    expect(timeout).toEqual({ kind: 'unknown', reason: 'timeout', detail: 'timed out' });
+    const hostile = await client(() =>
+      Promise.reject(
+        Object.assign(new Error('x'), { name: 'Customer 13800138000 synthetic.example.test' }),
+      ),
+    ).createTransfer(transferInput);
+    expect(hostile).toEqual({ kind: 'unknown', reason: 'transport', detail: 'transport error' });
   });
 
   it('encrypts the payee name when a transfer carries one', async () => {
@@ -414,7 +445,7 @@ describe('wechat pay client', () => {
     const c = client((req) => {
       seen.push(req);
       return Promise.resolve(
-        signedResponse(200, bill('W2', 'WAIT_USER_CONFIRM', { package_info: 'pkg' })),
+        signedResponse(200, created('W2', 'WAIT_USER_CONFIRM', { package_info: 'pkg' })),
       );
     });
     const r = await c.createTransfer({

@@ -20,7 +20,6 @@ export {
   type NotificationResult,
   type RefundInput,
   type TransferInput,
-  WECHAT_DEFAULT_REJECT_CODES,
   type WechatNotification,
   WechatPayClient,
   type WechatPayConfig,
@@ -33,13 +32,11 @@ export {
   wechatAuthorization,
 } from './wechat/crypto.ts';
 export {
-  ALIPAY_DEFAULT_REJECT_CODES,
   AlipayClient,
   type AlipayAppPayInput,
   type AlipayConfig,
   type AlipayRefundInput,
   type AlipayTransferInput,
-  topLevelMembers,
 } from './alipay/client.ts';
 export {
   alipaySignContent,

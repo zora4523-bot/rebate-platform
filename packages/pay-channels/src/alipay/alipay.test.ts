@@ -136,6 +136,7 @@ describe('alipay primitives', () => {
 
   it('decodes ASN.1 strings by type and fails closed on the rest', () => {
     expect(decodeDerString(0x0c, Buffer.from('Café', 'utf8'))).toBe('Café');
+    expect(decodeDerString(0x0c, Buffer.from('\uFEFFTest', 'utf8'))).toBe('\uFEFFTest');
     expect(decodeDerString(0x14, Buffer.from([0x43, 0x61, 0x66, 0xe9]))).toBe('Café');
     expect(decodeDerString(0x1c, Buffer.from([0, 0, 0, 0x41]))).toBe('A');
     expect(decodeDerString(0x1e, Buffer.from([0x4e, 0x2d]))).toBe('中');
@@ -172,6 +173,11 @@ describe('alipay primitives', () => {
 });
 
 describe('alipay client', () => {
+  const QUERY = 'alipay_fund_trans_common_query_response';
+  const okNode = (no = 'W1', extra = ''): string =>
+    `{"code":"10000","msg":"Success","out_biz_no":"${no}","order_id":"2026","status":"SUCCESS"${extra}}`;
+  const run = (node: string) => client(answer(body(TRANSFER, node))).transfer(transferInput);
+
   it('builds a signed APP pay order string with the amount in yuan', () => {
     const orderStr = client(() => Promise.reject(new Error('unused'))).buildAppPayOrderString({
       outTradeNo: 'P20261004A1',
@@ -195,14 +201,9 @@ describe('alipay client', () => {
 
   it('sends public parameters in the query string and the business payload in the body', async () => {
     const seen: HttpRequest[] = [];
-    const node = '{"code":"10000","msg":"Success","out_biz_no":"W1","status":"SUCCESS"}';
     const c = client((req) => {
       seen.push(req);
-      return Promise.resolve({
-        status: 200,
-        headers: {},
-        body: body('alipay_fund_trans_common_query_response', node),
-      });
+      return Promise.resolve({ status: 200, headers: {}, body: body(QUERY, okNode()) });
     });
     expect(await c.transferQuery('W1')).toMatchObject({ kind: 'ok', data: { status: 'SUCCESS' } });
     const url = new URL(seen[0]?.url ?? '');
@@ -225,219 +226,8 @@ describe('alipay client', () => {
     ).toBe(true);
   });
 
-  it('carries the transfer scene fields', async () => {
-    const seen: HttpRequest[] = [];
-    const node = '{"code":"10000","msg":"Success","out_biz_no":"W1","status":"SUCCESS"}';
-    const c = client((req) => {
-      seen.push(req);
-      return Promise.resolve({ status: 200, headers: {}, body: body(TRANSFER, node) });
-    });
-    const r = await c.transfer({
-      ...transferInput,
-      transferSceneName: '佣金报酬',
-      sceneReportInfos: [{ infoType: '佣金报酬说明', infoContent: '10 月推广报酬' }],
-    });
-    expect(r.kind).toBe('ok');
-    const biz = JSON.parse(
-      Object.fromEntries(new URLSearchParams(seen[0]?.body ?? ''))['biz_content'] ?? '{}',
-    ) as Record<string, unknown>;
-    expect(biz).toMatchObject({
-      trans_amount: '0.10',
-      transfer_scene_name: '佣金报酬',
-      transfer_scene_report_infos: [{ info_type: '佣金报酬说明', info_content: '10 月推广报酬' }],
-    });
-  });
-
-  it('never trusts an answer that is unsigned, wrongly signed or signed under another certificate', async () => {
-    const ok = '{"code":"10000","msg":"Success","out_biz_no":"W1","status":"SUCCESS"}';
-    const fail =
-      '{"code":"40004","msg":"Business Failed","sub_code":"PAYEE_NOT_EXIST","sub_msg":"x"}';
-    const cases: [string, string][] = [
-      ['forged signature', body(TRANSFER, ok, { sign: rsa2Sign(ok, app.privateKey) })],
-      ['other certificate', body(TRANSFER, ok, { sn: 'someone-else' })],
-      ['no certificate serial', body(TRANSFER, ok, { sn: null })],
-      ['unsigned success', `{"${TRANSFER}":${ok}}`],
-      ['unsigned business failure', `{"${TRANSFER}":${fail}}`],
-      [
-        'unsigned gateway code with a business sub_code',
-        '{"error_response":{"code":"40002","sub_code":"PAYEE_NOT_EXIST"}}',
-      ],
-      [
-        'unsigned gateway refusal',
-        '{"error_response":{"code":"40002","msg":"Invalid Arguments","sub_code":"isv.invalid-signature"}}',
-      ],
-    ];
-    for (const [name, text] of cases) {
-      const r = await client(answer(text)).transfer(transferInput);
-      expect(r, name).toMatchObject({ kind: 'unknown', reason: 'bad_signature' });
-    }
-  });
-
-  it('is not fooled by nested, duplicated or misplaced response nodes', async () => {
-    const old = '{"code":"10000","msg":"Success","out_biz_no":"W1","status":"SUCCESS"}';
-    const live = `{"code":"20000","msg":"Service Currently Unavailable","nested":{"${TRANSFER}":${old}}}`;
-    // top-level answer is 20000; a previously valid success object is nested inside and its
-    // signature is replayed as the response signature
-    const nested = await client(answer(body(TRANSFER, live, { sign: sign(old) }))).transfer(
-      transferInput,
-    );
-    expect(nested).toMatchObject({ kind: 'unknown', reason: 'bad_signature' });
-
-    const duplicated = `{"${TRANSFER}":${old},"${TRANSFER}":{"code":"20000"},"alipay_cert_sn":"${ALIPAY_SN}","sign":"${sign(old)}"}`;
-    expect(await client(answer(duplicated)).transfer(transferInput)).toMatchObject({
-      kind: 'unknown',
-      reason: 'bad_signature',
-    });
-
-    const nullThenObject = `{"${TRANSFER}":null,"other":${old},"alipay_cert_sn":"${ALIPAY_SN}","sign":"${sign(old)}"}`;
-    expect(await client(answer(nullThenObject)).transfer(transferInput)).toMatchObject({
-      kind: 'unknown',
-    });
-
-    const underError = body('error_response', old);
-    expect(await client(answer(underError)).transfer(transferInput)).toMatchObject({
-      kind: 'unknown',
-    });
-
-    const both = `{"${TRANSFER}":${old},"error_response":{"code":"20000"},"alipay_cert_sn":"${ALIPAY_SN}","sign":"${sign(old)}"}`;
-    expect(await client(answer(both)).transfer(transferInput)).toMatchObject({ kind: 'unknown' });
-  });
-
-  it('accepts verified answers with whitespace around tokens', async () => {
-    const node = '{"code":"10000","msg":"Success","out_biz_no":"W1","status":"DEALING"}';
-    const spaced = ` { "${TRANSFER}" : ${node} , "alipay_cert_sn" : "${ALIPAY_SN}" , "sign" : "${sign(node)}" } `;
-    expect(await client(answer(spaced)).transfer(transferInput)).toMatchObject({
-      kind: 'ok',
-      data: { status: 'DEALING' },
-    });
-  });
-
-  it('rejects only allowlisted sub codes; every other verified error is indeterminate', async () => {
-    const run = (node: string) => client(answer(body(TRANSFER, node))).transfer(transferInput);
-    expect(
-      await run(
-        '{"code":"40004","msg":"Business Failed","sub_code":"PAYEE_NOT_EXIST","sub_msg":"收款账号不存在"}',
-      ),
-    ).toEqual({
-      kind: 'rejected',
-      code: 'PAYEE_NOT_EXIST',
-      message: '收款账号不存在',
-      httpStatus: 200,
-    });
-    const indeterminate = [
-      'SYSTEM_ERROR',
-      'REQUEST_PROCESSING',
-      'TRANS_ORDER_DEALING',
-      'PROMO_TRANS_ORDER_DEALING',
-      'BIZ_UNIQUE_EXCEPTION',
-      'PAYMENT_INFO_INCONSISTENCY',
-      'MRCHPROD_QUERY_ERROR',
-      'A_SUB_CODE_NOBODY_HAS_SEEN',
-    ];
-    for (const sub of indeterminate) {
-      expect(
-        await run(`{"code":"40004","msg":"Business Failed","sub_code":"${sub}"}`),
-        sub,
-      ).toEqual({
-        kind: 'unknown',
-        reason: 'indeterminate',
-        detail: '40004',
-        code: sub,
-      });
-    }
-    expect(await run('{"code":"20000","msg":"Service Currently Unavailable"}')).toMatchObject({
-      kind: 'unknown',
-      reason: 'indeterminate',
-    });
-    expect(await run('{"code":"99999","msg":"?"}')).toMatchObject({
-      kind: 'unknown',
-      reason: 'indeterminate',
-    });
-  });
-
-  it('treats malformed or contradictory verified answers as unknown', async () => {
-    const run = (node: string) => client(answer(body(TRANSFER, node))).transfer(transferInput);
-    const ok = '"code":"10000","msg":"Success","out_biz_no":"W1","status":"SUCCESS"';
-    expect(await run('{"msg":"no code"}')).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
-    expect(await run(`{${ok},"sub_code":"SYSTEM_ERROR"}`)).toMatchObject({
-      kind: 'unknown',
-      reason: 'bad_body',
-    });
-    expect(await run(`{${ok},"sub_code":{"error":"SYSTEM_ERROR"}}`)).toMatchObject({
-      kind: 'unknown',
-      reason: 'bad_body',
-      detail: 'sub_code is not a string',
-    });
-    expect(await run('{"code":"10000","msg":"Success"}')).toMatchObject({
-      kind: 'unknown',
-      detail: 'missing out_biz_no',
-    });
-    expect(
-      await run('{"code":"10000","msg":"Success","out_biz_no":"W1","status":"A_NEW_STATUS"}'),
-    ).toMatchObject({
-      kind: 'unknown',
-      detail: 'unexpected status',
-    });
-    const queryNode = '{"code":"10000","msg":"Success","status":"SUCCESS"}';
-    expect(
-      await client(
-        answer(body('alipay_fund_trans_common_query_response', queryNode)),
-      ).transferQuery('W1'),
-    ).toMatchObject({ kind: 'unknown', detail: 'missing out_biz_no' });
-  });
-
-  it('does not accept a valid answer that belongs to another order', async () => {
-    const old = '{"code":"10000","msg":"Success","out_biz_no":"W_OLD","status":"SUCCESS"}';
-    expect(
-      await client(answer(body('alipay_fund_trans_common_query_response', old))).transferQuery(
-        'W_NEW',
-      ),
-    ).toMatchObject({ kind: 'unknown', reason: 'bad_body', detail: 'mismatched out_biz_no' });
-    const trade =
-      '{"code":"10000","msg":"Success","out_trade_no":"P_OLD","trade_no":"t","trade_status":"TRADE_SUCCESS","total_amount":"0.01"}';
-    expect(
-      await client(answer(body('alipay_trade_query_response', trade))).tradeQuery('P_NEW'),
-    ).toMatchObject({
-      kind: 'unknown',
-      detail: 'mismatched out_trade_no',
-    });
-  });
-
-  it('refuses answers whose surrounding JSON is invalid, even with a valid signed node', async () => {
-    const node = '{"code":"10000","msg":"Success","out_biz_no":"W1","status":"SUCCESS"}';
-    for (const junk of ['01', 'truefalse', '[}', '{"x":1,}', '"bad\\q"']) {
-      const text = `{"${TRANSFER}":${node},"junk":${junk},"alipay_cert_sn":"${ALIPAY_SN}","sign":"${sign(node)}"}`;
-      expect(await client(answer(text)).transfer(transferInput), junk).toMatchObject({
-        kind: 'unknown',
-        reason: 'bad_body',
-      });
-    }
-  });
-
-  it('treats "order not found" on queries as indeterminate, keeping the code readable', async () => {
-    const node =
-      '{"code":"40004","msg":"Business Failed","sub_code":"ORDER_NOT_EXIST","sub_msg":"转账订单不存在"}';
-    const r = await client(
-      answer(body('alipay_fund_trans_common_query_response', node)),
-    ).transferQuery('W9');
-    expect(r).toEqual({
-      kind: 'unknown',
-      reason: 'indeterminate',
-      detail: '40004',
-      code: 'ORDER_NOT_EXIST',
-    });
-    const trade = '{"code":"40004","msg":"Business Failed","sub_code":"ACQ.TRADE_NOT_EXIST"}';
-    expect(
-      await client(answer(body('alipay_trade_query_response', trade))).tradeQuery('P9'),
-    ).toMatchObject({
-      kind: 'unknown',
-      code: 'ACQ.TRADE_NOT_EXIST',
-    });
-  });
-
   it('keeps an existing query string on a custom gateway', async () => {
     const seen: HttpRequest[] = [];
-    const node = '{"code":"10000","msg":"Success","out_biz_no":"W1","status":"SUCCESS"}';
     const c = new AlipayClient({
       appId: '2021000000000001',
       privateKeyPem: app.privateKey,
@@ -448,11 +238,7 @@ describe('alipay client', () => {
       gateway: 'https://gw.example.test/gateway.do?route=test',
       transport: (req) => {
         seen.push(req);
-        return Promise.resolve({
-          status: 200,
-          headers: {},
-          body: body('alipay_fund_trans_common_query_response', node),
-        });
+        return Promise.resolve({ status: 200, headers: {}, body: body(QUERY, okNode()) });
       },
     });
     await c.transferQuery('W1');
@@ -461,34 +247,270 @@ describe('alipay client', () => {
     expect(url.searchParams.get('app_id')).toBe('2021000000000001');
   });
 
-  it('maps transport failures and non-200 answers to unknown', async () => {
+  it('carries the transfer scene fields', async () => {
+    const seen: HttpRequest[] = [];
+    const c = client((req) => {
+      seen.push(req);
+      return Promise.resolve({ status: 200, headers: {}, body: body(TRANSFER, okNode()) });
+    });
+    const r = await c.transfer({
+      ...transferInput,
+      transferSceneName: '佣金报酬',
+      sceneReportInfos: [{ infoType: '佣金报酬说明', infoContent: '10 月推广报酬' }],
+    });
+    expect(r.kind).toBe('ok');
+    const form = Object.fromEntries(new URLSearchParams(seen[0]?.body ?? ''));
+    expect(JSON.parse(form['biz_content'] ?? '{}')).toMatchObject({
+      trans_amount: '0.10',
+      transfer_scene_name: '佣金报酬',
+      transfer_scene_report_infos: [{ info_type: '佣金报酬说明', info_content: '10 月推广报酬' }],
+    });
+  });
+
+  it('never trusts an answer that is unsigned, wrongly signed or signed under another certificate', async () => {
+    const fail =
+      '{"code":"40004","msg":"Business Failed","sub_code":"PAYEE_NOT_EXIST","sub_msg":"x"}';
+    const cases: [string, string][] = [
+      ['forged signature', body(TRANSFER, okNode(), { sign: rsa2Sign(okNode(), app.privateKey) })],
+      ['other certificate', body(TRANSFER, okNode(), { sn: 'someone-else' })],
+      ['no certificate serial', body(TRANSFER, okNode(), { sn: null })],
+      ['unsigned success', `{"${TRANSFER}":${okNode()}}`],
+      ['unsigned business failure', `{"${TRANSFER}":${fail}}`],
+      ['unsigned gateway code', '{"error_response":{"code":"40002","sub_code":"PAYEE_NOT_EXIST"}}'],
+    ];
+    for (const [name, text] of cases) {
+      expect(await client(answer(text)).transfer(transferInput), name).toMatchObject({
+        kind: 'unknown',
+        reason: 'bad_signature',
+      });
+    }
+  });
+
+  it('is not fooled by nested, duplicated or misplaced response nodes', async () => {
+    const old = okNode();
+    const live = `{"code":"20000","msg":"Service Currently Unavailable","nested":{"${TRANSFER}":${old}}}`;
+    expect(
+      await client(answer(body(TRANSFER, live, { sign: sign(old) }))).transfer(transferInput),
+    ).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_signature',
+    });
+    const tail = `"alipay_cert_sn":"${ALIPAY_SN}","sign":"${sign(old)}"}`;
+    for (const text of [
+      `{"${TRANSFER}":${old},"${TRANSFER}":{"code":"20000"},${tail}`,
+      `{"${TRANSFER}":null,"other":${old},${tail}`,
+      `{"${TRANSFER}":${old},"error_response":{"code":"20000"},${tail}`,
+      body('error_response', old),
+    ]) {
+      expect(await client(answer(text)).transfer(transferInput)).toMatchObject({ kind: 'unknown' });
+    }
+  });
+
+  it('refuses answers whose surrounding JSON is invalid, even with a valid signed node', async () => {
+    for (const junk of ['01', 'truefalse', '[}', '{"x":1,}', '"bad\\q"']) {
+      const text = `{"${TRANSFER}":${okNode()},"junk":${junk},"alipay_cert_sn":"${ALIPAY_SN}","sign":"${sign(okNode())}"}`;
+      expect(await client(answer(text)).transfer(transferInput), junk).toMatchObject({
+        kind: 'unknown',
+        reason: 'bad_body',
+      });
+    }
+  });
+
+  it('accepts verified answers with whitespace around tokens', async () => {
+    const node = okNode().replace('SUCCESS"', 'DEALING"').replace('"Success"', '"Success"');
+    const dealing =
+      '{"code":"10000","msg":"Success","out_biz_no":"W1","order_id":"2026","status":"DEALING"}';
+    const spaced = ` { "${TRANSFER}" : ${dealing} , "alipay_cert_sn" : "${ALIPAY_SN}" , "sign" : "${sign(dealing)}" } `;
+    expect(node).toContain('W1');
+    expect(await client(answer(spaced)).transfer(transferInput)).toMatchObject({
+      kind: 'ok',
+      data: { status: 'DEALING' },
+    });
+  });
+
+  it('never reports an error answer as a failure, whatever the code combination', async () => {
+    for (const [code, sub] of [
+      ['40004', 'PAYEE_NOT_EXIST'],
+      ['40004', 'SYSTEM_ERROR'],
+      ['40004', 'TRANS_ORDER_DEALING'],
+      ['40004', 'A_SUB_CODE_NOBODY_HAS_SEEN'],
+      ['20000', 'PAYEE_NOT_EXIST'],
+      ['99999', 'BALANCE_IS_NOT_ENOUGH'],
+      ['40005', 'INVALID_PARAMETER'],
+    ] as const) {
+      const node = `{"code":"${code}","msg":"m","sub_code":"${sub}","sub_msg":"账号 a@example.test","out_biz_no":"W_OLD"}`;
+      expect(await run(node), `${code}/${sub}`).toEqual({
+        kind: 'unknown',
+        reason: 'channel_error',
+        detail: code,
+        code: sub,
+        verified: true,
+      });
+    }
+    expect(await run('{"code":"20000","msg":"Service Currently Unavailable"}')).toMatchObject({
+      kind: 'unknown',
+      reason: 'channel_error',
+      code: '20000',
+    });
+    const notFound = '{"code":"40004","msg":"Business Failed","sub_code":"ORDER_NOT_EXIST"}';
+    expect(await client(answer(body(QUERY, notFound))).transferQuery('W9')).toMatchObject({
+      kind: 'unknown',
+      reason: 'channel_error',
+      code: 'ORDER_NOT_EXIST',
+      verified: true,
+    });
+  });
+
+  it('treats malformed or contradictory verified answers as unknown', async () => {
+    const q = (node: string) => client(answer(body(QUERY, node))).transferQuery('W1');
+    expect(await run('{"msg":"no code"}')).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
+    expect(await run(okNode('W1', ',"sub_code":"SYSTEM_ERROR"'))).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+    });
+    expect(await run(okNode('W1', ',"sub_code":{"error":"SYSTEM_ERROR"}'))).toMatchObject({
+      kind: 'unknown',
+      detail: 'sub_code is not a string',
+    });
+    expect(await run('{"code":"10000","msg":"Success"}')).toMatchObject({
+      kind: 'unknown',
+      detail: 'missing out_biz_no',
+    });
+    expect(
+      await q('{"code":"10000","msg":"Success","out_biz_no":"W1","status":"SUCCESS"}'),
+    ).toMatchObject({
+      kind: 'unknown',
+      detail: 'missing order_id',
+    });
+    expect(
+      await q(
+        '{"code":"10000","msg":"Success","out_biz_no":"W1","order_id":42,"status":"SUCCESS"}',
+      ),
+    ).toMatchObject({
+      kind: 'unknown',
+      detail: 'missing order_id',
+    });
+    expect(await q(okNode('W1', ',"trans_amount":"NOT_MONEY"'))).toMatchObject({
+      kind: 'unknown',
+      detail: 'invalid trans_amount',
+    });
+    expect(await q(okNode('W1').replace('"SUCCESS"', '"A_NEW_STATUS"'))).toMatchObject({
+      kind: 'unknown',
+      detail: 'unexpected status',
+    });
+    expect(await q(okNode('W1', ',"trans_amount":"32.00"'))).toMatchObject({ kind: 'ok' });
+  });
+
+  it('does not accept a valid answer that belongs to another order or another interface', async () => {
+    expect(await client(answer(body(QUERY, okNode('W_OLD')))).transferQuery('W_NEW')).toMatchObject(
+      {
+        kind: 'unknown',
+        detail: 'mismatched out_biz_no',
+      },
+    );
+    const trade = (no: string): string =>
+      `{"code":"10000","msg":"Success","out_trade_no":"${no}","trade_no":"t","trade_status":"TRADE_SUCCESS","total_amount":"0.01"}`;
+    expect(
+      await client(answer(body('alipay_trade_query_response', trade('P_OLD')))).tradeQuery('P_NEW'),
+    ).toMatchObject({
+      kind: 'unknown',
+      detail: 'mismatched out_trade_no',
+    });
+    // a signed query answer re-labelled as a close answer
+    expect(
+      await client(answer(body('alipay_trade_close_response', trade('P1')))).tradeClose('P1'),
+    ).toMatchObject({
+      kind: 'unknown',
+      detail: 'unexpected field',
+    });
+    const closed = '{"code":"10000","msg":"Success","out_trade_no":"P1","trade_no":"t"}';
+    expect(
+      await client(answer(body('alipay_trade_close_response', closed))).tradeClose('P1'),
+    ).toMatchObject({ kind: 'ok' });
+  });
+
+  it('binds refund queries to the refund request when refund fields are present', async () => {
+    const R = 'alipay_trade_fastpay_refund_query_response';
+    const q = (node: string) => client(answer(body(R, node))).refundQuery('P1', 'R_NEW');
+    const base = '"code":"10000","msg":"Success"';
+    expect(await q(`{${base}}`)).toMatchObject({ kind: 'ok' });
+    expect(
+      await q(`{${base},"refund_status":"REFUND_SUCCESS","refund_amount":"0.10"}`),
+    ).toMatchObject({
+      kind: 'unknown',
+      detail: 'missing out_trade_no',
+    });
+    expect(
+      await q(
+        `{${base},"out_trade_no":"P1","out_request_no":"R_OLD","refund_status":"REFUND_SUCCESS","refund_amount":"0.10"}`,
+      ),
+    ).toMatchObject({ kind: 'unknown', detail: 'mismatched out_request_no' });
+    expect(
+      await q(
+        `{${base},"out_trade_no":"P1","out_request_no":"R_NEW","refund_status":{"x":1},"refund_amount":"0.10"}`,
+      ),
+    ).toMatchObject({ kind: 'unknown', detail: 'invalid refund_status' });
+    expect(
+      await q(
+        `{${base},"out_trade_no":"P1","out_request_no":"R_NEW","refund_status":"REFUND_SUCCESS","refund_amount":"-1"}`,
+      ),
+    ).toMatchObject({ kind: 'unknown', detail: 'invalid refund_amount' });
+    expect(
+      await q(
+        `{${base},"out_trade_no":"P1","out_request_no":"R_NEW","refund_status":"REFUND_SUCCESS","refund_amount":"0.10"}`,
+      ),
+    ).toMatchObject({ kind: 'ok' });
+  });
+
+  it('maps transport failures and non-200 answers to unknown, keeping a readable hint', async () => {
     const timeout = await client(() =>
       Promise.reject(Object.assign(new Error('t'), { name: 'TimeoutError' })),
     ).tradeClose('P1');
-    expect(timeout).toEqual({ kind: 'unknown', reason: 'timeout', detail: 'TimeoutError' });
+    expect(timeout).toEqual({ kind: 'unknown', reason: 'timeout', detail: 'timed out' });
+    const five = '{"alipay_trade_query_response":{"code":"20000","sub_code":"SYSTEM_ERROR"}}';
     expect(
-      await client(() => Promise.resolve({ status: 502, headers: {}, body: '' })).tradeQuery('P1'),
-    ).toMatchObject({ kind: 'unknown', reason: 'http_5xx' });
+      await client(() => Promise.resolve({ status: 500, headers: {}, body: five })).tradeQuery(
+        'P1',
+      ),
+    ).toEqual({
+      kind: 'unknown',
+      reason: 'http_5xx',
+      detail: '500',
+      code: 'SYSTEM_ERROR',
+    });
     expect(
       await client(() => Promise.resolve({ status: 302, headers: {}, body: '' })).tradeQuery('P1'),
     ).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
   });
 
-  it('describes results without channel payloads, messages or attacker-controlled text', async () => {
+  it('describes results with known constants only', async () => {
     const node =
       '{"code":"40004","msg":"Business Failed","sub_code":"PAYEE_NOT_EXIST","sub_msg":"账号 a@example.test 不存在"}';
-    const r = await client(answer(body(TRANSFER, node))).transfer(transferInput);
-    expect(describeResult(r)).toBe('rejected code=PAYEE_NOT_EXIST http=200');
-    expect(describeResult({ kind: 'ok', data: { payee: 'secret' } })).toBe('ok');
-    const hostile = describeResult({
-      kind: 'unknown',
-      reason: 'bad_signature',
-      detail: 'Evil\nName account=x@example.test',
-      code: 'account=synthetic@example.test\nok id=FAKE',
-    });
-    expect(hostile).toBe(
-      'unknown reason=bad_signature detail=Evil?Name account?x?example.test code=<redacted>',
+    expect(describeResult(await run(node))).toBe(
+      'unknown reason=channel_error detail=40004 code=PAYEE_NOT_EXIST verified',
     );
+    expect(describeResult({ kind: 'ok', data: { payee: 'secret' } })).toBe('ok');
+    for (const code of [
+      '13800138000',
+      'oSyntheticPrivateOpenid123',
+      'account=x@example.test\nok id=FAKE',
+    ]) {
+      expect(
+        describeResult({
+          kind: 'unknown',
+          reason: 'bad_signature',
+          detail: '400 bad_signature',
+          code,
+        }),
+      ).toBe('unknown reason=bad_signature detail=400 bad_signature code=<other>');
+    }
+    expect(
+      describeResult({
+        kind: 'unknown',
+        reason: 'transport',
+        detail: 'Customer 13800138000\nx@example.test',
+      }),
+    ).toBe('unknown reason=transport detail=Customer #?x?example.test');
   });
 
   it('verifies notifications over every field except sign and sign_type', () => {

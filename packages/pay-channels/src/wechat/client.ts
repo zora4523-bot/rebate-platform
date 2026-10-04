@@ -9,7 +9,7 @@ import {
   type Shape,
   shapeViolation,
   type Transport,
-  type UnknownResult,
+  unknownResult as unknown,
 } from '../transport.ts';
 import {
   decryptWechatResource,
@@ -36,8 +36,6 @@ export interface WechatPayConfig {
   /** Unix seconds. */
   readonly now?: () => number;
   readonly nonce?: () => string;
-  /** Overrides `WECHAT_DEFAULT_REJECT_CODES`. */
-  readonly rejectCodes?: ReadonlySet<string>;
 }
 
 export interface AppOrderInput {
@@ -99,22 +97,6 @@ type Json = Record<string, unknown>;
 
 const MAX_CLOCK_SKEW_SECONDS = 300;
 
-/**
- * Error codes the docs describe as "the request was refused before anything happened". A verified
- * answer with one of these is `rejected`; every other code — documented as indeterminate, or
- * simply not on this list — is `unknown` with the code kept for the caller. The transfer doc is
- * explicit: on a new error code, query the bill instead of assuming failure.
- */
-export const WECHAT_DEFAULT_REJECT_CODES: ReadonlySet<string> = new Set([
-  'PARAM_ERROR',
-  'INVALID_REQUEST',
-  'NO_AUTH',
-  'SIGN_ERROR',
-  'NOT_ENOUGH',
-  'APPID_MCHID_NOT_MATCH',
-  'MCH_NOT_EXISTS',
-]);
-
 const TRANSFER_STATES = [
   'ACCEPTED',
   'PROCESSING',
@@ -139,7 +121,6 @@ export class WechatPayClient {
   readonly #transport: Transport;
   readonly #now: () => number;
   readonly #nonce: () => string;
-  readonly #rejectCodes: ReadonlySet<string>;
 
   constructor(config: WechatPayConfig) {
     this.#c = config;
@@ -147,7 +128,6 @@ export class WechatPayClient {
     this.#transport = config.transport ?? fetchTransport;
     this.#now = config.now ?? (() => Math.floor(Date.now() / 1000));
     this.#nonce = config.nonce ?? (() => randomBytes(16).toString('hex'));
-    this.#rejectCodes = config.rejectCodes ?? WECHAT_DEFAULT_REJECT_CODES;
   }
 
   // ---- collect: APP pay
@@ -225,7 +205,11 @@ export class WechatPayClient {
     return this.#call(
       'POST',
       '/v3/refund/domestic/refunds',
-      refundShape(i.outRefundNo, i.outTradeNo),
+      refundShape(i.outRefundNo, {
+        outTradeNo: i.outTradeNo,
+        refundFen: i.refundFen,
+        totalFen: i.totalFen,
+      }),
       body,
     );
   }
@@ -262,7 +246,7 @@ export class WechatPayClient {
     return this.#call(
       'POST',
       '/v3/fund-app/mch-transfer/transfer-bills',
-      this.#billShape(i.outBillNo),
+      this.#billShape(i.outBillNo, ['create_time']),
       body,
     );
   }
@@ -271,7 +255,10 @@ export class WechatPayClient {
     return this.#call(
       'GET',
       `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${encodeURIComponent(outBillNo)}`,
-      { ...this.#billShape(outBillNo), integers: ['transfer_amount'] },
+      {
+        ...this.#billShape(outBillNo, ['mch_id', 'appid', 'create_time', 'update_time']),
+        positiveIntegers: ['transfer_amount'],
+      },
     );
   }
 
@@ -279,7 +266,7 @@ export class WechatPayClient {
     return this.#call(
       'POST',
       `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${encodeURIComponent(outBillNo)}/cancel`,
-      this.#billShape(outBillNo),
+      this.#billShape(outBillNo, ['update_time']),
     );
   }
 
@@ -323,10 +310,10 @@ export class WechatPayClient {
 
   // ---- internals
 
-  #billShape(outBillNo: string): Expect {
+  #billShape(outBillNo: string, alsoRequired: readonly string[]): Expect {
     return {
       status: 200,
-      strings: ['out_bill_no', 'transfer_bill_no', 'state'],
+      strings: ['out_bill_no', 'transfer_bill_no', 'state', ...alsoRequired],
       enums: { state: TRANSFER_STATES },
       echo: { out_bill_no: outBillNo, mch_id: this.#c.mchid, appid: this.#c.appid },
     };
@@ -425,34 +412,41 @@ export class WechatPayClient {
       return { kind: 'ok', data: parsed as T };
     }
 
+    // A verified error. It is not tied to this request (the signature does not cover the request)
+    // and the docs say to query the bill on any error, so it is never reported as a failure.
     if (code === undefined || code === '') return unknown('bad_body', `${status} no code`);
-    if (!this.#rejectCodes.has(code)) return unknown('indeterminate', status, code);
-    return {
-      kind: 'rejected',
-      code,
-      message: typeof parsed?.['message'] === 'string' ? parsed['message'] : '',
-      httpStatus: res.status,
-    };
+    return unknown('channel_error', status, code, true);
   }
 }
 
-function refundShape(outRefundNo: string, outTradeNo?: string): Expect {
+function refundShape(
+  outRefundNo: string,
+  sent?: { readonly outTradeNo: string; readonly refundFen: number; readonly totalFen: number },
+): Expect {
   return {
     status: 200,
     strings: ['refund_id', 'out_refund_no', 'out_trade_no', 'status'],
-    objects: ['amount'],
     enums: { status: REFUND_STATES },
     echo: {
       out_refund_no: outRefundNo,
-      ...(outTradeNo === undefined ? {} : { out_trade_no: outTradeNo }),
+      ...(sent === undefined ? {} : { out_trade_no: sent.outTradeNo }),
+    },
+    check: (obj) => {
+      const amount = obj['amount'];
+      if (typeof amount !== 'object' || amount === null || Array.isArray(amount))
+        return 'missing amount';
+      const a = amount as Record<string, unknown>;
+      const refund = a['refund'];
+      const total = a['total'];
+      const isFen = (v: unknown): v is number =>
+        typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+      if (!isFen(refund) || !isFen(total) || refund > total) return 'invalid amount';
+      if (a['currency'] !== 'CNY') return 'invalid amount';
+      if (sent !== undefined && (refund !== sent.refundFen || total !== sent.totalFen))
+        return 'mismatched amount';
+      return undefined;
     },
   };
-}
-
-function unknown(reason: UnknownResult['reason'], detail: string, code?: string): UnknownResult {
-  return code === undefined
-    ? { kind: 'unknown', reason, detail }
-    : { kind: 'unknown', reason, detail, code };
 }
 
 /** Parses a JSON object; anything else (null, array, primitive, invalid JSON) is `undefined`. */
