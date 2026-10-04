@@ -44,8 +44,12 @@ export interface AlipayTransferInput {
   readonly payeeName: string;
   readonly orderTitle: string;
   readonly remark?: string;
-  /** Required for merchants onboarded from 2026 per the API doc. */
+  /** Both scene fields are required for merchants onboarded from 2026 per the API doc. */
   readonly transferSceneName?: string;
+  readonly sceneReportInfos?: readonly {
+    readonly infoType: string;
+    readonly infoContent: string;
+  }[];
   readonly productCode?: string;
   readonly bizScene?: string;
 }
@@ -138,6 +142,12 @@ export class AlipayClient {
     };
     if (i.remark !== undefined) biz['remark'] = i.remark;
     if (i.transferSceneName !== undefined) biz['transfer_scene_name'] = i.transferSceneName;
+    if (i.sceneReportInfos !== undefined) {
+      biz['transfer_scene_report_infos'] = i.sceneReportInfos.map((r) => ({
+        info_type: r.infoType,
+        info_content: r.infoContent,
+      }));
+    }
     return this.#call('alipay.fund.trans.uni.transfer', biz);
   }
 
