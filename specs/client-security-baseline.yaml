@@ -7,20 +7,21 @@
 #   version            每次改动递增
 #   rules              每条 {id, title, waivable, platforms, check, targets}
 #     id               CSB-nn，一经发布不复用、不重排
-#     waivable         只有 CSB-08 不是「不可豁免」底线（它本身不检查）；CSB-01～07、09～11 一律 false。
+#     waivable         CSB-01～07、09～11 一律 false（不可豁免）；CSB-08 本身不检查，写 null（不适用）。
 #                      本文件不设 waivers 清单：想改变任何一条，只能先按 00 §8 修改 03 §4.8 与对应 BR，
 #                      由负责人决定（03 §4.8）
 #     check            检查方式（03 §4.8「CI 检查」列的摘要）
 #     targets          检查的文件或写法
 #   false_positives    检查方式误判、代码其实没有违反规则的：每条 {rule, file, reason}；由编排者评审，
 #                      评审记录留在 PR 里
-#   forbidden_schemes  CSB-11：自定义 scheme 不得是系统保留或通用 scheme（小写比较）。与 apps.json
+#   forbidden_schemes  CSB-11：自定义 scheme 不得是系统保留或通用 scheme（转小写后整串相等才算命中，不按前缀）。与 apps.json
 #                      外跳目标、SDK 必需查询项里的 scheme 相同的，由 CT-17d 的检查另行判定，不在本表重复
-#   exported_components_allowed  CSB-09：允许导出的组件（按端），每条 {platform, component, purpose};
+#   exported_components_allowed  CSB-09：允许导出的组件（按端），每条 {platform, component, purpose, source}，
+#                      source 为 own 或 sdk:<SDK 名>（按 SDK 移除用不到的组件）；
 #                      清单以外导出、带 intent-filter 或深链声明的组件即失败
 #   own_link_hosts     CSB-11：自有域名清单；https 入站链接与 iOS Associated Domains 的主机必须在这里
 #
-# TODO(规划/06): own_link_hosts 的具体域名 — blocked on 负责人提供正式域名（先空，空时任何 https 入站声明
+# TODO(规划/06 Q-A5): own_link_hosts 的具体域名 — blocked on 负责人提供正式域名（先空，空时任何 https 入站声明
 #   都不通过 CSB-11）。
 # TODO(规划/03 §4.8 CSB-09): exported_components_allowed 的具体组件名 — blocked on 三端工程建立（APP-02、
 #   HM-02）；SDK 带进来的导出组件接入时逐个登记用途，用不到的移除。
@@ -83,7 +84,7 @@ rules:
       - 三端分享调用点
   - id: CSB-08
     title: MVP 不做证书固定（依靠系统信任链与 CSB-01～04；日后要做另写 ADR）
-    waivable: not_applicable
+    waivable: null
     platforms: [ios, android, harmony]
     check: 不检查；代码里出现固定配置时由评审按本条处理
     targets: []
@@ -99,7 +100,7 @@ rules:
     title: 第三方页容器不注入；TrustedWebView 只注入随包发布的桥启动脚本
     waivable: false
     platforms: [ios, android, harmony]
-    check: ExternalWebView 封装出现执行脚本、用户脚本、注入样式、脚本消息通道的调用即失败；TrustedWebView 注入点引用配置或网络内容即失败
+    check: ExternalWebView 封装出现执行脚本、用户脚本、注入样式、脚本消息通道的调用即失败；TrustedWebView 注入点引用配置或网络内容即失败；桥一致性测试页（03 §5.5）有「第三方页面里没有桥对象」的用例
     targets:
       - Features/Web 容器封装
       - 桥启动脚本资源
@@ -107,7 +108,7 @@ rules:
     title: 入站声明只来自 apps.json 入站回调类的生成物；自定义 scheme 不得是系统保留、通用或第三方 App 的 scheme
     waivable: false
     platforms: [ios, android, harmony]
-    check: 生成物与工程文件比对；自定义 scheme 命中 forbidden_schemes 即失败；http intent-filter、https 缺 host、带通配符、不在 own_link_hosts、无 autoVerify 即失败；Associated Domains 主机不在 own_link_hosts 即失败；鸿蒙 https 深链在 CAP-X-03 无验证结论前即失败；iOS 查询 scheme 合计超过 20 条时生成器报错
+    check: 生成物与工程文件比对；自定义 scheme 命中 forbidden_schemes，或与 apps.json 外跳目标、SDK 必需查询项里的 scheme 相同，即失败；http intent-filter、https 缺 host、带通配符、不在 own_link_hosts、无 autoVerify 即失败；Associated Domains 主机不在 own_link_hosts 即失败；鸿蒙 https 深链在 CAP-X-03 无验证结论前即失败；iOS 查询 scheme 合计超过 20 条时生成器报错
     targets:
       - iOS URL Types 与 Associated Domains
       - Android 入口组件 intent-filter
