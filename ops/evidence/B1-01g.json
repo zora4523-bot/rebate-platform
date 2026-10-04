@@ -1,0 +1,109 @@
+{
+  "task": "B1-01g",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "6eb7f81fd856edc4b016f543de04d3db35460328",
+  "red_tests": [
+    "[ADR-0001 §4.2 #14] 常量：pg-boss schema 名 pgboss、期望 schema 版本 42、负载上限 16384 字节；生产目录与入口计划可直接创建运行时且不连库",
+    "[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive，其余 standard，死信队列 dead-letter",
+    "[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 秒] 生产入口计划逐项确切：api / stream / admin 不执行任务，worker 六个队列，payout 只有 payout 并发 1",
+    "[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry",
+    "[规划/02 §11 各自设置并发; contract §1–2 上下界] 目录或入口计划违反任一条规则时 createQueueRuntime 同步抛 invalid_catalog（固定文案、无 cause），且先于其他选项检查",
+    "[contract §1–2 上下界] 处在上下界上的目录与计划被接受：重试 0 与 20 次、延迟 1 与 3600 秒、退避上限等于延迟与 86400、过期 1 与 86400、保留 60 与 2592000、并发 1 与 10、轮询 0.5 与 60、50 字符队列名",
+    "[contract §9] createQueueRuntime 的其他选项错误一律同步抛 invalid_option：未知键、入口不是五个之一、stopTimeoutMs 不是 1..60000 的整数",
+    "[规划/02 §11; ADR-0001 §4.2 #14、#19] send 的检查顺序与每条规则确切：队列 → 任务名 → 负载 → 大小 → 选项 → 运行状态；被拒的 send 不碰任何连接",
+    "[contract §3d] 负载大小按 JSON.stringify 的 UTF-8 字节计：16384 字节放行（到运行状态检查），16385 字节 payload_too_large；多字节字符按字节计",
+    "[contract §5] register 的检查顺序：目录 → 本入口计划 → 处理器是函数 → 未重复 → 未启动；api 入口不能注册任何队列；错误是同步抛出的 QueueError",
+    "[contract §6] 未启动就 stop：立即以 undefined 解决、可以再调；之后 start 拒绝 already_started，register 抛 already_started，合规的 send 拒绝 not_running；全程不连库",
+    "[ADR-0001 §2 业务代码只依赖 JobQueue; 规划/02 §16.3 不要绕过 JobQueue] apps/api/src 里只有 platform/queue 目录导入 pg-boss（且确实用它实现），该目录的非测试源码不读时钟、不读 process.env、不用 console",
+    "[ADR-0001 §3 至少一次; 规划/02 §7.1 死信] 处理器一直抛错：按队列设置共调用 retryLimit+1 次（attempt 1、2、3），最终 failed 并复制进死信队列；两处输出都正好是 {\"error\": \"handler_failed\"}；日志正好两条 job_failed 与一条 job_failed_final，不含负载与错误内容",
+    "[ADR-0001 §3 至少一次] 处理器第一次抛错、第二次成功：共调用两次（attempt 1、2），任务 completed，没有死信副本，日志正好一条 job_failed",
+    "[规划/02 §7.1 死信; contract §5] retryLimit 0 的队列：处理器抛错（含非 Error 的抛出值）只调用一次，立刻 failed 进死信，输出固定，日志正好一条 job_failed_final",
+    "[规划/02 §11 消费幂等; ADR-0001 §3] 处理器在成功的副作用之后抛错：任务被再次投递（至少一次），处理器靠 processed_events(consumer, event_id) 在同一事务去重，副作用只生效一次",
+    "[ADR-0001 §2、§4.2 #14; 规划/02 §11、§18] 同事务入队：提交后业务行与任务都在、处理器收到确切的冻结任务对象一次；回滚后业务行与任务都不存在、处理器从未收到",
+    "[规划/02 §11 事务提交后才可被取走] 事务未提交时 worker 看不到任务（期间等 2 秒、轮询 4 次以上），提交后才被处理",
+    "[contract §3] trx 为 null 时单独入队并被处理；入队检查失败（未知队列、坏负载、坏选项）不碰事务，事务仍可继续写并提交",
+    "[规划/02 §11 任务 ID = event_id] 指定 id：处理器收到的 job.id 就是它；同一队列再送同 id 返回 null 且不新增行；别的队列可用同 id；回滚的同 id 不占位；不指定时生成的 id 与处理器收到的一致",
+    "[contract §3 delaySeconds] 延迟任务按 PostgreSQL 时间推后：delaySeconds 3600 的任务 3 秒内不交给处理器、start_after 在一小时后，delaySeconds 0 的任务立即处理",
+    "[ADR-0001 §4.2 #14 库版本与 schema 版本不一致时拒绝启动] pgboss.version 是 41、43、空表或多出一行时 start 拒绝 schema_mismatch（固定文案、无 cause），不建队列、不起 worker、不写日志；之后 start 拒绝 already_started；版本恢复 42 后新运行时能启动",
+    "[contract §5 队列] start 按目录建队列：每个目录队列一行、设置逐项等于目录（非分区）；已有队列的重试、过期、保留、删除设置被改回目录值；目录外的队列不动",
+    "[contract §5 queue_mismatch] 库里已有队列的策略或死信队列与目录不同：start 拒绝 queue_mismatch，不起 worker（已排队的任务不被取走），设置不被改动",
+    "[contract §6 优雅关闭] stop：先停止取任务（之后入队的任务不被取走，本运行时的 send 拒绝 not_running），再等在跑的处理器结束（期间 db 句柄可用、任务照常 completed）才解决；第二次与并发的 stop 一起解决、不抛；不写日志",
+    "[contract §6 关闭超时] 处理器超过 stopTimeoutMs 仍在跑：stop 不再等它、在超时后不久解决，正好一条 warn queue_stop_timeout {running: 1}，该任务被判失败进入 retry",
+    "[规划/02 §3.1 转账队列 concurrency=1; §11 各自设置并发] 生产计划的并发确切：worker 的 notify 同时最多 5 个且确实到 5；payout 入口（couli_payout 身份）的 payout 同时最多 1 个；全部完成",
+    "[contract §2 并发] 测试计划的并发确切：t-wide 并发 3 时同时最多 3 个处理器调用且确实到 3，等满 3 个轮询间隔仍不超过",
+    "[ADR-0001 §4.2 #11 每进程连接池] 运行时不另开连接池：worker 启动、处理任务、关闭期间，本库里 couli_app 的会话（观察者除外）的 application_name 只有 couli-worker",
+    "[contract §5、§8; 规划/02 §12.6 口令不外泄] 连不上数据库时 start 以驱动错误拒绝：错误的 message、stack、inspect 与 JSON 都不含连接串口令；运行时不写日志；之后 stop 解决、start 拒绝 already_started",
+    "[ADR-0001 §4.2 #19; 规划/02 §5.3] exclusive 队列：同键任务排队（created）、执行中（active）、等待重试（retry）时再送都静默返回 null 且不新增行；不同键照常入队；同键在另一个队列互不影响",
+    "[ADR-0001 §4.2 #19] exclusive 队列：同键任务完成（completed）或最终失败（failed）后键被释放，再送入队成功；回滚事务里送出的键不占位",
+    "[ADR-0001 §4.2 #19] 同一事务里连送两次同键：第二次返回 null；提交后只有一个任务；standard 队列不接受 singletonKey（invalid_option），不带键的两次送都入队",
+    "[ADR-0001 §4.2 #14 库版本与 schema 版本不一致时拒绝启动; contract §10] 真实 worker 入口：pgboss.version 为 41 时以退出码 1 结束，有 startup_failed、没有 started，输出不含口令；版本 42 时报告 started、收到 SIGTERM 后以 0 退出并有 stopped",
+    "[ADR-0001 §4.2 #14 库版本与 schema 版本不一致时拒绝启动; contract §10] 真实 payout 入口：pgboss.version 为 41 时以退出码 1 结束，有 startup_failed、没有 started，输出不含口令；版本 42 时报告 started、收到 SIGTERM 后以 0 退出并有 stopped",
+    "[ADR-0001 §3 至少一次; contract 补充 1] 进程取走任务后崩溃留下的过期 active 任务：新 worker 启动即回收，以同一 job id、attempt 2 再次交付并完成（payout 队列由 payout 入口重新执行）；没有重试余量的进死信；未过期的 active 任务不动；不写日志"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). JobQueue on pg-boss: enqueue in the business transaction, at-least-once delivery, singletonKey (standard / exclusive only), executors for worker and payout, start-up schema check (migrate:false), supervision only in worker (ADR-0001 §2, §3, §4.2 #14, #19; 规划/02 §11, §18). No amount computed; the payout queue's concurrency 1 and attempt ownership are what keep payouts single.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "cc5e72146b1f8cc4f5443b86c8afc86801e5ac2a",
+      "tree": "67a44e1c5fba6225ee05f7a138be648d447324da",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T14:31:49Z",
+      "finished_at": "2026-10-04T14:33:20Z"
+    },
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "55a2b19f5d8c005b0991baca527ecb446d7d4190",
+      "tree": "cb047ced3d74551ab71a61f4608b7fe01cf25213",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T14:36:30Z",
+      "finished_at": "2026-10-04T14:38:22Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "scope": "independent Claude subagent each round with database probes comparing old and new commits; round 4 (attempt 5): overlapping attempts no longer overwrite each other (job_attempt_superseded), job_handler_overrun logged, rebase merge kept IDEMPOTENCY, FIELD_CRYPTO and JOB_QUEUE; 1 S2 (per-channel polling throughput) recorded as a follow-up"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 4,
+      "scope": "money review; rounds 1-3 found the expiry/concurrency S1, the cold-cache pool deadlock, the fetch-before-slot S1 and the stale-attempt settlement S1, all fixed in attempts 3-5; round 4 (attempt 5): pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with one in-scope S2 (completion race in a lifecycle test) and two out-of-scope S1 (expired active recovery, real entries) added as tests in the supplementary commit, checked by the code review"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "ee5f39d6ab079380d24e6e9c0ce833d535c18f3c",
+    "apps/api/src/modules/platform/queue": "5bca86e281d07f6085b6ad4dc5a21744c1530c43"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 on the B1-01g worktree after the final rebase, 2026-10-04 22:35 (+08:00), 26.7 s; this task adds no property tests",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "exceptions": "implementation attempts 4 and 5 and code review round 4 approved by the orchestrator session beyond the default caps (couli-runs/B1-01g/exception-impl-4.md); one call killed during a Codex service outage",
+  "ledger": "PR #44 (paths add apps/api/scripts/smoke-entries.ts) merged first; this branch rebased onto it",
+  "severity_bar": "ops/approvals.yaml #18: the stale-attempt S1 was judged reachable in ordinary operation (overlapping workers during a rolling restart) and fixed, not downgraded",
+  "follow_ups": "couli-runs/followups/B1-01g-queue-test-gaps.md (periodic supervision, payout without supervision, HTTP entries start the queue, keep-alive check, per-channel polling throughput)"
+}
