@@ -219,14 +219,18 @@ async function filler(table: string, col: Column): Promise<unknown> {
   }
 }
 
-/** Inserts one row: the given values plus a value for every NOT NULL column without default. */
+/**
+ * Inserts one row: the given values plus a value for every NOT NULL column without default,
+ * except the columns in `omit`, which the INSERT leaves out so their DEFAULT applies.
+ */
 export async function insertRow(
   table: string,
   values: Record<string, unknown>,
+  omit: readonly string[] = [],
 ): Promise<Record<string, unknown>> {
   const row: Record<string, unknown> = { ...values };
   for (const col of await columns(table)) {
-    if (col.name in row || col.nullable || col.hasDefault) continue;
+    if (col.name in row || col.nullable || col.hasDefault || omit.includes(col.name)) continue;
     row[col.name] = await filler(table, col);
   }
   const names = Object.keys(row);

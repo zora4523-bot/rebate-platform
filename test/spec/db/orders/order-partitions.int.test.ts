@@ -42,17 +42,24 @@ async function ensurePartition(db: Kysely<DB>, month: Date): Promise<string> {
   return result.rows[0]?.name ?? '';
 }
 
+/**
+ * Partitions of orders with their bounds. The bounds are rendered under TIME ZONE 'UTC' in the
+ * same transaction, so the text does not depend on the database's default time zone.
+ */
 async function partitions(): Promise<{ name: string; bound: string }[]> {
-  const rows = await sql<{ name: string; bound: string }>`
-    SELECT c.relname AS name, pg_get_expr(c.relpartbound, c.oid) AS bound
-    FROM pg_inherits i
-    JOIN pg_class p ON p.oid = i.inhparent
-    JOIN pg_class c ON c.oid = i.inhrelid
-    JOIN pg_namespace n ON n.oid = p.relnamespace
-    WHERE n.nspname = 'app' AND p.relname = 'orders'
-    ORDER BY c.relname
-  `.execute(app);
-  return rows.rows;
+  return app.transaction().execute(async (trx) => {
+    await sql`SET LOCAL TIME ZONE 'UTC'`.execute(trx);
+    const rows = await sql<{ name: string; bound: string }>`
+      SELECT c.relname AS name, pg_get_expr(c.relpartbound, c.oid) AS bound
+      FROM pg_inherits i
+      JOIN pg_class p ON p.oid = i.inhparent
+      JOIN pg_class c ON c.oid = i.inhrelid
+      JOIN pg_namespace n ON n.oid = p.relnamespace
+      WHERE n.nspname = 'app' AND p.relname = 'orders'
+      ORDER BY c.relname
+    `.execute(trx);
+    return rows.rows;
+  });
 }
 
 async function partitionOf(orderId: unknown): Promise<string> {

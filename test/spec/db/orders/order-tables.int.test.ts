@@ -329,6 +329,89 @@ it('[AC-B1-08a#15] orders keep no per-order credit date columns (04 §3.2: 月�
   expect(names).toContain('settle_period');
 });
 
+// Every column of the 04 §3.2 orders row (SPEC_REF 826f86e), plus app_id and order_id (the key
+// shared with order_keys). Existence only: no value rule is asserted here.
+const ORDERS_COLUMNS_04 = [
+  'app_id',
+  'order_id',
+  'platform',
+  'sub_order_id',
+  'parent_order_id',
+  'shop_type',
+  'product_key',
+  'raw_item_id',
+  'shop_id',
+  'title',
+  'image_url',
+  'quantity',
+  'refunded_quantity',
+  'refunded_quantity_at_credit',
+  'pay_amount_fen',
+  'pid',
+  'relation_id',
+  'sub_union_id',
+  'custom_params',
+  'link_id',
+  'source_match',
+  'user_id',
+  'buy_type',
+  'scene_basis',
+  'user_basis',
+  'platform_status',
+  'rebate_status',
+  'hold',
+  'hold_reason',
+  'rights_pending',
+  'locked',
+  'row_version',
+  'commission_version',
+  'reason',
+  'reason_sub',
+  'diff_reason_code',
+  'is_presale',
+  'deposit_paid_at',
+  'paid_at',
+  'paid_at_source',
+  'attr_at',
+  'received_at',
+  'platform_received_at',
+  'received_synced_at',
+  'settled_at',
+  'union_settled_at',
+  'settle_period',
+  'platform_modified_at',
+  'credit_requires_settle',
+  'credited_at',
+  'est_commission_fen',
+  'settle_commission_fen',
+  'subsidy_commission_fen',
+  'booked_base_fen',
+  'booked_n_fen',
+  'initial_est_fen',
+  'n_total_fen',
+  'pre_base_deduct_fen',
+  'base_fen',
+  'platform_est_profit_fen',
+  'commission_rate_bp',
+  'is_price_compare',
+  'commission_rate_min_bp',
+  'commission_rate_max_bp',
+  'activity_type',
+  'source_scene',
+  'agent_session_id',
+  'content_hash',
+  'raw_payload_id',
+];
+
+it('[AC-B1-08a#40] orders has every column listed in 04 §3.2 orders', async () => {
+  const names = new Set((await columns('orders')).map((c) => c.name));
+  const missing = ORDERS_COLUMNS_04.filter((name) => !names.has(name));
+  expect(missing).toEqual([]);
+  for (const removed of ['credit_due_at', 'expected_credit_date', 'wait_days_snapshot']) {
+    expect(names.has(removed), removed).toBe(false);
+  }
+});
+
 it('[AC-B1-08a#16] platform_received_at is a nullable timestamptz beside received_at (BR-FUND-02)', async () => {
   for (const name of ['received_at', 'platform_received_at']) {
     const c = await column('orders', name);
@@ -383,11 +466,25 @@ it('[AC-B1-08a#21] orders accept every contract value of platform_status and reb
   }
 });
 
-it('[AC-B1-08a#22] orders.row_version is an integer starting at 0 (ADR-0001 §4.1 CAS)', async () => {
+it('[AC-B1-08a#22] orders.row_version is an integer with DEFAULT 0 (ADR-0001 §4.1 CAS)', async () => {
   const c = await column('orders', 'row_version');
   expect(INTEGER_TYPES).toContain(c?.type);
   expect(c?.nullable).toBe(false);
-  const key = await newOrder();
+  expect(c?.hasDefault).toBe(true);
+  // An INSERT that leaves row_version out stores 0 (the filler never supplies it here).
+  const key = await newOrderKey();
+  await insertRow(
+    'orders',
+    {
+      app_id: 'couli',
+      order_id: key.orderId,
+      platform: key.platform,
+      sub_order_id: key.subOrderId,
+      attr_at: key.attrAt,
+      raw_item_id: unique('item'),
+    },
+    ['row_version'],
+  );
   const stored = await sql<{ v: string }>`
     SELECT row_version::text AS v FROM app.orders WHERE order_id = ${key.orderId}
   `.execute(app);
