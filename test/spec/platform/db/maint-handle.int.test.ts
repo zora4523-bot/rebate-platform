@@ -204,7 +204,7 @@ it('[ADR-0002 §5「出错后重建连接」; db 契约 5] 服务端结束空闲
   });
 });
 
-it('[ADR-0001 §4.2 #11; db 契约 6] 关闭超时：closeTimeoutMs（300）到点仍在跑的维护查询从客户端关掉——确切一行 warn db_close_timeout（pool 为 dbMaint、busy 1），那条查询被拒绝，close() 按时完成；之后的请求以 DbError closed 拒绝', async () => {
+it('[ADR-0001 §4.2 #11; db 契约 6] 关闭超时：确认维护查询已在服务端运行后 close()，closeTimeoutMs（300）到点仍在跑的查询从客户端关掉——确切一行 warn db_close_timeout（pool 为 dbMaint、busy 1），那条查询被拒绝，close() 按时完成；之后的请求以 DbError closed 拒绝', async () => {
   let seen: unknown;
   try {
     const { handle, lines } = maintHandle(database.urlFor('couli_maint'), 300);
@@ -212,13 +212,21 @@ it('[ADR-0001 §4.2 #11; db 契约 6] 关闭超时：closeTimeoutMs（300）到�
       () => 'resolved',
       () => 'rejected',
     );
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 300);
-    });
+    // close() only after the query is really running on the server (connection established).
+    const watcher = observer('couli_maint');
+    const running = await until(async () => {
+      const result = await sql<{ n: bigint }>`
+        SELECT count(*) AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND application_name = 'couli-worker-maint'
+          AND state = 'active' AND query LIKE '%pg_sleep(5)%'
+      `.execute(watcher);
+      return Number(result.rows[0]?.n ?? 0n) === 1;
+    }, 5000);
     const began = performance.now();
     const closed = await handle.close();
     const elapsed = performance.now() - began;
     seen = {
+      running,
       closed,
       inTime: elapsed < 2000,
       slow: await slow,
@@ -229,11 +237,12 @@ it('[ADR-0001 §4.2 #11; db 契约 6] 关闭超时：closeTimeoutMs（300）到�
     await sql`
       SELECT pg_terminate_backend(pid) FROM pg_stat_activity
       WHERE datname = current_database() AND application_name = 'couli-worker-maint'
-    `.execute(observer('couli_maint'));
+    `.execute(watcher);
   } catch (error) {
     seen = describeError(error);
   }
   expect(seen).toStrictEqual({
+    running: true,
     closed: undefined,
     inTime: true,
     slow: 'rejected',

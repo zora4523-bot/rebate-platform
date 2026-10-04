@@ -131,8 +131,10 @@ async function runUntilStopped(
     stderr += chunk;
   });
   const timer = setTimeout(() => child.kill('SIGKILL'), limitMs);
+  // 'close' comes after the process exited AND its stdout / stderr were read to the end, so the
+  // last lines (`stopped`) are never cut off.
   const [code, signal] = await new Promise<[number | null, string | null]>((resolve) => {
-    child.on('exit', (exitCode, exitSignal) => {
+    child.on('close', (exitCode, exitSignal) => {
       resolve([exitCode, exitSignal]);
     });
   });
