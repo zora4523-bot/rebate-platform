@@ -74,6 +74,20 @@ export interface IdempotencyKeys {
   user_id: string | null;
 }
 
+export interface InboxMessages {
+  app_id: string;
+  body: string;
+  code: string;
+  created_at: Generated<Timestamp>;
+  message_id: string;
+  read_at: Timestamp | null;
+  route: Json | null;
+  row_version: Generated<number>;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface LinkLogs {
   agent_message_id: string | null;
   agent_session_id: string | null;
@@ -273,6 +287,23 @@ export interface ProcessedEvents {
   event_id: string;
 }
 
+export interface PushTokens {
+  acquired_by_move_at: Timestamp | null;
+  app_id: string;
+  bound_sid: string | null;
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  frozen_until: Timestamp | null;
+  id: string;
+  provider: string;
+  revoked_at: Timestamp | null;
+  row_version: Generated<number>;
+  token: string;
+  token_set_at: Timestamp;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
 export interface UserOauth {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -312,11 +343,21 @@ export interface Users {
   updated_at: Generated<Timestamp>;
 }
 
+export interface UserTipReads {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  platform: string;
+  read_at: Timestamp;
+  tip_key: string;
+  user_id: string;
+}
+
 export interface DB {
   device_registrations: DeviceRegistrations;
   devices: Devices;
   event_log: EventLog;
   idempotency_keys: IdempotencyKeys;
+  inbox_messages: InboxMessages;
   link_logs: LinkLogs;
   link_open_attempts: LinkOpenAttempts;
   links: Links;
@@ -326,6 +367,8 @@ export interface DB {
   order_settlements: OrderSettlements;
   orders: Orders;
   processed_events: ProcessedEvents;
+  push_tokens: PushTokens;
   user_oauth: UserOauth;
+  user_tip_reads: UserTipReads;
   users: Users;
 }

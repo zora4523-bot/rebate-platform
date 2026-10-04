@@ -19,5 +19,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/db/notification/**'
-status: todo
-pr: null
+status: done
+pr: 56
