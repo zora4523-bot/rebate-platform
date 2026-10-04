@@ -16,9 +16,18 @@ export {
   DB_READ,
   IDEMPOTENCY,
   FIELD_CRYPTO,
+  JOB_QUEUE,
   PlatformModule,
   ROOT_LOGGER,
 } from './platform.module.ts';
 export type { PlatformOptions } from './platform.module.ts';
 export { createDbHandles, loadConnectionConfig, DbError } from './db/index.ts';
 export type { ConnectionConfig, DbHandles } from './db/index.ts';
+export type {
+  JobQueue,
+  JobPayload,
+  SendOptions,
+  ReceivedJob,
+  JobHandler,
+  QueueRuntime,
+} from './queue/index.ts';
