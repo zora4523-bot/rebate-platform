@@ -1,0 +1,23 @@
+id: B1-01p
+repo: rebate-platform
+title: 链路标识：入口收到的 x-trace-id 只接受固定格式（32 位十六进制或 UUID），不符合就重新生成
+type: impl
+# B1-01c 的后续（approvals #18 降级后另立；couli-runs/followups/B1-01c-url-path-and-trace-id.md 第 2 项）。
+# 场景：请求头 x-trace-id: 13987654321 原样成为 reqId 写进每条访问日志与响应 trace_id。依据：规划/04 §5
+# 公共请求头 X-Trace-Id（客户端生成）；规划/02 §19 日志 trace_id 与 PII 脱敏；BR-ID-33 日志不出现明文。
+# 契约 TraceId 的 pattern 不改（请求校验照旧放行），只收窄服务端「原样采用」的范围。health 与 validation
+# 的单元测试里用了非 UUID 的示例值，随实现改为合格值（只改这两个单元测试文件）。
+refs: []
+refs_hash: {}
+deps: [B1-01c]
+paths:
+  - 'apps/api/src/modules/platform/tracing/**'
+  - 'apps/api/src/modules/health/http/public/health.controller.test.ts'
+  - 'apps/api/src/modules/platform/validation/http.test.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/tracing/**'
+status: todo
+pr: null
