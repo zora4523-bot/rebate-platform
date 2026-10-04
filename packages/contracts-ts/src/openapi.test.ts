@@ -101,3 +101,34 @@ it('abandon: original is null exactly when outcome is abandoned (04 §6.1)', () 
   expect([abandoned, completed, abandonedWithResult, completedWithoutResult]).toHaveLength(4);
   expect(completed.original?.code).toBe(30412);
 });
+
+it('step-up takes exactly one way; an oauth attempt for step_up names the action (BR-ID-04, BR-ID-08)', () => {
+  const bySms: Schema<'StepUpRequest'> = { action: 'withdraw', code: '123456' };
+  const byApple: Schema<'StepUpRequest'> = {
+    action: 'account_deletion',
+    provider: 'apple',
+    attempt_id: 'a-1',
+    identity_token: 'token',
+    authorization_code: 'code',
+  };
+  const mixed: Schema<'StepUpRequest'> = {
+    action: 'account_deletion',
+    provider: 'wechat',
+    attempt_id: 'a-1',
+    // @ts-expect-error a WeChat re-authorization carries the WeChat code, not Apple's fields
+    authorization_code: 'code',
+  };
+  const loginAttempt: Schema<'CreateOauthAttemptRequest'> = {
+    provider: 'huawei',
+    purpose: 'login',
+  };
+  // @ts-expect-error purpose=step_up needs the action
+  const stepUpAttempt: Schema<'CreateOauthAttemptRequest'> = {
+    provider: 'wechat',
+    purpose: 'step_up',
+  };
+  expectTypeOf<Schema<'RegisterDeviceRequest'>['id_source']>().toEqualTypeOf<
+    'idfv' | 'android_id' | 'oaid' | 'odid'
+  >();
+  expect([bySms, byApple, mixed, loginAttempt, stepUpAttempt]).toHaveLength(5);
+});

@@ -16,6 +16,20 @@ enums:
       wechat: 微信（unionid）
       apple: Sign in with Apple（sub）
       huawei: 华为账号（unionID，M-公开）
+  device_id_source:
+    source: 规划/04 §3.2 devices、§6.1；BR-ID-09
+    description: 设备标识哈希的来源（devices.id_source）
+    values:
+      idfv: iOS IDFV
+      android_id: Android ANDROID_ID（MVP Android 只用它）
+      oaid: Android OAID（MVP 不集成获取方式，预留）
+      odid: 鸿蒙 ODID
+  oauth_attempt_purpose:
+    source: 规划/04 §6.1；BR-ID-04、BR-ID-08
+    description: 第三方授权尝试的用途（POST /v1/auth/oauth-attempts）
+    values:
+      login: 登录
+      step_up: 二次验证
   sms_purpose:
     source: 规划/04 §6.1；BR-ID-05
     values:
