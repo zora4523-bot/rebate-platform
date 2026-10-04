@@ -216,3 +216,26 @@ it('content: notices, update check, inbox message (04 §6.2, §6.4)', () => {
   const stores: Schema<'AppVersionCheck'>['stores'] = [{ store: 'huawei', listed_version: null }];
   expect(stores).toHaveLength(1);
 });
+
+it('withdrawals and wallet (04 §6.4)', () => {
+  expectTypeOf<Schema<'Withdrawal'>['channel_order_id']>().toEqualTypeOf<string | null>();
+  expectTypeOf<Schema<'WithdrawRules'>['quick_amounts_fen']>().toEqualTypeOf<number[]>();
+  const entry: Schema<'LedgerEntry'> = {
+    ledger_type: 'WITHDRAW_PAID',
+    sub_type: null,
+    amount_fen: -100,
+    accounting_date: '2026-10-01',
+    link_type: 'withdrawal',
+    link_id: 'w',
+    masked: false,
+    balance_after_fen: null,
+    fee_fen: 0,
+    tax_fen: 0,
+  };
+  expect(entry.balance_after_fen).toBeNull();
+});
+
+it('the WITHDRAW_PAID summary entry has a null balance_after_fen (04 §6.4)', () => {
+  expectTypeOf<Schema<'LedgerWithdrawPaidEntry'>['balance_after_fen']>().toEqualTypeOf<null>();
+  expect(true).toBe(true);
+});
