@@ -37,6 +37,7 @@ const SHORT_NAMES: Readonly<Record<string, string>> = {
   '2.5.4.8': 'ST',
   '2.5.4.10': 'O',
   '2.5.4.11': 'OU',
+  '1.2.840.113549.1.9.1': 'E',
 };
 
 interface Tlv {
@@ -92,10 +93,34 @@ function decodeOid(value: Buffer): string {
   return parts.join('.');
 }
 
+/** Decodes an ASN.1 string by its tag. Types that are not implemented fail closed. */
+export function decodeDerString(tag: number, value: Buffer): string {
+  switch (tag) {
+    case 0x0c: // UTF8String
+      return new TextDecoder('utf-8', { fatal: true }).decode(value);
+    case 0x13: // PrintableString
+    case 0x16: // IA5String
+      if (value.some((b) => b > 0x7f)) throw new Error('non-ASCII byte in an ASCII string');
+      return value.toString('latin1');
+    case 0x14: // TeletexString (T61String): read as ISO 8859-1, as the common decoders do
+      return value.toString('latin1');
+    case 0x1c: {
+      // UniversalString: UTF-32BE
+      if (value.length % 4 !== 0) throw new Error('malformed UniversalString');
+      let out = '';
+      for (let i = 0; i < value.length; i += 4) out += String.fromCodePoint(value.readUInt32BE(i));
+      return out;
+    }
+    case 0x1e: // BMPString: UTF-16BE
+      if (value.length % 2 !== 0) throw new Error('malformed BMPString');
+      return Buffer.from(value).swap16().toString('utf16le');
+    default:
+      throw new Error(`ASN.1 string type 0x${tag.toString(16)} is not supported`);
+  }
+}
+
 function decodeString(tlv: Tlv): string {
-  // 0x1e BMPString is UTF-16BE; UTF8String, PrintableString, IA5String, TeletexString read as UTF-8.
-  if (tlv.tag === 0x1e) return Buffer.from(tlv.value).swap16().toString('utf16le');
-  return tlv.value.toString('utf8');
+  return decodeDerString(tlv.tag, tlv.value);
 }
 
 interface CertFields {
@@ -151,8 +176,15 @@ export function certSn(certPem: string): string {
 
 /** Root bundle: serial numbers of the RSA-signed certificates, joined with `_`. */
 export function rootCertSn(bundlePem: string): string {
+  const blocks = bundlePem.match(PEM_CERT) ?? [];
+  const begins = bundlePem.split('-----BEGIN CERTIFICATE-----').length - 1;
+  const ends = bundlePem.split('-----END CERTIFICATE-----').length - 1;
+  const leftover = bundlePem.replace(PEM_CERT, '').trim();
+  if (begins !== blocks.length || ends !== blocks.length || leftover !== '') {
+    throw new Error('root bundle is truncated or contains unexpected content');
+  }
   const sns: string[] = [];
-  for (const pem of bundlePem.match(PEM_CERT) ?? []) {
+  for (const pem of blocks) {
     const fields = parseCert(pem);
     if (fields.signatureOid.startsWith('1.2.840.113549.1.1')) sns.push(snOf(fields));
   }

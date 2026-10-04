@@ -5,6 +5,8 @@ import {
   type ChannelResult,
   fetchTransport,
   send,
+  type Shape,
+  shapeViolation,
   type Transport,
   type UnknownResult,
 } from '../transport.ts';
@@ -26,6 +28,8 @@ export interface AlipayConfig {
   readonly transport?: Transport;
   /** Epoch milliseconds. */
   readonly now?: () => number;
+  /** Overrides `ALIPAY_DEFAULT_REJECT_CODES` (matched against `sub_code`). */
+  readonly rejectCodes?: ReadonlySet<string>;
 }
 
 export interface AlipayAppPayInput {
@@ -65,21 +69,22 @@ export interface AlipayTransferInput {
 type Json = Record<string, unknown>;
 
 /**
- * Codes the docs describe as "cannot tell yet": still processing, system error, or a bill that is
- * not visible (which the transfer-query doc says may simply mean "still processing").
+ * `sub_code`s the docs describe as "the request was refused". A verified answer with one of these
+ * is `rejected`; every other code — still processing, system error, conflicting duplicate, bill
+ * not visible, or simply not on this list — is `unknown` with the code kept for the caller.
  */
-const INDETERMINATE_CODES = new Set(['20000']);
-const INDETERMINATE_SUB_CODES = new Set([
-  'SYSTEM_ERROR',
-  'ACQ.SYSTEM_ERROR',
-  'aop.unknow-error',
-  'isp.unknow-error',
-  'REQUEST_PROCESSING',
-  'TRANS_ORDER_DEALING',
-  'PROMO_TRANS_ORDER_DEALING',
-  'ORDER_NOT_EXIST',
-  'ACQ.TRADE_NOT_EXIST',
+export const ALIPAY_DEFAULT_REJECT_CODES: ReadonlySet<string> = new Set([
+  'INVALID_PARAMETER',
+  'PAYEE_NOT_EXIST',
+  'BALANCE_IS_NOT_ENOUGH',
 ]);
+
+/** Largest response accepted; anything bigger is treated as malformed. */
+const MAX_RESPONSE_CHARS = 1_000_000;
+
+const TRANSFER_STATUS = ['SUCCESS', 'FAIL', 'DEALING'];
+const TRANSFER_QUERY_STATUS = ['SUCCESS', 'WAIT_PAY', 'CLOSED', 'FAIL', 'DEALING', 'REFUND'];
+const TRADE_STATUS = ['WAIT_BUYER_PAY', 'TRADE_CLOSED', 'TRADE_SUCCESS', 'TRADE_FINISHED'];
 
 const DEFAULT_PRODUCT_CODE = 'TRANS_ACCOUNT_NO_PWD';
 const DEFAULT_BIZ_SCENE = 'DIRECT_TRANSFER';
@@ -89,12 +94,14 @@ export class AlipayClient {
   readonly #gateway: string;
   readonly #transport: Transport;
   readonly #now: () => number;
+  readonly #rejectCodes: ReadonlySet<string>;
 
   constructor(config: AlipayConfig) {
     this.#c = config;
     this.#gateway = config.gateway ?? 'https://openapi.alipay.com/gateway.do';
     this.#transport = config.transport ?? fetchTransport;
     this.#now = config.now ?? (() => Date.now());
+    this.#rejectCodes = config.rejectCodes ?? ALIPAY_DEFAULT_REJECT_CODES;
   }
 
   // ---- collect: APP pay
@@ -119,14 +126,23 @@ export class AlipayClient {
   }
 
   tradeQuery(outTradeNo: string): Promise<ChannelResult<Json>> {
-    return this.#call('alipay.trade.query', { out_trade_no: outTradeNo }, [
-      'out_trade_no',
-      'trade_status',
-    ]);
+    return this.#call(
+      'alipay.trade.query',
+      { out_trade_no: outTradeNo },
+      {
+        strings: ['out_trade_no', 'trade_no', 'trade_status', 'total_amount'],
+        enums: { trade_status: TRADE_STATUS },
+        echo: { out_trade_no: outTradeNo },
+      },
+    );
   }
 
   tradeClose(outTradeNo: string): Promise<ChannelResult<Json>> {
-    return this.#call('alipay.trade.close', { out_trade_no: outTradeNo }, ['out_trade_no']);
+    return this.#call(
+      'alipay.trade.close',
+      { out_trade_no: outTradeNo },
+      { strings: ['out_trade_no'], echo: { out_trade_no: outTradeNo } },
+    );
   }
 
   tradeRefund(i: AlipayRefundInput): Promise<ChannelResult<Json>> {
@@ -136,7 +152,10 @@ export class AlipayClient {
       refund_amount: fenToYuan(positiveFen(i.refundFen)),
     };
     if (i.reason !== undefined) biz['refund_reason'] = i.reason;
-    return this.#call('alipay.trade.refund', biz, ['out_trade_no', 'refund_fee']);
+    return this.#call('alipay.trade.refund', biz, {
+      strings: ['out_trade_no', 'refund_fee'],
+      echo: { out_trade_no: i.outTradeNo },
+    });
   }
 
   refundQuery(outTradeNo: string, outRequestNo: string): Promise<ChannelResult<Json>> {
@@ -145,7 +164,7 @@ export class AlipayClient {
     return this.#call(
       'alipay.trade.fastpay.refund.query',
       { out_trade_no: outTradeNo, out_request_no: outRequestNo },
-      [],
+      { echo: { out_trade_no: outTradeNo, out_request_no: outRequestNo } },
     );
   }
 
@@ -168,7 +187,11 @@ export class AlipayClient {
         info_content: r.infoContent,
       }));
     }
-    return this.#call('alipay.fund.trans.uni.transfer', biz, ['out_biz_no', 'status']);
+    return this.#call('alipay.fund.trans.uni.transfer', biz, {
+      strings: ['out_biz_no', 'status'],
+      enums: { status: TRANSFER_STATUS },
+      echo: { out_biz_no: i.outBizNo },
+    });
   }
 
   transferQuery(
@@ -183,7 +206,11 @@ export class AlipayClient {
         product_code: productCode ?? DEFAULT_PRODUCT_CODE,
         biz_scene: bizScene ?? DEFAULT_BIZ_SCENE,
       },
-      ['status'],
+      {
+        strings: ['out_biz_no', 'status'],
+        enums: { status: TRANSFER_QUERY_STATUS },
+        echo: { out_biz_no: outBizNo },
+      },
     );
   }
 
@@ -224,27 +251,28 @@ export class AlipayClient {
     return params;
   }
 
-  async #call(
-    method: string,
-    biz: Json,
-    required: readonly string[],
-  ): Promise<ChannelResult<Json>> {
+  async #call(method: string, biz: Json, shape: Shape): Promise<ChannelResult<Json>> {
     const params = this.#signedParams(method, biz);
     // Public parameters travel in the query string, the business payload in the form body; the
     // signature covers both.
     const { biz_content: bizContent, ...publicParams } = params;
     const res = await send(this.#transport, {
       method: 'POST',
-      url: `${this.#gateway}?${new URLSearchParams(publicParams).toString()}`,
+      url: withQuery(this.#gateway, publicParams),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
       body: new URLSearchParams({ biz_content: bizContent ?? '' }).toString(),
       timeoutMs: this.#c.timeoutMs ?? 10_000,
     });
     if ('kind' in res) return res;
     const status = String(res.status);
-    if (res.status >= 500) return { kind: 'unknown', reason: 'http_5xx', detail: status };
+    if (res.status >= 500) return unknown('http_5xx', status);
     if (res.status !== 200) return unknown('bad_body', status);
 
+    // The whole answer must be valid JSON before any part of it is looked at; the scanner only
+    // keeps the exact text of each member, which is what the signature covers.
+    if (res.body.length > MAX_RESPONSE_CHARS || !isJsonObject(res.body)) {
+      return unknown('bad_body', 'not a JSON object');
+    }
     const members = topLevelMembers(res.body);
     if (members === undefined) return unknown('bad_body', 'not a JSON object');
     const nodeKey = `${method.replaceAll('.', '_')}_response`;
@@ -255,50 +283,59 @@ export class AlipayClient {
     const count = (key: string): number => members.filter((m) => m.key === key).length;
 
     // Readable code for diagnostics only; nothing is trusted before the signature check.
-    const errorRaw = one('error_response');
     const nodeRaw = one(nodeKey);
-    const hint = diagnosticCode(nodeRaw ?? errorRaw);
+    const hint = diagnosticCode(nodeRaw ?? one('error_response'));
 
     if (count(nodeKey) !== 1 || count('error_response') !== 0 || count('sign') !== 1) {
       return unknown('bad_signature', 'missing, duplicated or conflicting response members', hint);
     }
-    if (nodeRaw === undefined || !nodeRaw.startsWith('{'))
+    if (nodeRaw === undefined || !nodeRaw.startsWith('{')) {
       return unknown('bad_body', 'response node is not an object', hint);
+    }
     const signature = parseString(one('sign'));
-    const certSnValue = parseString(one('alipay_cert_sn'));
     if (signature === undefined || signature === '')
       return unknown('bad_signature', 'no signature', hint);
-    if (certSnValue !== this.#c.alipayCertSn)
+    if (parseString(one('alipay_cert_sn')) !== this.#c.alipayCertSn) {
       return unknown('bad_signature', 'certificate serial mismatch', hint);
+    }
     if (!rsa2Verify(nodeRaw, signature, this.#c.alipayPublicKeyPem)) {
       return unknown('bad_signature', 'signature mismatch', hint);
     }
 
-    let node: Json;
-    try {
-      node = JSON.parse(nodeRaw) as Json;
-    } catch {
-      return unknown('bad_body', 'response node is not valid JSON');
-    }
+    const node = JSON.parse(nodeRaw) as Json;
     const code = typeof node['code'] === 'string' ? node['code'] : '';
-    const subCode = typeof node['sub_code'] === 'string' ? node['sub_code'] : '';
     if (code === '') return unknown('bad_body', 'no code');
+    const rawSub = node['sub_code'];
+    if (rawSub !== undefined && typeof rawSub !== 'string') {
+      return unknown('bad_body', 'sub_code is not a string', code);
+    }
+    const subCode = rawSub ?? '';
     const shown = subCode === '' ? code : subCode;
 
     if (code === '10000') {
       if (subCode !== '') return unknown('bad_body', 'success code with a sub_code', shown);
-      for (const field of required) {
-        const v = node[field];
-        if (typeof v !== 'string' || v === '') return unknown('bad_body', `missing ${field}`);
-      }
+      const violation = shapeViolation(node, shape);
+      if (violation !== undefined) return unknown('bad_body', violation);
       return { kind: 'ok', data: node };
     }
-    if (INDETERMINATE_CODES.has(code) || INDETERMINATE_SUB_CODES.has(subCode)) {
-      return unknown('indeterminate', code, shown);
-    }
-    const message =
-      typeof node['sub_msg'] === 'string' ? node['sub_msg'] : String(node['msg'] ?? '');
-    return { kind: 'rejected', code: shown, message, httpStatus: 200 };
+    if (!this.#rejectCodes.has(subCode)) return unknown('indeterminate', code, shown);
+    const message = typeof node['sub_msg'] === 'string' ? node['sub_msg'] : '';
+    return { kind: 'rejected', code: subCode, message, httpStatus: 200 };
+  }
+}
+
+function withQuery(gateway: string, params: Readonly<Record<string, string>>): string {
+  const url = new URL(gateway);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  return url.toString();
+}
+
+function isJsonObject(text: string): boolean {
+  try {
+    const v: unknown = JSON.parse(text);
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
+  } catch {
+    return false;
   }
 }
 

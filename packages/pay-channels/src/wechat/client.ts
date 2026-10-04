@@ -6,6 +6,8 @@ import {
   type ChannelResult,
   fetchTransport,
   send,
+  type Shape,
+  shapeViolation,
   type Transport,
   type UnknownResult,
 } from '../transport.ts';
@@ -34,6 +36,8 @@ export interface WechatPayConfig {
   /** Unix seconds. */
   readonly now?: () => number;
   readonly nonce?: () => string;
+  /** Overrides `WECHAT_DEFAULT_REJECT_CODES`. */
+  readonly rejectCodes?: ReadonlySet<string>;
 }
 
 export interface AppOrderInput {
@@ -80,7 +84,7 @@ export interface AppPayParams {
 export interface WechatNotification {
   readonly id: string;
   readonly eventType: string;
-  /** Decrypted `resource`, parsed as JSON. */
+  /** Decrypted `resource`: always a JSON object. */
   readonly resource: Record<string, unknown>;
 }
 
@@ -96,29 +100,38 @@ type Json = Record<string, unknown>;
 const MAX_CLOCK_SKEW_SECONDS = 300;
 
 /**
- * Codes the docs describe as "cannot tell yet": the request may have been or may still be
- * executed, or the bill may not be visible yet. Never a definite failure.
+ * Error codes the docs describe as "the request was refused before anything happened". A verified
+ * answer with one of these is `rejected`; every other code — documented as indeterminate, or
+ * simply not on this list — is `unknown` with the code kept for the caller. The transfer doc is
+ * explicit: on a new error code, query the bill instead of assuming failure.
  */
-const INDETERMINATE_CODES = new Set([
-  'SYSTEM_ERROR',
-  'ALREADY_EXISTS',
-  'OUT_TRADE_NO_USED',
-  'FREQUENCY_LIMIT_EXCEED',
-  'RATELIMIT_EXCEEDED',
-  'FREQUENCY_LIMIT',
-  'NOT_FOUND',
-  'ORDER_NOT_EXIST',
+export const WECHAT_DEFAULT_REJECT_CODES: ReadonlySet<string> = new Set([
+  'PARAM_ERROR',
+  'INVALID_REQUEST',
+  'NO_AUTH',
+  'SIGN_ERROR',
+  'NOT_ENOUGH',
+  'APPID_MCHID_NOT_MATCH',
+  'MCH_NOT_EXISTS',
 ]);
 
-/** What a successful answer of one call must look like. */
-interface Expect {
-  readonly status: number;
-  /** String fields that must be present and non-empty; empty list with status 204 = empty body. */
-  readonly required: readonly string[];
-}
+const TRANSFER_STATES = [
+  'ACCEPTED',
+  'PROCESSING',
+  'WAIT_USER_CONFIRM',
+  'TRANSFERING',
+  'SUCCESS',
+  'FAIL',
+  'CANCELING',
+  'CANCELLED',
+];
+const TRADE_STATES = ['SUCCESS', 'REFUND', 'NOTPAY', 'CLOSED', 'REVOKED', 'USERPAYING', 'PAYERROR'];
+const REFUND_STATES = ['SUCCESS', 'CLOSED', 'PROCESSING', 'ABNORMAL'];
 
-const BILL: Expect = { status: 200, required: ['out_bill_no', 'state'] };
-const REFUND: Expect = { status: 200, required: ['out_refund_no', 'status'] };
+/** `status` 204 means: verified, empty body, nothing else. */
+interface Expect extends Shape {
+  readonly status: 200 | 204;
+}
 
 export class WechatPayClient {
   readonly #c: WechatPayConfig;
@@ -126,6 +139,7 @@ export class WechatPayClient {
   readonly #transport: Transport;
   readonly #now: () => number;
   readonly #nonce: () => string;
+  readonly #rejectCodes: ReadonlySet<string>;
 
   constructor(config: WechatPayConfig) {
     this.#c = config;
@@ -133,6 +147,7 @@ export class WechatPayClient {
     this.#transport = config.transport ?? fetchTransport;
     this.#now = config.now ?? (() => Math.floor(Date.now() / 1000));
     this.#nonce = config.nonce ?? (() => randomBytes(16).toString('hex'));
+    this.#rejectCodes = config.rejectCodes ?? WECHAT_DEFAULT_REJECT_CODES;
   }
 
   // ---- collect: APP pay
@@ -148,10 +163,11 @@ export class WechatPayClient {
       amount: { total: i.totalFen, currency: 'CNY' },
     };
     if (i.timeExpire !== undefined) body['time_expire'] = i.timeExpire;
+    // The answer only carries prepay_id, so it cannot be tied to the order number.
     return this.#call(
       'POST',
       '/v3/pay/transactions/app',
-      { status: 200, required: ['prepay_id'] },
+      { status: 200, strings: ['prepay_id'] },
       body,
     );
   }
@@ -179,13 +195,21 @@ export class WechatPayClient {
 
   queryOrder(outTradeNo: string): Promise<ChannelResult<Json>> {
     const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}?mchid=${encodeURIComponent(this.#c.mchid)}`;
-    return this.#call('GET', path, { status: 200, required: ['out_trade_no', 'trade_state'] });
+    return this.#call('GET', path, {
+      status: 200,
+      strings: ['appid', 'mchid', 'out_trade_no', 'trade_state'],
+      enums: { trade_state: TRADE_STATES },
+      echo: { out_trade_no: outTradeNo, mchid: this.#c.mchid, appid: this.#c.appid },
+    });
   }
 
-  /** 204 with an empty body on success. */
+  /**
+   * 204 with an empty body on success. An empty answer cannot be tied to the order number; it is
+   * only fresh (five minutes) and signed, so confirm with `queryOrder` before acting on it.
+   */
   closeOrder(outTradeNo: string): Promise<ChannelResult<Json>> {
     const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}/close`;
-    return this.#call('POST', path, { status: 204, required: [] }, { mchid: this.#c.mchid });
+    return this.#call('POST', path, { status: 204 }, { mchid: this.#c.mchid });
   }
 
   refund(i: RefundInput): Promise<ChannelResult<Json>> {
@@ -198,14 +222,19 @@ export class WechatPayClient {
     };
     if (i.reason !== undefined) body['reason'] = i.reason;
     if (i.notifyUrl !== undefined) body['notify_url'] = i.notifyUrl;
-    return this.#call('POST', '/v3/refund/domestic/refunds', REFUND, body);
+    return this.#call(
+      'POST',
+      '/v3/refund/domestic/refunds',
+      refundShape(i.outRefundNo, i.outTradeNo),
+      body,
+    );
   }
 
   queryRefund(outRefundNo: string): Promise<ChannelResult<Json>> {
     return this.#call(
       'GET',
       `/v3/refund/domestic/refunds/${encodeURIComponent(outRefundNo)}`,
-      REFUND,
+      refundShape(outRefundNo),
     );
   }
 
@@ -230,14 +259,19 @@ export class WechatPayClient {
     }
     if (i.notifyUrl !== undefined) body['notify_url'] = i.notifyUrl;
     if (i.userRecvPerception !== undefined) body['user_recv_perception'] = i.userRecvPerception;
-    return this.#call('POST', '/v3/fund-app/mch-transfer/transfer-bills', BILL, body);
+    return this.#call(
+      'POST',
+      '/v3/fund-app/mch-transfer/transfer-bills',
+      this.#billShape(i.outBillNo),
+      body,
+    );
   }
 
   queryTransfer(outBillNo: string): Promise<ChannelResult<Json>> {
     return this.#call(
       'GET',
       `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${encodeURIComponent(outBillNo)}`,
-      BILL,
+      { ...this.#billShape(outBillNo), integers: ['transfer_amount'] },
     );
   }
 
@@ -245,7 +279,7 @@ export class WechatPayClient {
     return this.#call(
       'POST',
       `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${encodeURIComponent(outBillNo)}/cancel`,
-      BILL,
+      this.#billShape(outBillNo),
     );
   }
 
@@ -279,7 +313,8 @@ export class WechatPayClient {
         return { ok: false, reason: 'bad_body' };
       }
       const plain = decryptWechatResource(this.#c.apiV3Key, outer.resource as EncryptedResource);
-      const resource = JSON.parse(plain) as Record<string, unknown>;
+      const resource = parseObject(plain);
+      if (resource === undefined) return { ok: false, reason: 'bad_body' };
       return { ok: true, notification: { id: outer.id, eventType: outer.event_type, resource } };
     } catch {
       return { ok: false, reason: 'bad_body' };
@@ -287,6 +322,15 @@ export class WechatPayClient {
   }
 
   // ---- internals
+
+  #billShape(outBillNo: string): Expect {
+    return {
+      status: 200,
+      strings: ['out_bill_no', 'transfer_bill_no', 'state'],
+      enums: { state: TRANSFER_STATES },
+      echo: { out_bill_no: outBillNo, mch_id: this.#c.mchid, appid: this.#c.appid },
+    };
+  }
 
   /**
    * Signature, key identity and freshness of a response or notification. Every header must be
@@ -303,7 +347,7 @@ export class WechatPayClient {
     if (nonce === '' || signature === '') return 'bad_signature';
     if (
       !/^\d{1,12}$/.test(timestamp) ||
-      Math.abs(this.#now() - Number(timestamp)) > MAX_CLOCK_SKEW_SECONDS
+      Math.abs(this.#now() - Number(timestamp)) >= MAX_CLOCK_SKEW_SECONDS
     ) {
       return 'stale';
     }
@@ -355,18 +399,15 @@ export class WechatPayClient {
     if ('kind' in res) return res;
 
     const status = String(res.status);
-    if (res.status >= 500) return { kind: 'unknown', reason: 'http_5xx', detail: status };
-    if (res.status === 429) return { kind: 'unknown', reason: 'throttled', detail: status };
-
     const parsed = parseObject(res.body);
     const code = typeof parsed?.['code'] === 'string' ? parsed['code'] : undefined;
+    if (res.status >= 500) return unknown('http_5xx', status, code);
+    if (res.status === 429) return unknown('throttled', status, code);
 
     // Nothing below is trusted unless the envelope verifies: an error code alone proves neither
     // who sent the answer nor that the request was not executed.
     const failure = this.#verifyEnvelope(res.headers, res.body);
-    if (failure !== undefined) {
-      return unknown('bad_signature', `${status} ${failure}`, code);
-    }
+    if (failure !== undefined) return unknown('bad_signature', `${status} ${failure}`, code);
 
     if (res.status >= 200 && res.status < 300) {
       if (res.status !== expect.status) return unknown('bad_body', `${status} unexpected status`);
@@ -376,16 +417,16 @@ export class WechatPayClient {
           : unknown('bad_body', `${status} body not empty`);
       }
       if (parsed === undefined) return unknown('bad_body', `${status} not an object`);
-      for (const field of expect.required) {
-        const v = parsed[field];
-        if (typeof v !== 'string' || v === '')
-          return unknown('bad_body', `${status} missing ${field}`);
-      }
+      // A success body never carries an error code.
+      if (parsed['code'] !== undefined)
+        return unknown('bad_body', `${status} success with a code`, code);
+      const violation = shapeViolation(parsed, expect);
+      if (violation !== undefined) return unknown('bad_body', `${status} ${violation}`);
       return { kind: 'ok', data: parsed as T };
     }
 
     if (code === undefined || code === '') return unknown('bad_body', `${status} no code`);
-    if (INDETERMINATE_CODES.has(code)) return unknown('indeterminate', status, code);
+    if (!this.#rejectCodes.has(code)) return unknown('indeterminate', status, code);
     return {
       kind: 'rejected',
       code,
@@ -393,6 +434,19 @@ export class WechatPayClient {
       httpStatus: res.status,
     };
   }
+}
+
+function refundShape(outRefundNo: string, outTradeNo?: string): Expect {
+  return {
+    status: 200,
+    strings: ['refund_id', 'out_refund_no', 'out_trade_no', 'status'],
+    objects: ['amount'],
+    enums: { status: REFUND_STATES },
+    echo: {
+      out_refund_no: outRefundNo,
+      ...(outTradeNo === undefined ? {} : { out_trade_no: outTradeNo }),
+    },
+  };
 }
 
 function unknown(reason: UnknownResult['reason'], detail: string, code?: string): UnknownResult {

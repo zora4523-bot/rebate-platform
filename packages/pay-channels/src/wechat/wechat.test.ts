@@ -150,6 +150,29 @@ describe('wechat pay client', () => {
     (res: HttpResponse): Transport =>
     () =>
       Promise.resolve(res);
+  const bill = (no: string, state: string, extra: Record<string, unknown> = {}): string =>
+    JSON.stringify({ out_bill_no: no, transfer_bill_no: 'T1', state, ...extra });
+  const queried = (no: string, state: string, extra: Record<string, unknown> = {}): string =>
+    bill(no, state, {
+      mch_id: '1900000001',
+      appid: 'wxtestappid000001',
+      transfer_amount: 100,
+      ...extra,
+    });
+  const order = (no: string, state: string, extra: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      appid: 'wxtestappid000001',
+      mchid: '1900000001',
+      out_trade_no: no,
+      trade_state: state,
+      ...extra,
+    });
+  const appOrder = {
+    outTradeNo: 'P1',
+    description: 'd',
+    totalFen: 1,
+    notifyUrl: 'https://example.test/n',
+  };
 
   it('creates an APP order and returns verified data', async () => {
     const seen: HttpRequest[] = [];
@@ -159,13 +182,10 @@ describe('wechat pay client', () => {
         signedResponse(200, '{"prepay_id":"wx201410272009395522657a690389285100"}'),
       );
     });
-    const r = await c.createAppOrder({
-      outTradeNo: 'P20261004A1',
-      description: '测试',
-      totalFen: 1,
-      notifyUrl: 'https://example.test/notify/pay/wechat',
+    expect(await c.createAppOrder(appOrder)).toEqual({
+      kind: 'ok',
+      data: { prepay_id: 'wx201410272009395522657a690389285100' },
     });
-    expect(r).toEqual({ kind: 'ok', data: { prepay_id: 'wx201410272009395522657a690389285100' } });
     const sent = JSON.parse(seen[0]?.body ?? '{}') as { amount: { total: number }; mchid: string };
     expect(sent.amount.total).toBe(1);
     expect(sent.mchid).toBe('1900000001');
@@ -203,8 +223,8 @@ describe('wechat pay client', () => {
 
   it('treats an unverifiable 2xx answer as unknown, never as success', async () => {
     const tampered = {
-      ...signedResponse(200, '{"out_bill_no":"W1","state":"SUCCESS"}'),
-      body: '{"out_bill_no":"W1","state":"FAIL"}',
+      ...signedResponse(200, queried('W1', 'SUCCESS')),
+      body: queried('W1', 'FAIL'),
     };
     expect(await client(answer(tampered)).queryTransfer('W1')).toMatchObject({
       kind: 'unknown',
@@ -213,10 +233,11 @@ describe('wechat pay client', () => {
   });
 
   it('refuses stale, future, foreign-key and header-less answers even when the signature is valid', async () => {
-    const body = '{"out_bill_no":"W1","state":"SUCCESS"}';
+    const body = queried('W1', 'SUCCESS');
     const fresh = signedResponse(200, body);
     const cases: [string, HttpResponse][] = [
       ['a day old', signedResponse(200, body, NOW - 86_400)],
+      ['exactly five minutes old', signedResponse(200, body, NOW - 300)],
       ['from the future', signedResponse(200, body, NOW + 3_600)],
       [
         'other key id',
@@ -231,9 +252,41 @@ describe('wechat pay client', () => {
         reason: 'bad_signature',
       });
     }
-    expect(await client(answer(fresh)).queryTransfer('W1')).toMatchObject({
+    expect(
+      await client(answer(signedResponse(200, body, NOW - 299))).queryTransfer('W1'),
+    ).toMatchObject({
       kind: 'ok',
       data: { state: 'SUCCESS' },
+    });
+  });
+
+  it('does not accept a valid answer that belongs to another bill, merchant or app', async () => {
+    const other = signedResponse(200, queried('W_OLD', 'SUCCESS'));
+    expect(await client(answer(other)).queryTransfer('W_NEW')).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+      detail: '200 mismatched out_bill_no',
+    });
+    const otherMch = signedResponse(200, queried('W1', 'SUCCESS', { mch_id: '1900000999' }));
+    expect(await client(answer(otherMch)).queryTransfer('W1')).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+    });
+    const otherOrder = signedResponse(200, order('P_OLD', 'SUCCESS'));
+    expect(await client(answer(otherOrder)).queryOrder('P_NEW')).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+    });
+    const refund = JSON.stringify({
+      refund_id: 'r',
+      out_refund_no: 'R_OLD',
+      out_trade_no: 'P1',
+      status: 'SUCCESS',
+      amount: {},
+    });
+    expect(await client(answer(signedResponse(200, refund))).queryRefund('R_NEW')).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
     });
   });
 
@@ -255,7 +308,7 @@ describe('wechat pay client', () => {
     });
   });
 
-  it('classifies verified errors: rejected or indeterminate', async () => {
+  it('rejects only allowlisted codes; every other verified code is indeterminate', async () => {
     const run = (status: number, code: string) =>
       client(answer(signedResponse(status, `{"code":"${code}","message":"m"}`))).createTransfer(
         transferInput,
@@ -267,13 +320,16 @@ describe('wechat pay client', () => {
       httpStatus: 400,
     });
     expect(await run(403, 'NOT_ENOUGH')).toMatchObject({ kind: 'rejected', code: 'NOT_ENOUGH' });
-    for (const code of [
+    const indeterminate = [
       'ALREADY_EXISTS',
       'SYSTEM_ERROR',
       'NOT_FOUND',
       'ORDER_NOT_EXIST',
       'OUT_TRADE_NO_USED',
-    ]) {
+      'RESOURCE_NOT_EXISTS',
+      'A_CODE_NOBODY_HAS_SEEN',
+    ];
+    for (const code of indeterminate) {
       expect(await run(400, code), code).toEqual({
         kind: 'unknown',
         reason: 'indeterminate',
@@ -289,26 +345,36 @@ describe('wechat pay client', () => {
   });
 
   it('checks the shape each call requires, even when the signature is valid', async () => {
-    // a query must not accept an empty 204, null, or an object without its state field
-    expect(await client(answer(signedResponse(204, ''))).queryTransfer('W1')).toMatchObject({
+    const q = (body: string, status = 200) =>
+      client(answer(signedResponse(status, body))).queryTransfer('W1');
+    expect(await q('', 204)).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
+    expect(await q('null')).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
+    expect(await q(bill('W1', 'SUCCESS'))).toMatchObject({
       kind: 'unknown',
-      reason: 'bad_body',
+      detail: '200 missing transfer_amount',
     });
-    expect(await client(answer(signedResponse(200, 'null'))).queryOrder('P1')).toMatchObject({
+    expect(await q(queried('W1', 'SUCCESS', { transfer_amount: '100' }))).toMatchObject({
+      kind: 'unknown',
+    });
+    expect(await q(queried('W1', 'A_NEW_STATE'))).toMatchObject({
+      kind: 'unknown',
+      detail: '200 unexpected state',
+    });
+    expect(await q(queried('W1', 'SUCCESS', { code: 'SYSTEM_ERROR' }))).toMatchObject({
       kind: 'unknown',
       reason: 'bad_body',
+      detail: '200 success with a code',
     });
     expect(
       await client(answer(signedResponse(200, '{"out_trade_no":"P1"}'))).queryOrder('P1'),
-    ).toMatchObject({ kind: 'unknown', reason: 'bad_body', detail: '200 missing trade_state' });
-    expect(
-      await client(answer(signedResponse(200, '{}'))).createAppOrder({
-        outTradeNo: 'P',
-        description: 'd',
-        totalFen: 1,
-        notifyUrl: 'https://example.test',
-      }),
-    ).toMatchObject({ kind: 'unknown', reason: 'bad_body' });
+    ).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+    });
+    expect(await client(answer(signedResponse(200, '{}'))).createAppOrder(appOrder)).toMatchObject({
+      kind: 'unknown',
+      reason: 'bad_body',
+    });
     // closing an order succeeds only with a verified, empty 204
     expect(await client(answer(signedResponse(204, ''))).closeOrder('P1')).toEqual({
       kind: 'ok',
@@ -318,14 +384,20 @@ describe('wechat pay client', () => {
       kind: 'unknown',
       reason: 'bad_body',
     });
+    expect(
+      await client(answer(signedResponse(200, order('P1', 'NOTPAY')))).queryOrder('P1'),
+    ).toMatchObject({
+      kind: 'ok',
+      data: { trade_state: 'NOTPAY' },
+    });
   });
 
-  it('maps 5xx, throttling and timeouts to unknown', async () => {
+  it('maps 5xx, throttling and timeouts to unknown, keeping a readable code', async () => {
     expect(
       await client(
         answer({ status: 500, headers: {}, body: '{"code":"SYSTEM_ERROR"}' }),
       ).queryOrder('P1'),
-    ).toEqual({ kind: 'unknown', reason: 'http_5xx', detail: '500' });
+    ).toEqual({ kind: 'unknown', reason: 'http_5xx', detail: '500', code: 'SYSTEM_ERROR' });
     expect(await client(answer({ status: 429, headers: {}, body: '' })).queryOrder('P1')).toEqual({
       kind: 'unknown',
       reason: 'throttled',
@@ -342,10 +414,7 @@ describe('wechat pay client', () => {
     const c = client((req) => {
       seen.push(req);
       return Promise.resolve(
-        signedResponse(
-          200,
-          '{"out_bill_no":"W2","state":"WAIT_USER_CONFIRM","package_info":"pkg"}',
-        ),
+        signedResponse(200, bill('W2', 'WAIT_USER_CONFIRM', { package_info: 'pkg' })),
       );
     });
     const r = await c.createTransfer({
@@ -368,41 +437,36 @@ describe('wechat pay client', () => {
 
   it('rejects non-positive and fractional amounts before any request', () => {
     const c = client(() => Promise.reject(new Error('must not be called')));
-    expect(() =>
-      c.createAppOrder({
-        outTradeNo: 'P',
-        description: 'd',
-        totalFen: 0,
-        notifyUrl: 'https://example.test',
-      }),
-    ).toThrow(RangeError);
+    expect(() => c.createAppOrder({ ...appOrder, totalFen: 0 })).toThrow(RangeError);
     expect(() =>
       c.refund({ outTradeNo: 'P', outRefundNo: 'R', refundFen: 1.5, totalFen: 2 }),
     ).toThrow(RangeError);
   });
 
-  it('verifies and decrypts notifications, and refuses stale, foreign or forged ones', () => {
+  it('verifies and decrypts notifications, and refuses stale, foreign, forged or non-object ones', () => {
     const c = client(() => Promise.reject(new Error('unused')));
-    const body = JSON.stringify({
-      id: 'EV-1',
-      event_type: 'TRANSACTION.SUCCESS',
-      resource: {
-        algorithm: 'AEAD_AES_256_GCM',
-        ciphertext: encryptResource(
-          '{"out_trade_no":"P1","amount":{"total":1}}',
-          'nonce12chars',
-          'transaction',
-        ),
-        nonce: 'nonce12chars',
-        associated_data: 'transaction',
-      },
-    });
-    const headers = {
-      'wechatpay-timestamp': String(NOW),
-      'wechatpay-nonce': 'n9',
-      'wechatpay-signature': platformSign(String(NOW), 'n9', body),
-      'wechatpay-serial': 'PUB_KEY_ID_TEST',
+    const make = (plain: string): { headers: Record<string, string>; body: string } => {
+      const body = JSON.stringify({
+        id: 'EV-1',
+        event_type: 'TRANSACTION.SUCCESS',
+        resource: {
+          algorithm: 'AEAD_AES_256_GCM',
+          ciphertext: encryptResource(plain, 'nonce12chars', 'transaction'),
+          nonce: 'nonce12chars',
+          associated_data: 'transaction',
+        },
+      });
+      return {
+        body,
+        headers: {
+          'wechatpay-timestamp': String(NOW),
+          'wechatpay-nonce': 'n9',
+          'wechatpay-signature': platformSign(String(NOW), 'n9', body),
+          'wechatpay-serial': 'PUB_KEY_ID_TEST',
+        },
+      };
     };
+    const { headers, body } = make('{"out_trade_no":"P1","amount":{"total":1}}');
     expect(c.parseNotification(headers, body)).toEqual({
       ok: true,
       notification: {
@@ -430,5 +494,12 @@ describe('wechat pay client', () => {
         body,
       ),
     ).toEqual({ ok: false, reason: 'stale' });
+    for (const plain of ['null', '[]', '"text"']) {
+      const n = make(plain);
+      expect(c.parseNotification(n.headers, n.body), plain).toEqual({
+        ok: false,
+        reason: 'bad_body',
+      });
+    }
   });
 });

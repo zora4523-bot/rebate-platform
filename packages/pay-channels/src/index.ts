@@ -8,6 +8,8 @@ export {
   fetchTransport,
   type HttpRequest,
   type HttpResponse,
+  type Shape,
+  shapeViolation,
   type Transport,
   type UnknownReason,
   type UnknownResult,
@@ -18,6 +20,7 @@ export {
   type NotificationResult,
   type RefundInput,
   type TransferInput,
+  WECHAT_DEFAULT_REJECT_CODES,
   type WechatNotification,
   WechatPayClient,
   type WechatPayConfig,
@@ -30,6 +33,7 @@ export {
   wechatAuthorization,
 } from './wechat/crypto.ts';
 export {
+  ALIPAY_DEFAULT_REJECT_CODES,
   AlipayClient,
   type AlipayAppPayInput,
   type AlipayConfig,
@@ -41,6 +45,7 @@ export {
   alipaySignContent,
   alipayTimestamp,
   certSn,
+  decodeDerString,
   publicKeyFromCert,
   rootCertSn,
   rsa2Sign,
