@@ -78,20 +78,35 @@
 // type-only imports, relative imports with the `.ts` extension, no NestJS, no `process.env`, no
 // new dependency.
 
+import { maskName, maskPhone } from './index.ts';
+
 /** BR-ID-33 收款账号: 支付宝登录号 — phone form 138****5678, e-mail form zh***@example.com. */
 export function maskAlipayLogonId(logonId: string): string {
-  void logonId;
-  throw new Error('NotImplemented: maskAlipayLogonId');
+  const at = logonId.indexOf('@');
+  if (at === -1) return maskPhone(logonId);
+
+  if (
+    at === 0 ||
+    at === logonId.length - 1 ||
+    at !== logonId.lastIndexOf('@') ||
+    /[\s\p{C}]/u.test(logonId)
+  ) {
+    return '*'.repeat([...logonId].length);
+  }
+
+  const local = [...logonId.slice(0, at)];
+  const kept = Math.min(2, local.length - 1);
+  return `${local.slice(0, kept).join('')}***${logonId.slice(at)}`;
 }
 
 /** BR-ID-33 收款账号: 银行卡 「尾号 1234」 (bank name joined by the caller). */
 export function maskBankCardTail(cardNo: string): string {
-  void cardNo;
-  throw new Error('NotImplemented: maskBankCardTail');
+  return cardNo.length >= 12 && cardNo.length <= 19 && !/[^0-9]/u.test(cardNo)
+    ? `尾号 ${cardNo.slice(-4)}`
+    : '*'.repeat([...cardNo].length);
 }
 
 /** BR-ID-33 收款人姓名: same as maskName (**三). */
 export function maskPayeeName(name: string): string {
-  void name;
-  throw new Error('NotImplemented: maskPayeeName');
+  return maskName(name);
 }
