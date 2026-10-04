@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import openapiTS, { astToString } from 'openapi-typescript';
 import { parseYamlLite } from '../../../tools/lib/yaml-lite.ts';
 import type { EnumDef, ErrorRangeDef } from './catalog.ts';
-import { appsFile, bridgeFile, openapiFile, routesFile } from './paths.ts';
+import { join } from 'node:path';
+import { appsFile, bridgeFile, openapiFile, repoRoot, routesFile } from './paths.ts';
 
 type Obj = Record<string, unknown>;
 type Since = { ios: string | null; android: string | null; harmony: string | null };
@@ -35,8 +36,32 @@ export type AppDef = {
   name: string;
   platform: string;
   status: string;
+  trade_only: boolean;
   ios_query_schemes: string[];
 };
+export type SdkQueryDef = {
+  source_sdk: string;
+  ios_scheme: string | null;
+  android_package: string | null;
+  harmony_scheme: string | null;
+};
+export type InboundDef =
+  | {
+      kind: 'custom_scheme';
+      purpose: string;
+      source_sdk: string | null;
+      platforms: string[];
+      scheme: string;
+    }
+  | {
+      kind: 'verified_link';
+      purpose: string;
+      source_sdk: string | null;
+      platforms: string[];
+      host: string;
+      path_prefix: string;
+      verified: true;
+    };
 export type BridgeCatalog = {
   bridge: Obj;
   methods: BridgeMethodDef[];
@@ -45,6 +70,8 @@ export type BridgeCatalog = {
   errors: number[];
   routes: RouteDef[];
   apps: AppDef[];
+  sdkQueries: SdkQueryDef[];
+  inbound: InboundDef[];
 };
 
 const NAMESPACES = [
@@ -137,6 +164,118 @@ function sameSet(a: readonly unknown[], b: readonly unknown[]): boolean {
   return a.length === b.length && a.every((x) => b.includes(x));
 }
 
+const CLIENT_SIDES = ['ios', 'android', 'harmony'];
+const baselineFile = join(repoRoot, 'specs', 'client-security-baseline.yaml');
+
+function optString(where: string, v: unknown): string | null {
+  if (v === null) return null;
+  if (typeof v !== 'string' || v === '') fail(where, 'must be a non-empty string or null');
+  return v;
+}
+
+function loadSdkQueries(value: unknown): SdkQueryDef[] {
+  const where = 'contracts/apps.json sdk_queries';
+  if (!Array.isArray(value)) fail(where, 'must be a list');
+  return value.map((q, i) => {
+    const w = `${where}[${i}]`;
+    if (!isObj(q)) fail(w, 'must be an object');
+    const keys = ['source_sdk', 'ios_scheme', 'android_package', 'harmony_scheme'];
+    if (Object.keys(q).some((k) => !keys.includes(k)) || keys.some((k) => !(k in q))) {
+      fail(w, `exactly the keys ${keys.join(', ')}`);
+    }
+    const source = q['source_sdk'];
+    if (typeof source !== 'string' || source === '')
+      fail(w, 'source_sdk must be a non-empty string');
+    return {
+      source_sdk: source,
+      ios_scheme: optString(`${w} ios_scheme`, q['ios_scheme']),
+      android_package: optString(`${w} android_package`, q['android_package']),
+      harmony_scheme: optString(`${w} harmony_scheme`, q['harmony_scheme']),
+    };
+  });
+}
+
+/** Inbound callbacks (04 §9, 03 §4.5, CSB-11 of specs/client-security-baseline.yaml). */
+function loadInbound(value: unknown, apps: AppDef[], sdkQueries: SdkQueryDef[]): InboundDef[] {
+  const where = 'contracts/apps.json inbound';
+  if (!Array.isArray(value)) fail(where, 'must be a list');
+  const baseline = parseYamlLite(readFileSync(baselineFile, 'utf8'));
+  const forbidden =
+    isObj(baseline) && Array.isArray(baseline['forbidden_schemes'])
+      ? (baseline['forbidden_schemes'] as unknown[]).map((s) => String(s).toLowerCase())
+      : fail('specs/client-security-baseline.yaml', 'forbidden_schemes missing');
+  const ownHosts =
+    isObj(baseline) && Array.isArray(baseline['own_link_hosts'])
+      ? (baseline['own_link_hosts'] as unknown[]).map((h) => String(h))
+      : fail('specs/client-security-baseline.yaml', 'own_link_hosts missing');
+  const thirdParty = [
+    ...apps.flatMap((a) => a.ios_query_schemes),
+    ...sdkQueries.flatMap((q) => [q.ios_scheme, q.harmony_scheme].filter((s) => s !== null)),
+  ].map((s) => String(s).toLowerCase());
+  return value.map((e, i) => {
+    const w = `${where}[${i}]`;
+    if (!isObj(e)) fail(w, 'must be an object');
+    const purpose = e['purpose'];
+    if (typeof purpose !== 'string' || purpose === '')
+      fail(w, 'purpose must be a non-empty string');
+    const source = optString(`${w} source_sdk`, e['source_sdk']);
+    const platforms = e['platforms'];
+    if (
+      !Array.isArray(platforms) ||
+      platforms.length === 0 ||
+      platforms.some((p) => typeof p !== 'string' || !CLIENT_SIDES.includes(p)) ||
+      new Set(platforms).size !== platforms.length
+    ) {
+      fail(w, 'platforms: non-empty, distinct, each ios | android | harmony');
+    }
+    const common = ['kind', 'purpose', 'source_sdk', 'platforms'];
+    if (e['kind'] === 'custom_scheme') {
+      if (Object.keys(e).some((k) => ![...common, 'scheme'].includes(k))) {
+        fail(w, 'custom_scheme has only kind, purpose, source_sdk, platforms, scheme');
+      }
+      const scheme = e['scheme'];
+      if (typeof scheme !== 'string' || !/^[A-Za-z][A-Za-z0-9+.-]*$/.test(scheme)) {
+        fail(w, 'scheme must be a URI scheme');
+      }
+      const lower = scheme.toLowerCase();
+      if (forbidden.includes(lower))
+        fail(w, `scheme ${scheme} is a system or generic scheme (CSB-11)`);
+      if (thirdParty.includes(lower)) {
+        fail(w, `scheme ${scheme} equals a target or SDK query scheme (CSB-11)`);
+      }
+      return { kind: 'custom_scheme', purpose, source_sdk: source, platforms, scheme };
+    }
+    if (e['kind'] === 'verified_link') {
+      if (Object.keys(e).some((k) => ![...common, 'host', 'path_prefix', 'verified'].includes(k))) {
+        fail(
+          w,
+          'verified_link has only kind, purpose, source_sdk, platforms, host, path_prefix, verified',
+        );
+      }
+      const host = e['host'];
+      if (typeof host !== 'string' || host === '' || host.includes('*') || host.includes('/')) {
+        fail(w, 'host must be a full host name without wildcard');
+      }
+      if (!ownHosts.includes(host)) fail(w, `host ${host} is not in own_link_hosts (CSB-11)`);
+      const prefix = e['path_prefix'];
+      if (typeof prefix !== 'string' || !prefix.startsWith('/') || prefix === '/') {
+        fail(w, 'path_prefix starts with / and is not just /');
+      }
+      if (e['verified'] !== true) fail(w, 'verified must be true');
+      return {
+        kind: 'verified_link',
+        purpose,
+        source_sdk: source,
+        platforms,
+        host,
+        path_prefix: prefix,
+        verified: true,
+      };
+    }
+    return fail(w, 'kind: custom_scheme | verified_link');
+  });
+}
+
 export function loadBridgeCatalog(
   enums: readonly EnumDef[],
   ranges: readonly ErrorRangeDef[],
@@ -166,11 +305,22 @@ export function loadBridgeCatalog(
     for (const side of ['android', 'harmony'] as const) {
       if (!isObj(def[side])) fail(where, `${side} must be an object`);
     }
-    apps.push({ name, platform, status, ios_query_schemes: schemes as string[] });
+    // Every external target is a shopping platform (platform is a contracts/enums platform):
+    // ext.openApp never opens it without attribution (04 §9, BR-ATTR-29 细则).
+    if (def['trade_only'] !== true) fail(where, 'trade_only must be true for a shopping platform');
+    apps.push({ name, platform, status, trade_only: true, ios_query_schemes: schemes as string[] });
   }
-  const iosSchemes = apps.flatMap((a) => a.ios_query_schemes);
+  const sdkQueries = loadSdkQueries(appsDoc['sdk_queries']);
+  const inbound = loadInbound(appsDoc['inbound'], apps, sdkQueries);
+  const iosSchemes = [
+    ...apps.flatMap((a) => a.ios_query_schemes),
+    ...sdkQueries.flatMap((q) => (q.ios_scheme === null ? [] : [q.ios_scheme])),
+  ];
   if (iosSchemes.length > MAX_IOS_QUERY_SCHEMES) {
-    fail('contracts/apps.json', `at most ${MAX_IOS_QUERY_SCHEMES} iOS query schemes (03 §4.5)`);
+    fail(
+      'contracts/apps.json',
+      `at most ${MAX_IOS_QUERY_SCHEMES} iOS query schemes in apps + sdk_queries (03 §4.5)`,
+    );
   }
 
   // routes.json
@@ -334,7 +484,7 @@ export function loadBridgeCatalog(
     }
     signedPaths.push({ method, path });
   }
-  return { bridge, methods, events, signedPaths, errors, routes, apps };
+  return { bridge, methods, events, signedPaths, errors, routes, apps, sdkQueries, inbound };
 }
 
 function pascal(name: string): string {
@@ -452,11 +602,21 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
   const appMeta = Object.fromEntries(
     cat.apps.map((a) => [
       a.name,
-      { platform: a.platform, status: a.status, ios_query_schemes: a.ios_query_schemes },
+      {
+        platform: a.platform,
+        status: a.status,
+        trade_only: a.trade_only,
+        ios_query_schemes: a.ios_query_schemes,
+      },
     ]),
   );
   out.push(`export const apps = ${JSON.stringify(appMeta, null, 2)} as const;`);
   out.push('export type AppTarget = keyof typeof apps;');
+  out.push(
+    '/** SDK query entries and inbound callbacks (contracts/apps.json), input of the CT-05 generators. */',
+  );
+  out.push(`export const sdkQueries = ${JSON.stringify(cat.sdkQueries, null, 2)} as const;`);
+  out.push(`export const inbound = ${JSON.stringify(cat.inbound, null, 2)} as const;`);
   out.push('');
   return out.join('\n');
 }
