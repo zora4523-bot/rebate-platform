@@ -29,7 +29,7 @@
 //      APP_ENV        FIELD_KEY_PROVIDER unset             local                   kms
 //      local, test    allowed: `keyring` is null, the     allowed                 refused
 //                     process has no FIELD_CRYPTO
-//      staging        refused                              allowed (待确认)        allowed (opening
+//      staging        refused                              refused                 allowed (opening
 //                                                                                  refuses, §4)
 //      prod           refused                              refused                 allowed (opening
 //                                                                                  refuses, §4)
@@ -37,11 +37,12 @@
 //    待编排会话确认: (c) local / test may run without a keyring — needed now because the existing
 //    entry smoke test, bootstrap and contract tests (outside this task's paths) start entries with
 //    APP_ENV=test and no keyring variables; once `pnpm dev:stack` creates a local keyring it can
-//    become required everywhere. (d) staging allows the local provider — ADR-0001 says 云上用 KMS
-//    and staging runs on ECS (ADR-0002), but this task's title only forbids it in prod, and KMS
-//    does not exist yet; forbidding it in staging would keep staging from starting until the KMS
-//    task lands. (e) kms is refused in local / test: those environments never load real keys
-//    (规划/11 §8).
+//    become required everywhere. (e) kms is refused in local / test: those environments never
+//    load real keys (规划/11 §8).
+//    staging refuses the local provider like prod (rule-test review round 1, 2026-10-04): ADR-0001
+//    §2 says 本地用文件密钥实现，云上用 KMS 实现 and staging runs in the cloud (ECS, ADR-0002); the
+//    technical baseline is the ADR. Until the KMS provider lands, staging therefore cannot start —
+//    this is expected, not a defect.
 //
 // 3. Problems (`ConfigError.problems` of loadConfig). They never contain a value of any variable.
 //    The keyring problems come after every other problem of loadConfig, in the order
@@ -51,8 +52,8 @@
 //      FIELD_KEY_PROVIDER
 //        unset, APP_ENV staging / prod  `FIELD_KEY_PROVIDER: must be set when APP_ENV=<appEnv>`
 //        not exactly `local` or `kms`   `FIELD_KEY_PROVIDER: must be local or kms`
-//        local, APP_ENV prod            `FIELD_KEY_PROVIDER: local must not be used when
-//                                        APP_ENV=prod (production keys come from KMS)`
+//        local, APP_ENV staging / prod  `FIELD_KEY_PROVIDER: local must not be used when
+//                                        APP_ENV=<appEnv> (cloud keys come from KMS)`
 //        kms, APP_ENV local / test      `FIELD_KEY_PROVIDER: kms must not be used when
 //                                        APP_ENV=<appEnv> (local and test never load real keys)`
 //      FIELD_KEYRING_FILE

@@ -167,8 +167,8 @@ it.each(ENTRIES)(
   async (entry) => {
     const files = fresh(`nodb-${entry}`);
     misleadingProcessEnv(files);
-    const { logger } = memoryLogger(entry, 'staging');
-    const config = loadConfig(localEnv('staging', files));
+    const { logger } = memoryLogger(entry, 'local');
+    const config = loadConfig(localEnv('local', files));
     const started = await settle(startEntry(entry, { config, logger }));
     const token = await fieldCryptoToken();
     expect(typeof token).toBe('symbol');
@@ -232,9 +232,13 @@ function failureCases(entry: Entry): {
       local,
     ),
     make('other master key', { master: masterText(OTHER_MASTER_LABEL) }, 'unwrap_failed', local),
-    make('hand-built prod config with the local provider', {}, 'local_in_prod', (files) => ({
+    make('hand-built prod config with the local provider', {}, 'local_in_cloud', (files) => ({
       ...local(files),
       appEnv: 'prod',
+    })),
+    make('hand-built staging config with the local provider', {}, 'local_in_cloud', (files) => ({
+      ...local(files),
+      appEnv: 'staging',
     })),
     make('kms', {}, 'kms_unavailable', (files) => ({
       appEnv: 'staging',
@@ -288,28 +292,34 @@ it.each(ENTRIES)(
 );
 
 it.each(ENTRIES)(
-  '[ADR-0001 §2][规划/02 §12.6] %s 入口在 prod 选 local 提供者拒绝启动；staging 允许并注入可用的 FieldCrypto（经 loadConfig(process.env)）',
+  '[ADR-0001 §2][规划/02 §12.6] %s 入口在 staging 与 prod 选 local 提供者拒绝启动；local 允许并注入可用的 FieldCrypto（经 loadConfig(process.env)）',
   async (entry) => {
     const files = fresh(`env-local-${entry}`);
-    stubProcessEnv(localEnv('prod', files));
-    const prod = await startAndClose(entry, { logger: memoryLogger(entry, 'prod').logger });
-    expect(
-      'error' in prod
-        ? configProblems(() => {
-            throw prod.error;
-          })
-        : 'started',
-    ).toEqual([PROBLEMS.localInProd]);
+    const refused: Record<string, unknown> = {};
+    for (const appEnv of ['staging', 'prod'] as const) {
+      stubProcessEnv(localEnv(appEnv, files));
+      const outcome = await startAndClose(entry, { logger: memoryLogger(entry, appEnv).logger });
+      refused[appEnv] =
+        'error' in outcome
+          ? configProblems(() => {
+              throw outcome.error;
+            })
+          : 'started';
+      vi.unstubAllEnvs();
+    }
+    expect(refused).toEqual({
+      staging: [PROBLEMS.localInCloud('staging')],
+      prod: [PROBLEMS.localInCloud('prod')],
+    });
 
-    vi.unstubAllEnvs();
-    stubProcessEnv(localEnv('staging', files));
-    const { logger, lines } = memoryLogger(entry, 'staging');
-    const staging = await settle(startEntry(entry, { logger }));
+    stubProcessEnv(localEnv('local', files));
+    const { logger, lines } = memoryLogger(entry, 'local');
+    const local = await settle(startEntry(entry, { logger }));
     const token = await fieldCryptoToken();
-    expect('value' in staging ? 'started' : staging.error).toBe('started');
-    if (!('value' in staging)) return;
-    const injected = settleSync(() => staging.value.get(token));
-    await staging.value.close();
+    expect('value' in local ? 'started' : local.error).toBe('started');
+    if (!('value' in local)) return;
+    const injected = settleSync(() => local.value.get(token));
+    await local.value.close();
     expect(
       'value' in injected ? injectedProblems(injected.value) : [String(injected.error)],
     ).toEqual([]);

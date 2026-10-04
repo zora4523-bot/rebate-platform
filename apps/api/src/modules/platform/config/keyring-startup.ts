@@ -25,9 +25,12 @@
 //      properties the document does not use are ignored, as `openFieldCrypto` ignores them.
 //
 // 3. `openConfiguredFieldCrypto(appEnv, keyring)`, in this order; the first failing step decides:
-//      a. appEnv `prod` and provider `local`      → reject `local_in_prod` (no file is read: a
+//      a. appEnv `staging` or `prod` and provider `local`
+//                                                 → reject `local_in_cloud` (no file is read: a
 //                                                    hand-built AppConfig that skipped loadConfig
-//                                                    still cannot start prod on a local key)
+//                                                    still cannot start the cloud on a local key;
+//                                                    ./keyring.ts §2: staging cannot start until
+//                                                    the KMS provider lands, as expected)
 //      b. provider `kms`                          → reject `kms_unavailable` (no file is read, no
 //                                                    cloud call is made or faked: the KMS provider
 //                                                    arrives with a later task)
@@ -54,11 +57,14 @@
 //    - Token: `FIELD_CRYPTO = Symbol('FIELD_CRYPTO')`, declared next to the other tokens in
 //      platform.module.ts and exported from platform/index.ts. Other modules inject it as
 //      `@Inject(FIELD_CRYPTO) fieldCrypto: FieldCrypto`.
-//    - `PlatformModule.forRoot(options)` provides and exports FIELD_CRYPTO exactly when
+//    - `PlatformModule.forRoot(options)` provides AND exports FIELD_CRYPTO exactly when
 //      `options.config.keyring !== null`, with an async factory that awaits
 //      `openConfiguredFieldCrypto(options.config.appEnv, options.config.keyring)`. Whether
 //      `dbHandles` is given changes nothing. When `keyring` is null the token is not provided at
 //      all (asking the application for it fails; no placeholder, no lazily opened instance).
+//      Exported means: a module of another feature, imported next to PlatformModule, gets it
+//      through `inject: [FIELD_CRYPTO]` / `@Inject(FIELD_CRYPTO)` (the rule tests build such a
+//      consumer module), not only `app.get(FIELD_CRYPTO)`.
 //    - Timing: Nest awaits the factory while it creates the providers, so a failure rejects
 //      `createHttpApp` / `createWorkerContext` themselves (for HTTP entries before `app.init()`),
 //      with the `KeyringStartupError` itself (the entry runner then logs `startup_failed` and
@@ -84,8 +90,14 @@
 //      a key, a ciphertext or the underlying error.
 //    - Logs: opening logs nothing that holds a path, a file's content or key bytes in any
 //      encoding; this holds for every line written while an entry starts or fails to start.
+//      `openConfiguredFieldCrypto` itself writes nothing at all: no console, no
+//      process.stdout / stderr, no logger of its own, no warnings (the rule tests run it in a
+//      plain `node` process and require stdout to be exactly their reply and stderr empty, with
+//      synthetic phone numbers, id numbers and key markers inside the files it reads).
 //    - Objects: the injected FieldCrypto is the object of `openFieldCrypto` (its shape is the
-//      contract of ../crypto/index.ts); `AppConfig` holds only the provider name and the two paths.
+//      contract of ../crypto/index.ts: exactly `currentKeyVersion` = the keyring's
+//      `current_version` and the six methods, each working, `reencrypt` included);
+//      `AppConfig` holds only the provider name and the two paths.
 //    - Memory: decode the master key into an unpooled buffer (`Buffer.alloc(32)` then fill it;
 //      never `Buffer.from(text, 'hex')`, which may land in Node's shared 8 KiB pool), and zero
 //      that buffer and the bytes read from the file once the provider has been built.
@@ -96,7 +108,10 @@
 // project — erasable syntax only (no parameter properties, no enum, no namespace, no decorators),
 // `import type` for type-only imports, relative imports with the `.ts` extension, no NestJS in
 // this file, no `process.env`, no logging. Only `node:` modules and files of the platform module
-// (`LocalKeyProvider`, `openFieldCrypto`, `FieldCryptoError` of ../crypto/index.ts).
+// (`LocalKeyProvider`, `openFieldCrypto`, `FieldCryptoError` of ../crypto/index.ts). The rule
+// tests also run this file in a plain `node --conditions=couli-src` process (Node's own type
+// stripping, no bundler): at run time it may import only `node:` modules and ../crypto/index.ts;
+// anything from ./config.ts or ./keyring.ts is imported with `import type`.
 import type { FieldCrypto } from '../crypto/index.ts';
 import type { AppEnv } from './config.ts';
 import type { KeyringConfig } from './keyring.ts';
@@ -108,7 +123,7 @@ export const LOCAL_MASTER_KEY_ID = 'local';
 export const KEYRING_FILE_MAX_BYTES = 1_048_576;
 
 export type KeyringStartupErrorCode =
-  | 'local_in_prod'
+  | 'local_in_cloud'
   | 'kms_unavailable'
   | 'master_key_unreadable'
   | 'master_key_invalid'
@@ -119,7 +134,7 @@ export type KeyringStartupErrorCode =
 /** The one message of each code (the rule tests keep their own copy of this table). */
 export const KEYRING_STARTUP_MESSAGES: Readonly<Record<KeyringStartupErrorCode, string>> =
   Object.freeze({
-    local_in_prod: 'the local key provider must not be used when APP_ENV=prod',
+    local_in_cloud: 'the local key provider must not be used when APP_ENV is staging or prod',
     kms_unavailable: 'the KMS key provider is not available',
     master_key_unreadable: 'the master key file cannot be read',
     master_key_invalid: 'the master key file must hold exactly 64 lowercase hex characters',

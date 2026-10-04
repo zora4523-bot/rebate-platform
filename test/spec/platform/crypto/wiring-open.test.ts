@@ -99,9 +99,9 @@ async function refusal(
   return [...problems, ...leaks.map((name) => `leaks ${name}`)];
 }
 
-it('[BR-ID-33][ADR-0001 §2] local / test / staging 用 local 提供者打开 keyring：解开全部版本，加解密与盲索引对上', async () => {
+it('[BR-ID-33][ADR-0001 §2] local / test 用 local 提供者打开 keyring：解开全部版本，加解密与盲索引对上', async () => {
   const files = fresh('ok');
-  for (const appEnv of ['local', 'test', 'staging'] as const) {
+  for (const appEnv of ['local', 'test'] as const) {
     const outcome = await settle(openConfiguredFieldCrypto(appEnv, local(files)));
     expect(
       'value' in outcome
@@ -280,15 +280,17 @@ it('[BR-ID-33][ADR-0001 §2] 主密钥不对或包裹密钥被改时 unwrap_fail
   }
 });
 
-it('[ADR-0001 §2][规划/02 §12.6] 打开时再断言一次：APP_ENV=prod 用 local 提供者 local_in_prod，不读任何文件', async () => {
+it('[ADR-0001 §2][规划/02 §12.6] 打开时再断言一次：APP_ENV 为 staging 或 prod 用 local 提供者 local_in_cloud，不读任何文件', async () => {
   const files = fresh('prod');
-  expect(await refusal('prod', local(files), 'local_in_prod', secretsOf(files))).toEqual([]);
+  expect(await refusal('prod', local(files), 'local_in_cloud', secretsOf(files))).toEqual([]);
+  expect(await refusal('staging', local(files), 'local_in_cloud', secretsOf(files))).toEqual([]);
   const missing = {
     provider: 'local',
     keyringFile: join(files.dir, 'none.json'),
     masterKeyFile: join(files.dir, 'none.hex'),
   } as const;
-  expect(await refusal('prod', missing, 'local_in_prod', secretsOf(files))).toEqual([]);
+  expect(await refusal('prod', missing, 'local_in_cloud', secretsOf(files))).toEqual([]);
+  expect(await refusal('staging', missing, 'local_in_cloud', secretsOf(files))).toEqual([]);
 });
 
 it('[ADR-0001 §2] kms 提供者在本任务一律 kms_unavailable，不读文件、不伪造云端调用（各 APP_ENV）', async () => {

@@ -60,13 +60,13 @@ it('[ADR-0001 §2] FIELD_KEY_PROVIDER 只接受确切的 local 或 kms，取值�
   }
 });
 
-it('[ADR-0001 §2] local / test / staging 用 local 提供者时 keyring 原样保存两个绝对路径', () => {
+it('[ADR-0001 §2] local / test 用 local 提供者时 keyring 原样保存两个绝对路径', () => {
   const paths = [
     { keyring: KEYRING, master: MASTER },
     { keyring: '/srv/密钥 目录/../keyring.json', master: '/srv/密钥 目录/./master key.hex' },
     { keyring: '/k', master: '/m' },
   ];
-  for (const appEnv of ['local', 'test', 'staging'] as const) {
+  for (const appEnv of ['local', 'test'] as const) {
     for (const path of paths) {
       expect(
         keyringOf({
@@ -80,30 +80,32 @@ it('[ADR-0001 §2] local / test / staging 用 local 提供者时 keyring 原样�
   }
 });
 
-it('[ADR-0001 §2][规划/02 §12.6] APP_ENV=prod 选 local 提供者拒绝启动；文件变量照常检查', () => {
-  expect(
-    configProblems(() =>
-      loadConfig({
-        APP_ENV: 'prod',
-        FIELD_KEY_PROVIDER: 'local',
-        FIELD_KEYRING_FILE: KEYRING,
-        FIELD_MASTER_KEY_FILE: MASTER,
-      }),
-    ),
-  ).toEqual([PROBLEMS.localInProd]);
-  expect(
-    configProblems(() => loadConfig({ APP_ENV: 'prod', FIELD_KEY_PROVIDER: 'local' })),
-  ).toEqual([PROBLEMS.localInProd, PROBLEMS.keyringUnset, PROBLEMS.masterUnset]);
-  expect(
-    configProblems(() =>
-      loadConfig({
-        APP_ENV: 'prod',
-        FIELD_KEY_PROVIDER: 'local',
-        FIELD_KEYRING_FILE: 'keyring.json',
-        FIELD_MASTER_KEY_FILE: 'master.hex',
-      }),
-    ),
-  ).toEqual([PROBLEMS.localInProd, PROBLEMS.keyringRelative, PROBLEMS.masterRelative]);
+it('[ADR-0001 §2][规划/02 §12.6] APP_ENV 为 staging 或 prod（云上）选 local 提供者拒绝启动；文件变量照常检查', () => {
+  for (const appEnv of ['staging', 'prod'] as const) {
+    expect(
+      configProblems(() =>
+        loadConfig({
+          APP_ENV: appEnv,
+          FIELD_KEY_PROVIDER: 'local',
+          FIELD_KEYRING_FILE: KEYRING,
+          FIELD_MASTER_KEY_FILE: MASTER,
+        }),
+      ),
+    ).toEqual([PROBLEMS.localInCloud(appEnv)]);
+    expect(
+      configProblems(() => loadConfig({ APP_ENV: appEnv, FIELD_KEY_PROVIDER: 'local' })),
+    ).toEqual([PROBLEMS.localInCloud(appEnv), PROBLEMS.keyringUnset, PROBLEMS.masterUnset]);
+    expect(
+      configProblems(() =>
+        loadConfig({
+          APP_ENV: appEnv,
+          FIELD_KEY_PROVIDER: 'local',
+          FIELD_KEYRING_FILE: 'keyring.json',
+          FIELD_MASTER_KEY_FILE: 'master.hex',
+        }),
+      ),
+    ).toEqual([PROBLEMS.localInCloud(appEnv), PROBLEMS.keyringRelative, PROBLEMS.masterRelative]);
+  }
 });
 
 it('[规划/11 §8] local 与 test 选 kms 拒绝启动（本地栈不加载真实密钥）', () => {
@@ -146,7 +148,7 @@ it('[ADR-0001 §2] staging 与 prod 选 kms 时配置通过（keyring 只有 pro
 });
 
 it('[ADR-0001 §2] 选了提供者就必须给 FIELD_KEYRING_FILE；local 还必须给 FIELD_MASTER_KEY_FILE', () => {
-  for (const appEnv of ['local', 'test', 'staging'] as const) {
+  for (const appEnv of ['local', 'test'] as const) {
     const base = { APP_ENV: appEnv, FIELD_KEY_PROVIDER: 'local' };
     expect(configProblems(() => loadConfig(base))).toEqual([
       PROBLEMS.keyringUnset,
@@ -181,7 +183,7 @@ it('[ADR-0001 §2] 文件变量必须是绝对路径：以 / 开头且不含控�
     '/srv/key\u001fring.json',
     '/srv/key\u007fring.json',
   ];
-  for (const appEnv of ['local', 'test', 'staging'] as const) {
+  for (const appEnv of ['local', 'test'] as const) {
     for (const path of bad) {
       expect(
         configProblems(() =>
@@ -262,7 +264,7 @@ it('[ADR-0001 §2] keyring 的问题排在 loadConfig 其他问题之后，其�
     ),
   ).toEqual([
     'CLOCK_NOW: must not be set when APP_ENV=prod (the production clock is real time)',
-    PROBLEMS.localInProd,
+    PROBLEMS.localInCloud('prod'),
   ]);
   const withBadLevel = configProblems(() =>
     loadConfig({
@@ -314,7 +316,7 @@ it('[ADR-0001 §2] 只读 env 参数：同一份 env 在不同 APP_ENV 下的取
   const table: Record<AppEnvName, Record<'unset' | 'local' | 'kms', string>> = {
     local: { unset: 'null', local: 'local', kms: 'refused' },
     test: { unset: 'null', local: 'local', kms: 'refused' },
-    staging: { unset: 'refused', local: 'local', kms: 'kms' },
+    staging: { unset: 'refused', local: 'refused', kms: 'kms' },
     prod: { unset: 'refused', local: 'refused', kms: 'kms' },
   };
   const seen: Record<string, Record<string, string>> = {};
