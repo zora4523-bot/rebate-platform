@@ -118,6 +118,7 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
         for (let slot = 0; slot < item.concurrency; slot++) {
           executors.push(
             runExecutor({
+              db,
               boss,
               logger,
               work: item,

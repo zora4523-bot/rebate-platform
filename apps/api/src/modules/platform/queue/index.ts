@@ -170,6 +170,9 @@
 //      for domain events with `processed_events(consumer, event_id)` in the same transaction as the
 //      effect (规划/02 §11, §18; ADR-0001 §3), event_id being job.id.
 //      Expiry does not release the business concurrency slot until that handler actually settles.
+//      At expiry a still-running handler emits job_handler_overrun (warn).
+//      Completion/failure locks the job and checks active state, retry_count and the exact
+//      started_on of the claim in the same transaction; a superseded attempt only logs a warning.
 //      Each execution slot is acquired before fetching: a full queue executor leaves jobs unclaimed
 //      until a handler actually settles, without consuming their expiry or retry budgets.
 //
@@ -198,6 +201,10 @@
 //                          no business call starts, but pg-boss counts the release as a failure.
 //      `job_released_on_expiry` level warn, fields exactly { queue, jobId, attempt } — defensive
 //                          release of an already expired fetched lease without calling its handler.
+//      `job_handler_overrun` level warn, fields exactly { queue, jobId, attempt } — handler still
+//                          running when expireInSeconds elapses; it continues holding its slot.
+//      `job_attempt_superseded` level warn, fields exactly { queue, jobId, attempt } — settlement
+//                          skipped because this claim no longer owns the active attempt.
 //    Never the payload, the error object or its message / stack, or connection parameters.
 //
 // 8. Errors — `QueueError`: name 'QueueError', `code`, the fixed message of QUEUE_ERROR_MESSAGES;

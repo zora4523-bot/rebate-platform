@@ -8,7 +8,11 @@ import type { JobPayload, QueueRuntime, QueueSpec } from './types.ts';
 // No database runs: fetch is observed independently from business handler calls.
 vi.mock('kysely', async (original) => ({
   ...(await original<typeof import('kysely')>()),
-  sql: () => ({ execute: async () => ({ rows: [{ version: 42 }] }) }),
+  sql: () => ({
+    execute: async () => ({
+      rows: [{ version: 42, id: 'claimed', startedOnExact: '2026-10-04 00:00:00.123456+00' }],
+    }),
+  }),
 }));
 
 interface FetchedJob {
@@ -90,7 +94,10 @@ function fixture(concurrency = 1) {
   const logger = { warn: vi.fn(), error: vi.fn() };
   const runtime = createQueueRuntime({
     entry: 'payout',
-    db: { executeQuery: vi.fn() } as unknown as Kysely<DB>,
+    db: {
+      executeQuery: vi.fn(),
+      transaction: () => ({ execute: async (run: (trx: unknown) => Promise<unknown>) => run({}) }),
+    } as unknown as Kysely<DB>,
     logger: logger as unknown as RootLogger,
     catalog,
     plan: {
@@ -139,15 +146,25 @@ it.each([1, 2])(
     expect(seen).toContain('independent');
     expect(seen).not.toContain('next');
     expect(fake.fail).toHaveBeenCalledTimes(limit);
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn.mock.calls).toEqual(
+      Array.from({ length: limit }, (_, i) => [
+        { queue: 'payout', jobId: `first-${i}`, attempt: 1 },
+        'job_handler_overrun',
+      ]),
+    );
     release.resolve();
     await vi.advanceTimersByTimeAsync(500);
     expect(seen.filter((id) => id === 'next')).toEqual(['next']);
     expect(peak).toBe(limit);
     expect(active).toBe(0);
-    expect(fake.complete).toHaveBeenCalledWith('payout', 'next');
-    expect(fake.complete).not.toHaveBeenCalledWith('payout', 'first-0');
-    expect(fake.fail).not.toHaveBeenCalledWith('payout', 'next', expect.anything());
+    expect(fake.complete).toHaveBeenCalledWith('payout', 'next', undefined, { db: {} });
+    expect(fake.complete).not.toHaveBeenCalledWith('payout', 'first-0', undefined, { db: {} });
+    expect(fake.fail).not.toHaveBeenCalledWith(
+      'payout',
+      'next',
+      expect.anything(),
+      expect.anything(),
+    );
   },
 );
 
@@ -161,7 +178,12 @@ it('[AC-B1-01g#4] 兜底释放已过期任务，日志只含队列、任务编�
   await runtime.start();
   await vi.advanceTimersByTimeAsync(0);
   expect(handler).not.toHaveBeenCalled();
-  expect(fake.fail).toHaveBeenCalledWith('payout', 'expired', { error: 'handler_failed' });
+  expect(fake.fail).toHaveBeenCalledWith(
+    'payout',
+    'expired',
+    { error: 'handler_failed' },
+    { db: {} },
+  );
   expect(logger.warn.mock.calls).toEqual([
     [{ queue: 'payout', jobId: 'expired', attempt: 1 }, 'job_released_on_expiry'],
   ]);
@@ -180,7 +202,7 @@ it('[AC-B1-01g#6] 停机等待在途领取，迟到的最后一次任务释放�
   fetched.resolve([job('late', { retryCount: 2, retryLimit: 2 })]);
   await stopping;
   expect(handler).not.toHaveBeenCalled();
-  expect(fake.fail).toHaveBeenCalledWith('payout', 'late', { error: 'handler_failed' });
+  expect(fake.fail).toHaveBeenCalledWith('payout', 'late', { error: 'handler_failed' }, { db: {} });
   expect(logger.warn.mock.calls).toEqual([
     [{ queue: 'payout', jobId: 'late', attempt: 3 }, 'job_released_on_stop'],
   ]);
@@ -208,10 +230,18 @@ it.each([0, 1000])(
     await stopping;
     expect(handler).toHaveBeenCalledTimes(1);
     expect(pending.get('payout')).toEqual([job('waiting')]);
-    expect(logger.warn.mock.calls).toEqual([[{ running: 1 }, 'queue_stop_timeout']]);
-    expect(fake.fail).toHaveBeenCalledExactlyOnceWith('payout', 'first', {
-      error: 'handler_failed',
-    });
+    expect(logger.warn.mock.calls).toEqual([
+      ...(elapsed === 1000
+        ? [[{ queue: 'payout', jobId: 'first', attempt: 1 }, 'job_handler_overrun']]
+        : []),
+      [{ running: 1 }, 'queue_stop_timeout'],
+    ]);
+    expect(fake.fail).toHaveBeenCalledExactlyOnceWith(
+      'payout',
+      'first',
+      { error: 'handler_failed' },
+      { db: {} },
+    );
     release.reject(new Error('secret failure after stop'));
     await vi.advanceTimersByTimeAsync(1000);
     expect(fake.complete).not.toHaveBeenCalled();
@@ -233,7 +263,7 @@ it('[AC-B1-01g#8] 优雅关闭等处理器及完成写入；未领取任务不�
   const stopping = runtime.stop();
   release.resolve();
   await vi.advanceTimersByTimeAsync(0);
-  expect(fake.complete).toHaveBeenCalledWith('payout', 'first');
+  expect(fake.complete).toHaveBeenCalledWith('payout', 'first', undefined, { db: {} });
   expect(fake.stop).not.toHaveBeenCalled();
   saved.resolve();
   await stopping;

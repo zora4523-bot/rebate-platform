@@ -1,14 +1,9 @@
-import type { JobWithMetadata, PgBoss } from 'pg-boss';
+import type { DB } from '@couli/db';
+import type { Kysely } from 'kysely';
+import type { PgBoss } from 'pg-boss';
 import type { RootLogger } from '../logging/logger.ts';
-import type { JobHandler, JobPayload, WorkSpec } from './types.ts';
-
-export interface Envelope {
-  name: string;
-  payload: JobPayload;
-}
-
-/** The only value ever stored for a failed business handler. */
-const HANDLER_FAILED = Object.freeze({ error: 'handler_failed' });
+import { fetchAttempt, settleAttempt, type ClaimedJob } from './attempt.ts';
+import type { JobHandler, WorkSpec } from './types.ts';
 
 export function reportQueueError(logger: RootLogger, error: unknown): void {
   const code = (error as { code?: unknown } | null)?.code;
@@ -29,6 +24,7 @@ async function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promis
 }
 
 export interface ExecutorOptions {
+  db: Kysely<DB>;
   boss: PgBoss;
   logger: RootLogger;
   work: WorkSpec;
@@ -38,21 +34,29 @@ export interface ExecutorOptions {
   runningHandlers: Set<Promise<void>>;
 }
 
-async function execute(options: ExecutorOptions, job: JobWithMetadata<Envelope>): Promise<void> {
-  const { boss, logger, work, handler, shutdown, deadline, runningHandlers } = options;
+async function execute(options: ExecutorOptions, job: ClaimedJob): Promise<void> {
+  const { db, boss, logger, work, handler, shutdown, deadline, runningHandlers } = options;
   const queue = work.queue;
   const fields = { queue, jobId: job.id, attempt: job.retryCount + 1 };
+  const settle = async (succeeded: boolean): Promise<void> => {
+    if (!(await settleAttempt(db, boss, queue, job, succeeded))) {
+      logger.warn(fields, 'job_attempt_superseded');
+    }
+  };
   // A fetch already in flight may return after shutdown; never start business code then.
   // The signal check is a defensive guard for a fetched lease already released upstream.
   if (shutdown.aborted || job.signal?.aborted) {
     logger.warn(fields, shutdown.aborted ? 'job_released_on_stop' : 'job_released_on_expiry');
-    await boss.fail(queue, job.id, HANDLER_FAILED);
+    await settle(false);
     return;
   }
 
   const expiry = new AbortController();
   const lease = AbortSignal.any([expiry.signal, deadline]);
-  const timer = setTimeout(() => expiry.abort(), job.expireInSeconds * 1000);
+  const timer = setTimeout(() => {
+    logger.warn(fields, 'job_handler_overrun');
+    expiry.abort();
+  }, job.expireInSeconds * 1000);
   const finished = Promise.withResolvers<void>();
   runningHandlers.add(finished.promise);
   const handling = (async () => {
@@ -75,6 +79,7 @@ async function execute(options: ExecutorOptions, job: JobWithMetadata<Envelope>)
       }
       return false;
     } finally {
+      clearTimeout(timer);
       runningHandlers.delete(finished.promise);
       finished.resolve();
     }
@@ -82,8 +87,7 @@ async function execute(options: ExecutorOptions, job: JobWithMetadata<Envelope>)
   try {
     const succeeded = await untilAborted(handling, lease);
     // Exactly one settlement per fetched attempt; a late handler cannot complete a retry.
-    if (succeeded === true) await boss.complete(queue, job.id);
-    else await boss.fail(queue, job.id, HANDLER_FAILED);
+    await settle(succeeded === true);
   } finally {
     clearTimeout(timer);
     // Expiry ends the database lease, not this business execution slot. Only the shutdown
@@ -94,10 +98,10 @@ async function execute(options: ExecutorOptions, job: JobWithMetadata<Envelope>)
 
 /** One lane owns its execution slot BEFORE fetching and keeps it through actual handler exit. */
 export async function runExecutor(options: ExecutorOptions): Promise<void> {
-  const { boss, work, shutdown, logger } = options;
+  const { db, boss, work, shutdown, logger } = options;
   while (!shutdown.aborted) {
     try {
-      const jobs = await boss.fetch<Envelope>(work.queue, { batchSize: 1, includeMetadata: true });
+      const jobs = await fetchAttempt(db, boss, work.queue);
       for (const job of jobs) await execute(options, job);
     } catch (error) {
       reportQueueError(logger, error);
