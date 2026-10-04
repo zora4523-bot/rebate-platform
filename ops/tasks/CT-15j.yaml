@@ -1,0 +1,26 @@
+id: CT-15j
+repo: rebate-platform
+title: 契约：我的与推送——Me.invite_backfill、/v1/me/tips 三接口、POST /v1/devices/push-token、me/phone 与 me/deletion 的 x-step-up 与 20903（04 §6.1）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b1-07、b1-08、b1-29、b2-11、b2-08（me/phone、me/deletion）；b4-13 只在同时声明 /v1/auth/merge 时做。
+# tip_key 路径参数先定义具名 schema TipKey 再 $ref，ENUM_BINDINGS 登记。push-token 的 provider 在选型前写 string。
+# POST /v1/me/phone 的 x-step-up 只对更换生效，条件写在说明。首次声明的接口按 04 §6.1 当前行全量写。
+# 契约线补（CT-16a）：第一个挂 x-step-up 的任务按 contracts/README.md 第 13 条新建 components/parameters/StepUpToken
+# （X-Step-Up-Token，required false）；conformance 要求 x-step-up 接口列它、列 10003 与 20903。
+refs: []
+refs_hash: {}
+contract_sections: ['6.1']
+deps: [CT-16a, CT-17a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

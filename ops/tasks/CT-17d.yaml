@@ -1,0 +1,24 @@
+id: CT-17d
+repo: rebate-platform
+title: 契约：apps.json 改为外跳目标、SDK 必需查询项、入站回调三类，外跳目标加 trade_only，bridge.ts 的入站与查询项校验（04 §9）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b3-08、b4-23、b3-09（TS 校验部分）、b5-05（结构，取值待 06 Q-C12）、m-06。
+# 入站检查读 specs/client-security-baseline.yaml 的系统 scheme 禁止清单与 own_link_hosts（CT-15h）。
+# 三端工程文件与服务端关联文件的生成器归 CT-05。没有取值的类别留空数组，不臆造 scheme 与域名。
+refs: []
+refs_hash: {}
+contract_sections: ['9']
+deps: [CT-15h]
+paths:
+  - 'contracts/apps.json'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

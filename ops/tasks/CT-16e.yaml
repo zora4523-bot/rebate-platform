@@ -1,0 +1,23 @@
+id: CT-16e
+repo: rebate-platform
+title: 文案：新建 contracts/texts.default.json（BR-TEXT-14 表 A～D 与 BR-TEXT-01 / 03 / 22 的包内默认文案，含五批新键）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目：b1-40、b2-27、b3-37、b4-31、b5-28。
+# 首建归属按编排会话 D-4 归本任务：全量首建，文案只取 08，表 D 是待法务定稿的占位措辞。
+# 后台文案（invalid_device_hash、union_host 保存拒绝）不进用户侧字典；不含 pending_confirm.expired。
+# README「以后会放在这里的文件」与生成物（若生成 TS 键类型）同 PR 更新。依据在 08，refs 为空原因同 CT-15c。
+# 批评后改（contract-delta §5 w-04）：b5-28 只建键与默认文案；键在 specs/fund-term-keys.yaml 的归类移到 CT-19b。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/texts.default.json'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

@@ -1,0 +1,22 @@
+id: CT-16cb
+repo: rebate-platform
+title: 契约：提现与钱包——GET /v1/withdrawals/rules、POST /v1/withdrawals（x-step-up、20903）、提现列表与详情（channel_order_id）、wallet/ledger（balance_after_fen）、wallet/summary（04 §6.4）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# 编排会话 j-01：CT-16c 拆分的第二半（编排会话 2026-10-04 下午指示本次入账）（提现、钱包）。条目：b2-m03 + b5-07、b5-08、b5-09、b5-10、b2-08（withdrawals）。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对。资金实现任务要等负责人确认代表例，本契约任务只定形状；
+# 估算字段（est_fee_fen、est_tax_fen、est_net_fen）只写形状与可空条件，算法只引 BR 编号。
+refs: []
+refs_hash: {}
+contract_sections: ['6.4']
+deps: [CT-16ca]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
