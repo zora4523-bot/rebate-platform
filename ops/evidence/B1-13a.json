@@ -1,0 +1,69 @@
+{
+  "task": "B1-13a",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "215da7937a10b59cb4e7e61f29d8439fac74e548",
+  "red_tests": [
+    "[AC-B1-13a#1] payout_accounts has the 04 columns; account numbers are stored only as bytea cipher and HMAC (BR-WDR-02 ②)",
+    "[AC-B1-13a#5] an alipay account is current for at most one member of an app: unique (app_id, alipay_hmac) WHERE is_current (BR-WDR-02 ②, 30308)",
+    "[AC-B1-13a#20] one fingerprint has at most one reserved or unknown row per member (04 部分唯一 WHERE status IN (reserved, unknown))",
+    "[AC-B1-13a#24] an idempotency key binds at most one verification of a member, whatever its status (04 部分唯一 WHERE idempotency_key IS NOT NULL)"
+  ],
+  "risk_note": "RV2 by path (db/**, packages/db/**). Migration 0009 creates payout_accounts (ciphertext + HMAC only, two partial unique HMACs and one current account per user), payout_account_changes (append-only) and payout_account_verify_attempts (vendor request id unique, one in-flight per fingerprint, one record per idempotency key) (04 §3.2; BR-WDR-02). Generated schema.sql and db.gen.ts from pnpm db:snapshot outside the sandbox. Written by hand before the evidence generator exists.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "fcb331194836be62adc9f092a0f2df493d3a6245",
+      "tree": "276c9bdf21180375035a6b3c6a8d8e581fe58846",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T14:09:04Z",
+      "finished_at": "2026-10-04T14:10:16Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass, 2 S2 / 3 S3 as followups (couli-runs/B1-13a/review-claude.md, followups.md)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "32 rule tests; round 1 pass, its two out-of-scope gaps added as #33, #34"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "7886ff45bf2f6ac160b9cf46a73996f90c3c98b6",
+    "packages/db": "c3235374423fc9745306089b9d0e3327cdd3e06c",
+    "db": "c374d2c31fa0d88f0dc7bda9ca61135068778de7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 locally; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "notes": {
+    "rebased": "rule-test commits rebased onto main with the branch; spec_commit is the rebased head of the rule tests"
+  }
+}
