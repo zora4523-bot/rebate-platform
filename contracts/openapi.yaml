@@ -47,7 +47,7 @@ tags:
   - name: config
     description: Client configuration and switches (04 §6.2, §10.1).
   - name: trade
-    description: Search, product detail, input parsing and link open / convert (04 §6.3).
+    description: Search, product detail, input parsing, link open / convert, the link landing page and the share page (04 §6.3).
   - name: union
     description: Union authorization and binding (04 §6.3).
   - name: order
@@ -3411,6 +3411,224 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/links/{link_id}:
+    get:
+      operationId: getLink
+      tags:
+        - trade
+      summary: Card of a link for the in-app link landing page
+      description: |
+        Card data for the in-app link landing page (route LinkLanding, 01 §4.2; BR-ATTR-05 细则
+        「App 内打开链接的入口」). Read-only: registers no link, writes no link_log and converts
+        nothing. Returns link_kind (share | other), the shared product card subset (the same as
+        the share page: no rebate_* and no est_net_price_fen, BR-PRICE-06, BR-ATTR-10),
+        quoted_at, and viewer_is_sharer (true only with a token whose user is the sharer of this
+        share link; used only to show a hint, BR-ATTR-11). Unknown link or one of another app →
+        30144; the page has no card to re-convert from, shows the empty state and does not retry.
+        Buying still goes only through POST /v1/links/{link_id}/open.
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30144
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/LinkId'
+      responses:
+        '200':
+          description: The link kind and its card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkLandingResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  link_kind: share
+                  product_card:
+                    product_key: tb:7Kq9LmN3pQ
+                    item_ref: v1.dGJfN0txOUxtTjNwUQ.c2ln
+                    platform: taobao
+                    shop_type: tmall
+                    title: 降噪蓝牙耳机 5.3
+                    image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+                    shop_name: 示例旗舰店
+                    price_fen: 3990
+                    coupon_fen: 1000
+                    final_price_fen: 2990
+                    benefit_tags:
+                      - 有券
+                    is_presale: false
+                    link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70
+                    stale: false
+                    age_sec: 12
+                    source: taobao_union
+                    disclaimer_keys:
+                      - price_basis
+                    ad_label: null
+                    availability: ok
+                  quoted_at: '2026-10-02T09:30:00+08:00'
+                  viewer_is_sharer: false
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/share-pages/{link_id}:
+    get:
+      operationId: getSharePage
+      tags:
+        - trade
+      summary: Card data of the share page
+      description: |
+        Card data of the share page outside the app (F-SHARE-01, 01 §4.2): the shared product card
+        subset (no rebate_* and no est_net_price_fen, BR-PRICE-06), quoted_at, jump_url (the
+        sharer's converted short link used for the jump; never contains a token, in any
+        environment), tpwd_ticket and open_in_app_url. tpwd_ticket is the short-lived ticket for
+        POST /v1/share-pages/{link_id}/tpwd: returned only when the server judges the request's
+        User-Agent to be outside WeChat and the link has a token, otherwise null (a request
+        without User-Agent counts as WeChat). The User-Agent is the client's claim, only used to
+        adapt the page, not a guarantee of content isolation (BR-ATTR-10 细则). open_in_app_url
+        is the LinkLanding deep link, null while share.open_in_app.enabled is off (BR-ATTR-05
+        细则「App 内打开链接的入口」). Only links with pid_scene=share are answered; any other,
+        unknown or of another app → 30144. The response carries Cache-Control: no-store (not
+        cached by the CDN). Not signed; no X-Device-Id required.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30144
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/LinkId'
+      responses:
+        '200':
+          description: The share page card.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharePageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  product_card:
+                    product_key: tb:7Kq9LmN3pQ
+                    item_ref: v1.dGJfN0txOUxtTjNwUQ.c2ln
+                    platform: taobao
+                    shop_type: tmall
+                    title: 降噪蓝牙耳机 5.3
+                    image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+                    shop_name: 示例旗舰店
+                    price_fen: 3990
+                    coupon_fen: 1000
+                    final_price_fen: 2990
+                    benefit_tags:
+                      - 有券
+                    is_presale: false
+                    link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70
+                    stale: false
+                    age_sec: 30
+                    source: taobao_union
+                    disclaimer_keys:
+                      - price_basis
+                    ad_label: null
+                    availability: ok
+                  quoted_at: '2026-10-02T09:30:00+08:00'
+                  jump_url: https://s.click.example.test/t?e=share01
+                  tpwd_ticket: placeholder-ticket-01
+                  open_in_app_url: https://go.example.test/r/LinkLanding?link_id=0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/NoStoreTooManyRequests'
+        4XX:
+          $ref: '#/components/responses/NoStoreClientError'
+        5XX:
+          $ref: '#/components/responses/NoStoreServerError'
+  /v1/share-pages/{link_id}/tpwd:
+    post:
+      operationId: getShareTpwd
+      tags:
+        - trade
+      summary: Token of the share page for the copy-token button
+      description: |
+        Called when the user taps the copy-token button on the share page: the body carries the
+        tpwd_ticket of GET /v1/share-pages/{link_id}; returns the token (BR-ATTR-10 细则). The
+        ticket is bound to the link_id, valid 600 s, at most 3 exchanges. An invalid, expired or
+        used-up ticket, or a request whose User-Agent is the WeChat in-app browser or missing →
+        20001 with data.fields=[ticket], no token. Rate limited per IP × link_id
+        (share.tpwd_rate_per_min) → 42901 with Retry-After. The response carries Cache-Control:
+        no-store. Not signed. Version gate: 不判定：非三端请求 (written false, BR-ID-01 细则).
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: false
+      x-implementation: planned
+      x-error-codes:
+        - 20001
+        - 42901
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/LinkId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareTpwdRequest'
+            example:
+              ticket: placeholder-ticket-01
+      responses:
+        '200':
+          description: The token.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareTpwdResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  tpwd: placeholder-tpwd
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/NoStoreTooManyRequests'
+        4XX:
+          $ref: '#/components/responses/NoStoreClientError'
+        5XX:
+          $ref: '#/components/responses/NoStoreServerError'
 components:
   securitySchemes:
     bearerAuth:
@@ -3587,6 +3805,118 @@ components:
         maximum: 50
         default: 20
   responses:
+    NoStoreClientError:
+      description: Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则).
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            unionAuthRequired:
+              summary: 30101 Taobao not authorized
+              value:
+                code: 30101
+                msg: 请先授权淘宝
+                data:
+                  auth_url: https://oauth.example.test/authorize?state=st_01
+                  state: st_01
+                  auth_methods:
+                    - sdk_token
+                    - web_code
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            pddAuthRequired:
+              summary: 30111 Pinduoduo not authorized
+              value:
+                code: 30111
+                msg: 请先授权拼多多
+                data:
+                  auth_jump:
+                    primary:
+                      type: universal_link
+                      value: https://auth.example.test/pdd/authorize?state=st_02
+                    fallbacks:
+                      - type: h5
+                        value: https://auth.example.test/pdd/authorize?state=st_02&web=1
+                    expire_at: '2026-10-02T09:40:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            phoneInvalid:
+              summary: 20001 the phone does not normalise to a mainland mobile number
+              value:
+                code: 20001
+                msg: 手机号格式不正确
+                data:
+                  fields:
+                    - phone
+                  reason: phone_invalid
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            invalidParams:
+              summary: 20001 parameter validation failed
+              value:
+                code: 20001
+                msg: 参数错误
+                data:
+                  fields:
+                    - scene
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    NoStoreTooManyRequests:
+      description: Same as TooManyRequests (42901 with Retry-After), with Cache-Control no-store (share pages).
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Retry-After:
+          required: true
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            code: 42901
+            msg: 请求过于频繁
+            trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    NoStoreServerError:
+      description: Same as ServerError, with Cache-Control no-store (share pages).
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            searchUnavailable:
+              summary: 50304 search unavailable for one platform
+              value:
+                code: 50304
+                msg: 京东搜索暂不可用
+                data:
+                  platform: jd
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            searchDisabled:
+              summary: 50304 search switched off for one platform
+              value:
+                code: 50304
+                msg: 京东搜索已关闭
+                data:
+                  platform: jd
+                  reason: search_disabled
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            notLaunched:
+              summary: 50301 platform not launched yet
+              value:
+                code: 50301
+                msg: 即将开放
+                data:
+                  platform: pdd
+                  reason: not_launched
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     ClientError:
       description: |
         Business or request error. Clients act on `code` only (contracts/error-codes.yaml);
@@ -3693,6 +4023,14 @@ components:
                   platform: pdd
                   reason: not_launched
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+  headers:
+    NoStore:
+      required: true
+      description: Always no-store; the response is not cached by the CDN or the browser (BR-ATTR-10 细则).
+      schema:
+        type: string
+        enum:
+          - no-store
   examples:
     SearchProductsOk:
       summary: One page of taobao results
@@ -7816,5 +8154,250 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/ConvertLinkData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    LinkKind:
+      type: string
+      description: Kind of a link on the in-app landing page (contracts/enums/trade.yaml link_kind).
+      enum:
+        - share
+        - other
+    SharedProductCard:
+      type: object
+      description: |
+        Product card subset of the share page and the in-app link landing page (04 §6.3): the
+        fields of ProductCard without rebate_min_fen, rebate_max_fen, rebate_basis,
+        no_rebate_cause and est_net_price_fen (no rebate amount is shown to the opener,
+        BR-PRICE-06, BR-ATTR-10), without cta (its key is derived from the rebate state), and
+        without the Agent-only card_id, match_tag and spec_text. quoted_at sits next to the card.
+      additionalProperties: false
+      required:
+        - product_key
+        - item_ref
+        - platform
+        - title
+        - image
+        - price_fen
+        - coupon_fen
+        - final_price_fen
+        - benefit_tags
+        - is_presale
+        - link_id
+        - stale
+        - age_sec
+        - source
+        - disclaimer_keys
+        - availability
+      properties:
+        product_key:
+          type:
+            - string
+            - 'null'
+          description: Opaque product key (BR-PROD-02); null only on amount_unknown cards.
+          minLength: 3
+          maxLength: 128
+        item_ref:
+          type:
+            - string
+            - 'null'
+          description: Opaque signed reference passed through unchanged (BR-PROD-11).
+          minLength: 1
+          maxLength: 1024
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        shop_type:
+          type:
+            - string
+            - 'null'
+          description: Shop type, e.g. tmall for Tmall shops on taobao.
+        title:
+          type:
+            - string
+            - 'null'
+        image:
+          type:
+            - string
+            - 'null'
+          format: uri
+        shop_name:
+          type:
+            - string
+            - 'null'
+        price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        coupon_fen:
+          $ref: '#/components/schemas/NullableFen'
+        final_price_fen:
+          $ref: '#/components/schemas/NullableFen'
+        benefit_tags:
+          type: array
+          description: Server-generated labels (有券, 预售…).
+          items:
+            type: string
+        is_presale:
+          type: boolean
+          description: Presale; shown with the total price (BR-PRICE-22).
+        tlj:
+          $ref: '#/components/schemas/ProductTlj'
+        link_id:
+          $ref: '#/components/schemas/Id'
+        stale:
+          type: boolean
+        age_sec:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          description: Age of the price in seconds, computed by the server (BR-PRICE-11).
+        source:
+          type: string
+          description: Price source (BR-PRICE-16).
+          enum:
+            - taobao_union
+            - jd_union
+            - pdd_union
+        disclaimer_keys:
+          type: array
+          description: Ordered dictionary keys (BR-PRICE-17), including price_basis.
+          items:
+            type: string
+        ad_label:
+          type:
+            - string
+            - 'null'
+          description: Ad label (BR-TEXT-17).
+        availability:
+          $ref: '#/components/schemas/Availability'
+    LinkLandingData:
+      type: object
+      additionalProperties: false
+      required:
+        - link_kind
+        - product_card
+        - quoted_at
+        - viewer_is_sharer
+      properties:
+        link_kind:
+          $ref: '#/components/schemas/LinkKind'
+        product_card:
+          $ref: '#/components/schemas/SharedProductCard'
+        quoted_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Receipt time of the union response the price is based on (BR-PRICE-11).
+        viewer_is_sharer:
+          type: boolean
+          description: |
+            True only when called with a token whose user is the sharer of this share link; only
+            for the hint above the card (BR-ATTR-11). False for anonymous calls and other links.
+    LinkLandingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/LinkLandingData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    SharePageData:
+      type: object
+      additionalProperties: false
+      required:
+        - product_card
+        - quoted_at
+        - jump_url
+        - tpwd_ticket
+        - open_in_app_url
+      properties:
+        product_card:
+          $ref: '#/components/schemas/SharedProductCard'
+        quoted_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Receipt time of the union response the price is based on (BR-PRICE-11).
+        jump_url:
+          type: string
+          format: uri
+          description: The sharer's converted short link used for the jump; never contains a token.
+        tpwd_ticket:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 256
+          description: |
+            Short-lived ticket for POST /v1/share-pages/{link_id}/tpwd; null inside WeChat, without
+            User-Agent, or when the link has no token (BR-ATTR-10 细则).
+        open_in_app_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: LinkLanding deep link; null while share.open_in_app.enabled is off.
+    SharePageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/SharePageData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    ShareTpwdRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - ticket
+      properties:
+        ticket:
+          type: string
+          description: tpwd_ticket from GET /v1/share-pages/{link_id}.
+          minLength: 1
+          maxLength: 256
+    ShareTpwdData:
+      type: object
+      additionalProperties: false
+      required:
+        - tpwd
+      properties:
+        tpwd:
+          type: string
+          minLength: 1
+          description: The token of the share link, to be copied by the page.
+    ShareTpwdResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/ShareTpwdData'
         trace_id:
           $ref: '#/components/schemas/TraceId'
