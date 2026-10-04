@@ -20,7 +20,13 @@ export type BridgeMethodDef = {
   since: Since;
   params: Obj;
   result: Obj;
+  /** Effective: true for L2 and for a lower level marked gesture_required (03 §5.3). */
+  gesture_required: boolean;
+  /** The method's own whitelist rejection answered with 90403, or null (03 §5.3). */
+  whitelist_90403: string | null;
 };
+export type SharePageKey = (typeof SHARE_PAGE_KEYS)[number];
+export type SharePagePath = { page: string; path_pattern: string | null };
 export type RouteDef = {
   name: string;
   kind: 'native' | 'h5';
@@ -75,6 +81,7 @@ export type BridgeCatalog = {
   apps: AppDef[];
   sdkQueries: SdkQueryDef[];
   inbound: InboundDef[];
+  sharePagePaths: Record<SharePageKey, SharePagePath>;
 };
 
 const NAMESPACES = [
@@ -96,6 +103,21 @@ const SEMVER = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 const ROUTE_NAME = /^[A-Z][A-Za-z0-9]*$/;
 const PLATFORMS = ['ios', 'android', 'harmony'] as const;
 const MAX_IOS_QUERY_SCHEMES = 20;
+const METHOD_KEYS = [
+  'level',
+  'model',
+  'timeout_ms',
+  'phase',
+  'since',
+  'note',
+  'gesture_required',
+  'whitelist_90403',
+  'share_page_paths',
+  'params',
+  'result',
+];
+// The three share pages whose paths share.open lets through on share_domains (04 §9; BR-ATTR-29 细则).
+const SHARE_PAGE_KEYS = ['product_share', 'invite_landing', 'download_guide'] as const;
 
 class BridgeError extends Error {}
 
@@ -286,6 +308,41 @@ function loadInbound(value: unknown, apps: AppDef[], sdkQueries: SdkQueryDef[]):
   });
 }
 
+/** share.open share_page_paths: exactly the three pages, each {page, path_pattern} (04 §9). */
+export function loadSharePagePaths(
+  where: string,
+  value: unknown,
+): Record<SharePageKey, SharePagePath> {
+  if (!isObj(value)) fail(where, 'share_page_paths must be an object');
+  const keys = Object.keys(value).filter((k) => k !== '$comment');
+  if (!sameSet(keys, SHARE_PAGE_KEYS)) {
+    fail(where, `share_page_paths has exactly ${SHARE_PAGE_KEYS.join(', ')} (and $comment)`);
+  }
+  const out = {} as Record<SharePageKey, SharePagePath>;
+  for (const key of SHARE_PAGE_KEYS) {
+    const w = `${where} share_page_paths.${key}`;
+    const e = value[key];
+    if (!isObj(e) || !sameSet(Object.keys(e), ['page', 'path_pattern'])) {
+      fail(w, 'exactly the keys page, path_pattern');
+    }
+    const page = e['page'];
+    if (typeof page !== 'string' || page === '') fail(w, 'page must be a non-empty string');
+    const pattern = e['path_pattern'];
+    if (pattern !== null) {
+      if (typeof pattern !== 'string' || !pattern.startsWith('^/') || !pattern.endsWith('$')) {
+        fail(w, 'path_pattern is null or an anchored regular expression ^/…$');
+      }
+      try {
+        new RegExp(pattern);
+      } catch (err) {
+        fail(w, `path_pattern: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    out[key] = { page, path_pattern: pattern };
+  }
+  return out;
+}
+
 export function loadBridgeCatalog(
   enums: readonly EnumDef[],
   ranges: readonly ErrorRangeDef[],
@@ -438,12 +495,15 @@ export function loadBridgeCatalog(
     ['auth.getUser/result/properties/realname_status', 'realname_status'],
     ['ext.openApp/result/properties/installed', 'installed_state'],
     ['app.getEnv/result/properties/channel', 'install_channel'],
+    ['auth.getH5Token/result/properties/scope', 'h5_token_scope'],
   ];
   for (const [pointer, enumName] of inline) {
     if (!sameSet(enumOf(`bridge ${pointer}`, at(bridge['methods'], pointer)), want(enumName))) {
       fail(`contracts/bridge.schema.json ${pointer}`, `must equal contracts/enums ${enumName}`);
     }
   }
+  const errorTable = isObj(bridge['errors']) ? bridge['errors'] : {};
+  let sharePagePaths: Record<SharePageKey, SharePagePath> | null = null;
   const methods: BridgeMethodDef[] = [];
   for (const [name, def] of Object.entries(bridge['methods'])) {
     const where = `contracts/bridge.schema.json ${name}`;
@@ -464,6 +524,27 @@ export function loadBridgeCatalog(
     ) {
       fail(where, 'timeout_ms must be a positive integer or null (no timeout)');
     }
+    const unknown = Object.keys(def).filter((k) => !METHOD_KEYS.includes(k));
+    if (unknown.length > 0) fail(where, `unknown keys ${unknown.join(', ')}`);
+    if ('note' in def && (typeof def['note'] !== 'string' || def['note'] === '')) {
+      fail(where, 'note must be a non-empty string');
+    }
+    const gesture = def['gesture_required'];
+    if (gesture !== undefined) {
+      if (typeof gesture !== 'boolean') fail(where, 'gesture_required must be a boolean');
+      if (level === 'L2') fail(where, 'gesture_required is implied by L2; set it only on L0 / L1');
+    }
+    const w403 = def['whitelist_90403'];
+    if (w403 !== undefined) {
+      if (typeof w403 !== 'string' || w403 === '') {
+        fail(where, 'whitelist_90403 must be a non-empty string');
+      }
+      if (!('90403' in errorTable)) fail(where, 'whitelist_90403 needs error 90403');
+    }
+    if ('share_page_paths' in def) {
+      if (name !== 'share.open') fail(where, 'only share.open has share_page_paths');
+      sharePagePaths = loadSharePagePaths(where, def['share_page_paths']);
+    }
     methods.push({
       name,
       level,
@@ -473,7 +554,12 @@ export function loadBridgeCatalog(
       since: since(where, def['since']),
       params: closedObjectSchema(`${where} params`, def['params']),
       result: closedObjectSchema(`${where} result`, def['result']),
+      gesture_required: level === 'L2' || gesture === true,
+      whitelist_90403: typeof w403 === 'string' ? w403 : null,
     });
+  }
+  if (sharePagePaths === null) {
+    fail('contracts/bridge.schema.json share.open', 'share_page_paths is required (04 §9)');
   }
 
   const events: Array<{ name: string; data: Obj }> = [];
@@ -509,7 +595,18 @@ export function loadBridgeCatalog(
     }
     signedPaths.push({ method, path });
   }
-  return { bridge, methods, events, signedPaths, errors, routes, apps, sdkQueries, inbound };
+  return {
+    bridge,
+    methods,
+    events,
+    signedPaths,
+    errors,
+    routes,
+    apps,
+    sdkQueries,
+    inbound,
+    sharePagePaths,
+  };
 }
 
 function pascal(name: string): string {
@@ -565,11 +662,21 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
   out.push('}');
   out.push('export type BridgeMethodName = keyof BridgeMethods;');
   out.push('');
-  out.push('/** Level, call model, timeout and per-platform `since` of each method (03 §5.3). */');
+  out.push(
+    '/** Level, call model, timeout, per-platform `since`, user gesture and own 90403 whitelist of each method (03 §5.3). */',
+  );
   const meta = Object.fromEntries(
     cat.methods.map((m) => [
       m.name,
-      { level: m.level, model: m.model, timeout_ms: m.timeout_ms, phase: m.phase, since: m.since },
+      {
+        level: m.level,
+        model: m.model,
+        timeout_ms: m.timeout_ms,
+        phase: m.phase,
+        since: m.since,
+        gesture_required: m.gesture_required,
+        whitelist_90403: m.whitelist_90403 !== null,
+      },
     ]),
   );
   out.push(`export const bridgeMethods = ${JSON.stringify(meta, null, 2)} as const;`);
@@ -584,6 +691,12 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
   );
   out.push(`export const signedPaths = ${JSON.stringify(cat.signedPaths)} as const;`);
   out.push(`export const bridgeErrorCodes = ${JSON.stringify(cat.errors)} as const;`);
+  out.push(
+    '/** Share page path patterns share.open lets through on share_domains (04 §9; BR-ATTR-29 细则); null = not fixed yet. */',
+  );
+  out.push(
+    `export const sharePagePaths = ${JSON.stringify(cat.sharePagePaths, null, 2)} as const;`,
+  );
   out.push('');
   out.push(
     '/** Route table (contracts/routes.json); jumps are {route, params} (拍板第二批 TECH-04). */',
