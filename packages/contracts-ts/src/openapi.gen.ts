@@ -400,6 +400,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My orders (self-purchase or shared)
+         * @description Orders of the current account in the visible range, newest paid first. scope=self gives the
+         *     full order_no (copyable); scope=share gives only masked_order_no, and an item whose bought
+         *     product is not the shared one (is_other_product=true) has title and image_url null — both
+         *     trimmed by the server. Shared orders exclude referral-commission orders. status_group
+         *     groups display_status on the server; q matches a self-purchase order by its exact parent or
+         *     child order number, otherwise titles; shared orders are matched by the visible title only.
+         *     Grouping, search and projection rules are only in BR-TEXT-02 细则「订单列表的状态分组与查找」
+         *     「订单的检索范围与分享单的投影」. earliest_visible_date is the first day in range
+         *     (null when unlimited; BR-ID-30 细则「订单类记录」). For a pre-sale order in DEPOSIT_PAID,
+         *     pay_amount_fen is the deposit paid, null when the platform does not report it
+         *     (BR-TEXT-02 细则「预售单的付款金额」, wording pending CAP-*-07).
+         */
+        get: operations["listOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orders/pending-tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending-track cards
+         * @description One card per platform at most, chosen per open attempt (link_open_attempts): attempts with
+         *     a jump report first, the latest open wins; jumped_at is that attempt's open time; whether a
+         *     card shows, disappears or offers the claim entry is decided by the server (BR-ATTR-21 细则
+         *     「待跟单卡按实际外跳选」「待跟单卡的完成与关闭按尝试」). dismissed tells whether the user
+         *     closed this attempt's card.
+         */
+        get: operations["listPendingTracks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orders/pending-tracks/{link_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a pending-track card
+         * @description Closes only the attempt named in the body (link_open_attempts.dismissed_at, written once);
+         *     other attempts of the same link are untouched. Repeating the call is harmless (no
+         *     Idempotency-Key). A missing attempt_id, or one that is not the current user's or not of
+         *     the link in the path, is 20001 with data.fields=[attempt_id] and nothing is written
+         *     (BR-ATTR-21 细则「待跟单卡的完成与关闭按尝试」). Version gate: applied.
+         */
+        post: operations["dismissPendingTrack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orders/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Order detail
+         * @description Same projection as the list (scope by order ownership): full order_no for my own purchase,
+         *     masked_order_no for a shared order; is_other_product=true trims title, image_url and
+         *     product_key. product_key is set only for my own purchase and a shared order with
+         *     is_other_product=false. timeline lists the nodes of BR-TEXT-02 细则「时间线」 (a pre-sale
+         *     order starts with deposit_paid); a node that has not happened has at null. reason and
+         *     reason_action explain a missing rebate directly, without AI (拍板第二批 AI-09). An order
+         *     outside the visible range, not the user's, or unknown is 30701 (BR-ID-30 细则).
+         */
+        get: operations["getOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -1189,6 +1293,167 @@ export interface components {
             data: components["schemas"]["UnionBindingState"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /** @enum {string} */
+        OrderScope: "self" | "share";
+        /**
+         * @description Status group of the order list (enum order_status_group; members in BR-TEXT-02 细则).
+         * @enum {string}
+         */
+        OrderStatusGroup: "all" | "estimating" | "credited" | "no_rebate";
+        /**
+         * @description User-visible order status (enum display_status; BR-FUND-17); unknown codes map to UNKNOWN.
+         * @enum {string}
+         */
+        OrderDisplayStatus: "PAID" | "DEPOSIT_PAID" | "WAITING" | "CREDITING" | "REVIEWING" | "RIGHTS_PENDING" | "CREDITED" | "CREDITED_PART_CLAWED" | "NO_REBATE" | "INVALID" | "CLAWED_BACK";
+        /**
+         * @description Order reason code (enum order_reason); texts and actions come from /v1/dict.
+         * @enum {string}
+         */
+        OrderReasonCode: "REFUND" | "RIGHTS" | "PUNISH" | "PRESALE_UNPAID" | "COMMISSION_ZERO" | "OTHER" | "BLACKLIST" | "PART_REFUND" | "PRICE_COMPARE" | "PRICE_PROTECT" | "SETTLE_DIFF" | "NOT_TRACKED" | "EXPIRED_CLICK" | "OTHER_TLJ" | "RELATION_INVALID" | "CANCELLED";
+        /**
+         * @description Timeline node of the order detail (enum order_timeline_node; BR-TEXT-02 细则「时间线」):
+         *     a pre-sale order starts with deposit_paid and has final_paid instead of paid; invalid /
+         *     clawed_back / part_clawed_back only when the order reached that state.
+         * @enum {string}
+         */
+        OrderTimelineNode: "deposit_paid" | "paid" | "final_paid" | "received" | "credit_expected" | "credited" | "invalid" | "clawed_back" | "part_clawed_back";
+        /**
+         * @description One row of GET /v1/orders. Exactly one of order_no (my own purchase) and masked_order_no (a
+         *     shared order); the oneOf branches declare the property they require (strict Ajv2020). A
+         *     shared order with is_other_product=true has title and image_url null and never the full
+         *     order_no (BR-TEXT-02 细则
+         *     「订单的检索范围与分享单的投影」). OrderDetail repeats these fields (kept as two closed
+         *     objects; redocly's example check closes every allOf member, so no shared allOf base).
+         */
+        OrderSummary: {
+            order_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            title: string | null;
+            /** Format: uri */
+            image_url: string | null;
+            pay_amount_fen: components["schemas"]["NullableFen"];
+            /** Format: int32 */
+            quantity: number;
+            /** @description Full platform order number (self-purchase only, copyable). */
+            order_no?: string;
+            /** @description Masked by the server (BR-TEXT-02 细则「订单号的显示」); shared orders never carry the full number. */
+            masked_order_no?: string;
+            display_status: components["schemas"]["OrderDisplayStatus"];
+            reason: components["schemas"]["OrderReasonCode"] | null;
+            est_rebate_fen: components["schemas"]["NullableFen"];
+            /**
+             * Format: date-time
+             * @description Payment time (the final payment of a pre-sale order); null for a pre-sale order still in
+             *     DEPOSIT_PAID (BR-ATTR-25 keeps paid_at for the final payment).
+             */
+            paid_at: string | null;
+            /** @description A shared order whose bought product is not the shared one. */
+            is_other_product: boolean;
+        } & ({
+            order_no: string;
+        } | {
+            masked_order_no: string;
+        });
+        OrderListData: {
+            items: components["schemas"]["OrderSummary"][];
+            next_cursor: string | null;
+            /** Format: date */
+            earliest_visible_date: string | null;
+        };
+        OrderListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["OrderListData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        OrderTimelineItem: {
+            node: components["schemas"]["OrderTimelineNode"];
+            /**
+             * Format: date-time
+             * @description When it happened; null when it has not (shown greyed) or the platform gives no time.
+             */
+            at: string | null;
+            /** @description Expected settlement month (YYYY-MM), only on credit_expected; null otherwise. */
+            period: string | null;
+        };
+        /**
+         * @description The list row fields (same as OrderSummary) plus the detail fields of 04 §6.4. product_key
+         *     is null when is_other_product=true; with is_other_product=true title and image_url are
+         *     null too.
+         */
+        OrderDetail: {
+            order_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            title: string | null;
+            /** Format: uri */
+            image_url: string | null;
+            pay_amount_fen: components["schemas"]["NullableFen"];
+            /** Format: int32 */
+            quantity: number;
+            /** @description Full platform order number (self-purchase only, copyable). */
+            order_no?: string;
+            /** @description Masked by the server (BR-TEXT-02 细则「订单号的显示」); shared orders never carry the full number. */
+            masked_order_no?: string;
+            display_status: components["schemas"]["OrderDisplayStatus"];
+            reason: components["schemas"]["OrderReasonCode"] | null;
+            est_rebate_fen: components["schemas"]["NullableFen"];
+            /**
+             * Format: date-time
+             * @description Payment time (the final payment of a pre-sale order); null for a pre-sale order still in
+             *     DEPOSIT_PAID (BR-ATTR-25 keeps paid_at for the final payment).
+             */
+            paid_at: string | null;
+            /** @description A shared order whose bought product is not the shared one. */
+            is_other_product: boolean;
+            product_key: components["schemas"]["ProductKey"] | null;
+            /** @description Action codes of the reason (the order_reason dictionary's action[], BR-TEXT-05). */
+            reason_action: string[];
+            timeline: components["schemas"]["OrderTimelineItem"][];
+            expected_credit_period: string | null;
+            credit_overdue: boolean;
+            actual_fen: components["schemas"]["NullableFen"];
+            clawback_fen: components["schemas"]["NullableFen"];
+            appeal_pending: boolean;
+            is_price_compare: boolean | null;
+        } & ({
+            order_no: string;
+        } | {
+            masked_order_no: string;
+        });
+        OrderDetailResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["OrderDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        PendingTrack: {
+            link_id: components["schemas"]["Id"];
+            attempt_id: string;
+            platform: components["schemas"]["PlatformCode"];
+            /** Format: date-time */
+            jumped_at: string;
+            show_claim_entry: boolean;
+            dismissed: boolean;
+        };
+        PendingTracksData: {
+            items: components["schemas"]["PendingTrack"][];
+        };
+        PendingTracksResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["PendingTracksData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        DismissPendingTrackRequest: {
+            attempt_id: string;
+        };
+        EmptyData: Record<string, never>;
+        EmptyResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["EmptyData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         /** @description Risk state for the ban / freeze explanation page (BR-ID-31, 拍板第二批 OPS-12). */
         RiskInfo: {
             /**
@@ -1801,6 +2066,11 @@ export interface components {
         IdempotencyKey: components["schemas"]["IdempotencyKey"];
         /** @description Platform code (enum platform). */
         UnionPlatform: components["schemas"]["PlatformCode"];
+        /**
+         * @description link_id of the pending-track card. Unlike other link operations an unknown link, or one that
+         *     does not own the attempt_id in the body, is 20001 with data.fields=[attempt_id] (no 30144).
+         */
+        PendingTrackLinkId: components["schemas"]["Id"];
         /** @description link_id from a card; unknown or of another app → 30144. */
         LinkId: components["schemas"]["Id"];
         /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
@@ -2729,6 +2999,295 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["UnionBindingResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listOrders: {
+        parameters: {
+            query: {
+                /** @description self = my own purchases; share = orders bought through my shares. */
+                scope: components["schemas"]["OrderScope"];
+                /** @description Status group (enum order_status_group); absent = all. */
+                status_group?: components["schemas"]["OrderStatusGroup"];
+                display_status?: components["schemas"]["OrderDisplayStatus"];
+                platform?: components["schemas"]["PlatformCode"];
+                /** @description Order number or title words, at most 40 characters (BR-TEXT-02 细则). */
+                q?: string;
+                /** @description Month of payment, YYYY-MM in +08:00; only months in the visible range. */
+                paid_month?: string;
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of orders. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90",
+                     *             "platform": "taobao",
+                     *             "title": "降噪蓝牙耳机",
+                     *             "image_url": "https://img.example.test/p/1.jpg",
+                     *             "pay_amount_fen": 2990,
+                     *             "quantity": 1,
+                     *             "order_no": "3712345678901234567",
+                     *             "display_status": "WAITING",
+                     *             "reason": null,
+                     *             "est_rebate_fen": 269,
+                     *             "paid_at": "2026-10-02T09:31:00+08:00",
+                     *             "is_other_product": false
+                     *           }
+                     *         ],
+                     *         "next_cursor": null,
+                     *         "earliest_visible_date": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["OrderListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listPendingTracks: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending-track cards. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *             "attempt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80",
+                     *             "platform": "taobao",
+                     *             "jumped_at": "2026-10-02T09:30:05+08:00",
+                     *             "show_claim_entry": false,
+                     *             "dismissed": false
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PendingTracksResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    dismissPendingTrack: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /**
+                 * @description link_id of the pending-track card. Unlike other link operations an unknown link, or one that
+                 *     does not own the attempt_id in the body, is 20001 with data.fields=[attempt_id] (no 30144).
+                 */
+                link_id: components["parameters"]["PendingTrackLinkId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "attempt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80"
+                 *     }
+                 */
+                "application/json": components["schemas"]["DismissPendingTrackRequest"];
+            };
+        };
+        responses: {
+            /** @description The card of this attempt is closed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                order_id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90",
+                     *         "platform": "taobao",
+                     *         "title": "降噪蓝牙耳机",
+                     *         "image_url": "https://img.example.test/p/1.jpg",
+                     *         "pay_amount_fen": 2990,
+                     *         "quantity": 1,
+                     *         "order_no": "3712345678901234567",
+                     *         "display_status": "WAITING",
+                     *         "reason": null,
+                     *         "reason_action": [],
+                     *         "est_rebate_fen": 269,
+                     *         "paid_at": "2026-10-02T09:31:00+08:00",
+                     *         "is_other_product": false,
+                     *         "product_key": "tb:9001",
+                     *         "expected_credit_period": "2026-11",
+                     *         "credit_overdue": false,
+                     *         "actual_fen": null,
+                     *         "clawback_fen": null,
+                     *         "appeal_pending": false,
+                     *         "is_price_compare": false,
+                     *         "timeline": [
+                     *           {
+                     *             "node": "paid",
+                     *             "at": "2026-10-02T09:31:00+08:00",
+                     *             "period": null
+                     *           },
+                     *           {
+                     *             "node": "received",
+                     *             "at": "2026-10-05T12:00:00+08:00",
+                     *             "period": null
+                     *           },
+                     *           {
+                     *             "node": "credit_expected",
+                     *             "at": null,
+                     *             "period": "2026-11"
+                     *           },
+                     *           {
+                     *             "node": "credited",
+                     *             "at": null,
+                     *             "period": null
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["OrderDetailResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

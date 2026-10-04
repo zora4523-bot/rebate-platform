@@ -41,6 +41,27 @@ enums:
       RISK: 风控暂停入账
       CS: 客服暂停入账
       UNMAPPED_STATUS: 映射表之外的平台状态码出现时由系统置（BR-FUND-02）
+  order_status_group:
+    source: 规划/04 §6.4；BR-TEXT-02 细则「订单列表的状态分组与查找」
+    description: GET /v1/orders 的 status_group；各组包含哪些 display_status 只在 BR-TEXT-02 细则
+    values:
+      all: 全部（含未知编码）
+      estimating: 预估中
+      credited: 已结算
+      no_rebate: 无返利
+  order_timeline_node:
+    source: 规划/04 §6.4；BR-TEXT-02 细则「时间线」
+    description: 订单详情时间线节点（编码代理自定；04 只点名 deposit_paid，final_paid 与 08 12_TEXT 文案表的键 order_timeline.final_paid 对齐（BR-TEXT-02 细则「时间线」））；未发生的节点 at 为空
+    values:
+      deposit_paid: 付定金（只有预售单，在最前面；文案键 order_timeline.deposit_paid）
+      paid: 付款（非预售单）
+      final_paid: 付尾款（预售单用它代替 paid；文案键 order_timeline.final_paid）
+      received: 收货
+      credit_expected: 预计结算月份（period）
+      credited: 已结算
+      invalid: 失效
+      clawed_back: 扣回
+      part_clawed_back: 部分扣回
   order_reason:
     source: 规划/04 §2.3；BR-TEXT-05；08 §13.2
     description: 订单原因码；NOT_TRACKED、EXPIRED_CLICK、OTHER_TLJ、RELATION_INVALID 不写入 orders.reason。CANCELLED 待 09 实测，启用前不写入。rebate_status=CLAWED_BACK 同样写 orders.reason（迁移 R8 同事务写，取值按 BR-FUND-08 细则的映射表）
