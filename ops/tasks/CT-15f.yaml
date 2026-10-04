@@ -1,0 +1,24 @@
+id: CT-15f
+repo: rebate-platform
+title: 契约：链接落地与分享页——GET /v1/links/{link_id}、GET /v1/share-pages/{link_id}、POST /v1/share-pages/{link_id}/tpwd、link_kind、30144（04 §6.3）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b1-12、b1-13、b1-14、b1-27、b1-24。tpwd 不列 30144（只有 20001、42901）。
+# tpwd 在 BR-ID-01 接口表是「不判定」：按编排会话 D-12 写 x-min-version-gate: false 并在说明写「不判定：非三端请求」（conformance 白名单已收录）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.3']
+deps: [CT-17a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/trade.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

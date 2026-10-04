@@ -1,0 +1,24 @@
+id: CT-19b
+repo: rebate-platform
+title: 规格：资金术语键清单 specs/fund-term-keys.yaml 与归类检查、商店对照表 specs/app-stores.yaml（BR-TEXT-12；03 §4.1）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目：b5-24、b5-22。
+# 归类检查：texts.default.json 每个键、notify_template_code 每个编码恰好归一段；放 packages/contracts-ts 的检查
+# （进 contracts:check），不放 tools/（保护路径）。商店对照表只建结构，取值接入时按各商店文档填；生成器归 CT-05。
+# 依据在 08，refs 为空原因同 CT-15c；specs/ 按 RV2 评审。
+# 批评后改（contract-delta §5 w-04）：另含 b5-28 的归类（withdraw.、withdraw_detail.、ledger. 归资金术语；external_page.product_unresolved 单列）。
+refs: []
+refs_hash: {}
+contract_sections: ['11.2']
+deps: [CT-16e, CT-01a]
+paths:
+  - 'specs/fund-term-keys.yaml'
+  - 'specs/app-stores.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
