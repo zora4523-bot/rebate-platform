@@ -1,0 +1,66 @@
+{
+  "task": "B1-12a",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "38363065dbe6a3c44cc10f52452fcdb7af634a7a",
+  "red_tests": [
+    "[AC-B1-12a#1] the three tables exist in schema app with app_id NOT NULL and created_at (04 §3.2 preamble)",
+    "[AC-B1-12a#2] foreign keys of the three tables never cascade (db/AGENTS.md #7)",
+    "[AC-B1-12a#9] the same token value is independent across providers and apps (04 §3.2: 业务唯一键以 app_id 开头)",
+    "[AC-B1-12a#20] a message_id is issued once (04 §3.2 inbox_messages: 按 message_id 回查)"
+  ],
+  "risk_note": "RV2 by path (db/**, packages/db/**). Migration 0008 creates push_tokens (unique per device and provider, partial unique live token value, freeze / move columns, device FK), user_tip_reads and inbox_messages (route jsonb, nullable) (04 §3.2; c-01). Generated schema.sql and db.gen.ts from pnpm db:snapshot outside the sandbox. Written by hand before the evidence generator exists (ops/evidence/README.md).",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "50a10d129f61eb529d31f636fa509c65c23d811d",
+      "tree": "da8d8bcb5c5bb94fc437f7f4f20529d174429e3f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T13:46:49Z",
+      "finished_at": "2026-10-04T13:48:13Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass, S2 notes as followups (couli-runs/B1-12a/review-claude.md, followups.md); the 0008 comment fix (identity owns user_tip_reads) applied"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 4,
+      "note": "round 1 void (position change: a comment fix was committed during the review); round 2 S1s were base-drift noise (branch behind main), gone after the rebase; round 3 one S1 (a 4096-character high-entropy token exceeds the B-tree index row limit) is S2 under the cef1224 rubric; exception round 4 approved by the orchestrator, cef1224 prompts: pass (the same finding reported as S2)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "25 rule tests; round 1 pass, its out-of-scope gap (push_tokens.device_id FK) added as #26"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "3ff2fb42403ce418e0407ae9c5f1d137a9bc31b6",
+    "packages/db": "0245003968e20bcbf0ca6a10a566f0c30d660f65",
+    "db": "0450273a432925d01aec0a8914e8606b93e910c4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 on the B1-12a worktree; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
