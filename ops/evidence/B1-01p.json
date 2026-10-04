@@ -1,0 +1,62 @@
+{
+  "task": "B1-01p",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "8276f15985f984737589ef9e7b65eb8f016c0b7b",
+  "red_tests": [
+    "[规划/04 §5][BR-ID-33] x-trace-id 是手机号、身份证号、银行卡号、邮箱等个人数据的形状时不采用，换成新生成的小写 v4 UUID（每次不同、不取自输入）",
+    "[规划/04 §5] 不是 32 位十六进制也不是 8-4-4-4-12 写法的字符串不采用：长度差一位、连字符位置或个数不对、只省一部分连字符、非十六进制字母、下划线与旧格式示例值都换成新 UUID",
+    "[规划/04 §5][规划/02 §19][BR-ID-33] HTTP 入口：x-trace-id 是手机号 13987654321 时响应 trace_id 与访问日志两行的 reqId 是同一个新生成的 v4 UUID，响应与日志里都不出现该号码；身份证号、银行卡号同样；同一号码再请求一次得到另一个新 UUID；404 也一样",
+    "[规划/04 §5][规划/02 §19] HTTP 入口：旧格式的示例值（trace-abc_123、validation-trace、64 个 A）与 31 位、33 位十六进制都不采用，trace_id 与 reqId 是同一个新 v4 UUID"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). Trace id adoption narrowed: x-trace-id is used as the request id only when it is exactly 32 hex digits or an 8-4-4-4-12 UUID (any case, kept as is); anything else gets a fresh lower-case v4 UUID, so a phone number or other personal data in the header no longer reaches reqId, access logs or the response trace_id. No money, attribution or authorisation path.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "48f86af7a69ec82e9cd7e589c1a56c87a1d7f039",
+      "tree": "abdb41af7e2c7219f79a21b6780028f6bb7a677a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T19:07:38Z",
+      "finished_at": "2026-10-04T19:09:42Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass, no findings; tracing rule tests 9/9, validation + masking 52/52, api unit 273/273"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "money review base origin/main (includes the ledger PR #71 diff): pass, no findings, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, no findings"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "ec005dcad47326a189a11b8acac024e7854131d9",
+    "apps/api/src/modules/platform/tracing": "8f2e9ae87c05f176bd56a157d15d7ab842485acd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 pnpm test:longrun on the B1-01p worktree (test/properties tree shared by B1-01n/o/p/q), 2026-10-05; this task adds no property tests"
+  }
+}
