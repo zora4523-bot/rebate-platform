@@ -531,6 +531,129 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Help, rules, notices and agreements
+         * @description Published articles of one category, by version. Items of the notice category also carry
+         *     `notice` (NoticeItem); only items whose notice is in its effective window are returned, with
+         *     start_at = published_at, end_at = notice_end_at and content_version maintained on its own
+         *     (not the article revision); filtering again by the device clock is client behaviour
+         *     (BR-TEXT-13 细则「首页公告条的关闭与内容版本」). Readable anonymously in basic mode, without
+         *     a device id (BR-ID-11 细则, pending legal confirmation). Session scopes: accepts
+         *     deletion_only (BR-ID-01 细则「受限会话」).
+         */
+        get: operations["listArticles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/articles/{article_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One article
+         * @description Full text of a published article; unknown or unpublished → 30701. Readable anonymously,
+         *     without a device id (BR-ID-11 细则).
+         */
+        get: operations["getArticle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/app-versions/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Update check for this platform and channel
+         * @description By X-Platform and X-Channel: latest, minimum supported and recommended versions, update
+         *     title and notes, store_url (default address of this platform and channel; for the Android
+         *     universal package the client first looks up the store table by install source, 03 §4.1),
+         *     default_store (the store key of store_url) and stores (in the order filled in the admin,
+         *     app_versions.store_listings; only the stores of this platform and channel, including
+         *     default_store; listed_version is the highest version users can install there, or null).
+         *     No download address of any kind (拍板第二批 TECH-19). Store choice and checks: BR-ID-01 细则
+         *     「【去更新】打开哪家商店与保存前的核对」. Called on cold start and on return to foreground
+         *     after the recheck interval; read-only and never blocked by the minimum version. Session
+         *     scopes: accepts deletion_only.
+         */
+        get: operations["checkAppVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pages/{page_key}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Draft page preview (test builds only)
+         * @description Read-only preview of a draft, allowed only by an admin-issued preview token (10 minutes)
+         *     and never by a user token. The token is valid only in the environment that issued it;
+         *     invalid, expired or issued elsewhere → 30701. Only the HomePreview route of test builds
+         *     calls it; release builds have no route or code for it (03 §3.6). The QR code carries only
+         *     token and page_key, no host name. sections follow the page schema of the page module.
+         */
+        get: operations["previewPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/{message_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One inbox message (push-click lookup)
+         * @description Looks up where a push click goes by message id: message_id, code, title, body, created_at,
+         *     read_at and route ({route, params} or null). Only messages of the logged-in account; unknown
+         *     or someone else's → 30701 (not distinguished). Read-only: does not change read_at
+         *     (BR-ID-10 细则「推送点击的落点」).
+         */
+        get: operations["getMessage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -1807,6 +1930,150 @@ export interface components {
             payee_name: string;
         };
         SavePayoutAccountRequest: components["schemas"]["SavePayoutAccountByAlipay"] | components["schemas"]["SavePayoutAccountByBankCard"];
+        /**
+         * @description Article category (04 §6.2：帮助、规则、公告、协议; codes defined here, no enums/ entry yet).
+         * @enum {string}
+         */
+        ArticleCategory: "help" | "rule" | "notice" | "agreement";
+        /**
+         * @description In-app jump target {route, params} (contracts/routes.json; TECH-04). route stays a string on
+         *     purpose: a server may return a route newer than an installed client, which then opens the
+         *     upgrade page (03 §4.4), so the HTTP contract cannot pin the route list. The client checks
+         *     route and params against its own routes table (bridge RouteTarget) before opening; the
+         *     server only stores targets checked against routes.json when they are saved.
+         */
+        RouteTarget: {
+            route: string;
+            params?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * @description One notice-bar entry, shared by the static (home schema) and api (GET /v1/articles notice
+         *     category) sources; closing and content-version rules only in BR-TEXT-13 细则「首页公告条的
+         *     关闭与内容版本」 (04 §6.2).
+         */
+        NoticeItem: {
+            /** @description For api entries the notice article id. */
+            item_id: string;
+            /** Format: int32 */
+            content_version: number;
+            text: string;
+            target: components["schemas"]["RouteTarget"] | null;
+            closable: boolean;
+            /** Format: date-time */
+            start_at: string;
+            /** Format: date-time */
+            end_at: string | null;
+        };
+        /** @description A list item; items of the notice category carry notice (04 §6.2), others do not. */
+        ArticleSummary: components["schemas"]["NoticeArticleSummary"] | components["schemas"]["PlainArticleSummary"];
+        NoticeArticleSummary: {
+            article_id: string;
+            /** @enum {string} */
+            category: "notice";
+            title: string;
+            /** Format: int32 */
+            version: number;
+            /** Format: date-time */
+            published_at: string;
+            notice: components["schemas"]["NoticeItem"];
+        };
+        PlainArticleSummary: {
+            article_id: string;
+            /** @enum {string} */
+            category: "help" | "rule" | "agreement";
+            title: string;
+            /** Format: int32 */
+            version: number;
+            /** Format: date-time */
+            published_at: string;
+        };
+        ArticleListData: {
+            items: components["schemas"]["ArticleSummary"][];
+            next_cursor: string | null;
+        };
+        ArticleListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ArticleListData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        Article: {
+            article_id: string;
+            category: components["schemas"]["ArticleCategory"];
+            title: string;
+            /** Format: int32 */
+            version: number;
+            /** Format: date-time */
+            published_at: string;
+            body: string;
+        };
+        ArticleResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Article"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Semantic version x.y.z. */
+        SemVer: string;
+        StoreListing: {
+            /** @description Store key of specs/app-stores.yaml (that file comes with CT-19b). */
+            store: string;
+            listed_version: components["schemas"]["SemVer"] | null;
+        };
+        AppVersionCheck: {
+            latest_version: components["schemas"]["SemVer"];
+            /** @description Null when no minimum is set for this platform and channel (no interception). */
+            min_supported_version: components["schemas"]["SemVer"] | null;
+            recommended_version: components["schemas"]["SemVer"] | null;
+            update_title: string;
+            update_notes: string;
+            /** Format: uri */
+            store_url: string;
+            default_store: string;
+            /** @description Always includes the default_store entry (04 §6.2). */
+            stores: components["schemas"]["StoreListing"][];
+        };
+        AppVersionCheckResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AppVersionCheck"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        PagePreview: {
+            page_key: string;
+            /** Format: int32 */
+            version: number;
+            /** @description Sections as stored in page_versions.sections (shape owned by the page schema). */
+            sections: {
+                [key: string]: unknown;
+            }[];
+        };
+        PagePreviewResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["PagePreview"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        InboxMessage: {
+            message_id: components["schemas"]["Id"];
+            /** @description Message template code (notify_templates). */
+            code: string;
+            title: string;
+            body: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            read_at: string | null;
+            route: components["schemas"]["RouteTarget"] | null;
+        };
+        InboxMessageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["InboxMessage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         EmptyData: Record<string, never>;
         EmptyResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -3711,6 +3978,309 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["OrderDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listArticles: {
+        parameters: {
+            query: {
+                category: components["schemas"]["ArticleCategory"];
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Articles of the category. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "article_id": "example-notice-one",
+                     *             "category": "notice",
+                     *             "title": "国庆期间到账说明",
+                     *             "version": 3,
+                     *             "published_at": "2026-10-01T09:00:00+08:00",
+                     *             "notice": {
+                     *               "item_id": "example-notice-one",
+                     *               "content_version": 1,
+                     *               "text": "国庆期间结算顺延",
+                     *               "target": {
+                     *                 "route": "Help",
+                     *                 "params": {
+                     *                   "article_id": "example-notice-one"
+                     *                 }
+                     *               },
+                     *               "closable": true,
+                     *               "start_at": "2026-10-01T09:00:00+08:00",
+                     *               "end_at": "2026-10-08T00:00:00+08:00"
+                     *             }
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ArticleListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getArticle: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The article. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "article_id": "example-article-one",
+                     *         "category": "help",
+                     *         "title": "什么是比价订单",
+                     *         "version": 2,
+                     *         "published_at": "2026-10-01T09:00:00+08:00",
+                     *         "body": "示例正文"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ArticleResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    checkAppVersion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version information. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "latest_version": "1.2.0",
+                     *         "min_supported_version": "1.0.0",
+                     *         "recommended_version": "1.1.0",
+                     *         "update_title": "新版本",
+                     *         "update_notes": "修复若干问题",
+                     *         "store_url": "https://store.example.test/app/couli",
+                     *         "default_store": "huawei",
+                     *         "stores": [
+                     *           {
+                     *             "store": "huawei",
+                     *             "listed_version": "1.2.0"
+                     *           },
+                     *           {
+                     *             "store": "xiaomi",
+                     *             "listed_version": null
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AppVersionCheckResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    previewPage: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                page_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draft page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "version": 7,
+                     *         "sections": []
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PagePreviewResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                message_id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The message. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "message_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80",
+                     *         "code": "WITHDRAW_PAID",
+                     *         "title": "提现已到账",
+                     *         "body": "你的提现已到账",
+                     *         "created_at": "2026-10-02T09:30:00+08:00",
+                     *         "read_at": null,
+                     *         "route": {
+                     *           "route": "WithdrawRecords",
+                     *           "params": {}
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["InboxMessageResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

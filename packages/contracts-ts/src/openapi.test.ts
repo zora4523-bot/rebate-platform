@@ -209,3 +209,10 @@ it('payout account: masked GET, PUT body by method (04 §6.1)', () => {
   };
   expect([alipay, card]).toHaveLength(2);
 });
+
+it('content: notices, update check, inbox message (04 §6.2, §6.4)', () => {
+  expectTypeOf<Schema<'NoticeArticleSummary'>['notice']>().toEqualTypeOf<Schema<'NoticeItem'>>();
+  expectTypeOf<Schema<'InboxMessage'>['route']>().toEqualTypeOf<Schema<'RouteTarget'> | null>();
+  const stores: Schema<'AppVersionCheck'>['stores'] = [{ store: 'huawei', listed_version: null }];
+  expect(stores).toHaveLength(1);
+});
