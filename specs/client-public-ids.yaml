@@ -20,7 +20,7 @@ items:
     category: request_routing
     name: X-App-Id
     purpose: 请求头里的应用标识，区分品牌 App
-    platforms: [ios, android, harmony, h5]
+    platforms: [ios, android, harmony, h5, admin]
     why_public: 只标识是哪个 App，服务端另按设备注册与签名校验，知道它不能冒充请求
   - id: service_hosts
     category: request_routing
