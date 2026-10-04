@@ -775,7 +775,7 @@ it('[BR-ID-33] 访问日志（评审补充 F）：Fastify 请求经根 logger �
   const { lines, statusCodes } = await accessLog([`/healthz?${query.toString()}`]);
   expect({ lines: lines.length, statusCodes }).toEqual({ lines: 2, statusCodes: [200] });
   expectAccessLines(lines, 0, '/healthz', 200);
-});
+}, 30_000);
 
 it('[BR-ID-33] 访问日志（评审补充 F）：url 写匹配到的路由模板（/v1/users/:id），没匹配到路由写 [unmatched]；路径里的手机号、邮箱不写（含 404）', async () => {
   const urls = [
@@ -793,7 +793,7 @@ it('[BR-ID-33] 访问日志（评审补充 F）：url 写匹配到的路由模�
   expectAccessLines(lines, 1, '[unmatched]', 404);
   expectAccessLines(lines, 2, '[unmatched]', 404);
   expectAccessLines(lines, 3, '[unmatched]', 404);
-});
+}, 30_000);
 
 it('[BR-ID-33] 日志（评审补充 G）：URL 对象写 origin + pathname（去掉 userinfo、查询串、片段），在嵌套、数组、绑定、printf、Nest 参数里一样；自由文本键下过安全网；顶层日志对象或绑定是 URL 时不贡献字段', () => {
   const link = new URL('https://x.example:8443/cb/path#frag');

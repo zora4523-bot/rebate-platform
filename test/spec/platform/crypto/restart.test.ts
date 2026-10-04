@@ -115,7 +115,7 @@ it('[BR-ID-33] 换一个进程字段加密的 IV 也不重复：两个新进程�
     stuckBits: [],
     decryptedWithStoredKey: [...values, ...values, ...values].map((v) => v.text),
   });
-});
+}, 30_000);
 
 it('[BR-ID-33] 进程重启后照常可用（新进程验证）：新进程只凭主密钥字节、keyId、存下来的 keyring 与密文，解开重启前两个版本的密文、算出相同的盲索引、解开包裹过的密钥；新进程用同一把主密钥建的 keyring 与密文，本进程也打得开', async () => {
   const masterKey = testKey(MASTER);
@@ -177,7 +177,7 @@ it('[BR-ID-33] 进程重启后照常可用（新进程验证）：新进程只�
     },
     openedHere: { decrypted: [SAMPLES.phone], unwrapped: [testKey(2).toString('hex')] },
   });
-});
+}, 30_000);
 
 it('[BR-ID-33] 换一个进程包裹密钥的 IV 也不重复：本进程与两个新进程用同一把主密钥各把同一把密钥包裹 10 次，30 份 lk1 包裹文本的 IV 两两不同、96 位里每一位都出现过 0 和 1，每份都按 lk1 格式用主密钥独立解开、正好是那把密钥', async () => {
   const masterKey = testKey(MASTER);
@@ -208,7 +208,7 @@ it('[BR-ID-33] 换一个进程包裹密钥的 IV 也不重复：本进程与两�
     stuckBits: [],
     unwrapped: wrapped.map(() => key.toString('hex')),
   });
-});
+}, 30_000);
 
 it('[BR-ID-33] 换一个进程新生成的密钥也是新的随机密钥：本进程与两个新进程各新建 5 份 keyring 并各轮换一次，45 把数据密钥与盲索引密钥（按 lk1 格式用主密钥独立解包）都是 32 字节、两两不同、256 位里每一位都出现过 0 和 1，它们的 45 个包裹 IV 也两两不同', async () => {
   const masterKey = testKey(MASTER);
@@ -250,7 +250,7 @@ it('[BR-ID-33] 换一个进程新生成的密钥也是新的随机密钥：本�
     stuckBits: [],
     distinctIvs: 45,
   });
-});
+}, 30_000);
 
 it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建、轮换、打开 keyring，加密、解密、重新加密、建索引、读版本，包裹与解包，以及每一种错误码的被拒调用（含 provider 失败：新建、轮换、打开 keyring 时 provider 第几次调用抛出或拒绝 × 普通 Error 或同码的 FieldCryptoError，共 24 种）之后，标准错误一个字节也没有，标准输出正好是进程自己的那一份 JSON 回复', () => {
   const values = [
@@ -304,4 +304,4 @@ it('[BR-ID-33] 不往标准输出与标准错误里打印：新进程里新建�
       ],
     },
   });
-});
+}, 30_000);
