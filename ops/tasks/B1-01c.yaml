@@ -23,5 +23,5 @@ accept:
   - 'pnpm --filter @couli/api test'
   - 'pnpm --filter @couli/spec-tests test'
   - 'test/spec/platform/masking/**'
-status: todo
-pr: null
+status: done
+pr: 59

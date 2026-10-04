@@ -1,0 +1,240 @@
+import {
+  isAnyArrayBuffer,
+  isBigIntObject,
+  isBooleanObject,
+  isNumberObject,
+  isStringObject,
+} from 'node:util/types';
+
+/** BR-ID-33: logs discard sensitive values entirely; display masks are not log masks. */
+export const REDACTED = '[REDACTED]';
+
+export const SENSITIVE_KEYS = Object.freeze([
+  'phone',
+  'phones',
+  'mobile',
+  'mobile_phone',
+  'phone_number',
+  'contact_phone',
+  'auth_alert_phones',
+  'id_no',
+  'id_card',
+  'id_card_no',
+  'id_number',
+  'birth_date',
+  'real_name',
+  'payee_name',
+  'alipay_logon_id',
+  'alipay_account',
+  'bank_card_no',
+  'card_no',
+  'payee_account',
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'password',
+  'token',
+  'access_token',
+  'refresh_token',
+  'step_up_token',
+  'x-step-up-token',
+  'x-sign',
+  'secret',
+] as const);
+
+function normalizedKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const sensitiveNames = new Set<string>(SENSITIVE_KEYS.map(normalizedKey));
+const freeTextKeys = new Set(['msg', 'message', 'stack']);
+const email =
+  /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+const digit = '[0-9０-９]';
+const id18 = `${digit}(?:[ -]?${digit}){16}(?:[ -]?${digit}|[Xx])`;
+const bankCard = `${digit}(?:[ -]?${digit}){15,18}`;
+const id15 = `${digit}(?:[ -]?${digit}){14}`;
+const phone = `(?:(?:\\+[8８][6６]|[0０][0０][8８][6６]|[8８][6６])[ -]?)?[1１](?:[ -]?${digit}){10}`;
+const personalNumber = new RegExp(
+  `(?<!${digit})(?:${id18}|${bankCard}|${id15}|${phone})(?!${digit})`,
+  'g',
+);
+
+/** A safety net for free text only: ordinary structured ids and amounts are untouched. */
+export function redactText(text: string): string {
+  return text.replace(email, REDACTED).replace(personalNumber, REDACTED);
+}
+
+export const UNSERIALIZABLE = '[Unserializable]';
+
+function isBoxed(value: unknown): value is { valueOf(): string | number | boolean | bigint } {
+  return (
+    isStringObject(value) ||
+    isNumberObject(value) ||
+    isBooleanObject(value) ||
+    isBigIntObject(value)
+  );
+}
+
+function isBinary(value: unknown): value is ArrayBufferLike | ArrayBufferView {
+  return isAnyArrayBuffer(value) || ArrayBuffer.isView(value);
+}
+
+// Pino's hook and formatters may copy a record more than once. Preserve Error provenance
+// without adding output fields, so an Error's numeric code never becomes free text under err.
+const errorCopies = new WeakSet<object>();
+
+/** Resolve replacements at the same field depth; bound non-terminating toJSON chains too. */
+function resolveJSON(value: unknown, chain: Set<object>, ancestors = new Set<object>()): unknown {
+  while (value !== null && (typeof value === 'object' || typeof value === 'function')) {
+    if (ancestors.has(value) || chain.has(value)) return '[Circular]';
+    if (chain.size > 100) return '[Truncated]';
+    chain.add(value);
+    // These types have explicit rules that take precedence over built-in/custom toJSON.
+    if (value instanceof Error || value instanceof URL || isBinary(value) || isBoxed(value)) {
+      return value;
+    }
+    const toJSON: unknown = Reflect.get(value, 'toJSON');
+    if (typeof toJSON !== 'function') return value;
+    const next: unknown = toJSON.call(value);
+    if (next === value) return value;
+    value = next;
+  }
+  return value;
+}
+
+/** Copy without mutating callers; free-text context follows descendants. */
+export function redactValue(
+  value: unknown,
+  key = '',
+  ancestors = new Set<object>(),
+  depth = 0,
+  freeText = false,
+): unknown {
+  if (sensitiveNames.has(normalizedKey(key))) return REDACTED;
+  if (depth > 100) return '[Truncated]';
+  const chain = new Set<object>();
+  const visit = (item: unknown, name = '') =>
+    redactValue(item, name, ancestors, depth + 1, freeText);
+  const field = (name: string) => {
+    // Do not even invoke a getter for a sensitive field.
+    if (sensitiveNames.has(normalizedKey(name))) return REDACTED;
+    return attempt(() => visit(Reflect.get(value as object, name), name));
+  };
+  try {
+    value = resolveJSON(value, chain, ancestors);
+    for (const item of chain) ancestors.add(item);
+    const error =
+      value instanceof Error ||
+      (typeof value === 'object' && value !== null && errorCopies.has(value));
+    freeText ||= freeTextKeys.has(key) || (key === 'err' && !error);
+    if (isBinary(value)) return `[Binary ${String(value.byteLength)} bytes]`;
+    if (value instanceof URL) value = value.origin + value.pathname;
+    if (isBoxed(value)) value = value.valueOf();
+    if (
+      freeText &&
+      (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint')
+    ) {
+      return redactText(String(value));
+    }
+    if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value;
+    if (value instanceof Error) {
+      const original = value;
+      const fields: Record<string, unknown> = {
+        type: attempt(() => visit(original.constructor.name, 'type')),
+        message: field('message'),
+        stack: field('stack'),
+        ...Object.fromEntries(Object.keys(value).map((name) => [name, field(name)])),
+      };
+      if ('errors' in value) {
+        const errors = attempt(() => Reflect.get(original, 'errors') as unknown);
+        if (Array.isArray(errors)) fields['aggregateErrors'] = visit(errors);
+        else if (errors === UNSERIALIZABLE) fields['aggregateErrors'] = UNSERIALIZABLE;
+      }
+      if (Object.hasOwn(value, 'cause')) fields['cause'] = field('cause');
+      errorCopies.add(fields);
+      return fields;
+    }
+    if (typeof value === 'function') return undefined;
+    if (Array.isArray(value)) {
+      return Array.from({ length: value.length }, (_, index) => field(String(index)));
+    }
+    if (value instanceof Map || value instanceof Set) return {};
+    const fields = Object.fromEntries(Object.keys(value).map((name) => [name, field(name)]));
+    if (error) errorCopies.add(fields);
+    return fields;
+  } catch {
+    return UNSERIALIZABLE;
+  } finally {
+    // Only ancestors count as circular: shared values in separate branches remain visible.
+    for (const item of chain) ancestors.delete(item);
+  }
+}
+
+export function attempt(read: () => unknown): unknown {
+  try {
+    return read();
+  } catch {
+    return UNSERIALIZABLE;
+  }
+}
+
+export type FieldSerializers = Readonly<Record<string, (value: unknown) => unknown>>;
+
+/** Serializers see original objects (including prototype getters), before any copying. */
+export function redactRecord(
+  value: object,
+  serializers: FieldSerializers = {},
+): Record<string, unknown> {
+  const result = attempt(() => {
+    const chain = new Set<object>();
+    const record = resolveJSON(value, chain);
+    // A log record/binding contributes fields, not a primitive message. In particular, do
+    // not split a string result into indexed characters that bypass free-text redaction.
+    if (
+      record === null ||
+      typeof record !== 'object' ||
+      isBoxed(record) ||
+      isBinary(record) ||
+      record instanceof URL
+    )
+      return {};
+    return Object.fromEntries(
+      Object.keys(record).map((key) => [
+        key,
+        sensitiveNames.has(normalizedKey(key))
+          ? REDACTED
+          : attempt(() => {
+              const original: unknown = Reflect.get(record, key);
+              const serializer = Object.hasOwn(serializers, key) ? serializers[key] : undefined;
+              return redactValue(
+                serializer ? serializer(original) : original,
+                key,
+                new Set(chain),
+                1,
+              );
+            }),
+      ]),
+    );
+  });
+  return typeof result === 'object' && result !== null
+    ? (result as Record<string, unknown>)
+    : { message: UNSERIALIZABLE };
+}
+
+/** Node 24 raw JSON preserves bigint as numeric JSON without rounding or throwing. */
+export function stringifyValue(value: unknown): string | undefined {
+  const json = JSON as typeof JSON & { rawJSON: (text: string) => unknown };
+  return JSON.stringify(value, (_key, item: unknown) =>
+    typeof item === 'bigint' ? json.rawJSON(String(item)) : item,
+  );
+}
+
+export function redactMessage(value: unknown): string {
+  const safe = redactValue(value, 'msg');
+  return redactText(
+    typeof safe === 'string' || typeof safe === 'number' || typeof safe === 'boolean'
+      ? String(safe)
+      : (stringifyValue(safe) ?? ''),
+  );
+}
