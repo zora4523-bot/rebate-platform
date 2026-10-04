@@ -157,6 +157,116 @@ export interface LoginLogs {
   user_id: string;
 }
 
+export interface OrderKeys {
+  app_id: string;
+  attr_at: Timestamp;
+  created_at: Generated<Timestamp>;
+  order_id: string;
+  platform: string;
+  sub_order_id: string;
+}
+
+export interface OrderRights {
+  amount_fen: ColumnType<bigint, bigint, bigint> | null;
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  deduction_commission_fen: ColumnType<bigint, bigint, bigint> | null;
+  id: string;
+  occurred_at: Timestamp;
+  order_id: string;
+  platform_rights_no: string | null;
+  row_version: Generated<number>;
+  source: string;
+  status: string;
+  type: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Orders {
+  activity_type: string | null;
+  agent_session_id: string | null;
+  app_id: string;
+  attr_at: Timestamp;
+  base_fen: ColumnType<bigint, bigint, bigint> | null;
+  booked_base_fen: ColumnType<bigint, bigint, bigint> | null;
+  booked_n_fen: ColumnType<bigint, bigint, bigint> | null;
+  buy_type: string | null;
+  commission_rate_bp: number | null;
+  commission_rate_max_bp: number | null;
+  commission_rate_min_bp: number | null;
+  commission_version: Generated<number>;
+  content_hash: string | null;
+  created_at: Generated<Timestamp>;
+  credit_requires_settle: Generated<boolean>;
+  credited_at: Timestamp | null;
+  custom_params: string | null;
+  deposit_paid_at: Timestamp | null;
+  diff_reason_code: string | null;
+  est_commission_fen: ColumnType<bigint, bigint, bigint> | null;
+  hold: Generated<boolean>;
+  hold_reason: string | null;
+  image_url: string | null;
+  initial_est_fen: ColumnType<bigint, bigint, bigint> | null;
+  is_presale: Generated<boolean>;
+  is_price_compare: boolean | null;
+  link_id: string | null;
+  locked: Generated<boolean>;
+  n_total_fen: ColumnType<bigint, bigint, bigint> | null;
+  order_id: string;
+  paid_at: Timestamp | null;
+  paid_at_source: string | null;
+  parent_order_id: string | null;
+  pay_amount_fen: ColumnType<bigint, bigint, bigint> | null;
+  pid: string | null;
+  platform: string;
+  platform_est_profit_fen: ColumnType<bigint, bigint, bigint> | null;
+  platform_modified_at: Timestamp | null;
+  platform_received_at: Timestamp | null;
+  platform_status: string;
+  pre_base_deduct_fen: ColumnType<bigint, bigint, bigint> | null;
+  product_key: string | null;
+  quantity: number | null;
+  raw_item_id: string;
+  raw_payload_id: ColumnType<bigint, bigint, bigint> | null;
+  reason: string | null;
+  reason_sub: string | null;
+  rebate_status: Generated<string>;
+  received_at: Timestamp | null;
+  received_synced_at: Timestamp | null;
+  refunded_quantity: number | null;
+  refunded_quantity_at_credit: number | null;
+  relation_id: string | null;
+  rights_pending: Generated<boolean>;
+  row_version: Generated<number>;
+  scene_basis: string | null;
+  settle_commission_fen: ColumnType<bigint, bigint, bigint> | null;
+  settle_period: string | null;
+  settled_at: Timestamp | null;
+  shop_id: string | null;
+  shop_type: string | null;
+  source_match: string | null;
+  source_scene: string | null;
+  sub_order_id: string;
+  sub_union_id: string | null;
+  subsidy_commission_fen: ColumnType<bigint, bigint, bigint> | null;
+  title: string | null;
+  union_settled_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  user_basis: string | null;
+  user_id: string | null;
+}
+
+export interface OrderSettlements {
+  app_id: string;
+  content_hash: string;
+  created_at: Generated<Timestamp>;
+  order_id: string;
+  seq: number;
+  settle_commission_fen: ColumnType<bigint, bigint, bigint>;
+  settled_at: Timestamp;
+  source: string;
+}
+
 export interface ProcessedEvents {
   consumer: string;
   created_at: Generated<Timestamp>;
@@ -211,6 +321,10 @@ export interface DB {
   link_open_attempts: LinkOpenAttempts;
   links: Links;
   login_logs: LoginLogs;
+  order_keys: OrderKeys;
+  order_rights: OrderRights;
+  order_settlements: OrderSettlements;
+  orders: Orders;
   processed_events: ProcessedEvents;
   user_oauth: UserOauth;
   users: Users;

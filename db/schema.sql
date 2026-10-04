@@ -81,7 +81,7 @@ BEGIN
 
   -- Allow-list of month-partitioned tables (ADR-0001 §4.2 #5). Extend it in the migration
   -- that creates the next partitioned table.
-  IF p_table NOT IN ('event_log') THEN
+  IF p_table NOT IN ('event_log', 'orders') THEN
     RAISE EXCEPTION 'ensure_month_partition: table "%" is not month-partitioned', p_table
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
@@ -202,6 +202,30 @@ BEGIN
         ROW(OLD.quoted_final_price_fen, OLD.quoted_coupon_fen, OLD.quoted_coupon_id, OLD.quoted_at))
   THEN
     RAISE EXCEPTION 'links identity and written quote snapshot are immutable'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_order_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_order_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.order_id, NEW.app_id, NEW.platform, NEW.sub_order_id, NEW.attr_at)
+      IS DISTINCT FROM
+      ROW(OLD.order_id, OLD.app_id, OLD.platform, OLD.sub_order_id, OLD.attr_at)
+    OR (OLD.product_key IS NOT NULL AND NEW.product_key IS DISTINCT FROM OLD.product_key)
+    OR (OLD.settle_period IS NOT NULL AND NEW.settle_period IS DISTINCT FROM OLD.settle_period)
+    OR (OLD.credit_requires_settle AND NOT NEW.credit_requires_settle)
+  THEN
+    RAISE EXCEPTION 'orders identity, written product/period and settlement requirement cannot be rewritten'
       USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
@@ -745,6 +769,239 @@ ALTER TABLE app.login_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: order_keys; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_keys (
+    platform text NOT NULL,
+    sub_order_id text NOT NULL,
+    order_id uuid NOT NULL,
+    app_id text NOT NULL,
+    attr_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: order_rights; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_rights (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    order_id uuid NOT NULL,
+    source text NOT NULL,
+    type text NOT NULL,
+    status text NOT NULL,
+    amount_fen bigint,
+    deduction_commission_fen bigint,
+    occurred_at timestamp with time zone NOT NULL,
+    platform_rights_no text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_rights_status_check CHECK ((status = ANY (ARRAY['PROCESSING'::text, 'WAIT_COMMISSION'::text, 'SUCCEEDED'::text, 'FAILED'::text]))),
+    CONSTRAINT order_rights_type_check CHECK ((type = ANY (ARRAY['RIGHTS'::text, 'PUNISH'::text, 'INVALID_AFTER_SETTLE'::text, 'REFUND_AFTER_SETTLE'::text])))
+);
+
+
+--
+-- Name: order_settlements; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_settlements (
+    app_id text NOT NULL,
+    order_id uuid NOT NULL,
+    seq integer NOT NULL,
+    source text NOT NULL,
+    settle_commission_fen bigint NOT NULL,
+    settled_at timestamp with time zone NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_settlements_source_check CHECK ((source = ANY (ARRAY['API'::text, 'STATEMENT'::text])))
+);
+
+
+--
+-- Name: orders; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.orders (
+    order_id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    sub_order_id text NOT NULL,
+    parent_order_id text,
+    shop_type text,
+    product_key text,
+    raw_item_id text NOT NULL,
+    shop_id text,
+    title text,
+    image_url text,
+    quantity integer,
+    refunded_quantity integer,
+    refunded_quantity_at_credit integer,
+    pay_amount_fen bigint,
+    pid text,
+    relation_id text,
+    sub_union_id text,
+    custom_params text,
+    link_id uuid,
+    source_match text,
+    user_id uuid,
+    buy_type text,
+    scene_basis text,
+    user_basis text,
+    platform_status text NOT NULL,
+    rebate_status text DEFAULT 'UNATTRIBUTED'::text NOT NULL,
+    hold boolean DEFAULT false NOT NULL,
+    hold_reason text,
+    rights_pending boolean DEFAULT false NOT NULL,
+    locked boolean DEFAULT false NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    commission_version integer DEFAULT 0 NOT NULL,
+    reason text,
+    reason_sub text,
+    diff_reason_code text,
+    is_presale boolean DEFAULT false NOT NULL,
+    deposit_paid_at timestamp with time zone,
+    paid_at timestamp with time zone,
+    paid_at_source text,
+    attr_at timestamp with time zone NOT NULL,
+    received_at timestamp with time zone,
+    platform_received_at timestamp with time zone,
+    received_synced_at timestamp with time zone,
+    settled_at timestamp with time zone,
+    union_settled_at timestamp with time zone,
+    settle_period text,
+    platform_modified_at timestamp with time zone,
+    credit_requires_settle boolean DEFAULT false NOT NULL,
+    credited_at timestamp with time zone,
+    est_commission_fen bigint,
+    settle_commission_fen bigint,
+    subsidy_commission_fen bigint,
+    booked_base_fen bigint,
+    booked_n_fen bigint,
+    initial_est_fen bigint,
+    n_total_fen bigint,
+    pre_base_deduct_fen bigint,
+    base_fen bigint,
+    platform_est_profit_fen bigint,
+    commission_rate_bp integer,
+    is_price_compare boolean,
+    commission_rate_min_bp integer,
+    commission_rate_max_bp integer,
+    activity_type text,
+    source_scene text,
+    agent_session_id uuid,
+    content_hash text,
+    raw_payload_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT orders_buy_type_check CHECK ((buy_type = ANY (ARRAY['self'::text, 'share'::text]))),
+    CONSTRAINT orders_diff_reason_check CHECK ((diff_reason_code = ANY (ARRAY['PART_REFUND'::text, 'PRICE_COMPARE'::text, 'PRICE_PROTECT'::text, 'SETTLE_DIFF'::text]))),
+    CONSTRAINT orders_hold_reason_check CHECK ((hold_reason = ANY (ARRAY['RISK'::text, 'CS'::text, 'UNMAPPED_STATUS'::text]))),
+    CONSTRAINT orders_platform_status_check CHECK ((platform_status = ANY (ARRAY['DEPOSIT_PAID'::text, 'PAID'::text, 'RECEIVED'::text, 'SETTLED'::text, 'INVALID'::text]))),
+    CONSTRAINT orders_reason_check CHECK ((reason = ANY (ARRAY['REFUND'::text, 'RIGHTS'::text, 'PUNISH'::text, 'PRESALE_UNPAID'::text, 'COMMISSION_ZERO'::text, 'OTHER'::text, 'BLACKLIST'::text, 'PART_REFUND'::text, 'PRICE_COMPARE'::text, 'PRICE_PROTECT'::text, 'SETTLE_DIFF'::text]))),
+    CONSTRAINT orders_rebate_status_check CHECK ((rebate_status = ANY (ARRAY['UNATTRIBUTED'::text, 'ESTIMATED'::text, 'WAITING'::text, 'CREDITED'::text, 'VOID'::text, 'CLAWED_BACK'::text]))),
+    CONSTRAINT orders_scene_basis_check CHECK ((scene_basis = ANY (ARRAY['pid'::text, 'param'::text, 'fallback'::text]))),
+    CONSTRAINT orders_settle_period_check CHECK ((settle_period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text)),
+    CONSTRAINT orders_source_match_check CHECK ((source_match = ANY (ARRAY['exact'::text, 'product'::text, 'shop'::text, 'none'::text]))),
+    CONSTRAINT orders_user_basis_check CHECK ((user_basis = ANY (ARRAY['param'::text, 'claim'::text, 'admin'::text])))
+)
+PARTITION BY RANGE (attr_at);
+
+
+--
+-- Name: orders_default; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.orders_default (
+    order_id uuid CONSTRAINT orders_order_id_not_null NOT NULL,
+    app_id text CONSTRAINT orders_app_id_not_null NOT NULL,
+    platform text CONSTRAINT orders_platform_not_null NOT NULL,
+    sub_order_id text CONSTRAINT orders_sub_order_id_not_null NOT NULL,
+    parent_order_id text,
+    shop_type text,
+    product_key text,
+    raw_item_id text CONSTRAINT orders_raw_item_id_not_null NOT NULL,
+    shop_id text,
+    title text,
+    image_url text,
+    quantity integer,
+    refunded_quantity integer,
+    refunded_quantity_at_credit integer,
+    pay_amount_fen bigint,
+    pid text,
+    relation_id text,
+    sub_union_id text,
+    custom_params text,
+    link_id uuid,
+    source_match text,
+    user_id uuid,
+    buy_type text,
+    scene_basis text,
+    user_basis text,
+    platform_status text CONSTRAINT orders_platform_status_not_null NOT NULL,
+    rebate_status text DEFAULT 'UNATTRIBUTED'::text CONSTRAINT orders_rebate_status_not_null NOT NULL,
+    hold boolean DEFAULT false CONSTRAINT orders_hold_not_null NOT NULL,
+    hold_reason text,
+    rights_pending boolean DEFAULT false CONSTRAINT orders_rights_pending_not_null NOT NULL,
+    locked boolean DEFAULT false CONSTRAINT orders_locked_not_null NOT NULL,
+    row_version integer DEFAULT 0 CONSTRAINT orders_row_version_not_null NOT NULL,
+    commission_version integer DEFAULT 0 CONSTRAINT orders_commission_version_not_null NOT NULL,
+    reason text,
+    reason_sub text,
+    diff_reason_code text,
+    is_presale boolean DEFAULT false CONSTRAINT orders_is_presale_not_null NOT NULL,
+    deposit_paid_at timestamp with time zone,
+    paid_at timestamp with time zone,
+    paid_at_source text,
+    attr_at timestamp with time zone CONSTRAINT orders_attr_at_not_null NOT NULL,
+    received_at timestamp with time zone,
+    platform_received_at timestamp with time zone,
+    received_synced_at timestamp with time zone,
+    settled_at timestamp with time zone,
+    union_settled_at timestamp with time zone,
+    settle_period text,
+    platform_modified_at timestamp with time zone,
+    credit_requires_settle boolean DEFAULT false CONSTRAINT orders_credit_requires_settle_not_null NOT NULL,
+    credited_at timestamp with time zone,
+    est_commission_fen bigint,
+    settle_commission_fen bigint,
+    subsidy_commission_fen bigint,
+    booked_base_fen bigint,
+    booked_n_fen bigint,
+    initial_est_fen bigint,
+    n_total_fen bigint,
+    pre_base_deduct_fen bigint,
+    base_fen bigint,
+    platform_est_profit_fen bigint,
+    commission_rate_bp integer,
+    is_price_compare boolean,
+    commission_rate_min_bp integer,
+    commission_rate_max_bp integer,
+    activity_type text,
+    source_scene text,
+    agent_session_id uuid,
+    content_hash text,
+    raw_payload_id bigint,
+    created_at timestamp with time zone DEFAULT now() CONSTRAINT orders_created_at_not_null NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() CONSTRAINT orders_updated_at_not_null NOT NULL,
+    CONSTRAINT orders_buy_type_check CHECK ((buy_type = ANY (ARRAY['self'::text, 'share'::text]))),
+    CONSTRAINT orders_diff_reason_check CHECK ((diff_reason_code = ANY (ARRAY['PART_REFUND'::text, 'PRICE_COMPARE'::text, 'PRICE_PROTECT'::text, 'SETTLE_DIFF'::text]))),
+    CONSTRAINT orders_hold_reason_check CHECK ((hold_reason = ANY (ARRAY['RISK'::text, 'CS'::text, 'UNMAPPED_STATUS'::text]))),
+    CONSTRAINT orders_platform_status_check CHECK ((platform_status = ANY (ARRAY['DEPOSIT_PAID'::text, 'PAID'::text, 'RECEIVED'::text, 'SETTLED'::text, 'INVALID'::text]))),
+    CONSTRAINT orders_reason_check CHECK ((reason = ANY (ARRAY['REFUND'::text, 'RIGHTS'::text, 'PUNISH'::text, 'PRESALE_UNPAID'::text, 'COMMISSION_ZERO'::text, 'OTHER'::text, 'BLACKLIST'::text, 'PART_REFUND'::text, 'PRICE_COMPARE'::text, 'PRICE_PROTECT'::text, 'SETTLE_DIFF'::text]))),
+    CONSTRAINT orders_rebate_status_check CHECK ((rebate_status = ANY (ARRAY['UNATTRIBUTED'::text, 'ESTIMATED'::text, 'WAITING'::text, 'CREDITED'::text, 'VOID'::text, 'CLAWED_BACK'::text]))),
+    CONSTRAINT orders_scene_basis_check CHECK ((scene_basis = ANY (ARRAY['pid'::text, 'param'::text, 'fallback'::text]))),
+    CONSTRAINT orders_settle_period_check CHECK ((settle_period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text)),
+    CONSTRAINT orders_source_match_check CHECK ((source_match = ANY (ARRAY['exact'::text, 'product'::text, 'shop'::text, 'none'::text]))),
+    CONSTRAINT orders_user_basis_check CHECK ((user_basis = ANY (ARRAY['param'::text, 'claim'::text, 'admin'::text])))
+);
+
+
+--
 -- Name: processed_events; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1080,6 +1337,13 @@ ALTER TABLE ONLY app.link_logs ATTACH PARTITION app.link_logs_default DEFAULT;
 
 
 --
+-- Name: orders_default; Type: TABLE ATTACH; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.orders ATTACH PARTITION app.orders_default DEFAULT;
+
+
+--
 -- Name: job_common; Type: TABLE ATTACH; Schema: pgboss; Owner: -
 --
 
@@ -1187,6 +1451,70 @@ ALTER TABLE ONLY app.links
 
 ALTER TABLE ONLY app.login_logs
     ADD CONSTRAINT login_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_keys order_keys_app_order_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_keys
+    ADD CONSTRAINT order_keys_app_order_key UNIQUE (app_id, order_id);
+
+
+--
+-- Name: order_keys order_keys_identity_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_keys
+    ADD CONSTRAINT order_keys_identity_key UNIQUE (order_id, attr_at, app_id, platform, sub_order_id);
+
+
+--
+-- Name: order_keys order_keys_order_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_keys
+    ADD CONSTRAINT order_keys_order_id_key UNIQUE (order_id);
+
+
+--
+-- Name: order_keys order_keys_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_keys
+    ADD CONSTRAINT order_keys_pkey PRIMARY KEY (platform, sub_order_id);
+
+
+--
+-- Name: order_rights order_rights_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_rights
+    ADD CONSTRAINT order_rights_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_settlements order_settlements_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_settlements
+    ADD CONSTRAINT order_settlements_pkey PRIMARY KEY (order_id, seq);
+
+
+--
+-- Name: orders orders_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.orders
+    ADD CONSTRAINT orders_pkey PRIMARY KEY (order_id, attr_at);
+
+
+--
+-- Name: orders_default orders_default_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.orders_default
+    ADD CONSTRAINT orders_default_pkey PRIMARY KEY (order_id, attr_at);
 
 
 --
@@ -1398,6 +1726,41 @@ CREATE INDEX link_open_attempts_user_opened_idx ON app.link_open_attempts USING 
 
 
 --
+-- Name: order_rights_order_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX order_rights_order_idx ON app.order_rights USING btree (app_id, order_id);
+
+
+--
+-- Name: orders_link_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX orders_link_idx ON ONLY app.orders USING btree (app_id, link_id);
+
+
+--
+-- Name: orders_default_app_id_link_id_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX orders_default_app_id_link_id_idx ON app.orders_default USING btree (app_id, link_id);
+
+
+--
+-- Name: orders_user_paid_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX orders_user_paid_idx ON ONLY app.orders USING btree (app_id, user_id, paid_at DESC, order_id DESC);
+
+
+--
+-- Name: orders_default_app_id_user_id_paid_at_order_id_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX orders_default_app_id_user_id_paid_at_order_id_idx ON app.orders_default USING btree (app_id, user_id, paid_at DESC, order_id DESC);
+
+
+--
 -- Name: users_phone_hmac_key; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -1524,6 +1887,27 @@ ALTER INDEX app.link_logs_pkey ATTACH PARTITION app.link_logs_default_pkey;
 
 
 --
+-- Name: orders_default_app_id_link_id_idx; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.orders_link_idx ATTACH PARTITION app.orders_default_app_id_link_id_idx;
+
+
+--
+-- Name: orders_default_app_id_user_id_paid_at_order_id_idx; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.orders_user_paid_idx ATTACH PARTITION app.orders_default_app_id_user_id_paid_at_order_id_idx;
+
+
+--
+-- Name: orders_default_pkey; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.orders_pkey ATTACH PARTITION app.orders_default_pkey;
+
+
+--
 -- Name: job_common_pkey; Type: INDEX ATTACH; Schema: pgboss; Owner: -
 --
 
@@ -1563,6 +1947,27 @@ CREATE TRIGGER link_open_attempts_no_rewrite BEFORE UPDATE ON app.link_open_atte
 --
 
 CREATE TRIGGER links_no_quote_rewrite BEFORE UPDATE ON app.links FOR EACH ROW EXECUTE FUNCTION app.reject_link_quote_rewrite();
+
+
+--
+-- Name: order_keys order_keys_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER order_keys_append_only BEFORE DELETE OR UPDATE ON app.order_keys FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: order_settlements order_settlements_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER order_settlements_append_only BEFORE DELETE OR UPDATE ON app.order_settlements FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: orders orders_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER orders_no_rewrite BEFORE UPDATE ON app.orders FOR EACH ROW EXECUTE FUNCTION app.reject_order_rewrite();
 
 
 --
@@ -1643,6 +2048,46 @@ ALTER TABLE ONLY app.links
 
 ALTER TABLE ONLY app.login_logs
     ADD CONSTRAINT login_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: order_rights order_rights_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_rights
+    ADD CONSTRAINT order_rights_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: order_settlements order_settlements_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_settlements
+    ADD CONSTRAINT order_settlements_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: orders orders_identity_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE app.orders
+    ADD CONSTRAINT orders_identity_fkey FOREIGN KEY (order_id, attr_at, app_id, platform, sub_order_id) REFERENCES app.order_keys(order_id, attr_at, app_id, platform, sub_order_id);
+
+
+--
+-- Name: orders orders_link_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE app.orders
+    ADD CONSTRAINT orders_link_fkey FOREIGN KEY (app_id, link_id) REFERENCES app.links(app_id, link_id);
+
+
+--
+-- Name: orders orders_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE app.orders
+    ADD CONSTRAINT orders_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -1754,6 +2199,13 @@ REVOKE ALL ON FUNCTION app.reject_link_open_attempt_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_link_quote_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_order_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_order_rewrite() FROM PUBLIC;
 
 
 --
@@ -1896,6 +2348,45 @@ GRANT SELECT ON TABLE app.links TO couli_readonly;
 
 GRANT SELECT,INSERT ON TABLE app.login_logs TO couli_app;
 GRANT SELECT ON TABLE app.login_logs TO couli_readonly;
+
+
+--
+-- Name: TABLE order_keys; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.order_keys TO couli_app;
+GRANT SELECT ON TABLE app.order_keys TO couli_readonly;
+
+
+--
+-- Name: TABLE order_rights; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.order_rights TO couli_app;
+GRANT SELECT ON TABLE app.order_rights TO couli_readonly;
+
+
+--
+-- Name: TABLE order_settlements; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.order_settlements TO couli_app;
+GRANT SELECT ON TABLE app.order_settlements TO couli_readonly;
+
+
+--
+-- Name: TABLE orders; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.orders TO couli_app;
+GRANT SELECT ON TABLE app.orders TO couli_readonly;
+
+
+--
+-- Name: TABLE orders_default; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT ON TABLE app.orders_default TO couli_readonly;
 
 
 --

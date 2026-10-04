@@ -2,7 +2,7 @@
 // The naming rule must stay in sync with app.ensure_month_partition (db/migrations).
 
 /** Tables partitioned by month (ADR-0001 §4.2 #5). Mirrors the allow-list in the SQL function. */
-export const MONTH_PARTITIONED_TABLES = ['event_log'] as const;
+export const MONTH_PARTITIONED_TABLES = ['event_log', 'orders'] as const;
 
 export type MonthPartitionedTable = (typeof MONTH_PARTITIONED_TABLES)[number];
 
