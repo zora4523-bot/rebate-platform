@@ -170,7 +170,8 @@
 //      for domain events with `processed_events(consumer, event_id)` in the same transaction as the
 //      effect (规划/02 §11, §18; ADR-0001 §3), event_id being job.id.
 //      Expiry does not release the business concurrency slot until that handler actually settles.
-//      Jobs waiting for a slot do not invoke business code after their pg-boss signal is aborted.
+//      Each execution slot is acquired before fetching: a full queue executor leaves jobs unclaimed
+//      until a handler actually settles, without consuming their expiry or retry budgets.
 //
 // 6. Stop — `runtime.stop()`
 //    - From the first call no handler call starts and send() rejects 'not_running'.
@@ -193,8 +194,10 @@
 //                          error; code is the error's `code` when it is a string, else null;
 //      `queue_stop_timeout` (section 6).
 //      `job_released_on_stop` level warn, fields exactly { queue, jobId, attempt } — a fetched job
-//                          reaches the callback after stop, or waits for a slot when stop begins;
+//                          arrives after stop;
 //                          no business call starts, but pg-boss counts the release as a failure.
+//      `job_released_on_expiry` level warn, fields exactly { queue, jobId, attempt } — defensive
+//                          release of an already expired fetched lease without calling its handler.
 //    Never the payload, the error object or its message / stack, or connection parameters.
 //
 // 8. Errors — `QueueError`: name 'QueueError', `code`, the fixed message of QUEUE_ERROR_MESSAGES;

@@ -1,24 +1,16 @@
 import { sql } from 'kysely';
-import { PgBoss, fromKysely, type JobWithMetadata } from 'pg-boss';
+import { PgBoss, fromKysely } from 'pg-boss';
+import { reportQueueError, runExecutor } from './executor.ts';
 import {
   PGBOSS_SCHEMA,
   PGBOSS_SCHEMA_VERSION,
   QueueError,
   type JobHandler,
-  type JobPayload,
   type QueueRuntime,
   type QueueRuntimeOptions,
   type QueueSpec,
 } from './types.ts';
 import { runtimeOptions, validateSend } from './validation.ts';
-
-interface Envelope {
-  name: string;
-  payload: JobPayload;
-}
-
-/** The only value ever allowed to reach pg-boss from a failed business handler. */
-const HANDLER_FAILED = Object.freeze({ error: 'handler_failed' });
 
 function queueSettings(spec: QueueSpec) {
   return {
@@ -38,15 +30,10 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
   const specs = new Map(catalog.map((spec) => [spec.name, spec]));
   const work = new Map(plan[entry].map((item) => [item.queue, item]));
   const handlers = new Map<string, JobHandler>();
-  const working = new Set<string>();
+  const executors: Promise<void>[] = [];
   const runningHandlers = new Set<Promise<void>>();
-  const slots = new Map(
-    plan[entry].map((item) => [
-      item.queue,
-      { limit: item.concurrency, active: 0, waiters: new Set<() => void>() },
-    ]),
-  );
   const shutdown = new AbortController();
+  const deadline = new AbortController();
   const boss = new PgBoss({
     db: fromKysely(db),
     schema: PGBOSS_SCHEMA,
@@ -57,78 +44,13 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
     persistQueueStats: false,
     useListenNotify: false,
   });
-  boss.on('error', (error: unknown) => {
-    const code = (error as { code?: unknown } | null)?.code;
-    logger.error({ code: typeof code === 'string' ? code : null }, 'queue_error');
-  });
+  boss.on('error', (error: unknown) => reportQueueError(logger, error));
 
   let used = false;
   let running = false;
   let stopping = false;
   let starting: Promise<void> | undefined;
   let stopped: Promise<void> | undefined;
-
-  const execute = async (
-    queue: string,
-    handler: JobHandler,
-    job: JobWithMetadata<Envelope>,
-  ): Promise<void> => {
-    // Pg-boss releases its worker on expiry even if business code is still running.
-    // These slots belong to the actual handler lifetime, independently of that worker.
-    const slot = slots.get(queue)!;
-    const signal = AbortSignal.any([job.signal, shutdown.signal]);
-    while (slot.active >= slot.limit && !signal.aborted) {
-      await new Promise<void>((resolve) => {
-        const wake = () => {
-          slot.waiters.delete(wake);
-          signal.removeEventListener('abort', wake);
-          resolve();
-        };
-        slot.waiters.add(wake);
-        signal.addEventListener('abort', wake, { once: true });
-      });
-    }
-    // offWork can race a fetch already in flight. Pg-boss will count this as a failure;
-    // record the release without exposing business data, including on the final attempt.
-    if (stopping) {
-      logger.warn({ queue, jobId: job.id, attempt: job.retryCount + 1 }, 'job_released_on_stop');
-      throw HANDLER_FAILED;
-    }
-    // An expired batch may have waited for a slot. Never start it after its lease ended.
-    if (signal.aborted) throw HANDLER_FAILED;
-    slot.active++;
-    const finished = Promise.withResolvers<void>();
-    runningHandlers.add(finished.promise);
-    try {
-      await handler(
-        Object.freeze({
-          id: job.id,
-          queue,
-          name: job.data.name,
-          payload: job.data.payload,
-          attempt: job.retryCount + 1,
-        }),
-      );
-    } catch {
-      // An abandoned callback may reject much later, after pg-boss has settled its batch.
-      if (!job.signal.aborted) {
-        const fields = {
-          queue,
-          jobName: job.data.name,
-          jobId: job.id,
-          attempt: job.retryCount + 1,
-        };
-        if (job.retryCount < job.retryLimit) logger.warn(fields, 'job_failed');
-        else logger.error(fields, 'job_failed_final');
-      }
-      throw HANDLER_FAILED;
-    } finally {
-      runningHandlers.delete(finished.promise);
-      finished.resolve();
-      slot.active--;
-      for (const wake of slot.waiters) wake();
-    }
-  };
 
   const start = async (): Promise<void> => {
     try {
@@ -153,7 +75,6 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
         }
       }
       if (stopping) return;
-      await boss.start();
       // A dead-letter target must exist before a queue referencing it is created.
       const ordered = [
         ...catalog.filter((spec) => spec.deadLetter === null),
@@ -184,28 +105,37 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
         if (stopping) return;
         await boss.findJobs(spec.name, { id: '00000000-0000-0000-0000-000000000000' });
       }
+      // No periodic cache snapshot may start until every catalog queue exists and is warm.
+      // Otherwise a slow startup can publish an older snapshot after the warm-up above.
+      await boss.start();
+      if (stopping) return;
       // Recovery addendum 1: reclaim crashed workers' expired jobs, including payout jobs,
       // before registering any consumer. Pg-boss repeats supervision at its default 60 s interval.
       if (entry === 'worker') await boss.supervise();
       for (const [queue, handler] of handlers) {
         if (stopping) return;
         const item = work.get(queue)!;
-        working.add(queue);
-        const workOptions = {
-          batchSize: 1,
-          localConcurrency: item.concurrency,
-          pollingIntervalSeconds: item.pollingIntervalSeconds,
-          includeMetadata: true as const,
-        };
-        await boss.work<Envelope, void, typeof workOptions>(queue, workOptions, async (jobs) => {
-          for (const job of jobs) await execute(queue, handler, job);
-        });
+        for (let slot = 0; slot < item.concurrency; slot++) {
+          executors.push(
+            runExecutor({
+              boss,
+              logger,
+              work: item,
+              handler,
+              shutdown: shutdown.signal,
+              deadline: deadline.signal,
+              runningHandlers,
+            }),
+          );
+        }
       }
       if (!stopping) running = true;
     } catch (error) {
       running = false;
       stopping = true;
       shutdown.abort();
+      deadline.abort();
+      await Promise.allSettled(executors);
       await boss.stop({ close: false, graceful: false }).catch(() => undefined);
       throw error;
     }
@@ -213,24 +143,21 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
 
   const stop = async (): Promise<void> => {
     await starting?.catch(() => undefined);
-    // Calling offWork synchronously marks workers stopping; its promise covers fetches in flight,
-    // business handlers and their final complete/fail database statements.
-    const workersDrained = Promise.allSettled(
-      [...working].map((queue) => boss.offWork(queue, { wait: true })),
-    );
+    const workersDrained = Promise.allSettled(executors);
     const drain = Promise.allSettled([...runningHandlers, workersDrained]);
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<'timeout'>((resolve) => {
+    const timeout = new Promise<'timeout'>((resolve) => {
       timer = setTimeout(() => resolve('timeout'), stopTimeoutMs);
     });
     try {
-      if ((await Promise.race([drain, deadline])) === 'timeout' && runningHandlers.size > 0) {
+      if ((await Promise.race([drain, timeout])) === 'timeout' && runningHandlers.size > 0) {
         logger.warn({ running: runningHandlers.size }, 'queue_stop_timeout');
       }
-      // On timeout pg-boss fails and aborts its active batches. The original handler promise may
-      // resolve later, but cannot settle a job again or hold pg-boss timers open.
-      await boss.stop({ close: false, graceful: false });
+      // Release active leases on timeout, then await every fetch and settlement statement
+      // before the entry closes its shared pool. Late handlers cannot write queue state.
+      deadline.abort();
       await workersDrained;
+      await boss.stop({ close: false, graceful: false });
     } finally {
       clearTimeout(timer);
     }

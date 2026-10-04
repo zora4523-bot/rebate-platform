@@ -17,7 +17,7 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-function fixture(existing: boolean) {
+function fixture(existing: boolean, slowCreation = false) {
   vi.useFakeTimers();
   const catalog: QueueSpec[] = ['payout', 'notify'].map((name) => ({
     name,
@@ -33,6 +33,10 @@ function fixture(existing: boolean) {
   }));
   const rows = catalog.map((spec) => ({ ...spec, partition: false, table: 'job' }));
   const installed = new Set(existing ? catalog.map((spec) => spec.name) : []);
+  const creating = Promise.withResolvers<void>();
+  const resumeCreation = Promise.withResolvers<void>();
+  const snapshots: Array<{ names: string[]; publish: () => void }> = [];
+  let allQueueReads = 0;
   const executeQuery = vi.fn(async (query: CompiledQuery) => {
     const sql = query.sql;
     if (sql.includes('to_regclass')) return { rows: [{ name: 'pgboss.version' }] };
@@ -40,11 +44,25 @@ function fixture(existing: boolean) {
     if (sql === 'SELECT version()') return { rows: [{ version: 'PostgreSQL' }] };
     if (sql.includes('FROM pgboss.queue q')) {
       const names = query.parameters[0] as string[] | undefined;
-      return {
+      const result = {
         rows: rows.filter((row) => installed.has(row.name) && (!names || names.includes(row.name))),
       };
+      if (!names && ++allQueueReads > 1 && slowCreation && installed.size < catalog.length) {
+        // A timer captures the old snapshot during slow creation, then publishes after warm-up.
+        const paused = Promise.withResolvers<typeof result>();
+        snapshots.push({
+          names: result.rows.map((row) => row.name),
+          publish: () => paused.resolve(result),
+        });
+        return paused.promise;
+      }
+      return result;
     }
     if (sql.includes('pgboss.create_queue')) {
+      if (slowCreation && installed.size === 0) {
+        creating.resolve();
+        await resumeCreation.promise;
+      }
       for (const spec of catalog) {
         if (sql.includes(`'${spec.name}'`)) installed.add(spec.name);
       }
@@ -59,7 +77,7 @@ function fixture(existing: boolean) {
     plan: { api: [], stream: [], admin: [], worker: [], payout: [] },
   });
   runtimes.push(runtime);
-  return { runtime, executeQuery, catalog };
+  return { runtime, executeQuery, catalog, creating, resumeCreation, snapshots };
 }
 
 it.each([true, false])(
@@ -94,3 +112,41 @@ it.each([true, false])(
     expect(executeQuery).not.toHaveBeenCalled();
   },
 );
+
+it('[AC-B1-01g#9] 建队列超过缓存刷新周期：旧快照不能交错覆盖预热结果', async () => {
+  const { runtime, executeQuery, catalog, creating, resumeCreation, snapshots } = fixture(
+    false,
+    true,
+  );
+  const starting = runtime.start();
+  await creating.promise;
+  await vi.advanceTimersByTimeAsync(120_000);
+  // Even after two cache intervals no background read can capture the incomplete catalog.
+  const duringCreation = snapshots.map((snapshot) => snapshot.names);
+  resumeCreation.resolve();
+  await starting;
+  for (const snapshot of snapshots) snapshot.publish();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(duringCreation).toEqual([]);
+  executeQuery.mockClear();
+  executeQuery.mockRejectedValue(new Error('pool exhausted'));
+  const transactionQuery = vi.fn(async () => ({ rows: [{ id: 'inserted' }] }));
+  const trx = { isTransaction: true, executeQuery: transactionQuery } as unknown as Transaction<DB>;
+  await expect(
+    Promise.all(
+      catalog.map((spec) =>
+        runtime.send(
+          spec.name,
+          'job.run',
+          {},
+          {
+            trx,
+            ...(spec.policy === 'exclusive' ? { singletonKey: 'key:1' } : {}),
+          },
+        ),
+      ),
+    ),
+  ).resolves.toEqual(['inserted', 'inserted']);
+  expect(transactionQuery).toHaveBeenCalledTimes(2);
+  expect(executeQuery).not.toHaveBeenCalled();
+});
