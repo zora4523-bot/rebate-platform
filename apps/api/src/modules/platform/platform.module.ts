@@ -1,6 +1,7 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { CLOCK, type Clock } from './clock/index.ts';
 import type { AppConfig } from './config/index.ts';
+import { openConfiguredFieldCrypto } from './config/keyring-startup.ts';
 import type { DbHandles } from './db/index.ts';
 import type { EntryName } from './entries.ts';
 import { createIdempotency } from './idempotency/index.ts';
@@ -13,6 +14,7 @@ export const ROOT_LOGGER = Symbol('ROOT_LOGGER');
 export const DB = Symbol('DB');
 export const DB_READ = Symbol('DB_READ');
 export const IDEMPOTENCY = Symbol('IDEMPOTENCY');
+export const FIELD_CRYPTO = Symbol('FIELD_CRYPTO');
 const DB_LIFECYCLE = Symbol('DB_LIFECYCLE');
 
 export interface PlatformOptions {
@@ -32,6 +34,17 @@ export interface PlatformOptions {
 export class PlatformModule {
   static forRoot(options: PlatformOptions): DynamicModule {
     const handles = options.dbHandles;
+    const keyring = options.config.keyring;
+    const cryptoProviders =
+      keyring === null
+        ? []
+        : [
+            {
+              provide: FIELD_CRYPTO,
+              useFactory: async () =>
+                await openConfiguredFieldCrypto(options.config.appEnv, keyring),
+            },
+          ];
     const databaseProviders =
       handles === undefined
         ? []
@@ -65,12 +78,14 @@ export class PlatformModule {
         { provide: CLOCK, useValue: options.clock },
         { provide: ROOT_LOGGER, useValue: options.logger },
         ...databaseProviders,
+        ...cryptoProviders,
       ],
       exports: [
         APP_CONFIG,
         APP_ENTRY,
         CLOCK,
         ROOT_LOGGER,
+        ...(keyring === null ? [] : [FIELD_CRYPTO]),
         ...(handles === undefined ? [] : [DB, IDEMPOTENCY]),
         ...(handles !== undefined && options.entry === 'admin' && handles.dbRead !== null
           ? [DB_READ]
