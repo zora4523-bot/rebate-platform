@@ -43,8 +43,12 @@ it('data shapes of the link and search path match 04 §7', () => {
   expect(errorCodes[30101].data).toEqual({
     auth_url: null,
     state: null,
+    auth_methods: ['web_code', 'sdk_token'],
     reason: ['auth_unavailable'],
   });
+  expect(errorCodes[30102].data).toEqual(errorCodes[30101].data);
+  expect(errorCodes[30104].data).toEqual({ reason: ['credential_invalid', 'method_not_allowed'] });
+  expect(errorCodes[30111].data).toEqual({ auth_jump: null });
   expect(errorCodes[50301].data).toEqual({
     platform: null,
     reason: ['maintenance', 'not_launched'],
