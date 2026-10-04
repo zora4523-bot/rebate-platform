@@ -30,6 +30,8 @@ function run(mask: Mask, text: string): string {
 const nodeRequire = createRequire(import.meta.url);
 const fsModule = nodeRequire('node:fs') as Record<string, unknown>;
 
+const DEFERRAL_ROUNDS = 3;
+
 const FS_WRITERS = [
   'write',
   'writeSync',
@@ -46,9 +48,13 @@ const FS_WRITERS = [
  * Runs `body` while every output channel is replaced by a recorder that writes nothing: each
  * console method, process.stdout.write, process.stderr.write, process.emitWarning and the write
  * functions of node:fs (CommonJS object and, after syncBuiltinESMExports, the ESM named exports;
- * pino's default destination writes to fd 1 through them). Returns the channels that were called.
+ * pino's default destination writes to fd 1 through them). The hooks stay in place after `body`
+ * returns until the microtask queue has drained and DEFERRAL_ROUNDS rounds of setImmediate and
+ * setTimeout(0) have run, so a write deferred with queueMicrotask, a promise, setImmediate or
+ * setTimeout(…, 0) is still recorded (longer delays are excluded by the static source check).
+ * Returns the channels that were called.
  */
-function recordOutput(body: () => void): string[] {
+async function recordOutput(body: () => void): Promise<string[]> {
   const calls: string[] = [];
   const restores: (() => void)[] = [];
   const consoleRecord = console as unknown as Record<string, unknown>;
@@ -88,6 +94,14 @@ function recordOutput(body: () => void): string[] {
   syncBuiltinESMExports();
   try {
     body();
+    for (let round = 0; round < DEFERRAL_ROUNDS; round += 1) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    }
   } finally {
     for (const restore of restores.reverse()) restore();
     syncBuiltinESMExports();
@@ -95,7 +109,7 @@ function recordOutput(body: () => void): string[] {
   return calls;
 }
 
-it('[BR-ID-33 日志中不得出现明文] 三个函数对合法与不合规输入脱敏时不写任何输出：console 各方法、stdout、stderr、emitWarning、node:fs 写入一次都没有，结果照常', () => {
+it('[BR-ID-33 日志中不得出现明文] 三个函数对合法与不合规输入脱敏时不写任何输出：console 各方法、stdout、stderr、emitWarning、node:fs 写入一次都没有（调用后再等微任务与 3 轮 setImmediate / setTimeout 0），结果照常', async () => {
   const calls: [Mask, string][] = [
     [maskAlipayLogonId, '13812345678'],
     [maskAlipayLogonId, 'zhangsan@example.com'],
@@ -115,7 +129,7 @@ it('[BR-ID-33 日志中不得出现明文] 三个函数对合法与不合规输�
     [maskPayeeName, '\uD800'],
   ];
   const results: string[] = [];
-  const written = recordOutput(() => {
+  const written = await recordOutput(() => {
     for (const [mask, text] of calls) results.push(run(mask, text));
   });
   expect({ written, results }).toEqual({
@@ -141,11 +155,20 @@ it('[BR-ID-33 日志中不得出现明文] 三个函数对合法与不合规输�
   });
 });
 
-it('[BR-ID-33 日志中不得出现明文] 输出记录器自检：console、stdout、stderr、emitWarning 与 node:fs（CommonJS 与 ESM 具名导出）的写入都被记下、不真正写出', async () => {
+it('[BR-ID-33 日志中不得出现明文] 输出记录器自检：console、stdout、stderr、emitWarning 与 node:fs（CommonJS 与 ESM 具名导出）的写入，以及 queueMicrotask、setImmediate、setTimeout 0 延后的写入都被记下、不真正写出', async () => {
   const esm = await import('node:fs');
   // Reached through globalThis, as code that hides a console call would (lint forbids `console.`).
   const consoleAlias = globalThis.console;
-  const written = recordOutput(() => {
+  const written = await recordOutput(() => {
+    queueMicrotask(() => {
+      consoleAlias.info('x');
+    });
+    setImmediate(() => {
+      consoleAlias.trace('x');
+    });
+    setTimeout(() => {
+      consoleAlias.warn('x');
+    }, 0);
     consoleAlias.log('x');
     consoleAlias.error('x');
     process.stdout.write('');
@@ -164,6 +187,9 @@ it('[BR-ID-33 日志中不得出现明文] 输出记录器自检：console、std
     'fs.writeSync',
     'fs.writeSync',
     'fs.appendFileSync',
+    'console.info',
+    'console.trace',
+    'console.warn',
   ]);
 });
 
@@ -184,16 +210,53 @@ function importsOf(code: string): string[] {
   return [...code.matchAll(/\b(?:from|import)\s*['"]([^'"]+)['"]/g)].map((match) => match[1] ?? '');
 }
 
-it('[BR-ID-33 日志中不得出现明文] 源码静态检查：payout-account.ts 只导入 ./index.ts，不用动态 import / require，去掉注释后不出现 console、process、globalThis、pino、logging；index.ts 不导入任何东西', () => {
-  const code = codeOf(`${MASKING_DIR}payout-account.ts`);
-  const indexCode = codeOf(`${MASKING_DIR}index.ts`);
+// Words that must not occur in either source outside comments: output channels, ways to reach
+// them indirectly (global objects, code evaluation) and ways to defer work past the call.
+const FORBIDDEN_WORDS = [
+  'console',
+  'process',
+  'global',
+  'self',
+  'window',
+  'Reflect',
+  'eval',
+  'Function',
+  'queueMicrotask',
+  'setTimeout',
+  'setImmediate',
+  'setInterval',
+  'Promise',
+  'async',
+  'await',
+  'pino',
+  'logging',
+  'require',
+];
+
+function sourceFacts(code: string): {
+  imports: string[];
+  dynamicImport: boolean;
+  words: string[];
+} {
+  return {
+    imports: importsOf(code),
+    dynamicImport: /\bimport\s*\(/.test(code),
+    words: FORBIDDEN_WORDS.filter((word) => code.includes(word)),
+  };
+}
+
+it('[BR-ID-33 日志中不得出现明文] 源码静态检查（payout-account.ts 与 index.ts 同一规则）：去掉注释后，payout-account.ts 只导入 ./index.ts、index.ts 不导入任何东西，都没有动态 import，都不出现 console、process、global、queueMicrotask、setTimeout、setImmediate、Promise、pino、logging 等禁用词', () => {
   expect({
-    imports: importsOf(code).filter((specifier) => specifier !== './index.ts'),
-    dynamic: /\bimport\s*\(|\brequire\s*\(/.test(code),
-    words: ['console', 'process', 'globalThis', 'pino', 'logging'].filter((word) =>
-      code.includes(word),
-    ),
-    indexImports: importsOf(indexCode),
-    indexDynamic: /\bimport\s*\(|\brequire\s*\(/.test(indexCode),
-  }).toEqual({ imports: [], dynamic: false, words: [], indexImports: [], indexDynamic: false });
+    payoutAccount: sourceFacts(codeOf(`${MASKING_DIR}payout-account.ts`)),
+    index: sourceFacts(codeOf(`${MASKING_DIR}index.ts`)),
+  }).toEqual({
+    payoutAccount: {
+      imports: importsOf(codeOf(`${MASKING_DIR}payout-account.ts`)).filter(
+        (specifier) => specifier === './index.ts',
+      ),
+      dynamicImport: false,
+      words: [],
+    },
+    index: { imports: [], dynamicImport: false, words: [] },
+  });
 });

@@ -14,11 +14,17 @@
 // - No output of any kind (BR-ID-33: 日志中不得出现明文): the functions write no log line and
 //   nothing to stdout or stderr — no console method, no process.stdout / process.stderr write, no
 //   process.emitWarning, no node:fs write (pino's default destination writes to fd 1 with fs).
-//   Source rule, checked statically by the rule tests on this file with comments removed: the
-//   only import (static `import` / `import type` / `export … from`) is './index.ts'; no dynamic
-//   `import(`, no `require(`, and the words `console`, `process`, `globalThis`, `pino` and
-//   `logging` do not occur. ./index.ts itself imports nothing (as now), so nothing reaches
-//   ../logging or pino through it.
+//   Nothing is deferred either: no write happens after the call returns (the rule tests keep the
+//   hooks until the microtask queue and three rounds of setImmediate / setTimeout(0) have run).
+//   Source rule, the same for this file and for ./index.ts (whose maskPhone / maskName these
+//   functions may call), checked statically by the rule tests on both files with comments
+//   (`/* … */` blocks and lines starting with `//`) removed:
+//     - imports (static `import` / `import type` / `export … from`): this file only './index.ts';
+//       ./index.ts none (as now); no dynamic `import(` in either;
+//     - none of these words occurs anywhere in the code, as a substring, string literals
+//       included: console, process, global (so also globalThis), self, window, Reflect, eval,
+//       Function, queueMicrotask, setTimeout, setImmediate, setInterval, Promise, async, await,
+//       pino, logging, require.
 // - An input that is not of an accepted form reveals nothing: the result is one "*" (U+002A) per
 //   code point of the whole input, and nothing else (no "尾号", no "@", no domain). The empty
 //   string therefore stays empty.
