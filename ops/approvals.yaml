@@ -114,3 +114,9 @@ approvals:
     granted: true
     date: '2026-10-02'
     note: '负责人在对话里同意（经编排会话转达）；落在分支 chore/gate-ledger-rounds-brief（ops/risk-map.yaml、tools/guard、tools/ops、tools/lib、AGENTS.md），规划/11 §2.5、§5.3 同步改在规划仓库分支 docs/gate-ledger-rounds-brief'
+  - id: 18
+    row: 4
+    title: '评审口径：S0 / S1 只用于常规使用下会出现的缺陷（系统按设计使用与运维时会遇到的输入、状态与故障，含正常报错、重试、超时与并发）；要靠刻意构造的输入或本仓库没有任何代码会产生的调用方式才能触发的缺陷记 S2，照常报告并说明为何常规使用下到不了，不挡合并、转后续任务；算错钱、归属错、重复打款、普通请求写出明文密钥或个人信息不得这样降级。按此口径：B1-01c 合并已覆盖常规场景的实现，URL 路径带个人数据与 x-trace-id 原样进 reqId 两个通道另立后续任务；B1-01f 修掉最后一轮的两个问题后再评一轮即合并'
+    granted: true
+    date: '2026-10-04'
+    note: '负责人在对话里直接对编排会话确认（原话「该做安全还是要做，符合标准就好了，不要限制的太死」「同意，三条都按你说的办」）；落在本分支 chore/approvals-18-review-bar（ops/approvals.yaml、tools/agent/prompts/review-*.md 四份）；规划/11 §3.1 的同步改动另在规划仓库提交；本条所在的 PR 由负责人本人加标签'

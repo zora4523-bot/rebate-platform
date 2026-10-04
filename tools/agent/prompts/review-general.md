@@ -24,6 +24,14 @@ contains a defect and try to find the input or state that exposes it.
    - `S1` — 违反 BR 或契约、并发下进入非法状态、缺幂等 (violates a business rule or the contract,
      reaches an illegal state under concurrency, missing idempotency).
    - `S2` — 其他正确性问题 (any other correctness problem).
+   - **Reachability** (owner decision 2026-10-04, `ops/approvals.yaml` #18): S0 / S1 are for
+     defects that show up in ordinary use — inputs, states and failures the system meets when it
+     is used and operated as designed (including normal errors, retries, timeouts and concurrent
+     requests). A defect that needs a deliberately crafted input or an unusual calling pattern
+     that no code in this repository produces is `S2`: report it, say in `scenario` why it is not
+     reachable in ordinary use, and it does not fail the review. Never downgraded this way:
+     wrong amounts, wrong attribution, duplicate payout, and plaintext secrets or personal data
+     written by an ordinary request.
 5. **Every finding needs all of the following**, otherwise do not report it:
    - `scenario`: one concrete failing scenario — specific inputs, stored state or interleaving,
      and the wrong observable result. "This could be a problem" is not a scenario.
