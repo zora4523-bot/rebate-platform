@@ -35,7 +35,9 @@
 
 改了 `openapi.yaml`、`enums/`、`error-codes.yaml`、`bridge.schema.json`、`routes.json`、`apps.json` 必须在同一个 PR 里重新生成并提交生成物。
 
-TODO(规划/11 §4.1): oasdiff 破坏兼容检查（`fail-on: ERR`，CI 下载官方二进制）与 Prism mock（prism-cli 要 Node ≥24.18，ADR-0001 §7） — blocked on GitHub remote
+CI 的 `contracts-check` 用 oasdiff（官方二进制，`--fail-on ERR`）对比基线契约查破坏兼容；基线里仍标 `x-implementation: planned` 的接口不参与比较（`tools/ci/oasdiff-base.ts`：没有路由也没有调用方，改它的请求或响应不影响任何客户端），去掉标记之后的改动照常比较。
+
+TODO(规划/11 §4.1): Prism mock（prism-cli 要 Node ≥24.18，ADR-0001 §7） — blocked on GitHub remote
 
 ## 书写规则
 

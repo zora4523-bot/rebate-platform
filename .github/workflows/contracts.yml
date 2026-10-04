@@ -88,8 +88,13 @@ jobs:
           fi
           # A detached worktree keeps relative $ref targets of the base contract resolvable.
           git worktree add --detach "$RUNNER_TEMP/base-tree" "$BASE"
+          # Operations still marked x-implementation: planned in the base have no route and no
+          # caller, so they are left out of the comparison (tools/ci/oasdiff-base.ts; the
+          # contract has no external $ref, so the JSON copy resolves on its own).
+          node tools/ci/oasdiff-base.ts "$RUNNER_TEMP/base-tree/contracts/openapi.yaml" \
+            "$RUNNER_TEMP/base-openapi.json"
           "$RUNNER_TEMP/oasdiff/oasdiff" breaking --fail-on ERR \
-            "$RUNNER_TEMP/base-tree/contracts/openapi.yaml" contracts/openapi.yaml
+            "$RUNNER_TEMP/base-openapi.json" contracts/openapi.yaml
         env:
           BASE: ${{ needs.contracts-detect.outputs.base }}
 
