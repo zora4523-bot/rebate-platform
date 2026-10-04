@@ -76,7 +76,8 @@ it('[AC-B1-08a#36] the migrations create only the DEFAULT partition of orders (d
 
 it('[AC-B1-08a#37] orders is on the month-partition allow-list in SQL and in packages/db (db/AGENTS.md #5)', async () => {
   expect([...MONTH_PARTITIONED_TABLES] as string[]).toContain('orders');
-  expect(await ensurePartition(maint, MARCH)).toBe(monthPartitionName('orders', MARCH));
+  expect(await ensurePartition(maint, MARCH)).toBe('orders_p202703');
+  expect(monthPartitionName('orders', MARCH)).toBe('orders_p202703');
   expect(await ensurePartition(maint, new Date('2027-03-31T23:59:59.999Z'))).toBe('orders_p202703');
   const march = (await partitions()).find((p) => p.name === 'orders_p202703');
   expect(march?.bound).toBe(
