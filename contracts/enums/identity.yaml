@@ -114,6 +114,16 @@ enums:
       processing: 处理中
       done: 已注销
       cancelled: 已撤回
+  deletion_cancel_reason:
+    source: 规划/04 §3.2 deletion_requests；BR-ID-27
+    values:
+      user: 用户撤回
+      negative_balance: 冷静期满时余额为负，系统撤销（拍板第二批 §8 ADD-07）
+  tip_key:
+    source: 规划/04 §6.1 /v1/me/tips；BR-ATTR-21、BR-INV-03 细则
+    values:
+      jump_tip: 下单须知（按平台记已读）
+      inviter_before_buy: 首次购买前的邀请码提示（不分平台）
   appeal_status:
     source: 规划/04 §2.5；BR-ID-36
     values:

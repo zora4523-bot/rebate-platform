@@ -597,6 +597,26 @@ export const deletion_status = [
 export type DeletionStatus = (typeof deletion_status)[number];
 
 /**
+ * deletion_cancel_reason
+ * Source: 规划/04 §3.2 deletion_requests；BR-ID-27 (contracts/enums/identity.yaml).
+ */
+export const deletion_cancel_reason = [
+  "user", // 用户撤回
+  "negative_balance", // 冷静期满时余额为负，系统撤销（拍板第二批 §8 ADD-07）
+] as const;
+export type DeletionCancelReason = (typeof deletion_cancel_reason)[number];
+
+/**
+ * tip_key
+ * Source: 规划/04 §6.1 /v1/me/tips；BR-ATTR-21、BR-INV-03 细则 (contracts/enums/identity.yaml).
+ */
+export const tip_key = [
+  "jump_tip", // 下单须知（按平台记已读）
+  "inviter_before_buy", // 首次购买前的邀请码提示（不分平台）
+] as const;
+export type TipKey = (typeof tip_key)[number];
+
+/**
  * appeal_status
  * Source: 规划/04 §2.5；BR-ID-36 (contracts/enums/identity.yaml).
  */
@@ -1310,6 +1330,8 @@ export const enums = {
   risk_state,
   realname_status,
   deletion_status,
+  deletion_cancel_reason,
+  tip_key,
   appeal_status,
   appeal_target_type,
   notify_template_code,

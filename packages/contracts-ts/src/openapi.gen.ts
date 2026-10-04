@@ -59,6 +59,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/devices/push-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report the push token of this device
+         * @description Writes push_tokens through the notification module. The token value and its binding are
+         *     written only when the calling session is the latest login session of this device;
+         *     otherwise the report is ignored. A token value already registered on another device row
+         *     is taken over or not according to device registration order and session creation time;
+         *     a holder row that changed hands within the conflict window is frozen and reports during
+         *     the freeze are not written (BR-ID-07 细则「推送令牌与会话」). Every case answers success.
+         *     The client reports once after each successful login with the new session. provider is a
+         *     string until the push provider is chosen (orchestrator decision D-14).
+         */
+        post: operations["reportPushToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/sms-codes": {
         parameters: {
             query?: never;
@@ -514,7 +541,7 @@ export interface paths {
         /**
          * Current user
          * @description Nickname and default avatar, invite code, whether an inviter is bound (only yes / no),
-         *     identity level (BR-ID-01), single-balance summary, union authorization states, real-name
+         *     invite_backfill (whether the invite code can still be filled in, BR-INV-07), identity level (BR-ID-01), single-balance summary, union authorization states, real-name
          *     state, `need_reconsent` (BR-ID-12) and the risk state for the ban / freeze page. No
          *     user level (拍板第二批 OPS-20).
          *     Session scopes: accepts deletion_only (step-up method choice on the force-update and
@@ -523,6 +550,163 @@ export interface paths {
         get: operations["getMe"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/phone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind or change the phone number
+         * @description Binds a phone number to the account, or changes it. code is a purpose=bind SMS code sent to
+         *     the new number. Order of checks (BR-ID-06): 44001 (number blacklisted) → 30411 (number
+         *     belongs to another account of this app, including one in the deletion cooling period or
+         *     processing). Accounts are never merged here; the one exception is a third-party account
+         *     without phone that meets the BR-ID-06 merge conditions: 30411 then carries
+         *     data.reason=mergeable and data.merge_ticket and the client asks before calling
+         *     POST /v1/auth/merge (拍板第二批 OPS-04). Step-up applies to a change only: changing a bound
+         *     number needs X-Step-Up-Token for action phone_change (an SMS to the old number,
+         *     BR-ID-08); a first binding does not. With account.phone_change_enabled=false a change
+         *     (not a first binding) is 30414. Wrong or expired code: 20002 / 20003 (BR-ID-05). An
+         *     Idempotency-Key that was abandoned (POST /v1/idempotency-keys/abandon) is 20903 at the
+         *     idempotency check, without comparing the body or running the business; a business write
+         *     that finds the key abandoned is rolled back and also returns 20903 (04 §5「幂等」). The
+         *     client fetches GET /v1/me again after success. Version gate: applied.
+         */
+        post: operations["bindPhone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read states of the one-time tips
+         * @description jump_tip is read per platform (a platform without a record is absent or null);
+         *     inviter_before_buy is not per platform (BR-INV-03 细则). Fetched with /v1/config after
+         *     login; after a login on another device a tip already read on the same platform is not
+         *     shown again (BR-ATTR-21, AC-S1-17).
+         */
+        get: operations["getTips"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tips/{tip_key}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a tip as read
+         * @description tip_key=jump_tip needs a body {platform}; without it → 20001 with data.fields=[platform].
+         *     tip_key=inviter_before_buy takes no body (a body is ignored). Repeating the call is harmless:
+         *     an existing record keeps its read_at. Version gate: applied.
+         */
+        post: operations["markTipRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tips/{tip_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Show a tip again
+         * @description Settings「重新显示下单须知」: clears the read records of jump_tip on every platform. Only
+         *     tip_key=jump_tip is accepted (the path parameter allows only that value; another value is
+         *     20001). Version gate: applied.
+         */
+        delete: operations["resetTip"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Progress of my account deletion
+         * @description The latest deletion request of the account (deletion_requests; flow in BR-ID-27); data is
+         *     null when there has never been one. can_cancel follows BR-ID-27: cooling and now before
+         *     cooling_until. Session scopes: accepts deletion_only (BR-ID-01 细则「受限会话」).
+         */
+        get: operations["getDeletion"];
+        put?: never;
+        /**
+         * Apply for account deletion
+         * @description Needs X-Step-Up-Token for action account_deletion (BR-ID-08). The client shows balance and
+         *     estimated earnings first and the user ticks the waiver (BR-ID-27, wording BR-TEXT-01). A
+         *     withdrawal in PENDING_REVIEW, APPROVED or PAYING is 30412 (not for a withdrawal frozen by
+         *     a ban, BR-ID-31); a negative balance is 30416 with data.amount_fen (拍板第二批 §8 ADD-07).
+         *     Success starts the 7-day cooling period and returns the request. An abandoned
+         *     Idempotency-Key is 20903 at the idempotency check, without comparing the body or running
+         *     the business; a business write that finds it abandoned is rolled back with 20903
+         *     (04 §5「幂等」). Version gate: not applied (申请注销, BR-ID-01 细则). Session scopes:
+         *     accepts deletion_only.
+         */
+        post: operations["requestDeletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/deletion/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw my account deletion
+         * @description Allowed while now < apply_at + 7×24 hours, judged by time and not by whether the scheduled
+         *     job has run; later → 10007 (BR-ID-27). Repeating a successful cancel returns the cancelled
+         *     request. Version gate: not applied (撤销注销, BR-ID-01 细则). Session scopes: accepts
+         *     deletion_only.
+         */
+        post: operations["cancelDeletion"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1447,6 +1631,83 @@ export interface components {
         DismissPendingTrackRequest: {
             attempt_id: string;
         };
+        ReportPushTokenRequest: {
+            /** @description Push provider; a string until the provider is chosen (D-14). */
+            provider: string;
+            token: string;
+        };
+        BindPhoneRequest: {
+            phone: components["schemas"]["Phone"];
+            /** @description purpose=bind SMS code sent to the new number. */
+            code: string;
+        };
+        /**
+         * @description One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则).
+         * @enum {string}
+         */
+        TipKey: "jump_tip" | "inviter_before_buy";
+        /**
+         * @description The tip that settings can show again (subset of tip_key).
+         * @enum {string}
+         */
+        ResettableTipKey: "jump_tip";
+        MarkTipReadRequest: {
+            platform?: components["schemas"]["PlatformCode"];
+        };
+        /** Format: date-time */
+        TipReadAt: string | null;
+        TipsData: {
+            /** @description read_at per platform; a platform never read is absent or null. */
+            jump_tip: {
+                [key: string]: components["schemas"]["TipReadAt"];
+            };
+            inviter_before_buy: components["schemas"]["TipReadAt"];
+        };
+        TipsResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["TipsData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description contracts/enums/identity.yaml deletion_status (BR-ID-27).
+         * @enum {string}
+         */
+        DeletionStatus: "cooling" | "processing" | "done" | "cancelled";
+        /**
+         * @description contracts/enums/identity.yaml deletion_cancel_reason (04 §3.2 deletion_requests).
+         * @enum {string}
+         */
+        DeletionCancelReason: "user" | "negative_balance";
+        Deletion: {
+            status: components["schemas"]["DeletionStatus"];
+            /** Format: date-time */
+            apply_at: string;
+            /** Format: date-time */
+            cooling_until: string;
+            /** @description status=cooling and now before cooling_until (BR-ID-27). */
+            can_cancel: boolean;
+            /** Format: date-time */
+            cancelled_at: string | null;
+            cancel_reason: components["schemas"]["DeletionCancelReason"] | null;
+            /** Format: date-time */
+            processed_at: string | null;
+        };
+        DeletionResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Deletion"] | null;
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Whether the invite code can still be filled in and until when (computed by the server per
+         *     BR-INV-07, also for an account without phone; BR-INV-03 细则).
+         */
+        InviteBackfill: {
+            eligible: boolean;
+            /** Format: date-time */
+            deadline_at: string | null;
+        };
         EmptyData: Record<string, never>;
         EmptyResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -1475,6 +1736,7 @@ export interface components {
             invite_code: string | null;
             /** @description Only whether an inviter is bound, never who. */
             inviter_bound: boolean;
+            invite_backfill: components["schemas"]["InviteBackfill"];
             /**
              * @description contracts/enums/identity.yaml identity_level (BR-ID-01).
              * @enum {string}
@@ -2058,6 +2320,12 @@ export interface components {
          */
         Sign: string;
         /**
+         * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
+         *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+         */
+        StepUpToken: string;
+        TipKeyPath: components["schemas"]["TipKey"];
+        /**
          * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
          *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
          *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
@@ -2168,6 +2436,62 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["RegisterDeviceResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    reportPushToken: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "provider": "placeholder-provider",
+                 *       "token": "placeholder-push-token"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ReportPushTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted (also when the report was ignored). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
@@ -3335,6 +3659,10 @@ export interface operations {
                      *         "avatar_url": "https://cdn.example.test/avatar/default.png",
                      *         "invite_code": "K7Q2MZ",
                      *         "inviter_bound": false,
+                     *         "invite_backfill": {
+                     *           "eligible": true,
+                     *           "deadline_at": "2026-10-09T09:30:00+08:00"
+                     *         },
                      *         "identity_level": "phone",
                      *         "phone_bound": true,
                      *         "balance": {
@@ -3364,6 +3692,424 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    bindPhone: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
+                 *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["StepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13800008000",
+                 *       "code": "246810"
+                 *     }
+                 */
+                "application/json": components["schemas"]["BindPhoneRequest"];
+            };
+        };
+        responses: {
+            /** @description The number is bound to the account. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getTips: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The read states. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "jump_tip": {
+                     *           "taobao": "2026-10-02T09:30:00+08:00",
+                     *           "jd": null
+                     *         },
+                     *         "inviter_before_buy": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["TipsResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    markTipRead: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                tip_key: components["parameters"]["TipKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                /**
+                 * @example {
+                 *       "platform": "taobao"
+                 *     }
+                 */
+                "application/json": components["schemas"]["MarkTipReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded (or already recorded). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    resetTip: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /** @description Only jump_tip can be reset. */
+                tip_key: components["schemas"]["ResettableTipKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The read records are cleared. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getDeletion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The latest request, or null. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "status": "cooling",
+                     *         "apply_at": "2026-10-02T09:30:00+08:00",
+                     *         "cooling_until": "2026-10-09T09:30:00+08:00",
+                     *         "can_cancel": true,
+                     *         "cancelled_at": null,
+                     *         "cancel_reason": null,
+                     *         "processed_at": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["DeletionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    requestDeletion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
+                 *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["StepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request, now in cooling. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "status": "cooling",
+                     *         "apply_at": "2026-10-02T09:30:00+08:00",
+                     *         "cooling_until": "2026-10-09T09:30:00+08:00",
+                     *         "can_cancel": true,
+                     *         "cancelled_at": null,
+                     *         "cancel_reason": null,
+                     *         "processed_at": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["DeletionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    cancelDeletion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cancelled request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "status": "cancelled",
+                     *         "apply_at": "2026-10-02T09:30:00+08:00",
+                     *         "cooling_until": "2026-10-09T09:30:00+08:00",
+                     *         "can_cancel": false,
+                     *         "cancelled_at": "2026-10-03T10:00:00+08:00",
+                     *         "cancel_reason": "user",
+                     *         "processed_at": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["DeletionResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

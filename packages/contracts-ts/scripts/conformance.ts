@@ -41,6 +41,9 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   SessionScope: 'session_scope',
   AuthMethod: 'auth_method',
   NoRebateCause: 'no_rebate_cause',
+  TipKey: 'tip_key',
+  DeletionStatus: 'deletion_status',
+  DeletionCancelReason: 'deletion_cancel_reason',
   OrderStatusGroup: 'order_status_group',
   OrderDisplayStatus: 'display_status',
   OrderReasonCode: 'order_reason',
@@ -139,6 +142,7 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'BindUnionBySdkToken/properties/auth_method': 'auth_method',
   'StepUpByAppleRequest/properties/provider': 'login_provider',
   'StepUpByHuaweiRequest/properties/provider': 'login_provider',
+  ResettableTipKey: 'tip_key',
 };
 
 function isObj(v: unknown): v is Obj {
