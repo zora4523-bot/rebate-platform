@@ -1433,7 +1433,9 @@ paths:
         - content
       summary: Help, rules, notices and agreements
       description: |
-        Published articles of one category, by version. Items of the notice category also carry
+        Published articles of one category, each at its current published version (the version field;
+        an older version is read with GET /v1/articles/{article_id}?version=). Items of the notice
+        category also carry
         `notice` (NoticeItem); only items whose notice is in its effective window are returned, with
         start_at = published_at, end_at = notice_end_at and content_version maintained on its own
         (not the article revision); filtering again by the device clock is client behaviour
@@ -1506,8 +1508,8 @@ paths:
         - content
       summary: One article
       description: |
-        Full text of a published article; unknown or unpublished → 30701. Readable anonymously,
-        without a device id (BR-ID-11 细则).
+        Full text of a published article, the current version or the one asked for with version;
+        unknown or unpublished → 30701. Readable anonymously, without a device id (BR-ID-11 细则).
       x-auth: none
       x-signed: false
       x-idempotent: false
@@ -1529,6 +1531,16 @@ paths:
             type: string
             minLength: 1
             maxLength: 64
+        - name: version
+          in: query
+          required: false
+          description: |
+            Published version to read (articles are kept by version, 04 §6.2); without it the current
+            published version. An unknown or unpublished version → 30701.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
       responses:
         '200':
           description: The article.
@@ -5448,6 +5460,18 @@ components:
         category) sources; closing and content-version rules only in BR-TEXT-13 细则「首页公告条的
         关闭与内容版本」 (04 §6.2).
       additionalProperties: false
+      not:
+        type: object
+        additionalProperties: true
+        description: A notice that cannot be closed must have end_at (BR-TEXT-13 细则「生效区间」).
+        properties:
+          closable:
+            const: false
+          end_at:
+            type: 'null'
+        required:
+          - closable
+          - end_at
       required:
         - item_id
         - content_version

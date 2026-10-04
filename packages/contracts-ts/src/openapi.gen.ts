@@ -540,7 +540,9 @@ export interface paths {
         };
         /**
          * Help, rules, notices and agreements
-         * @description Published articles of one category, by version. Items of the notice category also carry
+         * @description Published articles of one category, each at its current published version (the version field;
+         *     an older version is read with GET /v1/articles/{article_id}?version=). Items of the notice
+         *     category also carry
          *     `notice` (NoticeItem); only items whose notice is in its effective window are returned, with
          *     start_at = published_at, end_at = notice_end_at and content_version maintained on its own
          *     (not the article revision); filtering again by the device clock is client behaviour
@@ -566,8 +568,8 @@ export interface paths {
         };
         /**
          * One article
-         * @description Full text of a published article; unknown or unpublished → 30701. Readable anonymously,
-         *     without a device id (BR-ID-11 细则).
+         * @description Full text of a published article, the current version or the one asked for with version;
+         *     unknown or unpublished → 30701. Readable anonymously, without a device id (BR-ID-11 细则).
          */
         get: operations["getArticle"];
         put?: never;
@@ -4062,7 +4064,13 @@ export interface operations {
     };
     getArticle: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Published version to read (articles are kept by version, 04 §6.2); without it the current
+                 *     published version. An unknown or unpublished version → 30701.
+                 */
+                version?: number;
+            };
             header: {
                 /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
                 "X-App-Id": components["parameters"]["AppId"];
