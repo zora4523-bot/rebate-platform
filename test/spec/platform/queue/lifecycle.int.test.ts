@@ -404,19 +404,28 @@ it('[规划/02 §3.1 转账队列 concurrency=1; §11 各自设置并发] 生产
         await sleep(3000);
         const peaks = { notify: notify.peak(), payout: payout.peak() };
         release.open();
+        const completed = async (): Promise<number> => {
+          const result = await sql<{ n: bigint }>`
+            SELECT count(*) AS n FROM pgboss.job
+            WHERE name IN ('notify', 'payout') AND state = 'completed'
+          `.execute(observer);
+          return Number(result.rows[0]?.n ?? -1n);
+        };
+        // The completion is written by the runtime after the handler returns: wait for the
+        // database to show all 11 jobs completed before reading the final states.
         const all = await waitFor(
-          () =>
+          async () =>
             notify.calls.length === 8 &&
             payout.calls.length === 3 &&
             notify.active() === 0 &&
-            payout.active() === 0,
+            payout.active() === 0 &&
+            (await completed()) === 11,
           20_000,
         );
         const states = await sql<{ name: string; state: string; n: bigint }>`
           SELECT name, state::text AS state, count(*) AS n FROM pgboss.job
           WHERE name IN ('notify', 'payout') GROUP BY name, state ORDER BY name, state
         `.execute(observer);
-        await sleep(500);
         return {
           reached,
           peaks,
