@@ -389,7 +389,9 @@ export interface paths {
          *     credential, or one the upstream says is not for this app, is 30104 with
          *     data.reason=credential_invalid; an expired or used state is 30104 without reason. Every
          *     binding attempt (new state or new credential) uses a new Idempotency-Key; only a transport
-         *     retry of the same request keeps it (BR-ID-17 细则「授权方式」).
+         *     retry of the same request keeps it (BR-ID-17 细则「授权方式」). While the site's own union
+         *     authorization is unavailable the request gets 30101 (unbound, pending_auth or released) or
+         *     30102 (invalid) with data.reason=auth_unavailable and no auth_url (BR-ID-24 ④).
          */
         post: operations["bindUnion"];
         delete?: never;
