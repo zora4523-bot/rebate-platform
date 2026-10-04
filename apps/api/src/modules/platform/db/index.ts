@@ -170,6 +170,8 @@
 //    - No `process.env`; no wall clock (a timer for the close timeout is fine); logs only through
 //      `options.logger`.
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
+import { checkServerIdentity } from 'node:tls';
 import { inspect } from 'node:util';
 import { createDb, type DB } from '@couli/db';
 import pg from 'pg';
@@ -293,6 +295,18 @@ function parseDatabaseParameters(url: URL, name: string): pg.ClientConfig {
   if (!validDatabaseQuery(url)) {
     throw new ConfigError([`${name}: ${DATABASE_QUERY_PROBLEM}`]);
   }
+  const queryPassword = url.searchParams.get('password');
+  const startupOptions = url.searchParams.get('options') ?? '';
+  // Check both passwords, even when the query value overrides user-info. NUL can
+  // split pg's startup fields; reject all contract-defined controls before CA I/O.
+  if (
+    [user, database, password, queryPassword ?? '', startupOptions].some((value) =>
+      [...value].some((char) => char.charCodeAt(0) <= 31 || char.charCodeAt(0) === 127),
+    )
+  ) {
+    throw new ConfigError([`${name}: connection fields may not contain control characters`]);
+  }
+  const host = url.hostname;
   const mode = url.searchParams.get('sslmode') ?? 'disable';
   let ca: string | undefined;
   if (url.searchParams.has('sslrootcert')) {
@@ -310,14 +324,20 @@ function parseDatabaseParameters(url: URL, name: string): pg.ClientConfig {
           ...(ca === undefined ? {} : { ca }),
           ...(mode === 'verify-ca' ? { checkServerIdentity: () => undefined } : {}),
         };
+  if (mode === 'verify-full' && typeof ssl === 'object') {
+    if (isIP(host) === 0) ssl.servername = host;
+    // pg omits SNI for IPs, so Node's supplied name can be localhost. Always
+    // validate against this handle's URL host, using Node's IP/DNS SAN rules.
+    ssl.checkServerIdentity = (_name, cert) => checkServerIdentity(host, cert);
+  }
   return {
-    host: url.hostname,
+    host,
     port: url.port === '' ? 5432 : Number(url.port),
     user,
-    password: url.searchParams.get('password') ?? password,
+    password: queryPassword ?? password,
     database,
     ssl,
-    options: url.searchParams.get('options') ?? '',
+    options: startupOptions,
   };
 }
 

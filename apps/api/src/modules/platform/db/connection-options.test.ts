@@ -1,6 +1,7 @@
 import { inspect } from 'node:util';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import type { PeerCertificate } from 'node:tls';
 import type { createDb } from '@couli/db';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ConfigError } from '../config/index.ts';
@@ -239,10 +240,22 @@ it.each([
   ['', false],
   ['sslmode=disable', false],
   ['sslmode=require', { rejectUnauthorized: false }],
-  ['sslmode=verify-full', { rejectUnauthorized: true }],
+  [
+    'sslmode=verify-full',
+    {
+      rejectUnauthorized: true,
+      servername: 'db.example',
+      checkServerIdentity: expect.any(Function),
+    },
+  ],
   [
     `sslmode=verify-full&sslrootcert=${encodeURIComponent(rootPath)}`,
-    { rejectUnauthorized: true, ca },
+    {
+      rejectUnauthorized: true,
+      ca,
+      servername: 'db.example',
+      checkServerIdentity: expect.any(Function),
+    },
   ],
   [
     `sslmode=verify-ca&sslrootcert=${encodeURIComponent(rootPath)}`,
@@ -262,7 +275,11 @@ it.each([
     for (const pool of driver.pools) {
       expect(pool.ssl).toEqual(expected);
       expect(pool).not.toHaveProperty('connectionString');
-      if (typeof pool.ssl === 'object' && pool.ssl.checkServerIdentity) {
+      if (
+        query.startsWith('sslmode=verify-ca') &&
+        typeof pool.ssl === 'object' &&
+        pool.ssl.checkServerIdentity
+      ) {
         expect(pool.ssl.checkServerIdentity('mismatched.example', {} as never)).toBeUndefined();
       }
     }
@@ -288,3 +305,97 @@ it('[AC-B1-01f#14] 根证书读取失败在配置加载时报固定错误，不�
   expect(inspect(error, { showHidden: true, depth: null })).not.toContain('missing-private-ca.pem');
   expect(driver.pools).toHaveLength(0);
 });
+
+it.each([
+  ['10.0.0.10', 'db.internal', false],
+  ['db.internal', '10.0.0.10', true],
+] as const)(
+  '[AC-B1-01f#16] verify-full 分别绑定主库 %s 与只读库 %s 的主机（自定 CA：%s）',
+  async (primaryHost, readHost, withCa) => {
+    const query = `sslmode=verify-full${withCa ? `&sslrootcert=${encodeURIComponent(rootPath)}` : ''}`;
+    const config = loadConnectionConfig('admin', {
+      DATABASE_URL: `postgres://couli_app@${primaryHost}/couli?${query}`,
+      DATABASE_READ_URL: `postgres://couli_readonly@${readHost}/couli?${query}`,
+      REDIS_URL: 'redis://127.0.0.1:1/0',
+    });
+    const handles = createDbHandles(config, {
+      logger: createRootLogger({ entry: 'admin', appEnv: 'test', level: 'silent' }),
+    });
+    try {
+      expect(driver.pools).toHaveLength(2);
+      for (const [index, host] of [primaryHost, readHost].entries()) {
+        const ssl = driver.pools[index]!.ssl;
+        expect(ssl).toEqual({
+          rejectUnauthorized: true,
+          ...(withCa ? { ca } : {}),
+          ...(host === 'db.internal' ? { servername: host } : {}),
+          checkServerIdentity: expect.any(Function),
+        });
+        if (typeof ssl !== 'object' || !ssl.checkServerIdentity) {
+          throw new Error('Missing certificate identity check');
+        }
+        for (const suppliedName of ['localhost', '10.0.0.10', 'db.internal', 'other.internal']) {
+          for (const [subjectaltname, matches] of [
+            ['DNS:localhost', false],
+            ['DNS:10.0.0.10', false],
+            ['IP Address:10.0.0.11', false],
+            ['IP Address:10.0.0.10', host === '10.0.0.10'],
+            ['DNS:db.internal', host === 'db.internal'],
+          ] as const) {
+            const cert = { subject: { CN: 'localhost' }, subjectaltname } as PeerCertificate;
+            const error = ssl.checkServerIdentity(suppliedName, cert);
+            if (matches) expect(error).toBeUndefined();
+            else {
+              expect(error).toBeInstanceOf(Error);
+              expect(error).toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID', host });
+            }
+          }
+        }
+      }
+      expect(driver.connect).not.toHaveBeenCalled();
+    } finally {
+      await handles.close();
+    }
+  },
+);
+
+it.each(['DATABASE_URL', 'DATABASE_READ_URL'] as const)(
+  '[AC-B1-01f#17] %s 各连接字段拒绝所有 C0 与 DEL，覆盖已被查询口令取代的 userinfo 口令',
+  (name) => {
+    const controls = Array.from({ length: 32 }, (_, code) => code).concat(127);
+    for (const code of controls) {
+      const value = `private${encodeURIComponent(String.fromCharCode(code))}value`;
+      for (const url of [
+        `postgres://${value}:secret@db.internal/couli`,
+        `postgres://couli_app:${value}@db.internal/couli`,
+        `postgres://couli_app:${value}@db.internal/couli?password=override`,
+        `postgres://couli_app@db.internal/${value}`,
+        `postgres://couli_app@db.internal/couli?password=${value}`,
+        `postgres://couli_app@db.internal/couli?options=${value}`,
+      ]) {
+        let error: unknown;
+        try {
+          const config = loadConnectionConfig('admin', {
+            DATABASE_URL: 'postgres://couli_app@db.internal/couli',
+            DATABASE_READ_URL: 'postgres://couli_readonly@db.internal/couli',
+            REDIS_URL: 'redis://127.0.0.1:1/0',
+            [name]: url,
+          });
+          void createDbHandles(config, {
+            logger: createRootLogger({ entry: 'admin', appEnv: 'test', level: 'silent' }),
+          }).close();
+        } catch (caught) {
+          error = caught;
+        }
+        expect(error).toBeInstanceOf(ConfigError);
+        expect((error as ConfigError).problems).toEqual([
+          `${name}: connection fields may not contain control characters`,
+        ]);
+        expect(error).not.toHaveProperty('cause');
+        expect(inspect(error, { showHidden: true, depth: null })).not.toContain('private');
+      }
+    }
+    expect(driver.pools).toHaveLength(0);
+    expect(driver.connect).not.toHaveBeenCalled();
+  },
+);
