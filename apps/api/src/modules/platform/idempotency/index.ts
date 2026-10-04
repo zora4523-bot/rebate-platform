@@ -2,7 +2,7 @@
 // §3.2 idempotency_keys, §6.1 POST /v1/idempotency-keys/abandon, §7 20901 / 20903 / 40901; 08
 // BR-WDR-07 幂等段, BR-ID-01 ④, BR-ID-08, BR-ID-10 细则「敏感操作的幂等键」, BR-ID-30 ⑤; 规划/02 §18
 // 「幂等 API」: idempotency_keys plus the business unique constraints as the last line).
-// Skeleton: every function throws `NotImplemented` until task B1-01i implements it. The rule tests
+// Implementation contract for task B1-01i. The rule tests
 // in test/spec/platform/idempotency/** import this file by path; the names, signatures and
 // semantics written here are the contract. Table shape: db/schema.sql (idempotency_keys after
 // migration 0004: request_hash and response null exactly on abandoned rows; status processing /
@@ -211,7 +211,8 @@
 //     with `.ts`. Runtime imports only: `node:crypto`, `kysely`, and files of this directory;
 //     `@couli/db` and `../clock/index.ts` type-only. No process.env.
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
+import { createHash } from 'node:crypto';
+import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { Clock } from '../clock/index.ts';
 
 /** The four step-up actions (04 §2.5 step_up_action). */
@@ -346,24 +347,477 @@ export class IdempotencyError extends Error {
 
 /** Section 1. */
 export function subjectOf(actor: IdempotencyActor): string {
-  void actor;
-  throw new Error('NotImplemented: subjectOf');
+  if (actor == null) throw new IdempotencyError('invalid_subject');
+  for (const [value, prefix, pattern] of [
+    [actor.userId, 'u', UUID],
+    [actor.deviceId, 'd', UUID],
+    [actor.phoneHmac, 'p', /^[0-9a-f]{64}$/],
+  ] as const) {
+    if (value === null) continue;
+    if (typeof value !== 'string' || !pattern.test(value) || value.includes('\n')) {
+      throw new IdempotencyError('invalid_subject');
+    }
+    return `${prefix}:${value}`;
+  }
+  throw new IdempotencyError('invalid_subject');
 }
 
 /** Section 3. */
 export function canonicalJson(body: unknown): string {
-  void body;
-  throw new Error('NotImplemented: canonicalJson');
+  if (body === undefined) return '';
+  const ancestors = new Set<object>();
+  function encode(value: unknown): string {
+    if (
+      value === null ||
+      typeof value === 'string' ||
+      typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value))
+    )
+      return JSON.stringify(value);
+    if (typeof value !== 'object' || value === null || ancestors.has(value)) {
+      throw new IdempotencyError('invalid_request');
+    }
+    ancestors.add(value);
+    try {
+      if (Array.isArray(value)) {
+        // Array.from visits holes too; sparse arrays must not silently lose values.
+        return `[${Array.from(value, (item: unknown) => encode(item)).join(',')}]`;
+      }
+      if (!isPlainObject(value)) throw new IdempotencyError('invalid_request');
+      return `{${Object.keys(value)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${encode(value[key])}`)
+        .join(',')}}`;
+    } finally {
+      ancestors.delete(value);
+    }
+  }
+  return encode(body);
 }
 
 /** Section 3. */
 export function requestHashOf(body: unknown): string {
-  void body;
-  throw new Error('NotImplemented: requestHashOf');
+  return createHash('sha256').update(canonicalJson(body), 'utf8').digest('hex');
 }
 
 /** Section 9. */
 export function createIdempotency(options: IdempotencyOptions): Idempotency {
-  void options;
-  throw new Error('NotImplemented: createIdempotency');
+  const lease =
+    options.processingLeaseMs === undefined
+      ? DEFAULT_PROCESSING_LEASE_MS
+      : options.processingLeaseMs;
+  if (!Number.isInteger(lease) || lease < 1000 || lease > 600_000) {
+    throw new IdempotencyError('invalid_option');
+  }
+  const { db, clock, logger } = options;
+
+  async function finish(row: Row, request: IdempotentRequest, response?: IdempotentResponse) {
+    const owned = sql<boolean>`id = ${row.id} AND status = 'processing'
+      AND created_at = ${row.ownership_created_at}::timestamptz`;
+    const query =
+      response === undefined
+        ? db.deleteFrom('idempotency_keys').where(owned).returning('id')
+        : db
+            .updateTable('idempotency_keys')
+            .set({
+              status: 'completed',
+              response: { status: response.status, body: response.body },
+            })
+            .where(owned)
+            .returning('id');
+    const changed = await query.execute();
+    if (changed.length === 0)
+      logger.warn({ method: request.method, path: request.path }, 'idempotency_record_lost');
+  }
+
+  return {
+    async execute(request, handler) {
+      const prepared = prepare(request);
+      if (!validKey(request.key)) return errorResponse(20001, request.traceId);
+      if (sensitiveOperation(request)) throw new IdempotencyError('transactional_required');
+      const claimed = await transaction(db, request.traceId, async (trx) => {
+        await lockScope(trx, prepared.scope);
+        return boundedClaim(trx, async () => {
+          for (;;) {
+            const row = await findRow(trx, prepared.scope);
+            const now = clock.now();
+            if (row !== undefined) {
+              if (row.status !== 'processing' || now.getTime() - row.created_at.getTime() < lease) {
+                return existingResponse(row, prepared.hash, request.traceId);
+              }
+              const taken = await trx
+                .updateTable('idempotency_keys')
+                .set({ request_hash: prepared.hash, ...timestamps(request, now), response: null })
+                .where('id', '=', row.id)
+                .where('status', '=', 'processing')
+                .where('created_at', '=', sql<Date>`${row.ownership_created_at}::timestamptz`)
+                .returningAll()
+                .returning(ownershipTimestamp)
+                .executeTakeFirst();
+              if (taken !== undefined) return taken;
+            } else {
+              const inserted = await insertRow(
+                trx,
+                prepared.scope,
+                'processing',
+                prepared.hash,
+                now,
+              );
+              if (inserted !== undefined) return inserted;
+            }
+            // A concurrent completion, cleanup, or unique-key winner changed the row.
+            // Re-read under READ COMMITTED before deciding; never overwrite a terminal row.
+          }
+        });
+      });
+      if ('source' in claimed) return claimed;
+      let result: ReturnType<typeof handlerResponse>;
+      try {
+        result = handlerResponse(await handler());
+      } catch (error) {
+        await finish(claimed, request);
+        throw error;
+      }
+      await finish(claimed, request, result.store ? result.response : undefined);
+      return result.response;
+    },
+
+    async executeInTransaction(request, handler) {
+      const prepared = prepare(request);
+      if (!validKey(request.key)) return errorResponse(20001, request.traceId);
+      return transaction(db, request.traceId, async (trx) => {
+        await lockScope(trx, prepared.scope);
+        const claim = await boundedClaim(trx, async () => {
+          for (;;) {
+            const row = await findRow(trx, prepared.scope);
+            if (row !== undefined) return existingResponse(row, prepared.hash, request.traceId);
+            const inserted = await insertRow(
+              trx,
+              prepared.scope,
+              'processing',
+              prepared.hash,
+              clock.now(),
+            );
+            if (inserted !== undefined) return inserted;
+          }
+        });
+        if ('source' in claim) return claim;
+        const result = handlerResponse(await handler(trx));
+        if (!result.store) throw new RollbackResponse(result.response);
+        // This processing row has never been visible outside this transaction. The unique
+        // constraint reserves the key before any business writes and excludes abandonment.
+        await trx
+          .updateTable('idempotency_keys')
+          .set({
+            status: 'completed',
+            response: { status: result.response.status, body: result.response.body },
+          })
+          .where('id', '=', claim.id)
+          .execute();
+        return result.response;
+      });
+    },
+
+    async abandon(request) {
+      const fields: string[] = [];
+      const actionValid = Object.hasOwn(SENSITIVE_OPERATIONS, request.action);
+      if (!actionValid) fields.push('action');
+      if (!validKey(request.key)) fields.push('idempotency_key');
+      if (fields.length > 0)
+        return envelopeResponse(400, 20001, 'invalid abandon request', request.traceId, { fields });
+      if (typeof request.appId !== 'string' || request.appId.length === 0)
+        throw new IdempotencyError('invalid_request');
+      const subject = subjectOf({ userId: request.userId, deviceId: null, phoneHmac: null });
+      const operation = SENSITIVE_OPERATIONS[request.action as StepUpAction];
+      const scope: Scope = {
+        app_id: request.appId,
+        subject,
+        method: operation.method,
+        path: operation.path,
+        key: request.key,
+      };
+      return transaction(db, request.traceId, async (trx) => {
+        await lockScope(trx, scope);
+        return boundedClaim(trx, async () => {
+          for (;;) {
+            const row = await findRow(trx, scope);
+            if (row?.status === 'processing') return errorResponse(40901, request.traceId);
+            if (row?.status === 'completed') {
+              const stored = storedResponse(row);
+              const original = JSON.parse(stored.body) as ResponseEnvelope;
+              return envelopeResponse(200, 0, '', request.traceId, {
+                outcome: 'completed',
+                original: {
+                  code: original.code,
+                  msg: original.msg,
+                  ...(Object.hasOwn(original, 'data') ? { data: original.data } : {}),
+                },
+              });
+            }
+            if (
+              row?.status === 'abandoned' ||
+              (await insertRow(trx, scope, 'abandoned', null, clock.now())) !== undefined
+            ) {
+              return envelopeResponse(200, 0, '', request.traceId, {
+                outcome: 'abandoned',
+                original: null,
+              });
+            }
+          }
+        });
+      });
+    },
+
+    async purgeExpired() {
+      const result = await db
+        .deleteFrom('idempotency_keys')
+        .where('expire_at', '<', clock.now())
+        .executeTakeFirstOrThrow();
+      return Number(result.numDeletedRows);
+    },
+  };
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+type Scope = Pick<
+  Selectable<DB['idempotency_keys']>,
+  'app_id' | 'subject' | 'method' | 'path' | 'key'
+>;
+type Row = Selectable<DB['idempotency_keys']> & { ownership_created_at: string };
+// Preserve PostgreSQL timestamp precision for conditional ownership checks on legacy rows.
+const ownershipTimestamp = sql<string>`created_at::text`.as('ownership_created_at');
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+  );
+}
+
+function validKey(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 8 &&
+    value.length <= 64 &&
+    !/[^A-Za-z0-9_-]/.test(value)
+  );
+}
+
+function sensitiveOperation(request: { method: string; path: string }) {
+  return Object.values(SENSITIVE_OPERATIONS).find(
+    (op) => op.method === request.method && op.path === request.path,
+  );
+}
+
+function prepare(request: IdempotentRequest) {
+  if (
+    typeof request.appId !== 'string' ||
+    request.appId.length === 0 ||
+    !['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) ||
+    typeof request.path !== 'string' ||
+    !request.path.startsWith('/') ||
+    /[?#]/.test(request.path)
+  ) {
+    throw new IdempotencyError('invalid_request');
+  }
+  const hash = requestHashOf(request.body);
+  const subject = subjectOf(request.actor);
+  const scope: Scope = {
+    app_id: request.appId,
+    subject,
+    method: request.method,
+    path: request.path,
+    key: request.key ?? '',
+  };
+  return { scope, hash };
+}
+
+function timestamps(request: { method: string; path: string }, now: Date) {
+  const created_at = now.toISOString();
+  return {
+    created_at,
+    expire_at:
+      sensitiveOperation(request)?.retention === 'unlimited'
+        ? 'infinity'
+        : sql<Date>`${created_at}::timestamptz + ${IDEMPOTENCY_RETENTION_MS} * interval '1 millisecond'`,
+  };
+}
+
+function findRow(db: Kysely<DB>, scope: Scope) {
+  return db
+    .selectFrom('idempotency_keys')
+    .selectAll()
+    .select(ownershipTimestamp)
+    .where('app_id', '=', scope.app_id)
+    .where('subject', '=', scope.subject)
+    .where('method', '=', scope.method)
+    .where('path', '=', scope.path)
+    .where('key', '=', scope.key)
+    .executeTakeFirst();
+}
+
+function insertRow(
+  db: Kysely<DB>,
+  scope: Scope,
+  status: 'processing' | 'abandoned',
+  hash: string | null,
+  now: Date,
+) {
+  return db
+    .insertInto('idempotency_keys')
+    .values({
+      ...scope,
+      user_id: scope.subject.startsWith('u:') ? scope.subject.slice(2) : null,
+      request_hash: hash,
+      status,
+      response: null,
+      ...timestamps(scope, now),
+    })
+    .onConflict((oc) => oc.columns(['app_id', 'subject', 'method', 'path', 'key']).doNothing())
+    .returningAll()
+    .returning(ownershipTimestamp)
+    .executeTakeFirst();
+}
+
+function storedResponse(row: Row): { status: number; body: string } {
+  const response = row.response;
+  if (
+    !isPlainObject(response) ||
+    typeof response.status !== 'number' ||
+    typeof response.body !== 'string'
+  ) {
+    throw new IdempotencyError('invalid_result');
+  }
+  return { status: response.status, body: response.body };
+}
+
+function existingResponse(row: Row, hash: string, traceId: string): IdempotentResponse {
+  if (row.status === 'abandoned') return errorResponse(20903, traceId);
+  if (row.status === 'processing') return errorResponse(40901, traceId);
+  if (row.request_hash !== hash) return errorResponse(20901, traceId);
+  return { ...storedResponse(row), source: 'replay' };
+}
+
+function handlerResponse(result: HandlerResult): { response: IdempotentResponse; store: boolean } {
+  if (
+    result == null ||
+    !Number.isInteger(result.status) ||
+    result.status < 200 ||
+    result.status > 599 ||
+    !isPlainObject(result.envelope) ||
+    !Number.isInteger(result.envelope.code) ||
+    result.envelope.code < 0 ||
+    typeof result.envelope.msg !== 'string' ||
+    typeof result.envelope.trace_id !== 'string'
+  ) {
+    throw new IdempotencyError('invalid_result');
+  }
+  let body: string;
+  try {
+    canonicalJson(result.envelope); // Reject values JSON.stringify would silently discard/coerce.
+    body = JSON.stringify(result.envelope);
+  } catch {
+    throw new IdempotencyError('invalid_result');
+  }
+  const code = result.envelope.code;
+  return {
+    response: { status: result.status, body, source: 'handler' },
+    store: code === 0 || (code >= 30000 && code <= 39999),
+  };
+}
+
+function envelopeResponse(
+  status: number,
+  code: number,
+  msg: string,
+  traceId: string,
+  data?: unknown,
+): IdempotentResponse {
+  return {
+    status,
+    body: JSON.stringify({ code, msg, ...(data === undefined ? {} : { data }), trace_id: traceId }),
+    source: 'idempotency',
+  };
+}
+
+function errorResponse(code: 20001 | 20901 | 20903 | 40901, traceId: string): IdempotentResponse {
+  const messages = {
+    20001: 'Idempotency-Key is missing or malformed',
+    20901: 'Idempotency-Key was used with a different request body',
+    20903: 'Idempotency-Key was abandoned',
+    40901: 'a request with this Idempotency-Key is in progress',
+  };
+  return envelopeResponse(
+    code === 20001 ? 400 : 409,
+    code,
+    messages[code],
+    traceId,
+    code === 20001 ? { fields: ['idempotency-key'] } : undefined,
+  );
+}
+
+class KeyBusy extends Error {}
+class RollbackResponse extends Error {
+  readonly response: IdempotentResponse;
+  constructor(response: IdempotentResponse) {
+    super('rollback without storing result');
+    this.response = response;
+  }
+}
+
+async function lockScope(trx: Transaction<DB>, scope: Scope) {
+  const digest = createHash('sha256')
+    .update(JSON.stringify([scope.app_id, scope.subject, scope.method, scope.path, scope.key]))
+    .digest();
+  // The two-int4 advisory namespace is disjoint from the business one-bigint locks.
+  const lock = await sql<{
+    acquired: boolean;
+  }>`SELECT pg_try_advisory_xact_lock(${digest.readInt32BE(0)}::int4, ${digest.readInt32BE(4)}::int4) AS acquired`.execute(
+    trx,
+  );
+  if (!lock.rows[0]?.acquired) throw new KeyBusy();
+}
+
+async function boundedClaim<T>(trx: Transaction<DB>, claim: () => Promise<T>): Promise<T> {
+  const previous = await sql<{
+    value: string;
+  }>`SELECT current_setting('lock_timeout') AS value`.execute(trx);
+  await sql`SELECT set_config('lock_timeout', '250ms', true)`.execute(trx);
+  let result: T;
+  try {
+    result = await claim();
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === '55P03')
+      throw new KeyBusy();
+    throw error;
+  }
+  // Do not impose the key acquisition timeout on the handler's unrelated business locks.
+  await sql`SELECT set_config('lock_timeout', ${previous.rows[0]!.value}, true)`.execute(trx);
+  return result;
+}
+
+async function transaction<T>(
+  db: Kysely<DB>,
+  traceId: string,
+  run: (trx: Transaction<DB>) => Promise<T>,
+): Promise<T | IdempotentResponse> {
+  let committing = false;
+  try {
+    return await db
+      .transaction()
+      .setIsolationLevel('read committed')
+      .execute(async (trx) => {
+        const result = await run(trx);
+        // Only a failure after the callback succeeded can be an uncertain COMMIT. Failures
+        // writing the completed record remain driver errors and roll back the business writes.
+        committing = true;
+        return result;
+      });
+  } catch (error) {
+    if (committing) throw new IdempotencyError('outcome_unknown');
+    if (error instanceof KeyBusy) return errorResponse(40901, traceId);
+    if (error instanceof RollbackResponse) return error.response;
+    throw error;
+  }
 }

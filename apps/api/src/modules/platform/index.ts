@@ -3,6 +3,7 @@ export * from './clock/index.ts';
 export * from './config/index.ts';
 export * from './logging/index.ts';
 export * from './tracing/index.ts';
+export * from './idempotency/index.ts';
 export { HTTP_ENTRIES, WORKER_ENTRIES, isHttpEntry } from './entries.ts';
 export type { EntryName, HttpEntry, WorkerEntry } from './entries.ts';
 export {
@@ -10,6 +11,7 @@ export {
   APP_ENTRY,
   DB,
   DB_READ,
+  IDEMPOTENCY,
   PlatformModule,
   ROOT_LOGGER,
 } from './platform.module.ts';

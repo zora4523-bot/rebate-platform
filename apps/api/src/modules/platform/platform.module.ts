@@ -3,6 +3,7 @@ import { CLOCK, type Clock } from './clock/index.ts';
 import type { AppConfig } from './config/index.ts';
 import type { DbHandles } from './db/index.ts';
 import type { EntryName } from './entries.ts';
+import { createIdempotency } from './idempotency/index.ts';
 import type { RootLogger } from './logging/index.ts';
 
 /** Nest injection tokens provided by `PlatformModule`. */
@@ -11,6 +12,7 @@ export const APP_ENTRY = Symbol('APP_ENTRY');
 export const ROOT_LOGGER = Symbol('ROOT_LOGGER');
 export const DB = Symbol('DB');
 export const DB_READ = Symbol('DB_READ');
+export const IDEMPOTENCY = Symbol('IDEMPOTENCY');
 const DB_LIFECYCLE = Symbol('DB_LIFECYCLE');
 
 export interface PlatformOptions {
@@ -24,7 +26,7 @@ export interface PlatformOptions {
 
 /**
  * Cross-cutting infrastructure shared by every module: configuration, clock, logger.
- * TODO(规划/11 §2): provide JobQueue and idempotency — blocked on B1-01.
+ * TODO(规划/11 §2): provide JobQueue — blocked on B1-01.
  */
 @Module({})
 export class PlatformModule {
@@ -35,6 +37,15 @@ export class PlatformModule {
         ? []
         : [
             { provide: DB, useValue: handles.db },
+            {
+              provide: IDEMPOTENCY,
+              useFactory: () =>
+                createIdempotency({
+                  db: handles.db,
+                  clock: options.clock,
+                  logger: options.logger,
+                }),
+            },
             ...(options.entry === 'admin' && handles.dbRead !== null
               ? [{ provide: DB_READ, useValue: handles.dbRead }]
               : []),
@@ -60,7 +71,7 @@ export class PlatformModule {
         APP_ENTRY,
         CLOCK,
         ROOT_LOGGER,
-        ...(handles === undefined ? [] : [DB]),
+        ...(handles === undefined ? [] : [DB, IDEMPOTENCY]),
         ...(handles !== undefined && options.entry === 'admin' && handles.dbRead !== null
           ? [DB_READ]
           : []),
