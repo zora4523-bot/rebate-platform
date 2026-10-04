@@ -1,0 +1,22 @@
+id: CT-16d
+repo: rebate-platform
+title: 契约：GET /v1/earnings/summary（自购、分享、邀请三块，已结算带符号；04 §6.4）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b2-05。总开关关闭返回 30701；referral 在 referral_visible 关闭时为 null；example 含一期负的 credited_fen。
+# W6（随 B2-13）；编排会话 2026-10-04 晚：P3 中不依赖未决事项的可继续。路由 Earnings 在 CT-17c。
+refs: []
+refs_hash: {}
+contract_sections: ['6.4']
+deps: [CT-15e]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
