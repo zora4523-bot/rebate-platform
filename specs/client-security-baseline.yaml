@@ -1,0 +1,154 @@
+# 客户端安全基线（规划/03 §4.8，机器可读版；功能对照 G-06）。三端同一套规则，各自用本端的静态检查工具实现
+# （03 §3.3 静态检查行，§11「安全基线」行，每个前端 PR 都跑）。规则对所有构建类型生效，debug 与 staging
+# 包同样不得放宽；任何一条不通过即 CI 失败，不设「仅警告」。规则正文与检查方式以 03 §4.8 为准，本文件
+# 与它不一致时以 03 为准并改本文件。
+#
+# 结构：
+#   version            每次改动递增
+#   rules              每条 {id, title, waivable, platforms, check, targets}
+#     id               CSB-nn，一经发布不复用、不重排
+#     waivable         CSB-01～07、09～11 一律 false（不可豁免）；CSB-08 本身不检查，写 null（不适用）。
+#                      本文件不设 waivers 清单：想改变任何一条，只能先按 00 §8 修改 03 §4.8 与对应 BR，
+#                      由负责人决定（03 §4.8）
+#     check            检查方式（03 §4.8「CI 检查」列的摘要）
+#     targets          检查的文件或写法
+#   false_positives    检查方式误判、代码其实没有违反规则的：每条 {rule, file, reason}；由编排者评审，
+#                      评审记录留在 PR 里
+#   forbidden_schemes  CSB-11：自定义 scheme 不得是系统保留或通用 scheme（转小写后整串相等才算命中，不按前缀）。与 apps.json
+#                      外跳目标、SDK 必需查询项里的 scheme 相同的，由 CT-17d 的检查另行判定，不在本表重复
+#   exported_components_allowed  CSB-09：允许导出的组件（按端），每条 {platform, component, purpose, source}，
+#                      source 为 own 或 sdk:<SDK 名>（按 SDK 移除用不到的组件）；
+#                      清单以外导出、带 intent-filter 或深链声明的组件即失败
+#   own_link_hosts     CSB-11：自有域名清单；https 入站链接与 iOS Associated Domains 的主机必须在这里
+#
+# TODO(规划/06 Q-A5): own_link_hosts 的具体域名 — blocked on 负责人提供正式域名（先空，空时任何 https 入站声明
+#   都不通过 CSB-11）。
+# TODO(规划/03 §4.8 CSB-09): exported_components_allowed 的具体组件名 — blocked on 三端工程建立（APP-02、
+#   HM-02）；SDK 带进来的导出组件接入时逐个登记用途，用不到的移除。
+version: '1'
+rules:
+  - id: CSB-01
+    title: 证书与主机名校验只用系统默认实现，不得被开关、远程配置或构建类型降级
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: 源码出现自定义信任管理、放行全部证书或恒返回通过的主机名校验即失败；发请求的客户端只能由 Core 的 Network 创建
+    targets:
+      - 三端源码（含 debug 与 staging 配置）
+  - id: CSB-02
+    title: TrustedWebView、ExternalWebView 遇到证书错误一律取消加载并显示错误页，不提供「继续访问」
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: 证书错误回调里出现继续或放行的调用即失败；桥一致性测试页（03 §5.5）有证书无效的用例
+    targets:
+      - Features/Web 容器封装的证书错误回调
+  - id: CSB-03
+    title: 两类容器只加载 https，禁止混合内容与 file 访问；ExternalWebView 不注入桥、不共享 Cookie
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: WebView 设置只能写在 Features/Web 的容器封装里，设置项与本条不一致即失败；其他模块直接创建 WebView 即失败
+    targets:
+      - Features/Web 容器封装
+      - 其他模块里的 WebView 创建
+  - id: CSB-04
+    title: 明文流量全关（iOS ATS 无例外；Android 不允许明文、不信任用户证书；鸿蒙无 http 业务地址）
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: 检查最终产物配置，出现例外域名、明文许可或 http:// 业务地址即失败
+    targets:
+      - Info.plist
+      - 合并后的 AndroidManifest 与网络安全配置
+      - 鸿蒙工程配置
+  - id: CSB-05
+    title: access_token、refresh_token、install_secret 只放系统安全存储，不写入普通 KV、文件、日志、剪贴板、埋点与崩溃附加信息
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: 三样用专用包装类型保存（不可打印、不参与普通序列化），只有 Core 的 SecureStore 能取原值，别处取原值即失败
+    targets:
+      - Core SecureStore 与令牌包装类型的使用点
+  - id: CSB-06
+    title: 备份与换机迁移不带走敏感数据；安全存储条目仅本设备可用，普通文件不含 CSB-05 的内容
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: 检查安全存储条目的可访问性属性与备份规则配置（写法接入时按官方文档核对）
+    targets:
+      - iOS Keychain 可访问性属性
+      - Android 备份规则文件
+      - 鸿蒙备份配置
+  - id: CSB-07
+    title: 对外共享文件只暴露分享图缓存目录
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: 检查文件共享路径配置与导出组件清单；分享调用点传入其他目录即失败
+    targets:
+      - Android 文件共享路径配置
+      - 三端分享调用点
+  - id: CSB-08
+    title: MVP 不做证书固定（依靠系统信任链与 CSB-01～04；日后要做另写 ADR）
+    waivable: null
+    platforms: [ios, android, harmony]
+    check: 不检查；代码里出现固定配置时由评审按本条处理
+    targets: []
+  - id: CSB-09
+    title: 入口组件最小化：只导出启动入口与声明了深链的入口组件；鸿蒙只有入口 Ability 声明深链
+    waivable: false
+    platforms: [android, harmony]
+    check: 合并后的清单里导出的、带 intent-filter 或深链声明的组件必须在 exported_components_allowed 里，否则失败
+    targets:
+      - 合并后的 AndroidManifest
+      - 鸿蒙模块配置
+  - id: CSB-10
+    title: 第三方页容器不注入；TrustedWebView 只注入随包发布的桥启动脚本
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: ExternalWebView 封装出现执行脚本、用户脚本、注入样式、脚本消息通道的调用即失败；TrustedWebView 注入点引用配置或网络内容即失败；桥一致性测试页（03 §5.5）有「第三方页面里没有桥对象」的用例
+    targets:
+      - Features/Web 容器封装
+      - 桥启动脚本资源
+  - id: CSB-11
+    title: 入站声明只来自 apps.json 入站回调类的生成物；自定义 scheme 不得是系统保留、通用或第三方 App 的 scheme
+    waivable: false
+    platforms: [ios, android, harmony]
+    check: 生成物与工程文件比对；自定义 scheme 命中 forbidden_schemes，或与 apps.json 外跳目标、SDK 必需查询项里的 scheme 相同，即失败；http intent-filter、https 缺 host、带通配符、不在 own_link_hosts、无 autoVerify 即失败；Associated Domains 主机不在 own_link_hosts 即失败；鸿蒙 https 深链在 CAP-X-03 无验证结论前即失败；iOS 查询 scheme 合计超过 20 条时生成器报错
+    targets:
+      - iOS URL Types 与 Associated Domains
+      - Android 入口组件 intent-filter
+      - 鸿蒙入口 Ability 深链声明
+      - 查询声明
+false_positives: []
+forbidden_schemes:
+  - http
+  - https
+  - file
+  - content
+  - data
+  - javascript
+  - about
+  - blob
+  - ftp
+  - ws
+  - wss
+  - tel
+  - telprompt
+  - sip
+  - sips
+  - sms
+  - smsto
+  - mms
+  - mmsto
+  - mailto
+  - facetime
+  - facetime-audio
+  - geo
+  - maps
+  - intent
+  - market
+  - itms
+  - itms-apps
+  - itms-appss
+  - itms-services
+  - app-settings
+  - app-prefs
+  - prefs
+  - settings
+exported_components_allowed: []
+own_link_hosts: []
