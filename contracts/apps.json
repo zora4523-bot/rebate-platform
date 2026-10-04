@@ -1,11 +1,12 @@
 {
-  "$comment": "External target apps (CT-03 skeleton): the only targets of ext.openApp and of installed detection (BR-ATTR-27 ①, 规划/03 §4.5). iOS LSApplicationQueriesSchemes (≤ 20 entries), Android <queries> packages and Harmony querySchemes are generated from this file. Nothing here is verified yet: values are candidates from 规划/09 CAP-TB-11, CAP-JD-11, CAP-PDD-11 and CAP-X-04 and stay status=candidate until the matching CAP item is verified; an empty list = not known yet. Clients never build jump URLs from these values: the server sends primary / fallbacks.",
+  "$comment": "Three kinds of entries (规划/04 §9「apps.json 的条目形状」, 规划/03 §4.5, CSB-11). apps: external target apps, the only targets of ext.openApp and of installed detection (BR-ATTR-27 ①); trade_only (required) is true for shopping platforms, and ext.openApp answers 90403 for them so H5 uses trade.convertAndOpen (BR-ATTR-29 细则). sdk_queries: query entries an SDK needs ({source_sdk, ios_scheme, android_package, harmony_scheme}, null where a platform has none). inbound: inbound callbacks, kind custom_scheme {scheme} or verified_link {host, path_prefix, verified: true}, both with purpose, source_sdk (null for our own) and platforms. iOS LSApplicationQueriesSchemes (apps + sdk_queries, ≤ 20), Android <queries>, Harmony querySchemes and every inbound declaration are generated from this file by CT-05; nothing is written by hand. Nothing here is verified yet: app values are candidates from 规划/09 CAP-TB-11, CAP-JD-11, CAP-PDD-11 and CAP-X-04; sdk_queries and inbound stay empty until values are given (our own scheme and domains: 规划/06; the WeChat verified link waits for 06 Q-C12; the Baichuan callback uses our own scheme, CAP-TB-11). Clients never build jump URLs from these values: the server sends primary / fallbacks.",
   "version": 1,
   "apps": {
     "taobao": {
       "name": "淘宝",
       "platform": "taobao",
       "status": "candidate",
+      "trade_only": true,
       "source": "规划/09 CAP-TB-11（taobao:// / tbopen:// scheme 为候选，以官方为准）；鸿蒙走百川 HarmonyOS SDK，见 CAP-X-04",
       "ios": {
         "query_schemes": ["taobao", "tbopen"]
@@ -21,6 +22,7 @@
       "name": "京东",
       "platform": "jd",
       "status": "candidate",
+      "trade_only": true,
       "source": "规划/09 CAP-JD-11（openApp.jdMobile scheme，无官方公开文档）",
       "ios": {
         "query_schemes": ["openApp.jdMobile"]
@@ -36,6 +38,7 @@
       "name": "拼多多",
       "platform": "pdd",
       "status": "candidate",
+      "trade_only": true,
       "source": "规划/09 CAP-PDD-11（schema_url 由转链返回，三端须静态声明要检测的 scheme，取值待实测）",
       "ios": {
         "query_schemes": []
@@ -47,5 +50,7 @@
         "query_schemes": []
       }
     }
-  }
+  },
+  "sdk_queries": [],
+  "inbound": []
 }

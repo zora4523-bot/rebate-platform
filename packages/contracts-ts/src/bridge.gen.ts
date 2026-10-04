@@ -1528,22 +1528,31 @@ export const apps = {
   "taobao": {
     "platform": "taobao",
     "status": "candidate",
+    "trade_only": true,
     "ios_query_schemes": [
       "taobao",
       "tbopen"
-    ]
+    ],
+    "harmony_query_schemes": []
   },
   "jd": {
     "platform": "jd",
     "status": "candidate",
+    "trade_only": true,
     "ios_query_schemes": [
       "openApp.jdMobile"
-    ]
+    ],
+    "harmony_query_schemes": []
   },
   "pdd": {
     "platform": "pdd",
     "status": "candidate",
-    "ios_query_schemes": []
+    "trade_only": true,
+    "ios_query_schemes": [],
+    "harmony_query_schemes": []
   }
 } as const;
 export type AppTarget = keyof typeof apps;
+/** SDK query entries and inbound callbacks (contracts/apps.json), input of the CT-05 generators. */
+export const sdkQueries = [] as const;
+export const inbound = [] as const;

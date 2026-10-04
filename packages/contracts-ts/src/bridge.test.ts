@@ -52,3 +52,9 @@ it('routes carry their entry list and release builds drop debug_only routes (BR-
   expect(bridge.releaseRouteNames).not.toContain('HomePreview');
   expect(bridge.releaseRouteNames).toContain('AuthManage');
 });
+
+it('every external target is trade_only; SDK queries and inbound start empty (04 §9)', () => {
+  for (const app of Object.values(bridge.apps)) expect(app.trade_only).toBe(true);
+  expect(bridge.sdkQueries).toEqual([]);
+  expect(bridge.inbound).toEqual([]);
+});
