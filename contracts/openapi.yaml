@@ -3751,7 +3751,8 @@ components:
       description: |
         One row of GET /v1/orders. Exactly one of order_no (my own purchase) and masked_order_no (a
         shared order); the oneOf branches declare the property they require (strict Ajv2020). A
-        shared order with is_other_product=true has title and image_url null (BR-TEXT-02 细则
+        shared order with is_other_product=true has title and image_url null and never the full
+        order_no (BR-TEXT-02 细则
         「订单的检索范围与分享单的投影」). OrderDetail repeats these fields (kept as two closed
         objects; redocly's example check closes every allOf member, so no shared allOf base).
       additionalProperties: false
@@ -3835,6 +3836,12 @@ components:
                 type: string
             required:
               - image_url
+          - type: object
+            properties:
+              order_no:
+                type: string
+            required:
+              - order_no
       oneOf:
         - type: object
           properties:
@@ -4035,6 +4042,12 @@ components:
                 type: string
             required:
               - image_url
+          - type: object
+            properties:
+              order_no:
+                type: string
+            required:
+              - order_no
           - type: object
             properties:
               product_key:
