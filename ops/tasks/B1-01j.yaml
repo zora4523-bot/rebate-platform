@@ -24,5 +24,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/maintenance/**'
-status: todo
-pr: null
+status: done
+pr: 70

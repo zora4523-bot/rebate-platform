@@ -1,0 +1,122 @@
+{
+  "task": "B1-01j",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "fc4988e5445bcc8c4242b9734adf62220ff9c56d",
+  "red_tests": [
+    "[ADR-0001 §4.2 #16; BR-ID-30 ⑫、⑰; contract B、C.4、H] 常量：默认间隔 3 600 000 毫秒，可删表正好是 [event_log]（冻结），错误文案固定；模块源码不读墙钟与环境变量、不用 pg-boss、Nest 或 console",
+    "[contract G] MaintenanceError：每个代码都是固定文案、name 为 MaintenanceError、自有属性正好 code / message / name / stack、没有 cause",
+    "[contract B] 选项校验：缺必填键、多出的键、类型不对、intervalMs 越界或不是整数，一律同步抛 invalid_option",
+    "[contract B] 合法选项（含 intervalMs 100 与 86 400 000 两端）得到 runOnce / start / stop；创建时不读时钟、不写日志、不碰 db",
+    "[contract D] stop() 在 start() 之前调用：立即以 undefined 结束、可重复调用；之后 start() 拒绝 already_started，且不碰 db、不读时钟、不写日志",
+    "[ADR-0001 §4.2 #16; BR-ID-30 ⑯] event_log 留存 190 天按 +08:00 日界：2026-10-08 23:59:59.999（+08:00）只删 p202602、保留 p202603；再晚 1 毫秒删 p202603；p202604、p202605 与 DEFAULT 不动，返回值确切、重复调用返回空数组",
+    "[ADR-0001 §4.2 #16; BR-ID-30 ⑯] 跨年的边界：2026-07-10 23:59:59.999（+08:00）只删 p202511（截止 2026-01-01 00:00 +08:00），再晚 1 毫秒删 p202512；p202601、p202602 保留",
+    "[BR-ID-30 运行当日 00:00（+08:00）] 截止时刻只看 p_now 在 +08:00 的日期：会话时区为 Pacific/Kiritimati（+14）或 America/New_York（−4）时结果与上面相同；p_now 以别的偏移写出也一样",
+    "[ADR-0001 §4.2 #4 DEFAULT 兜底; 规划/02 §15.1] 很远的 p_now 删掉 event_log 的全部月分区（升序返回），DEFAULT 分区及其数据保留；orders 的分区一个不少",
+    "[ADR-0001 §4.2 #4] 没有可删的分区时返回空数组（不是 NULL）：只有 DEFAULT 时、全部分区都在留存期内时",
+    "[规划/02 §15.1; BR-ID-30 ⑫、⑰] orders 等订单类表与 ledger_entries 等账务表（含尚不存在的表）一律拒绝：55000 与确切文案，orders 与 event_log 的旧分区都还在",
+    "[ADR-0001 §4.2 #4; 规划/02 §15.1] 没有留存规则的名字一律拒绝（22023 与确切文案）：link_logs、分区名、大小写或空白不同、带 schema、空串、不存在的表；什么都不删",
+    "[contract A1 a、b] 参数为 NULL 时 22004、p_now 为 ±infinity 时 22023，文案确切，什么都不删；NULL 检查先于名单检查",
+    "[ADR-0001 §4.2 #4 并发] 六个会话同时删 24 个过期分区：全部成功，每个分区正好被删、被报告一次，最后只剩 DEFAULT",
+    "[ADR-0001 §4.2 #4、#8] app.drop_expired_month_partitions(text, timestamptz) 返回 text[]：只有一个重载，plpgsql、SECURITY DEFINER、属主 couli_migrator、函数级设置正好是 search_path=pg_catalog, pg_temp、lock_timeout=5s、DateStyle=ISO, YMD、TimeZone=UTC（契约补充见 lock-timeout.int.test.ts 文件头），EXECUTE 只给 couli_maint（PUBLIC 已收回）",
+    "[ADR-0001 §4.2 #4、#8] app.partition_default_rows() 返回 TABLE(table_name text, default_partition text, row_count bigint)：同样是属主 couli_migrator 的 SECURITY DEFINER 函数，EXECUTE 只给 couli_maint",
+    "[ADR-0001 §4.2 #8; 规划/02 §15.1 以专用角色执行] couli_app、couli_payout、couli_readonly 调用两个函数都被拒（42501），分区不变；couli_maint 可以调用",
+    "[ADR-0001 §4.2 #8 couli_maint 无 DDL 权限] couli_maint 自己不能删、摘、建分区（42501），只能经 SECURITY DEFINER 函数删",
+    "[ADR-0001 §4.2 #4 每张分区表设 DEFAULT 分区兜底] 没有数据时：每张带 DEFAULT 的 app 分区表（含 event_log、link_logs、orders）正好一行、按表名排序、row_count 为 0（bigint）",
+    "[ADR-0001 §4.2 #4 其中有数据即告警] row_count 是 DEFAULT 分区里的确切行数：落进月分区的行不算，DEFAULT 里 3 行就是 3；建了别的月分区后不变",
+    "[ADR-0001 §4.2 #4 按月的表预建未来 3 个月、#5; contract C] 新库上一次运行（时钟 2026-11-20）：event_log 与 orders 各建 2026-11 至 2027-02 四个 UTC 月分区（界确切），报告与日志确切，时钟只读一次",
+    "[ADR-0001 §4.2 #4 幂等] 同一时钟再跑两次：报告相同（已存在的分区照样列出）、分区不多不少、每次只有一条 done 日志",
+    "[ADR-0001 §4.2 #10 时钟; contract C.2、C.3] 月份只按注入的时钟、按 UTC 月：北京时间已到 12 月（2026-11-30T16:30Z）仍从 2026-11 起；2026-12-31T23:59:59.999Z 建到 2027-03；跨到 2027-01-01T00:00Z 只新增 2027-04",
+    "[ADR-0001 §4.2 #4 并发] 两个 worker（各自的 couli_maint 连接池）同时跑三轮：全部成功、报告相同、没有失败日志，分区正好各四个",
+    "[ADR-0001 §4.2 #16; BR-ID-30 运行当日 00:00（+08:00）] 早 1 毫秒（2026-10-08 23:59:59.999 +08:00）的运行只删 p202602；运行把 now 原样交给删除函数",
+    "[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; contract C.3、C.5、E] DEFAULT 里有将来月份（2027-01）的 2 行：该月分区建不了，记 partition_ensure_failed（只有 SQLSTATE），其余照建；每轮告警一次（表、分区、行数）；日志与报告确切、不含行内容",
+    "[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警] DEFAULT 里只有很早月份的行（2020-03）时：分区都建成，只告警、不算失败；行移走前每轮都告警",
+    "[ADR-0001 §4.2 #4、#8 以 couli_maint 执行; contract C.1] 连接不是 couli_maint（couli_app、couli_payout、couli_readonly）时 runOnce 拒绝 wrong_role：不读时钟、不建分区、不写日志",
+    "[ADR-0001 §4.2 #4 worker 定时任务; contract D] start() 先跑完第一轮再 resolve，之后每 intervalMs 再跑；stop() 等进行中的一轮、之后不再跑；再 start() 拒绝 already_started",
+    "[ADR-0001 §4.2 #8 以 couli_maint 执行; contract D] 以 couli_app 连接 start()：拒绝 wrong_role、不安排后续运行（三个间隔内不再读时钟、不写日志、不建分区）",
+    "[contract D、E] 连不上数据库时：start() 记 partition_maintenance_failed（sqlstate 为 null，不带连接串或错误文本）后照常 resolve，之后每轮失败各记一条；stop() 正常结束",
+    "[BR-ID-30 删除条件 created_at < 截止; contract A1 (ii)] 分区按 occurred_at 已过期、但里面有一行 created_at 恰好等于后来的截止时刻（2026-10-08T16:00Z）：该分区整个保留到 p_now 2027-04-17T15:59:59.999Z（截止 = created_at，不算更早），2027-04-17T16:00Z 起才删；同期没有新行的分区照常按上界删",
+    "[BR-ID-30 删除条件 created_at < 截止; contract A1 (ii)] created_at 比截止早 1 毫秒的行不挡删除：分区按上界与 created_at 都已过期即删",
+    "[ADR-0001 §4.2 #16; BR-ID-30 ⑯、⑰; 规划/02 §15.1] 04:00（+08:00）的运行删 event_log 的过期分区（2026-10-09 04:00 删到 p202603），orders 的同月旧分区一个不删；日志每个删掉的分区一条，再一条 done",
+    "[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4] 删除只在 +08:00 的 04:00 起执行：2026-10-09 00:00 与 03:59:59.999（+08:00）的运行照常预建、不删也不调删除；04:00:00.000 的运行删 p202602、p202603",
+    "[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] link_logs_default 里有 3 行（正常写入的转链日志）：报告与告警正好是 link_logs 3 行，其余照常；行内容不进日志",
+    "[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警、须先迁出才能建分区] orders_default 里有 2027-01 的 1 个订单：orders_p202701 建不了（23514），其余照建；告警正好是 orders 1 行",
+    "[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] event_log 2 行、link_logs 1 行、orders 3 行同时在各自的 DEFAULT：三条告警按表名排序、行数各自确切，报告同序",
+    "[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4、D] 定时运行：时钟停在 2026-10-09 03:59:59.999（+08:00）时各轮只预建、不删；拨到 04:00:00.000 后的下一轮删 p202602、p202603，之后各轮不再删",
+    "[contract D stop 等进行中的一轮] 第一轮卡在 event_log_p202611 的分区锁上（另一连接持有 ensure_month_partition 用的咨询锁）时调用 stop()：锁未放开前 start() 与 stop() 都不结束、没有日志；放锁后这一轮完成（一条 done），start() resolve，stop() 在 done 之后才结束，之后不再运行",
+    "[BR-ID-30 删除条件 created_at < 截止; contract A1 (ii)] 同一分区混有已过期（2026-03-31T12:00Z）与未过期（恰等于截止 2026-04-01T16:00Z）两行：整个分区与两行都保留，直到最新一行也早于截止（p_now 2026-10-09T16:00Z）才删",
+    "[BR-ID-30 删除条件 created_at < 截止; contract A1 并发写入] 写事务向旧分区插入一行未过期的记录（created_at 2026-10-08T12:00Z）尚未提交时调用删除：删除等锁，写事务提交后删除复查看到这行，分区与两行都保留、返回空数组",
+    "[BR-ID-30 每日 04:00 删除任务; ADR-0001 §4.2 #4 DEFAULT 有数据即告警; contract C.4、C.5] 04:00 之前（2026-10-09 03:59:59.999 +08:00）的运行：link_logs_default 的 1 行照常告警、行数确切，过期的 event_log 分区不删",
+    "[ADR-0001 §4.2 #4、#16; contract A1 lock_timeout] 另一连接的读事务一直持有 event_log 的 ACCESS SHARE 锁时调用删除：4–9 秒内以 55P03 失败、什么都不删；其间向当月分区插入的一行在 9 秒内写成",
+    "[ADR-0001 §4.2 #4; contract C.3 lock_timeout] 读事务持有 event_log 的 ACCESS SHARE 锁、2027-01 分区尚不存在时跑一轮：event_log 预建在 4–12 秒内以 55P03 失败一次（跳过该表其余月份）、orders 照常建满；期间向当月分区的插入 9 秒内写成；读事务结束后下一轮建成",
+    "[ADR-0001 §4.2 #4; contract C.3 lock_timeout] 读事务同时持有 event_log 与 orders 的锁：两张表各失败一次（各 55P03 一条），一轮在 8–18 秒内结束；读事务结束后下一轮两张表都建成",
+    "[ADR-0001 §4.2 #4 DEFAULT 有数据即告警; contract C.5 lock_timeout] 另一会话正在建 event_log_p202701（事务未提交，持有父表与 DEFAULT 分区的排他锁）时跑一轮：该月预建与 DEFAULT 计数各在 5 秒左右以 55P03 失败一次，一轮在 8–18 秒内结束，orders 照常；之后下一轮正常"
+  ],
+  "risk_note": "RV2 by path (db/migrations, apps/api/src/modules/platform/**). Partition maintenance: migration 0011 (expired-partition drop for event_log only, order tables, ledger_entries and audit_logs refused, retention >= 190 days by partition bound and created_at rechecked under lock, DEFAULT row counts, couli_maint grants, lock_timeout 5s) and the maintenance runner (pre-create every run, deletion from 04:00 +08:00, bounded lock waits for every table-lock statement). Wiring into the worker entry is a follow-up (draft B1-01n).",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "2d1969ef1c9a3562c719468930dfc930107bbb61",
+      "tree": "88f0d8c423cd3cb5271ec797ed330037de767d9b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T15:41:59Z",
+      "finished_at": "2026-10-04T15:44:08Z"
+    },
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "734f0186201654887921ccb0f535d51be45487b2",
+      "tree": "3d67f765ef8fc23760b3b669a6b567e4d2bc4a3c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T16:02:25Z",
+      "finished_at": "2026-10-04T16:04:16Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "independent Claude subagent with PG18 probes each round: round 1 S1 (drop without lock timeout) and round 2 S1 (pre-creation without lock timeout) fixed in attempts 3 and 4; round 3 approve: bounded waits measured, lock_timeout does not leak to the pool, supplementary cases 2d1969e red on 7c03618; remaining S2 recorded as follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 3,
+      "scope": "money review rounds 1-3 pass; round 3: 1 S2 (a lock-wait test checks write latency but not success) recorded as a follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "two rounds pass; out-of-scope gaps added as tests in the supplementary commits (round 2 supplement, code-review rounds 1 and 2), each checked by the code review"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "a3e30c984846e9caeaf0af13c505add5352a52dc",
+    "apps/api/src/modules/platform/maintenance": "60d3c5639a37cafd8812454022275e55e35bffc8"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 on the B1-01j worktree, 2026-10-04 23:50 (+08:00); this task adds no property tests",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "two_stage": "stage 1 migration SQL by Codex, schema.sql regenerated by the orchestrator with pnpm db:snapshot (outside the sandbox); stage 2 maintenance module; migration renumbered 0008 -> 0011 as main moved",
+  "exceptions": "implementation attempt 4 and code review round 3 approved by the orchestrator session (couli-runs/B1-01j/exception-impl-4.md)",
+  "severity_bar": "ops/approvals.yaml #18: both lock-wait S1 were reachable in ordinary operation and fixed, not downgraded",
+  "follow_ups": "couli-runs/CT-plan/ledger-drafts/B1-01n.yaml (worker wiring, DATABASE_MAINT_URL, pool timeouts); couli-runs/followups/B1-01g-queue-test-gaps.md (B1-01j section)",
+  "verify_note": "runs 5 and 6 failed only by timing-sensitive integration tests (singleton.int sleep, handles.int close timeout) while the host load average was above 100 from unrelated virtual machines; run 7 at normal load passes",
+  "reordered": "supplementary rule-test commits (round 2 supplement, code-review rounds 1 and 2) moved before the implementation commits so the rule tests are unchanged after spec_commit; tree identical (3d67f76 = verify run 7)"
+}
