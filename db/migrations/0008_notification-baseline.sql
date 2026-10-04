@@ -7,7 +7,7 @@
 -- Session IDs are opaque text, as in devices.last_login_sid; sessions are stored elsewhere.
 -- provider remains open text until the provider selection (D-14).
 --
--- Writers: notification owns push_tokens and inbox_messages; growth owns user_tip_reads.
+-- Writers: notification owns push_tokens and inbox_messages; identity owns user_tip_reads.
 -- Token moves, conflict freezes and session binding are application transactions locking
 -- the device row. All token/read moments come from the injected application Clock.
 -- Re-reporting the same token must preserve token_set_at; acquired_by_move_at records a
