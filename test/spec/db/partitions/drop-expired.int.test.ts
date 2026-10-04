@@ -282,3 +282,46 @@ it('[ADR-0001 §4.2 #4 并发] 六个会话同时删 24 个过期分区：全部
     expect(await partitionNames(maint, 'event_log')).toEqual(['event_log_default']);
   });
 });
+
+it('[BR-ID-30 删除条件 created_at < 截止; contract A1 (ii)] 分区按 occurred_at 已过期、但里面有一行 created_at 恰好等于后来的截止时刻（2026-10-08T16:00Z）：该分区整个保留到 p_now 2027-04-17T15:59:59.999Z（截止 = created_at，不算更早），2027-04-17T16:00Z 起才删；同期没有新行的分区照常按上界删', async () => {
+  await withDatabase(async ({ maint, app }) => {
+    await ensureMonths(maint, 'event_log', ['2026-02', '2026-03']);
+    const inserted = await sql<{ part: string }>`
+      INSERT INTO app.event_log (app_id, event_id, name, payload, occurred_at, created_at)
+      VALUES ('couli', '00000000-0000-7000-8000-00000000c0de'::uuid, 'order.created',
+              '{"order_id": "late"}'::jsonb, '2026-03-31T12:00:00Z'::timestamptz,
+              '2026-10-08T16:00:00Z'::timestamptz)
+      RETURNING tableoid::regclass::text AS part
+    `.execute(app);
+    expect(inserted.rows[0]?.part).toBe('app.event_log_p202603');
+    expect(await dropped(maint, 'event_log', FIRST_MS_OF_OCT_9)).toEqual(['event_log_p202602']);
+    expect(await dropped(maint, 'event_log', '2027-04-16T15:59:59.999Z')).toEqual([]);
+    expect(await dropped(maint, 'event_log', '2027-04-16T16:00:00.000Z')).toEqual([]);
+    expect(await dropped(maint, 'event_log', '2027-04-17T15:59:59.999Z')).toEqual([]);
+    expect(await partitionNames(maint, 'event_log')).toEqual([
+      'event_log_default',
+      'event_log_p202603',
+    ]);
+    const kept = await sql<{ n: bigint }>`SELECT count(*) AS n FROM app.event_log`.execute(app);
+    expect(kept.rows[0]?.n).toBe(1n);
+    expect(await dropped(maint, 'event_log', '2027-04-17T16:00:00.000Z')).toEqual([
+      'event_log_p202603',
+    ]);
+    expect(await partitionNames(maint, 'event_log')).toEqual(['event_log_default']);
+  });
+});
+
+it('[BR-ID-30 删除条件 created_at < 截止; contract A1 (ii)] created_at 比截止早 1 毫秒的行不挡删除：分区按上界与 created_at 都已过期即删', async () => {
+  await withDatabase(async ({ maint, app }) => {
+    await ensureMonths(maint, 'event_log', ['2026-03']);
+    await sql`
+      INSERT INTO app.event_log (app_id, event_id, name, payload, occurred_at, created_at)
+      VALUES ('couli', '00000000-0000-7000-8000-00000000c0df'::uuid, 'order.created',
+              '{"order_id": "late"}'::jsonb, '2026-03-31T12:00:00Z'::timestamptz,
+              '2026-10-08T15:59:59.999Z'::timestamptz)
+    `.execute(app);
+    expect(await dropped(maint, 'event_log', '2027-04-16T16:00:00.000Z')).toEqual([
+      'event_log_p202603',
+    ]);
+  });
+});

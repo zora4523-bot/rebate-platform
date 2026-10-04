@@ -198,3 +198,46 @@ export function createOrStub(options: PartitionMaintenanceOptions): PartitionMai
     return { runOnce: fail, start: fail, stop: fail };
   }
 }
+
+/** A clock that returns the instant last given to `set` and counts its calls. */
+export function settableClock(instant: string): {
+  now: () => Date;
+  set: (next: string) => void;
+  calls: () => number;
+} {
+  let calls = 0;
+  let epoch = new Date(instant).getTime();
+  return {
+    now: () => {
+      calls += 1;
+      return new Date(epoch);
+    },
+    set: (next: string) => {
+      epoch = new Date(next).getTime();
+    },
+    calls: () => calls,
+  };
+}
+
+/** A gate a scenario can wait on; `open()` lets every waiter through. */
+export function gate(): { wait: () => Promise<void>; open: () => void } {
+  let release: () => void = () => undefined;
+  const opened = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { wait: () => opened, open: () => release() };
+}
+
+/** Tracks how a promise settles: `pending` until then, `resolved` or `rejected <error>`. */
+export function track(promise: Promise<unknown>): () => string {
+  let state = 'pending';
+  promise.then(
+    () => {
+      state = 'resolved';
+    },
+    (error: unknown) => {
+      state = `rejected ${describeError(error)}`;
+    },
+  );
+  return () => state;
+}

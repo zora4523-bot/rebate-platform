@@ -47,11 +47,19 @@
 //        day-partition maintenance in a later task (0006 header), until then it falls under d.
 //        Cutoff (BR-ID-30: "删除条件为 created_at < 运行当日 00:00（+08:00）− 留存天数"): let D be the
 //        calendar date of p_now at UTC+08:00 (fixed offset; the session TimeZone changes nothing);
-//        cutoff = 00:00 of (D − retention days) at +08:00. A partition is dropped exactly when ALL rows
-//        it can hold are older than the cutoff, i.e. its upper bound (the first instant of the next UTC
-//        month) ≤ cutoff. Example: event_log_p202603 ([2026-03-01Z, 2026-04-01Z)) is kept for any
-//        p_now ≤ 2026-10-08T15:59:59.999Z and dropped from p_now = 2026-10-08T16:00:00Z
-//        (= 2026-10-09 00:00 +08:00, cutoff 2026-04-02 00:00 +08:00) on.
+//        cutoff = 00:00 of (D − retention days) at +08:00. A partition is dropped exactly when BOTH
+//          (i)  ALL rows it can hold by its partition key are older than the cutoff: its upper bound
+//               (the first instant of the next UTC month of `occurred_at`) ≤ cutoff, AND
+//          (ii) no row in it has `created_at` ≥ cutoff (BR-ID-30 judges by created_at; occurred_at,
+//               the partition key, can be earlier than created_at for an event recorded late).
+//        A partition that passes (i) but not (ii) is kept (whole; rows are never deleted one by one)
+//        and not reported; a later call drops it once its newest created_at is older than the cutoff.
+//        Example: event_log_p202603 ([2026-03-01Z, 2026-04-01Z)) holding only rows created in March is
+//        kept for any p_now ≤ 2026-10-08T15:59:59.999Z and dropped from p_now = 2026-10-08T16:00:00Z
+//        (= 2026-10-09 00:00 +08:00, cutoff 2026-04-02 00:00 +08:00) on. If it also holds a row with
+//        created_at 2026-10-08T16:00:00Z, it is kept up to p_now 2027-04-17T15:59:59.999Z (cutoff
+//        2026-10-09 00:00 +08:00 equals that created_at: not older) and dropped from
+//        2027-04-17T16:00:00Z on.
 //        Only children of app.<p_table> named exactly `<p_table>_pYYYYMM` (the partitions
 //        app.ensure_month_partition creates) are considered; the DEFAULT partition and any other child
 //        are never dropped. Dropping is `DROP TABLE` of the partition (DDL; the append-only trigger of
@@ -95,10 +103,18 @@
 //       own statement. A success appends the returned name to `ensured`; a failure (e.g. 23514 when
 //       the DEFAULT partition holds rows of that month) logs `partition_ensure_failed`, counts in
 //       `failed`, and the run continues with the next month / table.
-//    4. Drop (ADR-0001 §4.2 #4 "建和删分区"; BR-ID-30 ⑯): for each table of DROPPABLE_TABLES
-//       (exactly ['event_log']; never a RETAINED table) `SELECT app.drop_expired_month_partitions(
-//       <table>, <now>)`; each returned name is appended to `dropped` and logged
-//       `partition_dropped`; a failure logs `partition_drop_failed` and counts in `failed`.
+//    4. Drop (ADR-0001 §4.2 #4 "建和删分区"; BR-ID-30 ⑯ and "由每日 04:00（+08:00）删除任务…执行"):
+//       ONLY when the time of day of `now` at UTC+08:00 is 04:00:00.000 or later (so between 00:00 and
+//       03:59:59.999 +08:00 this step is skipped entirely: no call, no log line, `dropped` empty).
+//       Pre-creation (3) and the DEFAULT check (5) run in every run; deletion is a daily step whose
+//       first chance each day is the first run at or after 04:00 +08:00 (with the hourly schedule:
+//       between 04:00 and 05:00). Later runs of the same day call the function again; it is idempotent
+//       and normally drops nothing more ("同一日只删一次" holds by result).
+//       For each table of DROPPABLE_TABLES (exactly ['event_log']; never a RETAINED table)
+//       `SELECT app.drop_expired_month_partitions(<table>, <now>)`; each returned name is appended to
+//       `dropped` and logged `partition_dropped`; a failure logs `partition_drop_failed` and counts in
+//       `failed`. Example: with event_log_p202602 and p202603 (rows created in their months), a run at
+//       2026-10-09 03:59:59.999 +08:00 drops nothing; a run at 2026-10-09 04:00:00.000 +08:00 drops both.
 //    5. DEFAULT check: `SELECT * FROM app.partition_default_rows()`; every row with row_count > 0 is
 //       appended to `defaultRows` and logged `partition_default_has_rows` (one line per table per run,
 //       so the alert repeats every run while the rows stay). A failure logs
@@ -123,9 +139,12 @@
 //      else, logs `partition_maintenance_failed` and resolves. From then on a run starts intervalMs
 //      after the previous one settled (never two runs of one instance at once); a rejected scheduled
 //      run logs `partition_maintenance_failed` and the schedule goes on.
-//    - stop(): from the first call no further run starts; awaits a run in progress; resolves with
-//      undefined, never rejects; a second or concurrent call resolves together with the first; also
-//      before start() (then start() afterwards rejects already_started).
+//    - stop(): from the first call no further run starts; awaits the run of this schedule that is in
+//      progress (also the first run inside start(): start() then settles as above after that run, and
+//      nothing is scheduled) and resolves only after that run has settled — so the caller may close
+//      the db handle right after; resolves with undefined, never rejects; a second or concurrent call
+//      resolves together with the first; also before start() (then start() afterwards rejects
+//      already_started). Runs started by calling runOnce() directly are not awaited.
 //    - Several worker processes may run the schedule at the same time: the SQL functions are
 //      idempotent and serialised by advisory locks, so concurrent runs create and drop each partition
 //      once and report no failure.
@@ -143,9 +162,11 @@
 //    sqlstate: the error's `code` when it is a string of five characters [0-9A-Z], else null.
 //
 // F. Open points (待编排会话确认, suggested defaults written above):
-//    - Scheduling without pg-boss cron (D). Hourly runs: BR-ID-30 names a daily 04:00 (+08:00) task;
-//      the drop cutoff depends only on the +08:00 date of `now`, so an hourly run drops the same
-//      partitions on the same date, at most four hours before 04:00.
+//    - Scheduling without pg-boss cron (D). Hourly runs pre-create and check DEFAULT partitions;
+//      deletion waits for 04:00 +08:00 each day (C.4, BR-ID-30 每日 04:00 删除任务), so it happens at
+//      most one interval after 04:00.
+//    - Retention of event_log by partition bound AND created_at (A1 (i), (ii)): BR-ID-30 names
+//      created_at, the partitions follow occurred_at; a partition goes only when both say so.
 //    - Wiring is outside this task's paths: the worker entry (apps/api/src/entry.ts) and a couli_maint
 //      connection variable (platform/config, platform/db) — a follow-up task starts the schedule in the
 //      worker entry and stops it before the queue on SIGTERM.

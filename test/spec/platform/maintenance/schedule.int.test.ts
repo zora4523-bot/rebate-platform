@@ -10,6 +10,9 @@ import { expect, it } from 'vitest';
 import {
   countingClock,
   createOrStub,
+  gate,
+  settableClock,
+  track,
   done,
   line,
   memoryLogger,
@@ -145,4 +148,127 @@ it('[contract D、E] 连不上数据库时：start() 记 partition_maintenance_f
     await maintenance.stop().catch(() => undefined);
     await destroyDb(unreachable).catch(() => undefined);
   }
+});
+
+async function eventLogNames(db: Kysely<DB>): Promise<string[]> {
+  return eventLogPartitions(db);
+}
+
+it('[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4、D] 定时运行：时钟停在 2026-10-09 03:59:59.999（+08:00）时各轮只预建、不删；拨到 04:00:00.000 后的下一轮删 p202602、p202603，之后各轮不再删', async () => {
+  await withDatabase(async (database) => {
+    const maint = createDb({ connectionString: database.urlFor('couli_maint'), max: 2 });
+    const app = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
+    for (const month of ['2026-02', '2026-03', '2026-04', '2026-05']) {
+      await sql`SELECT app.ensure_month_partition('event_log', ${`${month}-01`}::date)`.execute(
+        maint,
+      );
+    }
+    const { logger, lines } = memoryLogger();
+    const clock = settableClock('2026-10-08T19:59:59.999Z');
+    const maintenance = createOrStub({ db: maint, logger, clock, intervalMs: 150 });
+    const reduced = (): unknown[] => lines.map(reduceLine);
+    try {
+      const started = await maintenance.start().then(
+        () => 'resolved',
+        (error: unknown) => `rejected ${String(error)}`,
+      );
+      expect(started).toBe('resolved');
+      expect(await waitFor(() => lines.length >= 3, 10_000)).toBe(true);
+      expect(reduced().slice(0, 3)).toEqual([done(8, 0, 0), done(8, 0, 0), done(8, 0, 0)]);
+      expect(await eventLogNames(app)).toContain('event_log_p202602');
+      clock.set('2026-10-08T20:00:00.000Z');
+      expect(
+        await waitFor(
+          () =>
+            reduced().filter((l) => (l as { msg?: unknown }).msg === 'partition_dropped').length >=
+            2,
+          10_000,
+        ),
+      ).toBe(true);
+      const atSwitch = lines.length;
+      expect(await waitFor(() => lines.length >= atSwitch + 2, 10_000)).toBe(true);
+      await maintenance.stop();
+      const all = reduced();
+      const firstDrop = all.findIndex((l) => (l as { msg?: unknown }).msg === 'partition_dropped');
+      expect(
+        all.slice(0, firstDrop).every((l) => JSON.stringify(l) === JSON.stringify(done(8, 0, 0))),
+      ).toBe(true);
+      expect(all.slice(firstDrop)).toEqual([
+        line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202602' }),
+        line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202603' }),
+        done(8, 2, 0),
+        ...Array(all.length - firstDrop - 3).fill(done(8, 0, 0)),
+      ]);
+      expect(await eventLogNames(app)).toEqual([
+        'event_log_default',
+        ...['202604', '202605', '202610', '202611', '202612', '202701'].map(
+          (m) => `event_log_p${m}`,
+        ),
+      ]);
+    } finally {
+      await maintenance.stop().catch(() => undefined);
+      await Promise.all([maint, app].map((db) => destroyDb(db)));
+    }
+  });
+});
+
+it('[contract D stop 等进行中的一轮] 第一轮卡在 event_log_p202611 的分区锁上（另一连接持有 ensure_month_partition 用的咨询锁）时调用 stop()：锁未放开前 start() 与 stop() 都不结束、没有日志；放锁后这一轮完成（一条 done），start() resolve，stop() 在 done 之后才结束，之后不再运行', async () => {
+  await withDatabase(async (database) => {
+    const maint = createDb({ connectionString: database.urlFor('couli_maint'), max: 2 });
+    const holder = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
+    const observer = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
+    const { logger, lines } = memoryLogger();
+    const maintenance = createOrStub({
+      db: maint,
+      logger,
+      clock: countingClock('2026-11-20T03:04:05Z'),
+      intervalMs: 100,
+    });
+    const barrier = gate();
+    const locked = gate();
+    const key = 'app.ensure_month_partition:event_log_p202611';
+    const holding = holder.connection().execute(async (conn) => {
+      await sql`SELECT pg_advisory_lock(hashtextextended(${key}, 0))`.execute(conn);
+      locked.open();
+      await barrier.wait();
+      await sql`SELECT pg_advisory_unlock(hashtextextended(${key}, 0))`.execute(conn);
+    });
+    try {
+      await locked.wait();
+      const startState = track(maintenance.start());
+      const waiting = await waitFor(async () => {
+        const r = await sql<{ n: string }>`
+          SELECT count(*)::text AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+        `.execute(observer);
+        return r.rows[0]?.n === '1';
+      }, 10_000);
+      let linesWhenStopped = -1;
+      const stopping = maintenance.stop().then(() => {
+        linesWhenStopped = lines.length;
+      });
+      const stopState = track(stopping);
+      await sleep(400);
+      const blocked = { waiting, start: startState(), stop: stopState(), lines: lines.length };
+      barrier.open();
+      await holding;
+      await stopping.catch(() => undefined);
+      await sleep(400);
+      expect({
+        blocked,
+        start: startState(),
+        linesWhenStopped,
+        lines: lines.map(reduceLine),
+      }).toEqual({
+        blocked: { waiting: true, start: 'pending', stop: 'pending', lines: 0 },
+        start: 'resolved',
+        linesWhenStopped: 1,
+        lines: [done(8, 0, 0)],
+      });
+    } finally {
+      barrier.open();
+      await holding.catch(() => undefined);
+      await maintenance.stop().catch(() => undefined);
+      await Promise.all([maint, holder, observer].map((db) => destroyDb(db)));
+    }
+  });
 });

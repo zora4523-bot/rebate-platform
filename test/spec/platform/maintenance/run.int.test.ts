@@ -9,6 +9,7 @@ import { sql, type Kysely } from 'kysely';
 import { expect, it } from 'vitest';
 
 import type { MaintenanceReport } from '../../../../apps/api/src/modules/platform/maintenance/index.ts';
+import { newOrder, newOrderKey, useDb } from '../../db/orders/kit.ts';
 import {
   countingClock,
   createOrStub,
@@ -218,12 +219,12 @@ it('[ADR-0001 §4.2 #4 并发] 两个 worker（各自的 couli_maint 连接池�
   });
 });
 
-it('[ADR-0001 §4.2 #16; BR-ID-30 ⑯、⑰; 规划/02 §15.1] 运行删 event_log 的过期分区（2026-10-09 00:00 +08:00 起删到 p202603），orders 的同月旧分区一个不删；日志每个删掉的分区一条，再一条 done', async () => {
+it('[ADR-0001 §4.2 #16; BR-ID-30 ⑯、⑰; 规划/02 §15.1] 04:00（+08:00）的运行删 event_log 的过期分区（2026-10-09 04:00 删到 p202603），orders 的同月旧分区一个不删；日志每个删掉的分区一条，再一条 done', async () => {
   await withWorld(async ({ maint, app }) => {
     const old = monthRange('2026-02', '2026-05');
     await ensure(maint, 'event_log', old);
     await ensure(maint, 'orders', old);
-    const { maintenance, reduced } = instanceAt(maint, '2026-10-08T16:00:00Z');
+    const { maintenance, reduced } = instanceAt(maint, '2026-10-08T20:00:00Z');
     const ahead = monthRange('2026-10', '2027-01');
     expect(await report(maintenance.runOnce())).toEqual({
       ensured: [...names('event_log', ahead), ...names('orders', ahead)],
@@ -353,5 +354,157 @@ it('[ADR-0001 §4.2 #4、#8 以 couli_maint 执行; contract C.1] 连接不是 c
     expect(got).toEqual({ couli_app: expected, couli_payout: expected, couli_readonly: expected });
     expect(await partitionNames(app, 'event_log')).toEqual(['event_log_default']);
     expect(await partitionNames(app, 'orders')).toEqual(['orders_default']);
+  });
+});
+
+it('[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4] 删除只在 +08:00 的 04:00 起执行：2026-10-09 00:00 与 03:59:59.999（+08:00）的运行照常预建、不删也不调删除；04:00:00.000 的运行删 p202602、p202603', async () => {
+  await withWorld(async ({ maint, app }) => {
+    await ensure(maint, 'event_log', monthRange('2026-02', '2026-05'));
+    const ahead = monthRange('2026-10', '2027-01');
+    const ensured = [...names('event_log', ahead), ...names('orders', ahead)];
+    const results: unknown[] = [];
+    const logs: unknown[] = [];
+    for (const now of ['2026-10-08T16:00:00.000Z', '2026-10-08T19:59:59.999Z']) {
+      const run = instanceAt(maint, now);
+      results.push(await report(run.maintenance.runOnce()));
+      logs.push(...run.reduced());
+    }
+    expect(results).toEqual([
+      { ensured, dropped: [], defaultRows: [], failed: 0 },
+      { ensured, dropped: [], defaultRows: [], failed: 0 },
+    ]);
+    expect(logs).toEqual([done(8, 0, 0), done(8, 0, 0)]);
+    expect(await partitionNames(app, 'event_log')).toEqual([
+      'event_log_default',
+      ...names('event_log', ['2026-02', '2026-03', '2026-04', '2026-05', ...ahead]),
+    ]);
+    const atFour = instanceAt(maint, '2026-10-08T20:00:00.000Z');
+    expect(await report(atFour.maintenance.runOnce())).toEqual({
+      ensured,
+      dropped: ['event_log_p202602', 'event_log_p202603'],
+      defaultRows: [],
+      failed: 0,
+    });
+    expect(atFour.reduced()).toEqual([
+      line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202602' }),
+      line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202603' }),
+      done(8, 2, 0),
+    ]);
+  });
+});
+
+/** Inserts `count` link_logs rows as couli_app (no day partition exists: they land in DEFAULT). */
+async function insertLinkLogs(app: Kysely<DB>, count: number): Promise<string[]> {
+  const parts: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const result = await sql<{ part: string }>`
+      INSERT INTO app.link_logs (app_id, event, result_code, raw_item_id, created_at)
+      VALUES ('couli', 'convert', 0, 'item-13912345678', '2026-11-19T10:00:00Z')
+      RETURNING tableoid::regclass::text AS part
+    `.execute(app);
+    parts.push(result.rows[0]?.part ?? '');
+  }
+  return parts;
+}
+
+/** Inserts an order (with its order_keys row) attributed at `attrAt`; returns its partition. */
+async function insertOrder(app: Kysely<DB>, attrAt: string): Promise<string> {
+  useDb(app);
+  const key = await newOrder({}, await newOrderKey({ attr_at: new Date(attrAt) }));
+  const result = await sql<{ part: string }>`
+    SELECT tableoid::regclass::text AS part FROM app.orders WHERE order_id = ${key.orderId}
+  `.execute(app);
+  return result.rows[0]?.part ?? '';
+}
+
+it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] link_logs_default 里有 3 行（正常写入的转链日志）：报告与告警正好是 link_logs 3 行，其余照常；行内容不进日志', async () => {
+  await withWorld(async ({ maint, app }) => {
+    expect(await insertLinkLogs(app, 3)).toEqual(Array(3).fill('app.link_logs_default'));
+    const { maintenance, reduced, lines } = instanceAt(maint, '2026-11-20T03:04:05Z');
+    const months = monthRange('2026-11', '2027-02');
+    expect(await report(maintenance.runOnce())).toEqual({
+      ensured: [...names('event_log', months), ...names('orders', months)],
+      dropped: [],
+      defaultRows: [{ table: 'link_logs', partition: 'link_logs_default', rows: 3 }],
+      failed: 0,
+    });
+    expect(reduced()).toEqual([
+      line('warn', 'partition_default_has_rows', {
+        table: 'link_logs',
+        partition: 'link_logs_default',
+        rows: 3,
+      }),
+      done(8, 0, 0),
+    ]);
+    expect(lines.join('')).not.toMatch(/13912345678|item-/);
+  });
+});
+
+it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警、须先迁出才能建分区] orders_default 里有 2027-01 的 1 个订单：orders_p202701 建不了（23514），其余照建；告警正好是 orders 1 行', async () => {
+  await withWorld(async ({ maint, app }) => {
+    expect(await insertOrder(app, '2027-01-20T08:00:00+08:00')).toBe('app.orders_default');
+    const { maintenance, reduced } = instanceAt(maint, '2026-11-20T03:04:05Z');
+    const months = monthRange('2026-11', '2027-02');
+    expect(await report(maintenance.runOnce())).toEqual({
+      ensured: [
+        ...names('event_log', months),
+        ...names('orders', ['2026-11', '2026-12', '2027-02']),
+      ],
+      dropped: [],
+      defaultRows: [{ table: 'orders', partition: 'orders_default', rows: 1 }],
+      failed: 1,
+    });
+    expect(reduced()).toEqual([
+      line('error', 'partition_ensure_failed', {
+        table: 'orders',
+        month: '2027-01-01',
+        sqlstate: '23514',
+      }),
+      line('warn', 'partition_default_has_rows', {
+        table: 'orders',
+        partition: 'orders_default',
+        rows: 1,
+      }),
+      done(7, 0, 1),
+    ]);
+    expect(await partitionNames(app, 'orders')).toEqual([
+      'orders_default',
+      ...names('orders', ['2026-11', '2026-12', '2027-02']),
+    ]);
+  });
+});
+
+it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] event_log 2 行、link_logs 1 行、orders 3 行同时在各自的 DEFAULT：三条告警按表名排序、行数各自确切，报告同序', async () => {
+  await withWorld(async ({ maint, app }) => {
+    expect(await insertEvent(app, '2020-03-01T00:00:00Z', { order_id: 'a' })).toBe(
+      'app.event_log_default',
+    );
+    expect(await insertEvent(app, '2020-04-01T00:00:00Z', { order_id: 'b' })).toBe(
+      'app.event_log_default',
+    );
+    expect(await insertLinkLogs(app, 1)).toEqual(['app.link_logs_default']);
+    for (const attrAt of ['2020-01-01T00:00:00Z', '2020-02-01T00:00:00Z', '2020-02-29T23:59:59Z']) {
+      expect(await insertOrder(app, attrAt)).toBe('app.orders_default');
+    }
+    const { maintenance, reduced } = instanceAt(maint, '2026-11-20T03:04:05Z');
+    const months = monthRange('2026-11', '2027-02');
+    expect(await report(maintenance.runOnce())).toEqual({
+      ensured: [...names('event_log', months), ...names('orders', months)],
+      dropped: [],
+      defaultRows: [
+        { table: 'event_log', partition: 'event_log_default', rows: 2 },
+        { table: 'link_logs', partition: 'link_logs_default', rows: 1 },
+        { table: 'orders', partition: 'orders_default', rows: 3 },
+      ],
+      failed: 0,
+    });
+    const alert = (table: string, rows: number): Record<string, unknown> =>
+      line('warn', 'partition_default_has_rows', { table, partition: `${table}_default`, rows });
+    expect(reduced()).toEqual([
+      alert('event_log', 2),
+      alert('link_logs', 1),
+      alert('orders', 3),
+      done(8, 0, 0),
+    ]);
   });
 });
