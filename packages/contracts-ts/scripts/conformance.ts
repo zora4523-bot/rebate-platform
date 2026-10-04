@@ -283,8 +283,12 @@ function checkGateAndScopes(
   } else {
     const expected = GATE_EXCEPTIONS[where] ?? 'true';
     const actual = gate === true ? 'true' : gate === false ? 'false' : gate;
-    if (actual === undefined) {
+    if (gate === undefined) {
       problems.push(`${where}: write operations carry x-min-version-gate (04 §5)`);
+    } else if (gate !== true && gate !== false && gate !== 'conditional') {
+      problems.push(
+        `${where}: x-min-version-gate is the boolean true / false or the string conditional`,
+      );
     } else if (actual !== expected) {
       problems.push(
         `${where}: x-min-version-gate ${String(actual)} differs from BR-ID-01 细则 (${expected})`,

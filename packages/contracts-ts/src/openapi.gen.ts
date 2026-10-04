@@ -796,8 +796,9 @@ export interface components {
             captcha_token?: string;
             /**
              * @description With purpose=step_up the client always sends the action the code is for; the version
-             *     gate and the session scope are decided from it (BR-ID-01 细则). Without it, or with
-             *     another purpose, the request is treated as gated.
+             *     gate and the session scope are decided from it (BR-ID-01 细则): only
+             *     action=account_deletion is exempt, and a step_up request without action is gated.
+             *     purpose=login is exempt regardless of action; purpose=bind is gated.
              */
             action?: components["schemas"]["StepUpAction"];
         };
