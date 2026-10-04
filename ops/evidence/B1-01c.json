@@ -1,0 +1,101 @@
+{
+  "task": "B1-01c",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "36dc869c8cd97ae1ad3b62ab5822d193451beb96",
+  "red_tests": [
+    "[BR-ID-33] 日志：顶层的手机号、身份证号、姓名、收款账号与凭据字段只写 [REDACTED]，其他字段与 msg 原样保留",
+    "[BR-ID-33] 日志：任意深度（第 2、3、6、12 层）、数组、无原型对象与类实例里的敏感字段都只写 [REDACTED]，调用方的对象不被改动",
+    "[BR-ID-33] 日志：键名不分大小写与分隔符（bankCardNo、BANK_CARD_NO、bank-card-no 与 bank_card_no 同样替换）",
+    "[BR-ID-33] 日志：敏感字段的值是数字、字节（Buffer）、数组、对象、Map 或 Set 时整体只写 [REDACTED]；别的键下的 Map、Set 写成 {}",
+    "[BR-ID-33] 日志：错误对象（直接记录、err 下、其他键下、数组里、cause 链、AggregateError）的敏感属性只写 [REDACTED]，message 与 stack 不被改写，错误本身不被改动",
+    "[BR-ID-33] 日志：child() 与 setBindings() 给根 logger、子 logger、孙 logger 的绑定字段（含嵌套）只写 [REDACTED]，绑定对象不被改动",
+    "[BR-ID-33] 日志：toJSON 返回的敏感字段同样只写 [REDACTED]；循环引用写成 [Circular] 而不抛错",
+    "[BR-ID-33] 日志：printf 风格参数（%j、%o、%O）的对象按规则替换后再写进 msg，整条 msg 等于期望串",
+    "[BR-ID-33] Nest 日志适配器：对象消息写成替换后的 JSON、附加参数与错误对象按规则替换，context 与 stack 参数原样",
+    "[BR-ID-33] 日志：自由文本安全网逐种写法替换手机号（含 +86、空格、连字符、全角）、身份证号（18 位末位为数字或 X、15 位）、银行卡号（16～19 位逐个长度）与邮箱，别的数字与文字原样",
+    "[BR-ID-33] 日志：自由文本安全网覆盖每个通道：msg（字符串、数字、printf 结果、子 logger 的 msgPrefix、对象自带的 msg、回落的 err.message）、任意深度 msg / message / stack 键下的值、错误（直接记录、err 下、其他键下、属性里、cause、AggregateError）的 message 与 stack，Nest 的消息、context、stack 参数与字符串参数",
+    "[BR-ID-33] 日志：自由文本安全网同样覆盖绑定与任意深度：child() 与 setBindings()（根、子、孙 logger）绑定里 message / stack / msg 键下的文本与数字、绑定的错误对象，日志对象与 Nest 附加参数里任意深度（嵌套、数组、第 12 层）msg / message / stack 键下的文本与数字；调用方的对象不被改动",
+    "[BR-ID-33] 手机号默认脱敏：前 3 位 + **** + 后 4 位（138****5678）",
+    "[BR-ID-33] 手机号格式不符时不露任何字符：每个字符换成 *，空串仍是空串",
+    "[BR-ID-33] 身份证默认脱敏：只露首 1 位与末 1 位（1****************X），15 位旧号同样",
+    "[BR-ID-33] 身份证格式不符时不露任何字符：每个字符换成 *，空串仍是空串",
+    "[BR-ID-33] 姓名只显示末字：n 个字显示 n−1 个 * 加末字（**三），单字显示 *，按码点计",
+    "[BR-ID-33] 任意字符串：手机号脱敏不抛错、码点数不变，合规号码只露前 3 后 4，其余全是 *",
+    "[BR-ID-33] 任意字符串：身份证脱敏不抛错、码点数不变，合规号码只露首末各 1 位，其余全是 *",
+    "[BR-ID-33] 任意字符串：姓名脱敏不抛错、码点数不变，只有末一个码点保留（单字全遮）",
+    "[BR-ID-33] 日志（评审补充 A）：toJSON 的返回值仍带 toJSON 时逐层继续按规则处理——顶层、嵌套、数组、child()、孙 logger、setBindings() 都不写出内层的原始字段",
+    "[BR-ID-33] 日志（评审补充 B）：顶层日志对象或绑定本身是装箱原始值（String / Number / Boolean / BigInt）时不贡献字段，绝不按下标逐位写出",
+    "[BR-ID-33] 访问日志（评审补充 F）：url 写匹配到的路由模板（/v1/users/:id），没匹配到路由写 [unmatched]；路径里的手机号、邮箱不写（含 404）",
+    "[BR-ID-33] 日志（评审补充 G）：URL 对象写 origin + pathname（去掉 userinfo、查询串、片段），在嵌套、数组、绑定、printf、Nest 参数里一样；自由文本键下过安全网；顶层日志对象或绑定是 URL 时不贡献字段",
+    "[BR-ID-33] 日志（评审补充 H）：getter、toJSON、toJSON 的 getter、函数的 toJSON、child 序列化器抛错时写 [Unserializable]，敏感名下的 getter 不调用；第 101 层起写 [Truncated]；日志调用本身不抛",
+    "[BR-ID-33] 日志（评审补充 K）：Buffer、TypedArray、DataView、ArrayBuffer、SharedArrayBuffer 在任意深度、数组、toJSON 返回值、错误属性、序列化器输出与绑定里只写 [Binary <字节数> bytes]，敏感名下仍是 [REDACTED]",
+    "[BR-ID-33] 日志（评审补充 K）：二进制值作消息参数、printf 参数（%s、%j、%o、%O）与 Nest 的消息和参数时同样只写 [Binary <字节数> bytes]",
+    "[BR-ID-33] 日志（评审补充 L）：err 键下不是 Error 的值（字符串、数字、bigint、数组、普通对象）按自由文本写，任意深度与绑定里一样；err 下的 Error 仍按错误规则写"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). Masking pure functions (phone, id number, name; BR-ID-33 default formats) and log redaction at every depth and channel (pino root, child, bindings, printf, Nest logger, Fastify access log). No money, attribution or user-authorisation path changed.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "ac7fa2bb7227782c05601da7535e4f0e9e6cd817",
+      "tree": "02cbd1dd13fdf23ca3bdcf9d0905b3eb7ae1f83c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T11:21:49Z",
+      "finished_at": "2026-10-04T11:23:02Z"
+    },
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "0a571a5d95d084accc7245fed03f848f636fee59",
+      "tree": "9516b5ab5840916013cf9945a377ff575a687c17",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T11:38:07Z",
+      "finished_at": "2026-10-04T11:39:39Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "scope": "independent read-only Claude subagent each round; round 4 on ac7fa2b..75a6d85 (attempt 4, contract addenda A-L): pass, addenda checked one by one with probes, earlier fixes not regressed, reverting to ac7fa2b turns 8 rule tests red; 2 S2 reachable only with crafted input (approvals #18), recorded as follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 4,
+      "scope": "money review, base ac7fa2b (attempt 4): pass under approvals #18 reachability; 1 S2 (overridden valueOf on a boxed object) recorded as a follow-up; rounds 1-3 findings closed by attempts 2-4"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 4,
+    "last_verdict": "fail",
+    "note": "restarted count plus path B; round 4 (path B addenda) failed with 2 S1 for new channels (URL path segments in URL objects; x-trace-id copied into reqId). Owner decision 2026-10-04 (ops/approvals.yaml #18): merge the current implementation and move both channels to follow-up tasks (couli-runs/followups/B1-01c-url-path-and-trace-id.md, suggested B1-01o, B1-01p); the merge condition 'no open S1 from either reviewer' is waived for these two only"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "89e677342f3a67070d85c01f11f3500cd2e3ed00",
+    "apps/api/src/modules/platform/masking": "42fa29fbb4f868f74b0eba05747cd23b928efaae"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 on the B1-01c worktree after the rebase, 2026-10-04 19:33 (+08:00), 20.9 s; this task adds no property tests",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "waiver": "ops/approvals.yaml #18 (owner, 2026-10-04): severity bar reachability; B1-01c merged with the two path-B spec-review channels moved to follow-ups",
+  "exceptions": "Codex call cap for this task raised to 16 by the orchestrator session (couli-runs/B1-01c/exception-call-cap-14.md); 16 calls in total, one of them killed by the idle watchdog during a Codex service outage (not counted as a round)",
+  "rebased": "rebased onto main cef1224 before the final verification; spec_commit 36dc869",
+  "follow_ups": "couli-runs/followups/B1-01c-url-path-and-trace-id.md (URL path segments, x-trace-id, three crafted-input S2 from round 4)"
+}
