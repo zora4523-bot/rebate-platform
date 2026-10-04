@@ -903,12 +903,17 @@ paths:
         For platform=pdd the response carries auth_jump instead of auth_methods (executed like a
         purchase jump plan, h5 steps in the system browser, no link_jump report). No self-service
         rebinding or unbinding. A blocked binding of a user who is not banned is 30153 and no
-        auth_url is issued (BR-ID-17 细则「授权管理页」).
+        auth_url is issued (BR-ID-17 细则「授权管理页」). While the site's own union authorization
+        is unavailable the request gets the same code as a purchase would (30101 for unbound,
+        pending_auth or released, 30102 for invalid) with data.reason=auth_unavailable and no
+        auth_url; the client only shows the notice.
       x-auth: login
       x-signed: false
       x-idempotent: false
       x-implementation: planned
       x-error-codes:
+        - 30101
+        - 30102
         - 30153
       security:
         - bearerAuth: []
@@ -3192,7 +3197,9 @@ components:
           $ref: '#/components/schemas/TraceId'
     UnionAuthUrlData:
       type: object
-      description: auth_methods for Taobao (ordered), auth_jump for Pinduoduo; never both.
+      description: |
+        Exactly one of auth_methods (Taobao, ordered) and auth_jump (Pinduoduo); the oneOf branches
+        declare the property they require (strict Ajv2020).
       additionalProperties: false
       required:
         - auth_url
@@ -3212,18 +3219,20 @@ components:
             $ref: '#/components/schemas/AuthMethod'
         auth_jump:
           $ref: '#/components/schemas/AuthJumpPlan'
-      not:
-        type: object
-        additionalProperties: true
-        properties:
-          auth_methods:
-            type: array
-          auth_jump:
-            type: object
-            additionalProperties: true
-        required:
-          - auth_methods
-          - auth_jump
+      oneOf:
+        - type: object
+          properties:
+            auth_methods:
+              type: array
+          required:
+            - auth_methods
+        - type: object
+          properties:
+            auth_jump:
+              type: object
+              additionalProperties: true
+          required:
+            - auth_jump
     UnionAuthUrlResponse:
       type: object
       additionalProperties: false

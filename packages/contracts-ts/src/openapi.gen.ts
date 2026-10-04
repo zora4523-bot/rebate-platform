@@ -354,7 +354,10 @@ export interface paths {
          *     For platform=pdd the response carries auth_jump instead of auth_methods (executed like a
          *     purchase jump plan, h5 steps in the system browser, no link_jump report). No self-service
          *     rebinding or unbinding. A blocked binding of a user who is not banned is 30153 and no
-         *     auth_url is issued (BR-ID-17 细则「授权管理页」).
+         *     auth_url is issued (BR-ID-17 细则「授权管理页」). While the site's own union authorization
+         *     is unavailable the request gets the same code as a purchase would (30101 for unbound,
+         *     pending_auth or released, 30102 for invalid) with data.reason=auth_unavailable and no
+         *     auth_url; the client only shows the notice.
          */
         get: operations["getUnionAuthUrl"];
         put?: never;
@@ -1126,14 +1129,23 @@ export interface components {
             data: components["schemas"]["UnionBindingsData"];
             trace_id: components["schemas"]["TraceId"];
         };
-        /** @description auth_methods for Taobao (ordered), auth_jump for Pinduoduo; never both. */
+        /**
+         * @description Exactly one of auth_methods (Taobao, ordered) and auth_jump (Pinduoduo); the oneOf branches
+         *     declare the property they require (strict Ajv2020).
+         */
         UnionAuthUrlData: {
             /** Format: uri */
             auth_url: string;
             state: string;
             auth_methods?: components["schemas"]["AuthMethod"][];
             auth_jump?: components["schemas"]["AuthJumpPlan"];
-        };
+        } & ({
+            auth_methods: unknown[];
+        } | {
+            auth_jump: {
+                [key: string]: unknown;
+            };
+        });
         UnionAuthUrlResponse: {
             code: components["schemas"]["SuccessCode"];
             msg: string;

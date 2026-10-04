@@ -145,3 +145,26 @@ it('logins and refresh return the session scope (04 §5 受限会话)', () => {
   };
   expect(pair.access_token).toBe('a');
 });
+
+it('auth-url carries exactly one of auth_methods and auth_jump (04 §6.3)', () => {
+  const taobao: Schema<'UnionAuthUrlData'> = {
+    auth_url: 'https://auth.example.test/authorize',
+    state: 'st',
+    auth_methods: ['web_code'],
+  };
+  // @ts-expect-error one of auth_methods and auth_jump is required
+  const neither: Schema<'UnionAuthUrlData'> = {
+    auth_url: 'https://auth.example.test/a',
+    state: 'st',
+  };
+  const pdd: Schema<'UnionAuthUrlData'> = {
+    auth_url: 'https://auth.example.test/authorize',
+    state: 'st',
+    auth_jump: {
+      primary: { type: 'h5', value: 'https://auth.example.test/h5' },
+      fallbacks: [],
+      expire_at: '2026-10-04T12:00:00+08:00',
+    },
+  };
+  expect([taobao, neither, pdd]).toHaveLength(3);
+});
