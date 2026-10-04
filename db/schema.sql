@@ -1021,6 +1021,90 @@ CREATE TABLE app.orders_default (
 
 
 --
+-- Name: payout_account_changes; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_account_changes (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    old_payout_method text NOT NULL,
+    new_payout_method text NOT NULL,
+    old_hmac text NOT NULL,
+    new_hmac text NOT NULL,
+    operator text NOT NULL,
+    changed_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_account_changes_new_method_check CHECK ((new_payout_method = ANY (ARRAY['alipay'::text, 'bank_card'::text]))),
+    CONSTRAINT payout_account_changes_old_method_check CHECK ((old_payout_method = ANY (ARRAY['alipay'::text, 'bank_card'::text])))
+);
+
+
+--
+-- Name: payout_account_changes_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.payout_account_changes ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.payout_account_changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: payout_account_verify_attempts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_account_verify_attempts (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    verify_date date NOT NULL,
+    status text NOT NULL,
+    vendor_request_id text NOT NULL,
+    request_fingerprint text NOT NULL,
+    reserved_at timestamp with time zone NOT NULL,
+    unknown_at timestamp with time zone,
+    resolved_at timestamp with time zone,
+    origin_action text NOT NULL,
+    idempotency_key text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_account_verify_attempts_action_check CHECK ((origin_action = 'payout_account_change'::text)),
+    CONSTRAINT payout_account_verify_attempts_status_check CHECK ((status = ANY (ARRAY['reserved'::text, 'matched'::text, 'mismatched'::text, 'unknown'::text, 'expired_unresolved'::text, 'released'::text])))
+);
+
+
+--
+-- Name: payout_accounts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_accounts (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    payout_method text NOT NULL,
+    alipay_logon_id_cipher bytea,
+    alipay_hmac text,
+    bank_card_no_cipher bytea,
+    bank_card_hmac text,
+    bank_name text,
+    card_bin text,
+    payee_name text NOT NULL,
+    is_current boolean NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_accounts_details_check CHECK ((((payout_method = 'alipay'::text) AND (alipay_logon_id_cipher IS NOT NULL) AND (alipay_hmac IS NOT NULL) AND (bank_card_no_cipher IS NULL) AND (bank_card_hmac IS NULL) AND (bank_name IS NULL) AND (card_bin IS NULL)) OR ((payout_method = 'bank_card'::text) AND (bank_card_no_cipher IS NOT NULL) AND (bank_card_hmac IS NOT NULL) AND (bank_name IS NOT NULL) AND (card_bin IS NOT NULL) AND (alipay_logon_id_cipher IS NULL) AND (alipay_hmac IS NULL)))),
+    CONSTRAINT payout_accounts_method_check CHECK ((payout_method = ANY (ARRAY['alipay'::text, 'bank_card'::text])))
+);
+
+
+--
 -- Name: processed_events; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1582,6 +1666,38 @@ ALTER TABLE ONLY app.orders_default
 
 
 --
+-- Name: payout_account_changes payout_account_changes_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_account_changes
+    ADD CONSTRAINT payout_account_changes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_account_verify_attempts payout_account_verify_attempts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_account_verify_attempts
+    ADD CONSTRAINT payout_account_verify_attempts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_account_verify_attempts payout_account_verify_attempts_vendor_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_account_verify_attempts
+    ADD CONSTRAINT payout_account_verify_attempts_vendor_key UNIQUE (app_id, vendor_request_id);
+
+
+--
+-- Name: payout_accounts payout_accounts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_accounts
+    ADD CONSTRAINT payout_accounts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: processed_events processed_events_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -1856,6 +1972,62 @@ CREATE INDEX orders_default_app_id_user_id_paid_at_order_id_idx ON app.orders_de
 
 
 --
+-- Name: payout_account_changes_user_changed_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_account_changes_user_changed_idx ON app.payout_account_changes USING btree (app_id, user_id, changed_at);
+
+
+--
+-- Name: payout_account_verify_attempts_fingerprint_reserved_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_account_verify_attempts_fingerprint_reserved_idx ON app.payout_account_verify_attempts USING btree (app_id, user_id, request_fingerprint, reserved_at);
+
+
+--
+-- Name: payout_account_verify_attempts_idempotency_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX payout_account_verify_attempts_idempotency_key ON app.payout_account_verify_attempts USING btree (app_id, user_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+
+--
+-- Name: payout_account_verify_attempts_inflight_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX payout_account_verify_attempts_inflight_key ON app.payout_account_verify_attempts USING btree (app_id, user_id, request_fingerprint) WHERE (status = ANY (ARRAY['reserved'::text, 'unknown'::text]));
+
+
+--
+-- Name: payout_account_verify_attempts_user_date_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_account_verify_attempts_user_date_idx ON app.payout_account_verify_attempts USING btree (app_id, user_id, verify_date);
+
+
+--
+-- Name: payout_accounts_current_alipay_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX payout_accounts_current_alipay_key ON app.payout_accounts USING btree (app_id, alipay_hmac) WHERE is_current;
+
+
+--
+-- Name: payout_accounts_current_bank_card_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX payout_accounts_current_bank_card_key ON app.payout_accounts USING btree (app_id, bank_card_hmac) WHERE is_current;
+
+
+--
+-- Name: payout_accounts_current_user_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX payout_accounts_current_user_key ON app.payout_accounts USING btree (app_id, user_id) WHERE is_current;
+
+
+--
 -- Name: push_tokens_live_token_key; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -2080,6 +2252,13 @@ CREATE TRIGGER orders_no_rewrite BEFORE UPDATE ON app.orders FOR EACH ROW EXECUT
 
 
 --
+-- Name: payout_account_changes payout_account_changes_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app.payout_account_changes FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: device_registrations device_registrations_merged_into_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2205,6 +2384,30 @@ ALTER TABLE app.orders
 
 ALTER TABLE app.orders
     ADD CONSTRAINT orders_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: payout_account_changes payout_account_changes_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_account_changes
+    ADD CONSTRAINT payout_account_changes_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: payout_account_verify_attempts payout_account_verify_attempts_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_account_verify_attempts
+    ADD CONSTRAINT payout_account_verify_attempts_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: payout_accounts payout_accounts_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_accounts
+    ADD CONSTRAINT payout_accounts_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -2557,6 +2760,86 @@ GRANT SELECT ON TABLE app.orders TO couli_readonly;
 --
 
 GRANT SELECT ON TABLE app.orders_default TO couli_readonly;
+
+
+--
+-- Name: TABLE payout_account_changes; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_account_changes TO couli_app;
+GRANT SELECT ON TABLE app.payout_account_changes TO couli_readonly;
+
+
+--
+-- Name: TABLE payout_account_verify_attempts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_account_verify_attempts TO couli_app;
+GRANT SELECT ON TABLE app.payout_account_verify_attempts TO couli_readonly;
+
+
+--
+-- Name: COLUMN payout_account_verify_attempts.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.payout_account_verify_attempts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_account_verify_attempts.unknown_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(unknown_at) ON TABLE app.payout_account_verify_attempts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_account_verify_attempts.resolved_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resolved_at) ON TABLE app.payout_account_verify_attempts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_account_verify_attempts.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.payout_account_verify_attempts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_account_verify_attempts.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.payout_account_verify_attempts TO couli_app;
+
+
+--
+-- Name: TABLE payout_accounts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_accounts TO couli_app;
+GRANT SELECT ON TABLE app.payout_accounts TO couli_readonly;
+
+
+--
+-- Name: COLUMN payout_accounts.is_current; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(is_current) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.payout_accounts TO couli_app;
 
 
 --

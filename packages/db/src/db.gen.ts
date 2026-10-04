@@ -281,6 +281,55 @@ export interface OrderSettlements {
   source: string;
 }
 
+export interface PayoutAccountChanges {
+  app_id: string;
+  changed_at: Timestamp;
+  created_at: Generated<Timestamp>;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  new_hmac: string;
+  new_payout_method: string;
+  old_hmac: string;
+  old_payout_method: string;
+  operator: string;
+  user_id: string;
+}
+
+export interface PayoutAccounts {
+  alipay_hmac: string | null;
+  alipay_logon_id_cipher: Buffer | null;
+  app_id: string;
+  bank_card_hmac: string | null;
+  bank_card_no_cipher: Buffer | null;
+  bank_name: string | null;
+  card_bin: string | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  is_current: boolean;
+  payee_name: string;
+  payout_method: string;
+  row_version: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface PayoutAccountVerifyAttempts {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  idempotency_key: string | null;
+  origin_action: string;
+  request_fingerprint: string;
+  reserved_at: Timestamp;
+  resolved_at: Timestamp | null;
+  row_version: Generated<number>;
+  status: string;
+  unknown_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  vendor_request_id: string;
+  verify_date: Timestamp;
+}
+
 export interface ProcessedEvents {
   consumer: string;
   created_at: Generated<Timestamp>;
@@ -366,6 +415,9 @@ export interface DB {
   order_rights: OrderRights;
   order_settlements: OrderSettlements;
   orders: Orders;
+  payout_account_changes: PayoutAccountChanges;
+  payout_account_verify_attempts: PayoutAccountVerifyAttempts;
+  payout_accounts: PayoutAccounts;
   processed_events: ProcessedEvents;
   push_tokens: PushTokens;
   user_oauth: UserOauth;
