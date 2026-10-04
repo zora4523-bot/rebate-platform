@@ -112,6 +112,15 @@ const URLS = {
   mailto: [`mailto:${SAMPLES.alipayEmail}`, `null${REDACTED}`],
   tel: [`tel:+86-${SAMPLES.contactPhone}`, `null${REDACTED}`],
   cardNo: [`${HOST}/pay/${SAMPLES.cardNo}`, `${HOST}/pay/${REDACTED}`],
+  // Several sensitive segments in one path: every one of them is replaced, not only the first.
+  twoPhones: [
+    `${HOST}/u/${SAMPLES.phone}/pay/${SAMPLES.alipayPhone}`,
+    `${HOST}/u/${REDACTED}/pay/${REDACTED}`,
+  ],
+  emailAndCard: [
+    `${HOST}/cb/${EMAIL_ENCODED}/card/${CARD_HYPHENS}/x${SAMPLES.idNo}`,
+    `${HOST}/cb/${REDACTED}/card/${REDACTED}/${REDACTED}`,
+  ],
 } as const;
 
 type UrlName = keyof typeof URLS;
@@ -151,7 +160,8 @@ it('[BR-ID-33] 日志（B1-01o 补充 M）：嵌套对象、数组、数组里�
   logger.info(
     {
       order_id: KEPT.order_id,
-      nested: { deep: { target: url('phone'), kept: KEPT.name } },
+      nested: { deep: { target: url('phone'), kept: KEPT.name, more: [url('twoPhones')] } },
+      mixed: { href: url('emailAndCard') },
       list: [url('id15'), { href: url('emailEncoded') }, [url('fullWidth')]],
       holder: { toJSON: (): unknown => url('idSpaced') },
       failure,
@@ -165,7 +175,8 @@ it('[BR-ID-33] 日志（B1-01o 补充 M）：嵌套对象、数组、数组里�
   expectLine(lines[0], {
     level: 30,
     order_id: KEPT.order_id,
-    nested: { deep: { target: written('phone'), kept: KEPT.name } },
+    nested: { deep: { target: written('phone'), kept: KEPT.name, more: [written('twoPhones')] } },
+    mixed: { href: written('emailAndCard') },
     list: [written('id15'), { href: written('emailEncoded') }, [written('fullWidth')]],
     holder: written('idSpaced'),
     failure: errorShape('Error', failure, { target: written('card') }),
@@ -378,6 +389,18 @@ function expectAccessLines(
 it('[BR-ID-33] 访问日志（B1-01o 补充 N）：url 写的路由模板按段过安全网（模板里的手机号、身份证号、银行卡号、邮箱、编码后的邮箱整段替换）；普通模板与 [unmatched] 不变', async () => {
   const routes: readonly (readonly [string, string, string, number])[] = [
     // [registered route, requested path, written url, status]
+    [
+      `/v1/u/${SAMPLES.phone}/pay/${SAMPLES.alipayPhone}`,
+      `/v1/u/${SAMPLES.phone}/pay/${SAMPLES.alipayPhone}`,
+      `/v1/u/${REDACTED}/pay/${REDACTED}`,
+      200,
+    ],
+    [
+      `/v1/cb/${SAMPLES.alipayEmail}/card/${CARD_HYPHENS}/:id`,
+      `/v1/cb/${SAMPLES.alipayEmail}/card/${CARD_HYPHENS}/7`,
+      `/v1/cb/${REDACTED}/card/${REDACTED}/:id`,
+      200,
+    ],
     [
       `/v1/hotline/${SAMPLES.phone}`,
       `/v1/hotline/${SAMPLES.phone}?ref=1`,
