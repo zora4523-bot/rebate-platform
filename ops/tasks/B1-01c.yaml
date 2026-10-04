@@ -24,4 +24,4 @@ accept:
   - 'pnpm --filter @couli/spec-tests test'
   - 'test/spec/platform/masking/**'
 status: done
-pr: 59
+pr: 60
