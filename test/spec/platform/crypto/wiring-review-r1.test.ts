@@ -167,7 +167,7 @@ it.each(ENTRIES)(
       const files = fresh(`r1-entry-${entry}`, {
         keyring: JSON.stringify(keyringDoc({ versions: ring.versions, current: ring.current })),
       });
-      const { logger } = memoryLogger(entry, 'test');
+      const { logger, lines } = memoryLogger(entry, 'test');
       const started = await settle(
         startEntry(entry, { config: loadConfig(localEnv('test', files)), logger }),
       );
@@ -182,6 +182,9 @@ it.each(ENTRIES)(
           ? cipherProblems(injected.value, ring.versions, ring.current)
           : ['not provided'];
       await started.value.close();
+      // Every method above ran on the id number sample: no log line may carry it (BR-ID-33).
+      const leaks = [...new Set(lines.flatMap((line) => leaksIn(line, secretsOf(files))))];
+      seen[key] = [...(seen[key] ?? []), ...leaks.map((name) => `log leaks ${name}`)];
     }
     expect(seen).toEqual({ '1+2@2': [], '1+2@1': [], '1+2+3@2': [] });
   },
@@ -225,7 +228,7 @@ it.each(ENTRIES)(
     const platform = index['PlatformModule'] as { forRoot(options: object): object };
     const files = fresh(`r1-consumer-${entry}`);
     const config = loadConfig(localEnv('test', files));
-    const { logger } = memoryLogger(entry, 'test');
+    const { logger, lines } = memoryLogger(entry, 'test');
     class ConsumerModule {}
     class ConsumerRoot {}
     const consumer = {
@@ -274,6 +277,7 @@ it.each(ENTRIES)(
       roundTrip: true,
     });
     expect('value' in view && 'value' in direct && view.value.injected === direct.value).toBe(true);
+    expect([...new Set(lines.flatMap((line) => leaksIn(line, secretsOf(files))))]).toEqual([]);
   },
   NEST_TIMEOUT_MS,
 );

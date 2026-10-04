@@ -24,7 +24,7 @@ import {
   createRootLogger,
   type RootLogger,
 } from '../../../../apps/api/src/modules/platform/logging/logger.ts';
-import { BLIND_KEY_LABEL, referenceWrap, testKey } from './kit.ts';
+import { BLIND_KEY_LABEL, SAMPLES, referenceWrap, testKey } from './kit.ts';
 
 export const ENTRIES = ['api', 'stream', 'admin', 'worker', 'payout'] as const;
 export type Entry = (typeof ENTRIES)[number];
@@ -166,8 +166,21 @@ export function secretsOf(files: LocalFiles): Record<string, string | Uint8Array
     'blind-index key': testKey(BLIND_KEY_LABEL),
     'temporary directory name': dirName,
     'temporary directory': files.dir,
+    ...PLAINTEXT_SAMPLES,
   };
 }
+
+/**
+ * The synthetic personal data the tests encrypt (BR-ID-33: phone number, id number, payout
+ * account, payee name): none of it may show up in a log line, an error or a process output.
+ */
+export const PLAINTEXT_SAMPLES: Readonly<Record<string, string>> = {
+  'phone number sample': SAMPLES.phone,
+  'id number sample': SAMPLES.idNo,
+  'alipay account sample': SAMPLES.alipay,
+  'bank card sample': SAMPLES.bankCard,
+  'payee name sample': SAMPLES.name,
+};
 
 /**
  * A working keyring document with one more property, `note`, whose string value holds a byte that
