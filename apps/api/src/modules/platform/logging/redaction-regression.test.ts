@@ -135,6 +135,9 @@ it('[AC-B1-01c#5] Fastify inject keeps access-log request and response fields wi
     get url() {
       return '/healthz#access_token=t-1?phone=13987654321';
     }
+    get routeOptions() {
+      return { url: '/healthz' };
+    }
     get hostname() {
       return 'localhost';
     }
@@ -192,20 +195,16 @@ it.each([
     new URLSearchParams({ password: 'p w', real_name: '张小三', token: 't-1' }),
     '{}',
   ],
-  ['URL', new URL('https://x.example/cb?access_token=t-1'), '{}'],
-  [
-    'Buffer',
-    Buffer.from('{"password":"p"}'),
-    JSON.stringify(Buffer.from('{"password":"p"}').toJSON()),
-  ],
-  ['URL array', [new URL('https://x.example/cb?access_token=t-1')], '[{}]'],
+  ['URL', new URL('https://x.example/cb?access_token=t-1'), 'https://x.example/cb'],
+  ['Buffer', Buffer.from('{"password":"p"}'), '[Binary 16 bytes]'],
+  ['URL array', [new URL('https://x.example/cb?access_token=t-1')], '["https://x.example/cb"]'],
 ])('[AC-B1-01c#7] printf %%s serializes %s from its safe copy', (_label, value, expected) => {
   const { logger, records } = capture();
   logger.info('callback %s', value);
   logger.info('callback %j', value);
   expect(records().map((record) => record['msg'])).toEqual([
     `callback ${expected}`,
-    `callback ${expected}`,
+    `callback ${value instanceof URL || Buffer.isBuffer(value) ? `'${expected}'` : expected}`,
   ]);
 });
 
@@ -412,4 +411,142 @@ it('[AC-B1-01c#12] grandchildren inherit user log and binding formatters with fi
   });
   expect(bindings).toHaveBeenCalledTimes(4);
   expect(log).toHaveBeenCalledTimes(2);
+});
+
+it('[AC-B1-01c#13] toJSON chains and self-returns are copied without exposing intermediate fields', () => {
+  const { logger, records, lines } = capture();
+  const terminal = { phone: '13987654321', order_id: 'o2' };
+  const value = {
+    raw: '张小三',
+    toJSON: () => ({ raw: '13987654321', toJSON: () => terminal }),
+  };
+  const self = { phone: '13987654321', toJSON: () => self };
+  logger.info(value, 'root');
+  logger.info({ list: [value, self] }, 'nested');
+  const child = logger.child({}).child(value);
+  child.info('child');
+  const other = logger.child({});
+  other.setBindings(value);
+  other.info('set');
+  const written = { phone: REDACTED, order_id: 'o2' };
+  expect(records()[0]).toMatchObject(written);
+  expect(records()[1]?.['list']).toEqual([written, { phone: REDACTED }]);
+  expect(records()[2]).toMatchObject(written);
+  expect(records()[3]).toMatchObject(written);
+  expect(lines.join('')).not.toMatch(/13987654321|张小三|"raw"/);
+  expect(terminal.phone).toBe('13987654321');
+});
+
+it.each([
+  Object('13987654321') as object,
+  Object(13987654321) as object,
+  Object(13987654321n) as object,
+  Object(true) as object,
+  new URL('https://x.example/u?phone=13987654321'),
+  Buffer.from('13987654321'),
+  new Uint8Array([1, 2, 3]),
+])(
+  '[AC-B1-01c#14] special top-level values contribute no fields, including after toJSON',
+  (value) => {
+    const { logger, records } = capture();
+    const wrapped = { raw: '张小三', toJSON: () => ({ toJSON: () => value }) };
+    for (const input of [value, wrapped]) {
+      logger.info(input, 'root');
+      logger.child(input).child({}).info('child');
+      const child = logger.child({}).child({});
+      child.setBindings(input);
+      child.info('set');
+    }
+    expect(records()).toHaveLength(6);
+    for (const record of records()) {
+      expect(Object.keys(record).sort()).toEqual(['entry', 'env', 'level', 'msg', 'pid', 'time']);
+    }
+  },
+);
+
+it('[AC-B1-01c#15] access logs use route templates and a fixed unmatched marker', async () => {
+  const { logger, records, lines } = capture();
+  const app = await createHttpApp('api', { logger, config: loadConfig({ APP_ENV: 'test' }) });
+  try {
+    await app.init();
+    app
+      .getHttpAdapter()
+      .getInstance()
+      .get('/contact/:phone', async () => ({ ok: true }));
+    expect(
+      (await app.inject({ method: 'GET', url: '/contact/13987654321?token=t-1' })).statusCode,
+    ).toBe(200);
+    expect(
+      (await app.inject({ method: 'GET', url: '/missing/zhangsan@example.com' })).statusCode,
+    ).toBe(404);
+    const requests = records().filter((record) => record['msg'] === 'incoming request');
+    expect(requests.map((record) => (record['req'] as Record<string, unknown>)['url'])).toEqual([
+      '/contact/:phone',
+      '[unmatched]',
+    ]);
+    expect(lines.join('')).not.toMatch(/13987654321|zhangsan@example.com|t-1/);
+    expect(app.getHttpServer().listening).toBe(false);
+  } finally {
+    await app.close();
+  }
+});
+
+it('[AC-B1-01c#16] binary views hide their contents across serializers, errors and Nest parameters', () => {
+  const { logger, records, lines } = capture();
+  const bytes = Uint8Array.from(Buffer.from('13987654321'));
+  const view = new DataView(bytes.buffer, 3, 4);
+  const error = Object.assign(new Error('upload'), { data: view, code: 500 });
+  const child = logger.child({ upload: view }, { serializers: { payload: () => bytes } });
+  child.error({ payload: null, err: error, holder: { toJSON: () => bytes.buffer } }, 'upload');
+  logger.info('bytes %s %j %o %O', view, bytes, bytes.buffer, new SharedArrayBuffer(3));
+  const adapter = new PinoNestLogger(logger);
+  adapter.warn('upload', view, 'Upload');
+  adapter.log(bytes, 'Upload');
+  expect(records()[0]).toMatchObject({
+    upload: '[Binary 4 bytes]',
+    payload: '[Binary 11 bytes]',
+    err: { data: '[Binary 4 bytes]', code: 500 },
+    holder: '[Binary 11 bytes]',
+  });
+  expect(records()[1]?.['msg']).toBe(
+    "bytes [Binary 4 bytes] '[Binary 11 bytes]' '[Binary 11 bytes]' '[Binary 3 bytes]'",
+  );
+  expect(records()[2]?.['params']).toEqual(['[Binary 4 bytes]']);
+  expect(records()[3]?.['msg']).toBe('"[Binary 11 bytes]"');
+  expect(lines.join('')).not.toContain('13987654321');
+  expect(bytes).toEqual(Uint8Array.from(Buffer.from('13987654321')));
+});
+
+it('[AC-B1-01c#17] URL and failing toJSON string copies have no extra quotes with %s', () => {
+  const { logger, records } = capture();
+  const url = new URL('https://ops@x.example/u/13987654321?token=t-1#frag');
+  const fail = {
+    toJSON: () => {
+      throw new Error('13987654321');
+    },
+  };
+  logger.info('url %s, failure %s', url, fail);
+  logger.child({ message: url }).info({ link: url }, 'url');
+  new PinoNestLogger(logger).warn('callback', url, 'Callback');
+  expect(records()[0]?.['msg']).toBe(
+    `url https://x.example/u/${REDACTED}, failure [Unserializable]`,
+  );
+  expect(records()[1]).toMatchObject({
+    message: `https://x.example/u/${REDACTED}`,
+    link: 'https://x.example/u/13987654321',
+  });
+  expect(records()[2]?.['params']).toEqual(['https://x.example/u/13987654321']);
+});
+
+it('[AC-B1-01c#18] err text propagates to descendants while actual Error codes remain numeric', () => {
+  const { logger, records } = capture();
+  const error = Object.assign(new Error('failure'), { code: 500 });
+  const child = logger.child({ err: { status: 500, detail: [13987654321n, true] } });
+  child.child({}).info('bound');
+  logger.child({}).error({ err: error, nested: { err: 13987654321n } }, 'error');
+  // A lookalike record is still free text; only copies of actual Errors preserve types.
+  logger.error({ err: { type: 'Error', message: 'failure', code: 500 } }, 'lookalike');
+  expect(records()[0]?.['err']).toEqual({ status: '500', detail: [REDACTED, true] });
+  expect(records()[1]).toMatchObject({ err: { code: 500 }, nested: { err: REDACTED } });
+  expect(records()[2]?.['err']).toEqual({ type: 'Error', message: 'failure', code: '500' });
 });

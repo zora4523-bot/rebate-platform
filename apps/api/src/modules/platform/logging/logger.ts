@@ -56,15 +56,15 @@ function serializeRequest(value: unknown): unknown {
     }
     const request = value as {
       method?: unknown;
-      url?: unknown;
+      routeOptions?: { url?: unknown };
       hostname?: unknown;
       ip: unknown;
       socket?: { remotePort?: unknown };
     };
-    const url = request.url;
+    const url = request.routeOptions?.url;
     return redactRecord({
       method: request.method,
-      url: typeof url === 'string' ? url.split(/[?#]/, 1)[0] : url,
+      url: typeof url === 'string' ? url : '[unmatched]',
       hostname: request.hostname,
       remoteAddress: request.ip,
       remotePort: request.socket?.remotePort,
@@ -131,9 +131,9 @@ export function createRootLogger(
             if (match[0] === '%s') {
               safeArgs[index] = attempt(() => {
                 if (original instanceof Error) return `${original.name}: ${original.message}`;
-                if (original !== null && typeof original === 'object')
-                  return stringifyValue(safeArgs[index]) ?? '';
-                return String(safeArgs[index]);
+                const copy = safeArgs[index];
+                if (copy !== null && typeof copy === 'object') return stringifyValue(copy) ?? '';
+                return String(copy);
               });
             }
             index++;

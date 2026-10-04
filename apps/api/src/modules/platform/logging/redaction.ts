@@ -1,4 +1,10 @@
-import { isBigIntObject, isBooleanObject, isNumberObject, isStringObject } from 'node:util/types';
+import {
+  isAnyArrayBuffer,
+  isBigIntObject,
+  isBooleanObject,
+  isNumberObject,
+  isStringObject,
+} from 'node:util/types';
 
 /** BR-ID-33: logs discard sensitive values entirely; display masks are not log masks. */
 export const REDACTED = '[REDACTED]';
@@ -61,6 +67,42 @@ export function redactText(text: string): string {
 
 export const UNSERIALIZABLE = '[Unserializable]';
 
+function isBoxed(value: unknown): value is { valueOf(): string | number | boolean | bigint } {
+  return (
+    isStringObject(value) ||
+    isNumberObject(value) ||
+    isBooleanObject(value) ||
+    isBigIntObject(value)
+  );
+}
+
+function isBinary(value: unknown): value is ArrayBufferLike | ArrayBufferView {
+  return isAnyArrayBuffer(value) || ArrayBuffer.isView(value);
+}
+
+// Pino's hook and formatters may copy a record more than once. Preserve Error provenance
+// without adding output fields, so an Error's numeric code never becomes free text under err.
+const errorCopies = new WeakSet<object>();
+
+/** Resolve replacements at the same field depth; bound non-terminating toJSON chains too. */
+function resolveJSON(value: unknown, chain: Set<object>, ancestors = new Set<object>()): unknown {
+  while (value !== null && (typeof value === 'object' || typeof value === 'function')) {
+    if (ancestors.has(value) || chain.has(value)) return '[Circular]';
+    if (chain.size > 100) return '[Truncated]';
+    chain.add(value);
+    // These types have explicit rules that take precedence over built-in/custom toJSON.
+    if (value instanceof Error || value instanceof URL || isBinary(value) || isBoxed(value)) {
+      return value;
+    }
+    const toJSON: unknown = Reflect.get(value, 'toJSON');
+    if (typeof toJSON !== 'function') return value;
+    const next: unknown = toJSON.call(value);
+    if (next === value) return value;
+    value = next;
+  }
+  return value;
+}
+
 /** Copy without mutating callers; free-text context follows descendants. */
 export function redactValue(
   value: unknown,
@@ -71,61 +113,61 @@ export function redactValue(
 ): unknown {
   if (sensitiveNames.has(normalizedKey(key))) return REDACTED;
   if (depth > 100) return '[Truncated]';
-  freeText ||= freeTextKeys.has(key);
-  if (
-    freeText &&
-    (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint')
-  ) {
-    return redactText(String(value));
-  }
-  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value;
-  if (ancestors.has(value)) return '[Circular]';
-  ancestors.add(value);
+  const chain = new Set<object>();
   const visit = (item: unknown, name = '') =>
     redactValue(item, name, ancestors, depth + 1, freeText);
   const field = (name: string) => {
     // Do not even invoke a getter for a sensitive field.
     if (sensitiveNames.has(normalizedKey(name))) return REDACTED;
-    return attempt(() => visit(Reflect.get(value, name), name));
+    return attempt(() => visit(Reflect.get(value as object, name), name));
   };
   try {
+    value = resolveJSON(value, chain, ancestors);
+    for (const item of chain) ancestors.add(item);
+    const error =
+      value instanceof Error ||
+      (typeof value === 'object' && value !== null && errorCopies.has(value));
+    freeText ||= freeTextKeys.has(key) || (key === 'err' && !error);
+    if (isBinary(value)) return `[Binary ${String(value.byteLength)} bytes]`;
+    if (value instanceof URL) value = value.origin + value.pathname;
+    if (isBoxed(value)) value = value.valueOf();
+    if (
+      freeText &&
+      (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint')
+    ) {
+      return redactText(String(value));
+    }
+    if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value;
     if (value instanceof Error) {
+      const original = value;
       const fields: Record<string, unknown> = {
-        type: attempt(() => visit(value.constructor.name, 'type')),
+        type: attempt(() => visit(original.constructor.name, 'type')),
         message: field('message'),
         stack: field('stack'),
         ...Object.fromEntries(Object.keys(value).map((name) => [name, field(name)])),
       };
       if ('errors' in value) {
-        const errors = attempt(() => Reflect.get(value, 'errors') as unknown);
+        const errors = attempt(() => Reflect.get(original, 'errors') as unknown);
         if (Array.isArray(errors)) fields['aggregateErrors'] = visit(errors);
         else if (errors === UNSERIALIZABLE) fields['aggregateErrors'] = UNSERIALIZABLE;
       }
       if (Object.hasOwn(value, 'cause')) fields['cause'] = field('cause');
+      errorCopies.add(fields);
       return fields;
-    }
-    // URLs expose credentials through their built-in toJSON; only copy enumerable fields.
-    const toJSON: unknown = value instanceof URL ? undefined : Reflect.get(value, 'toJSON');
-    if (typeof toJSON === 'function') return visit(toJSON.call(value));
-    if (
-      isStringObject(value) ||
-      isNumberObject(value) ||
-      isBooleanObject(value) ||
-      isBigIntObject(value)
-    ) {
-      return visit(value.valueOf());
     }
     if (typeof value === 'function') return undefined;
     if (Array.isArray(value)) {
       return Array.from({ length: value.length }, (_, index) => field(String(index)));
     }
     if (value instanceof Map || value instanceof Set) return {};
-    return Object.fromEntries(Object.keys(value).map((name) => [name, field(name)]));
+    const fields = Object.fromEntries(Object.keys(value).map((name) => [name, field(name)]));
+    if (error) errorCopies.add(fields);
+    return fields;
   } catch {
     return UNSERIALIZABLE;
   } finally {
     // Only ancestors count as circular: shared values in separate branches remain visible.
-    ancestors.delete(value);
+    for (const item of chain) ancestors.delete(item);
   }
 }
 
@@ -145,11 +187,18 @@ export function redactRecord(
   serializers: FieldSerializers = {},
 ): Record<string, unknown> {
   const result = attempt(() => {
-    const toJSON: unknown = value instanceof URL ? undefined : Reflect.get(value, 'toJSON');
-    const record: unknown = typeof toJSON === 'function' ? toJSON.call(value) : value;
+    const chain = new Set<object>();
+    const record = resolveJSON(value, chain);
     // A log record/binding contributes fields, not a primitive message. In particular, do
     // not split a string result into indexed characters that bypass free-text redaction.
-    if (record === null || typeof record !== 'object') return {};
+    if (
+      record === null ||
+      typeof record !== 'object' ||
+      isBoxed(record) ||
+      isBinary(record) ||
+      record instanceof URL
+    )
+      return {};
     return Object.fromEntries(
       Object.keys(record).map((key) => [
         key,
@@ -161,7 +210,7 @@ export function redactRecord(
               return redactValue(
                 serializer ? serializer(original) : original,
                 key,
-                new Set([value, record]),
+                new Set(chain),
                 1,
               );
             }),

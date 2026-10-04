@@ -96,6 +96,34 @@
 //   rules (context, stack and string items of params are free text, see above). Levels: log
 //   info, warn warn, error error, debug debug, verbose trace, fatal fatal.
 //
+// Review addendum A–L (takes precedence over the original log contract above; exact outputs
+// are pinned by test/spec/platform/masking/log-redaction-review.test.ts):
+// A/B/C. Follow callable toJSON replacements until a terminal value, stopping a self-return.
+//   Functions with toJSON follow the same rule; other functions are omitted (null in arrays).
+//   Unbox String/Number/Boolean/BigInt wrappers before writing. A top-level record or binding
+//   ending in a primitive, wrapper, URL or binary value contributes no fields. Structured
+//   bigint is an exact JSON number; free-text bigint is scrubbed decimal text.
+// D/E. printf arguments are rule copies: %s uses primitive text or JSON, except Error uses
+//   "<name>: <message>"; never call the caller's toString. %j/%o/%O put string copies in single
+//   quotes (pino's spelling), leave undefined placeholders, otherwise use JSON. %d/%f use
+//   Number(copy), %i uses Math.floor(Number(copy)); null/undefined leave these placeholders.
+//   Except %%, every placeholder consumes an argument, even unexpanded ones. Free-text context
+//   follows all descendants of msg/message/stack (string/number/bigint become scrubbed strings;
+//   boolean/null stay unchanged). Non-string messages use primitive text or JSON, then the net.
+// F/G. Fastify access-log url is routeOptions.url or "[unmatched]", never the raw path.
+//   A nested URL writes origin + pathname, without userinfo, query or fragment; free-text
+//   contexts additionally scrub that string. URL handling precedes toJSON.
+// H/I. Throwing getters, toJSON and serializers write "[Unserializable]" without leaking the
+//   thrown value; sensitive getters are never called. Field levels 101+ write "[Truncated]".
+//   Free-text processing is linear in text length. Child serializers receive original values,
+//   apply to same-call bindings and are inherited; child formatters are inherited too. Their
+//   outputs always pass the rules, including the final msg after serializers and msgPrefix.
+// J. One space/hyphen may precede the last digit of an 18-digit ID, but not its final X/x.
+// K. Buffer, TypedArray, DataView, ArrayBuffer and SharedArrayBuffer write only
+//   "[Binary <byteLength> bytes]" everywhere, before toJSON; sensitive names still redact them.
+// L. Non-Error values below err are free text. Error properties other than message/stack retain
+//   their structured types, including when the logger copies them through multiple stages.
+//
 // Rules for the implementation: this directory is also compiled by the `test` project: erasable
 // syntax only (no parameter properties, no enum, no namespace, no decorators), `import type` for
 // type-only imports, relative imports with the `.ts` extension, no NestJS, no `process.env`, no
