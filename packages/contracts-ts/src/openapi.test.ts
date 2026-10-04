@@ -271,3 +271,15 @@ it('link landing and share page: card subset without rebate fields (04 §6.3)', 
   };
   expect(card.platform).toBe('taobao');
 });
+
+it('earnings dashboard: signed credited_fen, referral nullable without count (04 §6.4)', () => {
+  expectTypeOf<
+    Schema<'EarningsSummary'>['referral']
+  >().toEqualTypeOf<Schema<'ReferralEarnings'> | null>();
+  expectTypeOf<Schema<'EarningsSummary'>['self']>().toEqualTypeOf<Schema<'EarningsColumn'>>();
+  expectTypeOf<keyof Schema<'ReferralEarnings'>>().toEqualTypeOf<'this_month' | 'last_month'>();
+  const period: Schema<'EarningsPeriod'> = { paid_count: 0, est_fen: 0, credited_fen: -520 };
+  // @ts-expect-error the referral column has no paid_count (BR-FUND-25)
+  const referral: Schema<'ReferralEarningsPeriod'> = { paid_count: 1, est_fen: 0, credited_fen: 0 };
+  expect([period, referral]).toHaveLength(2);
+});

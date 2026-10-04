@@ -682,6 +682,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/earnings/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Earnings dashboard of the current user
+         * @description Display only; the figures and their periods are defined only in BR-FUND-25 (pending owner
+         *     decision, default per 功能对照 Q-10). as_of is the time the figures were computed; periods
+         *     are +08:00 natural days and months computed by the server, the client never converts them.
+         *     self and share have today, yesterday, this_month and last_month, each {paid_count,
+         *     est_fen, credited_fen}; credited_fen is signed and may be negative in a period that has
+         *     only reversals (BR-FUND-25 细则「已结算怎样聚合」). referral has only this_month and
+         *     last_month, each {est_fen, credited_fen}, no count; null while
+         *     earnings.dashboard.referral_visible is off. The optional platform filters self and share
+         *     only; referral is always the total of all platforms. earnings.dashboard.enabled off →
+         *     30701. Terms and text keys per BR-TEXT-01.
+         */
+        get: operations["getEarningsSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/wallet/ledger": {
         parameters: {
             query?: never;
@@ -3137,6 +3166,66 @@ export interface components {
             data: components["schemas"]["ShareTpwdData"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /** @description One period of the self or share column (BR-FUND-25). */
+        EarningsPeriod: {
+            /**
+             * Format: int32
+             * @description Paid child orders attributed to the user in the period (by paid_at).
+             */
+            paid_count: number;
+            /**
+             * Format: int64
+             * @description Estimated share of the user, by paid_at.
+             */
+            est_fen: number;
+            /**
+             * Format: int64
+             * @description Signed sum of the credit entries by accounting_date; negative when the period has only reversals.
+             */
+            credited_fen: number;
+        };
+        /** @description One period of the referral column (BR-FUND-25); no count. */
+        ReferralEarningsPeriod: {
+            /**
+             * Format: int64
+             * @description Estimated direct and indirect referral share, by paid_at.
+             */
+            est_fen: number;
+            /**
+             * Format: int64
+             * @description Signed sum of the REFERRAL_CREDIT entries by accounting_date.
+             */
+            credited_fen: number;
+        };
+        /** @description Self or share column, four periods. */
+        EarningsColumn: {
+            today: components["schemas"]["EarningsPeriod"];
+            yesterday: components["schemas"]["EarningsPeriod"];
+            this_month: components["schemas"]["EarningsPeriod"];
+            last_month: components["schemas"]["EarningsPeriod"];
+        };
+        /** @description Referral column, only this month and last month, all platforms. */
+        ReferralEarnings: {
+            this_month: components["schemas"]["ReferralEarningsPeriod"];
+            last_month: components["schemas"]["ReferralEarningsPeriod"];
+        };
+        EarningsSummary: {
+            /**
+             * Format: date-time
+             * @description Time the figures were computed (BR-FUND-25 细则).
+             */
+            as_of: string;
+            self: components["schemas"]["EarningsColumn"];
+            share: components["schemas"]["EarningsColumn"];
+            /** @description null while earnings.dashboard.referral_visible is off. */
+            referral: components["schemas"]["ReferralEarnings"] | null;
+        };
+        EarningsSummaryResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["EarningsSummary"];
+            trace_id: components["schemas"]["TraceId"];
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -4909,6 +4998,111 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["WalletSummaryResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getEarningsSummary: {
+        parameters: {
+            query?: {
+                /** @description Platform code (enum platform); filters self and share only. Absent = all. */
+                platform?: components["schemas"]["PlatformCode"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The dashboard figures. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "as_of": "2026-11-12T10:00:00+08:00",
+                     *         "self": {
+                     *           "today": {
+                     *             "paid_count": 1,
+                     *             "est_fen": 269,
+                     *             "credited_fen": 0
+                     *           },
+                     *           "yesterday": {
+                     *             "paid_count": 0,
+                     *             "est_fen": 0,
+                     *             "credited_fen": 0
+                     *           },
+                     *           "this_month": {
+                     *             "paid_count": 3,
+                     *             "est_fen": 812,
+                     *             "credited_fen": -520
+                     *           },
+                     *           "last_month": {
+                     *             "paid_count": 5,
+                     *             "est_fen": 1200,
+                     *             "credited_fen": 1830
+                     *           }
+                     *         },
+                     *         "share": {
+                     *           "today": {
+                     *             "paid_count": 0,
+                     *             "est_fen": 0,
+                     *             "credited_fen": 0
+                     *           },
+                     *           "yesterday": {
+                     *             "paid_count": 1,
+                     *             "est_fen": 150,
+                     *             "credited_fen": 0
+                     *           },
+                     *           "this_month": {
+                     *             "paid_count": 2,
+                     *             "est_fen": 300,
+                     *             "credited_fen": 0
+                     *           },
+                     *           "last_month": {
+                     *             "paid_count": 0,
+                     *             "est_fen": 0,
+                     *             "credited_fen": 420
+                     *           }
+                     *         },
+                     *         "referral": {
+                     *           "this_month": {
+                     *             "est_fen": 88,
+                     *             "credited_fen": 0
+                     *           },
+                     *           "last_month": {
+                     *             "est_fen": 0,
+                     *             "credited_fen": 150
+                     *           }
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EarningsSummaryResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

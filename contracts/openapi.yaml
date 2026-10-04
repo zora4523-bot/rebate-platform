@@ -53,7 +53,7 @@ tags:
   - name: order
     description: Orders and pending-track cards (04 §6.4).
   - name: fund
-    description: Payout account, withdrawals and wallet (04 §6.1, §6.4).
+    description: Payout account, withdrawals, wallet and the earnings dashboard (04 §6.1, §6.4).
   - name: content
     description: Articles, notices, update check, inbox messages and page preview (04 §6.2, §6.4).
 paths:
@@ -1805,6 +1805,105 @@ paths:
                   withdrawn_fen: 20000
                   risk_paused_reason: null
                   withdraw_enabled: true
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/earnings/summary:
+    get:
+      operationId: getEarningsSummary
+      tags:
+        - fund
+      summary: Earnings dashboard of the current user
+      description: |
+        Display only; the figures and their periods are defined only in BR-FUND-25 (pending owner
+        decision, default per 功能对照 Q-10). as_of is the time the figures were computed; periods
+        are +08:00 natural days and months computed by the server, the client never converts them.
+        self and share have today, yesterday, this_month and last_month, each {paid_count,
+        est_fen, credited_fen}; credited_fen is signed and may be negative in a period that has
+        only reversals (BR-FUND-25 细则「已结算怎样聚合」). referral has only this_month and
+        last_month, each {est_fen, credited_fen}, no count; null while
+        earnings.dashboard.referral_visible is off. The optional platform filters self and share
+        only; referral is always the total of all platforms. earnings.dashboard.enabled off →
+        30701. Terms and text keys per BR-TEXT-01.
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30701
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - name: platform
+          in: query
+          required: false
+          description: Platform code (enum platform); filters self and share only. Absent = all.
+          schema:
+            $ref: '#/components/schemas/PlatformCode'
+      responses:
+        '200':
+          description: The dashboard figures.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EarningsSummaryResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  as_of: '2026-11-12T10:00:00+08:00'
+                  self:
+                    today:
+                      paid_count: 1
+                      est_fen: 269
+                      credited_fen: 0
+                    yesterday:
+                      paid_count: 0
+                      est_fen: 0
+                      credited_fen: 0
+                    this_month:
+                      paid_count: 3
+                      est_fen: 812
+                      credited_fen: -520
+                    last_month:
+                      paid_count: 5
+                      est_fen: 1200
+                      credited_fen: 1830
+                  share:
+                    today:
+                      paid_count: 0
+                      est_fen: 0
+                      credited_fen: 0
+                    yesterday:
+                      paid_count: 1
+                      est_fen: 150
+                      credited_fen: 0
+                    this_month:
+                      paid_count: 2
+                      est_fen: 300
+                      credited_fen: 0
+                    last_month:
+                      paid_count: 0
+                      est_fen: 0
+                      credited_fen: 420
+                  referral:
+                    this_month:
+                      est_fen: 88
+                      credited_fen: 0
+                    last_month:
+                      est_fen: 0
+                      credited_fen: 150
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -8399,5 +8498,114 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/ShareTpwdData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    EarningsPeriod:
+      type: object
+      description: One period of the self or share column (BR-FUND-25).
+      additionalProperties: false
+      required:
+        - paid_count
+        - est_fen
+        - credited_fen
+      properties:
+        paid_count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Paid child orders attributed to the user in the period (by paid_at).
+        est_fen:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Estimated share of the user, by paid_at.
+        credited_fen:
+          type: integer
+          format: int64
+          description: Signed sum of the credit entries by accounting_date; negative when the period has only reversals.
+    ReferralEarningsPeriod:
+      type: object
+      description: One period of the referral column (BR-FUND-25); no count.
+      additionalProperties: false
+      required:
+        - est_fen
+        - credited_fen
+      properties:
+        est_fen:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Estimated direct and indirect referral share, by paid_at.
+        credited_fen:
+          type: integer
+          format: int64
+          description: Signed sum of the REFERRAL_CREDIT entries by accounting_date.
+    EarningsColumn:
+      type: object
+      description: Self or share column, four periods.
+      additionalProperties: false
+      required:
+        - today
+        - yesterday
+        - this_month
+        - last_month
+      properties:
+        today:
+          $ref: '#/components/schemas/EarningsPeriod'
+        yesterday:
+          $ref: '#/components/schemas/EarningsPeriod'
+        this_month:
+          $ref: '#/components/schemas/EarningsPeriod'
+        last_month:
+          $ref: '#/components/schemas/EarningsPeriod'
+    ReferralEarnings:
+      type: object
+      description: Referral column, only this month and last month, all platforms.
+      additionalProperties: false
+      required:
+        - this_month
+        - last_month
+      properties:
+        this_month:
+          $ref: '#/components/schemas/ReferralEarningsPeriod'
+        last_month:
+          $ref: '#/components/schemas/ReferralEarningsPeriod'
+    EarningsSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - as_of
+        - self
+        - share
+        - referral
+      properties:
+        as_of:
+          type: string
+          format: date-time
+          description: Time the figures were computed (BR-FUND-25 细则).
+        self:
+          $ref: '#/components/schemas/EarningsColumn'
+        share:
+          $ref: '#/components/schemas/EarningsColumn'
+        referral:
+          description: null while earnings.dashboard.referral_visible is off.
+          anyOf:
+            - $ref: '#/components/schemas/ReferralEarnings'
+            - type: 'null'
+    EarningsSummaryResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/EarningsSummary'
         trace_id:
           $ref: '#/components/schemas/TraceId'
