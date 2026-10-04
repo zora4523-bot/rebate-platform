@@ -1532,7 +1532,8 @@ export const apps = {
     "ios_query_schemes": [
       "taobao",
       "tbopen"
-    ]
+    ],
+    "harmony_query_schemes": []
   },
   "jd": {
     "platform": "jd",
@@ -1540,13 +1541,15 @@ export const apps = {
     "trade_only": true,
     "ios_query_schemes": [
       "openApp.jdMobile"
-    ]
+    ],
+    "harmony_query_schemes": []
   },
   "pdd": {
     "platform": "pdd",
     "status": "candidate",
     "trade_only": true,
-    "ios_query_schemes": []
+    "ios_query_schemes": [],
+    "harmony_query_schemes": []
   }
 } as const;
 export type AppTarget = keyof typeof apps;

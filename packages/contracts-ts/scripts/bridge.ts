@@ -38,6 +38,7 @@ export type AppDef = {
   status: string;
   trade_only: boolean;
   ios_query_schemes: string[];
+  harmony_query_schemes: string[];
 };
 export type SdkQueryDef = {
   source_sdk: string;
@@ -52,6 +53,8 @@ export type InboundDef =
       source_sdk: string | null;
       platforms: string[];
       scheme: string;
+      /** true when scheme carries {app_identifier} placeholders, expanded by the generators. */
+      template: boolean;
     }
   | {
       kind: 'verified_link';
@@ -209,7 +212,7 @@ function loadInbound(value: unknown, apps: AppDef[], sdkQueries: SdkQueryDef[]):
       ? (baseline['own_link_hosts'] as unknown[]).map((h) => String(h))
       : fail('specs/client-security-baseline.yaml', 'own_link_hosts missing');
   const thirdParty = [
-    ...apps.flatMap((a) => a.ios_query_schemes),
+    ...apps.flatMap((a) => [...a.ios_query_schemes, ...a.harmony_query_schemes]),
     ...sdkQueries.flatMap((q) => [q.ios_scheme, q.harmony_scheme].filter((s) => s !== null)),
   ].map((s) => String(s).toLowerCase());
   return value.map((e, i) => {
@@ -233,17 +236,24 @@ function loadInbound(value: unknown, apps: AppDef[], sdkQueries: SdkQueryDef[]):
       if (Object.keys(e).some((k) => ![...common, 'scheme'].includes(k))) {
         fail(w, 'custom_scheme has only kind, purpose, source_sdk, platforms, scheme');
       }
+      // A scheme may be a template derived from an app identifier, e.g. wx{wechat_app_id}
+      // (04 §9): {name} placeholders are expanded by the generators; the literal parts must
+      // still form a URI scheme starting with a letter.
       const scheme = e['scheme'];
-      if (typeof scheme !== 'string' || !/^[A-Za-z][A-Za-z0-9+.-]*$/.test(scheme)) {
-        fail(w, 'scheme must be a URI scheme');
+      const placeholder = /\{[a-z][a-z0-9_]*\}/g;
+      const template = typeof scheme === 'string' && /\{[a-z][a-z0-9_]*\}/.test(scheme);
+      const literal = typeof scheme === 'string' ? scheme.replace(placeholder, 'x') : '';
+      if (typeof scheme !== 'string' || !/^[A-Za-z][A-Za-z0-9+.-]*$/.test(literal)) {
+        fail(w, 'scheme must be a URI scheme, optionally with {app_identifier} placeholders');
       }
       const lower = scheme.toLowerCase();
-      if (forbidden.includes(lower))
+      if (!template && forbidden.includes(lower)) {
         fail(w, `scheme ${scheme} is a system or generic scheme (CSB-11)`);
-      if (thirdParty.includes(lower)) {
+      }
+      if (!template && thirdParty.includes(lower)) {
         fail(w, `scheme ${scheme} equals a target or SDK query scheme (CSB-11)`);
       }
-      return { kind: 'custom_scheme', purpose, source_sdk: source, platforms, scheme };
+      return { kind: 'custom_scheme', purpose, source_sdk: source, platforms, scheme, template };
     }
     if (e['kind'] === 'verified_link') {
       if (Object.keys(e).some((k) => ![...common, 'host', 'path_prefix', 'verified'].includes(k))) {
@@ -308,7 +318,22 @@ export function loadBridgeCatalog(
     // Every external target is a shopping platform (platform is a contracts/enums platform):
     // ext.openApp never opens it without attribution (04 §9, BR-ATTR-29 细则).
     if (def['trade_only'] !== true) fail(where, 'trade_only must be true for a shopping platform');
-    apps.push({ name, platform, status, trade_only: true, ios_query_schemes: schemes as string[] });
+    const harmony = def['harmony'];
+    const harmonySchemes = isObj(harmony) ? (harmony['query_schemes'] ?? []) : [];
+    if (
+      !Array.isArray(harmonySchemes) ||
+      harmonySchemes.some((s) => typeof s !== 'string' || s === '')
+    ) {
+      fail(where, 'harmony.query_schemes must be a list of strings');
+    }
+    apps.push({
+      name,
+      platform,
+      status,
+      trade_only: true,
+      ios_query_schemes: schemes as string[],
+      harmony_query_schemes: harmonySchemes as string[],
+    });
   }
   const sdkQueries = loadSdkQueries(appsDoc['sdk_queries']);
   const inbound = loadInbound(appsDoc['inbound'], apps, sdkQueries);
@@ -607,6 +632,7 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
         status: a.status,
         trade_only: a.trade_only,
         ios_query_schemes: a.ios_query_schemes,
+        harmony_query_schemes: a.harmony_query_schemes,
       },
     ]),
   );
