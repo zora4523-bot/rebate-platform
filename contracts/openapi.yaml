@@ -1631,7 +1631,7 @@ paths:
       summary: Mark a tip as read
       description: |
         tip_key=jump_tip needs a body {platform}; without it → 20001 with data.fields=[platform].
-        tip_key=inviter_before_buy takes no body (a body is ignored). Repeating the call is harmless:
+        tip_key=inviter_before_buy sends no body. Repeating the call is harmless:
         an existing record keeps its read_at. Version gate: applied.
       x-auth: login
       x-signed: false
@@ -4681,7 +4681,10 @@ components:
         - jump_tip
     MarkTipReadRequest:
       type: object
+      description: Body of tip_key=jump_tip; tip_key=inviter_before_buy sends no body.
       additionalProperties: false
+      required:
+        - platform
       properties:
         platform:
           $ref: '#/components/schemas/PlatformCode'

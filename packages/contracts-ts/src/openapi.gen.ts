@@ -624,7 +624,7 @@ export interface paths {
         /**
          * Mark a tip as read
          * @description tip_key=jump_tip needs a body {platform}; without it → 20001 with data.fields=[platform].
-         *     tip_key=inviter_before_buy takes no body (a body is ignored). Repeating the call is harmless:
+         *     tip_key=inviter_before_buy sends no body. Repeating the call is harmless:
          *     an existing record keeps its read_at. Version gate: applied.
          */
         post: operations["markTipRead"];
@@ -1651,8 +1651,9 @@ export interface components {
          * @enum {string}
          */
         ResettableTipKey: "jump_tip";
+        /** @description Body of tip_key=jump_tip; tip_key=inviter_before_buy sends no body. */
         MarkTipReadRequest: {
-            platform?: components["schemas"]["PlatformCode"];
+            platform: components["schemas"]["PlatformCode"];
         };
         /** Format: date-time */
         TipReadAt: string | null;
