@@ -11,6 +11,14 @@
 // - None of them throws for any string (lone surrogates included). Pure: the result depends only
 //   on the argument (no module state, no clock, no environment, no logging); the same input always
 //   gives the same output.
+// - No output of any kind (BR-ID-33: 日志中不得出现明文): the functions write no log line and
+//   nothing to stdout or stderr — no console method, no process.stdout / process.stderr write, no
+//   process.emitWarning, no node:fs write (pino's default destination writes to fd 1 with fs).
+//   Source rule, checked statically by the rule tests on this file with comments removed: the
+//   only import (static `import` / `import type` / `export … from`) is './index.ts'; no dynamic
+//   `import(`, no `require(`, and the words `console`, `process`, `globalThis`, `pino` and
+//   `logging` do not occur. ./index.ts itself imports nothing (as now), so nothing reaches
+//   ../logging or pino through it.
 // - An input that is not of an accepted form reveals nothing: the result is one "*" (U+002A) per
 //   code point of the whole input, and nothing else (no "尾号", no "@", no domain). The empty
 //   string therefore stays empty.
