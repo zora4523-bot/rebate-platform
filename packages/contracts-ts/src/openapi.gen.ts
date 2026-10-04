@@ -656,6 +656,148 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/wallet/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Single-balance summary
+         * @description Values per BR-FUND-18 (field names per FUND-18). The user side shows「预估返 / 预估推广收益
+         *     ¥{estimated_total_fen}」 and uses pending_credit_* only for the「其中已收货」 progress line;
+         *     the client never adds amounts itself (BR-TEXT-01). next_credit_period is the earliest
+         *     expected credit month across platforms (YYYY-MM). withdraw_enabled = withdraw.enabled
+         *     (04 §10.2): false keeps the balances visible, greys out the withdraw button and shows the
+         *     error.30306 text, the same sentence as a 30306 on submit. Session scopes: accepts
+         *     deletion_only (BR-ID-01 细则「受限会话」).
+         */
+        get: operations["getWalletSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/wallet/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Balance entries
+         * @description Only available-subaccount entries plus one WITHDRAW_PAID summary entry per paid withdrawal
+         *     (BR-FUND-15); no account filter (single balance). balance_after_fen is the available balance
+         *     after the entry (may be negative); null on the WITHDRAW_PAID summary entry, which does not
+         *     change the available balance. Referral-commission entries are masked (masked=true, shown as
+         *     「邀请好友订单」, BR-TEXT-19). link_type / link_id point to the order or withdrawal, null
+         *     when not navigable. fee_fen and tax_fen only on summary entries.
+         */
+        get: operations["listWalletLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/withdrawals/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Withdrawal precheck and estimate
+         * @description can_withdraw, block_code and block_reason (check order BR-WDR-03; withdraw.enabled off →
+         *     block_code 30306; current labor agreement not signed → 10004, BR-WDR-31), the maximum
+         *     withdrawable amount, today's and this month's remaining counts, and the estimate:
+         *     withdrawable_fen (same as GET /v1/wallet/summary, BR-FUND-18), est_fee_fen, est_tax_fen,
+         *     est_net_fen (null when can_withdraw=false) and quick_amounts_fen. With amount_fen the
+         *     estimate uses that amount, otherwise max_withdrawable_fen; the estimate does not validate the
+         *     amount. The client sends the user to the page of block_code and, back on Withdraw, fetches
+         *     the rules again without submitting (BR-WDR-07 细则「前置步骤的回流」); late or out-of-order
+         *     responses are dropped by the client by account, page instance, request number and amount
+         *     (BR-WDR-04 细则「估算响应的归属」). block_reason carries data.reason of block_code 30303
+         *     (enum withdraw_condition_reason) and is null otherwise.
+         */
+        get: operations["getWithdrawRules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/withdrawals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My withdrawals
+         * @description Status, review_mode (auto: the client says「预计几分钟内到账」, manual: within 24 working
+         *     hours, 拍板第二批 OPS-17), amounts, payout channel and masked account, the reason code of a
+         *     rejection or failure and fail_action for account-type failures (BR-TEXT-06, BR-TEXT-08).
+         *     channel_order_id is only in the detail.
+         */
+        get: operations["listWithdrawals"];
+        put?: never;
+        /**
+         * Apply for a withdrawal
+         * @description From the single balance (no account type in the body, ADD-06); entry and auth BR-WDR-01,
+         *     check order BR-WDR-03. Not signed the labor agreement → 10004 with
+         *     data.consent_type=labor_agreement. Stopped by a precondition the user must complete (10001,
+         *     10004 of any consent_type, 10005, 30304 / 30305 / 30307): not replayed; after completing
+         *     it the user submits again on Withdraw with a new Idempotency-Key. Only 10003, 10002 and
+         *     10402 resend with the same key. When the result is unknown the key is kept: the page waits
+         *     for the user to confirm (same key) or give up (POST /v1/idempotency-keys/abandon); an
+         *     abandoned key is 20903 at the idempotency check, without comparing the body or running the
+         *     business, and a business write that finds it abandoned is rolled back with 20903 (BR-WDR-07
+         *     细则「前置步骤的回流」, BR-ID-10 细则「敏感操作的幂等键」). Needs X-Step-Up-Token for action
+         *     withdraw. The user cannot cancel after submitting (customer service rejects with
+         *     USER_REQUEST, 拍板第二批 FUND-20); review_mode is decided after submission (BR-WDR-30).
+         *     Version gate: applied.
+         */
+        post: operations["createWithdrawal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/withdrawals/{withdrawal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One of my withdrawals
+         * @description As the list item plus channel_order_id (the channel serial number, only in PAID_API /
+         *     PAID_MANUAL when one was recorded, BR-WDR-25 细则「交易流水号」). Unknown or someone else's →
+         *     30701.
+         */
+        get: operations["getWithdrawal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -2074,6 +2216,185 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["InboxMessage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description contracts/enums/fund.yaml withdrawal_status (BR-WDR-08; user texts BR-TEXT-06).
+         * @enum {string}
+         */
+        WithdrawalStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED" | "PAYING" | "PAID_API" | "PAID_MANUAL" | "FAILED";
+        /**
+         * @description contracts/enums/fund.yaml withdrawal_review_mode (BR-WDR-30).
+         * @enum {string}
+         */
+        WithdrawalReviewMode: "auto" | "manual";
+        WalletSummary: {
+            available_fen: components["schemas"]["Fen"];
+            withdrawable_fen: components["schemas"]["Fen"];
+            negative_fen: components["schemas"]["Fen"];
+            frozen_fen: components["schemas"]["Fen"];
+            estimated_total_fen: components["schemas"]["Fen"];
+            estimated_fen: components["schemas"]["Fen"];
+            pending_credit_fen: components["schemas"]["Fen"];
+            pending_credit_paused_fen: components["schemas"]["Fen"];
+            next_credit_period: string | null;
+            credit_overdue: boolean;
+            withdrawn_fen: components["schemas"]["Fen"];
+            risk_paused_reason: string | null;
+            withdraw_enabled: boolean;
+        };
+        WalletSummaryResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["WalletSummary"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description An available-subaccount entry, or the WITHDRAW_PAID summary entry of a paid withdrawal (BR-FUND-15). */
+        LedgerEntry: components["schemas"]["LedgerPostingEntry"] | components["schemas"]["LedgerWithdrawPaidEntry"];
+        LedgerPostingEntry: {
+            /**
+             * @description ledger_type other than WITHDRAW_PAID.
+             * @enum {string}
+             */
+            ledger_type: "REBATE_CREDIT" | "SHARE_CREDIT" | "REFERRAL_CREDIT" | "CLAWBACK" | "SETTLE_ADJUST" | "WITHDRAW_FREEZE" | "WITHDRAW_RETURN" | "WITHDRAW_FEE" | "TAX_WITHHOLD" | "REWARD" | "ADMIN_ADJUST" | "BAD_DEBT_WRITEOFF";
+            sub_type: string | null;
+            /** @description Signed amount in fen. */
+            amount_fen: components["schemas"]["Fen"];
+            /** Format: date */
+            accounting_date: string;
+            /** @enum {string|null} */
+            link_type: "order" | "withdrawal" | null;
+            link_id: string | null;
+            masked: boolean;
+            /** @description Available balance after this entry (may be negative). */
+            balance_after_fen: components["schemas"]["Fen"];
+        };
+        LedgerWithdrawPaidEntry: {
+            /** @enum {string} */
+            ledger_type: "WITHDRAW_PAID";
+            sub_type: string | null;
+            /** @description Signed amount in fen. */
+            amount_fen: components["schemas"]["Fen"];
+            /** Format: date */
+            accounting_date: string;
+            /** @enum {string|null} */
+            link_type: "order" | "withdrawal" | null;
+            link_id: string | null;
+            masked: boolean;
+            /**
+             * Format: int64
+             * @description Always null; the summary entry does not change the available balance.
+             * @enum {integer|null}
+             */
+            balance_after_fen: null;
+            fee_fen: components["schemas"]["Fen"];
+            tax_fen: components["schemas"]["Fen"];
+        };
+        LedgerListData: {
+            items: components["schemas"]["LedgerEntry"][];
+            next_cursor: string | null;
+        };
+        LedgerListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["LedgerListData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        WithdrawRules: {
+            can_withdraw: boolean;
+            /**
+             * Format: int32
+             * @description The error code that blocks a withdrawal now (contracts/error-codes.yaml), null when none.
+             */
+            block_code: number | null;
+            block_reason: string | null;
+            max_withdrawable_fen: components["schemas"]["Fen"];
+            withdrawable_fen: components["schemas"]["Fen"];
+            /** Format: int32 */
+            daily_remaining: number;
+            /** Format: int32 */
+            monthly_remaining: number;
+            est_fee_fen: components["schemas"]["NullableFen"];
+            est_tax_fen: components["schemas"]["NullableFen"];
+            est_net_fen: components["schemas"]["NullableFen"];
+            /** @description Quick amount choices; empty when there are none. */
+            quick_amounts_fen: components["schemas"]["Fen"][];
+        };
+        WithdrawRulesResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["WithdrawRules"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        CreateWithdrawalRequest: {
+            /** Format: int64 */
+            amount_fen: number;
+        };
+        WithdrawalSummary: {
+            withdrawal_id: components["schemas"]["Id"];
+            status: components["schemas"]["WithdrawalStatus"];
+            /** @description Null until decided after submission (BR-WDR-30). */
+            review_mode: components["schemas"]["WithdrawalReviewMode"] | null;
+            amount_fen: components["schemas"]["Fen"];
+            fee_fen: components["schemas"]["Fen"];
+            tax_fen: components["schemas"]["Fen"];
+            net_fen: components["schemas"]["Fen"];
+            /**
+             * @description contracts/enums/fund.yaml payout_method (withdrawals.payout_channel).
+             * @enum {string}
+             */
+            payout_channel: "alipay" | "bank_card";
+            payout_channel_name: string;
+            /** @description Masked snapshot of the payee account (BR-ID-33 细则). */
+            masked_account: string;
+            /** @description reject_reason_code or fail_code of a rejected or failed withdrawal (BR-TEXT-06). */
+            reason_code: string | null;
+            /** @description Action for account-type failures, e.g. change_payout_account (BR-TEXT-08). */
+            fail_action: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description A withdrawal with channel_order_id (detail and create response). */
+        Withdrawal: {
+            withdrawal_id: components["schemas"]["Id"];
+            status: components["schemas"]["WithdrawalStatus"];
+            /** @description Null until decided after submission (BR-WDR-30). */
+            review_mode: components["schemas"]["WithdrawalReviewMode"] | null;
+            amount_fen: components["schemas"]["Fen"];
+            fee_fen: components["schemas"]["Fen"];
+            tax_fen: components["schemas"]["Fen"];
+            net_fen: components["schemas"]["Fen"];
+            /**
+             * @description contracts/enums/fund.yaml payout_method (withdrawals.payout_channel).
+             * @enum {string}
+             */
+            payout_channel: "alipay" | "bank_card";
+            payout_channel_name: string;
+            /** @description Masked snapshot of the payee account (BR-ID-33 细则). */
+            masked_account: string;
+            /** @description reject_reason_code or fail_code of a rejected or failed withdrawal (BR-TEXT-06). */
+            reason_code: string | null;
+            /** @description Action for account-type failures, e.g. change_payout_account (BR-TEXT-08). */
+            fail_action: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Channel serial number, only in PAID_API / PAID_MANUAL when recorded (BR-WDR-25 细则). */
+            channel_order_id: string | null;
+        };
+        WithdrawalListData: {
+            items: components["schemas"]["WithdrawalSummary"][];
+            next_cursor: string | null;
+        };
+        WithdrawalListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["WithdrawalListData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        WithdrawalResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Withdrawal"];
             trace_id: components["schemas"]["TraceId"];
         };
         EmptyData: Record<string, never>;
@@ -4289,6 +4610,430 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["InboxMessageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getWalletSummary: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "available_fen": 1234,
+                     *         "withdrawable_fen": 1000,
+                     *         "negative_fen": 0,
+                     *         "frozen_fen": 0,
+                     *         "estimated_total_fen": 5678,
+                     *         "estimated_fen": 4000,
+                     *         "pending_credit_fen": 1678,
+                     *         "pending_credit_paused_fen": 0,
+                     *         "next_credit_period": "2026-11",
+                     *         "credit_overdue": false,
+                     *         "withdrawn_fen": 20000,
+                     *         "risk_paused_reason": null,
+                     *         "withdraw_enabled": true
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["WalletSummaryResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listWalletLedger: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entries, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "ledger_type": "REBATE_CREDIT",
+                     *             "sub_type": null,
+                     *             "amount_fen": 520,
+                     *             "accounting_date": "2026-10-02",
+                     *             "link_type": "order",
+                     *             "link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a91",
+                     *             "masked": false,
+                     *             "balance_after_fen": 1234
+                     *           },
+                     *           {
+                     *             "ledger_type": "WITHDRAW_PAID",
+                     *             "sub_type": null,
+                     *             "amount_fen": -10000,
+                     *             "accounting_date": "2026-10-01",
+                     *             "link_type": "withdrawal",
+                     *             "link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90",
+                     *             "masked": false,
+                     *             "balance_after_fen": null,
+                     *             "fee_fen": 0,
+                     *             "tax_fen": 0
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["LedgerListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getWithdrawRules: {
+        parameters: {
+            query?: {
+                /** @description Amount to estimate; a positive integer, otherwise 20001 data.fields=[amount_fen]. */
+                amount_fen?: number;
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rules and estimate. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "can_withdraw": true,
+                     *         "block_code": null,
+                     *         "block_reason": null,
+                     *         "max_withdrawable_fen": 1000,
+                     *         "withdrawable_fen": 1000,
+                     *         "daily_remaining": 1,
+                     *         "monthly_remaining": 10,
+                     *         "est_fee_fen": 0,
+                     *         "est_tax_fen": 0,
+                     *         "est_net_fen": 1000,
+                     *         "quick_amounts_fen": [
+                     *           1000
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["WithdrawRulesResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listWithdrawals: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Withdrawals, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90",
+                     *             "status": "PENDING_REVIEW",
+                     *             "review_mode": "manual",
+                     *             "amount_fen": 10000,
+                     *             "fee_fen": 0,
+                     *             "tax_fen": 0,
+                     *             "net_fen": 10000,
+                     *             "payout_channel": "alipay",
+                     *             "payout_channel_name": "支付宝",
+                     *             "masked_account": "138****5678",
+                     *             "reason_code": null,
+                     *             "fail_action": null,
+                     *             "created_at": "2026-10-02T09:30:00+08:00"
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["WithdrawalListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    createWithdrawal: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
+                 *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["StepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "amount_fen": 10000
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreateWithdrawalRequest"];
+            };
+        };
+        responses: {
+            /** @description The withdrawal. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90",
+                     *         "status": "PENDING_REVIEW",
+                     *         "review_mode": "manual",
+                     *         "amount_fen": 10000,
+                     *         "fee_fen": 0,
+                     *         "tax_fen": 0,
+                     *         "net_fen": 10000,
+                     *         "payout_channel": "alipay",
+                     *         "payout_channel_name": "支付宝",
+                     *         "masked_account": "138****5678",
+                     *         "reason_code": null,
+                     *         "fail_action": null,
+                     *         "created_at": "2026-10-02T09:30:00+08:00",
+                     *         "channel_order_id": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["WithdrawalResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getWithdrawal: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                withdrawal_id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The withdrawal. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90",
+                     *         "status": "PAID_API",
+                     *         "review_mode": "manual",
+                     *         "amount_fen": 10000,
+                     *         "fee_fen": 0,
+                     *         "tax_fen": 0,
+                     *         "net_fen": 10000,
+                     *         "payout_channel": "alipay",
+                     *         "payout_channel_name": "支付宝",
+                     *         "masked_account": "138****5678",
+                     *         "reason_code": null,
+                     *         "fail_action": null,
+                     *         "created_at": "2026-10-02T09:30:00+08:00",
+                     *         "channel_order_id": "placeholder-channel-serial"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["WithdrawalResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

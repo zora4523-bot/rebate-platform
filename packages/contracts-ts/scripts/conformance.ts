@@ -42,6 +42,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AuthMethod: 'auth_method',
   NoRebateCause: 'no_rebate_cause',
   TipKey: 'tip_key',
+  WithdrawalStatus: 'withdrawal_status',
+  WithdrawalReviewMode: 'withdrawal_review_mode',
   DeletionStatus: 'deletion_status',
   DeletionCancelReason: 'deletion_cancel_reason',
   OrderStatusGroup: 'order_status_group',
@@ -143,6 +145,10 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'StepUpByAppleRequest/properties/provider': 'login_provider',
   'StepUpByHuaweiRequest/properties/provider': 'login_provider',
   ResettableTipKey: 'tip_key',
+  'WithdrawalSummary/properties/payout_channel': 'payout_method',
+  'Withdrawal/properties/payout_channel': 'payout_method',
+  'LedgerPostingEntry/properties/ledger_type': 'ledger_type',
+  'LedgerWithdrawPaidEntry/properties/ledger_type': 'ledger_type',
   'SavePayoutAccountByAlipay/properties/payout_method': 'payout_method',
   'SavePayoutAccountByBankCard/properties/payout_method': 'payout_method',
   'PayoutAccountAlipay/properties/payout_method': 'payout_method',
@@ -185,9 +191,17 @@ function checkAmounts(schemas: Obj, problems: string[]): void {
       for (const [name, prop] of Object.entries(props)) {
         if (!name.endsWith('_fen')) continue;
         const target = refName(prop, 'schemas');
-        const resolved = target === null ? prop : schemas[target];
-        const type = isObj(resolved) ? resolved['type'] : undefined;
-        const types = Array.isArray(type) ? type : [type];
+        let resolved = target === null ? prop : schemas[target];
+        let type = isObj(resolved) ? resolved['type'] : undefined;
+        let types = Array.isArray(type) ? type : [type];
+        // A list of amounts (e.g. quick_amounts_fen): every item is an int64 amount.
+        if (isObj(resolved) && types.includes('array')) {
+          const item = resolved['items'];
+          const itemTarget = refName(item, 'schemas');
+          resolved = itemTarget === null ? item : schemas[itemTarget];
+          type = isObj(resolved) ? resolved['type'] : undefined;
+          types = Array.isArray(type) ? type : [type];
+        }
         if (!isObj(resolved) || !types.includes('integer') || resolved['format'] !== 'int64') {
           problems.push(`${where}/properties/${name}: amounts must be int64 integers (04 §5)`);
         }
