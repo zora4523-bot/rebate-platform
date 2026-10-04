@@ -24,11 +24,11 @@ describe('GET /healthz', () => {
     await app.close();
   });
 
-  it('returns 200 with exactly the contract envelope and echoes a well-formed trace id', async () => {
+  it('[AC-B1-01p#3] returns 200 with exactly the contract envelope and echoes a well-formed trace id', async () => {
     const response = await app.inject({
       method: 'GET',
       url: '/healthz',
-      headers: { 'x-trace-id': 'trace-abc_123' },
+      headers: { 'x-trace-id': 'C56A4180-65AA-42EC-A945-5FD21DEC0538' },
     });
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toMatch(/^application\/json/);
@@ -36,7 +36,7 @@ describe('GET /healthz', () => {
       code: 0,
       msg: '',
       data: { status: 'ok', entry: 'api', now: '2026-10-01T04:00:00.000Z' },
-      trace_id: 'trace-abc_123',
+      trace_id: 'C56A4180-65AA-42EC-A945-5FD21DEC0538',
     });
   });
 

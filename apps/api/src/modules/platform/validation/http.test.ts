@@ -171,14 +171,14 @@ it('[AC-B1-01d#3] maps real Fastify failures in all four parts to the contract e
     const response = await app.inject({
       ...request,
       method: 'POST',
-      headers: { ...request.headers, 'x-trace-id': 'validation-trace' },
+      headers: { ...request.headers, 'x-trace-id': 'abcdefABCDEF01234567abcdefABCDEF' },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({
       code: 20001,
       msg: '参数校验失败',
       data: { fields },
-      trace_id: 'validation-trace',
+      trace_id: 'abcdefABCDEF01234567abcdefABCDEF',
     });
     expect(validate(response.json())).toBe(true);
   }
