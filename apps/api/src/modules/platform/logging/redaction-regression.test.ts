@@ -3,6 +3,7 @@ import { expect, it, vi } from 'vitest';
 import { createHttpApp } from '../../../bootstrap.ts';
 import { loadConfig } from '../config/index.ts';
 import { createRootLogger, PinoNestLogger, REDACTED } from './index.ts';
+import { redactPath } from './redaction.ts';
 
 function capture() {
   const lines: string[] = [];
@@ -533,10 +534,25 @@ it('[AC-B1-01c#17] URL and failing toJSON string copies have no extra quotes wit
   );
   expect(records()[1]).toMatchObject({
     message: `https://x.example/u/${REDACTED}`,
-    link: 'https://x.example/u/13987654321',
+    link: `https://x.example/u/${REDACTED}`,
   });
-  expect(records()[2]?.['params']).toEqual(['https://x.example/u/13987654321']);
+  expect(records()[2]?.['params']).toEqual([`https://x.example/u/${REDACTED}`]);
 });
+
+it.each([
+  ['/a//%/+/%4/%GG/end/', '/a//%/+/%4/%GG/end/'],
+  ['/a/a+b%40example.com/end', `/a/${REDACTED}/end`],
+  ['/a/%GG139%208765%204321/end', `/a/${REDACTED}/end`],
+  ['/a/%E2%82139%208765%204321/end', `/a/${REDACTED}/end`],
+  ['/a/x%2F13987654321%2Fy/end', `/a/${REDACTED}/end`],
+  ['/a/x%2Fy/end', '/a/x%2Fy/end'],
+  ['/a/a%2540example.com/end', '/a/a%2540example.com/end'],
+])(
+  '[AC-B1-01o#1] path decoding preserves boundaries and tolerates malformed bytes: %s',
+  (path, expected) => {
+    expect(redactPath(path)).toBe(expected);
+  },
+);
 
 it('[AC-B1-01c#18] err text propagates to descendants while actual Error codes remain numeric', () => {
   const { logger, records } = capture();

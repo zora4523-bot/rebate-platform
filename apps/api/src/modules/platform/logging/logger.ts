@@ -13,6 +13,7 @@ import {
   SENSITIVE_KEYS,
   attempt,
   redactMessage,
+  redactPath,
   redactRecord,
   redactValue,
   stringifyValue,
@@ -64,7 +65,7 @@ function serializeRequest(value: unknown): unknown {
     const url = request.routeOptions?.url;
     return redactRecord({
       method: request.method,
-      url: typeof url === 'string' ? url : '[unmatched]',
+      url: typeof url === 'string' ? redactPath(url) : '[unmatched]',
       hostname: request.hostname,
       remoteAddress: request.ip,
       remotePort: request.socket?.remotePort,

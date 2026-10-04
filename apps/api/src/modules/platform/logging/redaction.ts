@@ -65,6 +65,38 @@ export function redactText(text: string): string {
   return text.replace(email, REDACTED).replace(personalNumber, REDACTED);
 }
 
+/** Decode percent bytes once, retaining malformed escapes and replacing invalid UTF-8. */
+function decodePathSegment(segment: string): string {
+  if (!segment.includes('%')) return segment;
+  const bytes = new TextEncoder().encode(segment);
+  let length = 0;
+  for (let index = 0; index < bytes.length; index++) {
+    const byte = bytes[index]!;
+    if (byte === 0x25) {
+      const hex = String.fromCharCode(bytes[index + 1] ?? 0, bytes[index + 2] ?? 0);
+      if (/^[0-9a-f]{2}$/i.test(hex)) {
+        bytes[length++] = Number.parseInt(hex, 16);
+        index += 2;
+        continue;
+      }
+    }
+    bytes[length++] = byte;
+  }
+  return new TextDecoder().decode(bytes.subarray(0, length));
+}
+
+/** URL paths and access-log templates share the same whole-segment safety net. */
+export function redactPath(path: string): string {
+  return path
+    .split('/')
+    .map((segment) => {
+      if (redactText(segment) !== segment) return REDACTED;
+      const decoded = decodePathSegment(segment);
+      return redactText(decoded) !== decoded ? REDACTED : segment;
+    })
+    .join('/');
+}
+
 export const UNSERIALIZABLE = '[Unserializable]';
 
 function isBoxed(value: unknown): value is { valueOf(): string | number | boolean | bigint } {
@@ -129,7 +161,7 @@ export function redactValue(
       (typeof value === 'object' && value !== null && errorCopies.has(value));
     freeText ||= freeTextKeys.has(key) || (key === 'err' && !error);
     if (isBinary(value)) return `[Binary ${String(value.byteLength)} bytes]`;
-    if (value instanceof URL) value = value.origin + value.pathname;
+    if (value instanceof URL) value = redactText(value.origin) + redactPath(value.pathname);
     if (isBoxed(value)) value = value.valueOf();
     if (
       freeText &&
