@@ -132,3 +132,16 @@ it('step-up takes exactly one way; an oauth attempt for step_up names the action
   >();
   expect([bySms, byApple, mixed, loginAttempt, stepUpAttempt]).toHaveLength(5);
 });
+
+it('logins and refresh return the session scope (04 §5 受限会话)', () => {
+  expectTypeOf<Schema<'TokenPair'>['session_scope']>().toEqualTypeOf<'full' | 'deletion_only'>();
+  expectTypeOf<Schema<'H5TokenData'>['scope']>().toEqualTypeOf<'standard' | 'read_only'>();
+  // @ts-expect-error session_scope is required
+  const pair: Schema<'TokenPair'> = {
+    access_token: 'a',
+    access_expires_at: '2026-10-02T11:30:00+08:00',
+    refresh_token: 'r',
+    refresh_expires_at: '2026-11-01T09:30:00+08:00',
+  };
+  expect(pair.access_token).toBe('a');
+});

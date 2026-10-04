@@ -49,6 +49,8 @@ export interface paths {
          *     `id_source` is required (04 §6.1, §3.2 devices). Making it required is not a breaking
          *     change: the operation is still planned (no route, no caller), and the oasdiff check leaves
          *     planned operations out of the base contract (tools/ci/oasdiff-base.ts).
+         *     Version gate: not applied (session recovery, BR-ID-01 细则 interface table). Session scopes:
+         *     accepts deletion_only (BR-ID-01 细则「受限会话」).
          */
         post: operations["registerDevice"];
         delete?: never;
@@ -73,6 +75,11 @@ export interface paths {
          *     `phone` is normalised by the server (BR-ID-05 细则「手机号规范化」); when the result is not
          *     a mainland mobile number the answer is 20001 with `data.fields=[phone]` and
          *     `data.reason=phone_invalid`, no SMS is sent and nothing counts towards the limits.
+         *     Version gate (conditional, the table of BR-ID-01 细则 rules): not applied when purpose=login,
+         *     or purpose=step_up with action=account_deletion; applied otherwise (purpose=bind, or step_up
+         *     without action or with another action). Session scopes: a deletion_only session is accepted
+         *     only for purpose=login and for purpose=step_up with action=account_deletion. Both conditions
+         *     follow BR-ID-01 细则, which wins on any difference.
          */
         post: operations["sendSmsCode"];
         delete?: never;
@@ -99,6 +106,11 @@ export interface paths {
          *     normalised by the server; a number that does not normalise to a mainland mobile number is
          *     20001 with `data.fields=[phone]`, `data.reason=phone_invalid` (BR-ID-05 细则「手机号规范化」).
          *     Creating the account checks the same-device registration limit (44001, BR-ID-05).
+         *     Version gate: not applied (session recovery). A client below the minimum version gets a
+         *     restricted login (BR-ID-01 细则「受限会话」): only an existing account is logged in, invite_code is
+         *     ignored (BR-INV-06 handling for an existing account), nothing is created or bound, and no
+         *     existing account → 10405 with data.reason=no_account; the response carries
+         *     session_scope=deletion_only. Session scopes: accepts deletion_only.
          */
         post: operations["loginBySms"];
         delete?: never;
@@ -127,6 +139,10 @@ export interface paths {
          *     to an account without a bound phone (a bound phone → 20001 with `data.fields=[provider]`,
          *     BR-ID-08). purpose=step_up with action=account_deletion is inside the 10006 whitelist
          *     (BR-ID-31). Storage unavailable → 50001.
+         *     Version gate (conditional): not applied when purpose=login, or purpose=step_up with
+         *     action=account_deletion; applied otherwise. Session scopes: a deletion_only session is
+         *     accepted only for purpose=login and for purpose=step_up with action=account_deletion. Both
+         *     per BR-ID-01 细则, which wins on any difference.
          */
         post: operations["createOauthAttempt"];
         delete?: never;
@@ -154,6 +170,10 @@ export interface paths {
          *     answer lacking the unionid, is 50305 with `data.provider`. A first login creates the account
          *     and checks the same-device registration limit (44001, BR-ID-05). Restricted login for clients
          *     below the minimum version (10405) is added by CT-17a.
+         *     Version gate: not applied (session recovery). A client below the minimum version gets a
+         *     restricted login: only an account already bound to this identity is logged in, none → 10405
+         *     with data.reason=no_account, no account is created (BR-ID-01 细则「受限会话」). Session scopes:
+         *     accepts deletion_only.
          */
         post: operations["loginByWechat"];
         delete?: never;
@@ -179,6 +199,8 @@ export interface paths {
          *     signature, iss, aud, exp and the attempt's nonce; the submitted identity_token is checked
          *     the same way and its subject must equal that one, otherwise 20004 (BR-ID-04 细则). Otherwise
          *     as WeChat login.
+         *     Version gate: not applied (session recovery); restricted login below the minimum version as
+         *     for WeChat login (10405 data.reason=no_account). Session scopes: accepts deletion_only.
          */
         post: operations["loginByApple"];
         delete?: never;
@@ -202,6 +224,8 @@ export interface paths {
          *     `authorization_code`; otherwise as WeChat login (BR-ID-04 细则). Whether Huawei supports
          *     PKCE or returns the nonce is still to be checked (specs/oauth/huawei.md, CT-15i); no field
          *     for it is declared until then.
+         *     Version gate: not applied (session recovery); restricted login below the minimum version as
+         *     for WeChat login (10405 data.reason=no_account). Session scopes: accepts deletion_only.
          */
         post: operations["loginByHuawei"];
         delete?: never;
@@ -232,6 +256,9 @@ export interface paths {
          *     identity other than the one this account bound for that provider is 20004 with
          *     `data.reason=identity_mismatch`, an invalid credential or attempt is 20004, the provider
          *     being unavailable is 50305.
+         *     Version gate (conditional): not applied when action=account_deletion; applied otherwise.
+         *     Session scopes: a deletion_only session is accepted only for action=account_deletion. Both
+         *     per BR-ID-01 细则, which wins on any difference.
          */
         post: operations["stepUp"];
         delete?: never;
@@ -254,8 +281,35 @@ export interface paths {
          * @description Every refresh rotates the refresh token (BR-ID-07). Resubmitting a rotated token outside
          *     the 30-second grace revokes the whole session chain and returns 10404. Clients refresh
          *     single-flight: N concurrent 10002 trigger one refresh.
+         *     Version gate: not applied (session recovery). The scope of the refreshed session is decided
+         *     again from this request (X-Platform, X-Channel, X-App-Version), not inherited; the session
+         *     chain (sid) is unchanged (BR-ID-01 细则「受限会话」). Session scopes: accepts deletion_only.
          */
         post: operations["refreshToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/h5-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange the native session for an h5_token
+         * @description The native app gets an h5_token (aud=h5) for its trusted H5 pages; lifetime and scope per
+         *     BR-ID-32. A read_only token calling anything but GET is 10403 with
+         *     data.reason=h5_read_only, decided by the server from the HTTP method. Version gate:
+         *     applied (BR-ID-01 细则 interface table). Session scopes: not marked, so a deletion_only
+         *     session gets 10405.
+         */
+        post: operations["issueH5Token"];
         delete?: never;
         options?: never;
         head?: never;
@@ -275,6 +329,8 @@ export interface paths {
          *     identity level (BR-ID-01), single-balance summary, union authorization states, real-name
          *     state, `need_reconsent` (BR-ID-12) and the risk state for the ban / freeze page. No
          *     user level (拍板第二批 OPS-20).
+         *     Session scopes: accepts deletion_only (step-up method choice on the force-update and
+         *     deletion pages, BR-ID-01 细则「受限会话」).
          */
         get: operations["getMe"];
         put?: never;
@@ -312,6 +368,9 @@ export interface paths {
          *     BR-ID-27); passing them checks login, signature and subject only and grants no right to
          *     run the original operation. Single writer: platform. x-min-version-gate and
          *     x-session-scopes are added by CT-17a.
+         *     Version gate (conditional): not applied when action=account_deletion (abandoning an unknown
+         *     deletion request); applied otherwise. Session scopes: a deletion_only session is accepted
+         *     only for action=account_deletion. Both per BR-ID-01 细则, which wins on any difference.
          */
         post: operations["abandonIdempotencyKey"];
         delete?: never;
@@ -335,6 +394,7 @@ export interface paths {
          *     not fixed by 04 yet are free-form objects and get typed by the task that consumes them.
          *     x-auth is optional (04 §6.2): h5_release buckets by user_id when logged in (拍板第二批
          *     TECH-28) and agent availability depends on the whitelist user (BR-AI-12).
+         *     Session scopes: accepts deletion_only (BR-ID-01 细则「受限会话」).
          */
         get: operations["getConfig"];
         put?: never;
@@ -597,6 +657,35 @@ export interface components {
         /** @description Value of the Idempotency-Key header (04 §5「幂等」). */
         IdempotencyKey: string;
         /**
+         * @description scp of an access token (enum session_scope; meaning in BR-ID-01 细则「受限会话」).
+         * @enum {string}
+         */
+        SessionScope: "full" | "deletion_only";
+        /**
+         * @description Scope of an h5_token (enum h5_token_scope; BR-ID-32 细则「只读作用域」).
+         * @enum {string}
+         */
+        H5TokenScope: "standard" | "read_only";
+        IssueH5TokenRequest: {
+            /**
+             * @description Filled by the native app from its force-update state; H5 cannot choose it. The value
+             *     used when it is absent is set in BR-ID-32 细则「只读作用域」.
+             */
+            scope?: components["schemas"]["H5TokenScope"];
+        };
+        H5TokenData: {
+            token: string;
+            /** Format: date-time */
+            expire_at: string;
+            scope: components["schemas"]["H5TokenScope"];
+        };
+        H5TokenResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["H5TokenData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
          * @description Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).
          * @enum {string}
          */
@@ -705,6 +794,13 @@ export interface components {
             purpose: "login" | "bind" | "step_up";
             /** @description Human-verification token, required after 44003 (BR-ID-05). */
             captcha_token?: string;
+            /**
+             * @description With purpose=step_up the client always sends the action the code is for; the version
+             *     gate and the session scope are decided from it (BR-ID-01 细则): only
+             *     action=account_deletion is exempt, and a step_up request without action is gated.
+             *     purpose=login is exempt regardless of action; purpose=bind is gated.
+             */
+            action?: components["schemas"]["StepUpAction"];
         };
         SendSmsCodeData: {
             /**
@@ -849,7 +945,13 @@ export interface components {
             data: components["schemas"]["StepUpData"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Token pair of a login or a refresh. session_scope is the scp of the access token, decided
+         *     from this request (BR-ID-01 细则「受限会话」): deletion_only when the client is below the
+         *     minimum supported version.
+         */
         TokenPair: {
+            session_scope: components["schemas"]["SessionScope"];
             access_token: string;
             /** Format: date-time */
             access_expires_at: string;
@@ -1721,7 +1823,8 @@ export interface operations {
                      *           "access_token": "example-access-token-one",
                      *           "access_expires_at": "2026-10-02T11:30:00+08:00",
                      *           "refresh_token": "example-refresh-token-one",
-                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00"
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00",
+                     *           "session_scope": "full"
                      *         },
                      *         "invite_bind": {
                      *           "result": "bound",
@@ -1873,7 +1976,8 @@ export interface operations {
                      *           "access_token": "example-access-token-one",
                      *           "access_expires_at": "2026-10-02T11:30:00+08:00",
                      *           "refresh_token": "example-refresh-token-one",
-                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00"
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00",
+                     *           "session_scope": "full"
                      *         }
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
@@ -1953,7 +2057,8 @@ export interface operations {
                      *           "access_token": "example-access-token-one",
                      *           "access_expires_at": "2026-10-02T11:30:00+08:00",
                      *           "refresh_token": "example-refresh-token-one",
-                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00"
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00",
+                     *           "session_scope": "full"
                      *         }
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
@@ -2032,7 +2137,8 @@ export interface operations {
                      *           "access_token": "example-access-token-one",
                      *           "access_expires_at": "2026-10-02T11:30:00+08:00",
                      *           "refresh_token": "example-refresh-token-one",
-                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00"
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00",
+                     *           "session_scope": "full"
                      *         }
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
@@ -2164,12 +2270,72 @@ export interface operations {
                      *         "access_token": "example-access-token-two",
                      *         "access_expires_at": "2026-10-02T13:30:00+08:00",
                      *         "refresh_token": "example-refresh-token-two",
-                     *         "refresh_expires_at": "2026-11-01T11:30:00+08:00"
+                     *         "refresh_expires_at": "2026-11-01T11:30:00+08:00",
+                     *         "session_scope": "full"
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }
                      */
                     "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    issueH5Token: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "scope": "standard"
+                 *     }
+                 */
+                "application/json": components["schemas"]["IssueH5TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description A new h5_token. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "token": "placeholder",
+                     *         "expire_at": "2026-10-02T10:00:00+08:00",
+                     *         "scope": "standard"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["H5TokenResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
