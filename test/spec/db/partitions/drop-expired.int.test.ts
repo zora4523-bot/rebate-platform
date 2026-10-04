@@ -4,9 +4,9 @@
 // (orders 等订单类表与 ledger_entries 的分区只预建、不删除); BR-ID-30 (删除条件 created_at < 运行当日
 // 00:00（+08:00）− 留存天数; ⑫ 账务记录与 ⑰ 订单类记录确认前不删除分区; ⑯ event_log 190 天).
 // Every test clones its own database, so the partition lists start from the migrations alone.
-import { createDb, destroyDb } from '@couli/db';
+import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import { sql } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { expect, it } from 'vitest';
 
 import {
@@ -323,5 +323,105 @@ it('[BR-ID-30 删除条件 created_at < 截止; contract A1 (ii)] created_at 比
     expect(await dropped(maint, 'event_log', '2027-04-16T16:00:00.000Z')).toEqual([
       'event_log_p202603',
     ]);
+  });
+});
+
+async function insertEventAt(
+  app: Kysely<DB>,
+  eventId: string,
+  occurredAt: string,
+  createdAt: string,
+): Promise<string> {
+  const result = await sql<{ part: string }>`
+    INSERT INTO app.event_log (app_id, event_id, name, payload, occurred_at, created_at)
+    VALUES ('couli', ${eventId}::uuid, 'order.created', '{"order_id": "mixed"}'::jsonb,
+            ${occurredAt}::timestamptz, ${createdAt}::timestamptz)
+    RETURNING tableoid::regclass::text AS part
+  `.execute(app);
+  return result.rows[0]?.part ?? '';
+}
+
+async function eventIds(app: Kysely<DB>): Promise<string[]> {
+  const rows = await sql<{ id: string }>`
+    SELECT event_id::text AS id FROM app.event_log ORDER BY event_id
+  `.execute(app);
+  return rows.rows.map((r) => r.id);
+}
+
+it('[BR-ID-30 删除条件 created_at < 截止; contract A1 (ii)] 同一分区混有已过期（2026-03-31T12:00Z）与未过期（恰等于截止 2026-04-01T16:00Z）两行：整个分区与两行都保留，直到最新一行也早于截止（p_now 2026-10-09T16:00Z）才删', async () => {
+  await withDatabase(async ({ maint, app }) => {
+    await ensureMonths(maint, 'event_log', ['2026-03']);
+    const old = '00000000-0000-7000-8000-0000000a0001';
+    const recent = '00000000-0000-7000-8000-0000000a0002';
+    expect(await insertEventAt(app, old, '2026-03-10T00:00:00Z', '2026-03-31T12:00:00Z')).toBe(
+      'app.event_log_p202603',
+    );
+    expect(await insertEventAt(app, recent, '2026-03-31T12:00:00Z', '2026-04-01T16:00:00Z')).toBe(
+      'app.event_log_p202603',
+    );
+    // 2026-10-09 04:00 +08:00: cutoff 2026-04-02 00:00 +08:00 = 2026-04-01T16:00Z.
+    expect(await dropped(maint, 'event_log', '2026-10-08T20:00:00.000Z')).toEqual([]);
+    expect(await dropped(maint, 'event_log', '2026-10-09T15:59:59.999Z')).toEqual([]);
+    expect(await partitionNames(maint, 'event_log')).toEqual([
+      'event_log_default',
+      'event_log_p202603',
+    ]);
+    expect(await eventIds(app)).toEqual([old, recent]);
+    // 2026-10-10 00:00 +08:00: cutoff 2026-04-02T16:00Z, past both rows.
+    expect(await dropped(maint, 'event_log', '2026-10-09T16:00:00.000Z')).toEqual([
+      'event_log_p202603',
+    ]);
+    expect(await eventIds(app)).toEqual([]);
+  });
+});
+
+it('[BR-ID-30 删除条件 created_at < 截止; contract A1 并发写入] 写事务向旧分区插入一行未过期的记录（created_at 2026-10-08T12:00Z）尚未提交时调用删除：删除等锁，写事务提交后删除复查看到这行，分区与两行都保留、返回空数组', async () => {
+  await withDatabase(async ({ maint, app }, database) => {
+    await ensureMonths(maint, 'event_log', ['2026-03']);
+    const old = '00000000-0000-7000-8000-0000000b0001';
+    const late = '00000000-0000-7000-8000-0000000b0002';
+    await insertEventAt(app, old, '2026-03-10T00:00:00Z', '2026-03-15T00:00:00Z');
+    const writer = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
+    const observer = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
+    let release: () => void = () => undefined;
+    const commitGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let inserted: () => void = () => undefined;
+    const insertedGate = new Promise<void>((resolve) => {
+      inserted = resolve;
+    });
+    try {
+      const writing = writer.transaction().execute(async (trx) => {
+        await insertEventAt(trx, late, '2026-03-31T12:00:00Z', '2026-10-08T12:00:00Z');
+        inserted();
+        await commitGate;
+      });
+      await insertedGate;
+      const dropping = dropped(maint, 'event_log', '2026-10-08T20:00:00.000Z');
+      // The drop call waits for a lock held by the writer: a couli_maint session of this database.
+      let waited = false;
+      for (let i = 0; i < 250 && !waited; i += 1) {
+        const r = await sql<{ n: string }>`
+          SELECT count(*)::text AS n
+          FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+          WHERE NOT l.granted AND a.usename = 'couli_maint'
+            AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+        `.execute(observer);
+        waited = r.rows[0]?.n !== '0';
+        if (!waited) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      release();
+      await writing;
+      expect({ waited, result: await dropping }).toEqual({ waited: true, result: [] });
+      expect(await partitionNames(maint, 'event_log')).toEqual([
+        'event_log_default',
+        'event_log_p202603',
+      ]);
+      expect(await eventIds(app)).toEqual([old, late]);
+    } finally {
+      release();
+      await Promise.all([writer, observer].map((db) => destroyDb(db)));
+    }
   });
 });

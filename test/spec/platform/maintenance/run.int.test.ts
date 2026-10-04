@@ -508,3 +508,30 @@ it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] event_log 
     ]);
   });
 });
+
+it('[BR-ID-30 每日 04:00 删除任务; ADR-0001 §4.2 #4 DEFAULT 有数据即告警; contract C.4、C.5] 04:00 之前（2026-10-09 03:59:59.999 +08:00）的运行：link_logs_default 的 1 行照常告警、行数确切，过期的 event_log 分区不删', async () => {
+  await withWorld(async ({ maint, app }) => {
+    await ensure(maint, 'event_log', ['2026-02', '2026-03']);
+    expect(await insertLinkLogs(app, 1)).toEqual(['app.link_logs_default']);
+    const { maintenance, reduced } = instanceAt(maint, '2026-10-08T19:59:59.999Z');
+    const ahead = monthRange('2026-10', '2027-01');
+    expect(await report(maintenance.runOnce())).toEqual({
+      ensured: [...names('event_log', ahead), ...names('orders', ahead)],
+      dropped: [],
+      defaultRows: [{ table: 'link_logs', partition: 'link_logs_default', rows: 1 }],
+      failed: 0,
+    });
+    expect(reduced()).toEqual([
+      line('warn', 'partition_default_has_rows', {
+        table: 'link_logs',
+        partition: 'link_logs_default',
+        rows: 1,
+      }),
+      done(8, 0, 0),
+    ]);
+    expect(await partitionNames(app, 'event_log')).toEqual([
+      'event_log_default',
+      ...names('event_log', ['2026-02', '2026-03', ...ahead]),
+    ]);
+  });
+});

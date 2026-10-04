@@ -237,8 +237,19 @@ it('[contract D stop 等进行中的一轮] 第一轮卡在 event_log_p202611 �
       await locked.wait();
       const startState = track(maintenance.start());
       const waiting = await waitFor(async () => {
+        // Only waiters of this database, on exactly this advisory key, from a couli_maint session.
         const r = await sql<{ n: string }>`
-          SELECT count(*)::text AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+          WITH k AS (SELECT hashtextextended(${key}, 0) AS v)
+          SELECT count(*)::text AS n
+          FROM pg_locks l
+          JOIN pg_stat_activity a ON a.pid = l.pid
+          CROSS JOIN k
+          WHERE l.locktype = 'advisory' AND NOT l.granted
+            AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND l.objsubid = 1
+            AND l.classid::bigint = ((k.v >> 32) & 4294967295)
+            AND l.objid::bigint = (k.v & 4294967295)
+            AND a.usename = 'couli_maint'
         `.execute(observer);
         return r.rows[0]?.n === '1';
       }, 10_000);

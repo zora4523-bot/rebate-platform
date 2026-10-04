@@ -53,7 +53,8 @@
 //          (ii) no row in it has `created_at` ≥ cutoff (BR-ID-30 judges by created_at; occurred_at,
 //               the partition key, can be earlier than created_at for an event recorded late).
 //        A partition that passes (i) but not (ii) is kept (whole; rows are never deleted one by one)
-//        and not reported; a later call drops it once its newest created_at is older than the cutoff.
+//        and not reported; a later call drops it once its NEWEST created_at is older than the cutoff
+//        (one row at or after the cutoff keeps the whole partition, whatever the other rows are).
 //        Example: event_log_p202603 ([2026-03-01Z, 2026-04-01Z)) holding only rows created in March is
 //        kept for any p_now ≤ 2026-10-08T15:59:59.999Z and dropped from p_now = 2026-10-08T16:00:00Z
 //        (= 2026-10-09 00:00 +08:00, cutoff 2026-04-02 00:00 +08:00) on. If it also holds a row with
@@ -69,6 +70,12 @@
 //        and every partition is dropped and reported exactly once (e.g. a transaction-level advisory
 //        lock per table taken before listing the partitions, and the per-partition lock key that
 //        ensure_month_partition uses, `'app.ensure_month_partition:' || <partition name>`).
+//        Concurrent writers (BR-ID-30 created_at rule must hold against them): for a partition that
+//        passes (i), the function FIRST takes `LOCK TABLE app.<partition> IN ACCESS EXCLUSIVE MODE`
+//        (waiting for transactions that are writing into it to end), THEN checks (ii) under that lock
+//        with a statement that starts after the lock was granted, and drops only if (ii) still holds.
+//        So a row inserted by a transaction that commits while the call waits is seen and keeps the
+//        partition; checking first and locking only for the DROP is wrong (it loses that row).
 //
 //    A2. `app.partition_default_rows() RETURNS TABLE (table_name text, default_partition text, row_count bigint)`
 //        One row for every partitioned table of schema `app` that has a DEFAULT partition (read from
