@@ -447,7 +447,9 @@ export function checkConformance(
       checkStepUp(op, where, stepUpActions, stepUpByOperation.get(where), problems);
       if (!path.startsWith('/v1/')) continue;
       checkGateAndScopes(op, where, method, enumValues.get('session_scope') ?? [], problems);
-      if (refName(at(op, 'responses/429'), 'responses') !== 'TooManyRequests') {
+      // NoStoreTooManyRequests is the same response with Cache-Control: no-store (share pages).
+      const r429 = refName(at(op, 'responses/429'), 'responses');
+      if (r429 !== 'TooManyRequests' && r429 !== 'NoStoreTooManyRequests') {
         problems.push(
           `${where}: /v1 operations declare 429 → TooManyRequests (42901, Retry-After)`,
         );

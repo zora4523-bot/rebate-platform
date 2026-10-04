@@ -3139,6 +3139,45 @@ export interface components {
         };
     };
     responses: {
+        /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
+        NoStoreClientError: {
+            headers: {
+                "Cache-Control": components["headers"]["NoStore"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description Same as TooManyRequests (42901 with Retry-After), with Cache-Control no-store (share pages). */
+        NoStoreTooManyRequests: {
+            headers: {
+                "Cache-Control": components["headers"]["NoStore"];
+                /** @description Seconds to wait before retrying. */
+                "Retry-After": number;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "code": 42901,
+                 *       "msg": "请求过于频繁",
+                 *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description Same as ServerError, with Cache-Control no-store (share pages). */
+        NoStoreServerError: {
+            headers: {
+                "Cache-Control": components["headers"]["NoStore"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
         /**
          * @description Business or request error. Clients act on `code` only (contracts/error-codes.yaml);
          *     the HTTP status per code is listed there as well.
@@ -6496,9 +6535,9 @@ export interface operations {
                     "application/json": components["schemas"]["SharePageResponse"];
                 };
             };
-            429: components["responses"]["TooManyRequests"];
-            "4XX": components["responses"]["ClientError"];
-            "5XX": components["responses"]["ServerError"];
+            429: components["responses"]["NoStoreTooManyRequests"];
+            "4XX": components["responses"]["NoStoreClientError"];
+            "5XX": components["responses"]["NoStoreServerError"];
         };
     };
     getShareTpwd: {
@@ -6555,9 +6594,9 @@ export interface operations {
                     "application/json": components["schemas"]["ShareTpwdResponse"];
                 };
             };
-            429: components["responses"]["TooManyRequests"];
-            "4XX": components["responses"]["ClientError"];
-            "5XX": components["responses"]["ServerError"];
+            429: components["responses"]["NoStoreTooManyRequests"];
+            "4XX": components["responses"]["NoStoreClientError"];
+            "5XX": components["responses"]["NoStoreServerError"];
         };
     };
 }

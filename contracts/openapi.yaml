@@ -3563,11 +3563,11 @@ paths:
                   open_in_app_url: https://go.example.test/r/LinkLanding?link_id=0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
-          $ref: '#/components/responses/TooManyRequests'
+          $ref: '#/components/responses/NoStoreTooManyRequests'
         4XX:
-          $ref: '#/components/responses/ClientError'
+          $ref: '#/components/responses/NoStoreClientError'
         5XX:
-          $ref: '#/components/responses/ServerError'
+          $ref: '#/components/responses/NoStoreServerError'
   /v1/share-pages/{link_id}/tpwd:
     post:
       operationId: getShareTpwd
@@ -3624,11 +3624,11 @@ paths:
                   tpwd: placeholder-tpwd
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
-          $ref: '#/components/responses/TooManyRequests'
+          $ref: '#/components/responses/NoStoreTooManyRequests'
         4XX:
-          $ref: '#/components/responses/ClientError'
+          $ref: '#/components/responses/NoStoreClientError'
         5XX:
-          $ref: '#/components/responses/ServerError'
+          $ref: '#/components/responses/NoStoreServerError'
 components:
   securitySchemes:
     bearerAuth:
@@ -3805,6 +3805,118 @@ components:
         maximum: 50
         default: 20
   responses:
+    NoStoreClientError:
+      description: Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则).
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            unionAuthRequired:
+              summary: 30101 Taobao not authorized
+              value:
+                code: 30101
+                msg: 请先授权淘宝
+                data:
+                  auth_url: https://oauth.example.test/authorize?state=st_01
+                  state: st_01
+                  auth_methods:
+                    - sdk_token
+                    - web_code
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            pddAuthRequired:
+              summary: 30111 Pinduoduo not authorized
+              value:
+                code: 30111
+                msg: 请先授权拼多多
+                data:
+                  auth_jump:
+                    primary:
+                      type: universal_link
+                      value: https://auth.example.test/pdd/authorize?state=st_02
+                    fallbacks:
+                      - type: h5
+                        value: https://auth.example.test/pdd/authorize?state=st_02&web=1
+                    expire_at: '2026-10-02T09:40:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            phoneInvalid:
+              summary: 20001 the phone does not normalise to a mainland mobile number
+              value:
+                code: 20001
+                msg: 手机号格式不正确
+                data:
+                  fields:
+                    - phone
+                  reason: phone_invalid
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            invalidParams:
+              summary: 20001 parameter validation failed
+              value:
+                code: 20001
+                msg: 参数错误
+                data:
+                  fields:
+                    - scene
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    NoStoreTooManyRequests:
+      description: Same as TooManyRequests (42901 with Retry-After), with Cache-Control no-store (share pages).
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Retry-After:
+          required: true
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            code: 42901
+            msg: 请求过于频繁
+            trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    NoStoreServerError:
+      description: Same as ServerError, with Cache-Control no-store (share pages).
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            searchUnavailable:
+              summary: 50304 search unavailable for one platform
+              value:
+                code: 50304
+                msg: 京东搜索暂不可用
+                data:
+                  platform: jd
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            searchDisabled:
+              summary: 50304 search switched off for one platform
+              value:
+                code: 50304
+                msg: 京东搜索已关闭
+                data:
+                  platform: jd
+                  reason: search_disabled
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            notLaunched:
+              summary: 50301 platform not launched yet
+              value:
+                code: 50301
+                msg: 即将开放
+                data:
+                  platform: pdd
+                  reason: not_launched
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     ClientError:
       description: |
         Business or request error. Clients act on `code` only (contracts/error-codes.yaml);
