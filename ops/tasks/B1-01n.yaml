@@ -1,0 +1,34 @@
+id: B1-01n
+repo: rebate-platform
+title: 分区维护接线：worker 入口启动与停止维护任务，couli_maint 连接变量 DATABASE_MAINT_URL（只 worker 要，连接池 1）
+type: impl
+# B1-01j 的后续（其契约写明接线不在其 paths；草稿 couli-runs/CT-plan/ledger-drafts/B1-01n.yaml）。
+# 依据：ADR-0001 §4.2 第 4、8、11、20 项；规划/02 §15.1、§3.1；B1-01f、B1-01g、B1-01j 的契约。
+# 编排会话的决定：变量名 DATABASE_MAINT_URL，只 worker 入口要；连接池大小 1；连接串与 TLS 规则沿用
+# B1-01f 的契约补充；worker 启动顺序 配置校验 → 数据库句柄 → 队列 → 维护 start，SIGTERM 时先停维护
+# （等进行中的一轮）再停队列、关池。link_logs 只有 DEFAULT 分区（按日分区维护未做），接线后每轮都会
+# 告警：本任务在 B1-01j 契约上加补充，worker 接线时先把 link_logs 从 DEFAULT 告警里排除（由规则测试
+# 作者写，不改 B1-01j 已有规则测试）；按日分区维护另立任务，不在本任务。
+# 已有规则测试（queue/entries.int.test.ts 等）以不带新变量的环境启动 worker，不得改它们。
+refs: []
+refs_hash: {}
+deps: [B1-01j]
+paths:
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/db/**'
+  - 'apps/api/src/modules/platform/maintenance/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/main.worker.ts'
+  - 'apps/api/scripts/smoke-entries.ts'
+  - '.env.example'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/maintenance/**'
+  - 'test/spec/platform/db/**'
+status: todo
+pr: null

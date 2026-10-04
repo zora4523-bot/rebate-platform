@@ -1,0 +1,21 @@
+id: B1-01q
+repo: rebate-platform
+title: platform/masking：收款账号的脱敏函数（支付宝登录号手机号 / 邮箱形式、银行卡「尾号 后 4 位」、收款人姓名）
+type: impl
+# BR-ID-33 细则「收款账号的脱敏格式」（功能对照 G-71，SPEC_REF 826f86e 新增）；PR #19 与 B1-01c 台账
+# 注释提出另立（couli-runs/followups/BR-ID-33-G71-payout-account-masking.md）。纯函数，不依赖数据库；
+# 与 B1-01c 的 maskPhone / maskIdNo / maskName 同一模块，只新增，不改 B1-01c 已有规则测试。
+# 用户侧接口与提现单快照怎样调用这些函数，归 payout / withdrawals 各自的任务。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: 01b25f773b29
+deps: [B1-01c]
+paths:
+  - 'apps/api/src/modules/platform/masking/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/masking/**'
+status: todo
+pr: null

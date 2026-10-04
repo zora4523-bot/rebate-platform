@@ -1,0 +1,22 @@
+id: B1-01o
+repo: rebate-platform
+title: 日志脱敏补漏：URL 对象与访问日志路径里的手机号、邮箱等过自由文本检查
+type: impl
+# B1-01c 的后续（approvals #18 降级后另立；couli-runs/followups/B1-01c-url-path-and-trace-id.md 第 1 项）。
+# 场景：logger.info({ link: new URL('https://x.example/u/13987654321?ref=1') })，B1-01c 契约补充 G
+# 写 origin + pathname，路径里的号码原样写出。本任务：URL 对象写出的串在任何位置都过自由文本安全网
+# （与 msg 同一套规则），访问日志的路径同样过；补规则测试（嵌套、数组、绑定、printf 参数各一）。
+# 契约补充写在新规则测试文件头，不改 B1-01c 已有规则测试与 masking 的函数。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: 01b25f773b29
+deps: [B1-01c]
+paths:
+  - 'apps/api/src/modules/platform/logging/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/masking/**'
+status: todo
+pr: null
