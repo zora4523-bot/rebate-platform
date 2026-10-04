@@ -95,6 +95,7 @@
 //    syntax, no NestJS, no pg-boss, no `process.env`, no wall clock, logs only through the given
 //    logger); `import type` for the queue types.
 import type { RootLogger } from '../logging/logger.ts';
+import { createPartitionMaintenance, MaintenanceError } from './index.ts';
 import type { PartitionMaintenance, PartitionMaintenanceOptions } from './index.ts';
 
 /** Tables whose DEFAULT rows the worker logs at info instead of warn (section 1). */
@@ -119,14 +120,61 @@ export interface WorkerServices {
 
 /** The worker's maintenance instance (section 2). */
 export function createWorkerMaintenance(
-  options: PartitionMaintenanceOptions,
+  options: Omit<PartitionMaintenanceOptions, 'quietDefaultTables'>,
 ): PartitionMaintenance {
-  void options;
-  throw new Error('NotImplemented: createWorkerMaintenance');
+  if (
+    options === null ||
+    typeof options !== 'object' ||
+    Object.getPrototypeOf(options) !== Object.prototype ||
+    Reflect.ownKeys(options).some(
+      (key) => !['db', 'logger', 'clock', 'intervalMs'].includes(String(key)),
+    )
+  )
+    throw new MaintenanceError('invalid_option');
+  return createPartitionMaintenance({
+    ...options,
+    quietDefaultTables: WORKER_QUIET_DEFAULT_TABLES,
+  });
 }
 
 /** Starts queue then maintenance; the result stops them in reverse order (section 3). */
-export function startWorkerServices(parts: WorkerServicesParts): Promise<WorkerServices> {
-  void parts;
-  return Promise.reject(new Error('NotImplemented: startWorkerServices'));
+export async function startWorkerServices(parts: WorkerServicesParts): Promise<WorkerServices> {
+  const { queue, maintenance, logger } = parts;
+  const close = [...parts.close];
+  let maintenanceStarted = false;
+  let stopping: Promise<void> | undefined;
+  const stop = (): Promise<void> => {
+    stopping ??= (async () => {
+      let failed = false;
+      let firstError: unknown;
+      const steps = [
+        ...(maintenanceStarted && maintenance !== null ? [() => maintenance.stop()] : []),
+        () => queue.stop(),
+        ...close,
+      ];
+      for (const step of steps) {
+        try {
+          await step();
+        } catch (error) {
+          if (!failed) firstError = error;
+          failed = true;
+        }
+      }
+      if (failed) throw firstError;
+    })();
+    return stopping;
+  };
+  try {
+    await queue.start();
+    if (maintenance === null) {
+      logger.info({ variable: 'DATABASE_MAINT_URL' }, 'partition_maintenance_disabled');
+    } else {
+      maintenanceStarted = true;
+      await maintenance.start();
+    }
+  } catch (error) {
+    await stop().catch(() => undefined);
+    throw error;
+  }
+  return Object.freeze({ stop });
 }

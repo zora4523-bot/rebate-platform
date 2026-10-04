@@ -11,6 +11,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { FixedClock } from '../clock/clock.ts';
 import type { RootLogger } from '../logging/logger.ts';
 import { createPartitionMaintenance, type PartitionMaintenance } from './index.ts';
+import { createWorkerMaintenance } from './worker.ts';
 
 const instances: PartitionMaintenance[] = [];
 const handles: Kysely<DB>[] = [];
@@ -78,8 +79,65 @@ async function fixture(instant = '2026-11-20T03:04:05Z') {
     intervalMs: 100,
   });
   instances.push(maintenance);
-  return { maintenance, queries, transactions, control, logger, clock, now };
+  return { db, maintenance, queries, transactions, control, logger, clock, now };
 }
+
+it('[AC-B1-01n#5] worker 对 link_logs 降为信息日志，报告仍包含它，orders 仍告警', async () => {
+  const f = await fixture();
+  f.control.respond = async (query) =>
+    query.sql.includes('partition_default_rows')
+      ? [
+          { table_name: 'link_logs', default_partition: 'link_logs_default', row_count: 2n },
+          { table_name: 'orders', default_partition: 'orders_default', row_count: 3n },
+          { table_name: 'event_log', default_partition: 'event_log_default', row_count: 0n },
+        ]
+      : undefined;
+  const worker = createWorkerMaintenance({
+    db: f.db,
+    logger: f.logger as unknown as RootLogger,
+    clock: f.clock,
+  });
+  instances.push(worker);
+  const report = await worker.runOnce();
+  expect(report.defaultRows).toEqual([
+    { table: 'link_logs', partition: 'link_logs_default', rows: 2 },
+    { table: 'orders', partition: 'orders_default', rows: 3 },
+  ]);
+  expect(f.logger.info.mock.calls).toEqual([
+    [report.defaultRows[0], 'partition_default_rows_expected'],
+    [{ ensured: 8, dropped: 0, failed: 0 }, 'partition_maintenance_done'],
+  ]);
+  expect(f.logger.warn.mock.calls).toEqual([[report.defaultRows[1], 'partition_default_has_rows']]);
+});
+
+it('[AC-B1-01n#6] 创建后修改 quietDefaultTables 不影响日志分级', async () => {
+  const f = await fixture();
+  const tables = ['link_logs'];
+  const maintenance = createPartitionMaintenance({
+    db: f.db,
+    logger: f.logger as unknown as RootLogger,
+    clock: f.clock,
+    quietDefaultTables: tables,
+  });
+  instances.push(maintenance);
+  tables.splice(0, 1, 'orders');
+  f.control.respond = async (query) =>
+    query.sql.includes('partition_default_rows')
+      ? [
+          { table_name: 'link_logs', default_partition: 'link_logs_default', row_count: 1n },
+          { table_name: 'orders', default_partition: 'orders_default', row_count: 1n },
+        ]
+      : undefined;
+  await maintenance.runOnce();
+  expect(f.logger.info).toHaveBeenCalledWith(
+    { table: 'link_logs', partition: 'link_logs_default', rows: 1 },
+    'partition_default_rows_expected',
+  );
+  expect(f.logger.warn).toHaveBeenCalledExactlyOnceWith(
+    { table: 'orders', partition: 'orders_default', rows: 1 },
+    'partition_default_has_rows',
+  );
+});
 
 it('[AC-B1-01j#1] 独立参数化语句使用同一次时钟读数，失败月份不阻断后续建分区和 DEFAULT 告警', async () => {
   const f = await fixture();

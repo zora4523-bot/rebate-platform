@@ -33,6 +33,9 @@ export type {
 } from './events/index.ts';
 export { createDbHandles, loadConnectionConfig, DbError } from './db/index.ts';
 export type { ConnectionConfig, DbHandles } from './db/index.ts';
+export { loadMaintConnectionConfig, createMaintDbHandle } from './db/maint.ts';
+export type { MaintConnectionConfig, MaintDbHandle } from './db/maint.ts';
+export { createWorkerMaintenance, startWorkerServices } from './maintenance/worker.ts';
 export type {
   JobQueue,
   JobPayload,

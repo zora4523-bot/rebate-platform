@@ -26,6 +26,9 @@ function childEnv(entry: string, extra: Record<string, string>): Record<string, 
     APP_ENV: 'test',
     LOG_LEVEL: 'info',
     DATABASE_URL: `postgres://${entry === 'payout' ? 'couli_payout' : 'couli_app'}@127.0.0.1:1/couli`,
+    ...(entry === 'worker'
+      ? { DATABASE_MAINT_URL: 'postgres://couli_maint@127.0.0.1:1/couli' }
+      : {}),
     ...(entry === 'admin'
       ? { DATABASE_READ_URL: 'postgres://couli_readonly@127.0.0.1:1/couli' }
       : {}),
@@ -149,9 +152,12 @@ function checkMissingVariables(entry: string): void {
     'DATABASE_URL',
     ...(entry === 'admin' ? ['DATABASE_READ_URL'] : []),
     ...(entry === 'payout' ? [] : ['REDIS_URL']),
+    ...(entry === 'worker' ? ['DATABASE_MAINT_URL'] : []),
   ];
   for (const name of required) {
     const env = childEnv(entry, { COULI_EXIT_AFTER_INIT: '1' });
+    // Only APP_ENV=test permits workers without a maintenance connection.
+    if (name === 'DATABASE_MAINT_URL') env['APP_ENV'] = 'local';
     delete env[name];
     const result = spawnSync(process.execPath, [distFile(entry)], {
       cwd: appDir,

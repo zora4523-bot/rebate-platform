@@ -287,7 +287,7 @@ function validDatabaseQuery(url: URL): boolean {
 }
 
 /** Parse only known fields; never let pg reinterpret a connection string. */
-function parseDatabaseParameters(url: URL, name: string): pg.ClientConfig {
+function parseDatabaseParameters(url: URL, name: string, requiredUser?: string): pg.ClientConfig {
   // Decode before query validation, so malformed escapes always report the URL problem.
   const user = decodeURIComponent(url.username);
   const password = decodeURIComponent(url.password);
@@ -305,6 +305,9 @@ function parseDatabaseParameters(url: URL, name: string): pg.ClientConfig {
     )
   ) {
     throw new ConfigError([`${name}: connection fields may not contain control characters`]);
+  }
+  if (requiredUser !== undefined && user !== requiredUser) {
+    throw new ConfigError([`${name}: must connect as ${requiredUser}`]);
   }
   const host = url.hostname;
   const mode = url.searchParams.get('sslmode') ?? 'disable';
@@ -341,6 +344,29 @@ function parseDatabaseParameters(url: URL, name: string): pg.ClientConfig {
   };
 }
 
+/** Shared validated URL loader; credentials stay in the private parameter cache. */
+export function loadDatabaseUrl(value: string, name: string, requiredUser?: string): ConnectionUrl {
+  try {
+    const url = new URL(value);
+    if (
+      ['postgres:', 'postgresql:'].includes(url.protocol) &&
+      url.username !== '' &&
+      url.hostname !== '' &&
+      url.pathname.length > 1
+    ) {
+      const parameters = parseDatabaseParameters(url, name, requiredUser);
+      const connectionUrl = new ConnectionUrl(url.href);
+      databaseParameters.set(connectionUrl, parameters);
+      return connectionUrl;
+    }
+  } catch (error) {
+    if (error instanceof ConfigError) throw error;
+  }
+  throw new ConfigError([
+    `${name}: must be a postgres:// or postgresql:// URL with a user, a host and a database name`,
+  ]);
+}
+
 /**
  * Reads DATABASE_URL, DATABASE_READ_URL and REDIS_URL for `entry` from `env` (section 1).
  * Throws the `ConfigError` of platform/config listing every problem.
@@ -358,16 +384,11 @@ export function loadConnectionConfig(
     }
     const redis = name === 'REDIS_URL';
     try {
+      if (!redis) return loadDatabaseUrl(value, name);
       const url = new URL(value);
-      const valid = redis
-        ? ['redis:', 'rediss:'].includes(url.protocol) && url.hostname !== ''
-        : ['postgres:', 'postgresql:'].includes(url.protocol) &&
-          url.username !== '' &&
-          url.hostname !== '' &&
-          url.pathname.length > 1;
+      const valid = ['redis:', 'rediss:'].includes(url.protocol) && url.hostname !== '';
       if (valid) {
         const connectionUrl = new ConnectionUrl(url.href);
-        if (!redis) databaseParameters.set(connectionUrl, parseDatabaseParameters(url, name));
         return connectionUrl;
       }
     } catch (error) {
@@ -449,6 +470,17 @@ export interface DbHandles {
 
 /** Creates the pools of `config.entry` without connecting (section 4). */
 export function createDbHandles(config: ConnectionConfig, options: DbHandlesOptions): DbHandles {
+  return createManagedDbHandles(config.db, config.dbRead, options);
+}
+
+type ManagedPoolConfig = Omit<DbPoolConfig, 'name'> & { readonly name: DbHandleName | 'dbMaint' };
+
+/** Shared pool lifecycle; maintenance keeps its separate public config and handle shapes. */
+export function createManagedDbHandles(
+  primary: ManagedPoolConfig,
+  replica: ManagedPoolConfig | null,
+  options: DbHandlesOptions,
+): DbHandles {
   const timeout = options.closeTimeoutMs === undefined ? 5000 : options.closeTimeoutMs;
   if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60000) {
     throw new DbError('invalid_option');
@@ -456,7 +488,7 @@ export function createDbHandles(config: ConnectionConfig, options: DbHandlesOpti
   let closing = false;
   let closed: Promise<void> | undefined;
   const pools: ManagedPool[] = [];
-  const make = (settings: DbPoolConfig): Kysely<DB> => {
+  const make = (settings: ManagedPoolConfig): Kysely<DB> => {
     return createDb({
       max: settings.max,
       applicationName: settings.applicationName,
@@ -491,8 +523,8 @@ export function createDbHandles(config: ConnectionConfig, options: DbHandlesOpti
       },
     });
   };
-  const db = make(config.db);
-  const dbRead = config.dbRead === null ? null : make(config.dbRead);
+  const db = make(primary);
+  const dbRead = replica === null ? null : make(replica);
   return Object.freeze({
     db,
     dbRead,
@@ -524,7 +556,7 @@ interface ManagedPool {
 /** Keeps pg objects private and owns all lifecycle handling outside Kysely. */
 function managePool(
   config: pg.PoolConfig,
-  settings: DbPoolConfig,
+  settings: ManagedPoolConfig,
   logger: RootLogger,
   isClosing: () => boolean,
 ): ManagedPool {

@@ -91,6 +91,8 @@
 //      new file of this directory; this file must keep exporting the names below.
 //    - Wiring (entry.ts, maintenance/worker.ts) is described in platform/maintenance/worker.ts.
 import type { DB } from '@couli/db';
+import { ConfigError } from '../config/index.ts';
+import { DbError, loadDatabaseUrl, createManagedDbHandles } from './index.ts';
 import type { Kysely } from 'kysely';
 import type { EntryName } from '../entries.ts';
 import type { ConnectionUrl, DbHandlesOptions } from './index.ts';
@@ -118,14 +120,29 @@ export interface MaintDbHandle {
   close(): Promise<void>;
 }
 
+const validatedConfigs = new WeakSet<MaintConnectionConfig>();
+
 /** Reads DATABASE_MAINT_URL for `entry` from `env` (section 1). */
 export function loadMaintConnectionConfig(
   entry: EntryName,
   env: Readonly<Record<string, string | undefined>>,
 ): MaintConnectionConfig | null {
-  void entry;
-  void env;
-  throw new Error('NotImplemented: loadMaintConnectionConfig');
+  if (entry !== 'worker') return null;
+  const appEnv = env['APP_ENV'];
+  const value = env['DATABASE_MAINT_URL'];
+  if (value === undefined || value === '') {
+    if (appEnv === 'test') return null;
+    throw new ConfigError(['DATABASE_MAINT_URL: must be set for the worker entry']);
+  }
+  const config: MaintConnectionConfig = Object.freeze({
+    name: 'dbMaint',
+    url: loadDatabaseUrl(value, 'DATABASE_MAINT_URL', 'couli_maint'),
+    max: MAINT_POOL_SIZE,
+    applicationName: MAINT_APPLICATION_NAME,
+    readOnly: false,
+  });
+  validatedConfigs.add(config);
+  return config;
 }
 
 /** Creates the maintenance pool without connecting (section 3). */
@@ -133,7 +150,7 @@ export function createMaintDbHandle(
   config: MaintConnectionConfig,
   options: DbHandlesOptions,
 ): MaintDbHandle {
-  void config;
-  void options;
-  throw new Error('NotImplemented: createMaintDbHandle');
+  if (!validatedConfigs.has(config)) throw new DbError('invalid_option');
+  const handles = createManagedDbHandles(config, null, options);
+  return Object.freeze({ db: handles.db, close: handles.close });
 }

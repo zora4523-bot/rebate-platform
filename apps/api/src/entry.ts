@@ -4,6 +4,8 @@ import {
   type AppConfig,
   type ConnectionConfig,
   type DbHandles,
+  type MaintConnectionConfig,
+  type MaintDbHandle,
   ConfigError,
   type EntryName,
   type HttpEntry,
@@ -12,6 +14,11 @@ import {
   JOB_QUEUE,
   createRootLogger,
   createDbHandles,
+  createMaintDbHandle,
+  loadMaintConnectionConfig,
+  createWorkerMaintenance,
+  startWorkerServices,
+  clockFromConfig,
   isHttpEntry,
   loadConfig,
   loadConnectionConfig,
@@ -52,6 +59,7 @@ async function start(
   config: AppConfig,
   logger: RootLogger,
   dbHandles: DbHandles,
+  maintHandle: MaintDbHandle | null,
 ): Promise<void> {
   if (isHttpEntry(entry)) {
     const app = await createHttpApp(entry, { config, logger, dbHandles });
@@ -70,6 +78,55 @@ async function start(
     } catch (error) {
       await app.close();
       throw error;
+    }
+    return;
+  }
+
+  if (entry === 'worker') {
+    const clock = clockFromConfig(config);
+    const context = await createWorkerContext(entry, { config, logger, dbHandles, clock });
+    let servicesOwnCleanup = false;
+    try {
+      if (config.exitAfterInit) {
+        logger.info({ listening: false }, 'started');
+        return;
+      }
+      const queue = context.get<QueueRuntime>(JOB_QUEUE);
+      const maintenance =
+        maintHandle === null
+          ? null
+          : createWorkerMaintenance({
+              db: maintHandle.db,
+              logger,
+              clock,
+            });
+      servicesOwnCleanup = true;
+      const services = await startWorkerServices({
+        queue,
+        maintenance,
+        logger,
+        close: [
+          () => context.close(),
+          ...(maintHandle === null ? [] : [() => maintHandle.close()]),
+        ],
+      });
+      const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
+      closeOnSignal(logger, async () => {
+        try {
+          await services.stop();
+        } finally {
+          clearInterval(keepAlive);
+        }
+      });
+      logger.info({ listening: false }, 'started');
+    } finally {
+      if (!servicesOwnCleanup) {
+        try {
+          await context.close();
+        } finally {
+          await maintHandle?.close();
+        }
+      }
     }
     return;
   }
@@ -109,6 +166,7 @@ async function start(
 export async function runEntry(entry: EntryName): Promise<void> {
   let config: AppConfig | undefined;
   let connections: ConnectionConfig | undefined;
+  let maintConnection: MaintConnectionConfig | null = null;
   const problems: string[] = [];
   try {
     try {
@@ -119,6 +177,12 @@ export async function runEntry(entry: EntryName): Promise<void> {
     }
     try {
       connections = loadConnectionConfig(entry, process.env);
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      problems.push(...error.problems);
+    }
+    try {
+      maintConnection = loadMaintConnectionConfig(entry, process.env);
     } catch (error) {
       if (!(error instanceof ConfigError)) throw error;
       problems.push(...error.problems);
@@ -137,11 +201,14 @@ export async function runEntry(entry: EntryName): Promise<void> {
   if (config === undefined || connections === undefined) return;
   const logger = createRootLogger({ level: config.logLevel, entry, appEnv: config.appEnv });
   let handles: DbHandles | undefined;
+  let maintHandle: MaintDbHandle | null = null;
   try {
     handles = createDbHandles(connections, { logger });
-    await start(entry, config, logger, handles);
+    if (maintConnection !== null) maintHandle = createMaintDbHandle(maintConnection, { logger });
+    await start(entry, config, logger, handles, maintHandle);
   } catch (error) {
     await handles?.close();
+    await maintHandle?.close();
     logger.fatal({ err: error }, 'startup_failed');
     process.exitCode = 1;
   }
