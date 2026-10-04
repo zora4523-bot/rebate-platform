@@ -40,6 +40,7 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   DeviceIdSource: 'device_id_source',
   SessionScope: 'session_scope',
   AuthMethod: 'auth_method',
+  NoRebateCause: 'no_rebate_cause',
   H5TokenScope: 'h5_token_scope',
   LoginProvider: 'login_provider',
   OauthAttemptPurpose: 'oauth_attempt_purpose',

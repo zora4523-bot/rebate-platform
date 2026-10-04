@@ -990,7 +990,9 @@ paths:
         credential, or one the upstream says is not for this app, is 30104 with
         data.reason=credential_invalid; an expired or used state is 30104 without reason. Every
         binding attempt (new state or new credential) uses a new Idempotency-Key; only a transport
-        retry of the same request keeps it (BR-ID-17 细则「授权方式」).
+        retry of the same request keeps it (BR-ID-17 细则「授权方式」). While the site's own union
+        authorization is unavailable the request gets 30101 (unbound, pending_auth or released) or
+        30102 (invalid) with data.reason=auth_unavailable and no auth_url (BR-ID-24 ④).
       x-auth: login
       x-signed: true
       x-idempotent: true
@@ -998,6 +1000,8 @@ paths:
       x-implementation: planned
       x-error-codes:
         - 20001
+        - 30101
+        - 30102
         - 30104
         - 30151
         - 30153
@@ -1360,6 +1364,8 @@ paths:
         `POST /v1/links/{link_id}/open`. `x-auth` is optional although 04 §6.3 lists none:
         rebate amounts are computed for the current user and links are registered per user
         (BR-PRICE-11, BR-PRICE-12; 08 wins over 04).
+        When the search switch search.enabled.<platform> is off the answer is 50304 with
+        data.reason=search_disabled (BR-PROD-10 细则「按平台的搜索开关」).
       x-auth: optional
       x-signed: false
       x-idempotent: false
@@ -1635,6 +1641,8 @@ paths:
                   $ref: '#/components/examples/OpenLinkUnchanged'
                 priceChanged:
                   $ref: '#/components/examples/OpenLinkPriceChanged'
+                priceCompare:
+                  $ref: '#/components/examples/OpenLinkPriceCompare'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         4XX:
@@ -1959,6 +1967,15 @@ components:
                 data:
                   platform: jd
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            searchDisabled:
+              summary: 50304 search switched off for one platform
+              value:
+                code: 50304
+                msg: 京东搜索已关闭
+                data:
+                  platform: jd
+                  reason: search_disabled
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
             notLaunched:
               summary: 50301 platform not launched yet
               value:
@@ -2093,6 +2110,7 @@ components:
         code: 0
         msg: ''
         data:
+          attempt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80
           jump:
             primary:
               type: sdk
@@ -2119,6 +2137,7 @@ components:
         code: 0
         msg: ''
         data:
+          attempt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80
           jump:
             primary:
               type: scheme
@@ -2137,6 +2156,30 @@ components:
           availability: ok
           quoted_at: '2026-10-02T09:30:05+08:00'
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    OpenLinkPriceCompare:
+      summary: Price-compare pre-check says no rebate; the jump plan is still returned
+      value:
+        code: 0
+        msg: ''
+        data:
+          attempt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a82
+          jump:
+            primary:
+              type: sdk
+              value: https://s.click.example.test/t?e=def
+            fallbacks: []
+            expire_at: '2026-10-02T09:45:00+08:00'
+          price_changed: false
+          old_final_price_fen: 2990
+          new_final_price_fen: 2990
+          new_link_id: null
+          requote_failed: false
+          new_rebate_min_fen: 0
+          new_rebate_max_fen: 0
+          no_rebate_cause: price_compare
+          availability: ok
+          quoted_at: '2026-10-02T09:30:05+08:00'
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     ConvertLinkOk:
       summary: H5 entry without a link_id
       value:
@@ -2144,6 +2187,7 @@ components:
         msg: ''
         data:
           link_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a72
+          attempt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a81
           jump:
             primary:
               type: h5
@@ -2282,6 +2326,11 @@ components:
         - sales_desc
         - final_price_asc
         - rebate_desc
+    NoRebateCause:
+      type: string
+      description: Why a card or an open result has no rebate (enum no_rebate_cause).
+      enum:
+        - price_compare
     RebateBasis:
       type: string
       description: |
@@ -3939,6 +3988,13 @@ components:
           $ref: '#/components/schemas/NullableFen'
         rebate_basis:
           $ref: '#/components/schemas/RebateBasis'
+        no_rebate_cause:
+          description: |
+            May be non-null only when rebate_basis=no_rebate (BR-PRICE-08 细则「无返利原因」);
+            unknown values are treated as null. Not the open request's no_rebate_reason.
+          anyOf:
+            - $ref: '#/components/schemas/NoRebateCause'
+            - type: 'null'
         benefit_tags:
           type: array
           description: Server-generated labels (有券, 预售, 标题显示为 X…); no per-card reasons.
@@ -4196,9 +4252,11 @@ components:
       description: |
         Response of open (04 §8.4). old_final_price_fen is the link's quoted_final_price_fen;
         price_changed when |new − old| ≥ 100 fen or ≥ 5 % of old, both directions (BR-PRICE-13).
-        Prices and rebates are null on amount_unknown links, which are not re-checked.
+        Prices and rebates are null on amount_unknown links, which are not re-checked. There is no
+        rebate_basis: no rebate is expressed by new_rebate_max_fen = 0 (BR-PRICE-08, BR-PRICE-13).
       additionalProperties: false
       required:
+        - attempt_id
         - jump
         - price_changed
         - old_final_price_fen
@@ -4210,6 +4268,21 @@ components:
         - availability
         - quoted_at
       properties:
+        attempt_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            Issued by the server for this open attempt: a new one for every open of a link, the
+            same one when the same Idempotency-Key is replayed. The client sends it in every
+            link_jump of this jump (BR-ATTR-21 细则「待跟单卡按实际外跳选」).
+        no_rebate_cause:
+          description: |
+            Non-null only when new_rebate_max_fen = 0 and the reason is known; unknown values are
+            treated as null. Not the request's no_rebate_reason (BR-ID-18).
+          anyOf:
+            - $ref: '#/components/schemas/NoRebateCause'
+            - type: 'null'
         jump:
           $ref: '#/components/schemas/JumpPlan'
         price_changed:
@@ -4312,6 +4385,7 @@ components:
       additionalProperties: false
       required:
         - link_id
+        - attempt_id
         - jump
         - price_changed
         - old_final_price_fen
@@ -4323,6 +4397,21 @@ components:
         - availability
         - quoted_at
       properties:
+        attempt_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            Issued by the server for this open attempt: a new one for every open of a link, the
+            same one when the same Idempotency-Key is replayed. The client sends it in every
+            link_jump of this jump (BR-ATTR-21 细则「待跟单卡按实际外跳选」).
+        no_rebate_cause:
+          description: |
+            Non-null only when new_rebate_max_fen = 0 and the reason is known; unknown values are
+            treated as null. Not the request's no_rebate_reason (BR-ID-18).
+          anyOf:
+            - $ref: '#/components/schemas/NoRebateCause'
+            - type: 'null'
         link_id:
           $ref: '#/components/schemas/Id'
         jump:

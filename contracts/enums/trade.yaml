@@ -131,6 +131,11 @@ enums:
       product: 平台商品页
       promo: 推广短链与落地页
       union_host: 联盟平台网页（按注册域含子域）
+  no_rebate_cause:
+    source: 规划/04 §8.3、§8.4；BR-PRICE-08
+    description: 商品卡与 open / convert 结果的无返利原因（可空，未知值按空处理）；取值规则见 BR-PRICE-08 细则「无返利原因」
+    values:
+      price_compare: 比价预判为比价单
   tlj_kind:
     source: 规划/04 §2.5；BR-TEXT-15
     description: 素材淘礼金出资方判定；unknown 不宣称已判定为 third_party
