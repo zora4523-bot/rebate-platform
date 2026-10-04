@@ -78,8 +78,23 @@ export async function column(table: string, name: string): Promise<Column | unde
   return (await columns(table)).find((c) => c.name === name);
 }
 
-/** First string literal listed by a CHECK constraint that mentions the column, if any. */
-async function checkedLiteral(table: string, name: string): Promise<string | null> {
+/**
+ * Fixed, valid values for columns whose format a CHECK may constrain (semantic version strings of
+ * app_versions, 04 §3.2; client platforms of contracts/enums/platform.yaml client_platform).
+ */
+const FIXED: Readonly<Record<string, unknown>> = {
+  latest_version: '1.2.0',
+  min_supported_version: '1.0.0',
+  recommended_version: '1.1.0',
+  platform: 'android',
+};
+
+/**
+ * A value of an enumeration CHECK on the column (`col = ANY (ARRAY['a'::text, ...])`), if any.
+ * Format checks (regular expressions, lengths) are never mined for a value: a literal there is a
+ * pattern, not a valid value.
+ */
+async function enumeratedLiteral(table: string, name: string): Promise<string | null> {
   const rows = await sql<{ def: string }>`
     SELECT pg_get_constraintdef(c.oid) AS def
     FROM pg_constraint c
@@ -87,15 +102,16 @@ async function checkedLiteral(table: string, name: string): Promise<string | nul
     JOIN pg_namespace n ON n.oid = t.relnamespace
     WHERE n.nspname = 'app' AND t.relname = ${table} AND c.contype = 'c'
   `.execute(app);
+  const pattern = new RegExp(`\\(?${name}\\)? = ANY \\(\\(?ARRAY\\['([^']*)'::text`);
   for (const { def } of rows.rows) {
-    if (!new RegExp(`\\b${name}\\b`).test(def)) continue;
-    const literal = /'([^']*)'::text/.exec(def);
+    const literal = pattern.exec(def);
     if (literal?.[1] !== undefined) return literal[1];
   }
   return null;
 }
 
 async function filler(table: string, col: Column): Promise<unknown> {
+  if (col.name in FIXED) return FIXED[col.name];
   switch (col.type) {
     case 'uuid':
       return randomUUID();
@@ -115,7 +131,7 @@ async function filler(table: string, col: Column): Promise<unknown> {
     case 'json':
       return '[]';
     default:
-      return (await checkedLiteral(table, col.name)) ?? unique('v');
+      return (await enumeratedLiteral(table, col.name)) ?? unique('v');
   }
 }
 

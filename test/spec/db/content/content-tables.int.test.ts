@@ -253,3 +253,20 @@ it('[AC-F1-02a#12] other roles: readonly only reads, payout and maint never writ
     expect(acl.rows, table).toEqual([{ public_grants: '0' }]);
   }
 });
+
+// Added after rule-test review round 1 (base columns of articles: 04 §3.2「分类、标题、正文、版本、
+// 状态」; status values are not given by 04, so only its presence is asserted).
+it('[AC-F1-02a#46] articles has category, title, body, version and status, and keeps a written article', async () => {
+  const names = (await columns('articles')).map((c) => c.name);
+  for (const name of ['category', 'title', 'body', 'version', 'status']) {
+    expect(names, name).toContain(name);
+  }
+  const title = unique('提现规则');
+  const body = '提现申请提交后，按提现记录查看进度。';
+  await insertRow('articles', { app_id: 'couli', title, body, version: 3 });
+  const stored = await sql<{ title: string; body: string; version: string }>`
+    SELECT title, body, version::text AS version FROM app.articles
+    WHERE app_id = 'couli' AND title = ${title}
+  `.execute(app);
+  expect(stored.rows).toEqual([{ title, body, version: '3' }]);
+});
