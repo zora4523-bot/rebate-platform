@@ -589,6 +589,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/payout-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My current payout account (masked)
+         * @description Only payout_method, masked_account, bank_name (bank card only), masked_payee_name and
+         *     change_remaining_this_month (changes left this natural month, BR-WDR-02 ④, never below 0);
+         *     an empty object when nothing is bound. Never the ID number, the full logon id or card
+         *     number, the card BIN or the full name; masking is done by the server (BR-ID-33 细则
+         *     「收款账号的脱敏格式」).
+         */
+        get: operations["getPayoutAccount"];
+        /**
+         * Bind or change my payout account
+         * @description Body by payout_method (withdraw.payout_methods decides which are open): alipay with the
+         *     logon id and payee_name, bank_card with card number, bank name and payee_name. payee_name
+         *     and the real name are both normalised before comparing; different → 30307 (BR-WDR-02 ①).
+         *     A bank card must be a debit card of the user: 12–19 digits with Luhn, else 20001
+         *     data.fields=[card_no]; three-element verification mismatch → 30307 (⑥). An Alipay logon id
+         *     in phone form that does not normalise is 20001 with data.reason=phone_invalid (BR-WDR-02
+         *     细则). Account held by another user → 30308; blacklisted → 44001. Changes per natural
+         *     month over the limit → 30303 data.reason=payout_account_change_limit (④); the paid
+         *     verification reserves the day's quota before calling the vendor and a full quota is 30303
+         *     data.reason=payout_account_verify_limit without a vendor call (⑦). A verification of the
+         *     same account still in flight or under recheck → 40901; vendor timeout → 50401 (the same
+         *     account is first rechecked by the original request id on the next submit); a matching result
+         *     within its validity is reused. Resubmitting with the same Idempotency-Key reuses that key's
+         *     verification record (in flight or recheck 40901, match saves, mismatch the original 30307,
+         *     still unknown at the deadline 50401) without a new verification or charge (BR-WDR-02 细则
+         *     「核验次数上限」). Needs X-Step-Up-Token for action payout_account_change (BR-WDR-02 ③; also
+         *     on the first binding). An abandoned Idempotency-Key is 20903 at the idempotency check,
+         *     without comparing the body or running the business; a business write that finds it
+         *     abandoned is rolled back with 20903 (04 §5「幂等」). Not realname → 30304; after a blocking
+         *     precondition the request is not replayed, the user saves again on the payout-account page
+         *     (BR-WDR-07 细则「前置步骤的回流」). Version gate: applied.
+         */
+        put: operations["savePayoutAccount"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/tips": {
         parameters: {
             query?: never;
@@ -1709,6 +1757,56 @@ export interface components {
             /** Format: date-time */
             deadline_at: string | null;
         };
+        /** @description The current payout account, by payout_method (bank_name only for a bank card). */
+        PayoutAccount: components["schemas"]["PayoutAccountAlipay"] | components["schemas"]["PayoutAccountBankCard"];
+        PayoutAccountAlipay: {
+            /** @enum {string} */
+            payout_method: "alipay";
+            /** @description Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」). */
+            masked_account: string;
+            masked_payee_name: string;
+            /** Format: int32 */
+            change_remaining_this_month: number;
+        };
+        PayoutAccountBankCard: {
+            /** @enum {string} */
+            payout_method: "bank_card";
+            /** @description Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」). */
+            masked_account: string;
+            /** @description From the card BIN. */
+            bank_name: string;
+            masked_payee_name: string;
+            /** Format: int32 */
+            change_remaining_this_month: number;
+        };
+        PayoutAccountResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            /** @description The account, or an empty object when nothing is bound. */
+            data: components["schemas"]["PayoutAccount"] | components["schemas"]["EmptyData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        SavePayoutAccountByAlipay: {
+            /** @enum {string} */
+            payout_method: "alipay";
+            /** @description Alipay logon id (phone or e-mail form), normalised by the server (BR-WDR-02 细则). */
+            alipay_logon_id: string;
+            payee_name: string;
+        };
+        SavePayoutAccountByBankCard: {
+            /** @enum {string} */
+            payout_method: "bank_card";
+            /**
+             * @description Card number as typed; the server removes spaces and hyphens, then checks 12–19 digits and
+             *     Luhn (20001 data.fields=[card_no], BR-WDR-02 ⑥ and 细则).
+             */
+            card_no: string;
+            /** @description Opening bank as chosen by the user (04 §6.1). */
+            bank_name: string;
+            /** @description Account holder name (BR-WDR-02 ①). */
+            payee_name: string;
+        };
+        SavePayoutAccountRequest: components["schemas"]["SavePayoutAccountByAlipay"] | components["schemas"]["SavePayoutAccountByBankCard"];
         EmptyData: Record<string, never>;
         EmptyResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -3770,6 +3868,121 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getPayoutAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current payout account, or an empty object. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    savePayoutAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
+                 *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["StepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavePayoutAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description The saved account (masked). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "payout_method": "bank_card",
+                     *         "masked_account": "尾号 0009",
+                     *         "bank_name": "示例银行",
+                     *         "masked_payee_name": "**三",
+                     *         "change_remaining_this_month": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PayoutAccountResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

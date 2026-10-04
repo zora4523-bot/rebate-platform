@@ -271,6 +271,26 @@ export const payout_method = [
 export type PayoutMethod = (typeof payout_method)[number];
 
 /**
+ * 30303 的 data.reason（文案键 error.30303.<reason>，BR-TEXT-14）；编码由契约任务定（contract-delta b2-24）
+ * Source: 规划/08 §13.11 30303；BR-WDR-02、BR-WDR-03 细则、BR-WDR-04、BR-WDR-05、BR-FUND-19 (contracts/enums/fund.yaml).
+ */
+export const withdraw_condition_reason = [
+  "account_frozen", // 账户冻结（含账务差异冻结，冻结来源只在后台可见）
+  "below_min", // 低于单笔最低金额
+  "not_multiple", // 不是规定的整数倍
+  "above_max", // 超过单笔最高金额
+  "net_too_small", // 扣除手续费与税后到账金额过小
+  "daily_count", // 超过每日提现次数
+  "monthly_count", // 超过每月提现次数
+  "payee_daily_count", // 同一收款账号当日次数已满
+  "payee_daily_users", // 同一收款账号当日关联用户数已满
+  "self_purchase_required", // 需要先有自购订单
+  "payout_account_change_limit", // 本月收款账号变更次数已满（BR-WDR-02 ④）
+  "payout_account_verify_limit", // 收款账号付费核验当日次数已满（BR-WDR-02 ⑦）
+] as const;
+export type WithdrawConditionReason = (typeof withdraw_condition_reason)[number];
+
+/**
  * payout_batch_kind
  * Source: 规划/04 §2.4；BR-WDR-30 (contracts/enums/fund.yaml).
  */
@@ -1302,6 +1322,7 @@ export const enums = {
   withdraw_hold_kind,
   withdrawal_review_mode,
   payout_method,
+  withdraw_condition_reason,
   payout_batch_kind,
   bad_debt_writeoff_status,
   settle_batch_status,

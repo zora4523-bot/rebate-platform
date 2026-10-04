@@ -143,6 +143,10 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'StepUpByAppleRequest/properties/provider': 'login_provider',
   'StepUpByHuaweiRequest/properties/provider': 'login_provider',
   ResettableTipKey: 'tip_key',
+  'SavePayoutAccountByAlipay/properties/payout_method': 'payout_method',
+  'SavePayoutAccountByBankCard/properties/payout_method': 'payout_method',
+  'PayoutAccountAlipay/properties/payout_method': 'payout_method',
+  'PayoutAccountBankCard/properties/payout_method': 'payout_method',
 };
 
 function isObj(v: unknown): v is Obj {

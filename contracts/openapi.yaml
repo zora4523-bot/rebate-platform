@@ -52,6 +52,8 @@ tags:
     description: Union authorization and binding (04 §6.3).
   - name: order
     description: Orders and pending-track cards (04 §6.4).
+  - name: fund
+    description: Payout account, withdrawals and wallet (04 §6.1, §6.4).
 paths:
   /healthz:
     get:
@@ -1568,6 +1570,165 @@ paths:
                 code: 0
                 msg: ''
                 data: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/me/payout-account:
+    get:
+      operationId: getPayoutAccount
+      tags:
+        - fund
+      summary: My current payout account (masked)
+      description: |
+        Only payout_method, masked_account, bank_name (bank card only), masked_payee_name and
+        change_remaining_this_month (changes left this natural month, BR-WDR-02 ④, never below 0);
+        an empty object when nothing is bound. Never the ID number, the full logon id or card
+        number, the card BIN or the full name; masking is done by the server (BR-ID-33 细则
+        「收款账号的脱敏格式」).
+      x-auth: realname
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30304
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: The current payout account, or an empty object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountResponse'
+              examples:
+                alipay:
+                  summary: Alipay account bound
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      payout_method: alipay
+                      masked_account: 138****5678
+                      masked_payee_name: '**三'
+                      change_remaining_this_month: 2
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                unbound:
+                  summary: Nothing bound
+                  value:
+                    code: 0
+                    msg: ''
+                    data: {}
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    put:
+      operationId: savePayoutAccount
+      tags:
+        - fund
+      summary: Bind or change my payout account
+      description: |
+        Body by payout_method (withdraw.payout_methods decides which are open): alipay with the
+        logon id and payee_name, bank_card with card number, bank name and payee_name. payee_name
+        and the real name are both normalised before comparing; different → 30307 (BR-WDR-02 ①).
+        A bank card must be a debit card of the user: 12–19 digits with Luhn, else 20001
+        data.fields=[card_no]; three-element verification mismatch → 30307 (⑥). An Alipay logon id
+        in phone form that does not normalise is 20001 with data.reason=phone_invalid (BR-WDR-02
+        细则). Account held by another user → 30308; blacklisted → 44001. Changes per natural
+        month over the limit → 30303 data.reason=payout_account_change_limit (④); the paid
+        verification reserves the day's quota before calling the vendor and a full quota is 30303
+        data.reason=payout_account_verify_limit without a vendor call (⑦). A verification of the
+        same account still in flight or under recheck → 40901; vendor timeout → 50401 (the same
+        account is first rechecked by the original request id on the next submit); a matching result
+        within its validity is reused. Resubmitting with the same Idempotency-Key reuses that key's
+        verification record (in flight or recheck 40901, match saves, mismatch the original 30307,
+        still unknown at the deadline 50401) without a new verification or charge (BR-WDR-02 细则
+        「核验次数上限」). Needs X-Step-Up-Token for action payout_account_change (BR-WDR-02 ③; also
+        on the first binding). An abandoned Idempotency-Key is 20903 at the idempotency check,
+        without comparing the body or running the business; a business write that finds it
+        abandoned is rolled back with 20903 (04 §5「幂等」). Not realname → 30304; after a blocking
+        precondition the request is not replayed, the user saves again on the payout-account page
+        (BR-WDR-07 细则「前置步骤的回流」). Version gate: applied.
+      x-auth: realname
+      x-signed: true
+      x-idempotent: true
+      x-step-up: payout_account_change
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 30303
+        - 30304
+        - 30307
+        - 30308
+        - 10003
+        - 20903
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavePayoutAccountRequest'
+            examples:
+              alipay:
+                summary: Alipay
+                value:
+                  payout_method: alipay
+                  alipay_logon_id: zhangsan@example.com
+                  payee_name: 张三
+              bankCard:
+                summary: Bank card
+                value:
+                  payout_method: bank_card
+                  card_no: '6222 0000 0000 0009'
+                  bank_name: 示例银行
+                  payee_name: 张三
+      responses:
+        '200':
+          description: The saved account (masked).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  payout_method: bank_card
+                  masked_account: 尾号 0009
+                  bank_name: 示例银行
+                  masked_payee_name: '**三'
+                  change_remaining_this_month: 1
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -4813,6 +4974,134 @@ components:
             - string
             - 'null'
           format: date-time
+    PayoutAccount:
+      description: The current payout account, by payout_method (bank_name only for a bank card).
+      oneOf:
+        - $ref: '#/components/schemas/PayoutAccountAlipay'
+        - $ref: '#/components/schemas/PayoutAccountBankCard'
+    PayoutAccountAlipay:
+      type: object
+      additionalProperties: false
+      required:
+        - payout_method
+        - masked_account
+        - masked_payee_name
+        - change_remaining_this_month
+      properties:
+        payout_method:
+          type: string
+          enum:
+            - alipay
+        masked_account:
+          type: string
+          description: Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」).
+        masked_payee_name:
+          type: string
+        change_remaining_this_month:
+          type: integer
+          format: int32
+          minimum: 0
+    PayoutAccountBankCard:
+      type: object
+      additionalProperties: false
+      required:
+        - payout_method
+        - masked_account
+        - bank_name
+        - masked_payee_name
+        - change_remaining_this_month
+      properties:
+        payout_method:
+          type: string
+          enum:
+            - bank_card
+        masked_account:
+          type: string
+          description: Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」).
+        bank_name:
+          type: string
+          description: From the card BIN.
+        masked_payee_name:
+          type: string
+        change_remaining_this_month:
+          type: integer
+          format: int32
+          minimum: 0
+    PayoutAccountResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          description: The account, or an empty object when nothing is bound.
+          anyOf:
+            - $ref: '#/components/schemas/PayoutAccount'
+            - $ref: '#/components/schemas/EmptyData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    SavePayoutAccountByAlipay:
+      type: object
+      additionalProperties: false
+      required:
+        - payout_method
+        - alipay_logon_id
+        - payee_name
+      properties:
+        payout_method:
+          type: string
+          enum:
+            - alipay
+        alipay_logon_id:
+          type: string
+          description: Alipay logon id (phone or e-mail form), normalised by the server (BR-WDR-02 细则).
+          minLength: 1
+          maxLength: 128
+        payee_name:
+          type: string
+          minLength: 1
+          maxLength: 64
+    SavePayoutAccountByBankCard:
+      type: object
+      additionalProperties: false
+      required:
+        - payout_method
+        - card_no
+        - bank_name
+        - payee_name
+      properties:
+        payout_method:
+          type: string
+          enum:
+            - bank_card
+        card_no:
+          type: string
+          description: |
+            Card number as typed; the server removes spaces and hyphens, then checks 12–19 digits and
+            Luhn (20001 data.fields=[card_no], BR-WDR-02 ⑥ and 细则).
+          minLength: 1
+          maxLength: 32
+        bank_name:
+          type: string
+          description: Opening bank as chosen by the user (04 §6.1).
+          minLength: 1
+          maxLength: 64
+        payee_name:
+          type: string
+          description: Account holder name (BR-WDR-02 ①).
+          minLength: 1
+          maxLength: 64
+    SavePayoutAccountRequest:
+      oneOf:
+        - $ref: '#/components/schemas/SavePayoutAccountByAlipay'
+        - $ref: '#/components/schemas/SavePayoutAccountByBankCard'
     EmptyData:
       type: object
       additionalProperties: false
