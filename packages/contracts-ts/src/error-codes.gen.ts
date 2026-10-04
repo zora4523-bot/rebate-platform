@@ -399,8 +399,8 @@ export const errorCodes = {
   },
   30144: {
     http: 404,
-    meaning: "购买链接不存在（link_id 不存在或不属于本 App）",
-    action: "按卡片 product_key + item_ref 自动重新请求转链，替换卡片后仍须用户再次点击",
+    meaning: "购买链接不存在（link_id 不存在或不属于本 App）；GET /v1/links/{link_id}、GET /v1/share-pages/{link_id} 取不到卡片时同码",
+    action: "按卡片 product_key + item_ref 自动重新请求转链，替换卡片后仍须用户再次点击；App 内链接落地页（LinkLanding）没有可供重新转链的卡片数据，显示空态，不自动重试",
     retry: "重新转链后",
     retry_kind: "after_action",
     retry_kind_by_reason: {},

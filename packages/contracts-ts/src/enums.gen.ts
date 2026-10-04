@@ -1292,6 +1292,16 @@ export const link_pattern_category = [
 export type LinkPatternCategory = (typeof link_pattern_category)[number];
 
 /**
+ * App 内链接落地页（LinkLanding）取卡片时返回的 link 类别；share 即 pid_scene=share 的分享 link
+ * Source: 规划/04 §6.3 GET /v1/links/{link_id}；BR-ATTR-05 细则「App 内打开链接的入口」 (contracts/enums/trade.yaml).
+ */
+export const link_kind = [
+  "share", // 分享 link
+  "other", // 非分享 link
+] as const;
+export type LinkKind = (typeof link_kind)[number];
+
+/**
  * 商品卡与 open / convert 结果的无返利原因（可空，未知值按空处理）；取值规则见 BR-PRICE-08 细则「无返利原因」
  * Source: 规划/04 §8.3、§8.4；BR-PRICE-08 (contracts/enums/trade.yaml).
  */
@@ -1413,6 +1423,7 @@ export const enums = {
   benefit,
   sort,
   link_pattern_category,
+  link_kind,
   no_rebate_cause,
   tlj_kind,
 } as const;

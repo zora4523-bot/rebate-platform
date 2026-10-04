@@ -239,3 +239,35 @@ it('the WITHDRAW_PAID summary entry has a null balance_after_fen (04 §6.4)', ()
   expectTypeOf<Schema<'LedgerWithdrawPaidEntry'>['balance_after_fen']>().toEqualTypeOf<null>();
   expect(true).toBe(true);
 });
+
+it('link landing and share page: card subset without rebate fields (04 §6.3)', () => {
+  expectTypeOf<Schema<'LinkKind'>>().toEqualTypeOf<'share' | 'other'>();
+  expectTypeOf<Schema<'LinkLandingData'>['product_card']>().toEqualTypeOf<
+    Schema<'SharedProductCard'>
+  >();
+  expectTypeOf<Schema<'SharePageData'>['tpwd_ticket']>().toEqualTypeOf<string | null>();
+  expectTypeOf<Schema<'SharePageData'>['open_in_app_url']>().toEqualTypeOf<string | null>();
+  expectTypeOf<Schema<'ShareTpwdRequest'>>().toEqualTypeOf<{ ticket: string }>();
+  expectTypeOf<Schema<'ShareTpwdData'>>().toEqualTypeOf<{ tpwd: string }>();
+  const card: Schema<'SharedProductCard'> = {
+    product_key: 'tb:7Kq9LmN3pQ',
+    item_ref: null,
+    platform: 'taobao',
+    title: 't',
+    image: null,
+    price_fen: 3990,
+    coupon_fen: 1000,
+    final_price_fen: 2990,
+    benefit_tags: [],
+    is_presale: false,
+    link_id: 'l',
+    stale: false,
+    age_sec: 1,
+    source: 'taobao_union',
+    disclaimer_keys: [],
+    availability: 'ok',
+    // @ts-expect-error the shared card carries no rebate amount (BR-PRICE-06)
+    rebate_max_fen: 0,
+  };
+  expect(card.platform).toBe('taobao');
+});

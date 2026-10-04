@@ -1240,6 +1240,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Card of a link for the in-app link landing page
+         * @description Card data for the in-app link landing page (route LinkLanding, 01 §4.2; BR-ATTR-05 细则
+         *     「App 内打开链接的入口」). Read-only: registers no link, writes no link_log and converts
+         *     nothing. Returns link_kind (share | other), the shared product card subset (the same as
+         *     the share page: no rebate_* and no est_net_price_fen, BR-PRICE-06, BR-ATTR-10),
+         *     quoted_at, and viewer_is_sharer (true only with a token whose user is the sharer of this
+         *     share link; used only to show a hint, BR-ATTR-11). Unknown link or one of another app →
+         *     30144; the page has no card to re-convert from, shows the empty state and does not retry.
+         *     Buying still goes only through POST /v1/links/{link_id}/open.
+         */
+        get: operations["getLink"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/share-pages/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Card data of the share page
+         * @description Card data of the share page outside the app (F-SHARE-01, 01 §4.2): the shared product card
+         *     subset (no rebate_* and no est_net_price_fen, BR-PRICE-06), quoted_at, jump_url (the
+         *     sharer's converted short link used for the jump; never contains a token, in any
+         *     environment), tpwd_ticket and open_in_app_url. tpwd_ticket is the short-lived ticket for
+         *     POST /v1/share-pages/{link_id}/tpwd: returned only when the server judges the request's
+         *     User-Agent to be outside WeChat and the link has a token, otherwise null (a request
+         *     without User-Agent counts as WeChat). The User-Agent is the client's claim, only used to
+         *     adapt the page, not a guarantee of content isolation (BR-ATTR-10 细则). open_in_app_url
+         *     is the LinkLanding deep link, null while share.open_in_app.enabled is off (BR-ATTR-05
+         *     细则「App 内打开链接的入口」). Only links with pid_scene=share are answered; any other,
+         *     unknown or of another app → 30144. The response carries Cache-Control: no-store (not
+         *     cached by the CDN). Not signed; no X-Device-Id required.
+         */
+        get: operations["getSharePage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/share-pages/{link_id}/tpwd": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Token of the share page for the copy-token button
+         * @description Called when the user taps the copy-token button on the share page: the body carries the
+         *     tpwd_ticket of GET /v1/share-pages/{link_id}; returns the token (BR-ATTR-10 细则). The
+         *     ticket is bound to the link_id, valid 600 s, at most 3 exchanges. An invalid, expired or
+         *     used-up ticket, or a request whose User-Agent is the WeChat in-app browser or missing →
+         *     20001 with data.fields=[ticket], no token. Rate limited per IP × link_id
+         *     (share.tpwd_rate_per_min) → 42901 with Retry-After. The response carries Cache-Control:
+         *     no-store. Not signed. Version gate: 不判定：非三端请求 (written false, BR-ID-01 细则).
+         */
+        post: operations["getShareTpwd"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2940,6 +3024,119 @@ export interface components {
             data: components["schemas"]["ConvertLinkData"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Kind of a link on the in-app landing page (contracts/enums/trade.yaml link_kind).
+         * @enum {string}
+         */
+        LinkKind: "share" | "other";
+        /**
+         * @description Product card subset of the share page and the in-app link landing page (04 §6.3): the
+         *     fields of ProductCard without rebate_min_fen, rebate_max_fen, rebate_basis,
+         *     no_rebate_cause and est_net_price_fen (no rebate amount is shown to the opener,
+         *     BR-PRICE-06, BR-ATTR-10), without cta (its key is derived from the rebate state), and
+         *     without the Agent-only card_id, match_tag and spec_text. quoted_at sits next to the card.
+         */
+        SharedProductCard: {
+            /** @description Opaque product key (BR-PROD-02); null only on amount_unknown cards. */
+            product_key: string | null;
+            /** @description Opaque signed reference passed through unchanged (BR-PROD-11). */
+            item_ref: string | null;
+            platform: components["schemas"]["PlatformCode"];
+            /** @description Shop type, e.g. tmall for Tmall shops on taobao. */
+            shop_type?: string | null;
+            title: string | null;
+            /** Format: uri */
+            image: string | null;
+            shop_name?: string | null;
+            price_fen: components["schemas"]["NullableFen"];
+            coupon_fen: components["schemas"]["NullableFen"];
+            final_price_fen: components["schemas"]["NullableFen"];
+            /** @description Server-generated labels (有券, 预售…). */
+            benefit_tags: string[];
+            /** @description Presale; shown with the total price (BR-PRICE-22). */
+            is_presale: boolean;
+            tlj?: components["schemas"]["ProductTlj"];
+            link_id: components["schemas"]["Id"];
+            stale: boolean;
+            /**
+             * Format: int32
+             * @description Age of the price in seconds, computed by the server (BR-PRICE-11).
+             */
+            age_sec: number | null;
+            /**
+             * @description Price source (BR-PRICE-16).
+             * @enum {string}
+             */
+            source: "taobao_union" | "jd_union" | "pdd_union";
+            /** @description Ordered dictionary keys (BR-PRICE-17), including price_basis. */
+            disclaimer_keys: string[];
+            /** @description Ad label (BR-TEXT-17). */
+            ad_label?: string | null;
+            availability: components["schemas"]["Availability"];
+        };
+        LinkLandingData: {
+            link_kind: components["schemas"]["LinkKind"];
+            product_card: components["schemas"]["SharedProductCard"];
+            /**
+             * Format: date-time
+             * @description Receipt time of the union response the price is based on (BR-PRICE-11).
+             */
+            quoted_at: string | null;
+            /**
+             * @description True only when called with a token whose user is the sharer of this share link; only
+             *     for the hint above the card (BR-ATTR-11). False for anonymous calls and other links.
+             */
+            viewer_is_sharer: boolean;
+        };
+        LinkLandingResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["LinkLandingData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        SharePageData: {
+            product_card: components["schemas"]["SharedProductCard"];
+            /**
+             * Format: date-time
+             * @description Receipt time of the union response the price is based on (BR-PRICE-11).
+             */
+            quoted_at: string | null;
+            /**
+             * Format: uri
+             * @description The sharer's converted short link used for the jump; never contains a token.
+             */
+            jump_url: string;
+            /**
+             * @description Short-lived ticket for POST /v1/share-pages/{link_id}/tpwd; null inside WeChat, without
+             *     User-Agent, or when the link has no token (BR-ATTR-10 细则).
+             */
+            tpwd_ticket: string | null;
+            /**
+             * Format: uri
+             * @description LinkLanding deep link; null while share.open_in_app.enabled is off.
+             */
+            open_in_app_url: string | null;
+        };
+        SharePageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["SharePageData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        ShareTpwdRequest: {
+            /** @description tpwd_ticket from GET /v1/share-pages/{link_id}. */
+            ticket: string;
+        };
+        ShareTpwdData: {
+            /** @description The token of the share link, to be copied by the page. */
+            tpwd: string;
+        };
+        ShareTpwdResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ShareTpwdData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
     };
     responses: {
         /**
@@ -3038,7 +3235,10 @@ export interface components {
         Limit: number;
     };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /** @description Always no-store; the response is not cached by the CDN or the browser (BR-ATTR-10 细则). */
+        NoStore: "no-store";
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -6138,6 +6338,221 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConvertLinkResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getLink: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /** @description link_id from a card; unknown or of another app → 30144. */
+                link_id: components["parameters"]["LinkId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The link kind and its card. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "link_kind": "share",
+                     *         "product_card": {
+                     *           "product_key": "tb:7Kq9LmN3pQ",
+                     *           "item_ref": "v1.dGJfN0txOUxtTjNwUQ.c2ln",
+                     *           "platform": "taobao",
+                     *           "shop_type": "tmall",
+                     *           "title": "降噪蓝牙耳机 5.3",
+                     *           "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *           "shop_name": "示例旗舰店",
+                     *           "price_fen": 3990,
+                     *           "coupon_fen": 1000,
+                     *           "final_price_fen": 2990,
+                     *           "benefit_tags": [
+                     *             "有券"
+                     *           ],
+                     *           "is_presale": false,
+                     *           "link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *           "stale": false,
+                     *           "age_sec": 12,
+                     *           "source": "taobao_union",
+                     *           "disclaimer_keys": [
+                     *             "price_basis"
+                     *           ],
+                     *           "ad_label": null,
+                     *           "availability": "ok"
+                     *         },
+                     *         "quoted_at": "2026-10-02T09:30:00+08:00",
+                     *         "viewer_is_sharer": false
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["LinkLandingResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getSharePage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description link_id from a card; unknown or of another app → 30144. */
+                link_id: components["parameters"]["LinkId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The share page card. */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["NoStore"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "product_card": {
+                     *           "product_key": "tb:7Kq9LmN3pQ",
+                     *           "item_ref": "v1.dGJfN0txOUxtTjNwUQ.c2ln",
+                     *           "platform": "taobao",
+                     *           "shop_type": "tmall",
+                     *           "title": "降噪蓝牙耳机 5.3",
+                     *           "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *           "shop_name": "示例旗舰店",
+                     *           "price_fen": 3990,
+                     *           "coupon_fen": 1000,
+                     *           "final_price_fen": 2990,
+                     *           "benefit_tags": [
+                     *             "有券"
+                     *           ],
+                     *           "is_presale": false,
+                     *           "link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *           "stale": false,
+                     *           "age_sec": 30,
+                     *           "source": "taobao_union",
+                     *           "disclaimer_keys": [
+                     *             "price_basis"
+                     *           ],
+                     *           "ad_label": null,
+                     *           "availability": "ok"
+                     *         },
+                     *         "quoted_at": "2026-10-02T09:30:00+08:00",
+                     *         "jump_url": "https://s.click.example.test/t?e=share01",
+                     *         "tpwd_ticket": "placeholder-ticket-01",
+                     *         "open_in_app_url": "https://go.example.test/r/LinkLanding?link_id=0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SharePageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getShareTpwd: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description link_id from a card; unknown or of another app → 30144. */
+                link_id: components["parameters"]["LinkId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ticket": "placeholder-ticket-01"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ShareTpwdRequest"];
+            };
+        };
+        responses: {
+            /** @description The token. */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["NoStore"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "tpwd": "placeholder-tpwd"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ShareTpwdResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
