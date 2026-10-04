@@ -51,11 +51,6 @@ const DEFAULTS: readonly { key: string; value: unknown; source: string }[] = [
     source: 'BR-ATTR-05 细则（分享中间页）：share.open_in_app.enabled 默认 on',
   },
   {
-    key: 'share.tpwd_rate_per_min',
-    value: 5,
-    source: 'BR-ATTR-10 细则：同一 IP 对同一 link 每分钟 5 次',
-  },
-  {
     key: 'invite.bind_phone_guide',
     value: true,
     source: 'BR-INV-21 细则：config.invite.bind_phone_guide=on（BR-INV-03 细则）',
@@ -199,12 +194,13 @@ DEFAULTS.forEach(({ key, value, source }, index) => {
 
 const NEXT = 14 + DEFAULTS.length;
 
-it(`[AC-F1-02a#${String(NEXT)}] no risk-control threshold, help link or derived value is seeded (D-7, D-8)`, async () => {
+it(`[AC-F1-02a#${String(NEXT)}] no risk-control threshold (incl. share.tpwd_rate_per_min, orchestrator 2026-10-04), help link or derived value is seeded (D-7, D-8)`, async () => {
   const rows = await sql<{ key: string }>`
     SELECT DISTINCT key FROM app.config_items
     WHERE key LIKE 'sms.%' OR key LIKE 'device.%' OR key LIKE 'help\_links%'
        OR key LIKE 'claim.%' OR key LIKE 'features.%' OR key LIKE 'link\_patterns%'
        OR key LIKE '%product\_intercept%'
+       OR key = 'share.tpwd_rate_per_min'
     ORDER BY key
   `.execute(app);
   expect(rows.rows).toEqual([]);
