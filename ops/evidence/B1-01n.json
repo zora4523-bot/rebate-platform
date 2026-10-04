@@ -1,0 +1,92 @@
+{
+  "task": "B1-01n",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "c6df6b127e58fef91ad1bcb986eec5efa9ea09ec",
+  "red_tests": [
+    "[ADR-0001 §4.2 #4、#8、#11; 规划/02 §15.1] worker 在 APP_ENV 为 local、staging、prod 时缺 DATABASE_MAINT_URL（未设或空串）就拒绝启动：ConfigError 只列「DATABASE_MAINT_URL: must be set for the worker entry」一条；APP_ENV 未设、空串或不认识（TEST、 test、dev）时同样拒绝",
+    "[ADR-0001 §4.2 #4; 待编排会话确认] APP_ENV=test 时 worker 可以不设 DATABASE_MAINT_URL（未设或空串）：返回 null（不建维护连接池）",
+    "[ADR-0001 §4.2 #4、#8、#11] worker 在四种 APP_ENV 下设了合法的 couli_maint 连接串：得到确切的维护池配置——name dbMaint、池大小 1、会话名 couli-worker-maint、可写，冻结的普通对象；url 的 redacted 不含口令、reveal() 是 WHATWG 序列化；常量 MAINT_POOL_SIZE 为 1、MAINT_APPLICATION_NAME 为 couli-worker-maint",
+    "[ADR-0001 §4.2 #11; ADR-0002 §5; 规划/02 §12.6] 合法写法都收：postgresql://、首尾空白、大写协议、端口与库名不同、sslmode=verify-full 带可读的 sslrootcert、口令放在 password 查询参数、用户名用百分号编码（couli%5Fmaint 解码后是 couli_maint）；redacted 去掉口令与查询串",
+    "[ADR-0001 §4.2 #11; 规划/02 §12.6] DATABASE_MAINT_URL 格式不对（含无效的百分号转义）：local、test、staging、prod 下都只报这一条固定文案，不回显值的任何部分（含口令）——APP_ENV=test 时设了坏值也拒绝",
+    "[ADR-0001 §4.2 #3、#11; 路径 B 契约补充 1、2] DATABASE_MAINT_URL 的查询参数同样只收白名单：binary、types、client_encoding、application_name、user、host、port、dbname、ssl、statement_timeout、编码的名字、无等号、重复、sslmode=prefer、sslrootcert 配 require 或缺 sslrootcert 的 verify-ca 都只报查询参数这一条",
+    "[ADR-0001 §4.2 #11; 路径 B 契约补充 3] DATABASE_MAINT_URL 解码后的用户名、库名、口令（userinfo 与查询参数 password）、options 含控制字符（%00、%0A、%1F、%7F）只报控制字符这一条",
+    "[ADR-0001 §4.2 #4、#8; 待编排会话确认] DATABASE_MAINT_URL 的用户名（解码后）必须正好是 couli_maint：couli_app、couli_payout、couli_readonly、couli_migrator、postgres、大小写不同、前后多字符、带空格都只报「must connect as couli_maint」一条；APP_ENV=test 也一样",
+    "[ADR-0002 §5; 路径 B 契约补充 2、3] 一个变量只报一条、先到先报：格式错误 → 查询参数 → 控制字符 → 角色 → 读不到的 sslrootcert；couli_maint 配读不到的 sslrootcert 只报 sslrootcert 那条（不带路径）",
+    "[规划/02 §3.1; ADR-0001 §4.2 #20] api、stream、admin、payout 不读 DATABASE_MAINT_URL：无论 APP_ENV 与值（合法、坏值、别的角色、空）都返回 null，且一个 env 属性都不读",
+    "[apps/api AGENTS 硬规则 6; 规划/02 §12.6] worker 只读 env 里的 APP_ENV 与 DATABASE_MAINT_URL 两个名字：不读 process.env、不改传入的对象（冻结的对象也能用），其他变量（DATABASE_URL、MIGRATOR_DATABASE_URL 等）不影响结果",
+    "[ADR-0001 §4.2 #4、#11] 维护句柄正好有 db、close 两个自有属性且冻结；db 是普通 Kysely 实例；创建时不连库、不写日志；close() 以 undefined 完成，之后也不连库",
+    "[规划/02 §12.6] 维护连接的口令不出现在配置与句柄的 util.inspect（含 showHidden、深层）、JSON、String() 里：只见 redacted 形式",
+    "[ADR-0001 §4.2 #11; 教训 RESUME §8] closeTimeoutMs 只收 1 到 60000 的整数：0、负数、60001、小数、NaN、±Infinity、字符串、null 都同步抛 DbError invalid_option（文案确切）且不连库；1、60000 与省略都可以",
+    "[ADR-0001 §4.2 #4、#8; 维护连接契约 3] config 必须正是 loadMaintConnectionConfig 返回的那个对象：拷贝、同字段的仿造对象、worker 主库的池配置、null 都同步抛 DbError invalid_option，不建池、不连库",
+    "[ADR-0001 §4.2 #11] 从没查询过就 close()：之后每种取连接的方式（原始 SQL、查询、事务、connection()）都以 DbError closed 拒绝、不发起连接；close() 之后同一拍里发出的请求也一样；并发两次与事后第三次 close() 都以 undefined 完成",
+    "[ADR-0001 §4.2 #4; worker 契约 3] 启动顺序确切：先 queue.start，等它完成才 maintenance.start；维护的首轮完成前不算启动完；启动完得到只有 stop 的冻结对象；启动期间不调用任何 stop、close，不写日志",
+    "[ADR-0001 §4.2 #4; worker 契约 3; SIGTERM 时先停维护] 停止顺序确切：maintenance.stop（等进行中的一轮）完成前不停队列；queue.stop 完成前不关资源；资源按给定顺序一个一个关；全部完成后 stop() 以 undefined 结束，不写日志",
+    "[worker 契约 3] stop() 幂等：并发的第二次与事后的第三次返回同一个 promise，每一步只调用一次",
+    "[worker 契约 3] 停止时某一步失败不拦后面的步骤：maintenance.stop 与 close#1 都拒绝时，queue.stop、close#2 照样调用，stop() 在最后一步之后以第一个失败的那个错误（同一对象）拒绝",
+    "[ADR-0001 §4.2 #14 起不来的队列; worker 契约 3] queue.start 失败：不启动维护、不写 partition_maintenance_disabled；按顺序 queue.stop、close#1、close#2 收拾（其中一步失败也继续），再以 queue.start 的那个错误（同一对象）拒绝",
+    "[ADR-0001 §4.2 #4、#8 以 couli_maint 执行（wrong_role 起不来）; worker 契约 3] maintenance.start 失败：按顺序 maintenance.stop、queue.stop、close#1、close#2 收拾（其中一步失败也继续），再以 maintenance.start 的那个错误（同一对象）拒绝；不写日志",
+    "[ADR-0001 §4.2 #4; 待编排会话确认 APP_ENV=test 可不设维护连接] 没有维护（null）：queue.start 之后正好一行 info partition_maintenance_disabled（字段只有 variable: DATABASE_MAINT_URL，经根 logger 本身）；stop() 按 queue.stop、close#1 的顺序；没有资源时（空数组）也能启停",
+    "[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; worker 契约 1、2; maintenance 契约 B] WORKER_QUIET_DEFAULT_TABLES 正好是 [link_logs] 且冻结（link_logs 的按日分区维护另立任务）；createWorkerMaintenance：合法选项（含 intervalMs）得到 runOnce / start / stop，创建时不读时钟、不写日志；多出的键（含 quietDefaultTables）、缺键、坏 intervalMs 同步抛 invalid_option",
+    "[ADR-0001 §4.2 #4; maintenance 契约补充（worker 契约 5）] createPartitionMaintenance 的新选项 quietDefaultTables：[]、[link_logs]、三张表、32 个合法名、冻结数组都收；不是数组、元素不是字符串、空串、大写、空格、点号、带 schema、开头是数字或下划线、超过 63 个字符、重复、33 个、类数组对象都同步抛 invalid_option；创建时不碰 db、不读时钟、不写日志",
+    "[ADR-0001 §4.2 #4、#8、#11、#3] 维护池确切为 1 个连接、以 couli_maint 连接、会话名 couli-worker-maint、可写、int8 为 BigInt；能以它跑一轮分区维护（预建 8 个分区、无失败）；同时 worker 的主库池照旧是 couli_app / couli-worker、上限 10；close() 后维护会话消失，全程不写日志",
+    "[ADR-0002 §5「出错后重建连接」; db 契约 5] 服务端结束空闲的维护会话（pg_terminate_backend）：进程不退出，确切一行 error db_pool_error（pool 为 dbMaint、code 57P01），不带错误对象与口令；下一条查询换新连接照常",
+    "[ADR-0001 §4.2 #11; db 契约 6] 关闭超时：closeTimeoutMs（300）到点仍在跑的维护查询从客户端关掉——确切一行 warn db_close_timeout（pool 为 dbMaint、busy 1），那条查询被拒绝，close() 按时完成；之后的请求以 DbError closed 拒绝",
+    "[ADR-0002 §5 强制 SSL; 路径 B 契约补充 2] 对不开 TLS 的测试库：维护连接串带 sslmode=require 或 verify-full 时查询以「The server does not support SSL connections」失败、不退回明文（库里不多出维护会话）；sslmode=disable 照常连上",
+    "[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; maintenance 契约补充（worker 契约 5）] quietDefaultTables 列入的表：DEFAULT 有行时报告照旧（defaultRows 含它、行数确切），日志换成一行 info partition_default_rows_expected（表、分区、行数，位置同原告警行）；没列入的表照旧 warn；[] 与不给时完全是现行为；三张都列入时没有 warn；给定的数组创建后再改不影响；行内容不进日志",
+    "[ADR-0001 §4.2 #4、#5; worker 契约 2] worker 接线用的 createWorkerMaintenance：link_logs_default 有 3 行时只记一行 info partition_default_rows_expected、不告警；event_log_default 的行照常 warn；报告照旧含两张表；行内容不进日志",
+    "[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真实入口（dist 子进程）：worker 带 DATABASE_MAINT_URL 时在 pgboss 版本不对（41）时 startup_failed、退出码 1、一个分区都不建（维护在队列之后启动）；payout 设了它也不维护；COULI_EXIT_AFTER_INIT=1 的 worker 不跑维护；APP_ENV=test 的 worker 不设它时记 partition_maintenance_disabled、不维护；worker 带它时 started 之前跑完一轮——预建 event_log 与 orders 各 4 个月、event_log_default 的行告警、link_logs_default 的行只记 info——SIGTERM 后 stopping、stopped、5 秒内以退出码 0 结束（维护池也已关闭，不靠空闲超时）；输出不含任何口令",
+    "[ADR-0001 §4.2 #4、#8、#11; 规划/02 §3.1、§12.6; worker 契约 4] 真实入口的配置校验（dist 子进程，不连库）：worker 在 local 缺 DATABASE_MAINT_URL、在 test 设了坏值、在 staging 指向别的角色、在 prod 设了带口令的坏值都以一行 config_invalid（问题依次列出，维护连接排在 loadConfig 与主连接之后）、退出码 1 结束，不回显口令；带合法维护连接、COULI_EXIT_AFTER_INIT=1 的 worker 照常 started 且不跑维护；api 与 payout 不读它（坏值也照常 started）"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). Worker wiring of partition maintenance: DATABASE_MAINT_URL (couli_maint only, pool 1, worker only; optional only when APP_ENV=test), maintenance starts after the queue and stops before it with a bounded wait (5 s), every pool closed; link_logs DEFAULT rows logged at info instead of an alert until day-partition maintenance exists (orchestrator decision, deviation from ADR-0001 §4.2 #4 noted in the PR). No money, attribution or authorisation path.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "484806cd6c464dfc64395c6a45592dfb6c628409",
+      "tree": "c6394bd62dffff81ddfac7c44c416732aa47d631",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T19:37:58Z",
+      "finished_at": "2026-10-04T19:39:43Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent, rounds 1-2: pass; 1 S2 (SIGTERM during startup not graceful, no data loss, outside the contract) recorded as a follow-up under approvals #18"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 2,
+      "scope": "money review base origin/main: round 1 fail (S1 unbounded wait for a hung maintenance query on SIGTERM, fixed by implementation attempt 2 with the supplementary rule tests d45b411), round 2 pass, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with 2 S2 (fixed by the author's supplementary commit); out-of-scope S1 (link_logs exempt from the DEFAULT alert vs ADR-0001 §4.2 #4) is the orchestrator's decision"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "84115152bb8f17598419dec49ce978376391dc80",
+    "apps/api/src/modules/platform/maintenance": "e5e5906503fc5f2820da2cb0a095f8451a50948c"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 pnpm test:longrun on the B1-01p worktree (test/properties tree shared by B1-01n/o/p/q), 2026-10-05; this task adds no property tests"
+  },
+  "notes_extra": "code review round 2 is the closing round for both reviewers; supplementary rule tests after the rule-test review (two S2 fixes, stop-timeout contract) were reordered before the implementation commits"
+}
