@@ -125,9 +125,16 @@ forbidden_schemes:
   - about
   - blob
   - ftp
+  - ws
+  - wss
   - tel
   - telprompt
+  - sip
+  - sips
   - sms
+  - smsto
+  - mms
+  - mmsto
   - mailto
   - facetime
   - facetime-audio
