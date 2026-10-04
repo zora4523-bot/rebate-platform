@@ -46,29 +46,30 @@ fund_terms:
     - order_status_group.
     - jump_tip.
   keys:
-    - tag.rebate
-    - rebate_amount_unknown
-    - rebate_login_to_view
-    - no_rebate_hint
-    - platform_no_rebate
-    - no_rebate.price_compare
-    - no_rebate.price_compare.confirm
-    - order.price_compare.hint
     - btn.buy.no_rebate
-    - error.30412
-    - error.30416
+    - claim_required
     - error.30103
     - error.30121
     - error.30151
     - error.30153
+    - error.30412
+    - error.30416
     - error.44001
     - error.50301.not_launched
-    - platform_coming_soon
-    - claim_required
     - external_page.product_unresolved
-    - link_landing.owner_hint
+    - invite.notice_inviter
     - jump_tip
+    - link_landing.owner_hint
+    - no_rebate.price_compare
+    - no_rebate.price_compare.confirm
+    - no_rebate_hint
+    - order.price_compare.hint
     - order_list.deposit_amount
+    - platform_coming_soon
+    - platform_no_rebate
+    - rebate_amount_unknown
+    - rebate_login_to_view
+    - tag.rebate
   notify_templates:
     - ORDER_TRACKED
     - ORDER_INVALID
@@ -238,7 +239,6 @@ ordinary:
     - invite.bind_phone_guide.body
     - invite.bind_phone_guide.body_before_buy
     - invite.bind_phone_guide.title
-    - invite.notice_inviter
     - jump.taobao_sdk_unavailable
     - link_landing.invalid
     - login.help_entry
@@ -313,8 +313,6 @@ exempt:
     reason: 「已失效」说的是购买链接，正在重新获取
   - key: error.50304.search_disabled
     reason: 只是请用户改用粘贴链接查返利，不说有没有返利（08 BR-TEXT-12 细则写明归普通）
-  - key: invite.notice_inviter
-    reason: 告知绑定后订单收益的金额与状态会通知邀请人（数据共享告知），本身不说金额或状态
   - key: link_landing.invalid
     reason: 「已失效」说的是链接（08 BR-TEXT-12 细则的例子）
   - key: perm.push.card_hint
