@@ -154,6 +154,8 @@ importers:
         specifier: 4.10.2
         version: 4.10.2
 
+  packages/pay-channels: {}
+
   packages/testing:
     dependencies:
       fast-check:

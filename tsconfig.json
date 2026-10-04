@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/testing" },
     { "path": "packages/money" },
+    { "path": "packages/pay-channels" },
     { "path": "packages/domain" },
     { "path": "packages/db" },
     { "path": "packages/db/scripts" },
