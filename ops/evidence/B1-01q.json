@@ -1,0 +1,73 @@
+{
+  "task": "B1-01q",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "156ef5a0194123c8f710ebe06f4414d05cac988c",
+  "red_tests": [
+    "[BR-ID-33 日志中不得出现明文] 三个函数对合法与不合规输入脱敏时不写任何输出：console 各方法、stdout、stderr、emitWarning、node:fs 写入一次都没有（调用后再等微任务与 3 轮 setImmediate / setTimeout 0），结果照常",
+    "[BR-ID-33 收款账号的脱敏格式] 原文的例子逐字：138****5678、zh***@example.com、a***@x.com、***@x.com、尾号 1234、**三",
+    "[BR-ID-33 收款账号的脱敏格式] 支付宝邮箱形式：「@」前 1 位不留、2 位留 1 位、3 位及更长留前 2 位，其余固定换成 ***，按码点计",
+    "[BR-ID-33 收款账号的脱敏格式] 支付宝邮箱形式：「@」与域名原样显示（大小写不变、不要求带点、子域名与中文域名照旧），本地部分保留的字符也不改大小写",
+    "[BR-ID-33 收款账号的脱敏格式] 支付宝邮箱形式不合规（「@」前或后为空、多个「@」、任何位置有空白或 \\p{C} 字符）时不露任何字符：每个码点换成 *",
+    "[BR-ID-33 收款账号的脱敏格式] 支付宝手机号形式（不含「@」）同手机号：11 位 1 开头的 ASCII 数字露前 3 后 4，其余全是 *",
+    "[BR-ID-33 收款账号的脱敏格式] 支付宝手机号形式的反例：10 位、12 位、+86 / 86 / 0086 前缀、分隔符、全角数字、全角「＠」、首位不是 1、前后空白一律每个码点换成 *",
+    "[BR-ID-33 收款账号的脱敏格式; 规划/08 BR-WDR-02 卡号规范化] 银行卡逐个长度：12～19 位 ASCII 数字得到「尾号」+ 一个空格 + 后 4 位，11 位与 20 位每个码点换成 *（12～15 位待编排会话确认）",
+    "[BR-ID-33 收款账号的脱敏格式] 银行卡只认 ASCII 数字、不做 Luhn 校验：末位不同的两个 16 位卡号都给出各自的尾号；全 0 卡号同样",
+    "[BR-ID-33 收款账号的脱敏格式] 银行卡反例：空串、过短、空格或连字符分组、全角或其他文字的数字、字母、前后空白、加号一律每个码点换成 *，不出现「尾号」",
+    "[BR-ID-33 收款人姓名同姓名格式] 收款人姓名 1～4 个码点（含代理对生僻字）：n−1 个 * 加末字，单字为 *，空串仍是空串",
+    "[BR-ID-33 收款账号的脱敏格式] 三个函数对任何字符串都不抛错、只返回字符串，结果只由入参决定：顺序打乱、交错调用、重复调用结果相同",
+    "[BR-ID-33 收款账号的脱敏格式] 任意字符串：支付宝登录号脱敏与契约一致（手机号 3+4、邮箱留前 2 / 1 / 0 位加 ***，其余全是 *）",
+    "[BR-ID-33 收款账号的脱敏格式] 任意字符串：银行卡脱敏与契约一致（12～19 位 ASCII 数字为「尾号 后 4 位」，其余全是 *）",
+    "[BR-ID-33 收款人姓名同姓名格式] 任意字符串：收款人姓名脱敏与姓名格式一致（只留末一个码点，单字全遮）"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). Pure masking functions for payout accounts (BR-ID-33 细则 收款账号的脱敏格式, G-71): Alipay logon id phone and e-mail forms, bank card 尾号 + last 4 (12-19 ASCII digits, BR-WDR-02), payee name; no output of any kind. No money, attribution or authorisation path; callers (payout, withdrawals) are separate tasks.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "c2cce03cc7eb94b156263bea7d1390aff7ceeb12",
+      "tree": "fd283106921d3432d6f92ad2c63697efeb9a93bc",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T19:30:53Z",
+      "finished_at": "2026-10-04T19:32:48Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass, no findings; checked the author's supplementary commit after rule-test review round 2 (deferred writes, index.ts static check) with extra mutants; masking rule tests 56/56, api unit 260/260"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "money review base origin/main: pass, no findings, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "round 1 fail (1 S1: logging inside a mask function not caught), fixed by 995c5dd; round 2 fail (1 S1: deferred write via index.ts not caught), fixed by the supplementary commit 0e7eea6 (deferred writes and index.ts static check), checked by the code review (no rule-test review round left)"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "ab292b9d207211428df957f454fa75fe1cc0181b",
+    "apps/api/src/modules/platform/masking": "f0f6adc7b39a31b50ba403881361542307436cae"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 pnpm test:longrun on the B1-01p worktree (test/properties tree shared by B1-01n/o/p/q), 2026-10-05; this task adds no property tests"
+  }
+}
