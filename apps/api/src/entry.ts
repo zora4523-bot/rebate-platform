@@ -8,6 +8,8 @@ import {
   type EntryName,
   type HttpEntry,
   type RootLogger,
+  type QueueRuntime,
+  JOB_QUEUE,
   createRootLogger,
   createDbHandles,
   isHttpEntry,
@@ -60,6 +62,7 @@ async function start(
         await app.close();
         return;
       }
+      await app.get<QueueRuntime>(JOB_QUEUE).start();
       const port = portOf(entry, config);
       await app.listen(port, config.apiHost);
       logger.info({ listening: true, host: config.apiHost, port }, 'started');
@@ -72,18 +75,30 @@ async function start(
   }
 
   const context = await createWorkerContext(entry, { config, logger, dbHandles });
-  logger.info({ listening: false }, 'started');
+  const queue = context.get<QueueRuntime>(JOB_QUEUE);
   if (config.exitAfterInit) {
+    logger.info({ listening: false }, 'started');
     await context.close();
     return;
   }
-  // No job runner exists yet, so nothing else holds the event loop open.
-  // TODO(ADR-0001 §2): the pg-boss job runner replaces this timer — blocked on B1-01.
+  try {
+    await queue.start();
+  } catch (error) {
+    await queue.stop();
+    await context.close();
+    throw error;
+  }
+  // Keep entries alive even while no business module has registered a handler.
   const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
   closeOnSignal(logger, async () => {
-    clearInterval(keepAlive);
-    await context.close();
+    try {
+      await queue.stop();
+      await context.close();
+    } finally {
+      clearInterval(keepAlive);
+    }
   });
+  logger.info({ listening: false }, 'started');
 }
 
 /**
