@@ -28,6 +28,7 @@ export type RouteDef = {
   since: Since;
   phase: string;
   debug_only: boolean;
+  entry: string[];
   params: Obj;
 };
 export type AppDef = {
@@ -176,6 +177,7 @@ export function loadBridgeCatalog(
   const routesDoc = readJson(routesFile, 'contracts/routes.json');
   if (!isObj(routesDoc['routes'])) fail('contracts/routes.json', 'routes must be an object');
   const authLevels = want('auth_level').filter((a) => a !== 'optional');
+  const routeEntries = want('route_entry');
   const routes: RouteDef[] = [];
   for (const [name, def] of Object.entries(routesDoc['routes'])) {
     const where = `contracts/routes.json ${name}`;
@@ -197,6 +199,15 @@ export function loadBridgeCatalog(
     ) {
       fail(where, 'params.platform must list exactly the contracts/enums platform values');
     }
+    const entry = def['entry'];
+    if (
+      !Array.isArray(entry) ||
+      entry.length === 0 ||
+      entry.some((e) => typeof e !== 'string' || !routeEntries.includes(e)) ||
+      new Set(entry).size !== entry.length
+    ) {
+      fail(where, `entry must be a non-empty list of distinct ${routeEntries.join(' | ')}`);
+    }
     const auth = def['auth'];
     if (typeof auth !== 'string' || !authLevels.includes(auth)) {
       fail(where, `auth must be one of ${authLevels.join(', ')}`);
@@ -209,8 +220,21 @@ export function loadBridgeCatalog(
       since: since(where, def['since']),
       phase: typeof def['phase'] === 'string' ? def['phase'] : fail(where, 'phase missing'),
       debug_only: debugOnly,
+      entry: entry as string[],
       params: closedObjectSchema(`${where} params`, def['params']),
     });
+  }
+  // Funds and real-name pages take no external prefill (BR-WDR-01 细则): their params stay empty.
+  for (const r of ['Withdraw', 'PayoutAccount', 'LaborAgreement', 'RealName']) {
+    const def = routes.find((x) => x.name === r);
+    if (def === undefined) fail('contracts/routes.json', `${r} is required (BR-WDR-01)`);
+    const props = def.params['properties'];
+    if (!isObj(props) || Object.keys(props).length > 0) {
+      fail(
+        `contracts/routes.json ${r}`,
+        'params must be empty (no external prefill, BR-WDR-01 细则)',
+      );
+    }
   }
   for (const r of ['ExternalPage', 'WebPage']) {
     if (!routes.some((x) => x.name === r))
@@ -399,11 +423,16 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
         phase: r.phase,
         since: r.since,
         debug_only: r.debug_only,
+        entry: r.entry,
       },
     ]),
   );
   out.push(`export const routes = ${JSON.stringify(routeMeta, null, 2)} as const;`);
   out.push('export type RouteName = keyof typeof routes;');
+  out.push('/** Routes kept in release builds (debug_only routes are dropped there, TECH-11). */');
+  out.push(
+    `export const releaseRouteNames = ${JSON.stringify(cat.routes.filter((r) => !r.debug_only).map((r) => r.name))} as const;`,
+  );
   out.push('export interface RouteParams {');
   for (const r of cat.routes) out.push(`  ${r.name}: ${s(`Route${r.name}Params`)};`);
   out.push('}');

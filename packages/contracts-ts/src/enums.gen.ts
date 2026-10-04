@@ -1045,6 +1045,17 @@ export const client_platform = [
 export type ClientPlatform = (typeof client_platform)[number];
 
 /**
+ * contracts/routes.json 每条路由的 entry；入口类别看 route 的来源，不看请求里的标记
+ * Source: 规划/04 §10.1 跳转段；BR-ID-10 细则「路由入口矩阵」「入口类别看 route 的来源」 (contracts/enums/platform.yaml).
+ */
+export const route_entry = [
+  "in_app", // App 内发起（原生页面、首页卡片与弹窗、站内信、Agent 卡片、JSBridge nav.open）
+  "push", // 服务端按消息编号回查返回的 route
+  "deeplink", // 客户端从外部直接拿到的 route（通用链接、自定义 scheme、启动参数里直接带来的任何 route）
+] as const;
+export type RouteEntry = (typeof route_entry)[number];
+
+/**
  * /v1/config.features.search_status 的值，由 search.enabled.<platform> 派生
  * Source: 规划/04 §2.5、§10.1；BR-PROD-10 (contracts/enums/platform.yaml).
  */
@@ -1382,6 +1393,7 @@ export const enums = {
   platform,
   key_stability,
   client_platform,
+  route_entry,
   platform_search_status,
   install_channel,
   auth_level,

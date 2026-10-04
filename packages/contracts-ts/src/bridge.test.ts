@@ -44,3 +44,11 @@ it('ext.openApp targets are exactly the apps.json keys', () => {
     bridge.BridgeMethods['ext.openApp']['params']['target']
   >().toEqualTypeOf<bridge.AppTarget>();
 });
+
+it('routes carry their entry list and release builds drop debug_only routes (BR-ID-10 细则)', () => {
+  expect(bridge.routes.Withdraw.entry).toEqual(['in_app', 'push']);
+  expect(bridge.routes.ExternalPage.entry).toEqual(['in_app', 'push', 'deeplink']);
+  expect(bridge.routes.HomePreview.entry).toEqual(['in_app', 'deeplink']);
+  expect(bridge.releaseRouteNames).not.toContain('HomePreview');
+  expect(bridge.releaseRouteNames).toContain('AuthManage');
+});

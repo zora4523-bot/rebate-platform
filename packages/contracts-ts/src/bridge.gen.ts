@@ -323,7 +323,10 @@ export interface components {
         RouteMeParams: Record<string, never>;
         RouteWalletParams: Record<string, never>;
         RouteWithdrawParams: Record<string, never>;
-        RouteWithdrawRecordsParams: Record<string, never>;
+        RouteWithdrawRecordsParams: {
+            /** @description 定位本人的一张提现单并展开详情；不是本人的按不存在处理，只显示列表 */
+            withdrawal_id?: string;
+        };
         RouteLedgerParams: Record<string, never>;
         RouteRealNameParams: Record<string, never>;
         RoutePayoutAccountParams: Record<string, never>;
@@ -353,13 +356,30 @@ export interface components {
             type?: "agreement" | "privacy" | "sdk_list";
         };
         RouteWebPageParams: {
+            /** @description 只接受 bridge_origins 白名单内的 https 地址，不接受外部传入 */
             url: string;
         };
         RouteExternalPageParams: {
+            /** @description 从深链进入时主机必须在 /v1/config.external_hosts 里（完整主机名匹配，BR-ID-10 细则） */
             url: string;
+            /** @description 主机名下方的副标题（后台保存时过禁用词）；不能隐藏标题栏、主机名、返回与关闭按钮 */
+            title?: string;
+            /**
+             * @description 标题栏配色，缺省 light；不能隐藏标题栏、主机名、返回与关闭按钮
+             * @enum {string}
+             */
+            nav_style?: "light" | "dark";
         };
         RouteInvitedFriendsParams: Record<string, never>;
         RouteLevelUpgradeParams: Record<string, never>;
+        RouteLinkLandingParams: {
+            link_id: string;
+        };
+        RouteEarningsParams: {
+            /** @enum {string} */
+            platform?: "taobao" | "jd" | "pdd" | "meituan" | "vip" | "douyin" | "eleme" | "kuaishou" | "suning";
+        };
+        RouteAuthManageParams: Record<string, never>;
     };
     responses: never;
     parameters: never;
@@ -774,7 +794,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "BasicMode": {
     "kind": "native",
@@ -786,7 +809,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "Login": {
     "kind": "native",
@@ -798,7 +824,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "BindPhone": {
     "kind": "native",
@@ -810,7 +839,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "Home": {
     "kind": "native",
@@ -822,7 +854,12 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
   },
   "Search": {
     "kind": "native",
@@ -834,7 +871,12 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
   },
   "ProductDetail": {
     "kind": "native",
@@ -846,7 +888,12 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
   },
   "AuthSheet": {
     "kind": "native",
@@ -858,7 +905,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "JumpTip": {
     "kind": "native",
@@ -870,7 +920,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "AgentChat": {
     "kind": "native",
@@ -882,7 +935,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "AgentConsent": {
     "kind": "native",
@@ -894,7 +951,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "OrderList": {
     "kind": "native",
@@ -906,7 +966,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "OrderDetail": {
     "kind": "native",
@@ -918,7 +982,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "FindOrder": {
     "kind": "h5",
@@ -930,7 +998,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "Me": {
     "kind": "native",
@@ -942,7 +1014,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "Wallet": {
     "kind": "native",
@@ -954,7 +1030,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "Withdraw": {
     "kind": "native",
@@ -966,7 +1046,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "WithdrawRecords": {
     "kind": "native",
@@ -978,7 +1062,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "Ledger": {
     "kind": "h5",
@@ -990,7 +1078,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "RealName": {
     "kind": "native",
@@ -1002,7 +1094,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "PayoutAccount": {
     "kind": "native",
@@ -1014,7 +1110,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "LaborAgreement": {
     "kind": "native",
@@ -1026,7 +1126,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "Settings": {
     "kind": "native",
@@ -1038,7 +1141,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "PrivacyCenter": {
     "kind": "native",
@@ -1050,7 +1157,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "DeleteAccount": {
     "kind": "native",
@@ -1062,7 +1173,11 @@ export const routes = {
       "android": null,
       "harmony": null
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "RiskNotice": {
     "kind": "native",
@@ -1074,7 +1189,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "Appeal": {
     "kind": "native",
@@ -1086,7 +1205,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "ForceUpdate": {
     "kind": "native",
@@ -1098,7 +1221,10 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "HomePreview": {
     "kind": "native",
@@ -1110,7 +1236,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": true
+    "debug_only": true,
+    "entry": [
+      "in_app",
+      "deeplink"
+    ]
   },
   "About": {
     "kind": "native",
@@ -1122,7 +1252,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "Messages": {
     "kind": "h5",
@@ -1134,7 +1268,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "InviteShare": {
     "kind": "h5",
@@ -1146,7 +1284,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "Rules": {
     "kind": "h5",
@@ -1158,7 +1300,12 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
   },
   "Help": {
     "kind": "h5",
@@ -1170,7 +1317,12 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
   },
   "Notice": {
     "kind": "h5",
@@ -1182,7 +1334,12 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
   },
   "Agreement": {
     "kind": "h5",
@@ -1194,7 +1351,12 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
   },
   "WebPage": {
     "kind": "native",
@@ -1206,7 +1368,11 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   },
   "ExternalPage": {
     "kind": "native",
@@ -1218,7 +1384,12 @@ export const routes = {
       "android": "1.0.0",
       "harmony": "1.0.0"
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
   },
   "InvitedFriends": {
     "kind": "native",
@@ -1230,7 +1401,10 @@ export const routes = {
       "android": null,
       "harmony": null
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
   },
   "LevelUpgrade": {
     "kind": "native",
@@ -1242,10 +1416,64 @@ export const routes = {
       "android": null,
       "harmony": null
     },
-    "debug_only": false
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ]
+  },
+  "LinkLanding": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "none",
+    "phase": "M-公开",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ]
+  },
+  "Earnings": {
+    "kind": "h5",
+    "h5_path": "/earnings",
+    "auth": "login",
+    "phase": "M-公开",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
+  },
+  "AuthManage": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "login",
+    "phase": "M-内测",
+    "since": {
+      "ios": "1.0.0",
+      "android": "1.0.0",
+      "harmony": "1.0.0"
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ]
   }
 } as const;
 export type RouteName = keyof typeof routes;
+/** Routes kept in release builds (debug_only routes are dropped there, TECH-11). */
+export const releaseRouteNames = ["Launch","BasicMode","Login","BindPhone","Home","Search","ProductDetail","AuthSheet","JumpTip","AgentChat","AgentConsent","OrderList","OrderDetail","FindOrder","Me","Wallet","Withdraw","WithdrawRecords","Ledger","RealName","PayoutAccount","LaborAgreement","Settings","PrivacyCenter","DeleteAccount","RiskNotice","Appeal","ForceUpdate","About","Messages","InviteShare","Rules","Help","Notice","Agreement","WebPage","ExternalPage","InvitedFriends","LevelUpgrade","LinkLanding","Earnings","AuthManage"] as const;
 export interface RouteParams {
   Launch: components['schemas']["RouteLaunchParams"];
   BasicMode: components['schemas']["RouteBasicModeParams"];
@@ -1287,9 +1515,12 @@ export interface RouteParams {
   ExternalPage: components['schemas']["RouteExternalPageParams"];
   InvitedFriends: components['schemas']["RouteInvitedFriendsParams"];
   LevelUpgrade: components['schemas']["RouteLevelUpgradeParams"];
+  LinkLanding: components['schemas']["RouteLinkLandingParams"];
+  Earnings: components['schemas']["RouteEarningsParams"];
+  AuthManage: components['schemas']["RouteAuthManageParams"];
 }
 /** A jump target shared by banners, push, messages, SDUI, Agent cards and nav.open. */
-export type RouteWithOptionalParams = "Launch" | "BasicMode" | "Login" | "BindPhone" | "Home" | "Search" | "AgentChat" | "AgentConsent" | "OrderList" | "FindOrder" | "Me" | "Wallet" | "Withdraw" | "WithdrawRecords" | "Ledger" | "RealName" | "PayoutAccount" | "LaborAgreement" | "Settings" | "PrivacyCenter" | "DeleteAccount" | "RiskNotice" | "Appeal" | "ForceUpdate" | "About" | "Messages" | "InviteShare" | "Rules" | "Help" | "Notice" | "Agreement" | "InvitedFriends" | "LevelUpgrade";
+export type RouteWithOptionalParams = "Launch" | "BasicMode" | "Login" | "BindPhone" | "Home" | "Search" | "AgentChat" | "AgentConsent" | "OrderList" | "FindOrder" | "Me" | "Wallet" | "Withdraw" | "WithdrawRecords" | "Ledger" | "RealName" | "PayoutAccount" | "LaborAgreement" | "Settings" | "PrivacyCenter" | "DeleteAccount" | "RiskNotice" | "Appeal" | "ForceUpdate" | "About" | "Messages" | "InviteShare" | "Rules" | "Help" | "Notice" | "Agreement" | "InvitedFriends" | "LevelUpgrade" | "Earnings" | "AuthManage";
 export type RouteTarget = { [N in RouteName]: N extends RouteWithOptionalParams ? { route: N; params?: RouteParams[N] } : { route: N; params: RouteParams[N] } }[RouteName];
 
 /** External target apps (contracts/apps.json); the only targets of ext.openApp. */
