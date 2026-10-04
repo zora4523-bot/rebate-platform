@@ -1317,16 +1317,14 @@ export interface components {
          * @enum {string}
          */
         OrderTimelineNode: "deposit_paid" | "paid" | "final_paid" | "received" | "credit_expected" | "credited" | "invalid" | "clawed_back" | "part_clawed_back";
-        /** @description One row of GET /v1/orders (closed; the fields live in OrderSummaryFields). */
-        OrderSummary: components["schemas"]["OrderSummaryFields"];
         /**
-         * @description Fields shared by the order list row and the order detail. Exactly one of order_no (my own
-         *     purchase) and masked_order_no (a shared order); the oneOf branches declare the property
-         *     they require (strict Ajv2020). A shared order with is_other_product=true has title and
-         *     image_url null (BR-TEXT-02 细则「订单的检索范围与分享单的投影」). Not closed here;
-         *     OrderSummary and OrderDetail close it with unevaluatedProperties: false.
+         * @description One row of GET /v1/orders. Exactly one of order_no (my own purchase) and masked_order_no (a
+         *     shared order); the oneOf branches declare the property they require (strict Ajv2020). A
+         *     shared order with is_other_product=true has title and image_url null (BR-TEXT-02 细则
+         *     「订单的检索范围与分享单的投影」). OrderDetail repeats these fields (kept as two closed
+         *     objects; redocly's example check closes every allOf member, so no shared allOf base).
          */
-        OrderSummaryFields: {
+        OrderSummary: {
             order_id: components["schemas"]["Id"];
             platform: components["schemas"]["PlatformCode"];
             title: string | null;
@@ -1378,10 +1376,34 @@ export interface components {
             period: string | null;
         };
         /**
-         * @description The list fields plus the detail fields of 04 §6.4; product_key is null when
-         *     is_other_product=true (and for any order the rules give no product page, BR-TEXT-02 细则).
+         * @description The list row fields (same as OrderSummary) plus the detail fields of 04 §6.4. product_key
+         *     is null when is_other_product=true; with is_other_product=true title and image_url are
+         *     null too.
          */
-        OrderDetail: components["schemas"]["OrderSummaryFields"] & {
+        OrderDetail: {
+            order_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            title: string | null;
+            /** Format: uri */
+            image_url: string | null;
+            pay_amount_fen: components["schemas"]["NullableFen"];
+            /** Format: int32 */
+            quantity: number;
+            /** @description Full platform order number (self-purchase only, copyable). */
+            order_no?: string;
+            /** @description Masked by the server (BR-TEXT-02 细则「订单号的显示」); shared orders never carry the full number. */
+            masked_order_no?: string;
+            display_status: components["schemas"]["OrderDisplayStatus"];
+            reason: components["schemas"]["OrderReasonCode"] | null;
+            est_rebate_fen: components["schemas"]["NullableFen"];
+            /**
+             * Format: date-time
+             * @description Payment time (the final payment of a pre-sale order); null for a pre-sale order still in
+             *     DEPOSIT_PAID (BR-ATTR-25 keeps paid_at for the final payment).
+             */
+            paid_at: string | null;
+            /** @description A shared order whose bought product is not the shared one. */
+            is_other_product: boolean;
             product_key: components["schemas"]["ProductKey"] | null;
             /** @description Action codes of the reason (the order_reason dictionary's action[], BR-TEXT-05). */
             reason_action: string[];
@@ -1392,7 +1414,11 @@ export interface components {
             clawback_fen: components["schemas"]["NullableFen"];
             appeal_pending: boolean;
             is_price_compare: boolean | null;
-        };
+        } & ({
+            order_no: string;
+        } | {
+            masked_order_no: string;
+        });
         OrderDetailResponse: {
             code: components["schemas"]["SuccessCode"];
             msg: string;

@@ -3748,18 +3748,13 @@ components:
         - part_clawed_back
     OrderSummary:
       type: object
-      description: One row of GET /v1/orders (closed; the fields live in OrderSummaryFields).
-      unevaluatedProperties: false
-      allOf:
-        - $ref: '#/components/schemas/OrderSummaryFields'
-    OrderSummaryFields:
-      type: object
       description: |
-        Fields shared by the order list row and the order detail. Exactly one of order_no (my own
-        purchase) and masked_order_no (a shared order); the oneOf branches declare the property
-        they require (strict Ajv2020). A shared order with is_other_product=true has title and
-        image_url null (BR-TEXT-02 细则「订单的检索范围与分享单的投影」). Not closed here;
-        OrderSummary and OrderDetail close it with unevaluatedProperties: false.
+        One row of GET /v1/orders. Exactly one of order_no (my own purchase) and masked_order_no (a
+        shared order); the oneOf branches declare the property they require (strict Ajv2020). A
+        shared order with is_other_product=true has title and image_url null (BR-TEXT-02 细则
+        「订单的检索范围与分享单的投影」). OrderDetail repeats these fields (kept as two closed
+        objects; redocly's example check closes every allOf member, so no shared allOf base).
+      additionalProperties: false
       required:
         - order_id
         - platform
@@ -3853,6 +3848,7 @@ components:
               type: string
           required:
             - masked_order_no
+
     OrderListData:
       type: object
       additionalProperties: false
@@ -3916,63 +3912,149 @@ components:
     OrderDetail:
       type: object
       description: |
-        The list fields plus the detail fields of 04 §6.4; product_key is null when
-        is_other_product=true (and for any order the rules give no product page, BR-TEXT-02 细则).
-      unevaluatedProperties: false
-      allOf:
-        - $ref: '#/components/schemas/OrderSummaryFields'
-        - type: object
-          not:
-            type: object
+        The list row fields (same as OrderSummary) plus the detail fields of 04 §6.4. product_key
+        is null when is_other_product=true; with is_other_product=true title and image_url are
+        null too.
+      additionalProperties: false
+      required:
+        - order_id
+        - platform
+        - title
+        - image_url
+        - pay_amount_fen
+        - quantity
+        - display_status
+        - reason
+        - est_rebate_fen
+        - paid_at
+        - is_other_product
+        - product_key
+        - reason_action
+        - timeline
+        - expected_credit_period
+        - credit_overdue
+        - actual_fen
+        - clawback_fen
+        - appeal_pending
+        - is_price_compare
+      properties:
+        order_id:
+          $ref: '#/components/schemas/Id'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        title:
+          type:
+            - string
+            - 'null'
+        image_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        pay_amount_fen:
+          $ref: '#/components/schemas/NullableFen'
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+        order_no:
+          type: string
+          minLength: 1
+          description: Full platform order number (self-purchase only, copyable).
+        masked_order_no:
+          type: string
+          minLength: 1
+          description: Masked by the server (BR-TEXT-02 细则「订单号的显示」); shared orders never carry the full number.
+        display_status:
+          $ref: '#/components/schemas/OrderDisplayStatus'
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/OrderReasonCode'
+            - type: 'null'
+        est_rebate_fen:
+          $ref: '#/components/schemas/NullableFen'
+        paid_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: |
+            Payment time (the final payment of a pre-sale order); null for a pre-sale order still in
+            DEPOSIT_PAID (BR-ATTR-25 keeps paid_at for the final payment).
+        is_other_product:
+          type: boolean
+          description: A shared order whose bought product is not the shared one.
+        product_key:
+          anyOf:
+            - $ref: '#/components/schemas/ProductKey'
+            - type: 'null'
+        reason_action:
+          type: array
+          description: Action codes of the reason (the order_reason dictionary's action[], BR-TEXT-05).
+          items:
+            type: string
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderTimelineItem'
+        expected_credit_period:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+        credit_overdue:
+          type: boolean
+        actual_fen:
+          $ref: '#/components/schemas/NullableFen'
+        clawback_fen:
+          $ref: '#/components/schemas/NullableFen'
+        appeal_pending:
+          type: boolean
+        is_price_compare:
+          type:
+            - boolean
+            - 'null'
+      not:
+        type: object
+        additionalProperties: true
+        properties:
+          is_other_product:
+            const: true
+        required:
+          - is_other_product
+        anyOf:
+          - type: object
             properties:
-              is_other_product:
-                const: true
+              title:
+                type: string
+            required:
+              - title
+          - type: object
+            properties:
+              image_url:
+                type: string
+            required:
+              - image_url
+          - type: object
+            properties:
               product_key:
                 type: string
             required:
-              - is_other_product
               - product_key
-          required:
-            - product_key
-            - reason_action
-            - timeline
-            - expected_credit_period
-            - credit_overdue
-            - actual_fen
-            - clawback_fen
-            - appeal_pending
-            - is_price_compare
+      oneOf:
+        - type: object
           properties:
-            product_key:
-              anyOf:
-                - $ref: '#/components/schemas/ProductKey'
-                - type: 'null'
-            reason_action:
-              type: array
-              description: Action codes of the reason (the order_reason dictionary's action[], BR-TEXT-05).
-              items:
-                type: string
-            timeline:
-              type: array
-              items:
-                $ref: '#/components/schemas/OrderTimelineItem'
-            expected_credit_period:
-              type:
-                - string
-                - 'null'
-              pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
-            credit_overdue:
-              type: boolean
-            actual_fen:
-              $ref: '#/components/schemas/NullableFen'
-            clawback_fen:
-              $ref: '#/components/schemas/NullableFen'
-            appeal_pending:
-              type: boolean
-            is_price_compare:
-              type:
-                - boolean
-                - 'null'
+            order_no:
+              type: string
+          required:
+            - order_no
+        - type: object
+          properties:
+            masked_order_no:
+              type: string
+          required:
+            - masked_order_no
+
     OrderDetailResponse:
       type: object
       additionalProperties: false
