@@ -1,0 +1,60 @@
+{
+  "task": "CT-19b",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "3d086c269fbf481adf92d990a5828cfc1dfc66df",
+  "red_tests": [],
+  "risk_note": "RV2 only because specs/** is not on the risk-map whitelist (D-2). specs/fund-term-keys.yaml (fund-term vs ordinary classification of every bundled text key and notify template) and specs/app-stores.yaml (structure only) with their checks in contracts:check; no money, attribution or authorisation path. Written by hand before the evidence generator exists.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "2bfebc3a4ce8d6356246328e6959708e14ca4cae",
+      "tree": "c6cc16d6c61f2c2642180baf5f96a513aaa9312d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T14:46:24Z",
+      "finished_at": "2026-10-04T14:48:00Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass; its two S2 fixed (vitest config restored, tests moved to src; invite.notice_inviter to fund terms)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass (one S2: platform / channel pairing not checked, followup)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "contract task (ledger tester: codex) with no rule tests"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "ee5f39d6ab079380d24e6e9c0ce833d535c18f3c",
+    "specs": "94b4df6c1a87be638946eb56b30117319961f7d5"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 locally; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
