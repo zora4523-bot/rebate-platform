@@ -316,6 +316,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/unions/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Authorization state per platform
+         * @description One item per platform. A platform with an unreleased binding gives that binding's status;
+         *     otherwise released when a released binding exists, otherwise unbound. Pinduoduo reports
+         *     the authorization of the self-purchase promotion slot. No released_at, cooldown_until,
+         *     account name, nickname or avatar (BR-ID-17 细则「授权方式」「授权管理页」; how the page
+         *     shows each status is in BR-ID-17 细则).
+         */
+        get: operations["listUnionBindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/unions/{platform}/auth-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the authorization link of a platform
+         * @description Returns auth_url, state and the ordered auth_methods (Taobao: configured per platform of
+         *     the device record; the client uses the first one it can run, BR-ID-17 细则「授权方式」).
+         *     For platform=pdd the response carries auth_jump instead of auth_methods (executed like a
+         *     purchase jump plan, h5 steps in the system browser, no link_jump report). No self-service
+         *     rebinding or unbinding. A blocked binding of a user who is not banned is 30153 and no
+         *     auth_url is issued (BR-ID-17 细则「授权管理页」).
+         */
+        get: operations["getUnionAuthUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/unions/{platform}/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind after the user authorized
+         * @description Taobao body: exactly one of {state, auth_method: web_code, code} and
+         *     {state, auth_method: sdk_token, access_token, expires_in}; no nickname, avatar or account
+         *     name, and any undefined field is 20001. The server checks first and consumes later: uid,
+         *     device_id, the platform of the device record (X-Platform is only a claim) and the issued
+         *     method must all match before the state is marked used; then the configured app exchanges
+         *     or uses the credential. A method that was not issued, is closed or does not match the
+         *     device is 30104 with data.reason=method_not_allowed (the state stays unused); an invalid
+         *     credential, or one the upstream says is not for this app, is 30104 with
+         *     data.reason=credential_invalid; an expired or used state is 30104 without reason. Every
+         *     binding attempt (new state or new credential) uses a new Idempotency-Key; only a transport
+         *     retry of the same request keeps it (BR-ID-17 细则「授权方式」).
+         */
+        post: operations["bindUnion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -509,6 +588,10 @@ export interface paths {
          *     (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14). When the
          *     rebate drops from > 0 to 0 (new_rebate_max_fen = 0) the client also asks before jumping,
          *     even with price_changed=false (BR-PRICE-13).
+         *     A request stopped by 30101, 30102 or 30111 and sent again after the user authorized is a
+         *     new request with a new Idempotency-Key; the original key is only for retrying the same
+         *     request (BR-ID-10 细则). 30101 / 30102 carry auth_url, state and auth_methods; 30111
+         *     carries auth_jump.
          */
         post: operations["openLink"];
         delete?: never;
@@ -535,6 +618,10 @@ export interface paths {
          *     item_ref is not an error, BR-PROD-11), or `url`. A url whose product key cannot be
          *     derived is 30131 and nothing is registered (BR-PROD-03). A missing or invalid `scene`
          *     is 20001 (BR-ATTR-08). Writes a link_log `convert` row (BR-ATTR-14).
+         *     A request stopped by 30101, 30102 or 30111 and sent again after the user authorized is a
+         *     new request with a new Idempotency-Key; the original key is only for retrying the same
+         *     request (BR-ID-10 细则). 30101 / 30102 carry auth_url, state and auth_methods; 30111
+         *     carries auth_jump.
          */
         post: operations["convertLink"];
         delete?: never;
@@ -627,7 +714,7 @@ export interface components {
         Availability: "ok" | "off_shelf" | "coupon_gone" | "ref_expired" | "price_unavailable" | "unknown";
         /**
          * @description Whether the platform app is installed, as detected by the client (BR-ATTR-27 ①); the
-         *     strings "true" / "false" / "unknown", default unknown; H5 always sends unknown.
+         *     strings "true" / "false" / "unknown" (enum installed_state).
          * @enum {string}
          */
         InstalledState: "true" | "false" | "unknown";
@@ -1004,6 +1091,82 @@ export interface components {
              * @enum {string}
              */
             status: "unbound" | "pending_auth" | "active" | "invalid" | "released" | "blocked";
+        };
+        /**
+         * @description Taobao authorization method (enum auth_method; BR-ID-17 细则「授权方式」).
+         * @enum {string}
+         */
+        AuthMethod: "web_code" | "sdk_token";
+        AuthJumpStep: {
+            /**
+             * @description A subset of jump_type; an h5 step opens in the system browser, not in the app.
+             * @enum {string}
+             */
+            type: "scheme" | "universal_link" | "h5";
+            value: string;
+        };
+        /**
+         * @description Authorization jump of 30111 and of the Pinduoduo auth-url (04 §7 30111): primary and
+         *     fallbacks chosen by the server from the device record and installed (BR-ID-22 细则,
+         *     BR-ATTR-27); executed in order by the same executor as a purchase jump plan, but not
+         *     reported as link_jump and not a purchase jump (BR-ATTR-21).
+         */
+        AuthJumpPlan: {
+            primary: components["schemas"]["AuthJumpStep"];
+            fallbacks: components["schemas"]["AuthJumpStep"][];
+            /** Format: date-time */
+            expire_at: string;
+        };
+        UnionBindingsData: {
+            items: components["schemas"]["UnionBindingState"][];
+        };
+        UnionBindingsResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["UnionBindingsData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description auth_methods for Taobao (ordered), auth_jump for Pinduoduo; never both. */
+        UnionAuthUrlData: {
+            /** Format: uri */
+            auth_url: string;
+            state: string;
+            auth_methods?: components["schemas"]["AuthMethod"][];
+            auth_jump?: components["schemas"]["AuthJumpPlan"];
+        };
+        UnionAuthUrlResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["UnionAuthUrlData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        BindUnionByWebCode: {
+            state: string;
+            /** @enum {string} */
+            auth_method: "web_code";
+            code: string;
+        };
+        BindUnionBySdkToken: {
+            state: string;
+            /** @enum {string} */
+            auth_method: "sdk_token";
+            access_token: string;
+            /**
+             * Format: int64
+             * @description Lifetime of the access token in seconds, as the SDK returned it.
+             */
+            expires_in: number;
+        };
+        /**
+         * @description Exactly one authorization method (BR-ID-17 细则「授权方式」); each branch is closed, so
+         *     undefined fields are 20001.
+         */
+        BindUnionRequest: components["schemas"]["BindUnionByWebCode"] | components["schemas"]["BindUnionBySdkToken"];
+        UnionBindingResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["UnionBindingState"];
+            trace_id: components["schemas"]["TraceId"];
         };
         /** @description Risk state for the ban / freeze explanation page (BR-ID-31, 拍板第二批 OPS-12). */
         RiskInfo: {
@@ -1419,6 +1582,7 @@ export interface components {
             trace_id: components["schemas"]["TraceId"];
         };
         OpenLinkRequest: {
+            /** @description Default unknown; H5 always sends unknown (BR-ATTR-27 ①). */
             installed?: components["schemas"]["InstalledState"];
             /**
              * @description Buy without rebate (BR-ID-18).
@@ -1482,6 +1646,7 @@ export interface components {
              */
             scene: "h5";
             spm?: string;
+            /** @description Default unknown; H5 always sends unknown (BR-ATTR-27 ①). */
             installed?: components["schemas"]["InstalledState"];
         } & ({
             product_key: components["schemas"]["ProductKey"];
@@ -1585,6 +1750,8 @@ export interface components {
          *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
          */
         IdempotencyKey: components["schemas"]["IdempotencyKey"];
+        /** @description Platform code (enum platform). */
+        UnionPlatform: components["schemas"]["PlatformCode"];
         /** @description link_id from a card; unknown or of another app → 30144. */
         LinkId: components["schemas"]["Id"];
         /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
@@ -2336,6 +2503,183 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["H5TokenResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listUnionBindings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorization state per platform. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "platform": "taobao",
+                     *             "status": "active"
+                     *           },
+                     *           {
+                     *             "platform": "jd",
+                     *             "status": "unbound"
+                     *           },
+                     *           {
+                     *             "platform": "pdd",
+                     *             "status": "released"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["UnionBindingsResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getUnionAuthUrl: {
+        parameters: {
+            query?: {
+                /** @description Whether the platform app is installed; when absent see BR-ID-22 细则. */
+                installed?: components["schemas"]["InstalledState"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /** @description Platform code (enum platform). */
+                platform: components["parameters"]["UnionPlatform"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The authorization link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnionAuthUrlResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    bindUnion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Platform code (enum platform). */
+                platform: components["parameters"]["UnionPlatform"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindUnionRequest"];
+            };
+        };
+        responses: {
+            /** @description The binding state after binding. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "platform": "taobao",
+                     *         "status": "active"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["UnionBindingResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

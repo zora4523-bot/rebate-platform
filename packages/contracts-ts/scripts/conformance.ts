@@ -39,6 +39,7 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   IdempotencyAbandonOutcome: 'idempotency_abandon_outcome',
   DeviceIdSource: 'device_id_source',
   SessionScope: 'session_scope',
+  AuthMethod: 'auth_method',
   H5TokenScope: 'h5_token_scope',
   LoginProvider: 'login_provider',
   OauthAttemptPurpose: 'oauth_attempt_purpose',
@@ -128,6 +129,9 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'ParseInputRequest/properties/scene': 'scene',
   'ConvertLinkRequest/properties/scene': 'scene',
   'StepUpByWechatRequest/properties/provider': 'login_provider',
+  'AuthJumpStep/properties/type': 'jump_type',
+  'BindUnionByWebCode/properties/auth_method': 'auth_method',
+  'BindUnionBySdkToken/properties/auth_method': 'auth_method',
   'StepUpByAppleRequest/properties/provider': 'login_provider',
   'StepUpByHuaweiRequest/properties/provider': 'login_provider',
 };

@@ -527,6 +527,16 @@ export const consent_type = [
 export type ConsentType = (typeof consent_type)[number];
 
 /**
+ * 淘宝授权方式（auth-url 的 auth_methods、bindings 的 auth_method）；按端由服务端配置下发
+ * Source: 规划/04 §6.3；BR-ID-17 (contracts/enums/identity.yaml).
+ */
+export const auth_method = [
+  "web_code", // 网页授权码
+  "sdk_token", // 淘宝 SDK 换得的访问令牌
+] as const;
+export type AuthMethod = (typeof auth_method)[number];
+
+/**
  * 不设 cooling，释放后冷却用 released + cooldown_until；无用户自助换绑
  * Source: 规划/04 §2.5；BR-ID-19、BR-ID-20 (contracts/enums/identity.yaml).
  */
@@ -1256,6 +1266,7 @@ export const enums = {
   step_up_action,
   idempotency_abandon_outcome,
   consent_type,
+  auth_method,
   union_binding_status,
   union_binding_blocked_reason,
   risk_state,

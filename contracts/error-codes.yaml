@@ -188,8 +188,8 @@ codes:
     sources: [BR-ID-01, BR-ID-10, BR-WDR-07]
   - code: 30101
     http: 422
-    meaning: 淘宝未授权 / 未备案；站长授权过期或失效期间带 reason=auth_unavailable，不带 auth_url
-    action: 弹 AuthSheet → 拉起授权 → 自动重放；auth_unavailable 不拉起授权、不外跳、只提示，不提供无返利购买
+    meaning: 淘宝未授权 / 未备案（data.auth_url、data.state、data.auth_methods，授权方式见 BR-ID-17）；站长授权过期或失效期间带 reason=auth_unavailable，不带 auth_url
+    action: 弹 AuthSheet → 拉起授权 → 用新的幂等键重新发起原请求（BR-ID-10 细则）；auth_unavailable 不拉起授权、不外跳、只提示，不提供无返利购买
     retry: 授权后；auth_unavailable：稍后
     retry_kind: after_action
     retry_kind_by_reason:
@@ -197,17 +197,21 @@ codes:
     data:
       auth_url: ~
       state: ~
+      auth_methods: [web_code, sdk_token]
       reason: [auth_unavailable]
     sources: [BR-ID-17, BR-ID-18, BR-ID-24, BR-ATTR-05, BR-TEXT-14]
   - code: 30102
     http: 422
-    meaning: 淘宝授权已失效，需重新授权；站长授权过期或失效期间带 reason=auth_unavailable
+    meaning: 淘宝授权已失效，需重新授权（data 同 30101：data.auth_url、data.state、data.auth_methods）；站长授权过期或失效期间带 reason=auth_unavailable
     action: 同 30101
     retry: 同 30101
     retry_kind: after_action
     retry_kind_by_reason:
       auth_unavailable: later
     data:
+      auth_url: ~
+      state: ~
+      auth_methods: [web_code, sdk_token]
       reason: [auth_unavailable]
     sources: [BR-ID-17, BR-ID-21, BR-ID-24, BR-TEXT-14]
   - code: 30103
@@ -219,17 +223,21 @@ codes:
     sources: [规划/04 §7]
   - code: 30104
     http: 422
-    meaning: 淘宝授权请求已过期或已使用（state 超 10 分钟或重复提交）
-    action: 重新获取 auth_url 后重新发起授权
+    meaning: 淘宝授权请求已过期或已使用（state 超 10 分钟或重复提交）；授权凭证无效时带 data.reason=credential_invalid（授权码或 SDK 换得的访问令牌无效、已过期、已使用或不能用于备案）；提交的授权方式没有下发、已关闭或设备记录的端与 state 记录的不符时带 data.reason=method_not_allowed（此时 state 不被消费）
+    action: 重新获取 auth_url 后重新发起授权：这是一次新的绑定尝试，用新的 state、新的凭证和新的幂等键，不得带原幂等键提交新的请求体（只有同一请求的传输重试才沿用原键）；credential_invalid 时按新下发的 auth_methods 改用下一种授权方式，没有可换的方式按 BR-ID-18 的授权失败处理；method_not_allowed 时只按新下发的 auth_methods 执行
     retry: 重新授权后
     retry_kind: after_action
+    data:
+      reason: [credential_invalid, method_not_allowed]
     sources: [BR-ID-17]
   - code: 30111
     http: 422
-    meaning: 拼多多未授权
+    meaning: 拼多多未授权（data.auth_jump：服务端下发的授权跳转首选与备选，形状即 openapi AuthJumpPlan，选法见 BR-ID-22 细则；客户端用执行购买跳转方案的同一个执行器按 primary、fallbacks 顺序执行，h5 步骤交系统浏览器，不上报 link_jump）
     action: 同 30101
     retry: 授权后
     retry_kind: after_action
+    data:
+      auth_jump: ~
     sources: [BR-ID-18, BR-ID-22, BR-TEXT-14]
   - code: 30121
     http: 422
@@ -298,8 +306,8 @@ codes:
     sources: [BR-ID-19]
   - code: 30153
     http: 422
-    meaning: 该平台返利已被停用（绑定为 blocked 且用户未被封禁）
-    action: 给无返利购买与联系客服两个按钮
+    meaning: 该平台返利已被停用（绑定为 blocked 且用户未被封禁）；授权管理页取授权链接（GET /v1/unions/{platform}/auth-url）时同码
+    action: 购买入口：给无返利购买与联系客服两个按钮；授权管理页：只给联系客服（BR-ID-17 细则「授权管理页」）
     retry: 否
     retry_kind: never
     sources: [BR-ID-17, BR-ID-18]

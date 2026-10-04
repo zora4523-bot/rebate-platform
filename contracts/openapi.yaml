@@ -48,6 +48,8 @@ tags:
     description: Client configuration and switches (04 §6.2, §10.1).
   - name: trade
     description: Search, product detail, input parsing and link open / convert (04 §6.3).
+  - name: union
+    description: Union authorization and binding (04 §6.3).
 paths:
   /healthz:
     get:
@@ -837,6 +839,219 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/unions/bindings:
+    get:
+      operationId: listUnionBindings
+      tags:
+        - union
+      summary: Authorization state per platform
+      description: |
+        One item per platform. A platform with an unreleased binding gives that binding's status;
+        otherwise released when a released binding exists, otherwise unbound. Pinduoduo reports
+        the authorization of the self-purchase promotion slot. No released_at, cooldown_until,
+        account name, nickname or avatar (BR-ID-17 细则「授权方式」「授权管理页」; how the page
+        shows each status is in BR-ID-17 细则).
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes: []
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Authorization state per platform.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnionBindingsResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - platform: taobao
+                      status: active
+                    - platform: jd
+                      status: unbound
+                    - platform: pdd
+                      status: released
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/unions/{platform}/auth-url:
+    get:
+      operationId: getUnionAuthUrl
+      tags:
+        - union
+      summary: Get the authorization link of a platform
+      description: |
+        Returns auth_url, state and the ordered auth_methods (Taobao: configured per platform of
+        the device record; the client uses the first one it can run, BR-ID-17 细则「授权方式」).
+        For platform=pdd the response carries auth_jump instead of auth_methods (executed like a
+        purchase jump plan, h5 steps in the system browser, no link_jump report). No self-service
+        rebinding or unbinding. A blocked binding of a user who is not banned is 30153 and no
+        auth_url is issued (BR-ID-17 细则「授权管理页」).
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30153
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/UnionPlatform'
+        - name: installed
+          in: query
+          required: false
+          description: Whether the platform app is installed; when absent see BR-ID-22 细则.
+          schema:
+            $ref: '#/components/schemas/InstalledState'
+      responses:
+        '200':
+          description: The authorization link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnionAuthUrlResponse'
+              examples:
+                taobao:
+                  summary: Taobao, SDK first
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      auth_url: https://oauth.example.test/authorize?state=st_01
+                      state: st_01
+                      auth_methods:
+                        - sdk_token
+                        - web_code
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                pdd:
+                  summary: Pinduoduo, with an authorization jump plan
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      auth_url: https://auth.example.test/pdd/authorize?state=st_02
+                      state: st_02
+                      auth_jump:
+                        primary:
+                          type: universal_link
+                          value: https://auth.example.test/pdd/authorize?state=st_02
+                        fallbacks: []
+                        expire_at: '2026-10-02T09:40:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/unions/{platform}/bindings:
+    post:
+      operationId: bindUnion
+      tags:
+        - union
+      summary: Bind after the user authorized
+      description: |
+        Taobao body: exactly one of {state, auth_method: web_code, code} and
+        {state, auth_method: sdk_token, access_token, expires_in}; no nickname, avatar or account
+        name, and any undefined field is 20001. The server checks first and consumes later: uid,
+        device_id, the platform of the device record (X-Platform is only a claim) and the issued
+        method must all match before the state is marked used; then the configured app exchanges
+        or uses the credential. A method that was not issued, is closed or does not match the
+        device is 30104 with data.reason=method_not_allowed (the state stays unused); an invalid
+        credential, or one the upstream says is not for this app, is 30104 with
+        data.reason=credential_invalid; an expired or used state is 30104 without reason. Every
+        binding attempt (new state or new credential) uses a new Idempotency-Key; only a transport
+        retry of the same request keeps it (BR-ID-17 细则「授权方式」).
+      x-auth: login
+      x-signed: true
+      x-idempotent: true
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 20001
+        - 30104
+        - 30151
+        - 30153
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/UnionPlatform'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindUnionRequest'
+            examples:
+              webCode:
+                summary: Web authorization code
+                value:
+                  state: st_01
+                  auth_method: web_code
+                  code: example-authorization-code
+              sdkToken:
+                summary: Token from the Taobao SDK
+                value:
+                  state: st_01
+                  auth_method: sdk_token
+                  access_token: example-access-token
+                  expires_in: 86400
+      responses:
+        '200':
+          description: The binding state after binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnionBindingResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  platform: taobao
+                  status: active
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/me:
     get:
       operationId: getMe
@@ -1353,6 +1568,10 @@ paths:
         (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14). When the
         rebate drops from > 0 to 0 (new_rebate_max_fen = 0) the client also asks before jumping,
         even with price_changed=false (BR-PRICE-13).
+        A request stopped by 30101, 30102 or 30111 and sent again after the user authorized is a
+        new request with a new Idempotency-Key; the original key is only for retrying the same
+        request (BR-ID-10 细则). 30101 / 30102 carry auth_url, state and auth_methods; 30111
+        carries auth_jump.
       x-auth: optional
       x-signed: true
       x-idempotent: true
@@ -1431,6 +1650,10 @@ paths:
         item_ref is not an error, BR-PROD-11), or `url`. A url whose product key cannot be
         derived is 30131 and nothing is registered (BR-PROD-03). A missing or invalid `scene`
         is 20001 (BR-ATTR-08). Writes a link_log `convert` row (BR-ATTR-14).
+        A request stopped by 30101, 30102 or 30111 and sent again after the user authorized is a
+        new request with a new Idempotency-Key; the original key is only for retrying the same
+        request (BR-ID-10 细则). 30101 / 30102 carry auth_url, state and auth_methods; 30111
+        carries auth_jump.
       x-auth: login
       x-signed: true
       x-idempotent: true
@@ -1602,6 +1825,13 @@ components:
         POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
       schema:
         $ref: '#/components/schemas/IdempotencyKey'
+    UnionPlatform:
+      name: platform
+      in: path
+      required: true
+      description: Platform code (enum platform).
+      schema:
+        $ref: '#/components/schemas/PlatformCode'
     LinkId:
       name: link_id
       in: path
@@ -1653,6 +1883,24 @@ components:
                 data:
                   auth_url: https://oauth.example.test/authorize?state=st_01
                   state: st_01
+                  auth_methods:
+                    - sdk_token
+                    - web_code
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            pddAuthRequired:
+              summary: 30111 Pinduoduo not authorized
+              value:
+                code: 30111
+                msg: 请先授权拼多多
+                data:
+                  auth_jump:
+                    primary:
+                      type: universal_link
+                      value: https://auth.example.test/pdd/authorize?state=st_02
+                    fallbacks:
+                      - type: h5
+                        value: https://auth.example.test/pdd/authorize?state=st_02&web=1
+                    expire_at: '2026-10-02T09:40:00+08:00'
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
             phoneInvalid:
               summary: 20001 the phone does not normalise to a mainland mobile number
@@ -2055,7 +2303,7 @@ components:
       type: string
       description: |
         Whether the platform app is installed, as detected by the client (BR-ATTR-27 ①); the
-        strings "true" / "false" / "unknown", default unknown; H5 always sends unknown.
+        strings "true" / "false" / "unknown" (enum installed_state).
       enum:
         - 'true'
         - 'false'
@@ -2870,6 +3118,201 @@ components:
             - invalid
             - released
             - blocked
+    AuthMethod:
+      type: string
+      description: Taobao authorization method (enum auth_method; BR-ID-17 细则「授权方式」).
+      enum:
+        - web_code
+        - sdk_token
+    AuthJumpStep:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - value
+      properties:
+        type:
+          type: string
+          description: A subset of jump_type; an h5 step opens in the system browser, not in the app.
+          enum:
+            - scheme
+            - universal_link
+            - h5
+        value:
+          type: string
+          minLength: 1
+    AuthJumpPlan:
+      type: object
+      description: |
+        Authorization jump of 30111 and of the Pinduoduo auth-url (04 §7 30111): primary and
+        fallbacks chosen by the server from the device record and installed (BR-ID-22 细则,
+        BR-ATTR-27); executed in order by the same executor as a purchase jump plan, but not
+        reported as link_jump and not a purchase jump (BR-ATTR-21).
+      additionalProperties: false
+      required:
+        - primary
+        - fallbacks
+        - expire_at
+      properties:
+        primary:
+          $ref: '#/components/schemas/AuthJumpStep'
+        fallbacks:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthJumpStep'
+        expire_at:
+          type: string
+          format: date-time
+    UnionBindingsData:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnionBindingState'
+    UnionBindingsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/UnionBindingsData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    UnionAuthUrlData:
+      type: object
+      description: auth_methods for Taobao (ordered), auth_jump for Pinduoduo; never both.
+      additionalProperties: false
+      required:
+        - auth_url
+        - state
+      properties:
+        auth_url:
+          type: string
+          format: uri
+        state:
+          type: string
+          minLength: 1
+          maxLength: 128
+        auth_methods:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AuthMethod'
+        auth_jump:
+          $ref: '#/components/schemas/AuthJumpPlan'
+      not:
+        type: object
+        additionalProperties: true
+        properties:
+          auth_methods:
+            type: array
+          auth_jump:
+            type: object
+            additionalProperties: true
+        required:
+          - auth_methods
+          - auth_jump
+    UnionAuthUrlResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/UnionAuthUrlData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    BindUnionByWebCode:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - auth_method
+        - code
+      properties:
+        state:
+          type: string
+          minLength: 1
+          maxLength: 128
+        auth_method:
+          type: string
+          enum:
+            - web_code
+        code:
+          type: string
+          minLength: 1
+          maxLength: 4096
+    BindUnionBySdkToken:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - auth_method
+        - access_token
+        - expires_in
+      properties:
+        state:
+          type: string
+          minLength: 1
+          maxLength: 128
+        auth_method:
+          type: string
+          enum:
+            - sdk_token
+        access_token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        expires_in:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Lifetime of the access token in seconds, as the SDK returned it.
+    BindUnionRequest:
+      type: object
+      description: |
+        Exactly one authorization method (BR-ID-17 细则「授权方式」); each branch is closed, so
+        undefined fields are 20001.
+      unevaluatedProperties: false
+      oneOf:
+        - $ref: '#/components/schemas/BindUnionByWebCode'
+        - $ref: '#/components/schemas/BindUnionBySdkToken'
+    UnionBindingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/UnionBindingState'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     RiskInfo:
       type: object
       description: Risk state for the ban / freeze explanation page (BR-ID-31, 拍板第二批 OPS-12).
@@ -3722,6 +4165,7 @@ components:
       properties:
         installed:
           $ref: '#/components/schemas/InstalledState'
+          description: Default unknown; H5 always sends unknown (BR-ATTR-27 ①).
         no_rebate:
           type: boolean
           default: false
@@ -3852,6 +4296,7 @@ components:
           maxLength: 128
         installed:
           $ref: '#/components/schemas/InstalledState'
+          description: Default unknown; H5 always sends unknown (BR-ATTR-27 ①).
     ConvertLinkData:
       type: object
       description: The registered link_id plus the same fields as the open result (04 §6.3).
