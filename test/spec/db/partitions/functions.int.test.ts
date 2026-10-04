@@ -78,7 +78,7 @@ async function definitionOf(name: string): Promise<Definition[]> {
 
 const ACL = ['couli_maint=X/couli_migrator', 'couli_migrator=X/couli_migrator'];
 
-it('[ADR-0001 §4.2 #4、#8] app.drop_expired_month_partitions(text, timestamptz) 返回 text[]：只有一个重载，plpgsql、SECURITY DEFINER、属主 couli_migrator、search_path 固定为 pg_catalog, pg_temp，EXECUTE 只给 couli_maint（PUBLIC 已收回）', async () => {
+it('[ADR-0001 §4.2 #4、#8] app.drop_expired_month_partitions(text, timestamptz) 返回 text[]：只有一个重载，plpgsql、SECURITY DEFINER、属主 couli_migrator、函数级设置正好是 search_path=pg_catalog, pg_temp、lock_timeout=5s、DateStyle=ISO, YMD、TimeZone=UTC（契约补充见 lock-timeout.int.test.ts 文件头），EXECUTE 只给 couli_maint（PUBLIC 已收回）', async () => {
   expect(await definitionOf('drop_expired_month_partitions')).toEqual([
     {
       arguments: 'p_table text, p_now timestamp with time zone',
@@ -86,7 +86,12 @@ it('[ADR-0001 §4.2 #4、#8] app.drop_expired_month_partitions(text, timestamptz
       language: 'plpgsql',
       securityDefiner: true,
       owner: 'couli_migrator',
-      config: ['search_path=pg_catalog, pg_temp'],
+      config: [
+        'search_path=pg_catalog, pg_temp',
+        'lock_timeout=5s',
+        'DateStyle=ISO, YMD',
+        'TimeZone=UTC',
+      ],
       acl: ACL,
     },
   ]);
