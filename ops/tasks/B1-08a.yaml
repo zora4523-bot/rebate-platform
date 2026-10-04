@@ -1,0 +1,26 @@
+id: B1-08a
+repo: rebate-platform
+title: 迁移：订单类表——orders（booked_n_fen、platform_received_at、hold_reason 含 UNMAPPED_STATUS）、order_rights（type）、order_settlements（04 §3.2）
+type: migration
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# 编排会话 2026-10-04 下午决定选 A：四段金额冗余列（n_total_fen、pre_base_deduct_fen、base_fen、platform_est_profit_fen）
+# 全部可空、不设默认值与约束，只建形状不定取值（BR-CALC-27 待决策，定后另起迁移加约束）；资金评审里凡涉及取值口径的问题
+# 记为「待 BR-CALC-27」，不由实现自定。
+# 两段式（规划/11 §2.3）：Codex 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行。
+# 建表按 04 §3.2 当前行全量写（由编排者摘行进任务书第 2 节：迁移任务不带 contract_sections，§3.2 整节 46KB），
+# 下列增量是必须包含的部分：fa-18、fa-19。分区只预建不删除（B1-01j）。
+# 阻塞项：order_sync 待处理表 04 没有形状（fa-m04，contract-delta §4 S-07），不在本任务臆造。
+refs: []
+refs_hash: {}
+deps: [B1-06a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/orders/**'
+status: todo
+pr: null

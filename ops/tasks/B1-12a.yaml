@@ -1,0 +1,23 @@
+id: B1-12a
+repo: rebate-platform
+title: 迁移：push_tokens（按令牌值部分唯一、冻结列）与 user_tip_reads（04 §3.2）
+type: migration
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# 两段式（规划/11 §2.3）：Codex 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行。
+# 建表按 04 §3.2 当前行全量写（由编排者摘行进任务书第 2 节：迁移任务不带 contract_sections，§3.2 整节 46KB），
+# 下列增量是必须包含的部分：b2-37、b1-42。两张表写者不同（notification、growth），合在一个迁移只为串行省事。
+# 批评后补（contract-delta §5 c-01）：同时建 inbox_messages（route 为 {route, params} jsonb 可空，供 GET /v1/messages/{message_id} 回查）。
+refs: []
+refs_hash: {}
+deps: [B1-02a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/notification/**'
+status: todo
+pr: null

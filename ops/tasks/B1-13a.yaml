@@ -1,0 +1,22 @@
+id: B1-13a
+repo: rebate-platform
+title: 迁移：payout_accounts 与 payout_account_verify_attempts（04 §3.2；BR-WDR-02）
+type: migration
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# 两段式（规划/11 §2.3）：Codex 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行。
+# 建表按 04 §3.2 当前行全量写（由编排者摘行进任务书第 2 节：迁移任务不带 contract_sections，§3.2 整节 46KB），
+# 下列增量是必须包含的部分：b2-39、b2-m01（alipay_hmac 按规范化后的登录号计算，写进迁移说明）。
+refs: []
+refs_hash: {}
+deps: [B1-02a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/payout-account/**'
+status: todo
+pr: null

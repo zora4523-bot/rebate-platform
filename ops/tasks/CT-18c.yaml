@@ -1,0 +1,24 @@
+id: CT-18c
+repo: rebate-platform
+title: 契约：bridge.schema.json——perm.request、share.open、cs.open、ext.openApp、ext.openBrowser、nav.open、app.getEnv、auth.getH5Token、clipboard.write 手势标记、事件与 90403 / 90500 说明（04 §9）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b3-10、b3-11 + b4-17 + b4-19 + b5-04、b3-m05、b3-12、b3-13、b4-18、b4-20、b4-21、b4-22、b5-04（media.scan）、b4-34。
+# share.open 的三种分享页路径模式写成结构化字段供生成器取用；bridge.ts 读取、校验并输出手势标记与路径模式。
+# 不新增桥错误码。auth.getH5Token 的 scope 登记内联枚举核对 → h5_token_scope（CT-17a 新增）。
+refs: []
+refs_hash: {}
+contract_sections: ['9']
+deps: [CT-17a, CT-17d, CT-15g]
+paths:
+  - 'contracts/bridge.schema.json'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

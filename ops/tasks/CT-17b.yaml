@@ -1,0 +1,23 @@
+id: CT-17b
+repo: rebate-platform
+title: 契约：内容与版本——GET /v1/articles 与 NoticeItem、GET /v1/app-versions/check（default_store、stores）、GET /v1/messages/{message_id}、GET /v1/pages/{page_key}/preview（04 §6.2）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b2-13 + b5-15 + b5-30、b3-24 + b5-12、b3-26、b3-27。
+# app-versions/check 按 04 §6.2 当前行一次声明全部字段（含第 5 批的 default_store、stores），不下发下载地址。
+# §6.4 messages/{message_id} 行由编排者摘入。
+refs: []
+refs_hash: {}
+contract_sections: ['6.2']
+deps: [CT-17a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

@@ -1,0 +1,25 @@
+id: F1-02a
+repo: rebate-platform
+title: 迁移与种子：app_versions（default_store、store_listings）、articles（公告三列）、config_items 与配置默认值种子（04 §3.2、§10）
+type: migration
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# 两段式（规划/11 §2.3）：Codex 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行。
+# 建表按 04 §3.2 当前行全量写（由编排者摘行进任务书第 2 节：迁移任务不带 contract_sections，§3.2 整节 46KB），
+# 下列增量是必须包含的部分：b5-20、b5-21、b2-40、b3-39、b4-32、fa-24；b5-18 的种子部分按编排会话 D-8 不做（help_links.* 不入种子）。
+# 种子只放 08 写明的默认值；help_links、派生值不入种子；sms.* / device.* 阈值按编排会话 D-7 不入种子。
+# 批评后补（contract-delta §5 c-03）：第 1 批 11 个配置键的默认值种子（08 §13.2 第 1 批配置键行），风控类阈值按 D-7 不入种子。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'db/seeds/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/content/**'
+status: todo
+pr: null

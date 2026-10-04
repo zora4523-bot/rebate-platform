@@ -1,0 +1,25 @@
+id: CT-17c
+repo: rebate-platform
+title: 契约：routes.json——每条路由的 entry、ExternalPage / WebPage / HomePreview 说明与参数、新路由 LinkLanding、Earnings、AuthManage、资金实名路由空参数检查、WithdrawRecords 的 withdrawal_id（04 §10.1；01 §4.2）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对（契约任务书只带 04 节，见 CONTRACTS-W1 教训 §3）。
+# 条目：b3-01、b3-04、b3-m01、b3-05 + b1-32 + b5-02、b3-06、b1-31、b2-26、b4-24、b2-25、b5-01、b5-03、b3-07、b5-29。
+# entry 取值只照 08 BR-ID-10 细则「路由入口矩阵」；InvitedFriends、LevelUpgrade 不在矩阵，按编排会话 D-13 暂只 in_app
+# （规划侧 08 矩阵补登列入同步项；开工时若规划已改以规划为准）。Earnings 的 h5_path 由本任务定。三端生成器去 debug_only 归 CT-05。
+refs: []
+refs_hash: {}
+contract_sections: ['10.1']
+deps: []
+paths:
+  - 'contracts/routes.json'
+  - 'contracts/enums/platform.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

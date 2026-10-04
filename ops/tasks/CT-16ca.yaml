@@ -1,0 +1,27 @@
+id: CT-16ca
+repo: rebate-platform
+title: 契约：收款账号——GET / PUT /v1/me/payout-account（x-step-up、20903）、30303 reason 枚举与 retry、30304 / 30305 的 action（04 §6.1、§7）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
+# 编排会话 j-01：CT-16c 拆为 c1（收款账号，B1-13 用）与 c2（提现、钱包）；台账编号规则 TASK_ID_PATTERN 不允许数字结尾，记作 CT-16ca、CT-16cb。
+# 条目：b2-06 + b2-m05 + b5-11、b2-08（payout-account）、b2-16、b2-18、b2-24。
+# refs 为空：契约评审按 04 当前正文与 08 原文核对。§6.1 payout-account 行与 §13.11 30303～30305 行由编排者摘入任务书。
+# 资金实现任务要等负责人确认代表例，本契约任务只定形状，可先做。
+# 第一个挂 x-step-up 的任务按 contracts/README.md 第 13 条新建 components/parameters/StepUpToken（若尚未建）；
+# conformance 要求 x-step-up 接口列它、列 10003 与 20903。
+refs: []
+refs_hash: {}
+contract_sections: ['6.1']
+deps: [CT-16a, CT-17a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/fund.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

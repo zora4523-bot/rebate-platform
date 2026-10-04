@@ -1,0 +1,20 @@
+id: CT-15h
+repo: rebate-platform
+title: 规格：客户端公开标识清单、客户端安全基线 CSB-01～11 与三份清单、三端系统权限清单（02 §12.6；03 §4.8、§4.9）
+type: contract
+# 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。条目：b1-34、b1-35 + b3-32、b3-30 + b5-27（清单部分）。
+# CSB-01～07、09～11 不可豁免，CSB-08 写「MVP 不做证书固定」；own_link_hosts 具体域名待定（先空）。
+# 系统权限清单 MVP iOS 自有项只有保存图片到相册；生成器与 CI 断言归 CT-05 / QA-07。specs/ 按 RV2 评审。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'specs/client-public-ids.yaml'
+  - 'specs/client-security-baseline.yaml'
+  - 'specs/system-permissions.yaml'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
