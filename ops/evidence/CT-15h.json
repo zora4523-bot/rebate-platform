@@ -1,18 +1,18 @@
 {
   "task": "CT-15h",
   "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
-  "spec_commit": "4493d1360c91d8275547b4fe0461863a7702ed2c",
+  "spec_commit": "2ed4d11c5b96d0d343eaeae1ef78f44d698e3785",
   "red_tests": [],
   "risk_note": "RV2 only because specs/** is not on the risk-map whitelist (orchestrator decision D-2). Data-only change: three new spec files (client public ids, client security baseline CSB-01..11 with forbidden schemes / exported components / own link hosts, system permissions); no code, no money, attribution or user-authorisation path. spec_commit is the base commit of the branch. Written by hand before the evidence generator exists (ops/evidence/README.md).",
   "runs": [
     {
       "mode": "container",
       "exit_code": 0,
-      "commit": "396330499972026ac2759b16a94914e6bd774fd3",
-      "tree": "a32e917ad2a346c1b6f2c22c2ca3fca1dad9885f",
+      "commit": "38ab2bd4c2e3d6b29ac9c923fc9106ba1af2e2fd",
+      "tree": "1586b8cf99301f390a152343ccc58233c978a385",
       "prop_seed": 20261001,
-      "started_at": "2026-10-04T11:15:10Z",
-      "finished_at": "2026-10-04T11:17:11Z"
+      "started_at": "2026-10-04T12:03:40Z",
+      "finished_at": "2026-10-04T12:05:14Z"
     }
   ],
   "reviews": [
@@ -44,7 +44,7 @@
     "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
     "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
     "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
-    "test/spec": "91c7474496215d9d8bb05ca39680f7cadae455e8",
+    "test/spec": "89e677342f3a67070d85c01f11f3500cd2e3ed00",
     "specs": "9782f0f5c2e291b671ac77a0ed48a9aaf38c4ef1"
   },
   "longrun": {
@@ -56,5 +56,8 @@
     "files": 7,
     "note": "PROP_RUNS=1000000 on the CT-15h worktree at the verified head; packages/money and test/properties are unchanged from main",
     "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "notes": {
+    "rebased": "rebased onto main (cef1224, 2ed4d11) after the exception round 4; container verify rerun at the rebased head"
   }
 }
