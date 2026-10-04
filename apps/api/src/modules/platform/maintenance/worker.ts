@@ -112,6 +112,8 @@ export interface WorkerServicesParts {
   readonly maintenance: StartStop | null;
   readonly close: readonly (() => Promise<void>)[];
   readonly logger: RootLogger;
+  /** Bounds maintenance shutdown, including failed-start cleanup; defaults to 5 seconds. */
+  readonly maintenanceStopTimeoutMs?: number;
 }
 
 export interface WorkerServices {
@@ -139,16 +141,36 @@ export function createWorkerMaintenance(
 
 /** Starts queue then maintenance; the result stops them in reverse order (section 3). */
 export async function startWorkerServices(parts: WorkerServicesParts): Promise<WorkerServices> {
+  const timeout =
+    parts.maintenanceStopTimeoutMs === undefined ? 5000 : parts.maintenanceStopTimeoutMs;
+  if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60000) {
+    throw new MaintenanceError('invalid_option');
+  }
   const { queue, maintenance, logger } = parts;
   const close = [...parts.close];
   let maintenanceStarted = false;
   let stopping: Promise<void> | undefined;
+  const stopMaintenance = async (): Promise<void> => {
+    if (maintenance === null) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<true>((resolve) => {
+      timer = setTimeout(() => resolve(true), timeout);
+    });
+    try {
+      // The race also observes a late rejection after the shutdown deadline has passed.
+      if ((await Promise.race([maintenance.stop(), expired])) === true) {
+        logger.warn({ waitedMs: timeout }, 'partition_maintenance_stop_timeout');
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const stop = (): Promise<void> => {
     stopping ??= (async () => {
       let failed = false;
       let firstError: unknown;
       const steps = [
-        ...(maintenanceStarted && maintenance !== null ? [() => maintenance.stop()] : []),
+        ...(maintenanceStarted && maintenance !== null ? [stopMaintenance] : []),
         () => queue.stop(),
         ...close,
       ];
