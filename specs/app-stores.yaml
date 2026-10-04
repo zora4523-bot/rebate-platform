@@ -1,0 +1,49 @@
+# 商店对照表（唯一一份；规划/03 §4.1「【去更新】跳哪个商店」，规划/08 BR-ID-01 细则「【去更新】打开哪家商店与
+# 保存前的核对」）。客户端读安装来源、按商店键打开详情页都查这张表，代码里不写死；三端的常量由生成器从本文件
+# 生成（生成器归 CT-05，与 contracts/apps.json 同样做法）。
+# 各商店的已上架版本不进本文件：只认 GET /v1/app-versions/check 下发的 default_store 与 stores（后台按端渠道登记）。
+#
+# 结构（packages/contracts-ts/scripts/app-stores.ts 校验，pnpm contracts:check 里跑）：
+#   version   字符串，每次改动递增
+#   stores    列表，每条：
+#     key                      商店键：check 下发的 default_store、stores[].store 用的值；小写字母、数字、下划线，
+#                              不重复；未定为 null
+#     name                     商店名称
+#     platform                 contracts/enums/platform.yaml client_platform 的 ios、android、harmony 之一
+#     channels                 用这家商店的安装包渠道（install_channel）；appstore、huawei、agc 三个渠道各只有一家商店
+#                              （03 §4.1：iOS、鸿蒙、华为渠道包只有一家），official（Android 通用包）可有多家
+#     install_source_packages  Android 安装来源包名（本机读到的安装来源与它相等即认作这家商店）；只有 android 可填，
+#                              未定为空列表
+#     detail_page              打开详情页的方式：open_method（打开方式）、target（地址或参数模板），未定为 null
+#     source                   出处
+#   取值：商店键、安装来源包名与详情页打开方式 08、03 都没有给，接入时按各商店官方文档填，不臆造；提审前在
+#   规划/09 CAP-X-12 的自查表里逐家核对。Android 通用包上架哪些商店也还没定，定了再逐家加行。
+version: '0'
+stores:
+  - key: null
+    name: App Store
+    platform: ios
+    channels: [appstore]
+    install_source_packages: []
+    detail_page:
+      open_method: null
+      target: null
+    source: 规划/03 §4.1（iOS 跳 App Store 的详情页）；商店键与打开方式待接入时按官方文档填
+  - key: null
+    name: 华为应用市场
+    platform: android
+    channels: [huawei]
+    install_source_packages: []
+    detail_page:
+      open_method: null
+      target: null
+    source: 规划/03 §4.1（华为渠道 Android 包跳华为应用市场）；商店键、安装来源包名与打开方式待接入时按官方文档填
+  - key: null
+    name: 鸿蒙系统应用市场
+    platform: harmony
+    channels: [agc]
+    install_source_packages: []
+    detail_page:
+      open_method: null
+      target: null
+    source: 规划/03 §4.1（鸿蒙跳系统应用市场的详情页）；商店键与打开方式待接入时按官方文档填

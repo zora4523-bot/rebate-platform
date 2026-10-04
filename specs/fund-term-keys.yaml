@@ -1,0 +1,325 @@
+# 资金术语键清单（唯一一份机器可读清单；规划/08 BR-TEXT-12 细则「资金术语键」，规划/04 §11.2 权限点
+# content.fund_terms）。后台权限守卫（能改文案键或通知模板的每个写入口共用的同一个键级检查）与 CI 都读本文件，
+# 不按键名另猜；本文件与 08 不一致时以 08 为准修本文件。归类与例外表的改动按资金类评审。
+#
+# 结构（packages/contracts-ts/scripts/fund-term-keys.ts 校验，pnpm contracts:check 里跑）：
+#   fund_terms / ordinary   两段，各有三个列表：
+#     prefixes          键名以它开头的全部键归这一段（按字符串前缀比对，如 error.303 命中 error.30301.x）
+#     keys              单列的键（整键相等才命中）
+#     notify_templates  通知模板编码（contracts/enums/ops.yaml notify_template_code；一个编码下的全部变体随编码归类）
+#   exempt                  例外表 {key, reason}：只收归 ordinary、而默认文案命中关键词核对的键——带金额变量
+#                           （④ {amount} {rebate} {rebate_sum} {sum} {promo_sum} {net} {fee} {tax} {max}）、
+#                           用到 BR-TEXT-01 术语对照表「用户词」、或含「返利」「收益」「提现」「到账」「余额」
+#                           「冻结」「扣回」「结算」「入账」「抵扣」之一；没有理由 CI 失败。关键词只作辅助核对，
+#                           不决定归不归资金术语。
+#   检查：contracts/texts.default.json 的每个键、notify_template_code 的每个编码都恰好落在一段里（前缀或单列命中）；
+#   没有归类或两段都命中即失败；两段的前缀互不为前缀，单列的键不被另一段命中。新键、新模板须先归类才能合入。
+#   守卫：清单里查不到的键或模板按资金术语处理，并提示先归类。
+#   ordinary 段只用 08 写明整组归普通的前缀，其余逐键列出，不用 external_page. 这类整前缀
+#   （external_page.product_unresolved 单列资金术语）。
+#
+# 08 列了、texts.default.json 里还没有的键（tag.rebate、btn.buy.no_rebate、jump_tip，普通段的 btn.buy、btn.buy.coupon）
+# 照 08 先归类；08「还没有取键名的资金文案」取键名后补进 fund_terms.keys。P1 订阅提醒模板 watch.price_drop.*
+# 进 notify_template_code 时归 fund_terms（BR-WATCH-14）。
+fund_terms:
+  prefixes:
+    - order_status.
+    - order_reason.
+    - order_reason_sub.
+    - withdrawal_status.
+    - withdraw_reject_reason.
+    - withdraw_fail_reason.
+    - ledger_type.
+    - ledger.
+    - earnings.
+    - wallet.
+    - withdraw.
+    - withdraw_detail.
+    - pending_confirm.withdraw.
+    - error.303
+    - error.302
+    - claim_reject_reason.
+    - risk_msg.
+    - risk_reason.
+    - tlj.
+    - auth_tips.
+    - order_status_group.
+    - jump_tip.
+  keys:
+    - tag.rebate
+    - rebate_amount_unknown
+    - rebate_login_to_view
+    - no_rebate_hint
+    - platform_no_rebate
+    - no_rebate.price_compare
+    - no_rebate.price_compare.confirm
+    - order.price_compare.hint
+    - btn.buy.no_rebate
+    - error.30412
+    - error.30416
+    - error.30103
+    - error.30121
+    - error.30151
+    - error.30153
+    - error.44001
+    - error.50301.not_launched
+    - platform_coming_soon
+    - claim_required
+    - external_page.product_unresolved
+    - link_landing.owner_hint
+    - jump_tip
+    - order_list.deposit_amount
+  notify_templates:
+    - ORDER_TRACKED
+    - ORDER_INVALID
+    - CREDITED
+    - CLAWBACK
+    - WD_SUCCESS
+    - WD_REJECTED
+    - WD_FAILED
+    - CLAIM_RESULT
+    - WD_OVERDUE
+    - BALANCE_ADJUSTED
+    - RISK_STATE_CHANGED
+    - APPEAL_RESULT
+    - DELETION_PROGRESS
+ordinary:
+  # 08 写明整组归普通的前缀：claim.guide.*、app_update.*、第 4 批的 order_list.filter.*、order_list.search.*、
+  # order_timeline.*（预计结算、已结算、失效与扣回节点改用 order_status. 前缀）、amount_mask.*、auth_manage.*，
+  # BR-TEXT-14 表 D 的 privacy.、perm.（另归 content.agreement）。
+  prefixes:
+    - claim.guide.
+    - app_update.
+    - order_list.filter.
+    - order_list.search.
+    - order_timeline.
+    - amount_mask.
+    - auth_manage.
+    - privacy.
+    - perm.
+  # 清单以外的现有键（08「普通：清单以外的现有键与模板」），逐键列出。
+  keys:
+    - about.copy_diagnostics
+    - about.copy_diagnostics.done
+    - agent.degraded
+    - agent.degraded.empty
+    - agent.disclaimer.commission
+    - agent.match.matched
+    - agent.match.relaxed
+    - agent.match.spec_unconfirmed
+    - agent.match.title_shows
+    - agent.name
+    - agent.need_login
+    - agent.need_phone
+    - agent.notice.link_limit
+    - agent.notice.more_orders
+    - agent.notice.no_cheaper
+    - agent.notice.no_result
+    - agent.notice.ordinal_default
+    - agent.notice.price_unrecognized
+    - agent.notice.relaxed_price
+    - agent.notice.relaxed_spec
+    - agent.notice.search_disabled
+    - agent.notice.title_based
+    - agent.notice.tlj_taobao_only
+    - agent.order.lookup_limited
+    - agent.refuse.advice
+    - agent.refuse.out_of_scope
+    - agent.refuse.output_blocked
+    - agent.refuse.prohibited
+    - agent.refuse.safety_timeout
+    - agent.refuse.safety_unavailable
+    - agent.refuse.unsafe
+    - agent.rule.found
+    - agent.rule.not_found
+    - agent.suggest.no_result.1
+    - agent.suggest.no_result.2
+    - agent.suggest.no_result.3
+    - agent.timeout
+    - agent.welcome
+    - btn.buy
+    - btn.buy.coupon
+    - buy.opening
+    - buy.opening.cancel
+    - buy.timeout
+    - clipboard.invite_prompt
+    - clipboard.prompt
+    - cs.copy_link
+    - cs.go_help
+    - cs.wechat_unavailable
+    - download_guide.download
+    - download_guide.reopen
+    - error.10001
+    - error.10003
+    - error.10004
+    - error.10005
+    - error.10006
+    - error.10007
+    - error.10401
+    - error.10403
+    - error.10403.h5_read_only
+    - error.10404
+    - error.10405
+    - error.10405.no_account
+    - error.20001
+    - error.20001.nickname_sensitive
+    - error.20001.phone_invalid
+    - error.20002
+    - error.20003
+    - error.20004
+    - error.20004.identity_mismatch
+    - error.20901
+    - error.20902
+    - error.20903
+    - error.30101
+    - error.30101.auth_unavailable
+    - error.30102
+    - error.30102.auth_unavailable
+    - error.30104
+    - error.30104.credential_invalid
+    - error.30111
+    - error.30131
+    - error.30132
+    - error.30141
+    - error.30143
+    - error.30144
+    - error.30401
+    - error.30402
+    - error.30403
+    - error.30404
+    - error.30405
+    - error.30406
+    - error.30407
+    - error.30408
+    - error.30409
+    - error.30410
+    - error.30411
+    - error.30411.mergeable
+    - error.30413
+    - error.30414
+    - error.30415
+    - error.30501
+    - error.30502
+    - error.30503
+    - error.30504
+    - error.30506
+    - error.30601
+    - error.30602
+    - error.30603
+    - error.30604
+    - error.30701
+    - error.30801
+    - error.30802
+    - error.30803
+    - error.30804
+    - error.30805
+    - error.30806
+    - error.40901
+    - error.42901
+    - error.44002
+    - error.50001
+    - error.50301
+    - error.50301.maintenance
+    - error.50302
+    - error.50303
+    - error.50304
+    - error.50304.search_disabled
+    - error.50305
+    - error.50401
+    - external_page.close
+    - external_page.download_blocked
+    - external_page.download_unsupported
+    - external_page.load_failed
+    - external_page.open_in_browser
+    - external_page.retry
+    - external_page.union_host_blocked
+    - h5.load_failed
+    - invite.before_buy_tip
+    - invite.bind_phone_guide.body
+    - invite.bind_phone_guide.body_before_buy
+    - invite.bind_phone_guide.title
+    - invite.notice_inviter
+    - jump.taobao_sdk_unavailable
+    - link_landing.invalid
+    - login.help_entry
+    - login.wechat_unavailable
+    - net.stale_data
+    - no_rebate.price_compare.similar
+    - order_detail.view_product
+    - order_list.empty
+    - order_list.history_hint
+    - order_list.other_product
+    - order_list.summary
+    - pdd.parse_failed
+    - pending_confirm.abandon
+    - pending_confirm.abandon.cancel
+    - pending_confirm.abandon.confirm
+    - pending_confirm.abandon.ok
+    - pending_confirm.abandon_busy
+    - pending_confirm.abandoned
+    - pending_confirm.already_done
+    - pending_confirm.cannot_confirm
+    - pending_confirm.deletion.action
+    - pending_confirm.deletion.desc
+    - pending_confirm.payout_account.action
+    - pending_confirm.payout_account.desc
+    - pending_confirm.phone_change.action
+    - pending_confirm.phone_change.desc
+    - pending_confirm.retry_later
+    - pending_confirm.title
+    - pending_track_card.desc
+    - pending_track_card.title
+    - settings.clear_cache
+    - settings.clear_cache.confirm
+    - settings.clear_cache.confirm_cancel
+    - settings.clear_cache.confirm_ok
+    - settings.clear_cache.done
+    - settings.clear_cache.size
+    - share.copied
+    - share.copy_full
+    - share.copy_link_only
+    - share.copy_tpwd_only
+    - share.open_wechat
+    - share.save_images
+    - share.saved
+    - share.wechat_unavailable
+    - share_page.copy_tpwd
+    - share_page.copy_tpwd.done
+    - share_page.open_in_app
+    - share_page.open_in_browser_hint
+    - spec_min_price_note
+  notify_templates:
+    - SMS_CODE
+    - UNION_AUTH_EXPIRING
+    - UNION_AUTH_EXPIRED
+exempt:
+  - key: agent.notice.search_disabled
+    reason: 只是请用户改用发链接查返利，不说有没有返利（08 BR-TEXT-12 细则写明归普通）
+  - key: agent.refuse.out_of_scope
+    reason: 介绍助手能做的事（查返利、解答返利规则），不说金额、状态或有没有返利
+  - key: agent.welcome
+    reason: 介绍助手能做的事（查返利），不说金额、状态或有没有返利
+  - key: clipboard.prompt
+    reason: 只是请用户去查返利，不说有没有返利（08 BR-TEXT-12 细则的例子）
+  - key: error.10401
+    reason: 「已失效」说的是请求，不是订单或金额
+  - key: error.20003
+    reason: 「已失效」说的是验证码
+  - key: error.30102
+    reason: 「已失效」说的是淘宝授权，只要求重新授权，不说有没有返利（08 BR-TEXT-12 细则列为普通）
+  - key: error.30143
+    reason: 「已失效」说的是商品信息，请用户重新搜索
+  - key: error.30144
+    reason: 「已失效」说的是购买链接，正在重新获取
+  - key: error.50304.search_disabled
+    reason: 只是请用户改用粘贴链接查返利，不说有没有返利（08 BR-TEXT-12 细则写明归普通）
+  - key: invite.notice_inviter
+    reason: 告知绑定后订单收益的金额与状态会通知邀请人（数据共享告知），本身不说金额或状态
+  - key: link_landing.invalid
+    reason: 「已失效」说的是链接（08 BR-TEXT-12 细则的例子）
+  - key: perm.push.card_hint
+    reason: 通知权限的用途说明（08 BR-TEXT-12 细则的例子）
+  - key: perm.push.guide_bar
+    reason: 通知权限的用途说明，同 perm.push.card_hint
+  - key: privacy.basic_mode.notice
+    reason: 说明开启完整功能后能登录、查返利，不说有没有返利

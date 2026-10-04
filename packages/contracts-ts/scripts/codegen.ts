@@ -7,8 +7,10 @@
 //   node scripts/codegen.ts --check   exit 1 when a committed file differs from a fresh run
 // Both modes first run the cross-file conformance checks (conformance.ts) and the link pattern
 // table check (link-patterns.ts, specs/link-patterns.yaml), the analytics event table check
-// (events.ts, specs/events.yaml) and the bundled default text check (texts.ts,
-// contracts/texts.default.json), and stop on a problem.
+// (events.ts, specs/events.yaml), the bundled default text check (texts.ts,
+// contracts/texts.default.json), the fund term key list check (fund-term-keys.ts,
+// specs/fund-term-keys.yaml) and the store table check (app-stores.ts, specs/app-stores.yaml),
+// and stop on a problem.
 // Works offline: the contract has no remote $ref and openapi-typescript does not phone home.
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,9 +18,11 @@ import { basename, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
 import { loadEnums, loadErrorCodes, renderEnums, renderErrorCodes } from './catalog.ts';
+import { checkAppStores } from './app-stores.ts';
 import { loadBridgeCatalog, renderBridge } from './bridge.ts';
 import { checkConformance } from './conformance.ts';
 import { checkEvents } from './events.ts';
+import { checkFundTermKeys } from './fund-term-keys.ts';
 import { checkLinkPatterns } from './link-patterns.ts';
 import { checkTexts } from './texts.ts';
 import {
@@ -67,6 +71,8 @@ try {
     ...checkLinkPatterns(enumDefs),
     ...checkEvents(enumDefs),
     ...checkTexts(errors.codes),
+    ...checkFundTermKeys(enumDefs),
+    ...checkAppStores(enumDefs),
   ];
   if (problems.length > 0) {
     for (const p of problems) console.error(`codegen: conformance: ${p}`);
