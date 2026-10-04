@@ -1,0 +1,70 @@
+{
+  "task": "B1-08a",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "be7e8162ca178179eb33e42c977cc1ab484e6916",
+  "red_tests": [
+    "[AC-B1-08a#1] the four order tables exist in schema app and carry app_id NOT NULL",
+    "[AC-B1-08a#13] amounts of orders are bigint fen and rates are integer bp (db/AGENTS.md #7)",
+    "[AC-B1-08a#40] orders has every column listed in 04 §3.2 orders",
+    "[AC-B1-08a#22] orders.row_version is an integer with DEFAULT 0 (ADR-0001 §4.1 CAS)"
+  ],
+  "risk_note": "RV2 by path (db/**, packages/db/**). Migration 0007 creates order_keys (unpartitioned FK target), orders (range-partitioned by attr_at per month, DEFAULT partition only, added to the ensure_month_partition allow-list and packages/db/src/partitions.ts), order_rights and order_settlements (04 §3.2; ADR-0001 §4.2 #5). Orchestrator decision A: the four redundant amounts (n_total_fen, pre_base_deduct_fen, base_fen, platform_est_profit_fen) are nullable, without defaults or CHECKs until BR-CALC-27 is decided. Generated schema.sql and db.gen.ts from pnpm db:snapshot outside the sandbox. Written by hand before the evidence generator exists (ops/evidence/README.md).",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "a34faf7bc1d2f5cc0e98aef25b557199459efd49",
+      "tree": "1063f46c837dbdda1bc7964b00b444b05b6bf16c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T10:32:01Z",
+      "finished_at": "2026-10-04T10:34:23Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass, 7 S2 / notes recorded as followups (couli-runs/B1-08a/review-claude.md, followups.md)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, checklist 7 items (rounding ok, sign na, idempotency ok, concurrency ok, partial_refund na, clock ok, app_id ok)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "40 rule tests. Round 1 pass (1 S2 and 2 out-of-scope gaps added as tests). Round 2: 1 S1 on a test oracle (#37 expected value from the helper under test) downgraded to S2 under the owner's 2026-10-04 rubric (needs a deliberately double-wrong implementation); fixed anyway with a literal assertion and reviewed with the code (couli-runs/B1-08a/spec-test-review-note.md)"
+  },
+  "notes": {
+    "rebased": "rule-test commits rebased onto main before the implementation; spec_commit is the rebased head of the rule tests",
+    "verify_rerun": "first container run failed on unrelated 5 s timeouts (crypto restart test) while two verifies ran in parallel; rerun alone passed"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "91c7474496215d9d8bb05ca39680f7cadae455e8",
+    "packages/db": "3e42428f3fbf886beecb45a587cbce7c1321a645",
+    "db": "e4fbb3666587716b870370546278e92e6de00574"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 on the B1-08a worktree at the verified head; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
