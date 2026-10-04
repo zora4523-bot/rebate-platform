@@ -146,6 +146,8 @@
 //           Then every missing catalog queue is created with the catalog settings, and for the
 //           existing ones the retry, expiry, retention and deletion settings are set to the
 //           catalog values. Queues of the database that are not in the catalog are left alone.
+//           Before send becomes available, metadata for every catalog queue is cached so that
+//           transaction sends do not need another connection from the shared pool.
 //        3. Workers (worker and payout only): each registered queue is worked with its plan's
 //           concurrency and polling interval; the worker entry also runs pg-boss supervision
 //           (expiry of active jobs past expireInSeconds, deletion); payout and the HTTP entries do
@@ -167,6 +169,8 @@
 //      or an expiry, a crash between its effects and the completion). Handlers dedup themselves —
 //      for domain events with `processed_events(consumer, event_id)` in the same transaction as the
 //      effect (规划/02 §11, §18; ADR-0001 §3), event_id being job.id.
+//      Expiry does not release the business concurrency slot until that handler actually settles.
+//      Jobs waiting for a slot do not invoke business code after their pg-boss signal is aborted.
 //
 // 6. Stop — `runtime.stop()`
 //    - From the first call no handler call starts and send() rejects 'not_running'.
@@ -188,6 +192,9 @@
 //      `queue_error`       level error, fields exactly { code } — pg-boss reported a background
 //                          error; code is the error's `code` when it is a string, else null;
 //      `queue_stop_timeout` (section 6).
+//      `job_released_on_stop` level warn, fields exactly { queue, jobId, attempt } — a fetched job
+//                          reaches the callback after stop, or waits for a slot when stop begins;
+//                          no business call starts, but pg-boss counts the release as a failure.
 //    Never the payload, the error object or its message / stack, or connection parameters.
 //
 // 8. Errors — `QueueError`: name 'QueueError', `code`, the fixed message of QUEUE_ERROR_MESSAGES;
