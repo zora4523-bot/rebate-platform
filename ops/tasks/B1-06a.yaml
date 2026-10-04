@@ -1,6 +1,6 @@
 id: B1-06a
 repo: rebate-platform
-title: 迁移：links、link_logs（月分区）与 link_open_attempts（attempt_id 主键、jump_reported_at、dismissed_at 只写一次；04 §3.2）
+title: 迁移：links、link_logs（按日分区）与 link_open_attempts（attempt_id 主键、jump_reported_at、dismissed_at 只写一次；04 §3.2）
 type: migration
 # 2026-10-04 入账（契约线）。条目编号与依据见 couli-runs/CT-plan/contract-delta.md §1、§2.2，编排会话决定见同目录 decision-orchestrator.md。
 # 两段式（规划/11 §2.3）：Codex 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行。
