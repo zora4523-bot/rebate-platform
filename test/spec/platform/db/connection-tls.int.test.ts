@@ -142,10 +142,19 @@ const MODES = [
       checkServerIdentity: 'function returning undefined',
     },
   },
-  { query: 'sslmode=verify-full', tls: { rejectUnauthorized: true } },
+  // verify-full: amended by addendum 3 (connection-hardening.test.ts) — checkServerIdentity
+  // checks the URL host, so a certificate for another name fails.
+  {
+    query: 'sslmode=verify-full',
+    tls: { rejectUnauthorized: true, checkServerIdentity: 'function returning an error' },
+  },
   {
     query: `sslrootcert=${ROOT}&sslmode=verify-full`,
-    tls: { rejectUnauthorized: true, ca: ROOT_TEXT },
+    tls: {
+      rejectUnauthorized: true,
+      ca: ROOT_TEXT,
+      checkServerIdentity: 'function returning an error',
+    },
   },
   { query: 'sslmode=disable&password=', tls: null },
 ] as const;
