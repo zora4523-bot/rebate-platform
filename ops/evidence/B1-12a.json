@@ -1,7 +1,7 @@
 {
   "task": "B1-12a",
   "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
-  "spec_commit": "38363065dbe6a3c44cc10f52452fcdb7af634a7a",
+  "spec_commit": "e6357fabfe4384876b4bdc8cd90e3fe2dbe60f5c",
   "red_tests": [
     "[AC-B1-12a#1] the three tables exist in schema app with app_id NOT NULL and created_at (04 §3.2 preamble)",
     "[AC-B1-12a#2] foreign keys of the three tables never cascade (db/AGENTS.md #7)",
@@ -62,5 +62,8 @@
     "files": 7,
     "note": "PROP_RUNS=1000000 on the B1-12a worktree; packages/money and test/properties are unchanged from main",
     "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "notes": {
+    "rebased": "rule-test commits rebased onto main with the branch; spec_commit is the rebased head of the rule tests"
   }
 }
