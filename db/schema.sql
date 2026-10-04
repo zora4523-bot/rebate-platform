@@ -599,6 +599,25 @@ ALTER TABLE app.idempotency_keys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTIT
 
 
 --
+-- Name: inbox_messages; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.inbox_messages (
+    message_id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    code text NOT NULL,
+    title text NOT NULL,
+    body text NOT NULL,
+    route jsonb,
+    read_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: link_logs; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1013,6 +1032,28 @@ CREATE TABLE app.processed_events (
 
 
 --
+-- Name: push_tokens; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.push_tokens (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid,
+    bound_sid text,
+    device_id uuid NOT NULL,
+    provider text NOT NULL,
+    token text NOT NULL,
+    token_set_at timestamp with time zone NOT NULL,
+    acquired_by_move_at timestamp with time zone,
+    frozen_until timestamp with time zone,
+    revoked_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: user_oauth; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1028,6 +1069,21 @@ CREATE TABLE app.user_oauth (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT user_oauth_provider_check CHECK ((provider = ANY (ARRAY['wechat'::text, 'apple'::text, 'huawei'::text])))
+);
+
+
+--
+-- Name: user_tip_reads; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.user_tip_reads (
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    tip_key text NOT NULL,
+    platform text NOT NULL,
+    read_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT user_tip_reads_tip_key_check CHECK ((tip_key = ANY (ARRAY['jump_tip'::text, 'inviter_before_buy'::text])))
 );
 
 
@@ -1406,6 +1462,14 @@ ALTER TABLE ONLY app.idempotency_keys
 
 
 --
+-- Name: inbox_messages inbox_messages_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.inbox_messages
+    ADD CONSTRAINT inbox_messages_pkey PRIMARY KEY (message_id);
+
+
+--
 -- Name: link_logs link_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -1526,6 +1590,22 @@ ALTER TABLE ONLY app.processed_events
 
 
 --
+-- Name: push_tokens push_tokens_device_provider_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.push_tokens
+    ADD CONSTRAINT push_tokens_device_provider_key UNIQUE (app_id, device_id, provider);
+
+
+--
+-- Name: push_tokens push_tokens_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.push_tokens
+    ADD CONSTRAINT push_tokens_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: user_oauth user_oauth_identity_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -1547,6 +1627,14 @@ ALTER TABLE ONLY app.user_oauth
 
 ALTER TABLE ONLY app.user_oauth
     ADD CONSTRAINT user_oauth_user_provider_key UNIQUE (app_id, user_id, provider);
+
+
+--
+-- Name: user_tip_reads user_tip_reads_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_tip_reads
+    ADD CONSTRAINT user_tip_reads_pkey PRIMARY KEY (app_id, user_id, tip_key, platform);
 
 
 --
@@ -1698,6 +1786,13 @@ CREATE INDEX event_log_default_event_id_idx ON app.event_log_default USING btree
 
 
 --
+-- Name: inbox_messages_user_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX inbox_messages_user_created_idx ON app.inbox_messages USING btree (app_id, user_id, created_at, message_id);
+
+
+--
 -- Name: link_logs_link_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -1758,6 +1853,20 @@ CREATE INDEX orders_user_paid_idx ON ONLY app.orders USING btree (app_id, user_i
 --
 
 CREATE INDEX orders_default_app_id_user_id_paid_at_order_id_idx ON app.orders_default USING btree (app_id, user_id, paid_at DESC, order_id DESC);
+
+
+--
+-- Name: push_tokens_live_token_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX push_tokens_live_token_key ON app.push_tokens USING btree (app_id, provider, token) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: push_tokens_user_bound_sid_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX push_tokens_user_bound_sid_idx ON app.push_tokens USING btree (app_id, user_id, bound_sid);
 
 
 --
@@ -1995,6 +2104,14 @@ ALTER TABLE ONLY app.devices
 
 
 --
+-- Name: inbox_messages inbox_messages_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.inbox_messages
+    ADD CONSTRAINT inbox_messages_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: link_logs link_logs_opener_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2091,6 +2208,22 @@ ALTER TABLE app.orders
 
 
 --
+-- Name: push_tokens push_tokens_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.push_tokens
+    ADD CONSTRAINT push_tokens_device_fkey FOREIGN KEY (app_id, device_id) REFERENCES app.devices(app_id, id);
+
+
+--
+-- Name: push_tokens push_tokens_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.push_tokens
+    ADD CONSTRAINT push_tokens_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: user_oauth user_oauth_merged_from_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2104,6 +2237,14 @@ ALTER TABLE ONLY app.user_oauth
 
 ALTER TABLE ONLY app.user_oauth
     ADD CONSTRAINT user_oauth_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: user_tip_reads user_tip_reads_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_tip_reads
+    ADD CONSTRAINT user_tip_reads_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -2284,6 +2425,35 @@ GRANT SELECT ON TABLE app.idempotency_keys TO couli_readonly;
 
 
 --
+-- Name: TABLE inbox_messages; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.inbox_messages TO couli_app;
+GRANT SELECT ON TABLE app.inbox_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN inbox_messages.read_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(read_at) ON TABLE app.inbox_messages TO couli_app;
+
+
+--
+-- Name: COLUMN inbox_messages.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.inbox_messages TO couli_app;
+
+
+--
+-- Name: COLUMN inbox_messages.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.inbox_messages TO couli_app;
+
+
+--
 -- Name: TABLE link_logs; Type: ACL; Schema: app; Owner: -
 --
 
@@ -2399,11 +2569,90 @@ GRANT SELECT ON TABLE app.processed_events TO couli_readonly;
 
 
 --
+-- Name: TABLE push_tokens; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE ON TABLE app.push_tokens TO couli_app;
+GRANT SELECT ON TABLE app.push_tokens TO couli_readonly;
+
+
+--
+-- Name: COLUMN push_tokens.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(user_id) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN push_tokens.bound_sid; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(bound_sid) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN push_tokens.token; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(token) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN push_tokens.token_set_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(token_set_at) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN push_tokens.acquired_by_move_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(acquired_by_move_at) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN push_tokens.frozen_until; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(frozen_until) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN push_tokens.revoked_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(revoked_at) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN push_tokens.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN push_tokens.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.push_tokens TO couli_app;
+
+
+--
 -- Name: TABLE user_oauth; Type: ACL; Schema: app; Owner: -
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.user_oauth TO couli_app;
 GRANT SELECT ON TABLE app.user_oauth TO couli_readonly;
+
+
+--
+-- Name: TABLE user_tip_reads; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE ON TABLE app.user_tip_reads TO couli_app;
+GRANT SELECT ON TABLE app.user_tip_reads TO couli_readonly;
 
 
 --
