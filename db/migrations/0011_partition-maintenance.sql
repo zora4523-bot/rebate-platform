@@ -11,6 +11,9 @@ LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
+SET lock_timeout = '5s'
+SET DateStyle = 'ISO, YMD'
+SET TimeZone = 'UTC'
 AS $$
 DECLARE
   v_parent     oid;
@@ -93,7 +96,14 @@ BEGIN
       $bound$^FOR VALUES FROM \('([^']+)'\) TO \('([^']+)'\)$bound$);
     IF v_bounds IS NOT NULL AND isfinite(v_bounds[2]::timestamptz)
       AND v_bounds[2]::timestamptz <= v_cutoff THEN
-      v_candidates := array_append(v_candidates, v_partition.name);
+      -- Read-only preflight: a recent row already rules out deletion, so do not
+      -- queue an exclusive parent lock for this partition. Recheck under lock below
+      -- because concurrent writers may commit after this snapshot.
+      EXECUTE format('SELECT EXISTS (SELECT 1 FROM app.%I WHERE created_at >= $1)',
+        v_partition.name) INTO v_has_recent USING v_cutoff;
+      IF NOT v_has_recent THEN
+        v_candidates := array_append(v_candidates, v_partition.name);
+      END IF;
     END IF;
   END LOOP;
 
@@ -101,7 +111,7 @@ BEGIN
     RETURN v_dropped;
   END IF;
 
-  -- Acquire all creation locks before taking any relation locks: otherwise an ensure
+  -- Acquire all creation locks before taking exclusive relation locks: otherwise an ensure
   -- caller could hold a later partition's advisory lock while waiting for our parent.
   FOREACH v_name IN ARRAY v_candidates LOOP
     PERFORM pg_advisory_xact_lock(hashtextextended('app.ensure_month_partition:' || v_name, 0));
@@ -110,6 +120,9 @@ BEGIN
   -- DROP also needs the parent's exclusive lock. Take it before child locks to avoid
   -- deadlocking writers that lock the parent first and then route into a child.
   -- ONLY avoids recursively locking unrelated/default partitions.
+  -- Every lock wait is bounded by the function's 5s lock_timeout. Let SQLSTATE 55P03
+  -- abort the statement (rolling back all its drops); the worker logs one failure
+  -- and retries on its next run, without leaving a queued exclusive lock behind.
   EXECUTE format('LOCK TABLE ONLY app.%I IN ACCESS EXCLUSIVE MODE', p_table);
 
   -- Re-list after waiting, checking membership and bounds again under the parent lock.

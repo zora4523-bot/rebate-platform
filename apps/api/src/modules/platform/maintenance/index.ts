@@ -7,7 +7,7 @@
 // names, signatures and semantics written here are the contract. Values that no document fixes are
 // marked 待编排会话确认 (suggested defaults).
 //
-// A. Migration — `db/migrations/0008_<kebab-name>.sql` (next free number; 0007 is the newest on main)
+// A. Migration — `db/migrations/0011_partition-maintenance.sql`
 //    Rules of db/AGENTS.md apply: first line `-- Up Migration`, no down section, recovery in the header
 //    comment, no date-dependent DDL (the migration creates no partition), grants in this migration,
 //    `app.ensure_month_partition` is NOT redefined (its allow-list stays event_log, orders).
@@ -21,6 +21,10 @@
 //    Errors are raised with exactly the SQLSTATE and message given here (`%` = the argument).
 //
 //    A1. `app.drop_expired_month_partitions(p_table text, p_now timestamptz) RETURNS text[]`
+//        Function-level settings: lock_timeout = '5s' (technical limit), DateStyle = 'ISO, YMD',
+//        TimeZone = 'UTC'; bound rendering/parsing is independent of caller session settings.
+//        A lock wait timeout raises SQLSTATE 55P03 (lock_not_available), rolling back the entire
+//        statement, including any earlier drops; no partition is reported as dropped on failure.
 //        Drops the month partitions of `app.<p_table>` whose whole range is past the retention period
 //        and returns their names. Checks, in this order:
 //          a. p_table or p_now NULL → 22004 null_value_not_allowed
@@ -66,16 +70,19 @@
 //        are never dropped. Dropping is `DROP TABLE` of the partition (DDL; the append-only trigger of
 //        event_log does not fire), in the same transaction as the call.
 //        Result: the dropped names in ascending order; '{}' (never NULL) when nothing was dropped.
-//        Concurrency: two sessions calling it at the same time for the same table must both succeed
+//        Concurrency: absent a lock timeout, simultaneous calls for the same table both succeed
 //        and every partition is dropped and reported exactly once (e.g. a transaction-level advisory
 //        lock per table taken before listing the partitions, and the per-partition lock key that
 //        ensure_month_partition uses, `'app.ensure_month_partition:' || <partition name>`).
 //        Concurrent writers (BR-ID-30 created_at rule must hold against them): for a partition that
-//        passes (i), the function FIRST takes `LOCK TABLE app.<partition> IN ACCESS EXCLUSIVE MODE`
-//        (waiting for transactions that are writing into it to end), THEN checks (ii) under that lock
+//        passes (i), first precheck (ii) without requesting an exclusive lock; skip a partition
+//        already holding a recent row. If no candidates remain, return without a parent exclusive
+//        lock. Otherwise acquire creation advisory locks, then the parent's exclusive lock before
+//        `LOCK TABLE app.<partition> IN ACCESS EXCLUSIVE MODE` (waiting for writers to end).
+//        THEN recheck (ii) under that lock
 //        with a statement that starts after the lock was granted, and drops only if (ii) still holds.
 //        So a row inserted by a transaction that commits while the call waits is seen and keeps the
-//        partition; checking first and locking only for the DROP is wrong (it loses that row).
+//        partition; the precheck never replaces the check under lock.
 //
 //    A2. `app.partition_default_rows() RETURNS TABLE (table_name text, default_partition text, row_count bigint)`
 //        One row for every partitioned table of schema `app` that has a DEFAULT partition (read from
@@ -120,7 +127,11 @@
 //       For each table of DROPPABLE_TABLES (exactly ['event_log']; never a RETAINED table)
 //       `SELECT app.drop_expired_month_partitions(<table>, <now>)`; each returned name is appended to
 //       `dropped` and logged `partition_dropped`; a failure logs `partition_drop_failed` and counts in
-//       `failed`. Example: with event_log_p202602 and p202603 (rows created in their months), a run at
+//       `failed`.
+//       Lock timeout 55P03 follows the same failure path: one partition_drop_failed with
+//       { table: 'event_log', sqlstate: '55P03' }, failed += 1, continue DEFAULT checking;
+//       no immediate retry, the next scheduled run attempts deletion again.
+//       Example: with event_log_p202602 and p202603 (rows created in their months), a run at
 //       2026-10-09 03:59:59.999 +08:00 drops nothing; a run at 2026-10-09 04:00:00.000 +08:00 drops both.
 //    5. DEFAULT check: `SELECT * FROM app.partition_default_rows()`; every row with row_count > 0 is
 //       appended to `defaultRows` and logged `partition_default_has_rows` (one line per table per run,
@@ -153,8 +164,8 @@
 //      resolves together with the first; also before start() (then start() afterwards rejects
 //      already_started). Runs started by calling runOnce() directly are not awaited.
 //    - Several worker processes may run the schedule at the same time: the SQL functions are
-//      idempotent and serialised by advisory locks, so concurrent runs create and drop each partition
-//      once and report no failure.
+//      idempotent and serialised by advisory locks, so each partition is created and dropped once.
+//      A deletion lock timeout is logged as a failure and retried on the next run (A1, C.4).
 //
 // E. Log lines — only through `options.logger` itself (no child logger, no extra bindings), message =
 //    the event name, fields exactly as listed (flat; no error object, message, stack, SQL text,

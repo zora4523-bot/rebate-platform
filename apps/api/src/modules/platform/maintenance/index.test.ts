@@ -299,3 +299,81 @@ it('[AC-B1-01j#9] stop 不等待直接调用的 runOnce，停止后仍可手动�
   await expect(running).resolves.toMatchObject({ failed: 0 });
   await expect(f.maintenance.runOnce()).resolves.toMatchObject({ failed: 0 });
 });
+
+it('[AC-B1-01j#10] 删除锁超时只记一次失败，继续 DEFAULT 告警，下一轮重试成功', async () => {
+  vi.useFakeTimers();
+  const f = await fixture();
+  let attempts = 0;
+  f.control.respond = async (query) => {
+    if (query.sql.includes('drop_expired_month_partitions')) {
+      attempts += 1;
+      if (attempts === 1) {
+        throw {
+          code: '55P03',
+          message: 'canceling statement due to lock timeout',
+          detail: 'private connection and row data',
+        };
+      }
+      return [{ partitions: ['event_log_p202603'] }];
+    }
+    if (query.sql.includes('partition_default_rows')) {
+      return [{ table_name: 'orders', default_partition: 'orders_default', row_count: 2n }];
+    }
+    return undefined;
+  };
+  await f.maintenance.start();
+  expect(attempts).toBe(1);
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'event_log', sqlstate: '55P03' }, 'partition_drop_failed'],
+  ]);
+  expect(f.logger.warn.mock.calls).toEqual([
+    [{ table: 'orders', partition: 'orders_default', rows: 2 }, 'partition_default_has_rows'],
+  ]);
+  expect(f.logger.info.mock.calls).toEqual([
+    [{ ensured: 8, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
+  ]);
+  await vi.advanceTimersByTimeAsync(99);
+  expect(attempts).toBe(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(attempts).toBe(2);
+  expect(f.logger.error).toHaveBeenCalledTimes(1);
+  expect(f.logger.info.mock.calls.slice(1)).toEqual([
+    [{ table: 'event_log', partition: 'event_log_p202603' }, 'partition_dropped'],
+    [{ ensured: 8, dropped: 1, failed: 0 }, 'partition_maintenance_done'],
+  ]);
+});
+
+it('[AC-B1-01j#11] stop 等待中的删除收到锁超时后完成，且不再调度', async () => {
+  vi.useFakeTimers();
+  const f = await fixture();
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  f.control.respond = async (query) => {
+    if (query.sql.includes('drop_expired_month_partitions')) {
+      entered.resolve();
+      await release.promise;
+      throw { code: '55P03', message: 'canceling statement due to lock timeout' };
+    }
+    return undefined;
+  };
+  const starting = f.maintenance.start();
+  await entered.promise;
+  const stopped = vi.fn();
+  const stopping = f.maintenance.stop().then(stopped);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(stopped).not.toHaveBeenCalled();
+  release.resolve();
+  await starting;
+  await stopping;
+  expect(stopped).toHaveBeenCalledExactlyOnceWith(undefined);
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'event_log', sqlstate: '55P03' }, 'partition_drop_failed'],
+  ]);
+  expect(f.logger.info.mock.calls).toEqual([
+    [{ ensured: 8, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
+  ]);
+  expect(f.queries.at(-1)?.sql).toContain('partition_default_rows');
+  const queryCount = f.queries.length;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.queries).toHaveLength(queryCount);
+});
