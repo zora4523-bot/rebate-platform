@@ -24,7 +24,17 @@ import {
   createRootLogger,
   type RootLogger,
 } from '../../../../apps/api/src/modules/platform/logging/logger.ts';
-import { BLIND_KEY_LABEL, SAMPLES, referenceWrap, testKey } from './kit.ts';
+import type { FieldCrypto } from '../../../../apps/api/src/modules/platform/crypto/index.ts';
+import {
+  BLIND_KEY_LABEL,
+  SAMPLES,
+  parseV1,
+  referenceBlindIndex,
+  referenceDecrypt,
+  referenceEncrypt,
+  referenceWrap,
+  testKey,
+} from './kit.ts';
 
 export const ENTRIES = ['api', 'stream', 'admin', 'worker', 'payout'] as const;
 export type Entry = (typeof ENTRIES)[number];
@@ -356,4 +366,80 @@ export function stubProcessEnv(values: Readonly<Record<string, string>>): void {
   ];
   for (const name of names) vi.stubEnv(name, values[name]);
   for (const [name, value] of Object.entries(values)) vi.stubEnv(name, value);
+}
+
+// ---- the FieldCrypto contract, checked from outside ------------------------------------------
+
+/** The keyrings of these tests: versions held and the current one. */
+export const KEYRINGS = [
+  { versions: [1, 2], current: 2 },
+  { versions: [1, 2], current: 1 },
+  { versions: [1, 2, 3], current: 2 },
+] as const;
+
+export const METHODS = [
+  'blindIndex',
+  'currentKeyVersion',
+  'decrypt',
+  'encrypt',
+  'keyVersionOf',
+  'needsReencrypt',
+  'reencrypt',
+];
+
+/**
+ * Everything the FieldCrypto contract promises, checked against independent references: the
+ * exact member set; its own ciphertexts carry `current` (parsed here) and decrypt with it and
+ * with the reference; every held version decrypts; a ciphertext of another version needs
+ * re-encryption and re-encrypts to `current`, same plaintext, same blind index.
+ */
+export function cipherProblems(
+  value: unknown,
+  versions: readonly number[],
+  current: number,
+): string[] {
+  if (value === null || typeof value !== 'object') return [`not an object: ${String(value)}`];
+  const members = Reflect.ownKeys(value).map(String).sort();
+  if (JSON.stringify(members) !== JSON.stringify(METHODS)) return [`members ${members.join(',')}`];
+  const record = value as Record<string, unknown>;
+  const missing = METHODS.filter(
+    (name) => name !== 'currentKeyVersion' && typeof record[name] !== 'function',
+  );
+  if (missing.length > 0) return [`not functions: ${missing.join(',')}`];
+  const fc = value as FieldCrypto;
+  const problems: string[] = [];
+  const context = 'users.id_no';
+  if (fc.currentKeyVersion !== current) problems.push(`currentKeyVersion ${fc.currentKeyVersion}`);
+  const own = fc.encrypt(SAMPLES.idNo, context);
+  const parsed = settleSync(() => parseV1(own).version);
+  if (!('value' in parsed) || parsed.value !== current) problems.push('own ciphertext version');
+  if (fc.keyVersionOf(own) !== current) problems.push('keyVersionOf(own)');
+  if (fc.needsReencrypt(own)) problems.push('needsReencrypt(own)');
+  if (fc.decrypt(own, context) !== SAMPLES.idNo) problems.push('decrypt(own)');
+  const byReference = settleSync(() => referenceDecrypt(testKey(current), own, context));
+  if (!('value' in byReference) || byReference.value !== SAMPLES.idNo) {
+    problems.push('own ciphertext under the current key');
+  }
+  const blind = referenceBlindIndex(testKey(BLIND_KEY_LABEL), SAMPLES.idNo, context);
+  if (fc.blindIndex(SAMPLES.idNo, context) !== blind) problems.push('blindIndex');
+  for (const version of versions) {
+    const old = referenceEncrypt(testKey(version), version, SAMPLES.idNo, context);
+    if (fc.decrypt(old, context) !== SAMPLES.idNo) problems.push(`decrypt v${version}`);
+    if (fc.keyVersionOf(old) !== version) problems.push(`keyVersionOf v${version}`);
+    if (fc.needsReencrypt(old) !== (version !== current))
+      problems.push(`needsReencrypt v${version}`);
+    const again = fc.reencrypt(old, context);
+    const againVersion = settleSync(() => parseV1(again).version);
+    if (!('value' in againVersion) || againVersion.value !== current) {
+      problems.push(`reencrypt v${version} version`);
+    }
+    if (fc.decrypt(again, context) !== SAMPLES.idNo) problems.push(`reencrypt v${version} text`);
+    const againByReference = settleSync(() => referenceDecrypt(testKey(current), again, context));
+    if (!('value' in againByReference) || againByReference.value !== SAMPLES.idNo) {
+      problems.push(`reencrypt v${version} under the current key`);
+    }
+    if (fc.blindIndex(SAMPLES.idNo, context) !== blind)
+      problems.push(`blindIndex after v${version}`);
+  }
+  return problems;
 }
