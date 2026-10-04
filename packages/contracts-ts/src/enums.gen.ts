@@ -460,6 +460,26 @@ export const oauth_attempt_purpose = [
 export type OauthAttemptPurpose = (typeof oauth_attempt_purpose)[number];
 
 /**
+ * access_token 的 scp；登录与刷新按这次请求的客户端版本判定，含义与可调用的接口见 BR-ID-01 细则「受限会话」
+ * Source: 规划/04 §2.5、§5；BR-ID-01 (contracts/enums/identity.yaml).
+ */
+export const session_scope = [
+  "full", // 正常作用域
+  "deletion_only", // 受限作用域（低于最低支持版本，只能调用注销相关的接口）
+] as const;
+export type SessionScope = (typeof session_scope)[number];
+
+/**
+ * h5_token 的作用域；取值含义与缺省见 BR-ID-32 细则「只读作用域」
+ * Source: 规划/04 §2.5、§6.1；BR-ID-32 (contracts/enums/identity.yaml).
+ */
+export const h5_token_scope = [
+  "standard", // 标准
+  "read_only", // 只读（GET 以外的接口返回 10403 data.reason=h5_read_only）
+] as const;
+export type H5TokenScope = (typeof h5_token_scope)[number];
+
+/**
  * sms_purpose
  * Source: 规划/04 §6.1；BR-ID-05 (contracts/enums/identity.yaml).
  */
@@ -1230,6 +1250,8 @@ export const enums = {
   login_provider,
   device_id_source,
   oauth_attempt_purpose,
+  session_scope,
+  h5_token_scope,
   sms_purpose,
   step_up_action,
   idempotency_abandon_outcome,

@@ -38,6 +38,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   LinkPatternCategory: 'link_pattern_category',
   IdempotencyAbandonOutcome: 'idempotency_abandon_outcome',
   DeviceIdSource: 'device_id_source',
+  SessionScope: 'session_scope',
+  H5TokenScope: 'h5_token_scope',
   LoginProvider: 'login_provider',
   OauthAttemptPurpose: 'oauth_attempt_purpose',
 };
@@ -54,6 +56,69 @@ export const STEP_UP_OPERATIONS: Readonly<Record<string, string>> = {
   phone_change: 'POST /v1/me/phone',
   account_deletion: 'POST /v1/me/deletion',
 };
+
+/**
+ * Version gate exceptions (规划/08 BR-ID-01 细则「最低支持版本的接口层拦截」, the only place they
+ * are kept; this copy is checked against the contract and follows 08 on any difference). Every
+ * other /v1 write operation is gated (true). 「不判定」 operations are written false with the reason
+ * in the description (orchestrator decision D-12).
+ */
+export const GATE_EXCEPTIONS: Readonly<Record<string, 'false' | 'conditional'>> = {
+  'POST /v1/devices': 'false',
+  'POST /v1/auth/sms-codes': 'conditional',
+  'POST /v1/auth/login/sms': 'false',
+  'POST /v1/auth/login/wechat': 'false',
+  'POST /v1/auth/login/apple': 'false',
+  'POST /v1/auth/login/huawei': 'false',
+  'POST /v1/auth/refresh': 'false',
+  'POST /v1/auth/oauth-attempts': 'conditional',
+  'POST /v1/auth/step-up': 'conditional',
+  'POST /v1/auth/logout': 'false',
+  'POST /v1/consents': 'conditional',
+  'POST /v1/me/deletion': 'false',
+  'POST /v1/me/deletion/cancel': 'false',
+  'POST /v1/idempotency-keys/abandon': 'conditional',
+  'POST /v1/landing/sms-codes': 'false',
+  'POST /v1/invites/landing-register': 'false',
+  'POST /v1/share-pages/{link_id}/tpwd': 'false',
+};
+
+/**
+ * Operations a deletion_only session may call (BR-ID-01 细则「受限会话」 table; 08 wins on any
+ * difference): marked x-session-scopes [full, deletion_only]. The conditional ones accept it for
+ * some request bodies only and say which in the description.
+ */
+export const DELETION_ONLY_SCOPE: Readonly<Record<string, 'always' | 'conditional'>> = {
+  'POST /v1/me/deletion': 'always',
+  'POST /v1/me/deletion/cancel': 'always',
+  'GET /v1/me/deletion': 'always',
+  'POST /v1/auth/sms-codes': 'conditional',
+  'POST /v1/auth/oauth-attempts': 'conditional',
+  'POST /v1/auth/step-up': 'conditional',
+  'POST /v1/idempotency-keys/abandon': 'conditional',
+  'POST /v1/consents': 'conditional',
+  'POST /v1/auth/refresh': 'always',
+  'POST /v1/auth/logout': 'always',
+  'POST /v1/devices': 'always',
+  'POST /v1/auth/login/sms': 'always',
+  'POST /v1/auth/login/wechat': 'always',
+  'POST /v1/auth/login/apple': 'always',
+  'POST /v1/auth/login/huawei': 'always',
+  'GET /v1/articles': 'always',
+  'GET /v1/app-versions/check': 'always',
+  'GET /v1/config': 'always',
+  'GET /v1/dict': 'always',
+  'GET /v1/me': 'always',
+  'GET /v1/wallet/summary': 'always',
+};
+
+/** Logins that answer a client below the minimum version with a restricted login (10405 no_account). */
+const RESTRICTED_LOGINS = [
+  'POST /v1/auth/login/sms',
+  'POST /v1/auth/login/wechat',
+  'POST /v1/auth/login/apple',
+  'POST /v1/auth/login/huawei',
+];
 
 /** Codes every x-step-up operation lists in x-error-codes (04 §5 step-up and 幂等 rows). */
 const STEP_UP_CODES = [10003, 20903];
@@ -199,6 +264,72 @@ function checkHelpLinkTarget(schemas: Obj, problems: string[], routes: string = 
   }
 }
 
+/**
+ * x-min-version-gate and x-session-scopes (04 §5; BR-ID-01 细则 two tables, copied above).
+ */
+function checkGateAndScopes(
+  op: Obj,
+  where: string,
+  method: string,
+  scopes: readonly string[],
+  problems: string[],
+): void {
+  const gate = op['x-min-version-gate'];
+  const listed = Array.isArray(op['x-error-codes']) ? op['x-error-codes'] : [];
+  const description =
+    typeof op['description'] === 'string' ? op['description'].replace(/\s+/g, ' ') : '';
+  if (method === 'get') {
+    if (gate !== undefined) problems.push(`${where}: GET operations carry no x-min-version-gate`);
+  } else {
+    const expected = GATE_EXCEPTIONS[where] ?? 'true';
+    const actual = gate === true ? 'true' : gate === false ? 'false' : gate;
+    if (actual === undefined) {
+      problems.push(`${where}: write operations carry x-min-version-gate (04 §5)`);
+    } else if (actual !== expected) {
+      problems.push(
+        `${where}: x-min-version-gate ${String(actual)} differs from BR-ID-01 细则 (${expected})`,
+      );
+    }
+    if ((actual === 'true' || actual === 'conditional') && !listed.includes(10405)) {
+      problems.push(`${where}: a gated operation lists 10405 in x-error-codes`);
+    }
+    if (actual === 'conditional' && !/Version gate \(conditional/.test(description)) {
+      problems.push(`${where}: a conditional version gate states its condition in the description`);
+    }
+  }
+  if (RESTRICTED_LOGINS.includes(where) && !listed.includes(10405)) {
+    problems.push(`${where}: a restricted login lists 10405 (data.reason=no_account)`);
+  }
+  const marked = op['x-session-scopes'];
+  const expectedScope = DELETION_ONLY_SCOPE[where];
+  if (marked === undefined) {
+    if (expectedScope !== undefined) {
+      problems.push(
+        `${where}: needs x-session-scopes [full, deletion_only] (BR-ID-01 细则「受限会话」)`,
+      );
+    }
+    return;
+  }
+  if (!Array.isArray(marked) || marked.some((s) => typeof s !== 'string' || !scopes.includes(s))) {
+    problems.push(`${where}: x-session-scopes is a list of session_scope values`);
+    return;
+  }
+  const set = [...new Set(marked)].sort().join(',');
+  if (expectedScope === undefined) {
+    if (set !== 'full')
+      problems.push(
+        `${where}: only the operations of BR-ID-01 细则「受限会话」 accept deletion_only`,
+      );
+  } else if (set !== 'deletion_only,full') {
+    problems.push(`${where}: x-session-scopes must be [full, deletion_only]`);
+  } else if (
+    expectedScope === 'conditional' &&
+    !/deletion_only session is accepted only/.test(description)
+  ) {
+    problems.push(`${where}: a conditional session scope states its condition in the description`);
+  }
+}
+
 export function checkConformance(
   enums: readonly EnumDef[],
   codes: readonly ErrorCodeDef[],
@@ -279,6 +410,7 @@ export function checkConformance(
       }
       checkStepUp(op, where, stepUpActions, stepUpByOperation.get(where), problems);
       if (!path.startsWith('/v1/')) continue;
+      checkGateAndScopes(op, where, method, enumValues.get('session_scope') ?? [], problems);
       if (refName(at(op, 'responses/429'), 'responses') !== 'TooManyRequests') {
         problems.push(
           `${where}: /v1 operations declare 429 → TooManyRequests (42901, Retry-After)`,
