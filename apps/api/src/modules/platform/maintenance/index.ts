@@ -114,9 +114,11 @@
 //       MONTH_PARTITIONED_TABLES (@couli/db, in that order: event_log, orders) and each month of
 //       monthsToEnsure(now, MONTHS_AHEAD) (UTC months: the month of `now` and the 3 following, in
 //       ascending order): `SELECT app.ensure_month_partition(<table>, '<YYYY-MM-01>'::date)` as its
-//       own statement. A success appends the returned name to `ensured`; a failure (e.g. 23514 when
+//       own short transaction, first running SELECT set_config('lock_timeout', '5s', true).
+//       A success appends the returned name to `ensured`; a failure (e.g. 23514 when
 //       the DEFAULT partition holds rows of that month) logs `partition_ensure_failed`, counts in
-//       `failed`, and the run continues with the next month / table.
+//       `failed`, and the run continues with the next month / table. On 55P03, skip the remaining
+//       months of that table for this run; other tables continue and the next run tries again.
 //    4. Drop (ADR-0001 §4.2 #4 "建和删分区"; BR-ID-30 ⑯ and "由每日 04:00（+08:00）删除任务…执行"):
 //       ONLY when the time of day of `now` at UTC+08:00 is 04:00:00.000 or later (so between 00:00 and
 //       03:59:59.999 +08:00 this step is skipped entirely: no call, no log line, `dropped` empty).
@@ -133,7 +135,10 @@
 //       no immediate retry, the next scheduled run attempts deletion again.
 //       Example: with event_log_p202602 and p202603 (rows created in their months), a run at
 //       2026-10-09 03:59:59.999 +08:00 drops nothing; a run at 2026-10-09 04:00:00.000 +08:00 drops both.
-//    5. DEFAULT check: `SELECT * FROM app.partition_default_rows()`; every row with row_count > 0 is
+//    5. DEFAULT check: `SELECT * FROM app.partition_default_rows()` in its own short transaction,
+//       first running SELECT set_config('lock_timeout', '5s', true). A 55P03 follows the failure
+//       path below; the timeout setting never outlives the transaction.
+//       Every row with row_count > 0 is
 //       appended to `defaultRows` and logged `partition_default_has_rows` (one line per table per run,
 //       so the alert repeats every run while the rows stay). A failure logs
 //       `partition_default_check_failed` and counts in `failed`.
@@ -318,17 +323,22 @@ export function createPartitionMaintenance(
     const defaultRows: DefaultRows[] = [];
     let failed = 0;
 
-    // Separate autocommit statements keep one failed month from aborting the whole run.
+    // Each short transaction bounds lock waits without changing pooled session settings.
     for (const table of MONTH_PARTITIONED_TABLES) {
       for (const month of months) {
         try {
-          const result = await sql<{ partition: string }>`
-            SELECT app.ensure_month_partition(${table}, ${month}::date) AS partition
-          `.execute(db);
+          const result = await db.transaction().execute(async (trx) => {
+            await sql`SELECT set_config('lock_timeout', '5s', true)`.execute(trx);
+            return sql<{ partition: string }>`
+              SELECT app.ensure_month_partition(${table}, ${month}::date) AS partition
+            `.execute(trx);
+          });
           ensured.push(result.rows[0]!.partition);
         } catch (error) {
           failed += 1;
-          logger.error({ table, month, sqlstate: sqlstate(error) }, 'partition_ensure_failed');
+          const code = sqlstate(error);
+          logger.error({ table, month, sqlstate: code }, 'partition_ensure_failed');
+          if (code === '55P03') break;
         }
       }
     }
@@ -352,11 +362,14 @@ export function createPartitionMaintenance(
     }
 
     try {
-      const result = await sql<{
-        table_name: string;
-        default_partition: string;
-        row_count: bigint;
-      }>`SELECT * FROM app.partition_default_rows()`.execute(db);
+      const result = await db.transaction().execute(async (trx) => {
+        await sql`SELECT set_config('lock_timeout', '5s', true)`.execute(trx);
+        return sql<{
+          table_name: string;
+          default_partition: string;
+          row_count: bigint;
+        }>`SELECT * FROM app.partition_default_rows()`.execute(trx);
+      });
       for (const row of result.rows) {
         // The report explicitly uses numbers; never silently round a PG bigint count.
         const rows = Number(row.row_count);

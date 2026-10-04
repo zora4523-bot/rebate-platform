@@ -25,11 +25,27 @@ async function fixture(instant = '2026-11-20T03:04:05Z') {
   const driver = new DummyDriver();
   const connection = await driver.acquireConnection();
   const queries: CompiledQuery[] = [];
+  const transactions: { queries: CompiledQuery[]; outcome: string }[] = [];
+  let transaction: (typeof transactions)[number] | undefined;
+  driver.beginTransaction = async () => {
+    if (transaction) throw new Error('overlapping transactions');
+    transaction = { queries: [], outcome: 'pending' };
+    transactions.push(transaction);
+  };
+  driver.commitTransaction = async () => {
+    transaction!.outcome = 'committed';
+    transaction = undefined;
+  };
+  driver.rollbackTransaction = async () => {
+    transaction!.outcome = 'rolled back';
+    transaction = undefined;
+  };
   const control: { respond: (query: CompiledQuery) => Promise<unknown[] | undefined> } = {
     respond: async () => undefined,
   };
   connection.executeQuery = async <R>(query: CompiledQuery) => {
     queries.push(query);
+    transaction?.queries.push(query);
     let rows = await control.respond(query);
     if (rows === undefined) {
       if (query.sql.includes('current_user')) rows = [{ role: 'couli_maint' }];
@@ -37,6 +53,7 @@ async function fixture(instant = '2026-11-20T03:04:05Z') {
         rows = [{ partition: `${String(query.parameters[0])}:${String(query.parameters[1])}` }];
       } else if (query.sql.includes('drop_expired_month_partitions')) rows = [{ partitions: [] }];
       else if (query.sql.includes('partition_default_rows')) rows = [];
+      else if (query.sql.includes('set_config')) rows = [];
       else throw new Error('unexpected statement');
     }
     return { rows: rows as R[] };
@@ -61,7 +78,7 @@ async function fixture(instant = '2026-11-20T03:04:05Z') {
     intervalMs: 100,
   });
   instances.push(maintenance);
-  return { maintenance, queries, control, logger, clock, now };
+  return { maintenance, queries, transactions, control, logger, clock, now };
 }
 
 it('[AC-B1-01j#1] 独立参数化语句使用同一次时钟读数，失败月份不阻断后续建分区和 DEFAULT 告警', async () => {
@@ -92,7 +109,7 @@ it('[AC-B1-01j#1] 独立参数化语句使用同一次时钟读数，失败月�
     defaultRows: [{ table: 'orders', partition: 'orders_default', rows: 3 }],
     failed: 2,
   });
-  expect(f.queries.map((query) => query.parameters)).toEqual([
+  expect(f.queries.filter((q) => !q.sql.includes('set_config')).map((q) => q.parameters)).toEqual([
     [],
     ['event_log', '2026-11-01'],
     ['event_log', '2026-12-01'],
@@ -114,6 +131,17 @@ it('[AC-B1-01j#1] 独立参数化语句使用同一次时钟读数，失败月�
   );
   expect(f.logger.warn.mock.calls).toEqual([
     [{ table: 'orders', partition: 'orders_default', rows: 3 }, 'partition_default_has_rows'],
+  ]);
+  expect(f.transactions.map((transaction) => transaction.outcome)).toEqual([
+    'committed',
+    'rolled back',
+    'committed',
+    'committed',
+    'committed',
+    'rolled back',
+    'committed',
+    'committed',
+    'committed',
   ]);
 });
 
@@ -377,3 +405,144 @@ it('[AC-B1-01j#11] stop 等待中的删除收到锁超时后完成，且不再�
   await vi.advanceTimersByTimeAsync(1000);
   expect(f.queries).toHaveLength(queryCount);
 });
+
+it('[AC-B1-01j#12] 每次预建和 DEFAULT 计数独占短事务，首句设置事务级 5 秒锁超时', async () => {
+  const f = await fixture();
+  expect(await f.maintenance.runOnce()).toMatchObject({ failed: 0 });
+  const boundedQueries = f.queries.filter(
+    (q) => q.sql.includes('ensure_month_partition') || q.sql.includes('partition_default_rows'),
+  );
+  expect(boundedQueries).toHaveLength(9);
+  expect(f.transactions).toHaveLength(9);
+  for (const [index, transaction] of f.transactions.entries()) {
+    expect(transaction.outcome).toBe('committed');
+    expect(transaction.queries).toHaveLength(2);
+    expect(transaction.queries[0]?.sql).toBe("SELECT set_config('lock_timeout', '5s', true)");
+    expect(transaction.queries[1]).toBe(boundedQueries[index]);
+  }
+});
+
+it.each([['event_log'], ['event_log', 'orders']])(
+  '[AC-B1-01j#13] 锁超时每表只失败一次，跳过剩余月份、其他表继续，下轮重新预建（%j）',
+  async (...blockedTables) => {
+    const f = await fixture();
+    f.control.respond = async (query) => {
+      if (
+        query.sql.includes('ensure_month_partition') &&
+        blockedTables.includes(String(query.parameters[0])) &&
+        query.parameters[1] === '2027-01-01'
+      ) {
+        throw { code: '55P03', message: 'private SQL', detail: 'private row data' };
+      }
+      return undefined;
+    };
+    const allNames = ['event_log', 'orders'].flatMap((table) =>
+      ['2026-11-01', '2026-12-01', '2027-01-01', '2027-02-01'].map((month) => `${table}:${month}`),
+    );
+    expect(await f.maintenance.runOnce()).toEqual({
+      ensured: allNames.filter(
+        (name) => !blockedTables.some((table) => name.startsWith(`${table}:2027`)),
+      ),
+      dropped: [],
+      defaultRows: [],
+      failed: blockedTables.length,
+    });
+    expect(f.logger.error.mock.calls).toEqual(
+      blockedTables.map((table) => [
+        { table, month: '2027-01-01', sqlstate: '55P03' },
+        'partition_ensure_failed',
+      ]),
+    );
+    expect(
+      f.queries
+        .filter(
+          (q) =>
+            q.sql.includes('ensure_month_partition') &&
+            blockedTables.includes(String(q.parameters[0])),
+        )
+        .some((q) => q.parameters[1] === '2027-02-01'),
+    ).toBe(false);
+    expect(f.transactions.filter((t) => t.outcome === 'rolled back')).toHaveLength(
+      blockedTables.length,
+    );
+    expect(f.queries.some((q) => q.sql.includes('drop_expired_month_partitions'))).toBe(true);
+    expect(f.queries.at(-1)?.sql).toContain('partition_default_rows');
+    f.control.respond = async () => undefined;
+    expect(await f.maintenance.runOnce()).toEqual({
+      ensured: allNames,
+      dropped: [],
+      defaultRows: [],
+      failed: 0,
+    });
+  },
+);
+
+it('[AC-B1-01j#14] DEFAULT 锁超时回滚并记一次失败，下一定时轮恢复计数告警', async () => {
+  vi.useFakeTimers();
+  const f = await fixture();
+  let attempts = 0;
+  f.control.respond = async (query) => {
+    if (query.sql.includes('partition_default_rows')) {
+      attempts += 1;
+      if (attempts === 1) throw { code: '55P03', detail: 'private row data' };
+      return [{ table_name: 'orders', default_partition: 'orders_default', row_count: 2n }];
+    }
+    return undefined;
+  };
+  await f.maintenance.start();
+  expect(f.transactions.at(-1)?.outcome).toBe('rolled back');
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ sqlstate: '55P03' }, 'partition_default_check_failed'],
+  ]);
+  expect(f.logger.warn).not.toHaveBeenCalled();
+  expect(f.logger.info.mock.calls).toEqual([
+    [{ ensured: 8, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
+  ]);
+  await vi.advanceTimersByTimeAsync(99);
+  expect(attempts).toBe(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(attempts).toBe(2);
+  expect(f.transactions.at(-1)?.outcome).toBe('committed');
+  expect(f.logger.warn.mock.calls).toEqual([
+    [{ table: 'orders', partition: 'orders_default', rows: 2 }, 'partition_default_has_rows'],
+  ]);
+  expect(f.logger.info.mock.calls.at(-1)).toEqual([
+    { ensured: 8, dropped: 0, failed: 0 },
+    'partition_maintenance_done',
+  ]);
+});
+
+it.each(['ensure_month_partition', 'partition_default_rows'])(
+  '[AC-B1-01j#15] stop 等待 %s 锁超时后完成回滚，不再调度',
+  async (functionName) => {
+    vi.useFakeTimers();
+    const f = await fixture();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    f.control.respond = async (query) => {
+      if (query.sql.includes(functionName)) {
+        entered.resolve();
+        await release.promise;
+        throw { code: '55P03' };
+      }
+      return undefined;
+    };
+    const starting = f.maintenance.start();
+    await entered.promise;
+    const stopped = vi.fn();
+    const stopping = f.maintenance.stop().then(stopped);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(stopped).not.toHaveBeenCalled();
+    release.resolve();
+    await starting;
+    await stopping;
+    expect(stopped).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(f.transactions.every((t) => t.outcome !== 'pending')).toBe(true);
+    expect(f.transactions.filter((t) => t.outcome === 'rolled back')).toHaveLength(
+      functionName === 'ensure_month_partition' ? 2 : 1,
+    );
+    const queryCount = f.queries.length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.queries).toHaveLength(queryCount);
+  },
+);
