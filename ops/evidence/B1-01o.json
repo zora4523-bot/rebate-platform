@@ -1,0 +1,65 @@
+{
+  "task": "B1-01o",
+  "spec_ref": "826f86ef3bb76738e3c99998d7d31516838d1539",
+  "spec_commit": "f097cce794ca10602d0abd87d15eb2c59dbf8a5b",
+  "red_tests": [
+    "[BR-ID-33] 日志（B1-01o 补充 M）：URL 对象写出的 origin + pathname 按段过安全网——编码后的邮箱、空格分隔与全角号码、整段替换、只在原文或只在解码后命中、坏 UTF-8、主机名、mailto / tel",
+    "[BR-ID-33] 日志（B1-01o 补充 M）：嵌套对象、数组、数组里的普通对象、错误属性、toJSON 返回值与 child() 序列化器输出里的 URL 对象同样按段过安全网（手机号、身份证号、银行卡号、邮箱）",
+    "[BR-ID-33] 日志（B1-01o 补充 M）：child() 与孙 logger 的绑定、根 / 子 / 孙 logger 的 setBindings() 里的 URL 对象（含嵌套与数组）同样按段过安全网",
+    "[BR-ID-33] 日志（B1-01o 补充 M）：printf 的 %s、%j、%o、%O 参数里的 URL 对象按段过安全网，不靠 msg 的整串安全网（编码后的邮箱、空格分隔的身份证号、全角号码、整段替换）",
+    "[BR-ID-33] 日志（B1-01o 补充 M）：Nest 适配器的参数（URL 本身、对象与数组里的 URL）与非字符串消息（URL）按段过安全网",
+    "[BR-ID-33] 日志（B1-01o 补充 M）：自由文本位置（err、message、stack、对象自带的 msg、消息参数）里的 URL 对象先按段处理，再过整串安全网：整段替换，解码后才命中的也替换",
+    "[BR-ID-33] 访问日志（B1-01o 补充 N）：url 写的路由模板按段过安全网（模板里的手机号、身份证号、银行卡号、邮箱、编码后的邮箱整段替换）；普通模板与 [unmatched] 不变"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**). Log redaction: URL objects anywhere in a record (and the access-log route template) write origin and pathname through the free-text net (addenda M-O: whole matching path segment replaced, percent-decoding one round, host name included). No money, attribution or authorisation path.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "08ab522c08e546b7d7dceb393ecf9e906d045fd1",
+      "tree": "660d32f4aeffc6a87e9d29a3b7e11b15d92fce09",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-04T19:22:45Z",
+      "finished_at": "2026-10-04T19:26:58Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass; 2 S2 reachable only with crafted input (client Host header in the access-log hostname; blob: URL origin written twice, no leak) recorded as follow-ups under approvals #18"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "money review base origin/main: pass, no findings, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with 1 S2 (multi-segment paths not covered), fixed by the author's supplementary commit 4e82a17 before the implementation"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "6fb86eb4f2995d6ac7343834b891bac4ecedc030",
+    "apps/api/src/modules/platform/logging": "0600b95b4130e182c141f442bc5abc85c930f9b5"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 pnpm test:longrun on the B1-01p worktree (test/properties tree shared by B1-01n/o/p/q), 2026-10-05; this task adds no property tests"
+  }
+}
