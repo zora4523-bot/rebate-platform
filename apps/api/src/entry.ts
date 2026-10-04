@@ -2,13 +2,17 @@
 import { createHttpApp, createWorkerContext } from './bootstrap.ts';
 import {
   type AppConfig,
+  type ConnectionConfig,
+  type DbHandles,
   ConfigError,
   type EntryName,
   type HttpEntry,
   type RootLogger,
   createRootLogger,
+  createDbHandles,
   isHttpEntry,
   loadConfig,
+  loadConnectionConfig,
 } from './modules/platform/index.ts';
 
 // Keeps a worker process alive until a signal arrives; longer than any deployment lives.
@@ -41,23 +45,33 @@ function closeOnSignal(logger: RootLogger, close: () => Promise<void>): void {
   process.on('SIGINT', onSignal);
 }
 
-async function start(entry: EntryName, config: AppConfig, logger: RootLogger): Promise<void> {
+async function start(
+  entry: EntryName,
+  config: AppConfig,
+  logger: RootLogger,
+  dbHandles: DbHandles,
+): Promise<void> {
   if (isHttpEntry(entry)) {
-    const app = await createHttpApp(entry, { config, logger });
-    await app.init();
-    if (config.exitAfterInit) {
-      logger.info({ listening: false }, 'started');
+    const app = await createHttpApp(entry, { config, logger, dbHandles });
+    try {
+      await app.init();
+      if (config.exitAfterInit) {
+        logger.info({ listening: false }, 'started');
+        await app.close();
+        return;
+      }
+      const port = portOf(entry, config);
+      await app.listen(port, config.apiHost);
+      logger.info({ listening: true, host: config.apiHost, port }, 'started');
+      closeOnSignal(logger, () => app.close());
+    } catch (error) {
       await app.close();
-      return;
+      throw error;
     }
-    const port = portOf(entry, config);
-    await app.listen(port, config.apiHost);
-    logger.info({ listening: true, host: config.apiHost, port }, 'started');
-    closeOnSignal(logger, () => app.close());
     return;
   }
 
-  const context = await createWorkerContext(entry, { config, logger });
+  const context = await createWorkerContext(entry, { config, logger, dbHandles });
   logger.info({ listening: false }, 'started');
   if (config.exitAfterInit) {
     await context.close();
@@ -78,9 +92,23 @@ async function start(entry: EntryName, config: AppConfig, logger: RootLogger): P
  * code 0 without opening a port. Any startup failure is logged and sets exit code 1.
  */
 export async function runEntry(entry: EntryName): Promise<void> {
-  let config: AppConfig;
+  let config: AppConfig | undefined;
+  let connections: ConnectionConfig | undefined;
+  const problems: string[] = [];
   try {
-    config = loadConfig(process.env);
+    try {
+      config = loadConfig(process.env);
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      problems.push(...error.problems);
+    }
+    try {
+      connections = loadConnectionConfig(entry, process.env);
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      problems.push(...error.problems);
+    }
+    if (problems.length > 0) throw new ConfigError(problems);
   } catch (error) {
     const logger = createRootLogger({ level: 'error', entry, appEnv: 'unknown' });
     if (error instanceof ConfigError) {
@@ -91,11 +119,14 @@ export async function runEntry(entry: EntryName): Promise<void> {
     process.exitCode = 1;
     return;
   }
-
+  if (config === undefined || connections === undefined) return;
   const logger = createRootLogger({ level: config.logLevel, entry, appEnv: config.appEnv });
+  let handles: DbHandles | undefined;
   try {
-    await start(entry, config, logger);
+    handles = createDbHandles(connections, { logger });
+    await start(entry, config, logger, handles);
   } catch (error) {
+    await handles?.close();
     logger.fatal({ err: error }, 'startup_failed');
     process.exitCode = 1;
   }

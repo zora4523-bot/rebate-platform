@@ -27,9 +27,6 @@ const envSchema = z.object({
   API_PORT: port(3100),
   STREAM_PORT: port(3101),
   ADMIN_PORT: port(3102),
-  // TODO(ADR-0001 §4.2 #11): make DATABASE_URL / REDIS_URL required per entry once the database and cache modules exist — blocked on B1-01.
-  DATABASE_URL: z.url({ protocol: /^postgres(?:ql)?$/ }).optional(),
-  REDIS_URL: z.url({ protocol: /^rediss?$/ }).optional(),
 });
 
 type EnvKey = keyof z.input<typeof envSchema>;
@@ -45,8 +42,6 @@ export interface AppConfig {
   readonly apiPort: number;
   readonly streamPort: number;
   readonly adminPort: number;
-  readonly databaseUrl: string | undefined;
-  readonly redisUrl: string | undefined;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -118,7 +113,5 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     apiPort: values.API_PORT,
     streamPort: values.STREAM_PORT,
     adminPort: values.ADMIN_PORT,
-    databaseUrl: values.DATABASE_URL,
-    redisUrl: values.REDIS_URL,
   };
 }

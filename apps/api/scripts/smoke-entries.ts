@@ -21,8 +21,17 @@ const distFile = (entry: string): string => join(appDir, 'dist', `main.${entry}.
 
 // A minimal environment: nothing from the caller can change the outcome (for example a
 // credential-looking variable or CLOCK_NOW in the developer's shell).
-function childEnv(extra: Record<string, string>): Record<string, string> {
-  const env: Record<string, string> = { APP_ENV: 'test', LOG_LEVEL: 'info', ...extra };
+function childEnv(entry: string, extra: Record<string, string>): Record<string, string> {
+  const env: Record<string, string> = {
+    APP_ENV: 'test',
+    LOG_LEVEL: 'info',
+    DATABASE_URL: `postgres://${entry === 'payout' ? 'couli_payout' : 'couli_app'}@127.0.0.1:1/couli`,
+    ...(entry === 'admin'
+      ? { DATABASE_READ_URL: 'postgres://couli_readonly@127.0.0.1:1/couli' }
+      : {}),
+    ...(entry === 'payout' ? {} : { REDIS_URL: 'redis://127.0.0.1:1/0' }),
+    ...extra,
+  };
   for (const name of ['PATH', 'HOME', 'TMPDIR']) {
     const value = process.env[name];
     if (value !== undefined) env[name] = value;
@@ -34,6 +43,7 @@ interface LogLine {
   msg?: unknown;
   entry?: unknown;
   listening?: unknown;
+  problems?: unknown;
 }
 
 function logLines(stdout: string): LogLine[] {
@@ -59,7 +69,7 @@ function checkExitAfterInit(entry: string): void {
   const began = performance.now();
   const result = spawnSync(process.execPath, [distFile(entry)], {
     cwd: appDir,
-    env: childEnv({ COULI_EXIT_AFTER_INIT: '1' }),
+    env: childEnv(entry, { COULI_EXIT_AFTER_INIT: '1' }),
     encoding: 'utf8',
     timeout: LIMIT_MS,
   });
@@ -93,7 +103,7 @@ function checkSignalShutdown(entry: string): Promise<void> {
     const began = performance.now();
     const child = spawn(process.execPath, [distFile(entry)], {
       cwd: appDir,
-      env: childEnv({}),
+      env: childEnv(entry, {}),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -146,7 +156,43 @@ if (missing.length > 0) {
   process.exit(2);
 }
 
+function checkMissingVariables(entry: string): void {
+  const required = [
+    'DATABASE_URL',
+    ...(entry === 'admin' ? ['DATABASE_READ_URL'] : []),
+    ...(entry === 'payout' ? [] : ['REDIS_URL']),
+  ];
+  for (const name of required) {
+    const env = childEnv(entry, { COULI_EXIT_AFTER_INIT: '1' });
+    delete env[name];
+    const result = spawnSync(process.execPath, [distFile(entry)], {
+      cwd: appDir,
+      env,
+      encoding: 'utf8',
+      timeout: LIMIT_MS,
+    });
+    const lines = logLines(result.stdout);
+    if (
+      result.status !== 1 ||
+      result.error !== undefined ||
+      result.signal !== null ||
+      result.stderr.trim() !== '' ||
+      lines.length !== 1 ||
+      lines[0]?.msg !== 'config_invalid' ||
+      lines[0]?.entry !== entry ||
+      JSON.stringify(lines[0]?.problems) !==
+        JSON.stringify([`${name}: must be set for the ${entry} entry`])
+    ) {
+      console.error(`FAIL ${entry} missing ${name}`);
+      failures.push(`${entry}/${name}`);
+    } else {
+      console.error(`ok   ${entry.padEnd(6)} missing ${name}`);
+    }
+  }
+}
+
 for (const entry of ENTRIES) checkExitAfterInit(entry);
+for (const entry of ENTRIES) checkMissingVariables(entry);
 for (const entry of SIGNAL_ENTRIES) await checkSignalShutdown(entry);
 
 if (failures.length > 0) {
