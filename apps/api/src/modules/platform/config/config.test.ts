@@ -22,6 +22,7 @@ describe('loadConfig', () => {
       apiPort: 3100,
       streamPort: 3101,
       adminPort: 3102,
+      keyring: null,
     });
   });
 
@@ -29,6 +30,8 @@ describe('loadConfig', () => {
     expect(
       loadConfig({
         APP_ENV: 'staging',
+        FIELD_KEY_PROVIDER: 'kms',
+        FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
         LOG_LEVEL: 'debug',
         CLOCK_NOW: '2026-10-31T23:59:59.999+08:00',
         COULI_EXIT_AFTER_INIT: '1',
@@ -49,6 +52,7 @@ describe('loadConfig', () => {
       apiPort: 8080,
       streamPort: 8081,
       adminPort: 8082,
+      keyring: { provider: 'kms', keyringFile: '/srv/couli/keyring.json' },
     });
   });
 
@@ -94,7 +98,15 @@ describe('loadConfig', () => {
     '[AC-B1-01f] accepts CLOCK_NOW=%s outside prod',
     (clockNow) => {
       for (const appEnv of ['local', 'test', 'staging']) {
-        expect(loadConfig({ APP_ENV: appEnv, CLOCK_NOW: clockNow }).clockNow).toBe(clockNow);
+        expect(
+          loadConfig({
+            APP_ENV: appEnv,
+            CLOCK_NOW: clockNow,
+            ...(appEnv === 'staging'
+              ? { FIELD_KEY_PROVIDER: 'kms', FIELD_KEYRING_FILE: '/srv/couli/keyring.json' }
+              : {}),
+          }).clockNow,
+        ).toBe(clockNow);
       }
     },
   );
@@ -109,10 +121,17 @@ describe('loadConfig', () => {
   it('[AC-B1-01f] refuses to start in prod when CLOCK_NOW is set (ADR-0001 §4.2 #10)', () => {
     expect(problemsOf({ APP_ENV: 'prod', CLOCK_NOW: '2026-10-01T12:00:00Z' })).toEqual([
       'CLOCK_NOW: must not be set when APP_ENV=prod (the production clock is real time)',
+      'FIELD_KEY_PROVIDER: must be set when APP_ENV=prod',
     ]);
     // Refused even when the value is malformed: both findings are reported.
-    expect(problemsOf({ APP_ENV: 'prod', CLOCK_NOW: 'tomorrow' })).toHaveLength(2);
-    expect(loadConfig({ APP_ENV: 'prod' }).clockNow).toBeUndefined();
+    expect(problemsOf({ APP_ENV: 'prod', CLOCK_NOW: 'tomorrow' })).toHaveLength(3);
+    expect(
+      loadConfig({
+        APP_ENV: 'prod',
+        FIELD_KEY_PROVIDER: 'kms',
+        FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
+      }).clockNow,
+    ).toBeUndefined();
   });
 
   it.each(['local', 'test'])(
@@ -131,7 +150,14 @@ describe('loadConfig', () => {
   );
 
   it.each(['staging', 'prod'])('[AC-B1-01f] allows credential variables in %s', (appEnv) => {
-    expect(loadConfig({ APP_ENV: appEnv, ALIPAY_PRIVATE_KEY: 'k' }).appEnv).toBe(appEnv);
+    expect(
+      loadConfig({
+        APP_ENV: appEnv,
+        ALIPAY_PRIVATE_KEY: 'k',
+        FIELD_KEY_PROVIDER: 'kms',
+        FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
+      }).appEnv,
+    ).toBe(appEnv);
   });
 
   it('[AC-B1-01f] ignores credential-looking variables that are empty', () => {

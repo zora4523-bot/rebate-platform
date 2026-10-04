@@ -1,10 +1,11 @@
 // Environment configuration (ADR-0001 §2 配置校验): validated once at startup with zod.
 // `loadConfig` is pure: it only looks at the object it is given.
 import { z } from 'zod';
+import { APP_ENVS, type AppEnv } from './app-env.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
+import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
 
-export const APP_ENVS = ['local', 'test', 'staging', 'prod'] as const;
-export type AppEnv = (typeof APP_ENVS)[number];
+export { APP_ENVS, type AppEnv } from './app-env.ts';
 
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -42,6 +43,7 @@ export interface AppConfig {
   readonly apiPort: number;
   readonly streamPort: number;
   readonly adminPort: number;
+  readonly keyring: KeyringConfig | null;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -96,12 +98,17 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     );
     // APP_ENV-dependent assertions still run when APP_ENV itself is valid.
     const appEnv = z.enum(APP_ENVS).safeParse(input['APP_ENV']);
-    if (appEnv.success) problems.push(...startupViolations(appEnv.data, env));
+    if (appEnv.success) {
+      problems.push(...startupViolations(appEnv.data, env));
+      problems.push(...readKeyringConfig(appEnv.data, env).problems);
+    }
     throw new ConfigError(problems);
   }
 
   const values = parsed.data;
   const violations = startupViolations(values.APP_ENV, env);
+  const { keyring, problems } = readKeyringConfig(values.APP_ENV, env);
+  violations.push(...problems);
   if (violations.length > 0) throw new ConfigError(violations);
 
   return {
@@ -113,5 +120,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     apiPort: values.API_PORT,
     streamPort: values.STREAM_PORT,
     adminPort: values.ADMIN_PORT,
+    keyring,
   };
 }

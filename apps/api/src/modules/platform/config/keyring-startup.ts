@@ -1,8 +1,8 @@
 // Opening the field-encryption keyring when a process entry starts, and handing the opened
 // `FieldCrypto` to the other modules (规划/08 BR-ID-33; ADR-0001 §2 鉴权与密钥: 自有 KeyProvider 接口，
 // 本地用文件密钥实现，云上用 KMS 实现; 规划/02 §12.3, §12.6「数据加密主密钥 | KMS | 通过信封加密间接使用」;
-// 规划/11 §8「真实密钥被本地栈加载」). SKELETON written by the rule-test author: the function below
-// throws `NotImplemented` until task B1-01k implements it. The rule tests in
+// 规划/11 §8「真实密钥被本地栈加载」). Contract written by the rule-test author, implemented by B1-01k.
+// The rule tests in
 // test/spec/platform/crypto/wiring-*.test.ts import this file by path and start entries through
 // `createHttpApp` / `createWorkerContext` of apps/api/src/bootstrap.ts; the names, signatures,
 // formats, error texts and the wiring written here are the contract. The variables and
@@ -112,7 +112,15 @@
 // tests also run this file in a plain `node --conditions=couli-src` process (Node's own type
 // stripping, no bundler): at run time it may import only `node:` modules and ../crypto/index.ts;
 // anything from ./config.ts or ./keyring.ts is imported with `import type`.
-import type { FieldCrypto } from '../crypto/index.ts';
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
+import {
+  FieldCryptoError,
+  LocalKeyProvider,
+  openFieldCrypto,
+  type FieldCrypto,
+  type WrappedKeyring,
+} from '../crypto/index.ts';
 import type { AppEnv } from './config.ts';
 import type { KeyringConfig } from './keyring.ts';
 
@@ -163,11 +171,91 @@ export class KeyringStartupError extends Error {
  * Opens the configured keyring (§3). Called by the FIELD_CRYPTO factory of PlatformModule while
  * Nest creates the providers.
  */
-export function openConfiguredFieldCrypto(
+export async function openConfiguredFieldCrypto(
   appEnv: AppEnv,
   keyring: KeyringConfig,
 ): Promise<FieldCrypto> {
-  void appEnv;
-  void keyring;
-  return Promise.reject(new Error('NotImplemented: openConfiguredFieldCrypto'));
+  if ((appEnv === 'staging' || appEnv === 'prod') && keyring.provider === 'local') {
+    throw new KeyringStartupError('local_in_cloud');
+  }
+  if (keyring.provider === 'kms') throw new KeyringStartupError('kms_unavailable');
+
+  const bytes = await readBoundedFile(
+    keyring.masterKeyFile,
+    65,
+    'master_key_unreadable',
+    'master_key_invalid',
+  );
+  const masterKey = Buffer.alloc(32);
+  let provider: LocalKeyProvider;
+  try {
+    if (bytes.length !== 64 && !(bytes.length === 65 && bytes[64] === 10)) {
+      throw new KeyringStartupError('master_key_invalid');
+    }
+    // Decode bytes directly: no immutable string or pooled copy of the master key.
+    for (const [index, byte] of bytes.subarray(0, 64).entries()) {
+      const nibble =
+        byte >= 48 && byte <= 57 ? byte - 48 : byte >= 97 && byte <= 102 ? byte - 87 : -1;
+      if (nibble === -1) throw new KeyringStartupError('master_key_invalid');
+      const position = index >> 1;
+      masterKey[position] = (masterKey[position] ?? 0) * 16 + nibble;
+    }
+    provider = new LocalKeyProvider(masterKey, LOCAL_MASTER_KEY_ID);
+  } finally {
+    masterKey.fill(0);
+    bytes.fill(0);
+  }
+
+  const keyringBytes = await readBoundedFile(
+    keyring.keyringFile,
+    KEYRING_FILE_MAX_BYTES,
+    'keyring_unreadable',
+    'keyring_invalid',
+  );
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(keyringBytes);
+    const document = JSON.parse(text) as WrappedKeyring;
+    return await openFieldCrypto(document, provider);
+  } catch (error) {
+    throw new KeyringStartupError(
+      error instanceof FieldCryptoError && error.code === 'key_provider_failed'
+        ? 'unwrap_failed'
+        : 'keyring_invalid',
+    );
+  } finally {
+    keyringBytes.fill(0);
+  }
+}
+
+/** Check and read the same descriptor; nonblocking open also rejects FIFOs without waiting. */
+async function readBoundedFile(
+  path: string,
+  limit: number,
+  unreadable: KeyringStartupErrorCode,
+  invalid: KeyringStartupErrorCode,
+): Promise<Buffer> {
+  let buffer: Buffer | undefined;
+  try {
+    const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    try {
+      const stat = await file.stat();
+      if (!stat.isFile()) throw new KeyringStartupError(unreadable);
+      if (stat.size > limit) throw new KeyringStartupError(invalid);
+      buffer = Buffer.alloc(limit);
+      let offset = 0;
+      while (offset < limit) {
+        const { bytesRead } = await file.read(buffer, offset, limit - offset, offset);
+        if (bytesRead === 0) break;
+        offset += bytesRead;
+      }
+      // A file growing during the read must not turn a valid prefix into accepted content.
+      if ((await file.stat()).size > limit) throw new KeyringStartupError(invalid);
+      return buffer.subarray(0, offset);
+    } finally {
+      await file.close();
+    }
+  } catch (error) {
+    buffer?.fill(0);
+    throw new KeyringStartupError(error instanceof KeyringStartupError ? error.code : unreadable);
+  }
 }

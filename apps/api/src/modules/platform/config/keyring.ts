@@ -1,8 +1,8 @@
 // Where the field-encryption keyring comes from (ADR-0001 §2 鉴权与密钥: 自有 KeyProvider 接口，本地用
 // 文件密钥实现，云上用 KMS 实现; ADR-0001 §2 配置校验: zod，启动时校验环境变量; 规划/02 §12.3, §12.6
 // 「数据加密主密钥 | KMS | 通过信封加密间接使用」; 规划/11 §8「真实密钥被本地栈加载」; 规划/08 BR-ID-33).
-// SKELETON written by the rule-test author: the function below throws `NotImplemented` until task
-// B1-01k implements it. The rule tests in test/spec/platform/crypto/wiring-*.test.ts call
+// Contract written by the rule-test author, implemented by B1-01k.
+// The rule tests in test/spec/platform/crypto/wiring-*.test.ts call
 // `loadConfig` of ./config.ts and import the types of this file by path; the variable names, the
 // problem texts and the `AppConfig.keyring` shape written here are the contract. Choices that no
 // document fixes are marked 待编排会话确认 (the suggested default is what is written).
@@ -90,10 +90,27 @@
 // Rules for the implementation: erasable syntax only (this directory is also compiled by the
 // `test` project), `import type` for type-only imports, relative imports with the `.ts` extension.
 
-import type { AppEnv } from './config.ts';
+import { z } from 'zod';
+import type { AppEnv } from './app-env.ts';
 
 export const KEY_PROVIDER_NAMES = ['local', 'kms'] as const;
 export type KeyProviderName = (typeof KEY_PROVIDER_NAMES)[number];
+
+const keyringEnvSchema = z.object({
+  FIELD_KEY_PROVIDER: z.string().default(''),
+  FIELD_KEYRING_FILE: z.string().default(''),
+  FIELD_MASTER_KEY_FILE: z.string().default(''),
+});
+const providerSchema = z.enum(KEY_PROVIDER_NAMES);
+const pathSchema = z
+  .string()
+  .startsWith('/')
+  .refine((path) =>
+    Array.from(path).every((character) => {
+      const code = character.charCodeAt(0);
+      return code > 31 && code !== 127;
+    }),
+  );
 
 /** `AppConfig.keyring` when a provider is configured. Paths are absolute, as given. */
 export type KeyringConfig =
@@ -116,7 +133,52 @@ export function readKeyringConfig(
   appEnv: AppEnv,
   env: Readonly<Record<string, string | undefined>>,
 ): { readonly keyring: KeyringConfig | null; readonly problems: readonly string[] } {
-  void appEnv;
-  void env;
-  throw new Error('NotImplemented: readKeyringConfig');
+  const values = keyringEnvSchema.parse(env);
+  const provider = values.FIELD_KEY_PROVIDER;
+  const keyringFile = values.FIELD_KEYRING_FILE;
+  const masterKeyFile = values.FIELD_MASTER_KEY_FILE;
+  const cloud = appEnv === 'staging' || appEnv === 'prod';
+  const problems: string[] = [];
+
+  if (provider === '') {
+    if (cloud) problems.push(`FIELD_KEY_PROVIDER: must be set when APP_ENV=${appEnv}`);
+    for (const name of ['FIELD_KEYRING_FILE', 'FIELD_MASTER_KEY_FILE'] as const) {
+      if (values[name] !== '') problems.push(`${name}: must not be set without FIELD_KEY_PROVIDER`);
+    }
+    return { keyring: null, problems };
+  }
+  const parsedProvider = providerSchema.safeParse(provider);
+  if (!parsedProvider.success) {
+    return { keyring: null, problems: ['FIELD_KEY_PROVIDER: must be local or kms'] };
+  }
+  if (provider === 'local' && cloud) {
+    problems.push(
+      `FIELD_KEY_PROVIDER: local must not be used when APP_ENV=${appEnv} (cloud keys come from KMS)`,
+    );
+  } else if (provider === 'kms' && !cloud) {
+    problems.push(
+      `FIELD_KEY_PROVIDER: kms must not be used when APP_ENV=${appEnv} (local and test never load real keys)`,
+    );
+  }
+  if (keyringFile === '') {
+    problems.push('FIELD_KEYRING_FILE: must be set when FIELD_KEY_PROVIDER is set');
+  } else if (!pathSchema.safeParse(keyringFile).success) {
+    problems.push('FIELD_KEYRING_FILE: must be an absolute path');
+  }
+  if (provider === 'local') {
+    if (masterKeyFile === '') {
+      problems.push('FIELD_MASTER_KEY_FILE: must be set when FIELD_KEY_PROVIDER=local');
+    } else if (!pathSchema.safeParse(masterKeyFile).success) {
+      problems.push('FIELD_MASTER_KEY_FILE: must be an absolute path');
+    }
+  } else if (masterKeyFile !== '') {
+    problems.push('FIELD_MASTER_KEY_FILE: must not be set when FIELD_KEY_PROVIDER=kms');
+  }
+  return {
+    keyring:
+      provider === 'local'
+        ? { provider, keyringFile, masterKeyFile }
+        : { provider: 'kms', keyringFile },
+    problems,
+  };
 }
