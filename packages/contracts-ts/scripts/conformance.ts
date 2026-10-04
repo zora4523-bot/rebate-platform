@@ -42,6 +42,7 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AuthMethod: 'auth_method',
   NoRebateCause: 'no_rebate_cause',
   TipKey: 'tip_key',
+  PayoutMethod: 'payout_method',
   DeletionStatus: 'deletion_status',
   DeletionCancelReason: 'deletion_cancel_reason',
   OrderStatusGroup: 'order_status_group',
@@ -143,6 +144,8 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'StepUpByAppleRequest/properties/provider': 'login_provider',
   'StepUpByHuaweiRequest/properties/provider': 'login_provider',
   ResettableTipKey: 'tip_key',
+  'SavePayoutAccountByAlipay/properties/payout_method': 'payout_method',
+  'SavePayoutAccountByBankCard/properties/payout_method': 'payout_method',
 };
 
 function isObj(v: unknown): v is Obj {

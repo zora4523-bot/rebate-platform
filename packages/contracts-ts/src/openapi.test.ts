@@ -194,3 +194,18 @@ it('me: invite_backfill, tips and deletion (04 §6.1)', () => {
   };
   expect(tips.inviter_before_buy).toBeNull();
 });
+
+it('payout account: masked GET, PUT body by method (04 §6.1)', () => {
+  expectTypeOf<Schema<'PayoutAccount'>['payout_method']>().toEqualTypeOf<'alipay' | 'bank_card'>();
+  const alipay: Schema<'SavePayoutAccountRequest'> = {
+    payout_method: 'alipay',
+    alipay_logon_id: 'zhangsan@example.com',
+    payee_name: '张三',
+  };
+  // @ts-expect-error a bank card needs card_no and bank_name
+  const card: Schema<'SavePayoutAccountRequest'> = {
+    payout_method: 'bank_card',
+    payee_name: '张三',
+  };
+  expect([alipay, card]).toHaveLength(2);
+});
