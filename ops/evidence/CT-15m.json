@@ -1,0 +1,102 @@
+{
+  "task": "CT-15m",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "c775a41c7694f3baa6960a313cf490c4dbf12d00",
+  "red_tests": [
+    "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#1] link-patterns 生成常量存在且与 YAML 全量一致，缺失或漂移必须失败",
+    "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#2] link-patterns 重新生成的文本与已入库文件逐字一致",
+    "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#3] link-patterns 非空生成保留版本字符串、所有字段及规则和嵌套数组顺序",
+    "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#4] link-patterns 运行时取值与源规格一致",
+    "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#5] platform/index.ts 提供 link-patterns 常量及取值函数",
+    "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#6] material-channels 生成常量存在且与 YAML 全量一致，缺失或漂移必须失败",
+    "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#7] material-channels 重新生成的文本与已入库文件逐字一致",
+    "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#8] material-channels 非空生成保留顺序、版本、频道 ID 和全部字段，不丢弃 false",
+    "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#9] material-channels 运行时取值与源规格一致",
+    "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#10] platform/index.ts 提供 material-channels 常量及取值函数"
+  ],
+  "risk_note": "RV2 (platform/**). Build-time generated TS constants for specs/link-patterns.yaml and specs/material-channels.yaml in apps/api platform/specs (YAML parsed with the existing @readme/openapi-parser; order, fields and version strings kept; no runtime YAML reads), exported from platform/index.ts. Both specs are still empty tables (version '0'). Written by hand (no evidence generator yet).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c775a41c7694f3baa6960a313cf490c4dbf12d00",
+      "tree": "1a331cf03b64cefc3083f0928d60b55015a49315",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T21:51:53Z",
+      "finished_at": "2026-10-05T21:51:57Z",
+      "red_tests": [
+        "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#1] link-patterns 生成常量存在且与 YAML 全量一致，缺失或漂移必须失败",
+        "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#2] link-patterns 重新生成的文本与已入库文件逐字一致",
+        "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#3] link-patterns 非空生成保留版本字符串、所有字段及规则和嵌套数组顺序",
+        "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#4] link-patterns 运行时取值与源规格一致",
+        "test/spec/platform/specs/link-patterns.test.ts > [AC-CT-15m#5] platform/index.ts 提供 link-patterns 常量及取值函数",
+        "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#6] material-channels 生成常量存在且与 YAML 全量一致，缺失或漂移必须失败",
+        "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#7] material-channels 重新生成的文本与已入库文件逐字一致",
+        "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#8] material-channels 非空生成保留顺序、版本、频道 ID 和全部字段，不丢弃 false",
+        "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#9] material-channels 运行时取值与源规格一致",
+        "test/spec/platform/specs/material-channels.test.ts > [AC-CT-15m#10] platform/index.ts 提供 material-channels 常量及取值函数"
+      ],
+      "expected": [
+        "test/spec/platform/specs/link-patterns.test.ts",
+        "test/spec/platform/specs/material-channels.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "c8a1216e7063a7fa6a4ad84a48a4f5d9d6076dbb0e775db561148c4f09bef817"
+        }
+      ]
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "71e2c9cddac6fc3f9e325aaee0dbf98f94298fc0",
+      "tree": "73a05eb7aeda9e772ad353b89d3a600735af155b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T21:51:57Z",
+      "finished_at": "2026-10-05T21:53:35Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: pass; S2: link pattern categories and platform type are copied by hand instead of the generated contract types"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex read-only money review round 1: pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: pass; S2s (getter should return the constant itself; sample platforms pre-sorted) handled in the implementation"
+  },
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "42e0f88e76d0d70332a365126eedf43dcb08f914",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (tree f03b0e3, the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others); this task adds no test/properties files",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
