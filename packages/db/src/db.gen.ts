@@ -304,6 +304,8 @@ export interface Links {
   pid_scene: string | null;
   platform: string;
   product_key: string | null;
+  promo_url: string | null;
+  promo_url_fetched_at: Timestamp | null;
   quoted_at: Timestamp | null;
   quoted_coupon_fen: ColumnType<bigint, bigint, bigint> | null;
   quoted_coupon_id: string | null;
@@ -620,6 +622,39 @@ export interface UnionAccounts {
   updated_at: Generated<Timestamp>;
 }
 
+export interface UnionAuthSessions {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  expire_at: Timestamp;
+  link_id: string | null;
+  mode: string;
+  platform: string;
+  state: string;
+  used_at: Timestamp | null;
+  user_id: string;
+}
+
+export interface UnionBindings {
+  app_id: string;
+  blocked_reason: string | null;
+  bound_at: Timestamp | null;
+  cooldown_until: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  pdd_custom: string | null;
+  platform: string;
+  reason: string | null;
+  relation_id: string | null;
+  released_at: Timestamp | null;
+  row_version: Generated<number>;
+  special_id: string | null;
+  status: string;
+  union_account_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface UnionCredentials {
   access_token_cipher: Buffer;
   app_id: string;
@@ -747,6 +782,8 @@ export interface DB {
   risk_rules: RiskRules;
   sessions: Sessions;
   union_accounts: UnionAccounts;
+  union_auth_sessions: UnionAuthSessions;
+  union_bindings: UnionBindings;
   union_credentials: UnionCredentials;
   union_pids: UnionPids;
   user_oauth: UserOauth;

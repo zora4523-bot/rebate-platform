@@ -573,6 +573,27 @@ $$;
 
 
 --
+-- Name: reject_link_promo_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_link_promo_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (OLD.promo_url IS NOT NULL AND NEW.promo_url IS DISTINCT FROM OLD.promo_url)
+    OR (OLD.promo_url_fetched_at IS NOT NULL
+      AND NEW.promo_url_fetched_at IS DISTINCT FROM OLD.promo_url_fetched_at)
+  THEN
+    RAISE EXCEPTION 'links promotion link is write-once'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_link_quote_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -638,6 +659,30 @@ BEGIN
     IS DISTINCT FROM ROW(OLD.app_id, OLD.product_key, OLD.platform)
   THEN
     RAISE EXCEPTION 'product_refs identity (app_id, product_key, platform) is immutable'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_union_auth_session_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_union_auth_session_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.state, NEW.app_id, NEW.user_id, NEW.device_id, NEW.platform, NEW.mode,
+         NEW.link_id, NEW.expire_at, NEW.created_at)
+      IS DISTINCT FROM
+      ROW(OLD.state, OLD.app_id, OLD.user_id, OLD.device_id, OLD.platform, OLD.mode,
+          OLD.link_id, OLD.expire_at, OLD.created_at)
+    OR (OLD.used_at IS NOT NULL AND NEW.used_at IS DISTINCT FROM OLD.used_at)
+  THEN
+    RAISE EXCEPTION 'union_auth_sessions are immutable and used_at is write-once'
       USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
@@ -1470,7 +1515,9 @@ CREATE TABLE app.links (
     agent_card_id text,
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    promo_url text,
+    promo_url_fetched_at timestamp with time zone
 );
 
 
@@ -2054,6 +2101,55 @@ CREATE TABLE app.union_accounts (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT union_accounts_alert_stage_check CHECK ((alert_stage = ANY (ARRAY['none'::text, 'd14'::text, 'd7'::text, 'd1'::text, 'expired'::text]))),
     CONSTRAINT union_accounts_auth_status_check CHECK ((auth_status = ANY (ARRAY['active'::text, 'expiring'::text, 'expired'::text])))
+);
+
+
+--
+-- Name: union_auth_sessions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.union_auth_sessions (
+    state text NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    device_id uuid NOT NULL,
+    platform text NOT NULL,
+    mode text NOT NULL,
+    link_id uuid,
+    expire_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT union_auth_sessions_mode_check CHECK ((mode = 'bind'::text))
+);
+
+
+--
+-- Name: union_bindings; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.union_bindings (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    platform text NOT NULL,
+    union_account_id uuid NOT NULL,
+    relation_id text,
+    special_id text,
+    pdd_custom text,
+    status text NOT NULL,
+    bound_at timestamp with time zone,
+    released_at timestamp with time zone,
+    cooldown_until timestamp with time zone,
+    blocked_reason text,
+    reason text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT union_bindings_blocked_reason_check CHECK ((blocked_reason = ANY (ARRAY['ban'::text, 'admin_disable'::text, 'deletion'::text]))),
+    CONSTRAINT union_bindings_cooldown_order_check CHECK ((cooldown_until >= released_at)),
+    CONSTRAINT union_bindings_release_pair_check CHECK (((released_at IS NULL) = (cooldown_until IS NULL))),
+    CONSTRAINT union_bindings_released_instants_check CHECK (((status <> 'released'::text) OR (released_at IS NOT NULL))),
+    CONSTRAINT union_bindings_status_check CHECK ((status = ANY (ARRAY['unbound'::text, 'pending_auth'::text, 'active'::text, 'invalid'::text, 'released'::text, 'blocked'::text])))
 );
 
 
@@ -2955,6 +3051,22 @@ ALTER TABLE ONLY app.union_accounts
 
 
 --
+-- Name: union_auth_sessions union_auth_sessions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_auth_sessions
+    ADD CONSTRAINT union_auth_sessions_pkey PRIMARY KEY (state);
+
+
+--
+-- Name: union_bindings union_bindings_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_bindings
+    ADD CONSTRAINT union_bindings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: union_credentials union_credentials_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -3454,6 +3566,41 @@ CREATE INDEX union_accounts_auth_renewed_by_idx ON app.union_accounts USING btre
 
 
 --
+-- Name: union_auth_sessions_user_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_auth_sessions_user_idx ON app.union_auth_sessions USING btree (app_id, user_id, created_at);
+
+
+--
+-- Name: union_bindings_relation_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_bindings_relation_idx ON app.union_bindings USING btree (app_id, platform, relation_id);
+
+
+--
+-- Name: union_bindings_relation_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX union_bindings_relation_key ON app.union_bindings USING btree (app_id, union_account_id, platform, relation_id) WHERE (status = ANY (ARRAY['active'::text, 'invalid'::text, 'blocked'::text]));
+
+
+--
+-- Name: union_bindings_user_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_bindings_user_idx ON app.union_bindings USING btree (app_id, user_id);
+
+
+--
+-- Name: union_bindings_user_platform_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX union_bindings_user_platform_key ON app.union_bindings USING btree (app_id, user_id, platform) WHERE (status = ANY (ARRAY['pending_auth'::text, 'active'::text, 'invalid'::text, 'blocked'::text]));
+
+
+--
 -- Name: union_credentials_account_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -3678,6 +3825,13 @@ CREATE TRIGGER link_open_attempts_no_rewrite BEFORE UPDATE ON app.link_open_atte
 
 
 --
+-- Name: links links_no_promo_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER links_no_promo_rewrite BEFORE UPDATE ON app.links FOR EACH ROW EXECUTE FUNCTION app.reject_link_promo_rewrite();
+
+
+--
 -- Name: links links_no_quote_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -3724,6 +3878,13 @@ CREATE TRIGGER product_key_aliases_append_only BEFORE DELETE OR UPDATE ON app.pr
 --
 
 CREATE TRIGGER product_refs_no_key_rewrite BEFORE UPDATE ON app.product_refs FOR EACH ROW EXECUTE FUNCTION app.reject_product_ref_key_rewrite();
+
+
+--
+-- Name: union_auth_sessions union_auth_sessions_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER union_auth_sessions_no_rewrite BEFORE UPDATE ON app.union_auth_sessions FOR EACH ROW EXECUTE FUNCTION app.reject_union_auth_session_rewrite();
 
 
 --
@@ -4022,6 +4183,46 @@ ALTER TABLE ONLY app.union_accounts
 
 
 --
+-- Name: union_auth_sessions union_auth_sessions_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_auth_sessions
+    ADD CONSTRAINT union_auth_sessions_device_fkey FOREIGN KEY (app_id, device_id) REFERENCES app.devices(app_id, id);
+
+
+--
+-- Name: union_auth_sessions union_auth_sessions_link_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_auth_sessions
+    ADD CONSTRAINT union_auth_sessions_link_fkey FOREIGN KEY (app_id, link_id) REFERENCES app.links(app_id, link_id);
+
+
+--
+-- Name: union_auth_sessions union_auth_sessions_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_auth_sessions
+    ADD CONSTRAINT union_auth_sessions_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: union_bindings union_bindings_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_bindings
+    ADD CONSTRAINT union_bindings_account_fkey FOREIGN KEY (app_id, platform, union_account_id) REFERENCES app.union_accounts(app_id, platform, id);
+
+
+--
+-- Name: union_bindings union_bindings_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_bindings
+    ADD CONSTRAINT union_bindings_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: union_credentials union_credentials_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4190,6 +4391,13 @@ REVOKE ALL ON FUNCTION app.reject_link_open_attempt_rewrite() FROM PUBLIC;
 
 
 --
+-- Name: FUNCTION reject_link_promo_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_link_promo_rewrite() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION reject_link_quote_rewrite(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -4208,6 +4416,13 @@ REVOKE ALL ON FUNCTION app.reject_order_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_product_ref_key_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_union_auth_session_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_union_auth_session_rewrite() FROM PUBLIC;
 
 
 --
@@ -5344,6 +5559,29 @@ GRANT UPDATE(updated_at) ON TABLE app.sessions TO couli_app;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.union_accounts TO couli_app;
 GRANT SELECT ON TABLE app.union_accounts TO couli_readonly;
+
+
+--
+-- Name: TABLE union_auth_sessions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.union_auth_sessions TO couli_app;
+GRANT SELECT ON TABLE app.union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN union_auth_sessions.used_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(used_at) ON TABLE app.union_auth_sessions TO couli_app;
+
+
+--
+-- Name: TABLE union_bindings; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.union_bindings TO couli_app;
+GRANT SELECT ON TABLE app.union_bindings TO couli_readonly;
 
 
 --
