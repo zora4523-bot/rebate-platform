@@ -1,12 +1,11 @@
-// @couli/ui-tokens: design tokens for H5 and admin.
-//   `.`              TS theme object (this file)
+// @couli/ui-tokens: design tokens for H5 and admin (规划/03 §10.1), from the snapshot in
+// contracts/design-tokens.json.
+//   `.`              TS theme object (var() references) and the pure generators
 //   `./tokens.css`   CSS variables      -> src/tokens.gen.css   (generated)
-//   `./tailwind.css` Tailwind 4 @theme  -> src/tailwind.gen.css (generated)
-// TODO(规划/11 §2.3): the token snapshot, the theme object and both generated CSS files are implemented by CT-11a — blocked on CT-11a
+//   `./tailwind.css` Tailwind 4 @theme  -> src/tailwind.gen.css (generated, needs tokens.css)
+// Regenerate all three: node packages/ui-tokens/scripts/generate.ts
 
-/** Workspace package name; the only export until CT-11a lands. */
-export const PACKAGE_NAME = '@couli/ui-tokens';
-
+export { tokenTheme } from './theme.gen.ts';
 export {
   generateTokensCss,
   generateTailwindCss,
