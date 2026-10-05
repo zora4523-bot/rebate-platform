@@ -25,11 +25,12 @@ enums:
       oaid: Android OAID（MVP 不集成获取方式，预留）
       odid: 鸿蒙 ODID
   oauth_attempt_purpose:
-    source: 规划/04 §6.1；BR-ID-04、BR-ID-08
+    source: 规划/04 §6.1；BR-ID-04、BR-ID-08、BR-WDR-33 ②
     description: 第三方授权尝试的用途（POST /v1/auth/oauth-attempts）
     values:
       login: 登录
       step_up: 二次验证
+      payout_bind: 收款授权（只用于绑定微信零钱收款账号；不登录、不签发令牌，BR-ID-04 细则「收款授权」）
   session_scope:
     source: 规划/04 §2.5、§5；BR-ID-01
     description: access_token 的 scp；登录与刷新按这次请求的客户端版本判定，含义与可调用的接口见 BR-ID-01 细则「受限会话」
@@ -71,6 +72,18 @@ enums:
       id_verification: 实名授权
       personalization: 个性化推荐
       labor_agreement: 劳务协议
+  consent_channel:
+    source: 规划/04 §3.2 consent_records；BR-ID-12 细则
+    description: consent_records.channel，同意发生的入口；login_merge、h5_landing、withdraw_flow 只由服务端写入（登录合并、落地页注册、劳务协议签署），不经 POST /v1/consents 提交
+    values:
+      first_launch: 首启隐私弹窗
+      login_page: 登录页协议勾选
+      h5_landing: 邀请落地页注册
+      agent_sheet: Agent 同意半屏
+      realname_sheet: 实名授权半屏
+      privacy_center: 隐私中心
+      login_merge: 登录时设备级记录并入用户级
+      withdraw_flow: 提现流程中签署劳务协议（BR-WDR-31）
   auth_method:
     source: 规划/04 §6.3；BR-ID-17
     description: 淘宝授权方式（auth-url 的 auth_methods、bindings 的 auth_method）；按端由服务端配置下发

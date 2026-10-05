@@ -1,5 +1,5 @@
 // Task ledgers written before the default split of 2026-10-05 (Codex review CR2-02): the fixed
-// list in tools/guard/legacy-tasks.json (ops/tasks at the switch baseline dec8a3d). Only these may
+// list in tools/guard/legacy-tasks.json (every ops/tasks id on origin/main b97ee61 when the switch was merged). Only these may
 // omit `test_paths`; read from the trusted root by the guards. A missing or broken file means an
 // empty list (fail-closed: every task with a rule-test author then needs test_paths).
 import { existsSync, readFileSync } from 'node:fs';

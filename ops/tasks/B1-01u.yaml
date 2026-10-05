@@ -1,0 +1,21 @@
+id: B1-01u
+repo: rebate-platform
+title: 日志脱敏补漏：访问日志的 hostname（取自客户端 Host 头）过自由文本检查；blob URL 不再重复写出 origin
+type: impl
+# B1-01o 代码评审第 1 轮 Claude 的两条 S2（按 approvals #18 降级）：followups/B1-01c-url-path-and-trace-id.md
+# 第 7、8 项。场景：Host: 13987654321.example 的请求，访问日志 hostname 原样写出号码；blob:https://x.example/<id>
+# 写成 origin 两遍。hostname 与 URL 的其他部分用同一套自由文本规则；不改 B1-01c / B1-01o 的已有规则测试，
+# 契约补充写在新规则测试文件头。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: 01b25f773b29
+deps: [B1-01o]
+paths:
+  - 'apps/api/src/modules/platform/logging/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/masking/**'
+status: todo
+pr: null

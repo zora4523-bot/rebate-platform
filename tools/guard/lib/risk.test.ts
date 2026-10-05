@@ -15,6 +15,7 @@ describe('ops/risk-map.yaml', () => {
       'contracts/** RV1 claude/codex/codex',
       'packages/contracts-ts/** RV1 claude/codex/codex',
       'apps/api/src/modules/health/** RV1 claude/codex/codex',
+      'apps/api/src/modules/identity/** RV1 claude/codex/codex',
       'apps/api/src/modules/platform/** RV2 claude/codex/claude+codex',
       'packages/money/** RV2 claude/codex/claude+codex',
       'packages/domain/** RV2 claude/codex/claude+codex',

@@ -54,6 +54,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   LoginProvider: 'login_provider',
   OauthAttemptPurpose: 'oauth_attempt_purpose',
   LinkKind: 'link_kind',
+  AppealStatus: 'appeal_status',
+  AppealTargetType: 'appeal_target_type',
 };
 
 /**
@@ -154,6 +156,8 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'SavePayoutAccountByBankCard/properties/payout_method': 'payout_method',
   'PayoutAccountAlipay/properties/payout_method': 'payout_method',
   'PayoutAccountBankCard/properties/payout_method': 'payout_method',
+  'RecordConsentRequest/properties/type': 'consent_type',
+  'RecordConsentRequest/properties/channel': 'consent_channel',
 };
 
 function isObj(v: unknown): v is Obj {

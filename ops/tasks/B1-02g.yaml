@@ -1,0 +1,24 @@
+id: B1-02g
+repo: rebate-platform
+title: platform：作废接口 POST /v1/idempotency-keys/abandon 的 HTTP 路由（鉴权与条件作用域、调用已有 abandon 原语、去 planned 标记）
+type: impl
+# 2026-10-05 入账，B1-02 拆分的一段（05 B1-02 行：「作废接口…（platform 模块…）」）。原语与表约束已由 B1-01i、CT-16b 完成，
+# 源码 apps/api/src/modules/platform/idempotency/index.ts 把路由留给 B1-02。依据：BR-ID-10 细则「敏感操作的幂等键」、
+# BR-ID-01 细则（版本守卫与受限会话：conditional）、BR-ID-31（10006 白名单）、04 §6.1 作废接口行，由编排者摘入任务书第 2 节。
+# 需要登录会话（B1-02e）。platform 路径为 RV2：两家评审、容器验证、证据文件。
+# test_paths：test/spec/platform/idempotency/abandon-route/**（task-file.ts 还不认该字段；在它接受前，测试阶段的允许路径由编排会话写进任务书，规则测试只放第一类测试资产目录，spec_commit 前其余改动只许 NotImplemented 骨架，tools/guard/lib/spec-base.ts 已强制）。
+refs: []
+refs_hash: {}
+deps: [B1-02e]
+paths:
+  - 'apps/api/src/modules/platform/idempotency/**'
+  - 'apps/api/src/modules/platform/http/public/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'contracts/openapi.yaml'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/idempotency/abandon-route/**'
+status: todo
+pr: null

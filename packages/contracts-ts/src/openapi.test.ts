@@ -1,4 +1,7 @@
-import { expect, expectTypeOf, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { beforeAll, expect, expectTypeOf, it } from 'vitest';
 import { createApiClient, type Schema } from './index.ts';
 
 type OpenLinkResponse = Schema<'OpenLinkResponse'>;
@@ -282,4 +285,422 @@ it('earnings dashboard: signed credited_fen, referral nullable without count (04
   // @ts-expect-error the referral column has no paid_count (BR-FUND-25)
   const referral: Schema<'ReferralEarningsPeriod'> = { paid_count: 1, est_fen: 0, credited_fen: 0 };
   expect([period, referral]).toHaveLength(2);
+});
+
+// Reuse the API workspace's installed contract validator (ADR-0001 §4.2 #15).
+// This test-only loader adds no runtime dependency from contracts-ts to the API.
+const apiRequire = createRequire(new URL('../../../apps/api/package.json', import.meta.url));
+const testRequire = createRequire(import.meta.url);
+interface ContractValidator {
+  addFormat(name: string, format: { type: 'number'; validate: (value: number) => boolean }): void;
+  compile(schema: object): (data: unknown) => boolean;
+}
+const { Ajv2020 } = apiRequire('ajv/dist/2020.js') as {
+  Ajv2020: new (options: { strict: true; allErrors: true }) => ContractValidator;
+};
+const addFormats = apiRequire('ajv-formats') as (ajv: ContractValidator) => void;
+const { dereference } = apiRequire('@readme/openapi-parser') as {
+  dereference(path: string): Promise<unknown>;
+};
+const { parseYamlLite } = testRequire('../../../tools/lib/yaml-lite.ts') as {
+  parseYamlLite(text: string): unknown;
+};
+
+type ContractOperation = {
+  description: string;
+  security: Record<string, string[]>[];
+  parameters: { name: string; in: string }[];
+  requestBody: { required: boolean; content: { 'application/json': { schema: object } } };
+  responses: Record<string, { content: { 'application/json': { schema: object } } }>;
+  'x-auth': string;
+  'x-signed': boolean;
+  'x-idempotent': boolean;
+  'x-min-version-gate': boolean | 'conditional';
+  'x-session-scopes': string[];
+};
+type ContractDocument = {
+  paths: Record<string, { post: ContractOperation }>;
+  components: { schemas: Record<string, object & { enum?: string[] }> };
+};
+let contract: ContractDocument;
+let validateConsent: (data: unknown) => boolean;
+let validateOauthAttempt: (data: unknown) => boolean;
+let validateLogout: (data: unknown) => boolean;
+
+beforeAll(async () => {
+  contract = (await dereference(
+    fileURLToPath(new URL('../../../contracts/openapi.yaml', import.meta.url)),
+  )) as ContractDocument;
+  const ajv = new Ajv2020({ strict: true, allErrors: true });
+  addFormats(ajv);
+  ajv.addFormat('int32', {
+    type: 'number',
+    validate: (value) => Number.isInteger(value) && value >= -(2 ** 31) && value <= 2 ** 31 - 1,
+  });
+  validateConsent = ajv.compile(contract.components.schemas['RecordConsentRequest']!);
+  validateOauthAttempt = ajv.compile(contract.components.schemas['CreateOauthAttemptRequest']!);
+  validateLogout = ajv.compile(
+    contract.paths['/v1/auth/logout']!.post.responses['200']!.content['application/json'].schema,
+  );
+});
+
+it('logout requires bearer login without signing, idempotency or a version gate (04 §6.1, BR-ID-01)', () => {
+  const logout = contract.paths['/v1/auth/logout']!.post;
+  expect(logout['x-auth']).toBe('login');
+  expect(logout.security).toEqual([{ bearerAuth: [] }]);
+  expect(logout['x-signed']).toBe(false);
+  expect(logout['x-idempotent']).toBe(false);
+  expect(logout['x-min-version-gate']).toBe(false);
+  expect(logout['x-session-scopes']).toContain('deletion_only');
+  const headers = logout.parameters
+    .filter((p) => p.in === 'header')
+    .map((p) => p.name.toLowerCase());
+  for (const name of ['x-timestamp', 'x-nonce', 'x-sign', 'idempotency-key']) {
+    expect(headers).not.toContain(name);
+  }
+});
+
+it('logout 200 has an empty data object (04 §6.1)', () => {
+  const response = { code: 0, msg: '', data: {}, trace_id: 'logout-trace' };
+  expect(validateLogout(response)).toBe(true);
+  for (const data of [null, [], '', { session_id: 'unexpected' }]) {
+    expect(validateLogout({ ...response, data }), JSON.stringify(data)).toBe(false);
+  }
+  const withoutData: Record<string, unknown> = { ...response };
+  delete withoutData['data'];
+  expect(validateLogout(withoutData)).toBe(false);
+});
+
+const consentSample = {
+  type: 'privacy',
+  version: 1,
+  accepted: true,
+  channel: 'first_launch',
+  client_at: '2026-10-05T09:30:00+08:00',
+};
+
+it('consents accepts the five client types and five channels, including withdrawals (BR-ID-12)', () => {
+  const operation = contract.paths['/v1/consents']!.post;
+  expect(operation.requestBody.required).toBe(true);
+  expect(operation.requestBody.content['application/json'].schema).toEqual(
+    contract.components.schemas['RecordConsentRequest'],
+  );
+  for (const type of [
+    'privacy',
+    'agreement',
+    'ai_third_party',
+    'id_verification',
+    'personalization',
+  ]) {
+    for (const channel of [
+      'first_launch',
+      'login_page',
+      'agent_sheet',
+      'realname_sheet',
+      'privacy_center',
+    ]) {
+      for (const accepted of [true, false]) {
+        const body = { ...consentSample, type, channel, accepted };
+        expect(validateConsent(body), JSON.stringify(body)).toBe(true);
+      }
+    }
+  }
+});
+
+it('consents rejects labor agreements and server-written channels (BR-ID-12, 04 §6.1)', () => {
+  expect(validateConsent({ ...consentSample, type: 'labor_agreement' })).toBe(false);
+  for (const channel of ['login_merge', 'h5_landing', 'withdraw_flow']) {
+    expect(validateConsent({ ...consentSample, channel }), channel).toBe(false);
+  }
+});
+
+it('consents requires a positive integer version (BR-ID-12)', () => {
+  for (const version of [0, -1, 1.5, '1']) {
+    expect(validateConsent({ ...consentSample, version }), String(version)).toBe(false);
+  }
+  expect(validateConsent({ ...consentSample, version: 2 })).toBe(true);
+});
+
+it('consents requires every field and rejects additional fields (BR-ID-12)', () => {
+  for (const field of ['type', 'version', 'accepted', 'channel', 'client_at']) {
+    const body: Record<string, unknown> = { ...consentSample };
+    delete body[field];
+    expect(validateConsent(body), `missing ${field}`).toBe(false);
+  }
+  for (const extra of [
+    { unexpected: true },
+    { subject_type: 'user' },
+    { user_id: 'another-user' },
+    { device_id: 'another-device' },
+    { server_at: consentSample.client_at },
+  ]) {
+    expect(validateConsent({ ...consentSample, ...extra }), JSON.stringify(extra)).toBe(false);
+  }
+});
+
+it('consents allows anonymous or bearer requests with conditional version and session gates (04 §6.1, BR-ID-01)', () => {
+  const operation = contract.paths['/v1/consents']!.post;
+  expect(operation['x-auth']).toBe('optional');
+  expect(operation.security).toHaveLength(2);
+  expect(operation.security).toEqual(expect.arrayContaining([{}, { bearerAuth: [] }]));
+  expect(operation['x-min-version-gate']).toBe('conditional');
+  expect(operation['x-session-scopes']).toEqual(['full', 'deletion_only']);
+  // These extensions store the conditional rules in prose (OpenAPI info.description).
+  const description = operation.description.replace(/\s+/g, ' ');
+  expect(description).toMatch(
+    /Version gate \(conditional\): not applied to accepted=false of any type, nor to type privacy or agreement; applied otherwise/,
+  );
+  expect(description).toMatch(
+    /deletion_only session is accepted only for the same requests \(any withdrawal, and privacy or agreement records\)/,
+  );
+});
+
+it('payout_bind attempts accept only WeChat without action (04 §6.1, CT-20a)', () => {
+  expect(validateOauthAttempt({ provider: 'wechat', purpose: 'payout_bind' })).toBe(true);
+  for (const provider of ['apple', 'huawei']) {
+    expect(validateOauthAttempt({ provider, purpose: 'payout_bind' }), provider).toBe(false);
+  }
+  for (const action of ['withdraw', 'payout_account_change', 'phone_change', 'account_deletion']) {
+    expect(
+      validateOauthAttempt({ provider: 'wechat', purpose: 'payout_bind', action }),
+      action,
+    ).toBe(false);
+  }
+});
+
+it('OauthAttemptPurpose matches identity.yaml oauth_attempt_purpose (04 §6.1, CT-20a)', () => {
+  const identity = parseYamlLite(
+    readFileSync(new URL('../../../contracts/enums/identity.yaml', import.meta.url), 'utf8'),
+  ) as { enums: { oauth_attempt_purpose: { values: Record<string, string> } } };
+  const purposes = contract.components.schemas['OauthAttemptPurpose']!.enum;
+  expect(purposes).toBeDefined();
+  expect([...(purposes ?? [])].sort()).toEqual(
+    Object.keys(identity.enums.oauth_attempt_purpose.values).sort(),
+  );
+  expect(purposes).toContain('payout_bind');
+});
+
+// CT-02c reads the operations instead of naming schemas that the implementer has not chosen yet.
+type AppealSchema = {
+  type?: string | string[];
+  properties?: Record<string, AppealSchema>;
+  items?: AppealSchema;
+  required?: string[];
+  enum?: string[];
+};
+type AppealOperation = Omit<ContractOperation, 'parameters'> & {
+  summary?: string;
+  parameters: { name: string; in: string; required?: boolean; schema: AppealSchema }[];
+};
+
+function appealOperation(method: 'get' | 'post'): AppealOperation {
+  const path = contract.paths['/v1/me/appeals'] as
+    Partial<Record<'get' | 'post', AppealOperation>> | undefined;
+  expect(path?.[method], `${method.toUpperCase()} /v1/me/appeals must exist`).toBeDefined();
+  return path![method]!;
+}
+
+function appealProperty(schema: AppealSchema, name: string): AppealSchema {
+  expect(schema.properties?.[name], `schema property ${name}`).toBeDefined();
+  return schema.properties![name]!;
+}
+
+function compileAppealSchema(schema: object): (data: unknown) => boolean {
+  const ajv = new Ajv2020({ strict: true, allErrors: true });
+  addFormats(ajv);
+  ajv.addFormat('int32', {
+    type: 'number',
+    validate: (value) => Number.isInteger(value) && value >= -(2 ** 31) && value <= 2 ** 31 - 1,
+  });
+  return ajv.compile(schema);
+}
+
+function appealResponseSchema(method: 'get' | 'post'): AppealSchema {
+  return appealOperation(method).responses['200']!.content['application/json'].schema;
+}
+
+function appealItemSchema(method: 'get' | 'post'): AppealSchema {
+  const data = appealProperty(appealResponseSchema(method), 'data');
+  if (method === 'post') return data;
+  const items = appealProperty(data, 'items');
+  expect(items.type).toBe('array');
+  expect(items.items).toBeDefined();
+  return items.items!;
+}
+
+it('[CT-02c#1] 提交申诉要求登录与幂等键，不签名 (04 §5、§6.1)', () => {
+  const post = appealOperation('post');
+  expect(post['x-auth']).toBe('login');
+  expect(post.security).toEqual([{ bearerAuth: [] }]);
+  expect(post['x-idempotent']).toBe(true);
+  expect(post['x-signed']).toBe(false);
+  const headers = post.parameters.filter((parameter) => parameter.in === 'header');
+  expect(
+    headers.find((parameter) => parameter.name.toLowerCase() === 'idempotency-key'),
+  ).toMatchObject({ required: true });
+  for (const name of ['x-sign', 'x-timestamp', 'x-nonce']) {
+    expect(headers.map((parameter) => parameter.name.toLowerCase())).not.toContain(name);
+  }
+});
+
+it('[CT-02c#2] 申诉遵循默认版本守卫与会话范围 (04 §5、BR-ID-01)', () => {
+  // Both tables were checked against SPEC_REF: neither appeal operation is an exception.
+  const post = appealOperation('post');
+  const get = appealOperation('get');
+  expect(post['x-min-version-gate']).toBe(true);
+  expect(get['x-min-version-gate']).toBeUndefined();
+  for (const operation of [post, get]) {
+    expect(operation['x-session-scopes'] ?? ['full']).toEqual(['full']);
+  }
+});
+
+it('[CT-02c#3] 申诉请求只收对象类型、对象编号和内容 (04 §5、§6.1、BR-ID-36)', () => {
+  const post = appealOperation('post');
+  expect(post.requestBody.required).toBe(true);
+  const schema = post.requestBody.content['application/json'].schema as AppealSchema;
+  expect(Object.keys(schema.properties ?? {}).sort()).toEqual([
+    'content',
+    'target_id',
+    'target_type',
+  ]);
+  expect(schema.required).toEqual(expect.arrayContaining(['target_type', 'content']));
+  const validate = compileAppealSchema(schema);
+  const body = {
+    target_type: 'order',
+    target_id: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90',
+    content: '订单返利被作废，请核查。',
+  };
+  expect(validate(body)).toBe(true);
+  for (const field of ['target_type', 'content']) {
+    const missing: Record<string, unknown> = { ...body };
+    delete missing[field];
+    expect(validate(missing), `missing ${field}`).toBe(false);
+  }
+  for (const target_type of ['withdrawal', 'ACCOUNT', '', null, 1]) {
+    expect(validate({ ...body, target_type }), String(target_type)).toBe(false);
+  }
+  for (const content of [1, null, [], {}]) {
+    expect(validate({ ...body, content }), JSON.stringify(content)).toBe(false);
+  }
+  for (const extra of [{ unexpected: true }, { user_id: 'other-user' }, { status: 'revoked' }]) {
+    expect(validate({ ...body, ...extra }), JSON.stringify(extra)).toBe(false);
+  }
+  const validateTarget = compileAppealSchema(appealProperty(schema, 'target_type'));
+  expect(validateTarget('account')).toBe(true);
+  expect(validateTarget('order')).toBe(true);
+  // 04 §5 defines IDs as strings; neither 04 nor BR-ID-36 specifies account target_id filling.
+  // Do not prescribe its requiredness, nullability, or a special value for account appeals.
+  const idSchema = appealProperty(schema, 'target_id');
+  const types = Array.isArray(idSchema.type) ? idSchema.type : [idSchema.type];
+  expect(types).toContain('string');
+  expect(types.every((type) => type === 'string' || type === 'null')).toBe(true);
+  expect(compileAppealSchema(idSchema)(123)).toBe(false);
+});
+
+it('[CT-02c#4] 申诉响应包含封闭的状态与对象类型枚举 (04 §2.5、§6.1)', () => {
+  for (const method of ['post', 'get'] as const) {
+    const item = appealItemSchema(method);
+    expect(item.required).toEqual(expect.arrayContaining(['status', 'target_type']));
+    for (const [field, values] of [
+      ['status', ['processing', 'upheld', 'revoked']],
+      ['target_type', ['account', 'order']],
+    ] as const) {
+      const fieldSchema = appealProperty(item, field);
+      expect([...(fieldSchema.enum ?? [])].sort()).toEqual([...values].sort());
+      const validate = compileAppealSchema(fieldSchema);
+      for (const value of values) expect(validate(value), `${method} ${field}=${value}`).toBe(true);
+      for (const value of ['unknown', '', null, 1]) {
+        expect(validate(value), `${method} ${field}=${String(value)}`).toBe(false);
+      }
+    }
+    // Validate the declared success example as a whole, including the response envelope.
+    const media = appealOperation(method).responses['200']!.content['application/json'] as {
+      schema: object;
+      example?: unknown;
+      examples?: Record<string, { value?: unknown }>;
+    };
+    const examples =
+      media.example === undefined
+        ? Object.values(media.examples ?? {}).map((example) => example.value)
+        : [media.example];
+    expect(examples.length).toBeGreaterThan(0);
+    const validateResponse = compileAppealSchema(media.schema);
+    for (const example of examples) expect(validateResponse(example)).toBe(true);
+  }
+});
+
+it('[CT-02c#5] 申诉响应不公开处理截止时间 (BR-ID-36)', () => {
+  const visit = (node: unknown, seen = new Set<object>()): void => {
+    if (node === null || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    const properties = (node as AppealSchema).properties;
+    for (const name of Object.keys(properties ?? {})) {
+      expect(name).not.toMatch(/deadline|due_at|due_date|resolve_by|resolution_by/i);
+    }
+    for (const child of Object.values(node)) visit(child, seen);
+  };
+  for (const method of ['post', 'get'] as const) {
+    visit(appealResponseSchema(method));
+  }
+});
+
+it('[CT-02c#6] 查询本人申诉采用 App 游标列表 (04 §5、§6.1)', () => {
+  const get = appealOperation('get');
+  expect(get['x-auth']).toBe('login');
+  expect(get.security).toEqual([{ bearerAuth: [] }]);
+  expect(`${get.summary ?? ''} ${get.description}`).toMatch(
+    /本人|当前.{0,12}(?:用户|账户|账号)|(?:current|authenticated|logged.in)\s+(?:user|account)|own appeals/i,
+  );
+  expect(get.parameters.map((parameter) => parameter.name)).not.toContain('user_id');
+  const query = get.parameters.filter((parameter) => parameter.in === 'query');
+  const cursor = query.find((parameter) => parameter.name === 'cursor');
+  const limit = query.find((parameter) => parameter.name === 'limit');
+  expect(cursor).toBeDefined();
+  expect(limit).toBeDefined();
+  expect(compileAppealSchema(cursor!.schema)('opaque-cursor')).toBe(true);
+  const validateLimit = compileAppealSchema(limit!.schema);
+  expect(validateLimit(50)).toBe(true);
+  expect(validateLimit(51)).toBe(false);
+  expect(validateLimit(1.5)).toBe(false);
+  const data = appealProperty(appealResponseSchema('get'), 'data');
+  expect(data.required).toEqual(expect.arrayContaining(['items', 'next_cursor']));
+  expect(appealProperty(data, 'items').type).toBe('array');
+  const validateCursor = compileAppealSchema(appealProperty(data, 'next_cursor'));
+  expect(validateCursor(null)).toBe(true);
+  expect(validateCursor('next-page')).toBe(true);
+  expect(validateCursor(1)).toBe(false);
+});
+
+it('[CT-02c#7] 申诉字段登记 identity 枚举绑定 (04 §2.5、§6.1)', () => {
+  const { ENUM_BINDINGS, ENUM_SUBSETS } = testRequire('../scripts/conformance.ts') as {
+    ENUM_BINDINGS: Record<string, string>;
+    ENUM_SUBSETS: Record<string, string>;
+  };
+  const identity = parseYamlLite(
+    readFileSync(new URL('../../../contracts/enums/identity.yaml', import.meta.url), 'utf8'),
+  ) as { enums: Record<string, { values: Record<string, string> }> };
+  const request = appealOperation('post').requestBody.content['application/json'].schema;
+  const uses = [
+    [appealProperty(request, 'target_type'), 'appeal_target_type'],
+    ...(['post', 'get'] as const).flatMap((method) => [
+      [appealProperty(appealItemSchema(method), 'status'), 'appeal_status'] as const,
+      [appealProperty(appealItemSchema(method), 'target_type'), 'appeal_target_type'] as const,
+    ]),
+  ] as const;
+  for (const [schema, enumName] of uses) {
+    const registered = Object.entries({ ...ENUM_BINDINGS, ...ENUM_SUBSETS })
+      .filter(([, name]) => name === enumName)
+      .map(([pointer]) =>
+        pointer.split('/').reduce<unknown>((node, part) => {
+          return node !== null && typeof node === 'object'
+            ? (node as Record<string, unknown>)[part]
+            : undefined;
+        }, contract.components.schemas),
+      );
+    // dereference preserves object identity for $refs: an unrelated equal enum is not a binding.
+    expect(registered, enumName).toContain(schema);
+    expect([...(schema.enum ?? [])].sort()).toEqual(
+      Object.keys(identity.enums[enumName]!.values).sort(),
+    );
+  }
 });

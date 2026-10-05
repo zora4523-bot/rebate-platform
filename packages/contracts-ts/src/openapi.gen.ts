@@ -165,7 +165,12 @@ export interface paths {
          *     purpose=step_up requires a logged-in user (otherwise 10001) and `action`; it is issued only
          *     to an account without a bound phone (a bound phone → 20001 with `data.fields=[provider]`,
          *     BR-ID-08). purpose=step_up with action=account_deletion is inside the 10006 whitelist
-         *     (BR-ID-31). Storage unavailable → 50001.
+         *     (BR-ID-31). purpose=payout_bind (WeChat only, no `action`) is the payout authorization of
+         *     BR-ID-04 细则「收款授权」 and BR-WDR-33 ②: it requires a logged-in user (otherwise 10001)
+         *     and is bound to the user, this device_id and this app's WeChat AppID; the openid it yields
+         *     is only stored on the payout account — it creates no account, writes no third-party login
+         *     binding and issues or refreshes no token. It is consumed by the payout account save, not by
+         *     a login or step-up submission. Storage unavailable → 50001.
          *     Version gate (conditional): not applied when purpose=login, or purpose=step_up with
          *     action=account_deletion; applied otherwise. Session scopes: a deletion_only session is
          *     accepted only for purpose=login and for purpose=step_up with action=account_deletion. Both
@@ -313,6 +318,71 @@ export interface paths {
          *     chain (sid) is unchanged (BR-ID-01 细则「受限会话」). Session scopes: accepts deletion_only.
          */
         post: operations["refreshToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign out on this device
+         * @description Revokes the session of the access token (its sid and the refresh tokens of that chain,
+         *     BR-ID-07) and removes the binding between this device's push token and the user
+         *     (拍板第二批 OPS-21; push_tokens is written by the notification module). Other devices of the
+         *     same user are not affected. Repeating the call with a token whose session is already
+         *     revoked is answered like any revoked token (10002 / 10404 per BR-ID-07), nothing is written.
+         *     Version gate: not applied (退出登录). Session scopes: accepts deletion_only (BR-ID-01 细则
+         *     「受限会话」).
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a consent or its withdrawal
+         * @description Inserts one consent_records row (insert only, BR-ID-12). Login is not required (04 §6.1
+         *     鉴权 none): with a valid access token the row is user level (user_id and this device_id);
+         *     without one it is device level (device_id from X-Device-Id, user_id empty). A device
+         *     without a registered device_id cannot record (BR-ID-12: the first-launch consent is kept
+         *     locally and reported right after device registration). The current state of a subject and
+         *     type is the row with the latest server_at; server_at is the server clock, client_at is the
+         *     tap time on the device. Withdrawing the privacy consent (type=privacy, accepted=false, the
+         *     privacy center 【撤回同意】) is always a device-level row even with a token: subject is this
+         *     device, user_id is kept only as an association, other devices' user-level state is not
+         *     changed; the server then revokes this device's sessions and install_secret and clears its
+         *     push token, and the client enters basic mode (BR-ID-13). Other withdrawals (for example
+         *     ai_third_party, BR-AI-13) follow the user / device rule above.
+         *     `type` never takes labor_agreement (signed only through the labor agreement endpoint,
+         *     BR-WDR-31). `channel` never takes login_merge, h5_landing or withdraw_flow: those rows are
+         *     written by the server (login merge, landing registration, labor agreement signing).
+         *     A field outside these values → 20001 with data.fields.
+         *     Version gate (conditional): not applied to accepted=false of any type, nor to type privacy
+         *     or agreement; applied otherwise. Session scopes: a deletion_only session is accepted only
+         *     for the same requests (any withdrawal, and privacy or agreement records). Both per BR-ID-01
+         *     细则, which wins on any difference.
+         */
+        post: operations["recordConsent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1057,6 +1127,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My appeals
+         * @description Appeals of the current account only (the caller's own, account and order appeals alike),
+         *     newest first; the Appeal page shows progress and results from here (BR-ID-36). In the
+         *     10006 whitelist: a banned user, or one appealing a ban, can call it (BR-ID-31). The
+         *     internal deadline (appeals.deadline_at) and the handler are never returned: the
+         *     processing time limit is internal only and not shown to users (BR-ID-36 细则, BR-TEXT-23
+         *     细则).
+         */
+        get: operations["listAppeals"];
+        put?: never;
+        /**
+         * Submit an appeal
+         * @description Appeal on the account (target_type=account) or on one order (target_type=order, target_id
+         *     = the order_id); who may appeal is BR-ID-36 (① account: risk_state banned or frozen;
+         *     ② order: an order whose rebate risk control voided, BR-ATTR-26). At most one processing
+         *     appeal per target (the account, or one order): while one is processing, submitting again
+         *     returns that original appeal and creates no new one (BR-ID-36). An account appeal sets
+         *     risk_state to appealing and records prev_risk_state (BR-ID-36); target_type=order does not
+         *     change the account's risk state and only marks that order as under appeal (appeal_pending
+         *     on GET /v1/orders/{order_id}, 拍板第二批 OPS-07). For target_type=order an order_id that
+         *     is unknown or not the user's → 30701. How target_id is filled for target_type=account is
+         *     not set by 04 or BR-ID-36; the account appealed is always the caller's own. In the 10006
+         *     whitelist: a banned user, or one appealing a ban, can call it (BR-ID-31). The internal
+         *     deadline (appeals.deadline_at) and the handler are never returned: the processing time
+         *     limit is internal only and not shown to users (BR-ID-36 细则, BR-TEXT-23 细则). The result
+         *     reaches the user as the inbox message APPEAL_RESULT (BR-TEXT-23). Version gate: applied.
+         */
+        post: operations["submitAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/idempotency-keys/abandon": {
         parameters: {
             query?: never;
@@ -1659,14 +1771,39 @@ export interface components {
          * @enum {string}
          */
         LoginProvider: "wechat" | "apple" | "huawei";
+        RecordConsentRequest: {
+            /**
+             * @description consent_type without labor_agreement (BR-ID-12, BR-WDR-31).
+             * @enum {string}
+             */
+            type: "privacy" | "agreement" | "ai_third_party" | "id_verification" | "personalization";
+            /**
+             * Format: int32
+             * @description The version of the text the user saw (legal.privacy.version and the like).
+             */
+            version: number;
+            /** @description true = agreed; false = withdrawn. */
+            accepted: boolean;
+            /**
+             * @description consent_channel without the server-written login_merge, h5_landing and withdraw_flow.
+             * @enum {string}
+             */
+            channel: "first_launch" | "login_page" | "agent_sheet" | "realname_sheet" | "privacy_center";
+            /**
+             * Format: date-time
+             * @description When the user tapped (device clock).
+             */
+            client_at: string;
+        };
         /**
          * @description What a third-party authorization attempt is for (enum oauth_attempt_purpose).
          * @enum {string}
          */
-        OauthAttemptPurpose: "login" | "step_up";
+        OauthAttemptPurpose: "login" | "step_up" | "payout_bind";
         /**
-         * @description `action` is required exactly for purpose=step_up. The oneOf branches declare the
-         *     properties they constrain (strict Ajv2020, ADR-0001 §4.2 #15).
+         * @description `action` is required exactly for purpose=step_up. purpose=payout_bind is for WeChat only
+         *     and carries no `action`. The oneOf branches declare the properties they constrain (strict
+         *     Ajv2020, ADR-0001 §4.2 #15).
          */
         CreateOauthAttemptRequest: {
             provider: components["schemas"]["LoginProvider"];
@@ -1679,6 +1816,11 @@ export interface components {
             /** @enum {string} */
             purpose: "step_up";
             action: components["schemas"]["StepUpAction"];
+        } | {
+            /** @enum {string} */
+            purpose: "payout_bind";
+            /** @enum {string} */
+            provider: "wechat";
         });
         OauthAttemptData: {
             attempt_id: components["schemas"]["Id"];
@@ -2126,6 +2268,63 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["Deletion"] | null;
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description contracts/enums/identity.yaml appeal_status (BR-ID-36).
+         * @enum {string}
+         */
+        AppealStatus: "processing" | "upheld" | "revoked";
+        /**
+         * @description contracts/enums/identity.yaml appeal_target_type (04 §6.1, BR-ID-36).
+         * @enum {string}
+         */
+        AppealTargetType: "account" | "order";
+        SubmitAppealRequest: {
+            target_type: components["schemas"]["AppealTargetType"];
+            target_id?: components["schemas"]["Id"];
+            content: string;
+        };
+        /**
+         * @description One of my appeals (04 §3.2 appeals). No deadline_at or handler_id: the processing time
+         *     limit is internal only (BR-ID-36 细则).
+         */
+        Appeal: {
+            appeal_id: components["schemas"]["Id"];
+            target_type: components["schemas"]["AppealTargetType"];
+            /**
+             * @description The order_id when target_type=order. For target_type=account how it is filled is not
+             *     set by 04 or BR-ID-36.
+             */
+            target_id: string | null;
+            status: components["schemas"]["AppealStatus"];
+            /** @description The text the user submitted. */
+            content: string;
+            /**
+             * Format: date-time
+             * @description Submission time.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When the appeal was closed (upheld or revoked); null while processing.
+             */
+            closed_at: string | null;
+        };
+        AppealResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Appeal"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AppealListData: {
+            items: components["schemas"]["Appeal"][];
+            next_cursor: string | null;
+        };
+        AppealListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AppealListData"];
             trace_id: components["schemas"]["TraceId"];
         };
         /**
@@ -4111,6 +4310,111 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    logout: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session is revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    recordConsent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "type": "privacy",
+                 *       "version": 3,
+                 *       "accepted": true,
+                 *       "channel": "first_launch",
+                 *       "client_at": "2026-10-02T09:30:00+08:00"
+                 *     }
+                 */
+                "application/json": components["schemas"]["RecordConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description The consent row is recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     issueH5Token: {
         parameters: {
             query?: never;
@@ -6080,6 +6384,151 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["DeletionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listAppeals: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My appeals, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a91",
+                     *             "target_type": "order",
+                     *             "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *             "status": "processing",
+                     *             "content": "订单返利被作废，请核查。",
+                     *             "created_at": "2026-10-05T09:30:00+08:00",
+                     *             "closed_at": null
+                     *           },
+                     *           {
+                     *             "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a92",
+                     *             "target_type": "order",
+                     *             "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71",
+                     *             "status": "revoked",
+                     *             "content": "另一笔订单返利被作废，请核查。",
+                     *             "created_at": "2026-09-28T15:00:00+08:00",
+                     *             "closed_at": "2026-09-30T11:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AppealListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    submitAppeal: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "target_type": "order",
+                 *       "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                 *       "content": "订单返利被作废，请核查。"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SubmitAppealRequest"];
+            };
+        };
+        responses: {
+            /** @description The appeal, new or the processing one already on this target. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a91",
+                     *         "target_type": "order",
+                     *         "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *         "status": "processing",
+                     *         "content": "订单返利被作废，请核查。",
+                     *         "created_at": "2026-10-05T09:30:00+08:00",
+                     *         "closed_at": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AppealResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

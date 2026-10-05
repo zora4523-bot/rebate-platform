@@ -1,0 +1,22 @@
+id: B1-01w
+repo: rebate-platform
+title: worker 接线开启 link_logs 日分区维护并撤掉 DEFAULT 豁免（恢复「DEFAULT 有数据即告警」），同步改 B1-01n 的受保护测试
+type: test-change
+# B1-01s 之后。B1-01n 把 link_logs 从 DEFAULT 告警里排除（WORKER_QUIET_DEFAULT_TABLES，与 ADR-0001 §4.2 第 4
+# 项的已知偏离）；日分区维护落地后撤掉。受保护规则测试 worker-wiring.test.ts、quiet-default.int.test.ts、
+# worker-entry.int.test.ts 钉死了豁免，要改（保护路径第一类，合并要负责人标签 owner-approved-<头提交前 12 位>）。
+# quietDefaultTables 选项本身保留（B1-01n 契约补充），只是 worker 不再用它。
+refs: []
+refs_hash: {}
+deps: [B1-01s]
+paths:
+  - 'apps/api/src/modules/platform/maintenance/worker.ts'
+  - 'apps/api/src/modules/platform/maintenance/entry.test.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.test.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/maintenance/**'
+status: todo
+pr: null

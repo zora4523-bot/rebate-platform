@@ -5,13 +5,13 @@ import { expect, it } from 'vitest';
 import { LEGACY_TASKS_FILE, loadLegacyTasks, needsTestPaths } from './legacy-tasks.ts';
 import { repoRoot } from './paths.ts';
 
-it('[CR2-02] lists the ledgers of the switch baseline dec8a3d, each still in the ledger or its archive', () => {
+it('[CR2-02] lists the ledgers on origin/main when the switch was merged, each still in the ledger or its archive', () => {
   const doc = JSON.parse(readFileSync(join(repoRoot(), LEGACY_TASKS_FILE), 'utf8')) as {
     baseline: string;
     tasks: string[];
   };
-  expect(doc.baseline).toBe('dec8a3d9a71c53d84e781e309f81145e1335dee1');
-  expect(doc.tasks).toHaveLength(53);
+  expect(doc.baseline).toBe('b97ee61593c47a72f3aa6b53d790916fdb177568');
+  expect(doc.tasks).toHaveLength(70);
   const archive = join(repoRoot(), 'ops', 'tasks', 'archive');
   const months = existsSync(archive) ? readdirSync(archive) : [];
   for (const id of doc.tasks) {
