@@ -59,6 +59,10 @@ const { segs, exempt } = read();
 const fund = segs['fund_terms'] as Segment;
 const ordinary = segs['ordinary'] as Segment;
 
+it('[AC-CT-19c#4] fund_terms.keys 包含 btn.buy.rebate_suffix', () => {
+  expect(fund.keys).toContain('btn.buy.rebate_suffix');
+});
+
 function segmentsOf(key: string): string[] {
   return Object.entries(segs)
     .filter(([, s]) => s.keys.includes(key) || s.prefixes.some((p) => key.startsWith(p)))

@@ -1,0 +1,60 @@
+{
+  "task": "CT-19c",
+  "spec_ref": "b89ca4e745ae935d30f9b850e4c99cc6d6f19b7e",
+  "spec_commit": "b97ee61593c47a72f3aa6b53d790916fdb177568",
+  "red_tests": [],
+  "risk_note": "RV2 only because specs/** is not on the risk-map whitelist (D-2). Two default texts added to contracts/texts.default.json (withdraw_detail.net.expected / actual, 08 BR-TEXT-14 table C) and one whole key added to the fund-term section of specs/fund-term-keys.yaml (btn.buy.rebate_suffix, BR-TEXT-12); no code, money, attribution or authorisation path. Consistency tests by Codex were committed before the change (c4dee81) inside the ledger paths; spec_commit is the base commit of the branch, as for CT-15h. Written by hand before the evidence generator exists.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "9a38a4ca01ba795983902f4ce0813fdcdbb5d387",
+      "tree": "ebb65336fee0b9204a6eb86a3a321ffd1906fe76",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T11:38:18Z",
+      "finished_at": "2026-10-05T11:40:08Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass, no S1 / S2; three S3 (agent.guide.* fund-term keys unassigned, to be registered separately; [AC-CT-19c#3] pins a temporary state for the buy-button key task to change; ledger lacks the planning version note)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass, no findings (couli-runs/CT-19c/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "contract task (ledger tester: codex); its consistency tests live in packages/contracts-ts/src and were reviewed with the code"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "84115152bb8f17598419dec49ce978376391dc80",
+    "specs": "c48714c98fb9e31372a258d24509e69979e708fb"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 on the CT-19c worktree at the verified head; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}

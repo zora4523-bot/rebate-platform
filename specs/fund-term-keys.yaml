@@ -18,9 +18,9 @@
 #   ordinary 段只用 08 写明整组归普通的前缀，其余逐键列出，不用 external_page. 这类整前缀
 #   （external_page.product_unresolved 单列资金术语）。
 #
-# 08 列了、texts.default.json 里还没有的键（tag.rebate、btn.buy.no_rebate、jump_tip，普通段的 btn.buy、btn.buy.coupon）
-# 照 08 先归类；08「还没有取键名的资金文案」取键名后补进 fund_terms.keys。P1 订阅提醒模板 watch.price_drop.*
-# 进 notify_template_code 时归 fund_terms（BR-WATCH-14）。
+# 08 列了、texts.default.json 里还没有的键（tag.rebate、btn.buy.no_rebate、btn.buy.rebate_suffix、jump_tip，普通段的
+# btn.buy、btn.buy.coupon）照 08 先归类；08「还没有取键名的资金文案」取键名后补进 fund_terms.keys。
+# P1 订阅提醒模板 watch.price_drop.* 进 notify_template_code 时归 fund_terms（BR-WATCH-14）。
 fund_terms:
   prefixes:
     - order_status.
@@ -47,6 +47,7 @@ fund_terms:
     - jump_tip.
   keys:
     - btn.buy.no_rebate
+    - btn.buy.rebate_suffix
     - claim_required
     - error.30103
     - error.30121
