@@ -83,6 +83,31 @@ async function start(
   }
 
   if (entry === 'worker') {
+    let stopping = false;
+    let services: Awaited<ReturnType<typeof startWorkerServices>> | undefined;
+    let keepAlive: ReturnType<typeof setInterval> | undefined;
+    const shutdown = async (): Promise<void> => {
+      try {
+        await services?.stop();
+        logger.info('stopped');
+      } catch (error) {
+        logger.error({ err: error }, 'shutdown_failed');
+        process.exitCode = 1;
+      } finally {
+        clearInterval(keepAlive);
+      }
+    };
+    if (!config.exitAfterInit) {
+      const onSignal = (signal: NodeJS.Signals): void => {
+        if (stopping) return;
+        stopping = true;
+        logger.info({ signal }, 'stopping');
+        // Startup owns cleanup until it succeeds; never stop a service still starting.
+        if (services !== undefined) void shutdown();
+      };
+      process.on('SIGTERM', onSignal);
+      process.on('SIGINT', onSignal);
+    }
     const clock = clockFromConfig(config);
     const context = await createWorkerContext(entry, { config, logger, dbHandles, clock });
     let servicesOwnCleanup = false;
@@ -101,7 +126,7 @@ async function start(
               clock,
             });
       servicesOwnCleanup = true;
-      const services = await startWorkerServices({
+      services = await startWorkerServices({
         queue,
         maintenance,
         logger,
@@ -110,15 +135,12 @@ async function start(
           ...(maintHandle === null ? [] : [() => maintHandle.close()]),
         ],
       });
-      const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
-      closeOnSignal(logger, async () => {
-        try {
-          await services.stop();
-        } finally {
-          clearInterval(keepAlive);
-        }
-      });
-      logger.info({ listening: false }, 'started');
+      if (stopping) {
+        await shutdown();
+      } else {
+        keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
+        logger.info({ listening: false }, 'started');
+      }
     } finally {
       if (!servicesOwnCleanup) {
         try {
