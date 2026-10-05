@@ -3,5 +3,5 @@
 {"event":"tool.status","id":3,"data":{"seq":3,"tool":"search_rules","phase":"end","display_text":"已查询返利规则"}}
 {"event":"text.delta","id":4,"data":{"seq":4,"delta":"规则见下方卡片。"}}
 {"event":"card","id":5,"data":{"seq":5,"card_id":"c1","type":"future_card","schema_version":2,"data":{"future_field":{"nested":["未来扩展字段"]}},"fallback_text":"当前版本暂不支持显示这张卡片，请升级后查看。"}}
-{"event":"card","id":6,"data":{"seq":6,"card_id":"c2","type":"rule_ref","schema_version":1,"data":{"chunk_id":"019a0000-0000-7000-8000-000000000401","title":"演示规则：返利什么时候到账","excerpt":"演示摘要：订单确认收货并结算后，返利按规则进入账户。","published_version":"demo-v1","action":{"route":"Rules","params":{}}},"fallback_text":"演示规则：返利什么时候到账"}}
+{"event":"card","id":6,"data":{"seq":6,"card_id":"c2","type":"rule_ref","schema_version":1,"data":{"chunk_id":"019a0000-0000-7000-8000-000000000401","title":"演示规则：返利什么时候到账","excerpt":"演示摘要：订单确认收货并结算后，返利按规则进入账户。","published_version":"demo-v1","action":{"route":"Help","params":{"article_id":"demo-article-0001"}}},"fallback_text":"演示规则：返利什么时候到账"}}
 {"event":"done","id":7,"data":{"finish_reason":"stop","quota_left":26}}
