@@ -3,6 +3,7 @@
   "compilerOptions": {
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
     "noEmit": true,
     "composite": false,
     "declaration": false,
@@ -17,9 +18,8 @@
     { "path": "../packages/money" },
     { "path": "../packages/domain" },
     { "path": "../packages/db" },
+    { "path": "../packages/contracts-ts" },
     { "path": "../packages/bridge-sdk" },
-    { "path": "../packages/ui-tokens" },
-    { "path": "../apps/h5" },
-    { "path": "../apps/admin" }
+    { "path": "../packages/ui-tokens" }
   ]
 }
