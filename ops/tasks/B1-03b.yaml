@@ -11,7 +11,9 @@ type: impl
 # nonce 键 = app_id + device_id + nonce，TTL 600 秒，SET NX 原子写；Redis 不可用时拒绝、不放行，返回 50001（编排者裁定 §5 第 8 条；ADR-0001 §4.2 第 17 项：
 # 防重放键不得静默丢失）。比较用定时安全比较；日志不打 install_secret、签名串、X-Sign。
 # H5 经桥代签、落地页不签名（BR-ID-32）不在本任务。签名属 ①，必须先于请求校验：Fastify 的 schema 校验在 Nest guard 之前（大写 nonce 会先得 20001、到不了 10401），
-# 所以签名检查做成 Fastify preValidation 阶段的钩子（platform 在 bootstrap 提供注册点，risk 注册检查），并在解析前保留原始 body 字节供 sha256（Codex 台账评审 2026-10-05）；
+# 所以签名检查必须在 Fastify 解析请求体之前完成：在 preParsing 阶段读出原始字节、按 BR-ID-09 先查 X-Device-Id（10402）再验签（10401），通过后把同样的字节交回解析器
+# （或等价地用自定义 JSON 解析器先验签后解析；platform 在 bootstrap 提供注册点，risk 注册检查）。验收含组合场景：签名错 + 损坏 JSON → 10401；签名对 + 损坏 JSON → 20001；
+# 非签名接口不受影响（Codex 台账评审 2026-10-05 第 1、2 轮）；
 # 出错响应经 B1-01za 的全局过滤器出 ErrorEnvelope。令牌守卫（B1-02e）在其后；整条判定链的接线见 B1-03c 注释。
 # 串行：b～k 共享 risk/** 与 app.module.ts，只能依次派；b 另与 B1-02e（identity）、B1-01y / B1-01za（bootstrap、platform）相交；c 与 B1-02g（platform/idempotency）相交；
 # i 与 B1-02e / f / g 共用 platform/validation/route-schemas.gen.ts。
