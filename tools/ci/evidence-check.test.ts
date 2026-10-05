@@ -370,19 +370,19 @@ it('owner waiver: touching a money / attribution implementation path still needs
       'an owner approval label does not waive the evidence file',
     );
   }
-  // A module that is not on the list and not in the risk map (here: catalog) is waivable.
-  // (identity was the example until it got its own RV1 entry in ops/risk-map.yaml.)
-  const catalog = branchFromBase('chore/catalog', {
-    'apps/api/src/modules/catalog/index.ts': 'export {};\n',
+  // A module that is not on the list and not in the risk map (here: notification) is waivable.
+  // (identity, then catalog, were the example until they got their own RV1 entries in ops/risk-map.yaml.)
+  const notification = branchFromBase('chore/notification', {
+    'apps/api/src/modules/notification/index.ts': 'export {};\n',
   });
   expect(
     checkEvidence({
       prDir: repo,
       base,
-      head: catalog,
-      headRef: 'chore/catalog',
+      head: notification,
+      headRef: 'chore/notification',
       trusted: TRUSTED,
-      approval: approved(catalog),
+      approval: approved(notification),
     }),
   ).toMatchObject({ ok: true, waived: true, money_paths: [] });
 });

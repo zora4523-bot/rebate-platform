@@ -76,6 +76,23 @@ rules:
     impl: claude
     tester: codex
     review: claude+codex
+  # linking: 归属（规划/11 §1.1 第 3 行：orders、linking、union）为 RV2，评审另加 Claude 新子代理。
+  - path: 'apps/api/src/modules/linking/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
+  # catalog、parsing: 规划/11 §1.1 第 4 行「其他交易模块」为 RV1，分工同 identity、risk（2026-10-05 改定）。
+  - path: 'apps/api/src/modules/catalog/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
+  - path: 'apps/api/src/modules/parsing/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
   - path: 'apps/api/src/modules/platform/**'
     risk: RV2
     impl: claude
