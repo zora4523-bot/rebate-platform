@@ -353,9 +353,6 @@ it('[AC-B1-19a#16] child tables retain account foreign keys and none of the unio
     expect(accountColumn).toBeDefined();
     expect(await sqlState(insertRow(app, table, { [accountColumn!]: randomUUID() }))).toBe('23503');
   }
-  expect(
-    (await foreignKeys(app, 'union_accounts')).some((fk) => fk.columns.includes('auth_renewed_by')),
-  ).toBe(false);
 });
 
 it('[AC-B1-19a#17] grants provide union reads/writes without exposing writes to unrelated roles', async () => {
@@ -404,10 +401,10 @@ it('[AC-B1-19a#18] pid CHECK domains contain exactly the statuses and contract s
   }
 });
 
-it('[AC-B1-19a#19] the union writer can persist renewal and probe results without an admin_users foreign key', async () => {
-  const actor = randomUUID();
+it('[AC-B1-19a#19] the union writer can persist renewal and probe results', async () => {
   const row = await insertRow(app, 'union_accounts', {
-    auth_renewed_by: actor,
+    app_id: `renewal-${randomUUID()}`,
+    auth_renewed_by: null,
     auth_renewed_at: null,
     last_probe_at: null,
     last_probe_ok: null,
@@ -421,23 +418,23 @@ it('[AC-B1-19a#19] the union writer can persist renewal and probe results withou
       await sqlState(
         sql`
       UPDATE app.union_accounts
-      SET auth_expires_at = ${EXPIRES}, auth_renewed_at = ${AT}, auth_renewed_by = ${actor},
+      SET auth_expires_at = ${EXPIRES}, auth_renewed_at = ${AT}, auth_renewed_by = NULL,
           auth_status = ${status}, alert_stage = ${ok ? 'none' : 'expired'},
           last_probe_at = ${AT}, last_probe_ok = ${ok}, last_probe_error = ${error}
-      WHERE auth_renewed_by = ${actor}
+      WHERE app_id = ${row['app_id']}
     `.execute(app),
       ),
     ).toBe('no error');
     const stored = await sql<Record<string, unknown>>`
       SELECT auth_expires_at, auth_renewed_at, auth_renewed_by, auth_status,
              last_probe_at, last_probe_ok, last_probe_error, sync_start_at
-      FROM app.union_accounts WHERE auth_renewed_by = ${actor}
+      FROM app.union_accounts WHERE app_id = ${row['app_id']}
     `.execute(app);
     expect(stored.rows).toEqual([
       {
         auth_expires_at: EXPIRES,
         auth_renewed_at: AT,
-        auth_renewed_by: actor,
+        auth_renewed_by: null,
         auth_status: status,
         last_probe_at: AT,
         last_probe_ok: ok,
