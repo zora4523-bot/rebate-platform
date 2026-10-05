@@ -4,6 +4,7 @@
 // and its data is never AC-LINK / AC-ORD evidence. Links are https://demo.invalid/… only.
 // APP_ENV=prod refuses to construct it (same rule as replay in infra/endpoints.ts).
 import { createHash } from 'node:crypto';
+import { mulDivFloor, splitByBp } from '@couli/money';
 import { GovernanceError, type Clock } from '../../../platform/index.ts';
 import {
   isRegisteredPlatform,
@@ -85,6 +86,9 @@ const CATALOG_SIZE = 24;
 const SEARCH_PAGE_SIZE = 10;
 const FEED_PAGE_SIZE = 8;
 const DEMO_HOST = 'demo.invalid';
+const BP = 10_000n;
+/** Synthetic prices are PRICE_CEILING_FEN scaled by a seeded ratio of 200–10 000 bp (998–49 900 fen). */
+const PRICE_CEILING_FEN = 49_900n;
 const DETAIL_TEXT = '演示商品详情：合成数据，仅供开发联调，不对应任何平台的真实商品。';
 
 interface CatalogEntry {
@@ -93,12 +97,18 @@ interface CatalogEntry {
   readonly ref: ItemRef;
   readonly title: string;
   readonly price_fen: bigint;
-  readonly coupon_fen: bigint;
+  /** Coupon as a share of the price; amounts are derived through @couli/money only. */
+  readonly coupon_bp: bigint;
   readonly commission_rate_bp: bigint;
 }
 
 function digest(parts: readonly string[]): string {
   return createHash('sha256').update(parts.join('\u0000'), 'utf8').digest('hex');
+}
+
+/** A seeded ratio in basis points: lowBp + (hex mod span); ratios only, never an amount. */
+function seededBp(hex: string, lowBp: bigint, span: bigint): bigint {
+  return lowBp + (BigInt(`0x${hex}`) % span);
 }
 
 /** `count` decimal digits taken from a hex digest, first digit 1–9. */
@@ -136,16 +146,18 @@ function buildCatalog(platform: RegisteredPlatform, seed: string): readonly Cata
       linkId = `dm${hash.slice(16, 40)}`;
       ref = Object.freeze({ platform, goods_id: stable, goods_sign: linkId });
     }
-    const price = 990n + (BigInt(`0x${hash.slice(42, 50)}`) % 49_000n);
-    const coupon = index % 3 === 0 ? 0n : 100n * (1n + (BigInt(`0x${hash.slice(50, 54)}`) % 30n));
-    const commission = index % 5 === 0 ? 0n : 50n + (BigInt(`0x${hash.slice(54, 58)}`) % 2_950n);
+    // Amounts come from @couli/money (AGENTS.md: money only through packages/money); the seed
+    // only picks ratios. Coupon 1%–30% of the price, so it always stays below the price.
+    const price = mulDivFloor(PRICE_CEILING_FEN, seededBp(hash.slice(42, 50), 200n, 9_801n), BP);
+    const couponBp = index % 3 === 0 ? 0n : seededBp(hash.slice(50, 54), 100n, 2_901n);
+    const commission = index % 5 === 0 ? 0n : seededBp(hash.slice(54, 58), 50n, 2_950n);
     entries.push(
       Object.freeze({
         linkId,
         ref,
         title: `演示商品 ${hash.slice(58, 64)} ${String(index + 1).padStart(2, '0')}`,
         price_fen: price,
-        coupon_fen: coupon < price ? coupon : 0n,
+        coupon_bp: couponBp,
         commission_rate_bp: commission,
       }),
     );
@@ -244,7 +256,9 @@ export class DemoUnionAdapter implements UnionAdapter {
     if (typeof req !== 'object' || req === null || !filled(req.authorizationCode)) {
       throw this.#invalid('authorizationCode must be a non-empty string');
     }
-    const tag = digest(['demo-bind', this.platform, this.#seed, req.authorizationCode]);
+    if (!filled(ctx.appId)) throw this.#invalid('bind requires the calling app');
+    // App-scoped: the same synthetic code under two brands gives two relation ids.
+    const tag = digest(['demo-bind', this.platform, ctx.appId, this.#seed, req.authorizationCode]);
     return Object.freeze({ relationId: `demo-relation-${tag.slice(0, 16)}` });
   }
 
@@ -331,13 +345,15 @@ export class DemoUnionAdapter implements UnionAdapter {
   }
 
   #item(entry: CatalogEntry, scenario: DemoScenario | undefined): UnionItem {
-    const coupon = scenario === 'coupon_expired' ? 0n : entry.coupon_fen;
+    // coupon_fen = floor(price * bp / 10000); final_price_fen = price - coupon (the remainder).
+    const couponBp = scenario === 'coupon_expired' ? 0n : entry.coupon_bp;
+    const split = splitByBp(entry.price_fen, [couponBp]);
     return Object.freeze({
       ...entry.ref,
       title: entry.title,
       price_fen: entry.price_fen,
-      coupon_fen: coupon,
-      final_price_fen: entry.price_fen - coupon,
+      coupon_fen: split.shares[0] ?? 0n,
+      final_price_fen: split.remainder,
       commission_rate_bp: scenario === 'no_commission' ? 0n : entry.commission_rate_bp,
       quoted_at: this.#clock.now().toISOString(),
     });
