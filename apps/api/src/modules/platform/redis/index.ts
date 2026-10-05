@@ -276,6 +276,8 @@ function buildHandle(transport: RedisTransport, settings: HandleSettings): Redis
       // Run asynchronously, so that `connecting` is set before this attempt can settle.
       await Promise.resolve();
       try {
+        // close() may have run in that turn: then never open a connection (finally still clears).
+        if (now() === 'closed') throw new RedisClosedError();
         await withTimeout(() => transport.connect(), settings.connectTimeoutMs);
       } catch (error) {
         disconnect();
@@ -323,6 +325,7 @@ function buildHandle(transport: RedisTransport, settings: HandleSettings): Redis
       if (error instanceof TimeoutSignal) {
         // A connection that stops answering is not trusted with the next command.
         reset(seen);
+        if (now() === 'closed') throw new RedisClosedError();
         throw new RedisUnavailableError('command_timeout');
       }
       // An error reply leaves the connection usable; anything else may have broken it.

@@ -193,6 +193,90 @@ it('[B1-01y §9.2] close() while connecting rejects the command as closed and se
   expect(driver.disconnect).toHaveBeenCalled();
 });
 
+it('[B1-01y §9.2] a late failure of a first-generation command never drops the second connection', async () => {
+  const { handle, driver, loseConnection } = await fixture();
+  try {
+    const cache = handle.namespace('catalog');
+    let breakFirst: (error: Error) => void = () => {};
+    driver.call.mockImplementationOnce(
+      () =>
+        new Promise<unknown>((_resolve, reject) => {
+          breakFirst = reject;
+        }),
+    );
+    const first = failure(() => cache.get('first'));
+    await vi.waitFor(() => {
+      expect(driver.call).toHaveBeenCalledTimes(1);
+    });
+    loseConnection();
+    driver.call.mockResolvedValueOnce('second');
+    expect(await cache.get('second')).toBe('second');
+    expect(driver.connect).toHaveBeenCalledTimes(2);
+    // The first generation's socket error arrives only now, after the second connection exists.
+    breakFirst(new Error('Connection is closed.'));
+    expect(await first).toMatchObject({ reason: 'command_failed' });
+    expect(driver.disconnect).not.toHaveBeenCalled();
+    driver.call.mockResolvedValueOnce('third');
+    expect(await cache.get('third')).toBe('third');
+    expect(driver.connect).toHaveBeenCalledTimes(2);
+  } finally {
+    await handle.close();
+  }
+});
+
+it('[B1-01y §9.2] after a command timeout the next command opens a new connection', async () => {
+  vi.useFakeTimers();
+  try {
+    const { handle, driver } = await fixture({ commandTimeoutMs: 25 });
+    try {
+      const cache = handle.namespace('catalog');
+      driver.call.mockImplementationOnce(() => new Promise(() => {}));
+      const pending = failure(() => cache.get('key'));
+      await vi.advanceTimersByTimeAsync(26);
+      expect(await pending).toMatchObject({ reason: 'command_timeout' });
+      expect(driver.disconnect).toHaveBeenCalledTimes(1);
+      driver.call.mockResolvedValueOnce('fresh');
+      expect(await cache.get('key')).toBe('fresh');
+      expect(driver.connect).toHaveBeenCalledTimes(2);
+    } finally {
+      await handle.close();
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('[B1-01y §9.2] close() before the transport is asked to connect opens nothing', async () => {
+  const { handle, driver } = await fixture();
+  // The first command schedules its connection attempt; close() runs before that turn.
+  const pending = failure(() => handle.namespace('catalog').get('key'));
+  const closed = handle.close();
+  expect(await pending).toBeInstanceOf(RedisClosedError);
+  await closed;
+  expect(driver.connect).not.toHaveBeenCalled();
+  expect(driver.call).not.toHaveBeenCalled();
+  expect(driver.quit).not.toHaveBeenCalled();
+});
+
+it('[B1-01y §9.2] a command that times out after close() reports the handle as closed', async () => {
+  vi.useFakeTimers();
+  try {
+    const { handle, driver } = await fixture({ commandTimeoutMs: 25, closeTimeoutMs: 50 });
+    await handle.namespace('catalog').get('key');
+    driver.call.mockImplementationOnce(() => new Promise(() => {}));
+    const pending = failure(() => handle.namespace('catalog').get('key'));
+    // Let the command reach the transport without getting near its 25 ms timeout.
+    await vi.advanceTimersByTimeAsync(1);
+    expect(driver.call).toHaveBeenCalledTimes(2);
+    const closed = handle.close();
+    await vi.advanceTimersByTimeAsync(26);
+    expect(await pending).toBeInstanceOf(RedisClosedError);
+    await closed;
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('[B1-01y §9.2] replies of the wrong shape are not reported as a hit or a write', async () => {
   const { handle, driver } = await fixture();
   try {
