@@ -1,0 +1,25 @@
+id: F1-06d
+repo: rebate-platform
+title: packages/money 加两个展示格式化函数：App 写法（App、App 内 H5、站外 H5 共用）与管理后台写法（两位小数 + 千分位），输入整数分，按 BR-TEXT-10 的规则与测试向量
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend）。03 §10.3：「格式化放在共用的金额包里分成两个函数（App 写法、后台写法），后台页面只调后台写法，三端与 H5 不调它」；
+# 03 §9.2「金额显示」。宿主 05 F1-06（后台金额显示）；H5 页面同样只调这里的 App 写法（前端线任务书规则：金额一律走 packages/money，不在页面拼）。
+# 依据 BR-TEXT-10（正文与细则「后台格式」及两张测试向量表）。SPEC_REF b9f54fe 之后规划 d014690 只给后台格式补了两处边界：不足一分的单价保留原小数位、
+# 图表坐标轴刻度可只写整数——两者都不是「整数分 → 字符串」的输入，本任务不实现，任务书第 2 节由编排者注明。
+# 只做纯函数：入参 bigint 分（与 formatFen 同口径），可选项只按 BR-TEXT-10 写明的变体（流水正数加「+」、区间「–」等，以 08 为准，不自加）；不碰现有导出的行为。
+# refs 留空：带 BR-TEXT-10 全文的任务书 25.7KB 超 24KB（lessons brief-over-24kb-refs-emptied），由编排者把正文、「后台格式」与两张向量表摘入任务书第 2 节；评审以原始产出为准（校验改写移进 out_of_scope 的 BR-TEXT-10 条目照范围内处理），证据与 PR 写明。money 只返回金额字符串，「暂无返利」由调用方取字典。
+# 金额隐藏、等宽数字、字号是页面与组件的事，不在本任务。资金包规则测试写顶层 it（规划/11 §4.3、AGENTS.md §7）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'packages/money/src/**'
+test_paths:
+  - 'test/spec/money/display/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/money/display/**'
+status: todo
+pr: null

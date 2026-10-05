@@ -1,0 +1,25 @@
+id: F1-01e
+repo: rebate-platform
+title: H5 白屏检测与失败重试：首屏 3 秒后关键节点为空即上报（URL、端、版本），H5 侧的出错 / 重试页与重试动作；原生容器的重试页与维护页不在本任务
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend）。依据 03 §8.1 监控行（上报内容只按 01 F-OBS-01 白名单：不带请求与响应体、令牌、手机号、输入框内容）、§8.3（白屏检测 3 秒、加载失败由原生容器显示重试页、
+# 页面级开关为 false 时原生直接显示维护页，TECH-20），由编排者摘入任务书第 2 节。Sentry 接入等账号到位前只留上报端口与 TODO(规划/11 §5.1)，不臆造 DSN；时间读注入的时钟，测试用假时钟。
+# 画面以设计稿为准（编排者把对应画板路径与 sha256 写进任务书）；文案取字典键，08 没有的键不臆造，稿上文案暂放 apps/h5/src/texts/**（禁中文 lint 的唯一豁免目录）并登记 couli-runs/F1-frontend/needs.md。
+refs: []
+refs_hash: {}
+deps: [F1-01c]
+paths:
+  - 'apps/h5/src/shared/whitescreen/**'
+  - 'apps/h5/src/components/retry/**'
+  - 'apps/h5/src/texts/**'
+  - 'apps/h5/src/entries/app/main.tsx'
+  - 'apps/h5/src/entries/app/routes.ts'
+test_paths:
+  - 'test/spec/frontend/h5-whitescreen/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-whitescreen/**'
+status: todo
+pr: null

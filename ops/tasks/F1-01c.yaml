@@ -1,0 +1,27 @@
+id: F1-01c
+repo: rebate-platform
+title: apps/h5 脚手架：app / landing / conformance 三个入口分别构建，React Router 按路由懒加载，TanStack Query，openapi-fetch 客户端（解包 code/msg/data、错误码动作表、App 内经 bridge-sdk 取 h5_token），运行环境判断（可信容器 / 微信 / 普通浏览器）
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend）。依据 03 §8.1–§8.3（技术栈、入口与目录 apps/h5/src/{entries,shared,components}、运行环境表、标题栏用原生 ui.setNavBar、安全区）、
+# §1.1（H5 不做支付、提现、改收款账号、签署劳务协议、注销）、§12（落地页首屏 JS ≤60KB gzip、App 内单路由 ≤150KB gzip，本任务在 PR 写实测体积）、contracts/openapi.yaml 与 error-codes.yaml、
+# routes.json 的 h5 路由，由编排者摘入任务书第 2 节。landing 入口不依赖桥、不 import bridge-sdk；conformance 入口本任务只建空壳，页面归 F1-01d。
+# 不做：白屏检测与重试页（F1-01e）、基础组件（F1-01f）、任何业务页面；内容安全策略按 05 随 F1-03 首批页面上线前。业务页面禁止硬编码中文（03 §10.3），壳里的文案也取字典键（contracts/texts.default.json）。
+# 固定接线文件（后续任务按名接入）：entries/app/main.tsx（挂载、Provider、白屏检测启动点）、entries/app/routes.ts（路由表）、shared/styles/**（Tailwind 入口与 ui-tokens 的 CSS 变量与主题，故依赖 CT-11a）、
+# entries/landing/main.tsx、entries/conformance/main.tsx。API 客户端用 F1-01b 的令牌管理器。版本化部署与入口灰度不在本任务（依赖 OSS 环境与 F1-02 的 h5_release，登记 couli-runs/F1-frontend/blocked.md B-4）。
+# 骨架检查转不了 TSX：Codex 的骨架只写 .ts 模块（含 NotImplemented），实现者在 .ts 里改为从 .tsx 转出；测试只 import .ts 入口。
+refs: []
+refs_hash: {}
+deps: [F1-01a, F1-01b, CT-11a]
+paths:
+  - 'apps/h5/src/**'
+  - 'apps/h5/vite.config.ts'
+  - 'apps/h5/index.html'
+test_paths:
+  - 'test/spec/frontend/h5-shell/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-shell/**'
+status: todo
+pr: null
