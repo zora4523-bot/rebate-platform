@@ -1,0 +1,31 @@
+id: B3-01b
+repo: rebate-platform
+title: 评测框架第二段：录制格式与按请求内容匹配的回放、规则判分（意图、工具与参数、卡片、文本金额与链接口令、身份参数、句数）、结果类型与首个失败层、报告 JSON 与冒烟门禁
+type: impl
+# 2026-10-06 入账（会话「Agent 落地方案」，B3 线由本会话负责）。接 B3-01a（评测题格式与校验），流形状用 CT-08a。
+# 依据：BR-AI-21（冒烟组成与「全部用例通过」、本机回放只回写通过或失败；取值只在 08）、BR-AI-06 细则（金额、URL / scheme、
+# 口令的判定正则与句数 ≤2）、BR-AI-03 细则（身份字段清单与比较方式）；方案 docs/proposals/20261005-Agent系统设计与评测进化.md
+# §4.4.1–§4.4.2（参考：录制按请求内容匹配、对不上判覆盖缺口、禁止按调用顺序取下一条；每题只记一个首个失败层）。
+# 本段只做 A 模式回放的框架与冒烟门禁：被测 Agent 以接口注入（B3-05 编排器接入时提供实现），测试用桩。
+# 不在本段：全量发布门禁的各项比率与适用集合、卡片数值与接口比对、转链归因、按厂商对照与 Jev 打分（B3-01c，接 B3-11）；
+# banned_word_in_text、auto_redirect 的判定（本段遇到即记覆盖缺口）；回写到 PR 的方式（CT-14 / 规划/11 §7.3）。
+# specs/agent-identity-fields.txt 按 BR-AI-03 细则的初始清单建（ToolRegistry 与评测共用；文件头写明清单只在 08 维护）。
+# 分工按规划/11 §1.1（2026-10-05）：Codex 先写规则测试（test/spec/evals-replay/**，先红），Claude 新子代理过审，Opus 5.5 实现。
+refs: [BR-AI-21, BR-AI-06, BR-AI-03]
+refs_hash:
+  BR-AI-21: 7e5eb4e48745
+  BR-AI-06: b6a8abaa5dab
+  BR-AI-03: 2131432de5c6
+deps: [B3-01a, CT-08a]
+paths:
+  - 'packages/evals/**'
+  - 'specs/agent-identity-fields.txt'
+test_paths:
+  - 'test/spec/evals-replay/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/evals-replay/**'
+status: todo
+pr: null
