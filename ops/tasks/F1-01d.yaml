@@ -1,0 +1,21 @@
+id: F1-01d
+repo: rebate-platform
+title: 桥一致性测试页（apps/h5 conformance 入口）：逐个调用 MVP 桥方法的正常、超时、不支持、参数错误、无手势五类与 03 §5.5 的负面用例，结果按 schema 写入 window.__RESULT__；只在 debug / staging 构建出现
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend）。依据 03 §5.5（五类与负面用例 ①～⑥、只在 Debug / Staging 构建编译、Release 制品扫描确认不含，§3.6）、contracts/bridge.schema.json、
+# packages/contracts-ts 的 conformance 生成物（若有用例表以它为准，不手写第二份）、10 AC-S1-100，由编排者摘入任务书第 2 节。05 F1-01 验收「一致性页可在三端加载」由三端 UI 测试做，不在本仓库。
+# 结果对象的形状只取契约与生成物；需要原生配合的负面用例（非白名单 origin、子框架）页面只负责调用与记录结果，判定在三端测试。
+refs: []
+refs_hash: {}
+deps: [F1-01b, F1-01c]
+paths:
+  - 'apps/h5/src/entries/conformance/**'
+test_paths:
+  - 'test/spec/frontend/h5-conformance/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-conformance/**'
+status: todo
+pr: null

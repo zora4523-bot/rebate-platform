@@ -1,0 +1,21 @@
+id: F1-06g
+repo: rebate-platform
+title: 后台 REST data provider（/admin/v1，解包 {code,msg,data}，页码分页 page / page_size ≤200，错误码交给统一处理）与 CASL 权限（超管全有，其他账号按权限点；界面隐藏，服务端再校验）
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend）。依据 03 §9.1（数据提供者、权限）、§9.2「权限校验」、04 §6.6（写操作 CAS 冲突统一 20902）、§11、ADR-0001 §4.2（后台允许页码分页）、
+# contracts/ 的错误码与 CT-02f 合并后的 /admin/v1 形状，由编排者摘入任务书第 2 节。等 CT-02f：资源路径与响应形状只取契约，不臆造。
+refs: []
+refs_hash: {}
+deps: [F1-06e, CT-02f]
+paths:
+  - 'apps/admin/src/providers/data/**'
+  - 'apps/admin/src/providers/access-control/**'
+test_paths:
+  - 'test/spec/frontend/admin-data/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-data/**'
+status: todo
+pr: null

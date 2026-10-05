@@ -1,0 +1,21 @@
+id: F1-01f
+repo: rebate-platform
+title: H5 基础组件：EmptyState、ErrorState、Skeleton、Toast、Dialog、Sheet（03 §10.2 命名），只引用令牌名，对话框与半屏按无障碍约定（role=dialog、aria-modal、标题关联、焦点进入与归还、Esc 关闭）
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend）。依据 03 §10.1–§10.2、§10.4（App 内 H5 跟随 App 字号到 200% 不截断）、§10.5 与设计稿 GUIDE.md、adaptation-a11y-spec.md（编排者把画板与约定摘入任务书第 2 节，
+# 画板文件复制到运行目录并核对 sha256）。颜色、字号、间距只用 packages/ui-tokens 的变量，不写字面值（11 §2.6「换回令牌」）；文案由调用方传字典键。
+# 业务组件（PriceTag、RebateTag 等）不在本任务，随用到它的页面任务做。
+refs: []
+refs_hash: {}
+deps: [CT-11a, F1-01c]
+paths:
+  - 'apps/h5/src/components/base/**'
+test_paths:
+  - 'test/spec/frontend/h5-components/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-components/**'
+status: todo
+pr: null

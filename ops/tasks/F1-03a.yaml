@@ -1,0 +1,24 @@
+id: F1-03a
+repo: rebate-platform
+title: H5 返利规则页 Rules（试行页，规划/11 §2.6）：读 /v1/articles 的规则类文章，正常、加载、空、出错四态按设计稿，页底入口按 flow-map，文案取字典键，App 内页面经 bridge-sdk 设标题栏
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend）。05 F1-03「H5：规则、帮助、公告、协议」的第一张页面，也是 11 §2.6 试行的 H5 那一对的第一张：编排者按 docs/templates/page-spec.md 整理页面规格，
+# 连同画板文件（couli-runs/design-hifi/project/Rules*.dc.html，复制到运行目录并核对 sha256）与规格取自的规划提交号补进任务书第 2 节「依据摘录」。
+# 接口：listArticles / getArticle（契约在、x-implementation planned）；后端 F1-02 未实现前，测试与本地预览只用契约示例做成的静态夹具，不起端口（11 §2.6）。
+# 依据：03 §8（App 内入口、原生标题栏）、§10.2–§10.5、BR-TEXT-12（文案三级来源）、BR-TEXT-13（禁用词）、BR-TEXT-18 细则（帮助中心三个常见问题与规则页的分工，以 08 为准），由编排者摘入。
+# 合并前编排者用内置浏览器在稿的同尺寸同状态截图逐张对比，差异写 PR 描述并登记 couli-runs/F1-frontend/design-diffs.md；教训写 lessons/F1-FRONTEND.md。
+refs: []
+refs_hash: {}
+deps: [F1-01f]
+paths:
+  - 'apps/h5/src/entries/app/pages/rules/**'
+  - 'apps/h5/src/entries/app/routes.ts'
+test_paths:
+  - 'test/spec/frontend/h5-rules/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-rules/**'
+status: todo
+pr: null

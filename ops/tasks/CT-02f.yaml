@@ -1,0 +1,27 @@
+id: CT-02f
+repo: rebate-platform
+title: 契约：后台鉴权与账号只读——/admin/v1 的登录（账号密码 + 动态码）、首次绑定身份验证器（只能用于绑定的中间凭证）、step-up 两档（totp / sms，令牌记档位）、me/permissions（随权限点下发档位标注）、admins 列表只读
+type: contract
+# 2026-10-06 入账（前端线 f1-frontend）。为什么现在要：04 §6.6 的 auth 一项写「路径、字段与错误码待契约线定」，openapi.yaml 里还没有任何 /admin/v1 路径；后台壳之后的登录、
+# step-up、data provider、账号列表（11 §2.6 的试行页「后台接口进契约之后才用得上」）都要按契约做 mock，不能臆造形状。
+# 依据：04 §6.6 auth / admins / permissions 三项、§11（权限点与档位）、BR-ID-34（含细则「首次绑定身份验证器」：未绑定不签发 admin_token、动态码错误不绑定并计入登录失败锁定、
+# 没有权限点的账号 me/permissions 返回空集）、03 §9.1–§9.2（页码分页 page、page_size ≤200；StepUpModal 两档；未登记验证手机号时短信档按钮置灰），由编排者摘入任务书第 2 节。
+# 错误码只按 08 §13.11 唯一分配表取值；表里没有的（登录失败、锁定、IP 不在白名单、绑定凭证过期等）停下写 blocked.md 开规划同步，不自分配码值。
+# 只写契约与生成物（x-implementation: planned），后端由 admin 模块任务实现（F1-06 其余部分，另行入账）；admins 只做列表与详情的只读形状，创建、停用、勾选权限点随后续任务。
+# 契约槽全局同时 1 个在途（派前看 claims）；openapi.yaml 与各线 HTTP 任务相交，按就绪计算排队。测试由实现者写在 packages/contracts-ts/src/（同 CT-02e 先例）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.6', '11']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

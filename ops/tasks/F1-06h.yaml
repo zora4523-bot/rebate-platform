@@ -1,0 +1,21 @@
+id: F1-06h
+repo: rebate-platform
+title: 后台登录与 auth provider：账号密码 + 动态码登录、新账号首次绑定身份验证器（绑定前不进后台、动态码错误不绑定）、会话失效回登录页、没有权限点落到「暂无权限」页
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend）。依据 BR-ID-34（含细则「首次绑定身份验证器」、8 小时 / 空闲 30 分钟、失败 5 次锁定 30 分钟的提示以 08 为准）、04 §6.6 auth、03 §9.3 providers/auth、
+# CT-02f 合并后的契约与示例，画板 AdmLogin、AdmLoginTotp、AdmLoginTotpBind*（复制到运行目录核对 sha256），由编排者摘入任务书第 2 节。令牌只存内存或 httpOnly 由契约定，不写 localStorage。
+refs: []
+refs_hash: {}
+deps: [F1-06g]
+paths:
+  - 'apps/admin/src/providers/auth/**'
+  - 'apps/admin/src/pages/login/**'
+test_paths:
+  - 'test/spec/frontend/admin-auth/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-auth/**'
+status: todo
+pr: null
