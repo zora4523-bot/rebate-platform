@@ -1,0 +1,111 @@
+{
+  "task": "B1-05a",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "16e13b7b6c8849d12f943f60827b416414cb7e1d",
+  "red_tests": [
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#1] catalog tables contain the explicitly specified columns",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#2] seeds contain exactly nine string platform codes, bare prefixes and unverified stability",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#3] seeds preserve the search, conversion, order-sync and rollout distinctions of 04 §2.1",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#4] platform codes are unique and adding a dictionary row needs no platform enum change",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#5] key_stability accepts the four specified values and rejects unknown values with CHECK",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#6] product_refs primary key is exactly (app_id, product_key)",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#7] product_key accepts boundary lengths, case and every allowed printable ASCII character",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#8] product_key CHECK rejects empty IDs, overlong IDs, missing separators and forbidden characters",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#9] product_refs accepts only search, detail, parse and pool sources",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#10] raw_item_id is text preserved verbatim and canonical_url can be null",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#11] a written product_key cannot change while raw references can refresh",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#12] product key aliases persist their audit data and remain one-to-one",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#13] aliases are insert-only for the application role, including column-level privileges",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#14] tenant business tables require app_id and blocklist keyword is nullable",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#15] platform references retain foreign keys and no catalog foreign key cascades",
+    "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#16] catalog grants allow the writer and reader, never unrelated-role writes or PUBLIC access"
+  ],
+  "risk_note": "RV2 migration (db/**). Migration 0017: platforms (dictionary with nine seeded codes and prefixes, key_stability unverified, capability marks), product_refs (primary key app_id + product_key, product_key format CHECK, key immutable by grant and trigger), product_key_aliases (insert only, format CHECK on both keys), category_blocklist. platforms and product_key_aliases stay global dictionaries per 04 §3.2 (orchestrator decision, couli-runs/B1-05a/decision-orchestrator.md). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "16e13b7b6c8849d12f943f60827b416414cb7e1d",
+      "tree": "dc2bdbd4b2ca253cc4b483457d65d85dd2df7a4f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T22:55:06Z",
+      "finished_at": "2026-10-05T22:55:12Z",
+      "red_tests": [
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#1] catalog tables contain the explicitly specified columns",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#2] seeds contain exactly nine string platform codes, bare prefixes and unverified stability",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#3] seeds preserve the search, conversion, order-sync and rollout distinctions of 04 §2.1",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#4] platform codes are unique and adding a dictionary row needs no platform enum change",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#5] key_stability accepts the four specified values and rejects unknown values with CHECK",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#6] product_refs primary key is exactly (app_id, product_key)",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#7] product_key accepts boundary lengths, case and every allowed printable ASCII character",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#8] product_key CHECK rejects empty IDs, overlong IDs, missing separators and forbidden characters",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#9] product_refs accepts only search, detail, parse and pool sources",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#10] raw_item_id is text preserved verbatim and canonical_url can be null",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#11] a written product_key cannot change while raw references can refresh",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#12] product key aliases persist their audit data and remain one-to-one",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#13] aliases are insert-only for the application role, including column-level privileges",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#14] tenant business tables require app_id and blocklist keyword is nullable",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#15] platform references retain foreign keys and no catalog foreign key cascades",
+        "test/spec/db/catalog/catalog-tables.int.test.ts > [AC-B1-05a#16] catalog grants allow the writer and reader, never unrelated-role writes or PUBLIC access"
+      ],
+      "expected": ["test/spec/db/catalog/catalog-tables.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "69cee1b678a6f980f08efb8af94c0d17d09b1ce691cd40ba8ffe0fe9d229ac98"
+        }
+      ]
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "59a152be6f788c16537dfdeff9efecde3a3e9bcc",
+      "tree": "309bac53e07b9f122c90eaa270cf6543598d7cc1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T22:55:13Z",
+      "finished_at": "2026-10-05T22:56:55Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: pass; S2: key_prefix CHECK wider than BR-PROD-02; aliases do not require the same prefix (follow-ups)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 x2: platforms and product_key_aliases without app_id) -> orchestrator decision: global dictionaries per 04 §3.2 and the frozen rule tests, per-account variance is unverified (CAP-TB-01); round 2 pass with S2"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: pass with 2 S2 (whole-key length, alias key format) handled in the migration"
+  },
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "1cb2a3de2e91ea5eca9c1fb795740743b266fb2a",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (tree f03b0e3, the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
