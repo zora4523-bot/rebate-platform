@@ -1,0 +1,61 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 only because specs/** is not on the risk-map whitelist (D-2). Adds specs/request-sign.vectors.json (shared request-signing vectors, BR-ID-09) and its consistency test packages/contracts-ts/src/request-sign.test.ts; no runtime code, money, attribution or authorisation path. Codex consistency tests were committed before the vectors; spec_commit is the base commit of the branch (contract task; legacy ledger in tools/guard/legacy-tasks.json, no red run required). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent: round 1 fail (two S2: invalid cases not isolated; invalid-case X-Sign rule unstated), round 2 pass; S3 in couli-runs/CT-15k/followups.md"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "rounds 1 and 2 pass; both recomputed every valid and invalid case"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "contract task (ledger tester: codex); its consistency tests were reviewed with the vectors"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "task": "CT-15k",
+  "spec_ref": "1955639f5c29cae4f43f6e039dc3c742b5ae3312",
+  "spec_commit": "373ef2947dadffc5cd0e1b90796178ee21843386",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "afc962d7370e71f7d39ae49c5068fb84148f4c6f",
+      "tree": "47b9659765b97c0ef76998910469255b5976f8a6",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T15:39:54Z",
+      "finished_at": "2026-10-05T15:41:53Z"
+    }
+  ],
+  "trees": {
+    "packages/money": "83cb7c5abfd03ef162543c3aa1db0033ecf2aff0",
+    "packages/domain": "c7bbadb81089e32cd0ed3ff3e38958080a0134ef",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "acac2df455b394aebdd6803723d280149d37dffa",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  }
+}
