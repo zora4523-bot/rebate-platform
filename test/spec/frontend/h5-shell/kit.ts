@@ -2,7 +2,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { expect, vi } from 'vitest';
 import type { BridgeRequest, BridgeTransport, H5Token } from '@couli/bridge-sdk';
 
-export const ROOT = new URL('../../../../', import.meta.url);
+// 避免 Vite 在 jsdom 的 client 转换中将仓库目录改写为资源 URL。
+const moduleUrl = import.meta.url;
+export const ROOT = new URL('../../../../', moduleUrl);
 export const BASE_URL = 'https://api.example.invalid';
 export const HEALTH = { status: 'ok', entry: 'api', now: '2026-10-06T00:00:00Z' } as const;
 
