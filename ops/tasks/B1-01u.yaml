@@ -17,5 +17,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/masking/**'
-status: todo
-pr: null
+status: done
+pr: 83
