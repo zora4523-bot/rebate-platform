@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@couli/db": "workspace:*",
+    "@couli/domain": "workspace:*",
+    "@couli/money": "workspace:*",
     "@nestjs/common": "12.1.0",
     "@nestjs/core": "12.1.0",
     "@nestjs/platform-fastify": "12.1.0",

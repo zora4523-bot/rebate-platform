@@ -10,5 +10,10 @@
     "verbatimModuleSyntax": false
   },
   "include": ["src"],
-  "references": [{ "path": "../../packages/contracts-ts" }, { "path": "../../packages/db" }]
+  "references": [
+    { "path": "../../packages/contracts-ts" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/money" },
+    { "path": "../../packages/domain" }
+  ]
 }
