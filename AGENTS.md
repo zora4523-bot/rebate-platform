@@ -50,6 +50,7 @@
 | `contracts/**` | Claude | Codex | Codex | RV1 |
 | `packages/contracts-ts/**` | Claude | Codex | Codex | RV1 |
 | `apps/api/src/modules/health/**` | Codex | Claude | Claude | RV1 |
+| `apps/api/src/modules/identity/**` | Claude | Codex | Codex | RV1 |
 | `apps/api/src/modules/platform/**` | Codex | Claude | Claude + Codex | RV2 |
 | `packages/money/**` | Codex | Claude | Claude + Codex | RV2 |
 | `packages/domain/**` | Codex | Claude | Claude + Codex | RV2 |
