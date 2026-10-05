@@ -8,10 +8,10 @@ type: impl
 # 封禁的连带动作（吊销全部会话、联盟绑定置 blocked、提现阻断）由后台封禁命令编排（F1-10 / B1-27），本任务只提供状态写入命令与事件，不跨模块执行连带动作。
 # 冻结到期恢复与不定期冻结满 30 天告警归 B1-03j。frozen 对提现的 30303 在提现受理（B2-05）判定，本任务不碰 payout。
 # 位置在 ④a 之后，按 B1-03c 注释的接线方案：幂等接口注册进 platform/idempotency 的「未命中之后、执行之前」钩子，非幂等接口由 ③ 之后的 guard 执行。
-# app.module.ts 不在白名单，整体按 RV2。
+# 判定要用登录用户：取 B1-02h 令牌守卫放进请求上下文的 uid（B1-02e 拆分后依赖由 B1-02e 改为 B1-02h）。app.module.ts 不在白名单，整体按 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-03a, B1-03c, B1-02e]
+deps: [B1-03a, B1-03c, B1-02h]
 paths:
   - 'apps/api/src/modules/risk/**'
   - 'apps/api/src/app.module.ts'
