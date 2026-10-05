@@ -134,6 +134,8 @@ it('impl: usable output gives exit 0, a complete meta.json and a usage record', 
     group_gone: true,
     position_changed: [],
     validation: 'ok',
+    // Codex in impl mode writes the rule tests unless told otherwise (ops/approvals.yaml id 19).
+    phase: 'test',
   });
   const head = gitIn(fx.worktree, ['rev-parse', 'HEAD']);
   expect(meta['head_before']).toBe(head);
@@ -544,6 +546,66 @@ it('review type follows the risk level: RV2 defaults to money and refuses genera
   const rv1 = codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--dry-run']);
   expect(decodeDryRun(rv1.stdout).join('\n')).toContain('- Review type: general');
 });
+
+it(
+  '[ops/approvals.yaml id 19] impl phases; Codex never gets the spec-test review of its own tests',
+  LONG,
+  () => {
+    const fx = fixture('phases');
+    const stub = (fields: Record<string, unknown>): void =>
+      writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+        { when: ['show'], stdout: JSON.stringify({ id: TASK, type: 'impl', ...fields }) },
+      ]);
+    // The phase is impl-only and one of two values.
+    expect(codexRun(fx, ['impl', TASK, '--phase', 'implement', '--dry-run']).status).toBe(2);
+    expect(
+      codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--phase', 'test', '--dry-run']).status,
+    ).toBe(2);
+    // A handover implementation is for RV0 / RV1 only (规划/11 §2.5).
+    stub({ risk: 'RV1', tester: 'codex' });
+    const rv1 = codexRun(fx, ['impl', TASK, '--phase', 'handover', '--dry-run']);
+    expect(rv1.status, rv1.stderr).toBe(0);
+    stub({ risk: 'RV2', tester: 'codex' });
+    const rv2 = codexRun(fx, ['impl', TASK, '--phase', 'handover', '--dry-run']);
+    expect(rv2.status).toBe(2);
+    expect(rv2.stderr).toContain('RV0 / RV1 only');
+    // Rule tests written by Codex are reviewed by a fresh Claude subagent, never by Codex.
+    const spec = codexRun(fx, [
+      'review',
+      TASK,
+      '--base',
+      fx.baseSha,
+      '--review-type',
+      'spec-test',
+      '--dry-run',
+    ]);
+    expect(spec.status).toBe(2);
+    expect(spec.stderr).toContain('fresh Claude subagent');
+    // Code reviews of the same task stay with Codex; a task whose tests Claude wrote keeps the
+    // spec-test review.
+    expect(
+      codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--review-type', 'money', '--dry-run'])
+        .status,
+    ).toBe(0);
+    stub({ risk: 'RV2', tester: 'claude' });
+    expect(
+      codexRun(fx, [
+        'review',
+        TASK,
+        '--base',
+        fx.baseSha,
+        '--review-type',
+        'spec-test',
+        '--dry-run',
+      ]).status,
+    ).toBe(0);
+    // A real handover run records its phase for the round counters.
+    stub({ risk: 'RV1', tester: 'codex' });
+    const run = codexRun(fx, ['impl', TASK, '--phase', 'handover']);
+    expect(run.status, run.stderr).toBe(0);
+    expect(readJson(join(fx.run, 'meta.impl.json'))['phase']).toBe('handover');
+  },
+);
 
 it('a checkout path that contains "review" does not change the implementation output', LONG, () => {
   // The fake codex once chose the output shape from the whole schema path.

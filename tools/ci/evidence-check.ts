@@ -17,6 +17,13 @@
 //              with exit code 0 whose tree is the head tree, both reviewers pass with no open
 //              S0 / S1, every recorded directory tree hash equals the head's, long-run result
 //              bound to one of those trees.
+//              CI runs (`mode: ci`, RO2-05 / RO3-01, 2026-10-05): checks that for now can only run
+//              in CI (browser tests). They come in addition to the container run, never instead
+//              of it, and each one must be bound: `commit` is an ancestor of the head (or the head)
+//              whose tree, without this task's evidence file, equals the head's (only the
+//              evidence file may differ: committing the evidence after the CI run is fine, any
+//              change to sources, tests or configuration needs a new run); `spec_commit` equals
+//              the evidence's; `run_attempt` 1, `conclusion` success, `skipped` 0, exit code 0.
 //              Owner waiver (owner decision 2026-10-02, ops/approvals.yaml id 12): on a branch
 //              that is not task/<id> (test-change and gate-change PRs), the evidence file is
 //              not required when the PR carries a valid owner approval label for the head (the
@@ -174,6 +181,47 @@ function class1Hits(prDir: string, from: string, to: string, cfg: ProtectedConfi
     .map((c) => `${c.path} (${c.status})`);
 }
 
+/**
+ * A CI run (`mode: ci`; RO2-05, RO3-01): bound to a commit that is the head or an ancestor of it
+ * and differs from the head by nothing but the evidence file, to the evidence's spec_commit, and
+ * to a single clean attempt.
+ */
+export function ciRunProblems(
+  run: Record<string, unknown>,
+  ctx: {
+    prDir: string;
+    head: string;
+    evidencePath: string;
+    headTree: string | null;
+    specCommit: unknown;
+  },
+): string[] {
+  const problems: string[] = [];
+  const commit = run['commit'];
+  if (typeof commit !== 'string' || !SHA.test(commit)) {
+    problems.push('commit: a CI run must name the full commit SHA it tested');
+  } else if (!isAncestor(ctx.prDir, commit, ctx.head)) {
+    problems.push(`commit: ${commit} is not the head or an ancestor of it`);
+  } else {
+    const tested = headTreeWithoutEvidence(ctx.prDir, commit, ctx.evidencePath);
+    if (tested === null || tested !== ctx.headTree) {
+      problems.push(
+        `commit: the tested tree ${tested ?? '(unknown)'} differs from the head tree ` +
+          `${ctx.headTree ?? '(unknown)'} beyond ${ctx.evidencePath}: sources, tests or ` +
+          'configuration changed after the CI run, run it again',
+      );
+    }
+  }
+  if (typeof run['spec_commit'] !== 'string' || run['spec_commit'] !== ctx.specCommit) {
+    problems.push('spec_commit: a CI run must be bound to the evidence spec_commit');
+  }
+  if (run['run_attempt'] !== 1) problems.push('run_attempt: must be 1 (不许重跑到绿)');
+  if (run['conclusion'] !== 'success') problems.push('conclusion: must be success');
+  if (run['skipped'] !== 0) problems.push('skipped: must be 0');
+  if (run['exit_code'] !== 0) problems.push('exit_code: must be 0');
+  return problems;
+}
+
 /** Validates one evidence document against the PR; returns the problems found. */
 export function evidenceProblems(
   doc: unknown,
@@ -209,7 +257,8 @@ export function evidenceProblems(
     }
   }
 
-  const headTree = headTreeWithoutEvidence(ctx.prDir, ctx.head, `ops/evidence/${ctx.task}.json`);
+  const evidencePath = `ops/evidence/${ctx.task}.json`;
+  const headTree = headTreeWithoutEvidence(ctx.prDir, ctx.head, evidencePath);
   const runs = doc['runs'];
   if (!Array.isArray(runs) || runs.length === 0) {
     at('runs', 'must list at least one out-of-sandbox verification');
@@ -223,8 +272,16 @@ export function evidenceProblems(
       const mode = run['mode'];
       const exit = run['exit_code'];
       const tree = run['tree'];
-      if (mode !== 'container' && mode !== 'host')
-        at(`runs[${i}].mode`, 'must be container or host');
+      if (mode !== 'container' && mode !== 'host' && mode !== 'ci')
+        at(`runs[${i}].mode`, 'must be container, host or ci');
+      if (mode === 'ci') {
+        problems.push(
+          ...ciRunProblems(run, { ...ctx, evidencePath, headTree, specCommit }).map(
+            (p) => `runs[${i}]: ${p}`,
+          ),
+        );
+        return;
+      }
       if (typeof exit !== 'number') at(`runs[${i}].exit_code`, 'must be a number');
       if (typeof tree !== 'string' || !SHA.test(tree)) at(`runs[${i}].tree`, 'must be a tree hash');
       if (mode === 'container' && exit === 0 && tree === headTree) verifiedHead = true;

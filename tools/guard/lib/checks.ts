@@ -29,7 +29,7 @@ import type { ProtectedHit } from './protected.ts';
 import { checkCoverage } from './risk-map-coverage.ts';
 import { loadRiskMap } from './risk.ts';
 import { lintSchema } from './schema-lint.ts';
-import { authorProblems } from './spec-base.ts';
+import { authorProblems, checkAuthorPaths } from './spec-base.ts';
 import { checkSpecRef } from './spec-ref.ts';
 import { addOnlyViolations, scanTree } from './test-guard.ts';
 import type { Finding } from './test-guard.ts';
@@ -299,6 +299,50 @@ export function authorPathsCheck(
   return result('path-guard-author', problems, [
     `${changes.length} path(s) changed by the rule-test commits ${base.slice(0, 12)}..${specCommit.slice(0, 12)}`,
   ]);
+}
+
+/**
+ * Path guard of a rule-test run (`path-guard.ts --author`): the working tree of `root` against
+ * `base` may only hold rule-test assets and NotImplemented skeleton shells inside the task
+ * paths (lib/spec-base.ts checkAuthorPaths; default split of 2026-10-05, ops/approvals.yaml
+ * id 19). Out-of-scope ops/ and docs/ changes are reported apart, as in pathGuardCheck.
+ */
+export function authorWorktreeCheck(
+  root: string,
+  base: string,
+  taskPaths: readonly string[],
+  taskType: string | undefined,
+): PathGuardOutcome {
+  const protectedList = loadProtected(trustedRoot());
+  const changes = changedFiles(base, { cwd: root });
+  const hits = findProtectedHits(changes, protectedList, gitReaders(root, base), { taskType });
+  const testAssets = protectedList.class1_add_only.map((g) => splitFragment(g).glob);
+  const detail = checkAuthorPaths(
+    changes,
+    {
+      taskPaths,
+      testAssets,
+      contentAtSpec: (path) => {
+        const file = join(root, path);
+        return existsSync(file) ? readFileSync(file, 'utf8') : null;
+      },
+    },
+    hits,
+  );
+  return {
+    check: result(
+      'path-guard-author',
+      detail.violations.map((v) => `${v.path}: ${v.reason}`),
+      [
+        ...detail.out_of_scope_ops_docs.map(
+          (p) =>
+            `${p}: out-of-scope change under ops/ or docs/ (to be reverted by the orchestrator)`,
+        ),
+        ...detail.protected_hits.map((h) => `${h.path}: protected path, class ${h.class}`),
+      ],
+    ),
+    detail,
+  };
 }
 
 export type ProtectedOutcome = { check: CheckResult; hits: ProtectedHit[] };

@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # Out-of-sandbox verification (规划/11 §2.3 step 7, §9.3 #6; ADR-0001 §4.2 #9, §7).
 #
-#   verify-container.sh <id> [--worktree <path>] [--host]
+#   verify-container.sh <id> [--worktree <path>] [--host] [--fast]
+#
+# --fast: run `pnpm run verify:fast` instead of `pnpm verify` — the entry the Claude Opus
+# implementation subagent uses for its own test runs (default split of 2026-10-05,
+# ops/approvals.yaml id 19; 规划/11 §2.3 step 5): the tests are Codex-written, so they run in
+# this container and never on the host. verify:fast needs no database: no PostgreSQL is started
+# and the container runs with `--network none`. Results go to <runs>/<id>/verify-fast/<n>/ so
+# that they are never mistaken for the task's verification (verify/<n>/), which decides it.
 #
 # Runs `pnpm verify` for a task worktree inside a container that has no way out:
 #   - per-run `--internal` network; a one-shot PostgreSQL attached ONLY to it;
@@ -16,8 +23,9 @@
 # `pnpm verify` (124 = time limit). Exit code 2 = usage or infrastructure error
 # (no result.json is written in that case).
 #
-# Output: <runs>/<id>/verify/<n>/log.txt and result.json
-#   { mode: container|host, exit_code, commit, tree, prop_seed, started_at, finished_at }
+# Output: <runs>/<id>/verify/<n>/log.txt and result.json (--fast: verify-fast/<n>/)
+#   { mode: container|host, script: verify|verify:fast, exit_code, commit, tree, prop_seed,
+#     started_at, finished_at }
 # `tree` is the git tree of the work tree as verified (uncommitted changes included). The tree
 # is exported once into an immutable snapshot and that snapshot is what gets verified, so the
 # hash and the exit code always describe the same files; git-ignored paths never reach it.
@@ -40,7 +48,7 @@ DEFAULT_PROP_SEED=20261001
 
 log() { printf '%s\n' "$*" >&2; }
 die() { log "verify-container: $*"; exit 2; }
-usage() { log "usage: verify-container.sh <id> [--worktree <path>] [--host]"; exit 2; }
+usage() { log "usage: verify-container.sh <id> [--worktree <path>] [--host] [--fast]"; exit 2; }
 
 sha256_stdin() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
@@ -63,8 +71,13 @@ SELF_ROOT="$(cd "$SELF_DIR/../.." && pwd -P)"
 ID=''
 WORKTREE=''
 MODE='container'
+SCRIPT='verify'
 while [ $# -gt 0 ]; do
   case "$1" in
+    --fast)
+      SCRIPT='verify:fast'
+      shift
+      ;;
     --worktree)
       [ $# -ge 2 ] || usage
       WORKTREE="$2"
@@ -155,13 +168,15 @@ if ! [[ "$PREFIX" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then die "COULI_VERIFY_PREFIX must
 
 # Next free run number; mkdir makes the choice atomic.
 RUN="$RUNS/$ID"
-mkdir -p "$RUN/verify"
+VBASE="$RUN/verify"
+[ "$SCRIPT" = verify ] || VBASE="$RUN/verify-fast"
+mkdir -p "$VBASE"
 N=1
-while ! mkdir "$RUN/verify/$N" 2>/dev/null; do
+while ! mkdir "$VBASE/$N" 2>/dev/null; do
   N=$((N + 1))
-  [ "$N" -le 9999 ] || die "cannot create a run directory under $RUN/verify"
+  [ "$N" -le 9999 ] || die "cannot create a run directory under $VBASE"
 done
-VDIR="$RUN/verify/$N"
+VDIR="$VBASE/$N"
 LOG="$VDIR/log.txt"
 RESULT="$VDIR/result.json"
 : >"$LOG"
@@ -213,8 +228,8 @@ STARTED_AT="$(now_utc)"
 
 write_result() {
   local tmp="$RESULT.tmp.$$"
-  printf '{\n  "mode": "%s",\n  "exit_code": %s,\n  "commit": %s,\n  "tree": %s,\n  "prop_seed": %s,\n  "started_at": "%s",\n  "finished_at": "%s"\n}\n' \
-    "$MODE" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "$STARTED_AT" "$(now_utc)" >"$tmp"
+  printf '{\n  "mode": "%s",\n  "script": "%s",\n  "exit_code": %s,\n  "commit": %s,\n  "tree": %s,\n  "prop_seed": %s,\n  "started_at": "%s",\n  "finished_at": "%s"\n}\n' \
+    "$MODE" "$SCRIPT" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "$STARTED_AT" "$(now_utc)" >"$tmp"
   mv "$tmp" "$RESULT"
 }
 
@@ -222,7 +237,7 @@ finish() {
   write_result "$1"
   # The snapshot is identified by `tree` in result.json; the copy itself is not kept.
   rm -rf "$SRC"
-  log "verify-container: $ID run $N ($MODE) exit $1; log: $LOG"
+  log "verify-container: $ID run $N ($MODE, $SCRIPT) exit $1; log: $LOG"
   cat "$RESULT"
   exit "$1"
 }
@@ -271,7 +286,7 @@ if [ "$MODE" = 'host' ]; then
   [ -z "${COULI_KILL_GRACE_SECS:-}" ] || host_env+=("COULI_KILL_GRACE_SECS=$COULI_KILL_GRACE_SECS")
   (
     cd "$SRC"
-    exec env -i "${host_env[@]}" /usr/bin/perl "$SELF_DIR/timeout-group.pl" "$TIMEOUT_SECS" pnpm verify
+    exec env -i "${host_env[@]}" /usr/bin/perl "$SELF_DIR/timeout-group.pl" "$TIMEOUT_SECS" pnpm run "$SCRIPT"
   ) >>"$LOG" 2>&1 </dev/null || rc=$?
   finish "$rc"
 fi
@@ -390,6 +405,24 @@ if [ -f "$SRC/SPEC_REF" ]; then
   else
     step "SPEC_REF is not a commit of $spec_repo: /spec is not mounted"
   fi
+fi
+
+if [ "$SCRIPT" = 'verify:fast' ]; then
+  # verify:fast connects to no database and no network (规划/11 §4.1): no PostgreSQL, no
+  # network at all.
+  step "running pnpm run verify:fast in $IMAGE (no network, limit ${TIMEOUT_SECS}s)"
+  FAST_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS" -e "VERIFY_SCRIPT=verify:fast")
+  [ -z "${PROP_RUNS:-}" ] || FAST_ENV+=(-e "PROP_RUNS=$PROP_RUNS")
+  rc=0
+  docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
+    --network none \
+    -v "$SRC:/src:ro" \
+    -v "$STORE_VOL:/store:ro" \
+    --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
+    ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
+    "${FAST_ENV[@]}" \
+    "$IMAGE" couli-verify-entrypoint verify >>"$LOG" 2>&1 </dev/null || rc=$?
+  finish "$rc"
 fi
 
 step "creating internal network $NET"

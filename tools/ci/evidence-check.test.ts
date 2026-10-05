@@ -397,3 +397,71 @@ it('the CLI looks the approval up with --pr-number, exactly like the protected-p
   expect(run([label], 'ci-bot')).toMatchObject({ status: 1, report: { ok: false } });
   expect(run([label], 'o', 'e'.repeat(40))).toMatchObject({ status: 1, report: { ok: false } });
 });
+
+it('[RO2-05, RO3-01] a CI run stays valid when only the evidence file is committed after it', () => {
+  git(repo, ['checkout', '-q', 'task/B2-01a']);
+  git(repo, ['checkout', '-q', '-b', 'ci-runs']);
+  try {
+    const tested = git(repo, ['rev-parse', 'HEAD']);
+    const path = 'ops/evidence/B2-01a.json';
+    const tree = headTreeWithoutEvidence(repo, tested, path) ?? '';
+    const money = git(repo, ['rev-parse', `${tested}:packages/money`]);
+    const ciRun = (extra: Evidence = {}): Evidence => ({
+      mode: 'ci',
+      commit: tested,
+      spec_commit: specCommit,
+      run_attempt: 1,
+      conclusion: 'success',
+      skipped: 0,
+      exit_code: 0,
+      ...extra,
+    });
+    const doc = (run: Evidence): Evidence =>
+      evidence({
+        runs: [{ mode: 'container', exit_code: 0, commit: tested, tree, prop_seed: 1 }, run],
+        trees: { 'packages/money': money },
+        longrun: { runs: 1000000, seed: 1, passed: true, tree: money },
+      });
+    // The evidence is committed after the CI run: the tested commit is an ancestor of the head
+    // and differs from it by the evidence file only.
+    const head = commitEvidence(doc(ciRun()));
+    expect(head).not.toBe(tested);
+    expect(check(head).problems).toEqual([]);
+
+    // Not a clean single attempt, or not bound to the rule-test commit: refused.
+    const cfg = loadProtected(REPO);
+    const problemsOf = (run: Evidence): string =>
+      evidenceProblems(doc(run), { prDir: repo, head, task: 'B2-01a', cfg }).join('\n');
+    expect(problemsOf(ciRun({ run_attempt: 2 }))).toContain('run_attempt: must be 1');
+    expect(problemsOf(ciRun({ conclusion: 'failure' }))).toContain('conclusion: must be success');
+    expect(problemsOf(ciRun({ skipped: 1 }))).toContain('skipped: must be 0');
+    expect(problemsOf(ciRun({ spec_commit: base }))).toContain('bound to the evidence spec_commit');
+    expect(problemsOf(ciRun({ commit: tested.slice(0, 12) }))).toContain('full commit SHA');
+    expect(problemsOf({ mode: 'browser', exit_code: 0, tree })).toContain(
+      'must be container, host or ci',
+    );
+  } finally {
+    git(repo, ['checkout', '-q', 'task/B2-01a']);
+  }
+});
+
+it('[RO3-01] a CI run no longer counts once sources change after it', () => {
+  git(repo, ['checkout', '-q', 'ci-runs']);
+  try {
+    const head0 = git(repo, ['rev-parse', 'HEAD']);
+    const doc = JSON.parse(git(repo, ['show', `${head0}:ops/evidence/B2-01a.json`])) as Evidence;
+    // A source file changes after the CI run; the evidence file is carried over unchanged.
+    write(repo, { 'docs/README.md': '# docs, changed after the CI run\n' });
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '-m', 'change after ci']);
+    const head = git(repo, ['rev-parse', 'HEAD']);
+    const cfg = loadProtected(REPO);
+    const problems = evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg }).join('\n');
+    expect(problems).toMatch(
+      /runs\[1\]: commit: the tested tree [0-9a-f]+ differs from the head tree/,
+    );
+    expect(check(head).ok).toBe(false);
+  } finally {
+    git(repo, ['checkout', '-q', 'task/B2-01a']);
+  }
+});

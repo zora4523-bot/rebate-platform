@@ -6,15 +6,26 @@
 //                                    [--started-at <iso>] [--last-error <path>|none]
 //   node tools/ops/state.ts claim <id> [--owner <session>] [--renew]
 //   node tools/ops/state.ts release <id> [--owner <session>]
-//   node tools/ops/state.ts bump-attempt <id> impl
+//   node tools/ops/state.ts bump-attempt <id> test|impl|handover
 //   node tools/ops/state.ts bump-attempt <id> review --review-type money|general|contract|spec-test
 //   node tools/ops/state.ts settle <id> --meta <meta.json>
+//   node tools/ops/state.ts opus-run <id> --outcome ok|no-output|timeout|capacity --risk RV0|RV1|RV2
 //   node tools/ops/state.ts migrate <id> [--unattributed-review spec-test|code] [--dry-run]
 //
 // Rounds (规划/11 §2.5, owner decision 2026-10-02, ops/approvals.yaml id 13):
-// - three counters with their own limits: implementation 3, spec-test review 2, code review
-//   (money / general / contract) 3 (raised from 2, owner decision 2026-10-02, ops/approvals.yaml
-//   id 17);
+// - five counters with their own limits (default split of 2026-10-05, ops/approvals.yaml id 19:
+//   Opus implements, Codex writes the rule tests first and reviews):
+//     test       Codex writes the rule / acceptance tests (codex-run.sh impl --phase test)   3
+//     impl       the Claude Opus 5.5 implementation subagent (bumped by the orchestrator)   3
+//     handover   Codex implements once after the Opus attempts ran out, RV0 / RV1 only
+//                (规划/11 §2.5 超限换家; codex-run.sh impl --phase handover)                 1
+//     spec-test  rule-test review (a fresh Claude subagent since 2026-10-05)                 2
+//     code       code review (money / general / contract) 3 (raised from 2, owner decision
+//                2026-10-02, ops/approvals.yaml id 17)
+//   A Codex call in impl mode is counted as `test` or `handover` by the `phase` of its meta.json,
+//   never as `impl`; an older meta.json without `phase` (a Codex implementation before
+//   2026-10-05) still counts as `impl`. A state file of the older three-counter shape is read
+//   with `test` and `handover` at 0.
 // - a counter is bumped BEFORE the call (a run that dies without a trace stays counted);
 // - `settle`, run by tools/agent/codex-run.sh after every call, takes the bump back when the
 //   call ended without output: hard timeout or inactivity kill (exit 124), model capacity error
@@ -23,6 +34,13 @@
 //   a call still counts towards the per-task Codex call cap and the no-output breaker (below).
 //   An answer that failed validation (exit 10, validation "failed") and a position assertion
 //   failure (exit 12) stay counted.
+//
+// Opus failure breaker (RO2-03; default split of 2026-10-05, ops/approvals.yaml id 19): the
+// Opus implementation subagent is no Codex call and leaves no meta.json, so its runs are
+// recorded by the orchestrator with `opus-run`. Every run without a usable result (no output,
+// timeout, capacity / quota error) counts; 3 in a row or 5 in total open the breaker: RV0 / RV1
+// go to a Codex handover (dispatch.sh --handover), RV2 is blocked (no handover for funds and
+// attribution, 规划/11 §2.5, §0 rule 3). A run with a result resets the run of failures.
 //
 // Failure breakers (规划/11 §2.5; owner 2026-10-02: the Codex quota is unlimited, only failures
 // stop a task, ops/approvals.yaml id 15). `bump-attempt` refuses with exit 3 when either is open:
@@ -54,11 +72,31 @@ export const STATES = [
 ] as const;
 export type StateName = (typeof STATES)[number];
 
-export const ATTEMPT_KINDS = ['impl', 'spec-test', 'code'] as const;
+export const ATTEMPT_KINDS = ['test', 'impl', 'handover', 'spec-test', 'code'] as const;
 export type AttemptKind = (typeof ATTEMPT_KINDS)[number];
 
-/** 规划/11 §2.5: 3 implementation attempts; 2 rule-test review rounds; 3 code review rounds. */
-export const ATTEMPT_LIMITS: Record<AttemptKind, number> = { impl: 3, 'spec-test': 2, code: 3 };
+/**
+ * 规划/11 §2.5: 3 rule-test writing attempts (Codex); 3 implementation attempts (Opus); one
+ * handover implementation (Codex, RV0 / RV1); 2 rule-test review rounds; 3 code review rounds.
+ */
+export const ATTEMPT_LIMITS: Record<AttemptKind, number> = {
+  test: 3,
+  impl: 3,
+  handover: 1,
+  'spec-test': 2,
+  code: 3,
+};
+
+/** What a Codex call in impl mode does (codex-run.sh impl --phase, recorded in meta.json). */
+export const IMPL_PHASES = ['test', 'handover'] as const;
+export type ImplPhase = (typeof IMPL_PHASES)[number];
+
+/** Counters added on 2026-10-05; a state file without them reads them as 0. */
+const LATER_KINDS: readonly AttemptKind[] = ['test', 'handover'];
+
+export function emptyAttempts(): Record<AttemptKind, number> {
+  return { test: 0, impl: 0, handover: 0, 'spec-test': 0, code: 0 };
+}
 
 export const REVIEW_TYPES = ['money', 'general', 'contract', 'spec-test'] as const;
 export type ReviewType = (typeof REVIEW_TYPES)[number];
@@ -75,6 +113,18 @@ export type UncountedCall = {
   started_at: string;
   exit_code: number;
   reason: 'timeout' | 'inactivity-kill' | 'capacity' | 'no-output';
+};
+
+export const OPUS_OUTCOMES = ['ok', 'no-output', 'timeout', 'capacity'] as const;
+export type OpusOutcome = (typeof OPUS_OUTCOMES)[number];
+/** RO2-03: this many Opus runs without a result in a row, or in total, open the breaker. */
+export const OPUS_MAX_CONSECUTIVE_FAILURES = 3;
+export const OPUS_MAX_TOTAL_FAILURES = 5;
+
+export type OpusFailures = {
+  total: number;
+  consecutive: number;
+  last_reason: Exclude<OpusOutcome, 'ok'> | null;
 };
 
 export type TaskState = {
@@ -94,8 +144,14 @@ export type TaskState = {
   last_error: string | null;
   /** Calls that ended without output and therefore did not use up a round. */
   uncounted_calls: UncountedCall[];
+  /** Runs of the Opus implementation subagent without a result (RO2-03); absent in older files. */
+  opus_failures: OpusFailures;
   updated_at: string;
 };
+
+function noOpusFailures(): OpusFailures {
+  return { total: 0, consecutive: 0, last_reason: null };
+}
 
 export function stateDir(): string {
   return join(runsDir(), 'state');
@@ -113,7 +169,7 @@ function initialState(id: string, now: Date): TaskState {
   return {
     id,
     state: 'ready',
-    attempts: { impl: 0, 'spec-test': 0, code: 0 },
+    attempts: emptyAttempts(),
     spec_commit: null,
     pid: null,
     started_at: null,
@@ -122,6 +178,7 @@ function initialState(id: string, now: Date): TaskState {
     ask_created_at: null,
     last_error: null,
     uncounted_calls: [],
+    opus_failures: noOpusFailures(),
     updated_at: now.toISOString(),
   };
 }
@@ -153,10 +210,13 @@ export function parseState(raw: unknown, file: string): TaskState {
         `convert it with: node tools/ops/state.ts migrate ${String(o.id)}`,
     );
   }
-  const keys = Object.keys(attempts ?? {}).sort();
+  // The three-counter shape (before 2026-10-05) is read with the later counters at 0.
+  const filled: Record<string, unknown> = { ...attempts };
+  for (const k of LATER_KINDS) if (!(k in filled)) filled[k] = 0;
+  const keys = Object.keys(filled).sort();
   if (
     keys.join(',') !== [...ATTEMPT_KINDS].sort().join(',') ||
-    !ATTEMPT_KINDS.every((k) => isCount(attempts?.[k]))
+    !ATTEMPT_KINDS.every((k) => isCount(filled[k]))
   ) {
     bad(`attempts must have exactly ${ATTEMPT_KINDS.join(', ')} as non-negative integers`);
   }
@@ -190,7 +250,25 @@ export function parseState(raw: unknown, file: string): TaskState {
     if (!isNullableString(o[key])) bad(`${key} must be a string or null`);
   }
   if (typeof o.updated_at !== 'string') bad('updated_at must be a string');
-  return raw as TaskState;
+  let opus = noOpusFailures();
+  if (o.opus_failures !== undefined) {
+    const f = o.opus_failures as Record<string, unknown>;
+    if (
+      typeof f !== 'object' ||
+      f === null ||
+      !isCount(f.total) ||
+      !isCount(f.consecutive) ||
+      !(f.last_reason === null || (OPUS_OUTCOMES as readonly unknown[]).includes(f.last_reason))
+    ) {
+      bad('opus_failures must be {total, consecutive, last_reason}');
+    }
+    opus = f as OpusFailures;
+  }
+  return {
+    ...(raw as TaskState),
+    attempts: filled as Record<AttemptKind, number>,
+    opus_failures: opus,
+  };
 }
 
 export function readState(id: string): TaskState | null {
@@ -219,7 +297,10 @@ export function writeState(state: TaskState): void {
 }
 
 export type StatePatch = Partial<
-  Omit<TaskState, 'id' | 'attempts' | 'uncounted_calls' | 'updated_at' | 'ask_created_at'>
+  Omit<
+    TaskState,
+    'id' | 'attempts' | 'uncounted_calls' | 'opus_failures' | 'updated_at' | 'ask_created_at'
+  >
 >;
 
 export function updateState(id: string, patch: StatePatch, now: Date = new Date()): TaskState {
@@ -261,10 +342,54 @@ export function bumpAttempt(id: string, kind: AttemptKind, now: Date = new Date(
   return next;
 }
 
+export type OpusRunResult = {
+  state: TaskState;
+  /** continue: Opus may try again; handover: RV0 / RV1 to Codex once; blocked: RV2 stops. */
+  next: 'continue' | 'handover' | 'blocked';
+  reason: string | null;
+};
+
+/**
+ * Records one run of the Opus implementation subagent (RO2-03). A run without a result (no
+ * output, timeout, capacity) counts as a failure; 3 in a row or 5 in total hand the task over to
+ * Codex once (RV0 / RV1) or block it (RV2). A run with a result resets the consecutive count.
+ */
+export function recordOpusRun(
+  id: string,
+  outcome: OpusOutcome,
+  risk: 'RV0' | 'RV1' | 'RV2',
+  now: Date = new Date(),
+): OpusRunResult {
+  const prev = readState(id) ?? initialState(id, now);
+  const f = prev.opus_failures;
+  const opus: OpusFailures =
+    outcome === 'ok'
+      ? { ...f, consecutive: 0 }
+      : { total: f.total + 1, consecutive: f.consecutive + 1, last_reason: outcome };
+  const state: TaskState = { ...prev, opus_failures: opus, updated_at: now.toISOString() };
+  writeState(state);
+  let reason: string | null = null;
+  if (opus.consecutive >= OPUS_MAX_CONSECUTIVE_FAILURES) {
+    reason = `${id}: Opus 实现连续 ${opus.consecutive} 次没有结果（最近一次：${opus.last_reason}）`;
+  } else if (opus.total >= OPUS_MAX_TOTAL_FAILURES) {
+    reason = `${id}: Opus 实现累计 ${opus.total} 次没有结果`;
+  }
+  if (reason === null) return { state, next: 'continue', reason: null };
+  return risk === 'RV2'
+    ? { state, next: 'blocked', reason: `${reason}；RV2 不换家，标 blocked（规划/11 §2.5）` }
+    : {
+        state,
+        next: 'handover',
+        reason: `${reason}；换 Codex 实现一次：dispatch.sh ${id} --handover`,
+      };
+}
+
 /** The fields of a codex-run.sh meta.json that `settle` and `migrate` read. */
 export type CallMeta = {
   mode: 'impl' | 'review';
   review_type: ReviewType | null;
+  /** impl mode only: `test` or `handover`; null for a meta.json written before 2026-10-05. */
+  phase: ImplPhase | null;
   started_at: string;
   exit_code: number;
   has_output: boolean;
@@ -282,9 +407,13 @@ export function parseCallMeta(raw: unknown): CallMeta | null {
   const type = (REVIEW_TYPES as readonly unknown[]).includes(m.review_type)
     ? (m.review_type as ReviewType)
     : null;
+  const phase = (IMPL_PHASES as readonly unknown[]).includes(m.phase)
+    ? (m.phase as ImplPhase)
+    : null;
   return {
     mode: m.mode,
     review_type: m.mode === 'review' ? type : null,
+    phase: m.mode === 'impl' ? phase : null,
     started_at: m.started_at,
     exit_code: m.exit_code,
     has_output: m.has_output === true,
@@ -293,9 +422,13 @@ export function parseCallMeta(raw: unknown): CallMeta | null {
   };
 }
 
-/** Which counter a call used. A review without a recorded type counts as a code review. */
+/**
+ * Which counter a call used. A Codex call in impl mode uses `test` or `handover` by its phase
+ * (an older meta.json without one was a Codex implementation: `impl`). A review without a
+ * recorded type counts as a code review.
+ */
 export function callKind(meta: CallMeta): AttemptKind {
-  if (meta.mode === 'impl') return 'impl';
+  if (meta.mode === 'impl') return meta.phase ?? 'impl';
   return reviewKind(meta.review_type ?? 'general');
 }
 
@@ -445,7 +578,7 @@ export function migrateState(id: string, opts: MigrateOptions = {}): TaskState {
   }
   const metas = runCallMetas(join(runsDir(), id));
   const uncounted: UncountedCall[] = [];
-  const attempts: Record<AttemptKind, number> = { impl: old.impl, 'spec-test': 0, code: 0 };
+  const attempts: Record<AttemptKind, number> = { ...emptyAttempts(), impl: old.impl };
   for (const meta of metas.filter((m) => m.mode === 'impl')) {
     const reason = uncountedReason(meta);
     if (reason === null) continue;
@@ -549,6 +682,8 @@ function main(argv: string[]): number {
       'review-type': { type: 'string' },
       meta: { type: 'string' },
       'unattributed-review': { type: 'string' },
+      outcome: { type: 'string' },
+      risk: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
     },
     allowPositionals: true,
@@ -608,11 +743,11 @@ function main(argv: string[]): number {
   }
   if (cmd === 'bump-attempt') {
     let kind: AttemptKind;
-    if (extra === 'impl') {
+    if (extra === 'test' || extra === 'impl' || extra === 'handover') {
       if (values['review-type'] !== undefined) {
         throw new UsageError('--review-type applies to review only');
       }
-      kind = 'impl';
+      kind = extra;
     } else if (extra === 'review') {
       const type = values['review-type'];
       if (type === undefined || !(REVIEW_TYPES as readonly string[]).includes(type)) {
@@ -623,7 +758,7 @@ function main(argv: string[]): number {
       kind = reviewKind(type as ReviewType);
     } else {
       throw new UsageError(
-        'bump-attempt <id> impl | bump-attempt <id> review --review-type <type>',
+        'bump-attempt <id> test|impl|handover | bump-attempt <id> review --review-type <type>',
       );
     }
     const state = bumpAttempt(id, kind);
@@ -646,6 +781,26 @@ function main(argv: string[]): number {
     );
     return 0;
   }
+  if (cmd === 'opus-run') {
+    const outcome = values.outcome;
+    const risk = values.risk;
+    if (outcome === undefined || !(OPUS_OUTCOMES as readonly string[]).includes(outcome)) {
+      throw new UsageError(`opus-run <id> needs --outcome ${OPUS_OUTCOMES.join('|')}`);
+    }
+    if (risk !== 'RV0' && risk !== 'RV1' && risk !== 'RV2') {
+      throw new UsageError('opus-run <id> needs --risk RV0|RV1|RV2 (tools/ops/task.ts show)');
+    }
+    const res = recordOpusRun(id, outcome as OpusOutcome, risk);
+    console.log(
+      JSON.stringify({
+        task: id,
+        next: res.next,
+        reason: res.reason,
+        opus_failures: res.state.opus_failures,
+      }),
+    );
+    return 0;
+  }
   if (cmd === 'migrate') {
     const un = values['unattributed-review'];
     if (un !== undefined && un !== 'spec-test' && un !== 'code') {
@@ -656,7 +811,9 @@ function main(argv: string[]): number {
     console.log(JSON.stringify(migrateState(id, opts), null, 2));
     return 0;
   }
-  throw new UsageError('expected: get|set|claim|release|bump-attempt|settle|migrate <id> ...');
+  throw new UsageError(
+    'expected: get|set|claim|release|bump-attempt|settle|opus-run|migrate <id> ...',
+  );
 }
 
 if (import.meta.main) runMain(main);

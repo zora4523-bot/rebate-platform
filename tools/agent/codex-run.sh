@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # codex-run.sh — the ONLY way Codex is invoked in this repository (规划/11 §2.4).
 #
-#   codex-run.sh impl   <id> [--worktree <dir>] [--timeout-min <n>] [--dry-run]
+#   codex-run.sh impl   <id> [--phase test|handover] [--worktree <dir>] [--timeout-min <n>]
+#                            [--dry-run]
 #   codex-run.sh review <id> [--worktree <dir>] [--review-type money|general|contract|spec-test]
 #                            [--base <ref>] [--timeout-min <n>] [--dry-run]
 #   codex-run.sh selfcheck
@@ -13,6 +14,14 @@
 # The command line given to Codex is fixed here. Callers cannot pass arguments through.
 # Schemas, prompts and the output validator are read from the trusted root, never from the
 # task worktree. See tools/agent/README.md.
+#
+# Default split since 2026-10-05 (ops/approvals.yaml id 19): Claude Opus 5.5 implements, Codex
+# writes the rule / acceptance tests first and reviews. impl mode therefore has two phases,
+# recorded as `phase` in meta.json so that tools/ops/state.ts counts them apart:
+#   test      (default) Codex writes red rule tests and NotImplemented skeletons
+#   handover  Codex implements once after the Opus attempts ran out, RV0 / RV1 only (§2.5)
+# A spec-test review of a task whose rule tests Codex wrote (ledger tester: codex) is refused:
+# that review goes to a fresh Claude subagent (README §11).
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -33,6 +42,7 @@ CAPACITY_TEXT='Selected model is at capacity'
 REF_PATTERN='^[A-Za-z0-9][A-Za-z0-9._/@^~-]*$'
 
 MODE=''
+PHASE=''
 TASK=''
 WT_ARG=''
 REVIEW_TYPE=''
@@ -44,7 +54,8 @@ log() { printf 'codex-run: %s\n' "$*" >&2; }
 
 print_usage() {
   cat <<'EOF'
-usage: codex-run.sh impl   <id> [--worktree <dir>] [--timeout-min <n>] [--dry-run]
+usage: codex-run.sh impl   <id> [--phase test|handover] [--worktree <dir>] [--timeout-min <n>]
+                                [--dry-run]
        codex-run.sh review <id> [--worktree <dir>] [--review-type money|general|contract|spec-test]
                                 [--base <ref>] [--timeout-min <n>] [--dry-run]
        codex-run.sh selfcheck
@@ -88,7 +99,7 @@ parse_args() {
   while [ $# -gt 0 ]; do
     opt="$1"
     case "$opt" in
-      --worktree | --review-type | --base | --timeout-min)
+      --worktree | --review-type | --base | --timeout-min | --phase)
         # `--worktree <dir>` is this wrapper's own option (it becomes `-C <dir>`); Codex's
         # valueless `--worktree` flag and every other spelling are refused below.
         if [ $# -lt 2 ]; then
@@ -106,6 +117,7 @@ parse_args() {
           --review-type) REVIEW_TYPE="$val" ;;
           --base) BASE_ARG="$val" ;;
           --timeout-min) TIMEOUT_MIN="$val" ;;
+          --phase) PHASE="$val" ;;
         esac
         ;;
       --dry-run)
@@ -122,7 +134,13 @@ parse_args() {
   if [ "$MODE" = impl ]; then
     [ -z "$REVIEW_TYPE" ] || fail_usage "--review-type applies to review only"
     [ -z "$BASE_ARG" ] || fail_usage "--base applies to review only"
+    case "$PHASE" in
+      '') PHASE=test ;;
+      test | handover) ;;
+      *) fail_usage "unknown phase: $PHASE (expected test or handover)" ;;
+    esac
   else
+    [ -z "$PHASE" ] || fail_usage "--phase applies to impl only"
     # An empty REVIEW_TYPE is filled in from the task's risk level (resolve_review_type).
     case "$REVIEW_TYPE" in
       '' | money | general | contract | spec-test) ;;
@@ -238,10 +256,11 @@ resolve_roots() {
 # The review type follows the risk level computed by the trusted tools from the task paths
 # (规划/11 §1.2, §3.3): an RV2 task gets the money review (checklist enforced) by default, and
 # `--review-type general` is refused for it. Without a readable task file the default is general.
-resolve_review_type() {
+read_task_info() {
   TASK_RISK=''
   TASK_REFS=''
   TASK_PATHS=''
+  TASK_TESTER=''
   local task_json=''
   if [ -f "$TRUSTED/tools/ops/task.ts" ]; then
     task_json="$(node "$TRUSTED/tools/ops/task.ts" show "$TASK" --json 2>/dev/null || true)"
@@ -263,11 +282,26 @@ resolve_review_type() {
     case "$TASK_PATHS" in
       *[!A-Za-z0-9_.@*{},/-]* | *..*) TASK_PATHS='' ;;
     esac
+    TASK_TESTER="$(printf '%s\n' "$task_json" |
+      node "$SELF_DIR/meta.ts" get --file /dev/stdin tester 2>/dev/null || true)"
   fi
   case "$TASK_RISK" in
     RV0 | RV1 | RV2) ;;
     *) TASK_RISK='' ;;
   esac
+  case "$TASK_TESTER" in
+    codex | claude | none) ;;
+    *) TASK_TESTER='' ;;
+  esac
+}
+
+resolve_review_type() {
+  read_task_info
+  # Codex never reviews the rule tests it wrote (规划/11 §0 rule 1, §2.3 step 4; ops/approvals.yaml
+  # id 19): the spec-test review of such a task is a fresh Claude subagent's (README §11).
+  if [ "$REVIEW_TYPE" = spec-test ] && [ "$TASK_TESTER" = codex ]; then
+    fail_usage "task $TASK: its rule tests are written by Codex (ledger tester: codex); the spec-test review goes to a fresh Claude subagent, not to Codex (ops/approvals.yaml id 19)"
+  fi
   if [ -z "$REVIEW_TYPE" ]; then
     if [ "$TASK_RISK" = RV2 ]; then REVIEW_TYPE=money; else REVIEW_TYPE=general; fi
   elif [ "$TASK_RISK" = RV2 ] && [ "$REVIEW_TYPE" = general ]; then
@@ -580,6 +614,14 @@ run_task() {
   resolve_codex_bin
   resolve_limits
   if [ "$MODE" = review ]; then resolve_review_type; fi
+  # A handover implementation is for RV0 / RV1 only; RV2 stops instead (规划/11 §2.5).
+  if [ "$MODE" = impl ] && [ "$PHASE" = handover ]; then
+    read_task_info
+    case "$TASK_RISK" in
+      RV0 | RV1) ;;
+      *) fail_usage "task $TASK is ${TASK_RISK:-of unknown risk}: a handover implementation by Codex is for RV0 / RV1 only (规划/11 §2.5: RV2 stops, no handover)" ;;
+    esac
+  fi
 
   RUN="$RUNS/$TASK"
   WT="${WT_ARG:-$RUNS/worktrees/$TASK}"
@@ -632,6 +674,9 @@ run_task() {
     --num "wrapper_pid=$$" --str "output_file=$OUT" --str "events_file=$EVENTS")
   if [ "$MODE" = review ]; then
     meta_args+=(--str "review_type=$REVIEW_TYPE" --str "base=$BASE_SHA" --str "risk=$TASK_RISK")
+  else
+    # Which counter the call uses (tools/ops/state.ts callKind): test or handover.
+    meta_args+=(--str "phase=$PHASE")
   fi
   node "$SELF_DIR/meta.ts" merge --new --file "$RUN/meta.json" --copy-to "$RUN/meta.$MODE.json" \
     "${meta_args[@]}"

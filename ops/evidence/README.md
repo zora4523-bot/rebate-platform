@@ -18,8 +18,8 @@
 | `task` | 任务编号 | `ops/tasks/<编号>.yaml` |
 | `spec_ref` | 写规则测试和实现时对应的规划版本 | 仓库根 `SPEC_REF` |
 | `spec_commit` | 规则测试提交号；之后规则测试不得改动。CI 的 guard-git 也读它：核对它是头提交的祖先、基线的后代后，路径守卫从它起算，它之前的提交按规则测试作者的路径检查（`tools/README.md`「任务分支按 spec_commit 分段」，`ops/approvals.yaml` 第 14 条） | `couli-runs/state/<编号>.json` |
-| `red_tests` | 规则测试先红时的测试名列表（红的原因必须是断言失败或属性反例） | `tools/guard/red-check.ts`（还没有） |
-| `runs[]` | 每一次沙箱外验证：`commit`、`tree`、`prop_seed`、`exit_code`、`mode`（`container` 或 `host`）、起止时间。检查器要求至少一条 `mode: container`、`exit_code: 0` 且 `tree` 等于头提交去掉本证据文件后的树哈希（验证在写证据之前跑，证据文件不可能在它描述的树里） | `couli-runs/<编号>/verify/<n>/result.json`，由 `tools/ops/verify-container.sh` 写出，字段同名 |
+| `red_tests` | 规则测试先红时的测试名列表（红的原因必须是断言失败、属性反例或骨架的 `NotImplemented`） | `tools/guard/red-check.ts --json` 的 `red` |
+| `runs[]` | 每一次沙箱外验证：`commit`、`tree`、`prop_seed`、`exit_code`、`mode`（`container`、`host` 或 `ci`）、起止时间。检查器要求至少一条 `mode: container`、`exit_code: 0` 且 `tree` 等于头提交去掉本证据文件后的树哈希（验证在写证据之前跑，证据文件不可能在它描述的树里） | `couli-runs/<编号>/verify/<n>/result.json`，由 `tools/ops/verify-container.sh` 写出，字段同名（`verify-fast/<n>/` 是实现子代理自己跑的，不进证据） |
 | `reviews[]` | 每家评审的结论：`reviewer`（`claude` / `codex`）、`verdict`、未关闭的 S0 / S1 数、资金清单是否齐全 | 评审输出（`tools/agent/schemas/review.schema.json`） |
 | `trees` | 受保护代码目录的树哈希：路径 → `git rev-parse HEAD:<路径>` | git |
 | `longrun` | 长跑属性测试：次数、种子、结果、对应的资金目录树哈希 | 长跑运行 |
@@ -43,5 +43,7 @@
   "longrun": { "runs": 1000000, "seed": 20261001, "passed": true, "tree": "<树哈希>" }
 }
 ```
+
+`mode: ci`（规划评审 RO2-05、RO3-01，2026-10-05）：暂时只能在 CI 跑的检查（浏览器测试）。它是容器那一条之外的补充，不能代替；每一条 CI 运行都要绑定：`commit` 是被测提交的完整 SHA，必须是头提交或它的祖先，且两者去掉本任务证据文件后的树哈希相同（证据入库产生的新提交不影响；源码、测试、配置有任何变化须重新跑）；`spec_commit` 等于本证据的 `spec_commit`；`run_attempt` 为 1、`conclusion` 为 `success`、`skipped` 为 0、`exit_code` 为 0。不是「被测提交必须等于头提交」。
 
 合并规则：RV2 不接受 `runs[].mode` 为 `host` 的结果（11 §2.3 第 7 步）；长跑结果绑定树哈希，不绑定提交号（11 §3.2）。检查器逐项核对：`task` 等于分支 `task/<编号>` 的编号；`spec_ref` 等于头提交的 `SPEC_REF`；`spec_commit` 是头提交的祖先，且此后第一类测试资产只增未改；`reviews[]` 里 `claude` 与 `codex` 都是 `pass`、`open_s0_s1` 为 0、`codex` 的 `checklist_complete` 为 true；`trees` 里每条路径的树哈希等于 `git rev-parse <头提交>:<路径>`；`longrun.passed` 为 true 且 `longrun.tree` 是 `trees` 里的某个值。

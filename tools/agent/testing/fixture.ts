@@ -140,7 +140,11 @@ export function makeFixture(name: string): Fixture {
   gitIn(main, ['worktree', 'add', '-q', '-b', `task/${TASK}`, worktree]);
 
   mkdirSync(run, { recursive: true });
-  writeFileSync(join(run, 'brief.md'), `# 任务 ${TASK}：fixture task\n\nDo not commit.\n\n`);
+  // A test-phase brief (brief.ts --phase test): dispatch.sh reuses it for the first test round.
+  writeFileSync(
+    join(run, 'brief.md'),
+    `# 任务 ${TASK}：fixture task\n\n- 本轮阶段：test（fixture）\n\nDo not commit.\n\n`,
+  );
 
   mkdirSync(join(trusted, 'tools'), { recursive: true });
   cpSync(AGENT_DIR, join(trusted, 'tools', 'agent'), { recursive: true });

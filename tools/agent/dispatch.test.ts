@@ -177,8 +177,9 @@ it('dispatch: preflight in order, background launch, pid recorded', LONG, () => 
   const res = runScript('dispatch.sh', [TASK], fx.env);
   expect(res.status, res.stderr).toBe(0);
   const out = lastJsonLine(res.stdout);
-  expect(Object.keys(out)).toEqual(['action', 'pid', 'run']);
-  expect(out).toMatchObject({ action: 'dispatched', run: fx.run });
+  expect(Object.keys(out)).toEqual(['action', 'pid', 'run', 'phase']);
+  // Codex writes the rule tests by default (ops/approvals.yaml id 19).
+  expect(out).toMatchObject({ action: 'dispatched', run: fx.run, phase: 'test' });
   const pid = Number(out['pid']);
   expect(pid).toBeGreaterThan(1);
 
@@ -197,7 +198,8 @@ it('dispatch: preflight in order, background launch, pid recorded', LONG, () => 
     ['state', 'claim', TASK, '--owner', 'sess-test'],
     // The pid of a still-running previous dispatch is looked up before anything is counted.
     ['state', 'get', TASK],
-    ['state', 'bump-attempt', TASK, 'impl'],
+    // Codex writing tests has its own counter, never the implementation's (RO-07).
+    ['state', 'bump-attempt', TASK, 'test'],
     ['state', 'get', TASK],
   ]);
   expect(calls.filter((call) => call[0] === 'usage' && call[1] !== 'record')).toEqual([]);
@@ -376,7 +378,12 @@ it('dispatch: from the second attempt on the brief is regenerated before the lau
   // takes both the attempt number and that output from the in-flight state.
   const fx = fixture('dispatch-retry-brief', {
     state: [
-      { when: ['get'], stdout: stateJson({ attempts: { impl: 2, 'spec-test': 0, code: 0 } }) },
+      {
+        when: ['get'],
+        stdout: stateJson({
+          attempts: { test: 2, impl: 0, handover: 0, 'spec-test': 0, code: 0 },
+        }),
+      },
     ],
     brief: [{ writeOut: `# 任务 ${TASK}：regenerated for attempt 2\n` }],
   });
@@ -628,3 +635,98 @@ it('post-run: a wrapper that never started Codex is reported as blocked', LONG, 
   });
   expect(runScript('post-run.sh', [], fx.env).status).toBe(2);
 });
+
+it(
+  '[ops/approvals.yaml id 19] dispatch: committed rule tests are never rewritten by Codex',
+  LONG,
+  () => {
+    const fx = fixture('dispatch-spec-done', {
+      state: [{ when: ['get'], stdout: stateJson({ spec_commit: 'abc1234' }) }],
+    });
+    const res = runScript('dispatch.sh', [TASK], fx.env);
+    expect(res.status, res.stderr).toBe(1);
+    expect(lastJsonLine(res.stdout)).toMatchObject({
+      action: 'none',
+      reason: 'spec-commit-exists',
+    });
+    expect(String(lastJsonLine(res.stdout)['detail'])).toContain('Claude Opus subagent');
+    // Nothing was counted and nothing was launched.
+    expect(stubCalls(fx, 'state').some((call) => call[1] === 'bump-attempt')).toBe(false);
+    expect(existsSync(join(fx.run, 'dispatch.log'))).toBe(false);
+  },
+);
+
+it(
+  '[规划/11 §2.5] dispatch --handover: RV0 / RV1 only, its own counter and an impl brief',
+  LONG,
+  () => {
+    const rv2 = fixture('dispatch-handover-rv2', {
+      task: [{ when: ['show'], stdout: JSON.stringify({ id: TASK, type: 'impl', risk: 'RV2' }) }],
+      state: [{ when: ['get'], stdout: stateJson({ spec_commit: 'abc1234' }) }],
+    });
+    const refused = runScript('dispatch.sh', [TASK, '--handover'], rv2.env);
+    expect(refused.status).toBe(1);
+    expect(lastJsonLine(refused.stdout)).toMatchObject({ reason: 'handover-refused' });
+    expect(stubCalls(rv2, 'state').some((call) => call[1] === 'bump-attempt')).toBe(false);
+
+    const fx = fixture('dispatch-handover', {
+      state: [{ when: ['get'], stdout: stateJson({ spec_commit: 'abc1234' }) }],
+      brief: [{ writeOut: `# 任务 ${TASK}：handover brief\n\n- 本轮阶段：handover（stub）\n` }],
+    });
+    const res = runScript('dispatch.sh', [TASK, '--handover'], fx.env);
+    expect(res.status, res.stderr).toBe(0);
+    expect(lastJsonLine(res.stdout)).toMatchObject({ action: 'dispatched', phase: 'handover' });
+    const meta = waitForRun(fx);
+    expect(meta).toMatchObject({ mode: 'impl', phase: 'handover', exit_code: 0 });
+    const calls = stubCalls(fx);
+    expect(calls).toContainEqual(['state', 'bump-attempt', TASK, 'handover']);
+    // The test-phase brief of the fixture is not reused for an implementation.
+    expect(calls).toContainEqual([
+      'brief',
+      TASK,
+      '--phase',
+      'handover',
+      '--out',
+      join(fx.run, 'brief.md'),
+    ]);
+    expect(observedArgv(fx).at(-1)).toContain('handover brief');
+  },
+);
+
+it(
+  'post-run: a Codex rule-test run is guarded as the rule-test author and goes to the red check',
+  LONG,
+  () => {
+    const fx = fixture('post-test-phase', {
+      state: [
+        {
+          when: ['get'],
+          stdout: stateJson({
+            attempts: { test: 1, impl: 0, handover: 0, 'spec-test': 0, code: 0 },
+          }),
+        },
+      ],
+    });
+    writeMeta(fx, { phase: 'test' });
+    writeImpl(fx);
+    const res = runScript('post-run.sh', [TASK], fx.env);
+    expect(res.status, res.stderr).toBe(0);
+    expect(lastJsonLine(res.stdout)).toMatchObject({
+      action: 'red-check',
+      phase: 'test',
+      attempt: 1,
+      base: fx.baseSha,
+    });
+    expect(stubCalls(fx, 'path-guard')[0]).toEqual([
+      'path-guard',
+      '--task',
+      TASK,
+      '--base',
+      fx.baseSha,
+      '--cwd',
+      fx.worktree,
+      '--json',
+      '--author',
+    ]);
+  },
+);

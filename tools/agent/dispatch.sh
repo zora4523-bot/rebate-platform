@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
-# dispatch.sh <id> — preflight and background launch of one implementation run
-# (规划/11 §2.2 后台运行, §2.3 step 5, §2.5).
+# dispatch.sh <id> [--handover] — preflight and background launch of one Codex run in impl mode
+# (规划/11 §2.2 后台运行, §2.3 steps 3 and 5, §2.5).
+#
+# Default split since 2026-10-05 (ops/approvals.yaml id 19): Claude Opus 5.5 implements (a
+# subagent the orchestrator starts, README §10, not this script), Codex writes the rule tests.
+# So this script launches one of two Codex runs:
+#   (default)    test phase: Codex writes red rule tests and NotImplemented skeletons. Refused
+#                once the task has a spec_commit (the rule tests are committed and frozen).
+#   --handover   Codex implements once after the Opus attempts ran out (规划/11 §2.5 超限换家);
+#                RV0 / RV1 only, checked here with the trusted task.ts and again by codex-run.sh.
+# The phase picks the counter (state.ts bump-attempt test|handover), the brief
+# (brief.ts --phase test|handover) and the wrapper phase (codex-run.sh impl --phase test|handover).
 #
 # There is no quota gate: the owner said on 2026-10-02 that the Codex quota is unlimited
 # (ops/approvals.yaml id 15). Only failures stop a task (§2.5), checked in step 2.
@@ -10,21 +20,23 @@
 #                          The owner is COULI_SESSION when set, else a name unique to this
 #                          dispatch process; `--renew` is tried only when the claim on file is
 #                          already held by this very owner (never for another session's claim)
-#   2. count the attempt   node <TRUSTED>/tools/ops/state.ts bump-attempt <id> impl
+#   2. count the attempt   node <TRUSTED>/tools/ops/state.ts bump-attempt <id> test|handover
 #                          BEFORE launching, every time. A call that ends without output
 #                          (timeout, capacity error, no `-o`, …) is given back by codex-run.sh
 #                          (state.ts settle) when it finishes (§2.5). bump-attempt exits 3 when a
 #                          failure breaker of the task is open (10 calls, or 3 calls in a row
 #                          without output): the task is stopped and reported
-#   3. task brief          RUN/brief.md, else node <TRUSTED>/tools/ops/brief.ts <id>. From the
-#                          second attempt on the brief is always regenerated: every round is a
-#                          new one and carries the previous failure output (§2.3 重试不用 resume)
+#   3. task brief          RUN/brief.md when it is a brief of this phase (its `- 本轮阶段：`
+#                          line), else node <TRUSTED>/tools/ops/brief.ts <id> --phase <p>. From
+#                          the second attempt on the brief is always regenerated: every round is
+#                          a new one and carries the previous failure output (§2.3 重试不用 resume)
 #   4. worktree            <runs>/worktrees/<id> exists and has node_modules. Dependencies are
 #                          installed by the orchestrator outside the sandbox; nothing is
 #                          installed here.
-# Then codex-run.sh impl <id> is started in the background in its own session (under
-# `caffeinate -i` when available), pid and start time are recorded with state.ts set, and one
-# JSON line is printed: {"action":"dispatched","pid":<n>,"run":"<RUN>"}.
+# Then codex-run.sh impl <id> --phase <test|handover> is started in the background in its own
+# session (under `caffeinate -i` when available), pid and start time are recorded with
+# state.ts set, and one JSON line is printed:
+# {"action":"dispatched","pid":<n>,"run":"<RUN>","phase":"test|handover"}.
 #
 # Exit codes: 0 dispatched | 3 a failure breaker of the task is open | 1 a preflight check
 #             failed | 2 usage or internal error. On every non-zero exit one JSON line with
@@ -39,8 +51,11 @@ SELF_REPO="$(cd "$SELF_DIR/../.." && pwd -P)"
 log() { printf 'dispatch: %s\n' "$*" >&2; }
 emit() { node "$SELF_DIR/meta.ts" emit "$@"; }
 
-if [ $# -ne 1 ]; then
-  log "usage: dispatch.sh <id>"
+HANDOVER=0
+if [ $# -eq 2 ] && [ "$2" = --handover ]; then
+  HANDOVER=1
+elif [ $# -ne 1 ]; then
+  log "usage: dispatch.sh <id> [--handover]"
   exit 2
 fi
 TASK="$1"
@@ -59,6 +74,13 @@ agent_resolve_roots || exit 2
 OPS="$TRUSTED/tools/ops"
 RUN="$RUNS/$TASK"
 WT="$RUNS/worktrees/$TASK"
+if [ "$HANDOVER" = 1 ]; then
+  PHASE=handover
+  BRIEF_PHASE=handover
+else
+  PHASE=test
+  BRIEF_PHASE=test
+fi
 for script in state.ts brief.ts; do
   [ -f "$OPS/$script" ] || {
     log "missing in the trusted root: tools/ops/$script"
@@ -116,8 +138,11 @@ fi
 
 # A run of this task that is still alive (pid recorded by a previous dispatch) must not get a
 # second implementation started next to it on the same worktree.
-running_pid="$(node "$OPS/state.ts" get "$TASK" 2>/dev/null |
+state_now="$(node "$OPS/state.ts" get "$TASK" 2>/dev/null || true)"
+running_pid="$(printf '%s\n' "$state_now" |
   node "$SELF_DIR/meta.ts" get --file /dev/stdin pid 2>/dev/null || true)"
+spec_commit_now="$(printf '%s\n' "$state_now" |
+  node "$SELF_DIR/meta.ts" get --file /dev/stdin spec_commit 2>/dev/null || true)"
 case "$running_pid" in
   '' | null | *[!0-9]*) ;;
   *)
@@ -127,11 +152,32 @@ case "$running_pid" in
     ;;
 esac
 
+# Which run is this? Rule tests are written once, before the implementation: with a spec_commit
+# they are frozen, and the implementation belongs to the Opus subagent (README §10). A handover
+# to Codex is for RV0 / RV1 only (规划/11 §2.5: RV2 stops instead).
+if [ "$PHASE" = test ]; then
+  case "$spec_commit_now" in
+    '' | null) ;;
+    *) stop 1 spec-commit-exists "rule tests are committed (spec_commit $spec_commit_now): the implementation goes to a Claude Opus subagent (tools/agent/README.md §10); a Codex handover is dispatch.sh $TASK --handover" ;;
+  esac
+else
+  [ -f "$OPS/task.ts" ] || {
+    log "missing in the trusted root: tools/ops/task.ts"
+    exit 2
+  }
+  task_risk="$(node "$OPS/task.ts" show "$TASK" --json 2>/dev/null |
+    node "$SELF_DIR/meta.ts" get --file /dev/stdin risk 2>/dev/null || true)"
+  case "$task_risk" in
+    RV0 | RV1) ;;
+    *) stop 1 handover-refused "task $TASK is ${task_risk:-of unknown risk}: a Codex handover implementation is for RV0 / RV1 only (规划/11 §2.5: RV2 stops)" ;;
+  esac
+fi
+
 # 2. Count the attempt before anything is launched (规划/11 §2.5). A previous call that ended
 # without output (capacity error included) was already given back by codex-run.sh. Exit 3: a
 # failure breaker of this task is open (per-task call cap, consecutive calls without output).
 bump_rc=0
-node "$OPS/state.ts" bump-attempt "$TASK" impl >/dev/null 2>"$ERR_FILE" || bump_rc=$?
+node "$OPS/state.ts" bump-attempt "$TASK" "$PHASE" >/dev/null 2>"$ERR_FILE" || bump_rc=$?
 if [ "$bump_rc" = 3 ]; then
   emit --str action=stopped --str "task=$TASK" --str reason=task-breaker \
     --str "detail=$(cat "$ERR_FILE" 2>/dev/null || true)"
@@ -144,13 +190,19 @@ if [ "$bump_rc" != 0 ]; then stop 2 state-error "$(last_error)"; fi
 # a fresh one: brief.ts reads the attempt number and the previous failure output from the
 # in-flight state, which the orchestrator updates between rounds (state.ts set --last-error).
 attempts_now="$(node "$OPS/state.ts" get "$TASK" 2>/dev/null |
-  node "$SELF_DIR/meta.ts" get --file /dev/stdin attempts.impl 2>/dev/null || true)"
+  node "$SELF_DIR/meta.ts" get --file /dev/stdin "attempts.$PHASE" 2>/dev/null || true)"
 case "$attempts_now" in
   '' | *[!0-9]*) attempts_now=1 ;;
 esac
-if [ ! -s "$RUN/brief.md" ] || [ "$attempts_now" -ge 2 ]; then
+# A brief written for another phase (brief.ts writes `- 本轮阶段：<phase>（…）`) is never reused:
+# the test-phase brief lets Codex add rule tests, the impl brief freezes them.
+brief_phase_ok=0
+if [ -s "$RUN/brief.md" ] && grep -q "^- 本轮阶段：$BRIEF_PHASE（" "$RUN/brief.md"; then
+  brief_phase_ok=1
+fi
+if [ "$brief_phase_ok" = 0 ] || [ "$attempts_now" -ge 2 ]; then
   mkdir -p "$RUN"
-  node "$OPS/brief.ts" "$TASK" --out "$RUN/brief.md" >/dev/null 2>"$ERR_FILE" ||
+  node "$OPS/brief.ts" "$TASK" --phase "$BRIEF_PHASE" --out "$RUN/brief.md" >/dev/null 2>"$ERR_FILE" ||
     stop 1 brief-failed "$(last_error)"
   [ -s "$RUN/brief.md" ] || stop 1 brief-failed "brief.ts wrote no $RUN/brief.md"
 fi
@@ -167,7 +219,7 @@ launcher=(perl -e 'use POSIX qw(setsid); setsid(); exec { $ARGV[0] } @ARGV; exit
 if command -v caffeinate >/dev/null 2>&1; then
   launcher+=(caffeinate -i)
 fi
-"${launcher[@]}" "$TRUSTED/tools/agent/codex-run.sh" impl "$TASK" \
+"${launcher[@]}" "$TRUSTED/tools/agent/codex-run.sh" impl "$TASK" --phase "$PHASE" \
   >"$RUN/dispatch.log" 2>&1 </dev/null &
 pid=$!
 
@@ -175,4 +227,4 @@ node "$OPS/state.ts" set "$TASK" --state doing --pid "$pid" --started-at "$(agen
   >/dev/null 2>"$ERR_FILE" ||
   log "warning: run started (pid $pid) but state.ts set failed: $(last_error)"
 
-emit --str action=dispatched --num "pid=$pid" --str "run=$RUN"
+emit --str action=dispatched --num "pid=$pid" --str "run=$RUN" --str "phase=$PHASE"

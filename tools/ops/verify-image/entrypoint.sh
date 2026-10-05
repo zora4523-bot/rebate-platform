@@ -5,6 +5,7 @@
 #                                    /in/pnpm-workspace.yaml; fills the store volume at /store
 #   couli-verify-entrypoint verify   offline; copies /src to /work/repo, installs from the
 #                                    read-only store and runs `pnpm verify` under a time limit
+#                                    (VERIFY_SCRIPT=verify:fast: `pnpm run verify:fast` instead)
 set -euo pipefail
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
@@ -21,6 +22,14 @@ case "${1:-}" in
     ;;
   verify)
     limit="${VERIFY_TIMEOUT_SECS:?VERIFY_TIMEOUT_SECS is required}"
+    script="${VERIFY_SCRIPT:-verify}"
+    case "$script" in
+      verify | verify:fast) ;;
+      *)
+        echo "VERIFY_SCRIPT must be verify or verify:fast" >&2
+        exit 2
+        ;;
+    esac
     mkdir -p /work/repo
     # node_modules of the host holds darwin binaries; .git is not needed and not exposed.
     # *.tsbuildinfo is git-ignored, so the path guard never sees it: a stale or forged one must
@@ -32,14 +41,14 @@ case "${1:-}" in
     cd /work/repo
     echo "[verify] pnpm install --offline --frozen-lockfile"
     pnpm install --offline --frozen-lockfile --store-dir /store
-    echo "[verify] pnpm verify (limit ${limit}s)"
+    echo "[verify] pnpm run ${script} (limit ${limit}s)"
     started=$(date +%s)
     rc=0
-    timeout --signal=TERM --kill-after=10 "$limit" pnpm verify || rc=$?
+    timeout --signal=TERM --kill-after=10 "$limit" pnpm run "$script" || rc=$?
     elapsed=$(( $(date +%s) - started ))
     # `timeout` reports 137 when the command ignored TERM and had to be killed.
     if [ "$rc" -eq 137 ] && [ "$elapsed" -ge "$limit" ]; then rc=124; fi
-    echo "[verify] pnpm verify exited ${rc} after ${elapsed}s"
+    echo "[verify] pnpm run ${script} exited ${rc} after ${elapsed}s"
     exit "$rc"
     ;;
   *)

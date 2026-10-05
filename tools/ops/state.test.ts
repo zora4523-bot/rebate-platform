@@ -6,13 +6,16 @@ import {
   ATTEMPT_LIMITS,
   bumpAttempt,
   type CallMeta,
+  callKind,
   claimDir,
   claimTask,
   listStates,
   MAX_CALLS_PER_TASK,
   MAX_CONSECUTIVE_NO_OUTPUT,
   migrateState,
+  parseCallMeta,
   readState,
+  recordOpusRun,
   releaseTask,
   reviewKind,
   settleCall,
@@ -40,7 +43,7 @@ it('creates the state file on first use and writes it atomically', () => {
   expect(state).toEqual({
     id: 'A1-01',
     state: 'doing',
-    attempts: { impl: 0, 'spec-test': 0, code: 0 },
+    attempts: { test: 0, impl: 0, handover: 0, 'spec-test': 0, code: 0 },
     spec_commit: null,
     pid: 4242,
     started_at: T0.toISOString(),
@@ -49,6 +52,7 @@ it('creates the state file on first use and writes it atomically', () => {
     ask_created_at: null,
     last_error: null,
     uncounted_calls: [],
+    opus_failures: { total: 0, consecutive: 0, last_reason: null },
     updated_at: T0.toISOString(),
   });
   expect(JSON.parse(readFileSync(stateFile('A1-01'), 'utf8'))).toEqual(state);
@@ -64,7 +68,13 @@ it('records when a task entered `ask` and forgets it when the task leaves', () =
 });
 
 it('counts attempts before dispatch and refuses to go past the limits', () => {
-  expect(bumpAttempt('A1-03', 'impl', T0).attempts).toEqual({ impl: 1, 'spec-test': 0, code: 0 });
+  expect(bumpAttempt('A1-03', 'impl', T0).attempts).toEqual({
+    test: 0,
+    impl: 1,
+    handover: 0,
+    'spec-test': 0,
+    code: 0,
+  });
   bumpAttempt('A1-03', 'impl', T0);
   expect(bumpAttempt('A1-03', 'impl', T0).attempts.impl).toBe(3);
   // Persisted: a crash right after the bump still counts the attempt.
@@ -74,7 +84,7 @@ it('counts attempts before dispatch and refuses to go past the limits', () => {
 });
 
 it('[规划/11 §2.5] rule-test review has 2 rounds, code review 3, each its own counter', () => {
-  expect(ATTEMPT_LIMITS).toEqual({ impl: 3, 'spec-test': 2, code: 3 });
+  expect(ATTEMPT_LIMITS).toEqual({ test: 3, impl: 3, handover: 1, 'spec-test': 2, code: 3 });
   expect(reviewKind('spec-test')).toBe('spec-test');
   for (const type of ['money', 'general', 'contract'] as const)
     expect(reviewKind(type)).toBe('code');
@@ -86,7 +96,13 @@ it('[规划/11 §2.5] rule-test review has 2 rounds, code review 3, each its own
   // Two spec-test rounds used up do not take anything from the code review.
   bumpAttempt('A1-07', 'code', T0);
   bumpAttempt('A1-07', 'code', T0);
-  expect(bumpAttempt('A1-07', 'code', T0).attempts).toEqual({ impl: 0, 'spec-test': 2, code: 3 });
+  expect(bumpAttempt('A1-07', 'code', T0).attempts).toEqual({
+    test: 0,
+    impl: 0,
+    handover: 0,
+    'spec-test': 2,
+    code: 3,
+  });
   expect(() => bumpAttempt('A1-07', 'code', T0)).toThrow(/code attempts exhausted \(3 of 3/);
 });
 
@@ -94,6 +110,7 @@ function meta(over: Partial<CallMeta> = {}): CallMeta {
   return {
     mode: 'review',
     review_type: 'spec-test',
+    phase: null,
     started_at: '2026-10-02T03:14:01Z',
     exit_code: 0,
     has_output: true,
@@ -126,13 +143,19 @@ it('[规划/11 §2.5] settle takes a timed-out review back once, on its own coun
   const timedOut = meta({ exit_code: 124, has_output: false, validation: 'not-run' });
   const first = settleCall('A1-08', timedOut, later(1000));
   expect(first).toMatchObject({ kind: 'spec-test', counted: false, changed: true });
-  expect(first.state?.attempts).toEqual({ impl: 0, 'spec-test': 0, code: 1 });
+  expect(first.state?.attempts).toEqual({ test: 0, impl: 0, handover: 0, 'spec-test': 0, code: 1 });
   expect(first.state?.uncounted_calls).toEqual([
     { kind: 'spec-test', started_at: timedOut.started_at, exit_code: 124, reason: 'timeout' },
   ]);
   // Idempotent: settling the same call again (post-run, a retry of the wrapper) changes nothing.
   expect(settleCall('A1-08', timedOut, later(2000))).toMatchObject({ changed: false });
-  expect(readState('A1-08')?.attempts).toEqual({ impl: 0, 'spec-test': 0, code: 1 });
+  expect(readState('A1-08')?.attempts).toEqual({
+    test: 0,
+    impl: 0,
+    handover: 0,
+    'spec-test': 0,
+    code: 1,
+  });
   // A call with output keeps its round.
   const ok = meta({ review_type: 'money', started_at: '2026-10-02T04:00:00Z' });
   expect(settleCall('A1-08', ok, later(3000))).toMatchObject({ counted: true, changed: false });
@@ -149,6 +172,119 @@ it('[规划/11 §2.5] settle takes a timed-out review back once, on its own coun
   expect(settleCall('A1-08', implTimeout, later(4000)).state?.attempts.impl).toBe(0);
   // Without a state file there is nothing to settle.
   expect(settleCall('Z9-99', timedOut, T0)).toMatchObject({ state: null, changed: false });
+});
+
+it('[ops/approvals.yaml id 19] Codex writing tests, the Opus implementation and a handover count apart', () => {
+  // Codex writes the rule tests: its rounds never use up an implementation attempt.
+  for (const n of [1, 2, 3]) expect(bumpAttempt('E1-01', 'test', T0).attempts.test).toBe(n);
+  expect(() => bumpAttempt('E1-01', 'test', T0)).toThrow(/test attempts exhausted \(3 of 3/);
+  expect(readState('E1-01')?.attempts).toEqual({
+    test: 3,
+    impl: 0,
+    handover: 0,
+    'spec-test': 0,
+    code: 0,
+  });
+  // The Opus subagent still has its three attempts; the handover to Codex is one.
+  expect(bumpAttempt('E1-01', 'impl', T0).attempts.impl).toBe(1);
+  expect(bumpAttempt('E1-01', 'handover', T0).attempts.handover).toBe(1);
+  expect(() => bumpAttempt('E1-01', 'handover', T0)).toThrow(
+    /handover attempts exhausted \(1 of 1/,
+  );
+  removeDir(stateFile('E1-01'));
+});
+
+it('[ops/approvals.yaml id 19] an impl-mode Codex call is counted by its phase', () => {
+  const impl = { mode: 'impl' as const, review_type: null };
+  expect(callKind(meta({ ...impl, phase: 'test' }))).toBe('test');
+  expect(callKind(meta({ ...impl, phase: 'handover' }))).toBe('handover');
+  // A meta.json from before 2026-10-05 (no phase) was a Codex implementation.
+  expect(callKind(meta({ ...impl, phase: null }))).toBe('impl');
+  expect(
+    parseCallMeta({ ...meta({ ...impl }), phase: 'test', finished_at: '2026-10-05T01:00:00Z' })
+      ?.phase,
+  ).toBe('test');
+  expect(
+    parseCallMeta({ ...meta(), phase: 'test', finished_at: '2026-10-05T01:00:00Z' })?.phase,
+  ).toBeNull();
+  // A test-writing call killed by the hard timeout gives its round back to `test`, not `impl`.
+  bumpAttempt('E1-02', 'test', T0);
+  bumpAttempt('E1-02', 'impl', T0);
+  const timedOut = meta({
+    ...impl,
+    phase: 'test',
+    started_at: '2026-10-05T02:00:00Z',
+    exit_code: 124,
+    has_output: false,
+    validation: 'not-run',
+  });
+  expect(settleCall('E1-02', timedOut, later(1000))).toMatchObject({ kind: 'test', changed: true });
+  expect(readState('E1-02')?.attempts).toMatchObject({ test: 0, impl: 1 });
+  removeDir(stateFile('E1-02'));
+});
+
+it('[RO2-03] Opus runs without a result: 3 in a row or 5 in total hand over (RV0 / RV1) or block (RV2)', () => {
+  expect(recordOpusRun('E1-04', 'no-output', 'RV1', T0).next).toBe('continue');
+  expect(recordOpusRun('E1-04', 'timeout', 'RV1', T0).next).toBe('continue');
+  const third = recordOpusRun('E1-04', 'capacity', 'RV1', T0);
+  expect(third).toMatchObject({ next: 'handover' });
+  expect(third.reason).toContain('连续 3 次');
+  expect(third.state.opus_failures).toEqual({ total: 3, consecutive: 3, last_reason: 'capacity' });
+  // A run with a result resets the run of failures, not the total.
+  const ok = recordOpusRun('E1-05', 'timeout', 'RV2', T0);
+  expect(ok.next).toBe('continue');
+  for (const outcome of ['no-output', 'ok', 'timeout', 'ok', 'capacity', 'ok'] as const) {
+    recordOpusRun('E1-05', outcome, 'RV2', T0);
+  }
+  expect(readState('E1-05')?.opus_failures).toEqual({
+    total: 4,
+    consecutive: 0,
+    last_reason: 'capacity',
+  });
+  const fifth = recordOpusRun('E1-05', 'no-output', 'RV2', T0);
+  expect(fifth.next).toBe('blocked');
+  expect(fifth.reason).toContain('累计 5 次');
+  expect(fifth.reason).toContain('RV2 不换家');
+  // Opus failures never touch the Codex counters.
+  expect(fifth.state.attempts).toEqual({ test: 0, impl: 0, handover: 0, 'spec-test': 0, code: 0 });
+  const cli = runCli('state.ts', ['opus-run', 'E1-06', '--outcome', 'timeout', '--risk', 'RV1'], {
+    COULI_RUNS: runs,
+  });
+  expect(cli.status, cli.stderr).toBe(0);
+  expect(JSON.parse(cli.stdout)).toMatchObject({ next: 'continue', opus_failures: { total: 1 } });
+  expect(
+    runCli('state.ts', ['opus-run', 'E1-06', '--outcome', 'timeout'], { COULI_RUNS: runs }).status,
+  ).toBe(2);
+  for (const id of ['E1-04', 'E1-05', 'E1-06']) removeDir(stateFile(id));
+});
+
+it('reads a state file of the three-counter shape with the later counters at 0', () => {
+  writeFileSync(
+    stateFile('E1-03'),
+    JSON.stringify({
+      id: 'E1-03',
+      state: 'doing',
+      attempts: { impl: 2, 'spec-test': 1, code: 0 },
+      spec_commit: null,
+      pid: null,
+      started_at: null,
+      owner_session: null,
+      lease_until: null,
+      ask_created_at: null,
+      last_error: null,
+      uncounted_calls: [],
+      updated_at: T0.toISOString(),
+    }),
+  );
+  expect(readState('E1-03')?.attempts).toEqual({
+    test: 0,
+    impl: 2,
+    handover: 0,
+    'spec-test': 1,
+    code: 0,
+  });
+  expect(bumpAttempt('E1-03', 'test', T0).attempts).toMatchObject({ test: 1, impl: 2 });
+  removeDir(stateFile('E1-03'));
 });
 
 it('[规划/11 §2.5] migrates the old shared review counter from the run history', () => {
@@ -212,12 +348,12 @@ it('[规划/11 §2.5] migrates the old shared review counter from the run histor
   writeFileSync(join(run, 'meta.json'), JSON.stringify(files['meta.review.json']));
 
   const dry = migrateState(id, { dryRun: true, now: later(1000) });
-  expect(dry.attempts).toEqual({ impl: 1, 'spec-test': 1, code: 0 });
+  expect(dry.attempts).toEqual({ test: 0, impl: 1, handover: 0, 'spec-test': 1, code: 0 });
   expect(() => readState(id)).toThrow(/old shape/);
   const migrated = migrateState(id, { now: later(1000) });
   expect(migrated).toMatchObject({
     state: 'blocked',
-    attempts: { impl: 1, 'spec-test': 1, code: 0 },
+    attempts: { test: 0, impl: 1, handover: 0, 'spec-test': 1, code: 0 },
     last_error: '/runs/B9-01a/r2-fix-input.txt',
     uncounted_calls: [
       { kind: 'spec-test', started_at: '2026-10-02T03:14:01Z', exit_code: 124, reason: 'timeout' },
@@ -316,7 +452,9 @@ it('refuses to guess when counted review rounds left no meta.json', () => {
   );
   expect(() => migrateState(id, { now: T0 })).toThrow(/--unattributed-review/);
   expect(migrateState(id, { now: T0, unattributedReview: 'code' }).attempts).toEqual({
+    test: 0,
     impl: 1,
+    handover: 0,
     'spec-test': 0,
     code: 1,
   });
@@ -400,7 +538,7 @@ it(
       id: 'C1-01',
       state: 'verify',
       owner_session: 's1',
-      attempts: { impl: 3, 'spec-test': 0, code: 0 },
+      attempts: { test: 0, impl: 3, handover: 0, 'spec-test': 0, code: 0 },
     });
     expect(runCli('state.ts', ['release', 'C1-01', '--owner', 's2'], env).status).toBe(1);
     expect(runCli('state.ts', ['release', 'C1-01', '--owner', 's1'], env).status).toBe(0);
@@ -440,7 +578,7 @@ it(
       kind: 'code',
       counted: false,
       changed: true,
-      attempts: { impl: 3, 'spec-test': 1, code: 0 },
+      attempts: { test: 0, impl: 3, handover: 0, 'spec-test': 1, code: 0 },
     });
     expect(runCli('state.ts', ['get', '../../etc/passwd'], env).status).toBe(2);
 

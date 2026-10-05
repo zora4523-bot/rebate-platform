@@ -531,7 +531,7 @@ describe('run.ts static and the single-purpose guards', () => {
     expect(guard('agents-table.ts', ['--write', '--cwd', root]).status).toBe(0);
     expect(guard('agents-table.ts', ['--check', '--cwd', root]).status).toBe(0);
     const text = readFileSync(join(root, 'AGENTS.md'), 'utf8');
-    expect(text).toContain('| `packages/money/**` | Codex | Claude | Claude + Codex | RV2 |');
+    expect(text).toContain('| `packages/money/**` | Claude | Codex | Claude + Codex | RV2 |');
     expect(text.endsWith(`${TABLE_END}\n\n## next\n`)).toBe(true);
     expect(guard('agents-table.ts', ['--cwd', root]).status).toBe(2);
     rmSync(join(root, 'AGENTS.md'));

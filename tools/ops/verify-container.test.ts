@@ -40,6 +40,7 @@ function run(args: string[], env: Record<string, string> = {}) {
 
 type Result = {
   mode: string;
+  script: string;
   exit_code: number;
   commit: string | null;
   tree: string | null;
@@ -135,6 +136,7 @@ it(
     const first = result('V1-03', 1);
     expect(first).toMatchObject({
       mode: 'host',
+      script: 'verify',
       exit_code: 0,
       commit: null,
       tree: null,
@@ -190,6 +192,39 @@ it(
     expect(dirty.tree).toMatch(/^[0-9a-f]{40}$/);
     expect(dirty.tree).not.toBe(headTree);
     expect(fixtureGit(repo, ['status', '--porcelain'])).toBe('?? new-file.txt');
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[ops/approvals.yaml id 19] --fast runs verify:fast for the implementation subagent, kept apart from verify',
+  () => {
+    const dir = join(base, 'host-fast');
+    writeFiles(dir, {
+      'package.json': `${JSON.stringify(
+        {
+          name: 'host-fast',
+          private: true,
+          scripts: {
+            verify: 'node -e "process.exit(9)"',
+            'verify:fast': 'node -e "process.exit(0)"',
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'pnpm-workspace.yaml': 'packages: []\n',
+    });
+    const fast = run(['V1-06', '--worktree', dir, '--host', '--fast']);
+    expect(fast.status, fast.stderr).toBe(0);
+    const fastResult = JSON.parse(
+      readFileSync(join(runs, 'V1-06', 'verify-fast', '1', 'result.json'), 'utf8'),
+    ) as Result;
+    expect(fastResult).toMatchObject({ mode: 'host', script: 'verify:fast', exit_code: 0 });
+    // The task's verification is a different run directory and runs the full script.
+    expect(existsSync(join(runs, 'V1-06', 'verify'))).toBe(false);
+    expect(run(['V1-06', '--worktree', dir, '--host']).status).toBe(9);
+    expect(result('V1-06', 1)).toMatchObject({ script: 'verify', exit_code: 9 });
   },
   CLI_TIMEOUT,
 );

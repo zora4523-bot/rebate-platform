@@ -5,6 +5,13 @@
 #   (tools/guard/risk-map-coverage.ts fails otherwise).
 # - The 分工 table in the root AGENTS.md is generated from this file
 #   (node tools/guard/agents-table.ts --write); do not edit that table by hand.
+# - Columns (规划/11 §1.1; owner decision 2026-10-05, ops/approvals.yaml id 19): impl is always
+#   claude (a Claude Opus 5.5 subagent, model claude-opus-5-5, in the task worktree); tester is
+#   codex where it was claude before (rule and acceptance tests written BEFORE the
+#   implementation and red first, through tools/agent/codex-run.sh impl --phase test); none
+#   stays none (docs, ledger, the rule-test assets themselves); review is
+#   codex (a fresh read-only Codex session) for RV0 / RV1 and claude+codex for RV2 (a fresh
+#   read-only Codex session plus a fresh Claude subagent that is not the implementing one).
 # Protected path, class 3 (规划/11 §4.4): changing this file needs owner approval.
 version: 1
 rules:
@@ -33,41 +40,41 @@ rules:
     review: codex
   - path: 'apps/api/src/modules/health/**'
     risk: RV1
-    impl: codex
-    tester: claude
-    review: claude
+    impl: claude
+    tester: codex
+    review: codex
   - path: 'apps/api/src/modules/platform/**'
     risk: RV2
-    impl: codex
-    tester: claude
+    impl: claude
+    tester: codex
     review: claude+codex
   - path: 'packages/money/**'
     risk: RV2
-    impl: codex
-    tester: claude
+    impl: claude
+    tester: codex
     review: claude+codex
   - path: 'packages/domain/**'
     risk: RV2
-    impl: codex
-    tester: claude
+    impl: claude
+    tester: codex
     review: claude+codex
   - path: 'packages/db/**'
     risk: RV2
-    impl: codex
-    tester: claude
+    impl: claude
+    tester: codex
     review: claude+codex
   - path: 'db/**'
     risk: RV2
-    impl: codex
-    tester: claude
+    impl: claude
+    tester: codex
     review: claude+codex
   - path: 'packages/testing/**'
     risk: RV2
     impl: claude
     tester: none
-    review: codex
+    review: claude+codex
   - path: 'test/**'
     risk: RV2
     impl: claude
     tester: none
-    review: codex
+    review: claude+codex

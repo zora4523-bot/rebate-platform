@@ -49,17 +49,19 @@
 | `ops/tasks/**` | Claude | — | Codex | RV0 |
 | `contracts/**` | Claude | Codex | Codex | RV1 |
 | `packages/contracts-ts/**` | Claude | Codex | Codex | RV1 |
-| `apps/api/src/modules/health/**` | Codex | Claude | Claude | RV1 |
-| `apps/api/src/modules/platform/**` | Codex | Claude | Claude + Codex | RV2 |
-| `packages/money/**` | Codex | Claude | Claude + Codex | RV2 |
-| `packages/domain/**` | Codex | Claude | Claude + Codex | RV2 |
-| `packages/db/**` | Codex | Claude | Claude + Codex | RV2 |
-| `db/**` | Codex | Claude | Claude + Codex | RV2 |
-| `packages/testing/**` | Claude | — | Codex | RV2 |
-| `test/**` | Claude | — | Codex | RV2 |
+| `apps/api/src/modules/health/**` | Claude | Codex | Codex | RV1 |
+| `apps/api/src/modules/platform/**` | Claude | Codex | Claude + Codex | RV2 |
+| `packages/money/**` | Claude | Codex | Claude + Codex | RV2 |
+| `packages/domain/**` | Claude | Codex | Claude + Codex | RV2 |
+| `packages/db/**` | Claude | Codex | Claude + Codex | RV2 |
+| `db/**` | Claude | Codex | Claude + Codex | RV2 |
+| `packages/testing/**` | Claude | — | Claude + Codex | RV2 |
+| `test/**` | Claude | — | Claude + Codex | RV2 |
 | 其他（未列入的任何路径） | 见任务台账 | 见任务台账 | Claude + Codex | RV2 |
 
 <!-- risk-table:end -->
+
+默认分工（负责人 2026-10-05，`ops/approvals.yaml` 第 19 条；规划/11 §1.1）：主实现一律是 Claude Opus 5.5 子代理（模型 `claude-opus-5-5`，在任务 worktree 里，不提交）；Codex 在实现前写规则 / 验收测试和只抛 `NotImplemented` 的骨架（经 `tools/agent/codex-run.sh impl`），先红由编排者在隔离容器里核对，再以新只读会话做对抗评审；RV2 另加 Claude 新子代理评审，规则测试过审也由 Claude 新子代理做。Codex 沙箱里只做不执行测试的静态检查，Codex 生成的任何可执行内容都不在宿主运行；实现子代理只经 `tools/ops/verify-container.sh <编号> --fast` 在容器里跑 `verify:fast`。派工细节见 `tools/agent/README.md`。
 
 ## 4. 硬规则
 

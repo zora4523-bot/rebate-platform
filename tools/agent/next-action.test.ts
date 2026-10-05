@@ -276,3 +276,64 @@ it('a capacity error is retried without counting, a position failure blocks', ()
 it('an unfinished meta.json is an error, not a decision', () => {
   expect(() => nextAction(input({}, { exit_code: null }))).toThrow(/not finished/);
 });
+
+it('[ops/approvals.yaml id 19] rule tests written by Codex go to the red check, never to verification', () => {
+  const action = nextAction(
+    input(
+      {
+        phase: 'test',
+        pathGuard: {
+          exit: 0,
+          report: { ...OK_GUARD.report, out_of_scope_ops_docs: ['docs/notes.md'] },
+        },
+      },
+      { phase: 'test' },
+    ),
+  );
+  expect(action).toMatchObject({
+    action: 'red-check',
+    phase: 'test',
+    attempt: 1,
+    base: 'abc1234',
+    worktree: '/runs/worktrees/B2-02a',
+    revert_first: ['docs/notes.md'],
+  });
+  expect(action['red_check']).toContain('tools/guard/red-check.ts --task B2-02a');
+  // The spec-test review goes to a fresh Claude subagent, the implementation to Opus.
+  expect(String(action['then'])).toContain('fresh Claude subagent');
+  expect(action).not.toHaveProperty('verify');
+  // Out of bounds stays a failed attempt of the test phase, with its own three attempts.
+  const outside = {
+    exit: 1,
+    report: {
+      ok: false,
+      violations: [{ path: 'apps/api/src/x.ts', reason: 'implementation in a rule-test run' }],
+      out_of_scope_ops_docs: [],
+      protected_hits: [],
+    },
+  };
+  expect(nextAction(input({ phase: 'test', attempts: 2, pathGuard: outside }))).toMatchObject({
+    action: 'retry',
+    reason: 'out-of-bounds',
+  });
+  expect(nextAction(input({ phase: 'test', attempts: 3, pathGuard: outside }))).toMatchObject({
+    action: 'blocked',
+    reason: 'attempts-exhausted',
+  });
+});
+
+it('[规划/11 §2.5] a handover implementation has one attempt; it is verified like any other', () => {
+  expect(nextAction(input({ phase: 'handover' }))).toMatchObject({ action: 'verify' });
+  expect(
+    nextAction(
+      input({ phase: 'handover' }, { exit_code: 10, has_output: false, validation: 'failed' }),
+    ),
+  ).toMatchObject({
+    action: 'blocked',
+    reason: 'attempts-exhausted',
+    last_failure: 'no-usable-output',
+  });
+  expect(failed({ task: 'B2-02a', run: '/r', attempts: 1, phase: 'test' }, 'orphan')).toMatchObject(
+    { action: 'retry' },
+  );
+});

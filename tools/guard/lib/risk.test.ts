@@ -8,20 +8,20 @@ const cfg = loadProtected(repoRoot());
 const map = loadRiskMap(repoRoot());
 
 describe('ops/risk-map.yaml', () => {
-  it('holds the initial rules in order', () => {
+  it('holds the rules in order (default split of 2026-10-05: Opus implements, Codex tests and reviews)', () => {
     expect(map.rules.map((r) => `${r.path} ${r.risk} ${r.impl}/${r.tester}/${r.review}`)).toEqual([
       'docs/** RV0 claude/none/codex',
       'ops/tasks/** RV0 claude/none/codex',
       'contracts/** RV1 claude/codex/codex',
       'packages/contracts-ts/** RV1 claude/codex/codex',
-      'apps/api/src/modules/health/** RV1 codex/claude/claude',
-      'apps/api/src/modules/platform/** RV2 codex/claude/claude+codex',
-      'packages/money/** RV2 codex/claude/claude+codex',
-      'packages/domain/** RV2 codex/claude/claude+codex',
-      'packages/db/** RV2 codex/claude/claude+codex',
-      'db/** RV2 codex/claude/claude+codex',
-      'packages/testing/** RV2 claude/none/codex',
-      'test/** RV2 claude/none/codex',
+      'apps/api/src/modules/health/** RV1 claude/codex/codex',
+      'apps/api/src/modules/platform/** RV2 claude/codex/claude+codex',
+      'packages/money/** RV2 claude/codex/claude+codex',
+      'packages/domain/** RV2 claude/codex/claude+codex',
+      'packages/db/** RV2 claude/codex/claude+codex',
+      'db/** RV2 claude/codex/claude+codex',
+      'packages/testing/** RV2 claude/none/claude+codex',
+      'test/** RV2 claude/none/claude+codex',
     ]);
   });
 

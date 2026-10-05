@@ -15,6 +15,8 @@
 import { tryGit } from '../../lib/git.ts';
 import type { Change } from '../../lib/git.ts';
 import { matchesAny } from '../../lib/glob.ts';
+import type { PathGuardResult } from './path-guard.ts';
+import type { ProtectedHit } from './protected.ts';
 
 /** A commit id as written in an evidence file (abbreviated ids accepted, as evidence-check does). */
 export const COMMIT_ID = /^[0-9a-f]{7,64}$/;
@@ -149,4 +151,66 @@ export function authorProblems(changes: readonly Change[], scope: AuthorScope): 
     }
   }
   return problems;
+}
+
+/**
+ * The path guard of a rule-test RUN (Codex writing the rule tests, tools/agent/post-run.sh with
+ * `path-guard.ts --author`; default split of 2026-10-05, ops/approvals.yaml id 19): the working
+ * tree against the branch point, before anything is committed. Same three kinds of paths as the
+ * rule-test commits above; `contentAtSpec` reads the working tree. Out-of-scope `ops/` and
+ * `docs/` changes are listed apart and do not fail (the orchestrator reverts them), as in the
+ * implementer's path guard; the ledger `ops/tasks/**` is the orchestrator's, also reverted.
+ */
+export function checkAuthorPaths(
+  changes: readonly Change[],
+  scope: AuthorScope,
+  protectedHits: readonly ProtectedHit[],
+): PathGuardResult {
+  const violations: { path: string; reason: string }[] = [];
+  const opsDocs = new Set<string>();
+  const seen = new Set<string>();
+  for (const change of changes) {
+    const sides: [string, boolean][] = [[change.path, change.status === 'D']];
+    if (change.oldPath !== undefined) sides.push([change.oldPath, true]);
+    for (const [path, removed] of sides) {
+      if (seen.has(path)) continue;
+      seen.add(path);
+      if (matchesAny(path, scope.testAssets)) continue;
+      if (matchesAny(path, scope.taskPaths)) {
+        if (removed) {
+          violations.push({
+            path,
+            reason: 'removed in a rule-test run; the rule-test author only adds skeleton shells',
+          });
+          continue;
+        }
+        const content = scope.contentAtSpec(path);
+        if (content === null || !SKELETON_MARKER.test(content)) {
+          violations.push({
+            path,
+            reason:
+              'implementation in a rule-test run: a file inside the task paths must be a ' +
+              'NotImplemented skeleton shell',
+          });
+        }
+        continue;
+      }
+      if (path.startsWith('ops/') || path.startsWith('docs/')) {
+        opsDocs.add(path);
+        continue;
+      }
+      violations.push({
+        path,
+        reason:
+          "outside the rule-test author's paths (rule-test assets, NotImplemented skeleton " +
+          'shells inside the task paths)',
+      });
+    }
+  }
+  return {
+    ok: violations.length === 0,
+    violations,
+    out_of_scope_ops_docs: [...opsDocs].sort(),
+    protected_hits: protectedHits.map((h) => ({ path: h.path, class: h.class })),
+  };
 }

@@ -120,3 +120,9 @@ approvals:
     granted: true
     date: '2026-10-04'
     note: '负责人在对话里直接对编排会话确认（原话「该做安全还是要做，符合标准就好了，不要限制的太死」「同意，三条都按你说的办」）；落在本分支 chore/approvals-18-review-bar（ops/approvals.yaml、tools/agent/prompts/review-*.md 四份）；规划/11 §3.1 的同步改动另在规划仓库提交；本条所在的 PR 由负责人本人加标签'
+  - id: 19
+    row: 4
+    title: '默认分工改为 Opus 5.5 实现、Codex 写规则测试并对抗评审，RV2 两家评审不变；本仓库保护路径第三类的相应改动（ops/risk-map.yaml、各级 AGENTS.md、ops/approvals.yaml、tools/**）'
+    granted: true
+    date: '2026-10-05'
+    note: '负责人原话「现在是谁写代码 请修改为让opus5.5 写 codex 对抗review」；编排会话追问规则 / 验收测试由谁写，负责人选「Codex 写规则 / 验收测试（实现前先写、先红）」；同日负责人说「代码仓库那边也一起改」。规划依据：规划仓库 docs/changes/20261005-实现改由Opus评审由Codex.md 与 规划/11 §1.1、§2.3–§2.5'

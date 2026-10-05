@@ -1,30 +1,43 @@
-# tools/agent：Codex 调用包装
+# tools/agent：Codex 调用包装与派工
 
-这里是本仓库调用 Codex 的唯一入口。规则出处：规划仓库 `规划/11_开发协作与自主推进.md` §2.2–§2.5、§3.1、§3.3、§4.3、§9.3。本目录属于保护路径第三类（门禁与规则），改动要负责人确认。
+这里是本仓库调用 Codex 的唯一入口，也写明 Claude 实现子代理怎么派。规则出处：规划仓库 `规划/11_开发协作与自主推进.md` §1.1、§2.2–§2.5、§3.1、§3.3、§4.3、§9.3。本目录属于保护路径第三类（门禁与规则），改动要负责人确认。
 
 一句话：`codex-run.sh` 把 Codex 关在固定的沙箱参数里跑一次，跑完告诉编排者「有没有可用产出」；任务做没做对，不看它，只看沙箱外的 `pnpm verify`。
+
+**默认分工（负责人 2026-10-05，`ops/approvals.yaml` 第 19 条；规划/11 §1.1）：Opus 实现、Codex 写测试与评审。**
+
+| 谁 | 做什么 | 经什么 |
+| --- | --- | --- |
+| Claude Opus 5.5 子代理（`claude-opus-5-5`） | 主实现，所有区域 | 编排会话用 Claude Code 的 Agent 能力起，见 §10 |
+| Codex | 实现前写规则 / 验收测试和只抛 `NotImplemented` 的骨架，先红 | `codex-run.sh impl <id> --phase test`（`dispatch.sh <id>`） |
+| Codex 新只读会话 | 对抗评审（所有区域） | `codex-run.sh review <id>` |
+| Claude 新子代理（不是实现那个） | RV2 的第二家评审；规则测试过审（spec-test） | §11 |
+| Codex（换家，一次） | Opus 超限后的 RV0 / RV1 实现 | `dispatch.sh <id> --handover`（`codex-run.sh impl --phase handover`） |
+
+**执行边界**（规划第 2 轮评审 RO2-01/04）：Codex 沙箱里只做不执行测试的静态检查（类型检查、lint）；任何运行测试的命令都由编排者在隔离容器（`tools/ops/verify-container.sh`）或 CI 里跑；Codex 生成的任何可执行内容（规则测试、骨架、换家实现）都不在宿主上运行。Opus 实现子代理跑测试也只经 `verify-container.sh <id> --fast`，因为里面有 Codex 写的测试。
 
 ## 1. 文件
 
 | 文件 | 作用 |
 | --- | --- |
-| `codex-run.sh` | 包装脚本：`impl`、`review`、`selfcheck` |
+| `codex-run.sh` | 包装脚本：`impl`（`--phase test` 写测试 / `--phase handover` 换家实现）、`review`、`selfcheck` |
 | `supervise.pl` | 进程组监管：硬超时、无活动看门狗、整组击杀、确认组内无存活进程 |
-| `dispatch.sh` | 派工前检查 + 后台启动一次实现 |
-| `post-run.sh` | 实现结束后：先跑守卫，再给出下一步动作 |
+| `dispatch.sh` | 派工前检查 + 后台启动一次 Codex 写测试（或 `--handover` 换家实现） |
+| `post-run.sh` | Codex 运行结束后：先跑守卫，再给出下一步动作 |
 | `next-action.ts` | `post-run.sh` 的判定表（纯函数，有单测） |
 | `validate-output.ts` | 产出校验：schema（Ajv2020 strict）+ 评审规则 + 资金清单；规则测试评审的范围外条目移进 `out_of_scope`、重算结论、追加到 `out-of-scope.md` |
 | `meta.ts` | 给 bash 用的 JSON 读写小工具、事件流解析 |
 | `common.sh` | 三个脚本共用的路径解析与进程组函数 |
 | `schemas/impl.schema.json`、`schemas/review.schema.json` | 结构化产出的 schema（每个 object 都是 `additionalProperties:false` + 全字段必填）；评审产出另有 `out_of_scope`（任务 refs 以外的问题，不计入结论） |
-| `prompts/review-{money,general,contract,spec-test}.md` | 四种评审提示词 |
+| `prompts/review-{money,general,contract,spec-test}.md` | 四种评审提示词；`spec-test` 现由 Claude 新子代理使用（§11），其余三种 Codex 与 RV2 的 Claude 评审子代理共用 |
 | `testing/` | 测试用假 `codex`（`couli-fake-codex.sh`）和夹具；不连模型、不耗额度 |
 
 ## 2. 命令
 
 ```bash
-# 实现（任务书必须已在 <runs>/<id>/brief.md）
-tools/agent/codex-run.sh impl <id> [--worktree <dir>] [--timeout-min <n>] [--dry-run]
+# Codex 写规则测试（默认 --phase test）或换家实现（--phase handover，只限 RV0 / RV1）
+# 任务书必须已在 <runs>/<id>/brief.md（brief.ts --phase test|handover）
+tools/agent/codex-run.sh impl <id> [--phase test|handover] [--worktree <dir>] [--timeout-min <n>] [--dry-run]
 
 # 评审（只读沙箱）
 tools/agent/codex-run.sh review <id> [--worktree <dir>] \
@@ -33,8 +46,8 @@ tools/agent/codex-run.sh review <id> [--worktree <dir>] \
 # 自检：不发起任何 Codex 回合，不耗额度
 tools/agent/codex-run.sh selfcheck
 
-# 派工（后台）与收尾
-tools/agent/dispatch.sh <id>
+# 派工（后台）与收尾：默认是 Codex 写测试；--handover 是换家实现
+tools/agent/dispatch.sh <id> [--handover]
 tools/agent/post-run.sh <id>
 
 # 单独校验一份产出
@@ -42,7 +55,8 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 ```
 
 - `<id>` 是台账编号（如 `B2-03a`）。`<runs>` 默认是仓库旁边的 `couli-runs/`，worktree 默认 `<runs>/worktrees/<id>`。
-- `--review-type` 不传时按任务的风险级定：RV2 → `money`（资金清单强制），其余 `general`。RV2 任务不接受 `general`。
+- `--review-type` 不传时按任务的风险级定：RV2 → `money`（资金清单强制），其余 `general`。RV2 任务不接受 `general`。台账 `tester: codex` 的任务不接受 `--review-type spec-test`（退出 2）：Codex 不评审自己写的规则测试，规则测试过审交 Claude 新子代理（§11）。
+- `--phase` 只用于 `impl`，不传是 `test`；写进 `meta.json` 的 `phase`，`tools/ops/state.ts` 据此把这次调用记在 `test` 或 `handover` 计数器上，不记进实现次数（RO-07）。`handover` 只接受可信副本 `task.ts show` 算出 RV0 / RV1 的任务。
 - `--base` 不传时取 `HEAD` 与 `origin/main`（没有则 `main`）的分叉点。
 - `--timeout-min` 只能调小：实现上限 30 分钟、评审 15 分钟（规划/11 §2.2）。超时的任务要拆小，不是加时间。
 - `--dry-run` 把将要执行的 argv 一行一个打印出来（参数里的换行显示为 `\n`），不启动 Codex、不写任何文件。
@@ -95,7 +109,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 | `verify/<n>/` | 沙箱外验证的日志与结果（`tools/ops/verify-container.sh` 写） |
 | `out-of-scope.md` | 规则测试评审范围以外的条目，按 `key` 去重累积追加（`validate-output.ts --out-of-scope-log` 写，不随 `attempts/` 归档）；编排者据此给后续任务写规则测试 |
 
-`meta.json` 字段：`mode`、`task`、`worktree`、`run`、`started_at`、`finished_at`、`exit_code`、`codex_exit`、`timed_out`、`idle_killed`、`aborted`、`has_output`、`capacity_error`、`head_before`、`head_after`、`thread_id`、`codex_version`、`model`、`last_event`、`pgid`、`group_gone`、`stragglers_killed`、`validation`、`validation_messages`、`position_changed`、`other_task_branches_changed`、`timeout_secs`、`idle_secs`、`wrapper_pid`、`output_file`、`events_file`，评审另有 `review_type`、`base`。`has_output` 只表示产出通过了校验；位置断言失败时 `exit_code` 仍是 12。
+`meta.json` 字段：`mode`、`phase`（只 `impl` 有：`test` / `handover`）、`task`、`worktree`、`run`、`started_at`、`finished_at`、`exit_code`、`codex_exit`、`timed_out`、`idle_killed`、`aborted`、`has_output`、`capacity_error`、`head_before`、`head_after`、`thread_id`、`codex_version`、`model`、`last_event`、`pgid`、`group_gone`、`stragglers_killed`、`validation`、`validation_messages`、`position_changed`、`other_task_branches_changed`、`timeout_secs`、`idle_secs`、`wrapper_pid`、`output_file`、`events_file`，评审另有 `review_type`、`base`。`has_output` 只表示产出通过了校验；位置断言失败时 `exit_code` 仍是 12。
 
 ## 6. 禁止的用法（规划/11 §2.4 禁用）
 
@@ -110,7 +124,16 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 
 ## 7. 派工与收尾
 
-`dispatch.sh <id>` 先用 `mkdir <runs>/<id>/dispatch.lock` 取一把只在本次派工期间存在的锁（10 分钟没清掉的视为残留），再按顺序检查，任何一步不过就停（没有额度闸门）：认领任务（owner 是 `COULI_SESSION`，不设则本进程唯一；只有认领已被同一 owner 持有时才 `--renew`）→ 上一次派工记录的 pid 还活着就停（`run-in-progress`）→ **先把尝试次数加一**（每次都加；上一次调用若没有产出就结束，包装脚本结束时已经把那一轮还回去了；该任务的失败熔断打开时 `bump-attempt` 退出 3，派工输出 `{"action":"stopped","reason":"task-breaker",…}` 并以 3 退出，只停这个任务）→ 任务书在不在（不在就生成）→ worktree 与 `node_modules` 在不在（依赖由编排者在沙箱外装，这里绝不安装）。然后在独立会话里后台启动 `codex-run.sh impl <id>`（有 `caffeinate` 就套上防睡眠），登记 pid 与开始时间，输出一行 `{"action":"dispatched","pid":…,"run":"…"}`。
+`dispatch.sh` 只派 Codex 的 `impl` 模式运行，分两种（`ops/approvals.yaml` 第 19 条）：
+
+| 调用 | 阶段 | 计数器 | 任务书 | 前提 |
+| --- | --- | --- | --- | --- |
+| `dispatch.sh <id>` | `test`：Codex 写规则测试与骨架 | `attempts.test`（3 次） | `brief.ts --phase test` | 在途状态没有 `spec_commit`（有了就停，`spec-commit-exists`：测试已冻结，实现交 Opus，§10） |
+| `dispatch.sh <id> --handover` | `handover`：Opus 超限后 Codex 实现一次 | `attempts.handover`（1 次） | `brief.ts --phase handover` | 可信副本算出 RV0 / RV1；RV2 停（`handover-refused`，规划/11 §2.5） |
+
+已有的 `brief.md` 只在它的「本轮阶段」行与这次阶段相同时复用；否则重新生成，免得把写测试的任务书交给实现、或反过来。
+
+`dispatch.sh <id>` 先用 `mkdir <runs>/<id>/dispatch.lock` 取一把只在本次派工期间存在的锁（10 分钟没清掉的视为残留），再按顺序检查，任何一步不过就停（没有额度闸门）：认领任务（owner 是 `COULI_SESSION`，不设则本进程唯一；只有认领已被同一 owner 持有时才 `--renew`）→ 上一次派工记录的 pid 还活着就停（`run-in-progress`）→ 阶段前提（上表）→ **先把这一阶段的尝试次数加一**（每次都加；上一次调用若没有产出就结束，包装脚本结束时已经把那一轮还回去了；该任务的失败熔断打开时 `bump-attempt` 退出 3，派工输出 `{"action":"stopped","reason":"task-breaker",…}` 并以 3 退出，只停这个任务）→ 任务书在不在（不在就生成）→ worktree 与 `node_modules` 在不在（依赖由编排者在沙箱外装，这里绝不安装）。然后在独立会话里后台启动 `codex-run.sh impl <id>`（有 `caffeinate` 就套上防睡眠），登记 pid 与开始时间，输出一行 `{"action":"dispatched","pid":…,"run":"…"}`。
 
 三处细节：
 
@@ -124,14 +147,15 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 
 | `action` | 什么时候 |
 | --- | --- |
-| `verify` | 有产出、路径守卫与保护路径守卫都过。附 `revert_first`（`ops/`、`docs/` 下要先还原的越界改动）和 `outside_needed`（要在沙箱外跑的命令） |
+| `verify` | 换家实现（或 2026-10-05 前的 Codex 实现）有产出、路径守卫与保护路径守卫都过。附 `revert_first`（`ops/`、`docs/` 下要先还原的越界改动）和 `outside_needed`（要在沙箱外跑的命令） |
+| `red-check` | Codex 写测试（`phase: test`）有产出、守卫都过。不验证（测试本来就该红）：编排者在隔离容器里跑规则测试取 Vitest JSON 报告，`node tools/guard/red-check.ts --task <id> --report <报告>` 过了才提交 `test(spec): …`、`state.ts set --spec-commit`，RV2 再交 Claude 新子代理过审（§11），然后派 Opus 实现（§10） |
 | `retry` | 失败的一次尝试（无产出、超时、越界、自称没做完、孤儿）。附 `backoff_min`：第 1 次后 15 分钟，第 2 次后 30 分钟；超时与无产出另附 `counts_as_attempt`（`false` = 包装脚本已还回这一轮）。孤儿（包装脚本没写完 `meta.json`）没有结算，照计一次 |
 | `blocked` | 三次用完、位置断言失败、要装依赖（`deps-needed`）、实现者自报受阻、守卫出错 |
 | `ask` | 改动碰了保护路径第二、三类，交负责人确认 |
 | `capacity-retry` | 模型容量错误，不计次数 |
 | `none`（退出码 1） | 这次运行还没结束 |
 
-守卫（`tools/guard/path-guard.ts`、`protected-paths.ts`）一律从可信副本运行，基线取规则测试提交（`spec_commit`），没有就取分叉点。包装脚本已死但 Codex 进程组还活着时，`post-run.sh` 会把整组结束掉，再按孤儿计一次失败。
+守卫（`tools/guard/path-guard.ts`、`protected-paths.ts`）一律从可信副本运行，基线取规则测试提交（`spec_commit`），没有就取分叉点。写测试的运行（`phase: test`）从分叉点算，路径守卫带 `--author`：只许规则测试资产（第一类保护路径，只新增）与任务 `paths` 内含 `NotImplemented` 的骨架，`ops/`、`docs/` 越界照旧只报告；计数器取 `attempts.test`（换家取 `attempts.handover`，没有 `phase` 的旧运行取 `attempts.impl`）。包装脚本已死但 Codex 进程组还活着时，`post-run.sh` 会把整组结束掉，再按孤儿计一次失败。
 
 ## 8. 首次真实自检（由编排者做）
 
@@ -170,7 +194,38 @@ TODO(规划/11 §2.4, §9.3)：上面第 2–4 步尚未执行 — blocked on �
 | `COULI_CODEX_TIMEOUT_SECS`、`COULI_CODEX_IDLE_SECS` | 把硬超时、无活动阈值调小（测试与首次自检用）；调不大。这两个变量是本目录自己加的，根 `.env.example` 末尾有注释说明 |
 | `COULI_CODEX_WRAPPER=1` | 只由本脚本设置，`codex` 垫片据此放行 |
 
-## 10. 已知未验证与限制
+## 10. Claude Opus 实现子代理怎么派
+
+实现子代理不经脚本起：编排会话用 Claude Code 的 Agent 能力起一个新子代理（规划/11 §2.3 第 5 步）。每次都按下面做：
+
+1. **前提**：在途状态已有 `spec_commit`（Codex 写的规则测试已提交、先红已核对；RV2 还要 §11 的过审通过），worktree `<runs>/worktrees/<id>` 的依赖已由编排者在沙箱外装好。
+2. **计数**：起之前 `node <可信副本>/tools/ops/state.ts bump-attempt <id> impl`（Opus 实现 3 次；退出 3 = 失败熔断打开，停）。
+3. **任务书**：`node <可信副本>/tools/ops/brief.ts <id> --phase impl --out <runs>/<id>/brief.md`。实现阶段的任务书写明规则测试已冻结、测试只经可信容器入口跑；不要把写测试阶段的任务书交给实现子代理。
+4. **起子代理**：模型指定 `claude-opus-5-5`（Agent 调用的模型参数选 opus，并在提示词里写明模型锁定）；工作目录就是 `<runs>/worktrees/<id>`（独立 worktree，不用主检出，不在 `/tmp` 下）；提示词 = 任务书全文 + 下面几条硬约束：不提交、不建分支、不 `git add` / `stash` / `reset`、不装依赖、不改 `ops/` 与 `docs/`、不改规则测试与保护路径；跑测试只用 `<runs>/trusted/rebate-platform/tools/ops/verify-container.sh <id> --fast`（断网容器里的 `pnpm verify:fast`，结果在 `<runs>/<id>/verify-fast/<n>/`；Docker 不可用时停下报告，不在宿主直跑测试）；结束时按任务书第 8 节的 JSON 结构回报。子代理在后台跑（规划/11 §2.2），编排会话在等待期间不碰这个 worktree。
+5. **硬超时与取消**（RO-08）：硬超时沿用 30 分钟（规划/11 §2.2，和 Codex 写入型相同；超时的任务要拆小，不加时间）。到点或要放弃时，用 Agent 能力停掉这个子代理（TaskStop），然后**确认它已经停了**再做任何事：子代理的任务状态显示已结束；`verify-container.sh` 起的容器没有残留（`docker ps --filter label=couli.task=<id>` 为空，有就 `docker rm -f`）；worktree 在之后 1 分钟内不再有文件变化。确认之前不重派、不跑守卫、不在这个 worktree 上起新的实现。
+6. **结束后核对**（位置断言，规划/11 §2.4）：起之前记下 `git -C <wt> rev-parse HEAD`、`git -C <wt> for-each-ref refs/heads`、`git -C <wt> diff --cached --name-only`；结束后三者都要不变（暂存区为空），变了按越界处理：这个 worktree 里的东西一律不运行、不提交，先人工看。
+7. **守卫与记录**：从可信副本跑 `path-guard.ts --task <id> --base <spec_commit> --cwd <wt> --json` 与 `protected-paths.ts --base <spec_commit> --cwd <wt> --json`（先守卫、后执行）；再把这一轮记下：`state.ts opus-run <id> --outcome ok|no-output|timeout|capacity --risk <RV>`。没有结果（无产出、超时、容量或额度错误）都计入 Opus 失败；连续 3 次或累计 5 次时输出 `next: handover`（RV0 / RV1：`dispatch.sh <id> --handover`）或 `next: blocked`（RV2：标 blocked，不换家）（RO2-03）。有结果的照常进沙箱外验证：`verify-container.sh <id>`（完整 `pnpm verify`）。
+
+`verify-container.sh` 的 `--fast` 是为这一步加的（`tools/ops/README.md`）：只跑 `pnpm run verify:fast`，不起 PostgreSQL、容器 `--network none`，结果放 `verify-fast/<n>/`，与决定任务成败的 `verify/<n>/` 分开。
+
+## 11. 规则测试过审（spec-test）交 Claude 新子代理
+
+Codex 写的规则测试由另一家过审（规划/11 §2.3 第 4 步，RV2 必做）：
+
+1. `codex-run.sh review --review-type spec-test` 对台账 `tester: codex` 的任务直接拒绝（退出 2）；`tester: claude` 的旧任务仍可用。
+2. 计数：`state.ts bump-attempt <id> review --review-type spec-test`（最多 2 轮，计数器不变）。
+3. 起一个新的 Claude 子代理（不是本任务的实现子代理，也不是别的评审子代理），只读：提示词 = 可信副本的 `prompts/review-spec-test.md` + 一段上下文（任务编号、基线 = 分叉点、`spec_commit`、任务 refs、任务 paths、`git diff --name-only <基线> <spec_commit>`）+ `brief.ts <id> --phase review` 生成的任务书。它不运行测试（变异清单靠推演；要跑就由编排者在容器里跑）。
+4. 产出按 `schemas/review.schema.json` 写到 `<runs>/<id>/review-claude-spec-test.json`，编排者校验：`node <可信副本>/tools/agent/validate-output.ts --schema <可信副本>/tools/agent/schemas/review.schema.json --file <产出> --refs <refs> --allowed-paths <paths> --rewrite --out-of-scope-log <runs>/<id>/out-of-scope.md --diff-base <基线> --cwd <wt>`。校验不过算一轮、没有结论；`verdict: fail`（范围内有 S0 / S1）就退回 Codex 改测试（`dispatch.sh <id>` 前先 `state.ts set --spec-commit none`，在途状态的 `last_error` 指向这份评审）。
+
+## 12. 私有库（`rebate-private`）里的 Codex 写入
+
+Agent 评测集与注入集放私有库（规划/11 §1.1）。读脚本的结论（没有真的调用 Codex）：
+
+- `codex-run.sh impl <id> --worktree <目录>` 对 `<目录>` 只要求是一个 git 工作树的根、有 HEAD、它和它的 git 目录都不在 `/tmp`、`$TMPDIR` 下；不要求是 `rebate-platform`。所以 `--worktree /Users/zhixing/我的项目/rebate-private` 能跑，位置断言照常核对那个仓库的 HEAD、分支、暂存区。
+- **不建议直接用私有库主检出**：Codex 的写范围是整个 `-C` 目录，会直接改私有库的工作区。做法是先给私有库建一个 worktree，再把它交给包装脚本，例如 `git -C /Users/zhixing/我的项目/rebate-private worktree add ../couli-runs/worktrees/<id>-private -b task/<id>`，然后 `tools/agent/codex-run.sh impl <id> --phase test --worktree <runs>/worktrees/<id>-private`（linked worktree 的 gitdir 在私有库 `.git` 里，不在沙箱可写根内）。
+- 限制：任务书仍来自本仓库的台账（`<runs>/<id>/brief.md`），台账的 `repo` 只能是本仓库与三个原生仓库，`paths` 按本仓库的风险表算级；`dispatch.sh` 固定用 `<runs>/worktrees/<id>` 且要求有 `node_modules`，所以私有库的写入只能由编排者直接调 `codex-run.sh impl --worktree`；`post-run.sh` 的守卫按本仓库的保护路径清单看私有库的改动，结论只作参考，私有库的改动由编排者人工过目后提交。这些行为本次没有改。
+
+## 13. 已知未验证与限制
 
 - 规划/11 §9.3「仍未测的要点」里 Codex 那一条全部仍未测：两条命令全部参数写在一起的首跑、真实回合中途的进程组击杀、其他模型 id、如何避免往 `~/.codex/config.toml` 写信任记录（每个 worktree 路径会被写一条，负责人已选 A：不动全局配置）、Linux 上的沙箱。
 - 事件名（`thread.started`、`turn.completed`、`turn.failed`、`error`）与容量错误出现在哪个事件里，是按验证日的记录写的，假 `codex` 也照这个造；真实事件流首跑时要核对一次。
@@ -181,3 +236,5 @@ TODO(规划/11 §2.4, §9.3)：上面第 2–4 步尚未执行 — blocked on �
 - 评审产出里发现的 `key` 被校验成固定格式 `<文件>#<函数或符号>#<规则编号>`（不含空白，开头与 `file` 字段相同）。格式不对整份评审按无产出处理（退出 10），会多耗一轮评审；首次真实评审后看模型是否稳定按这个格式写，不稳就放宽 `validate-output.ts` 里的 `KEY_PATTERN`。
 - 本目录的测试要用 `bash`、`perl`、`git`，并在 `REPO/.tmp/` 下建一次性 git 仓库（verify 镜像已装 git）。全部用例本机约 30–90 秒（看机器负载）；孤儿进程要靠 1 号进程回收，容器须带 `--init`（`verify-container.sh` 已带）。2026-10-02 已在 verify 镜像里按同样的加固参数（只读根、断网、`/work` tmpfs、离线装依赖、仓库根没有 `.git`）跑过本目录全部用例：66 条通过，约 25 秒（Linux bash 5.2、perl 5.36、git 2.39）。
 - Codex 沙箱内（`pnpm verify:fast`）能否正常运行这些测试（进程组信号、`.tmp` 下的 `.git`）未测。
+- 2026-10-05 的分工切换（`ops/approvals.yaml` 第 19 条）只改了派工、计数与守卫，还没有真实跑过一轮「Codex 写测试 → 先红 → Claude 过审 → Opus 实现」。§10、§11 的子代理步骤靠编排会话照做，没有脚本强制；位置断言与守卫是事后关口。
+- TODO(规划/11 §2.3): 先红检查要的 Vitest JSON 报告还没有脚本产出（要在隔离容器里对规则测试文件跑 `vitest run --reporter=json`；`verify-container.sh` 目前只跑 `verify` / `verify:fast`） — blocked on 给 verify 容器加报告输出的后续门禁任务。`tools/guard/red-check.ts` 已能核对这样一份报告。
