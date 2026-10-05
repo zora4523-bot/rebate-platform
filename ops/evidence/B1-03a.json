@@ -1,0 +1,61 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 migration (db/**). Migration 0014 risk baseline: blocklist, user_risk_state, appeals, risk_rules, risk_hits (insert-only). Rule tests were run red in containers before the migration (couli-runs/B1-03a/verify-red1.log; 30 AssertionErrors); legacy ledger, no red run record required. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent: round 1 fail (S2: reason_category codes from BR-TEXT-23; third-party first-login block hit could not be recorded) -> fixed; round 2 pass"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1: risk_hits created_at not insertable, so the injected clock could not be used) -> fixed; round 2 pass (remaining S2 was the 0012 gap, closed by #89)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 fail (S1 account blocklist expiry), round 2 fail (S1 ref_type fallback too wide), orchestrator-approved exception round 3 pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "task": "B1-03a",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "6ccba802e95b3a40166220004acee4b15a0ca33f",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "c4088d0db865d0427a23fa783780b01b784b8cde",
+      "tree": "8c36de3d24f595efa41c8aeffebe6df6cad386cd",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T20:28:34Z",
+      "finished_at": "2026-10-05T20:30:15Z"
+    }
+  ],
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "51d4007bc65e2d915cf518caea3e86d189df5f74",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  }
+}

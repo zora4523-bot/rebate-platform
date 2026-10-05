@@ -900,6 +900,54 @@ CREATE TABLE app.app_versions (
 
 
 --
+-- Name: appeals; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.appeals (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid,
+    target_type text NOT NULL,
+    request_type text,
+    target_id text NOT NULL,
+    related_phone_hmac text,
+    prev_risk_state text,
+    status text NOT NULL,
+    content text NOT NULL,
+    deadline_at timestamp with time zone NOT NULL,
+    handler_id text,
+    closed_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT appeals_account_target_check CHECK (((target_type <> 'account'::text) OR (target_id = (user_id)::text))),
+    CONSTRAINT appeals_closed_check CHECK (((status = 'processing'::text) = (closed_at IS NULL))),
+    CONSTRAINT appeals_handler_check CHECK (((status = 'processing'::text) OR (handler_id IS NOT NULL))),
+    CONSTRAINT appeals_order_target_check CHECK (((target_type <> 'order'::text) OR (target_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text))),
+    CONSTRAINT appeals_prev_risk_state_check CHECK (
+CASE
+    WHEN (target_type = 'account'::text) THEN ((prev_risk_state IS NOT NULL) AND (prev_risk_state = ANY (ARRAY['banned'::text, 'frozen'::text])))
+    ELSE (prev_risk_state IS NULL)
+END),
+    CONSTRAINT appeals_related_phone_check CHECK (
+CASE
+    WHEN (request_type = ANY (ARRAY['register'::text, 'phone_change'::text])) THEN (related_phone_hmac IS NOT NULL)
+    WHEN (request_type IS NULL) THEN (related_phone_hmac IS NULL)
+    ELSE true
+END),
+    CONSTRAINT appeals_request_check CHECK (((target_type = 'blocked_request'::text) = (request_type IS NOT NULL))),
+    CONSTRAINT appeals_request_type_check CHECK ((request_type = ANY (ARRAY['register'::text, 'withdraw'::text, 'phone_change'::text, 'payout_account'::text]))),
+    CONSTRAINT appeals_status_check CHECK ((status = ANY (ARRAY['processing'::text, 'upheld'::text, 'revoked'::text]))),
+    CONSTRAINT appeals_target_type_check CHECK ((target_type = ANY (ARRAY['account'::text, 'order'::text, 'blocked_request'::text]))),
+    CONSTRAINT appeals_user_check CHECK (
+CASE
+    WHEN (request_type = 'register'::text) THEN (user_id IS NULL)
+    ELSE (user_id IS NOT NULL)
+END)
+);
+
+
+--
 -- Name: articles; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -921,6 +969,48 @@ CREATE TABLE app.articles (
     CONSTRAINT articles_category_check CHECK ((category = ANY (ARRAY['help'::text, 'rule'::text, 'notice'::text, 'agreement'::text]))),
     CONSTRAINT articles_notice_content_version_check CHECK ((notice_content_version >= 1)),
     CONSTRAINT articles_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: blocklist; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.blocklist (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    dimension text NOT NULL,
+    value_hmac text,
+    value text,
+    violation_type text NOT NULL,
+    reason text,
+    platform text,
+    union_account_id uuid,
+    start_at timestamp with time zone,
+    end_at timestamp with time zone,
+    expire_at timestamp with time zone,
+    status text NOT NULL,
+    created_by text NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT blocklist_account_expire_check CHECK (((dimension = ANY (ARRAY['order_no_suffix'::text, 'channel'::text])) OR (expire_at IS NOT NULL))),
+    CONSTRAINT blocklist_channel_check CHECK (
+CASE
+    WHEN (dimension = 'channel'::text) THEN ((union_account_id IS NOT NULL) AND (start_at IS NOT NULL) AND ((end_at IS NULL) OR (end_at > start_at)))
+    ELSE ((union_account_id IS NULL) AND (start_at IS NULL) AND (end_at IS NULL))
+END),
+    CONSTRAINT blocklist_device_check CHECK (((dimension <> 'device'::text) OR (value_hmac ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT blocklist_dimension_check CHECK ((dimension = ANY (ARRAY['phone'::text, 'id_no'::text, 'alipay'::text, 'bank_card'::text, 'wechat_openid'::text, 'device'::text, 'relation_id'::text, 'order_no_suffix'::text, 'channel'::text]))),
+    CONSTRAINT blocklist_order_no_suffix_check CHECK (((dimension <> 'order_no_suffix'::text) OR ((platform = 'taobao'::text) AND (char_length(value) = 6)))),
+    CONSTRAINT blocklist_platform_check CHECK (((dimension = ANY (ARRAY['order_no_suffix'::text, 'channel'::text])) = (platform IS NOT NULL))),
+    CONSTRAINT blocklist_status_check CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text]))),
+    CONSTRAINT blocklist_storage_check CHECK (
+CASE
+    WHEN (dimension = ANY (ARRAY['order_no_suffix'::text, 'channel'::text])) THEN ((value IS NOT NULL) AND (value_hmac IS NULL))
+    ELSE ((value_hmac IS NOT NULL) AND (value IS NULL))
+END),
+    CONSTRAINT blocklist_violation_type_check CHECK ((violation_type = ANY (ARRAY['malicious_rights'::text, 'fraud_invite'::text, 'other'::text])))
 );
 
 
@@ -1659,6 +1749,83 @@ CREATE TABLE app.refresh_tokens (
 
 
 --
+-- Name: risk_hits; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.risk_hits (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid,
+    rule_id text NOT NULL,
+    risk_action text NOT NULL,
+    dimension text NOT NULL,
+    value_hmac text NOT NULL,
+    ref_type text NOT NULL,
+    ref_id text NOT NULL,
+    request_type text,
+    related_phone_hmac text,
+    related_phone_masked text,
+    amount_fen bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT risk_hits_amount_check CHECK (
+CASE
+    WHEN (request_type = 'withdraw'::text) THEN ((amount_fen IS NOT NULL) AND (amount_fen > 0))
+    ELSE (amount_fen IS NULL)
+END),
+    CONSTRAINT risk_hits_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text]))),
+    CONSTRAINT risk_hits_related_phone_check CHECK (
+CASE
+    WHEN (request_type = ANY (ARRAY['register'::text, 'phone_change'::text])) THEN ((related_phone_hmac IS NOT NULL) AND (related_phone_masked IS NOT NULL))
+    WHEN (ref_type <> 'blocked_request'::text) THEN ((related_phone_hmac IS NULL) AND (related_phone_masked IS NULL))
+    ELSE ((related_phone_hmac IS NULL) = (related_phone_masked IS NULL))
+END),
+    CONSTRAINT risk_hits_request_check CHECK (((request_type IS NULL) OR (ref_type = 'blocked_request'::text))),
+    CONSTRAINT risk_hits_request_type_check CHECK ((request_type = ANY (ARRAY['register'::text, 'withdraw'::text, 'phone_change'::text, 'payout_account'::text]))),
+    CONSTRAINT risk_hits_risk_action_check CHECK ((risk_action = ANY (ARRAY['pass'::text, 'manual_review'::text, 'block'::text, 'void_commission'::text]))),
+    CONSTRAINT risk_hits_user_check CHECK (
+CASE
+    WHEN (request_type = 'register'::text) THEN (user_id IS NULL)
+    WHEN (request_type IS NOT NULL) THEN (user_id IS NOT NULL)
+    ELSE true
+END)
+);
+
+
+--
+-- Name: risk_hits_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.risk_hits ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.risk_hits_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: risk_rules; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.risk_rules (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    rule_id text NOT NULL,
+    scene text NOT NULL,
+    conditions jsonb NOT NULL,
+    risk_action text NOT NULL,
+    status text NOT NULL,
+    version integer NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT risk_rules_risk_action_check CHECK ((risk_action = ANY (ARRAY['pass'::text, 'manual_review'::text, 'block'::text, 'void_commission'::text])))
+);
+
+
+--
 -- Name: sessions; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1691,6 +1858,29 @@ CREATE TABLE app.user_oauth (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT user_oauth_provider_check CHECK ((provider = ANY (ARRAY['wechat'::text, 'apple'::text, 'huawei'::text])))
+);
+
+
+--
+-- Name: user_risk_state; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.user_risk_state (
+    user_id uuid NOT NULL,
+    app_id text NOT NULL,
+    state text NOT NULL,
+    reason text,
+    reason_category text,
+    frozen_until timestamp with time zone,
+    changed_by text NOT NULL,
+    changed_at timestamp with time zone NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT user_risk_state_frozen_until_check CHECK (((frozen_until IS NULL) OR (state = ANY (ARRAY['frozen'::text, 'appealing'::text])))),
+    CONSTRAINT user_risk_state_reason_category_check CHECK ((reason_category = ANY (ARRAY['malicious_rights'::text, 'fraud_invite'::text, 'abnormal_trade'::text, 'account_security'::text, 'other'::text]))),
+    CONSTRAINT user_risk_state_reason_category_required_check CHECK (((state = 'normal'::text) OR (reason_category IS NOT NULL))),
+    CONSTRAINT user_risk_state_state_check CHECK ((state = ANY (ARRAY['normal'::text, 'frozen'::text, 'appealing'::text, 'banned'::text])))
 );
 
 
@@ -2052,11 +2242,27 @@ ALTER TABLE ONLY app.app_versions
 
 
 --
+-- Name: appeals appeals_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.appeals
+    ADD CONSTRAINT appeals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: articles articles_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
 ALTER TABLE ONLY app.articles
     ADD CONSTRAINT articles_pkey PRIMARY KEY (id, version);
+
+
+--
+-- Name: blocklist blocklist_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.blocklist
+    ADD CONSTRAINT blocklist_pkey PRIMARY KEY (id);
 
 
 --
@@ -2324,6 +2530,30 @@ ALTER TABLE ONLY app.refresh_tokens
 
 
 --
+-- Name: risk_hits risk_hits_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_hits
+    ADD CONSTRAINT risk_hits_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: risk_rules risk_rules_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_rules
+    ADD CONSTRAINT risk_rules_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: risk_rules risk_rules_rule_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_rules
+    ADD CONSTRAINT risk_rules_rule_id_key UNIQUE (app_id, rule_id);
+
+
+--
 -- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2361,6 +2591,14 @@ ALTER TABLE ONLY app.user_oauth
 
 ALTER TABLE ONLY app.user_oauth
     ADD CONSTRAINT user_oauth_user_provider_key UNIQUE (app_id, user_id, provider);
+
+
+--
+-- Name: user_risk_state user_risk_state_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_risk_state
+    ADD CONSTRAINT user_risk_state_pkey PRIMARY KEY (user_id);
 
 
 --
@@ -2492,10 +2730,52 @@ ALTER TABLE ONLY public.pgmigrations
 
 
 --
+-- Name: appeals_processing_deadline_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX appeals_processing_deadline_idx ON app.appeals USING btree (app_id, deadline_at) WHERE (status = 'processing'::text);
+
+
+--
+-- Name: appeals_processing_register_phone_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX appeals_processing_register_phone_key ON app.appeals USING btree (app_id, related_phone_hmac) WHERE ((status = 'processing'::text) AND (request_type = 'register'::text));
+
+
+--
+-- Name: appeals_processing_target_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX appeals_processing_target_key ON app.appeals USING btree (app_id, target_type, target_id) WHERE (status = 'processing'::text);
+
+
+--
+-- Name: appeals_user_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX appeals_user_idx ON app.appeals USING btree (app_id, user_id, created_at DESC);
+
+
+--
 -- Name: articles_app_category_published_idx; Type: INDEX; Schema: app; Owner: -
 --
 
 CREATE INDEX articles_app_category_published_idx ON app.articles USING btree (app_id, category, status, published_at, id, version);
+
+
+--
+-- Name: blocklist_value_hmac_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX blocklist_value_hmac_idx ON app.blocklist USING btree (app_id, dimension, value_hmac) WHERE (value_hmac IS NOT NULL);
+
+
+--
+-- Name: blocklist_value_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX blocklist_value_idx ON app.blocklist USING btree (app_id, dimension, value) WHERE (value IS NOT NULL);
 
 
 --
@@ -2688,6 +2968,27 @@ CREATE INDEX refresh_tokens_session_idx ON app.refresh_tokens USING btree (app_i
 
 
 --
+-- Name: risk_hits_ref_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX risk_hits_ref_idx ON app.risk_hits USING btree (app_id, ref_type, ref_id);
+
+
+--
+-- Name: risk_hits_related_phone_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX risk_hits_related_phone_idx ON app.risk_hits USING btree (app_id, related_phone_hmac) WHERE (related_phone_hmac IS NOT NULL);
+
+
+--
+-- Name: risk_hits_user_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX risk_hits_user_idx ON app.risk_hits USING btree (app_id, user_id) WHERE (user_id IS NOT NULL);
+
+
+--
 -- Name: sessions_device_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -2699,6 +3000,13 @@ CREATE INDEX sessions_device_idx ON app.sessions USING btree (app_id, device_id)
 --
 
 CREATE INDEX sessions_user_idx ON app.sessions USING btree (app_id, user_id);
+
+
+--
+-- Name: user_risk_state_state_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX user_risk_state_state_idx ON app.user_risk_state USING btree (app_id, state, frozen_until);
 
 
 --
@@ -2919,6 +3227,14 @@ CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app
 
 
 --
+-- Name: appeals appeals_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.appeals
+    ADD CONSTRAINT appeals_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: consent_records consent_records_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -3119,6 +3435,22 @@ ALTER TABLE ONLY app.refresh_tokens
 
 
 --
+-- Name: risk_hits risk_hits_rule_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_hits
+    ADD CONSTRAINT risk_hits_rule_fkey FOREIGN KEY (app_id, rule_id) REFERENCES app.risk_rules(app_id, rule_id);
+
+
+--
+-- Name: risk_hits risk_hits_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_hits
+    ADD CONSTRAINT risk_hits_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: sessions sessions_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -3148,6 +3480,14 @@ ALTER TABLE ONLY app.user_oauth
 
 ALTER TABLE ONLY app.user_oauth
     ADD CONSTRAINT user_oauth_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: user_risk_state user_risk_state_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.user_risk_state
+    ADD CONSTRAINT user_risk_state_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -3308,11 +3648,125 @@ GRANT SELECT ON TABLE app.app_versions TO couli_readonly;
 
 
 --
+-- Name: TABLE appeals; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.appeals TO couli_app;
+GRANT SELECT ON TABLE app.appeals TO couli_readonly;
+
+
+--
+-- Name: COLUMN appeals.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.appeals TO couli_app;
+
+
+--
+-- Name: COLUMN appeals.handler_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(handler_id) ON TABLE app.appeals TO couli_app;
+
+
+--
+-- Name: COLUMN appeals.closed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(closed_at) ON TABLE app.appeals TO couli_app;
+
+
+--
+-- Name: COLUMN appeals.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.appeals TO couli_app;
+
+
+--
+-- Name: COLUMN appeals.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.appeals TO couli_app;
+
+
+--
 -- Name: TABLE articles; Type: ACL; Schema: app; Owner: -
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.articles TO couli_app;
 GRANT SELECT ON TABLE app.articles TO couli_readonly;
+
+
+--
+-- Name: TABLE blocklist; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.blocklist TO couli_app;
+GRANT SELECT ON TABLE app.blocklist TO couli_readonly;
+
+
+--
+-- Name: COLUMN blocklist.value_hmac; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(value_hmac) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN blocklist.value; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(value) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN blocklist.violation_type; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(violation_type) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN blocklist.reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reason) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN blocklist.end_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(end_at) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN blocklist.expire_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(expire_at) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN blocklist.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN blocklist.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN blocklist.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.blocklist TO couli_app;
 
 
 --
@@ -3808,6 +4262,162 @@ GRANT UPDATE(updated_at) ON TABLE app.refresh_tokens TO couli_app;
 
 
 --
+-- Name: TABLE risk_hits; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT ON TABLE app.risk_hits TO couli_app;
+GRANT SELECT ON TABLE app.risk_hits TO couli_readonly;
+
+
+--
+-- Name: COLUMN risk_hits.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(app_id) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(user_id) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.rule_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(rule_id) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.risk_action; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(risk_action) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.dimension; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(dimension) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.value_hmac; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(value_hmac) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.ref_type; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(ref_type) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.ref_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(ref_id) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.request_type; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(request_type) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.related_phone_hmac; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(related_phone_hmac) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.related_phone_masked; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(related_phone_masked) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.amount_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(amount_fen) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(created_at) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: TABLE risk_rules; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.risk_rules TO couli_app;
+GRANT SELECT ON TABLE app.risk_rules TO couli_readonly;
+
+
+--
+-- Name: COLUMN risk_rules.scene; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(scene) ON TABLE app.risk_rules TO couli_app;
+
+
+--
+-- Name: COLUMN risk_rules.conditions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(conditions) ON TABLE app.risk_rules TO couli_app;
+
+
+--
+-- Name: COLUMN risk_rules.risk_action; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(risk_action) ON TABLE app.risk_rules TO couli_app;
+
+
+--
+-- Name: COLUMN risk_rules.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.risk_rules TO couli_app;
+
+
+--
+-- Name: COLUMN risk_rules.version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(version) ON TABLE app.risk_rules TO couli_app;
+
+
+--
+-- Name: COLUMN risk_rules.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.risk_rules TO couli_app;
+
+
+--
+-- Name: COLUMN risk_rules.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.risk_rules TO couli_app;
+
+
+--
 -- Name: TABLE sessions; Type: ACL; Schema: app; Owner: -
 --
 
@@ -3842,6 +4452,85 @@ GRANT UPDATE(updated_at) ON TABLE app.sessions TO couli_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.user_oauth TO couli_app;
 GRANT SELECT ON TABLE app.user_oauth TO couli_readonly;
+
+
+--
+-- Name: TABLE user_risk_state; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.user_risk_state TO couli_app;
+GRANT SELECT ON TABLE app.user_risk_state TO couli_readonly;
+
+
+--
+-- Name: COLUMN user_risk_state.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(user_id) ON TABLE app.user_risk_state TO couli_payout;
+
+
+--
+-- Name: COLUMN user_risk_state.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.user_risk_state TO couli_payout;
+
+
+--
+-- Name: COLUMN user_risk_state.state; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(state) ON TABLE app.user_risk_state TO couli_app;
+GRANT SELECT(state) ON TABLE app.user_risk_state TO couli_payout;
+
+
+--
+-- Name: COLUMN user_risk_state.reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reason) ON TABLE app.user_risk_state TO couli_app;
+
+
+--
+-- Name: COLUMN user_risk_state.reason_category; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reason_category) ON TABLE app.user_risk_state TO couli_app;
+
+
+--
+-- Name: COLUMN user_risk_state.frozen_until; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(frozen_until) ON TABLE app.user_risk_state TO couli_app;
+
+
+--
+-- Name: COLUMN user_risk_state.changed_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(changed_by) ON TABLE app.user_risk_state TO couli_app;
+
+
+--
+-- Name: COLUMN user_risk_state.changed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(changed_at) ON TABLE app.user_risk_state TO couli_app;
+
+
+--
+-- Name: COLUMN user_risk_state.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.user_risk_state TO couli_app;
+
+
+--
+-- Name: COLUMN user_risk_state.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.user_risk_state TO couli_app;
 
 
 --

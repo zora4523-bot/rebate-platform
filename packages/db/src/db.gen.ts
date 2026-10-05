@@ -23,6 +23,25 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface Appeals {
+  app_id: string;
+  closed_at: Timestamp | null;
+  content: string;
+  created_at: Generated<Timestamp>;
+  deadline_at: Timestamp;
+  handler_id: string | null;
+  id: string;
+  prev_risk_state: string | null;
+  related_phone_hmac: string | null;
+  request_type: string | null;
+  row_version: Generated<number>;
+  status: string;
+  target_id: string;
+  target_type: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
 export interface AppVersions {
   app_id: string;
   channel: string;
@@ -56,6 +75,26 @@ export interface Articles {
   title: string;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+}
+
+export interface Blocklist {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  dimension: string;
+  end_at: Timestamp | null;
+  expire_at: Timestamp | null;
+  id: string;
+  platform: string | null;
+  reason: string | null;
+  row_version: Generated<number>;
+  start_at: Timestamp | null;
+  status: string;
+  union_account_id: string | null;
+  updated_at: Generated<Timestamp>;
+  value: string | null;
+  value_hmac: string | null;
+  violation_type: string;
 }
 
 export interface ConfigItems {
@@ -428,6 +467,37 @@ export interface RefreshTokens {
   updated_at: Generated<Timestamp>;
 }
 
+export interface RiskHits {
+  amount_fen: ColumnType<bigint, bigint, bigint> | null;
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  dimension: string;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  ref_id: string;
+  ref_type: string;
+  related_phone_hmac: string | null;
+  related_phone_masked: string | null;
+  request_type: string | null;
+  risk_action: string;
+  rule_id: string;
+  user_id: string | null;
+  value_hmac: string;
+}
+
+export interface RiskRules {
+  app_id: string;
+  conditions: Json;
+  created_at: Generated<Timestamp>;
+  id: string;
+  risk_action: string;
+  row_version: Generated<number>;
+  rule_id: string;
+  scene: string;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  version: number;
+}
+
 export interface Sessions {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -449,6 +519,20 @@ export interface UserOauth {
   provider: string;
   row_version: Generated<number>;
   union_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface UserRiskState {
+  app_id: string;
+  changed_at: Timestamp;
+  changed_by: string;
+  created_at: Generated<Timestamp>;
+  frozen_until: Timestamp | null;
+  reason: string | null;
+  reason_category: string | null;
+  row_version: Generated<number>;
+  state: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -490,7 +574,9 @@ export interface UserTipReads {
 
 export interface DB {
   app_versions: AppVersions;
+  appeals: Appeals;
   articles: Articles;
+  blocklist: Blocklist;
   config_items: ConfigItems;
   consent_records: ConsentRecords;
   device_registrations: DeviceRegistrations;
@@ -512,8 +598,11 @@ export interface DB {
   processed_events: ProcessedEvents;
   push_tokens: PushTokens;
   refresh_tokens: RefreshTokens;
+  risk_hits: RiskHits;
+  risk_rules: RiskRules;
   sessions: Sessions;
   user_oauth: UserOauth;
+  user_risk_state: UserRiskState;
   user_tip_reads: UserTipReads;
   users: Users;
 }
