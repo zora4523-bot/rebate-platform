@@ -1,0 +1,17 @@
+/* H5 styles shared by the app, landing and conformance entries (规划/03 §8.1). */
+/* Tailwind scans all of apps/h5/src: '../../' is relative to this file. */
+@import 'tailwindcss' source('../../');
+@import '@couli/ui-tokens/tokens.css';
+@import '@couli/ui-tokens/tailwind.css';
+
+@layer base {
+  /* viewport-fit=cover: keep content clear of notches and the home indicator. */
+  body {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    background-color: var(--color-background-canvas);
+    color: var(--color-text-primary);
+  }
+}

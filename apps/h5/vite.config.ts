@@ -5,9 +5,6 @@ import { defaultClientConditions, defineConfig } from 'vite';
 
 // One build per entry (规划/03 §8.2): `vite build --mode <entry>` builds
 // src/entries/<entry>/index.html into dist/web/<entry>/ (dist/tsc holds the `tsc -b` output).
-// TODO(规划/11 §2.3): the entry directories src/entries/{app,landing,conformance} are created by F1-01c — blocked on F1-01c
-// Because root is the entry directory, each entry's CSS is written (by F1-01c) as
-// `@import 'tailwindcss' source('../../');` so Tailwind scans all of apps/h5/src, not one entry.
 const ENTRIES = ['app', 'landing', 'conformance'];
 
 // Deployment target: the same variable and values as apps/api (local / test / staging / prod).
@@ -38,6 +35,12 @@ export default defineConfig(({ command, mode }) => {
     // vitest.shared.ts), so build and dev server never need a prior `tsc -b`.
     resolve: { conditions: ['couli-src', ...defaultClientConditions] },
     plugins: [react(), tailwindcss()],
+    // Deploy builds always bundle the production React / React Router branches, whatever
+    // NODE_ENV the caller has (CI and Vitest set it to "test"); the route and landing size budgets
+    // of 规划/03 §12 are measured on exactly this output.
+    ...(command === 'build'
+      ? { define: { 'process.env.NODE_ENV': JSON.stringify('production') } }
+      : {}),
     build: {
       outDir: pkgDir(`./dist/web/${mode}/`),
       emptyOutDir: true,
