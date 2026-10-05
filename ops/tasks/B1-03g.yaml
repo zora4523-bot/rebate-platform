@@ -1,0 +1,29 @@
+id: B1-03g
+repo: rebate-platform
+title: 发码风控默认值：同一设备（按 device_hash）每小时的不同号码准入集合（原子判定、42901）、同一 IP 每小时发码达阈值后须人机验证（44003）、captcha_mode 为 always、人机验证不可用按 42901、全站当日短信量预算告警
+type: impl
+# 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释）。依据：BR-ID-05 条目行（发码判定顺序：签名 → 20001 → 44001 → 44003 → 42901）与细则「发码与设备注册的风控默认值」
+# （设备的不同号码数整段、判定位置、人机验证不可用、窗口、例子），由编排者摘入；验收参照 10 AC-S1-79（⑦⑩ 要真实 Redis 并发，不用 mock）。
+# 准入集合的「清理过期、判断在不在、判断满没满、加入或刷新」在一个 Redis 脚本里原子完成；键取设备行上的 device_hash（经 identity 实现的端口取，同 B1-03b 的依赖倒置），
+# 不取 device_id；准入后不论结果都占名额；存储不可用按拒绝（42901）。请求记录只记号码 HMAC。
+# 人机验证本身未定（13 §13.3 的 44003 行「是否启用待决策」）：本任务只做「要求人机验证」的判定与验证端口，验证不可用按 42901；不接任何人机验证供应商。
+# 原有的「同一 IP 一小时新注册 ≥5 个账号」触发 44003 若 B1-02e 已做，本任务并进同一判定、不重复（编排者派前核对 B1-02e，裁定 §5 第 13 条）。手机号 60 秒 / 每日额度在 B1-02e，本任务的判定插在它之前。
+# 预算告警：达 sms.daily_budget_count × sms.daily_budget_alert_ratio_bp 与 100% 各告警一次，不自动停发；告警出口同 B1-03f 注释。
+# 阈值与 sms.captcha_mode 经 F1-02b 的配置读取取值（B1-03e 定义的端口），键未配置时用 08 的默认值兜底（D-7 不入种子，不变）。
+# identity 与 app.module.ts 路径，整体按 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-03e, B1-02e]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/risk/sms-risk/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/sms-risk/**'
+status: todo
+pr: null

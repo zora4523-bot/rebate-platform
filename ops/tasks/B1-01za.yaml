@@ -1,0 +1,29 @@
+id: B1-01za
+repo: rebate-platform
+title: platform：全局异常过滤器统一出错响应——未知异常、请求体解析失败（损坏 / 空 JSON、415）、守卫里的异常与响应序列化失败都返回契约 ErrorEnvelope（20001 / 50001）
+type: impl
+# 2026-10-05 入账（B1-02c 两家评审带出的平台缺口，couli-runs/B1-02c/followups.md 第 9、10 条）。现状：bootstrap.ts 用 useGlobalFilters 注册 RequestValidationFilter，
+# 它先接住所有异常，所以 APP_FILTER 不生效；B1-02c 只能用 platform/http 的全局拦截器把控制器里的未知异常转成 50001，接不住 guard 里的异常、
+# Fastify 请求体解析错误（损坏 JSON 返回 Nest 默认 {statusCode,message}，message 可能带原始请求体片段；FST_ERR_CTP_EMPTY_JSON_BODY；415）与响应序列化失败（如 bigint）。
+# 做法：把 RequestValidationFilter 的两项职责（校验错误 → 20001 ErrorEnvelope、IdempotencyError outcome_unknown 断开连接）与 50001 兜底并成 platform/http 的一个过滤器，
+# bootstrap 只注册它；FST_ERR_CTP_* → 20001（data.fields=['body']，不回显请求体），其余未知异常 → 50001；带 statusCode 的普通错误也按 50001（头注释写明）。
+# 合并后删掉 B1-02c 的 ServerErrorInterceptor（或改为只做日志），行为以本任务的过滤器为准。依据：contracts/openapi.yaml 各操作 4XX / 5XX 引用 ErrorEnvelope、
+# contracts/error-codes.yaml 的 20001、50001，ADR-0001 §4.2（请求校验），由编排者摘入任务书第 2 节。bootstrap.ts 的在途任务 B1-01r 已合并（#82）。platform 路径 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-02c]
+paths:
+  - 'apps/api/src/modules/platform/http/**'
+  - 'apps/api/src/modules/platform/validation/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/bootstrap.ts'
+test_paths:
+  - 'test/spec/platform/errors/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/errors/**'
+status: todo
+pr: null

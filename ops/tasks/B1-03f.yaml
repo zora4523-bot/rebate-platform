@@ -1,0 +1,27 @@
+id: B1-03f
+repo: rebate-platform
+title: 设备注册风控：同一 IP 每小时注册设备数上限（device.ip_register_per_hour，42901 + Retry-After，不签发 device_id）与 device_hash 热点告警（24 小时内关联 device_id 数达 device.hash_hot_alert_count，只告警不拦截）
+type: impl
+# 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释；B1-02c 注释写明这两项归 B1-03）。依据：BR-ID-05 细则「发码与设备注册的风控默认值」表的 device.ip_register_per_hour 行与
+# 「窗口」一段（滑动 [now − 3600 秒, now] 两端闭区间，IP 取网关识别出的客户端 IP）、BR-ID-09 细则「设备标识的无效值」的监控一条、04 §6.1 POST /v1/devices 行，由编排者摘入；
+# 验收参照 10 AC-S1-69 ⑤、AC-S1-79 ③。契约已有（CT-15b：registerDevice 的 42901）。
+# 只数注册成功的设备；超限时不签发、不写 devices。阈值经 F1-02b 的配置读取取值（B1-03e 定义的端口），键未配置时用 08 的默认值（30、20）兜底。
+# devices 写者是 identity：注册用例（B1-02c）签发前调 risk 判定、成功后调 risk 记一次；热点计数在 risk 用 Redis（键 = app_id + device_hash，24 小时窗口，带 TTL），不读 devices 表。
+# 告警只打结构化告警日志（platform/logging 平铺字段，不带 install_secret）；接企业微信告警群归可观测任务，不在这里。
+# identity 与 app.module.ts 路径，整体按 RV2。identity 路径与 B1-02e、f、B1-12b 相交，不并行派。
+refs: []
+refs_hash: {}
+deps: [B1-03e, B1-02c]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/risk/device-register/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/device-register/**'
+status: todo
+pr: null

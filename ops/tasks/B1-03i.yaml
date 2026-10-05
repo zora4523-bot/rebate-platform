@@ -1,0 +1,31 @@
+id: B1-03i
+repo: rebate-platform
+title: 申诉接口实现：POST /v1/me/appeals（账户申诉：risk_state 置 appealing 并记 prev_risk_state；处理中再提交返回原单；幂等；写审计）与 GET /v1/me/appeals（本人申诉列表，不返回截止时间）
+type: impl
+# 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释）。契约已合并（CT-02c，operationId submitAppeal / listAppeals，实现时去掉 x-implementation: planned），路由属 risk（02 §4.1）。
+# 依据：BR-ID-36 条目行（可申诉对象、同一对象同时最多 1 条处理中、处理时限、appealing 期间限制）、BR-ID-31（10006 白名单含申诉接口）、BR-ID-01 细则（版本守卫 true），由编排者摘入；
+# 验收参照 10 AC-S1-60 ⑤。审计经 F1-06b 的审计端口。
+# deadline_at = 提交起第 3 个工作日 24:00（+08:00），按国家法定工作日历（含调休）。日历按编排者 2026-10-05 裁定（§5 第 10 条，代理默认，待回写规划 04 §10 与 08 BR-ID-36）：
+# 配置键按年登记法定节假日与调休工作日（calendar.cn_holidays.<year>、calendar.cn_makeup_workdays.<year>），经 F1-02b 的配置读取（B1-03e 定义的端口）取；
+# 本任务建日历端口与按日历的计算；未登记的年份只按周末计并告警。截止时间不返回给用户（CT-02c）。
+# 订单申诉（target_type=order）要校验「该订单被风控作废返利」（BR-ATTR-26），订单模块（B1-08、B1-09）还没入账、也不可能已有被作废的订单：
+# B1-09 之前按 20001 拒绝，PR 里列为未完成（编排者裁定 §5 第 11 条），B1-09 入账后另起一个 B1-03 后缀补上。blocked_request 不经用户接口（CT-02d）。
+# 申诉次数上限、维持后能否再申诉负责人没答（差异清单第五节第 2 题）：只按「同一对象同时最多 1 条处理中」做，不加次数限制，也不自选。
+# 结案（维持 / 撤销）、站内信 APPEAL_RESULT、申诉恢复差错单在后台处理侧（F1-10、settlement），不在本任务。
+# app.module.ts 不在白名单，整体按 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-03h, B1-03e, CT-02c, F1-06b, F1-02b]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+test_paths:
+  - 'test/spec/risk/appeals/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/appeals/**'
+status: todo
+pr: null
