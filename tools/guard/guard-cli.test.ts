@@ -168,6 +168,35 @@ describe('risk-of-paths.ts', () => {
     expect(json<{ paths: unknown[] }>(nul.stdout).paths).toHaveLength(2);
   });
 
+  it('--sets answers one report per set, each as a call of its own, paths kept intact', () => {
+    const sets = [
+      ['docs/a.md', 'packages/money/src/index.ts'],
+      ['docs/README.md', 'turbo.json'],
+      ['docs/a.md\ndocs/b.md', 'docs/c\u0000d.md'],
+      [],
+    ];
+    const res = guard('risk-of-paths.ts', ['--sets'], { input: JSON.stringify(sets) });
+    expect(res.status).toBe(0);
+    const reports = json<{ risk: string; ask: boolean; paths: unknown[] }[]>(res.stdout);
+    expect(reports).toHaveLength(sets.length);
+    for (const [i, set] of sets.slice(0, 2).entries()) {
+      expect(reports[i]).toEqual(json(guard('risk-of-paths.ts', ['--json', ...set]).stdout));
+    }
+    expect(reports[0]).toMatchObject({ risk: 'RV2', ask: false });
+    expect(reports[1]).toMatchObject({ risk: 'RV2', ask: true });
+    // A newline or NUL inside a path stays inside that path: two rows, not four.
+    expect(reports[2]?.paths).toHaveLength(2);
+    expect(reports[3]).toEqual({ risk: 'RV2', ask: false, paths: [] });
+  });
+
+  it('--sets rejects input that is not an array of string arrays, and other arguments', () => {
+    for (const input of ['not json', '{"a":1}', '[["docs/a.md", 1]]', '["docs/a.md"]']) {
+      expect(guard('risk-of-paths.ts', ['--sets'], { input }).status).toBe(2);
+    }
+    expect(guard('risk-of-paths.ts', ['--sets', '--json'], { input: '[]' }).status).toBe(2);
+    expect(guard('risk-of-paths.ts', ['--sets', 'docs/a.md'], { input: '[]' }).status).toBe(2);
+  });
+
   it('prints a readable table without --json and rejects wrong usage with exit 2', () => {
     const res = guard('risk-of-paths.ts', ['docs/a.md']);
     expect(res.stdout).toBe('RV0  docs/a.md  (docs/**)\nrisk: RV0\n');

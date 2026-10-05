@@ -120,6 +120,24 @@ it(
   CLI_TIMEOUT,
 );
 
+it('warns on the board, in one line, when the combined risk call fails and asks per task', () => {
+  const board = collectBoard({
+    root,
+    now: NOW,
+    risk: fixedRisk('RV1'),
+    riskSets: () => {
+      throw new Error(
+        'risk-of-paths.ts --sets exited 2: unknown option --sets\nusage: risk-of-paths.ts',
+      );
+    },
+  });
+  expect(board.rows.find((r) => r.id === 'S1-03')?.risk).toBe('RV1');
+  expect(board.warnings).toContain(
+    '风险级未能合并计算，已逐个任务计算：risk-of-paths.ts --sets exited 2: unknown option --sets',
+  );
+  expect(board.warnings.some((w) => w.includes('usage:'))).toBe(false);
+});
+
 it(
   'renders the ledger table and the fixed lines within the opening-read budget',
   () => {

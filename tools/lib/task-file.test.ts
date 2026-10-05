@@ -154,6 +154,16 @@ describe('parseTaskFile', () => {
     expect(message).toContain('"a\\b" must use "/" separators');
   });
 
+  it('rejects paths that hold control characters (a newline or NUL would split a guard call)', () => {
+    for (const escape of ['\\n', '\\0', '\\r']) {
+      const text = EXAMPLE.replace(
+        '  - "apps/api/src/modules/ledger/**"',
+        `  - "docs/a${escape}docs/b.md"`,
+      );
+      expect(messageOf(text, 'B2-02a.yaml')).toContain('must not contain control characters');
+    }
+  });
+
   it('wraps YAML errors with the file name and rejects non-mapping documents', () => {
     expect(messageOf('id: &a B2-02a\n', 'B2-02a.yaml')).toMatch(/^B2-02a\.yaml: yaml-lite: line 1/);
     expect(messageOf('- a\n', 'B2-02a.yaml')).toContain('the document must be a mapping');

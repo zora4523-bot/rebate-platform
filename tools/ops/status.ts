@@ -20,7 +20,7 @@ import {
   taskCalls,
 } from './state.ts';
 import type { BreakerReason, TaskState } from './state.ts';
-import { archivedTaskIds, readTask, riskOfPaths } from './task.ts';
+import { archivedTaskIds, batchRisk, readTask, riskSources } from './task.ts';
 import type { RiskLevel, RiskReport } from './task.ts';
 import { currentSummary } from './usage.ts';
 import type { Summary } from './usage.ts';
@@ -71,6 +71,8 @@ export type BoardOptions = {
   root?: string;
   now?: Date;
   risk?: (paths: readonly string[]) => RiskReport;
+  /** Injected by tests: many sets at once (see task.ts riskSources). */
+  riskSets?: (sets: readonly (readonly string[])[]) => RiskReport[];
 };
 
 /** States that hold a task's paths: everything except "queued". */
@@ -127,7 +129,6 @@ function gitFacts(root: string, warnings: string[]): GitFacts {
 export function collectBoard(opts: BoardOptions = {}): Board {
   const root = opts.root ?? repoRoot();
   const now = opts.now ?? new Date();
-  const riskFn = opts.risk ?? riskOfPaths;
   const warnings: string[] = [];
 
   const tasks = new Map<string, TaskFile>();
@@ -139,6 +140,16 @@ export function collectBoard(opts: BoardOptions = {}): Board {
       warnings.push(`台账文件 ${id}.yaml 无法解析（运行 pnpm ops:task:check）：${first}`);
     }
   }
+
+  // One guard call for every open task instead of one per task (batchRisk).
+  const riskFn = batchRisk(
+    [...tasks.values()].filter((t) => t.status === 'todo').map((t) => t.paths),
+    riskSources({
+      ...opts,
+      onRiskFallback: (reason) =>
+        warnings.push(`风险级未能合并计算，已逐个任务计算：${reason.split('\n')[0]}`),
+    }),
+  );
 
   const states = new Map<string, TaskState>();
   try {

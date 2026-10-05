@@ -103,6 +103,7 @@ function stringList(
 }
 
 function pathProblem(glob: string): string | null {
+  if (/[\u0000-\u001f\u007f]/.test(glob)) return 'must not contain control characters';
   if (glob.startsWith('/')) return 'must be relative to the repository root';
   if (glob.includes('\\')) return 'must use "/" separators';
   if (glob.split('/').some((seg) => seg === '..' || seg === '.')) {

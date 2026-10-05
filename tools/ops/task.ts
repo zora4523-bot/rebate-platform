@@ -30,7 +30,23 @@ export type CheckOptions = {
   spec?: SpecSource;
   /** Injected by tests; defaults to the guard in the trusted root. */
   risk?: (paths: readonly string[]) => RiskReport;
+  /** Injected by tests: many sets at once; defaults to `risk` per set, or the trusted guard. */
+  riskSets?: (sets: readonly (readonly string[])[]) => RiskReport[];
+  /** Told when the combined guard call is unusable (the check then asks per task). */
+  onRiskFallback?: (reason: string) => void;
 };
+
+/** The guard calls checkTasks and the status board batch (batchRisk). */
+export function riskSources(opts: {
+  risk?: (paths: readonly string[]) => RiskReport;
+  riskSets?: (sets: readonly (readonly string[])[]) => RiskReport[];
+  onRiskFallback?: (reason: string) => void;
+}): RiskSources {
+  const one = opts.risk;
+  const many =
+    opts.riskSets ?? (one ? (sets: readonly (readonly string[])[]) => sets.map(one) : undefined);
+  return { many, one, onFallback: opts.onRiskFallback };
+}
 
 /** Risk level of a set of paths, computed by the trusted guard (规划/11 §1.2). */
 export function riskOfPaths(paths: readonly string[]): RiskReport {
@@ -43,6 +59,65 @@ export function riskOfPaths(paths: readonly string[]): RiskReport {
     throw new Error(`risk-of-paths.ts returned an unknown risk: ${String(parsed.risk)}`);
   }
   return parsed;
+}
+
+/** Risk reports of many path sets from one call of the trusted guard (`risk-of-paths.ts --sets`). */
+export function riskOfPathSets(sets: readonly (readonly string[])[]): RiskReport[] {
+  const res = runGuard('risk-of-paths.ts', ['--sets'], { input: JSON.stringify(sets) });
+  if (res.status !== 0) {
+    throw new Error(`risk-of-paths.ts --sets exited ${res.status}: ${res.stderr.trim()}`);
+  }
+  const parsed = JSON.parse(res.stdout) as unknown;
+  if (!Array.isArray(parsed) || parsed.length !== sets.length) {
+    throw new Error(`risk-of-paths.ts --sets did not answer one report per set`);
+  }
+  for (const report of parsed as RiskReport[]) {
+    if (!['RV0', 'RV1', 'RV2'].includes(report?.risk)) {
+      throw new Error(`risk-of-paths.ts --sets returned an unknown risk: ${String(report?.risk)}`);
+    }
+  }
+  return parsed as RiskReport[];
+}
+
+export type RiskSources = {
+  /** One report per set, in order (default: the trusted guard, riskOfPathSets). */
+  many?: ((sets: readonly (readonly string[])[]) => RiskReport[]) | undefined;
+  /** One set (default: the trusted guard, riskOfPaths). */
+  one?: ((paths: readonly string[]) => RiskReport) | undefined;
+  /** Told once when the combined call is unusable and every set is asked on its own. */
+  onFallback?: ((reason: string) => void) | undefined;
+};
+
+/**
+ * Risk of many path sets from one call of the trusted guard. risk-of-paths.ts runs as a process of
+ * its own, and one call per task (one Node start-up each) made the whole-ledger check outgrow its
+ * test timeout once the ledger passed a hundred tasks. The guard computes every report itself
+ * (`--sets`), so its aggregation is not repeated here. A set asked about that was not in `sets`, or
+ * every set when the combined call fails, is asked on its own as before.
+ */
+export function batchRisk(
+  sets: readonly (readonly string[])[],
+  sources: RiskSources = {},
+): (paths: readonly string[]) => RiskReport {
+  const many = sources.many ?? riskOfPathSets;
+  const one = sources.one ?? riskOfPaths;
+  const key = (paths: readonly string[]): string => JSON.stringify(paths);
+  // undefined: not asked yet; null: the combined call is unusable.
+  let answers: Map<string, RiskReport> | null | undefined;
+  return (paths) => {
+    if (answers === undefined) {
+      answers = null;
+      const unique = [...new Map(sets.map((set) => [key(set), set])).values()];
+      try {
+        const reports = unique.length > 0 ? many(unique) : [];
+        if (reports.length !== unique.length) throw new Error('not one report per set');
+        answers = new Map(unique.map((set, i) => [key(set), reports[i]!]));
+      } catch (err) {
+        sources.onFallback?.(err instanceof Error ? err.message : String(err));
+      }
+    }
+    return answers?.get(key(paths)) ?? one(paths);
+  };
 }
 
 function tasksDir(root: string): string {
@@ -233,10 +308,23 @@ export type CheckResult = { id: string; problems: string[] };
 export function checkTasks(ids: readonly string[] = [], opts: CheckOptions = {}): CheckResult[] {
   const root = opts.root ?? repoRoot();
   const wanted = ids.length > 0 ? [...ids] : listTaskIds(root);
+  // One guard call for the whole ledger instead of one per task (batchRisk): the path sets of
+  // the tasks whose risk checkTask asks for.
+  const risk = batchRisk(
+    wanted.flatMap((id) => {
+      try {
+        const task = readTask(id, root);
+        return task.type === 'impl' || task.type === 'migration' ? [task.paths] : [];
+      } catch {
+        return [];
+      }
+    }),
+    riskSources(opts),
+  );
   const results: CheckResult[] = [];
   for (const id of wanted) {
     try {
-      results.push({ id, problems: checkTask(id, opts) });
+      results.push({ id, problems: checkTask(id, { ...opts, risk }) });
     } catch (err) {
       results.push({ id, problems: [err instanceof Error ? err.message : String(err)] });
     }
@@ -279,7 +367,13 @@ function main(argv: string[]): number {
   });
   const [cmd, ...rest] = positionals;
   if (cmd === 'check') {
-    const results = checkTasks(rest.map((id) => assertTaskId(id)));
+    const results = checkTasks(
+      rest.map((id) => assertTaskId(id)),
+      {
+        onRiskFallback: (reason) =>
+          console.error(`notice: risk asked per task (${reason.split('\n')[0]})`),
+      },
+    );
     const failed = results.filter((r) => r.problems.length > 0);
     if (values.json) {
       console.log(JSON.stringify({ ok: failed.length === 0, tasks: results }, null, 2));

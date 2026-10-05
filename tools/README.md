@@ -27,7 +27,7 @@
 
 | 命令 | 检查什么 | 出处 |
 | --- | --- | --- |
-| `risk-of-paths.ts [--json] [--stdin \| <路径>…]` | 按 `ops/risk-map.yaml` 算风险级（默认 RV2，先匹配先得）和保护路径类别。输入可以是改动文件，也可以是任务的 glob；glob 必须整体落在某条白名单规则内才不是 RV2。类别只按路径判断（`package.json` 一律报第二类），是否真的动了 `scripts` 由 `protected-paths.ts` 看差异决定 | 11 §1.2 |
+| `risk-of-paths.ts [--json] [--stdin \| <路径>…]`；`risk-of-paths.ts --sets` | 按 `ops/risk-map.yaml` 算风险级（默认 RV2，先匹配先得）和保护路径类别。`--sets`：标准输入是 JSON 数组的数组（多组路径），输出 JSON 报告数组，每组一份、与单独调用相同；`tools/ops/task.ts check` 与看板用它一次算完整本台账（`batchRisk`）。输入可以是改动文件，也可以是任务的 glob；glob 必须整体落在某条白名单规则内才不是 RV2。类别只按路径判断（`package.json` 一律报第二类），是否真的动了 `scripts` 由 `protected-paths.ts` 看差异决定 | 11 §1.2 |
 | `path-guard.ts (--task <编号> \| --paths <glob,glob>) --base <提交> [--author] [--cwd] [--json]` | 相对 `--base` 的全部改动（含未跟踪文件、改名的两侧）必须落在任务 `paths` 内；`ops/`、`docs/` 下的越界改动单独列出、不算失败。`--author`：Codex 写规则测试那一轮的工作区（`tools/agent/post-run.sh` 在 `phase: test` 时用）：只许台账 `test_paths`（没有就整轮失败，CR-06）与任务 `paths` 内的 `NotImplemented` 骨架；骨架按新增或改动的函数体逐个检查（`guard/lib/skeleton.ts`，CR-05）。CI 的 path-guard-author（基线到 `spec_commit`）同样按函数体检查，台账有 `test_paths` 时只认它，2026-10-05 前的旧台账仍用全部第一类 | 11 §2.3 第 3、6 步 |
 | `protected-paths.ts --base <提交> [--cwd] [--task-type <类型>] [--json]` | 第一类：已有文件被改、删、改名；第二、三类：任何改动；`package.json` 只比较 `scripts`；`deps` 任务可改 `pnpm-lock.yaml`。匹配不分大小写 | 11 §4.4 |
 | `test-guard.ts [--base <提交>] [--cwd] [--json]` | 测试文件、vitest 配置、package scripts 里不得有 skip / only / todo / retry / passWithNoTests（retry 的口径见下文「retry 怎么查」）；单元测试不得引用 `pg`、`pg-boss`、`testcontainers`、`@couli/db/testing`，不得 `listen`；测试文件不得读 `TEST_PG_ADMIN_URL`；`test/spec`、`test/properties` 不用 `describe`、不 mock 资金核心；`test/acceptance` 标题带 `[AC-…]`。带 `--base` 时加第一类「只增不改」 | 11 §2.3 第 5 步、§4.1–§4.3 |

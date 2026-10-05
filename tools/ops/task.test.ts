@@ -1,8 +1,15 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { listTaskIds, loadTask } from '../lib/task-file.ts';
 import { ruleHash, findRuleInText } from './spec.ts';
-import { checkTask, checkTasks, computeRefsHash, MAX_TASK_LINES, showTask } from './task.ts';
-import type { CheckOptions } from './task.ts';
+import {
+  batchRisk,
+  checkTask,
+  checkTasks,
+  computeRefsHash,
+  MAX_TASK_LINES,
+  showTask,
+} from './task.ts';
+import type { CheckOptions, RiskReport } from './task.ts';
 import {
   CLI_TIMEOUT,
   fixedRisk,
@@ -211,6 +218,86 @@ it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a 
     for (const id of ['X1-01k', 'X1-01l', 'X1-01m', 'X1-01n', 'X1-01o']) {
       removeDir(`${root}/ops/tasks/${id}.yaml`);
     }
+  }
+});
+
+// A stand-in for the trusted guard: one report per set, counting the calls.
+function countingGuard(): {
+  manyCalls: string[][][];
+  oneCalls: string[][];
+  many: (sets: readonly (readonly string[])[]) => RiskReport[];
+  one: (paths: readonly string[]) => RiskReport;
+} {
+  const report = (paths: readonly string[]): RiskReport => ({
+    risk: paths.some((p) => p.startsWith('apps/')) ? 'RV1' : 'RV0',
+    ask: false,
+    paths: paths.map((path) => ({ path, risk: 'RV0', rule: null, protected: null })),
+  });
+  const g = {
+    manyCalls: [] as string[][][],
+    oneCalls: [] as string[][],
+    many: (sets: readonly (readonly string[])[]) => {
+      g.manyCalls.push(sets.map((s) => [...s]));
+      return sets.map(report);
+    },
+    one: (paths: readonly string[]) => {
+      g.oneCalls.push([...paths]);
+      return report(paths);
+    },
+  };
+  return g;
+}
+
+it('batchRisk asks the guard once for all distinct sets and hands back its report per set', () => {
+  const g = countingGuard();
+  const lookup = batchRisk([['docs/a.md'], ['apps/x/**', 'docs/a.md'], ['docs/a.md']], g);
+  expect(lookup(['apps/x/**', 'docs/a.md'])).toEqual(g.one(['apps/x/**', 'docs/a.md']));
+  expect(lookup(['docs/a.md']).risk).toBe('RV0');
+  expect(g.manyCalls).toEqual([[['docs/a.md'], ['apps/x/**', 'docs/a.md']]]);
+  // A set the batch was not asked about goes to the guard on its own.
+  g.oneCalls.length = 0;
+  expect(lookup(['apps/y/**']).risk).toBe('RV1');
+  expect(g.oneCalls).toEqual([['apps/y/**']]);
+});
+
+it('batchRisk asks every set on its own when the combined call fails or is not one report per set', () => {
+  for (const broken of [
+    () => {
+      throw new Error('guard failed');
+    },
+    () => [] as RiskReport[],
+  ]) {
+    const g = countingGuard();
+    const reasons: string[] = [];
+    const lookup = batchRisk([['docs/a.md'], ['apps/x/**']], {
+      many: broken,
+      one: g.one,
+      onFallback: (r) => reasons.push(r),
+    });
+    expect(lookup(['docs/a.md']).risk).toBe('RV0');
+    expect(lookup(['apps/x/**']).risk).toBe('RV1');
+    expect(g.oneCalls).toEqual([['docs/a.md'], ['apps/x/**']]);
+    expect(reasons).toHaveLength(1);
+  }
+});
+
+it('checkTasks asks the guard once, for the implementation tasks only', () => {
+  const own = scratchDir('task-batch');
+  writeFiles(own, {
+    'ops/tasks/X1-01.yaml': good(),
+    'ops/tasks/X1-01a.yaml': good({ id: 'X1-01a', paths: "\n  - 'apps/x/**'" }),
+    'ops/tasks/X1-01b.yaml': good({ id: 'X1-01b', type: 'migration', paths: "\n  - 'db/m/**'" }),
+    'ops/tasks/X1-01c.yaml': good({ id: 'X1-01c', type: 'contract', paths: "\n  - 'docs/x/**'" }),
+  });
+  try {
+    const g = countingGuard();
+    const ids = ['X1-01', 'X1-01a', 'X1-01b', 'X1-01c'];
+    const results = checkTasks(ids, { root: own, spec, riskSets: g.many, risk: g.one });
+    expect(results.map((r) => r.id)).toEqual(ids);
+    expect(g.manyCalls).toEqual([[['packages/demo/src/**'], ['apps/x/**'], ['db/m/**']]]);
+    expect(g.oneCalls).toEqual([]);
+  } finally {
+    removeDir(own);
   }
 });
 
