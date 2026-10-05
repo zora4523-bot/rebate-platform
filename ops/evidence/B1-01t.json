@@ -1,0 +1,62 @@
+{
+  "task": "B1-01t",
+  "spec_ref": "1955639f5c29cae4f43f6e039dc3c742b5ae3312",
+  "spec_commit": "a8e06df277098a89bc7a165a40f545c1bb902ba0",
+  "red_tests": [
+    "[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 在队列启动时（pgboss.version 被另一会话锁住）收到 SIGTERM——立即记 stopping、不退出、不记 started；放锁后启动照常做完（维护首轮 ensured 8），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、两个池都关）、放锁后 5 秒内退出码 0；同一阶段收到 SIGINT 后启动失败（放锁时版本改成 41）：stopping、startup_failed、不记 stopped，进程自然结束、退出码 1；输出不含口令",
+    "[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 的维护首轮卡在 event_log_p202611 的分区锁上时收到 SIGTERM 再收到 SIGINT（或 SIGINT 再 SIGTERM）——只按第一个信号立即记一行 stopping、不退出、不记 started；放锁后这一轮做完（ensured 8、failed 0），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、维护池与主池都关）、放锁后 5 秒内退出码 0；输出不含口令",
+    "[ADR-0001 §4.2 #4、#11; worker 契约 7 e] 真实入口（dist 子进程）：维护首轮卡在分区锁上时连收两次同一信号（SIGTERM→SIGTERM、SIGINT→SIGINT，第二次在第一次的 stopping 已记之后发）——第二次被忽略：只一行 stopping、不退出、不记 started；放锁后这一轮做完，按启停顺序停、记 stopped，进程自然结束、退出码 0",
+    "[ADR-0001 §4.2 #4、#11; worker 契约 3、7 c] 真实入口（dist 子进程）：维护首轮中收到 SIGTERM，放锁后启动做完并开始停止；停止的最后一步（关维护池）被挂住时进程仍在、只有 stopping 与 partition_maintenance_done、没有 stopped；放开后才记 stopped，进程自然结束、退出码 0"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/entry.ts, apps/api/src/modules/platform/maintenance/**). Worker entry: SIGTERM / SIGINT handlers installed before start; a signal during start is logged at once and the worker stops in order after the start finishes (worker contract 7). No money, attribution or authorisation path.",
+  "runs": [
+    {
+      "mode": "container",
+      "exit_code": 0,
+      "commit": "7ea4a40aed25e39ce806b8017e4e4e0ccd2bb840",
+      "tree": "3f686499e48c8535cd695a8f4ecba16b67c64aa7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T12:17:26Z",
+      "finished_at": "2026-10-05T12:19:05Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent round 1: pass; 1 S2 (a signal during the cleanup after a failed start logs an extra stopping line) recorded as a follow-up"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "money review base origin/main round 1: pass, 0 findings, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass; 3 items moved out of scope only because refs are empty (2 S1 test gaps: stopped checkpoint, same signal twice; 1 S2), fixed by the author's supplementary commits 58ec21c and e22c5c0 and checked in code review"
+  },
+  "trees": {
+    "packages/money": "8ea6cd06780c825c51b9d122157eb107863dee06",
+    "packages/domain": "440d90618f07b66a24cc32c485676e37f78a6835",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "35310289c26a7e49b9b192896411c0071d0d3ed9",
+    "apps/api/src/modules/platform/maintenance": "2391dcb11155e15d381904413b80df833f3ddd2b"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 pnpm test:longrun on a b1-followups-2 worktree (test/properties unchanged by B1-01r–w), 2026-10-05; this task adds no property tests"
+  }
+}
