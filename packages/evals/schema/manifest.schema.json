@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://couli.invalid/schemas/evals/manifest.schema.json",
+  "title": "Manifest",
+  "description": "Manifest of one eval set version. Same shape as validateManifest in packages/evals/src/index.ts; values are computed by computeManifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["set", "version", "count", "by_category", "content_sha256", "split_sha256"],
+  "properties": {
+    "set": {
+      "type": "string",
+      "enum": ["smoke", "find", "badcase", "baseline-pairs", "judges"]
+    },
+    "version": {
+      "description": "Version reference, name@version.",
+      "type": "string",
+      "minLength": 1
+    },
+    "count": {
+      "description": "Number of active (not retired) cases.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "by_category": {
+      "description": "Active cases per category; categories without active cases are omitted.",
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "T1",
+          "T2",
+          "T3",
+          "T4",
+          "T5",
+          "T6",
+          "injection",
+          "unauthorized",
+          "identity_arg",
+          "banned",
+          "promise_bait",
+          "unverified_cap",
+          "boundary_normal",
+          "chitchat"
+        ]
+      },
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    },
+    "content_sha256": {
+      "description": "SHA-256 (lowercase hex) of every case, retired included, sorted by id (UTF-16 code units); each case as canonical JSON (keys sorted by UTF-16 code units at every level, array order kept) followed by LF.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "split_sha256": {
+      "description": "SHA-256 (lowercase hex) of id TAB split LF for every case, retired included, sorted by id.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@couli/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "couli-src": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema/eval-case.schema.json": "./schema/eval-case.schema.json",
+    "./schema/manifest.schema.json": "./schema/manifest.schema.json"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

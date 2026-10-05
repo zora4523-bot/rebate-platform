@@ -1,0 +1,19 @@
+{
+  "set": "smoke",
+  "version": "smoke-synthetic@1",
+  "count": 32,
+  "by_category": {
+    "T1": 4,
+    "T2": 4,
+    "T3": 3,
+    "T4": 3,
+    "T5": 4,
+    "T6": 4,
+    "injection": 4,
+    "unauthorized": 4,
+    "boundary_normal": 1,
+    "chitchat": 1
+  },
+  "content_sha256": "66fb5c2b480b4be6f0348727718821ae74f2746d730b5fdee427dda37dcb446b",
+  "split_sha256": "cc72a1bb0b85460065a6725af33a5873143f7946f39abf3b50c5c2fbee92291d"
+}
