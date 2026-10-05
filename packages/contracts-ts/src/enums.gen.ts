@@ -3,7 +3,7 @@
 // Regenerate: pnpm contracts:codegen (drift is checked by pnpm contracts:check)
 
 /**
- * 权限点 key；标 step-up 的权限点每次操作都须二次验证（见 04 §11 与 specs/permissions.yaml）
+ * 权限点 key；标 step-up 的权限点每次操作都须二次验证，只有部分操作要的在该项写明（见 04 §11 与 specs/permissions.yaml）
  * Source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05） (contracts/enums/admin.yaml).
  */
 export const admin_permission = [
@@ -11,7 +11,7 @@ export const admin_permission = [
   "user.lookup", // 按 UID、完整手机号或订单号逐个查询
   "pii.reveal_phone", // 查看完整手机号（step-up）
   "pii.reveal_identity", // 查看完整身份证号、收款账号（step-up）
-  "fund.view", // 单个用户流水、提现单、对账明细
+  "fund.view", // 单个用户流水、提现单、对账明细；资金看板
   "audit.view_all", // 全部审计日志只读
   "export", // 导出
   "content.page", // 首页配置发布 / 回滚、草稿预览二维码
@@ -19,6 +19,7 @@ export const admin_permission = [
   "content.article", // 帮助中心、返利规则、公告、消息模板（资金类消息模板除外，归 content.fund_terms）
   "content.agreement", // 协议发布与提高最低版本 / 标记重签；修改隐私与权限文案键（BR-TEXT-14 表 D），要填法务确认人（step-up）
   "content.poster", // 海报背景图上传、审核
+  "content.app_version", // 版本管理（按端与渠道）：最新版本、推荐版本、更新文案、商店登记与默认商店、最低支持版本；只有提高最低支持版本时要二次验证（step-up）
   "content.fund_terms", // 修改资金术语键与资金类消息模板（清单见 BR-TEXT-12 细则「资金术语键」与 specs/fund-term-keys.yaml）（step-up）
   "config.general", // 普通配置（不含 BR-TEXT-14 表 D 的隐私与权限文案键与 BR-TEXT-12 细则所列的资金术语键）
   "config.risk", // 风控规则与阈值（step-up）
@@ -28,29 +29,33 @@ export const admin_permission = [
   "risk.freeze", // 冻结 / 解冻（step-up）
   "risk.ban", // 封禁 / 解封（step-up）
   "risk.blocklist", // 黑名单增删（step-up）
-  "risk.appeal", // 申诉处理
+  "risk.appeal", // 申诉处理（维持 / 撤销）；客服代为登记未登录或注册被拦截者的申诉
   "union.binding_reset", // 用户联盟授权重置（step-up）
   "union.binding_disable", // 用户联盟授权停用返利 / 恢复（step-up）
   "union.account_auth", // 站长联盟授权管理（step-up）
+  "union.pid", // 推广位登记、启用（pending → active）、停用（active → retired），不可删除（step-up）
   "user.level", // 调等级（step-up）
   "user.inviter", // 改上级（step-up）
+  "user.realname_fix", // 实名更正（用户经企业微信联系客服，客服人工审核后在用户详情页操作）（step-up）
+  "user.phone_change", // 编辑会员信息：改手机号与昵称；实名信息归 user.realname_fix，余额归 fund.adjust（step-up）
+  "user.data_export", // 个人信息副本导出（用户详情页）（step-up）
   "order.view", // 订单查询、手动同步
   "order.claim", // 找回、维权处理
   "order.assign", // 订单归属变更（step-up）
   "order.hold", // 订单 hold / unhold
   "order.restore", // 订单平台恢复、申诉恢复差错单（step-up）
-  "ticket.handle", // 客服工单处理
-  "ticket.data_export", // 个人信息副本导出（step-up）
-  "withdraw.review", // 提现审核、驳回
+  "withdraw.review", // 提现审核、驳回（step-up）
   "payout.execute", // 执行打款、needs_manual 处置、W11 凭通道成功证据核销原单（可为本单审核人）（step-up）
-  "payout.manual_entry", // 线下打款补录（step-up）
+  "payout.manual_entry", // 线下打款补录（W8，含银行卡线下转账）与批量手动打款（step-up）
   "settle.bill", // 月结账单确认、撤销定时、驳回、继续执行、补充批次（step-up）
   "settle.statement_upload", // 联盟结算明细上传
   "fund.adjust", // 人工调账（step-up）
   "fund.writeoff", // 坏账核销（step-up）
   "fund.settle_adjust", // 补差批次（step-up）
-  "fund.recon", // 对账与差错单处理
-  "agent.trace", // Agent trace 查询
+  "fund.recon", // 对账与差错单处理（含以「已关闭（不处理）」结案，必填原因）
+  "fund.cash_entry", // 平台资金台账录入：联盟回款、企业支付宝余额 W（step-up）
+  "agent.trace", // Agent trace 查询（含 AI 举报列表的查看）
+  "agent.report", // AI 举报处理：标记已处理、填写处理说明
 ] as const;
 export type AdminPermission = (typeof admin_permission)[number];
 
@@ -455,6 +460,7 @@ export const recon_diff_status = [
   "processing", // 处理中
   "adjusted", // 已调账
   "written_off", // 已核销
+  "closed", // 已关闭（不处理）
 ] as const;
 export type ReconDiffStatus = (typeof recon_diff_status)[number];
 
@@ -733,34 +739,6 @@ export const notify_category = [
   "marketing", // 营销类（预埋）
 ] as const;
 export type NotifyCategory = (typeof notify_category)[number];
-
-/**
- * ticket_type
- * Source: 规划/04 §2.5；拍板第二批 OPS-08、OPS-19、FUND-20 (contracts/enums/ops.yaml).
- */
-export const ticket_type = [
-  "appeal_unauth", // 未登录申诉
-  "realname_correction", // 实名更正
-  "phone_change", // 旧手机号不可用换号
-  "ai_report", // AI 举报
-  "data_export", // 个人信息副本
-  "withdraw_cancel", // 提现撤销申请
-  "other", // 其他
-] as const;
-export type TicketType = (typeof ticket_type)[number];
-
-/**
- * ticket_status
- * Source: 规划/04 §2.5；拍板第二批 OPS-08 (contracts/enums/ops.yaml).
- */
-export const ticket_status = [
-  "open", // 待处理
-  "processing", // 处理中
-  "waiting_user", // 等待用户
-  "resolved", // 已解决
-  "closed", // 已关闭
-] as const;
-export type TicketStatus = (typeof ticket_status)[number];
 
 /**
  * 分销等级，晋升只看本人推广订单；用户端不展示（拍板第二批 OPS-20）
@@ -1423,8 +1401,6 @@ export const enums = {
   appeal_target_type,
   notify_template_code,
   notify_category,
-  ticket_type,
-  ticket_status,
   user_level,
   agent_intent,
   agent_card_type,
