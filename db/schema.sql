@@ -1843,6 +1843,75 @@ CREATE TABLE app.sessions (
 
 
 --
+-- Name: union_accounts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.union_accounts (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    account_name text NOT NULL,
+    status text NOT NULL,
+    sync_start_at timestamp with time zone,
+    auth_expires_at timestamp with time zone,
+    auth_status text NOT NULL,
+    auth_renewed_at timestamp with time zone,
+    auth_renewed_by uuid,
+    alert_stage text DEFAULT 'none'::text NOT NULL,
+    last_probe_at timestamp with time zone,
+    last_probe_ok boolean,
+    last_probe_error text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT union_accounts_alert_stage_check CHECK ((alert_stage = ANY (ARRAY['none'::text, 'd14'::text, 'd7'::text, 'd1'::text, 'expired'::text]))),
+    CONSTRAINT union_accounts_auth_status_check CHECK ((auth_status = ANY (ARRAY['active'::text, 'expiring'::text, 'expired'::text])))
+);
+
+
+--
+-- Name: union_credentials; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.union_credentials (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    union_account_id uuid NOT NULL,
+    access_token_cipher bytea NOT NULL,
+    refresh_token_cipher bytea,
+    expires_at timestamp with time zone,
+    is_current boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: union_pids; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.union_pids (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    union_account_id uuid NOT NULL,
+    site_id text,
+    pid text NOT NULL,
+    pid_scene text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    hjy_ignore_confirmed_at timestamp with time zone,
+    hjy_ignore_evidence_path text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT union_pids_hjy_evidence_check CHECK (((status = 'pending'::text) OR ((hjy_ignore_confirmed_at IS NOT NULL) AND (hjy_ignore_evidence_path IS NOT NULL)))),
+    CONSTRAINT union_pids_pid_scene_check CHECK ((pid_scene = ANY (ARRAY['self_buy'::text, 'agent'::text, 'share'::text, 'taolijin'::text, 'fallback'::text, 'query'::text]))),
+    CONSTRAINT union_pids_site_check CHECK (((platform = 'taobao'::text) = (site_id IS NOT NULL))),
+    CONSTRAINT union_pids_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'active'::text, 'retired'::text])))
+);
+
+
+--
 -- Name: user_oauth; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -2570,6 +2639,54 @@ ALTER TABLE ONLY app.sessions
 
 
 --
+-- Name: union_accounts union_accounts_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_accounts
+    ADD CONSTRAINT union_accounts_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: union_accounts union_accounts_app_id_platform_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_accounts
+    ADD CONSTRAINT union_accounts_app_id_platform_id_key UNIQUE (app_id, platform, id);
+
+
+--
+-- Name: union_accounts union_accounts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_accounts
+    ADD CONSTRAINT union_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: union_credentials union_credentials_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_credentials
+    ADD CONSTRAINT union_credentials_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: union_pids union_pids_app_platform_pid_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_pids
+    ADD CONSTRAINT union_pids_app_platform_pid_key UNIQUE (app_id, platform, pid);
+
+
+--
+-- Name: union_pids union_pids_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_pids
+    ADD CONSTRAINT union_pids_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: user_oauth user_oauth_identity_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -3003,6 +3120,34 @@ CREATE INDEX sessions_user_idx ON app.sessions USING btree (app_id, user_id);
 
 
 --
+-- Name: union_credentials_account_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_credentials_account_created_idx ON app.union_credentials USING btree (app_id, union_account_id, created_at);
+
+
+--
+-- Name: union_credentials_current_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX union_credentials_current_key ON app.union_credentials USING btree (app_id, union_account_id) WHERE is_current;
+
+
+--
+-- Name: union_pids_account_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_pids_account_idx ON app.union_pids USING btree (app_id, platform, union_account_id);
+
+
+--
+-- Name: union_pids_scene_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_pids_scene_idx ON app.union_pids USING btree (app_id, platform, pid_scene, status);
+
+
+--
 -- Name: user_risk_state_state_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -3224,6 +3369,13 @@ CREATE TRIGGER orders_no_rewrite BEFORE UPDATE ON app.orders FOR EACH ROW EXECUT
 --
 
 CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app.payout_account_changes FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: union_pids union_pids_no_delete; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER union_pids_no_delete BEFORE DELETE ON app.union_pids FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
@@ -3464,6 +3616,22 @@ ALTER TABLE ONLY app.sessions
 
 ALTER TABLE ONLY app.sessions
     ADD CONSTRAINT sessions_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: union_credentials union_credentials_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_credentials
+    ADD CONSTRAINT union_credentials_account_fkey FOREIGN KEY (app_id, union_account_id) REFERENCES app.union_accounts(app_id, id);
+
+
+--
+-- Name: union_pids union_pids_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_pids
+    ADD CONSTRAINT union_pids_account_fkey FOREIGN KEY (app_id, platform, union_account_id) REFERENCES app.union_accounts(app_id, platform, id);
 
 
 --
@@ -4444,6 +4612,80 @@ GRANT UPDATE(revoke_reason) ON TABLE app.sessions TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.sessions TO couli_app;
+
+
+--
+-- Name: TABLE union_accounts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.union_accounts TO couli_app;
+GRANT SELECT ON TABLE app.union_accounts TO couli_readonly;
+
+
+--
+-- Name: TABLE union_credentials; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.union_credentials TO couli_app;
+
+
+--
+-- Name: COLUMN union_credentials.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.union_credentials TO couli_readonly;
+
+
+--
+-- Name: COLUMN union_credentials.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.union_credentials TO couli_readonly;
+
+
+--
+-- Name: COLUMN union_credentials.union_account_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(union_account_id) ON TABLE app.union_credentials TO couli_readonly;
+
+
+--
+-- Name: COLUMN union_credentials.expires_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(expires_at) ON TABLE app.union_credentials TO couli_readonly;
+
+
+--
+-- Name: COLUMN union_credentials.is_current; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(is_current) ON TABLE app.union_credentials TO couli_app;
+GRANT SELECT(is_current) ON TABLE app.union_credentials TO couli_readonly;
+
+
+--
+-- Name: COLUMN union_credentials.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.union_credentials TO couli_readonly;
+
+
+--
+-- Name: COLUMN union_credentials.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.union_credentials TO couli_app;
+GRANT SELECT(updated_at) ON TABLE app.union_credentials TO couli_readonly;
+
+
+--
+-- Name: TABLE union_pids; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.union_pids TO couli_app;
+GRANT SELECT ON TABLE app.union_pids TO couli_readonly;
 
 
 --
