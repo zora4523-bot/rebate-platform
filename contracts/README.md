@@ -14,6 +14,8 @@
 | `bridge.schema.json` | JSBridge（CT-03）：信封、权限级别、桥错误码 90001–90500、`signed_paths` 白名单（MVP 只有 `POST /v1/orders/claims`，TECH-30）、事件，以及 04 §9 每个方法的 `level`、`model`、`timeout_ms`、`since`（按端）和 params / result 的 JSON Schema |
 | `routes.json` | 路由表（CT-03）：路由名 → `native` 或 `h5` + `h5_path`，`auth`、按端 `since`（TECH-07，null 表示该端尚未提供）、params 的 JSON Schema；跳转一律 `{route, params}`，外链用 `ExternalPage`（TECH-04） |
 | `apps.json` | 外跳目标 App 骨架（CT-03）：`ext.openApp` 与已装检测只认这里的键；取值都是 09 的候选（`status: candidate`），对应 CAP 实测后改 `verified` |
+| `agent-stream.schema.json` | Agent 流协议（CT-08a，04 §8.1–8.3）：JSON Schema 2020-12，根是一帧 `{event, id, data}`（SSE 的 `event:` / `id:` / `data:` 三行），按 `event` 区分 `meta`、`text.delta`、`tool.status`、`card`、`suggestions`、`error`、`done`（`done`、`error` 是唯一终止事件）；心跳 `: ping` 不是帧，由 `$defs/ping` 校验。已注册的 8 类卡片（`product_list`、`rebate_quote`、`order_status`、`claim_draft`、`handoff`、`auth_required`、`notice`、`rule_ref`，与 `enums/` 的 `agent_card_type` 一致）严格校验 `data`；其他 `type` 按未知卡片只校验外壳，客户端显示 `fallback_text`（03 §7.2）。`page_guide`、`earnings_summary` 由 CT-08b 加，加之前按未知卡片处理。同名枚举取值与 `enums/` 一致；暂不生成 TS 类型，与 04 和 `enums/` 的一致性由 `test/spec/contracts/agent-stream/` 检查 |
+| `fixtures/agent-streams/*.ndjson` | Agent 流样例（CT-08a），7 类各一个：`normal`、`tool-failed`、`cancelled`、`disconnected`（断线，没有终止帧）、`unknown-card`、`error`、`fallback`（无模型降级，`done.finish_reason=fallback`）。每行一个 JSON 对象（一帧，或心跳 `{"comment":"ping"}`）；`card_id` 按出现顺序（卡片帧在前、其内嵌商品卡在后）为 c1、c2…连续。全部是合成数据，链接只用 `https://example.com/`；三端 StreamReducer 的单元测试与快照测试用这批样例（03 §7.2） |
 | `texts.default.json` | 客户端包内默认文案（CT-16e）：BR-TEXT-12 字典机制的兜底，接口没下发或字典没有该键时用。键与文案照 08 原文转写，一字不改：BR-TEXT-14 表 A（`error.<code>`）、表 B（`error.<code>.<reason>`）、表 C、表 D，BR-TEXT-01 收益看板（`earnings.*`），BR-TEXT-03（`order.price_compare.hint`），BR-TEXT-22 固定话术。`texts` 是默认文案，`{name}` 占位符照原样保留；`fallbacks` 是 08 给出的变量缺失时的写法（表 A「包内默认（变量缺失时）」等）。**表 D（`privacy.*`、`perm.*`）是代理起草的占位措辞，待法务定稿（规划/06 Q-F14），不得用于提审与公开版本**；08 只写了要点、没写文案的键（如 `privacy.first_launch.*`）不建。后台文案不进这里。`pnpm contracts:check` 校验键名、值非空、键按字母序且不重复，并核对 `error-codes.yaml` 每个未废弃、非 P1 的码都有 `error.<code>`（表 A 标「—」静默处理的 10002、10402、30505、44003 除外，登记在 `packages/contracts-ts/scripts/texts.ts`） |
 
 ## 以后会放在这里的文件（规划/02 §16.2）
@@ -22,7 +24,6 @@
 
 | 文件 | 内容 | 由谁创建 |
 | --- | --- | --- |
-| `agent-stream.schema.json` | SSE 事件与卡片 | 契约任务 |
 | `home-schema.json` | 首页页面与组件 props | 契约任务 |
 | `design-tokens.json` | 颜色、字号、间距、圆角 | 契约任务 |
 
