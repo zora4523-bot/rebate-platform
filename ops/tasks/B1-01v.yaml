@@ -1,0 +1,21 @@
+id: B1-01v
+repo: rebate-platform
+title: queue/singleton.int 偶发失败：exclusive 用例把固定等待 1.5 秒改为轮询三个键的终态（不改断言）
+type: test-change
+# 后续（followups/B1-01g-queue-test-gaps.md B1-01n 节第 2 条、B1-01g 节第 5 条）。定位：根因是测试时序，不是
+# 实现竞态。用例送出 3 个任务后固定 sleep(1500) 再断言全部 completed；t-excl2 并发 1、轮询 0.5 秒，执行通道
+# 每处理完一个任务再等一个间隔（executor.ts runExecutor），3 个任务最快约 1–1.5 秒加执行耗时，负载高时超出。
+# 实现行为符合队列契约（去重与终态正确，只是吞吐），吞吐优化另记 followups/INDEX.md。保护路径第一类，合并要
+# 负责人标签 owner-approved-<头提交前 12 位>。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/platform/queue/singleton.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/queue/**'
+status: todo
+pr: null

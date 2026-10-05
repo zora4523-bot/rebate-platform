@@ -1,0 +1,22 @@
+id: B1-01t
+repo: rebate-platform
+title: worker 启动期间收到 SIGTERM / SIGINT 也优雅停止：信号处理在启动前挂上，等启动结束再按启停顺序收尾
+type: impl
+# B1-01n Claude 代码评审第 1 轮 S2 的后续（couli-runs/B1-01n/review-claude-round1.md；followups/
+# B1-01g-queue-test-gaps.md B1-01n 节）。现状：closeOnSignal 在 startWorkerServices 结束、started 之后才挂，
+# 启动中（队列启动、维护首轮）收到信号时进程被直接终止。依据：ADR-0001 §4.2 第 4、11 项与 B1-01n 的
+# worker 契约 3（停止顺序：维护 → 队列 → 资源）。只改 worker 入口；api、stream、admin、payout 不在本任务。
+refs: []
+refs_hash: {}
+deps: [B1-01n]
+paths:
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/modules/platform/maintenance/worker.ts'
+  - 'apps/api/src/modules/platform/maintenance/entry.test.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/maintenance/**'
+status: todo
+pr: null
