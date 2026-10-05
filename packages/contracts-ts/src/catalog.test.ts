@@ -35,6 +35,15 @@ it('HTTP status follows the code segment (04 §7 码段)', () => {
   expect(errorCodes[30804].http).toBe(409);
 });
 
+it('only 20001 has extra statuses: request-body errors keep 413 / 415 (CT-01d)', () => {
+  const withExtra = codes.filter(
+    (c) => errorCodes[c as keyof typeof errorCodes].http_also.length > 0,
+  );
+  expect(withExtra).toEqual([20001]);
+  expect(errorCodes[20001].http).toBe(400);
+  expect(errorCodes[20001].http_also).toEqual([413, 415]);
+});
+
 it('deprecated codes stay allocated and are marked (废弃码不回收)', () => {
   const deprecated = codes.filter((c) => errorCodes[c as keyof typeof errorCodes].deprecated);
   expect(deprecated).toEqual([30142, 30152]);

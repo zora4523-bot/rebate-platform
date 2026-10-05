@@ -9,6 +9,7 @@
 export const errorCodes = {
   10001: {
     http: 401,
+    http_also: [],
     meaning: "未登录",
     action: "跳 Login，成功后恢复 pending_action；不登记 pending_action 的操作（BR-ID-10 细则「不适用的动作」）登录后回到发起页，由用户重新提交；这类操作的键出现过结果未知时不换键，登录后回到发起页进入待确认状态（BR-ID-10 细则「敏感操作的幂等键」）",
     retry: "登录后",
@@ -22,6 +23,7 @@ export const errorCodes = {
   },
   10002: {
     http: 401,
+    http_also: [],
     meaning: "access_token 过期",
     action: "单飞刷新后重放原请求 1 次；刷新失败清会话跳登录",
     retry: "刷新后",
@@ -35,6 +37,7 @@ export const errorCodes = {
   },
   10003: {
     http: 403,
+    http_also: [],
     meaning: "需要二次验证（含 step_up_token 过期）",
     action: "弹短信验证，拿到 step_up_token 后重放",
     retry: "验证后",
@@ -48,6 +51,7 @@ export const errorCodes = {
   },
   10004: {
     http: 403,
+    http_also: [],
     meaning: "需要同意（协议重新同意、AI 单独同意、实名授权、劳务协议 labor_agreement 等）",
     action: "弹对应同意组件，同意后重放；例外：原请求是需要二次验证的四个操作之一（提现申请、收款账号变更、换手机号、申请注销）时，不论 consent_type，同意或签署后不重放，回到发起页由用户重新提交，用新幂等键；该键出现过结果未知时不换键，回到发起页进入待确认状态（BR-ID-10 细则「不适用的动作」「敏感操作的幂等键」；提现见 BR-WDR-07 细则「前置步骤的回流」、BR-WDR-31）",
     retry: "同意后；上述四个操作：同意后由用户重新提交",
@@ -61,6 +65,7 @@ export const errorCodes = {
   },
   10005: {
     http: 403,
+    http_also: [],
     meaning: "需要绑定手机号",
     action: "跳 BindPhone，完成后恢复 pending_action；不登记 pending_action 的操作同 10001（含结果未知时不换键）",
     retry: "绑定后",
@@ -74,6 +79,7 @@ export const errorCodes = {
   },
   10006: {
     http: 403,
+    http_also: [],
     meaning: "账号已冻结或封禁",
     action: "展示封禁说明页与申诉入口",
     retry: "否",
@@ -87,6 +93,7 @@ export const errorCodes = {
   },
   10007: {
     http: 403,
+    http_also: [],
     meaning: "账号在注销冷静期或处理中",
     action: "冷静期跳注销进度页（可撤回）；processing 仅提示",
     retry: "否",
@@ -100,6 +107,7 @@ export const errorCodes = {
   },
   10401: {
     http: 401,
+    http_also: [],
     meaning: "请求签名无效或重放（X-Nonce 重复 / 时间戳超窗）",
     action: "不自动重放，上报埋点",
     retry: "否",
@@ -113,6 +121,7 @@ export const errorCodes = {
   },
   10402: {
     http: 401,
+    http_also: [],
     meaning: "设备未注册、已失效或非服务端签发",
     action: "重新注册设备后重放 1 次",
     retry: "重新注册后",
@@ -126,6 +135,7 @@ export const errorCodes = {
   },
   10403: {
     http: 403,
+    http_also: [],
     meaning: "App 或请求来源不被允许（含令牌作用域越权）；强更检查结果未知时签发的只读 h5_token（scp=read_only）调用 GET 以外的接口时带 data.reason=h5_read_only（BR-ID-32 细则「只读作用域」）",
     action: "不跳登录，仅提示（带 reason 取子键文案）；h5_read_only：H5 SDK 丢弃内存里的令牌，这次请求按普通失败处理、不自动重发，用户再次操作时重新取令牌（规划/03 §5.4）",
     retry: "否",
@@ -139,6 +149,7 @@ export const errorCodes = {
   },
   10404: {
     http: 401,
+    http_also: [],
     meaning: "refresh_token 失效，需重新登录",
     action: "清会话，跳 Login",
     retry: "—",
@@ -152,6 +163,7 @@ export const errorCodes = {
   },
   10405: {
     http: 403,
+    http_also: [],
     meaning: "客户端版本低于最低支持版本（data.min_supported_version；写接口默认受约束，例外见 BR-ID-01 细则「最低支持版本的接口层拦截」的接口表）；受限会话（scp=deletion_only）调用该细则「受限会话」表以外的接口同样返回本码，该端渠道没有配置最低版本时 data.min_supported_version 为空；过低版本的登录（受限登录）查不到已有账号时同样返回本码，带 data.reason=no_account（BR-ID-01 细则「受限会话」）",
     action: "进入 ForceUpdate 全屏拦截页，按钮跳应用商店，另有隐私政策与注销两个次要入口；本机版本不低于 data.min_supported_version（或它为空）而会话是受限作用域的，不进入强更页，先刷新令牌，由用户重新操作；no_account：提示先更新（取子键文案），回到 ForceUpdate，没有建号；不重放原请求、不登记 pending_action；不写幂等记录，不结束未决幂等键（BR-ID-10 细则「敏感操作的幂等键」）",
     retry: "否（升级后：键从未出现过结果未知的，由用户重新操作，是新请求；键已经结果未知的，发起页仍待确认，由用户确认或放弃上一笔，BR-ID-10 细则）",
@@ -165,6 +177,7 @@ export const errorCodes = {
   },
   20001: {
     http: 400,
+    http_also: [413,415],
     meaning: "参数校验失败（data.fields；提醒目标价无效时 data.fields=[target_price]、data.reason=watch_target_invalid；昵称命中内容安全时 data.reason=nickname_sensitive；设备注册时 data.fields=[device_hash] 表示设备标识哈希格式不符或命中无效清单；后台登记或修改设备黑名单时 data.fields=[value]、data.reason=invalid_device_hash 表示该值命中无效设备哈希清单；手机号规范化后不是中国大陆 11 位手机号时 data.fields=[phone]、data.reason=phone_invalid，BR-ID-05 细则「手机号规范化」）",
     action: "在对应字段旁提示（带 reason 取子键文案）；device_hash 不向用户提示，客户端按 BR-ID-09 重新读取设备标识后再注册；invalid_device_hash 只出现在后台接口，后台在该字段旁显示后台文案（BR-ID-31 细则），不进用户侧字典",
     retry: "否",
@@ -178,6 +191,7 @@ export const errorCodes = {
   },
   20002: {
     http: 400,
+    http_also: [],
     meaning: "验证码错误",
     action: "提示重新输入",
     retry: "否",
@@ -191,6 +205,7 @@ export const errorCodes = {
   },
   20003: {
     http: 400,
+    http_also: [],
     meaning: "验证码已过期或已作废（含错满 5 次）",
     action: "提示重新获取验证码",
     retry: "否",
@@ -204,6 +219,7 @@ export const errorCodes = {
   },
   20004: {
     http: 400,
+    http_also: [],
     meaning: "第三方授权凭证或授权尝试无效、已过期或已使用（第三方登录与二次验证的第三方重新授权；含尝试的 provider、用途、设备与请求不符，以及客户端令牌与服务端换码所得的主体不一致；对外不区分具体原因。data.reason=identity_mismatch 表示重新授权得到的第三方账号不是本账号绑定的那一个）",
     action: "回到登录页或二次验证面板，由用户重新发起第三方授权（重新取授权尝试，不复用原尝试与原凭证），不自动重放（带 reason 取子键文案）",
     retry: "重新授权后",
@@ -217,6 +233,7 @@ export const errorCodes = {
   },
   20901: {
     http: 409,
+    http_also: [],
     meaning: "幂等键冲突（同键不同请求体）",
     action: "不重放；生成新幂等键后由用户重新提交",
     retry: "否",
@@ -230,6 +247,7 @@ export const errorCodes = {
   },
   20902: {
     http: 409,
+    http_also: [],
     meaning: "状态已变化（并发修改冲突）",
     action: "刷新详情",
     retry: "刷新后",
@@ -243,6 +261,7 @@ export const errorCodes = {
   },
   20903: {
     http: 409,
+    http_also: [],
     meaning: "幂等键已作废（需要二次验证的四个操作中结果未知的一次提交已被用户放弃，作废接口在该键没有记录时写入作废记录；之后带同一个键的请求在幂等检查一步返回本码，不比较请求体、不执行业务；业务结果写入时发现该键已作废也整笔回滚并返回本码）",
     action: "结束该键的待确认状态，删除本机未决记录，恢复提交入口；不重放，由用户重新提交（新幂等键）",
     retry: "否",
@@ -256,6 +275,7 @@ export const errorCodes = {
   },
   30101: {
     http: 422,
+    http_also: [],
     meaning: "淘宝未授权 / 未备案（data.auth_url、data.state、data.auth_methods，授权方式见 BR-ID-17）；站长授权过期或失效期间带 reason=auth_unavailable，不带 auth_url",
     action: "弹 AuthSheet → 拉起授权 → 用新的幂等键重新发起原请求（BR-ID-10 细则）；auth_unavailable 不拉起授权、不外跳、只提示，不提供无返利购买",
     retry: "授权后；auth_unavailable：稍后",
@@ -269,6 +289,7 @@ export const errorCodes = {
   },
   30102: {
     http: 422,
+    http_also: [],
     meaning: "淘宝授权已失效，需重新授权（data 同 30101：data.auth_url、data.state、data.auth_methods）；站长授权过期或失效期间带 reason=auth_unavailable",
     action: "同 30101",
     retry: "同 30101",
@@ -282,6 +303,7 @@ export const errorCodes = {
   },
   30103: {
     http: 422,
+    http_also: [],
     meaning: "该渠道已被限制推广（渠道 ID 黑名单）",
     action: "给无返利购买与联系客服两个按钮",
     retry: "否",
@@ -295,6 +317,7 @@ export const errorCodes = {
   },
   30104: {
     http: 422,
+    http_also: [],
     meaning: "淘宝授权请求已过期或已使用（state 超 10 分钟或重复提交）；授权凭证无效时带 data.reason=credential_invalid（授权码或 SDK 换得的访问令牌无效、已过期、已使用或不能用于备案）；提交的授权方式没有下发、已关闭或设备记录的端与 state 记录的不符时带 data.reason=method_not_allowed（此时 state 不被消费）",
     action: "重新获取 auth_url 后重新发起授权：这是一次新的绑定尝试，用新的 state、新的凭证和新的幂等键，不得带原幂等键提交新的请求体（只有同一请求的传输重试才沿用原键）；credential_invalid 时按新下发的 auth_methods 改用下一种授权方式，没有可换的方式按 BR-ID-18 的授权失败处理；method_not_allowed 时只按新下发的 auth_methods 执行",
     retry: "重新授权后",
@@ -308,6 +331,7 @@ export const errorCodes = {
   },
   30111: {
     http: 422,
+    http_also: [],
     meaning: "拼多多未授权（data.auth_jump：服务端下发的授权跳转首选与备选，形状即 openapi AuthJumpPlan，选法见 BR-ID-22 细则；客户端用执行购买跳转方案的同一个执行器按 primary、fallbacks 顺序执行，h5 步骤交系统浏览器，不上报 link_jump）",
     action: "同 30101",
     retry: "授权后",
@@ -321,6 +345,7 @@ export const errorCodes = {
   },
   30121: {
     http: 422,
+    http_also: [],
     meaning: "京东该链接暂不支持转链（权限不足）",
     action: "给无返利购买按钮（BR-PRICE-08）",
     retry: "否",
@@ -334,6 +359,7 @@ export const errorCodes = {
   },
   30131: {
     http: 422,
+    http_also: [],
     meaning: "不支持该链接或平台",
     action: "仅提示",
     retry: "否",
@@ -347,6 +373,7 @@ export const errorCodes = {
   },
   30132: {
     http: 422,
+    http_also: [],
     meaning: "口令无法识别（含口令解析权限未开通）",
     action: "给商品名搜索按钮（预填规则见 BR-TEXT-14 error.30132）",
     retry: "否",
@@ -360,6 +387,7 @@ export const errorCodes = {
   },
   30141: {
     http: 422,
+    http_also: [],
     meaning: "商品已下架",
     action: "不外跳，卡片置灰（availability=off_shelf）；Agent 场景追加换一批入口",
     retry: "否",
@@ -373,6 +401,7 @@ export const errorCodes = {
   },
   30142: {
     http: 422,
+    http_also: [],
     meaning: "废弃（原义：券已失效或领完），服务端不再返回",
     action: "按表外 3xxxx 处理",
     retry: "—",
@@ -386,6 +415,7 @@ export const errorCodes = {
   },
   30143: {
     http: 422,
+    http_also: [],
     meaning: "商品信息已失效（ref_expired，检索不到同键商品或派生出不同的键）",
     action: "跳搜索（BR-PROD-05）",
     retry: "否",
@@ -399,6 +429,7 @@ export const errorCodes = {
   },
   30144: {
     http: 404,
+    http_also: [],
     meaning: "购买链接不存在（link_id 不存在或不属于本 App）；GET /v1/links/{link_id}、GET /v1/share-pages/{link_id} 取不到卡片时同码",
     action: "按卡片 product_key + item_ref 自动重新请求转链，替换卡片后仍须用户再次点击；App 内链接落地页（LinkLanding）没有可供重新转链的卡片数据，显示空态，不自动重试",
     retry: "重新转链后",
@@ -412,6 +443,7 @@ export const errorCodes = {
   },
   30151: {
     http: 422,
+    http_also: [],
     meaning: "该淘宝账号已绑定本 App 其他用户",
     action: "给无返利购买与联系客服两个按钮，不透露对方账号",
     retry: "否",
@@ -425,6 +457,7 @@ export const errorCodes = {
   },
   30152: {
     http: 422,
+    http_also: [],
     meaning: "废弃（原义：换绑间隔不足），服务端不再返回",
     action: "按表外 3xxxx 处理",
     retry: "—",
@@ -438,6 +471,7 @@ export const errorCodes = {
   },
   30153: {
     http: 422,
+    http_also: [],
     meaning: "该平台返利已被停用（绑定为 blocked 且用户未被封禁）；授权管理页取授权链接（GET /v1/unions/{platform}/auth-url）时同码",
     action: "购买入口：给无返利购买与联系客服两个按钮；授权管理页：只给联系客服（BR-ID-17 细则「授权管理页」）",
     retry: "否",
@@ -451,6 +485,7 @@ export const errorCodes = {
   },
   30201: {
     http: 404,
+    http_also: [],
     meaning: "订单不存在",
     action: "仅提示",
     retry: "否",
@@ -464,6 +499,7 @@ export const errorCodes = {
   },
   30202: {
     http: 422,
+    http_also: [],
     meaning: "订单不可找回",
     action: "按 data.reason 提示",
     retry: "否",
@@ -477,6 +513,7 @@ export const errorCodes = {
   },
   30203: {
     http: 422,
+    http_also: [],
     meaning: "今日找回次数已用完（风控禁止时 reason=RISK_BLOCKED）",
     action: "仅提示",
     retry: "次日",
@@ -490,6 +527,7 @@ export const errorCodes = {
   },
   30204: {
     http: 422,
+    http_also: [],
     meaning: "订单已被认领（含已锁定）",
     action: "仅提示，不透露对方信息",
     retry: "否",
@@ -503,6 +541,7 @@ export const errorCodes = {
   },
   30205: {
     http: 422,
+    http_also: [],
     meaning: "已提交过该订单的找回",
     action: "跳找回记录",
     retry: "否",
@@ -516,6 +555,7 @@ export const errorCodes = {
   },
   30206: {
     http: 422,
+    http_also: [],
     meaning: "找回功能暂时关闭（claims.enabled=off）",
     action: "找回入口置灰",
     retry: "稍后",
@@ -529,6 +569,7 @@ export const errorCodes = {
   },
   30301: {
     http: 422,
+    http_also: [],
     meaning: "余额不足",
     action: "仅提示",
     retry: "否",
@@ -542,6 +583,7 @@ export const errorCodes = {
   },
   30302: {
     http: 422,
+    http_also: [],
     meaning: "余额为负，暂不能提现",
     action: "展示负余额说明",
     retry: "否",
@@ -555,6 +597,7 @@ export const errorCodes = {
   },
   30303: {
     http: 422,
+    http_also: [],
     meaning: "不满足提现条件（data.reason 取值见 contracts/enums/fund.yaml withdraw_condition_reason；账务差异冻结记为 account_frozen，冻结来源只在后台可见；payout_account_verify_limit 为收款账号付费核验当日次数已满）",
     action: "按 data.reason 提示",
     retry: "否（payout_account_verify_limit：次日）",
@@ -568,6 +611,7 @@ export const errorCodes = {
   },
   30304: {
     http: 422,
+    http_also: [],
     meaning: "未实名",
     action: "跳 RealName；实名完成后回到发起页，不重放原请求（提现回 Withdraw、收款账号页回收款账号页、劳务协议签署页回签署页；目标由导航栈决定）",
     retry: "否（实名后由用户在发起页重新提交，用新幂等键；3xxxx 已写入幂等结果，原键重放只返回同一错误，BR-WDR-07）",
@@ -581,6 +625,7 @@ export const errorCodes = {
   },
   30305: {
     http: 422,
+    http_also: [],
     meaning: "未绑定收款账号",
     action: "跳 PayoutAccount；完成后回到发起页，不重放原请求（只有提现申请会返回这个码，发起页就是 Withdraw）",
     retry: "否（绑定后由用户重新提交，用新幂等键，同 30304）",
@@ -594,6 +639,7 @@ export const errorCodes = {
   },
   30306: {
     http: 422,
+    http_also: [],
     meaning: "提现暂停（withdraw.enabled 关闭）",
     action: "提现按钮置灰",
     retry: "否",
@@ -607,6 +653,7 @@ export const errorCodes = {
   },
   30307: {
     http: 422,
+    http_also: [],
     meaning: "收款账号姓名与实名不一致",
     action: "跳 PayoutAccount；提现流程中改好后回到 Withdraw，由用户重新提交（同 30304）",
     retry: "否",
@@ -620,6 +667,7 @@ export const errorCodes = {
   },
   30308: {
     http: 422,
+    http_also: [],
     meaning: "收款账号已被其他实名绑定",
     action: "跳 PayoutAccount，不透露对方信息",
     retry: "否",
@@ -633,6 +681,7 @@ export const errorCodes = {
   },
   30309: {
     http: 422,
+    http_also: [],
     meaning: "未成年人提现限制",
     action: "展示未成年提现规则",
     retry: "否",
@@ -646,6 +695,7 @@ export const errorCodes = {
   },
   30401: {
     http: 422,
+    http_also: [],
     meaning: "邀请码无效（含格式错误、邀请人不存在或不可用、邀请人未满 18 周岁，不透露原因）",
     action: "仅提示",
     retry: "否",
@@ -659,6 +709,7 @@ export const errorCodes = {
   },
   30402: {
     http: 422,
+    http_also: [],
     meaning: "已绑定上级 / 已用过绑定机会",
     action: "仅提示",
     retry: "否",
@@ -672,6 +723,7 @@ export const errorCodes = {
   },
   30403: {
     http: 422,
+    http_also: [],
     meaning: "不能绑定该邀请人（自己、下级、同设备）",
     action: "仅提示",
     retry: "否",
@@ -685,6 +737,7 @@ export const errorCodes = {
   },
   30404: {
     http: 422,
+    http_also: [],
     meaning: "已超过补填期限",
     action: "仅提示",
     retry: "否",
@@ -698,6 +751,7 @@ export const errorCodes = {
   },
   30405: {
     http: 422,
+    http_also: [],
     meaning: "该身份证已被其他账号实名",
     action: "不透露对方账号",
     retry: "否",
@@ -711,6 +765,7 @@ export const errorCodes = {
   },
   30406: {
     http: 422,
+    http_also: [],
     meaning: "实名核验不通过",
     action: "仅提示",
     retry: "否",
@@ -724,6 +779,7 @@ export const errorCodes = {
   },
   30407: {
     http: 422,
+    http_also: [],
     meaning: "年龄不满足要求（未满 14 周岁不予实名）",
     action: "仅提示",
     retry: "否",
@@ -737,6 +793,7 @@ export const errorCodes = {
   },
   30408: {
     http: 422,
+    http_also: [],
     meaning: "邀请绑定暂停（growth.invite_bind.enabled=off）",
     action: "落地页引导直接下载注册",
     retry: "稍后",
@@ -750,6 +807,7 @@ export const errorCodes = {
   },
   30409: {
     http: 422,
+    http_also: [],
     meaning: "已有订单、找回申请或下级，不能补填或改上级",
     action: "仅提示",
     retry: "否",
@@ -763,6 +821,7 @@ export const errorCodes = {
   },
   30410: {
     http: 422,
+    http_also: [],
     meaning: "今日实名次数已用完",
     action: "仅提示，不暴露身份证是否已被占用",
     retry: "次日",
@@ -776,6 +835,7 @@ export const errorCodes = {
   },
   30411: {
     http: 422,
+    http_also: [],
     meaning: "目标手机号已属于本 App 其他账号；满足并号条件时带 reason=mergeable 与 merge_ticket",
     action: "无 reason 仅提示；mergeable 弹并入确认，凭 merge_ticket 调 POST /v1/auth/merge",
     retry: "否",
@@ -789,6 +849,7 @@ export const errorCodes = {
   },
   30412: {
     http: 422,
+    http_also: [],
     meaning: "有进行中的提现（PENDING_REVIEW / APPROVED / PAYING），暂不能申请注销",
     action: "仅提示",
     retry: "提现完结后",
@@ -802,6 +863,7 @@ export const errorCodes = {
   },
   30413: {
     http: 422,
+    http_also: [],
     meaning: "未满 18 周岁，不开放邀请与分享",
     action: "隐藏邀请与分享赚入口",
     retry: "否",
@@ -815,6 +877,7 @@ export const errorCodes = {
   },
   30414: {
     http: 422,
+    http_also: [],
     meaning: "暂不支持自助更换手机号（account.phone_change_enabled=false，不含首次绑定）",
     action: "仅提示",
     retry: "否",
@@ -828,6 +891,7 @@ export const errorCodes = {
   },
   30415: {
     http: 422,
+    http_also: [],
     meaning: "昵称当月修改次数已满",
     action: "仅提示",
     retry: "次月",
@@ -841,6 +905,7 @@ export const errorCodes = {
   },
   30416: {
     http: 422,
+    http_also: [],
     meaning: "账户有待扣回金额（余额为负），暂不能注销",
     action: "注销页展示提示与联系客服，不进入冷静期",
     retry: "余额回正后",
@@ -854,6 +919,7 @@ export const errorCodes = {
   },
   30501: {
     http: 422,
+    http_also: [],
     meaning: "AI 助手未开放",
     action: "隐藏或置灰入口",
     retry: "否",
@@ -867,6 +933,7 @@ export const errorCodes = {
   },
   30502: {
     http: 422,
+    http_also: [],
     meaning: "今日 AI 次数已用完",
     action: "跳搜索",
     retry: "次日",
@@ -880,6 +947,7 @@ export const errorCodes = {
   },
   30503: {
     http: 422,
+    http_also: [],
     meaning: "内容不支持",
     action: "仅提示",
     retry: "否",
@@ -893,6 +961,7 @@ export const errorCodes = {
   },
   30504: {
     http: 422,
+    http_also: [],
     meaning: "会话已过期、达轮数上限或不可访问",
     action: "新建会话",
     retry: "新建会话后",
@@ -906,6 +975,7 @@ export const errorCodes = {
   },
   30505: {
     http: 404,
+    http_also: [],
     meaning: "run 不存在或已结束",
     action: "刷新会话消息",
     retry: "否",
@@ -919,6 +989,7 @@ export const errorCodes = {
   },
   30506: {
     http: 409,
+    http_also: [],
     meaning: "本会话有进行中的 run（run_in_progress）",
     action: "发送按钮保持禁用，当前 run 结束后可再发",
     retry: "run 结束后",
@@ -932,6 +1003,7 @@ export const errorCodes = {
   },
   30601: {
     http: 422,
+    http_also: [],
     meaning: "已领取过该淘礼金",
     action: "仅提示",
     retry: "否",
@@ -945,6 +1017,7 @@ export const errorCodes = {
   },
   30602: {
     http: 422,
+    http_also: [],
     meaning: "淘礼金已抢光（含点击时领完）",
     action: "淘礼金按钮置灰，给普通购买入口",
     retry: "否",
@@ -958,6 +1031,7 @@ export const errorCodes = {
   },
   30603: {
     http: 422,
+    http_also: [],
     meaning: "活动未开始或已结束",
     action: "仅提示",
     retry: "否",
@@ -971,6 +1045,7 @@ export const errorCodes = {
   },
   30604: {
     http: 422,
+    http_also: [],
     meaning: "不满足领取条件",
     action: "仅提示",
     retry: "否",
@@ -984,6 +1059,7 @@ export const errorCodes = {
   },
   30701: {
     http: 404,
+    http_also: [],
     meaning: "页面或内容不存在（推送点击回查 GET /v1/messages/{message_id} 时，消息不存在或不属于当前账号同码，对外不区分）",
     action: "显示空态；推送点击回查得到本码时改为打开站内信页（BR-ID-10 细则「推送点击的落点」）",
     retry: "否",
@@ -997,6 +1073,7 @@ export const errorCodes = {
   },
   30801: {
     http: 422,
+    http_also: [],
     meaning: "当前已达到目标价",
     action: "仅提示",
     retry: "否",
@@ -1010,6 +1087,7 @@ export const errorCodes = {
   },
   30802: {
     http: 422,
+    http_also: [],
     meaning: "提醒数量已达上限",
     action: "列表显示已设数量，引导删除旧提醒",
     retry: "删除旧提醒或到期后",
@@ -1023,6 +1101,7 @@ export const errorCodes = {
   },
   30803: {
     http: 409,
+    http_also: [],
     meaning: "同商品已有提醒",
     action: "跳到已有提醒（修改目标价）",
     retry: "否",
@@ -1036,6 +1115,7 @@ export const errorCodes = {
   },
   30804: {
     http: 409,
+    http_also: [],
     meaning: "同商品有可续期的过期提醒",
     action: "跳到已有提醒（续期）",
     retry: "否",
@@ -1049,6 +1129,7 @@ export const errorCodes = {
   },
   30805: {
     http: 422,
+    http_also: [],
     meaning: "暂时无法获取价格（不建 watch 行）",
     action: "仅提示，不建提醒",
     retry: "稍后",
@@ -1062,6 +1143,7 @@ export const errorCodes = {
   },
   30806: {
     http: 422,
+    http_also: [],
     meaning: "该平台提醒暂停服务",
     action: "仅提示",
     retry: "否",
@@ -1075,6 +1157,7 @@ export const errorCodes = {
   },
   40901: {
     http: 409,
+    http_also: [],
     meaning: "同一请求正在处理（含同一收款账号的付费核验仍在途或复核中；租约与复核期限到期后不再返回；作废接口遇到该键的原请求仍在处理时同码）",
     action: "保持加载态，稍后查询结果；作废请求得到本码时保持待确认状态，稍后由用户再确认或放弃",
     retry: "稍后",
@@ -1088,6 +1171,7 @@ export const errorCodes = {
   },
   42901: {
     http: 429,
+    http_also: [],
     meaning: "请求过于频繁",
     action: "按 Retry-After 禁用按钮，缺省 5 秒",
     retry: "稍后",
@@ -1101,6 +1185,7 @@ export const errorCodes = {
   },
   44001: {
     http: 403,
+    http_also: [],
     meaning: "风控拦截（号段或手机号黑名单、设备或 IP 注册上限、封禁用户的受限操作）",
     action: "给申诉入口；文案取字典 risk_msg.<code>，未命中回落 error.44001",
     retry: "否",
@@ -1114,6 +1199,7 @@ export const errorCodes = {
   },
   44002: {
     http: 403,
+    http_also: [],
     meaning: "设备环境异常",
     action: "仅提示",
     retry: "否",
@@ -1127,6 +1213,7 @@ export const errorCodes = {
   },
   44003: {
     http: 403,
+    http_also: [],
     meaning: "需要人机验证（是否启用待决策，08 §13.3）",
     action: "拉起人机验证组件，通过后带验证凭证重放",
     retry: "验证后",
@@ -1140,6 +1227,7 @@ export const errorCodes = {
   },
   50001: {
     http: 500,
+    http_also: [],
     meaning: "服务端错误",
     action: "通用错误态 + trace_id 后 6 位",
     retry: "是",
@@ -1153,6 +1241,7 @@ export const errorCodes = {
   },
   50301: {
     http: 503,
+    http_also: [],
     meaning: "平台维护或熔断，或平台未开放",
     action: "maintenance 弹 Toast、购买按钮禁用；not_launched 购买按钮禁用、不弹 Toast；无 reason 按 maintenance",
     retry: "maintenance：稍后；not_launched：否",
@@ -1166,6 +1255,7 @@ export const errorCodes = {
   },
   50302: {
     http: 503,
+    http_also: [],
     meaning: "AI 暂不可用（只在服务端按关键词无模型出卡也失败时返回）",
     action: "跳搜索",
     retry: "稍后",
@@ -1179,6 +1269,7 @@ export const errorCodes = {
   },
   50303: {
     http: 503,
+    http_also: [],
     meaning: "暂时无法确认价格或生成链接（点击复核失败且无缓存，或取价成功但转链失败）",
     action: "不外跳返利链接；给重试主按钮与无返利购买次按钮（BR-PRICE-08）",
     retry: "稍后",
@@ -1192,6 +1283,7 @@ export const errorCodes = {
   },
   50304: {
     http: 503,
+    http_also: [],
     meaning: "某平台搜索暂不可用（data.platform；联盟超时、限流或熔断且无可用搜索缓存，不改读商品池冒充）；该平台的搜索开关 search.enabled.<platform> 关闭时带 data.reason=search_disabled（BR-PROD-10 细则「按平台的搜索开关」）",
     action: "无 reason：搜索页显示空态与重试按钮；Agent 改查其他平台。search_disabled：不显示重试按钮，刷新配置并隐藏该平台的搜索 Tab，给「粘贴链接查返利」入口；Agent 不检索该平台",
     retry: "稍后；search_disabled：否",
@@ -1205,6 +1297,7 @@ export const errorCodes = {
   },
   50305: {
     http: 503,
+    http_also: [],
     meaning: "第三方登录服务暂不可用（第三方接口超时、限流或返回服务端错误，含换取结果缺少必需的身份标识）",
     action: "登录页或二次验证面板提示并保留其他方式，不自动重试",
     retry: "稍后",
@@ -1218,6 +1311,7 @@ export const errorCodes = {
   },
   50401: {
     http: 504,
+    http_also: [],
     meaning: "依赖超时",
     action: "通用错误态 + trace_id 后 6 位",
     retry: "是",
