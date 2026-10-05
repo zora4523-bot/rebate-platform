@@ -8,7 +8,7 @@ type: impl
 # 生成逻辑是 src/ 里的纯函数（受 tsc -b 检查），scripts/ 只放薄命令行外壳（不放 tools/；文件名不含 check）；生成物 src/*.gen.css、src/*.gen.ts 不手改，输出即 prettier 定型文本（.gen.css 不在 .prettierignore）；
 # 漂移检查是 ui-tokens 的单元测试（重新生成与入库生成物逐字相同）。快照同样要过 prettier。type 写 impl 而非 contract：要有 Codex 测试作者；contracts/README 的清单一并更新。
 # 变量名由令牌路径机械映射（如 color.background.canvas → --color-background-canvas），规则写进生成器头注释；H5 与后台共用同一份输出。
-# contracts/** 风险 RV1、packages/ui-tokens 未登记 RV2，整体 RV2。不碰 openapi 与其他契约文件；契约槽全局同时 1 个在途，派前看 claims。
+# contracts/** 与 packages/ui-tokens（#120 登记后）都是 RV1。不碰 openapi 与其他契约文件；契约槽全局同时 1 个在途，派前看 claims。
 refs: []
 refs_hash: {}
 deps: [F1-01a]

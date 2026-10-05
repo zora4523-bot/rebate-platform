@@ -6,7 +6,7 @@ type: impl
 # §5.3 协议、contracts/bridge.schema.json 与 packages/contracts-ts 的 bridge 生成物（方法名、参数、结果、权限级别、错误码 90001/90401/90403/90404），BR-ID-32，由编排者摘入任务书第 2 节。
 # 「调用前强制 has()」（05 F1-01、TECH-28）用类型实现：has(method) 返回 Capability<M> | null，call 的第一个参数只收句柄；不改 eslint 配置（保护路径第二类）。属实现方案，PR 写明，03 §5.4 摘要句由编排者回写。
 # 不做：三端传输层（原生仓库）、一致性测试页（F1-01d）、H5 的 API 客户端（F1-01c）。方法签名只从生成物来，不手写方法表。
-# App 外 has() 一律返回 null；另导出无类型的底层 invoke(method, params)（给一致性页调不存在 / 不支持的方法），App 外经它返回 90001。令牌管理器由本任务定：getToken({ forWrite })（read_only 时写请求前重取）、
+# App 外 has() 一律返回 null；无类型的底层 invoke(method, params) 只从子路径 @couli/bridge-sdk/conformance 导出（给一致性页调不支持的方法，App 外经它返回 90001），`.` 不导出；F1-01a 的 lint 禁止一致性页以外 import 它。令牌管理器由本任务定：getToken({ forWrite })（read_only 时写请求前重取）、
 # invalidate()、10002 续取；F1-01c 的 API 客户端只接线（10403 且 data.reason=h5_read_only 时 invalidate、不重发）。需要 window 的用例文件头写 @vitest-environment jsdom。
 refs: []
 refs_hash: {}

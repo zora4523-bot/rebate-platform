@@ -9,7 +9,7 @@ type: deps
 # H5 不引第三方移动端组件库（ADR §2「待定」的补填：设计稿全是自绘组件，落地页首屏 ≤60KB gzip，03 §8.2、§12），基础组件按 03 §10.2 自写；PR 写明，规划 ADR §2 由编排者随后回写。
 # 四个新包（@couli/h5、@couli/admin、@couli/bridge-sdk、@couli/ui-tokens）：package.json（exports 带 couli-src；scripts 只有 build、test）、tsconfig（继承 base，加 DOM 与 jsx）、vitest 配置（unitConfig，组件包 jsdom）、 占位入口只写 TODO(规划/11 §2.3) 与最小导出；apps/h5、apps/admin 另有 vite 配置与 index.html（apps/h5 三入口 app / landing / conformance，入口目录由 F1-01c 建）。
 # 前端规则测试放 test/spec/frontend/**（.test.ts、jsdom 文件头、React.createElement）。必须一次定下的（工作区依赖与引用、exports 子路径、h5 分入口分环境构建脚本、禁止硬编码中文的 lint）见 plan §4，验收逐项核对。
-# 保护路径第二类（scripts、tsconfig、vitest 配置、eslint / depcruise 配置、锁文件与 pnpm-workspace），合并前要负责人标签；deps 任务的锁文件先到先合，后合者变基重跑 pnpm install；风险表条目在 PR #120。
+# 保护路径第二类（scripts、tsconfig、vitest 配置、eslint / depcruise 配置、锁文件与 pnpm-workspace），合并前要负责人标签；deps 任务的锁文件先到先合，后合者变基重跑 pnpm install；风险表 PR #120 必须先合。
 # 第 1 轮实现后补路径（2026-10-06）：根 package.json 只加 devDependencies（eslint-plugin-react-hooks 只能从根解析），不改 scripts；四个包各一个 index.test.ts（passWithNoTests 为 false）；
 # pnpm-workspace.yaml 只在 @tailwindcss/oxide 等的安装脚本被 strictDepBuilds 拦下时加进 ignoredBuiltDependencies；.dependency-cruiser.cjs 只给解析扩展名加 .tsx。新包的风险表条目另走 guard-change PR。
 refs: []
