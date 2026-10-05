@@ -1,0 +1,27 @@
+id: F1-02b
+repo: rebate-platform
+title: content 模块首建只读入口：最低支持版本查询（app_versions，按端与渠道）与业务配置读取（config_items，带缓存与版本号），经 content/index.ts 导出
+type: impl
+# 草稿 2026-10-05（编排者裁定 §5 第 4、9 条合并处理）。宿主 05 F1-02（content 模块后端：config、app versions…），本任务只做其中两项只读查询，
+# 写入、发布、后台接口、/v1/config 与 /v1/app-versions/check 下发、紧急开关都归 F1-02 其余部分。表已由 F1-02a 建（0010），写者 content（02 §4.1）。
+# 使用方：B1-03c（版本守卫）、B1-03e / f / g / k（风控阈值）、B1-03i（申诉截止时间的工作日历配置）。它们走「risk 定义端口、content 实现」：
+# content 的查询服务按 risk 端口的形状实现，app.module 装配；content 不 import risk（TS 结构类型即可，不新增模块依赖）。
+# 依据：02 §10（配置项存 config_items、带版本；普通参数按其缓存刷新规则生效）、04 §3.2 config_items / app_versions 行、BR-ID-01 细则「最低支持版本的接口层拦截」的
+# 「判定」一条（按 (X-Platform, X-Channel) 取 min_supported_version，没有配置行或没设最低版本时不拦截），由编排者摘入任务书第 2 节。
+# 配置读取：按 key 取 value JSON 与 version；缓存时长与读库失败时的行为由本任务定并写进说明，version 变了才换缓存；键不存在返回「未配置」，
+# 由调用方用自己的代码默认值兜底（F1-02a 注释 D-7：风控阈值不入种子，不变）。
+# 开工前在 ops/risk-map.yaml 登记 apps/api/src/modules/content/**（RV2，编排者裁定 §5 第 23 条；保护路径第三类，要负责人标签）。
+# test_paths：test/spec/content/read/**（task-file.ts 还不认该字段；同 B1-02c 注释的做法）。app.module.ts 不在白名单，整体按 RV2。
+refs: []
+refs_hash: {}
+deps: [F1-02a]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/read/**'
+status: todo
+pr: null

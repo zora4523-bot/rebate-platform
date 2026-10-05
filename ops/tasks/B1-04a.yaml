@@ -1,0 +1,31 @@
+id: B1-04a
+repo: rebate-platform
+title: 迁移：union_raw_payloads（联盟原始报文归档，按月分区，只插入）并登记分区允许名单与 180 天留存规则（04 §3.2）
+type: migration
+# 草稿 2026-10-05。B1-04 开工盘点（差异清单第一节第 6 件末尾要求另做，结论写在 README）：已有 links、link_logs、link_open_attempts（0006）、order_keys、orders
+# （0007，orders.raw_payload_id 预留为指向本表的 bigint、不加外键）；缺 union_accounts / union_credentials / union_pids（B1-19a）与本表。
+# 依据：04 §3.2 union_raw_payloads 行、02 §6.1 末条（每次调用记请求摘要、响应原文、耗时、错误码）、ADR-0001 §4.2 第 4、5 项（本表按月分区、DEFAULT 分区兜底）、
+# BR-ID-30 ⑦（180 天），由编排者摘入任务书第 2 节。
+# 按 db/AGENTS.md 第 5 条：同一迁移把表名加进 app.ensure_month_partition 的允许名单并同步 packages/db/src/partitions.ts；留存照 0011 的 drop_expired_month_partitions
+# 做法加一条 180 天规则，并同步 platform/maintenance 的 DROPPABLE_TABLES（评审若嫌两件事一起太大，可把留存拆成后续任务）。
+# 主键带分区键（同 orders 的做法），id 用 bigint 以对上 orders.raw_payload_id。列：platform、kind（04 写 order / rights / query…，没给全集，留 text）、
+# payload（压缩字节）、fetched_at、content_hash，另加 02 §6.1 的请求摘要、耗时、错误码。请求摘要不得含 appKey、secret、sign、session、access_token
+# （09 README 脱敏要求），由写入方（B1-04c）保证，迁移头注释写明。只授 INSERT / SELECT。
+# order_sync_drops / order_sync_drop_keys 写者也是 union（02 §4.1），但只有订单同步（B1-08）用到，留给 B1-08 的配套迁移（README）。
+# 分工与两段式同 B1-19a；迁移全局串行，排在 F1-06a 之后（B1-04b 骨架不等本任务，B1-04c 的归档要等）。test_paths：test/spec/db/union-raw/**。
+refs: []
+refs_hash: {}
+deps: [F1-06a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'packages/db/src/partitions.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/union-raw/**'
+status: todo
+pr: null

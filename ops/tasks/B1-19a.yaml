@@ -1,0 +1,35 @@
+id: B1-19a
+repo: rebate-platform
+title: 迁移：联盟账号与推广位——union_accounts（站长授权到期与探测列）、union_credentials（令牌只存密文）、union_pids（pending / active / retired，禁止删除，启用前须填花卷云确认）（04 §3.2）
+type: migration
+# 草稿 2026-10-05（差异清单第三节「B1-19a」、第一节第 5 件）。依据：04 §3.2 union_accounts / union_credentials 行与 union_pids 行、02 §6.2 凭据行与 §6.3；
+# BR-ATTR-02（白名单匹配键、sync_start_at）、BR-ATTR-28（启用前须填 hjy_ignore_confirmed_at 与截图路径）、BR-ID-24（凭据加密、到期写 auth_expires_at）、BR-ID-30，由编排者摘入任务书第 2 节。
+# 选择一：union_credentials 一起建。04 把它与 union_accounts 放在同一格，写者同为 union（02 §4.1）；B1-04 调联盟要读凭据、B1-22 巡检要读 expires_at，
+# 单独建要多占一个迁移槽且没有独立的消费者。令牌只存字段加密密文（platform/crypto，带 key_version，BR-ID-33 同法），不建明文列；
+# 「当前凭据」怎么判定（部分唯一 is_current，或按 created_at 取最新）04 没写，由迁移定并写进头注释。
+# 选择二：admin_users / admin_permissions / audit_logs 不在本任务建，另立 F1-06a（同批草稿）：写者是 admin（02 §4.1），宿主是 05 F1-06（登录 + TOTP、审计），
+# 「迁移跟着宿主任务编号」同 B1-13b 的先例；现有 0001～0011 迁移都没建这三张表。union_accounts.auth_renewed_by 指向后台账号，admin_users 建好前不加外键，
+# 由 F1-06a 补（同 0003～0010「等基线表再补外键」的做法）。
+# 约束只照 04 与 08 写、不自加：union_pids 唯一 (app_id, platform, pid)；status 取 pending / active / retired，默认 pending；status 不是 pending 时
+# hjy_ignore_confirmed_at 与 hjy_ignore_evidence_path 都不能为空（BR-ATTR-28）；pid_scene 取值同 contracts/enums/trade.yaml；禁止删除：不授 DELETE，
+# 另加「禁止 DELETE」触发器（db/AGENTS.md 第 8 条只许这一类）。site_id 只淘宝有，是否写 CHECK 按 BR-ATTR-02 匹配键由迁移定。
+# auth_status（active / expiring / expired）、alert_stage（none / d14 / d7 / d1 / expired）按 04 写 CHECK；union_accounts.status 04 没给取值，留 text；
+# union_accounts 的业务唯一键 04 没写，不自加（编排者裁定 §5 第 21 条）。状态流转 pending → active → retired 不回退由应用层（B1-19）保证，不写触发器。
+# links.pid 到 union_pids 的外键（04 §3.1 关系图 uses）本批不加，记为后续（编排者裁定 §5 第 20 条）。
+# 分工按规划/11 §1.1（2026-10-05）：Codex 先写规则测试（先红），Claude 新子代理过审，Opus 子代理只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot
+# 并提交生成物；迁移全局串行，排在 B1-03a 之后（派前看 db/migrations/ 最新号）。
+# test_paths：test/spec/db/union/**（task-file.ts 接受该字段前由编排会话写进任务书）。
+refs: []
+refs_hash: {}
+deps: [B1-03a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/union/**'
+status: todo
+pr: null
