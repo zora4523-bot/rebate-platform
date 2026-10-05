@@ -1,0 +1,61 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (identity RV1, plus platform paths and app.module.ts). Device registration POST /v1/devices with the identity module skeleton; platform exports contractRouteSchema, fieldsErrorEnvelope, newUuidV7, ServerErrorInterceptor (50001 ErrorEnvelope) and adds install_secret to the redaction list. Rule tests were run red in containers before the implementation (couli-runs/B1-02c/verify-red*.log; 9 AssertionErrors, 404); legacy ledger, no red run record required. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent: round 1 fail (S2: second UUIDv7 implementation) -> platform newUuidV7; round 2 pass; out-of-scope items in couli-runs/B1-02c/followups.md"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1: unhandled errors returned the Nest default body, not the 5XX ErrorEnvelope) -> ServerErrorInterceptor; round 2 pass (S2: body-parse errors before the interceptor, taken by B1-01za)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 fail (S1: decoded secret bytes could be stored; S2: error bodies not contract-checked), round 2 pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "task": "B1-02c",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "21f6baf97945888a30d5f5a1e21a9d31c5740cd0",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "76da08f4d740895d5d7586e7fa49b08de901d1c8",
+      "tree": "ab32922ca02ae110017dc8a96d0ff90752c3e845",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T16:25:22Z",
+      "finished_at": "2026-10-05T16:27:19Z"
+    }
+  ],
+  "trees": {
+    "packages/money": "83cb7c5abfd03ef162543c3aa1db0033ecf2aff0",
+    "packages/domain": "c7bbadb81089e32cd0ed3ff3e38958080a0134ef",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "db142a3c472cdb32d4a7732c1fb444e64c285029",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  }
+}
