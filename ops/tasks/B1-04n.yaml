@@ -6,7 +6,9 @@ type: test-change
 # 写死的地方：test/spec/platform/maintenance/contract.test.ts（可删表只有 event_log）、run.int.test.ts（只预建两张表）、
 # quiet-default.int.test.ts（预建列表 event_log、orders，多处 done(8, 0, 0)）、worker-entry.int.test.ts（启动日志 ensured: 8）、
 # worker-wiring.test.ts、schedule.int.test.ts，以及实现侧 apps/api/src/modules/platform/maintenance/index.test.ts（ensured 计数）。
-# 改法：预建表与可删表取自 app.ensure_month_partition 的允许名单与 packages/db/src/partitions.ts（数据库里查、或读该模块），计数按名单长度 × 预建月数算；
+# 改法：两种依据分开。预建表取自月分区允许名单（app.ensure_month_partition 与 packages/db/src/partitions.ts），计数按名单长度 × 预建月数算；
+# 可删表取自留存删除规则（0011 drop_expired_month_partitions 的规则与 maintenance 的 DROPPABLE_TABLES 必须一致），不从预建名单推导；
+# orders 等禁止删除分区的表（BR-ID-30 ⑰、0011 第 40 行的拒绝）保留独立断言（Codex 台账评审第 3 轮）。
 # 断言的行为与含义不变（预建、留存、DEFAULT 告警），只去掉对「现在恰好有哪几张表」的写死。不改任何实现代码。
 # 与在途的 B1-01s、B1-01w（同改这些受保护测试与 maintenance）串行，排在它们之后。保护路径第一类，合并要负责人标签 owner-approved-<头提交前 12 位>。
 refs: []
