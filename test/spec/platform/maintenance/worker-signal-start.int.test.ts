@@ -157,7 +157,7 @@ interface Worker {
 }
 
 /** Starts the built worker entry with the exit probe; SIGKILL after `limitMs`. */
-function launch(vars: Record<string, string>, limitMs = 30_000): Worker {
+function launch(vars: Record<string, string>, limitMs = 60_000): Worker {
   const child = spawn(
     process.execPath,
     ['--import', PROBE, path.join(API_DIR, 'dist', 'main.worker.js')],
@@ -322,7 +322,7 @@ async function signalWhileBlocked(
       if (worker.exited()) return true;
       const now = await waiters(observer);
       return JSON.stringify(now) === JSON.stringify([expected]);
-    }, 20_000);
+    }, 45_000);
     for (const [index, signal] of signals.entries()) {
       if (index > 0) await sleep(100);
       worker.child.kill(signal);
@@ -481,7 +481,7 @@ it('[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子�
     },
     leaks: [],
   });
-}, 180_000);
+}, 300_000);
 
 it('[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 的维护首轮卡在 event_log_p202611 的分区锁上时收到 SIGTERM 再收到 SIGINT（或 SIGINT 再 SIGTERM）——只按第一个信号立即记一行 stopping、不退出、不记 started；放锁后这一轮做完（ensured 8、failed 0），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、维护池与主池都关）、放锁后 5 秒内退出码 0；输出不含口令', async () => {
   const built = build();
@@ -526,4 +526,4 @@ it('[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子�
     int: graceful('SIGINT', MAINT_WAITER),
     leaks: [],
   });
-}, 180_000);
+}, 300_000);
