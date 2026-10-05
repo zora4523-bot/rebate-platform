@@ -22,7 +22,7 @@ enums:
       config.risk: 风控规则与阈值（step-up）
       config.business: 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
       switch.all: 全部紧急开关（step-up）
-      switch.payout: 仅 withdraw.enabled、payout.enabled、payout.queue_paused（step-up）
+      switch.payout: 仅打款类开关：withdraw.enabled、payout.enabled、payout.queue_paused、payout.channel_enabled.<channel>、payout.channel_paused.<channel>（step-up）
       risk.freeze: 冻结 / 解冻（step-up）
       risk.ban: 封禁 / 解封（step-up）
       risk.blocklist: 黑名单增删（step-up）

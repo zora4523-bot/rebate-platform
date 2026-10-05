@@ -25,11 +25,12 @@ enums:
       oaid: Android OAID（MVP 不集成获取方式，预留）
       odid: 鸿蒙 ODID
   oauth_attempt_purpose:
-    source: 规划/04 §6.1；BR-ID-04、BR-ID-08
+    source: 规划/04 §6.1；BR-ID-04、BR-ID-08、BR-WDR-33 ②
     description: 第三方授权尝试的用途（POST /v1/auth/oauth-attempts）
     values:
       login: 登录
       step_up: 二次验证
+      payout_bind: 收款授权（只用于绑定微信零钱收款账号；不登录、不签发令牌，BR-ID-04 细则「收款授权」）
   session_scope:
     source: 规划/04 §2.5、§5；BR-ID-01
     description: access_token 的 scp；登录与刷新按这次请求的客户端版本判定，含义与可调用的接口见 BR-ID-01 细则「受限会话」

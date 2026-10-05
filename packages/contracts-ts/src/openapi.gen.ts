@@ -165,7 +165,12 @@ export interface paths {
          *     purpose=step_up requires a logged-in user (otherwise 10001) and `action`; it is issued only
          *     to an account without a bound phone (a bound phone → 20001 with `data.fields=[provider]`,
          *     BR-ID-08). purpose=step_up with action=account_deletion is inside the 10006 whitelist
-         *     (BR-ID-31). Storage unavailable → 50001.
+         *     (BR-ID-31). purpose=payout_bind (WeChat only, no `action`) is the payout authorization of
+         *     BR-ID-04 细则「收款授权」 and BR-WDR-33 ②: it requires a logged-in user (otherwise 10001)
+         *     and is bound to the user, this device_id and this app's WeChat AppID; the openid it yields
+         *     is only stored on the payout account — it creates no account, writes no third-party login
+         *     binding and issues or refreshes no token. It is consumed by the payout account save, not by
+         *     a login or step-up submission. Storage unavailable → 50001.
          *     Version gate (conditional): not applied when purpose=login, or purpose=step_up with
          *     action=account_deletion; applied otherwise. Session scopes: a deletion_only session is
          *     accepted only for purpose=login and for purpose=step_up with action=account_deletion. Both
@@ -1663,10 +1668,11 @@ export interface components {
          * @description What a third-party authorization attempt is for (enum oauth_attempt_purpose).
          * @enum {string}
          */
-        OauthAttemptPurpose: "login" | "step_up";
+        OauthAttemptPurpose: "login" | "step_up" | "payout_bind";
         /**
-         * @description `action` is required exactly for purpose=step_up. The oneOf branches declare the
-         *     properties they constrain (strict Ajv2020, ADR-0001 §4.2 #15).
+         * @description `action` is required exactly for purpose=step_up. purpose=payout_bind is for WeChat only
+         *     and carries no `action`. The oneOf branches declare the properties they constrain (strict
+         *     Ajv2020, ADR-0001 §4.2 #15).
          */
         CreateOauthAttemptRequest: {
             provider: components["schemas"]["LoginProvider"];
@@ -1679,6 +1685,11 @@ export interface components {
             /** @enum {string} */
             purpose: "step_up";
             action: components["schemas"]["StepUpAction"];
+        } | {
+            /** @enum {string} */
+            purpose: "payout_bind";
+            /** @enum {string} */
+            provider: "wechat";
         });
         OauthAttemptData: {
             attempt_id: components["schemas"]["Id"];

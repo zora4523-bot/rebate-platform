@@ -560,7 +560,7 @@ export const errorCodes = {
     retry: "否（payout_account_verify_limit：次日）",
     retry_kind: "never",
     retry_kind_by_reason: {"payout_account_verify_limit":"later"},
-    data: {"reason":["account_frozen","below_min","not_multiple","above_max","net_too_small","daily_count","monthly_count","payee_daily_count","payee_daily_users","self_purchase_required","payout_account_change_limit","payout_account_verify_limit"]},
+    data: {"reason":["account_frozen","below_min","not_multiple","above_max","above_method_max","net_too_small","daily_count","monthly_count","payee_daily_count","payee_daily_users","self_purchase_required","payout_account_change_limit","payout_account_verify_limit"]},
     headers: [],
     sources: ["BR-WDR-02","BR-WDR-03","BR-WDR-04","BR-WDR-05","BR-FUND-19"],
     phase: null,

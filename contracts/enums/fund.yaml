@@ -106,6 +106,7 @@ enums:
     values:
       payout_disabled: 打款开关关闭
       queue_paused: 打款队列暂停
+      channel_disabled: 该收款方式的打款通道关闭或暂停（BR-WDR-33 ①）
       member_blocked: 用户受限
       single_cap: 单笔上限
       daily_cap: 单日上限
@@ -134,11 +135,26 @@ enums:
       auto: 系统按规则组审核并打款
       manual: 人工审核
   payout_method:
-    source: 规划/04 §2.4；BR-WDR-02、BR-WDR-32
+    source: 规划/04 §2.4；BR-WDR-02、BR-WDR-32、BR-WDR-33
     description: payout_accounts.payout_method 与 withdrawals.payout_channel
     values:
       alipay: 支付宝
       bank_card: 本人银行卡
+      wechat: 微信零钱（BR-WDR-33；通道开关默认关）
+  withdrawal_channel_state:
+    source: 规划/04 §2.4；BR-WDR-33 ⑤
+    description: withdrawals.channel_state，可空，只有微信零钱单在 PAYING 期间有值；不是提现状态（withdrawal_status 不变）
+    values:
+      processing: 通道处理中
+      wait_user_confirm: 等用户在微信里确认收款
+      canceling: 撤销中
+  payout_attempt_kind:
+    source: 规划/04 §2.4；BR-WDR-13、BR-WDR-33 ⑥
+    description: payout_attempts.kind；cancel 只用于微信零钱单的撤销
+    values:
+      transfer: 转账
+      query: 查询
+      cancel: 撤销
   withdraw_condition_reason:
     source: 规划/08 §13.11 30303；BR-WDR-02、BR-WDR-03 细则、BR-WDR-04、BR-WDR-05、BR-FUND-19
     description: 30303 的 data.reason（文案键 error.30303.<reason>，BR-TEXT-14）；编码由契约任务定（contract-delta b2-24）
@@ -147,6 +163,7 @@ enums:
       below_min: 低于单笔最低金额
       not_multiple: 不是规定的整数倍
       above_max: 超过单笔最高金额
+      above_method_max: 超过当前收款方式的单笔上限（withdraw.method_max_amount_fen.<payout_method>，BR-WDR-33 ④）
       net_too_small: 扣除手续费与税后到账金额过小
       daily_count: 超过每日提现次数
       monthly_count: 超过每月提现次数
