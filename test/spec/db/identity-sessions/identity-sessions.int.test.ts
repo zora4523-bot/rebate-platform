@@ -1,6 +1,6 @@
 // B1-02b: 04 §3.2 sessions / refresh_tokens, consent_records, devices; BR-ID-07 / BR-ID-12.
-// TEST_PG_ADMIN_URL is consumed only by the existing integration globalSetup; every query
-// here uses a business role. Run outside the sandbox, before and after the migration.
+// The admin connection string is consumed only by the existing integration globalSetup; every
+// query here uses a business role. Run outside the sandbox, before and after the migration.
 // API refresh/grace/reuse detection and login_merge decisions belong to later API tests.
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
