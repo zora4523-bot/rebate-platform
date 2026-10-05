@@ -218,7 +218,64 @@ it('[AC-B1-04b-GOV#7] 10 秒窗外失败不积累；少于 20 次请求不熔断
   await expect(port.bindPublisher!({ authorizationCode: 'synthetic' }, online)).rejects.toThrow(
     'synthetic outage',
   );
+  await expect(port.bindPublisher!({ authorizationCode: 'synthetic' }, online)).rejects.toThrow(
+    'synthetic outage',
+  );
+  expect(fail).toHaveBeenCalledTimes(21);
+});
+
+it('[AC-B1-04b-GOV#14] 9 999 毫秒内的失败仍计入 10 秒窗，第 20 次失败后熔断', async () => {
+  const scheduler = new ManualScheduler();
+  const fail = vi.fn(async (): Promise<never> => {
+    throw new Error('synthetic outage');
+  });
+  const port = createGovernedAdapter(
+    { ...adapter(), bindPublisher: fail },
+    { endpoint: endpoint(), scheduler, quota: quota() },
+  );
+  for (let i = 0; i < 19; i += 1) {
+    await expect(port.bindPublisher!({ authorizationCode: 'synthetic' }, online)).rejects.toThrow(
+      'synthetic outage',
+    );
+  }
+  await scheduler.advance(9999);
+  await expect(port.bindPublisher!({ authorizationCode: 'synthetic' }, online)).rejects.toThrow(
+    'synthetic outage',
+  );
+  await expect(
+    port.bindPublisher!({ authorizationCode: 'synthetic' }, online),
+  ).rejects.toMatchObject({
+    code: 'circuit_open',
+  });
   expect(fail).toHaveBeenCalledTimes(20);
+});
+
+it('[AC-B1-04b-GOV#15] 前 10 次失败、9 次成功、第 20 次失败即以 11/20 触发熔断', async () => {
+  const scheduler = new ManualScheduler();
+  let calls = 0;
+  const bind = vi.fn(async () => {
+    calls += 1;
+    if (calls <= 10 || calls === 20) throw new Error('synthetic outage');
+    return { relationId: 'relation' };
+  });
+  const port = createGovernedAdapter(
+    { ...adapter(), bindPublisher: bind },
+    { endpoint: endpoint(), scheduler, quota: quota() },
+  );
+  for (let i = 0; i < 20; i += 1) {
+    const result = port.bindPublisher!({ authorizationCode: 'synthetic' }, online);
+    if (i < 10 || i === 19) {
+      await expect(result).rejects.toThrow('synthetic outage');
+    } else {
+      await expect(result).resolves.toEqual({ relationId: 'relation' });
+    }
+  }
+  await expect(
+    port.bindPublisher!({ authorizationCode: 'synthetic' }, online),
+  ).rejects.toMatchObject({
+    code: 'circuit_open',
+  });
+  expect(bind).toHaveBeenCalledTimes(20);
 });
 
 it('[AC-B1-04b-GOV#8] 配额拒绝时不调用上游、不重试，按调用用途取令牌', async () => {
@@ -240,7 +297,10 @@ it('[AC-B1-04b-GOV#8] 配额拒绝时不调用上游、不重试，按调用用�
   await expect(
     port.listOrders(window, {}, { ...online, purpose: 'order_sync' }),
   ).rejects.toMatchObject({ code: 'quota_exceeded' });
-  expect(take.mock.calls).toEqual([['online'], ['order_sync']]);
+  await expect(
+    port.searchItems({ keyword: 'refresh' }, { ...online, purpose: 'pool_refresh' }),
+  ).rejects.toMatchObject({ code: 'quota_exceeded' });
+  expect(take.mock.calls).toEqual([['online'], ['order_sync'], ['pool_refresh']]);
   expect(search).toHaveBeenCalledTimes(0);
   expect(orders).toHaveBeenCalledTimes(0);
   expect(scheduler.pending).toBe(0);

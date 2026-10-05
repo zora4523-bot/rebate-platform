@@ -89,6 +89,7 @@ it.each([
   { baseUrl: 'not-a-url' },
   { baseUrl: 'file:///private/endpoint' },
   { platform: 'unknown' },
+  { appSecret: 'x' },
 ])('[AC-B1-04b-CONFIG#6] 非法配置 %j 明确拒绝', (override) => {
   expect(
     errorCode(() =>

@@ -25,7 +25,11 @@ it('[AC-B1-04b-DTO#1] 商品保留京东空 skuId、三种价格、佣金率与�
 it.each([
   ['0', 0n],
   ['0.29', 29n],
+  ['0.5', 50n],
+  ['12.3', 1230n],
   ['12.34', 1234n],
+  // BR-CALC-26: percentage strings with more than two decimal places are floored.
+  ['12.345', 1234n],
   ['99.99', 9999n],
   ['100', 10000n],
 ])('[AC-B1-04b-DTO#2] 用例 %#：百分数字符串精确转万分之一整数，不走浮点', (percent, bp) => {
