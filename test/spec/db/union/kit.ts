@@ -40,11 +40,11 @@ export async function columns(db: Kysely<DB>, table: Table): Promise<Column[]> {
 export async function foreignKeys(db: Kysely<DB>, table: Table): Promise<ForeignKey[]> {
   await columns(db, table);
   const result = await sql<ForeignKey>`
-    SELECT ARRAY(SELECT a.attname FROM unnest(c.conkey) WITH ORDINALITY k(num, ord)
+    SELECT ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k(num, ord)
              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.num
              ORDER BY k.ord) AS columns,
            n.nspname AS target_schema, t.relname AS target,
-           ARRAY(SELECT a.attname FROM unnest(c.confkey) WITH ORDINALITY k(num, ord)
+           ARRAY(SELECT a.attname::text FROM unnest(c.confkey) WITH ORDINALITY k(num, ord)
              JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.num
              ORDER BY k.ord) AS target_columns,
            c.confdeltype::text AS on_delete, c.confupdtype::text AS on_update

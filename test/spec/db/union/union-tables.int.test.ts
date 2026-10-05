@@ -150,7 +150,7 @@ for (const [column, allowed] of [
 it('[AC-B1-19a#7] account status stays open text and account names are not made business-unique', async () => {
   const row = await insertRow(app, 'union_accounts');
   const keys = await sql<{ cols: string[] }>`
-    SELECT ARRAY(SELECT a.attname FROM unnest(c.conkey) k(num)
+    SELECT ARRAY(SELECT a.attname::text FROM unnest(c.conkey) k(num)
       JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.num) AS cols
     FROM pg_constraint c WHERE c.conrelid = to_regclass('app.union_accounts') AND c.contype = 'p'
   `.execute(app);
