@@ -7,7 +7,7 @@ type: impl
 # 第三方 step-up 的换码验签等 CT-15i（B1-02d）。依据：BR-ID-04 细则（含「收款授权」）、BR-ID-08、BR-ID-12、BR-ID-13、BR-ID-32、
 # 04 §6.1 相关行，由编排者摘入任务书第 2 节。实现路由的接口去掉 x-implementation: planned。
 # 作废接口 POST /v1/idempotency-keys/abandon 的 HTTP 路由在 platform 模块，另立 B1-02g。
-# test_paths（工具接受前写注释）：test/spec/identity/step-up/**。
+# test_paths：test/spec/identity/step-up/**（task-file.ts 还不认该字段；在它接受前，测试阶段的允许路径由编排会话写进任务书，规则测试只放第一类测试资产目录，spec_commit 前其余改动只许 NotImplemented 骨架，tools/guard/lib/spec-base.ts 已强制）。
 refs: []
 refs_hash: {}
 deps: [B1-02e, CT-20a]

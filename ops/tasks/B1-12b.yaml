@@ -1,0 +1,23 @@
+id: B1-12b
+repo: rebate-platform
+title: notification 模块首建与推送令牌条件解绑命令；identity 在吊销会话的同一事务内调用（退出、复用检测、被动结束）
+type: impl
+# 2026-10-05 入账，承接 B1-02e 拆出的推送解绑（05 B1-02 行「退出登录解除推送绑定（OPS-21），会话被动结束时同样解除」）。
+# 依据：BR-ID-07 细则（同一事务内条件解绑，异步事件不能替代）、04 §3.2 push_tokens 行，由编排者摘入任务书第 2 节。
+# push_tokens 表已由 B1-12a 建好。只做解绑命令与 identity 接线；模板、推送 Adapter、站内消息等归 B1-12 其余子任务。
+# 开工前要在 ops/risk-map.yaml 登记 apps/api/src/modules/notification/**（保护路径，需负责人标签）。
+# test_paths：test/spec/notification/unbind/**（同 B1-02c 注释的做法）。
+refs: []
+refs_hash: {}
+deps: [B1-02e, B1-12a]
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/unbind/**'
+status: todo
+pr: null
