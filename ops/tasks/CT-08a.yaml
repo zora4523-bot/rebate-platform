@@ -1,0 +1,30 @@
+id: CT-08a
+repo: rebate-platform
+title: 契约——Agent 流协议 contracts/agent-stream.schema.json（帧格式、事件、现有卡片类型）与基础流样例 contracts/fixtures/agent-streams/*.ndjson
+type: contract
+# 2026-10-06 入账（会话「Agent 落地方案」负责 B3 线与 CT-08，已与代码仓库在途编排会话协调；契约槽空闲）。
+# 05 CT-08 按 PR ≤400 行拆分：a 帧格式、事件与 D31/D32 之前已有的卡片类型；b 页面引导卡、收益卡、agent_intent 新值、routes.json 的 agent_guide（D31、D32）。
+# 形状以 04 §8.1–8.3 为准（contract_sections 嵌入任务书）；05 写的 fixtures/agent-streams/ 在本仓库落到 contracts/fixtures/agent-streams/。
+# 样例 7 类：正常、工具失败、取消、断线、未知卡片、error、降级；ndjson 每行一帧，逐帧可被 schema 校验。
+# 并入 couli-runs/CT-plan/contract-delta.md b4-33：order_status 卡 title 可空（分享单 is_other_product=true 时为 null）、加 is_other_product、不含订单号、字段裁剪同订单列表。
+# 新分工：Codex 先写一致性测试（test/spec/contracts/agent-stream/**，读 schema 与样例逐帧校验、未知卡片走 fallback_text），先红；Claude 新子代理过审；Opus 5.5 实现。
+refs: [BR-AI-04, BR-AI-06, BR-AI-24]
+refs_hash:
+  BR-AI-04: a07587a282ba
+  BR-AI-06: b6a8abaa5dab
+  BR-AI-24: e6144dd5290b
+contract_sections: ['8.1', '8.2', '8.3']
+deps: []
+paths:
+  - 'contracts/agent-stream.schema.json'
+  - 'contracts/fixtures/agent-streams/**'
+  - 'contracts/README.md'
+test_paths:
+  - 'test/spec/contracts/agent-stream/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/contracts/agent-stream/**'
+status: todo
+pr: null

@@ -1,0 +1,30 @@
+id: CT-08b
+repo: rebate-platform
+title: 契约——Agent 页面引导卡与只读收益卡（D31、D32）：card.type 加 page_guide、earnings_summary，agent_intent 加 page_guide、earnings_query，routes.json 加 agent_guide，相应流样例
+type: contract
+# 2026-10-06 入账，接 CT-08a（同一契约槽，a 合并后再派）。依据：规划 00 D31、D32；08 BR-AI-01 细则「页面引导」「收益查询」「判定顺序」、BR-AI-18 意图白名单、BR-ID-10 路由入口矩阵（取值只在 08）。
+# 形状：04 §2.5（agent_intent、page_guide_reject_reason）、§8.3（page_guide 卡 data 只有 route 与 text_key；earnings_summary 卡字段与 latest_withdrawal 的 {title_key, amount_fen}）、§8.5（页面引导意图输出 {agent_intent, guide_route}；get_my_earnings 空 schema 与返回 {card_id, status}）、§10（routes.json 的 agent_guide）。
+# 样例：正常类加一条页面引导流、一条收益卡流、一条历史重载的收益卡（不含金额，BR-AI-19 细则）；未知卡片类加一条 route 不在 agent_guide 内的 page_guide 卡（类数不变）。
+# specs/agent-tools.allowlist 的 get_my_earnings 新增项随 B3-16 合入，本任务不加。
+refs: [BR-AI-01, BR-AI-18, BR-ID-10]
+refs_hash:
+  BR-AI-01: b624c86b4643
+  BR-AI-18: 01b60e6ca170
+  BR-ID-10: fdd5f173f9ff
+contract_sections: ['2.5', '8.3', '8.5', '10']
+deps: [CT-08a]
+paths:
+  - 'contracts/agent-stream.schema.json'
+  - 'contracts/fixtures/agent-streams/**'
+  - 'contracts/enums/ops.yaml'
+  - 'contracts/routes.json'
+  - 'contracts/README.md'
+test_paths:
+  - 'test/spec/contracts/agent-stream-d31-d32/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/contracts/agent-stream-d31-d32/**'
+status: todo
+pr: null
