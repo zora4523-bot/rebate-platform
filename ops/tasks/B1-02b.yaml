@@ -1,0 +1,25 @@
+id: B1-02b
+repo: rebate-platform
+title: 迁移：会话类基线表——sessions、refresh_tokens（只存 token 哈希、parent_hash 链）、consent_records（只插入）（04 §3.2）
+type: migration
+# 2026-10-05 入账。依据：couli-runs/CT-plan/spec-delta-826f86e-492b9ef.md 第一节第 3 件、第三节（规划 1e4569c）。
+# 原编排决定里叫 B1-00a，05 没有 B1-00 编号，按编号规则改为 B1-02b。B1-02a（身份类基线表）已合并，两版之间没变。
+# 两段式（规划/11 §2.3）：Codex 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行。
+# 建表按 04 §3.2 的 sessions / refresh_tokens 行与 consent_records 行（由编排者摘行进任务书第 2 节；迁移任务不带
+# contract_sections，§3.2 整节约 52KB）。consent_records 只插入，索引 (app_id, subject_type, user_id|device_id, type, server_at DESC)。
+# 业务规则：BR-ID-07（复用检测吊销整条 sid）、BR-ID-12（同意记录），由编排者摘入；授权写在建对象的那条迁移里。
+# 派迁移前 git ls-tree origin/main db/migrations/ 看最新号（现为 0011）。
+refs: []
+refs_hash: {}
+deps: [B1-02a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/identity-sessions/**'
+status: todo
+pr: null
