@@ -8,7 +8,7 @@
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import type { ReceivedJob } from '../../../../apps/api/src/modules/platform/queue/index.ts';
-import { gate, observe, sleep, waitFor } from './kit.ts';
+import { gate, observe, waitFor } from './kit.ts';
 import {
   closeObserver,
   observerOn,
@@ -143,7 +143,27 @@ it('[ADR-0001 §4.2 #19] exclusive 队列：同键任务完成（completed）或
           })
           .catch((error: unknown) => (error instanceof Rollback ? 'rolled back' : error));
         const afterRollback = shape(await send('win:rb', false));
-        await sleep(1500);
+        // Waits for the final state of the three later jobs (one per key) instead of a fixed
+        // 1.5 s sleep: the t-excl2 lane (concurrency 1, polling 0.5 s) waits one interval after
+        // each job, so three queued jobs can take longer than 1.5 s on a loaded host (B1-01v).
+        // The assertions below are unchanged; a timeout leaves the states as they are.
+        const final = (state: string | undefined): boolean =>
+          state === 'completed' || state === 'failed';
+        await waitFor(async () => {
+          const [doneNow, deadNow, rbNow] = await Promise.all([
+            statesOfKey(observer, 't-excl2', 'win:done'),
+            statesOfKey(observer, 't-excl2', 'win:dead'),
+            statesOfKey(observer, 't-excl2', 'win:rb'),
+          ]);
+          return (
+            doneNow.length >= 2 &&
+            doneNow.every(final) &&
+            deadNow.length >= 2 &&
+            deadNow.every(final) &&
+            rbNow.length >= 1 &&
+            rbNow.every(final)
+          );
+        }, 15_000);
         return {
           settledBoth,
           afterCompleted,
