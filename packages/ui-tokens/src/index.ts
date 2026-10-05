@@ -6,3 +6,11 @@
 
 /** Workspace package name; the only export until CT-11a lands. */
 export const PACKAGE_NAME = '@couli/ui-tokens';
+
+export {
+  generateTokensCss,
+  generateTailwindCss,
+  themeFromTokens,
+  generateThemeTs,
+} from './generate.ts';
+export type { DesignTokens, TokenTheme } from './generate.ts';
