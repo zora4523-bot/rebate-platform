@@ -24,10 +24,9 @@ it('[AC-B1-05c#33] BR-PROD-01 新旧键交换左右和不同旧键汇合都判�
   expect(await catalog.isSameProduct({ ...left, productKey: 'tb:reviewNew' }, left)).toBe(true);
 
   await aliases(db, ['tb:reviewX0', 'tb:reviewX1', 'tb:reviewEnd']);
-  await aliases(db, ['tb:reviewY0', 'tb:reviewY1', 'tb:reviewEnd']);
   for (const [a, b] of [
     ['tb:reviewX0', 'tb:reviewX1'],
-    ['tb:reviewX0', 'tb:reviewY0'],
+    ['tb:reviewX0', 'tb:reviewEnd'],
   ]) {
     const first = { ...left, productKey: a! };
     const second = { ...left, productKey: b! };

@@ -16,7 +16,9 @@ afterAll(async () => {
 });
 
 // 补充 #4：两条固定连接，持锁者同时观察等待者，不用第三条连接或睡眠猜顺序。
-// 第一条已写但未提交：普通 SELECT 仍可读到基线，而写入/锁定读取必须等提交。
+// 第一条用 SQL 夹具模拟已写但未提交的响应，不把外部事务对象注入 catalog。
+// 登记方法接收第二条普通连接，可以自行开启事务；普通 SELECT 仍可读到基线，
+// 而写入/锁定读取必须等第一条提交。
 // 因此「SELECT 后无条件 UPDATE」在新先旧后的顺序下会确定性覆盖新响应。
 it.each(['new-first', 'old-first'] as const)(
   '[AC-B1-05c#37] BR-PROD-05 双连接事务屏障 %s 提交顺序仍只保留最新响应',
@@ -50,9 +52,20 @@ it.each(['new-first', 'old-first'] as const)(
     const holder = await db.startTransaction().setIsolationLevel('read committed').execute();
     try {
       await sql`SET LOCAL statement_timeout = '10s'`.execute(holder);
-      const firstContext = setup(holder);
-      firstContext.clock.advanceMs(20);
-      await firstContext.catalog.registerProductRef(first, enabled);
+      const updated = await sql`
+        UPDATE app.product_refs SET
+          raw_item_id = ${first.rawItemId},
+          raw_fetched_at = ${first.rawFetchedAt}::timestamptz,
+          refreshed_at = ${first.receivedAt}::timestamptz,
+          source = ${first.source},
+          title = ${first.title},
+          shop_id = ${first.shopId},
+          shop_type = ${first.shopType},
+          canonical_url = ${first.canonicalUrl}
+        WHERE app_id = ${first.appId} AND product_key = ${first.productKey}
+        RETURNING product_key
+      `.execute(holder);
+      expect(updated.rows).toHaveLength(1);
       await db.connection().execute(async (waiter) => {
         await sql`SET statement_timeout = '10s'`.execute(waiter);
         const pid = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(waiter);
