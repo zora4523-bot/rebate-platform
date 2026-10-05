@@ -53,6 +53,29 @@ rules:
     impl: claude
     tester: codex
     review: codex
+  # risk: 其他交易模块（规划/11 §1.1 第 4 行）为 RV1，分工同 identity（2026-10-05 改定）。
+  - path: 'apps/api/src/modules/risk/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
+  # union: 归属与订单状态机（规划/11 §1.1 第 3 行：orders、linking、union）为 RV2，评审另加 Claude 新子代理。
+  - path: 'apps/api/src/modules/union/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
+  # admin、content: 规划/11 §1.1 没有单列，按 §1.2「未列入白名单的任何路径」为 RV2；分工按 2026-10-05 改定的通则。
+  - path: 'apps/api/src/modules/admin/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
+  - path: 'apps/api/src/modules/content/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
   - path: 'apps/api/src/modules/platform/**'
     risk: RV2
     impl: claude
