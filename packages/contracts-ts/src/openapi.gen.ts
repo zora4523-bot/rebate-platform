@@ -324,6 +324,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign out on this device
+         * @description Revokes the session of the access token (its sid and the refresh tokens of that chain,
+         *     BR-ID-07) and removes the binding between this device's push token and the user
+         *     (拍板第二批 OPS-21; push_tokens is written by the notification module). Other devices of the
+         *     same user are not affected. Repeating the call with a token whose session is already
+         *     revoked is answered like any revoked token (10002 / 10404 per BR-ID-07), nothing is written.
+         *     Version gate: not applied (退出登录). Session scopes: accepts deletion_only (BR-ID-01 细则
+         *     「受限会话」).
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a consent or its withdrawal
+         * @description Inserts one consent_records row (insert only, BR-ID-12). Login is not required (04 §6.1
+         *     鉴权 none): with a valid access token the row is user level (user_id and this device_id);
+         *     without one it is device level (device_id from X-Device-Id, user_id empty). A device
+         *     without a registered device_id cannot record (BR-ID-12: the first-launch consent is kept
+         *     locally and reported right after device registration). The current state of a subject and
+         *     type is the row with the latest server_at; server_at is the server clock, client_at is the
+         *     tap time on the device. accepted=false is a withdrawal; for a device it also follows
+         *     BR-ID-13 (device sessions revoked, push token cleared, basic mode).
+         *     `type` never takes labor_agreement (signed only through the labor agreement endpoint,
+         *     BR-WDR-31). `channel` never takes login_merge, h5_landing or withdraw_flow: those rows are
+         *     written by the server (login merge, landing registration, labor agreement signing).
+         *     A field outside these values → 20001 with data.fields.
+         *     Version gate (conditional): not applied to accepted=false of any type, nor to type privacy
+         *     or agreement; applied otherwise. Session scopes: a deletion_only session is accepted only
+         *     for the same requests (any withdrawal, and privacy or agreement records). Both per BR-ID-01
+         *     细则, which wins on any difference.
+         */
+        post: operations["recordConsent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/h5-token": {
         parameters: {
             query?: never;
@@ -1664,6 +1725,30 @@ export interface components {
          * @enum {string}
          */
         LoginProvider: "wechat" | "apple" | "huawei";
+        RecordConsentRequest: {
+            /**
+             * @description consent_type without labor_agreement (BR-ID-12, BR-WDR-31).
+             * @enum {string}
+             */
+            type: "privacy" | "agreement" | "ai_third_party" | "id_verification" | "personalization";
+            /**
+             * Format: int32
+             * @description The version of the text the user saw (legal.privacy.version and the like).
+             */
+            version: number;
+            /** @description true = agreed; false = withdrawn. */
+            accepted: boolean;
+            /**
+             * @description consent_channel without the server-written login_merge, h5_landing and withdraw_flow.
+             * @enum {string}
+             */
+            channel: "first_launch" | "login_page" | "agent_sheet" | "realname_sheet" | "privacy_center";
+            /**
+             * Format: date-time
+             * @description When the user tapped (device clock).
+             */
+            client_at: string;
+        };
         /**
          * @description What a third-party authorization attempt is for (enum oauth_attempt_purpose).
          * @enum {string}
@@ -4115,6 +4200,111 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session is revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    recordConsent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "type": "privacy",
+                 *       "version": 3,
+                 *       "accepted": true,
+                 *       "channel": "first_launch",
+                 *       "client_at": "2026-10-02T09:30:00+08:00"
+                 *     }
+                 */
+                "application/json": components["schemas"]["RecordConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description The consent row is recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

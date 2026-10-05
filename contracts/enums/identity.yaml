@@ -72,6 +72,18 @@ enums:
       id_verification: 实名授权
       personalization: 个性化推荐
       labor_agreement: 劳务协议
+  consent_channel:
+    source: 规划/04 §3.2 consent_records；BR-ID-12 细则
+    description: consent_records.channel，同意发生的入口；login_merge、h5_landing、withdraw_flow 只由服务端写入（登录合并、落地页注册、劳务协议签署），不经 POST /v1/consents 提交
+    values:
+      first_launch: 首启隐私弹窗
+      login_page: 登录页协议勾选
+      h5_landing: 邀请落地页注册
+      agent_sheet: Agent 同意半屏
+      realname_sheet: 实名授权半屏
+      privacy_center: 隐私中心
+      login_merge: 登录时设备级记录并入用户级
+      withdraw_flow: 提现流程中签署劳务协议（BR-WDR-31）
   auth_method:
     source: 规划/04 §6.3；BR-ID-17
     description: 淘宝授权方式（auth-url 的 auth_methods、bindings 的 auth_method）；按端由服务端配置下发
