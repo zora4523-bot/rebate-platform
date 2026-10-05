@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 import {
-  canonicalJson, sha256Hex, modelKey, toolKey, loadRecordings, RecordingMiss,
+  canonicalJson,
+  sha256Hex,
+  modelKey,
+  toolKey,
+  loadRecordings,
+  RecordingMiss,
 } from '../../../packages/evals/src/index.ts';
 import type { ModelRequest, ToolCall } from '../../../packages/evals/src/index.ts';
 import { call, digest, jsonl, recording, request } from './fixtures.ts';
@@ -21,10 +26,19 @@ it('[B3-01b] 规范化与摘要按 UTF-16 键序、UTF-8 编码，数组保序�
 
 it('[B3-01b] modelKey 覆盖完整请求；键插入顺序不影响摘要', () => {
   const req = request({ messages: ['合成一', '合成二'], params: { z: 1, a: { y: 2, x: 3 } } });
-  const expected = digest('{"messages":["合成一","合成二"],"model":"synthetic-snapshot","params":{"a":{"x":3,"y":2},"z":1},"tools":[],"vendor":"synthetic-vendor"}');
+  const expected = digest(
+    '{"messages":["合成一","合成二"],"model":"synthetic-snapshot","params":{"a":{"x":3,"y":2},"z":1},"tools":[],"vendor":"synthetic-vendor"}',
+  );
   expect(modelKey(req)).toBe(expected);
-  expect(modelKey({ params: { a: { x: 3, y: 2 }, z: 1 }, tools: [], messages: req.messages,
-    model: req.model, vendor: req.vendor })).toBe(expected);
+  expect(
+    modelKey({
+      params: { a: { x: 3, y: 2 }, z: 1 },
+      tools: [],
+      messages: req.messages,
+      model: req.model,
+      vendor: req.vendor,
+    }),
+  ).toBe(expected);
 });
 
 it.each<{ field: string; patch: Partial<ModelRequest> }>([
@@ -43,9 +57,25 @@ it.each<{ field: string; patch: Partial<ModelRequest> }>([
 it('[B3-01b] toolKey 仅两个状态集合排序，其余数组保序且不修改输入', () => {
   const original = call({ args: { ordered: ['b', 'a'] } });
   const before = structuredClone(original);
-  const sorted = { ...original, state: { turn: 1, result_set_ids: ['rs-B', 'rs-a'], tool_set: ['parse_input', 'search_products'] } };
+  const sorted = {
+    ...original,
+    state: {
+      turn: 1,
+      result_set_ids: ['rs-B', 'rs-a'],
+      tool_set: ['parse_input', 'search_products'],
+    },
+  };
   expect(toolKey(original)).toBe(digest(canonicalJson(sorted)));
-  expect(toolKey({ ...original, state: { turn: 1, result_set_ids: ['rs-a', 'rs-B'], tool_set: ['search_products', 'parse_input'] } })).toBe(toolKey(original));
+  expect(
+    toolKey({
+      ...original,
+      state: {
+        turn: 1,
+        result_set_ids: ['rs-a', 'rs-B'],
+        tool_set: ['search_products', 'parse_input'],
+      },
+    }),
+  ).toBe(toolKey(original));
   expect(original).toEqual(before);
   expect(toolKey({ ...original, args: { ordered: ['a', 'b'] } })).not.toBe(toolKey(original));
 });
@@ -83,7 +113,12 @@ it('[B3-01b] 回放按内容查找，可重复命中、忽略对象键序与录�
     expect(store.tool(tool)).toEqual(['tool-B']);
     expect(store.model(req)).toEqual({ result: 'model-A' });
     expect(store.model({ ...req, params: { z: 2, a: 1 } })).toEqual({ result: 'model-A' });
-    expect(store.tool({ ...tool, state: { ...tool.state, tool_set: [...tool.state.tool_set].reverse() } })).toEqual(['tool-B']);
+    expect(
+      store.tool({
+        ...tool,
+        state: { ...tool.state, tool_set: [...tool.state.tool_set].reverse() },
+      }),
+    ).toEqual(['tool-B']);
     expect(store.unused()).toEqual([{ kind: 'model', key: 'f'.repeat(64) }]);
   }
 });
@@ -96,7 +131,11 @@ it('[B3-01b] 空录制合法；缺录制不拿下一条，抛对应 kind 与请�
     ['tool', toolKey(call()), () => store.tool(call())],
   ] as const) {
     expect(lookup).toThrow(RecordingMiss);
-    try { lookup(); } catch (error) { expect(error).toMatchObject({ kind, key }); }
+    try {
+      lookup();
+    } catch (error) {
+      expect(error).toMatchObject({ kind, key });
+    }
   }
   expect(store.unused()).toEqual([{ kind: 'model', key: 'a'.repeat(64) }]);
 });
@@ -104,7 +143,8 @@ it('[B3-01b] 空录制合法；缺录制不拿下一条，抛对应 kind 与请�
 it.each<[string, unknown]>([
   ['多余字段', { ...recording(), extra: true }],
   ...['kind', 'key', 'response', 'recorded_at'].map((field): [string, unknown] => [
-    `缺少 ${field}`, Object.fromEntries(Object.entries(recording()).filter(([key]) => key !== field)),
+    `缺少 ${field}`,
+    Object.fromEntries(Object.entries(recording()).filter(([key]) => key !== field)),
   ]),
   ['kind 越界', recording({ kind: 'other' as 'model' })],
   ['key 大写', recording({ key: 'A'.repeat(64) })],
@@ -114,8 +154,15 @@ it.each<[string, unknown]>([
   ['日期不是字符串', { ...recording(), recorded_at: 123 }],
   ['非对象', null],
 ])('[B3-01b] 录制结构错误 %s 报 schema 和物理行号，后续有效录制可加载', (_label, invalid) => {
-  const { store, problems } = loadRecordings(`\n${JSON.stringify(invalid)}\n\n${jsonl([recording()])}`, 'bad.jsonl');
-  expect(problems).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'schema', file: 'bad.jsonl', line: 2 })]));
+  const { store, problems } = loadRecordings(
+    `\n${JSON.stringify(invalid)}\n\n${jsonl([recording()])}`,
+    'bad.jsonl',
+  );
+  expect(problems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: 'schema', file: 'bad.jsonl', line: 2 }),
+    ]),
+  );
   expect(store.unused()).toEqual([{ kind: 'model', key: 'a'.repeat(64) }]);
 });
 
@@ -127,28 +174,45 @@ it('[B3-01b] 非 JSON 行返回有文件与行号的问题，不阻止后续有�
 });
 
 it('[B3-01b] 同 kind+key 的等价响应去重；时间不同不冲突，kind 不同不合并', () => {
-  const { problems, store } = loadRecordings(jsonl([
-    recording({ response: { z: 1, a: [2, 3] } }),
-    recording({ response: { a: [2, 3], z: 1 }, recorded_at: '2026-10-06T02:00:00Z' }),
-    recording({ kind: 'tool', response: 'other-kind' }),
-  ]), 'duplicate.jsonl');
+  const { problems, store } = loadRecordings(
+    jsonl([
+      recording({ response: { z: 1, a: [2, 3] } }),
+      recording({ response: { a: [2, 3], z: 1 }, recorded_at: '2026-10-06T02:00:00Z' }),
+      recording({ kind: 'tool', response: 'other-kind' }),
+    ]),
+    'duplicate.jsonl',
+  );
   expect(problems).toEqual([]);
-  expect(store.unused()).toEqual(expect.arrayContaining([
-    { kind: 'model', key: 'a'.repeat(64) }, { kind: 'tool', key: 'a'.repeat(64) },
-  ]));
+  expect(store.unused()).toEqual(
+    expect.arrayContaining([
+      { kind: 'model', key: 'a'.repeat(64) },
+      { kind: 'tool', key: 'a'.repeat(64) },
+    ]),
+  );
   expect(store.unused()).toHaveLength(2);
 });
 
 it.each([null, false, [2, 1], { a: 2 }].map((response) => ({ response })))(
-  '[B3-01b] 同 key 不同 response=$response 报 recording_conflict', ({ response }) => {
-  const { problems } = loadRecordings(jsonl([recording({ response: [1, 2] }), recording({ response })]), 'conflict.jsonl');
-  expect(problems).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'recording_conflict' })]));
-});
+  '[B3-01b] 同 key 不同 response=$response 报 recording_conflict',
+  ({ response }) => {
+    const { problems } = loadRecordings(
+      jsonl([recording({ response: [1, 2] }), recording({ response })]),
+      'conflict.jsonl',
+    );
+    expect(problems).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'recording_conflict' })]),
+    );
+  },
+);
 
-it.each([null, false, 0, '', ['synthetic'], { nested: { value: 1 } }].map((response) => ({ response })))(
-  '[B3-01b] 录制 response=$response 不解释原样交回', ({ response }) => {
+it.each(
+  [null, false, 0, '', ['synthetic'], { nested: { value: 1 } }].map((response) => ({ response })),
+)('[B3-01b] 录制 response=$response 不解释原样交回', ({ response }) => {
   const req = request();
-  const { store, problems } = loadRecordings(jsonl([recording({ key: modelKey(req), response })]), 'response.jsonl');
+  const { store, problems } = loadRecordings(
+    jsonl([recording({ key: modelKey(req), response })]),
+    'response.jsonl',
+  );
   expect(problems).toEqual([]);
   expect(store.model(req)).toEqual(response);
   expect(store.unused()).toEqual([]);

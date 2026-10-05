@@ -1,5 +1,10 @@
 import { expect, it } from 'vitest';
-import { checkDuplicateIds, checkManifest, computeManifest, validateCase } from '../../../packages/evals/src/index.ts';
+import {
+  checkDuplicateIds,
+  checkManifest,
+  computeManifest,
+  validateCase,
+} from '../../../packages/evals/src/index.ts';
 import type { Manifest, Problem } from '../../../packages/evals/src/index.ts';
 import { sample } from './fixtures.ts';
 
@@ -15,11 +20,13 @@ it('[B3-01b] 跨文件重复 id 报 duplicate_id，指出两处文件名；同�
 
 it('[B3-01b] 不重复的跨文件 id 与空输入通过，退役题 id 仍不可跨文件重复', () => {
   expect(checkDuplicateIds([], [])).toEqual([]);
-  expect(checkDuplicateIds([sample({ id: 'syn-A' }), sample({ id: 'syn-B' })], ['a.jsonl', 'b.jsonl'])).toEqual([]);
+  expect(
+    checkDuplicateIds([sample({ id: 'syn-A' }), sample({ id: 'syn-B' })], ['a.jsonl', 'b.jsonl']),
+  ).toEqual([]);
   const retired = sample({ retired: { at: '2026-10-05', reason: '合成退役' } });
-  expect(checkDuplicateIds([sample(), retired], ['a.jsonl', 'b.jsonl'])).toEqual(expect.arrayContaining([
-    expect.objectContaining({ code: 'duplicate_id' }),
-  ]));
+  expect(checkDuplicateIds([sample(), retired], ['a.jsonl', 'b.jsonl'])).toEqual(
+    expect.arrayContaining([expect.objectContaining({ code: 'duplicate_id' })]),
+  );
 });
 
 it.each([
@@ -35,18 +42,27 @@ it.each([
   const manifest = computeManifest('smoke', 'v1', cases);
   let problems: Problem[] = [];
   let threw = false;
-  try { problems = checkManifest(edit(manifest) as Manifest, cases); }
-  catch { threw = true; }
+  try {
+    problems = checkManifest(edit(manifest) as Manifest, cases);
+  } catch {
+    threw = true;
+  }
   // 将旧实现的异常转为明确的断言红，不能让 TypeError 成为红测原因。
   expect(threw).toBe(false);
   expect(problems).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'schema' })]));
 });
 
 it.each(['only-hole', 'middle-hole', 'trailing-hole'] as const)(
-  '[B3-01b] B3-01a 补强：turns 稀疏数组 %s 报 schema', (kind) => {
-    const turns = kind === 'only-hole' ? new Array<{ text: string }>(1) : [{ text: '合成第一轮' }, { text: '合成第二轮' }, { text: '合成第三轮' }];
+  '[B3-01b] B3-01a 补强：turns 稀疏数组 %s 报 schema',
+  (kind) => {
+    const turns =
+      kind === 'only-hole'
+        ? new Array<{ text: string }>(1)
+        : [{ text: '合成第一轮' }, { text: '合成第二轮' }, { text: '合成第三轮' }];
     if (kind === 'middle-hole') delete turns[1];
     if (kind === 'trailing-hole') delete turns[2];
-    expect(validateCase(sample({ turns }))).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'schema' })]));
+    expect(validateCase(sample({ turns }))).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'schema' })]),
+    );
   },
 );
