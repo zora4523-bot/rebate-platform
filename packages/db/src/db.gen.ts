@@ -69,6 +69,23 @@ export interface ConfigItems {
   version: Generated<number>;
 }
 
+export interface ConsentRecords {
+  accepted: boolean;
+  app_id: string;
+  channel: string;
+  client_at: Timestamp;
+  created_at: Generated<Timestamp>;
+  device_id: string | null;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  server_at: Timestamp;
+  signer_snapshot: Json | null;
+  subject_type: string;
+  text_sha256: string | null;
+  type: string;
+  user_id: string | null;
+  version: number;
+}
+
 export interface DeviceRegistrations {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -85,7 +102,7 @@ export interface Devices {
   device_hash: string;
   id: string;
   id_source: string;
-  install_secret_hash: string;
+  install_secret_cipher: Buffer;
   last_login_sid: string | null;
   last_seen_at: Timestamp;
   platform: string;
@@ -399,6 +416,30 @@ export interface PushTokens {
   user_id: string | null;
 }
 
+export interface RefreshTokens {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  expire_at: Timestamp;
+  id: string;
+  parent_hash: string | null;
+  rotated_at: Timestamp | null;
+  sid: string;
+  token_hash: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Sessions {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  id: string;
+  revoke_reason: string | null;
+  revoked_at: Timestamp | null;
+  sid: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface UserOauth {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -451,6 +492,7 @@ export interface DB {
   app_versions: AppVersions;
   articles: Articles;
   config_items: ConfigItems;
+  consent_records: ConsentRecords;
   device_registrations: DeviceRegistrations;
   devices: Devices;
   event_log: EventLog;
@@ -469,6 +511,8 @@ export interface DB {
   payout_accounts: PayoutAccounts;
   processed_events: ProcessedEvents;
   push_tokens: PushTokens;
+  refresh_tokens: RefreshTokens;
+  sessions: Sessions;
   user_oauth: UserOauth;
   user_tip_reads: UserTipReads;
   users: Users;

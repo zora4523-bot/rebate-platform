@@ -1,0 +1,61 @@
+{
+  "task": "B1-02b",
+  "spec_ref": "1955639f5c29cae4f43f6e039dc3c742b5ae3312",
+  "spec_commit": "7b7a7b8ff4543985779a2fc5f294fe5b255ba880",
+  "red_tests": [],
+  "risk_note": "RV2 migration (db/**). Migration 0013: sessions, refresh_tokens, consent_records; devices install_secret_hash replaced by install_secret_cipher with existing rows revoked (empty placeholder, revoked_at from last_seen_at). Legacy ledger (tools/guard/legacy-tasks.json): no red run record required; the rule tests were run red in containers before the migration (couli-runs/B1-02b/verify-red*.log). Upgrade with existing devices rows checked on a one-shot database (couli-runs/B1-02b/upgrade-check.log). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "4f0d955d533120dddeda5e67724d2b91fb483ffe",
+      "tree": "d782fe8e3b5ccb398ac0a6400d6ebb76a620d483",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T14:48:12Z",
+      "finished_at": "2026-10-05T14:50:02Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "scope": "independent read-only Claude subagent: rounds 1-4 pass on cdf9a05, 3d0d01b, f315f43, ce459f5 (pre-rebase ids); its S3 adopted (readonly cannot read the cipher, labor_agreement needs device_id, empty-key CHECK)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 4,
+      "note": "round 1 pass (S2 expand+contract); round 2 fail (S1: NOT NULL add fails on existing rows) -> backfill revoke; round 3 fail (S1: SQL now() in backfill) -> last_seen_at; round 4 (orchestrator-approved exception round) pass; remaining S2 was the 0012 gap, closed by #89"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent in two rounds; a later one-line regex fix (enum names with digits, h5_landing) found while implementing was made by Codex and checked by the orchestrator"
+  },
+  "trees": {
+    "packages/money": "83cb7c5abfd03ef162543c3aa1db0033ecf2aff0",
+    "packages/domain": "c7bbadb81089e32cd0ed3ff3e38958080a0134ef",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "1c79afc6c6b00e0d8915963ee0cb5f87624f1c22",
+    "specs": "c48714c98fb9e31372a258d24509e69979e708fb"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
