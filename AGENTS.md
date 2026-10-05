@@ -52,6 +52,7 @@
 | `apps/api/src/modules/health/**` | Claude | Codex | Codex | RV1 |
 | `apps/api/src/modules/identity/**` | Claude | Codex | Codex | RV1 |
 | `apps/api/src/modules/platform/**` | Claude | Codex | Claude + Codex | RV2 |
+| `packages/evals/**` | Claude | Codex | Codex | RV1 |
 | `packages/money/**` | Claude | Codex | Claude + Codex | RV2 |
 | `packages/domain/**` | Claude | Codex | Claude + Codex | RV2 |
 | `packages/db/**` | Claude | Codex | Claude + Codex | RV2 |

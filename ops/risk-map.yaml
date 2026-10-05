@@ -58,6 +58,13 @@ rules:
     impl: claude
     tester: codex
     review: claude+codex
+  # evals: Agent 评测框架（规划/02 §9.3、§16.2「公开库只放加载器、schema 与合成样例」；05 B3-01）。
+  # 非资金、非归属，按规划/11 §1.1「Agent 服务」为 RV1；正式评测题与录制只在 rebate-private。
+  - path: 'packages/evals/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
   - path: 'packages/money/**'
     risk: RV2
     impl: claude
