@@ -12,11 +12,11 @@ type: impl
 # 作用域判定：按请求的 X-Platform / X-Channel / X-App-Version 与最低支持版本比较（identity 定义版本查询端口、F1-02b 的 content 实现、app.module 装配），h5、admin 或没有配置时为 full；
 # 版本比较做成纯函数放 platform/client-version 导出（B1-03c 守卫复用，不写两份）；供 B1-02j 登录、B1-02k 刷新调用。建会话原语接收调用方事务：先锁设备行、写 sessions 与首个 refresh_token、
 # 把 last_login_sid 写成新会话，并留同事务扩展点给 B1-12b 绑定推送令牌；吊销原语按 sid 置 revoked_at 并作废该链 refresh_token（填空列一次，0013 头注释），供退出、B1-02k 调用。
-# 退出：吊销本请求的 sid，其他设备不受影响；已吊销会话再调由守卫回 10002（契约 logout 说明）。推送解绑由 B1-12b 补，合并前 05 B1-02 行「退出解除推送绑定」不算完成。ES256 用 node:crypto 实现（不新增依赖；要装库写 deps_needed），JWT 头带 kid 以便轮换。签名密钥进 platform/config：local/test 未配置时启动生成临时密钥对，staging/prod 未配置拒绝启动；私钥不进
+# 退出：吊销本请求的 sid，其他设备不受影响；已吊销会话再调由守卫回 10002（契约 logout 说明）。推送解绑由 B1-12b 补，合并前 05 B1-02 行「退出解除推送绑定」不算完成。ES256 用 ADR-0001 §2 指定的 jose 库（B1-01zb 安装；Codex 台账评审 2026-10-06），JWT 头带 kid 以便轮换。签名密钥进 platform/config：local/test 未配置时启动生成临时密钥对，staging/prod 未配置拒绝启动；私钥不进
 # .env.example（gitleaks）；KMS 托管另立任务（私有库 dev-reference/aliyun/kms.md）。refresh_token 为 32 字节随机串，库内只存 SHA-256；日志不打令牌与密钥。实现路由时去掉 logout 的 x-implementation: planned 并重生成 route-schemas.gen.ts。bootstrap、platform/http 与 B1-03b、B1-01y、B1-01za 相交，排在它们之后。
 refs: []
 refs_hash: {}
-deps: [B1-02e, B1-02b, B1-03b, B1-01za, CT-02b]
+deps: [B1-02e, B1-02b, B1-03b, B1-01za, CT-02b, B1-01zb]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/modules/platform/config/**'

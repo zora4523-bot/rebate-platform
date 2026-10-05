@@ -15,7 +15,7 @@ type: impl
 # （content 按同形实现、app.module 装配，同 F1-02b 注释），键未配置用 08 默认值。
 # 短信只接假适配器（APP_ENV=local/test，规划/11 §8）。02 §4.1 把「短信」列在 notification（还没建）：本任务在 identity 定义发送端口、假实现暂放 identity/infra，真实适配器接入时放
 # notification 并随迁（README 裁定点）。端口返回「受理 / 明确拒绝 / 结果未知」三类，假实现可注入三类结果、已发消息进进程内发件箱供测试读取；local/test 检测到短信真实密钥变量拒绝启动
-# （platform/config/app-env.ts 的临时匹配按其 TODO 换成短信适配器声明的变量名，一律 SMS_ 开头）。阿里云资料只作任务书引用（私有库 docs-mirror/aliyun-sms/ 的 frequency-limits、send-sms、
+# （platform/config/credential-env.ts 的临时匹配按其 TODO 换成短信适配器声明的变量名，一律 SMS_ 开头）。阿里云资料只作任务书引用（私有库 docs-mirror/aliyun-sms/ 的 frequency-limits、send-sms、
 # api-errors；控制台核查记录不进公开仓库），真实接入另立任务。日志不打验证码、captcha_token 与手机号明文（新字段名同步 platform/logging 脱敏清单）。
 # 实现路由时去掉 sendSmsCode 的 x-implementation: planned 并重生成 route-schemas.gen.ts（与 B1-02f / g / h / j / k、B1-03i 串行）。契约描述缺「每自然小时 5 条」，补法见 README 裁定点。
 refs: []
