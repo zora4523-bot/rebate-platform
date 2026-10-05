@@ -3,7 +3,8 @@
 // test/spec/platform/maintenance/lock-wait.int.test.ts). Basis: ADR-0001 §4.2 #4 (worker 定时任务以
 // couli_maint 建和删分区); BR-ID-30 ② (link_logs 按日分区删除). A run whose first day waits 5 s and fails
 // with 55P03 skips the remaining days of that table (else 15 × 5 s); a failed deletion is logged and
-// retried on the next run.
+// retried on the next run. The lock is released after 20 s at the latest (runHolding), so a run that
+// keeps waiting fails on its assertions, not on the test's time limit.
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
@@ -93,6 +94,30 @@ async function timedReport(
   return { ms: performance.now() - t0, report };
 }
 
+/**
+ * Runs `run` while `hold` keeps its lock, but releases the lock after RELEASE_AFTER_MS at the latest,
+ * so that an implementation that keeps waiting (e.g. one 5 s wait per day) still ends well within
+ * the test's time limit and fails on the duration and report assertions instead of a time-out.
+ */
+const RELEASE_AFTER_MS = 20_000;
+
+async function runHolding(
+  hold: { release: () => void },
+  run: () => Promise<MaintenanceReport>,
+): Promise<{ ms: number; report: unknown; releasedByTimer: boolean }> {
+  let releasedByTimer = false;
+  const timer = setTimeout(() => {
+    releasedByTimer = true;
+    hold.release();
+  }, RELEASE_AFTER_MS);
+  try {
+    const result = await timedReport(run());
+    return { ...result, releasedByTimer };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const NOW = '2026-11-20T03:04:05Z'; // 11:04 +08:00; days 2026-11-20 … 2026-12-04
 const MONTHS = monthRange('2026-11', '2027-02');
 const MONTH_NAMES = [...names('event_log', MONTHS), ...names('orders', MONTHS)];
@@ -100,7 +125,7 @@ const MONTH_NAMES = [...names('event_log', MONTHS), ...names('orders', MONTHS)];
 it('[ADR-0001 §4.2 #4; contract I2 C.3b 55P03] 读事务一直持有 link_logs 的锁时：第一个日分区等 5 秒以 55P03 失败，记一条 partition_ensure_failed（day 2026-11-20），其余 14 天本轮跳过；整轮在 4–15 秒内结束，月分区照建；锁放开后下一轮建齐 15 天', async () => {
   await withWorld(async ({ database, maint, app }) => {
     const hold = reader(database);
-    let first: { ms: number; report: unknown } = { ms: 0, report: 'not run' };
+    let first = { ms: 0, report: 'not run' as unknown, releasedByTimer: false };
     let firstLines: unknown[] = [];
     try {
       await hold.ready;
@@ -111,15 +136,20 @@ it('[ADR-0001 §4.2 #4; contract I2 C.3b 55P03] 读事务一直持有 link_logs 
         clock: countingClock(NOW),
         dayPartitions: true,
       });
-      first = await timedReport(maintenance.runOnce());
+      first = await runHolding(hold, () => maintenance.runOnce());
       firstLines = lines.map(reduceLine);
     } finally {
       hold.release();
       await hold.done;
     }
-    expect({ report: first.report, withinBound: first.ms >= 4_000 && first.ms <= 15_000 }).toEqual({
+    expect({
+      report: first.report,
+      withinBound: first.ms >= 4_000 && first.ms <= 15_000,
+      releasedByTimer: first.releasedByTimer,
+    }).toEqual({
       report: { ensured: MONTH_NAMES, dropped: [], defaultRows: [], failed: 1 },
       withinBound: true,
+      releasedByTimer: false,
     });
     expect(firstLines).toEqual([
       line('error', 'partition_ensure_failed', {
@@ -164,7 +194,7 @@ it('[BR-ID-30 ②; contract I2 C.4 55P03] 04:00（+08:00）的运行在读事务
     ];
     const at = '2026-10-08T20:00:00.000Z'; // 2026-10-09 04:00 +08:00, cutoff 2026-07-11 00:00
     const hold = reader(database);
-    let first: { ms: number; report: unknown } = { ms: 0, report: 'not run' };
+    let first = { ms: 0, report: 'not run' as unknown, releasedByTimer: false };
     let firstLines: unknown[] = [];
     try {
       await hold.ready;
@@ -175,15 +205,20 @@ it('[BR-ID-30 ②; contract I2 C.4 55P03] 04:00（+08:00）的运行在读事务
         clock: countingClock(at),
         dayPartitions: true,
       });
-      first = await timedReport(maintenance.runOnce());
+      first = await runHolding(hold, () => maintenance.runOnce());
       firstLines = lines.map(reduceLine);
     } finally {
       hold.release();
       await hold.done;
     }
-    expect({ report: first.report, withinBound: first.ms >= 4_000 && first.ms <= 12_000 }).toEqual({
+    expect({
+      report: first.report,
+      withinBound: first.ms >= 4_000 && first.ms <= 12_000,
+      releasedByTimer: first.releasedByTimer,
+    }).toEqual({
       report: { ensured, dropped: [], defaultRows: [], failed: 1 },
       withinBound: true,
+      releasedByTimer: false,
     });
     expect(firstLines).toEqual([
       line('error', 'partition_drop_failed', { table: 'link_logs', sqlstate: '55P03' }),
