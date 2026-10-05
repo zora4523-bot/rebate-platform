@@ -60,6 +60,29 @@ export async function columns(table: string): Promise<Column[]> {
   return list;
 }
 
+/** Ordered key columns, without depending on migration-specific constraint names. */
+export async function primaryKeyColumns(table: string): Promise<string[]> {
+  const result = await sql<{ name: string }>`
+    SELECT a.attname AS name FROM pg_constraint c
+    CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, position)
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+    WHERE c.conrelid = to_regclass(${`app.${table}`}) AND c.contype = 'p'
+    ORDER BY k.position
+  `.execute(app);
+  return result.rows.map((row) => row.name);
+}
+
+export async function uniqueKeys(table: string): Promise<string[][]> {
+  const result = await sql<{ keys: string[] }>`
+    SELECT ARRAY(SELECT pg_get_indexdef(i.indexrelid, k, true)
+      FROM generate_series(1, i.indnkeyatts) AS k ORDER BY k) AS keys
+    FROM pg_index i
+    WHERE i.indrelid = to_regclass(${`app.${table}`}) AND i.indisunique
+      AND i.indisvalid AND i.indisready AND i.indpred IS NULL
+  `.execute(app);
+  return result.rows.map((row) => row.keys);
+}
+
 /** First string literal listed by a CHECK constraint that mentions the column, if any. */
 export async function checkedLiteral(table: string, column: string): Promise<string | null> {
   const rows = await sql<{ def: string }>`

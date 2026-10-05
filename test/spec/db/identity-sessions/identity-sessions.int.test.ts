@@ -10,7 +10,17 @@ import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
-import { columns, hex64, insertRow, newUser, sqlState, useDb } from './kit.ts';
+import {
+  checkedLiteral,
+  columns,
+  hex64,
+  insertRow,
+  newUser,
+  primaryKeyColumns,
+  sqlState,
+  uniqueKeys,
+  useDb,
+} from './kit.ts';
 
 const TABLES = ['sessions', 'refresh_tokens', 'consent_records'] as const;
 const TEXT = ['text', 'varchar', 'bpchar'];
@@ -71,7 +81,7 @@ async function hashValue(table: string, name: string, hex = hex64()) {
     : hex;
 }
 
-async function newDevice(userId: string | null = null) {
+async function newDevice(userId: string | null = null, values: Record<string, unknown> = {}) {
   const id = randomUUID();
   await insertRow('devices', {
     id,
@@ -80,16 +90,16 @@ async function newDevice(userId: string | null = null) {
     device_hash: hex64(),
     id_source: 'idfv',
     install_secret_cipher: Buffer.from('fixture-encrypted-install-secret'),
+    ...values,
   });
   return id;
 }
 
-async function newSession() {
-  const userId = await newUser();
-  const deviceId = await newDevice(userId);
-  const sid = randomUUID();
+async function newSession(appId = 'couli', sid = randomUUID()) {
+  const userId = await newUser({ app_id: appId });
+  const deviceId = await newDevice(userId, { app_id: appId });
   await insertRow('sessions', {
-    app_id: 'couli',
+    app_id: appId,
     sid,
     user_id: userId,
     device_id: deviceId,
@@ -102,7 +112,7 @@ async function newSession() {
 async function newConsent(values: Record<string, unknown> = {}) {
   const subject = values['subject_type'] ?? 'user';
   const userId = subject === 'device' ? null : await newUser();
-  const deviceId = await newDevice(userId);
+  const deviceId = 'device_id' in values ? values['device_id'] : await newDevice(userId);
   return insertRow('consent_records', {
     app_id: 'couli',
     subject_type: subject,
@@ -141,6 +151,9 @@ it('[AC-B1-02b#1] [04 §3.2 通则] session tables exist in app with app_id and 
 });
 
 it('[AC-B1-02b#2] [04 §3.2 sessions] session ownership and nullable revocation fields exist', async () => {
+  await shape('sessions', 'id', ['uuid'], false);
+  await shape('sessions', 'updated_at', INSTANT, false);
+  expect(await primaryKeyColumns('sessions')).toEqual(['id']);
   await shape('sessions', 'sid', [...TEXT, 'uuid'], false);
   await shape('sessions', 'user_id', ['uuid'], false);
   await shape('sessions', 'device_id', ['uuid'], false);
@@ -149,6 +162,9 @@ it('[AC-B1-02b#2] [04 §3.2 sessions] session ownership and nullable revocation 
 });
 
 it('[AC-B1-02b#3] [04 §3.2 refresh_tokens] [BR-ID-07] tokens have hashes and a nullable parent, never stored token values', async () => {
+  await shape('refresh_tokens', 'id', ['uuid'], false);
+  await shape('refresh_tokens', 'updated_at', INSTANT, false);
+  expect(await primaryKeyColumns('refresh_tokens')).toEqual(['id']);
   await shape('refresh_tokens', 'sid', [...TEXT, 'uuid'], false);
   await shape('refresh_tokens', 'token_hash', HASH, false);
   await shape('refresh_tokens', 'parent_hash', HASH, true);
@@ -167,7 +183,7 @@ it('[AC-B1-02b#4] [04 §3.2 consent_records] consent facts, subject and signing 
   await shape('consent_records', 'subject_type', TEXT, false);
   await shape('consent_records', 'user_id', ['uuid'], true);
   // User records can also carry the originating device: do not impose an exclusive-or.
-  await shape('consent_records', 'device_id', ['uuid']);
+  await shape('consent_records', 'device_id', ['uuid'], true);
   for (const name of ['type', 'channel']) await shape('consent_records', name, TEXT, false);
   await shape('consent_records', 'version', ['int2', 'int4', 'int8'], false);
   await shape('consent_records', 'accepted', ['bool'], false);
@@ -186,16 +202,13 @@ it('[AC-B1-02b#5] [04 §3.2 devices] install_secret is a required bytea cipher, 
     SELECT install_secret_cipher AS cipher FROM app.devices WHERE id = ${id}
   `.execute(app);
   expect(stored.rows[0]?.cipher).toEqual(Buffer.from('fixture-encrypted-install-secret'));
-  expect(
-    await sqlState(
-      sql`
-    UPDATE app.devices SET install_secret_cipher = NULL WHERE id = ${id}
-  `.execute(app),
-    ),
-  ).toBe('23502');
+  expect(await sqlState(newDevice(null, { install_secret_cipher: null }))).toBe('23502');
 });
 
 it('[AC-B1-02b#6] [BR-ID-07] a root and its direct successor retain their hash chain across rotation and sid revocation', async () => {
+  await shape('sessions', 'sid', [...TEXT, 'uuid'], false);
+  await shape('refresh_tokens', 'token_hash', HASH, false);
+  await shape('devices', 'install_secret_cipher', ['bytea'], false);
   const { sid } = await newSession();
   const first = await hashValue('refresh_tokens', 'token_hash');
   const second = await hashValue('refresh_tokens', 'token_hash');
@@ -235,10 +248,11 @@ it('[AC-B1-02b#6] [BR-ID-07] a root and its direct successor retain their hash c
     ]),
   );
   // Storage capability only: no claim that SQL itself implements API reuse detection.
+  const reason = (await checkedLiteral('sessions', 'revoke_reason')) ?? 'fixture-revocation';
   expect(
     await sqlState(
       sql`
-    UPDATE app.sessions SET revoked_at = ${NOW}, revoke_reason = 'refresh_reuse'
+    UPDATE app.sessions SET revoked_at = ${NOW}, revoke_reason = ${reason}
     WHERE app_id = 'couli' AND sid = ${sid}
   `.execute(app),
     ),
@@ -246,7 +260,7 @@ it('[AC-B1-02b#6] [BR-ID-07] a root and its direct successor retain their hash c
   const revoked = await sql<{ revoked_at: Date; revoke_reason: string }>`
     SELECT revoked_at, revoke_reason FROM app.sessions WHERE app_id = 'couli' AND sid = ${sid}
   `.execute(app);
-  expect(revoked.rows).toEqual([{ revoked_at: NOW, revoke_reason: 'refresh_reuse' }]);
+  expect(revoked.rows).toEqual([{ revoked_at: NOW, revoke_reason: reason }]);
 });
 
 it('[AC-B1-02b#7] [BR-ID-12] both consent subjects and every contracted type can be inserted', async () => {
@@ -324,6 +338,8 @@ it('[AC-B1-02b#13] [BR-ID-12] consent enum domains contain exactly the contract 
 });
 
 it('[AC-B1-02b#10] [BR-ID-12] consent history only appends, including refusals and repeated versions', async () => {
+  await shape('consent_records', 'subject_type', TEXT, false);
+  await shape('devices', 'install_secret_cipher', ['bytea'], false);
   const row = await newConsent();
   const later = new Date('2026-10-05T00:00:01Z');
   await newConsent({
@@ -382,6 +398,12 @@ it('[AC-B1-02b#11] [04 §3.2 consent_records] both subject lookup indexes end wi
 
 it('[AC-B1-02b#12] [04 §3.2] [ADR-0001 §4.2#8] identity tables grant business access without granting consent rewrites', async () => {
   for (const table of [...TABLES, 'devices']) {
+    expect(
+      (await columns(table)).length,
+      `${table} must exist before checking grants`,
+    ).toBeGreaterThan(0);
+  }
+  for (const table of [...TABLES, 'devices']) {
     for (const role of ['couli_app', 'couli_readonly', 'couli_payout', 'couli_maint']) {
       // Deleting session/token history is not required by the excerpt; do not require that grant.
       const privileges =
@@ -407,4 +429,55 @@ it('[AC-B1-02b#12] [04 §3.2] [ADR-0001 §4.2#8] identity tables grant business 
       }
     }
   }
+});
+
+it('[AC-B1-02b#14] [04 §3.2 通则] sid is unique within an app and can be reused by another app', async () => {
+  expect(await uniqueKeys('sessions')).toContainEqual(['app_id', 'sid']);
+  const sid = randomUUID();
+  expect(await sqlState(newSession('couli', sid))).toBe('no error');
+  // newSession supplies fresh entity ids: the rejection must concern sid, not the primary key.
+  expect(await sqlState(newSession('couli', sid))).toBe('23505');
+  expect(await sqlState(newSession('couli_two', sid))).toBe('no error');
+});
+
+it('[AC-B1-02b#15] [04 §3.2 通则] [BR-ID-07] token_hash is unique within an app and can be reused by another app', async () => {
+  expect(await uniqueKeys('refresh_tokens')).toContainEqual(['app_id', 'token_hash']);
+  await shape('sessions', 'sid', [...TEXT, 'uuid'], false);
+  await shape('devices', 'install_secret_cipher', ['bytea'], false);
+  const first = await newSession();
+  const sameApp = await newSession();
+  const otherApp = await newSession('couli_two');
+  const token = {
+    app_id: 'couli',
+    sid: first.sid,
+    token_hash: await hashValue('refresh_tokens', 'token_hash'),
+    parent_hash: null,
+    rotated_at: null,
+    expire_at: EXPIRES,
+  };
+  expect(await sqlState(insertRow('refresh_tokens', token))).toBe('no error');
+  // Different session and entity ids cannot bypass app-wide hash uniqueness.
+  expect(await sqlState(insertRow('refresh_tokens', { ...token, sid: sameApp.sid }))).toBe('23505');
+  expect(
+    await sqlState(
+      insertRow('refresh_tokens', { ...token, app_id: 'couli_two', sid: otherApp.sid }),
+    ),
+  ).toBe('no error');
+});
+
+it('[AC-B1-02b#16] [04 §3.2 consent_records] [BR-ID-32] h5_landing user consent can be recorded without a device', async () => {
+  await shape('consent_records', 'device_id', ['uuid'], true);
+  expect(
+    await sqlState(newConsent({ subject_type: 'user', channel: 'h5_landing', device_id: null })),
+  ).toBe('no error');
+});
+
+it('[AC-B1-02b#17] [04 §3.2 consent_records] [BR-ID-13] device consent can carry an associated user_id', async () => {
+  await shape('consent_records', 'user_id', ['uuid'], true);
+  await shape('devices', 'install_secret_cipher', ['bytea'], false);
+  const userId = await newUser();
+  const deviceId = await newDevice(userId);
+  expect(
+    await sqlState(newConsent({ subject_type: 'device', user_id: userId, device_id: deviceId })),
+  ).toBe('no error');
 });
