@@ -479,3 +479,228 @@ it('OauthAttemptPurpose matches identity.yaml oauth_attempt_purpose (04 §6.1, C
   );
   expect(purposes).toContain('payout_bind');
 });
+
+// CT-02c reads the operations instead of naming schemas that the implementer has not chosen yet.
+type AppealSchema = {
+  type?: string | string[];
+  properties?: Record<string, AppealSchema>;
+  items?: AppealSchema;
+  required?: string[];
+  enum?: string[];
+};
+type AppealOperation = Omit<ContractOperation, 'parameters'> & {
+  summary?: string;
+  parameters: { name: string; in: string; required?: boolean; schema: AppealSchema }[];
+};
+
+function appealOperation(method: 'get' | 'post'): AppealOperation {
+  const path = contract.paths['/v1/me/appeals'] as
+    Partial<Record<'get' | 'post', AppealOperation>> | undefined;
+  expect(path?.[method], `${method.toUpperCase()} /v1/me/appeals must exist`).toBeDefined();
+  return path![method]!;
+}
+
+function appealProperty(schema: AppealSchema, name: string): AppealSchema {
+  expect(schema.properties?.[name], `schema property ${name}`).toBeDefined();
+  return schema.properties![name]!;
+}
+
+function compileAppealSchema(schema: object): (data: unknown) => boolean {
+  const ajv = new Ajv2020({ strict: true, allErrors: true });
+  addFormats(ajv);
+  ajv.addFormat('int32', {
+    type: 'number',
+    validate: (value) => Number.isInteger(value) && value >= -(2 ** 31) && value <= 2 ** 31 - 1,
+  });
+  return ajv.compile(schema);
+}
+
+function appealResponseSchema(method: 'get' | 'post'): AppealSchema {
+  return appealOperation(method).responses['200']!.content['application/json'].schema;
+}
+
+function appealItemSchema(method: 'get' | 'post'): AppealSchema {
+  const data = appealProperty(appealResponseSchema(method), 'data');
+  if (method === 'post') return data;
+  const items = appealProperty(data, 'items');
+  expect(items.type).toBe('array');
+  expect(items.items).toBeDefined();
+  return items.items!;
+}
+
+it('[CT-02c#1] 提交申诉要求登录与幂等键，不签名 (04 §5、§6.1)', () => {
+  const post = appealOperation('post');
+  expect(post['x-auth']).toBe('login');
+  expect(post.security).toEqual([{ bearerAuth: [] }]);
+  expect(post['x-idempotent']).toBe(true);
+  expect(post['x-signed']).toBe(false);
+  const headers = post.parameters.filter((parameter) => parameter.in === 'header');
+  expect(
+    headers.find((parameter) => parameter.name.toLowerCase() === 'idempotency-key'),
+  ).toMatchObject({ required: true });
+  for (const name of ['x-sign', 'x-timestamp', 'x-nonce']) {
+    expect(headers.map((parameter) => parameter.name.toLowerCase())).not.toContain(name);
+  }
+});
+
+it('[CT-02c#2] 申诉遵循默认版本守卫与会话范围 (04 §5、BR-ID-01)', () => {
+  // Both tables were checked against SPEC_REF: neither appeal operation is an exception.
+  const post = appealOperation('post');
+  const get = appealOperation('get');
+  expect(post['x-min-version-gate']).toBe(true);
+  expect(get['x-min-version-gate']).toBeUndefined();
+  for (const operation of [post, get]) {
+    expect(operation['x-session-scopes'] ?? ['full']).toEqual(['full']);
+  }
+});
+
+it('[CT-02c#3] 申诉请求只收对象类型、对象编号和内容 (04 §5、§6.1、BR-ID-36)', () => {
+  const post = appealOperation('post');
+  expect(post.requestBody.required).toBe(true);
+  const schema = post.requestBody.content['application/json'].schema as AppealSchema;
+  expect(Object.keys(schema.properties ?? {}).sort()).toEqual([
+    'content',
+    'target_id',
+    'target_type',
+  ]);
+  expect(schema.required).toEqual(expect.arrayContaining(['target_type', 'content']));
+  const validate = compileAppealSchema(schema);
+  const body = {
+    target_type: 'order',
+    target_id: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a90',
+    content: '订单返利被作废，请核查。',
+  };
+  expect(validate(body)).toBe(true);
+  for (const field of ['target_type', 'content']) {
+    const missing: Record<string, unknown> = { ...body };
+    delete missing[field];
+    expect(validate(missing), `missing ${field}`).toBe(false);
+  }
+  for (const target_type of ['withdrawal', 'ACCOUNT', '', null, 1]) {
+    expect(validate({ ...body, target_type }), String(target_type)).toBe(false);
+  }
+  for (const content of [1, null, [], {}]) {
+    expect(validate({ ...body, content }), JSON.stringify(content)).toBe(false);
+  }
+  for (const extra of [{ unexpected: true }, { user_id: 'other-user' }, { status: 'revoked' }]) {
+    expect(validate({ ...body, ...extra }), JSON.stringify(extra)).toBe(false);
+  }
+  const validateTarget = compileAppealSchema(appealProperty(schema, 'target_type'));
+  expect(validateTarget('account')).toBe(true);
+  expect(validateTarget('order')).toBe(true);
+  // 04 §5 defines IDs as strings; neither 04 nor BR-ID-36 specifies account target_id filling.
+  // Do not prescribe its requiredness, nullability, or a special value for account appeals.
+  const idSchema = appealProperty(schema, 'target_id');
+  const types = Array.isArray(idSchema.type) ? idSchema.type : [idSchema.type];
+  expect(types).toContain('string');
+  expect(types.every((type) => type === 'string' || type === 'null')).toBe(true);
+  expect(compileAppealSchema(idSchema)(123)).toBe(false);
+});
+
+it('[CT-02c#4] 申诉响应包含封闭的状态与对象类型枚举 (04 §2.5、§6.1)', () => {
+  for (const method of ['post', 'get'] as const) {
+    const item = appealItemSchema(method);
+    expect(item.required).toEqual(expect.arrayContaining(['status', 'target_type']));
+    for (const [field, values] of [
+      ['status', ['processing', 'upheld', 'revoked']],
+      ['target_type', ['account', 'order']],
+    ] as const) {
+      const fieldSchema = appealProperty(item, field);
+      expect([...(fieldSchema.enum ?? [])].sort()).toEqual([...values].sort());
+      const validate = compileAppealSchema(fieldSchema);
+      for (const value of values) expect(validate(value), `${method} ${field}=${value}`).toBe(true);
+      for (const value of ['unknown', '', null, 1]) {
+        expect(validate(value), `${method} ${field}=${String(value)}`).toBe(false);
+      }
+    }
+    // Validate the declared success example as a whole, including the response envelope.
+    const media = appealOperation(method).responses['200']!.content['application/json'] as {
+      schema: object;
+      example?: unknown;
+      examples?: Record<string, { value?: unknown }>;
+    };
+    const examples =
+      media.example === undefined
+        ? Object.values(media.examples ?? {}).map((example) => example.value)
+        : [media.example];
+    expect(examples.length).toBeGreaterThan(0);
+    const validateResponse = compileAppealSchema(media.schema);
+    for (const example of examples) expect(validateResponse(example)).toBe(true);
+  }
+});
+
+it('[CT-02c#5] 申诉响应不公开处理截止时间 (BR-ID-36)', () => {
+  const visit = (node: unknown, seen = new Set<object>()): void => {
+    if (node === null || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    const properties = (node as AppealSchema).properties;
+    for (const name of Object.keys(properties ?? {})) {
+      expect(name).not.toMatch(/deadline|due_at|due_date|resolve_by|resolution_by/i);
+    }
+    for (const child of Object.values(node)) visit(child, seen);
+  };
+  for (const method of ['post', 'get'] as const) {
+    visit(appealResponseSchema(method));
+  }
+});
+
+it('[CT-02c#6] 查询本人申诉采用 App 游标列表 (04 §5、§6.1)', () => {
+  const get = appealOperation('get');
+  expect(get['x-auth']).toBe('login');
+  expect(get.security).toEqual([{ bearerAuth: [] }]);
+  expect(`${get.summary ?? ''} ${get.description}`).toMatch(
+    /本人|当前.{0,12}(?:用户|账户|账号)|(?:current|authenticated|logged.in)\s+(?:user|account)|own appeals/i,
+  );
+  expect(get.parameters.map((parameter) => parameter.name)).not.toContain('user_id');
+  const query = get.parameters.filter((parameter) => parameter.in === 'query');
+  const cursor = query.find((parameter) => parameter.name === 'cursor');
+  const limit = query.find((parameter) => parameter.name === 'limit');
+  expect(cursor).toBeDefined();
+  expect(limit).toBeDefined();
+  expect(compileAppealSchema(cursor!.schema)('opaque-cursor')).toBe(true);
+  const validateLimit = compileAppealSchema(limit!.schema);
+  expect(validateLimit(50)).toBe(true);
+  expect(validateLimit(51)).toBe(false);
+  expect(validateLimit(1.5)).toBe(false);
+  const data = appealProperty(appealResponseSchema('get'), 'data');
+  expect(data.required).toEqual(expect.arrayContaining(['items', 'next_cursor']));
+  expect(appealProperty(data, 'items').type).toBe('array');
+  const validateCursor = compileAppealSchema(appealProperty(data, 'next_cursor'));
+  expect(validateCursor(null)).toBe(true);
+  expect(validateCursor('next-page')).toBe(true);
+  expect(validateCursor(1)).toBe(false);
+});
+
+it('[CT-02c#7] 申诉字段登记 identity 枚举绑定 (04 §2.5、§6.1)', () => {
+  const { ENUM_BINDINGS, ENUM_SUBSETS } = testRequire('../scripts/conformance.ts') as {
+    ENUM_BINDINGS: Record<string, string>;
+    ENUM_SUBSETS: Record<string, string>;
+  };
+  const identity = parseYamlLite(
+    readFileSync(new URL('../../../contracts/enums/identity.yaml', import.meta.url), 'utf8'),
+  ) as { enums: Record<string, { values: Record<string, string> }> };
+  const request = appealOperation('post').requestBody.content['application/json'].schema;
+  const uses = [
+    [appealProperty(request, 'target_type'), 'appeal_target_type'],
+    ...(['post', 'get'] as const).flatMap((method) => [
+      [appealProperty(appealItemSchema(method), 'status'), 'appeal_status'] as const,
+      [appealProperty(appealItemSchema(method), 'target_type'), 'appeal_target_type'] as const,
+    ]),
+  ] as const;
+  for (const [schema, enumName] of uses) {
+    const registered = Object.entries({ ...ENUM_BINDINGS, ...ENUM_SUBSETS })
+      .filter(([, name]) => name === enumName)
+      .map(([pointer]) =>
+        pointer.split('/').reduce<unknown>((node, part) => {
+          return node !== null && typeof node === 'object'
+            ? (node as Record<string, unknown>)[part]
+            : undefined;
+        }, contract.components.schemas),
+      );
+    // dereference preserves object identity for $refs: an unrelated equal enum is not a binding.
+    expect(registered, enumName).toContain(schema);
+    expect([...(schema.enum ?? [])].sort()).toEqual(
+      Object.keys(identity.enums[enumName]!.values).sort(),
+    );
+  }
+});
