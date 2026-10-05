@@ -5,8 +5,8 @@ type: impl
 # 2026-10-06 入账（前端线 f1-frontend）。05 CT-11「design-tokens.json」、03 §2 契约表（H5 / 后台生成物：CSS 变量 + Tailwind 预设）、03 §10.1（唯一源是规划仓库 design/tokens/design-tokens.json，
 # 代码仓库 contracts/design-tokens.json 接收固定版本快照并保留与 SPEC_REF 的来源关系；MVP 只做浅色，系统深色下强制浅色；组件只引用令牌名）。
 # 快照取 SPEC_REF 那一版（v0.3.0），文件里或旁注写明 metadata.version 与规划提交号；以后令牌升版走同类任务，不手改快照。
-# 生成器放 packages/ui-tokens/scripts/（不放 tools/，那是保护路径第三类；文件名不含 check，避开 **/scripts/*check*），生成物 src/*.gen.css、src/*.gen.ts（AGENTS.md 硬规则 8 不手改），
-# 漂移检查做成 ui-tokens 自己的单元测试（同 contracts-ts codegen:check 的思路：重新生成与入库生成物逐字相同），不改 package.json 的 scripts。
+# 生成逻辑是 src/ 里的纯函数（受 tsc -b 检查），scripts/ 只放薄命令行外壳（不放 tools/；文件名不含 check）；生成物 src/*.gen.css、src/*.gen.ts 不手改，输出即 prettier 定型文本（.gen.css 不在 .prettierignore）；
+# 漂移检查是 ui-tokens 的单元测试（重新生成与入库生成物逐字相同）。快照同样要过 prettier。type 写 impl 而非 contract：要有 Codex 测试作者；contracts/README 的清单一并更新。
 # 变量名由令牌路径机械映射（如 color.background.canvas → --color-background-canvas），规则写进生成器头注释；H5 与后台共用同一份输出。
 # contracts/** 风险 RV1、packages/ui-tokens 未登记 RV2，整体 RV2。不碰 openapi 与其他契约文件；契约槽全局同时 1 个在途，派前看 claims。
 refs: []
@@ -14,6 +14,7 @@ refs_hash: {}
 deps: [F1-01a]
 paths:
   - 'contracts/design-tokens.json'
+  - 'contracts/README.md'
   - 'packages/ui-tokens/src/**'
   - 'packages/ui-tokens/scripts/**'
 test_paths:

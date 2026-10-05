@@ -11,6 +11,8 @@ deps: [F1-01c]
 paths:
   - 'apps/h5/src/shared/whitescreen/**'
   - 'apps/h5/src/components/retry/**'
+  - 'apps/h5/src/entries/app/main.tsx'
+  - 'apps/h5/src/entries/app/routes.ts'
 test_paths:
   - 'test/spec/frontend/h5-whitescreen/**'
 impl: claude

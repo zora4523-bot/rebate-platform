@@ -1,11 +1,12 @@
 id: F1-06e
 repo: rebate-platform
-title: 后台壳：Refine 应用骨架、侧栏 / 顶栏 / 面包屑布局（1440 宽设计稿）、按权限点隐藏菜单项、「暂无权限」页、后台金额统一走 packages/money 的后台写法
+title: 后台壳：Refine 应用骨架、侧栏 / 顶栏 / 面包屑布局（1440 宽设计稿）、按权限点隐藏菜单项、「暂无权限」页
 type: impl
 # 2026-10-06 入账（前端线 f1-frontend）。依据 03 §9.1–§9.3（Refine + Ant Design + React Router、resources 目录、权限按权限点隐藏、服务端再校验）、§10.4 后台行（浏览器缩放 200%、窄视口重排）、
 # §10.5 与 §9.2「控件与结构」（d014690 新增，任务书注明提交号）、BR-ID-34 细则（没有权限点的账号落到「暂无权限」页）、contracts/enums/admin.yaml 权限点清单，由编排者摘入任务书第 2 节；
 # 画板 couli-runs/design-hifi/project/Adm*.dc.html 中的壳与 AdmHomeNoPerm 等（复制到运行目录核对 sha256）。主题从 packages/ui-tokens 取（admin-canvas 底色等），不写字面色值。
-# 本任务不连接口：当前账号与权限点来自注入的 provider 接口，测试用夹具；登录、step-up、data provider 各自另有任务。菜单分组与名称按设计稿，文案取字典键，08 没有的登记 needs.md。
+# 固定接线文件：src/App.tsx（Refine 根与 provider 接入点）、src/resources/index.ts（资源与菜单表）、src/texts/**（后台文案表，键名规则本任务定；texts.default.json 不收后台文案，needs.md 只登记涉及业务口径的）；
+# 「当前账号能做什么」定成一个接口（can(权限点)），本任务用夹具实现，F1-06g 换成 CASL。本任务不连接口：当前账号与权限点来自注入的 provider 接口，测试用夹具；登录、step-up、data provider 各自另有任务。菜单分组与名称按设计稿，文案走 src/texts。
 refs: []
 refs_hash: {}
 deps: [F1-01a, CT-11a]
