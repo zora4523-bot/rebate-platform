@@ -1,0 +1,24 @@
+id: CT-19c
+repo: rebate-platform
+title: 契约：两处文案键与归类的小补丁——withdraw_detail.net.actual / expected 进默认文案，btn.buy.rebate_suffix 进资金术语清单
+type: contract
+# 2026-10-05 入账（台账随任务 PR 一起进，规划/11 §2.1）。依据：差异清单 couli-runs/CT-plan/spec-delta-826f86e-492b9ef.md
+# 第二节「CT-19c」；12_TEXT 的 BR-TEXT-01 术语表「实际到账」行与细则、BR-TEXT-14 表 C 的 withdraw_detail.net.* 两行、
+# BR-TEXT-12 细则「资金术语键」，规划/03 §10.2 BuyButton，由编排者摘入任务书第 2 节。
+# btn.buy.rebate_suffix 的默认文案不进 texts.default.json：购买按钮整族键还没进，随它们一起进（旧缺口）；
+# 检查脚本不允许文案首尾空格。与 CT-21a、CT-22a 改同样两个文件，串行。
+# 契约任务没有 spec_commit 阶段：Codex 的一致性测试写在 packages/contracts-ts/src/ 下，先提交测试、再提交实现。
+refs: []
+refs_hash: {}
+deps: [CT-16e, CT-19b]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
