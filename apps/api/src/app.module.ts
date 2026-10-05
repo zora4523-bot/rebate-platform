@@ -12,6 +12,7 @@ import {
   isHttpEntry,
 } from './modules/platform/index.ts';
 import { RiskModule, SIGNATURE_CHECK } from './modules/risk/index.ts';
+import { UnionModule } from './modules/union/index.ts';
 
 /**
  * The request check plan bootstrap installs before Fastify parses a body (规划/08 BR-ID-01):
@@ -36,7 +37,9 @@ function requestChecks(options: PlatformOptions): Provider {
 /**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes and the risk module's request signature check, whose
- * device port identity implements; the worker entries load only the platform module.
+ * device port identity implements. The union module (adapter registry and endpoint configuration)
+ * loads where union platforms are called: `api` (search, linking) and `worker` (order sync); the
+ * other worker entries load only the platform and admin modules.
  * The admin module provides the platform audit port on every entry (F1-06b).
  * Business modules are added to the entries that own them by their tasks (规划/02 §4.1).
  */
@@ -53,6 +56,7 @@ export class AppModule {
         ...(options.entry === 'api'
           ? [IdentityModule, RiskModule.forRoot({ imports: [IdentityModule] })]
           : []),
+        ...(options.entry === 'api' || options.entry === 'worker' ? [UnionModule.forRoot()] : []),
       ],
       providers: isHttpEntry(options.entry) ? [requestChecks(options)] : [],
     };
