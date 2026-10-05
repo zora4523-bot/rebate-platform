@@ -626,6 +626,26 @@ $$;
 
 
 --
+-- Name: reject_product_ref_key_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_product_ref_key_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.app_id, NEW.product_key, NEW.platform)
+    IS DISTINCT FROM ROW(OLD.app_id, OLD.product_key, OLD.platform)
+  THEN
+    RAISE EXCEPTION 'product_refs identity (app_id, product_key, platform) is immutable'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_update_delete(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -1095,6 +1115,24 @@ CASE
     ELSE ((value_hmac IS NOT NULL) AND (value IS NULL))
 END),
     CONSTRAINT blocklist_violation_type_check CHECK ((violation_type = ANY (ARRAY['malicious_rights'::text, 'fraud_invite'::text, 'other'::text])))
+);
+
+
+--
+-- Name: category_blocklist; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.category_blocklist (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    category_id text NOT NULL,
+    keyword text,
+    reason text NOT NULL,
+    status text NOT NULL,
+    updated_by text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1783,6 +1821,30 @@ CREATE TABLE app.payout_accounts (
 
 
 --
+-- Name: platforms; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.platforms (
+    code text NOT NULL,
+    key_prefix text,
+    key_stability text NOT NULL,
+    search_support text NOT NULL,
+    convert_support text NOT NULL,
+    order_sync_support text NOT NULL,
+    stage text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platforms_code_check CHECK ((code ~ '^[a-z][a-z0-9_]*$'::text)),
+    CONSTRAINT platforms_convert_support_check CHECK ((convert_support = ANY (ARRAY['supported'::text, 'unverified'::text, 'activity'::text, 'p1'::text, 'p2'::text, 'none'::text]))),
+    CONSTRAINT platforms_key_prefix_check CHECK ((key_prefix ~ '^[a-z0-9]+$'::text)),
+    CONSTRAINT platforms_key_stability_check CHECK ((key_stability = ANY (ARRAY['unverified'::text, 'stable_24h'::text, 'stable_7d'::text, 'unstable'::text]))),
+    CONSTRAINT platforms_order_sync_support_check CHECK ((order_sync_support = ANY (ARRAY['supported'::text, 'unverified'::text, 'activity'::text, 'p1'::text, 'p2'::text, 'none'::text]))),
+    CONSTRAINT platforms_search_support_check CHECK ((search_support = ANY (ARRAY['supported'::text, 'unverified'::text, 'activity'::text, 'p1'::text, 'p2'::text, 'none'::text]))),
+    CONSTRAINT platforms_stage_check CHECK ((stage = ANY (ARRAY['m_beta'::text, 'p1'::text, 'p2'::text])))
+);
+
+
+--
 -- Name: processed_events; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1790,6 +1852,48 @@ CREATE TABLE app.processed_events (
     consumer text NOT NULL,
     event_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: product_key_aliases; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.product_key_aliases (
+    old_key text NOT NULL,
+    new_key text NOT NULL,
+    reason text NOT NULL,
+    adr_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_key_aliases_adr_id_check CHECK ((adr_id <> ''::text)),
+    CONSTRAINT product_key_aliases_distinct_check CHECK ((old_key <> new_key)),
+    CONSTRAINT product_key_aliases_new_key_check CHECK (((char_length(new_key) <= 128) AND (new_key ~ '^[a-z0-9]+:[!-"$-.0->@-~]{1,124}$'::text))),
+    CONSTRAINT product_key_aliases_old_key_check CHECK (((char_length(old_key) <= 128) AND (old_key ~ '^[a-z0-9]+:[!-"$-.0->@-~]{1,124}$'::text))),
+    CONSTRAINT product_key_aliases_reason_check CHECK ((reason <> ''::text))
+);
+
+
+--
+-- Name: product_refs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.product_refs (
+    app_id text NOT NULL,
+    product_key text NOT NULL,
+    platform text NOT NULL,
+    raw_item_id text NOT NULL,
+    raw_fetched_at timestamp with time zone NOT NULL,
+    canonical_url text,
+    title text NOT NULL,
+    shop_id text,
+    shop_type text,
+    source text NOT NULL,
+    refreshed_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_refs_product_key_check CHECK (((char_length(product_key) <= 128) AND (product_key ~ '^[a-z0-9]+:[!-"$-.0->@-~]{1,124}$'::text))),
+    CONSTRAINT product_refs_raw_item_id_check CHECK ((raw_item_id <> ''::text)),
+    CONSTRAINT product_refs_source_check CHECK ((source = ANY (ARRAY['search'::text, 'detail'::text, 'parse'::text, 'pool'::text])))
 );
 
 
@@ -2467,6 +2571,22 @@ ALTER TABLE ONLY app.blocklist
 
 
 --
+-- Name: category_blocklist category_blocklist_entry_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.category_blocklist
+    ADD CONSTRAINT category_blocklist_entry_key UNIQUE NULLS NOT DISTINCT (app_id, platform, category_id, keyword);
+
+
+--
+-- Name: category_blocklist category_blocklist_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.category_blocklist
+    ADD CONSTRAINT category_blocklist_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: config_items config_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2683,11 +2803,51 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: platforms platforms_key_prefix_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platforms
+    ADD CONSTRAINT platforms_key_prefix_key UNIQUE (key_prefix);
+
+
+--
+-- Name: platforms platforms_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platforms
+    ADD CONSTRAINT platforms_pkey PRIMARY KEY (code);
+
+
+--
 -- Name: processed_events processed_events_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
 ALTER TABLE ONLY app.processed_events
     ADD CONSTRAINT processed_events_pkey PRIMARY KEY (consumer, event_id);
+
+
+--
+-- Name: product_key_aliases product_key_aliases_new_key_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.product_key_aliases
+    ADD CONSTRAINT product_key_aliases_new_key_key UNIQUE (new_key);
+
+
+--
+-- Name: product_key_aliases product_key_aliases_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.product_key_aliases
+    ADD CONSTRAINT product_key_aliases_pkey PRIMARY KEY (old_key);
+
+
+--
+-- Name: product_refs product_refs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.product_refs
+    ADD CONSTRAINT product_refs_pkey PRIMARY KEY (app_id, product_key);
 
 
 --
@@ -3224,6 +3384,13 @@ CREATE UNIQUE INDEX payout_accounts_current_user_key ON app.payout_accounts USIN
 
 
 --
+-- Name: product_refs_platform_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX product_refs_platform_idx ON app.product_refs USING btree (platform);
+
+
+--
 -- Name: push_tokens_live_token_key; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -3546,6 +3713,20 @@ CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app
 
 
 --
+-- Name: product_key_aliases product_key_aliases_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER product_key_aliases_append_only BEFORE DELETE OR UPDATE ON app.product_key_aliases FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: product_refs product_refs_no_key_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER product_refs_no_key_rewrite BEFORE UPDATE ON app.product_refs FOR EACH ROW EXECUTE FUNCTION app.reject_product_ref_key_rewrite();
+
+
+--
 -- Name: union_pids union_pids_no_delete; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -3582,6 +3763,14 @@ ALTER TABLE ONLY app.appeals
 
 ALTER TABLE ONLY app.audit_logs
     ADD CONSTRAINT audit_logs_admin_fkey FOREIGN KEY (app_id, admin_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: category_blocklist category_blocklist_platform_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.category_blocklist
+    ADD CONSTRAINT category_blocklist_platform_fkey FOREIGN KEY (platform) REFERENCES app.platforms(code);
 
 
 --
@@ -3750,6 +3939,14 @@ ALTER TABLE ONLY app.payout_account_verify_attempts
 
 ALTER TABLE ONLY app.payout_accounts
     ADD CONSTRAINT payout_accounts_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: product_refs product_refs_platform_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.product_refs
+    ADD CONSTRAINT product_refs_platform_fkey FOREIGN KEY (platform) REFERENCES app.platforms(code);
 
 
 --
@@ -4004,6 +4201,13 @@ REVOKE ALL ON FUNCTION app.reject_link_quote_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_order_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_product_ref_key_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_product_ref_key_rewrite() FROM PUBLIC;
 
 
 --
@@ -4276,6 +4480,56 @@ GRANT UPDATE(row_version) ON TABLE app.blocklist TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.blocklist TO couli_app;
+
+
+--
+-- Name: TABLE category_blocklist; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.category_blocklist TO couli_app;
+GRANT SELECT ON TABLE app.category_blocklist TO couli_readonly;
+
+
+--
+-- Name: COLUMN category_blocklist.category_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(category_id) ON TABLE app.category_blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN category_blocklist.keyword; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(keyword) ON TABLE app.category_blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN category_blocklist.reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reason) ON TABLE app.category_blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN category_blocklist.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.category_blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN category_blocklist.updated_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_by) ON TABLE app.category_blocklist TO couli_app;
+
+
+--
+-- Name: COLUMN category_blocklist.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.category_blocklist TO couli_app;
 
 
 --
@@ -4669,12 +4923,141 @@ GRANT UPDATE(updated_at) ON TABLE app.payout_accounts TO couli_app;
 
 
 --
+-- Name: TABLE platforms; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.platforms TO couli_app;
+GRANT SELECT ON TABLE app.platforms TO couli_readonly;
+
+
+--
+-- Name: COLUMN platforms.key_stability; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(key_stability) ON TABLE app.platforms TO couli_app;
+
+
+--
+-- Name: COLUMN platforms.search_support; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(search_support) ON TABLE app.platforms TO couli_app;
+
+
+--
+-- Name: COLUMN platforms.convert_support; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(convert_support) ON TABLE app.platforms TO couli_app;
+
+
+--
+-- Name: COLUMN platforms.order_sync_support; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(order_sync_support) ON TABLE app.platforms TO couli_app;
+
+
+--
+-- Name: COLUMN platforms.stage; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(stage) ON TABLE app.platforms TO couli_app;
+
+
+--
+-- Name: COLUMN platforms.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.platforms TO couli_app;
+
+
+--
 -- Name: TABLE processed_events; Type: ACL; Schema: app; Owner: -
 --
 
 GRANT SELECT,INSERT ON TABLE app.processed_events TO couli_app;
 GRANT SELECT,INSERT ON TABLE app.processed_events TO couli_payout;
 GRANT SELECT ON TABLE app.processed_events TO couli_readonly;
+
+
+--
+-- Name: TABLE product_key_aliases; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.product_key_aliases TO couli_app;
+GRANT SELECT ON TABLE app.product_key_aliases TO couli_readonly;
+
+
+--
+-- Name: TABLE product_refs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.product_refs TO couli_app;
+GRANT SELECT ON TABLE app.product_refs TO couli_readonly;
+
+
+--
+-- Name: COLUMN product_refs.raw_item_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(raw_item_id) ON TABLE app.product_refs TO couli_app;
+
+
+--
+-- Name: COLUMN product_refs.raw_fetched_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(raw_fetched_at) ON TABLE app.product_refs TO couli_app;
+
+
+--
+-- Name: COLUMN product_refs.canonical_url; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(canonical_url) ON TABLE app.product_refs TO couli_app;
+
+
+--
+-- Name: COLUMN product_refs.title; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(title) ON TABLE app.product_refs TO couli_app;
+
+
+--
+-- Name: COLUMN product_refs.shop_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(shop_id) ON TABLE app.product_refs TO couli_app;
+
+
+--
+-- Name: COLUMN product_refs.shop_type; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(shop_type) ON TABLE app.product_refs TO couli_app;
+
+
+--
+-- Name: COLUMN product_refs.source; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(source) ON TABLE app.product_refs TO couli_app;
+
+
+--
+-- Name: COLUMN product_refs.refreshed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(refreshed_at) ON TABLE app.product_refs TO couli_app;
+
+
+--
+-- Name: COLUMN product_refs.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.product_refs TO couli_app;
 
 
 --
