@@ -1,0 +1,23 @@
+id: B1-05g
+repo: rebate-platform
+title: catalog 搜索与详情缓存（Redis）：命中条件 now − fetched_at ≤ 300 秒、物理 TTL 3600 秒只作清理、缓存键规则（app_id 开头、不含用户与归因参数）、命中沿用原 quoted_at、联盟故障时只回 ≤300 秒缓存并标 stale
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：BR-PROD-07（缓存口径、键规则、物理 TTL）、BR-PRICE-11（只存归一化价格与券字段、不缓存卡片、quoted_at 不改写、stale 与 age_sec；
+# search.cache_ttl_sec）、02 §14 搜索与 Redis 两行（Redis 不可用时直读联盟、限流收紧——收紧的幅度 08 没写，按 plan-draft 待决定第 6 条默认），由编排者摘入任务书第 2 节。
+# 淘宝检索结果里的推广链接不进跨用户共享缓存（BR-ATTR-27 淘宝行、05 B1-05 行）。
+# Redis 客户端由 B1-01y（platform/redis）提供，本任务只用它的封装（键必须带 TTL）。在本任务之前 B1-05d / e 没有缓存：联盟故障直接 50304 / 暂时查不到，行为符合「无缓存」一支。
+# catalog/** 串行。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-05e, B1-01y]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+test_paths:
+  - 'test/spec/catalog/cache/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/cache/**'
+status: todo
+pr: null

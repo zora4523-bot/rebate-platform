@@ -1,0 +1,28 @@
+id: B1-06b
+repo: rebate-platform
+title: 迁移：union_bindings（唯一与释放后冷却按 BR-ID-19）、union_auth_sessions（state 唯一、单次使用、mode 只取 bind）、links 加我方推广链接两列（可空，只写一次）（04 §3.2）
+type: migration
+# 草稿 2026-10-05（W1 搜索转链线）。B1-06 开工盘点：links、link_logs、link_open_attempts 已在 0006（B1-06a）；缺 union_bindings、union_auth_sessions（写者 linking，02 §4.1）
+# 与淘宝百川所需的 links 我方推广链接列（docs/changes/20261003-淘宝转链改客户端百川.md §3 第 6 条：只存带本用户 relation_id 与该场景推广位取得的链接，
+# 列名该记录特意没写进 04，由本迁移定并写头注释，合并后编排者回写 04 §3.2 links 行）。
+# 依据：04 §3.2 union_bindings、union_auth_sessions、links 行；BR-ID-17（state 有效期与单次使用、过期或已用 30104）、BR-ID-19（唯一约束与释放后冷却）、BR-ID-20、
+# 拍板第二批 §8 ADD-01（无用户自助换绑，mode 只取 bind）、BR-ATTR-07（归属按 attr_at 落在绑定区间，与当前 status 无关）、BR-ATTR-27 淘宝行，由编排者摘入任务书第 2 节。
+# 状态取值以 contracts/enums 的 union_binding_status 为准。union_bindings 外键：user_id 带 app_id 复合外键到 users（同 0006 做法）；union_account_id 到 union_accounts（B1-19a 已建）。
+# 推广链接列照 0006 的报价快照列做法：可从 NULL 填一次、之后不可改（禁止类触发器，db/AGENTS.md 第 8 条）。relation_id 等外部标识一律 text。
+# 迁移全局串行：排在 B1-05a 之后。分工与两段式同 B1-19a。
+refs: []
+refs_hash: {}
+deps: [B1-05a, B1-19a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/linking-bindings/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/linking-bindings/**'
+status: todo
+pr: null

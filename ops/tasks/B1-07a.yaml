@@ -1,0 +1,26 @@
+id: B1-07a
+repo: rebate-platform
+title: parsing 模块首建与 parse_input 核心：从文本取最多 3 个链接或口令、按平台链接形态表判平台与类别、交 union.resolveLink 取商品、经 deriveProductKey 出 key、同 key 一张卡、识别不到 30132 不出候选、能识别但派生失败 30131；按结构类型实现 linking 的按 url 解析端口（不 import linking）
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。05 B1-07 拆分：a 识别核心（本任务），b 路由；「每类 ≥30 条真实样本 fixture、链接识别率 ≥98%」与 specs/link-patterns.yaml 的真实域名
+# 等负责人提供样本（05 B1-07 行「人：样本」），本批只用合成规则表与合成样本，规则表读取按现有文件（现为空表，rules: []）。
+# 依据：04 §6.3 parse 行与 §8.5、BR-PROD-03（派生与 30131 / 30132）、BR-PROD-08 ⑤（同 key 一张卡）、BR-TEXT-14（识别不到的文案键）、BR-ATTR-27 淘宝行与 02 §6.1 淘宝逐级解析
+# （淘宝只解析出 item_id 后用详情出卡，不按链接转链；用户原链接与口令不作为打开目标）、BR-ATTR-29 细则「平台链接形态表」（规范化与匹配规则；共用向量 specs/external-navigation.vectors.json）、
+# BR-PRICE-08（粘贴的无返利商品照常出卡、标暂无返利）、01 §8.1（口令识别率只对 CAP-<平台>-01 为支持的平台考核），由编排者摘入任务书第 2 节。
+# 口令解析（tpwd.parse）与推广链接解析在淘宝是权限待核的级（02 §6.1），由适配器标 replay 并跳过，parsing 只看适配器结果。parse.tpwd.enabled 开关关时按 02 §14 走 30132。
+# 卡片走 catalog 的 CardAssembler（entry_source=parse）。依赖方向 parsing → union、catalog（02 §4.1）。开工前风险表要已登记 parsing/**（RM-1）。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-05f, B1-06c, B1-04o]
+paths:
+  - 'apps/api/src/modules/parsing/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/parsing/core/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/parsing/core/**'
+status: todo
+pr: null

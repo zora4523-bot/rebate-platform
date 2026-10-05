@@ -1,0 +1,24 @@
+id: B1-06h
+repo: rebate-platform
+title: POST /v1/unions/{platform}/bindings 与 GET /v1/unions/bindings：先校验后消费 state（uid、device_id、设备记录的端、下发过的授权方式）、淘宝 web_code / sdk_token 两种凭证经演示适配器换 relation_id、30104 三种原因、唯一与冷却、只返回授权状态不返回账号名
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：04 §6.3 bindings 两行（请求体二选一、未定义字段 20001、method_not_allowed 时 state 不变、credential_invalid）、BR-ID-17 细则「授权方式」「授权管理页」、
+# BR-ID-19（唯一约束与释放后冷却）、BR-ID-20、BR-ATTR-07、拍板第三批 §3（授权管理页只显示授权状态），由编排者摘入任务书第 2 节。
+# 渠道备案（淘宝 publisher.save）与拼多多授权查询是联盟调用：本批只接演示适配器的 bindPublisher（合成 relation_id），真实适配器写 TODO(规划/11 §4.5) — blocked on 推广位 / siteId。
+# 凭证只在进程内使用，不落库、不进日志（BR-ID-17；04 §6.3「不设昵称、头像、账号名」）。幂等走 idempotency.execute（I 标记）；签名由 risk 线全局守卫。
+# 登录必需，未接身份时 10001。实现路由时去掉两个 operation 的 x-implementation: planned。linking/** 与 openapi.yaml 串行。整体 RV2（用户授权边界）。
+refs: []
+refs_hash: {}
+deps: [B1-06g]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'contracts/openapi.yaml'
+test_paths:
+  - 'test/spec/linking/bindings/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/bindings/**'
+status: todo
+pr: null

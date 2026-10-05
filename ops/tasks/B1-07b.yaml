@@ -1,0 +1,22 @@
+id: B1-07b
+repo: rebate-platform
+title: POST /v1/inputs/parse 路由：请求体校验（text、scene）、按输入顺序每个识别结果一张卡、出卡只登记 link 与报价快照不转链、x-auth optional（未接身份按游客）；去掉 parseInput 的 planned 标记
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：04 §6.3 parse 行、§8.5、拍板第二批 TRADE-03、TRADE-07，由编排者摘入任务书第 2 节。
+# x-signed: true 与 x-min-version-gate：签名（B1-03b）与最低支持版本拦截（B1-03c）由 risk 线全局接，本任务不实现（plan-draft 待决定第 3 条）。
+# 识别核心在 B1-07a；本任务只做控制器与响应组装、契约校验测试。openapi.yaml 与本线其他路由任务串行。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-07a]
+paths:
+  - 'apps/api/src/modules/parsing/**'
+  - 'contracts/openapi.yaml'
+test_paths:
+  - 'test/spec/parsing/http/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/parsing/http/**'
+status: todo
+pr: null

@@ -1,0 +1,24 @@
+id: B1-06g
+repo: rebate-platform
+title: GET /v1/unions/{platform}/auth-url：签发 state（写 union_auth_sessions，有效期与单次使用按 BR-ID-17）、按端配置下发 auth_methods（以设备记录的端为准）、拼多多带 auth_jump、绑定为 blocked 且用户未封禁时 30153、站长授权不可用时 30101 / 30102 auth_unavailable
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：04 §6.3 auth-url 行、§7 30111 / 30153；BR-ID-17（含细则「授权方式」「授权管理页」）、BR-ID-19、BR-ID-22（installed 未带时的处理）、
+# BR-ID-24（站长授权过期或失效期间停调，auth_status 由 B1-19a 的列给出，巡检与告警是 B1-22，本任务只读）、拍板第二批 §8 ADD-01（无换绑，mode 只取 bind），由编排者摘入任务书第 2 节。
+# sdk_token 在 CAP-TB-05 (f) 通过前只在非生产配置启用（05 B1-04 行）：prod 配置出现 sdk_token 即拒绝启动或不下发（按 B1-04k 草稿同一口径）。
+# auth_url 的真实生成要联盟应用与回调（淘宝 redirect_uri 能否直回 App 待 09 实测），本批经演示适配器给合成地址，真实生成写 TODO(规划/11 §4.5) — blocked on 推广位 / siteId 与联盟应用。
+# 登录必需（login）：经 CallerContext，未接身份时 10001。实现路由时去掉 x-implementation: planned。linking/** 与 openapi.yaml 串行。整体 RV2（用户授权边界）。
+refs: []
+refs_hash: {}
+deps: [B1-06e, B1-06b]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'contracts/openapi.yaml'
+test_paths:
+  - 'test/spec/linking/auth-url/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/auth-url/**'
+status: todo
+pr: null

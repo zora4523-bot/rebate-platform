@@ -1,0 +1,26 @@
+id: B1-06e
+repo: rebate-platform
+title: POST /v1/links/{link_id}/open 路由与京东、拼多多服务端转链（经演示适配器）：UnionIdentity 服务端构造、只用 active 推广位、按平台 × 端 × installed 出外跳方案（primary、fallbacks、expire_at）、平台开关 50301、转链失败或熔断 50303 并给无返利购买、no_rebate 购买
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：02 §5.1 时序图、§6.2（转链不自动重试，由客户端重放同一幂等键）、§14 转链两行；BR-ATTR-05、08（no_rebate 购买用 self_buy 位、不带用户参数、不做绑定校验）、
+# BR-ATTR-27（外跳矩阵与 installed 输入；状态待验证，按 08 细则默认矩阵）、BR-ID-18（no_rebate、no_rebate_reason 的取值与服务端覆盖）、BR-PROD-10（convert.enabled.<platform> 关 → 50301）、
+# BR-PRICE-08（无返利购买目标：转链成功佣金为 0 用转链结果；失败跳无推广参数商品页，不外跳用户原链接）、BR-PRICE-13，由编排者摘入任务书第 2 节。
+# 真实转链做不了（推广位 / siteId 未到）：京东、拼多多真实适配器留接口，写 TODO(规划/11 §4.5): 真实转链 — blocked on 推广位 / siteId；本任务只接演示适配器。
+# 拼多多未备案 30111（auth_jump）的判定要绑定数据，放在 B1-06h 之后由 B1-06f 一并接；本任务对拼多多先按「已备案」路径并在 PR 列为未完成。amount_unknown 直链（pdd.direct_convert.enabled 默认关）不做。
+# 淘宝 open 在 B1-06f 之前一律按平台开关关闭（50301）处理，不出半成品。无 active 推广位时按 plan-draft 待决定第 2 条默认。
+# 实现路由时去掉 openLink 的 x-implementation: planned。x-signed / 登录 / 幂等：签名由 risk 线全局守卫（B1-03b），本任务不实现签名（plan-draft 待决定第 3 条）。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-06d, B1-04o]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'contracts/openapi.yaml'
+test_paths:
+  - 'test/spec/linking/open-jdpdd/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-jdpdd/**'
+status: todo
+pr: null

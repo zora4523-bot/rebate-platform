@@ -1,0 +1,28 @@
+id: B1-05c
+repo: rebate-platform
+title: catalog 模块首建：平台字典读取、product_refs 登记与按 BR-PROD-05 顺序取原串、别名解析 resolveProductKey、item_ref 加密签名与校验、类目黑名单过滤；定义卡片组装要用的端口（登记 link、报价、查看者）
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。05 B1-05 拆分：c 模块基础，f 卡片组装，d 搜索，e 详情，g 缓存。依据：BR-PROD-01、02（别名只用于一对一派生规则变更）、
+# 05（raw_item_id 原样保存与三级取用顺序及各级时限）、10（平台编码、天猫 shop_type）、11（item_ref 内容 app_id / platform / product_key / raw_item_id / fetched_at、不含 user_id，
+# 服务端加密签名、客户端只透传、无效时的处理）、04 §3.2 catalog 各表行，由编排者摘入任务书第 2 节。
+# item_ref 用 platform/crypto 已有的带认证加密（加密即可防篡改），密钥用途沿用现有 keyring；若必须新增密钥用途要改 platform/config，先停下另开任务，不越界。
+# 端口（catalog 定义、别的模块实现、app.module 装配，同编排者裁定 LEDGER-next §6 第 2、3 条的做法）：
+#  LinkRegistrar（linking 实现，B1-06c）——出卡只登记 link 与报价快照、不转链（BR-PRICE-12）；
+#  RebateQuoter（报价，BR-CALC-20 / BR-PRICE-06；真实实现归 B2-03 + 等级来源，本批只有演示实现，见 B1-05f 与 plan-draft 待决定第 1 条）；
+#  ViewerContext（查看者 app_id、user_id、device_id；identity 以后实现，未接线时一律按游客，见 plan-draft 待决定第 3 条）。
+# 依赖 union（02 §4.1 catalog → union）：只用 union/index.ts 导出的接口与 DTO。开工前风险表要已登记 apps/api/src/modules/catalog/**（plan-draft 前置 RM-1）。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-05a, B1-05b, B1-04b]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/catalog/base/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/base/**'
+status: todo
+pr: null

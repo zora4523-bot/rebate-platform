@@ -1,0 +1,24 @@
+id: B1-06i
+repo: rebate-platform
+title: POST /v1/links/convert（只供 H5 无 link_id 入口）：同一请求内登记 link 后按 open 同样复核与转链，返回 link_id + open 响应；按 product_key 调用必须带卡片 item_ref（校验签名与 app_id、product_key 一致），按 url 调用经解析
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：04 §6.3 convert 行（参数 platform、product_key + item_ref 或 url、scene、spm；installed 缺省 unknown）、BR-PROD-11（item_ref 缺失不报错时的取原串顺序）、
+# BR-PROD-03（按 url 转链的派生）、BR-ATTR-14（convert 事件只记用户主动发起的 convert，成功失败都记）、拍板第二批 TRADE-03，由编排者摘入任务书第 2 节。
+# 按 url 调用要 parsing 的识别（02 §4.1：parsing → linking 方向不能反过来）：url 分支经 linking 定义的端口、parsing 实现（B1-07a 之后装配）；
+# 在 parsing 合并前 url 分支返回 30132 并在 PR 列为未完成。登录必需、签名由 risk 线全局守卫、幂等走 idempotency.execute。
+# 实现路由时去掉 convertLink 的 x-implementation: planned。linking/** 与 openapi.yaml 串行。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-06f]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'contracts/openapi.yaml'
+test_paths:
+  - 'test/spec/linking/convert/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/convert/**'
+status: todo
+pr: null

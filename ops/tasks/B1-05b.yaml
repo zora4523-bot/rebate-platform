@@ -1,0 +1,26 @@
+id: B1-05b
+repo: rebate-platform
+title: packages/domain 商品标识纯函数：deriveProductKey(platform, unionPayload)（淘宝取 item_id 最后一段、京东按 product_key.jd.mode、拼多多取 goods_id）、product_key 格式校验与拆分，派生失败抛 PRODUCT_KEY_UNDERIVABLE
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：BR-PROD-02（格式、字符集、长度、前缀取自 platforms 表、代码不写死前缀枚举）、BR-PROD-03（五个入口共用同一个纯函数；默认派生规则；
+# 京东模式是全平台配置、不按单条响应切换，默认 item；空串或不合格一律 UNDERIVABLE，不截断、不转义）、BR-PROD-01（不同 app_id 不比较），由编排者摘入任务书第 2 节。
+# 前缀不写死：函数入参带平台字典里的 key_prefix 与 jd 模式（调用方从 platforms 表与配置取），本函数只做纯计算，不读库、不读配置、不读时钟。
+# 05 验收「每平台同一商品跨接口派生一致的 fixture 测试」：fixture 只用合成载荷（字段形状取 B1-04b 的统一 DTO，不仿造平台报文）；每平台 ≥30 条真实样本等首批 probe 录制。
+# 不做：别名解析 resolveProductKey（要读 product_key_aliases，归 catalog B1-05c）、兜底键 BR-PROD-06（默认不启用，要 ADR）。
+# 纯 TS、不引入运行时依赖（funds-packages-stay-pure 规则照旧）。packages/domain/** 为 RV2。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'packages/domain/src/product-key/**'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/product-key/**'
+  - 'test/properties/domain/product-key/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/product-key/**'
+status: todo
+pr: null

@@ -1,0 +1,28 @@
+id: B1-19b
+repo: rebate-platform
+title: union 联盟账号与推广位服务：登记账号、登记推广位（pending）、补填花卷云确认信息、置 active（校验确认时间与截图路径已填 + super 二次验证 + 审计）、retired、禁止删除；按 app × platform × pid_scene 取 active 推广位的查询经 union/index.ts 导出
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。05 B1-19 行拆分：a 迁移（已入账）；b 本任务（服务层）；c 命令行种子脚本；后台 HTTP（/admin/v1/union-accounts、union-pids）
+# 没有契约、F1-06 登录未建，本批不做（plan-draft「被挡住的部分」）。
+# 依据：02 §6.3、BR-ATTR-02（白名单匹配键；pending / active / retired 都计入白名单）、BR-ATTR-03、BR-ATTR-08（scene → pid_scene；fallback 只作保留位、不用于转链；query 只查价）、
+# BR-ATTR-28（置 active 前 hjy_ignore_confirmed_at 与截图路径必须已填；pending 不用于转链）、BR-PROD-07（查询专用推广位 pid_scene=query），由编排者摘入任务书第 2 节。
+# 状态只进不退：pending → active → retired，不回退、不物理删除（BR-ATTR-02；B1-19a 已加禁止 DELETE 触发器，应用层保证不回退）。
+# 二次验证与审计：union 不 import admin（02 §4.1 union 依赖为「—」）。审计走 F1-06b 的 platform 审计端口；super 的 TOTP 校验由 union 定义端口、admin 实现、装配处注入
+# （同编排者裁定 LEDGER-next §6 第 2 条的做法）。置 active 的调用方必须带已通过校验的 super 身份，否则拒绝并写审计。
+# 导出给 linking / catalog 的只有只读查询：取某场景当前 active 推广位（同场景多个 active 时的取法 08 没写，按「最早启用的一个」并写说明，列入 plan-draft 待决定）、
+# 判定某推广位是否在白名单（订单同步 B1-08 用，本任务只给函数，不接订单）。
+# 05 验收「三家各至少 1 个推广位经该流程置为 active」等负责人提供真实推广位，本任务只用合成推广位测试（不写真实 PID）。union/** 串行，排在 B1-04o 之后。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-19a, F1-06b, B1-04b]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/pids/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pids/**'
+status: todo
+pr: null

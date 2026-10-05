@@ -1,0 +1,29 @@
+id: CT-02e
+repo: rebate-platform
+title: 契约：淘宝百川打开指令——JumpStep 加可选 sdk 对象（type=sdk 时必填，provider=baichuan，open_by url / code 与所需参数）、jump_type.sdk 说明、link_jump 事件补 sdk_open_by 与百川回调错误码（docs/changes/20261003-淘宝转链改客户端百川.md §3）
+type: contract
+# 草稿 2026-10-05（W1 搜索转链线）。05 B1-06 行「契约按 docs/changes/20261003-淘宝转链改客户端百川.md 补 JumpStep 百川参数」；现 openapi 的 JumpStep 只有 {type, value}、
+# additionalProperties: false，装不下 openByCode 的 item_id + pid + relationId（变更记录 §3 第 1 条）。照变更记录 §3 第 1、2、5 条改：
+# ① components.schemas.JumpStep 加 sdk（两个 oneOf 分支各自声明必填，ADR-0001 §4.2 第 15 项的写法；只用四个生成器都支持的 OAS 3.1 写法，TECH-27）；
+# ② contracts/enums/trade.yaml jump_type.sdk 说明；③ specs/events.yaml 的 link_jump 步骤结果字段。第 6 条（links 的我方推广链接列）是数据形状，归 B1-06b 迁移，不在本任务。
+# 百川回跳 scheme（契约差异清单 m-06，CT-17d 已登记入站回调）不改；能否回跳以 CAP-TB-11 为准，说明里不写成能力。
+# 04 §8.4 还没有这些字段（变更记录写明「须由负责契约的任务按下面改」），合并后由编排者回写规划 04 §8.4（plan-draft「需回写规划」）。
+# 契约槽全局同时只有 1 个在途（派前看 claims；CT-15k 在同一队列）。openapi.yaml 与本线 HTTP 任务相交，排在 B1-06f 之前。
+refs: []
+refs_hash: {}
+contract_sections: ['8.4']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/trade.yaml'
+  - 'specs/events.yaml'
+  - 'packages/contracts-ts/**'
+test_paths:
+  - 'test/spec/contracts/baichuan/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
