@@ -1,0 +1,59 @@
+{
+  "task": "B1-19a",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "1e5b5c31899286f3fb340e297e16ee1f630ff0d7",
+  "red_tests": [],
+  "risk_note": "RV2 migration (db/**). Migration 0015: union_accounts (auth expiry and probe columns), union_credentials (token ciphertext only, one current credential per account by partial unique index), union_pids (pending/active/retired, non-pending requires the Huajuanyun confirmation time and evidence path, no DELETE by grant and trigger). Rule tests by Codex were run red in containers before the migration (couli-runs/B1-19a/red/1, red/2); legacy ledger, no red run record required. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "22caaef1e0d320a152cb37ee5a12e145bc0feec4",
+      "tree": "3163c90e94b9f8b778416611d8ef926506745ffa",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T21:53:48Z",
+      "finished_at": "2026-10-05T21:55:27Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: pass; S2: evidence path may be an empty string; non-pending pids can still have pid / platform / account rewritten (follow-ups for B1-19b)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex read-only money review round 1: pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 pass (3 S2); round 2 after the orchestrator asked Codex to drop the lasting no-foreign-key assertion on auth_renewed_by (F1-06a adds it): pass; round 3 by Codex only cast attname to text in three catalog queries of the test kit (node-pg returned name[] as a string), assertions unchanged, not re-reviewed"
+  },
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "f0e714718229a6c5038acff79d1ff1fc3794eaae",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (tree f03b0e3, the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
