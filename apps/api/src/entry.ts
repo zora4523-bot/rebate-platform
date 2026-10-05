@@ -60,9 +60,10 @@ async function start(
   logger: RootLogger,
   dbHandles: DbHandles,
   maintHandle: MaintDbHandle | null,
+  redisUrl: ConnectionConfig['redisUrl'],
 ): Promise<void> {
   if (isHttpEntry(entry)) {
-    const app = await createHttpApp(entry, { config, logger, dbHandles });
+    const app = await createHttpApp(entry, { config, logger, dbHandles, redisUrl });
     try {
       await app.init();
       if (config.exitAfterInit) {
@@ -109,7 +110,13 @@ async function start(
       process.on('SIGINT', onSignal);
     }
     const clock = clockFromConfig(config);
-    const context = await createWorkerContext(entry, { config, logger, dbHandles, clock });
+    const context = await createWorkerContext(entry, {
+      config,
+      logger,
+      dbHandles,
+      clock,
+      redisUrl,
+    });
     let servicesOwnCleanup = false;
     try {
       if (config.exitAfterInit) {
@@ -153,7 +160,8 @@ async function start(
     return;
   }
 
-  const context = await createWorkerContext(entry, { config, logger, dbHandles });
+  // payout: redisUrl is null (it never reads Redis, ADR-0001 §4.2 #20), so no REDIS provider.
+  const context = await createWorkerContext(entry, { config, logger, dbHandles, redisUrl });
   const queue = context.get<QueueRuntime>(JOB_QUEUE);
   if (config.exitAfterInit) {
     logger.info({ listening: false }, 'started');
@@ -227,7 +235,7 @@ export async function runEntry(entry: EntryName): Promise<void> {
   try {
     handles = createDbHandles(connections, { logger });
     if (maintConnection !== null) maintHandle = createMaintDbHandle(maintConnection, { logger });
-    await start(entry, config, logger, handles, maintHandle);
+    await start(entry, config, logger, handles, maintHandle, connections.redisUrl);
   } catch (error) {
     await handles?.close();
     await maintHandle?.close();
