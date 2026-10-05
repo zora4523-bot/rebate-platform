@@ -11,6 +11,9 @@ type: impl
 # 实现路由时去掉 openapi 里 registerDevice 的 x-implementation: planned（contracts/README 规则 10；扩展字段不进生成类型，
 # 不碰 packages/contracts-ts）。openapi.yaml 与 CT-02b 相交，CT-02b 合并后才派。app.module.ts 不在风险表白名单，整体按 RV2：
 # 两家评审、容器验证、证据文件。test_paths：test/spec/identity/devices/**（task-file.ts 还不认该字段；在它接受前，测试阶段的允许路径由编排会话写进任务书，规则测试只放第一类测试资产目录，spec_commit 前其余改动只许 NotImplemented 骨架，tools/guard/lib/spec-base.ts 已强制）。
+# 2026-10-05 实现阶段补路径：identity 是第一个在 platform 之外挂 /v1 路由的模块，路由校验 schema 改由 platform 导出（不在模块里复制生成脚本）；
+# install_secret 加进 platform/logging 的脱敏清单（apps/api/AGENTS.md 硬规则 3）。第 3 轮（Codex 评审 S1）：未处理异常映射为契约 5XX ErrorEnvelope（50001）的全局拦截器（bootstrap 的 RequestValidationFilter 先接住异常，APP_FILTER 无效）
+# 放 platform/http、在 platform.module 注册（identity 是第一个会出 5XX 的业务路由）；device_id 改用 platform 导出的 UUIDv7 生成函数。
 refs: []
 refs_hash: {}
 deps: [CT-15b, B1-02a, B1-01i, B1-02b]
@@ -18,6 +21,11 @@ paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/app.module.ts'
   - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/platform/logging/**'
+  - 'apps/api/src/modules/platform/validation/**'
+  - 'apps/api/src/modules/platform/http/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
 impl: claude
 tester: codex
 accept:
