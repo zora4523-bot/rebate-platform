@@ -3,6 +3,8 @@
 // Pure arithmetic primitives; commission split policies belong to packages/domain (B2-03).
 // Rules: 规划/08 BR-CALC-01, 02, 08, 26 (text in the task brief).
 
+export { formatYuan, formatYuanAdmin, formatYuanRange } from './display.ts';
+
 /** Thrown for an amount that is not an integer number of fen, or is negative where forbidden. */
 export class InvalidAmount extends Error {
   constructor(message: string) {
