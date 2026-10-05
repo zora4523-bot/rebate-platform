@@ -15,14 +15,21 @@
 //   fields (validationErrorEnvelope of ../validation/index.ts).
 // - Fastify request body errors (a FastifyError coded FST_ERR_CTP_* with a 4xx status: malformed or
 //   empty JSON, a body above the limit, a Content-Length mismatch, an unsupported Content-Type):
-//   20001 with data.fields ['body'] and Fastify's status (400, 413, 415). 415 is kept by the
-//   B1-01za ruling although error-codes.yaml maps 20001 to HTTP 400 (contract follow-up). Neither
-//   the request body nor Fastify's message is written back or logged.
+//   20001 with data.fields ['body'] and Fastify's status (400, 413, 415). 413 and 415 depart from
+//   the HTTP 400 that error-codes.yaml gives 20001; contract task CT-01d declares them in its new
+//   `http_also` field (20001: [413, 415]). Neither the request body nor Fastify's message is
+//   written back or logged.
 // - Anything else (any other Error, also one carrying statusCode / status / expose, a thrown string,
 //   object or null, other IdempotencyErrors, Fastify server errors, a reply that cannot be
 //   serialized): one pino `error` line 'unhandled_error' with trace_id, error_class and stack (never
 //   the request body or other properties of the thrown value), then HTTP 500
-//   { code: 50001, msg, trace_id }.
+//   { code: 50001, msg, trace_id }. If the response was already sent, only the log line is written.
+//
+// Known exceptions: any other Fastify 4xx error goes through `super.mapException` and becomes an
+// HttpException written back as Nest's { statusCode, message }; with the current code none is raised
+// while a request is handled, so recheck this when adding a Fastify plugin (rate limiting,
+// multipart, ...). If `handlerTimeout` is ever configured, FST_ERR_HANDLER_TIMEOUT (503) lands on
+// 500 / 50001, not 50301.
 //
 // Not imported by ./index.ts: this file uses NestJS, and the `test` project compiles only what the
 // rule tests import (./index.ts).

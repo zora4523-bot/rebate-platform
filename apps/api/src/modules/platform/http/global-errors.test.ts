@@ -7,6 +7,7 @@ import {
   HttpException,
   Param,
   Post,
+  Res,
   UseGuards,
   type CanActivate,
   type ExecutionContext,
@@ -83,6 +84,12 @@ class ProbeController {
   @Get('bigint')
   bigint() {
     return { cannotSerialize: 1n };
+  }
+
+  @Get('sent-then-throw')
+  sentThenThrow(@Res() reply: { send(payload: unknown): unknown }) {
+    reply.send({ first: 'already sent' });
+    throw new TypeError('after send');
   }
 }
 
@@ -246,6 +253,36 @@ it('[AC-B1-01za#6] a reply that cannot be serialized answers 500 / 50001 and the
   expect(unhandled()).toMatchObject([{ trace_id: TRACE, error_class: 'TypeError' }]);
   const next = await post('/__global_errors/echo', '{"ok":true}');
   expect(next.statusCode).toBe(201);
+});
+
+it('[AC-B1-01za#5] an unknown error after the response was sent keeps that response, logs once and the app keeps serving', async () => {
+  const crashes: unknown[] = [];
+  const record = (error: unknown) => void crashes.push(error);
+  process.on('uncaughtException', record);
+  process.on('unhandledRejection', record);
+  try {
+    const response = await app.inject({
+      url: '/__global_errors/sent-then-throw',
+      headers: { 'x-trace-id': TRACE },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ first: 'already sent' });
+    const records = unhandled();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ level: 50, trace_id: TRACE, error_class: 'TypeError' });
+    expect(records[0]!['stack']).toMatch(/^TypeError: after send\n/);
+    const warnings = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => (entry['level'] as number) >= 40);
+    expect(warnings).toEqual(records);
+    const next = await post('/__global_errors/echo', '{"ok":true}');
+    expect(next.statusCode).toBe(201);
+    expect(next.json()).toEqual({ body: { ok: true } });
+    expect(crashes).toEqual([]);
+  } finally {
+    process.off('uncaughtException', record);
+    process.off('unhandledRejection', record);
+  }
 });
 
 it('[AC-B1-01za#1] the adapter keeps request body errors and Fastify server errors for the filter', async () => {
