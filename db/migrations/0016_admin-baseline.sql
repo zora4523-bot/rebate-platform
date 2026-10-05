@@ -25,11 +25,15 @@
 -- (BR-ID-34 细则「首次绑定身份验证器」); totp_secret_cipher may already be set during binding,
 -- so the two columns are not coupled by a CHECK. verify_phone_set_at NULL means no
 -- verification phone is registered, so the account cannot perform SMS-tier step-up
--- operations (BR-ID-34). is_super has no default and no trigger: a super admin owns every
--- permission point and never appears in admin_permissions (ADD-04); who may set it is enforced
--- by the admin module. status is open text: 04, 08 and contracts give no admin-status
--- vocabulary, so the writer states it on creation and no CHECK is added. No other required
--- string column exists besides the account name and the password hash.
+-- operations (BR-ID-34). totp_last_step is the 30-second TOTP time step of the most recently
+-- accepted code (NULL until a code is accepted); it lets the admin module consume a code at
+-- most once across processes and runs with a conditional update
+-- (WHERE totp_last_step IS NULL OR totp_last_step < :step), so replay protection lands in PG
+-- (AGENTS.md §4.4). It is not a secret. is_super has no default and no trigger: a super admin
+-- owns every permission point and never appears in admin_permissions (ADD-04); who may set it
+-- is enforced by the admin module. status is open text: 04, 08 and contracts give no
+-- admin-status vocabulary, so the writer states it on creation and no CHECK is added. No
+-- other required string column exists besides the account name and the password hash.
 -- Grants: couli_app gets SELECT, INSERT and UPDATE on every column except id, app_id,
 -- login_name and created_at (the account name is immutable); no DELETE (accounts are
 -- disabled, never removed, so audit and grant references stay valid). couli_readonly may read
@@ -67,6 +71,7 @@ CREATE TABLE app.admin_users (
   password_hash       text NOT NULL,
   totp_secret_cipher  bytea,
   totp_bound_at       timestamptz,
+  totp_last_step      bigint,
   is_super            boolean NOT NULL,
   status              text NOT NULL,
   verify_phone_cipher bytea,
@@ -130,14 +135,14 @@ CREATE INDEX union_accounts_auth_renewed_by_idx
   ON app.union_accounts (app_id, auth_renewed_by) WHERE auth_renewed_by IS NOT NULL;
 
 GRANT SELECT, INSERT ON app.admin_users TO couli_app;
-GRANT UPDATE (password_hash, totp_secret_cipher, totp_bound_at, is_super, status,
+GRANT UPDATE (password_hash, totp_secret_cipher, totp_bound_at, totp_last_step, is_super, status,
               verify_phone_cipher, verify_phone_hmac, verify_phone_set_at, row_version,
               updated_at)
   ON app.admin_users TO couli_app;
 GRANT SELECT, INSERT, DELETE ON app.admin_permissions TO couli_app;
 GRANT SELECT, INSERT ON app.audit_logs TO couli_app;
 
-GRANT SELECT (id, app_id, login_name, totp_bound_at, is_super, status, verify_phone_set_at,
-              row_version, created_at, updated_at)
+GRANT SELECT (id, app_id, login_name, totp_bound_at, totp_last_step, is_super, status,
+              verify_phone_set_at, row_version, created_at, updated_at)
   ON app.admin_users TO couli_readonly;
 GRANT SELECT ON app.admin_permissions, app.audit_logs TO couli_readonly;
