@@ -1,5 +1,168 @@
-// Test phase: no top-level execution. The implementation phase supplies the CLI entry point.
-export function main(argv: string[]): number {
-  void argv;
-  throw new Error('NotImplemented: cli');
+// Command line of @couli/evals (B3-01b). Runs on Node's type stripping, no build step:
+//
+//   node packages/evals/src/cli.ts smoke-gate --cases <dir> --manifest <file> --report <file>
+//     Reads every *.jsonl in <dir>. Load problems (json, schema, duplicate_id, also across
+//     files): exit 2, prints only code, file and line. Otherwise runs checkSmokeGate, prints the
+//     SmokeVerdict as one JSON line on stdout and exits 0 (passed) or 1; on failure stderr gets
+//     each problem's code and case id, never case text or problem messages (BR-AI-21: a local
+//     replay writes back pass or fail only).
+//
+//   node packages/evals/src/cli.ts identity-fields [--file <path>]
+//     Checks specs/agent-identity-fields.txt (default: found from this file) against the
+//     package's IDENTITY_FIELDS; exit 0 when equal, 1 on drift, 2 when it cannot be read.
+//
+// smoke-gate also runs the identity-field check when the specs file is present next to the
+// package (in the repository), so the grader's list cannot drift from BR-AI-03 unnoticed.
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { checkDuplicateIds, checkIdentityFieldsFile, checkSmokeGate, parseJsonl } from './index.ts';
+import type { EvalCase, Manifest, Problem, Report } from './index.ts';
+
+export interface CliIo {
+  out(text: string): void;
+  err(text: string): void;
 }
+
+const processIo: CliIo = {
+  out: (text) => {
+    process.stdout.write(text);
+  },
+  err: (text) => {
+    process.stderr.write(text);
+  },
+};
+
+const USAGE =
+  'usage: cli.ts smoke-gate --cases <dir> --manifest <file> --report <file>\n' +
+  '       cli.ts identity-fields [--file <path>]\n';
+
+const DEFAULT_IDENTITY_FILE = fileURLToPath(
+  new URL('../../../specs/agent-identity-fields.txt', import.meta.url),
+);
+
+function parseFlags(args: string[], allowed: readonly string[]): Map<string, string> | null {
+  const flags = new Map<string, string>();
+  for (let i = 0; i < args.length; i += 2) {
+    const flag = args[i];
+    const value = args[i + 1];
+    if (flag === undefined || !allowed.includes(flag) || value === undefined) return null;
+    if (flags.has(flag)) return null;
+    flags.set(flag, value);
+  }
+  return flags;
+}
+
+/** Load problems: code, file and line only (no message, no id: both can carry case text). */
+function printLoadProblems(io: CliIo, problems: readonly Problem[]): void {
+  for (const problem of problems) {
+    io.err(`${problem.code} ${problem.file ?? '-'}:${problem.line ?? '-'}\n`);
+  }
+}
+
+function identityProblems(file: string): Problem[] {
+  return checkIdentityFieldsFile(readFileSync(file, 'utf8')).map((problem) => ({
+    ...problem,
+    file: basename(file),
+  }));
+}
+
+function readJson(path: string): { value: unknown } | { problem: Problem } {
+  try {
+    return { value: JSON.parse(readFileSync(path, 'utf8')) as unknown };
+  } catch {
+    return { problem: { code: 'json', file: basename(path), message: 'unreadable JSON' } };
+  }
+}
+
+function smokeGate(args: string[], io: CliIo): number {
+  const flags = parseFlags(args, ['--cases', '--manifest', '--report']);
+  const casesDir = flags?.get('--cases');
+  const manifestPath = flags?.get('--manifest');
+  const reportPath = flags?.get('--report');
+  if (casesDir === undefined || manifestPath === undefined || reportPath === undefined) {
+    io.err(USAGE);
+    return 2;
+  }
+
+  const loadProblems: Problem[] = [];
+  if (existsSync(DEFAULT_IDENTITY_FILE))
+    loadProblems.push(...identityProblems(DEFAULT_IDENTITY_FILE));
+
+  const cases: EvalCase[] = [];
+  const files: string[] = [];
+  let names: string[];
+  try {
+    names = readdirSync(casesDir)
+      .filter((name) => name.endsWith('.jsonl'))
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  } catch {
+    io.err(`io ${basename(casesDir)}:-\n`);
+    return 2;
+  }
+  for (const name of names) {
+    const parsed = parseJsonl(readFileSync(join(casesDir, name), 'utf8'), name);
+    loadProblems.push(...parsed.problems);
+    for (const item of parsed.cases) {
+      cases.push(item);
+      files.push(name);
+    }
+  }
+  loadProblems.push(...checkDuplicateIds(cases, files));
+
+  const manifest = readJson(manifestPath);
+  const report = readJson(reportPath);
+  if ('problem' in manifest) loadProblems.push(manifest.problem);
+  if ('problem' in report) loadProblems.push(report.problem);
+  if (loadProblems.length > 0 || 'problem' in manifest || 'problem' in report) {
+    printLoadProblems(io, loadProblems);
+    return 2;
+  }
+
+  const gate = checkSmokeGate(report.value as Report, manifest.value as Manifest, cases);
+  io.out(`${JSON.stringify(gate.verdict)}\n`);
+  if (gate.passed) return 0;
+  for (const problem of gate.problems) {
+    io.err(problem.id === undefined ? `${problem.code}\n` : `${problem.code} ${problem.id}\n`);
+  }
+  return 1;
+}
+
+function identityFields(args: string[], io: CliIo): number {
+  const flags = parseFlags(args, ['--file']);
+  if (flags === null) {
+    io.err(USAGE);
+    return 2;
+  }
+  const file = flags.get('--file') ?? DEFAULT_IDENTITY_FILE;
+  let problems: Problem[];
+  try {
+    problems = identityProblems(file);
+  } catch {
+    io.err(`io ${basename(file)}:-\n`);
+    return 2;
+  }
+  for (const problem of problems) io.err(`${problem.code}: ${problem.message}\n`);
+  return problems.length === 0 ? 0 : 1;
+}
+
+/** Runs one command; returns the exit code. */
+export function main(argv: string[], io: CliIo = processIo): number {
+  const [command, ...rest] = argv;
+  if (command === 'smoke-gate') return smokeGate(rest, io);
+  if (command === 'identity-fields') return identityFields(rest, io);
+  io.err(USAGE);
+  return 2;
+}
+
+function isEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) process.exitCode = main(process.argv.slice(2));

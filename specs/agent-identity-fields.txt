@@ -1,0 +1,20 @@
+# Agent 身份字段清单（规划/08 BR-AI-03 细则「身份字段清单」）。清单只在 08 BR-AI-03 细则维护，本文件按它转写，
+# 改字段先改 08。比较时转小写并去掉 _ 与 -（positionId、sub_unionid、pId、adzoneId 都命中）。
+# 读取方：ToolRegistry（B3-04/B3-05，模型参数含清单字段时拒绝并告警 agent.identity_arg）；评测判分
+# packages/evals 的 IDENTITY_FIELDS 常量与本文件逐项一致，由 `node packages/evals/src/cli.ts identity-fields` 核对。
+# 格式：一行一个字段；以 # 开头的行与空行忽略。
+user_id
+uid
+app_id
+device_id
+scene
+pid
+p_id
+adzone_id
+site_id
+position_id
+relation_id
+special_id
+sub_union_id
+custom_parameters
+union_id

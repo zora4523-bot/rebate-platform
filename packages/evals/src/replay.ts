@@ -1,209 +1,353 @@
-import type { Category, EvalCase, EvalSet, Intent, Manifest, Problem, Split, Subject } from './index.ts';
+// Agent eval framework, part 2 (B3-01b): recordings matched by request content and the replay
+// runner (mode A). A recording is found by the digest of the full request, never by call order,
+// so one request asked twice gets the same response and the order of lines in a recording file
+// does not matter. Recordings live in private storage (BR-AI-21); this file only loads them.
+import { canonicalJson, compareCodeUnits, sha256Hex } from './canonical.ts';
+import { Collector, isObject } from './cases.ts';
+import type { EvalCase, Problem } from './cases.ts';
+import { IDENTITY_FIELDS, gradeCase } from './grade.ts';
+import { summarize } from './report.ts';
+import type {
+  AgentPorts,
+  AgentUnderTest,
+  CaseResult,
+  ModelRequest,
+  Recording,
+  Report,
+  RunMeta,
+  ToolCall,
+  TurnOutput,
+} from './types.ts';
 
-export interface ModelRequest {
-  vendor: string;
-  model: string;
-  messages: unknown[];
-  tools: unknown[];
-  params: Record<string, unknown>;
-}
+const KEY_PATTERN = /^[0-9a-f]{64}$/;
+/** ISO 8601 date-time with an explicit offset (Z or ±hh:mm). */
+const ISO_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const KINDS: readonly Recording['kind'][] = ['model', 'tool'];
+const DEFAULT_TIMEOUT_MS = 30000;
 
-export interface ToolCall {
-  name: string;
-  args: Record<string, unknown>;
-  state: { turn: number; result_set_ids: string[]; tool_set: string[] };
-  config_fingerprint: string;
-}
-
-export interface Recording {
-  kind: 'model' | 'tool';
-  key: string;
-  response: unknown;
-  recorded_at: string;
-}
-
-export type ProblemCode = string;
-
-export function sha256Hex(text: string): string {
-  void text;
-  throw new Error('NotImplemented: sha256Hex');
-}
-
+/** sha256Hex(canonicalJson(req)): independent of object key order; message order matters. */
 export function modelKey(req: ModelRequest): string {
-  void req;
-  throw new Error('NotImplemented: modelKey');
+  return sha256Hex(canonicalJson(req));
 }
 
+/** sha256Hex(canonicalJson(call)) with state.tool_set and state.result_set_ids sorted first
+ * (they are sets); every other array keeps its order. The input is not modified. */
 export function toolKey(call: ToolCall): string {
-  void call;
-  throw new Error('NotImplemented: toolKey');
+  const state = call.state;
+  return sha256Hex(
+    canonicalJson({
+      ...call,
+      state: {
+        ...state,
+        result_set_ids: [...state.result_set_ids].sort(compareCodeUnits),
+        tool_set: [...state.tool_set].sort(compareCodeUnits),
+      },
+    }),
+  );
 }
 
+/** Thrown when no recording matches a request. */
 export class RecordingMiss extends Error {
-  declare readonly kind: Recording['kind'];
-  declare readonly key: string;
+  readonly kind: Recording['kind'];
+  readonly key: string;
 
   constructor(kind: Recording['kind'], key: string) {
-    super('NotImplemented: RecordingMiss');
-    void kind;
-    void key;
-    throw new Error('NotImplemented: RecordingMiss');
+    super(`no ${kind} recording for key ${key}`);
+    this.name = 'RecordingMiss';
+    this.kind = kind;
+    this.key = key;
   }
 }
 
+interface StoredRecording {
+  kind: Recording['kind'];
+  key: string;
+  response: unknown;
+}
+
+function slot(kind: Recording['kind'], key: string): string {
+  return `${kind}:${key}`;
+}
+
+/** Recordings looked up by exact content key. Responses are handed back as recorded (a copy). */
 export class RecordingStore {
+  private readonly entries = new Map<string, StoredRecording>();
+  private readonly used = new Set<string>();
+
+  constructor(recordings: readonly StoredRecording[] = []) {
+    for (const item of recordings) {
+      const id = slot(item.kind, item.key);
+      if (!this.entries.has(id)) this.entries.set(id, item);
+    }
+  }
+
+  private find(kind: Recording['kind'], key: string): unknown {
+    const id = slot(kind, key);
+    const entry = this.entries.get(id);
+    if (entry === undefined) throw new RecordingMiss(kind, key);
+    this.used.add(id);
+    return structuredClone(entry.response);
+  }
+
   model(req: ModelRequest): unknown {
-    void req;
-    throw new Error('NotImplemented: RecordingStore.model');
+    return this.find('model', modelKey(req));
   }
 
   tool(call: ToolCall): unknown {
-    void call;
-    throw new Error('NotImplemented: RecordingStore.tool');
+    return this.find('tool', toolKey(call));
   }
 
+  /** Recordings never looked up so far, ordered by kind then key. */
   unused(): { kind: Recording['kind']; key: string }[] {
-    throw new Error('NotImplemented: RecordingStore.unused');
+    return [...this.entries.entries()]
+      .filter(([id]) => !this.used.has(id))
+      .map(([, entry]) => ({ kind: entry.kind, key: entry.key }))
+      .sort((a, b) => compareCodeUnits(a.kind, b.kind) || compareCodeUnits(a.key, b.key));
   }
 }
 
-export function loadRecordings(text: string, file: string): { store: RecordingStore; problems: Problem[] } {
-  void text;
-  void file;
-  throw new Error('NotImplemented: loadRecordings');
+/** Strict structural check of one recording line; every problem has code `schema`. */
+function validateRecording(value: unknown): Problem[] {
+  const c = new Collector(undefined);
+  if (!c.object(value, '', ['kind', 'key', 'response', 'recorded_at'], [])) return c.problems;
+  if (Object.hasOwn(value, 'kind')) c.oneOf(value['kind'], '/kind', KINDS);
+  if (Object.hasOwn(value, 'key')) {
+    const key = value['key'];
+    if (typeof key !== 'string' || !KEY_PATTERN.test(key)) {
+      c.add('/key', 'must be a lowercase hex SHA-256');
+    }
+  }
+  if (Object.hasOwn(value, 'recorded_at')) {
+    const at = value['recorded_at'];
+    if (typeof at !== 'string' || !ISO_WITH_ZONE.test(at) || Number.isNaN(Date.parse(at))) {
+      c.add('/recorded_at', 'must be an ISO 8601 date-time with a time zone');
+    }
+  }
+  return c.problems;
 }
 
-export interface StreamFrame {
-  event: string;
-  id: number;
-  data: Record<string, unknown>;
+/**
+ * Loads a JSONL recording file. Blank lines are skipped; `line` is the 1-based physical line.
+ * Invalid lines are reported (`json`, `schema`) and skipped. The same kind + key twice with a
+ * different response (canonical JSON) is `recording_conflict` and the first line wins; the same
+ * response twice is kept once without a problem.
+ */
+export function loadRecordings(
+  text: string,
+  file: string,
+): { store: RecordingStore; problems: Problem[] } {
+  const problems: Problem[] = [];
+  const kept = new Map<string, { item: StoredRecording; canonical: string; line: number }>();
+  text.split('\n').forEach((raw, index) => {
+    const line = index + 1;
+    const source = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+    if (source.trim() === '') return;
+    let value: unknown;
+    try {
+      value = JSON.parse(source);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      problems.push({ code: 'json', file, line, message: `invalid JSON: ${reason}` });
+      return;
+    }
+    const found = validateRecording(value);
+    if (found.length > 0 || !isObject(value)) {
+      for (const problem of found) problems.push({ ...problem, file, line });
+      return;
+    }
+    const item: StoredRecording = {
+      kind: value['kind'] as Recording['kind'],
+      key: value['key'] as string,
+      response: value['response'],
+    };
+    const canonical = canonicalJson(item.response);
+    const id = slot(item.kind, item.key);
+    const previous = kept.get(id);
+    if (previous === undefined) {
+      kept.set(id, { item, canonical, line });
+    } else if (previous.canonical !== canonical) {
+      problems.push({
+        code: 'recording_conflict',
+        file,
+        line,
+        message: `${item.kind} recording ${item.key} differs from the one on line ${previous.line}`,
+      });
+    }
+  });
+  return { store: new RecordingStore([...kept.values()].map((entry) => entry.item)), problems };
 }
 
-export interface TurnOutput {
-  frames: StreamFrame[];
-  trace: {
-    intent: Intent | null;
-    tool_calls: { name: string; args: Record<string, unknown>; status: 'ok' | 'rejected' | 'failed' }[];
+// ---------------------------------------------------------------------------------------------
+// Runner.
+
+type Outcome =
+  { kind: 'ok'; value: unknown } | { kind: 'error'; error: unknown } | { kind: 'timeout' };
+
+/** Runs `start` and settles at the first of: result, error, or `ms` elapsed (no waiting after). */
+function settleWithin(start: () => unknown, ms: number): Promise<Outcome> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (outcome: Outcome): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(outcome);
+    };
+    const timer = setTimeout(() => finish({ kind: 'timeout' }), ms);
+    let pending: Promise<unknown>;
+    try {
+      pending = Promise.resolve(start());
+    } catch (error) {
+      pending = Promise.reject(error);
+    }
+    pending.then(
+      (value) => finish({ kind: 'ok', value }),
+      (error: unknown) => finish({ kind: 'error', error }),
+    );
+  });
+}
+
+function describe(error: unknown): string {
+  try {
+    return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  } catch {
+    return 'unprintable error';
+  }
+}
+
+/** Minimal shape needed by the grader; anything else is the agent's error. */
+function isTurnOutput(value: unknown): value is TurnOutput {
+  if (!isObject(value) || !Array.isArray(value['frames']) || !isObject(value['trace'])) {
+    return false;
+  }
+  const trace = value['trace'];
+  const frames = value['frames'] as unknown[];
+  const intent = trace['intent'];
+  if (intent !== null && typeof intent !== 'string') return false;
+  if (!Array.isArray(trace['tool_calls'])) return false;
+  const calls = trace['tool_calls'] as unknown[];
+  return (
+    frames.every((f) => isObject(f) && typeof f['event'] === 'string' && isObject(f['data'])) &&
+    calls.every((c) => isObject(c) && typeof c['name'] === 'string' && isObject(c['args']))
+  );
+}
+
+function stopped(
+  c: EvalCase,
+  result: 'coverage_gap' | 'error',
+  code: string,
+  turn: number | null,
+  message: string,
+): CaseResult {
+  return {
+    id: c.id,
+    category: c.category,
+    split: c.split,
+    result,
+    first_failed_layer: null,
+    problems: [{ code, layer: null, turn, message }],
   };
 }
 
-export interface AgentPorts {
-  model(req: ModelRequest): Promise<unknown>;
-  tool(call: ToolCall): Promise<unknown>;
+function missResult(c: EvalCase, turn: number, miss: RecordingMiss): CaseResult {
+  return stopped(c, 'coverage_gap', 'recording_miss', turn, `录制未命中：${miss.kind} ${miss.key}`);
 }
 
-export type AgentUnderTest = (input: {
-  case_id: string;
-  turn: number;
-  text: string;
-  untrusted: boolean;
-  subject: Subject;
-  switches: Record<string, boolean>;
-}, ports: AgentPorts) => Promise<TurnOutput>;
-
-export type ResultType = 'pass' | 'fail' | 'coverage_gap' | 'error';
-export type Layer = 'L1' | 'L3';
-export interface CaseProblem {
-  code: string;
-  layer: Layer | null;
-  turn: number | null;
-  message: string;
-}
-export interface CaseResult {
-  id: string;
-  category: Category;
-  split: Split;
-  result: ResultType;
-  first_failed_layer: Layer | null;
-  problems: CaseProblem[];
-}
-
-export interface RunMeta {
-  mode: 'A' | 'B' | 'integration';
-  vendor: string;
-  model_snapshot: string;
-  prompt_sha256: string;
-  sampling: Record<string, unknown>;
-  eval_set: { set: EvalSet; version: string; content_sha256: string; split_sha256: string };
-  tool_schema_version: string;
-  code_commit: string;
-  grader_version: string;
-  recordings_sha256: string | null;
-  unused_recordings: number;
-  started_at: string;
-  finished_at: string;
-}
-
-export interface Report {
-  schema_version: 1;
-  meta: RunMeta;
-  cases: CaseResult[];
-  summary: {
-    total: number;
-    pass: number;
-    fail: number;
-    coverage_gap: number;
-    error: number;
-    by_category: Partial<Record<Category, {
-      total: number; pass: number; fail: number; coverage_gap: number; error: number;
-    }>>;
-    counters: { amount_in_text: number; url_in_text: number; identity_arg: number };
-  };
-}
-
-export interface SmokeVerdict {
-  passed: boolean;
-  eval_set: string;
-  content_sha256: string;
-  report_sha256: string;
-  total: number;
-  pass: number;
-  fail: number;
-  coverage_gap: number;
-  error: number;
+async function runCase(
+  c: EvalCase,
+  agent: AgentUnderTest,
+  store: RecordingStore,
+  timeoutMs: number,
+): Promise<CaseResult> {
+  const outputs: TurnOutput[] = [];
+  for (const [index, step] of c.turns.entries()) {
+    const turn = index + 1;
+    // Ports are wrapped per turn: every miss is remembered (and still thrown), so a miss the
+    // agent swallows still makes the case a coverage gap. Lookups after the turn ended (an agent
+    // still running past its timeout) are not attributed to this case.
+    const turnState: { open: boolean; miss: RecordingMiss | undefined } = {
+      open: true,
+      miss: undefined,
+    };
+    const lookup = (find: () => unknown): unknown => {
+      try {
+        return find();
+      } catch (error) {
+        if (error instanceof RecordingMiss && turnState.open && turnState.miss === undefined) {
+          turnState.miss = error;
+        }
+        throw error;
+      }
+    };
+    const ports: AgentPorts = {
+      model: async (req) => lookup(() => store.model(req)),
+      tool: async (call) => lookup(() => store.tool(call)),
+    };
+    const input = {
+      case_id: c.id,
+      turn,
+      text: step.text,
+      untrusted: step.untrusted ?? false,
+      subject: c.subject,
+      switches: { ...(c.switches ?? {}) },
+    };
+    const outcome = await settleWithin(() => agent(input, ports), timeoutMs);
+    turnState.open = false;
+    if (turnState.miss !== undefined) return missResult(c, turn, turnState.miss);
+    if (outcome.kind === 'timeout') {
+      return stopped(c, 'error', 'timeout', turn, `第 ${turn} 轮超过 ${timeoutMs} ms 未完成`);
+    }
+    if (outcome.kind === 'error') {
+      if (outcome.error instanceof RecordingMiss) return missResult(c, turn, outcome.error);
+      return stopped(c, 'error', 'agent_error', turn, describe(outcome.error));
+    }
+    let output: unknown;
+    try {
+      output = structuredClone(outcome.value);
+    } catch (error) {
+      return stopped(c, 'error', 'agent_error', turn, `输出无法复制：${describe(error)}`);
+    }
+    if (!isTurnOutput(output)) {
+      return stopped(c, 'error', 'agent_error', turn, '输出不符合 TurnOutput 结构');
+    }
+    outputs.push(output);
+  }
+  try {
+    return gradeCase(c, outputs, IDENTITY_FIELDS);
+  } catch (error) {
+    return stopped(c, 'error', 'agent_error', null, `判分失败：${describe(error)}`);
+  }
 }
 
-export function runReplay(opts: {
+/**
+ * Replays the active cases in id order (UTF-16 code units), turn by turn, against `agent` with
+ * ports served by `store`; one case failing never stops the others. A recording miss in a turn
+ * (thrown, swallowed or followed by another error) makes the case `coverage_gap` and skips its
+ * later turns; another error or `timeoutMs` (default 30000) makes it `error`; otherwise the
+ * case is graded with the package's identity field list.
+ */
+export async function runReplay(opts: {
   cases: EvalCase[];
   agent: AgentUnderTest;
   store: RecordingStore;
   meta: RunMeta;
   timeoutMs?: number;
 }): Promise<Report> {
-  void opts;
-  throw new Error('NotImplemented: runReplay');
-}
-
-export function gradeCase(c: EvalCase, outputs: TurnOutput[], identityFields: readonly string[]): CaseResult {
-  void c;
-  void outputs;
-  void identityFields;
-  throw new Error('NotImplemented: gradeCase');
-}
-
-export function summarize(cases: CaseResult[]): Report['summary'] {
-  void cases;
-  throw new Error('NotImplemented: summarize');
-}
-
-export function checkReport(report: Report, manifest: Manifest, cases: EvalCase[]): Problem[] {
-  void report;
-  void manifest;
-  void cases;
-  throw new Error('NotImplemented: checkReport');
-}
-
-export function checkSmokeGate(report: Report, manifest: Manifest, cases: EvalCase[]): {
-  passed: boolean; problems: Problem[]; verdict: SmokeVerdict;
-} {
-  void report;
-  void manifest;
-  void cases;
-  throw new Error('NotImplemented: checkSmokeGate');
-}
-
-export function checkDuplicateIds(cases: EvalCase[], files: string[]): Problem[] {
-  void cases;
-  void files;
-  throw new Error('NotImplemented: checkDuplicateIds');
+  const timeoutMs =
+    opts.timeoutMs !== undefined && Number.isFinite(opts.timeoutMs) && opts.timeoutMs >= 0
+      ? opts.timeoutMs
+      : DEFAULT_TIMEOUT_MS;
+  const active = opts.cases
+    .filter((item) => item.retired === undefined)
+    .sort((a, b) => compareCodeUnits(a.id, b.id));
+  const results: CaseResult[] = [];
+  for (const c of active) {
+    results.push(await runCase(c, opts.agent, opts.store, timeoutMs));
+  }
+  return {
+    schema_version: 1,
+    meta: { ...opts.meta, unused_recordings: opts.store.unused().length },
+    cases: results,
+    summary: summarize(results),
+  };
 }

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://couli.invalid/schemas/evals/report.schema.json",
+  "title": "Report",
+  "description": "Result of one eval run. Same shape as the structural check in checkReport (packages/evals/src/report.ts); checkReport also checks run validity (empty meta, eval set, case set, summary). Only the SmokeVerdict of a private replay is written back (BR-AI-21).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "meta", "cases", "summary"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "vendor",
+        "model_snapshot",
+        "prompt_sha256",
+        "sampling",
+        "eval_set",
+        "tool_schema_version",
+        "code_commit",
+        "grader_version",
+        "recordings_sha256",
+        "unused_recordings",
+        "started_at",
+        "finished_at"
+      ],
+      "properties": {
+        "mode": { "type": "string", "enum": ["A", "B", "integration"] },
+        "vendor": { "type": "string", "minLength": 1 },
+        "model_snapshot": { "type": "string", "minLength": 1 },
+        "prompt_sha256": { "type": "string", "minLength": 1 },
+        "sampling": { "type": "object" },
+        "eval_set": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["set", "version", "content_sha256", "split_sha256"],
+          "properties": {
+            "set": { "$ref": "#/$defs/evalSet" },
+            "version": { "type": "string", "minLength": 1 },
+            "content_sha256": { "type": "string" },
+            "split_sha256": { "type": "string" }
+          }
+        },
+        "tool_schema_version": { "type": "string", "minLength": 1 },
+        "code_commit": { "type": "string", "minLength": 1 },
+        "grader_version": { "type": "string", "minLength": 1 },
+        "recordings_sha256": {
+          "description": "Required (not null) in mode A: digest of all recording lines, computed by the caller.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "unused_recordings": { "type": "integer", "minimum": 0 },
+        "started_at": { "type": "string", "minLength": 1 },
+        "finished_at": { "type": "string", "minLength": 1 }
+      },
+      "if": { "properties": { "mode": { "const": "A" } } },
+      "then": { "properties": { "recordings_sha256": { "type": "string" } } }
+    },
+    "cases": {
+      "description": "Active cases only, ordered by id (UTF-16 code units).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/caseResult" }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "pass", "fail", "coverage_gap", "error", "by_category", "counters"],
+      "properties": {
+        "total": { "$ref": "#/$defs/count" },
+        "pass": { "$ref": "#/$defs/count" },
+        "fail": { "$ref": "#/$defs/count" },
+        "coverage_gap": { "$ref": "#/$defs/count" },
+        "error": { "$ref": "#/$defs/count" },
+        "by_category": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/category" },
+          "additionalProperties": { "$ref": "#/$defs/counts" }
+        },
+        "counters": {
+          "description": "Number of cases with at least one problem of that code.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["amount_in_text", "url_in_text", "identity_arg"],
+          "properties": {
+            "amount_in_text": { "$ref": "#/$defs/count" },
+            "url_in_text": { "$ref": "#/$defs/count" },
+            "identity_arg": { "$ref": "#/$defs/count" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "pass", "fail", "coverage_gap", "error"],
+      "properties": {
+        "total": { "$ref": "#/$defs/count" },
+        "pass": { "$ref": "#/$defs/count" },
+        "fail": { "$ref": "#/$defs/count" },
+        "coverage_gap": { "$ref": "#/$defs/count" },
+        "error": { "$ref": "#/$defs/count" }
+      }
+    },
+    "layer": { "type": ["string", "null"], "enum": ["L1", "L3", null] },
+    "caseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "split", "result", "first_failed_layer", "problems"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "category": { "$ref": "#/$defs/category" },
+        "split": { "type": "string", "enum": ["tune", "validate", "holdout"] },
+        "result": { "type": "string", "enum": ["pass", "fail", "coverage_gap", "error"] },
+        "first_failed_layer": { "$ref": "#/$defs/layer" },
+        "problems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "layer", "turn", "message"],
+            "properties": {
+              "code": { "type": "string", "minLength": 1 },
+              "layer": { "$ref": "#/$defs/layer" },
+              "turn": { "type": ["integer", "null"], "minimum": 1 },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "evalSet": {
+      "type": "string",
+      "enum": ["smoke", "find", "badcase", "baseline-pairs", "judges"]
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "injection",
+        "unauthorized",
+        "identity_arg",
+        "banned",
+        "promise_bait",
+        "unverified_cap",
+        "boundary_normal",
+        "chitchat"
+      ]
+    }
+  }
+}
