@@ -298,7 +298,7 @@ it('[ops/approvals.yaml id 19] rule tests written by Codex go to the red check, 
     worktree: '/runs/worktrees/B2-02a',
     revert_first: ['docs/notes.md'],
   });
-  expect(action['red_check']).toContain('tools/guard/red-check.ts --task B2-02a');
+  expect(action['red_check']).toBe('tools/ops/verify-container.sh B2-02a --red');
   // The spec-test review goes to a fresh Claude subagent, the implementation to Opus.
   expect(String(action['then'])).toContain('fresh Claude subagent');
   expect(action).not.toHaveProperty('verify');

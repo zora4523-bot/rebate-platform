@@ -14,7 +14,9 @@
 | Claude 新子代理（不是实现那个） | RV2 的第二家评审；规则测试过审（spec-test） | §11 |
 | Codex（换家，一次） | Opus 超限后的 RV0 / RV1 实现 | `dispatch.sh <id> --handover`（`codex-run.sh impl --phase handover`） |
 
-**执行边界**（规划第 2 轮评审 RO2-01/04）：Codex 沙箱里只做不执行测试的静态检查（类型检查、lint）；任何运行测试的命令都由编排者在隔离容器（`tools/ops/verify-container.sh`）或 CI 里跑；Codex 生成的任何可执行内容（规则测试、骨架、换家实现）都不在宿主上运行。Opus 实现子代理跑测试也只经 `verify-container.sh <id> --fast`，因为里面有 Codex 写的测试。
+**执行边界**（规划第 2 轮评审 RO2-01/04）：Codex 沙箱里只做不执行测试的静态检查（类型检查、lint）；任何运行测试的命令都由编排者在隔离容器（`tools/ops/verify-container.sh`）或 CI 里跑；Codex 生成的任何可执行内容（规则测试、骨架、换家实现）都不在宿主上运行。Opus 实现子代理跑测试也只经 `verify-container.sh <id> --fast`，因为里面有 Codex 写的测试。`verify-container.sh` 没有宿主回退（CR-01）：Docker 用不了就停下，交给 CI。
+
+**谁实现的就不评审谁**：台账 `tester` 不是 `claude` 时（Codex 写的或读不到作者）`codex-run.sh review --review-type spec-test` 一律拒绝（CR-08）；换家后（在途状态 `implementer: codex`，或运行目录里有 `phase: handover` 的调用）Codex 的代码评审一律拒绝，改由 Claude 新子代理按 §11 的做法评审（CR-09）。`codex-run.sh impl` 核对任务书「本轮阶段」与 `--phase` 一致，不一致拒绝（CR-14）。
 
 ## 1. 文件
 
@@ -148,7 +150,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 | `action` | 什么时候 |
 | --- | --- |
 | `verify` | 换家实现（或 2026-10-05 前的 Codex 实现）有产出、路径守卫与保护路径守卫都过。附 `revert_first`（`ops/`、`docs/` 下要先还原的越界改动）和 `outside_needed`（要在沙箱外跑的命令） |
-| `red-check` | Codex 写测试（`phase: test`）有产出、守卫都过。不验证（测试本来就该红）：编排者在隔离容器里跑规则测试取 Vitest JSON 报告，`node tools/guard/red-check.ts --task <id> --report <报告>` 过了才提交 `test(spec): …`、`state.ts set --spec-commit`，RV2 再交 Claude 新子代理过审（§11），然后派 Opus 实现（§10） |
+| `red-check` | Codex 写测试（`phase: test`）有产出、守卫都过。不验证（测试本来就该红）：编排者跑 `tools/ops/verify-container.sh <id> --red`（隔离容器里只跑本任务 `test_paths` 内新写的测试文件，导出 Vitest JSON 报告，`red-check.ts` 逐个文件对账，退出码就是它的），过了才提交 `test(spec): …`、`state.ts set --spec-commit`，把 `red/<n>/result.json` 记进证据；RV2 再交 Claude 新子代理过审（§11），然后派 Opus 实现（§10） |
 | `retry` | 失败的一次尝试（无产出、超时、越界、自称没做完、孤儿）。附 `backoff_min`：第 1 次后 15 分钟，第 2 次后 30 分钟；超时与无产出另附 `counts_as_attempt`（`false` = 包装脚本已还回这一轮）。孤儿（包装脚本没写完 `meta.json`）没有结算，照计一次 |
 | `blocked` | 三次用完、位置断言失败、要装依赖（`deps-needed`）、实现者自报受阻、守卫出错 |
 | `ask` | 改动碰了保护路径第二、三类，交负责人确认 |
@@ -198,13 +200,13 @@ TODO(规划/11 §2.4, §9.3)：上面第 2–4 步尚未执行 — blocked on �
 
 实现子代理不经脚本起：编排会话用 Claude Code 的 Agent 能力起一个新子代理（规划/11 §2.3 第 5 步）。每次都按下面做：
 
-1. **前提**：在途状态已有 `spec_commit`（Codex 写的规则测试已提交、先红已核对；RV2 还要 §11 的过审通过），worktree `<runs>/worktrees/<id>` 的依赖已由编排者在沙箱外装好。
+1. **前提**：在途状态已有 `spec_commit`（Codex 写的规则测试已提交、`verify-container.sh <id> --red` 已通过；RV2 还要 §11 的过审通过），worktree `<runs>/worktrees/<id>` 的依赖已由编排者在沙箱外装好。每一轮起之前给它取一个运行编号（例如 Agent 任务编号或 `opus-<时间>`），第 7 步结算要用。
 2. **计数**：起之前 `node <可信副本>/tools/ops/state.ts bump-attempt <id> impl`（Opus 实现 3 次；退出 3 = 失败熔断打开，停）。
 3. **任务书**：`node <可信副本>/tools/ops/brief.ts <id> --phase impl --out <runs>/<id>/brief.md`。实现阶段的任务书写明规则测试已冻结、测试只经可信容器入口跑；不要把写测试阶段的任务书交给实现子代理。
 4. **起子代理**：模型指定 `claude-opus-5-5`（Agent 调用的模型参数选 opus，并在提示词里写明模型锁定）；工作目录就是 `<runs>/worktrees/<id>`（独立 worktree，不用主检出，不在 `/tmp` 下）；提示词 = 任务书全文 + 下面几条硬约束：不提交、不建分支、不 `git add` / `stash` / `reset`、不装依赖、不改 `ops/` 与 `docs/`、不改规则测试与保护路径；跑测试只用 `<runs>/trusted/rebate-platform/tools/ops/verify-container.sh <id> --fast`（断网容器里的 `pnpm verify:fast`，结果在 `<runs>/<id>/verify-fast/<n>/`；Docker 不可用时停下报告，不在宿主直跑测试）；结束时按任务书第 8 节的 JSON 结构回报。子代理在后台跑（规划/11 §2.2），编排会话在等待期间不碰这个 worktree。
 5. **硬超时与取消**（RO-08）：硬超时沿用 30 分钟（规划/11 §2.2，和 Codex 写入型相同；超时的任务要拆小，不加时间）。到点或要放弃时，用 Agent 能力停掉这个子代理（TaskStop），然后**确认它已经停了**再做任何事：子代理的任务状态显示已结束；`verify-container.sh` 起的容器没有残留（`docker ps --filter label=couli.task=<id>` 为空，有就 `docker rm -f`）；worktree 在之后 1 分钟内不再有文件变化。确认之前不重派、不跑守卫、不在这个 worktree 上起新的实现。
 6. **结束后核对**（位置断言，规划/11 §2.4）：起之前记下 `git -C <wt> rev-parse HEAD`、`git -C <wt> for-each-ref refs/heads`、`git -C <wt> diff --cached --name-only`；结束后三者都要不变（暂存区为空），变了按越界处理：这个 worktree 里的东西一律不运行、不提交，先人工看。
-7. **守卫与记录**：从可信副本跑 `path-guard.ts --task <id> --base <spec_commit> --cwd <wt> --json` 与 `protected-paths.ts --base <spec_commit> --cwd <wt> --json`（先守卫、后执行）；再把这一轮记下：`state.ts opus-run <id> --outcome ok|no-output|timeout|capacity --risk <RV>`。没有结果（无产出、超时、容量或额度错误）都计入 Opus 失败；连续 3 次或累计 5 次时输出 `next: handover`（RV0 / RV1：`dispatch.sh <id> --handover`）或 `next: blocked`（RV2：标 blocked，不换家）（RO2-03）。有结果的照常进沙箱外验证：`verify-container.sh <id>`（完整 `pnpm verify`）。
+7. **守卫与记录**：从可信副本跑 `path-guard.ts --task <id> --base <spec_commit> --cwd <wt> --json` 与 `protected-paths.ts --base <spec_commit> --cwd <wt> --json`（先守卫、后执行）；再把这一轮结算：`state.ts opus-run <id> --run-id <运行编号> --outcome ok|no-output|timeout|capacity --risk <RV>`。没有结果（无产出、超时、容量或额度错误）的一轮把第 2 步计上的 `attempts.impl` 还回去（和 Codex 无产出一样，按运行编号去重，重复结算不多还，CR-07），同时计入 Opus 失败；连续 3 次或累计 5 次时输出 `next: handover`（RV0 / RV1：`dispatch.sh <id> --handover`）或 `next: blocked`（RV2：标 blocked，不换家）（RO2-03）。有结果的照常进沙箱外验证：`verify-container.sh <id>`（完整 `pnpm verify`）。
 
 `verify-container.sh` 的 `--fast` 是为这一步加的（`tools/ops/README.md`）：只跑 `pnpm run verify:fast`，不起 PostgreSQL、容器 `--network none`，结果放 `verify-fast/<n>/`，与决定任务成败的 `verify/<n>/` 分开。
 
@@ -212,10 +214,11 @@ TODO(规划/11 §2.4, §9.3)：上面第 2–4 步尚未执行 — blocked on �
 
 Codex 写的规则测试由另一家过审（规划/11 §2.3 第 4 步，RV2 必做）：
 
-1. `codex-run.sh review --review-type spec-test` 对台账 `tester: codex` 的任务直接拒绝（退出 2）；`tester: claude` 的旧任务仍可用。
-2. 计数：`state.ts bump-attempt <id> review --review-type spec-test`（最多 2 轮，计数器不变）。
-3. 起一个新的 Claude 子代理（不是本任务的实现子代理，也不是别的评审子代理），只读：提示词 = 可信副本的 `prompts/review-spec-test.md` + 一段上下文（任务编号、基线 = 分叉点、`spec_commit`、任务 refs、任务 paths、`git diff --name-only <基线> <spec_commit>`）+ `brief.ts <id> --phase review` 生成的任务书。它不运行测试（变异清单靠推演；要跑就由编排者在容器里跑）。
-4. 产出按 `schemas/review.schema.json` 写到 `<runs>/<id>/review-claude-spec-test.json`，编排者校验：`node <可信副本>/tools/agent/validate-output.ts --schema <可信副本>/tools/agent/schemas/review.schema.json --file <产出> --refs <refs> --allowed-paths <paths> --rewrite --out-of-scope-log <runs>/<id>/out-of-scope.md --diff-base <基线> --cwd <wt>`。校验不过算一轮、没有结论；`verdict: fail`（范围内有 S0 / S1）就退回 Codex 改测试（`dispatch.sh <id>` 前先 `state.ts set --spec-commit none`，在途状态的 `last_error` 指向这份评审）。
+1. `codex-run.sh review --review-type spec-test` 只接受可信台账写明 `tester: claude` 的旧任务；`tester: codex`、`none`、台账读不到都拒绝（退出 2，CR-08）。
+2. 换家实现（`dispatch.sh --handover`）之后的代码评审也按本节的做法交 Claude 新子代理，提示词换成对应的 `review-general.md` / `review-money.md` / `review-contract.md`，产出写 `review-claude-<类型>.json`，计数用 `bump-attempt <id> review --review-type <类型>`（CR-09）。
+3. 计数：`state.ts bump-attempt <id> review --review-type spec-test`（最多 2 轮，计数器不变）。
+4. 起一个新的 Claude 子代理（不是本任务的实现子代理，也不是别的评审子代理），只读：提示词 = 可信副本的 `prompts/review-spec-test.md` + 一段上下文（任务编号、基线 = 分叉点、`spec_commit`、任务 refs、任务 paths、`git diff --name-only <基线> <spec_commit>`）+ `brief.ts <id> --phase review` 生成的任务书。它不运行测试（变异清单靠推演；要跑就由编排者在容器里跑）。
+5. 产出按 `schemas/review.schema.json` 写到 `<runs>/<id>/review-claude-spec-test.json`，编排者校验：`node <可信副本>/tools/agent/validate-output.ts --schema <可信副本>/tools/agent/schemas/review.schema.json --file <产出> --refs <refs> --allowed-paths <paths> --rewrite --out-of-scope-log <runs>/<id>/out-of-scope.md --diff-base <基线> --cwd <wt>`。校验不过算一轮、没有结论；`verdict: fail`（范围内有 S0 / S1）就退回 Codex 改测试（`dispatch.sh <id>` 前先 `state.ts set --spec-commit none`，在途状态的 `last_error` 指向这份评审）。
 
 ## 12. 私有库（`rebate-private`）里的 Codex 写入
 
@@ -237,4 +240,5 @@ Agent 评测集与注入集放私有库（规划/11 §1.1）。读脚本的结�
 - 本目录的测试要用 `bash`、`perl`、`git`，并在 `REPO/.tmp/` 下建一次性 git 仓库（verify 镜像已装 git）。全部用例本机约 30–90 秒（看机器负载）；孤儿进程要靠 1 号进程回收，容器须带 `--init`（`verify-container.sh` 已带）。2026-10-02 已在 verify 镜像里按同样的加固参数（只读根、断网、`/work` tmpfs、离线装依赖、仓库根没有 `.git`）跑过本目录全部用例：66 条通过，约 25 秒（Linux bash 5.2、perl 5.36、git 2.39）。
 - Codex 沙箱内（`pnpm verify:fast`）能否正常运行这些测试（进程组信号、`.tmp` 下的 `.git`）未测。
 - 2026-10-05 的分工切换（`ops/approvals.yaml` 第 19 条）只改了派工、计数与守卫，还没有真实跑过一轮「Codex 写测试 → 先红 → Claude 过审 → Opus 实现」。§10、§11 的子代理步骤靠编排会话照做，没有脚本强制；位置断言与守卫是事后关口。
-- TODO(规划/11 §2.3): 先红检查要的 Vitest JSON 报告还没有脚本产出（要在隔离容器里对规则测试文件跑 `vitest run --reporter=json`；`verify-container.sh` 目前只跑 `verify` / `verify:fast`） — blocked on 给 verify 容器加报告输出的后续门禁任务。`tools/guard/red-check.ts` 已能核对这样一份报告。
+- 隔离红测（`verify-container.sh --red`）只跑 `test/` 包（`@couli/spec-tests`）里的 Vitest 文件；`test_paths` 里别的目录（`packages/testing/**` 的夹具、`db/invariants/**` 的 SQL）不是测试文件，不在对账清单里。浏览器测试（Playwright）的红测还没有入口，暂由 CI 跑并按 `ops/evidence/README.md` 的 `mode: ci` 记录。
+- 骨架检查（`tools/guard/lib/skeleton.ts`）用 Node 自带的 `stripTypeScriptTypes`（实验特性）把 TypeScript 转成 JavaScript 后按函数体逐个看；顶层常量、类型、导出不看。TSX 与装饰器转换不了，按「不是骨架」处理。

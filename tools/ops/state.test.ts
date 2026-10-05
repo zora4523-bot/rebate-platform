@@ -45,6 +45,7 @@ it('creates the state file on first use and writes it atomically', () => {
     state: 'doing',
     attempts: { test: 0, impl: 0, handover: 0, 'spec-test': 0, code: 0 },
     spec_commit: null,
+    implementer: null,
     pid: 4242,
     started_at: T0.toISOString(),
     owner_session: null,
@@ -53,6 +54,7 @@ it('creates the state file on first use and writes it atomically', () => {
     last_error: null,
     uncounted_calls: [],
     opus_failures: { total: 0, consecutive: 0, last_reason: null },
+    opus_runs: [],
     updated_at: T0.toISOString(),
   });
   expect(JSON.parse(readFileSync(stateFile('A1-01'), 'utf8'))).toEqual(state);
@@ -223,39 +225,69 @@ it('[ops/approvals.yaml id 19] an impl-mode Codex call is counted by its phase',
   removeDir(stateFile('E1-02'));
 });
 
-it('[RO2-03] Opus runs without a result: 3 in a row or 5 in total hand over (RV0 / RV1) or block (RV2)', () => {
-  expect(recordOpusRun('E1-04', 'no-output', 'RV1', T0).next).toBe('continue');
-  expect(recordOpusRun('E1-04', 'timeout', 'RV1', T0).next).toBe('continue');
-  const third = recordOpusRun('E1-04', 'capacity', 'RV1', T0);
+it('[RO2-03, CR-07] count, run, settle, dispatch again: an Opus run without a result gives its round back', () => {
+  const id = 'E1-04';
+  // capacity → output → capacity: the implementation still has two of its three rounds.
+  expect(bumpAttempt(id, 'impl', T0).attempts.impl).toBe(1);
+  expect(recordOpusRun(id, 'opus-1', 'capacity', 'RV1', T0)).toMatchObject({ next: 'continue' });
+  expect(readState(id)?.attempts.impl).toBe(0);
+  expect(bumpAttempt(id, 'impl', T0).attempts.impl).toBe(1);
+  expect(recordOpusRun(id, 'opus-2', 'ok', 'RV1', T0).state.attempts.impl).toBe(1);
+  expect(bumpAttempt(id, 'impl', T0).attempts.impl).toBe(2);
+  expect(recordOpusRun(id, 'opus-3', 'capacity', 'RV1', T0).state.attempts.impl).toBe(1);
+  // Settling the same run twice changes nothing (no double give-back, no double failure).
+  const again = recordOpusRun(id, 'opus-3', 'capacity', 'RV1', T0);
+  expect(again.state.attempts.impl).toBe(1);
+  expect(again.state.opus_failures).toEqual({ total: 2, consecutive: 1, last_reason: 'capacity' });
+  expect(
+    again.state.uncounted_calls.filter((c) => c.kind === 'impl').map((c) => c.started_at),
+  ).toEqual(['opus-1', 'opus-3']);
+  // The next round can still be dispatched.
+  expect(bumpAttempt(id, 'impl', T0).attempts.impl).toBe(2);
+  // Three in a row without a result: handover for RV0 / RV1.
+  recordOpusRun(id, 'opus-4', 'timeout', 'RV1', T0);
+  bumpAttempt(id, 'impl', T0);
+  const third = recordOpusRun(id, 'opus-5', 'no-output', 'RV1', T0);
   expect(third).toMatchObject({ next: 'handover' });
   expect(third.reason).toContain('连续 3 次');
-  expect(third.state.opus_failures).toEqual({ total: 3, consecutive: 3, last_reason: 'capacity' });
-  // A run with a result resets the run of failures, not the total.
-  const ok = recordOpusRun('E1-05', 'timeout', 'RV2', T0);
-  expect(ok.next).toBe('continue');
-  for (const outcome of ['no-output', 'ok', 'timeout', 'ok', 'capacity', 'ok'] as const) {
-    recordOpusRun('E1-05', outcome, 'RV2', T0);
-  }
-  expect(readState('E1-05')?.opus_failures).toEqual({
+  // Opus runs are no Codex calls: the per-task Codex call cap does not move.
+  expect(taskCalls(id).calls).toBe(0);
+  expect(() => recordOpusRun(id, 'bad id!', 'ok', 'RV1', T0)).toThrow(/invalid Opus run id/);
+  removeDir(stateFile(id));
+});
+
+it('[RO2-03] five Opus runs without a result in total block an RV2 task (no handover)', () => {
+  const id = 'E1-05';
+  // Never three in a row, two runs with a result: the fifth failure in total stops the task.
+  const outcomes = ['timeout', 'no-output', 'ok', 'capacity', 'timeout', 'ok'] as const;
+  outcomes.forEach((o, i) => {
+    bumpAttempt(id, 'impl', T0);
+    expect(recordOpusRun(id, `r${i}`, o, 'RV2', T0).next).toBe('continue');
+  });
+  expect(readState(id)?.opus_failures).toEqual({
     total: 4,
     consecutive: 0,
-    last_reason: 'capacity',
+    last_reason: 'timeout',
   });
-  const fifth = recordOpusRun('E1-05', 'no-output', 'RV2', T0);
+  expect(readState(id)?.attempts.impl).toBe(2);
+  bumpAttempt(id, 'impl', T0);
+  const fifth = recordOpusRun(id, 'r9', 'no-output', 'RV2', T0);
   expect(fifth.next).toBe('blocked');
   expect(fifth.reason).toContain('累计 5 次');
   expect(fifth.reason).toContain('RV2 不换家');
-  // Opus failures never touch the Codex counters.
-  expect(fifth.state.attempts).toEqual({ test: 0, impl: 0, handover: 0, 'spec-test': 0, code: 0 });
-  const cli = runCli('state.ts', ['opus-run', 'E1-06', '--outcome', 'timeout', '--risk', 'RV1'], {
-    COULI_RUNS: runs,
-  });
+  const cli = runCli(
+    'state.ts',
+    ['opus-run', 'E1-06', '--run-id', 'x1', '--outcome', 'timeout', '--risk', 'RV1'],
+    { COULI_RUNS: runs },
+  );
   expect(cli.status, cli.stderr).toBe(0);
   expect(JSON.parse(cli.stdout)).toMatchObject({ next: 'continue', opus_failures: { total: 1 } });
   expect(
-    runCli('state.ts', ['opus-run', 'E1-06', '--outcome', 'timeout'], { COULI_RUNS: runs }).status,
+    runCli('state.ts', ['opus-run', 'E1-06', '--outcome', 'timeout', '--risk', 'RV1'], {
+      COULI_RUNS: runs,
+    }).status,
   ).toBe(2);
-  for (const id of ['E1-04', 'E1-05', 'E1-06']) removeDir(stateFile(id));
+  for (const t of [id, 'E1-06']) removeDir(stateFile(t));
 });
 
 it('reads a state file of the three-counter shape with the later counters at 0', () => {

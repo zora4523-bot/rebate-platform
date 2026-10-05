@@ -1,13 +1,17 @@
-// Unit tests of the red check (规划/11 §2.3 step 3; ops/approvals.yaml id 19).
+// Unit tests of the red check (规划/11 §2.3 step 3; ops/approvals.yaml id 19; Codex review
+// CR-10, CR-11 of 2026-10-05).
 import { expect, it } from 'vitest';
-import { checkRedReport, redCheckRequired, wrongRedReason } from './red-check.ts';
+import {
+  checkRedReports,
+  expectedRuleTests,
+  redCheckRequired,
+  wrongRedReason,
+} from './red-check.ts';
 
-const GLOBS = ['test/spec/**', 'test/properties/**', 'test/acceptance/**'];
 const ROOT = '/work/repo';
 
-function report(
-  files: Array<{ name: string; message?: string; tests: Array<[string, string, string?]> }>,
-) {
+type T = [string, string, string?];
+function report(files: Array<{ name: string; message?: string; tests: T[] }>) {
   return {
     testResults: files.map((f) => ({
       name: `${ROOT}/${f.name}`,
@@ -31,75 +35,129 @@ it('[ops/approvals.yaml id 19] applies to every task with a rule-test author, RV
 
 it('[规划/11 §2.3] red for the right reason: assertion, counterexample, NotImplemented', () => {
   expect(wrongRedReason('AssertionError: expected 3 to be 4')).toBeNull();
+  expect(wrongRedReason('Property failed after 1 tests\nCounterexample: [0]')).toBeNull();
   expect(
-    wrongRedReason('Property failed after 1 tests\nCounterexample: [0]\nGot error: AssertionError'),
+    wrongRedReason(
+      'Property failed after 1 tests\nCounterexample: [0]\nGot error: AssertionError: x',
+    ),
   ).toBeNull();
   expect(wrongRedReason('Error: NotImplemented: splitCommission')).toBeNull();
-  expect(wrongRedReason("Error: Cannot find module '../src/split.ts'")).toContain('wrong reason');
+  expect(wrongRedReason("Error: Cannot find module '../src/split.ts'")).toContain(
+    'module not found',
+  );
   expect(wrongRedReason("TypeError: Cannot read properties of undefined (reading 'x')")).toContain(
     'TypeError',
   );
-  // A counterexample whose error is a TypeError is a crash, not a rule violation.
-  expect(
-    wrongRedReason('Property failed after 1 tests\nGot error: TypeError: x is not a function'),
-  ).toContain('TypeError');
   expect(wrongRedReason('Error: boom')).toContain('unrecognised');
 });
 
-it('[规划/11 §2.3] a report passes only when every rule test is red for the right reason', () => {
-  const good = checkRedReport(
-    report([
-      {
-        name: 'test/spec/money/split.test.ts',
-        tests: [['splits [AC-1]', 'failed', 'AssertionError: expected 1 to be 2']],
-      },
-      {
-        name: 'test/properties/money/sum.test.ts',
-        tests: [['sums', 'failed', 'Error: NotImplemented']],
-      },
-      // Unit tests elsewhere are not rule tests and are ignored.
-      { name: 'packages/money/src/a.test.ts', tests: [['unit', 'passed']] },
-    ]),
-    GLOBS,
+it('[CR-11] infrastructure failures wrapped by fast-check or a hook are never a valid red', () => {
+  const wrapped = (cause: string): string =>
+    `Property failed after 1 tests\n{ seed: 1 }\nCounterexample: [0]\nGot error: ${cause}`;
+  expect(wrongRedReason(wrapped('Error: connect ECONNREFUSED 127.0.0.1:5432'))).toContain(
+    'network or database unreachable',
+  );
+  expect(wrongRedReason(wrapped('error: password authentication failed for user "x"'))).toContain(
+    'database connection failed',
+  );
+  expect(wrongRedReason('Error: migration 0007_ledger.sql failed: relation exists')).toContain(
+    'migration failed',
+  );
+  expect(wrongRedReason('Error: Hook timed out in 10000ms.')).toContain('test setup failed');
+  expect(wrongRedReason('Error: health check of the mock server failed')).toContain(
+    'server not up',
+  );
+  expect(wrongRedReason('Error: Build failed with 1 error')).toContain('build failed');
+  // A counterexample whose cause is not an assertion is not counted either.
+  expect(wrongRedReason(wrapped('Error: boom'))).toContain('not an assertion failure');
+});
+
+it('[CR-10] the expected rule-test files are the ones the task added inside its test_paths', () => {
+  expect(
+    expectedRuleTests(
+      [
+        { path: 'test/spec/money/a.test.ts', status: '?' },
+        { path: 'test/spec/money/b.int.test.ts', status: 'A' },
+        { path: 'test/spec/money/arb.ts', status: '?' },
+        { path: 'test/spec/other/c.test.ts', status: '?' },
+        { path: 'test/spec/money/gone.test.ts', status: 'D' },
+      ],
+      ['test/spec/money/**'],
+    ),
+  ).toEqual(['test/spec/money/a.test.ts', 'test/spec/money/b.int.test.ts']);
+});
+
+it('[CR-10] every expected file must have run and be red; a partial report fails', () => {
+  const a = 'test/spec/money/a.test.ts';
+  const b = 'test/spec/money/b.test.ts';
+  const both = [a, b];
+  const good = checkRedReports(
+    [
+      report([
+        { name: a, tests: [['splits [AC-1]', 'failed', 'AssertionError: expected 1 to be 2']] },
+      ]),
+      report([{ name: b, tests: [['sums', 'failed', 'Error: NotImplemented']] }]),
+    ],
+    both,
     ROOT,
   );
   expect(good).toEqual({
     ok: true,
-    red: [
-      'test/spec/money/split.test.ts > splits [AC-1]',
-      'test/properties/money/sum.test.ts > sums',
-    ],
+    red: [`${a} > splits [AC-1]`, `${b} > sums`],
     problems: [],
   });
 
-  const bad = checkRedReport(
-    report([
-      {
-        name: 'test/spec/money/split.test.ts',
-        tests: [
-          ['green one', 'passed'],
-          ['crashes', 'failed', 'TypeError: f is not a function'],
-          ['skipped', 'skipped'],
-        ],
-      },
-      {
-        name: 'test/spec/money/missing.test.ts',
-        message: "Error: Failed to resolve import '../x.ts'",
-        tests: [],
-      },
-    ]),
-    GLOBS,
+  // B never ran: the run picked A only.
+  const partial = checkRedReports(
+    [report([{ name: a, tests: [['splits', 'failed', 'AssertionError: x']] }])],
+    both,
     ROOT,
   );
-  expect(bad.ok).toBe(false);
+  expect(partial.ok).toBe(false);
+  expect(partial.problems).toEqual([
+    { file: b, test: null, reason: 'not in the report: this rule-test file did not run' },
+  ]);
+
+  const bad = checkRedReports(
+    [
+      report([
+        {
+          name: a,
+          tests: [
+            ['green one', 'passed'],
+            ['crashes', 'failed', 'TypeError: f is not a function'],
+            ['skipped', 'skipped'],
+          ],
+        },
+        { name: b, message: "Error: Failed to resolve import '../x.ts'", tests: [] },
+      ]),
+    ],
+    both,
+    ROOT,
+  );
   expect(bad.problems.map((p) => `${p.test ?? '(file)'}: ${p.reason.split(' (')[0]}`)).toEqual([
     'green one: green on the skeleton: the test has no teeth',
     'crashes: red for the wrong reason',
     'skipped: status "skipped"',
     '(file): the file did not load: red for the wrong reason',
   ]);
-  expect(checkRedReport(report([]), GLOBS, ROOT).problems[0]?.reason).toContain(
-    'no rule-test file',
+  // A file-level setup failure taints the tests that failed next to it.
+  const tainted = checkRedReports(
+    [
+      report([
+        {
+          name: a,
+          message: 'Error: connect ECONNREFUSED pg:5432',
+          tests: [['t', 'failed', 'AssertionError: x']],
+        },
+      ]),
+    ],
+    [a],
+    ROOT,
   );
-  expect(checkRedReport({ nope: true }, GLOBS, ROOT).ok).toBe(false);
+  expect(tainted.problems[0]?.reason).toContain('network or database unreachable');
+  expect(checkRedReports([report([])], [], ROOT).problems[0]?.reason).toContain(
+    'added no rule-test file',
+  );
+  expect(checkRedReports([{ nope: true }], [a], ROOT).ok).toBe(false);
 });

@@ -24,6 +24,7 @@ function state(id: string, over: Partial<TaskState> = {}): TaskState {
     state: 'review',
     attempts: { test: 0, impl: 2, handover: 0, 'spec-test': 1, code: 0 },
     spec_commit: null,
+    implementer: null,
     pid: null,
     started_at: null,
     owner_session: null,
@@ -32,6 +33,7 @@ function state(id: string, over: Partial<TaskState> = {}): TaskState {
     last_error: null,
     uncounted_calls: [],
     opus_failures: { total: 0, consecutive: 0, last_reason: null },
+    opus_runs: [],
     updated_at: '2026-10-02T03:00:00.000Z',
     ...over,
   };

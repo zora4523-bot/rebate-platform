@@ -4,12 +4,14 @@
 //   node tools/ops/state.ts get <id>
 //   node tools/ops/state.ts set <id> [--state <s>] [--spec-commit <sha>|none] [--pid <n>|none]
 //                                    [--started-at <iso>] [--last-error <path>|none]
+//                                    [--implementer claude|codex|none]
 //   node tools/ops/state.ts claim <id> [--owner <session>] [--renew]
 //   node tools/ops/state.ts release <id> [--owner <session>]
 //   node tools/ops/state.ts bump-attempt <id> test|impl|handover
 //   node tools/ops/state.ts bump-attempt <id> review --review-type money|general|contract|spec-test
 //   node tools/ops/state.ts settle <id> --meta <meta.json>
-//   node tools/ops/state.ts opus-run <id> --outcome ok|no-output|timeout|capacity --risk RV0|RV1|RV2
+//   node tools/ops/state.ts opus-run <id> --run-id <x> --outcome ok|no-output|timeout|capacity
+//                                         --risk RV0|RV1|RV2
 //   node tools/ops/state.ts migrate <id> [--unattributed-review spec-test|code] [--dry-run]
 //
 // Rounds (规划/11 §2.5, owner decision 2026-10-02, ops/approvals.yaml id 13):
@@ -133,6 +135,12 @@ export type TaskState = {
   attempts: Record<AttemptKind, number>;
   /** Commit of the rule tests; they must not change afterwards. */
   spec_commit: string | null;
+  /**
+   * Who implements the task: null / claude = the Opus subagent (default split of 2026-10-05);
+   * codex after a handover (dispatch.sh --handover): its code review then goes to Claude (CR-09).
+   * Absent in older files.
+   */
+  implementer: 'claude' | 'codex' | null;
   /** Current background run. */
   pid: number | null;
   started_at: string | null;
@@ -146,6 +154,8 @@ export type TaskState = {
   uncounted_calls: UncountedCall[];
   /** Runs of the Opus implementation subagent without a result (RO2-03); absent in older files. */
   opus_failures: OpusFailures;
+  /** Every settled Opus run, by its run id (CR-07: settling is idempotent); absent in older files. */
+  opus_runs: { run_id: string; outcome: OpusOutcome; at: string }[];
   updated_at: string;
 };
 
@@ -171,6 +181,7 @@ function initialState(id: string, now: Date): TaskState {
     state: 'ready',
     attempts: emptyAttempts(),
     spec_commit: null,
+    implementer: null,
     pid: null,
     started_at: null,
     owner_session: null,
@@ -179,6 +190,7 @@ function initialState(id: string, now: Date): TaskState {
     last_error: null,
     uncounted_calls: [],
     opus_failures: noOpusFailures(),
+    opus_runs: [],
     updated_at: now.toISOString(),
   };
 }
@@ -264,10 +276,29 @@ export function parseState(raw: unknown, file: string): TaskState {
     }
     opus = f as OpusFailures;
   }
+  const runs = o.opus_runs ?? [];
+  if (
+    !Array.isArray(runs) ||
+    !runs.every(
+      (r: unknown) =>
+        typeof r === 'object' &&
+        r !== null &&
+        typeof (r as { run_id?: unknown }).run_id === 'string' &&
+        (OPUS_OUTCOMES as readonly unknown[]).includes((r as { outcome?: unknown }).outcome),
+    )
+  ) {
+    bad('opus_runs must be a list of {run_id, outcome, at}');
+  }
+  const implementer = o.implementer ?? null;
+  if (implementer !== null && implementer !== 'claude' && implementer !== 'codex') {
+    bad('implementer must be claude, codex or null');
+  }
   return {
     ...(raw as TaskState),
     attempts: filled as Record<AttemptKind, number>,
     opus_failures: opus,
+    opus_runs: runs as TaskState['opus_runs'],
+    implementer: implementer as TaskState['implementer'],
   };
 }
 
@@ -354,20 +385,56 @@ export type OpusRunResult = {
  * output, timeout, capacity) counts as a failure; 3 in a row or 5 in total hand the task over to
  * Codex once (RV0 / RV1) or block it (RV2). A run with a result resets the consecutive count.
  */
+/** An Opus run id: whatever the orchestrator names it by (the Agent task id, a timestamp). */
+export const OPUS_RUN_ID = /^[A-Za-z0-9._:-]{1,80}$/;
+
+const OPUS_UNCOUNTED: Record<Exclude<OpusOutcome, 'ok'>, UncountedCall['reason']> = {
+  'no-output': 'no-output',
+  timeout: 'timeout',
+  capacity: 'capacity',
+};
+
+/**
+ * Settles one run of the Opus implementation subagent (RO2-03, CR-07). Its round was counted
+ * before it started (`bump-attempt impl`); a run without a result (no output, timeout, capacity)
+ * gives that round back, like a Codex call without output (uncounted_calls, kind impl), and counts
+ * as an Opus failure: 3 in a row or 5 in total hand the task over to Codex once (RV0 / RV1) or
+ * block it (RV2). A run with a result keeps its round and resets the run of failures. Idempotent
+ * per run id: settling the same run again changes nothing.
+ */
 export function recordOpusRun(
   id: string,
+  runId: string,
   outcome: OpusOutcome,
   risk: 'RV0' | 'RV1' | 'RV2',
   now: Date = new Date(),
 ): OpusRunResult {
+  if (!OPUS_RUN_ID.test(runId)) throw new UsageError(`invalid Opus run id: "${runId}"`);
   const prev = readState(id) ?? initialState(id, now);
-  const f = prev.opus_failures;
-  const opus: OpusFailures =
-    outcome === 'ok'
-      ? { ...f, consecutive: 0 }
-      : { total: f.total + 1, consecutive: f.consecutive + 1, last_reason: outcome };
-  const state: TaskState = { ...prev, opus_failures: opus, updated_at: now.toISOString() };
-  writeState(state);
+  let state = prev;
+  if (!prev.opus_runs.some((r) => r.run_id === runId)) {
+    const f = prev.opus_failures;
+    const failed = outcome !== 'ok';
+    state = {
+      ...prev,
+      attempts: failed
+        ? { ...prev.attempts, impl: Math.max(0, prev.attempts.impl - 1) }
+        : prev.attempts,
+      uncounted_calls: failed
+        ? [
+            ...prev.uncounted_calls,
+            { kind: 'impl', started_at: runId, exit_code: -1, reason: OPUS_UNCOUNTED[outcome] },
+          ]
+        : prev.uncounted_calls,
+      opus_failures: failed
+        ? { total: f.total + 1, consecutive: f.consecutive + 1, last_reason: outcome }
+        : { ...f, consecutive: 0 },
+      opus_runs: [...prev.opus_runs, { run_id: runId, outcome, at: now.toISOString() }],
+      updated_at: now.toISOString(),
+    };
+    writeState(state);
+  }
+  const opus = state.opus_failures;
   let reason: string | null = null;
   if (opus.consecutive >= OPUS_MAX_CONSECUTIVE_FAILURES) {
     reason = `${id}: Opus 实现连续 ${opus.consecutive} 次没有结果（最近一次：${opus.last_reason}）`;
@@ -677,12 +744,14 @@ function main(argv: string[]): number {
       pid: { type: 'string' },
       'started-at': { type: 'string' },
       'last-error': { type: 'string' },
+      implementer: { type: 'string' },
       owner: { type: 'string' },
       renew: { type: 'boolean', default: false },
       'review-type': { type: 'string' },
       meta: { type: 'string' },
       'unattributed-review': { type: 'string' },
       outcome: { type: 'string' },
+      'run-id': { type: 'string' },
       risk: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
     },
@@ -728,6 +797,13 @@ function main(argv: string[]): number {
     }
     const lastError = parseNullable(values['last-error']);
     if (lastError !== undefined) patch.last_error = lastError;
+    const implementer = parseNullable(values.implementer);
+    if (implementer !== undefined) {
+      if (implementer !== null && implementer !== 'claude' && implementer !== 'codex') {
+        throw new UsageError('--implementer must be claude, codex or "none"');
+      }
+      patch.implementer = implementer;
+    }
     if (Object.keys(patch).length === 0) throw new UsageError('set needs at least one field');
     console.log(JSON.stringify(updateState(id, patch), null, 2));
     return 0;
@@ -790,13 +866,16 @@ function main(argv: string[]): number {
     if (risk !== 'RV0' && risk !== 'RV1' && risk !== 'RV2') {
       throw new UsageError('opus-run <id> needs --risk RV0|RV1|RV2 (tools/ops/task.ts show)');
     }
-    const res = recordOpusRun(id, outcome as OpusOutcome, risk);
+    const runId = values['run-id'];
+    if (runId === undefined) throw new UsageError('opus-run <id> needs --run-id <x>');
+    const res = recordOpusRun(id, runId, outcome as OpusOutcome, risk);
     console.log(
       JSON.stringify({
         task: id,
         next: res.next,
         reason: res.reason,
         opus_failures: res.state.opus_failures,
+        attempts: res.state.attempts,
       }),
     );
     return 0;

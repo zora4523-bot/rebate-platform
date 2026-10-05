@@ -126,6 +126,48 @@ it('checks every file of the ledger and reports the failing ones', () => {
   ]);
 });
 
+it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a task with a tester', () => {
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**', 'test/properties/**', 'specs/commission-examples.csv'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    'ops/tasks/X1-01k.yaml': good({
+      id: 'X1-01k',
+      test_paths: "\n  - 'test/spec/demo/**'\n  - 'test/properties/demo/*.test.ts'",
+    }),
+    'ops/tasks/X1-01l.yaml': good({
+      id: 'X1-01l',
+      test_paths:
+        "\n  - 'packages/demo/src/**'\n  - 'test/sp*'\n  - 'specs/commission-examples.csv'",
+    }),
+    'ops/tasks/X1-01m.yaml': good({
+      id: 'X1-01m',
+      tester: 'none',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+  });
+  try {
+    expect(checkTask('X1-01k', opts('RV1'))).toEqual([]);
+    expect(loadTask('X1-01k', root).test_paths).toEqual([
+      'test/spec/demo/**',
+      'test/properties/demo/*.test.ts',
+    ]);
+    // An older ledger without the field still parses (test_paths: []).
+    expect(loadTask('X1-01', root).test_paths).toEqual([]);
+    expect(checkTask('X1-01l', opts('RV1'))).toEqual([
+      'test_paths: "packages/demo/src/**" is not inside the rule-test assets (class 1 of tools/guard/protected-paths.json)',
+      'test_paths: "test/sp*" is not inside the rule-test assets (class 1 of tools/guard/protected-paths.json)',
+    ]);
+    expect(checkTask('X1-01m', opts('RV1')).join('\n')).toContain(
+      'a task without a rule-test author (tester: none) has no test_paths',
+    );
+  } finally {
+    for (const id of ['X1-01k', 'X1-01l', 'X1-01m']) removeDir(`${root}/ops/tasks/${id}.yaml`);
+  }
+});
+
 it('shows a task together with its computed risk', () => {
   const view = showTask('X1-01', opts('RV1'));
   expect(view.id).toBe('X1-01');

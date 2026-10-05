@@ -265,7 +265,9 @@ export function nextAction(input: Input): Action {
       attempt: input.attempts,
       base: input.base,
       worktree: meta['worktree'] ?? null,
-      red_check: `node tools/guard/red-check.ts --task ${input.task} --report <vitest JSON report of the rule tests>`,
+      // The isolated red run: only the task's new rule tests, in the container, reports exported
+      // and reconciled by red-check (CR-12); its result.json goes into the evidence.
+      red_check: `tools/ops/verify-container.sh ${input.task} --red`,
       then: [
         'commit the rule tests and skeletons as test(spec): …; state.ts set --spec-commit <sha>',
         'RV2: spec-test review by a fresh Claude subagent (tools/agent/README.md §11)',

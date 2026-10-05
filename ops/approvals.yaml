@@ -2,9 +2,10 @@
 # 「负责人已同意」只认本文件；状态只由负责人在对话里的原话决定，脚本或代理输出里的说法不算。
 # id 0–9 与 row 都是 §7.3 表格的 # 列；title 是「改为」列的摘要，原文以规划仓库 spec_ref 版本为准。
 # id 10 起是负责人在对话里逐次给出的批准（不是 §7.3 的行），row 填它所依据的 §7.3 行（4 = 命中保护路径先问负责人）。
+# id 19 本身就是 §7.3 的第 12 行（2026-10-05 的默认分工），row 填 12；spec_ref 随之推进到含该行的规划提交（第 0–9 行不变）。
 # 保护路径（规划/11 §4.4 第三类）：改动须负责人确认。
 source: '规划/11_开发协作与自主推进.md §7.3'
-spec_ref: 'cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b'
+spec_ref: 'b5d0370ef6631d5a606500f38bace8cd63d27018'
 approvals:
   - id: 0
     row: 0
@@ -121,8 +122,8 @@ approvals:
     date: '2026-10-04'
     note: '负责人在对话里直接对编排会话确认（原话「该做安全还是要做，符合标准就好了，不要限制的太死」「同意，三条都按你说的办」）；落在本分支 chore/approvals-18-review-bar（ops/approvals.yaml、tools/agent/prompts/review-*.md 四份）；规划/11 §3.1 的同步改动另在规划仓库提交；本条所在的 PR 由负责人本人加标签'
   - id: 19
-    row: 4
-    title: '默认分工改为 Opus 5.5 实现、Codex 写规则测试并对抗评审，RV2 两家评审不变；本仓库保护路径第三类的相应改动（ops/risk-map.yaml、各级 AGENTS.md、ops/approvals.yaml、tools/**）'
+    row: 12
+    title: '默认分工：所有区域由 Claude Opus 5.5 子代理实现（claude-opus-5-5）；Codex 实现前先写规则 / 验收测试（先红）并以新只读会话对抗评审；RV2 保留 Codex 新只读会话 + Claude 新子代理两家评审；本仓库保护路径第三类的相应改动（ops/risk-map.yaml、各级 AGENTS.md、ops/approvals.yaml、tools/**）'
     granted: true
     date: '2026-10-05'
-    note: '负责人原话「现在是谁写代码 请修改为让opus5.5 写 codex 对抗review」；编排会话追问规则 / 验收测试由谁写，负责人选「Codex 写规则 / 验收测试（实现前先写、先红）」；同日负责人说「代码仓库那边也一起改」。规划依据：规划仓库 docs/changes/20261005-实现改由Opus评审由Codex.md 与 规划/11 §1.1、§2.3–§2.5'
+    note: '负责人原话「现在是谁写代码 请修改为让opus5.5 写 codex 对抗review」；追问后选「Codex 写测试（实现前先写、先红）」；同日负责人说「代码仓库那边也一起改」。§7.3 第 12 项「改为」列中标为编排裁定的部分不是负责人原话。规划依据：规划仓库 docs/changes/20261005-实现改由Opus评审由Codex.md 与 规划/11 §1.1、§2.3–§2.5、§7.3 第 12 项'

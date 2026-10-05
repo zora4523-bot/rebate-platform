@@ -156,6 +156,17 @@ esac
 # they are frozen, and the implementation belongs to the Opus subagent (README §10). A handover
 # to Codex is for RV0 / RV1 only (规划/11 §2.5: RV2 stops instead).
 if [ "$PHASE" = test ]; then
+  # CR-06: the test phase writes only into the task's test_paths; a ledger without them is not
+  # dispatched (nothing is counted).
+  [ -f "$OPS/task.ts" ] || {
+    log "missing in the trusted root: tools/ops/task.ts"
+    exit 2
+  }
+  test_paths_now="$(node "$OPS/task.ts" show "$TASK" --json 2>/dev/null |
+    node "$SELF_DIR/meta.ts" get --file /dev/stdin test_paths 2>/dev/null || true)"
+  case "$test_paths_now" in
+    '' | '[]' | null) stop 1 test-paths-missing "ops/tasks/$TASK.yaml has no test_paths: add the task's rule-test paths (inside class 1 of the protected paths) before the test phase" ;;
+  esac
   case "$spec_commit_now" in
     '' | null) ;;
     *) stop 1 spec-commit-exists "rule tests are committed (spec_commit $spec_commit_now): the implementation goes to a Claude Opus subagent (tools/agent/README.md §10); a Codex handover is dispatch.sh $TASK --handover" ;;
@@ -223,8 +234,10 @@ fi
   >"$RUN/dispatch.log" 2>&1 </dev/null &
 pid=$!
 
-node "$OPS/state.ts" set "$TASK" --state doing --pid "$pid" --started-at "$(agent_now_utc)" \
-  >/dev/null 2>"$ERR_FILE" ||
+state_args=(--state doing --pid "$pid" --started-at "$(agent_now_utc)")
+# CR-09: after a handover Codex is the implementer; codex-run.sh then refuses a Codex code review.
+if [ "$PHASE" = handover ]; then state_args+=(--implementer codex); fi
+node "$OPS/state.ts" set "$TASK" "${state_args[@]}" >/dev/null 2>"$ERR_FILE" ||
   log "warning: run started (pid $pid) but state.ts set failed: $(last_error)"
 
 emit --str action=dispatched --num "pid=$pid" --str "run=$RUN" --str "phase=$PHASE"

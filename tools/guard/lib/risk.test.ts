@@ -19,9 +19,10 @@ describe('ops/risk-map.yaml', () => {
       'packages/money/** RV2 claude/codex/claude+codex',
       'packages/domain/** RV2 claude/codex/claude+codex',
       'packages/db/** RV2 claude/codex/claude+codex',
+      'db/invariants/** RV2 codex/none/claude',
       'db/** RV2 claude/codex/claude+codex',
-      'packages/testing/** RV2 claude/none/claude+codex',
-      'test/** RV2 claude/none/claude+codex',
+      'packages/testing/** RV2 codex/none/claude',
+      'test/** RV2 codex/none/claude',
     ]);
   });
 

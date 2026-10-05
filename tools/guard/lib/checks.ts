@@ -285,16 +285,24 @@ export function authorPathsCheck(
   base: string,
   specCommit: string,
   taskPaths: readonly string[],
+  testPaths: readonly string[] = [],
 ): CheckResult {
-  const testAssets = loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob);
+  // The task's test_paths; a ledger written before 2026-10-05 has none and keeps the old scope
+  // (all rule-test assets) so that its merged history still checks out.
+  const testAssets =
+    testPaths.length > 0
+      ? [...testPaths]
+      : loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob);
   const changes = changedBetweenCommits(base, specCommit, { cwd: root });
+  const show = (ref: string, path: string): string | null => {
+    const res = tryGit(['show', `${ref}:${path}`], { cwd: root });
+    return res.status === 0 ? res.stdout : null;
+  };
   const problems = authorProblems(changes, {
     taskPaths,
     testAssets,
-    contentAtSpec: (path) => {
-      const res = tryGit(['show', `${specCommit}:${path}`], { cwd: root });
-      return res.status === 0 ? res.stdout : null;
-    },
+    contentAtSpec: (path) => show(specCommit, path),
+    contentAtBase: (path) => show(base, path),
   });
   return result('path-guard-author', problems, [
     `${changes.length} path(s) changed by the rule-test commits ${base.slice(0, 12)}..${specCommit.slice(0, 12)}`,
@@ -312,23 +320,35 @@ export function authorWorktreeCheck(
   base: string,
   taskPaths: readonly string[],
   taskType: string | undefined,
+  testPaths: readonly string[],
 ): PathGuardOutcome {
   const protectedList = loadProtected(trustedRoot());
   const changes = changedFiles(base, { cwd: root });
   const hits = findProtectedHits(changes, protectedList, gitReaders(root, base), { taskType });
-  const testAssets = protectedList.class1_add_only.map((g) => splitFragment(g).glob);
+  // Only the task's own test_paths (CR-06): no test_paths, no rule-test asset is allowed.
   const detail = checkAuthorPaths(
     changes,
     {
       taskPaths,
-      testAssets,
+      testAssets: testPaths,
       contentAtSpec: (path) => {
         const file = join(root, path);
         return existsSync(file) ? readFileSync(file, 'utf8') : null;
       },
+      contentAtBase: (path) => {
+        const res = tryGit(['show', `${base}:${path}`], { cwd: root });
+        return res.status === 0 ? res.stdout : null;
+      },
     },
     hits,
   );
+  if (testPaths.length === 0) {
+    detail.ok = false;
+    detail.violations.unshift({
+      path: 'ops/tasks',
+      reason: 'the task has no test_paths: add them to the ledger before the test phase (CR-06)',
+    });
+  }
   return {
     check: result(
       'path-guard-author',
@@ -368,13 +388,14 @@ export function protectedPathsCheck(
 }
 
 /** Task definition from the trusted root: a branch cannot widen its own `paths`. */
-export function trustedTask(id: string): { paths: string[]; type: string } {
+export function trustedTask(id: string): { paths: string[]; type: string; test_paths: string[] } {
   const task = loadTask(id, trustedRoot());
-  return { paths: task.paths, type: task.type };
+  return { paths: task.paths, type: task.type, test_paths: task.test_paths };
 }
 
 export type GuardTask = {
   paths: string[];
+  test_paths: string[];
   type: string;
   source: 'trusted' | 'head';
   notice: string | null;
@@ -407,6 +428,7 @@ export function guardTask(id: string, root: string, base: string): GuardTask {
   const task = parseTaskFile(atHead.stdout, rel);
   return {
     paths: task.paths,
+    test_paths: task.test_paths,
     type: task.type,
     source: 'head',
     notice:

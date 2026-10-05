@@ -6,6 +6,12 @@
 #   couli-verify-entrypoint verify   offline; copies /src to /work/repo, installs from the
 #                                    read-only store and runs `pnpm verify` under a time limit
 #                                    (VERIFY_SCRIPT=verify:fast: `pnpm run verify:fast` instead)
+#   couli-verify-entrypoint red      offline; copies /src, installs, then runs only the rule-test
+#                                    files named in RED_UNIT / RED_INT (newline separated,
+#                                    repository paths under test/) with the Vitest JSON reporter;
+#                                    reports go to /out/unit.json and /out/int.json. The tests are
+#                                    expected to fail (red): their exit code is recorded in
+#                                    /out/*.exit, not returned; tools/guard/red-check.ts judges.
 set -euo pipefail
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
@@ -51,8 +57,39 @@ case "${1:-}" in
     echo "[verify] pnpm run ${script} exited ${rc} after ${elapsed}s"
     exit "$rc"
     ;;
+  red)
+    limit="${VERIFY_TIMEOUT_SECS:?VERIFY_TIMEOUT_SECS is required}"
+    mkdir -p /work/repo
+    tar -C /src \
+      --exclude=node_modules --exclude=.git --exclude=dist --exclude=.turbo --exclude=.tmp \
+      --exclude='*.tsbuildinfo' \
+      -cf - . | tar -C /work/repo -xf -
+    cd /work/repo
+    echo "[red] pnpm install --offline --frozen-lockfile"
+    pnpm install --offline --frozen-lockfile --store-dir /store
+    cd /work/repo/test
+    run_red() { # run_red <name> <newline-separated repo paths> [vitest args…]
+      local name="$1" list="$2" files=() f rc=0
+      shift 2
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        case "$f" in
+          test/*) files+=("${f#test/}") ;;
+          *) echo "[red] not under test/, cannot run: $f" ;;
+        esac
+      done <<<"$list"
+      [ "${#files[@]}" -gt 0 ] || return 0
+      echo "[red] vitest run ${name}: ${files[*]}"
+      timeout --signal=TERM --kill-after=10 "$limit" pnpm exec vitest run "$@" \
+        --reporter=json --outputFile="/out/${name}.json" "${files[@]}" || rc=$?
+      echo "$rc" >"/out/${name}.exit"
+      echo "[red] vitest ${name} exited ${rc} (red is expected)"
+    }
+    run_red unit "${RED_UNIT:-}"
+    run_red int "${RED_INT:-}" --config vitest.integration.config.ts
+    ;;
   *)
-    echo "usage: couli-verify-entrypoint fetch|verify" >&2
+    echo "usage: couli-verify-entrypoint fetch|verify|red" >&2
     exit 2
     ;;
 esac

@@ -1,38 +1,43 @@
 #!/usr/bin/env bash
-# Out-of-sandbox verification (规划/11 §2.3 step 7, §9.3 #6; ADR-0001 §4.2 #9, §7).
+# Out-of-sandbox verification (规划/11 §2.3 steps 3, 5 and 7, §4.1, §9.3 #6; ADR-0001 §4.2 #9, §7).
 #
-#   verify-container.sh <id> [--worktree <path>] [--host] [--fast]
+#   verify-container.sh <id> [--worktree <path>] [--fast | --red [--base <ref>]] [--dry-run]
 #
-# --fast: run `pnpm run verify:fast` instead of `pnpm verify` — the entry the Claude Opus
-# implementation subagent uses for its own test runs (default split of 2026-10-05,
-# ops/approvals.yaml id 19; 规划/11 §2.3 step 5): the tests are Codex-written, so they run in
-# this container and never on the host. verify:fast needs no database: no PostgreSQL is started
-# and the container runs with `--network none`. Results go to <runs>/<id>/verify-fast/<n>/ so
-# that they are never mistaken for the task's verification (verify/<n>/), which decides it.
+#   (default)  `pnpm verify` — the task's verification; it alone decides the task. verify/<n>/
+#   --fast     `pnpm run verify:fast` — the entry the Claude Opus implementation subagent uses for
+#              its own test runs (default split of 2026-10-05, ops/approvals.yaml id 19). No
+#              PostgreSQL, `--network none`. verify-fast/<n>/; never evidence of verification.
+#   --red      the isolated red run of the rule tests Codex wrote (规划/11 §2.3 step 3; CR-12):
+#              only the task's new rule-test files (inside its trusted test_paths, changed
+#              against --base, default the branch point with origin/main), Vitest JSON reports
+#              exported to red/<n>/out/, then tools/guard/red-check.ts reconciles them with the
+#              expected list (exit code = red-check's). Integration files (*.int.test.ts) get the
+#              one-shot PostgreSQL on the internal network; unit files only run with no network.
+#   --dry-run  prints what would run (script, commit, tree, red files) as one JSON line and
+#              starts nothing; no run directory is created.
 #
-# Runs `pnpm verify` for a task worktree inside a container that has no way out:
-#   - per-run `--internal` network; a one-shot PostgreSQL attached ONLY to it;
+# There is no host fallback (CR-01; 规划/11 §4.1, §8): every test or task file runs only in this
+# container. `--host` is refused; without Docker the script stops (exit 2) and the run goes to CI.
+#
+# The container has no way out:
+#   - per-run `--internal` network (or none); a one-shot PostgreSQL attached ONLY to it;
 #   - worktree mounted read-only at /src and copied to a tmpfs before anything runs;
 #   - dependencies from an offline pnpm store (volume keyed by the lockfile hash;
 #     filled by one networked `pnpm fetch` that sees nothing but the lockfile and
 #     pnpm-workspace.yaml);
-#   - non-root, read-only root file system, no capabilities, no Docker socket;
+#   - non-root, read-only root file system, no capabilities, no Docker socket; the red run
+#     additionally mounts its own output directory (reports only);
 #   - planning text for guards and tools tests comes from a read-only, single-commit
 #     snapshot of the planning repository at SPEC_REF, mounted at /spec.
-# The task passes or fails on this script's exit code, which is the exit code of
-# `pnpm verify` (124 = time limit). Exit code 2 = usage or infrastructure error
-# (no result.json is written in that case).
+# Exit code = the exit code of the script run (124 = time limit); --red: red-check's. Exit code
+# 2 = usage or infrastructure error (no result.json is written in that case).
 #
-# Output: <runs>/<id>/verify/<n>/log.txt and result.json (--fast: verify-fast/<n>/)
-#   { mode: container|host, script: verify|verify:fast, exit_code, commit, tree, prop_seed,
-#     started_at, finished_at }
+# Output: <runs>/<id>/{verify,verify-fast,red}/<n>/log.txt and result.json
+#   { mode: container, script: verify|verify:fast|red, exit_code, commit, tree, prop_seed,
+#     started_at, finished_at }  — red adds red_tests, expected and reports (path + sha256).
 # `tree` is the git tree of the work tree as verified (uncommitted changes included). The tree
 # is exported once into an immutable snapshot and that snapshot is what gets verified, so the
 # hash and the exit code always describe the same files; git-ignored paths never reach it.
-#
-# --host: fallback when Docker is unavailable. Runs `env -i HOME=<run>/home PATH=... pnpm verify`
-# in the snapshot (dependencies installed offline from the host's pnpm store, never the
-# worktree's node_modules) and records mode "host". RV2 never merges on a host result.
 #
 # This script, the Dockerfile and the entrypoint are gates: run them from the
 # trusted root, never from the task worktree (规划/11 §2.4).
@@ -40,7 +45,7 @@
 # Environment: COULI_RUNS, COULI_TRUSTED_ROOT, COULI_SPEC_REPO (conventions C7);
 #   COULI_VERIFY_TIMEOUT_SECS (default 1200); COULI_VERIFY_PREFIX (default couli-verify;
 #   prefix of every container, network and volume this script creates);
-#   PROP_SEED / PROP_RUNS are passed through; TEST_PG_ADMIN_URL only in --host mode.
+#   PROP_SEED / PROP_RUNS are passed through.
 set -euo pipefail
 
 PG_IMAGE='pgvector/pgvector:0.8.6-pg18-trixie'
@@ -48,7 +53,7 @@ DEFAULT_PROP_SEED=20261001
 
 log() { printf '%s\n' "$*" >&2; }
 die() { log "verify-container: $*"; exit 2; }
-usage() { log "usage: verify-container.sh <id> [--worktree <path>] [--host] [--fast]"; exit 2; }
+usage() { log "usage: verify-container.sh <id> [--worktree <path>] [--fast | --red [--base <ref>]] [--dry-run]"; exit 2; }
 
 sha256_stdin() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
@@ -72,10 +77,29 @@ ID=''
 WORKTREE=''
 MODE='container'
 SCRIPT='verify'
+BASE_ARG=''
+DRY_RUN=0
+set_script() {
+  [ "$SCRIPT" = verify ] || die "give at most one of --fast and --red"
+  SCRIPT="$1"
+}
 while [ $# -gt 0 ]; do
   case "$1" in
     --fast)
-      SCRIPT='verify:fast'
+      set_script 'verify:fast'
+      shift
+      ;;
+    --red)
+      set_script 'red'
+      shift
+      ;;
+    --base)
+      [ $# -ge 2 ] || usage
+      BASE_ARG="$2"
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=1
       shift
       ;;
     --worktree)
@@ -84,8 +108,8 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --host)
-      MODE='host'
-      shift
+      # CR-01: a host run would execute the task's (Codex-written) tests and code on the host.
+      die "--host is no longer accepted: tests and task code run only in the isolated container (规划/11 §4.1, §8). Start Docker, or hand the run to CI."
       ;;
     -h | --help) usage ;;
     -*) die "unknown option: $1" ;;
@@ -98,6 +122,8 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$ID" ] || usage
 if ! [[ "$ID" =~ ^[A-Z][A-Z0-9]*-[0-9]+[a-z]*$ ]]; then die "invalid task id: $ID"; fi
+if [ -n "$BASE_ARG" ] && [ "$SCRIPT" != red ]; then die "--base applies to --red only"; fi
+if [ -n "$BASE_ARG" ] && ! [[ "$BASE_ARG" =~ ^[A-Za-z0-9][A-Za-z0-9._/@^~-]*$ ]]; then die "invalid --base: $BASE_ARG"; fi
 
 # Same layout rule as tools/lib/paths.ts.
 parent="$(dirname "$SELF_ROOT")"
@@ -155,21 +181,69 @@ TIMEOUT_SECS="${COULI_VERIFY_TIMEOUT_SECS:-$MAX_TIMEOUT_SECS}"
 if ! [[ "$TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]]; then die "COULI_VERIFY_TIMEOUT_SECS must be a positive integer"; fi
 # The switch can only tighten the limit (.env.example: 都只能收紧).
 if [ "$TIMEOUT_SECS" -gt "$MAX_TIMEOUT_SECS" ]; then die "COULI_VERIFY_TIMEOUT_SECS is capped at $MAX_TIMEOUT_SECS"; fi
-if [ -n "${COULI_KILL_GRACE_SECS:-}" ]; then
-  if ! [[ "$COULI_KILL_GRACE_SECS" =~ ^[1-9][0-9]*$ ]] || [ "$COULI_KILL_GRACE_SECS" -gt 5 ]; then
-    die "COULI_KILL_GRACE_SECS must be an integer from 1 to 5 (规划/11 §2.4: 5 秒后 KILL)"
-  fi
-fi
 PROP_SEED_VALUE="${PROP_SEED:-$DEFAULT_PROP_SEED}"
 if ! [[ "$PROP_SEED_VALUE" =~ ^[0-9]+$ ]]; then die "PROP_SEED must be a non-negative integer"; fi
 if [ -n "${PROP_RUNS:-}" ] && ! [[ "$PROP_RUNS" =~ ^[1-9][0-9]*$ ]]; then die "PROP_RUNS must be a positive integer"; fi
 PREFIX="${COULI_VERIFY_PREFIX:-couli-verify}"
 if ! [[ "$PREFIX" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then die "COULI_VERIFY_PREFIX must match [a-z0-9][a-z0-9-]*"; fi
 
-# Next free run number; mkdir makes the choice atomic.
+# The red run: which rule-test files the task added (inside its trusted test_paths), against the
+# base. The same list is what red-check reconciles the reports with (CR-10).
+RED_FILES=''
+if [ "$SCRIPT" = red ]; then
+  if [ -z "$BASE_ARG" ]; then
+    for candidate in origin/main main; do
+      if git -C "$WT" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null 2>&1; then
+        BASE_ARG="$(git -C "$WT" merge-base HEAD "$candidate" 2>/dev/null || true)"
+        [ -z "$BASE_ARG" ] || break
+      fi
+    done
+  fi
+  [ -n "$BASE_ARG" ] || die "--red needs a base (no origin/main or main in $WT): pass --base <ref>"
+  RED_FILES="$(cd "$TRUSTED" && node tools/guard/red-check.ts --task "$ID" --cwd "$WT" --base "$BASE_ARG" --print-expected)" ||
+    die "cannot list the task's rule-test files (trusted ledger, test_paths)"
+  [ -n "$RED_FILES" ] || die "task $ID added no rule-test file inside its test_paths (against $BASE_ARG): nothing to run red"
+  while IFS= read -r f; do
+    [[ "$f" =~ ^[A-Za-z0-9_./@-]+$ ]] && [[ "$f" != *..* ]] || die "unexpected rule-test path: $f"
+  done <<<"$RED_FILES"
+fi
+
+tree_of_worktree() { # prints the git tree of the work tree (uncommitted changes included)
+  local idx="$1" t
+  if [ -n "$head" ]; then GIT_INDEX_FILE="$idx" git -C "$WT" read-tree HEAD; fi
+  GIT_INDEX_FILE="$idx" git -C "$WT" add -A . >/dev/null
+  t="$(GIT_INDEX_FILE="$idx" git -C "$WT" write-tree)"
+  rm -f "$idx" "$idx.lock"
+  [[ "$t" =~ ^[0-9a-f]{40,64}$ ]] || die "cannot compute the tree of $WT"
+  printf '%s' "$t"
+}
+
 RUN="$RUNS/$ID"
-VBASE="$RUN/verify"
-[ "$SCRIPT" = verify ] || VBASE="$RUN/verify-fast"
+top="$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || true)"
+IS_TOP=0
+if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$WT" ]; then IS_TOP=1; fi
+head=''
+if [ "$IS_TOP" = 1 ]; then head="$(git -C "$WT" rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null || true)"; fi
+
+if [ "$DRY_RUN" = 1 ]; then
+  mkdir -p "$RUNS"
+  dry_tree='null'
+  if [ "$IS_TOP" = 1 ]; then dry_tree="\"$(tree_of_worktree "$RUNS/.dry-index.$ID.$$")\""; fi
+  node -e '
+    const [script, commit, tree, files] = process.argv.slice(1);
+    const out = { script, commit: commit === "" ? null : commit, tree: JSON.parse(tree) };
+    if (script === "red") out.red_files = files.split("\n").filter((l) => l !== "");
+    process.stdout.write(JSON.stringify(out) + "\n");
+  ' "$SCRIPT" "$head" "$dry_tree" "$RED_FILES"
+  exit 0
+fi
+
+# Next free run number; mkdir makes the choice atomic.
+case "$SCRIPT" in
+  verify) VBASE="$RUN/verify" ;;
+  verify:fast) VBASE="$RUN/verify-fast" ;;
+  red) VBASE="$RUN/red" ;;
+esac
 mkdir -p "$VBASE"
 N=1
 while ! mkdir "$VBASE/$N" 2>/dev/null; do
@@ -197,17 +271,10 @@ mkdir -p "$SRC"
 # The snapshot is removed however the script ends (container mode replaces this trap with
 # cleanup(), which removes it as well).
 trap 'rm -rf "$SRC"' EXIT
-top="$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || true)"
-if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$WT" ]; then
-  head="$(git -C "$WT" rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null || true)"
+if [ "$IS_TOP" = 1 ]; then
   [ -z "$head" ] || COMMIT="\"$head\""
   # A throwaway index: the real index (the orchestrator's staging area) is not touched.
-  idx="$VDIR/index.tmp"
-  if [ -n "$head" ]; then GIT_INDEX_FILE="$idx" git -C "$WT" read-tree HEAD; fi
-  GIT_INDEX_FILE="$idx" git -C "$WT" add -A . >/dev/null
-  tree="$(GIT_INDEX_FILE="$idx" git -C "$WT" write-tree)"
-  rm -f "$idx" "$idx.lock"
-  [[ "$tree" =~ ^[0-9a-f]{40,64}$ ]] || die "cannot compute the tree of $WT"
+  tree="$(tree_of_worktree "$VDIR/index.tmp")"
   TREE="\"$tree\""
   # Export exactly that tree object (deterministic: the archive is built from the object
   # database, not from the live files; .gitattributes sets no export-ignore).
@@ -230,6 +297,23 @@ write_result() {
   local tmp="$RESULT.tmp.$$"
   printf '{\n  "mode": "%s",\n  "script": "%s",\n  "exit_code": %s,\n  "commit": %s,\n  "tree": %s,\n  "prop_seed": %s,\n  "started_at": "%s",\n  "finished_at": "%s"\n}\n' \
     "$MODE" "$SCRIPT" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "$STARTED_AT" "$(now_utc)" >"$tmp"
+  if [ "$SCRIPT" = red ] && [ -f "$VDIR/red-check.json" ]; then
+    # The red tests, the expected files and the exported reports with their sha256 (evidence).
+    node -e '
+      const fs = require("node:fs");
+      const crypto = require("node:crypto");
+      const [file, check, outDir] = process.argv.slice(1);
+      const result = JSON.parse(fs.readFileSync(file, "utf8"));
+      const red = JSON.parse(fs.readFileSync(check, "utf8"));
+      result.red_tests = red.red ?? [];
+      result.expected = red.expected ?? [];
+      result.reports = fs.readdirSync(outDir).filter((f) => f.endsWith(".json")).sort().map((f) => ({
+        path: `out/${f}`,
+        sha256: crypto.createHash("sha256").update(fs.readFileSync(`${outDir}/${f}`)).digest("hex"),
+      }));
+      fs.writeFileSync(file, JSON.stringify(result, null, 2) + "\n");
+    ' "$tmp" "$VDIR/red-check.json" "$VDIR/out" || die "cannot record the red run in result.json"
+  fi
   mv "$tmp" "$RESULT"
 }
 
@@ -242,60 +326,11 @@ finish() {
   exit "$1"
 }
 
-# --- host fallback -----------------------------------------------------------
-if [ "$MODE" = 'host' ]; then
-  node_bin="$(command -v node || true)"
-  pnpm_bin="$(command -v pnpm || true)"
-  [ -n "$node_bin" ] && [ -n "$pnpm_bin" ] || die "node and pnpm must be on PATH for --host"
-  host_path="$(dirname "$node_bin"):$(dirname "$pnpm_bin"):/usr/bin:/bin:/usr/sbin:/sbin"
-  mkdir -p "$RUN/home"
-  # A clean environment: no GH_TOKEN, no SSH_AUTH_SOCK, no user configuration.
-  host_env=("HOME=$RUN/home" "PATH=$host_path" "CI=true" "PROP_SEED=$PROP_SEED_VALUE")
-  [ -z "${TMPDIR:-}" ] || host_env+=("TMPDIR=$TMPDIR")
-  [ -z "${PROP_RUNS:-}" ] || host_env+=("PROP_RUNS=$PROP_RUNS")
-  [ -z "${TEST_PG_ADMIN_URL:-}" ] || host_env+=("TEST_PG_ADMIN_URL=$TEST_PG_ADMIN_URL")
-  # The snapshot has no sibling `couli`: hand the planning repository over explicitly (host
-  # mode reads the real checkout; the container mode mounts a single-commit snapshot instead).
-  host_spec="${COULI_SPEC_REPO:-$PROJECTS/couli}"
-  if [ -d "$host_spec" ]; then host_env+=("COULI_SPEC_REPO=$(cd "$host_spec" && pwd -P)"); fi
-  # Testcontainers looks for the Docker socket below $HOME, which is replaced here.
-  if [ -n "${DOCKER_HOST:-}" ]; then
-    host_env+=("DOCKER_HOST=$DOCKER_HOST")
-  elif [ ! -S /var/run/docker.sock ] && [ -S "${HOME:-/nonexistent}/.docker/run/docker.sock" ]; then
-    host_env+=("DOCKER_HOST=unix://$HOME/.docker/run/docker.sock")
-  fi
-  log "verify-container: host mode (not accepted for RV2 merges), limit ${TIMEOUT_SECS}s"
-  # The host run executes the SNAPSHOT, never the worktree itself: nothing a sandboxed run
-  # may have written to a git-ignored path (node_modules/.bin, dist, *.tsbuildinfo) is used.
-  # Dependencies come from the host's own pnpm store, offline, so nothing is downloaded.
-  if [ -f "$SRC/pnpm-lock.yaml" ]; then
-    store="$(pnpm store path 2>/dev/null || true)"
-    [ -n "$store" ] || die "cannot determine the pnpm store path for the offline install"
-    printf '[verify-container %s] pnpm install --offline --frozen-lockfile (host store %s)\n' "$(now_utc)" "$store" >>"$LOG"
-    (
-      cd "$SRC"
-      exec env -i "${host_env[@]}" pnpm install --offline --frozen-lockfile --store-dir "$store"
-    ) >>"$LOG" 2>&1 </dev/null ||
-      die "offline install in the snapshot failed (the host store lacks packages of the lockfile?), see $LOG"
-  else
-    printf '[verify-container %s] no pnpm-lock.yaml: running without dependencies\n' "$(now_utc)" >>"$LOG"
-  fi
-  rc=0
-  # The command runs in its own process group; on timeout the whole group gets
-  # TERM, then KILL (规划/11 §2.4 "超时"; see timeout-group.pl).
-  [ -z "${COULI_KILL_GRACE_SECS:-}" ] || host_env+=("COULI_KILL_GRACE_SECS=$COULI_KILL_GRACE_SECS")
-  (
-    cd "$SRC"
-    exec env -i "${host_env[@]}" /usr/bin/perl "$SELF_DIR/timeout-group.pl" "$TIMEOUT_SECS" pnpm run "$SCRIPT"
-  ) >>"$LOG" 2>&1 </dev/null || rc=$?
-  finish "$rc"
-fi
-
 # --- container mode ----------------------------------------------------------
 [ -f "$SRC/pnpm-lock.yaml" ] || die "no pnpm-lock.yaml in $WT"
 [ -f "$SRC/pnpm-workspace.yaml" ] || die "no pnpm-workspace.yaml in $WT"
 docker version --format '{{.Server.Version}}' >/dev/null 2>&1 ||
-  die "Docker is not available. Start Docker, or pass --host (host results are not accepted for RV2 merges)."
+  die "Docker is not available. Start Docker, or hand the run to CI (there is no host fallback: 规划/11 §4.1, §8)."
 
 PNPM_VERSION="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"pnpm@\([0-9][0-9.]*\)".*/\1/p' "$SRC/package.json" | head -n 1)"
 if ! [[ "$PNPM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -405,6 +440,61 @@ if [ -f "$SRC/SPEC_REF" ]; then
   else
     step "SPEC_REF is not a commit of $spec_repo: /spec is not mounted"
   fi
+fi
+
+if [ "$SCRIPT" = red ]; then
+  # Unit files run with no network; integration files need the one-shot PostgreSQL below.
+  RED_UNIT="$(printf '%s\n' "$RED_FILES" | grep -v '\.int\.test\.' || true)"
+  RED_INT="$(printf '%s\n' "$RED_FILES" | grep '\.int\.test\.' || true)"
+  printf '%s\n' "$RED_FILES" >"$VDIR/expected.txt"
+  mkdir -p "$VDIR/out"
+  chmod 0777 "$VDIR/out"
+  RED_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS" -e RED_UNIT -e RED_INT)
+  [ -z "${PROP_RUNS:-}" ] || RED_ENV+=(-e "PROP_RUNS=$PROP_RUNS")
+  RED_NET=(--network none)
+  if [ -n "$RED_INT" ]; then
+    step "creating internal network $NET (integration rule tests)"
+    docker network create --internal "${LABELS[@]}" "$NET" >/dev/null
+    net_created=1
+    step "starting one-shot PostgreSQL ($PG_IMAGE) on $NET only"
+    PG_PASSWORD="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --name "$PG_NAME" "${LABELS[@]}" \
+      --network "$NET" --network-alias pg --tmpfs /var/lib/postgresql -e POSTGRES_PASSWORD \
+      "$PG_IMAGE" >/dev/null 2>>"$LOG" || die "cannot start PostgreSQL, see $LOG"
+    tries=0
+    until docker exec "$PG_NAME" pg_isready -q -h 127.0.0.1 -U postgres >/dev/null 2>&1; do
+      tries=$((tries + 1))
+      [ "$tries" -lt 120 ] || die "PostgreSQL did not become ready within 60 seconds, see $LOG"
+      sleep 0.5
+    done
+    RED_NET=(--network "$NET")
+    RED_ENV+=(-e TEST_PG_ADMIN_URL)
+    export TEST_PG_ADMIN_URL="postgres://postgres:$PG_PASSWORD@pg:5432/postgres"
+  fi
+  step "running the task's rule tests (red run) in $IMAGE (limit ${TIMEOUT_SECS}s)"
+  export RED_UNIT RED_INT
+  red_rc=0
+  docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
+    "${RED_NET[@]}" \
+    -v "$SRC:/src:ro" \
+    -v "$STORE_VOL:/store:ro" \
+    -v "$VDIR/out:/out" \
+    --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
+    ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
+    "${RED_ENV[@]}" \
+    "$IMAGE" couli-verify-entrypoint red >>"$LOG" 2>&1 </dev/null || red_rc=$?
+  [ "$red_rc" = 0 ] || die "the red run did not produce its reports (exit $red_rc), see $LOG"
+  reports=''
+  for f in "$VDIR/out/unit.json" "$VDIR/out/int.json"; do
+    [ -f "$f" ] && reports="${reports:+$reports,}$f"
+  done
+  [ -n "$reports" ] || die "the red run wrote no report, see $LOG"
+  rc=0
+  (cd "$TRUSTED" && node tools/guard/red-check.ts --task "$ID" --report "$reports" \
+    --expected-list "$VDIR/expected.txt" --root /work/repo --json) \
+    >"$VDIR/red-check.json" 2>>"$LOG" || rc=$?
+  [ "$rc" = 0 ] || [ "$rc" = 1 ] || die "red-check failed to run (exit $rc), see $LOG"
+  finish "$rc"
 fi
 
 if [ "$SCRIPT" = 'verify:fast' ]; then

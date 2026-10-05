@@ -36,6 +36,19 @@ const DEPS_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: D1-01')
   .replace('type: impl', 'type: deps')
   .replace('  - "apps/api/src/modules/ledger/**"', '  - "package.json"\n  - "pnpm-lock.yaml"');
 
+/** A task of the default split of 2026-10-05: Codex writes its rule tests into test_paths. */
+const AUTHOR_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: B2-02b')
+  .replace('impl: codex', 'impl: claude')
+  .replace('tester: claude', 'tester: codex\ntest_paths:\n  - "test/spec/ledger/**"');
+const OLD_LEDGER_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02c').replace(
+  'test_paths:\n  - "test/spec/ledger/**"\n',
+  '',
+);
+const NO_TESTER_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: N1-01').replace(
+  'tester: claude',
+  'tester: none',
+);
+
 const APPROVALS = [
   'source: "规划/11 §7.3"',
   'spec_ref: cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b',
@@ -94,6 +107,9 @@ beforeAll(() => {
   trusted = makeTree({
     'ops/tasks/B2-02a.yaml': LEDGER_TASK,
     'ops/tasks/D1-01.yaml': DEPS_TASK,
+    'ops/tasks/B2-02b.yaml': AUTHOR_TASK,
+    'ops/tasks/B2-02c.yaml': OLD_LEDGER_TASK,
+    'ops/tasks/N1-01.yaml': NO_TESTER_TASK,
     'ops/approvals.yaml': APPROVALS,
   });
   for (const file of [
@@ -230,6 +246,101 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
     expect(
       guard('path-guard.ts', ['--paths', 'docs/**', '--base', base], { cwd: root }).status,
     ).toBe(1);
+  });
+
+  it('[CR-05, CR-06] --author: only the task test_paths and per-function NotImplemented shells', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'test/spec/ledger/new.test.ts': "it('new', () => {});\n",
+      // Another area's rule tests are not this task's test_paths.
+      'test/spec/money/other.test.ts': "it('other', () => {});\n",
+      // A shell next to a real implementation in one file, the keyword only in a comment.
+      'apps/api/src/modules/ledger/post.ts': [
+        'export const post = 1;',
+        "export function plan(a: number): never {\n  void a;\n  throw new Error('NotImplemented: plan');\n}",
+        '// NotImplemented',
+        'export function book(a: number): number {\n  return a + 1;\n}',
+        '',
+      ].join('\n'),
+      'docs/notes.md': '# changed\n',
+    });
+    const res = guard('path-guard.ts', [
+      '--task',
+      'B2-02b',
+      '--base',
+      base,
+      '--cwd',
+      root,
+      '--json',
+      '--author',
+    ]);
+    expect(res.status).toBe(1);
+    const out = json<PathGuardJson>(res.stdout);
+    expect(out.violations.map((v) => v.path)).toEqual([
+      'apps/api/src/modules/ledger/post.ts',
+      'test/spec/money/other.test.ts',
+    ]);
+    expect(out.violations[0]?.reason).toContain('book: does not end with throw new NotImplemented');
+    expect(out.out_of_scope_ops_docs).toEqual(['docs/notes.md']);
+
+    // Without test_paths in the ledger the test phase is refused outright.
+    const old = guard('path-guard.ts', [
+      '--task',
+      'B2-02c',
+      '--base',
+      base,
+      '--cwd',
+      root,
+      '--json',
+      '--author',
+    ]);
+    expect(old.status).toBe(1);
+    expect(json<PathGuardJson>(old.stdout).violations[0]?.reason).toContain(
+      'the task has no test_paths',
+    );
+  });
+
+  it('[CR-16] red-check --json prints exactly one JSON document, also when it skips', () => {
+    const { root, base } = workRepo();
+    const skip = guard('red-check.ts', ['--task', 'N1-01', '--report', '/nonexistent', '--json']);
+    expect(skip.status).toBe(0);
+    expect(json<{ required: boolean }>(skip.stdout)).toMatchObject({ required: false, ok: true });
+    expect(skip.stderr).toContain('SKIP red-check');
+
+    writeFiles(root, { 'test/spec/ledger/new.test.ts': "it('new', () => {});\n" });
+    const reportFile = join(root, '..', 'red-report.json');
+    writeFileSync(
+      reportFile,
+      JSON.stringify({
+        testResults: [
+          {
+            name: `${root}/test/spec/ledger/new.test.ts`,
+            assertionResults: [
+              { fullName: 'new', status: 'failed', failureMessages: ['Error: NotImplemented'] },
+            ],
+          },
+        ],
+      }),
+    );
+    const res = guard('red-check.ts', [
+      '--task',
+      'B2-02b',
+      '--report',
+      reportFile,
+      '--cwd',
+      root,
+      '--base',
+      base,
+      '--root',
+      root,
+      '--json',
+    ]);
+    expect(res.status, res.stderr).toBe(0);
+    expect(json<{ ok: boolean; expected: string[] }>(res.stdout)).toMatchObject({
+      ok: true,
+      expected: ['test/spec/ledger/new.test.ts'],
+    });
+    expect(res.stderr).toContain('PASS red-check');
   });
 
   it('rejects wrong usage with exit 2', () => {

@@ -227,14 +227,25 @@ it(
 );
 
 it('[ops/approvals.yaml id 19] the test phase lets Codex add rule tests and skeletons only; review is read-only', () => {
-  const test = readFileSync(generateBrief('X1-01', opts({ phase: 'test', attempt: 1 })), 'utf8');
+  // A ledger without test_paths gets no test-phase brief (CR-06).
+  expect(() => generateBrief('X1-01', opts({ phase: 'test' }))).toThrow(/没有 test_paths/);
+  writeFiles(root, {
+    'ops/tasks/X1-05.yaml': taskYaml({
+      id: 'X1-05',
+      tester: 'codex',
+      impl: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      accept: "\n  - 'pnpm verify'\n  - 'test/spec/demo/**'",
+    }),
+  });
+  const test = readFileSync(generateBrief('X1-05', opts({ phase: 'test', attempt: 1 })), 'utf8');
   const marks = [
     '- 本轮阶段：test（写规则 / 验收测试（Codex）',
     '## 3. 可以改的路径',
-    '- 规则测试资产（只新增文件，已有的不改不删）：`test/spec/**`',
-    '- 任务路径内只放只抛 `NotImplemented` 的函数骨架',
+    '- 本任务的规则测试（台账 `test_paths`；只新增文件，已有的不改不删）：`test/spec/demo/**`',
+    '- 任务路径内只放 `NotImplemented` 骨架，逐个函数检查',
     '- `packages/demo/src/**`',
-    '- 第一类保护路径（规则测试资产）里已有的文件：不能改、不能删，只能新增文件。',
+    '- 第一类保护路径（规则测试资产）里已有的文件：不能改、不能删；`test_paths` 以外的规则测试资产不能碰。',
     '```\npnpm typecheck\npnpm lint\n```',
     '本轮要的是「先红」',
     '找不到模块、`TypeError`、语法错误的红不算',
@@ -246,7 +257,9 @@ it('[ops/approvals.yaml id 19] the test phase lets Codex add rule tests and skel
   expect(positions.filter((p) => p < 0)).toEqual([]);
   expect(positions).toEqual([...positions].sort((a, b) => a - b));
   // RO-04: Codex writing tests in its sandbox never gets the container entry or Docker.
-  expect(test).not.toContain('verify-container.sh');
+  // Codex is told the orchestrator runs the red run; it never gets the container entry itself.
+  expect(test).not.toContain('verify-container.sh X1-05 --fast');
+  expect(test).toContain('编排者用 `tools/ops/verify-container.sh X1-05 --red`');
   // RO2-01/04: the Codex sandbox executes no test; the orchestrator runs them in a container.
   expect(test).not.toContain('```\npnpm verify:fast');
   expect(test).not.toContain('规则测试已冻结');
@@ -276,7 +289,9 @@ it('[ops/approvals.yaml id 19] the test phase lets Codex add rule tests and skel
 it(
   'counts the attempt of the phase: Codex writing tests apart from the implementation',
   () => {
-    writeFiles(root, { 'ops/tasks/X1-04.yaml': taskYaml({ id: 'X1-04' }) });
+    writeFiles(root, {
+      'ops/tasks/X1-04.yaml': taskYaml({ id: 'X1-04', test_paths: "\n  - 'test/spec/demo/**'" }),
+    });
     bumpAttempt('X1-04', 'test');
     bumpAttempt('X1-04', 'test');
     expect(readFileSync(generateBrief('X1-04', opts({ phase: 'test' })), 'utf8')).toContain(

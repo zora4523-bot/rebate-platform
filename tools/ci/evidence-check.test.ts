@@ -1,6 +1,7 @@
 // evidence-check.ts against a fixture repository: an RV2 branch with and without a complete
 // evidence file, an RV0 branch, and each field that must make the check fail.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -51,7 +52,16 @@ function evidence(extra: Evidence = {}): Evidence {
     spec_ref: SPEC_REF,
     spec_commit: specCommit,
     red_tests: ['money: rounds down'],
-    runs: [{ mode: 'container', exit_code: 0, commit: null, tree: headTree, prop_seed: 1 }],
+    runs: [
+      {
+        mode: 'container',
+        script: 'verify',
+        exit_code: 0,
+        commit: null,
+        tree: headTree,
+        prop_seed: 1,
+      },
+    ],
     reviews: [
       { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 },
       { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true },
@@ -146,12 +156,12 @@ it('every field of the evidence can fail the check', () => {
     ],
     [
       'failed run',
-      evidence({ runs: [{ mode: 'container', exit_code: 1, tree: headTree }] }),
+      evidence({ runs: [{ mode: 'container', script: 'verify', exit_code: 1, tree: headTree }] }),
       /no container run/,
     ],
     [
       'other tree',
-      evidence({ runs: [{ mode: 'container', exit_code: 0, tree: otherTree }] }),
+      evidence({ runs: [{ mode: 'container', script: 'verify', exit_code: 0, tree: otherTree }] }),
       /no container run/,
     ],
     [
@@ -398,69 +408,220 @@ it('the CLI looks the approval up with --pr-number, exactly like the protected-p
   expect(run([label], 'o', 'e'.repeat(40))).toMatchObject({ status: 1, report: { ok: false } });
 });
 
-it('[RO2-05, RO3-01] a CI run stays valid when only the evidence file is committed after it', () => {
+it('[CR-02] a verify:fast record never stands in for the full verification', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const problemsOf = (doc: unknown): string =>
+    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg }).join('\n');
+  // Fast passed on the very tree, the full verification never ran: refused.
+  const fastOnly = problemsOf(
+    evidence({
+      runs: [{ mode: 'container', script: 'verify:fast', exit_code: 0, tree: headTree }],
+    }),
+  );
+  expect(fastOnly).toContain("verify:fast is the implementer's own check");
+  expect(fastOnly).toContain('no container run of `verify` with exit code 0');
+  // Fast passed, the full verification failed: refused.
+  expect(
+    problemsOf(
+      evidence({
+        runs: [
+          { mode: 'container', script: 'verify:fast', exit_code: 0, tree: headTree },
+          { mode: 'container', script: 'verify', exit_code: 1, tree: headTree },
+        ],
+      }),
+    ),
+  ).toContain('no container run of `verify`');
+  // A record without a script cannot prove which one ran.
+  expect(
+    problemsOf(evidence({ runs: [{ mode: 'container', exit_code: 0, tree: headTree }] })),
+  ).toContain('must be verify or red');
+});
+
+/** CI records and their archive (rebate-private/ci-evidence/<run_id>/) for one test. */
+function ciSetup(): {
+  archive: string;
+  tested: string;
+  testedTree: string;
+  money: string;
+  archiveRun: (runId: number, meta: Record<string, unknown>, report: string) => string;
+} {
+  const tested = git(repo, ['rev-parse', 'HEAD']);
+  const archive = join(SCRATCH, `ci-evidence-${tested.slice(0, 8)}`);
+  return {
+    archive,
+    tested,
+    testedTree: git(repo, ['rev-parse', `${tested}^{tree}`]),
+    money: git(repo, ['rev-parse', `${tested}:packages/money`]),
+    archiveRun: (runId, meta, report) => {
+      write(archive, {
+        [`${runId}/run.json`]: JSON.stringify({ run_id: runId, ...meta }),
+        [`${runId}/playwright-report.json`]: report,
+      });
+      return createHash('sha256').update(report).digest('hex');
+    },
+  };
+}
+
+it('[CR-03, CR-04, RO3-01] red and green CI records, bound to their run, report and tree', () => {
   git(repo, ['checkout', '-q', 'task/B2-01a']);
   git(repo, ['checkout', '-q', '-b', 'ci-runs']);
   try {
-    const tested = git(repo, ['rev-parse', 'HEAD']);
-    const path = 'ops/evidence/B2-01a.json';
-    const tree = headTreeWithoutEvidence(repo, tested, path) ?? '';
-    const money = git(repo, ['rev-parse', `${tested}:packages/money`]);
-    const ciRun = (extra: Evidence = {}): Evidence => ({
+    const ci = ciSetup();
+    const specTree = git(repo, ['rev-parse', `${specCommit}^{tree}`]);
+    const redSha = ci.archiveRun(
+      101,
+      {
+        head_sha: specCommit,
+        run_attempt: 1,
+        conclusion: 'failure',
+        workflow: 'browser',
+        job: 'playwright',
+      },
+      '{"red": true}\n',
+    );
+    const greenSha = ci.archiveRun(
+      102,
+      {
+        head_sha: ci.tested,
+        run_attempt: 1,
+        conclusion: 'success',
+        workflow: 'browser',
+        job: 'playwright',
+      },
+      '{"green": true}\n',
+    );
+    const common = {
       mode: 'ci',
-      commit: tested,
-      spec_commit: specCommit,
+      workflow: 'browser',
+      job: 'playwright',
       run_attempt: 1,
+      spec_commit: specCommit,
+    };
+    const red: Evidence = {
+      ...common,
+      phase: 'red',
+      run_id: 101,
+      run_url: 'https://github.com/o/r/actions/runs/101/job/7',
+      commit: specCommit,
+      tree: specTree,
+      report_sha256: redSha,
+      conclusion: 'failure',
+      exit_code: 1,
+      red_tests: ['h5: rules page shows the cap [AC-F1-03]'],
+    };
+    const green: Evidence = {
+      ...common,
+      phase: 'green',
+      run_id: 102,
+      run_url: 'https://github.com/o/r/actions/runs/102',
+      commit: ci.tested,
+      tree: ci.testedTree,
+      report_sha256: greenSha,
       conclusion: 'success',
       skipped: 0,
       exit_code: 0,
-      ...extra,
-    });
-    const doc = (run: Evidence): Evidence =>
+    };
+    const tree = headTreeWithoutEvidence(repo, ci.tested, 'ops/evidence/B2-01a.json') ?? '';
+    const doc = (runs: Evidence[]): Evidence =>
       evidence({
-        runs: [{ mode: 'container', exit_code: 0, commit: tested, tree, prop_seed: 1 }, run],
-        trees: { 'packages/money': money },
-        longrun: { runs: 1000000, seed: 1, passed: true, tree: money },
+        runs: [
+          { mode: 'container', script: 'verify', exit_code: 0, commit: ci.tested, tree },
+          ...runs,
+        ],
+        trees: { 'packages/money': ci.money },
+        longrun: { runs: 1000000, seed: 1, passed: true, tree: ci.money },
       });
-    // The evidence is committed after the CI run: the tested commit is an ancestor of the head
+    // The evidence is committed after the CI runs: the green commit is an ancestor of the head
     // and differs from it by the evidence file only.
-    const head = commitEvidence(doc(ciRun()));
-    expect(head).not.toBe(tested);
-    expect(check(head).problems).toEqual([]);
+    const head = commitEvidence(doc([red, green]));
+    expect(head).not.toBe(ci.tested);
+    const checked = checkEvidence({
+      prDir: repo,
+      base,
+      head,
+      headRef: 'task/B2-01a',
+      trusted: REPO,
+      ciArchive: ci.archive,
+    });
+    expect(checked.problems).toEqual([]);
 
-    // Not a clean single attempt, or not bound to the rule-test commit: refused.
     const cfg = loadProtected(REPO);
-    const problemsOf = (run: Evidence): string =>
-      evidenceProblems(doc(run), { prDir: repo, head, task: 'B2-01a', cfg }).join('\n');
-    expect(problemsOf(ciRun({ run_attempt: 2 }))).toContain('run_attempt: must be 1');
-    expect(problemsOf(ciRun({ conclusion: 'failure' }))).toContain('conclusion: must be success');
-    expect(problemsOf(ciRun({ skipped: 1 }))).toContain('skipped: must be 0');
-    expect(problemsOf(ciRun({ spec_commit: base }))).toContain('bound to the evidence spec_commit');
-    expect(problemsOf(ciRun({ commit: tested.slice(0, 12) }))).toContain('full commit SHA');
-    expect(problemsOf({ mode: 'browser', exit_code: 0, tree })).toContain(
-      'must be container, host or ci',
+    const problemsOf = (runs: Evidence[], archive: string | null = ci.archive): string =>
+      evidenceProblems(doc(runs), {
+        prDir: repo,
+        head,
+        task: 'B2-01a',
+        cfg,
+        ciArchive: archive,
+      }).join('\n');
+    // Without the archive, nothing a CI record says is accepted.
+    expect(problemsOf([green], null)).toContain(
+      'archive (rebate-private/ci-evidence) is not available',
     );
+    // Missing fields.
+    for (const field of [
+      'run_url',
+      'run_id',
+      'workflow',
+      'job',
+      'commit',
+      'tree',
+      'report_sha256',
+      'phase',
+    ]) {
+      const rest = { ...green };
+      delete rest[field];
+      expect(problemsOf([rest]), field).toMatch(new RegExp(`runs\\[1\\]: ${field}`));
+    }
+    // A record that claims more than the archive holds.
+    expect(problemsOf([{ ...green, report_sha256: 'f'.repeat(64) }])).toContain(
+      'no archived report file has this sha256',
+    );
+    expect(problemsOf([{ ...green, job: 'unit' }])).toContain('run.json job is "playwright"');
+    expect(
+      problemsOf([{ ...green, run_id: 103, run_url: 'https://github.com/o/r/actions/runs/103' }]),
+    ).toContain('no archived run');
+    // Green rules.
+    expect(problemsOf([{ ...green, run_attempt: 2 }])).toContain('run_attempt: must be 1');
+    expect(problemsOf([{ ...green, skipped: 1 }])).toContain('skipped: must be 0');
+    expect(problemsOf([{ ...green, spec_commit: base }])).toContain(
+      'bound to the evidence spec_commit',
+    );
+    expect(problemsOf([{ ...green, tree: specTree }])).toContain('is not the tree of');
+    // Red rules: the spec_commit tree, a real failure, the red tests named.
+    expect(problemsOf([{ ...red, commit: ci.tested, tree: ci.testedTree }])).toContain(
+      'a red run must have tested the spec_commit tree',
+    );
+    expect(problemsOf([{ ...red, exit_code: 0 }])).toContain('a red run fails');
+    expect(problemsOf([{ ...red, red_tests: [] }])).toContain('red_tests: must list');
   } finally {
     git(repo, ['checkout', '-q', 'task/B2-01a']);
   }
 });
 
-it('[RO3-01] a CI run no longer counts once sources change after it', () => {
+it('[RO3-01] a green CI run no longer counts once sources change after it', () => {
   git(repo, ['checkout', '-q', 'ci-runs']);
   try {
     const head0 = git(repo, ['rev-parse', 'HEAD']);
     const doc = JSON.parse(git(repo, ['show', `${head0}:ops/evidence/B2-01a.json`])) as Evidence;
+    const archive = join(SCRATCH, `ci-evidence-${git(repo, ['rev-parse', 'HEAD~1']).slice(0, 8)}`);
     // A source file changes after the CI run; the evidence file is carried over unchanged.
     write(repo, { 'docs/README.md': '# docs, changed after the CI run\n' });
     git(repo, ['add', '-A']);
     git(repo, ['commit', '-q', '-m', 'change after ci']);
     const head = git(repo, ['rev-parse', 'HEAD']);
     const cfg = loadProtected(REPO);
-    const problems = evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg }).join('\n');
+    const problems = evidenceProblems(doc, {
+      prDir: repo,
+      head,
+      task: 'B2-01a',
+      cfg,
+      ciArchive: archive,
+    }).join('\n');
     expect(problems).toMatch(
-      /runs\[1\]: commit: the tested tree [0-9a-f]+ differs from the head tree/,
+      /runs\[2\]: commit: the tested tree [0-9a-f]+ differs from the head tree/,
     );
-    expect(check(head).ok).toBe(false);
   } finally {
     git(repo, ['checkout', '-q', 'task/B2-01a']);
   }

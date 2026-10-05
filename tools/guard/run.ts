@@ -159,7 +159,9 @@ async function runGit(argv: string[]): Promise<number> {
         }),
       );
       results.push(
-        runCheck('path-guard-author', () => authorPathsCheck(root, base, specCommit, task.paths)),
+        runCheck('path-guard-author', () =>
+          authorPathsCheck(root, base, specCommit, task.paths, task.test_paths),
+        ),
       );
     } else {
       const note = `implementer scope starts at the base: ${spec.reason}`;

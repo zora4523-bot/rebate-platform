@@ -54,9 +54,10 @@
 | `packages/money/**` | Claude | Codex | Claude + Codex | RV2 |
 | `packages/domain/**` | Claude | Codex | Claude + Codex | RV2 |
 | `packages/db/**` | Claude | Codex | Claude + Codex | RV2 |
+| `db/invariants/**` | Codex | — | Claude | RV2 |
 | `db/**` | Claude | Codex | Claude + Codex | RV2 |
-| `packages/testing/**` | Claude | — | Claude + Codex | RV2 |
-| `test/**` | Claude | — | Claude + Codex | RV2 |
+| `packages/testing/**` | Codex | — | Claude | RV2 |
+| `test/**` | Codex | — | Claude | RV2 |
 | 其他（未列入的任何路径） | 见任务台账 | 见任务台账 | Claude + Codex | RV2 |
 
 <!-- risk-table:end -->

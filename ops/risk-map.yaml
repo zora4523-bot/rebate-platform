@@ -9,9 +9,11 @@
 #   claude (a Claude Opus 5.5 subagent, model claude-opus-5-5, in the task worktree); tester is
 #   codex where it was claude before (rule and acceptance tests written BEFORE the
 #   implementation and red first, through tools/agent/codex-run.sh impl --phase test); none
-#   stays none (docs, ledger, the rule-test assets themselves); review is
+#   stays none (docs, ledger); review is
 #   codex (a fresh read-only Codex session) for RV0 / RV1 and claude+codex for RV2 (a fresh
 #   read-only Codex session plus a fresh Claude subagent that is not the implementing one).
+#   The rule-test assets themselves (test/**, packages/testing/**, db/invariants/**) are mapped
+#   apart: impl codex (they are the test author's), review claude, risk unchanged.
 # Protected path, class 3 (规划/11 §4.4): changing this file needs owner approval.
 version: 1
 rules:
@@ -63,6 +65,14 @@ rules:
     impl: claude
     tester: codex
     review: claude+codex
+  # Rule-test assets (class 1 of tools/guard/protected-paths.json) are written by the rule-test
+  # author Codex and reviewed by the other model, Claude (the spec-test review by a fresh Claude
+  # subagent, tools/agent/README.md §11); risk unchanged. db/invariants/** comes before db/**.
+  - path: 'db/invariants/**'
+    risk: RV2
+    impl: codex
+    tester: none
+    review: claude
   - path: 'db/**'
     risk: RV2
     impl: claude
@@ -70,11 +80,11 @@ rules:
     review: claude+codex
   - path: 'packages/testing/**'
     risk: RV2
-    impl: claude
+    impl: codex
     tester: none
-    review: claude+codex
+    review: claude
   - path: 'test/**'
     risk: RV2
-    impl: claude
+    impl: codex
     tester: none
-    review: claude+codex
+    review: claude

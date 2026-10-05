@@ -24,10 +24,12 @@ runCli(
 
     let allowed: string[];
     let taskType: string | undefined;
+    let testPaths: string[] = [];
     if (taskId !== undefined) {
       const task = trustedTask(taskId);
       allowed = task.paths;
       taskType = task.type;
+      testPaths = task.test_paths;
     } else {
       allowed = splitTopLevelCommas(pathList ?? '')
         .map((g) => g.trim())
@@ -37,7 +39,7 @@ runCli(
 
     const root = resolveRoot(args.values.get('cwd'));
     const outcome = args.flags.has('author')
-      ? authorWorktreeCheck(root, base, allowed, taskType)
+      ? authorWorktreeCheck(root, base, allowed, taskType, testPaths)
       : pathGuardCheck(root, base, allowed, taskType);
     if (args.flags.has('json')) {
       for (const problem of outcome.check.problems) console.error(`path-guard: ${problem}`);

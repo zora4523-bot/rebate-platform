@@ -561,8 +561,20 @@ it(
     expect(
       codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--phase', 'test', '--dry-run']).status,
     ).toBe(2);
-    // A handover implementation is for RV0 / RV1 only (规划/11 §2.5).
+    // CR-14: the brief must be one of the called phase (the fixture's is a test-phase brief).
     stub({ risk: 'RV1', tester: 'codex' });
+    const mismatch = codexRun(fx, ['impl', TASK, '--phase', 'handover', '--dry-run']);
+    expect(mismatch.status).toBe(2);
+    expect(mismatch.stderr).toContain('is for phase "test", this call is --phase handover');
+    const handoverBrief = `# 任务 ${TASK}：handover\n\n- 本轮阶段：handover（fixture）\n`;
+    writeFileSync(join(fx.run, 'brief.md'), handoverBrief);
+    expect(codexRun(fx, ['impl', TASK, '--dry-run']).stderr).toContain(
+      'is for phase "handover", this call is --phase test',
+    );
+    writeFileSync(join(fx.run, 'brief.md'), '# 任务：no phase line\n');
+    expect(codexRun(fx, ['impl', TASK, '--dry-run']).stderr).toContain('is for phase "none"');
+    writeFileSync(join(fx.run, 'brief.md'), handoverBrief);
+    // A handover implementation is for RV0 / RV1 only (规划/11 §2.5).
     const rv1 = codexRun(fx, ['impl', TASK, '--phase', 'handover', '--dry-run']);
     expect(rv1.status, rv1.stderr).toBe(0);
     stub({ risk: 'RV2', tester: 'codex' });
@@ -581,6 +593,25 @@ it(
     ]);
     expect(spec.status).toBe(2);
     expect(spec.stderr).toContain('fresh Claude subagent');
+    // CR-08: an author that cannot be read is refused as well, never waved through.
+    const specArgs = [
+      'review',
+      TASK,
+      '--base',
+      fx.baseSha,
+      '--review-type',
+      'spec-test',
+      '--dry-run',
+    ];
+    stub({ risk: 'RV2' });
+    const unknown = codexRun(fx, specArgs);
+    expect(unknown.status).toBe(2);
+    expect(unknown.stderr).toContain('the rule-test author is unknown');
+    writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+      { exit: 1, stderr: 'no task' },
+    ]);
+    expect(codexRun(fx, specArgs).status).toBe(2);
+    stub({ risk: 'RV2', tester: 'codex' });
     // Code reviews of the same task stay with Codex; a task whose tests Claude wrote keeps the
     // spec-test review.
     expect(
@@ -604,6 +635,10 @@ it(
     const run = codexRun(fx, ['impl', TASK, '--phase', 'handover']);
     expect(run.status, run.stderr).toBe(0);
     expect(readJson(join(fx.run, 'meta.impl.json'))['phase']).toBe('handover');
+    // CR-09: Codex implemented this task, so Codex does not review the code (Claude does).
+    const general = codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--dry-run']);
+    expect(general.status).toBe(2);
+    expect(general.stderr).toContain('implemented by Codex (handover)');
   },
 );
 
@@ -618,6 +653,10 @@ it('a checkout path that contains "review" does not change the implementation ou
 it('[规划/11 §2.5] every finished call is settled against the in-flight state', LONG, () => {
   const fx = fixture('settle');
   writeStub(join(fx.trusted, 'tools', 'ops', 'state.ts'), 'state');
+  // A task written before 2026-10-05: Claude wrote its rule tests, Codex may review them.
+  writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+    { when: ['show'], stdout: JSON.stringify({ id: TASK, risk: 'RV1', tester: 'claude' }) },
+  ]);
   const timedOut = codexRun(
     fx,
     ['review', TASK, '--review-type', 'spec-test', '--base', fx.baseSha],
@@ -662,7 +701,12 @@ it(
     writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
       {
         when: ['show'],
-        stdout: JSON.stringify({ id: TASK, risk: 'RV1', refs: ['BR-CALC-01', 'BR-CALC-08'] }),
+        stdout: JSON.stringify({
+          id: TASK,
+          risk: 'RV1',
+          tester: 'claude',
+          refs: ['BR-CALC-01', 'BR-CALC-08'],
+        }),
       },
     ]);
     const dry = codexRun(fx, [
@@ -723,6 +767,7 @@ it(
         stdout: JSON.stringify({
           id: TASK,
           risk: 'RV2',
+          tester: 'claude',
           refs: ['BR-CALC-01'],
           paths: ['packages/money/src/**'],
         }),

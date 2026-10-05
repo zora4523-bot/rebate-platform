@@ -69,13 +69,22 @@ function fixture(name: string, stubs: Stubs = {}): Fixture {
   writeStub(
     join(ops, 'brief.ts'),
     'brief',
-    stubs.brief ?? [{ writeOut: `# 任务 ${TASK}：stub brief\n` }],
+    stubs.brief ?? [{ writeOut: `# 任务 ${TASK}：stub brief\n\n- 本轮阶段：test（stub）\n` }],
   );
   writeStub(
     join(ops, 'task.ts'),
     'task',
     stubs.task ?? [
-      { when: ['show'], stdout: JSON.stringify({ id: TASK, type: 'impl', risk: 'RV1' }) },
+      {
+        when: ['show'],
+        stdout: JSON.stringify({
+          id: TASK,
+          type: 'impl',
+          risk: 'RV1',
+          tester: 'codex',
+          test_paths: ['test/spec/fixture/**'],
+        }),
+      },
     ],
   );
   writeStub(
@@ -198,9 +207,10 @@ it('dispatch: preflight in order, background launch, pid recorded', LONG, () => 
     ['state', 'claim', TASK, '--owner', 'sess-test'],
     // The pid of a still-running previous dispatch is looked up before anything is counted.
     ['state', 'get', TASK],
+    // The ledger must name the task's test_paths (CR-06).
+    ['task', 'show', TASK, '--json'],
     // Codex writing tests has its own counter, never the implementation's (RO-07).
     ['state', 'bump-attempt', TASK, 'test'],
-    ['state', 'get', TASK],
   ]);
   expect(calls.filter((call) => call[0] === 'usage' && call[1] !== 'record')).toEqual([]);
   const set = calls.find((call) => call[0] === 'state' && call[1] === 'set');
@@ -249,6 +259,7 @@ it('dispatch: an open failure breaker stops the task with exit 3 and says why', 
   expect(stubCalls(fx).map((call) => call.slice(0, 2).join(' '))).toEqual([
     'state claim',
     'state get',
+    'task show',
     'state bump-attempt',
   ]);
   expect(existsSync(join(fx.run, 'dispatch.log'))).toBe(false);
@@ -360,6 +371,7 @@ it('dispatch: a missing brief is generated; missing dependencies are never insta
   expect(stubCalls(fx).map((call) => call.slice(0, 2).join(' '))).toEqual([
     'state claim',
     'state get',
+    'task show',
     'state bump-attempt',
     'state get',
     `brief ${TASK}`,
@@ -385,7 +397,9 @@ it('dispatch: from the second attempt on the brief is regenerated before the lau
         }),
       },
     ],
-    brief: [{ writeOut: `# 任务 ${TASK}：regenerated for attempt 2\n` }],
+    brief: [
+      { writeOut: `# 任务 ${TASK}：regenerated for attempt 2\n\n- 本轮阶段：test（stub）\n` },
+    ],
   });
   expect(readFileSync(join(fx.run, 'brief.md'), 'utf8')).toContain('fixture task');
   const res = runScript('dispatch.sh', [TASK], fx.env);
@@ -680,6 +694,9 @@ it(
     expect(meta).toMatchObject({ mode: 'impl', phase: 'handover', exit_code: 0 });
     const calls = stubCalls(fx);
     expect(calls).toContainEqual(['state', 'bump-attempt', TASK, 'handover']);
+    // CR-09: the in-flight state names Codex as the implementer, so its code review goes to Claude.
+    const set = calls.find((call) => call[0] === 'state' && call[1] === 'set') ?? [];
+    expect(set.slice(-2)).toEqual(['--implementer', 'codex']);
     // The test-phase brief of the fixture is not reused for an implementation.
     expect(calls).toContainEqual([
       'brief',
@@ -728,5 +745,23 @@ it(
       '--json',
       '--author',
     ]);
+  },
+);
+
+it(
+  '[CR-06] dispatch: a ledger without test_paths gets no test phase and nothing is counted',
+  LONG,
+  () => {
+    const fx = fixture('dispatch-no-test-paths', {
+      task: [{ when: ['show'], stdout: JSON.stringify({ id: TASK, type: 'impl', risk: 'RV1' }) }],
+    });
+    const res = runScript('dispatch.sh', [TASK], fx.env);
+    expect(res.status, res.stderr).toBe(1);
+    expect(lastJsonLine(res.stdout)).toMatchObject({
+      action: 'none',
+      reason: 'test-paths-missing',
+    });
+    expect(stubCalls(fx, 'state').some((call) => call[1] === 'bump-attempt')).toBe(false);
+    expect(existsSync(join(fx.run, 'dispatch.log'))).toBe(false);
   },
 );

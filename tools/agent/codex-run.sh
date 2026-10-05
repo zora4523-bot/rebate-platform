@@ -298,14 +298,44 @@ read_task_info() {
 resolve_review_type() {
   read_task_info
   # Codex never reviews the rule tests it wrote (规划/11 §0 rule 1, §2.3 step 4; ops/approvals.yaml
-  # id 19): the spec-test review of such a task is a fresh Claude subagent's (README §11).
-  if [ "$REVIEW_TYPE" = spec-test ] && [ "$TASK_TESTER" = codex ]; then
-    fail_usage "task $TASK: its rule tests are written by Codex (ledger tester: codex); the spec-test review goes to a fresh Claude subagent, not to Codex (ops/approvals.yaml id 19)"
+  # id 19): the spec-test review of such a task is a fresh Claude subagent's (README §11). Only a
+  # task whose trusted ledger names Claude as the rule-test author (written before 2026-10-05)
+  # still gets a Codex spec-test review; an author that cannot be read is refused (CR-08).
+  if [ "$REVIEW_TYPE" = spec-test ]; then
+    case "$TASK_TESTER" in
+      claude) ;;
+      codex) fail_usage "task $TASK: its rule tests are written by Codex (ledger tester: codex); the spec-test review goes to a fresh Claude subagent, not to Codex (ops/approvals.yaml id 19)" ;;
+      *) fail_usage "task $TASK: the rule-test author is unknown (trusted ledger missing or unreadable, or tester: ${TASK_TESTER:-?}); a Codex spec-test review needs the ledger to name Claude as the author" ;;
+    esac
   fi
   if [ -z "$REVIEW_TYPE" ]; then
     if [ "$TASK_RISK" = RV2 ]; then REVIEW_TYPE=money; else REVIEW_TYPE=general; fi
   elif [ "$TASK_RISK" = RV2 ] && [ "$REVIEW_TYPE" = general ]; then
     fail_usage "task $TASK is RV2: a general review is refused, use --review-type money (规划/11 §3.3 资金评审清单必填)"
+  fi
+}
+
+# CR-09 (规划/11 §2.5 超限换家): after a handover, Codex implemented the task, so its code review
+# goes to a fresh Claude subagent; Codex never reviews its own implementation. The implementer is
+# recorded in the in-flight state (state.ts set --implementer codex, written by dispatch.sh
+# --handover) and, independently, by the meta.json of every handover run in the run directory.
+check_implementer() {
+  [ "$REVIEW_TYPE" != spec-test ] || return 0
+  local implementer='' f phase mode
+  if [ -f "$TRUSTED/tools/ops/state.ts" ]; then
+    implementer="$(node "$TRUSTED/tools/ops/state.ts" get "$TASK" 2>/dev/null |
+      node "$SELF_DIR/meta.ts" get --file /dev/stdin implementer 2>/dev/null || true)"
+  fi
+  if [ "$implementer" != codex ] && [ -d "$RUN" ]; then
+    for f in "$RUN/meta.impl.json" "$RUN"/attempts/*/meta.json; do
+      [ -f "$f" ] || continue
+      mode="$(node "$SELF_DIR/meta.ts" get --file "$f" mode 2>/dev/null || true)"
+      phase="$(node "$SELF_DIR/meta.ts" get --file "$f" phase 2>/dev/null || true)"
+      if [ "$mode" = impl ] && [ "$phase" = handover ]; then implementer=codex; fi
+    done
+  fi
+  if [ "$implementer" = codex ]; then
+    fail_usage "task $TASK was implemented by Codex (handover): its $REVIEW_TYPE review goes to a fresh Claude subagent, not to Codex (规划/11 §2.5; tools/agent/README.md §10)"
   fi
 }
 
@@ -625,6 +655,7 @@ run_task() {
 
   RUN="$RUNS/$TASK"
   WT="${WT_ARG:-$RUNS/worktrees/$TASK}"
+  if [ "$MODE" = review ]; then check_implementer; fi
   assert_position
   if [ "$DRY_RUN" = 0 ]; then
     mkdir -p "$RUN"
@@ -636,6 +667,13 @@ run_task() {
 
   read_brief
   if [ "$MODE" = impl ]; then
+    # CR-14: the brief must have been written for this very phase (brief.ts --phase writes a
+    # `- 本轮阶段：<phase>（…）` line): an implementation brief never goes to a test-writing run,
+    # nor the other way round.
+    local brief_phase
+    brief_phase="$(printf '%s\n' "$BRIEF" | sed -n 's/^- 本轮阶段：\([a-z]*\)（.*/\1/p' | head -n 1 || true)"
+    [ "$brief_phase" = "$PHASE" ] ||
+      fail_usage "the brief $RUN/brief.md is for phase \"${brief_phase:-none}\", this call is --phase $PHASE: regenerate it with tools/ops/brief.ts $TASK --phase $PHASE"
     PROMPT="$BRIEF"
   else
     resolve_review_base
