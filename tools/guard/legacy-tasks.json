@@ -1,6 +1,6 @@
 {
-  "//": "Task ledgers that existed when the default split of 2026-10-05 (ops/approvals.yaml id 19) was merged: every ops/tasks id on origin/main at the merge (the commit below). Only these may omit test_paths and keep the old flow (a Claude rule-test author and a Codex implementation as before; no required red run in their evidence). Every other task with a rule-test author needs test_paths (Codex review CR2-02). Fixed list: never add to it. Protected path, class 3.",
-  "baseline": "b97ee61593c47a72f3aa6b53d790916fdb177568",
+  "//": "Task ledgers that existed when the default split of 2026-10-05 (ops/approvals.yaml id 19) was merged: every ops/tasks id on origin/main just before the switch landed (the commit below: the last main commit before #97, 2026-10-05; #96, #98, #99 merged minutes before #97 and were missed by the first snapshot b97ee61). Only these may omit test_paths and keep the old flow (a Claude rule-test author and a Codex implementation as before; no required red run in their evidence). Every other task with a rule-test author needs test_paths (Codex review CR2-02). Fixed list: never add to it. Protected path, class 3.",
+  "baseline": "85f4f53f7b122b86ffb0cac518a2c2a23184aadc",
   "tasks": [
     "B1-01a",
     "B1-01b",
@@ -24,6 +24,9 @@
     "B1-01u",
     "B1-01v",
     "B1-01w",
+    "B1-01x",
+    "B1-01y",
+    "B1-01z",
     "B1-02a",
     "B1-02b",
     "B1-02c",
@@ -31,11 +34,14 @@
     "B1-02f",
     "B1-02g",
     "B1-03a",
+    "B1-04a",
+    "B1-04n",
     "B1-06a",
     "B1-08a",
     "B1-12a",
     "B1-12b",
     "B1-13a",
+    "B1-19a",
     "B2-01a",
     "CT-01",
     "CT-01a",
@@ -44,6 +50,7 @@
     "CT-02a",
     "CT-02b",
     "CT-02c",
+    "CT-02d",
     "CT-03",
     "CT-13",
     "CT-15a",
@@ -55,6 +62,7 @@
     "CT-15g",
     "CT-15h",
     "CT-15j",
+    "CT-15k",
     "CT-16a",
     "CT-16b",
     "CT-16ca",
@@ -70,7 +78,11 @@
     "CT-18b",
     "CT-18c",
     "CT-19b",
+    "CT-19c",
     "CT-20a",
-    "F1-02a"
+    "F1-02a",
+    "F1-02b",
+    "F1-06a",
+    "F1-06b"
   ]
 }
