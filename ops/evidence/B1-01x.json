@@ -1,0 +1,61 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (apps/api/package.json and pnpm-lock.yaml are not on the risk-map whitelist; the lockfile is a class-2 protected path, owner approval label). Deps task: adds ioredis 5.11.1 (ADR-0001 §2) and its six direct dependencies; no code. Ledger tester: none; legacy ledger. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass; S3 notes (owner label, no licence allow-list file yet, named ESM import for B1-03)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "deps task, ledger tester: none"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "task": "B1-01x",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "aeed8cef4f42cdf33d752eb8a8000245db279a20",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "e9219f35a4f2f0ac541ccea8ec093d4558da759d",
+      "tree": "73067053079cd750566381dca3be84f56eb640b2",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T19:34:03Z",
+      "finished_at": "2026-10-05T19:35:51Z"
+    }
+  ],
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "dba10730ad2e236a9d6ecfc02a3dfbd141ac0531",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  }
+}
