@@ -71,21 +71,7 @@ it('[AC-F1-06a#2] admin_users contains the specified security columns and no pla
   // The account name and hash may have arbitrary names. Apart from the account name and
   // specified columns there must be required opaque credential storage. Hash computation
   // itself is the writer's responsibility and cannot be proved by a column's spelling.
-  const loginName = await accountColumn();
-  const credentialColumns = cols.filter(
-    (c) =>
-      ![
-        loginName,
-        'app_id',
-        'status',
-        'totp_secret_cipher',
-        'verify_phone_cipher',
-        'verify_phone_hmac',
-      ].includes(c.name) &&
-      ['text', 'varchar', 'bpchar', 'bytea'].includes(c.type) &&
-      !c.nullable,
-  );
-  expect(credentialColumns.length, 'required password-hash storage').toBeGreaterThan(0);
+  await passwordHashColumns();
   for (const c of cols) {
     expect(c.name).not.toMatch(
       /^(?:password|passwd|pwd|totp|totp_secret|totp_seed|phone|phone_number|verify_phone|verify_phone_number)$/i,
@@ -132,19 +118,58 @@ it('[AC-F1-06a#4] binding, phone registration, grant and audit times are supplie
 async function accountColumn(): Promise<string> {
   const cols = await columns(app, 'admin_users');
   const uniqueKeys = await keys(app, 'admin_users');
-  // The sole-column, unconditional string key identifies the implementation-chosen login name.
+  // Expression keys such as lower(login_name) also reserve the name globally. Resolve their
+  // column dependencies instead of prescribing either the column name or index expression.
+  // A sole expression must depend on exactly one table column; app/status-dependent keys
+  // and partial indexes do not establish unconditional global uniqueness.
+  const expressionKeys = await sql<{ columns: string[] }>`
+    SELECT ARRAY(
+      SELECT DISTINCT a.attname::text
+      FROM pg_depend d JOIN pg_attribute a
+        ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+      WHERE d.classid = 'pg_class'::regclass AND d.objid = i.indexrelid
+        AND d.refclassid = 'pg_class'::regclass AND d.refobjid = i.indrelid
+        AND d.refobjsubid > 0
+    ) AS columns
+    FROM pg_index i
+    WHERE i.indrelid = 'app.admin_users'::regclass
+      AND i.indisunique AND i.indisvalid AND i.indisready
+      AND i.indpred IS NULL AND i.indexprs IS NOT NULL AND i.indnkeyatts = 1
+  `.execute(app);
   const candidates = cols.filter(
     (c) =>
       ['text', 'varchar', 'citext'].includes(c.type) &&
       !c.nullable &&
       !['app_id', 'status', 'verify_phone_hmac'].includes(c.name) &&
       !/(?:hash|digest|cipher)/i.test(c.name) &&
-      uniqueKeys.some(
+      (uniqueKeys.some(
         (k) => !k.partial && !k.expression && k.columns.length === 1 && k.columns[0] === c.name,
-      ),
+      ) ||
+        expressionKeys.rows.some((k) => k.columns.length === 1 && k.columns[0] === c.name)),
   );
   expect(candidates.length, 'global, nonpartial account-name uniqueness').toBeGreaterThan(0);
   return candidates[0]!.name;
+}
+
+async function passwordHashColumns(): Promise<string[]> {
+  const loginName = await accountColumn();
+  const candidates = (await columns(app, 'admin_users')).filter(
+    (c) =>
+      ![
+        loginName,
+        'app_id',
+        'status',
+        'totp_secret_cipher',
+        'verify_phone_cipher',
+        'verify_phone_hmac',
+      ].includes(c.name) &&
+      ['text', 'varchar', 'bpchar', 'bytea'].includes(c.type) &&
+      !c.nullable,
+  );
+  // The baseline's remaining required opaque credential column is implementation-named.
+  // Check every candidate so another required string cannot conceal a readable hash.
+  expect(candidates.length, 'required password-hash storage').toBeGreaterThan(0);
+  return candidates.map((c) => c.name);
 }
 
 it('[AC-F1-06a#5] account names are globally unique across apps and every status, including disabled accounts', async () => {
@@ -346,15 +371,38 @@ it('[AC-F1-06a#14] the admin writer and readonly reader have the required grants
     await columns(app, table);
     for (const priv of ['SELECT', 'INSERT'])
       expect(await privilege('couli_app', table, priv)).toBe(true);
-    expect(await privilege('couli_readonly', table, 'SELECT')).toBe(true);
+    expect(
+      (await privilege('couli_readonly', table, 'SELECT')) ||
+        (await privilege('couli_readonly', table, 'SELECT', true)),
+    ).toBe(true);
     expect(await privilege('couli_app', table, 'TRUNCATE')).toBe(false);
   }
   expect(await privilege('couli_app', 'admin_users', 'UPDATE', true)).toBe(true);
+  expect(await privilege('couli_app', 'admin_users', 'DELETE')).toBe(false);
   expect(await privilege('couli_app', 'admin_permissions', 'DELETE')).toBe(true);
   for (const priv of ['UPDATE', 'DELETE', 'TRUNCATE']) {
     expect(await privilege('couli_app', 'audit_logs', priv)).toBe(false);
   }
   expect(await privilege('couli_app', 'audit_logs', 'UPDATE', true)).toBe(false);
+  for (const name of [
+    'totp_secret_cipher',
+    'verify_phone_cipher',
+    ...(await passwordHashColumns()),
+  ]) {
+    await column(app, 'admin_users', name);
+    const result = await sql<{ held: boolean }>`
+      SELECT has_column_privilege(
+        'couli_readonly', 'app.admin_users', ${name}, 'SELECT'
+      ) AS held
+    `.execute(app);
+    expect(result.rows, `couli_readonly cannot read ${name}`).toEqual([{ held: false }]);
+    expect(
+      await sqlState(
+        sql`SELECT ${sql.ref(name)} FROM app.admin_users WHERE false`.execute(readonly),
+      ),
+      `couli_readonly SELECT ${name}`,
+    ).toBe('42501');
+  }
 });
 
 it('[AC-F1-06a#15] readonly, payout and maintenance roles cannot write any admin baseline table', async () => {
@@ -430,4 +478,18 @@ it('[AC-F1-06a#17] bound TOTP and a registered verification phone can store opaq
   values['verify_phone_hmac'] = hmacColumn.type === 'bytea' ? Buffer.from(hmac, 'hex') : hmac;
   expected['verify_phone_hmac'] = values['verify_phone_hmac'];
   expect(await newAdmin(app, values)).toMatchObject(expected);
+});
+
+it('[AC-F1-06a#18] permissions are assigned directly without admin_roles or role references', async () => {
+  for (const table of ['admin_users', 'admin_permissions']) {
+    const names = (await columns(app, table)).map((c) => c.name);
+    expect(names, table).not.toContain('role');
+    expect(names, table).not.toContain('role_id');
+  }
+  const roles = await sql<{ name: string }>`
+    SELECT c.relname AS name FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'app' AND c.relname = 'admin_roles'
+  `.execute(app);
+  expect(roles.rows).toEqual([]);
 });
