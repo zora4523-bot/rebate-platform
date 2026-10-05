@@ -1,3 +1,5 @@
+// Also compiled by the test project: erasable syntax only, import type for type-only
+// imports, relative imports with .ts; no NestJS imports or decorators.
 /** Verified by stage ①, before parsers, schema validation and later authentication stages. */
 export interface VerifiedDevice {
   readonly deviceId: string;

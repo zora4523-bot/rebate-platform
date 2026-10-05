@@ -37,6 +37,12 @@ export const SECRET = 'test-only.signature.device-secret';
 export const NONCE = '9f'.repeat(16);
 export const SMS = '/v1/auth/sms-codes';
 export const BODY = '{"phone":"13800138000","purpose":"login"}';
+export const UNSIGNED_HEADERS = {
+  'x-device-id': '019a0000-0000-7000-8000-000000000099',
+  'x-timestamp': 'malformed-timestamp',
+  'x-nonce': 'malformed-nonce',
+  'x-sign': 'malformed-signature',
+};
 export const METHODS = [
   'get',
   'post',
@@ -143,6 +149,7 @@ export function dependencies() {
   ]);
   const devices = { findActive: vi.fn(async (id: string) => rows.get(id) ?? null) };
   const reserved = new Set<string>();
+  // Lua must return SET ... NX EX unchanged: Redis 'OK' / nil maps to 'OK' / null.
   const evalScript = vi.fn(async (_script: string, options: { keys: readonly string[] }) => {
     const key = options.keys.join('|');
     if (reserved.has(key)) return null;
@@ -164,10 +171,25 @@ export function dependencies() {
   return { clock, rows, devices, redis, evalScript, reserved };
 }
 
-export function vectorInput(vector: Vector): RequestCheckInput {
+export async function vectorInput(vector: Vector): Promise<RequestCheckInput> {
   const parsed = new URL(vector.path, 'https://api.example.com');
   const url = parsed.pathname + parsed.search;
-  const routeTemplate = parsed.pathname.replace('/links/abc/open', '/links/:link_id/open');
+  const segments = parsed.pathname.split('/');
+  const paths = Object.entries((await contract()).paths)
+    .filter(([path, item]) => {
+      const parts = path.split('/');
+      return (
+        item[vector.method.toLowerCase() as (typeof METHODS)[number]] !== undefined &&
+        parts.length === segments.length &&
+        parts.every((part, index) =>
+          /^\{[^}]+\}$/.test(part) ? segments[index] !== '' : part === segments[index],
+        )
+      );
+    })
+    // Literal paths take precedence over parameter paths, as in Fastify routing.
+    .sort(([a], [b]) => (a.match(/\{/g)?.length ?? 0) - (b.match(/\{/g)?.length ?? 0));
+  expect(paths.length, '向量路径必须匹配契约操作').toBeGreaterThan(0);
+  const routeTemplate = template(paths[0]![0]);
   return input({
     method: vector.method.toUpperCase(),
     url,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { ConnectionUrl } from '../../../../apps/api/src/modules/platform/db/index.ts';
+import { loadConnectionConfig } from '../../../../apps/api/src/modules/platform/db/index.ts';
 import { createRootLogger } from '../../../../apps/api/src/modules/platform/logging/index.ts';
 import {
   createRedisHandle,
@@ -61,7 +61,11 @@ async function withRedis(
   try {
     for (let i = 0; i < 2; i++) {
       const handle = await createRedisHandle(
-        { entry: 'api', redisUrl: new ConnectionUrl(server!.url) },
+        loadConnectionConfig('api', {
+          DATABASE_URL: 'postgres://couli_app@127.0.0.1:1/rules',
+          DATABASE_READ_URL: 'postgres://couli_readonly@127.0.0.1:1/rules',
+          REDIS_URL: server!.url,
+        }),
         {
           logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
         },
@@ -137,7 +141,7 @@ it('[BR-ID-09] 重放不延长TTL，Redis键过期后同nonce携新时间戳可�
   });
 });
 
-it('[BR-ID-09][B1-03b §9.5] nonce隔离使用设备行app_id，不使用伪造X-App-Id', async () => {
+it('[BR-ID-09][BR-ID-01] nonce隔离使用设备行app_id，不使用伪造X-App-Id', async () => {
   expect(server).toBeDefined();
   await withRedis(async ({ handles, raw, device, key }) => {
     const deps = dependencies();
@@ -158,7 +162,8 @@ it('[BR-ID-09][B1-03b §9.5] nonce隔离使用设备行app_id，不使用伪造X
   });
 });
 
-it('[BR-ID-09][B1-03b §9.5] 已关闭Redis句柄不能放行，坏签名仍先返回10401', async () => {
+it('[BR-ID-09][ADR-0001 §4.2 第17项] 已关闭Redis句柄不能放行，坏签名仍先返回10401', async () => {
+  // Fail closed and propagate RedisUnavailableError to B1-01za's global error filter.
   expect(server).toBeDefined();
   await withRedis(async ({ handles, device }) => {
     const deps = dependencies();

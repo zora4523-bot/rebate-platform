@@ -8,6 +8,7 @@ import {
   NOW,
   SECRET,
   SMS,
+  UNSIGNED_HEADERS,
   contract,
   dependencies,
   httpFixture,
@@ -32,7 +33,7 @@ it('[BR-ID-09][04 §5] 所有契约签名操作均拒绝无设备；所有非签
           method: method.toUpperCase(),
           url,
           rawBody: Buffer.alloc(0),
-          headers: {},
+          headers: operation['x-signed'] === true ? {} : UNSIGNED_HEADERS,
         });
         deps.devices.findActive.mockClear();
         deps.evalScript.mockClear();
@@ -50,11 +51,17 @@ it('[BR-ID-09][04 §5] 所有契约签名操作均拒绝无设备；所有非签
     }
     expect(signed).toBeGreaterThan(0);
     expect(unsigned).toBeGreaterThan(0);
+    deps.devices.findActive.mockClear();
+    deps.evalScript.mockClear();
     for (const url of ['/not-in-contract', `${SMS}/unmatched`]) {
-      const response = await server.inject({ method: 'POST', url });
+      const response = await server.inject({ method: 'POST', url, headers: UNSIGNED_HEADERS });
       expect(response.statusCode).toBe(404);
     }
-    expect((await server.inject({ method: 'GET', url: SMS })).statusCode).toBe(404);
+    expect(
+      (await server.inject({ method: 'GET', url: SMS, headers: UNSIGNED_HEADERS })).statusCode,
+    ).toBe(404);
+    expect(deps.devices.findActive).not.toHaveBeenCalled();
+    expect(deps.evalScript).not.toHaveBeenCalled();
   } finally {
     await server.close();
   }
@@ -133,11 +140,17 @@ for (const validSign of [false, true]) {
   });
 }
 
-for (const validSign of [false, true]) {
-  it(`[BR-ID-09][B1-03b §9.5] 流式body超上限先返回413/20001，签名正确=${String(validSign)}`, async () => {
+for (const [size, validSign] of [
+  [65, false],
+  [65, true],
+  [111, false],
+  [111, true],
+] as const) {
+  it(`[BR-ID-09][CT-01d] 流式body ${size}字节超过64上限先返回413/20001，签名正确=${String(validSign)}`, async () => {
     const { server, deps } = await httpFixture({ bodyLimit: 64 });
     try {
-      const rawBody = Buffer.from(JSON.stringify({ text: 'x'.repeat(100) }));
+      const rawBody = Buffer.from(JSON.stringify({ text: 'x'.repeat(size - 11) }));
+      expect(rawBody.length).toBe(size);
       const request = input({ rawBody });
       const response = await server.inject({
         method: 'POST',
@@ -204,7 +217,8 @@ it('[BR-ID-09][BR-ID-01] 按注册顺序运行后续检查，失败短路且后�
   }
 });
 
-it('[BR-ID-09][B1-03b §9.5] Redis不可用拒绝50001，错签仍10401；日志和响应不含密钥签名串及X-Sign', async () => {
+it('[BR-ID-09][ADR-0001 §4.2 第17项] Redis不可用拒绝50001，错签仍10401；日志和响应不含密钥签名串及X-Sign', async () => {
+  // B1-01za: unexpected Redis errors use the global filter's unhandled_error log.
   const deps = dependencies();
   deps.evalScript.mockRejectedValue(new RedisUnavailableError('command_timeout'));
   const { server, lines } = await httpFixture({ deps });
@@ -212,9 +226,10 @@ it('[BR-ID-09][B1-03b §9.5] Redis不可用拒绝50001，错签仍10401；日志
     const request = input();
     const failed = await inject(server, request);
     await rejected(failed, 50001);
+    const invalidSign = 'bad10401'.repeat(8);
     const bad = await inject(server, {
       ...request,
-      headers: { ...request.headers, 'x-sign': '0'.repeat(64) },
+      headers: { ...request.headers, 'x-sign': invalidSign },
     });
     await rejected(bad, 10401);
     expect(deps.evalScript).toHaveBeenCalledTimes(1);
@@ -225,17 +240,19 @@ it('[BR-ID-09][B1-03b §9.5] Redis不可用拒绝50001，错签仍10401；日志
     for (const secret of [
       SECRET,
       String(request.headers['x-sign']),
+      invalidSign,
       signingString('POST', SMS, request.rawBody, String(NOW), NONCE),
     ]) {
-      expect(JSON.stringify(logs)).not.toContain(secret);
-      expect(failed.body + bad.body).not.toContain(secret);
+      const escaped = JSON.stringify(secret).slice(1, -1);
+      expect(lines.join('\n')).not.toContain(escaped);
+      expect(failed.body + bad.body).not.toContain(escaped);
     }
   } finally {
     await server.close();
   }
 });
 
-it('[BR-ID-09][B1-03b §9.5] 密钥查询/解密异常是50001而非10402，且不写nonce', async () => {
+it('[BR-ID-09][B1-01za] 密钥查询/解密异常是50001而非10402，且不写nonce', async () => {
   const deps = dependencies();
   deps.devices.findActive.mockRejectedValue(new Error('field decryption failed'));
   const { server } = await httpFixture({ deps });
@@ -300,7 +317,7 @@ it('[BR-ID-09] HTTP匹配模板后仍按原始转义path/query验签，不排序
   }
 });
 
-it('[BR-ID-09][B1-03b §9.5] 没有Redis提供者时签名请求失败关闭，不签名请求仍可通过', async () => {
+it('[BR-ID-09][ADR-0001 §4.2 第17项] 没有Redis提供者时签名请求失败关闭，不签名请求仍可通过', async () => {
   const { server } = await httpFixture({ withoutRedis: true });
   try {
     await rejected(await inject(server), 50001);
@@ -315,7 +332,8 @@ it('[BR-ID-09][B1-03b §9.5] 没有Redis提供者时签名请求失败关闭，�
   }
 });
 
-it('[BR-ID-01][B1-03b §9.3] 后续检查也早于JSON解析，失败后不调用剩余检查', async () => {
+it('[BR-ID-01][B1-01za] 后续检查也早于JSON解析，失败后不调用剩余检查', async () => {
+  // BR-ID-01 puts stages ②/③ before body validation too; the shared preParsing hook preserves it.
   const last = vi.fn(async () => undefined);
   const middle = vi.fn(async () => {
     throw new Error('later check rejected');

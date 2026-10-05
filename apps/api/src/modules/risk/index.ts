@@ -1,3 +1,5 @@
+// Also compiled by the test project: erasable syntax only, import type for type-only
+// imports, relative imports with .ts; no NestJS imports or decorators.
 /** Structural ports keep this public surface independent of Nest and other modules. */
 export interface SignatureRequest {
   readonly id: string;
@@ -54,6 +56,7 @@ export class SignatureError extends Error {
  * Only contract x-signed:true routes (including planned operations) enter stage ①.
  * Device => timestamp/nonce format and skew => timing-safe HMAC => atomic nonce reservation.
  * The key is risk:nonce:<device app_id>:<device_id>:<nonce>, with a 600-second TTL.
+ * Lua returns SET ... NX EX ARGV[1] unchanged: 'OK' on reservation, nil on replay.
  * Bad HMAC never reserves a nonce. On success publish only deviceId/appId to the context.
  */
 export function createSignatureCheck(

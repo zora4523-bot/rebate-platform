@@ -13,6 +13,7 @@ import {
   dependencies,
   input,
   sign,
+  signingString,
   template,
   vectorInput,
   vectors,
@@ -45,8 +46,15 @@ for (const vector of vectors.valid_cases) {
       appId: 'couli',
       installSecret: vector.install_secret,
     });
+    const body = Buffer.from(vector.body_utf8, 'utf8');
+    expect(signingString(vector.method, vector.path, body, vector.timestamp, vector.nonce)).toBe(
+      vector.expected_signing_string,
+    );
+    expect(
+      sign(vector.method, vector.path, body, vector.timestamp, vector.nonce, vector.install_secret),
+    ).toBe(vector.expected_sign);
     const check = createSignatureCheck(deps);
-    const request = vectorInput(vector);
+    const request = await vectorInput(vector);
     await check(request);
     expect(request.verifiedDevice).toEqual({ deviceId: DEVICE, appId: 'couli' });
     expect(deps.evalScript).toHaveBeenCalledTimes(1);
@@ -63,7 +71,7 @@ for (const vector of vectors.invalid_cases) {
       installSecret: vector.install_secret,
     });
     const check = createSignatureCheck(deps);
-    await expect(check(vectorInput(vector))).rejects.toMatchObject({ code: 10401 });
+    await expect(check(await vectorInput(vector))).rejects.toMatchObject({ code: 10401 });
     expect(deps.evalScript).not.toHaveBeenCalled();
   });
 }
@@ -101,6 +109,7 @@ for (const header of ['x-timestamp', 'x-nonce', 'x-sign']) {
 }
 
 it('[BR-ID-09] X-Sign只接受64位小写hex，长短、大小写和首尾篡改均不通过', async () => {
+  // contracts/openapi.yaml Sign pattern ^[0-9a-f]{64}$ rejects uppercase too.
   const deps = dependencies();
   const check = createSignatureCheck(deps);
   const request = input();
@@ -154,14 +163,16 @@ it('[BR-ID-09] HMAC绑定方法、原始query编码及顺序、原始body字节�
 
 it('[BR-ID-09][BR-ID-01] 错签不占nonce且优先于Redis故障，修正后可成功一次', async () => {
   const deps = dependencies();
-  deps.evalScript.mockRejectedValueOnce(new RedisUnavailableError('command_failed', null));
+  // ADR-0001 §4.2 #17: fail closed; preserve the error for B1-01za's global filter.
+  const unavailable = new RedisUnavailableError('command_failed', null);
+  deps.evalScript.mockRejectedValueOnce(unavailable);
   const check = createSignatureCheck(deps);
   const request = input();
   await expect(
     check({ ...request, headers: { ...request.headers, 'x-sign': '0'.repeat(64) } }),
   ).rejects.toMatchObject({ code: 10401 });
   expect(deps.evalScript).not.toHaveBeenCalled();
-  await expect(check(request)).rejects.toBeInstanceOf(RedisUnavailableError);
+  await expect(check(request)).rejects.toBe(unavailable);
   expect(request.verifiedDevice).toBeUndefined();
   await check(request);
   expect(request.verifiedDevice).toEqual({ deviceId: DEVICE, appId: 'couli' });
@@ -184,6 +195,7 @@ it('[BR-ID-09][BR-ID-01] nonce使用设备行app_id；①不比较客户端X-App
 });
 
 it('[BR-ID-09] 相同nonce允许不同设备使用；吊销后不得依赖旧查询结果继续放行', async () => {
+  // BR-ID-09 accepts only unrevoked devices, including immediately after a successful lookup.
   const deps = dependencies();
   const check = createSignatureCheck(deps);
   await check(input());
