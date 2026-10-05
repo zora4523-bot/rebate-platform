@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, expect, expectTypeOf, it } from 'vitest';
-import { createApiClient, type Schema } from './index.ts';
+import { createApiClient, enums, type Schema } from './index.ts';
 
 type OpenLinkResponse = Schema<'OpenLinkResponse'>;
 
@@ -699,8 +699,69 @@ it('[CT-02c#7] 申诉字段登记 identity 枚举绑定 (04 §2.5、§6.1)', () 
       );
     // dereference preserves object identity for $refs: an unrelated equal enum is not a binding.
     expect(registered, enumName).toContain(schema);
-    expect([...(schema.enum ?? [])].sort()).toEqual(
-      Object.keys(identity.enums[enumName]!.values).sort(),
-    );
+    const catalogValues = Object.keys(identity.enums[enumName]!.values);
+    if (enumName === 'appeal_target_type') {
+      // CT-02d: blocked_request is admin-only (04 §3.2、§6.1).
+      expect([...(schema.enum ?? [])].sort()).toEqual(['account', 'order']);
+      expect(catalogValues).toEqual(expect.arrayContaining(schema.enum!));
+    } else {
+      expect([...(schema.enum ?? [])].sort()).toEqual(catalogValues.sort());
+    }
   }
+});
+
+const appealIdentity = parseYamlLite(
+  readFileSync(new URL('../../../contracts/enums/identity.yaml', import.meta.url), 'utf8'),
+) as { enums: Record<string, { values: Record<string, string> }> };
+const blockedRequestTypes = ['register', 'withdraw', 'phone_change', 'payout_account'];
+
+it('[AC-CT-02d#1] 申诉对象枚举恰含 account、order、blocked_request (04 §3.2)', () => {
+  expect(Object.keys(appealIdentity.enums.appeal_target_type?.values ?? {}).sort()).toEqual(
+    ['account', 'order', 'blocked_request'].sort(),
+  );
+});
+
+it('[AC-CT-02d#2] 被拦请求类型枚举恰含四种类型 (08 BR-ID-36 被拦截请求申诉)', () => {
+  expect(appealIdentity.enums).toHaveProperty('blocked_request_type');
+  expect(Object.keys(appealIdentity.enums.blocked_request_type?.values ?? {}).sort()).toEqual(
+    [...blockedRequestTypes].sort(),
+  );
+});
+
+it('[AC-CT-02d#3] 用户侧提交与查询仅支持 account、order (04 §6.1)', () => {
+  const request = appealOperation('post').requestBody.content['application/json'].schema;
+  const targets = [
+    contract.components.schemas['AppealTargetType'],
+    appealProperty(request, 'target_type'),
+    appealProperty(appealItemSchema('post'), 'target_type'),
+    appealProperty(appealItemSchema('get'), 'target_type'),
+  ];
+  for (const target of targets) {
+    expect(target).toBeDefined();
+    const schema = target as AppealSchema;
+    expect([...(schema.enum ?? [])].sort()).toEqual(['account', 'order']);
+    const validate = compileAppealSchema(schema);
+    expect(validate('account')).toBe(true);
+    expect(validate('order')).toBe(true);
+    expect(validate('blocked_request')).toBe(false);
+  }
+});
+
+it('[AC-CT-02d#4] 用户侧对象登记子集绑定且请求类型尚不绑定接口 (04 §3.2、§6.1；任务 §9)', () => {
+  const { ENUM_BINDINGS, ENUM_SUBSETS } = testRequire('../scripts/conformance.ts') as {
+    ENUM_BINDINGS: Record<string, string>;
+    ENUM_SUBSETS: Record<string, string>;
+  };
+  expect.soft(ENUM_SUBSETS.AppealTargetType).toBe('appeal_target_type');
+  expect.soft(ENUM_BINDINGS).not.toHaveProperty('AppealTargetType');
+  expect.soft(Object.values(ENUM_BINDINGS)).not.toContain('blocked_request_type');
+  expect.soft(Object.values(ENUM_SUBSETS)).not.toContain('blocked_request_type');
+});
+
+it('[AC-CT-02d#5] 生成枚举包含被拦请求对象与四种请求类型 (04 §3.2；08 BR-ID-36)', () => {
+  expect
+    .soft([...enums.appeal_target_type].sort())
+    .toEqual(['account', 'order', 'blocked_request'].sort());
+  // Property assertion keeps a missing generated enum an AssertionError, not an import failure.
+  expect.soft(enums).toHaveProperty('blocked_request_type', blockedRequestTypes);
 });
