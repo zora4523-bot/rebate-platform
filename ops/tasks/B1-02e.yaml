@@ -10,14 +10,19 @@ type: impl
 # JWT 签名密钥、发码存储等新配置按 apps/api/AGENTS.md 进 platform/config（不直接读 process.env），新增环境变量写进
 # .env.example；要装新依赖写 deps_needed，由编排者开 deps 任务。platform 路径为 RV2，本任务整体按 RV2。
 # 实现路由的接口去掉 x-implementation: planned。test_paths：test/spec/identity/session/**（task-file.ts 还不认该字段；在它接受前，测试阶段的允许路径由编排会话写进任务书，规则测试只放第一类测试资产目录，spec_commit 前其余改动只许 NotImplemented 骨架，tools/guard/lib/spec-base.ts 已强制）。
+# 2026-10-05 补（Codex 台账评审）：登录与刷新时版本低于最低支持版本签 deletion_only（BR-ID-01 细则「受限会话」）要用版本查询：identity 定义端口、F1-02b 的 content 实现、
+# app.module 装配；判定链接线照 B1-03c 注释（①～③ 全局 guard / 签名钩子，④ 幂等在 idempotency.execute，④a 之后挂钩子），任务书要带这段。路由 schema 生成物
+# platform/validation/route-schemas.gen.ts 在去掉 planned 后重生成（B1-02c 引入），与 B1-02f / g、B1-03i 串行。
 refs: []
 refs_hash: {}
-deps: [B1-02c, B1-02b, CT-02b]
+deps: [B1-02c, B1-02b, CT-02b, F1-02b]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/modules/platform/config/**'
   - '.env.example'
   - 'contracts/openapi.yaml'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
 impl: claude
 tester: codex
 accept:

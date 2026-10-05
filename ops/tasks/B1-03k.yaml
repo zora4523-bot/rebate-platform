@@ -1,0 +1,27 @@
+id: B1-03k
+repo: rebate-platform
+title: 同设备多账号判定（BR-ID-37）：按 login_logs 的 device_hash、滑动 720 小时窗口、各账号窗口内首次登录排序，第 3 个起标记；并号墓碑按设备与窗口判断计不计（开关 risk.merge_tombstone_dedupe）；命中写 risk_hits（manual_review）
+type: impl
+# 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释；05 B1-03 行末句）。依据：BR-ID-37 条目行与细则（并号墓碑的成对例外，第 4 批第 2 轮评审后补）、
+# BR-ID-05 细则「同设备注册上限的计数」里墓碑与开关的说明，由编排者摘入；验收参照 10 AC-S1-59 ⑥～⑧。
+# login_logs、device_registrations 是 identity 的表：risk 只经 identity 实现的查询端口取「某 device_hash 窗口内各账号首次登录时刻与并号关系」（同 B1-03b 的依赖倒置）。
+# 只交付 risk/index.ts 的判定服务（输入用户与判定时点，输出是否标记，并写 risk_hits）；调用方是提现受理（B2-05，写风险标签 same_device_multi_account）与奖励发放（P1），
+# 本任务不碰 payout，也不据此封禁或拦截登录。阈值 risk.device_login_accounts_limit 与开关 risk.merge_tombstone_dedupe 经 F1-02b 的配置读取取值（B1-03e 定义的端口），
+# 未配置时用 08 的默认值兜底（3、on）。消费者在 B2，优先级低于 b～i。
+# identity 与 app.module.ts 路径，整体按 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-03d, B1-03e, B1-02e]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/risk/same-device/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/same-device/**'
+status: todo
+pr: null

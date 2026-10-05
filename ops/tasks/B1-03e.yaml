@@ -1,0 +1,29 @@
+id: B1-03e
+repo: rebate-platform
+title: 三维限流（判定顺序 ⑬）：用户、设备、IP 三个令牌桶，阈值按接口可配，超限 42901 + Retry-After；Redis 令牌桶，键带 TTL；存储不可用按拒绝并告警
+type: impl
+# 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释）。依据：BR-ID-01（⑬ 的位置）、02 §12.2 限流行（三维令牌桶、阈值在后台配置、42901 + Retry-After）、
+# 04 §7 42901 行，由编排者摘入。转链与搜索的默认值取 06 Q-B4 现值（转链每用户 30 次/分、500 次/日；搜索每用户 60 次/分、每 IP 120 次/分；08 未收录，
+# 编排者裁定 §5 第 14 条：先用作代码默认值，以后回收进 08）；Agent 的限流见 BR-AI-15，不在本任务。
+# 发码与设备注册的专用限额不在本任务（f、g）；短信按手机号的 60 秒与每日额度在 B1-02e。
+# 阈值读取（编排者裁定 §5 第 4、9 条）：经 F1-02b 的配置读取取值，键未配置时用代码默认值兜底（F1-02a 注释 D-7：风控阈值不入种子，不变）；
+# 本任务在 risk/index.ts 定义配置读取端口，content 实现、app.module 装配，f、g、k 复用同一端口。
+# 存储不可用按拒绝 42901（编排者裁定 §5 第 8 条）。代价：Redis 故障期间所有受限流的接口都返回 42901。告警要求：首次不可用立即告警、恢复时再告警一次，
+# 期间按分钟汇总受影响接口与拒绝次数（只打平铺字段，不带用户标识明文；出口同 B1-03f 注释），不能只打普通错误日志。
+# ⑬ 的接线按 B1-03c 注释的方案（幂等接口走钩子、非幂等接口走 ③ 之后的 guard）。滑动窗口与令牌桶的实现要给 f、g 复用。
+# 集成测试用 B1-01y 的一次性 Redis。app.module.ts 不在白名单，整体按 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-03b, B1-03c, B1-01y, F1-02b]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/risk/rate-limit/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/rate-limit/**'
+status: todo
+pr: null

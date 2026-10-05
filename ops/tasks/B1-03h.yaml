@@ -1,0 +1,26 @@
+id: B1-03h
+repo: rebate-platform
+title: 风控状态与封禁拦截（判定顺序 ⑤，10006）：user_risk_state 读写服务（frozen_until、原因类别）、banned 或「appealing 且申诉前为 banned」时白名单外 10006、≤60 秒缓存与变更即失效、资金与身份敏感接口不读缓存、发 risk.state_changed
+type: impl
+# 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释）。依据：BR-ID-01（⑤ 的位置与缓存规则）、BR-ID-31（10006 白名单全文：含 oauth-attempts 与 step-up 只放行 account_deletion、
+# 作废接口、申诉接口；封禁用户登录照常签发令牌）、BR-ID-36（风控状态、appealing 期间对外限制同 prev_risk_state）、04 §2.5 risk_state 行、§3.2 user_risk_state 行，由编排者摘入；
+# 验收参照 10 AC-S1-60 ①⑤。白名单按 08 写成一张表并逐条测；GET /v1/me 的 risk{state, reason_category, frozen_until} 由 identity 读本服务（B1-02 的 /v1/me 实现时接）。
+# 封禁的连带动作（吊销全部会话、联盟绑定置 blocked、提现阻断）由后台封禁命令编排（F1-10 / B1-27），本任务只提供状态写入命令与事件，不跨模块执行连带动作。
+# 冻结到期恢复与不定期冻结满 30 天告警归 B1-03j。frozen 对提现的 30303 在提现受理（B2-05）判定，本任务不碰 payout。
+# 位置在 ④a 之后，按 B1-03c 注释的接线方案：幂等接口注册进 platform/idempotency 的「未命中之后、执行之前」钩子，非幂等接口由 ③ 之后的 guard 执行。
+# app.module.ts 不在白名单，整体按 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-03a, B1-03c, B1-02e]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/risk/risk-state/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/risk-state/**'
+status: todo
+pr: null

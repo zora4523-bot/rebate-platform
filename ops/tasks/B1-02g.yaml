@@ -15,6 +15,7 @@ paths:
   - 'apps/api/src/modules/platform/http/public/**'
   - 'apps/api/src/modules/platform/platform.module.ts'
   - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
 impl: claude
 tester: codex
 accept:
