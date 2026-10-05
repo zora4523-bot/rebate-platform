@@ -20,7 +20,7 @@ import {
   taskCalls,
 } from './state.ts';
 import type { BreakerReason, TaskState } from './state.ts';
-import { archivedTaskIds, batchRisk, readTask } from './task.ts';
+import { archivedTaskIds, batchRisk, readTask, riskSources } from './task.ts';
 import type { RiskLevel, RiskReport } from './task.ts';
 import { currentSummary } from './usage.ts';
 import type { Summary } from './usage.ts';
@@ -142,7 +142,10 @@ export function collectBoard(opts: BoardOptions = {}): Board {
   // One guard call for every open task instead of one per task (batchRisk).
   const riskFn = batchRisk(
     [...tasks.values()].filter((t) => t.status === 'todo').map((t) => t.paths),
-    opts.risk,
+    riskSources({
+      ...opts,
+      onRiskFallback: (reason) => warnings.push(`风险级未能合并计算，已逐个任务计算：${reason}`),
+    }),
   );
 
   const states = new Map<string, TaskState>();

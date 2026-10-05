@@ -221,72 +221,77 @@ it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a 
   }
 });
 
-// A stand-in for the trusted guard with its aggregation (tools/guard/lib/risk.ts riskOfPaths): one
-// row per input in input order, the highest row risk (RV2 when empty), ask on protected class 2 / 3.
-function countingGuard(): { calls: string[][]; risk: (paths: readonly string[]) => RiskReport } {
-  const rowOf = (path: string): RiskReport['paths'][number] =>
-    path.startsWith('ops/')
-      ? { path, risk: 'RV2', rule: 'default', protected: 3 }
-      : path.startsWith('apps/')
-        ? { path, risk: 'RV1', rule: 'apps/**', protected: null }
-        : { path, risk: 'RV0', rule: 'docs/**', protected: null };
-  const calls: string[][] = [];
-  const rank = { RV0: 0, RV1: 1, RV2: 2 } as const;
-  return {
-    calls,
-    risk: (paths) => {
-      calls.push([...paths]);
-      const rows = paths.map(rowOf);
-      let risk: RiskReport['risk'] = rows.length === 0 ? 'RV2' : 'RV0';
-      for (const r of rows) if (rank[r.risk] > rank[risk]) risk = r.risk;
-      return { risk, ask: rows.some((r) => r.protected === 3), paths: rows };
+// A stand-in for the trusted guard: one report per set, counting the calls.
+function countingGuard(): {
+  manyCalls: string[][][];
+  oneCalls: string[][];
+  many: (sets: readonly (readonly string[])[]) => RiskReport[];
+  one: (paths: readonly string[]) => RiskReport;
+} {
+  const report = (paths: readonly string[]): RiskReport => ({
+    risk: paths.some((p) => p.startsWith('apps/')) ? 'RV1' : 'RV0',
+    ask: false,
+    paths: paths.map((path) => ({ path, risk: 'RV0', rule: null, protected: null })),
+  });
+  const g = {
+    manyCalls: [] as string[][][],
+    oneCalls: [] as string[][],
+    many: (sets: readonly (readonly string[])[]) => {
+      g.manyCalls.push(sets.map((s) => [...s]));
+      return sets.map(report);
+    },
+    one: (paths: readonly string[]) => {
+      g.oneCalls.push([...paths]);
+      return report(paths);
     },
   };
+  return g;
 }
 
-it('batchRisk asks the guard once for every set and answers each set like a call of its own', () => {
-  const sets = [['docs/a.md'], ['apps/x/**', 'docs/a.md'], ['ops/tasks/**', 'docs/b.md'], []];
-  const batched = countingGuard();
-  const single = countingGuard();
-  const lookup = batchRisk(sets, batched.risk);
-  for (const set of sets) expect(lookup(set)).toEqual(single.risk(set));
-  expect(batched.calls).toEqual([['docs/a.md', 'apps/x/**', 'ops/tasks/**', 'docs/b.md']]);
-  expect(lookup([]).risk).toBe('RV2');
-  expect(lookup(['ops/tasks/**']).ask).toBe(true);
-});
-
-it('batchRisk asks a set on its own when the combined call is unusable or misses a path', () => {
-  const sets = [['docs/a.md'], ['apps/x/**']];
-  // A path the combined call was not asked about.
-  const guard = countingGuard();
-  const lookup = batchRisk(sets, guard.risk);
+it('batchRisk asks the guard once for all distinct sets and hands back its report per set', () => {
+  const g = countingGuard();
+  const lookup = batchRisk([['docs/a.md'], ['apps/x/**', 'docs/a.md'], ['docs/a.md']], g);
+  expect(lookup(['apps/x/**', 'docs/a.md'])).toEqual(g.one(['apps/x/**', 'docs/a.md']));
+  expect(lookup(['docs/a.md']).risk).toBe('RV0');
+  expect(g.manyCalls).toEqual([[['docs/a.md'], ['apps/x/**', 'docs/a.md']]]);
+  // A set the batch was not asked about goes to the guard on its own.
+  g.oneCalls.length = 0;
   expect(lookup(['apps/y/**']).risk).toBe('RV1');
-  expect(guard.calls).toEqual([['docs/a.md', 'apps/x/**'], ['apps/y/**']]);
-  // The combined call fails: every set is asked on its own, its own error surfaces.
-  let calls = 0;
-  const failing = batchRisk(sets, (paths) => {
-    calls += 1;
-    if (paths.length > 1) throw new Error('guard failed');
-    return countingGuard().risk(paths);
-  });
-  expect(failing(['docs/a.md']).risk).toBe('RV0');
-  expect(failing(['apps/x/**']).risk).toBe('RV1');
-  expect(calls).toBe(3);
-  // A combined answer that is not row for row is not used.
-  const short = countingGuard();
-  const lossy = batchRisk(sets, (paths) => {
-    const report = short.risk(paths);
-    return paths.length > 1 ? { ...report, paths: report.paths.slice(1) } : report;
-  });
-  expect(lossy(['docs/a.md'])).toEqual(countingGuard().risk(['docs/a.md']));
-  expect(short.calls).toEqual([['docs/a.md', 'apps/x/**'], ['docs/a.md']]);
+  expect(g.oneCalls).toEqual([['apps/y/**']]);
 });
 
-it('checkTasks asks the guard once for the whole ledger', () => {
-  const guard = countingGuard();
-  const results = checkTasks(['X1-01', 'X1-01a', 'X9-01'], { root, spec, risk: guard.risk });
+it('batchRisk asks every set on its own when the combined call fails or is not one report per set', () => {
+  for (const broken of [
+    () => {
+      throw new Error('guard failed');
+    },
+    () => [] as RiskReport[],
+  ]) {
+    const g = countingGuard();
+    const reasons: string[] = [];
+    const lookup = batchRisk([['docs/a.md'], ['apps/x/**']], {
+      many: broken,
+      one: g.one,
+      onFallback: (r) => reasons.push(r),
+    });
+    expect(lookup(['docs/a.md']).risk).toBe('RV0');
+    expect(lookup(['apps/x/**']).risk).toBe('RV1');
+    expect(g.oneCalls).toEqual([['docs/a.md'], ['apps/x/**']]);
+    expect(reasons).toHaveLength(1);
+  }
+});
+
+it('checkTasks asks the guard once for the risk of every implementation task', () => {
+  const g = countingGuard();
+  const results = checkTasks(['X1-01', 'X1-01a', 'X9-01'], {
+    root,
+    spec,
+    riskSets: g.many,
+    risk: g.one,
+  });
   expect(results.map((r) => r.id)).toEqual(['X1-01', 'X1-01a', 'X9-01']);
-  expect(guard.calls).toEqual([['packages/demo/src/**']]);
+  expect(g.manyCalls).toEqual([[['packages/demo/src/**']]]);
+  expect(g.oneCalls).toEqual([]);
 });
 
 it('shows a task together with its computed risk', () => {
