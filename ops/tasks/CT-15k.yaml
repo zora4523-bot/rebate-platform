@@ -6,7 +6,7 @@ type: contract
 # 签名向量没有任何任务承接。B1-03b（签名 Guard）与 APP-03、HM 的网络中间件都按它测。
 # 依据：BR-ID-09 条目行（签名串 = 大写 method、不含域名且含原始 query 的 path、ts、nonce、sha256(原始 body)；X-Timestamp 10 位秒、±300 秒；X-Nonce 32 位小写 hex）
 # 与细则里的例子，由编排者摘入任务书第 2 节。
-# 向量要有：正例（带 query、空 body、非 ASCII body、query 编码与参数顺序原样保留）、反例（时间差 300 / 301 秒、nonce 长度或大小写不符、method 小写、path 带域名）；
+# 向量要有：正例（带 query、空 body、非 ASCII body、query 编码与参数顺序原样保留）、时间边界（偏差 ±300 秒为正例、±301 秒为反例，BR-ID-09「|服务端时间 − ts| ≤ 300 秒」），反例另有（nonce 长度或大小写不符、method 小写、path 带域名）；
 # install_secret 用一眼可辨的测试值，不得像真实密钥（gitleaks 与 specs/client-public-ids.yaml 的规则照旧）。
 # 同 CT-15c：契约类、没有 spec_commit 阶段；Codex 的一致性测试放 packages/contracts-ts/src/ 下（读向量文件、按 BR-ID-09 自算一遍对上），先提交测试再提交向量。
 # 契约槽全局串行，排在 CT-02d 之后。

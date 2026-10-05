@@ -1,0 +1,22 @@
+id: B1-01z
+repo: rebate-platform
+title: 验证底座加一次性 Redis：容器验证在内部网络起 Redis 并注入 TEST_REDIS_URL，CI 集成测试加 redis 服务，供 platform/redis 与风控的集成测试使用
+type: impl
+# 2026-10-05 入账（Codex 台账评审第 1 轮 S1）：B1-01y 的集成测试要真实 Redis（BR-ID-05 细则准入集合要原子操作，10 AC-S1-79 ⑦⑩ 要真实 Redis 并发），
+# 但 tools/ops/verify-container.sh 的验证容器没有 Docker socket、只起 PostgreSQL 并注入 TEST_PG_ADMIN_URL，testcontainers 在里面起不了 Redis；
+# evidence-check 又要求成功的容器验证记录。做法照 PostgreSQL：同一内部网络起 redis 7.4（与 infra/local/compose.yaml 同版本，noeviction，不落盘），
+# 注入 TEST_REDIS_URL；CI 的集成测试 job 加 redis 服务与同名变量；--host 模式透传本机变量。只提供连接，不写任何 Redis 业务封装（那是 B1-01y）。
+# tools/** 与 .github/** 属保护路径，合并前要负责人批准标签。验证脚本自身的测试照 tools/ops 已有写法补。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/verify-container.sh'
+  - 'tools/ops/*.test.ts'
+  - '.github/workflows/ci.yml'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
