@@ -22,8 +22,8 @@ describe('ops/risk-map.yaml', () => {
       'apps/api/src/modules/content/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/platform/** RV2 claude/codex/claude+codex',
       'packages/evals/** RV1 claude/codex/codex',
-      'apps/admin/src/resources/withdrawals/** RV2 claude/codex/claude+codex',
-      'apps/admin/src/resources/adjustments/** RV2 claude/codex/claude+codex',
+      'apps/admin/src/**/{withdrawals,adjustments}/** RV2 claude/codex/claude+codex',
+      'apps/admin/src/**/{withdrawals,adjustments}.* RV2 claude/codex/claude+codex',
       'apps/admin/** RV1 claude/codex/codex',
       'apps/h5/** RV1 claude/codex/codex',
       'packages/bridge-sdk/** RV1 claude/codex/codex',
@@ -42,6 +42,14 @@ describe('ops/risk-map.yaml', () => {
     expect(riskOfPath('ops/tasks/CT-01.yaml', map, cfg).risk).toBe('RV0');
     expect(riskOfPath('ops/evidence/CT-01.json', map, cfg).risk).toBe('RV2');
     expect(riskOfPath('ops/approvals.yaml', map, cfg).risk).toBe('RV2');
+  });
+
+  it('admin withdrawal and adjustment pages are RV2 wherever they live; other admin pages RV1 (规划/11 §1.1)', () => {
+    expect(riskOfPath('apps/admin/src/resources/withdrawals/List.tsx', map, cfg).risk).toBe('RV2');
+    expect(riskOfPath('apps/admin/src/pages/adjustments/create.tsx', map, cfg).risk).toBe('RV2');
+    expect(riskOfPath('apps/admin/src/resources/withdrawals.tsx', map, cfg).risk).toBe('RV2');
+    expect(riskOfPath('apps/admin/src/resources/users/List.tsx', map, cfg).risk).toBe('RV1');
+    expect(riskOfPath('apps/h5/src/entries/app/main.tsx', map, cfg).risk).toBe('RV1');
   });
 });
 
