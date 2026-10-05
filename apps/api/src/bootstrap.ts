@@ -2,14 +2,15 @@
 // files decide whether to listen, and tests drive HTTP entries through Fastify `inject`.
 import 'reflect-metadata';
 import type { IncomingMessage } from 'node:http';
-import { Catch, type ArgumentsHost, type INestApplicationContext } from '@nestjs/common';
-import { BaseExceptionFilter, NestFactory } from '@nestjs/core';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { INestApplicationContext } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module.ts';
 import {
-  createValidatorCompiler,
-  validationErrorEnvelope,
-} from './modules/platform/validation/index.ts';
+  GlobalErrorFilter,
+  PlatformFastifyAdapter,
+} from './modules/platform/http/global-errors.ts';
+import { createValidatorCompiler } from './modules/platform/validation/index.ts';
 import {
   type AppConfig,
   type Clock,
@@ -20,7 +21,6 @@ import {
   type PlatformOptions,
   type RootLogger,
   type WorkerEntry,
-  IdempotencyError,
   clockFromConfig,
   createRootLogger,
   loadConfig,
@@ -36,27 +36,6 @@ export interface BootstrapOverrides {
   readonly clock?: Clock;
   /** Defaults to a pino root logger on stdout at `config.logLevel`. */
   readonly logger?: RootLogger;
-}
-
-@Catch()
-class RequestValidationFilter extends BaseExceptionFilter<unknown> {
-  override catch(error: unknown, host: ArgumentsHost): void {
-    const http = host.switchToHttp();
-    if (error instanceof IdempotencyError && error.code === 'outcome_unknown') {
-      // A lost COMMIT acknowledgement is not a definite business failure. Do not allow Nest
-      // to build a response that could make the client start another sensitive operation.
-      const reply = http.getResponse<{ hijack(): void; raw: { destroy(): void } }>();
-      reply.hijack();
-      reply.raw.destroy();
-      return;
-    }
-    const response = validationErrorEnvelope(error, http.getRequest<{ id: string }>().id);
-    if (response === undefined) {
-      super.catch(error, host);
-      return;
-    }
-    this.applicationRef?.reply(http.getResponse(), response.body, response.statusCode);
-  }
 }
 
 function platformOptions(entry: EntryName, overrides: BootstrapOverrides): PlatformOptions {
@@ -83,7 +62,7 @@ export async function createHttpApp(
 ): Promise<NestFastifyApplication> {
   try {
     const options = platformOptions(entry, overrides);
-    const adapter = new FastifyAdapter({
+    const adapter = new PlatformFastifyAdapter({
       loggerInstance: options.logger,
       genReqId: (request: IncomingMessage) => resolveTraceId(request.headers['x-trace-id']),
     });
@@ -101,7 +80,9 @@ export async function createHttpApp(
         abortOnError: false,
       },
     );
-    app.useGlobalFilters(new RequestValidationFilter(app.getHttpAdapter()));
+    // The only global filter: every error of a request ends in the contract ErrorEnvelope (or, for
+    // an uncertain commit, a closed connection); see platform/http/global-errors.ts.
+    app.useGlobalFilters(new GlobalErrorFilter(app.getHttpAdapter(), options.logger));
     return app;
   } catch (error) {
     await overrides.dbHandles?.close();
