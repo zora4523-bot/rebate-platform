@@ -1,0 +1,815 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Agent stream contract (CT-08a). Frames, events and cards: 规划/04 §8.1–8.3; client handling: 规划/03 §7.2. One SSE frame `event: <type>` / `id: <seq>` / `data: <json>` is written here as one object {event, id, data}; the heartbeat comment line `: ping` (every 15 s) is not a frame and is validated by $defs/ping. id (= seq) increases within a run; done and error are the only terminal events. Known card types are validated strictly; any other type is an unknown card: only the envelope is checked and the client shows fallback_text (03 §7.2). page_guide and earnings_summary are added by CT-08b; until then they are unknown cards. Fixtures: contracts/fixtures/agent-streams/*.ndjson.",
+  "title": "AgentStreamFrame",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event", "id", "data"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["meta", "text.delta", "tool.status", "card", "suggestions", "error", "done"]
+    },
+    "id": {
+      "$ref": "#/$defs/seq"
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["event", "data"],
+      "properties": {
+        "event": { "type": "string", "enum": ["meta"] },
+        "data": { "$ref": "#/$defs/meta" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["event", "data"],
+      "properties": {
+        "event": { "type": "string", "enum": ["text.delta"] },
+        "data": { "$ref": "#/$defs/text_delta" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["event", "data"],
+      "properties": {
+        "event": { "type": "string", "enum": ["tool.status"] },
+        "data": { "$ref": "#/$defs/tool_status" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["event", "data"],
+      "properties": {
+        "event": { "type": "string", "enum": ["card"] },
+        "data": { "$ref": "#/$defs/card" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["event", "data"],
+      "properties": {
+        "event": { "type": "string", "enum": ["suggestions"] },
+        "data": { "$ref": "#/$defs/suggestions" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["event", "data"],
+      "properties": {
+        "event": { "type": "string", "enum": ["error"] },
+        "data": { "$ref": "#/$defs/error" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["event", "data"],
+      "properties": {
+        "event": { "type": "string", "enum": ["done"] },
+        "data": { "$ref": "#/$defs/done" }
+      }
+    }
+  ],
+  "$defs": {
+    "ping": {
+      "description": "Heartbeat comment line `: ping`, sent every 15 seconds (04 §8.1). Not a frame: it has no id and no event; fixtures write it as {\"comment\":\"ping\"}.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comment"],
+      "properties": {
+        "comment": { "type": "string", "enum": ["ping"] }
+      }
+    },
+    "seq": {
+      "description": "Sequence number within one run; equals the frame id (04 §8.1).",
+      "type": "integer",
+      "format": "int64",
+      "minimum": 1
+    },
+    "entity_id": {
+      "description": "Entity id, a UUIDv7 string (04 §5).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "card_id": {
+      "description": "Card id c1, c2… One sequence per session shared by card frames and the product cards inside them, in delivery order (frame first, then its items); never reused (04 §8.3, BR-AI-05).",
+      "type": "string",
+      "pattern": "^c[1-9][0-9]*$"
+    },
+    "fen": {
+      "description": "Amount in fen (ADR-0001 §4.2 item 3).",
+      "type": "integer",
+      "format": "int64"
+    },
+    "nullable_fen": {
+      "description": "Amount in fen, null when unknown.",
+      "type": ["integer", "null"],
+      "format": "int64"
+    },
+    "timestamp": {
+      "description": "ISO 8601 time with the +08:00 offset (04 §5).",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?\\+08:00$"
+    },
+    "platform": {
+      "description": "contracts/enums/platform.yaml platform.",
+      "type": "string",
+      "enum": ["taobao", "jd", "pdd", "meituan", "vip", "douyin", "eleme", "kuaishou", "suning"]
+    },
+    "text_key": {
+      "description": "Dictionary key (BR-TEXT-12); the client resolves the text, never raw copy.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+    },
+    "route_target": {
+      "description": "Route name from contracts/routes.json with its params (TECH-04); the client opens it only after a user tap.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "params"],
+      "properties": {
+        "route": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Za-z0-9]*$"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "quick_reply": {
+      "description": "Quick follow-up chip: text shown, send_text sent as the next user message.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "send_text"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "send_text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "meta": {
+      "description": "First frame of a run (04 §8.2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "run_id",
+        "message_id",
+        "prompt_version",
+        "model_label",
+        "ai_label"
+      ],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/entity_id" },
+        "run_id": { "$ref": "#/$defs/entity_id" },
+        "message_id": { "$ref": "#/$defs/entity_id" },
+        "prompt_version": { "type": "string", "minLength": 1 },
+        "model_label": {
+          "description": "Display name of the model.",
+          "type": "string",
+          "minLength": 1
+        },
+        "ai_label": {
+          "description": "From texts.ai_label (BR-TEXT-16).",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "text_delta": {
+      "description": "Text appended by seq; amounts, URLs and tokens are filtered by the server (BR-AI-06, BR-TEXT-16).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "delta"],
+      "properties": {
+        "seq": { "$ref": "#/$defs/seq" },
+        "delta": { "type": "string", "minLength": 1 }
+      }
+    },
+    "tool_status": {
+      "description": "Tool progress; never carries the raw arguments (04 §8.2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "tool", "phase", "display_text"],
+      "properties": {
+        "seq": { "$ref": "#/$defs/seq" },
+        "tool": { "type": "string", "minLength": 1 },
+        "phase": { "type": "string", "enum": ["start", "end", "failed"] },
+        "display_text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "suggestions": {
+      "description": "At most 3 quick follow-ups (04 §8.2), assembled by the server (BR-AI-06).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/quick_reply" }
+        }
+      }
+    },
+    "error": {
+      "description": "Terminal event. code is a 5-digit code from contracts/error-codes.yaml.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "msg", "retryable", "fallback"],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 10000,
+          "maximum": 99999
+        },
+        "msg": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean" },
+        "fallback": {
+          "description": "Fallback entry for the client, e.g. search_page; null when there is none.",
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      }
+    },
+    "done": {
+      "description": "Terminal event (BR-AI-01, BR-AI-14, BR-AI-16, BR-AI-18).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finish_reason", "quota_left"],
+      "properties": {
+        "finish_reason": {
+          "description": "contracts/enums agent_finish_reason.",
+          "type": "string",
+          "enum": [
+            "stop",
+            "cancelled",
+            "limit",
+            "budget",
+            "error",
+            "auth_required",
+            "safety",
+            "fallback",
+            "timeout"
+          ]
+        },
+        "quota_left": {
+          "description": "Messages left today after this one (BR-AI-15).",
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0
+        }
+      }
+    },
+    "card": {
+      "description": "Card envelope (04 §8.3). The 8 registered types (contracts/enums agent_card_type) validate data strictly; any other type is an unknown card whose data is not inspected and which the client shows as fallback_text (03 §7.2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "card_id", "type", "schema_version", "data", "fallback_text"],
+      "properties": {
+        "seq": { "$ref": "#/$defs/seq" },
+        "card_id": { "$ref": "#/$defs/card_id" },
+        "type": { "type": "string", "minLength": 1 },
+        "schema_version": { "type": "integer", "format": "int32", "minimum": 1 },
+        "data": { "type": "object", "additionalProperties": true },
+        "fallback_text": { "type": "string", "minLength": 1 }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["product_list"] },
+            "data": { "$ref": "#/$defs/card_product_list" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["rebate_quote"] },
+            "data": { "$ref": "#/$defs/card_rebate_quote" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["order_status"] },
+            "data": { "$ref": "#/$defs/card_order_status" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["claim_draft"] },
+            "data": { "$ref": "#/$defs/card_claim_draft" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["handoff"] },
+            "data": { "$ref": "#/$defs/card_handoff" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["auth_required"] },
+            "data": { "$ref": "#/$defs/card_auth_required" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["notice"] },
+            "data": { "$ref": "#/$defs/card_notice" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["rule_ref"] },
+            "data": { "$ref": "#/$defs/card_rule_ref" }
+          }
+        },
+        {
+          "description": "Unknown card: any type outside the registered ones.",
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "not": {
+                "enum": [
+                  "product_list",
+                  "rebate_quote",
+                  "order_status",
+                  "claim_draft",
+                  "handoff",
+                  "auth_required",
+                  "notice",
+                  "rule_ref"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "product_cta": {
+      "description": "Buy button chosen by the server; the client never decides it (BR-TEXT-12).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text_key"],
+      "properties": {
+        "text_key": { "$ref": "#/$defs/text_key" }
+      }
+    },
+    "product_tlj": {
+      "description": "Taolijin shown on the card; never folded into prices.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount_fen", "remain", "kind"],
+      "properties": {
+        "amount_fen": { "$ref": "#/$defs/fen" },
+        "remain": { "type": "integer", "format": "int32", "minimum": 0 },
+        "kind": {
+          "description": "contracts/enums tlj_kind.",
+          "type": "string",
+          "enum": ["ours", "brand_open", "third_party", "unknown"]
+        }
+      }
+    },
+    "product_card": {
+      "description": "Agent product card (04 §8.3). Every field is always present. Required data (BR-AI-04): prices, rebate_basis, availability, quoted_at and source are never null on an Agent card; rebate_basis never no_rebate (filtered in the tool layer, no card) and no no_rebate_cause; rebate_min_fen / rebate_max_fen are integers for normal and price_compare_risk and null for amount_unknown and login_required; tlj is required when the card shows taolijin (benefit_tags has taolijin or cta.text_key starts with claim_tlj).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "card_id",
+        "product_key",
+        "item_ref",
+        "platform",
+        "shop_type",
+        "title",
+        "image",
+        "shop_name",
+        "price_fen",
+        "coupon_fen",
+        "final_price_fen",
+        "est_net_price_fen",
+        "rebate_min_fen",
+        "rebate_max_fen",
+        "rebate_basis",
+        "benefit_tags",
+        "match_tag",
+        "spec_text",
+        "is_presale",
+        "tlj",
+        "link_id",
+        "cta",
+        "quoted_at",
+        "stale",
+        "age_sec",
+        "source",
+        "disclaimer_keys",
+        "ad_label",
+        "availability"
+      ],
+      "properties": {
+        "card_id": { "$ref": "#/$defs/card_id" },
+        "product_key": {
+          "description": "Opaque product key `<key_prefix>:<stable_id>` (BR-PROD-02).",
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        },
+        "item_ref": {
+          "description": "Opaque signed reference passed through unchanged (BR-PROD-11).",
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "platform": { "$ref": "#/$defs/platform" },
+        "shop_type": { "type": ["string", "null"] },
+        "title": { "type": ["string", "null"] },
+        "image": { "type": ["string", "null"], "format": "uri" },
+        "shop_name": { "type": ["string", "null"] },
+        "price_fen": { "$ref": "#/$defs/fen" },
+        "coupon_fen": {
+          "description": "0 when there is no coupon (BR-AI-04).",
+          "$ref": "#/$defs/fen"
+        },
+        "final_price_fen": { "$ref": "#/$defs/fen" },
+        "est_net_price_fen": { "$ref": "#/$defs/nullable_fen" },
+        "rebate_min_fen": { "$ref": "#/$defs/nullable_fen" },
+        "rebate_max_fen": { "$ref": "#/$defs/nullable_fen" },
+        "rebate_basis": {
+          "description": "contracts/enums rebate_basis without no_rebate (BR-AI-04).",
+          "type": "string",
+          "enum": ["normal", "price_compare_risk", "amount_unknown", "login_required"]
+        },
+        "benefit_tags": {
+          "description": "Server-generated labels; no per-card recommendation reasons (AI-08).",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "match_tag": {
+          "description": "contracts/enums match_tag, decided by server code (BR-AI-24).",
+          "type": "string",
+          "enum": ["matched", "relaxed", "spec_unconfirmed"]
+        },
+        "spec_text": {
+          "description": "Spec recognized from the title, for 标题显示为 X (BR-AI-24).",
+          "type": ["string", "null"]
+        },
+        "is_presale": { "type": "boolean" },
+        "tlj": {
+          "anyOf": [{ "$ref": "#/$defs/product_tlj" }, { "type": "null" }]
+        },
+        "link_id": { "$ref": "#/$defs/entity_id" },
+        "cta": { "$ref": "#/$defs/product_cta" },
+        "quoted_at": {
+          "description": "Time the upstream data was fetched, not the cache write time (BR-AI-04, BR-PRICE-11).",
+          "$ref": "#/$defs/timestamp"
+        },
+        "stale": { "type": "boolean" },
+        "age_sec": { "type": "integer", "format": "int32", "minimum": 0 },
+        "source": {
+          "description": "Price source (BR-PRICE-16).",
+          "type": "string",
+          "enum": ["taobao_union", "jd_union", "pdd_union"]
+        },
+        "disclaimer_keys": {
+          "description": "Ordered dictionary keys (BR-PRICE-17), including price_basis.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "ad_label": {
+          "description": "Ad label (BR-TEXT-17); null on Agent relevance cards in MVP (BR-AI-10).",
+          "type": ["string", "null"]
+        },
+        "availability": {
+          "description": "contracts/enums availability.",
+          "type": "string",
+          "enum": ["ok", "off_shelf", "coupon_gone", "ref_expired", "price_unavailable", "unknown"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "required": ["rebate_basis"],
+            "properties": {
+              "rebate_basis": { "type": "string", "enum": ["normal", "price_compare_risk"] }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "rebate_min_fen": { "$ref": "#/$defs/fen" },
+              "rebate_max_fen": { "$ref": "#/$defs/fen" }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["rebate_basis"],
+            "properties": {
+              "rebate_basis": { "type": "string", "enum": ["amount_unknown", "login_required"] }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "rebate_min_fen": { "type": "null" },
+              "rebate_max_fen": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["benefit_tags"],
+            "properties": {
+              "benefit_tags": {
+                "type": "array",
+                "contains": { "type": "string", "enum": ["taolijin"] }
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "tlj": { "$ref": "#/$defs/product_tlj" }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["cta"],
+            "properties": {
+              "cta": {
+                "type": "object",
+                "required": ["text_key"],
+                "properties": {
+                  "text_key": { "type": "string", "pattern": "^claim_tlj" }
+                }
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "tlj": { "$ref": "#/$defs/product_tlj" }
+            }
+          }
+        }
+      ]
+    },
+    "quote_material": {
+      "description": "Material parsed from text the user pasted. Untrusted, shown only on the material line (BR-AI-04, BR-PRICE-10).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title_hint",
+        "spec",
+        "claimed_price_fen",
+        "claimed_unit_price_fen",
+        "conditions",
+        "benefits",
+        "tpwd"
+      ],
+      "properties": {
+        "title_hint": { "type": ["string", "null"] },
+        "spec": { "type": ["string", "null"] },
+        "claimed_price_fen": {
+          "description": "Price claimed by the material; untrusted, display only (BR-PRICE-10).",
+          "$ref": "#/$defs/nullable_fen"
+        },
+        "claimed_unit_price_fen": {
+          "description": "Unit price claimed by the material; untrusted, display only.",
+          "$ref": "#/$defs/nullable_fen"
+        },
+        "conditions": {
+          "description": "Conditions named by the material, e.g. 88vip, taojinbi.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "benefits": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tpwd": { "type": ["string", "null"] }
+      }
+    },
+    "card_product_list": {
+      "description": "1–8 product cards (03 §7.4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result_set_id", "items", "layout"],
+      "properties": {
+        "result_set_id": { "type": "string", "minLength": 1 },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/product_card" }
+        },
+        "layout": { "type": "string", "enum": ["list", "grid"] }
+      }
+    },
+    "card_rebate_quote": {
+      "description": "One product card plus the material line (null when the user sent no material) and tlj_kind.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product", "material", "tlj_kind"],
+      "properties": {
+        "product": { "$ref": "#/$defs/product_card" },
+        "material": {
+          "anyOf": [{ "$ref": "#/$defs/quote_material" }, { "type": "null" }]
+        },
+        "tlj_kind": {
+          "description": "contracts/enums tlj_kind.",
+          "type": "string",
+          "enum": ["ours", "brand_open", "third_party", "unknown"]
+        }
+      }
+    },
+    "card_order_status": {
+      "description": "Order summary; fields trimmed as in the order list (BR-TEXT-02 细则「订单的检索范围与分享单的投影」), no order number. A shared order with is_other_product=true has a null title.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_id",
+        "platform",
+        "title",
+        "is_other_product",
+        "display_status",
+        "reason",
+        "est_rebate_fen",
+        "expected_credit_period"
+      ],
+      "properties": {
+        "order_id": { "$ref": "#/$defs/entity_id" },
+        "platform": { "$ref": "#/$defs/platform" },
+        "title": { "type": ["string", "null"] },
+        "is_other_product": { "type": "boolean" },
+        "display_status": {
+          "description": "contracts/enums display_status (BR-FUND-17).",
+          "type": "string",
+          "enum": [
+            "PAID",
+            "DEPOSIT_PAID",
+            "WAITING",
+            "CREDITING",
+            "REVIEWING",
+            "RIGHTS_PENDING",
+            "CREDITED",
+            "CREDITED_PART_CLAWED",
+            "NO_REBATE",
+            "INVALID",
+            "CLAWED_BACK"
+          ]
+        },
+        "reason": {
+          "description": "contracts/enums order_reason, or null.",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "REFUND",
+                "RIGHTS",
+                "PUNISH",
+                "PRESALE_UNPAID",
+                "COMMISSION_ZERO",
+                "OTHER",
+                "BLACKLIST",
+                "PART_REFUND",
+                "PRICE_COMPARE",
+                "PRICE_PROTECT",
+                "SETTLE_DIFF",
+                "NOT_TRACKED",
+                "EXPIRED_CLICK",
+                "OTHER_TLJ",
+                "RELATION_INVALID",
+                "CANCELLED"
+              ]
+            },
+            { "type": "null" }
+          ]
+        },
+        "est_rebate_fen": { "$ref": "#/$defs/nullable_fen" },
+        "expected_credit_period": {
+          "description": "YYYY-MM (AI-02); null when there is no expected month.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+        }
+      },
+      "if": {
+        "type": "object",
+        "required": ["is_other_product"],
+        "properties": {
+          "is_other_product": { "type": "boolean", "enum": [true] }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "null" }
+        }
+      }
+    },
+    "card_claim_draft": {
+      "description": "Claim draft; submitted only when the user taps submit_action.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "order_no", "click_times", "evidence_summary", "submit_action"],
+      "properties": {
+        "platform": { "$ref": "#/$defs/platform" },
+        "order_no": { "type": "string", "minLength": 1 },
+        "click_times": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/timestamp" }
+        },
+        "evidence_summary": {
+          "description": "Always null in MVP.",
+          "type": "null"
+        },
+        "submit_action": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text_key", "action"],
+          "properties": {
+            "text_key": { "$ref": "#/$defs/text_key" },
+            "action": { "type": "string", "enum": ["submit_claim"] }
+          }
+        }
+      }
+    },
+    "card_handoff": {
+      "description": "Customer service card (opens WeCom customer service).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry", "summary"],
+      "properties": {
+        "entry": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "card_auth_required": {
+      "description": "Authorization needed; the client resumes after it. resume_link_id is null when there is no link to resume.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "reason", "resume_link_id"],
+      "properties": {
+        "platform": { "$ref": "#/$defs/platform" },
+        "reason": { "type": "string", "enum": ["union_auth", "login", "bind_phone"] },
+        "resume_link_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 }
+      }
+    },
+    "card_notice": {
+      "description": "Degrade, no-result or maintenance notice; actions are quick rewrite chips (03 §7.4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "text_key", "actions"],
+      "properties": {
+        "level": { "type": "string", "enum": ["info", "warn"] },
+        "text_key": { "$ref": "#/$defs/text_key" },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/quick_reply" }
+        }
+      }
+    },
+    "card_rule_ref": {
+      "description": "Published rule excerpt hit by search_rules (BR-AI-07); action opens the full article.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunk_id", "title", "excerpt", "published_version", "action"],
+      "properties": {
+        "chunk_id": { "$ref": "#/$defs/entity_id" },
+        "title": { "type": "string", "minLength": 1 },
+        "excerpt": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "published_version": { "type": "string", "minLength": 1 },
+        "action": { "$ref": "#/$defs/route_target" }
+      }
+    }
+  }
+}
