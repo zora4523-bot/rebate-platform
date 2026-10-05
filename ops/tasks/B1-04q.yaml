@@ -1,0 +1,22 @@
+id: B1-04q
+repo: rebate-platform
+title: 依赖：apps/api 加工作区包 @couli/money 与 @couli/domain（workspace:*）并在 apps/api/tsconfig.json 加项目引用
+type: deps
+# 2026-10-06（W1 搜索转链线）。B1-04b 两家评审之一（Claude 资金清单评审）判 S1：union 的统一 DTO 把佣金率十进制字符串转万分之一整数、
+# 把元字符串转分，因 apps/api 没有依赖 @couli/money 只能自写（AGENTS.md 硬规则 1：金额只用 packages/money 运算；BR-CALC-26 的取整只该有一份实现）。
+# 后续 catalog 的卡片组装（B1-05f，价格三字段与返利区间）、linking 的复核同样要在 apps/api 里用 @couli/money 与 @couli/domain（deriveProductKey，B1-05b 已合并）。
+# 只加两个工作区内部包，不引入任何第三方依赖；会改 pnpm-lock.yaml（保护路径第二类）与 apps/api/tsconfig.json（项目引用），合并前要负责人批准标签。
+# deps 任务全局串行、先合并进 main；B1-04b 以它为基线换成库函数（pctStrToBp、parseFen）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'apps/api/tsconfig.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

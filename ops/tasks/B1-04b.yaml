@@ -15,7 +15,7 @@ type: impl
 # 全部 RV2（union/**、app.module.ts）。union 模块后续任务（B1-04o、B1-19b、B1-04c、B1-04p）都改 union/**，与本任务串行。
 refs: []
 refs_hash: {}
-deps: [B1-01b, B1-05b]
+deps: [B1-01b, B1-05b, B1-04q]
 paths:
   - 'apps/api/src/modules/union/**'
   - 'apps/api/src/app.module.ts'
