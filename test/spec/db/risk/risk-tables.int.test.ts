@@ -12,8 +12,8 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 
 import {
   ACTIONS,
+  BLOCKLIST_EXPIRES_AT,
   CHECK_ERRORS,
-  NOW,
   TABLES,
   allowedValues,
   appealRow,
@@ -79,7 +79,7 @@ async function closeAppeal(row: Record<string, unknown>, status: string): Promis
   // Handler may be a text system actor or an FK; let the local catalog filler supply it.
   // No transition() exists in this migration task: SQL exercises only the partial indexes.
   const result = await sql`
-    UPDATE app.appeals SET status = ${status}, closed_at = ${NOW},
+    UPDATE app.appeals SET status = ${status}, closed_at = now(),
       handler_id = ${await fixtureValue('appeals', 'handler_id')}
     WHERE id = ${row['id']}
   `.execute(app);
@@ -97,7 +97,7 @@ it('[AC-B1-03a#1] blocklist 表与列 [04 §3.2 blocklist]', async () => {
     created_by: [ID, false],
     expire_at: [TIME, true],
     platform: [STRING],
-    union_account_id: [TEXT],
+    union_account_id: [['uuid']],
     start_at: [TIME],
     end_at: [TIME, true],
     status: [STRING, false],
@@ -111,7 +111,7 @@ it('[AC-B1-03a#2] user_risk_state 表与用户主键 [04 §3.2 user_risk_state]'
     user_id: [['uuid'], false],
     state: [STRING, false],
     reason: [TEXT],
-    reason_category: [TEXT],
+    reason_category: [STRING],
     frozen_until: [TIME, true],
     changed_by: [ID],
     changed_at: [TIME, false],
@@ -135,6 +135,8 @@ it('[AC-B1-03a#3] appeals 表与条件可空列 [04 §3.2 appeals]', async () =>
     closed_at: [TIME, true],
     [await phoneColumn('appeals')]: [HASH, true],
   });
+  const names = (await columns('appeals')).map((c) => c.name);
+  expect(names.filter((n) => /phone|mobile/.test(n) && !/hmac|mask/.test(n))).toEqual([]);
 });
 
 it('[AC-B1-03a#4] risk_rules 表与条件 JSON [04 §3.2 risk_rules]', async () => {
@@ -200,20 +202,25 @@ it('[AC-B1-03a#8] 风控动作与请求类型单列集合 [BR-ID-36]', async () 
 
 it('[AC-B1-03a#9] 黑名单覆盖全部账号与订单维度 [BR-ID-31] [BR-ATTR-26]', async () => {
   await ready('blocklist');
-  // No blocklist enum in contracts at SPEC_REF. Account-side spelling is left to B1-03;
-  // accept explicit equivalent names without dropping any of the seven account dimensions.
+  // No blocklist enum in contracts at SPEC_REF. BR-ID-31 counts five account dimensions:
+  // payout accounts may share one dimension or split into Alipay, bank card and WeChat.
+  const actual = await allowedValues('blocklist', 'dimension');
+  const payoutGroups = actual.includes('payout_account')
+    ? [['payout_account']]
+    : [
+        ['alipay', 'alipay_hmac'],
+        ['bank_card', 'bank_card_hmac'],
+        ['wechat_openid', 'wechat', 'wechat_openid_hmac'],
+      ];
   const groups = [
     ['phone', 'phone_hmac'],
     ['id_no', 'id_no_hmac'],
-    ['alipay', 'alipay_hmac'],
-    ['bank_card', 'bank_card_hmac'],
-    ['wechat_openid', 'wechat', 'wechat_openid_hmac'],
+    ...payoutGroups,
     ['device', 'device_hash'],
     ['relation_id'],
     ['order_no_suffix'],
     ['channel'],
   ];
-  const actual = await allowedValues('blocklist', 'dimension');
   for (const alternatives of groups) {
     expect(
       actual.filter((v) => alternatives.includes(v)),
@@ -235,12 +242,11 @@ it('[AC-B1-03a#10] request_type 仅被拦请求必填 [04 §3.2 appeals]', async
     const row = await appealRow(target);
     expect(await sqlState(insertRow('appeals', row)), target).toBe('no error');
     for (const request of contractValues('blocked_request_type')) {
+      const invalidRow = await appealRow(target);
       expect(CHECK_ERRORS).toContain(
         await sqlState(
           insertRow('appeals', {
-            ...row,
-            id: randomUUID(),
-            target_id: randomUUID(),
+            ...invalidRow,
             request_type: request,
           }),
         ),
@@ -522,7 +528,7 @@ it('[AC-B1-03a#22] risk_hits 业务角色不可更新或删除 [BR-ID-36]', asyn
   expect(remaining.rows).toEqual([{ risk_action: 'block' }]);
 });
 
-it('[AC-B1-03a#23] 账号黑名单存 HMAC 并允许空到期时间 [BR-ID-31] [04 §3.2 blocklist]', async () => {
+it('[AC-B1-03a#23] 账号黑名单只存 HMAC 并记到期时间 [BR-ID-31] [BR-ID-30]', async () => {
   await ready('blocklist');
   const dimension = (await allowedValues('blocklist', 'dimension')).find((v) =>
     ['phone', 'phone_hmac'].includes(v),
@@ -536,10 +542,10 @@ it('[AC-B1-03a#23] 账号黑名单存 HMAC 并允许空到期时间 [BR-ID-31] [
     violation_type: 'other',
     reason: '风控登记',
     status: 'active',
-    expire_at: null,
+    expire_at: BLOCKLIST_EXPIRES_AT,
   });
   expect(row['value_hmac']).toEqual(hmac);
-  expect(row['expire_at']).toBeNull();
+  expect(row['expire_at']).toEqual(BLOCKLIST_EXPIRES_AT);
   expect(CHECK_ERRORS).toContain(
     await sqlState(
       insertRow('blocklist', {
@@ -549,7 +555,7 @@ it('[AC-B1-03a#23] 账号黑名单存 HMAC 并允许空到期时间 [BR-ID-31] [
         violation_type: 'other',
         reason: '风控登记',
         status: 'active',
-        expire_at: null,
+        expire_at: BLOCKLIST_EXPIRES_AT,
       }),
     ),
   );
@@ -580,7 +586,7 @@ it('[AC-B1-03a#23] 账号黑名单存 HMAC 并允许空到期时间 [BR-ID-31] [
           violation_type: 'other',
           reason: '风控登记',
           status: 'active',
-          expire_at: null,
+          expire_at: BLOCKLIST_EXPIRES_AT,
           [col.name]: '13800000000',
         }),
       ),
@@ -592,7 +598,14 @@ it('[AC-B1-03a#24] 冻结可定期或不定期且每用户仅一行 [BR-ID-36]',
   await ready('user_risk_state');
   for (const until of [null, new Date('2026-11-05T02:00:00Z')]) {
     const user = await newUser();
-    const values = { app_id: 'couli', user_id: user, state: 'frozen', frozen_until: until };
+    const values = {
+      app_id: 'couli',
+      user_id: user,
+      state: 'frozen',
+      frozen_until: until,
+      reason: await fixtureValue('user_risk_state', 'reason'),
+      reason_category: await fixtureValue('user_risk_state', 'reason_category'),
+    };
     const row = await insertRow('user_risk_state', values);
     expect(row['frozen_until']).toEqual(until);
     expect(await sqlState(insertRow('user_risk_state', values))).toBe('23505');
@@ -608,6 +621,8 @@ it('[AC-B1-03a#25] 永久封禁不设到期时间 [BR-ID-31]', async () => {
         user_id: await newUser(),
         state: 'banned',
         frozen_until: null,
+        reason: await fixtureValue('user_risk_state', 'reason'),
+        reason_category: await fixtureValue('user_risk_state', 'reason_category'),
       }),
     ),
   ).toBe('no error');
@@ -618,6 +633,8 @@ it('[AC-B1-03a#25] 永久封禁不设到期时间 [BR-ID-31]', async () => {
         user_id: await newUser(),
         state: 'banned',
         frozen_until: new Date('2026-11-05T02:00:00Z'),
+        reason: await fixtureValue('user_risk_state', 'reason'),
+        reason_category: await fixtureValue('user_risk_state', 'reason_category'),
       }),
     ),
   );
@@ -634,7 +651,7 @@ it('[AC-B1-03a#26] risk 写者有读写权限且命中表只追加 [04 §3.2]', 
   expect(await hasPrivilege('couli_app', 'risk_hits', 'TRUNCATE')).toBe(false);
 });
 
-it('[AC-B1-03a#27] readonly 只读且 maint 无业务表权限 [04 §3.2] [ADR-0001 §4.2]', async () => {
+it('[AC-B1-03a#27] readonly 只读、maint 无权限、payout 仅用风控状态表 [04 §3.2] [ADR-0001 §4.2] [BR-WDR-13 ③]', async () => {
   await ready(...TABLES);
   for (const table of TABLES) {
     expect(await hasPrivilege('couli_readonly', table, 'SELECT'), table).toBe(true);
@@ -655,21 +672,27 @@ it('[AC-B1-03a#27] readonly 只读且 maint 无业务表权限 [04 §3.2] [ADR-0
       expect(await hasPrivilege('couli_maint', table, privilege), `${table}/${privilege}`).toBe(
         false,
       );
+      if (table !== 'user_risk_state') {
+        expect(
+          await hasPrivilege('couli_payout', table, privilege),
+          `payout/${table}/${privilege}`,
+        ).toBe(false);
+      }
     }
   }
 });
 
-it('[AC-B1-03a#28] payout 可读风控状态用于发款前复核 [BR-ID-31]', async () => {
+it('[AC-B1-03a#28] payout 可读风控状态用于发款前复核 [BR-WDR-13 ③] [BR-WDR-05]', async () => {
   await ready('user_risk_state');
-  // BR-ID-31 explicitly requires payout preflight to reject banned users. Its WDR-13
-  // reference explains the consumer; this case only checks read access to the risk table.
-  for (const column of ['user_id', 'app_id', 'state', 'frozen_until']) {
+  // BR-WDR-13 ③ requires checking risk_state against the BR-WDR-05 withdrawal blocks;
+  // reading frozen_until is not required for this check.
+  for (const column of ['user_id', 'app_id', 'state']) {
     const result = await sql<{ ok: boolean }>`
       SELECT has_column_privilege('couli_payout', 'app.user_risk_state', ${column}, 'SELECT') AS ok
     `.execute(app);
     expect(result.rows[0]?.ok, column).toBe(true);
   }
-  for (const privilege of ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+  for (const privilege of ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) {
     expect(await hasPrivilege('couli_payout', 'user_risk_state', privilege), privilege).toBe(false);
   }
 });

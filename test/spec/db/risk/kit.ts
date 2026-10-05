@@ -16,6 +16,7 @@ export const TABLES = [
 ] as const;
 export type Table = (typeof TABLES)[number];
 export const NOW = new Date('2026-10-05T02:00:00Z');
+export const BLOCKLIST_EXPIRES_AT = new Date('2028-10-05T02:00:00Z');
 export const DEADLINE = new Date('2026-10-08T16:00:00Z');
 export const ACTIONS = ['pass', 'manual_review', 'block', 'void_commission'];
 export const CHECK_ERRORS = ['23514', '23502', '22P02'];
@@ -150,7 +151,12 @@ export async function hitColumn(kind: 'dimension' | 'hmac'): Promise<string> {
 }
 
 export async function conditionColumn(): Promise<string> {
-  const list = (await columns('risk_rules')).filter((c) => ['json', 'jsonb'].includes(c.type));
+  const columnsList = await columns('risk_rules');
+  const named = ['conditions', 'condition', 'condition_json'].find((name) =>
+    columnsList.some((c) => c.name === name),
+  );
+  if (named) return named;
+  const list = columnsList.filter((c) => ['json', 'jsonb'].includes(c.type));
   expect(list.length, 'risk_rules needs a JSON conditions column').toBe(1);
   return list[0]!.name;
 }
@@ -337,20 +343,29 @@ export async function appealRow(
 }
 
 export async function hitRow(request = 'register'): Promise<Record<string, unknown>> {
+  const dimension = await hitColumn('dimension');
+  const dimensions = await allowedValues('risk_hits', dimension);
+  const refTypes = await allowedValues('risk_hits', 'ref_type');
+  // These encodings are not fixed by the contract; prefer the matching catalog literals.
+  const phoneDimension = dimensions.find((v) => /phone/.test(v)) ?? dimensions[0] ?? 'phone';
+  const blockedRef =
+    refTypes.find((v) => v === 'blocked_request') ??
+    refTypes.find((v) => /request/.test(v)) ??
+    refTypes[0] ??
+    'blocked_request';
   return {
     app_id: 'couli',
     // insertRow fills rule_id through its actual FK (id or rule_id), as in the existing kit.
     risk_action: 'block',
     user_id: request === 'register' ? null : await newUser(),
-    ref_type: 'blocked_request',
+    ref_type: blockedRef,
     ref_id: randomUUID(),
     request_type: request,
-    [await hitColumn('dimension')]: 'phone',
+    [dimension]: phoneDimension,
     [await hitColumn('hmac')]: await hmacValue('risk_hits', await hitColumn('hmac')),
     [await phoneColumn('risk_hits')]: await hmacValue('risk_hits', await phoneColumn('risk_hits')),
     [await phoneColumn('risk_hits', 'masked')]: '138****0000',
     amount_fen: request === 'withdraw' ? 12345n : null,
-    created_at: NOW,
   };
 }
 
