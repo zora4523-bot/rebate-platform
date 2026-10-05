@@ -17,7 +17,12 @@ export interface ContentReaderOptions {
   readonly clock: Clock;
 }
 
-/** A reader with its own cache: create one per process and share it. */
+/**
+ * A reader with its own cache. Its answers may be up to one cache lifetime old, so it is for
+ * read paths only and never for validating a write (an admin save, for example, checks inside its
+ * transaction by reading the table directly). Wire it as a singleton: one reader per process,
+ * shared by every caller.
+ */
 export function createContentReader(options: ContentReaderOptions): ContentReader {
   return new CachedContentReader(createKyselyContentStore(options.db), options.clock);
 }

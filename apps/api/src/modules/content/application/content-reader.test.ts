@@ -153,6 +153,66 @@ it('[AC-F1-02b] a clock stepped back before the load expires the entry instead o
   expect(f.calls).toHaveLength(2);
 });
 
+it('[AC-F1-02b] a failed reread after expiry rejects instead of returning the old value', async () => {
+  const f = fakeStore();
+  f.configs.set('app expiring', { value: 'old', version: 1 });
+  f.versions.set('app android', new Map([['official', '1.0.0']]));
+  const clock = new FixedClock(START);
+  const reader = new CachedContentReader(f.store, clock);
+  expect(await reader.configValue('app', 'expiring')).toStrictEqual({ value: 'old', version: 1 });
+  expect(await reader.minSupportedVersion('app', 'android', 'official')).toBe('1.0.0');
+  f.configs.set('app expiring', { value: 'new', version: 2 });
+  f.versions.set('app android', new Map([['official', '2.0.0']]));
+  clock.advanceMs(CONTENT_CACHE_TTL_MS);
+  f.control.failure = new Error('database unavailable');
+  await expect(reader.configValue('app', 'expiring')).rejects.toThrow('database unavailable');
+  await expect(reader.configValue('app', 'expiring')).rejects.toThrow('database unavailable');
+  await expect(reader.minSupportedVersion('app', 'android', 'official')).rejects.toThrow(
+    'database unavailable',
+  );
+  f.control.failure = null;
+  expect(await reader.configValue('app', 'expiring')).toStrictEqual({ value: 'new', version: 2 });
+  expect(await reader.minSupportedVersion('app', 'android', 'official')).toBe('2.0.0');
+  expect(f.calls).toHaveLength(7);
+});
+
+it('[AC-F1-02b] after a failed reread a clock stepped back into the old lifetime still rejects', async () => {
+  const f = fakeStore();
+  f.configs.set('app rewound', { value: 'v1', version: 1 });
+  f.versions.set('app ios', new Map([['appstore', '1.0.0']]));
+  const clock = new FixedClock(START);
+  const reader = new CachedContentReader(f.store, clock);
+  expect(await reader.configValue('app', 'rewound')).toStrictEqual({ value: 'v1', version: 1 });
+  expect(await reader.minSupportedVersion('app', 'ios', 'appstore')).toBe('1.0.0');
+  clock.advanceMs(CONTENT_CACHE_TTL_MS);
+  f.control.failure = new Error('database unavailable');
+  await expect(reader.configValue('app', 'rewound')).rejects.toThrow('database unavailable');
+  await expect(reader.minSupportedVersion('app', 'ios', 'appstore')).rejects.toThrow(
+    'database unavailable',
+  );
+  // Back to 30 s after the first load, within the lifetime the expired entries once had.
+  clock.advanceMs(-CONTENT_CACHE_TTL_MS / 2);
+  await expect(reader.configValue('app', 'rewound')).rejects.toThrow('database unavailable');
+  await expect(reader.minSupportedVersion('app', 'ios', 'appstore')).rejects.toThrow(
+    'database unavailable',
+  );
+  expect(f.calls).toHaveLength(6);
+});
+
+it('[AC-F1-02b] a missing key is read once per lifetime and read again when it expires', async () => {
+  const f = fakeStore();
+  const clock = new FixedClock(START);
+  const reader = new CachedContentReader(f.store, clock);
+  expect(await reader.configValue('app', 'absent')).toBeNull();
+  clock.advanceMs(CONTENT_CACHE_TTL_MS - 1);
+  expect(await reader.configValue('app', 'absent')).toBeNull();
+  expect(await reader.configValue('app', 'absent')).toBeNull();
+  expect(f.calls).toEqual(['config app absent']);
+  clock.advanceMs(1);
+  expect(await reader.configValue('app', 'absent')).toBeNull();
+  expect(f.calls).toEqual(['config app absent', 'config app absent']);
+});
+
 it('[AC-F1-02b] callers get their own copy: mutating a result does not change later reads', async () => {
   const f = fakeStore();
   f.configs.set('app domains', { value: { hosts: ['a.example.test'] }, version: 4 });
