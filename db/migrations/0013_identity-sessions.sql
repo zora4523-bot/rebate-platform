@@ -16,7 +16,15 @@
 -- devices whose signatures can never verify. The column is bytea like the other *_cipher
 -- columns (users.phone_cipher, payout_accounts) and stores the UTF-8 bytes of the
 -- field-encryption ciphertext string (v1.<key_version>.<payload>, platform crypto module).
--- The table-level grants of 0005 already cover the new column.
+-- couli_app keeps its table-level grants from 0005, which cover the new column. couli_readonly
+-- loses the table-level SELECT of 0005 and gets SELECT on every devices column except
+-- install_secret_cipher: processes holding the field keys could decrypt a ciphertext read
+-- through the read-only role and forge request signatures. A later migration that adds a
+-- devices column must grant it to couli_readonly explicitly.
+-- If a local or staging database already has devices rows, this migration fails by design
+-- (there is no production data: orchestrator ruling in ops/tasks/B1-02b.yaml). Rebuild that
+-- database (remove the data volume and rerun the local stack), or first delete the devices
+-- rows together with the links and push_tokens rows that reference them.
 --
 -- sessions / refresh_tokens are mutable entity tables (04 §3.2 通则; ADR-0001 §4.3): each has
 -- a uuid id (UUIDv7 supplied by the application) and updated_at; sid stays its own column,
@@ -27,6 +35,9 @@
 -- the rotated predecessor in the same app and is unique: a token is rotated at most once
 -- (BR-ID-07: R1 has one direct successor R2; a grace hit returns that same pair), so a
 -- concurrent second rotation of R1 fails with 23505 instead of forking the chain.
+-- Because of that self-referencing foreign key, a later cleanup of expired tokens must delete
+-- a sid's whole chain in one statement (or its migration drops the foreign key); deleting by
+-- expire_at alone would hit predecessors whose successors are still stored.
 -- revoke_reason is open text: 04 and 08 give no closed vocabulary.
 -- Revocation (revoked_at, revoke_reason) and rotation (rotated_at) fill NULL columns once:
 -- writers put "... IS NULL" in the WHERE clause and treat 0 updated rows as already revoked
@@ -48,8 +59,10 @@
 -- Coupled CHECKs: a user record names its user and a device record its device; device_id
 -- stays optional on user records (h5_landing registers outside the App, BR-ID-32) and user_id
 -- is only an association on device records (BR-ID-13). labor_agreement is user-level only
--- (BR-ID-12) and stores text_sha256 and the signer snapshot (BR-WDR-31 细则); other types may
--- leave both NULL. The snapshot's JSON keys belong to the signing service.
+-- (BR-ID-12) and stores text_sha256, the signer snapshot (BR-WDR-31 细则) and device_id
+-- (BR-WDR-31 lists it among the retained fields; signing happens only in the native App);
+-- other types may leave text_sha256 and signer_snapshot NULL. The snapshot's JSON keys belong
+-- to the signing service.
 -- Consent rows are kept with the tombstone user_id after account deletion (BR-ID-28); their
 -- foreign keys therefore keep referenced users and devices rows from being deleted (BR-ID-28
 -- lists device records under "删除或匿名化").
@@ -140,7 +153,10 @@ CREATE TABLE app.consent_records (
   ),
   CONSTRAINT consent_records_labor_agreement_check CHECK (
     type <> 'labor_agreement'
-    OR (subject_type = 'user' AND text_sha256 IS NOT NULL AND signer_snapshot IS NOT NULL)
+    OR (
+      subject_type = 'user' AND text_sha256 IS NOT NULL AND signer_snapshot IS NOT NULL
+      AND device_id IS NOT NULL
+    )
   )
 );
 
@@ -154,3 +170,9 @@ GRANT SELECT, INSERT ON app.sessions, app.refresh_tokens, app.consent_records TO
 GRANT UPDATE (revoked_at, revoke_reason, updated_at) ON app.sessions TO couli_app;
 GRANT UPDATE (rotated_at, updated_at) ON app.refresh_tokens TO couli_app;
 GRANT SELECT ON app.sessions, app.refresh_tokens, app.consent_records TO couli_readonly;
+-- Every devices column except install_secret_cipher (see the header).
+REVOKE SELECT ON app.devices FROM couli_readonly;
+GRANT SELECT (
+  id, app_id, user_id, device_hash, id_source, platform, app_version, last_login_sid,
+  revoked_at, last_seen_at, row_version, created_at, updated_at
+) ON app.devices TO couli_readonly;

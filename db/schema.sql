@@ -961,7 +961,7 @@ CREATE TABLE app.consent_records (
     signer_snapshot jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT consent_records_channel_check CHECK ((channel = ANY (ARRAY['first_launch'::text, 'login_page'::text, 'h5_landing'::text, 'agent_sheet'::text, 'realname_sheet'::text, 'privacy_center'::text, 'login_merge'::text, 'withdraw_flow'::text]))),
-    CONSTRAINT consent_records_labor_agreement_check CHECK (((type <> 'labor_agreement'::text) OR ((subject_type = 'user'::text) AND (text_sha256 IS NOT NULL) AND (signer_snapshot IS NOT NULL)))),
+    CONSTRAINT consent_records_labor_agreement_check CHECK (((type <> 'labor_agreement'::text) OR ((subject_type = 'user'::text) AND (text_sha256 IS NOT NULL) AND (signer_snapshot IS NOT NULL) AND (device_id IS NOT NULL)))),
     CONSTRAINT consent_records_subject_check CHECK ((((subject_type = 'user'::text) AND (user_id IS NOT NULL)) OR ((subject_type = 'device'::text) AND (device_id IS NOT NULL)))),
     CONSTRAINT consent_records_subject_type_check CHECK ((subject_type = ANY (ARRAY['user'::text, 'device'::text]))),
     CONSTRAINT consent_records_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'ai_third_party'::text, 'id_verification'::text, 'personalization'::text, 'labor_agreement'::text])))
@@ -3379,7 +3379,97 @@ GRANT UPDATE(merged_into_user_id) ON TABLE app.device_registrations TO couli_app
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.devices TO couli_app;
-GRANT SELECT ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(user_id) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.device_hash; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(device_hash) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.id_source; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id_source) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.platform; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(platform) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.app_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_version) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.last_login_sid; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(last_login_sid) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.revoked_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(revoked_at) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.last_seen_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(last_seen_at) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(row_version) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: COLUMN devices.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(updated_at) ON TABLE app.devices TO couli_readonly;
 
 
 --
