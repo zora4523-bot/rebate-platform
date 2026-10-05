@@ -6,7 +6,8 @@
 #   (default)  `pnpm verify` — the task's verification; it alone decides the task. verify/<n>/
 #   --fast     `pnpm run verify:fast` — the entry the Claude Opus implementation subagent uses for
 #              its own test runs (default split of 2026-10-05, ops/approvals.yaml id 19). No
-#              PostgreSQL, `--network none`. verify-fast/<n>/; never evidence of verification.
+#              PostgreSQL, no Redis, `--network none`. verify-fast/<n>/; never evidence of
+#              verification.
 #   --red      the isolated red run of the rule tests Codex wrote (规划/11 §2.3 step 3; CR-12):
 #              only the task's new rule-test files (inside its trusted test_paths, changed
 #              against --base, default the branch point with origin/main), each run by the
@@ -15,7 +16,8 @@
 #              (verify-image/red-reporter.mjs, keeps the failure causes, CR2-03); reports go to
 #              red/<n>/out/<project>.json and tools/guard/red-check.ts reconciles them with the
 #              expected list (exit code = red-check's). A project that needs PostgreSQL gets the
-#              one-shot database on the internal network; otherwise the run has no network.
+#              one-shot PostgreSQL and Redis on the internal network; otherwise the run has no
+#              network.
 #   --dry-run  prints what would run (script, commit, tree, red files) as one JSON line and
 #              starts nothing; no run directory is created.
 #
@@ -23,7 +25,8 @@
 # container. `--host` is refused; without Docker the script stops (exit 2) and the run goes to CI.
 #
 # The container has no way out:
-#   - per-run `--internal` network (or none); a one-shot PostgreSQL attached ONLY to it;
+#   - per-run `--internal` network (or none); a one-shot PostgreSQL (TEST_PG_ADMIN_URL) and a
+#     one-shot Redis (TEST_REDIS_URL) attached ONLY to it, no published port, data on tmpfs;
 #   - worktree mounted read-only at /src and copied to a tmpfs before anything runs;
 #   - dependencies from an offline pnpm store (volume keyed by the lockfile hash;
 #     filled by one networked `pnpm fetch` that sees nothing but the lockfile and
@@ -52,6 +55,8 @@
 set -euo pipefail
 
 PG_IMAGE='pgvector/pgvector:0.8.6-pg18-trixie'
+# Same image as infra/local/compose.yaml and the verify-int job of .github/workflows/ci.yml.
+REDIS_IMAGE='redis:7.4.11-alpine'
 DEFAULT_PROP_SEED=20261001
 
 log() { printf '%s\n' "$*" >&2; }
@@ -365,6 +370,7 @@ STORE_VOL="$PREFIX-store-$LOCK_HASH"
 TAG="$(printf '%s' "$ID" | tr '[:upper:]' '[:lower:]')-$N-$$"
 NET="$PREFIX-net-$TAG"
 PG_NAME="$PREFIX-pg-$TAG"
+REDIS_NAME="$PREFIX-redis-$TAG"
 VERIFY_NAME="$PREFIX-run-$TAG"
 FETCH_NAME="$PREFIX-fetch-$TAG"
 STORE_LOCK="$RUNS/lock/verify-store-$LOCK_HASH"
@@ -376,7 +382,7 @@ net_created=0
 store_locked=0
 cleanup() {
   # Signals do not reach processes inside a container: remove them explicitly.
-  docker rm -f -v "$VERIFY_NAME" "$FETCH_NAME" "$PG_NAME" >/dev/null 2>&1 || true
+  docker rm -f -v "$VERIFY_NAME" "$FETCH_NAME" "$PG_NAME" "$REDIS_NAME" >/dev/null 2>&1 || true
   if [ "$net_created" -eq 1 ]; then docker network rm "$NET" >/dev/null 2>&1 || true; fi
   if [ "$store_locked" -eq 1 ]; then rmdir "$STORE_LOCK" 2>/dev/null || true; fi
   rm -rf "$SRC"
@@ -388,6 +394,65 @@ trap 'exit 143' TERM
 step() {
   log "verify-container: $*"
   printf '[verify-container %s] %s\n' "$(now_utc)" "$*" >>"$LOG"
+}
+
+# The one-shot services of a run that may connect to databases (ADR-0001 §4.2 #9): PostgreSQL
+# (random password) and Redis, attached only to the run's --internal network, no published
+# port, data on tmpfs. Exports TEST_PG_ADMIN_URL and TEST_REDIS_URL for `docker run -e NAME`.
+# Redis runs with the settings of infra/local/compose.yaml: no RDB, no AOF, noeviction with an
+# explicit limit (ADR-0001 §4.2 #17). It has no password: the network is internal and holds
+# nothing but this run.
+pg_ready() {
+  # TCP only: the image first runs a temporary server that listens on the socket alone.
+  docker exec "$PG_NAME" pg_isready -q -h 127.0.0.1 -U postgres >/dev/null 2>&1
+}
+redis_ready() {
+  # The reply, not the exit code: a LOADING error reply is not ready.
+  [ "$(docker exec "$REDIS_NAME" redis-cli ping 2>/dev/null)" = PONG ]
+}
+wait_ready() { # <container> <readiness check> <label>
+  local tries=0
+  until "$2"; do
+    # A container that has exited will never answer: stop now instead of waiting 60 seconds.
+    if [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" != true ]; then
+      docker logs "$1" >>"$LOG" 2>&1 || true
+      die "$3 exited before it became ready, see $LOG"
+    fi
+    tries=$((tries + 1))
+    if [ "$tries" -ge 120 ]; then
+      docker logs "$1" >>"$LOG" 2>&1 || true
+      die "$3 did not become ready within 60 seconds, see $LOG"
+    fi
+    sleep 0.5
+  done
+}
+start_services() { # <what the services are for, for the log>
+  step "creating internal network $NET ($1)"
+  docker network create --internal "${LABELS[@]}" "$NET" >/dev/null 2>>"$LOG" ||
+    die "cannot create network $NET, see $LOG"
+  net_created=1
+
+  step "starting one-shot PostgreSQL ($PG_IMAGE) on $NET only"
+  PG_PASSWORD="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --name "$PG_NAME" "${LABELS[@]}" \
+    --network "$NET" --network-alias pg \
+    --tmpfs /var/lib/postgresql \
+    -e POSTGRES_PASSWORD \
+    "$PG_IMAGE" >/dev/null 2>>"$LOG" || die "cannot start PostgreSQL, see $LOG"
+
+  step "starting one-shot Redis ($REDIS_IMAGE) on $NET only"
+  docker run -d --name "$REDIS_NAME" "${LABELS[@]}" \
+    --network "$NET" --network-alias redis \
+    --tmpfs /data \
+    "$REDIS_IMAGE" redis-server --save '' --appendonly no \
+    --maxmemory 256mb --maxmemory-policy noeviction >/dev/null 2>>"$LOG" ||
+    die "cannot start Redis, see $LOG"
+
+  # Both start in parallel; the run begins once both answer.
+  wait_ready "$PG_NAME" pg_ready PostgreSQL
+  wait_ready "$REDIS_NAME" redis_ready Redis
+  export TEST_PG_ADMIN_URL="postgres://postgres:$PG_PASSWORD@pg:5432/postgres"
+  export TEST_REDIS_URL='redis://redis:6379/0'
 }
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -462,7 +527,7 @@ fi
 
 if [ "$SCRIPT" = red ]; then
   # Groups of the plan (tools/ops/red-plan.ts); a group needing PostgreSQL gets the one-shot
-  # database on the internal network, otherwise the run has no network at all.
+  # PostgreSQL and Redis on the internal network, otherwise the run has no network at all.
   printf '%s\n' "$RED_FILES" >"$VDIR/expected.txt"
   printf '%s\n' "$RED_PLAN" >"$VDIR/plan.json"
   mkdir -p "$VDIR/out"
@@ -471,23 +536,9 @@ if [ "$SCRIPT" = red ]; then
   [ -z "${PROP_RUNS:-}" ] || RED_ENV+=(-e "PROP_RUNS=$PROP_RUNS")
   RED_NET=(--network none)
   if [ "$RED_DB" = 1 ]; then
-    step "creating internal network $NET (integration rule tests)"
-    docker network create --internal "${LABELS[@]}" "$NET" >/dev/null
-    net_created=1
-    step "starting one-shot PostgreSQL ($PG_IMAGE) on $NET only"
-    PG_PASSWORD="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-    POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --name "$PG_NAME" "${LABELS[@]}" \
-      --network "$NET" --network-alias pg --tmpfs /var/lib/postgresql -e POSTGRES_PASSWORD \
-      "$PG_IMAGE" >/dev/null 2>>"$LOG" || die "cannot start PostgreSQL, see $LOG"
-    tries=0
-    until docker exec "$PG_NAME" pg_isready -q -h 127.0.0.1 -U postgres >/dev/null 2>&1; do
-      tries=$((tries + 1))
-      [ "$tries" -lt 120 ] || die "PostgreSQL did not become ready within 60 seconds, see $LOG"
-      sleep 0.5
-    done
+    start_services 'integration rule tests'
     RED_NET=(--network "$NET")
-    RED_ENV+=(-e TEST_PG_ADMIN_URL)
-    export TEST_PG_ADMIN_URL="postgres://postgres:$PG_PASSWORD@pg:5432/postgres"
+    RED_ENV+=(-e TEST_PG_ADMIN_URL -e TEST_REDIS_URL)
   fi
   step "running the task's rule tests (red run) in $IMAGE (limit ${TIMEOUT_SECS}s)"
   export RED_PLAN
@@ -520,7 +571,7 @@ fi
 
 if [ "$SCRIPT" = 'verify:fast' ]; then
   # verify:fast connects to no database and no network (规划/11 §4.1): no PostgreSQL, no
-  # network at all.
+  # Redis, no network at all.
   step "running pnpm run verify:fast in $IMAGE (no network, limit ${TIMEOUT_SECS}s)"
   FAST_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS" -e "VERIFY_SCRIPT=verify:fast")
   [ -z "${PROP_RUNS:-}" ] || FAST_ENV+=(-e "PROP_RUNS=$PROP_RUNS")
@@ -536,39 +587,14 @@ if [ "$SCRIPT" = 'verify:fast' ]; then
   finish "$rc"
 fi
 
-step "creating internal network $NET"
-docker network create --internal "${LABELS[@]}" "$NET" >/dev/null
-net_created=1
-
-step "starting one-shot PostgreSQL ($PG_IMAGE) on $NET only"
-PG_PASSWORD="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --name "$PG_NAME" "${LABELS[@]}" \
-  --network "$NET" --network-alias pg \
-  --tmpfs /var/lib/postgresql \
-  -e POSTGRES_PASSWORD \
-  "$PG_IMAGE" >/dev/null 2>>"$LOG" || die "cannot start PostgreSQL, see $LOG"
-ready=0
-tries=0
-while [ "$tries" -lt 120 ]; do
-  # TCP only: the image first runs a temporary server that listens on the socket alone.
-  if docker exec "$PG_NAME" pg_isready -q -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
-    ready=1
-    break
-  fi
-  sleep 0.5
-  tries=$((tries + 1))
-done
-if [ "$ready" -ne 1 ]; then
-  docker logs "$PG_NAME" >>"$LOG" 2>&1 || true
-  die "PostgreSQL did not become ready within 60 seconds, see $LOG"
-fi
+start_services 'pnpm verify'
 
 step "running pnpm verify in $IMAGE (limit ${TIMEOUT_SECS}s)"
-ENV_ARGS=(-e TEST_PG_ADMIN_URL -e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS")
+ENV_ARGS=(-e TEST_PG_ADMIN_URL -e TEST_REDIS_URL
+  -e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS")
 [ -z "${PROP_RUNS:-}" ] || ENV_ARGS+=(-e "PROP_RUNS=$PROP_RUNS")
 rc=0
-TEST_PG_ADMIN_URL="postgres://postgres:$PG_PASSWORD@pg:5432/postgres" \
-  docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
+docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
   --network "$NET" \
   -v "$SRC:/src:ro" \
   -v "$STORE_VOL:/store:ro" \

@@ -1,0 +1,61 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (tools/** and .github/** are class-3 protected paths, owner approval label). verify-container.sh starts a one-shot redis:7.4.11-alpine on the internal network next to PostgreSQL (noeviction, no persistence, no published port) and passes TEST_REDIS_URL; CI verify-int gets a redis service bound to 127.0.0.1 with a host-side PING. Tooling task: the implementer wrote the tool tests (tools/ops/verify-container.services.test.ts) instead of a separate Codex test phase, stated in the PR. End-to-end selftest from a non-worktree checkout of this branch: couli-runs/B1-01z/selftest.log. Legacy ledger. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent: round 1 pass with S3 (four adopted: PG hand-off assertion by value, split --red cases, fail fast on exited service, CI port 127.0.0.1 + host PING); increment 5628e0b..2c3fd00 pass; follow-ups in couli-runs/B1-01z/followups.md"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with one S2 (tests inherited PROP_RUNS and could misreport), fixed in 2c3fd00"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "tooling task; tests written by the implementer and reviewed with the code"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "task": "B1-01z",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "5cb77df4e40913a1c708e6f0eee596421cb76c04",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "cc0d0fd92f772ea3236a4a5decac58b2dc4a181f",
+      "tree": "420412a0875590c4844bdd50753a22d0a329b955",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T21:39:24Z",
+      "finished_at": "2026-10-05T21:41:00Z"
+    }
+  ],
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "51d4007bc65e2d915cf518caea3e86d189df5f74",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  }
+}
