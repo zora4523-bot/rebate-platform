@@ -28,11 +28,12 @@
 | 命令 | 检查什么 | 出处 |
 | --- | --- | --- |
 | `risk-of-paths.ts [--json] [--stdin \| <路径>…]` | 按 `ops/risk-map.yaml` 算风险级（默认 RV2，先匹配先得）和保护路径类别。输入可以是改动文件，也可以是任务的 glob；glob 必须整体落在某条白名单规则内才不是 RV2。类别只按路径判断（`package.json` 一律报第二类），是否真的动了 `scripts` 由 `protected-paths.ts` 看差异决定 | 11 §1.2 |
-| `path-guard.ts (--task <编号> \| --paths <glob,glob>) --base <提交> [--cwd] [--json]` | 相对 `--base` 的全部改动（含未跟踪文件、改名的两侧）必须落在任务 `paths` 内；`ops/`、`docs/` 下的越界改动单独列出、不算失败 | 11 §2.3 第 6 步 |
+| `path-guard.ts (--task <编号> \| --paths <glob,glob>) --base <提交> [--author] [--cwd] [--json]` | 相对 `--base` 的全部改动（含未跟踪文件、改名的两侧）必须落在任务 `paths` 内；`ops/`、`docs/` 下的越界改动单独列出、不算失败。`--author`：Codex 写规则测试那一轮的工作区（`tools/agent/post-run.sh` 在 `phase: test` 时用）：只许台账 `test_paths`（没有就整轮失败，CR-06）与任务 `paths` 内的 `NotImplemented` 骨架；骨架按新增或改动的函数体逐个检查（`guard/lib/skeleton.ts`，CR-05）。CI 的 path-guard-author（基线到 `spec_commit`）同样按函数体检查，台账有 `test_paths` 时只认它，2026-10-05 前的旧台账仍用全部第一类 | 11 §2.3 第 3、6 步 |
 | `protected-paths.ts --base <提交> [--cwd] [--task-type <类型>] [--json]` | 第一类：已有文件被改、删、改名；第二、三类：任何改动；`package.json` 只比较 `scripts`；`deps` 任务可改 `pnpm-lock.yaml`。匹配不分大小写 | 11 §4.4 |
 | `test-guard.ts [--base <提交>] [--cwd] [--json]` | 测试文件、vitest 配置、package scripts 里不得有 skip / only / todo / retry / passWithNoTests（retry 的口径见下文「retry 怎么查」）；单元测试不得引用 `pg`、`pg-boss`、`testcontainers`、`@couli/db/testing`，不得 `listen`；测试文件不得读 `TEST_PG_ADMIN_URL`；`test/spec`、`test/properties` 不用 `describe`、不 mock 资金核心；`test/acceptance` 标题带 `[AC-…]`。带 `--base` 时加第一类「只增不改」 | 11 §2.3 第 5 步、§4.1–§4.3 |
 | `schema-lint.ts [--cwd] [文件…]` | `tools/agent/schemas/*.json` 每个 object 有 `additionalProperties:false`、全部字段进 `required`，只用约定的关键字 | 11 §2.4 |
 | `banned-terms.ts (--spec \| --file <路径>…)` | 禁用词：`--spec` 扫 `SPEC_REF` 版本的 `规划/**`（只经 `git show`），`--file` 扫任务书 | 11 §5.5 |
+| `red-check.ts --task <编号> --report <JSON>[,<JSON>] (--expected-list <文件> \| --cwd <目录> --base <提交>) [--root <目录>] [--json]`；`--print-expected` 只列应跑的文件 | 规则测试先红且红得对：应跑的文件 = 本任务在台账 `test_paths` 内新增或改动的 `*.test.ts`，与报告逐个对账，缺文件、没跑任何测试、跳过、待办都失败（CR-10）；每条测试都失败，原因是断言失败、断言型的 fast-check 反例或骨架的 `NotImplemented`；找不到模块、`TypeError`、连不上库、迁移或夹具失败、服务没起、构建失败都不算，包在 fast-check 或钩子报错里也不算（CR-11）。`--json` 时标准输出只有一份 JSON（CR-16）。适用范围：台账 `tester` 不是 `none` 的任务，**不分风险级**（2026-10-05 起 RV0 / RV1 有测试作者的任务也先写先红，`ops/approvals.yaml` 第 19 条）；`tester: none` 输出 `SKIP`、退出 0。报告由编排者在隔离容器里跑规则测试得到（Codex 写的测试不在宿主跑）；`--root` 是报告里文件名的前缀，默认容器里的 `/work/repo` | 11 §2.3 第 3 步 |
 | `approvals.ts --require <编号>` | `ops/approvals.yaml` 里该条为 `granted: true` 才返回 0 | 11 §3.2、§7.3 |
 | `spec-ref.ts` | `SPEC_REF` 是 40 位提交号，且是规划仓库 `origin/main` 的祖先 | 11 §5.3 |
 | `agents-pair.ts` | 每个 `AGENTS.md` 配一个内容只有 `@AGENTS.md` 的 `CLAUDE.md`；根 ≤150 行，嵌套 ≤60 行 | 11 §5.1、§5.5 |
@@ -73,7 +74,8 @@ retry 怎么查（`guard/lib/test-guard.ts`；编排会话 2026-10-03 按 `ops/a
 
 | 守卫 | 出处 | 说明 |
 | --- | --- | --- |
-| `red-check.ts` | 11 §2.3 第 3 步 | 规则测试必须因断言失败或属性反例而红 |
+| 浏览器测试的隔离红测 | 11 §2.3 第 3 步 | `verify-container.sh --red` 只跑 Vitest；Playwright 没有入口，证据的 `mode: ci` 在归档接入前一律拒绝 |
+| CI 证据归档核验 | 11 §3.2、§4.5 | `evidence-check` 暂拒所有 `mode: ci` 记录（CR2-06），归档 `rebate-private/ci-evidence` 接入后再核对运行与报告内容 |
 | `sm-diff.ts` | 11 §4.2 | 状态机双份盲录逐行比对 |
 | `records-check` | 11 §4.5 | 验收记录只能由脚本生成 |
 | mapper 字段检查 | 11 §4.5 | 联盟 mapper 引用的字段都出现在 probe 录制里 |

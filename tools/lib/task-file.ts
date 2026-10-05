@@ -20,6 +20,12 @@ export type TaskFile = {
   contract_sections: string[];
   deps: string[];
   paths: string[];
+  /**
+   * Where the rule-test author may write the task's rule tests (globs inside class 1 of the
+   * protected paths); optional, [] when absent. The test phase of a task with a rule-test author
+   * needs it (default split of 2026-10-05, ops/approvals.yaml id 19; 规划/11 §2.3 step 2).
+   */
+  test_paths: string[];
   impl: 'codex' | 'claude';
   tester: 'codex' | 'claude' | 'none';
   accept: string[];
@@ -57,6 +63,7 @@ const KNOWN_KEYS = new Set([
   'contract_sections',
   'deps',
   'paths',
+  'test_paths',
   'impl',
   'tester',
   'accept',
@@ -121,7 +128,12 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     if (!KNOWN_KEYS.has(key)) problems.push(`${key}: unknown field`);
   }
   for (const key of KNOWN_KEYS) {
-    if (key !== 'pr' && key !== 'contract_sections' && !Object.hasOwn(doc, key)) {
+    if (
+      key !== 'pr' &&
+      key !== 'contract_sections' &&
+      key !== 'test_paths' &&
+      !Object.hasOwn(doc, key)
+    ) {
       problems.push(`${key}: missing`);
     }
   }
@@ -159,6 +171,13 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
   const paths = Object.hasOwn(doc, 'paths')
     ? stringList(doc, 'paths', problems, { nonEmpty: true })
     : [];
+  const testPaths = Object.hasOwn(doc, 'test_paths')
+    ? stringList(doc, 'test_paths', problems, { nonEmpty: true })
+    : [];
+  for (const glob of testPaths) {
+    const problem = pathProblem(glob);
+    if (problem) problems.push(`test_paths: "${glob}" ${problem}`);
+  }
   const accept = Object.hasOwn(doc, 'accept')
     ? stringList(doc, 'accept', problems, { nonEmpty: true })
     : [];
@@ -232,6 +251,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     contract_sections: contractSections,
     deps,
     paths,
+    test_paths: testPaths,
     impl: impl as TaskFile['impl'],
     tester: tester as TaskFile['tester'],
     accept,

@@ -12,7 +12,13 @@ import { formatBeijing, runMain } from './cli.ts';
 import { orchestratorLockStatus } from './lock.ts';
 import type { LockStatus } from './lock.ts';
 import { pathSetsMayOverlap } from './overlap.ts';
-import { listStates, MAX_CALLS_PER_TASK, MAX_CONSECUTIVE_NO_OUTPUT, taskCalls } from './state.ts';
+import {
+  emptyAttempts,
+  listStates,
+  MAX_CALLS_PER_TASK,
+  MAX_CONSECUTIVE_NO_OUTPUT,
+  taskCalls,
+} from './state.ts';
 import type { BreakerReason, TaskState } from './state.ts';
 import { archivedTaskIds, readTask, riskOfPaths } from './task.ts';
 import type { RiskLevel, RiskReport } from './task.ts';
@@ -168,7 +174,7 @@ export function collectBoard(opts: BoardOptions = {}): Board {
       })),
       status: task.status,
       state: state?.state ?? null,
-      attempts: state?.attempts ?? { impl: 0, 'spec-test': 0, code: 0 },
+      attempts: state?.attempts ?? emptyAttempts(),
       pr: task.pr,
     });
   }
@@ -258,6 +264,10 @@ function rowLine(r: BoardRow): string {
       ? '—'
       : r.deps.map((d) => `${d.id}（${d.done ? 'done' : 'todo'}）`).join('、');
   const reviews: string[] = [];
+  // Codex writing the rule tests and a handover implementation are not implementation rounds
+  // of the Opus subagent (ops/approvals.yaml id 19).
+  if (r.attempts.test > 0) reviews.push(`写测试 ${r.attempts.test}`);
+  if (r.attempts.handover > 0) reviews.push(`换家实现 ${r.attempts.handover}`);
   if (r.attempts['spec-test'] > 0) reviews.push(`规则测试评审 ${r.attempts['spec-test']}`);
   if (r.attempts.code > 0) reviews.push(`代码评审 ${r.attempts.code}`);
   const attempts =

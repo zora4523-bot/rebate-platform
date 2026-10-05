@@ -13,26 +13,30 @@
 | `task.ts check [编号…]` | 校验 `ops/tasks/*.yaml`：字段、文件名、≤40 行、编号前缀在 05 里存在、`refs` 存在且 `refs_hash` 与规划原文一致、依赖存在、RV2 的实现与规则测试作者不是同一家。`pnpm ops:task:check` | 11 §2.1 |
 | `task.ts show <编号> --json` | 任务字段（平铺）加算出的 `risk`、`ask`、`risk_paths` | 11 §1.2 |
 | `task.ts hash <编号>` | 打印可直接粘贴的 `refs_hash` 段 | 11 §5.3 |
-| `state.ts get\|set\|claim\|release\|bump-attempt\|settle\|migrate <编号>` | 在途状态 `couli-runs/state/<编号>.json`（先写临时文件再改名）；领任务 `couli-runs/claims/<编号>/`，租约 20 分钟，`claim --renew` 续期，过期才能被别的会话接手。轮次与失败熔断见下文「轮次怎么计」「失败熔断」；`bump-attempt` 在熔断打开时退出 3 | 11 §2.1、§2.2、§2.5 |
+| `state.ts get\|set\|claim\|release\|bump-attempt\|settle\|opus-run\|migrate <编号>` | 在途状态 `couli-runs/state/<编号>.json`（先写临时文件再改名）；领任务 `couli-runs/claims/<编号>/`，租约 20 分钟，`claim --renew` 续期，过期才能被别的会话接手。轮次与失败熔断见下文「轮次怎么计」「失败熔断」；`bump-attempt` 在熔断打开时退出 3 | 11 §2.1、§2.2、§2.5 |
 | `lock.ts`（只有函数） | 编排锁 `couli-runs/lock/orchestrator/`：取锁、心跳、释放；心跳停 20 分钟才允许接管。心跳与释放也在接管闸门 `<锁目录>.takeover` 里做，自己的租约已过期就不再续（返回 false，持有者必须停下） | 11 §2.2 |
 | `usage.ts record\|summary` | 用量账本 `couli-runs/usage.jsonl`（只追加），只记每次调用的 token 与结果，不拦任何调用；读不出的行跳过并计数。`pnpm ops:usage summary` | 11 §1.3 |
 | `status.ts [--json]` | 看板，每次现算，不落盘。`pnpm ops:status` | 11 §2.1、§5.2、§7.2 |
-| `brief.ts <编号> [--attempt n] [--out 文件]` | 任务书，写到 `couli-runs/<编号>/brief.md`；超过 24KB 或命中禁用词就不写文件、退出码 1。`pnpm ops:brief <编号>` | 11 §2.3 第 2 步、§5.3 |
+| `brief.ts <编号> [--phase test\|impl\|handover\|review] [--attempt n] [--out 文件]` | 任务书，写到 `couli-runs/<编号>/brief.md`；超过 24KB 或命中禁用词就不写文件、退出码 1。`pnpm ops:brief <编号>`。阶段（`ops/approvals.yaml` 第 19 条）：`test` 给 Codex 写规则测试（可新增规则测试资产与 `NotImplemented` 骨架，沙箱里只做静态检查）；`impl`（默认）给 Opus 实现子代理（测试冻结，只经 `verify-container.sh <编号> --fast` 跑测试）；`handover` 给 Codex 换家实现（测试冻结，只做静态检查）；`review` 给评审作数据（只读）。头部「本轮阶段」一行写明阶段，`dispatch.sh` 据此判断能否复用 | 11 §2.3 第 2 步、§5.3 |
 | `handoff.ts [--out 文件] [--session 名]` | 交接，写 `couli-runs/handoff/CURRENT.md` 和带时间戳的副本，≤40 行。`pnpm ops:handoff` | 11 §5.1 |
-| `verify-container.sh <编号> [--worktree 路径] [--host]` | 沙箱外验证：断网容器里跑 `pnpm verify`，退出码就是验证结果（124 = 超时）。结果在 `couli-runs/<编号>/verify/<n>/` | 11 §2.3 第 7 步、§9.3 #6 |
+| `verify-container.sh <编号> [--worktree 路径] [--fast \| --red [--base 提交]] [--dry-run]` | 沙箱外验证：断网容器里跑 `pnpm verify`，退出码就是验证结果（124 = 超时）。结果在 `couli-runs/<编号>/verify/<n>/`。`--fast` 是 Opus 实现子代理自己跑测试的入口：只跑 `pnpm run verify:fast`，不起 PostgreSQL、容器 `--network none`，结果在 `verify-fast/<n>/`，不决定任务成败、不进证据。`--red` 是 Codex 写完规则测试后的隔离红测：只跑本任务 `test_paths` 内新写的测试文件（相对 `--base`，默认与 `origin/main` 的分叉点），每个文件由可信项目表 `verify-image/red-projects.json` 分到对应的 Vitest 配置（`red-plan.ts`；没有项目收的文件让红测直接失败），需要库的项目才起一次性 PG，用可信 reporter `verify-image/red-reporter.mjs` 保留失败的 cause 链，报告导出到 `red/<n>/out/<项目>.json`，由 `red-check.ts` 逐个文件对账，退出码是它的；`result.json` 带 `red_tests`、`expected`、报告 sha256。`--dry-run` 只打印将跑什么（脚本、提交、树哈希、红测文件）。**没有宿主回退**（CR-01）：`--host` 一律拒绝，Docker 用不了就停下交 CI | 11 §2.3 第 3、5、7 步、§9.3 #6 |
 | `verify-container.selftest.sh` | 上一个脚本的端到端自测，要 Docker 和网络，手动跑 | — |
-| `timeout-group.pl` | `--host` 模式用的超时器：到点杀整个进程组 | 11 §2.4「超时」 |
 | `spec.ts`、`overlap.ts`、`cli.ts` | 供上面脚本用的库：按 `SPEC_REF` 读规则原文与条目哈希、路径是否可能相交、公共小函数 | 11 §5.3 |
 
 ### 轮次怎么计（`state.ts`）
 
 规划/11 §2.5；负责人 2026-10-02 决定（`ops/approvals.yaml` 第 13 条）。
 
-- 三个计数器各有上限：实现 `impl` 3 次；规则测试评审 `spec-test` 2 轮；代码评审 `code` 3 轮（`money`、`general`、`contract` 共用；负责人 2026-10-02 由 2 轮提高到 3 轮，`ops/approvals.yaml` 第 17 条）。原来是一个评审计数器共 2 轮。
-- `bump-attempt <编号> impl`（`dispatch.sh` 调）或 `bump-attempt <编号> review --review-type <类型>`（编排者在评审前调）在**派发前**计数并落盘；用完了退出码 1、不写文件。
+- 五个计数器各有上限：Codex 写规则测试 `test` 3 次；Opus 实现 `impl` 3 次；换家实现 `handover` 1 次（规划/11 §2.5，只限 RV0 / RV1）；规则测试评审 `spec-test` 2 轮；代码评审 `code` 3 轮（`money`、`general`、`contract` 共用；负责人 2026-10-02 由 2 轮提高到 3 轮，`ops/approvals.yaml` 第 17 条）。原来是一个评审计数器共 2 轮；`test`、`handover` 是 2026-10-05 分工切换时加的（`ops/approvals.yaml` 第 19 条，规划评审 RO-07）：Codex 写测试的 `impl` 模式调用不再计入实现次数。只有三个计数器的旧状态文件照常读，`test`、`handover` 当 0。
+- Codex 调用记在哪个计数器上，看它 `meta.json` 的 `phase`（`codex-run.sh impl --phase test|handover`）；没有 `phase` 的旧调用（2026-10-05 前的 Codex 实现）记 `impl`。
+- `bump-attempt <编号> test|handover`（`dispatch.sh` 按阶段调）、`bump-attempt <编号> impl`（编排者起 Opus 实现子代理前调）或 `bump-attempt <编号> review --review-type <类型>`（编排者在评审前调）在**派发前**计数并落盘；用完了退出码 1、不写文件。
 - `settle <编号> --meta <meta.json>`（`codex-run.sh` 每次调用结束后调）：没有产出就结束的调用把那一轮还回去，记进状态文件的 `uncounted_calls`（`kind`、`started_at`、`exit_code`、`reason`）；按 `kind` + `started_at` 去重，重复执行不多还。「没有产出」指：硬超时或无活动击杀（124）、模型容量错误（11）、或退出 10 且校验没跑（缺 `-o`、`turn.failed`、退出码非 0、被中止、留下进程）。拿到回答但校验不过（`validation: failed`）、位置断言失败（12）、孤儿（包装脚本没写完 `meta.json`）照计。
 - 不计轮次的调用照样计入每任务 10 次与连续无产出（见下一节）。
 - `migrate <编号> [--unattributed-review spec-test|code] [--dry-run]`：把旧形状 `attempts: {impl, review}` 的状态文件换成新形状。评审轮次按 `<runs>/<编号>/` 下各次调用的 `meta.json`（`meta.<模式>.json` 与 `attempts/<n>/meta.json`）归到各自类型，没有产出的调用移进 `uncounted_calls`；实现次数减去没有产出的实现调用；其余字段（`state`、`last_error` …）不动。旧计数比留下的评审 `meta.json` 多时，必须用 `--unattributed-review` 说明多出的轮次归哪类，否则拒绝。旧形状的文件不经迁移读不进来（`get`、看板都会报错并提示这条命令）。
+
+### Opus 实现的失败计数（`state.ts opus-run`）
+
+规划评审 RO2-03、Codex 评审 CR-07（2026-10-05）。Opus 实现子代理不是 Codex 调用、不留 `meta.json`，所以由编排者在每一轮结束后结算：`state.ts opus-run <编号> --run-id <运行编号> --outcome ok|no-output|timeout|capacity --risk RV0|RV1|RV2`。没有结果（无产出、超时、容量或额度错误）的一轮把派工前计上的 `attempts.impl` 还回去（记进 `uncounted_calls`，`kind: impl`），并算一次失败，记进状态文件的 `opus_failures`（`total`、`consecutive`、`last_reason`）；每一轮记进 `opus_runs`，同一运行编号重复结算不改任何东西；有结果的一轮把 `consecutive` 清零。连续 3 次或累计 5 次时输出 `next: handover`（RV0 / RV1：`tools/agent/dispatch.sh <编号> --handover`，Codex 实现一次）或 `next: blocked`（RV2：不换家，标 blocked，规划/11 §2.5）；否则 `next: continue`。Opus 的轮次不计入每任务 10 次 Codex 调用上限。
 
 ### 失败熔断（`state.ts`），没有额度闸门
 
@@ -47,13 +51,13 @@
 
 - 镜像定义在 `verify-image/`：`node:24-bookworm-slim` + 与根 `packageManager` 完全一致的 pnpm（不用 corepack）+ PGDG 的 `postgresql-client-18` + git 与 procps（`tools/` 的单元测试要建夹具仓库、要 `ps`），非 root。镜像标签由 `verify-image/` 的内容和 pnpm 版本算出，改了就自动重建。
 - 依赖走离线 store：数据卷按 `pnpm-lock.yaml` 的 sha256 命名，没有时联网 `pnpm fetch` 一次（只挂锁文件和 `pnpm-workspace.yaml`）。
-- 快照：先把 worktree 的 git 树（含未提交改动，不含被 `.gitignore` 忽略的任何东西：`node_modules`、`dist`、`.env*`、`*.key`、`coverage/`、`reports/` …）用 `git archive` 导出到 `couli-runs/<编号>/verify/<n>/src/`，`result.json` 的 `tree` 就是这份快照的树哈希；之后容器和 host 模式都只看这份快照，worktree 在镜像构建、填 store 期间被改动也影响不了结果。快照用完即删。不是 git 仓库顶层的目录按同一套排除规则用 tar 复制，`tree` 为 null。
+- 快照：先把 worktree 的 git 树（含未提交改动，不含被 `.gitignore` 忽略的任何东西：`node_modules`、`dist`、`.env*`、`*.key`、`coverage/`、`reports/` …）用 `git archive` 导出到 `couli-runs/<编号>/<verify|verify-fast|red>/<n>/src/`，`result.json` 的 `tree` 就是这份快照的树哈希；之后容器只看这份快照，worktree 在镜像构建、填 store 期间被改动也影响不了结果。快照用完即删。不是 git 仓库顶层的目录按同一套排除规则用 tar 复制，`tree` 为 null。
 - 每次运行：新建 `--internal` 网；一次性 PG（`pgvector/pgvector:0.8.6-pg18-trixie`，随机密码）只接这个网；验证容器根文件系统只读、快照只读挂 `/src`、store 只读、`/work` 与 `/tmp` 是 tmpfs；容器里先把 `/src` 拷到 `/work/repo`，`pnpm install --offline --frozen-lockfile`，再限时跑 `pnpm verify`。结束后容器和网络一律清掉。
 - 规划原文：把规划仓库在 `SPEC_REF` 那一个提交做成只读快照（`couli-runs/spec-snapshots/<提交号>.git`）挂到 `/spec`，容器里 `COULI_SPEC_REPO=/spec`。容器看不到规划仓库的工作区和配置。快照没有历史，所以「`SPEC_REF` 在规划仓库 main 上」由本脚本在宿主对真实仓库核对，通过了才给快照写上 `origin/main`，容器里的 `spec-ref` 守卫据此通过。
-- `result.json`：`mode`（`container` / `host`）、`exit_code`、`commit`、`tree`（含未提交改动的工作区树哈希）、`prop_seed`、起止时间。基础设施出错（Docker 起不来、镜像构建失败）退出码 2，不写 `result.json`。
-- `--host`：Docker 不可用时的退路，在快照目录里 `pnpm install --offline --frozen-lockfile --store-dir <宿主 store>` 后 `env -i HOME=<运行目录>/home PATH=… pnpm verify`，记 `mode: host`；绝不复用 worktree 自己的 `node_modules`、`dist` 等被忽略的路径（沙箱内写进去的东西在守卫和评审里都看不见）。RV2 不接受 host 结果合并（11 §2.3）。脚本不会自己降级，必须显式传 `--host`。
+- `result.json`：`mode`（`container`）、`script`（`verify` / `verify:fast` / `red`）、`exit_code`、`commit`、`tree`（含未提交改动的工作区树哈希）、`prop_seed`、起止时间。基础设施出错（Docker 起不来、镜像构建失败）退出码 2，不写 `result.json`。
+- 宿主回退已取消（Codex 评审 CR-01，2026-10-05）：原来的 `--host` 会在宿主上执行任务快照里的代码和测试（含 Codex 写的），清空环境变量挡不住。现在 `--host` 一律拒绝、退出 2；Docker 用不了就停下，把这次运行交给 CI。原 `timeout-group.pl` 随之删除。
 - worktree 在 `/tmp`、`/private/tmp`、`$TMPDIR` 下一律拒绝（那里是 Codex 沙箱的可写根，11 §0）。
-- 可调环境变量：`COULI_VERIFY_TIMEOUT_SECS`（默认与上限 1200，只能调小）、`COULI_KILL_GRACE_SECS`（host 模式，1–5）、`COULI_VERIFY_PREFIX`（容器、网络、数据卷的名字前缀，默认 `couli-verify`）、`PROP_SEED`、`PROP_RUNS`。
+- 可调环境变量：`COULI_VERIFY_TIMEOUT_SECS`（默认与上限 1200，只能调小）、`COULI_VERIFY_PREFIX`（容器、网络、数据卷的名字前缀，默认 `couli-verify`）、`PROP_SEED`、`PROP_RUNS`。
 
 实测（2026-10-02，M2 Max，Docker Desktop 28.0.1；当时机器同时在跑别的任务，数字偏慢）：
 
@@ -96,9 +100,10 @@
 
 1. `pnpm ops:status` 看就绪任务与失败熔断。
 2. 建 worktree `../couli-runs/worktrees/<编号>`（分支 `task/<编号>`）并在沙箱外 `pnpm install --frozen-lockfile`。
-3. `tools/agent/dispatch.sh <编号>`（内部依次：`state.ts claim` → `state.ts bump-attempt`（含失败熔断） → `brief.ts` → 后台 `codex-run.sh`），结束后 `tools/agent/post-run.sh <编号>` 过路径守卫。
-4. `tools/ops/verify-container.sh <编号>`；任务成败只看它的退出码。
-5. 失败要重派时：先 `node tools/ops/state.ts set <编号> --last-error <verify/<n>/log.txt 的路径>`，然后回到第 3 步。`dispatch.sh` 先计数再生成任务书，从第 2 次尝试起每次都重新生成，所以新任务书会写「第 n 次尝试」并带上一轮失败输出的末尾。`last_error` 目前没有脚本自动写，漏了这一步新任务书就没有失败输出。
+3. Codex 写规则测试（台账要先有 `test_paths`）：`tools/agent/dispatch.sh <编号>`（内部依次：`state.ts claim` → 核对台账 `test_paths` → `state.ts bump-attempt <编号> test`（含失败熔断） → `brief.ts --phase test` → 后台 `codex-run.sh impl --phase test`），结束后 `tools/agent/post-run.sh <编号>` 过守卫（`path-guard.ts --author`），输出 `red-check`：跑 `tools/ops/verify-container.sh <编号> --red`（隔离容器里只跑本任务新写的规则测试，`red-check.ts` 逐个文件对账），通过后提交 `test(spec): …`、`state.ts set <编号> --spec-commit <提交>`；RV2 再交 Claude 新子代理过审（`tools/agent/README.md` §11）。
+4. Opus 实现：按 `tools/agent/README.md` §10 起 Claude 子代理（`bump-attempt <编号> impl` → `brief.ts --phase impl` → 子代理 → 位置断言 → 守卫 → `state.ts opus-run --run-id …`）。
+5. `tools/ops/verify-container.sh <编号>`；任务成败只看它的退出码。
+6. 失败要重派时：先 `node tools/ops/state.ts set <编号> --last-error <verify/<n>/log.txt 的路径>`，然后回到第 4 步（Opus 超限后 RV0 / RV1 换家：`dispatch.sh <编号> --handover`）。`dispatch.sh` 先计数再生成任务书，从第 2 次尝试起每次都重新生成，所以新任务书会写「第 n 次尝试」并带上一轮失败输出的末尾。`last_error` 目前没有脚本自动写，漏了这一步新任务书就没有失败输出。
 
 ## 3. 测试
 

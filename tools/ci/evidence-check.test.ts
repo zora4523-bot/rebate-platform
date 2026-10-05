@@ -1,10 +1,16 @@
 // evidence-check.ts against a fixture repository: an RV2 branch with and without a complete
 // evidence file, an RV0 branch, and each field that must make the check fail.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { checkEvidence, evidenceProblems, headTreeWithoutEvidence } from './evidence-check.ts';
+import {
+  CI_REFUSED,
+  checkEvidence,
+  evidenceProblems,
+  headTreeWithoutEvidence,
+  redRequirement,
+} from './evidence-check.ts';
 import { loadProtected } from '../guard/lib/protected.ts';
 
 const REPO = resolve(import.meta.dirname, '../..');
@@ -39,6 +45,13 @@ function write(root: string, files: Record<string, string>): void {
 let repo = '';
 let base = '';
 let specCommit = '';
+let specTree = '';
+/** Trusted root of the fixture: risk map and protected paths of this repository, plus a ledger of
+ * B2-01a written under the default split of 2026-10-05 (tester codex, test_paths) and an empty
+ * switch-baseline list, so the red run is required (CR2-05). */
+let TRUSTED = '';
+const FLOOR = 'test/spec/money/floor.test.ts';
+const RED = { required: true, expected: [FLOOR] };
 let headTree = '';
 let moneyTree = '';
 
@@ -51,7 +64,26 @@ function evidence(extra: Evidence = {}): Evidence {
     spec_ref: SPEC_REF,
     spec_commit: specCommit,
     red_tests: ['money: rounds down'],
-    runs: [{ mode: 'container', exit_code: 0, commit: null, tree: headTree, prop_seed: 1 }],
+    runs: [
+      {
+        mode: 'container',
+        script: 'red',
+        exit_code: 0,
+        commit: null,
+        tree: specTree,
+        prop_seed: 1,
+        red_tests: [`${FLOOR} > floors`],
+        expected: [FLOOR],
+      },
+      {
+        mode: 'container',
+        script: 'verify',
+        exit_code: 0,
+        commit: null,
+        tree: headTree,
+        prop_seed: 1,
+      },
+    ],
     reviews: [
       { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 },
       { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true },
@@ -91,6 +123,34 @@ beforeAll(() => {
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'test(spec): floor']);
   specCommit = git(repo, ['rev-parse', 'HEAD']);
+  specTree = git(repo, ['rev-parse', `${specCommit}^{tree}`]);
+  TRUSTED = join(SCRATCH, 'trusted');
+  for (const file of ['tools/guard/protected-paths.json', 'ops/risk-map.yaml']) {
+    write(TRUSTED, { [file]: readFileSync(join(REPO, file), 'utf8') });
+  }
+  write(TRUSTED, {
+    'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: [] }),
+    'ops/tasks/B2-01a.yaml': [
+      'id: B2-01a',
+      'repo: rebate-platform',
+      'title: money fixture',
+      'type: impl',
+      'refs: []',
+      'refs_hash: {}',
+      'deps: []',
+      'paths:',
+      "  - 'packages/money/src/**'",
+      'test_paths:',
+      "  - 'test/spec/money/**'",
+      'impl: claude',
+      'tester: codex',
+      'accept:',
+      "  - 'pnpm verify'",
+      'status: todo',
+      'pr: null',
+      '',
+    ].join('\n'),
+  });
   write(repo, { 'packages/money/src/index.ts': 'export const a = 2;\n' });
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'impl']);
@@ -101,7 +161,7 @@ afterAll(() => {
 });
 
 function check(head: string, headRef = 'task/B2-01a') {
-  return checkEvidence({ prDir: repo, base, head, headRef, trusted: REPO });
+  return checkEvidence({ prDir: repo, base, head, headRef, trusted: TRUSTED });
 }
 
 it('an RV2 branch without an evidence file fails; with a complete one it passes', () => {
@@ -133,7 +193,7 @@ it('every field of the evidence can fail the check', () => {
   const head = git(repo, ['rev-parse', 'HEAD']);
   const cfg = loadProtected(REPO);
   const problemsOf = (doc: unknown): string =>
-    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg }).join('\n');
+    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red: RED }).join('\n');
   const otherTree = git(repo, ['rev-parse', `${base}^{tree}`]);
   const cases: [string, Evidence | string, RegExp][] = [
     ['task', evidence({ task: 'B2-02' }), /task: must be "B2-01a"/],
@@ -146,12 +206,12 @@ it('every field of the evidence can fail the check', () => {
     ],
     [
       'failed run',
-      evidence({ runs: [{ mode: 'container', exit_code: 1, tree: headTree }] }),
+      evidence({ runs: [{ mode: 'container', script: 'verify', exit_code: 1, tree: headTree }] }),
       /no container run/,
     ],
     [
       'other tree',
-      evidence({ runs: [{ mode: 'container', exit_code: 0, tree: otherTree }] }),
+      evidence({ runs: [{ mode: 'container', script: 'verify', exit_code: 0, tree: otherTree }] }),
       /no container run/,
     ],
     [
@@ -211,7 +271,13 @@ it('rule tests changed after the rule-test commit fail the check', () => {
   git(repo, ['commit', '-q', '-m', 'weaken the rule test']);
   const head = git(repo, ['rev-parse', 'HEAD']);
   const cfg = loadProtected(REPO);
-  const problems = evidenceProblems(evidence(), { prDir: repo, head, task: 'B2-01a', cfg });
+  const problems = evidenceProblems(evidence(), {
+    prDir: repo,
+    head,
+    task: 'B2-01a',
+    cfg,
+    red: RED,
+  });
   expect(problems.join('\n')).toContain('rule tests changed after the rule-test commit');
   expect(problems.join('\n')).toContain('test/spec/money/floor.test.ts (M)');
   git(repo, ['checkout', '-q', 'task/B2-01a']);
@@ -263,7 +329,7 @@ const approved = (head: string) => ({
 
 it('owner waiver: a non-task RV2 branch outside the money paths passes with a valid approval', () => {
   const head = branchFromBase('chore/gate-fix', { 'tools/guard/new-guard.ts': 'export {};\n' });
-  const input = { prDir: repo, base, head, headRef: 'chore/gate-fix', trusted: REPO };
+  const input = { prDir: repo, base, head, headRef: 'chore/gate-fix', trusted: TRUSTED };
   const waived = checkEvidence({ ...input, approval: approved(head) });
   expect(waived).toMatchObject({ ok: true, risk: 'RV2', task: null, waivable: true, waived: true });
   expect(waived.notices.join('\n')).toContain('evidence file waived by the owner approval');
@@ -295,7 +361,7 @@ it('owner waiver: touching a money / attribution implementation path still needs
       base,
       head,
       headRef: branch,
-      trusted: REPO,
+      trusted: TRUSTED,
       approval: approved(head),
     });
     expect(report, branch).toMatchObject({ ok: false, waivable: false, waived: false });
@@ -315,7 +381,7 @@ it('owner waiver: touching a money / attribution implementation path still needs
       base,
       head: catalog,
       headRef: 'chore/catalog',
-      trusted: REPO,
+      trusted: TRUSTED,
       approval: approved(catalog),
     }),
   ).toMatchObject({ ok: true, waived: true, money_paths: [] });
@@ -328,7 +394,7 @@ it('owner waiver: task branches are unchanged', () => {
     base,
     head,
     headRef: 'task/B2-01a',
-    trusted: REPO,
+    trusted: TRUSTED,
     approval: approved(head),
   });
   expect(report).toMatchObject({ ok: false, task: 'B2-01a', waivable: false, waived: false });
@@ -397,4 +463,156 @@ it('the CLI looks the approval up with --pr-number, exactly like the protected-p
   });
   expect(run([label], 'ci-bot')).toMatchObject({ status: 1, report: { ok: false } });
   expect(run([label], 'o', 'e'.repeat(40))).toMatchObject({ status: 1, report: { ok: false } });
+});
+
+it('[CR-02] a verify:fast record never stands in for the full verification', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const problemsOf = (doc: unknown): string =>
+    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red: RED }).join('\n');
+  // Fast passed on the very tree, the full verification never ran: refused.
+  const fastOnly = problemsOf(
+    evidence({
+      runs: [{ mode: 'container', script: 'verify:fast', exit_code: 0, tree: headTree }],
+    }),
+  );
+  expect(fastOnly).toContain("verify:fast is the implementer's own check");
+  expect(fastOnly).toContain('no container run of `verify` with exit code 0');
+  // Fast passed, the full verification failed: refused.
+  expect(
+    problemsOf(
+      evidence({
+        runs: [
+          { mode: 'container', script: 'verify:fast', exit_code: 0, tree: headTree },
+          { mode: 'container', script: 'verify', exit_code: 1, tree: headTree },
+        ],
+      }),
+    ),
+  ).toContain('no container run of `verify`');
+  // A record without a script cannot prove which one ran.
+  expect(
+    problemsOf(evidence({ runs: [{ mode: 'container', exit_code: 0, tree: headTree }] })),
+  ).toContain('must be verify or red');
+});
+
+it('[CR2-06] CI records are refused until the CI evidence archive is connected', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const ci = {
+    mode: 'ci',
+    phase: 'green',
+    run_id: 102,
+    run_url: 'https://github.com/o/r/actions/runs/102',
+    run_attempt: 1,
+    workflow: 'browser',
+    job: 'playwright',
+    commit: head,
+    tree: headTree,
+    report_sha256: 'a'.repeat(64),
+    spec_commit: specCommit,
+    conclusion: 'success',
+    skipped: 0,
+    exit_code: 0,
+  };
+  const doc = evidence();
+  const problems = evidenceProblems(
+    { ...doc, runs: [...(doc['runs'] as Evidence[]), ci] },
+    { prDir: repo, head, task: 'B2-01a', cfg, red: RED },
+  );
+  expect(problems).toEqual([`runs[2].mode: ${CI_REFUSED}`]);
+  expect(CI_REFUSED).toContain('CI 证据归档未接入，暂不接受');
+});
+
+it('[CR2-05] a task whose rule tests Codex writes needs a valid red run covering its new rule tests', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const problemsOf = (runs: Evidence[], red = RED): string =>
+    evidenceProblems(evidence({ runs }), { prDir: repo, head, task: 'B2-01a', cfg, red }).join(
+      '\n',
+    );
+  const [redRun, verifyRun] = evidence()['runs'] as [Evidence, Evidence];
+  expect(problemsOf([redRun, verifyRun])).toBe('');
+  // The red run left out: "never red, straight to green" is refused.
+  expect(problemsOf([verifyRun])).toContain('no valid red run');
+  // A red run that failed red-check, ran on another tree, or skipped a new rule-test file.
+  expect(problemsOf([{ ...redRun, exit_code: 1 }, verifyRun])).toContain('red-check passed');
+  expect(problemsOf([{ ...redRun, tree: headTree }, verifyRun])).toContain(
+    'must have run on the spec_commit tree',
+  );
+  expect(problemsOf([{ ...redRun, expected: [] }, verifyRun])).toContain(`does not cover ${FLOOR}`);
+  expect(
+    problemsOf([{ ...redRun, red_tests: ['test/spec/money/round.test.ts > rounds'] }, verifyRun]),
+  ).toContain(`no red test of ${FLOOR}`);
+  // Required, but the task added no rule-test file at all.
+  expect(problemsOf([redRun, verifyRun], { required: true, expected: [] })).toContain(
+    'the task added no rule-test file',
+  );
+  // Not required for a ledger of the switch baseline.
+  expect(problemsOf([verifyRun], { required: false, expected: [] })).toBe('');
+});
+
+it('[CR2-05] the requirement comes from the trusted ledger and the switch-baseline list', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const text = JSON.stringify({ task: 'B2-01a', spec_commit: specCommit });
+  const input = { prDir: repo, base, head, headRef: 'task/B2-01a', trusted: TRUSTED };
+  expect(redRequirement(input, 'B2-01a', base, text)).toEqual({
+    required: true,
+    expected: [FLOOR],
+  });
+  // The real repository lists B2-01a among the switch-baseline ledgers (written by Claude).
+  expect(redRequirement({ ...input, trusted: REPO }, 'B2-01a', base, text)).toEqual({
+    required: false,
+    expected: [],
+  });
+  // CR3-03: a new task with tester: claude is not exempt; only tester none or a legacy ledger.
+  const claudeTrusted = join(SCRATCH, 'trusted-claude-tester');
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'ops/risk-map.yaml',
+    'tools/guard/legacy-tasks.json',
+  ]) {
+    write(claudeTrusted, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+  }
+  write(claudeTrusted, {
+    'ops/tasks/B2-01a.yaml': readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8')
+      .replace('impl: claude', 'impl: codex')
+      .replace('tester: codex', 'tester: claude'),
+  });
+  expect(redRequirement({ ...input, trusted: claudeTrusted }, 'B2-01a', base, text)).toEqual({
+    required: true,
+    expected: [FLOOR],
+  });
+  // An unreadable ledger requires the red run with nothing to cover: fails closed.
+  expect(redRequirement(input, 'B9-99', base, text)).toEqual({ required: true, expected: [] });
+  // The full check: evidence without the red run fails.
+  const doc = evidence();
+  const runs = doc['runs'] as Evidence[];
+  const noRed = commitEvidence({ ...doc, runs: runs.slice(1) });
+  expect(check(noRed).problems.join('\n')).toContain('no valid red run');
+});
+
+it('[legacy flow] a legacy ledger needs no red run and no test_paths, but still the full container verify', () => {
+  // A B1-01s-shape ledger: Codex implements, Claude wrote the rule tests, no test_paths; listed
+  // on the trusted legacy list.
+  const legacyTrusted = join(SCRATCH, 'trusted-legacy');
+  for (const file of ['tools/guard/protected-paths.json', 'ops/risk-map.yaml']) {
+    write(legacyTrusted, { [file]: readFileSync(join(REPO, file), 'utf8') });
+  }
+  write(legacyTrusted, {
+    'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: ['B2-01a'] }),
+    'ops/tasks/B2-01a.yaml': readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8')
+      .replace('impl: claude', 'impl: codex')
+      .replace('tester: codex', 'tester: claude')
+      .replace("test_paths:\n  - 'test/spec/money/**'\n", ''),
+  });
+  const doc = evidence();
+  const runs = doc['runs'] as Evidence[];
+  const head = commitEvidence({ ...doc, runs: runs.slice(1) });
+  const input = { prDir: repo, base, head, headRef: 'task/B2-01a', trusted: legacyTrusted };
+  expect(checkEvidence(input).problems).toEqual([]);
+  // The full container verify is still required.
+  const noVerify = commitEvidence({ ...doc, runs: runs.slice(0, 1) });
+  expect(checkEvidence({ ...input, head: noVerify }).problems.join('\n')).toContain(
+    'no container run of `verify`',
+  );
 });

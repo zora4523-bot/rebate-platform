@@ -198,7 +198,10 @@ run_case 'fail: exit code is propagated' ST-02 fail 7 container
 run_case 'net: no way out of the internal network' ST-03 net 42 container
 run_case 'pg: one-shot PostgreSQL 18 + pgvector, psql, pg_dump' ST-04 pg 0 container
 COULI_VERIFY_TIMEOUT_SECS=5 run_case 'slow: time limit gives 124' ST-05 slow 124 container
-run_case 'host fallback is recorded as mode host' ST-06 fail 7 host --host
+# CR-01: there is no host fallback any more.
+rc=0
+bash "$SELF_DIR/verify-container.sh" ST-06 --worktree "$BASE/fail" --host >/dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 2 ]; then note 'ok: --host is refused'; else fail "--host: exit $rc, expected 2"; fi
 
 rc=0
 mkdir -p "${TMPDIR:-/tmp}/couli-selftest-wt.$$"

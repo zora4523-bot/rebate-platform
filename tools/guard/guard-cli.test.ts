@@ -36,6 +36,21 @@ const DEPS_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: D1-01')
   .replace('type: impl', 'type: deps')
   .replace('  - "apps/api/src/modules/ledger/**"', '  - "package.json"\n  - "pnpm-lock.yaml"');
 
+/** A task of the default split of 2026-10-05: Codex writes its rule tests into test_paths. */
+const AUTHOR_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: B2-02b')
+  .replace('impl: codex', 'impl: claude')
+  .replace('tester: claude', 'tester: codex\ntest_paths:\n  - "test/spec/ledger/**"');
+const OLD_LEDGER_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02c').replace(
+  'test_paths:\n  - "test/spec/ledger/**"\n',
+  '',
+);
+/** A new task (not a ledger of the switch baseline) that omits test_paths (CR2-02). */
+const NEW_NO_TEST_PATHS_TASK = OLD_LEDGER_TASK.replace('id: B2-02c', 'id: B2-02d');
+const NO_TESTER_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: N1-01').replace(
+  'tester: claude',
+  'tester: none',
+);
+
 const APPROVALS = [
   'source: "规划/11 §7.3"',
   'spec_ref: cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b',
@@ -94,6 +109,13 @@ beforeAll(() => {
   trusted = makeTree({
     'ops/tasks/B2-02a.yaml': LEDGER_TASK,
     'ops/tasks/D1-01.yaml': DEPS_TASK,
+    'ops/tasks/B2-02b.yaml': AUTHOR_TASK,
+    'ops/tasks/B2-02c.yaml': OLD_LEDGER_TASK,
+    'ops/tasks/N1-01.yaml': NO_TESTER_TASK,
+    'ops/tasks/B2-02d.yaml': NEW_NO_TEST_PATHS_TASK,
+    // The fixture's own switch-baseline list: B2-02a stands for a ledger written before
+    // 2026-10-05 (no test_paths, old scope); B2-02d is not on it.
+    'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: ['B2-02a'] }),
     'ops/approvals.yaml': APPROVALS,
   });
   for (const file of [
@@ -230,6 +252,101 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
     expect(
       guard('path-guard.ts', ['--paths', 'docs/**', '--base', base], { cwd: root }).status,
     ).toBe(1);
+  });
+
+  it('[CR-05, CR-06] --author: only the task test_paths and per-function NotImplemented shells', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'test/spec/ledger/new.test.ts': "it('new', () => {});\n",
+      // Another area's rule tests are not this task's test_paths.
+      'test/spec/money/other.test.ts': "it('other', () => {});\n",
+      // A shell next to a real implementation in one file, the keyword only in a comment.
+      'apps/api/src/modules/ledger/post.ts': [
+        'export const post = 1;',
+        "export function plan(a: number): never {\n  void a;\n  throw new Error('NotImplemented: plan');\n}",
+        '// NotImplemented',
+        'export function book(a: number): number {\n  return a + 1;\n}',
+        '',
+      ].join('\n'),
+      'docs/notes.md': '# changed\n',
+    });
+    const res = guard('path-guard.ts', [
+      '--task',
+      'B2-02b',
+      '--base',
+      base,
+      '--cwd',
+      root,
+      '--json',
+      '--author',
+    ]);
+    expect(res.status).toBe(1);
+    const out = json<PathGuardJson>(res.stdout);
+    expect(out.violations.map((v) => v.path)).toEqual([
+      'apps/api/src/modules/ledger/post.ts',
+      'test/spec/money/other.test.ts',
+    ]);
+    expect(out.violations[0]?.reason).toContain('book: does not end with throw new NotImplemented');
+    expect(out.out_of_scope_ops_docs).toEqual(['docs/notes.md']);
+
+    // Without test_paths in the ledger the test phase is refused outright.
+    const old = guard('path-guard.ts', [
+      '--task',
+      'B2-02c',
+      '--base',
+      base,
+      '--cwd',
+      root,
+      '--json',
+      '--author',
+    ]);
+    expect(old.status).toBe(1);
+    expect(json<PathGuardJson>(old.stdout).violations[0]?.reason).toContain(
+      'the task has no test_paths',
+    );
+  });
+
+  it('[CR-16] red-check --json prints exactly one JSON document, also when it skips', () => {
+    const { root, base } = workRepo();
+    const skip = guard('red-check.ts', ['--task', 'N1-01', '--report', '/nonexistent', '--json']);
+    expect(skip.status).toBe(0);
+    expect(json<{ required: boolean }>(skip.stdout)).toMatchObject({ required: false, ok: true });
+    expect(skip.stderr).toContain('SKIP red-check');
+
+    writeFiles(root, { 'test/spec/ledger/new.test.ts': "it('new', () => {});\n" });
+    const reportFile = join(root, '..', 'red-report.json');
+    writeFileSync(
+      reportFile,
+      JSON.stringify({
+        testResults: [
+          {
+            name: `${root}/test/spec/ledger/new.test.ts`,
+            assertionResults: [
+              { fullName: 'new', status: 'failed', failureMessages: ['Error: NotImplemented'] },
+            ],
+          },
+        ],
+      }),
+    );
+    const res = guard('red-check.ts', [
+      '--task',
+      'B2-02b',
+      '--report',
+      reportFile,
+      '--cwd',
+      root,
+      '--base',
+      base,
+      '--root',
+      root,
+      '--json',
+    ]);
+    expect(res.status, res.stderr).toBe(0);
+    expect(json<{ ok: boolean; expected: string[] }>(res.stdout)).toMatchObject({
+      ok: true,
+      expected: ['test/spec/ledger/new.test.ts'],
+    });
+    expect(res.stderr).toContain('PASS red-check');
   });
 
   it('rejects wrong usage with exit 2', () => {
@@ -531,7 +648,7 @@ describe('run.ts static and the single-purpose guards', () => {
     expect(guard('agents-table.ts', ['--write', '--cwd', root]).status).toBe(0);
     expect(guard('agents-table.ts', ['--check', '--cwd', root]).status).toBe(0);
     const text = readFileSync(join(root, 'AGENTS.md'), 'utf8');
-    expect(text).toContain('| `packages/money/**` | Codex | Claude | Claude + Codex | RV2 |');
+    expect(text).toContain('| `packages/money/**` | Claude | Codex | Claude + Codex | RV2 |');
     expect(text.endsWith(`${TABLE_END}\n\n## next\n`)).toBe(true);
     expect(guard('agents-table.ts', ['--cwd', root]).status).toBe(2);
     rmSync(join(root, 'AGENTS.md'));
@@ -875,6 +992,101 @@ describe('run.ts git --task: the path guard starts at spec_commit (owner decisio
       'path-guard-author: apps/api/src/modules/orders/sync.ts: changed in a rule-test commit ' +
         "(before spec_commit) outside the rule-test author's paths",
     );
+  });
+
+  it('[CR3-02] B1-01s shape: a legacy ledger passes with constants in its skeleton; a new task does not', () => {
+    const skeleton = [
+      "export const DAY_PARTITIONED_TABLES: readonly string[] = Object.freeze(['link_logs']);",
+      'const DAYS_AHEAD = 14;',
+      "export function post(): never {\n  throw new Error('NotImplemented: post');\n}",
+      '',
+    ].join('\n');
+    const branch = (task: string): { root: string; base: string } => {
+      const { root, base } = workRepo();
+      writeFiles(root, {
+        'test/spec/ledger/rule.test.ts': "it('[BR-FUND-13] rule', () => { expect(1).toBe(1); });\n",
+        'apps/api/src/modules/ledger/post.ts': skeleton,
+      });
+      const spec = commitAll(root, 'test(spec): rule tests and skeleton');
+      writeFiles(root, {
+        [`ops/evidence/${task}.json`]: `${JSON.stringify({ task, spec_commit: spec }, null, 2)}\n`,
+      });
+      commitAll(root, 'ops(evidence)');
+      return { root, base };
+    };
+    // B2-02a is on the fixture's legacy list (no test_paths, old scope, old skeleton rule).
+    const legacy = branch('B2-02a');
+    const ok = guard('run.ts', [
+      'git',
+      '--base',
+      legacy.base,
+      '--task',
+      'B2-02a',
+      '--cwd',
+      legacy.root,
+    ]);
+    expect(ok.stdout).toContain('PASS path-guard-author');
+    // B2-02b is a new task (test_paths test/spec/ledger/**): the same skeleton is refused.
+    const fresh = branch('B2-02b');
+    const bad = guard('run.ts', [
+      'git',
+      '--base',
+      fresh.base,
+      '--task',
+      'B2-02b',
+      '--cwd',
+      fresh.root,
+    ]);
+    expect(bad.status).toBe(1);
+    expect(bad.stdout).toContain('FAIL path-guard-author');
+    expect(bad.stderr).toContain('executable top-level code is not a skeleton');
+  });
+
+  it('[CR3-01] B1-02b shape: a legacy ledger without test_paths gets the old scope in red-check', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, { 'test/spec/money/new.test.ts': "it('[BR-X] new', () => {});\n" });
+    const res = guard('red-check.ts', [
+      '--task',
+      'B2-02a',
+      '--cwd',
+      root,
+      '--base',
+      base,
+      '--print-expected',
+    ]);
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout.trim()).toBe('test/spec/money/new.test.ts');
+    // A new task without test_paths has nothing in scope.
+    expect(
+      guard('red-check.ts', [
+        '--task',
+        'B2-02d',
+        '--cwd',
+        root,
+        '--base',
+        base,
+        '--print-expected',
+      ]).stdout.trim(),
+    ).toBe('');
+  });
+
+  it('[CR2-02] a new task without test_paths gets no rule-test asset in its rule-test commits', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'test/spec/money/other.test.ts': "it('[BR-X] other', () => { expect(1).toBe(1); });\n",
+      'apps/api/src/modules/ledger/post.ts': SKELETON,
+    });
+    const spec = commitAll(root, 'test(spec): rule tests and skeleton');
+    writeFiles(root, {
+      'ops/evidence/B2-02d.json': `${JSON.stringify({ task: 'B2-02d', spec_commit: spec }, null, 2)}\n`,
+    });
+    commitAll(root, 'ops(evidence)');
+    const res = guard('run.ts', ['git', '--base', base, '--task', 'B2-02d', '--cwd', root]);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain(
+      'task B2-02d has no test_paths and is not a ledger of the switch baseline',
+    );
+    expect(res.stderr).toContain('test/spec/money/other.test.ts: changed in a rule-test commit');
   });
 
   it('a rule-test commit may not remove implementation files', () => {

@@ -122,7 +122,9 @@ describe('ops/approvals.yaml of this repository', () => {
     expect(later.map((a) => a.id)).toEqual(later.map((_, i) => 10 + i));
     for (const approval of later) {
       expect(approval.row).toBeGreaterThanOrEqual(0);
-      expect(approval.row).toBeLessThanOrEqual(9);
+      // §7.3 has rows 0–12 at SPEC_REF b5d0370 (row 12, the default split of 2026-10-05, is
+      // itself the approval id 19 records).
+      expect(approval.row).toBeLessThanOrEqual(12);
       expect(approval.note).not.toBe('');
     }
   });

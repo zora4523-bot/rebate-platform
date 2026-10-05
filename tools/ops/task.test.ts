@@ -64,6 +64,25 @@ beforeAll(() => {
     'ops/tasks/X1-01h.yaml': good({ id: 'X1-01zz' }),
     'ops/tasks/X1-01i.yaml': good({ id: 'X1-01i', type: 'feature', paths: '[]' }),
     'ops/tasks/X1-01j.yaml': good({ id: 'X1-01j', refs_hash: '{}' }),
+    // The fixture's switch-baseline ledgers: these may omit test_paths (CR2-02).
+    'tools/guard/legacy-tasks.json': JSON.stringify({
+      baseline: 'fixture',
+      tasks: [
+        'X1-01',
+        'X1-01a',
+        'X1-01b',
+        'X1-01c',
+        'X1-01d',
+        'X1-01e',
+        'X1-01f',
+        'X1-01g',
+        'X1-01h',
+        'X1-01i',
+        'X1-01j',
+        'X1-02',
+        'X9-01',
+      ],
+    }),
   });
 });
 
@@ -124,6 +143,75 @@ it('checks every file of the ledger and reports the failing ones', () => {
   expect(checkTasks(['X1-99'], opts())[0]?.problems).toEqual([
     'ops/tasks/X1-99.yaml does not exist',
   ]);
+});
+
+it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a task with a tester', () => {
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**', 'test/properties/**', 'specs/commission-examples.csv'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    // A new ledger (not on the switch-baseline list) with a rule-test author and no test_paths.
+    'ops/tasks/X1-01n.yaml': good({ id: 'X1-01n', tester: 'codex', impl: 'claude' }),
+    // A new ledger with the old roles (CR3-03).
+    'ops/tasks/X1-01o.yaml': good({
+      id: 'X1-01o',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+    'ops/tasks/X1-01k.yaml': good({
+      id: 'X1-01k',
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'\n  - 'test/properties/demo/*.test.ts'",
+    }),
+    'ops/tasks/X1-01l.yaml': good({
+      id: 'X1-01l',
+      impl: 'claude',
+      tester: 'codex',
+      test_paths:
+        "\n  - 'packages/demo/src/**'\n  - 'test/sp*'\n  - 'specs/commission-examples.csv'",
+    }),
+    'ops/tasks/X1-01m.yaml': good({
+      id: 'X1-01m',
+      impl: 'claude',
+      tester: 'none',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+  });
+  try {
+    expect(checkTask('X1-01k', opts('RV1'))).toEqual([]);
+    expect(loadTask('X1-01k', root).test_paths).toEqual([
+      'test/spec/demo/**',
+      'test/properties/demo/*.test.ts',
+    ]);
+    // An older ledger without the field still parses (test_paths: []).
+    expect(loadTask('X1-01', root).test_paths).toEqual([]);
+    expect(checkTask('X1-01l', opts('RV1'))).toEqual([
+      'test_paths: "packages/demo/src/**" is not inside the rule-test assets (class 1 of tools/guard/protected-paths.json)',
+      'test_paths: "test/sp*" is not inside the rule-test assets (class 1 of tools/guard/protected-paths.json)',
+    ]);
+    expect(checkTask('X1-01m', opts('RV1')).join('\n')).toContain(
+      'a task without a rule-test author (tester: none) has no test_paths',
+    );
+    // CR2-02: a new task that omits test_paths is refused; a switch-baseline ledger is not.
+    expect(checkTask('X1-01n', opts('RV1')).join('\n')).toContain(
+      'test_paths: required for a task with a rule-test author (tester: codex)',
+    );
+    expect(checkTask('X1-01', opts('RV1'))).toEqual([]);
+    // CR3-03: a new ledger cannot take the old roles; a legacy one keeps them.
+    expect(checkTask('X1-01o', opts('RV1'))).toEqual([
+      'impl: must be claude for a task written after the switch of 2026-10-05 (a Codex handover is recorded at run time, not in the ledger)',
+      'tester: must be codex or none for a task written after the switch of 2026-10-05',
+    ]);
+    expect(checkTask('X1-01e', opts('RV1'))).toEqual([]);
+  } finally {
+    for (const id of ['X1-01k', 'X1-01l', 'X1-01m', 'X1-01n', 'X1-01o']) {
+      removeDir(`${root}/ops/tasks/${id}.yaml`);
+    }
+  }
 });
 
 it('shows a task together with its computed risk', () => {

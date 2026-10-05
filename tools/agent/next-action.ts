@@ -1,21 +1,40 @@
-// Decides the orchestrator's next step after an implementation run (规划/11 §2.3 step 6, §2.5).
-// Used by post-run.sh; it reads files only and never touches git or the worktree.
+// Decides the orchestrator's next step after a Codex run in impl mode (规划/11 §2.3 steps 3 and 6,
+// §2.5). Used by post-run.sh; it reads files only and never touches git or the worktree.
+//
+// Phases (default split of 2026-10-05, ops/approvals.yaml id 19; meta.json `phase`):
+//   test      Codex wrote rule tests and NotImplemented skeletons. Success is `red-check`: the
+//             orchestrator checks they are red for the right reason (tools/guard/red-check.ts),
+//             commits them as test(spec), records spec_commit, and for RV2 has a FRESH CLAUDE
+//             SUBAGENT do the spec-test review (never Codex: README §11). No verification run.
+//   handover  Codex implemented once after the Opus attempts ran out (RV0 / RV1): as `impl`, with
+//             the handover counter (one attempt).
+//   impl      (default; a meta.json without phase) a Codex implementation as before 2026-10-05.
+// The Opus implementation subagent does not go through here (README §10).
 //
 //   node next-action.ts --task <id> --run <dir> --meta <meta.json> --attempts <n>
-//                       [--base <ref>] [--impl <impl.json>]
+//                       [--phase test|handover|impl] [--base <ref>] [--impl <impl.json>]
 //                       [--path-guard <json> --path-guard-exit <n>]
 //                       [--protected <json> --protected-exit <n>]
 //   node next-action.ts --task <id> --run <dir> --attempts <n> --failure <reason> [--detail <text>]
 //       A failed attempt that left no finished meta.json (orphaned run).
 //
-// Prints one JSON line `{ "action": "verify" | "retry" | "blocked" | "ask" | "capacity-retry", … }`.
+// Prints one JSON line
+// `{ "action": "verify" | "red-check" | "retry" | "blocked" | "ask" | "capacity-retry", … }`.
 // Exit codes: 0 decided, 2 usage or internal error.
 import { existsSync } from 'node:fs';
 import { readJsonFile } from '../lib/fsx.ts';
-import { uncountedReason } from '../ops/state.ts';
+import { ATTEMPT_LIMITS, uncountedReason } from '../ops/state.ts';
 
 /** 规划/11 §2.5: at most 3 implementation attempts; re-dispatch after 15, 30, 60 minutes. */
 export const MAX_IMPL_ATTEMPTS = 3;
+
+export const RUN_PHASES = ['test', 'handover', 'impl'] as const;
+export type RunPhase = (typeof RUN_PHASES)[number];
+
+/** Attempts of a phase: test 3, handover 1, impl 3 (tools/ops/state.ts ATTEMPT_LIMITS). */
+export function phaseLimit(phase: RunPhase): number {
+  return ATTEMPT_LIMITS[phase];
+}
 export const BACKOFF_MINUTES = [15, 30, 60] as const;
 
 export type ProtectedHit = { path: string; class: number };
@@ -25,6 +44,8 @@ export type GuardRun = { exit: number; report: Record<string, unknown> | null };
 export type Input = {
   task: string;
   run: string;
+  /** Default `impl`. */
+  phase?: RunPhase;
   /** RUN/meta.impl.json as written by codex-run.sh. */
   meta: Record<string, unknown>;
   /**
@@ -39,10 +60,9 @@ export type Input = {
   protectedPaths: GuardRun | null;
 };
 
-export type Action = { action: 'verify' | 'retry' | 'blocked' | 'ask' | 'capacity-retry' } & Record<
-  string,
-  unknown
->;
+export type Action = {
+  action: 'verify' | 'red-check' | 'retry' | 'blocked' | 'ask' | 'capacity-retry';
+} & Record<string, unknown>;
 
 export function backoffMinutes(attempts: number): number {
   const index = Math.min(Math.max(attempts, 1), BACKOFF_MINUTES.length) - 1;
@@ -65,12 +85,12 @@ function hitsOf(value: unknown): ProtectedHit[] {
 
 /** A failed attempt: retry with backoff, or stop when the attempts are used up. */
 export function failed(
-  input: Pick<Input, 'task' | 'run' | 'attempts'>,
+  input: Pick<Input, 'task' | 'run' | 'attempts' | 'phase'>,
   reason: string,
   extra: Record<string, unknown> = {},
 ): Action {
   const common = { task: input.task, run: input.run, reason, attempt: input.attempts, ...extra };
-  if (input.attempts >= MAX_IMPL_ATTEMPTS) {
+  if (input.attempts >= phaseLimit(input.phase ?? 'impl')) {
     // RV0 / RV1 may be handed to the other implementer once, RV2 stays blocked (规划/11 §2.5);
     // that choice needs the risk level and is the orchestrator's.
     return { action: 'blocked', ...common, reason: 'attempts-exhausted', last_failure: reason };
@@ -91,6 +111,7 @@ export function nextAction(input: Input): Action {
     uncountedReason({
       mode: 'impl',
       review_type: null,
+      phase: null,
       started_at: '',
       exit_code: exitCode,
       has_output: meta['has_output'] === true,
@@ -233,6 +254,30 @@ export function nextAction(input: Input): Action {
   }
   if (impl['task_done'] !== true) return failed(input, 'not-done');
 
+  if ((input.phase ?? 'impl') === 'test') {
+    // Rule tests written by Codex: nothing is verified yet (they are meant to be red). The
+    // orchestrator checks the red, commits, and has the tests reviewed by a fresh Claude
+    // subagent (RV2), never by Codex (规划/11 §2.3 steps 3-4; ops/approvals.yaml id 19).
+    return {
+      action: 'red-check',
+      ...common,
+      phase: 'test',
+      attempt: input.attempts,
+      base: input.base,
+      worktree: meta['worktree'] ?? null,
+      // The isolated red run: only the task's new rule tests, in the container, reports exported
+      // and reconciled by red-check (CR-12); its result.json goes into the evidence.
+      red_check: `tools/ops/verify-container.sh ${input.task} --red`,
+      then: [
+        'commit the rule tests and skeletons as test(spec): …; state.ts set --spec-commit <sha>',
+        'RV2: spec-test review by a fresh Claude subagent (tools/agent/README.md §11)',
+        'implementation by a Claude Opus subagent (tools/agent/README.md §10)',
+      ],
+      revert_first: asArray(pathReport['out_of_scope_ops_docs']),
+      outside_needed: outsideNeeded,
+    };
+  }
+
   return {
     action: 'verify',
     ...common,
@@ -277,6 +322,7 @@ function main(argv: readonly string[]): number {
     '--run',
     '--meta',
     '--attempts',
+    '--phase',
     '--base',
     '--impl',
     '--path-guard',
@@ -300,10 +346,15 @@ function main(argv: readonly string[]): number {
     throw new UsageError('--task, --run and --attempts are required');
   }
   if (!/^\d+$/.test(attempts)) throw new UsageError('--attempts must be a non-negative integer');
+  const phaseArg = values.get('--phase') ?? 'impl';
+  if (!(RUN_PHASES as readonly string[]).includes(phaseArg)) {
+    throw new UsageError(`--phase must be one of ${RUN_PHASES.join(', ')}`);
+  }
+  const phase = phaseArg as RunPhase;
   const failure = values.get('--failure');
   if (failure !== undefined) {
     const detail = values.get('--detail') ?? '';
-    const orphan = failed({ task, run, attempts: Number(attempts) }, failure, { detail });
+    const orphan = failed({ task, run, attempts: Number(attempts), phase }, failure, { detail });
     process.stdout.write(`${JSON.stringify(orphan)}\n`);
     return 0;
   }
@@ -312,6 +363,7 @@ function main(argv: readonly string[]): number {
   const action = nextAction({
     task,
     run,
+    phase,
     meta: readObject(metaFile),
     attempts: Number(attempts),
     base: values.get('--base') ?? null,

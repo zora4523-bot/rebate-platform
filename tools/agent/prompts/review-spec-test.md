@@ -3,8 +3,11 @@
 You are reviewing rule tests (`test/spec/**`, `test/properties/**`, `test/acceptance/**`) that
 were written BEFORE the implementation exists (规划/11 §2.3 step 4). The tests are the only thing
 that will decide whether the later implementation is correct, so a missing or weak test is a
-defect. You did not write these tests. The function skeletons in the change only throw
-`NotImplemented`; do not review them as an implementation.
+defect. You did not write these tests: since 2026-10-05 they are written by Codex, and this
+review is done by a fresh Claude subagent that is not the implementing one (ops/approvals.yaml
+id 19; tools/agent/README.md §11). Its output follows `tools/agent/schemas/review.schema.json`
+and is validated with `validate-output.ts` like any review. The function skeletons in the change
+only throw `NotImplemented`; do not review them as an implementation.
 
 ## Ground rules
 

@@ -134,6 +134,8 @@ it('impl: usable output gives exit 0, a complete meta.json and a usage record', 
     group_gone: true,
     position_changed: [],
     validation: 'ok',
+    // Codex in impl mode writes the rule tests unless told otherwise (ops/approvals.yaml id 19).
+    phase: 'test',
   });
   const head = gitIn(fx.worktree, ['rev-parse', 'HEAD']);
   expect(meta['head_before']).toBe(head);
@@ -545,6 +547,101 @@ it('review type follows the risk level: RV2 defaults to money and refuses genera
   expect(decodeDryRun(rv1.stdout).join('\n')).toContain('- Review type: general');
 });
 
+it(
+  '[ops/approvals.yaml id 19] impl phases; Codex never gets the spec-test review of its own tests',
+  LONG,
+  () => {
+    const fx = fixture('phases');
+    const stub = (fields: Record<string, unknown>): void =>
+      writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+        { when: ['show'], stdout: JSON.stringify({ id: TASK, type: 'impl', ...fields }) },
+      ]);
+    // The phase is impl-only and one of two values.
+    expect(codexRun(fx, ['impl', TASK, '--phase', 'implement', '--dry-run']).status).toBe(2);
+    expect(
+      codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--phase', 'test', '--dry-run']).status,
+    ).toBe(2);
+    // CR-14: the brief must be one of the called phase (the fixture's is a test-phase brief).
+    stub({ risk: 'RV1', tester: 'codex' });
+    const mismatch = codexRun(fx, ['impl', TASK, '--phase', 'handover', '--dry-run']);
+    expect(mismatch.status).toBe(2);
+    expect(mismatch.stderr).toContain('is for phase "test", this call is --phase handover');
+    const handoverBrief = `# 任务 ${TASK}：handover\n\n- 本轮阶段：handover（fixture）\n`;
+    writeFileSync(join(fx.run, 'brief.md'), handoverBrief);
+    expect(codexRun(fx, ['impl', TASK, '--dry-run']).stderr).toContain(
+      'is for phase "handover", this call is --phase test',
+    );
+    writeFileSync(join(fx.run, 'brief.md'), '# 任务：no phase line\n');
+    expect(codexRun(fx, ['impl', TASK, '--dry-run']).stderr).toContain('is for phase "none"');
+    writeFileSync(join(fx.run, 'brief.md'), handoverBrief);
+    // A handover implementation is for RV0 / RV1 only (规划/11 §2.5).
+    const rv1 = codexRun(fx, ['impl', TASK, '--phase', 'handover', '--dry-run']);
+    expect(rv1.status, rv1.stderr).toBe(0);
+    stub({ risk: 'RV2', tester: 'codex' });
+    const rv2 = codexRun(fx, ['impl', TASK, '--phase', 'handover', '--dry-run']);
+    expect(rv2.status).toBe(2);
+    expect(rv2.stderr).toContain('RV0 / RV1 only');
+    // Rule tests written by Codex are reviewed by a fresh Claude subagent, never by Codex.
+    const spec = codexRun(fx, [
+      'review',
+      TASK,
+      '--base',
+      fx.baseSha,
+      '--review-type',
+      'spec-test',
+      '--dry-run',
+    ]);
+    expect(spec.status).toBe(2);
+    expect(spec.stderr).toContain('fresh Claude subagent');
+    // CR-08: an author that cannot be read is refused as well, never waved through.
+    const specArgs = [
+      'review',
+      TASK,
+      '--base',
+      fx.baseSha,
+      '--review-type',
+      'spec-test',
+      '--dry-run',
+    ];
+    stub({ risk: 'RV2' });
+    const unknown = codexRun(fx, specArgs);
+    expect(unknown.status).toBe(2);
+    expect(unknown.stderr).toContain('the rule-test author is unknown');
+    writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+      { exit: 1, stderr: 'no task' },
+    ]);
+    expect(codexRun(fx, specArgs).status).toBe(2);
+    stub({ risk: 'RV2', tester: 'codex' });
+    // Code reviews of the same task stay with Codex; a task whose tests Claude wrote keeps the
+    // spec-test review.
+    expect(
+      codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--review-type', 'money', '--dry-run'])
+        .status,
+    ).toBe(0);
+    stub({ risk: 'RV2', tester: 'claude' });
+    expect(
+      codexRun(fx, [
+        'review',
+        TASK,
+        '--base',
+        fx.baseSha,
+        '--review-type',
+        'spec-test',
+        '--dry-run',
+      ]).status,
+    ).toBe(0);
+    // A real handover run records its phase for the round counters.
+    stub({ risk: 'RV1', tester: 'codex' });
+    const run = codexRun(fx, ['impl', TASK, '--phase', 'handover']);
+    expect(run.status, run.stderr).toBe(0);
+    expect(readJson(join(fx.run, 'meta.impl.json'))['phase']).toBe('handover');
+    // CR-09: Codex implemented this task, so Codex does not review the code (Claude does).
+    const general = codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--dry-run']);
+    expect(general.status).toBe(2);
+    expect(general.stderr).toContain('implemented by Codex (handover)');
+  },
+);
+
 it('a checkout path that contains "review" does not change the implementation output', LONG, () => {
   // The fake codex once chose the output shape from the whole schema path.
   const fx = fixture('review-in-path');
@@ -556,6 +653,10 @@ it('a checkout path that contains "review" does not change the implementation ou
 it('[规划/11 §2.5] every finished call is settled against the in-flight state', LONG, () => {
   const fx = fixture('settle');
   writeStub(join(fx.trusted, 'tools', 'ops', 'state.ts'), 'state');
+  // A task written before 2026-10-05: Claude wrote its rule tests, Codex may review them.
+  writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+    { when: ['show'], stdout: JSON.stringify({ id: TASK, risk: 'RV1', tester: 'claude' }) },
+  ]);
   const timedOut = codexRun(
     fx,
     ['review', TASK, '--review-type', 'spec-test', '--base', fx.baseSha],
@@ -600,7 +701,12 @@ it(
     writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
       {
         when: ['show'],
-        stdout: JSON.stringify({ id: TASK, risk: 'RV1', refs: ['BR-CALC-01', 'BR-CALC-08'] }),
+        stdout: JSON.stringify({
+          id: TASK,
+          risk: 'RV1',
+          tester: 'claude',
+          refs: ['BR-CALC-01', 'BR-CALC-08'],
+        }),
       },
     ]);
     const dry = codexRun(fx, [
@@ -661,6 +767,7 @@ it(
         stdout: JSON.stringify({
           id: TASK,
           risk: 'RV2',
+          tester: 'claude',
           refs: ['BR-CALC-01'],
           paths: ['packages/money/src/**'],
         }),
@@ -720,5 +827,66 @@ it(
     expect(messages.join('\n')).toContain('file packages/db/src/schema.ts is outside the task');
     const log = readFileSync(join(fx.run, 'out-of-scope.md'), 'utf8');
     expect(log).toContain(`- \`${outside.key}\` S1`);
+  },
+);
+
+it(
+  '[legacy flow] a B1-01s-shape ledger keeps the old flow: Codex spec-test review, Codex implementation, Codex review',
+  LONG,
+  () => {
+    const fx = fixture('legacy-flow');
+    // The old split: Claude writes the rule tests, Codex implements; no test_paths.
+    const stub = (fields: Record<string, unknown>): void =>
+      writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+        {
+          when: ['show'],
+          stdout: JSON.stringify({
+            id: TASK,
+            type: 'impl',
+            risk: 'RV2',
+            impl: 'codex',
+            tester: 'claude',
+            ...fields,
+          }),
+        },
+      ]);
+    stub({});
+    const implBrief = `# 任务 ${TASK}：legacy\n\n- 本轮阶段：impl（旧分工）\n`;
+    writeFileSync(join(fx.run, 'brief.md'), implBrief);
+    // Not on the legacy list yet: the old implementation phase is refused.
+    const refused = codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']);
+    expect(refused.status).toBe(2);
+    expect(refused.stderr).toContain('not on tools/guard/legacy-tasks.json');
+    mkdirSync(join(fx.trusted, 'tools', 'guard'), { recursive: true });
+    writeFileSync(
+      join(fx.trusted, 'tools', 'guard', 'legacy-tasks.json'),
+      JSON.stringify({ baseline: 'fixture', tasks: [TASK] }),
+    );
+    // Codex reviews the rule tests Claude wrote.
+    expect(
+      codexRun(fx, [
+        'review',
+        TASK,
+        '--base',
+        fx.baseSha,
+        '--review-type',
+        'spec-test',
+        '--dry-run',
+      ]).status,
+    ).toBe(0);
+    // Codex implements in the old implementation phase (not a handover).
+    const run = codexRun(fx, ['impl', TASK, '--phase', 'impl']);
+    expect(run.status, run.stderr).toBe(0);
+    expect(readJson(join(fx.run, 'meta.impl.json'))['phase']).toBe('impl');
+    // Its code review stays with Codex (the old split's reviewers); nothing marks a handover.
+    expect(
+      codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--review-type', 'money', '--dry-run'])
+        .status,
+    ).toBe(0);
+    // A legacy ledger that names Claude as implementer gets no Codex implementation.
+    stub({ impl: 'claude', tester: 'codex' });
+    expect(codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']).stderr).toContain(
+      'not codex',
+    );
   },
 );

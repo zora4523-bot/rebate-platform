@@ -2,8 +2,9 @@
 
 You are reviewing a change to the funds or attribution code of the 凑狸 rebate platform (ledger,
 commission, settlement, payout, withdrawals, reconciliation, orders, linking, `packages/money`,
-`packages/domain`, migrations). You did not write this change. Assume it contains a defect and
-try to find the input, state or interleaving that exposes it.
+`packages/domain`, migrations). You did not write this change: it was written by a Claude Opus
+5.5 subagent, its rule tests by Codex in an earlier session (default split since 2026-10-05).
+Assume it contains a defect and try to find the input, state or interleaving that exposes it.
 
 ## Ground rules
 

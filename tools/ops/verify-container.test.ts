@@ -1,8 +1,8 @@
-// Unit tests for the parts of verify-container.sh that need neither Docker nor
-// the network. The container path itself is exercised by
+// Unit tests for the parts of verify-container.sh that need neither Docker nor the network: usage,
+// refusals and the --dry-run plan (commit, tree). The container path itself is exercised by
 // tools/ops/verify-container.selftest.sh (run by hand, see tools/ops/README.md).
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -38,18 +38,6 @@ function run(args: string[], env: Record<string, string> = {}) {
   return { status: res.status ?? -1, stdout: res.stdout, stderr: res.stderr };
 }
 
-type Result = {
-  mode: string;
-  exit_code: number;
-  commit: string | null;
-  tree: string | null;
-  prop_seed: number;
-  started_at: string;
-  finished_at: string;
-};
-const result = (id: string, n: number): Result =>
-  JSON.parse(readFileSync(join(runs, id, 'verify', String(n), 'result.json'), 'utf8')) as Result;
-
 beforeAll(() => {
   base = scratchDir('verify');
   runs = join(base, 'runs');
@@ -57,7 +45,7 @@ beforeAll(() => {
 afterAll(() => removeDir(base));
 
 it(
-  'the scripts are valid bash and perl',
+  'the scripts are valid bash',
   () => {
     for (const file of [
       'verify-container.sh',
@@ -66,7 +54,6 @@ it(
     ]) {
       expect(spawnSync('bash', ['-n', join(OPS_DIR, file)]).status).toBe(0);
     }
-    expect(spawnSync('perl', ['-c', join(OPS_DIR, 'timeout-group.pl')]).status).toBe(0);
   },
   CLI_TIMEOUT,
 );
@@ -86,15 +73,22 @@ it(
   'refuses bad usage and worktrees under the temp directories',
   () => {
     expect(run([]).status).toBe(2);
-    expect(run(['../x', '--host']).stderr).toContain('invalid task id');
+    expect(run(['../x', '--dry-run']).stderr).toContain('invalid task id');
     expect(run(['V1-01', '--bogus']).status).toBe(2);
-    expect(run(['V1-01', '--worktree', join(base, 'missing'), '--host']).stderr).toContain(
+    expect(run(['V1-01', '--worktree', join(base, 'missing'), '--dry-run']).stderr).toContain(
       'worktree does not exist',
+    );
+    const ok = fixture('usage', 'true');
+    expect(run(['V1-01', '--worktree', ok, '--fast', '--red', '--dry-run']).stderr).toContain(
+      'at most one of --fast and --red',
+    );
+    expect(run(['V1-01', '--worktree', ok, '--base', 'main', '--dry-run']).stderr).toContain(
+      '--base applies to --red only',
     );
     const inTmp = mkdtempSync(join(tmpdir(), 'couli-verify-test-'));
     try {
       writeFileSync(join(inTmp, 'package.json'), '{"scripts":{"verify":"true"}}\n');
-      const res = run(['V1-01', '--worktree', inTmp, '--host']);
+      const res = run(['V1-01', '--worktree', inTmp, '--dry-run']);
       expect(res.status).toBe(2);
       expect(res.stderr).toContain('refusing a worktree under');
     } finally {
@@ -107,9 +101,24 @@ it(
 );
 
 it(
+  '[CR-01] there is no host fallback: --host is refused for verify and verify:fast alike',
+  () => {
+    const dir = fixture('host', 'node -e "process.exit(0)"');
+    for (const extra of [[], ['--fast']]) {
+      const res = run(['V1-02', '--worktree', dir, '--host', ...extra]);
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain('--host is no longer accepted');
+      expect(res.stderr).toContain('hand the run to CI');
+    }
+    expect(existsSync(join(runs, 'V1-02'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
   'refuses to run from a checkout that is not the trusted root',
   () => {
-    const res = run(['V1-02', '--worktree', fixture('untrusted', 'true'), '--host'], {
+    const res = run(['V1-03', '--worktree', fixture('untrusted', 'true'), '--dry-run'], {
       COULI_TRUSTED_ROOT: base,
     });
     expect(res.status).toBe(2);
@@ -119,77 +128,79 @@ it(
 );
 
 it(
-  'host mode records the exit code, the seed and the mode',
+  '--dry-run names the commit and the tree of the worktree as it would be verified',
   () => {
-    const ok = fixture(
-      'host-ok',
-      // A clean environment: replaced HOME, no inherited secrets, seed passed through.
-      "node -e \"const e=process.env; process.exit(e.HOME.endsWith('/V1-03/home') && !e.GH_TOKEN && !e.SSH_AUTH_SOCK && e.PROP_SEED==='77' ? 0 : 9)\"",
-    );
-    const pass = run(['V1-03', '--worktree', ok, '--host'], {
-      GH_TOKEN: 'not-a-real-token',
-      SSH_AUTH_SOCK: '/nonexistent/agent.sock',
-      PROP_SEED: '77',
-    });
-    expect(pass.status).toBe(0);
-    const first = result('V1-03', 1);
-    expect(first).toMatchObject({
-      mode: 'host',
-      exit_code: 0,
-      commit: null,
-      tree: null,
-      prop_seed: 77,
-    });
-    expect(JSON.parse(pass.stdout)).toEqual(first);
-    expect(Date.parse(first.finished_at)).toBeGreaterThanOrEqual(Date.parse(first.started_at));
-    expect(readFileSync(join(runs, 'V1-03', 'verify', '1', 'log.txt'), 'utf8')).toContain(
-      '> node -e',
-    );
-
-    const bad = fixture('host-fail', 'node -e "process.exit(7)"');
-    expect(run(['V1-03', '--worktree', bad, '--host']).status).toBe(7);
-    // Runs are numbered; the default seed is the fixed one.
-    expect(result('V1-03', 2)).toMatchObject({ mode: 'host', exit_code: 7, prop_seed: 20261001 });
-    expect(readdirSync(join(runs, 'V1-03', 'verify')).sort()).toEqual(['1', '2']);
-  },
-  CLI_TIMEOUT,
-);
-
-it(
-  'host mode kills the whole process group at the time limit and reports 124',
-  () => {
-    const slow = fixture('host-slow', 'node -e "setTimeout(() => {}, 600000)"');
-    const res = run(['V1-04', '--worktree', slow, '--host'], {
-      COULI_VERIFY_TIMEOUT_SECS: '1',
-      COULI_KILL_GRACE_SECS: '2',
-    });
-    expect(res.status).toBe(124);
-    expect(result('V1-04', 1).exit_code).toBe(124);
-  },
-  CLI_TIMEOUT,
-);
-
-it(
-  'records the commit and the tree of the worktree as verified',
-  () => {
-    const repo = fixture('host-git', 'node -e "process.exit(0)"');
+    const repo = fixture('dry', 'node -e "process.exit(0)"');
     fixtureGit(repo, ['init', '-q', '-b', 'main']);
     fixtureGit(repo, ['add', '-A']);
     fixtureGit(repo, ['commit', '-q', '-m', 'fixture']);
     const head = fixtureGit(repo, ['rev-parse', 'HEAD']);
     const headTree = fixtureGit(repo, ['rev-parse', 'HEAD^{tree}']);
 
-    expect(run(['V1-05', '--worktree', repo, '--host']).status).toBe(0);
-    expect(result('V1-05', 1)).toMatchObject({ commit: head, tree: headTree });
+    const plan = run(['V1-05', '--worktree', repo, '--dry-run']);
+    expect(plan.status, plan.stderr).toBe(0);
+    expect(JSON.parse(plan.stdout)).toEqual({ script: 'verify', commit: head, tree: headTree });
 
     // Uncommitted work changes the tree, not the commit; the real index stays untouched.
     writeFileSync(join(repo, 'new-file.txt'), 'uncommitted\n');
-    expect(run(['V1-05', '--worktree', repo, '--host']).status).toBe(0);
-    const dirty = result('V1-05', 2);
+    const dirty = JSON.parse(run(['V1-05', '--worktree', repo, '--fast', '--dry-run']).stdout) as {
+      script: string;
+      commit: string;
+      tree: string;
+    };
+    expect(dirty.script).toBe('verify:fast');
     expect(dirty.commit).toBe(head);
     expect(dirty.tree).toMatch(/^[0-9a-f]{40}$/);
     expect(dirty.tree).not.toBe(headTree);
     expect(fixtureGit(repo, ['status', '--porcelain'])).toBe('?? new-file.txt');
+    // No run directory and no result for a plan.
+    expect(existsSync(join(runs, 'V1-05'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[CR-12] --red needs the task in the trusted ledger and stops before anything runs',
+  () => {
+    const repo = fixture('red', 'node -e "process.exit(0)"');
+    fixtureGit(repo, ['init', '-q', '-b', 'main']);
+    fixtureGit(repo, ['add', '-A']);
+    fixtureGit(repo, ['commit', '-q', '-m', 'fixture']);
+    const res = run(['V9-99', '--worktree', repo, '--red', '--base', 'main', '--dry-run']);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain("cannot list the task's rule-test files");
+    expect(existsSync(join(runs, 'V9-99'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[CR3-01] --red for B1-02b (legacy ledger, no test_paths): the old scope gives it files to run',
+  () => {
+    // The real trusted ledger: B1-02b is on tools/guard/legacy-tasks.json and has no test_paths.
+    const repo = fixture('red-legacy', 'node -e "process.exit(0)"');
+    fixtureGit(repo, ['init', '-q', '-b', 'main']);
+    fixtureGit(repo, ['add', '-A']);
+    fixtureGit(repo, ['commit', '-q', '-m', 'fixture']);
+    writeFiles(repo, {
+      'test/spec/identity/devices.test.ts': "it('[BR-ID-05] x', () => {});\n",
+      'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
+      'apps/api/src/modules/identity/devices.ts': 'export {};\n',
+    });
+    const res = run(['B1-02b', '--worktree', repo, '--red', '--base', 'main', '--dry-run']);
+    expect(res.status, res.stderr).toBe(0);
+    const plan = JSON.parse(res.stdout) as {
+      red_files: string[];
+      red_plan: { name: string; files: string[] }[];
+    };
+    expect(plan.red_files).toEqual([
+      'test/spec/identity/devices.int.test.ts',
+      'test/spec/identity/devices.test.ts',
+    ]);
+    expect(plan.red_plan.map((g) => `${g.name}: ${g.files.join(' ')}`)).toEqual([
+      'spec-int: spec/identity/devices.int.test.ts',
+      'spec-unit: spec/identity/devices.test.ts',
+    ]);
   },
   CLI_TIMEOUT,
 );

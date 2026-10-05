@@ -53,6 +53,7 @@ describe('parseTaskFile', () => {
       deps: ['B2-01'],
       paths: ['apps/api/src/modules/ledger/**'],
       impl: 'codex',
+      test_paths: [],
       tester: 'claude',
       accept: ['pnpm verify', 'test/spec/ledger/**'],
       status: 'todo',

@@ -141,6 +141,7 @@ it('writes the eight sections of the template in order', () => {
     '- 仓库：rebate-platform；分支：`task/X1-01`；第 1 次尝试',
     '- 规格版本：`SPEC_REF=',
     '- 风险级：RV2；实现：codex；规则测试作者：claude',
+    '- 本轮阶段：impl（实现：规则测试已冻结，不改不删；测试只经可信容器入口跑）',
     '- 依赖任务：无',
     '## 1. 目标',
     '演示任务：金额类型。关联验收编号：AC-S1-01。',
@@ -162,7 +163,7 @@ it('writes the eight sections of the template in order', () => {
     '- 已有规则测试：本任务还没有规则测试提交',
     '- `ops/`、`docs/` 下任何文件；结果只写进 JSON 输出。',
     '## 5. 必须遵守的仓库规则',
-    '根 AGENTS.md 由 Codex 自动读取，这里不再内嵌；',
+    '根 AGENTS.md 由 Codex 与 Claude Code 自动读取，这里不再内嵌；',
     '<!-- packages/AGENTS.md 全文开始 -->',
     '中间一级的规则。',
     '模块规则：单一写者。',
@@ -170,12 +171,13 @@ it('writes the eight sections of the template in order', () => {
     '## 6. 验收命令',
     '```\npnpm verify:fast\npnpm --filter demo test\n```',
     '必须变绿的规则测试：`test/spec/demo/**`。完整验证由编排者在沙箱外跑。',
+    '`<couli-runs>/trusted/rebate-platform/tools/ops/verify-container.sh X1-01 --fast`',
     '## 7. 上一轮失败输出（第 2 次起才有）',
     '（第 1 次尝试，没有上一轮。）',
     '## 8. 输出',
     '| `task_done` | 是否认为完成 |',
     '| `notes` | 需要评审方注意的地方，三句以内 |',
-    'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 不要运行需要网络、Docker、数据库或监听端口的命令。',
+    'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删；它们是 Codex 写的，只在容器里运行，不在宿主上跑。除可信容器入口 `tools/ops/verify-container.sh <编号> --fast` 外，不要运行需要网络、Docker、数据库或监听端口的命令。',
   ];
   const positions = marks.map((m) => text.indexOf(m));
   expect(positions.filter((p) => p < 0)).toEqual([]);
@@ -223,6 +225,111 @@ it(
   },
   CLI_TIMEOUT,
 );
+
+it('[ops/approvals.yaml id 19] the test phase lets Codex add rule tests and skeletons only; review is read-only', () => {
+  // A ledger without test_paths gets no test-phase brief (CR-06).
+  expect(() => generateBrief('X1-01', opts({ phase: 'test' }))).toThrow(/没有 test_paths/);
+  writeFiles(root, {
+    'ops/tasks/X1-05.yaml': taskYaml({
+      id: 'X1-05',
+      tester: 'codex',
+      impl: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      accept: "\n  - 'pnpm verify'\n  - 'test/spec/demo/**'",
+    }),
+  });
+  const test = readFileSync(generateBrief('X1-05', opts({ phase: 'test', attempt: 1 })), 'utf8');
+  const marks = [
+    '- 本轮阶段：test（写规则 / 验收测试（Codex）',
+    '## 3. 可以改的路径',
+    '- 本任务的规则测试（台账 `test_paths`；只新增文件，已有的不改不删）：`test/spec/demo/**`',
+    '- 任务路径内只放 `NotImplemented` 骨架，逐条顶层语句检查',
+    '- `packages/demo/src/**`',
+    '- 第一类保护路径（规则测试资产）里已有的文件：不能改、不能删；`test_paths` 以外的规则测试资产不能碰。',
+    '```\npnpm typecheck\npnpm lint\n```',
+    '本轮要的是「先红」',
+    '找不到模块、`TypeError`、语法错误的红不算',
+    'Codex 沙箱里只做不执行测试的静态检查',
+    '| `tests_passed` | 类型检查与 lint 通过时填 true（测试由编排者在容器里跑，先红由它核对） |',
+    '只写规则 / 验收测试与 `NotImplemented` 骨架，不写实现。只做静态检查，不运行测试；不要运行需要网络、Docker、数据库或监听端口的命令。',
+  ];
+  const positions = marks.map((m) => test.indexOf(m));
+  expect(positions.filter((p) => p < 0)).toEqual([]);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  // RO-04: Codex writing tests in its sandbox never gets the container entry or Docker.
+  // Codex is told the orchestrator runs the red run; it never gets the container entry itself.
+  expect(test).not.toContain('verify-container.sh X1-05 --fast');
+  expect(test).toContain('编排者用 `tools/ops/verify-container.sh X1-05 --red`');
+  // RO2-01/04: the Codex sandbox executes no test; the orchestrator runs them in a container.
+  expect(test).not.toContain('```\npnpm verify:fast');
+  expect(test).not.toContain('规则测试已冻结');
+  expect(test).not.toContain('验收用的规则测试所在，不能改、不能删');
+
+  const handover = readFileSync(generateBrief('X1-01', opts({ phase: 'handover' })), 'utf8');
+  expect(handover).toContain('- 本轮阶段：handover（换家实现（Codex，一次）');
+  expect(handover).toContain('```\npnpm typecheck\npnpm lint\n```');
+  expect(handover).toContain('Codex 沙箱里只做不执行测试的静态检查');
+  expect(handover).not.toContain('verify-container.sh');
+  expect(
+    handover
+      .trimEnd()
+      .endsWith(
+        '规则测试已冻结，不改不删。只做静态检查，不运行测试；不要运行需要网络、Docker、数据库或监听端口的命令。',
+      ),
+  ).toBe(true);
+
+  const review = readFileSync(generateBrief('X1-01', opts({ phase: 'review' })), 'utf8');
+  expect(review).toContain('- 本轮阶段：review（评审对照（只读）');
+  expect(review).toContain('第 1 次尝试');
+  expect(review.trimEnd().split('\n').at(-1)).toBe(
+    '评审只读：不改任何文件，不提交，不安装依赖。不要运行需要网络、Docker、数据库或监听端口的命令。',
+  );
+});
+
+it(
+  'counts the attempt of the phase: Codex writing tests apart from the implementation',
+  () => {
+    writeFiles(root, {
+      'ops/tasks/X1-04.yaml': taskYaml({ id: 'X1-04', test_paths: "\n  - 'test/spec/demo/**'" }),
+    });
+    bumpAttempt('X1-04', 'test');
+    bumpAttempt('X1-04', 'test');
+    expect(readFileSync(generateBrief('X1-04', opts({ phase: 'test' })), 'utf8')).toContain(
+      '第 2 次尝试',
+    );
+    // Two test-writing rounds are no implementation attempt; a handover adds to the Opus ones.
+    expect(readFileSync(generateBrief('X1-04', opts()), 'utf8')).toContain('第 1 次尝试');
+    bumpAttempt('X1-04', 'impl');
+    bumpAttempt('X1-04', 'handover');
+    expect(readFileSync(generateBrief('X1-04', opts({ phase: 'impl' })), 'utf8')).toContain(
+      '第 2 次尝试',
+    );
+    expect(runCli('brief.ts', ['X1-04', '--phase', 'deploy']).status).toBe(2);
+  },
+  CLI_TIMEOUT,
+);
+
+it('[legacy flow] a legacy impl: codex ledger gets the old implementation brief, no test_paths needed', () => {
+  // B1-01s shape: Codex implements, Claude wrote the rule tests, no test_paths, on the list.
+  writeFiles(root, {
+    'ops/tasks/X1-06.yaml': taskYaml({ id: 'X1-06', impl: 'codex', tester: 'claude' }),
+    'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: ['X1-06'] }),
+  });
+  try {
+    const impl = readFileSync(generateBrief('X1-06', opts({ attempt: 1 })), 'utf8');
+    expect(impl).toContain('- 本轮阶段：impl（实现（旧分工，台账 impl: codex）');
+    expect(impl).toContain('```\npnpm verify:fast\n');
+    expect(impl).not.toContain('verify-container.sh');
+    expect(impl.trimEnd().split('\n').at(-1)).toBe(
+      'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删。不要运行需要网络、Docker、数据库或监听端口的命令。',
+    );
+    // A test-phase brief of a legacy ledger keeps the old scope instead of refusing.
+    const test = readFileSync(generateBrief('X1-06', opts({ phase: 'test', attempt: 1 })), 'utf8');
+    expect(test).toContain('只新增文件，已有的不改不删）：`test/spec/**`');
+  } finally {
+    removeDir(join(root, 'tools', 'guard', 'legacy-tasks.json'));
+  }
+});
 
 it('refuses a brief over 24 KB and tells that the task must be split', () => {
   writeFiles(root, { 'packages/huge/AGENTS.md': `# huge\n\n${'规则'.repeat(5000)}\n` });
@@ -356,7 +463,9 @@ it(
     expect(section2).not.toContain('| 影响面 |');
     for (const path of task.paths) expect(text).toContain(`\n- \`${path}\`\n`);
     // The root AGENTS.md is not embedded: Codex reads it by itself at the repository root.
-    expect(text).toContain('## 5. 必须遵守的仓库规则\n\n根 AGENTS.md 由 Codex 自动读取');
+    expect(text).toContain(
+      '## 5. 必须遵守的仓库规则\n\n根 AGENTS.md 由 Codex 与 Claude Code 自动读取',
+    );
     expect(text).not.toContain('<!-- AGENTS.md 全文开始 -->');
     expect(text.endsWith('监听端口的命令。\n')).toBe(true);
 

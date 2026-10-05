@@ -1,12 +1,18 @@
 // Path guard (规划/11 §2.3 step 6): run before anything from the worktree is executed.
+// --author: the guard of a rule-test run (Codex writing the rule tests, 规划/11 §2.3 step 3):
+// only rule-test assets and NotImplemented skeleton shells inside the task paths
+// (lib/spec-base.ts checkAuthorPaths; ops/approvals.yaml id 19).
 import { splitTopLevelCommas } from '../lib/glob.ts';
-import { pathGuardCheck, trustedTask } from './lib/checks.ts';
+import { authorWorktreeCheck, pathGuardCheck, trustedTask } from './lib/checks.ts';
 import { UsageError, parseArgs, printJson, report, resolveRoot, runCli } from './lib/cli.ts';
 
 runCli(
-  'path-guard.ts (--task <id> | --paths <glob,glob>) --base <ref> [--cwd <worktree>] [--json]',
+  'path-guard.ts (--task <id> | --paths <glob,glob>) --base <ref> [--author] [--cwd <worktree>] [--json]',
   (argv) => {
-    const args = parseArgs(argv, { values: ['task', 'paths', 'base', 'cwd'], flags: ['json'] });
+    const args = parseArgs(argv, {
+      values: ['task', 'paths', 'base', 'cwd'],
+      flags: ['json', 'author'],
+    });
     if (args.rest.length > 0) throw new UsageError(`unexpected argument "${args.rest[0]}"`);
     const taskId = args.values.get('task');
     const pathList = args.values.get('paths');
@@ -18,10 +24,12 @@ runCli(
 
     let allowed: string[];
     let taskType: string | undefined;
+    let testPaths: string[] = [];
     if (taskId !== undefined) {
       const task = trustedTask(taskId);
       allowed = task.paths;
       taskType = task.type;
+      testPaths = task.test_paths;
     } else {
       allowed = splitTopLevelCommas(pathList ?? '')
         .map((g) => g.trim())
@@ -29,7 +37,10 @@ runCli(
       if (allowed.length === 0) throw new UsageError('--paths is empty');
     }
 
-    const outcome = pathGuardCheck(resolveRoot(args.values.get('cwd')), base, allowed, taskType);
+    const root = resolveRoot(args.values.get('cwd'));
+    const outcome = args.flags.has('author')
+      ? authorWorktreeCheck(root, base, allowed, taskType, testPaths, taskId)
+      : pathGuardCheck(root, base, allowed, taskType);
     if (args.flags.has('json')) {
       for (const problem of outcome.check.problems) console.error(`path-guard: ${problem}`);
       printJson(outcome.detail);

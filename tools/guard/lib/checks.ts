@@ -11,6 +11,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile } from '../../lib/fsx.ts';
 import { changedBetweenCommits, changedFiles, listTree, showFile, tryGit } from '../../lib/git.ts';
+import { loadLegacyTasks, ruleTestScope } from '../../lib/legacy-tasks.ts';
 import { specRepo, trustedRoot } from '../../lib/paths.ts';
 import { loadTask, parseTaskFile, TASK_ID_PATTERN } from '../../lib/task-file.ts';
 import { checkAgentsPairs } from './agents-pair.ts';
@@ -29,7 +30,7 @@ import type { ProtectedHit } from './protected.ts';
 import { checkCoverage } from './risk-map-coverage.ts';
 import { loadRiskMap } from './risk.ts';
 import { lintSchema } from './schema-lint.ts';
-import { authorProblems } from './spec-base.ts';
+import { authorProblems, checkAuthorPaths } from './spec-base.ts';
 import { checkSpecRef } from './spec-ref.ts';
 import { addOnlyViolations, scanTree } from './test-guard.ts';
 import type { Finding } from './test-guard.ts';
@@ -275,6 +276,11 @@ export function pathGuardCheck(
   };
 }
 
+/** Class 1 of the trusted protected-path list: every rule-test asset (fragments removed). */
+export function ruleTestAssets(): string[] {
+  return loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob);
+}
+
 /**
  * The rule-test author's part of a task branch, base..spec_commit (规划/11 §2.3 step 3; owner
  * decision 2026-10-02): only rule-test assets (class 1 of the trusted protected-path list), the
@@ -284,21 +290,109 @@ export function authorPathsCheck(
   root: string,
   base: string,
   specCommit: string,
-  taskPaths: readonly string[],
+  task: { id: string; tester: string; paths: readonly string[]; test_paths: readonly string[] },
 ): CheckResult {
-  const testAssets = loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob);
+  // The task's test_paths. Only a ledger of the switch baseline (tools/guard/legacy-tasks.json,
+  // read from the trusted root) may have none and keep the old scope (all rule-test assets);
+  // any other task without test_paths gets no rule-test asset at all (CR2-02, fail-closed).
+  const legacyList = loadLegacyTasks(trustedRoot());
+  const legacy = legacyList.has(task.id);
+  const testPaths = task.test_paths;
+  const taskPaths = task.paths;
+  const testAssets = ruleTestScope(
+    { id: task.id, test_paths: [...testPaths] },
+    legacyList,
+    ruleTestAssets(),
+  );
   const changes = changedBetweenCommits(base, specCommit, { cwd: root });
+  const show = (ref: string, path: string): string | null => {
+    const res = tryGit(['show', `${ref}:${path}`], { cwd: root });
+    return res.status === 0 ? res.stdout : null;
+  };
   const problems = authorProblems(changes, {
     taskPaths,
     testAssets,
-    contentAtSpec: (path) => {
-      const res = tryGit(['show', `${specCommit}:${path}`], { cwd: root });
-      return res.status === 0 ? res.stdout : null;
-    },
+    contentAtSpec: (path) => show(specCommit, path),
+    contentAtBase: (path) => show(base, path),
+    // CR3-02: a legacy ledger's skeletons were written under the old rule (the NotImplemented
+    // keyword); the statement-by-statement check applies to the other tasks.
+    legacySkeleton: legacy,
   });
+  if (testPaths.length === 0 && !legacy && task.tester !== 'none') {
+    problems.unshift(
+      `task ${task.id} has no test_paths and is not a ledger of the switch baseline ` +
+        '(tools/guard/legacy-tasks.json): add test_paths to its ledger',
+    );
+  }
   return result('path-guard-author', problems, [
     `${changes.length} path(s) changed by the rule-test commits ${base.slice(0, 12)}..${specCommit.slice(0, 12)}`,
   ]);
+}
+
+/**
+ * Path guard of a rule-test run (`path-guard.ts --author`): the working tree of `root` against
+ * `base` may only hold rule-test assets and NotImplemented skeleton shells inside the task
+ * paths (lib/spec-base.ts checkAuthorPaths; default split of 2026-10-05, ops/approvals.yaml
+ * id 19). Out-of-scope ops/ and docs/ changes are reported apart, as in pathGuardCheck.
+ */
+export function authorWorktreeCheck(
+  root: string,
+  base: string,
+  taskPaths: readonly string[],
+  taskType: string | undefined,
+  testPaths: readonly string[],
+  taskId?: string,
+): PathGuardOutcome {
+  // A legacy ledger (tools/guard/legacy-tasks.json) without test_paths keeps the old scope, all
+  // rule-test assets; any other task without test_paths gets none (CR-06, CR2-02, CR3-01).
+  const legacyList = loadLegacyTasks(trustedRoot());
+  const legacy = taskId !== undefined && legacyList.has(taskId);
+  const protectedList = loadProtected(trustedRoot());
+  const changes = changedFiles(base, { cwd: root });
+  const hits = findProtectedHits(changes, protectedList, gitReaders(root, base), { taskType });
+  // Only the task's own test_paths (CR-06): no test_paths, no rule-test asset is allowed.
+  const detail = checkAuthorPaths(
+    changes,
+    {
+      taskPaths,
+      testAssets: ruleTestScope(
+        { id: taskId ?? '', test_paths: [...testPaths] },
+        legacyList,
+        protectedList.class1_add_only.map((g) => splitFragment(g).glob),
+      ),
+      legacySkeleton: legacy,
+      contentAtSpec: (path) => {
+        const file = join(root, path);
+        return existsSync(file) ? readFileSync(file, 'utf8') : null;
+      },
+      contentAtBase: (path) => {
+        const res = tryGit(['show', `${base}:${path}`], { cwd: root });
+        return res.status === 0 ? res.stdout : null;
+      },
+    },
+    hits,
+  );
+  if (testPaths.length === 0 && !legacy) {
+    detail.ok = false;
+    detail.violations.unshift({
+      path: 'ops/tasks',
+      reason: 'the task has no test_paths: add them to the ledger before the test phase (CR-06)',
+    });
+  }
+  return {
+    check: result(
+      'path-guard-author',
+      detail.violations.map((v) => `${v.path}: ${v.reason}`),
+      [
+        ...detail.out_of_scope_ops_docs.map(
+          (p) =>
+            `${p}: out-of-scope change under ops/ or docs/ (to be reverted by the orchestrator)`,
+        ),
+        ...detail.protected_hits.map((h) => `${h.path}: protected path, class ${h.class}`),
+      ],
+    ),
+    detail,
+  };
 }
 
 export type ProtectedOutcome = { check: CheckResult; hits: ProtectedHit[] };
@@ -324,13 +418,20 @@ export function protectedPathsCheck(
 }
 
 /** Task definition from the trusted root: a branch cannot widen its own `paths`. */
-export function trustedTask(id: string): { paths: string[]; type: string } {
+export function trustedTask(id: string): {
+  paths: string[];
+  type: string;
+  test_paths: string[];
+  tester: string;
+} {
   const task = loadTask(id, trustedRoot());
-  return { paths: task.paths, type: task.type };
+  return { paths: task.paths, type: task.type, test_paths: task.test_paths, tester: task.tester };
 }
 
 export type GuardTask = {
   paths: string[];
+  test_paths: string[];
+  tester: string;
   type: string;
   source: 'trusted' | 'head';
   notice: string | null;
@@ -363,6 +464,8 @@ export function guardTask(id: string, root: string, base: string): GuardTask {
   const task = parseTaskFile(atHead.stdout, rel);
   return {
     paths: task.paths,
+    test_paths: task.test_paths,
+    tester: task.tester,
     type: task.type,
     source: 'head',
     notice:

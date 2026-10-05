@@ -6,10 +6,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { matchesAny } from '../lib/glob.ts';
+import { loadLegacyTasks, needsTestPaths } from '../lib/legacy-tasks.ts';
 import { repoRoot } from '../lib/paths.ts';
 import { listTaskIds, parseTaskFile } from '../lib/task-file.ts';
 import type { TaskFile } from '../lib/task-file.ts';
 import { assertTaskId, CheckError, runGuard, runMain, TASK_ID, UsageError } from './cli.ts';
+import { literalPrefix } from './overlap.ts';
 import { findRule, ruleHash, taskIdKnown } from './spec.ts';
 import type { SpecSource } from './spec.ts';
 
@@ -80,6 +83,25 @@ export function computeRefsHash(
   return out;
 }
 
+/** Class 1 of the protected paths (the rule-test assets) of `root`, fragments removed. */
+export function ruleTestGlobs(root: string): string[] {
+  const file = join(root, 'tools', 'guard', 'protected-paths.json');
+  const raw = JSON.parse(readFileSync(file, 'utf8')) as { class1_add_only?: unknown };
+  if (!Array.isArray(raw.class1_add_only)) throw new Error(`${file}: class1_add_only missing`);
+  return raw.class1_add_only.map((g) => String(g).replace(/#.*$/, ''));
+}
+
+/** True when every path `glob` can match lies inside one of `globs` (by its literal prefix). */
+export function insideGlobs(glob: string, globs: readonly string[]): boolean {
+  const prefix = literalPrefix(glob);
+  if (prefix === glob) return matchesAny(glob, globs);
+  // Everything the glob matches lies below `dir`: inside when a `**` glob covers that directory.
+  const dir = prefix.slice(0, prefix.lastIndexOf('/') + 1);
+  return (
+    dir !== '' && matchesAny(`${dir}__file__`, globs) && matchesAny(`${dir}__dir__/__file__`, globs)
+  );
+}
+
 /** All problems of one task file; an empty list means the file is valid. */
 export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   const root = opts.root ?? repoRoot();
@@ -135,6 +157,51 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   for (const dep of task.deps) {
     if (dep === task.id) problems.push(`deps: a task cannot depend on itself`);
     else if (!known.has(dep)) problems.push(`deps: ${dep} is not in ops/tasks`);
+  }
+
+  // test_paths (2026-10-05): only the rule-test author's assets, i.e. inside class 1 of the
+  // protected paths, and only for a task that has a rule-test author. A task with a rule-test
+  // author needs them, unless its ledger existed at the switch baseline (CR2-02).
+  // CR3-03: a ledger written after the switch follows the default split: the Opus subagent
+  // implements (impl: claude; a handover is recorded at run time, never in the ledger) and the
+  // rule tests are Codex's or there are none.
+  const legacy = loadLegacyTasks(root);
+  if (!legacy.has(task.id)) {
+    if (task.impl !== 'claude') {
+      problems.push(
+        `impl: must be claude for a task written after the switch of 2026-10-05 (a Codex handover is recorded at run time, not in the ledger)`,
+      );
+    }
+    if (task.tester !== 'codex' && task.tester !== 'none') {
+      problems.push(
+        `tester: must be codex or none for a task written after the switch of 2026-10-05`,
+      );
+    }
+  }
+  if (task.test_paths.length === 0 && needsTestPaths(task, legacy)) {
+    problems.push(
+      `test_paths: required for a task with a rule-test author (tester: ${task.tester}); only the ledgers listed in tools/guard/legacy-tasks.json may omit it`,
+    );
+  }
+  if (task.test_paths.length > 0) {
+    if (task.tester === 'none') {
+      problems.push(
+        'test_paths: a task without a rule-test author (tester: none) has no test_paths',
+      );
+    }
+    let class1: string[] = [];
+    try {
+      class1 = ruleTestGlobs(root);
+    } catch (err) {
+      problems.push(`test_paths: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    for (const glob of task.test_paths) {
+      if (class1.length > 0 && !insideGlobs(glob, class1)) {
+        problems.push(
+          `test_paths: "${glob}" is not inside the rule-test assets (class 1 of tools/guard/protected-paths.json)`,
+        );
+      }
+    }
   }
 
   if (task.paths.length === 0) {

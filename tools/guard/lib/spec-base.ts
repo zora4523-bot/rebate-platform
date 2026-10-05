@@ -15,15 +15,15 @@
 import { tryGit } from '../../lib/git.ts';
 import type { Change } from '../../lib/git.ts';
 import { matchesAny } from '../../lib/glob.ts';
+import type { PathGuardResult } from './path-guard.ts';
+import type { ProtectedHit } from './protected.ts';
+import { skeletonProblems } from './skeleton.ts';
 
 /** A commit id as written in an evidence file (abbreviated ids accepted, as evidence-check does). */
 export const COMMIT_ID = /^[0-9a-f]{7,64}$/;
 
 /** The ledger directory the rule-test author may change (规划/11 §2.1 台账). */
 export const LEDGER_PATHS: readonly string[] = ['ops/tasks/**'];
-
-/** A skeleton shell names this token (its functions only throw NotImplemented, 规划/11 §2.3). */
-export const SKELETON_MARKER = /\bNotImplemented\b/;
 
 export function evidencePath(taskId: string): string {
   return `ops/evidence/${taskId}.json`;
@@ -102,11 +102,36 @@ export function resolveSpecBase(dir: string, base: string, head: string, taskId:
 export type AuthorScope = {
   /** The task `paths` (from the trusted root): where skeleton shells go. */
   taskPaths: readonly string[];
-  /** Rule-test asset globs: class 1 of the trusted protected-path list. */
+  /**
+   * Rule-test asset globs: the task's `test_paths`, or class 1 of the trusted protected-path
+   * list for a ledger written before 2026-10-05 (commit check only; the run check requires
+   * test_paths).
+   */
   testAssets: readonly string[];
-  /** Content of a file at spec_commit, or null when it does not exist there. */
+  /** Content of a file at spec_commit (or in the working tree), or null when it does not exist. */
   contentAtSpec: (path: string) => string | null;
+  /** Content of a file at the base, or null when it does not exist there. */
+  contentAtBase?: (path: string) => string | null;
+  /**
+   * A ledger on tools/guard/legacy-tasks.json: its skeletons follow the rule of before the
+   * switch, the NotImplemented keyword in the file (CR3-02); every other task gets the
+   * statement-by-statement check (lib/skeleton.ts).
+   */
+  legacySkeleton?: boolean;
 };
+
+/** The old skeleton rule (before 2026-10-05): the file names NotImplemented. */
+const LEGACY_SKELETON_MARKER = /\bNotImplemented\b/;
+
+/** Why a file the rule-test author changed inside the task paths is not a skeleton ([] = it is). */
+function shellProblems(path: string, scope: AuthorScope): string[] {
+  const content = scope.contentAtSpec(path);
+  if (content === null) return ['missing'];
+  if (scope.legacySkeleton === true) {
+    return LEGACY_SKELETON_MARKER.test(content) ? [] : ['does not name NotImplemented'];
+  }
+  return skeletonProblems(path, content, scope.contentAtBase?.(path) ?? null);
+}
 
 /**
  * Problems of the rule-test author's changes (base..spec_commit). Allowed: rule-test assets, the
@@ -132,11 +157,12 @@ export function authorProblems(changes: readonly Change[], scope: AuthorScope): 
           );
           continue;
         }
-        const content = scope.contentAtSpec(path);
-        if (content === null || !SKELETON_MARKER.test(content)) {
+        const shell = shellProblems(path, scope);
+        if (shell.length > 0) {
           problems.push(
             `${path}: implementation path changed in a rule-test commit (before spec_commit) but ` +
-              'it is not a NotImplemented skeleton shell; implementation belongs after spec_commit',
+              `it is not a NotImplemented skeleton shell (${shell.join('; ')}); implementation ` +
+              'belongs after spec_commit',
           );
         }
         continue;
@@ -149,4 +175,66 @@ export function authorProblems(changes: readonly Change[], scope: AuthorScope): 
     }
   }
   return problems;
+}
+
+/**
+ * The path guard of a rule-test RUN (Codex writing the rule tests, tools/agent/post-run.sh with
+ * `path-guard.ts --author`; default split of 2026-10-05, ops/approvals.yaml id 19): the working
+ * tree against the branch point, before anything is committed. Same three kinds of paths as the
+ * rule-test commits above; `contentAtSpec` reads the working tree. Out-of-scope `ops/` and
+ * `docs/` changes are listed apart and do not fail (the orchestrator reverts them), as in the
+ * implementer's path guard; the ledger `ops/tasks/**` is the orchestrator's, also reverted.
+ */
+export function checkAuthorPaths(
+  changes: readonly Change[],
+  scope: AuthorScope,
+  protectedHits: readonly ProtectedHit[],
+): PathGuardResult {
+  const violations: { path: string; reason: string }[] = [];
+  const opsDocs = new Set<string>();
+  const seen = new Set<string>();
+  for (const change of changes) {
+    const sides: [string, boolean][] = [[change.path, change.status === 'D']];
+    if (change.oldPath !== undefined) sides.push([change.oldPath, true]);
+    for (const [path, removed] of sides) {
+      if (seen.has(path)) continue;
+      seen.add(path);
+      if (matchesAny(path, scope.testAssets)) continue;
+      if (matchesAny(path, scope.taskPaths)) {
+        if (removed) {
+          violations.push({
+            path,
+            reason: 'removed in a rule-test run; the rule-test author only adds skeleton shells',
+          });
+          continue;
+        }
+        const shell = shellProblems(path, scope);
+        if (shell.length > 0) {
+          violations.push({
+            path,
+            reason:
+              'implementation in a rule-test run: a file inside the task paths must be a ' +
+              `NotImplemented skeleton shell (${shell.join('; ')})`,
+          });
+        }
+        continue;
+      }
+      if (path.startsWith('ops/') || path.startsWith('docs/')) {
+        opsDocs.add(path);
+        continue;
+      }
+      violations.push({
+        path,
+        reason:
+          "outside the rule-test author's paths (the task's test_paths, NotImplemented skeleton " +
+          'shells inside the task paths)',
+      });
+    }
+  }
+  return {
+    ok: violations.length === 0,
+    violations,
+    out_of_scope_ops_docs: [...opsDocs].sort(),
+    protected_hits: protectedHits.map((h) => ({ path: h.path, class: h.class })),
+  };
 }

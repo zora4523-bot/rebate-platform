@@ -3,7 +3,18 @@
 // implementer and of the reviewers. It is written to couli-runs/<id>/brief.md
 // and never committed.
 //
-//   node tools/ops/brief.ts <id> [--attempt <n>] [--out <file>]
+//   node tools/ops/brief.ts <id> [--phase test|impl|handover|review] [--attempt <n>] [--out <file>]
+//
+// Phases (default split of 2026-10-05, ops/approvals.yaml id 19):
+//   test    Codex writes the rule / acceptance tests and NotImplemented skeletons, red first;
+//           it may add rule-test assets (class 1 of the protected paths), never change them
+//   impl    (default) the Opus implementation subagent; the rule tests are frozen; tests run
+//           only through the trusted container entry tools/ops/verify-container.sh <id> --fast
+//   handover  Codex implements once (规划/11 §2.5): rule tests frozen as in impl
+//   review  the brief as data for a reviewer: read-only
+// The Codex sandbox only does static checks that execute no test (typecheck, lint); every run
+// that executes tests is the orchestrator's, in the isolated container or in CI. Nothing Codex
+// generates (tests, skeletons, a handover implementation) runs on the host.
 //
 // Exit codes: 0 written, 1 refused (over the size limit, banned term, bad task), 2 usage/internal.
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
@@ -27,6 +38,7 @@ import {
   splitTableRow,
 } from './spec.ts';
 import type { Rule, SpecSource } from './spec.ts';
+import { loadLegacyTasks, ruleTestScope } from '../lib/legacy-tasks.ts';
 import { readState } from './state.ts';
 import type { TaskState } from './state.ts';
 import { readTask, riskOfPaths } from './task.ts';
@@ -46,8 +58,26 @@ export type ProtectedPaths = {
   class3_gates: string[];
 };
 
+export const BRIEF_PHASES = ['test', 'impl', 'handover', 'review'] as const;
+export type BriefPhase = (typeof BRIEF_PHASES)[number];
+
+const PHASE_TEXT: Record<BriefPhase, string> = {
+  test: '写规则 / 验收测试（Codex）：只写先红的规则测试和只抛 `NotImplemented` 的函数骨架，不写实现',
+  impl: '实现：规则测试已冻结，不改不删；测试只经可信容器入口跑',
+  handover: '换家实现（Codex，一次）：规则测试已冻结，不改不删；沙箱里只做静态检查',
+  review: '评审对照（只读）：本任务书是评审的数据，不改任何文件',
+};
+
 export type BriefInput = {
   task: TaskFile;
+  /**
+   * The ledger is on tools/guard/legacy-tasks.json (written before the switch was merged): it
+   * keeps the old flow — no test_paths needed, and with impl: codex the implementation brief is
+   * the old one for Codex (verify:fast in its sandbox).
+   */
+  legacy?: boolean;
+  /** Default `impl`. */
+  phase?: BriefPhase;
   risk: RiskReport['risk'];
   attempt: number;
   specRef: string;
@@ -257,11 +287,17 @@ function contractRules(task: TaskFile, spec: SpecSource | undefined): string[] {
 /** Renders the brief; pure apart from reading rule text and AGENTS.md files. */
 export function renderBrief(input: BriefInput): string {
   const { task, state } = input;
+  const phase = input.phase ?? 'impl';
+  // The old flow's Codex implementation (a legacy ledger with impl: codex).
+  const oldCodexImpl = input.legacy === true && task.impl === 'codex' && phase === 'impl';
   const out: string[] = [];
   out.push(`# 任务 ${task.id}：${task.title}`, '');
   out.push(`- 仓库：${task.repo}；分支：\`task/${task.id}\`；第 ${input.attempt} 次尝试`);
   out.push(`- 规格版本：\`SPEC_REF=${input.specRef}\``);
   out.push(`- 风险级：${input.risk}；实现：${task.impl}；规则测试作者：${task.tester}`);
+  out.push(
+    `- 本轮阶段：${phase}（${oldCodexImpl ? '实现（旧分工，台账 impl: codex）：规则测试已冻结，不改不删' : PHASE_TEXT[phase]}）`,
+  );
   out.push(`- 依赖任务：${task.deps.length === 0 ? '无' : task.deps.join('、')}`, '');
 
   out.push('## 1. 目标', '');
@@ -274,14 +310,31 @@ export function renderBrief(input: BriefInput): string {
   if (task.type === 'contract') out.push(...contractRules(task, input.spec));
   else out.push(...ruleTexts(task, input.spec));
 
+  const prot = readProtectedPaths(input.rulesRoot);
+  const code = (globs: readonly string[]): string => globs.map((g) => `\`${g}\``).join('、');
   out.push('## 3. 可以改的路径', '');
+  if (phase === 'test') {
+    // The rule-test author's three kinds of paths (规划/11 §2.3 step 3; path-guard --author).
+    // CR-06: the task's own test_paths, not every rule-test asset of the repository.
+    if (task.test_paths.length === 0 && input.legacy !== true) {
+      throw new Error(`task ${task.id} has no test_paths: the test phase needs them in the ledger`);
+    }
+    // The shared scope (CR3-01): test_paths, or every rule-test asset for a legacy ledger.
+    const scope = ruleTestScope(
+      task,
+      new Set(input.legacy === true ? [task.id] : []),
+      prot.class1_add_only.map((g) => g.replace(/#.*$/, '')),
+    );
+    out.push(
+      `- 本任务的规则测试（台账 \`test_paths\`；只新增文件，已有的不改不删）：${code(scope)}`,
+      "- 任务路径内只放 `NotImplemented` 骨架，逐条顶层语句检查：只许 import、export 列表与转出、type、interface、函数声明和类；函数与方法体只能是 `void <参数>;` 再加最后一句 `throw new Error('NotImplemented: <名字>')`（派生类构造函数第一句可以是只含普通值的 `super(…)`）；类字段不带初始值。`const` / `let` / `var`（含常量）、顶层调用、箭头函数、参数默认值、分支一律不行；要用的常量放进规则测试或写成类型：",
+    );
+  }
   for (const p of task.paths) out.push(`- \`${p}\``);
   out.push('');
 
   out.push('## 4. 不能改的', '');
-  const prot = readProtectedPaths(input.rulesRoot);
   const all = [...prot.class1_add_only, ...prot.class2_verify_config, ...prot.class3_gates];
-  const code = (globs: readonly string[]): string => globs.map((g) => `\`${g}\``).join('、');
   // "Relevant" (template §4) = what the implementer could mistake for fair game: protected
   // globs that reach into the allowed paths, and the add-only areas that hold the rule tests
   // named in `accept`. Everything else is outside `paths` and refused by the path guard anyway.
@@ -295,7 +348,11 @@ export function renderBrief(input: BriefInput): string {
   out.push(
     `- 保护路径（落在你的允许路径之内、仍然不能动的）：${inside.length === 0 ? '无' : code(inside)}`,
   );
-  if (testAreas.length > 0) {
+  if (phase === 'test') {
+    out.push(
+      '- 第一类保护路径（规则测试资产）里已有的文件：不能改、不能删；`test_paths` 以外的规则测试资产不能碰。',
+    );
+  } else if (testAreas.length > 0) {
     out.push(
       `- 保护路径（验收用的规则测试所在，不能改、不能删，也不要为了变绿去动它们）：${code(testAreas)}`,
     );
@@ -315,7 +372,7 @@ export function renderBrief(input: BriefInput): string {
 
   out.push('## 5. 必须遵守的仓库规则', '');
   out.push(
-    '根 AGENTS.md 由 Codex 自动读取，这里不再内嵌；下面是允许路径上各级子目录的 AGENTS.md 全文。',
+    '根 AGENTS.md 由 Codex 与 Claude Code 自动读取，这里不再内嵌；下面是允许路径上各级子目录的 AGENTS.md 全文。',
     '',
   );
   const agents = agentsFilesFor(task.paths, input.rulesRoot);
@@ -330,11 +387,37 @@ export function renderBrief(input: BriefInput): string {
   const commands = task.accept.filter(
     (a) => isCommand(a) && a !== 'pnpm verify' && a !== 'pnpm verify:fast',
   );
-  out.push('```', 'pnpm verify:fast', ...commands, '```', '');
-  out.push(
-    `必须变绿的规则测试：${testIds.length === 0 ? '无' : testIds.map((t) => `\`${t}\``).join('、')}。完整验证由编排者在沙箱外跑。沙箱里没有网络，连不上数据库和 Docker，也不能监听端口：不要跑集成测试、迁移和类型生成，需要时写进 \`outside_needed\`。`,
-    '',
-  );
+  const codexSandbox = phase === 'test' || phase === 'handover';
+  if (codexSandbox) {
+    // The Codex sandbox runs no test (RO2-01/04): static checks only.
+    out.push('```', 'pnpm typecheck', 'pnpm lint', '```', '');
+  } else {
+    out.push('```', 'pnpm verify:fast', ...commands, '```', '');
+  }
+  const tests = testIds.length === 0 ? '无' : testIds.map((t) => `\`${t}\``).join('、');
+  const sandboxNote =
+    'Codex 沙箱里只做不执行测试的静态检查（上面两条）；任何运行测试的命令（含 `pnpm verify:fast`、`pnpm test`）都由编排者在隔离容器或 CI 里跑，你写的东西不在宿主上运行。沙箱里没有网络，连不上数据库和 Docker，也不能监听端口；需要沙箱外的命令写进 `outside_needed`。';
+  if (phase === 'test') {
+    out.push(
+      `本轮要的是「先红」：类型检查与 lint 通过；新写的规则测试在骨架上全部为红，红的原因只能是断言失败、fast-check 反例或骨架抛出的 \`NotImplemented\`，找不到模块、\`TypeError\`、语法错误的红不算（编排者用 \`tools/ops/verify-container.sh ${task.id} --red\` 在隔离容器里只跑本任务新写的规则测试，\`tools/guard/red-check.ts\` 逐个文件对账；没跑到的文件也算不合格）。规则测试放在：${tests}。${sandboxNote}`,
+      '',
+    );
+  } else if (phase === 'handover') {
+    out.push(
+      `必须变绿的规则测试：${tests}（由编排者在隔离容器里验证，验收命令：${commands.length === 0 ? '无' : commands.map((c) => `\`${c}\``).join('、')}）。${sandboxNote}`,
+      '',
+    );
+  } else if (oldCodexImpl) {
+    out.push(
+      `必须变绿的规则测试：${tests}。完整验证由编排者在沙箱外跑。沙箱里没有网络，连不上数据库和 Docker，也不能监听端口：不要跑集成测试、迁移和类型生成，需要时写进 \`outside_needed\`。`,
+      '',
+    );
+  } else {
+    out.push(
+      `必须变绿的规则测试：${tests}。完整验证由编排者在沙箱外跑。测试只经可信容器入口跑：\`<couli-runs>/trusted/rebate-platform/tools/ops/verify-container.sh ${task.id} --fast\`（断网容器里的 \`pnpm verify:fast\`；Docker 不可用就停下报告，不在宿主跑测试）。不连库、不监听端口，不跑集成测试、迁移和类型生成，需要时写进 \`outside_needed\`。`,
+      '',
+    );
+  }
 
   out.push('## 7. 上一轮失败输出（第 2 次起才有）', '');
   if (input.attempt >= 2) {
@@ -352,15 +435,33 @@ export function renderBrief(input: BriefInput): string {
   out.push('| `task_done` | 是否认为完成 |');
   out.push('| `files_changed` | 改动文件列表 |');
   out.push('| `commands` | 跑过的命令与退出码 |');
-  out.push('| `tests_passed` | 验收命令是否通过 |');
+  out.push(
+    phase === 'test'
+      ? '| `tests_passed` | 类型检查与 lint 通过时填 true（测试由编排者在容器里跑，先红由它核对） |'
+      : phase === 'handover'
+        ? '| `tests_passed` | 类型检查与 lint 通过时填 true（测试由编排者在容器里跑） |'
+        : '| `tests_passed` | 验收命令是否通过 |',
+  );
   out.push('| `deps_needed` | 需要新装的依赖：名称、版本、理由；没有填空数组 |');
   out.push(
     '| `outside_needed` | 需要编排者在沙箱外跑的命令（迁移、类型生成等）：命令、理由；没有填空数组 |',
   );
   out.push('| `blocked_reason` | 没做完或发现规格冲突时写原因；没有填空串 |');
   out.push('| `notes` | 需要评审方注意的地方，三句以内 |', '');
+  // RO-04: the implementer runs its tests through the trusted container entry, so the impl
+  // tail does not forbid that one Docker use; Codex writing tests (sandbox) and reviewers do.
+  const tail: Record<BriefPhase, string> = {
+    test: 'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 只写规则 / 验收测试与 `NotImplemented` 骨架，不写实现。只做静态检查，不运行测试；不要运行需要网络、Docker、数据库或监听端口的命令。',
+    handover:
+      'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删。只做静态检查，不运行测试；不要运行需要网络、Docker、数据库或监听端口的命令。',
+    impl: 'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删；它们是 Codex 写的，只在容器里运行，不在宿主上跑。除可信容器入口 `tools/ops/verify-container.sh <编号> --fast` 外，不要运行需要网络、Docker、数据库或监听端口的命令。',
+    review:
+      '评审只读：不改任何文件，不提交，不安装依赖。不要运行需要网络、Docker、数据库或监听端口的命令。',
+  };
   out.push(
-    'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 不要运行需要网络、Docker、数据库或监听端口的命令。',
+    oldCodexImpl
+      ? 'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删。不要运行需要网络、Docker、数据库或监听端口的命令。'
+      : tail[phase],
   );
   return `${out.join('\n')}\n`;
 }
@@ -387,6 +488,7 @@ export function sectionSizes(text: string): { title: string; bytes: number }[] {
 }
 
 export type GenerateOptions = {
+  phase?: BriefPhase;
   attempt?: number;
   out?: string;
   root?: string;
@@ -408,11 +510,28 @@ export function generateBrief(id: string, opts: GenerateOptions = {}): string {
   const root = opts.root ?? repoRoot();
   const task = readTask(id, root);
   const state = readState(id);
-  const attempt = opts.attempt ?? Math.max(1, state?.attempts.impl ?? 0);
+  const phase = opts.phase ?? 'impl';
+  const legacy = loadLegacyTasks(opts.root ?? trustedRoot()).has(id);
+  if (phase === 'test' && task.test_paths.length === 0 && !legacy) {
+    throw new CheckError(
+      `任务 ${id} 的台账没有 test_paths：测试阶段不派工，先在 ops/tasks/${id}.yaml 补上本任务规则测试的路径（第一类保护路径之内）`,
+    );
+  }
+  // Each phase counts its own rounds (tools/ops/state.ts): Codex writing tests is `test`; the
+  // implementation is the Opus attempts plus a handover; a review brief is a single round.
+  const used =
+    phase === 'test'
+      ? (state?.attempts.test ?? 0)
+      : phase === 'impl' || phase === 'handover'
+        ? (state?.attempts.impl ?? 0) + (state?.attempts.handover ?? 0)
+        : 1;
+  const attempt = opts.attempt ?? Math.max(1, used);
   const report = (opts.risk ?? riskOfPaths)(task.paths);
   const render = (failureTailBytes: number): string =>
     renderBrief({
       task,
+      legacy,
+      phase,
       risk: report.risk,
       attempt,
       specRef: specRef(),
@@ -461,13 +580,21 @@ export function generateBrief(id: string, opts: GenerateOptions = {}): string {
 function main(argv: string[]): number {
   const { values, positionals } = parseArgs({
     args: argv,
-    options: { attempt: { type: 'string' }, out: { type: 'string' } },
+    options: { attempt: { type: 'string' }, out: { type: 'string' }, phase: { type: 'string' } },
     allowPositionals: true,
   });
   if (positionals.length !== 1)
-    throw new UsageError('brief.ts <id> [--attempt <n>] [--out <file>]');
+    throw new UsageError(
+      'brief.ts <id> [--phase test|impl|handover|review] [--attempt <n>] [--out <file>]',
+    );
   const id = assertTaskId(positionals[0]);
   const opts: GenerateOptions = {};
+  if (values.phase !== undefined) {
+    if (!(BRIEF_PHASES as readonly string[]).includes(values.phase)) {
+      throw new UsageError(`--phase must be one of ${BRIEF_PHASES.join(', ')}`);
+    }
+    opts.phase = values.phase as BriefPhase;
+  }
   if (values.attempt !== undefined) {
     if (!/^[1-9][0-9]?$/.test(values.attempt)) throw new UsageError('--attempt must be 1..99');
     opts.attempt = Number.parseInt(values.attempt, 10);

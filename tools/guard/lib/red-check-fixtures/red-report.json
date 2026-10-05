@@ -1,0 +1,165 @@
+{
+  "reporter": "couli-red-reporter",
+  "testResults": [
+    {
+      "name": "/work/repo/test/spec/zzprobe2/m.test.ts",
+      "status": "failed",
+      "message": "Error: Cannot find module './missing.ts' imported from /work/repo/test/spec/zzprobe2/m.test.ts\n    at reviveInvokeError (file:///work/repo/node_modules/.pnpm/vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1/node_modules/vite/dist/node/module-runner.js:540:14)\n    at Object.invoke (file:///work/repo/node_modules/.pnpm/vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1/node_modules/vite/dist/node/module-runner.js:556:33)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at VitestModuleRunner.getModuleInformation (file:///work/repo/node_modules/.pnpm/vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1/node_modules/vite/dist/node/module-runner.js:1210:7)\n    at request (file:///work/repo/node_modules/.pnpm/vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1/node_modules/vite/dist/node/module-runner.js:1227:83)\n    at /work/repo/test/spec/zzprobe2/m.test.ts:1:1\n    at VitestModuleEvaluator._runInlinedModule (file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1_/node_modules/vitest/dist/module-evaluator.js:258:4)",
+      "failures": [
+        {
+          "causes": [
+            {
+              "name": "Error",
+              "message": "Cannot find module './missing.ts' imported from /work/repo/test/spec/zzprobe2/m.test.ts"
+            }
+          ]
+        }
+      ],
+      "assertionResults": []
+    },
+    {
+      "name": "/work/repo/test/spec/zzprobe/p.test.ts",
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[AC-P#1] typeerror inside property",
+          "title": "[AC-P#1] typeerror inside property",
+          "status": "failed",
+          "failureMessages": [
+            "Error: Property failed after 1 tests\n{ seed: 214997977, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run\n    at buildError (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:16)\n    at throwIfFailed (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2476:8)"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "Property failed after 1 tests\n{ seed: 214997977, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run"
+                },
+                {
+                  "name": "TypeError",
+                  "message": "Cannot read properties of undefined (reading 'f')"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-P#2] assertion inside property",
+          "title": "[AC-P#2] assertion inside property",
+          "status": "failed",
+          "failureMessages": [
+            "Error: Property failed after 1 tests\n{ seed: 369190840, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run\n    at buildError (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:16)\n    at throwIfFailed (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2476:8)"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "Property failed after 1 tests\n{ seed: 369190840, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run"
+                },
+                {
+                  "name": "AssertionError",
+                  "message": "expected +0 to be 1 // Object.is equality"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-P#3] property returns false",
+          "title": "[AC-P#3] property returns false",
+          "status": "failed",
+          "failureMessages": [
+            "Error: Property failed after 1 tests\n{ seed: -2087338129, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run\n    at buildError (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:16)\n    at throwIfFailed (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2476:8)"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "Property failed after 1 tests\n{ seed: -2087338129, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run"
+                },
+                {
+                  "name": "Error",
+                  "message": "Property failed by returning false"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-P#4] database refused inside property",
+          "title": "[AC-P#4] database refused inside property",
+          "status": "failed",
+          "failureMessages": [
+            "Error: Property failed after 1 tests\n{ seed: 1699313085, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run\n    at buildError (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:16)\n    at throwIfFailed (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2476:8)"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "Property failed after 1 tests\n{ seed: 1699313085, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run"
+                },
+                {
+                  "name": "Error",
+                  "message": "connect ECONNREFUSED 127.0.0.1:5432"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-P#5] NotImplemented inside property",
+          "title": "[AC-P#5] NotImplemented inside property",
+          "status": "failed",
+          "failureMessages": [
+            "Error: Property failed after 1 tests\n{ seed: -318162357, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run\n    at buildError (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:16)\n    at throwIfFailed (file:///work/repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2476:8)"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "Property failed after 1 tests\n{ seed: -318162357, path: \"0:0\", endOnFailure: true }\nCounterexample: [0]\nShrunk 1 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run"
+                },
+                {
+                  "name": "Error",
+                  "message": "NotImplemented: plan"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-P#6] plain assertion",
+          "title": "[AC-P#6] plain assertion",
+          "status": "failed",
+          "failureMessages": [
+            "AssertionError: expected 1 to be 2 // Object.is equality\n    at /work/repo/test/spec/zzprobe/p.test.ts:19:50\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:1628:35\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:26\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:3319:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:3314:10)\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_vite@8.3.0_@types+node@24.13.6_jiti@2.7.0_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:3299:20"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "AssertionError",
+                  "message": "expected 1 to be 2 // Object.is equality"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-P#7] skipped",
+          "title": "[AC-P#7] skipped",
+          "status": "skipped",
+          "failureMessages": [],
+          "failures": []
+        }
+      ]
+    }
+  ],
+  "unhandledErrors": []
+}
