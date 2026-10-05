@@ -162,7 +162,23 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   // test_paths (2026-10-05): only the rule-test author's assets, i.e. inside class 1 of the
   // protected paths, and only for a task that has a rule-test author. A task with a rule-test
   // author needs them, unless its ledger existed at the switch baseline (CR2-02).
-  if (task.test_paths.length === 0 && needsTestPaths(task, loadLegacyTasks(root))) {
+  // CR3-03: a ledger written after the switch follows the default split: the Opus subagent
+  // implements (impl: claude; a handover is recorded at run time, never in the ledger) and the
+  // rule tests are Codex's or there are none.
+  const legacy = loadLegacyTasks(root);
+  if (!legacy.has(task.id)) {
+    if (task.impl !== 'claude') {
+      problems.push(
+        `impl: must be claude for a task written after the switch of 2026-10-05 (a Codex handover is recorded at run time, not in the ledger)`,
+      );
+    }
+    if (task.tester !== 'codex' && task.tester !== 'none') {
+      problems.push(
+        `tester: must be codex or none for a task written after the switch of 2026-10-05`,
+      );
+    }
+  }
+  if (task.test_paths.length === 0 && needsTestPaths(task, legacy)) {
     problems.push(
       `test_paths: required for a task with a rule-test author (tester: ${task.tester}); only the ledgers listed in tools/guard/legacy-tasks.json may omit it`,
     );

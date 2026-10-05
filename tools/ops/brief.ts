@@ -38,7 +38,7 @@ import {
   splitTableRow,
 } from './spec.ts';
 import type { Rule, SpecSource } from './spec.ts';
-import { loadLegacyTasks } from '../lib/legacy-tasks.ts';
+import { loadLegacyTasks, ruleTestScope } from '../lib/legacy-tasks.ts';
 import { readState } from './state.ts';
 import type { TaskState } from './state.ts';
 import { readTask, riskOfPaths } from './task.ts';
@@ -319,11 +319,12 @@ export function renderBrief(input: BriefInput): string {
     if (task.test_paths.length === 0 && input.legacy !== true) {
       throw new Error(`task ${task.id} has no test_paths: the test phase needs them in the ledger`);
     }
-    // A legacy ledger without test_paths keeps the old scope: every rule-test asset.
-    const scope =
-      task.test_paths.length > 0
-        ? task.test_paths
-        : prot.class1_add_only.map((g) => g.replace(/#.*$/, ''));
+    // The shared scope (CR3-01): test_paths, or every rule-test asset for a legacy ledger.
+    const scope = ruleTestScope(
+      task,
+      new Set(input.legacy === true ? [task.id] : []),
+      prot.class1_add_only.map((g) => g.replace(/#.*$/, '')),
+    );
     out.push(
       `- 本任务的规则测试（台账 \`test_paths\`；只新增文件，已有的不改不删）：${code(scope)}`,
       "- 任务路径内只放 `NotImplemented` 骨架，逐条顶层语句检查：只许 import、export 列表与转出、type、interface、函数声明和类；函数与方法体只能是 `void <参数>;` 再加最后一句 `throw new Error('NotImplemented: <名字>')`（派生类构造函数第一句可以是只含普通值的 `super(…)`）；类字段不带初始值。`const` / `let` / `var`（含常量）、顶层调用、箭头函数、参数默认值、分支一律不行；要用的常量放进规则测试或写成类型：",

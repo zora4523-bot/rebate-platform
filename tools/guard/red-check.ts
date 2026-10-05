@@ -14,7 +14,9 @@
 import { readFileSync } from 'node:fs';
 import { changedFiles } from '../lib/git.ts';
 import { trustedRoot } from '../lib/paths.ts';
+import { loadLegacyTasks, ruleTestScope } from '../lib/legacy-tasks.ts';
 import { loadTask } from '../lib/task-file.ts';
+import { ruleTestAssets } from './lib/checks.ts';
 import { UsageError, parseArgs, printJson, resolveRoot, runCli } from './lib/cli.ts';
 import { checkRedReports, expectedRuleTests, redCheckRequired } from './lib/red-check.ts';
 
@@ -38,13 +40,15 @@ runCli(
       throw new UsageError('--task and --report are required');
     }
     const task = loadTask(id, trustedRoot());
+    // The same scope as the path guards (CR3-01): test_paths, or the old scope of a legacy ledger.
+    const scope = ruleTestScope(task, loadLegacyTasks(trustedRoot()), ruleTestAssets());
     if (printExpected) {
       const base = args.values.get('base');
       if (base === undefined)
         throw new UsageError('--print-expected needs --cwd <dir> --base <ref>');
       const files = expectedRuleTests(
         changedFiles(base, { cwd: resolveRoot(args.values.get('cwd')) }),
-        task.test_paths,
+        scope,
       );
       for (const file of files) console.log(file);
       return 0;
@@ -66,7 +70,7 @@ runCli(
     } else if (base !== undefined) {
       expected = expectedRuleTests(
         changedFiles(base, { cwd: resolveRoot(args.values.get('cwd')) }),
-        task.test_paths,
+        scope,
       );
     } else {
       throw new UsageError('give --expected-list <file> or --cwd <dir> --base <ref>');

@@ -994,6 +994,82 @@ describe('run.ts git --task: the path guard starts at spec_commit (owner decisio
     );
   });
 
+  it('[CR3-02] B1-01s shape: a legacy ledger passes with constants in its skeleton; a new task does not', () => {
+    const skeleton = [
+      "export const DAY_PARTITIONED_TABLES: readonly string[] = Object.freeze(['link_logs']);",
+      'const DAYS_AHEAD = 14;',
+      "export function post(): never {\n  throw new Error('NotImplemented: post');\n}",
+      '',
+    ].join('\n');
+    const branch = (task: string): { root: string; base: string } => {
+      const { root, base } = workRepo();
+      writeFiles(root, {
+        'test/spec/ledger/rule.test.ts': "it('[BR-FUND-13] rule', () => { expect(1).toBe(1); });\n",
+        'apps/api/src/modules/ledger/post.ts': skeleton,
+      });
+      const spec = commitAll(root, 'test(spec): rule tests and skeleton');
+      writeFiles(root, {
+        [`ops/evidence/${task}.json`]: `${JSON.stringify({ task, spec_commit: spec }, null, 2)}\n`,
+      });
+      commitAll(root, 'ops(evidence)');
+      return { root, base };
+    };
+    // B2-02a is on the fixture's legacy list (no test_paths, old scope, old skeleton rule).
+    const legacy = branch('B2-02a');
+    const ok = guard('run.ts', [
+      'git',
+      '--base',
+      legacy.base,
+      '--task',
+      'B2-02a',
+      '--cwd',
+      legacy.root,
+    ]);
+    expect(ok.stdout).toContain('PASS path-guard-author');
+    // B2-02b is a new task (test_paths test/spec/ledger/**): the same skeleton is refused.
+    const fresh = branch('B2-02b');
+    const bad = guard('run.ts', [
+      'git',
+      '--base',
+      fresh.base,
+      '--task',
+      'B2-02b',
+      '--cwd',
+      fresh.root,
+    ]);
+    expect(bad.status).toBe(1);
+    expect(bad.stdout).toContain('FAIL path-guard-author');
+    expect(bad.stderr).toContain('executable top-level code is not a skeleton');
+  });
+
+  it('[CR3-01] B1-02b shape: a legacy ledger without test_paths gets the old scope in red-check', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, { 'test/spec/money/new.test.ts': "it('[BR-X] new', () => {});\n" });
+    const res = guard('red-check.ts', [
+      '--task',
+      'B2-02a',
+      '--cwd',
+      root,
+      '--base',
+      base,
+      '--print-expected',
+    ]);
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout.trim()).toBe('test/spec/money/new.test.ts');
+    // A new task without test_paths has nothing in scope.
+    expect(
+      guard('red-check.ts', [
+        '--task',
+        'B2-02d',
+        '--cwd',
+        root,
+        '--base',
+        base,
+        '--print-expected',
+      ]).stdout.trim(),
+    ).toBe('');
+  });
+
   it('[CR2-02] a new task without test_paths gets no rule-test asset in its rule-test commits', () => {
     const { root, base } = workRepo();
     writeFiles(root, {

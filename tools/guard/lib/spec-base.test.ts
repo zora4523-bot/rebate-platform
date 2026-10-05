@@ -53,6 +53,31 @@ it('rejects implementation, removals, renames out of the task paths and other pa
   expect(problems[3]).toContain("outside the rule-test author's paths");
 });
 
+it('[CR3-02] a legacy ledger keeps the old skeleton rule; any other task gets the new one', () => {
+  // B1-01s shape: the frozen skeleton adds constants next to NotImplemented functions.
+  const skeleton = [
+    "export const DAY_PARTITIONED_TABLES: readonly string[] = Object.freeze(['link_logs']);",
+    'const DAYS_AHEAD = 14;',
+    'export function ensure(days: number = DAYS_AHEAD): never {',
+    '  void days;',
+    "  throw new Error('NotImplemented: ensure');",
+    '}',
+    '',
+  ].join('\n');
+  const changes = [{ path: 'packages/money/src/index.ts', status: 'M' as const }];
+  const files = { 'packages/money/src/index.ts': skeleton };
+  expect(authorProblems(changes, { ...scope(files), legacySkeleton: true })).toEqual([]);
+  const strict = authorProblems(changes, scope(files)).join('\n');
+  expect(strict).toContain('executable top-level code is not a skeleton');
+  // The old rule still needs the keyword.
+  expect(
+    authorProblems(changes, {
+      ...scope({ 'packages/money/src/index.ts': 'export const a = 1;\n' }),
+      legacySkeleton: true,
+    }).join('\n'),
+  ).toContain('does not name NotImplemented');
+});
+
 it('[ops/approvals.yaml id 19] the working tree of a Codex rule-test run: tests and skeletons only', () => {
   const result = checkAuthorPaths(
     [

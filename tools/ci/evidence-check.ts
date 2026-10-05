@@ -22,9 +22,8 @@
 //              and `host` are refused as evidence. A container red run (`script: "red"`,
 //              tools/ops/verify-container.sh --red) must have passed red-check (exit 0), list its
 //              red tests and have verified the spec_commit tree.
-//              Red run (CR2-05): a task whose rule tests Codex writes (ledger tester: codex)
-//              and that is not a ledger of the switch baseline (tools/guard/legacy-tasks.json)
-//              needs a valid container red run: script red, exit 0 (red-check passed), on the
+//              Red run (CR2-05, CR3-03): every task except one without a rule-test author
+//              (tester: none) and the legacy ledgers (tools/guard/legacy-tasks.json) needs a valid container red run: script red, exit 0 (red-check passed), on the
 //              spec_commit tree, its `expected` list covering every rule-test file the task
 //              added inside its test_paths (base..spec_commit), each with a red test.
 //              CI runs (`mode: ci`) are refused for now (CR2-06): the CI evidence archive
@@ -425,7 +424,8 @@ export function redRequirement(
   }
   if (ledger === null) return { required: true, expected: [] };
   const legacy = loadLegacyTasks(input.trusted);
-  if (ledger.tester !== 'codex' || legacy.has(ledger.id)) return { required: false, expected: [] };
+  // CR3-03: only a task without a rule-test author, or a legacy ledger, is exempt.
+  if (ledger.tester === 'none' || legacy.has(ledger.id)) return { required: false, expected: [] };
   let specCommit: unknown;
   try {
     specCommit = (JSON.parse(evidenceText) as Record<string, unknown>)['spec_commit'];

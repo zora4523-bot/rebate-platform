@@ -28,3 +28,18 @@ export function needsTestPaths(
 ): boolean {
   return task.tester !== 'none' && !legacy.has(task.id);
 }
+
+/**
+ * The rule-test asset globs of a task (Codex review CR3-01), one answer for every gate: the
+ * path guards (run and commit), red-check and the --red entry. Its `test_paths`; a legacy ledger
+ * without them keeps the old scope, every rule-test asset (class 1 of the protected paths); any
+ * other task without test_paths has none.
+ */
+export function ruleTestScope(
+  task: Pick<TaskFile, 'id' | 'test_paths'>,
+  legacy: Set<string>,
+  ruleTestAssets: readonly string[],
+): string[] {
+  if (task.test_paths.length > 0) return [...task.test_paths];
+  return legacy.has(task.id) ? [...ruleTestAssets] : [];
+}

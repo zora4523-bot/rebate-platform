@@ -564,6 +564,24 @@ it('[CR2-05] the requirement comes from the trusted ledger and the switch-baseli
     required: false,
     expected: [],
   });
+  // CR3-03: a new task with tester: claude is not exempt; only tester none or a legacy ledger.
+  const claudeTrusted = join(SCRATCH, 'trusted-claude-tester');
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'ops/risk-map.yaml',
+    'tools/guard/legacy-tasks.json',
+  ]) {
+    write(claudeTrusted, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+  }
+  write(claudeTrusted, {
+    'ops/tasks/B2-01a.yaml': readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8')
+      .replace('impl: claude', 'impl: codex')
+      .replace('tester: codex', 'tester: claude'),
+  });
+  expect(redRequirement({ ...input, trusted: claudeTrusted }, 'B2-01a', base, text)).toEqual({
+    required: true,
+    expected: [FLOOR],
+  });
   // An unreadable ledger requires the red run with nothing to cover: fails closed.
   expect(redRequirement(input, 'B9-99', base, text)).toEqual({ required: true, expected: [] });
   // The full check: evidence without the red run fails.

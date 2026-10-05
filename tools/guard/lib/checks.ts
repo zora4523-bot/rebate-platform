@@ -11,7 +11,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile } from '../../lib/fsx.ts';
 import { changedBetweenCommits, changedFiles, listTree, showFile, tryGit } from '../../lib/git.ts';
-import { loadLegacyTasks } from '../../lib/legacy-tasks.ts';
+import { loadLegacyTasks, ruleTestScope } from '../../lib/legacy-tasks.ts';
 import { specRepo, trustedRoot } from '../../lib/paths.ts';
 import { loadTask, parseTaskFile, TASK_ID_PATTERN } from '../../lib/task-file.ts';
 import { checkAgentsPairs } from './agents-pair.ts';
@@ -276,6 +276,11 @@ export function pathGuardCheck(
   };
 }
 
+/** Class 1 of the trusted protected-path list: every rule-test asset (fragments removed). */
+export function ruleTestAssets(): string[] {
+  return loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob);
+}
+
 /**
  * The rule-test author's part of a task branch, base..spec_commit (规划/11 §2.3 step 3; owner
  * decision 2026-10-02): only rule-test assets (class 1 of the trusted protected-path list), the
@@ -290,15 +295,15 @@ export function authorPathsCheck(
   // The task's test_paths. Only a ledger of the switch baseline (tools/guard/legacy-tasks.json,
   // read from the trusted root) may have none and keep the old scope (all rule-test assets);
   // any other task without test_paths gets no rule-test asset at all (CR2-02, fail-closed).
-  const legacy = loadLegacyTasks(trustedRoot()).has(task.id);
+  const legacyList = loadLegacyTasks(trustedRoot());
+  const legacy = legacyList.has(task.id);
   const testPaths = task.test_paths;
   const taskPaths = task.paths;
-  const testAssets =
-    testPaths.length > 0
-      ? [...testPaths]
-      : legacy
-        ? loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob)
-        : [];
+  const testAssets = ruleTestScope(
+    { id: task.id, test_paths: [...testPaths] },
+    legacyList,
+    ruleTestAssets(),
+  );
   const changes = changedBetweenCommits(base, specCommit, { cwd: root });
   const show = (ref: string, path: string): string | null => {
     const res = tryGit(['show', `${ref}:${path}`], { cwd: root });
@@ -309,6 +314,9 @@ export function authorPathsCheck(
     testAssets,
     contentAtSpec: (path) => show(specCommit, path),
     contentAtBase: (path) => show(base, path),
+    // CR3-02: a legacy ledger's skeletons were written under the old rule (the NotImplemented
+    // keyword); the statement-by-statement check applies to the other tasks.
+    legacySkeleton: legacy,
   });
   if (testPaths.length === 0 && !legacy && task.tester !== 'none') {
     problems.unshift(
@@ -336,8 +344,9 @@ export function authorWorktreeCheck(
   taskId?: string,
 ): PathGuardOutcome {
   // A legacy ledger (tools/guard/legacy-tasks.json) without test_paths keeps the old scope, all
-  // rule-test assets; any other task without test_paths gets none (CR-06, CR2-02).
-  const legacy = taskId !== undefined && loadLegacyTasks(trustedRoot()).has(taskId);
+  // rule-test assets; any other task without test_paths gets none (CR-06, CR2-02, CR3-01).
+  const legacyList = loadLegacyTasks(trustedRoot());
+  const legacy = taskId !== undefined && legacyList.has(taskId);
   const protectedList = loadProtected(trustedRoot());
   const changes = changedFiles(base, { cwd: root });
   const hits = findProtectedHits(changes, protectedList, gitReaders(root, base), { taskType });
@@ -346,10 +355,12 @@ export function authorWorktreeCheck(
     changes,
     {
       taskPaths,
-      testAssets:
-        testPaths.length > 0 || !legacy
-          ? testPaths
-          : protectedList.class1_add_only.map((g) => splitFragment(g).glob),
+      testAssets: ruleTestScope(
+        { id: taskId ?? '', test_paths: [...testPaths] },
+        legacyList,
+        protectedList.class1_add_only.map((g) => splitFragment(g).glob),
+      ),
+      legacySkeleton: legacy,
       contentAtSpec: (path) => {
         const file = join(root, path);
         return existsSync(file) ? readFileSync(file, 'utf8') : null;

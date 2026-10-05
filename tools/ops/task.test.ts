@@ -74,6 +74,7 @@ beforeAll(() => {
         'X1-01c',
         'X1-01d',
         'X1-01e',
+        'X1-01f',
         'X1-01g',
         'X1-01h',
         'X1-01i',
@@ -153,17 +154,29 @@ it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a 
     }),
     // A new ledger (not on the switch-baseline list) with a rule-test author and no test_paths.
     'ops/tasks/X1-01n.yaml': good({ id: 'X1-01n', tester: 'codex', impl: 'claude' }),
+    // A new ledger with the old roles (CR3-03).
+    'ops/tasks/X1-01o.yaml': good({
+      id: 'X1-01o',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
     'ops/tasks/X1-01k.yaml': good({
       id: 'X1-01k',
+      impl: 'claude',
+      tester: 'codex',
       test_paths: "\n  - 'test/spec/demo/**'\n  - 'test/properties/demo/*.test.ts'",
     }),
     'ops/tasks/X1-01l.yaml': good({
       id: 'X1-01l',
+      impl: 'claude',
+      tester: 'codex',
       test_paths:
         "\n  - 'packages/demo/src/**'\n  - 'test/sp*'\n  - 'specs/commission-examples.csv'",
     }),
     'ops/tasks/X1-01m.yaml': good({
       id: 'X1-01m',
+      impl: 'claude',
       tester: 'none',
       test_paths: "\n  - 'test/spec/demo/**'",
     }),
@@ -188,8 +201,14 @@ it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a 
       'test_paths: required for a task with a rule-test author (tester: codex)',
     );
     expect(checkTask('X1-01', opts('RV1'))).toEqual([]);
+    // CR3-03: a new ledger cannot take the old roles; a legacy one keeps them.
+    expect(checkTask('X1-01o', opts('RV1'))).toEqual([
+      'impl: must be claude for a task written after the switch of 2026-10-05 (a Codex handover is recorded at run time, not in the ledger)',
+      'tester: must be codex or none for a task written after the switch of 2026-10-05',
+    ]);
+    expect(checkTask('X1-01e', opts('RV1'))).toEqual([]);
   } finally {
-    for (const id of ['X1-01k', 'X1-01l', 'X1-01m', 'X1-01n']) {
+    for (const id of ['X1-01k', 'X1-01l', 'X1-01m', 'X1-01n', 'X1-01o']) {
       removeDir(`${root}/ops/tasks/${id}.yaml`);
     }
   }

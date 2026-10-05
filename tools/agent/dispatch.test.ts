@@ -811,3 +811,34 @@ it(
     expect(set).not.toContain('--implementer');
   },
 );
+
+it(
+  '[CR3-01] dispatch: B1-02b shape (legacy, impl: claude, no test_paths) goes to the test phase',
+  LONG,
+  () => {
+    const fx = fixture('dispatch-legacy-test', {
+      task: [
+        {
+          when: ['show'],
+          stdout: JSON.stringify({
+            id: TASK,
+            type: 'impl',
+            risk: 'RV1',
+            impl: 'claude',
+            tester: 'codex',
+          }),
+        },
+      ],
+    });
+    mkdirSync(join(fx.trusted, 'tools', 'guard'), { recursive: true });
+    writeFileSync(
+      join(fx.trusted, 'tools', 'guard', 'legacy-tasks.json'),
+      JSON.stringify({ baseline: 'fixture', tasks: [TASK] }),
+    );
+    const res = runScript('dispatch.sh', [TASK], fx.env);
+    expect(res.status, res.stderr).toBe(0);
+    expect(lastJsonLine(res.stdout)).toMatchObject({ action: 'dispatched', phase: 'test' });
+    expect(waitForRun(fx)).toMatchObject({ mode: 'impl', phase: 'test', exit_code: 0 });
+    expect(stubCalls(fx)).toContainEqual(['state', 'bump-attempt', TASK, 'test']);
+  },
+);

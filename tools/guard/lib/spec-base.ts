@@ -112,12 +112,24 @@ export type AuthorScope = {
   contentAtSpec: (path: string) => string | null;
   /** Content of a file at the base, or null when it does not exist there. */
   contentAtBase?: (path: string) => string | null;
+  /**
+   * A ledger on tools/guard/legacy-tasks.json: its skeletons follow the rule of before the
+   * switch, the NotImplemented keyword in the file (CR3-02); every other task gets the
+   * statement-by-statement check (lib/skeleton.ts).
+   */
+  legacySkeleton?: boolean;
 };
+
+/** The old skeleton rule (before 2026-10-05): the file names NotImplemented. */
+const LEGACY_SKELETON_MARKER = /\bNotImplemented\b/;
 
 /** Why a file the rule-test author changed inside the task paths is not a skeleton ([] = it is). */
 function shellProblems(path: string, scope: AuthorScope): string[] {
   const content = scope.contentAtSpec(path);
   if (content === null) return ['missing'];
+  if (scope.legacySkeleton === true) {
+    return LEGACY_SKELETON_MARKER.test(content) ? [] : ['does not name NotImplemented'];
+  }
   return skeletonProblems(path, content, scope.contentAtBase?.(path) ?? null);
 }
 

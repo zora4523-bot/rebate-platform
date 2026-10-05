@@ -173,3 +173,34 @@ it(
   },
   CLI_TIMEOUT,
 );
+
+it(
+  '[CR3-01] --red for B1-02b (legacy ledger, no test_paths): the old scope gives it files to run',
+  () => {
+    // The real trusted ledger: B1-02b is on tools/guard/legacy-tasks.json and has no test_paths.
+    const repo = fixture('red-legacy', 'node -e "process.exit(0)"');
+    fixtureGit(repo, ['init', '-q', '-b', 'main']);
+    fixtureGit(repo, ['add', '-A']);
+    fixtureGit(repo, ['commit', '-q', '-m', 'fixture']);
+    writeFiles(repo, {
+      'test/spec/identity/devices.test.ts': "it('[BR-ID-05] x', () => {});\n",
+      'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
+      'apps/api/src/modules/identity/devices.ts': 'export {};\n',
+    });
+    const res = run(['B1-02b', '--worktree', repo, '--red', '--base', 'main', '--dry-run']);
+    expect(res.status, res.stderr).toBe(0);
+    const plan = JSON.parse(res.stdout) as {
+      red_files: string[];
+      red_plan: { name: string; files: string[] }[];
+    };
+    expect(plan.red_files).toEqual([
+      'test/spec/identity/devices.int.test.ts',
+      'test/spec/identity/devices.test.ts',
+    ]);
+    expect(plan.red_plan.map((g) => `${g.name}: ${g.files.join(' ')}`)).toEqual([
+      'spec-int: spec/identity/devices.int.test.ts',
+      'spec-unit: spec/identity/devices.test.ts',
+    ]);
+  },
+  CLI_TIMEOUT,
+);
