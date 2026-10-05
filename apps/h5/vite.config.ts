@@ -27,6 +27,10 @@ export default defineConfig(({ command, mode }) => {
       );
     }
   }
+  if (command === 'build') {
+    // Vite's documented way to choose the build's NODE_ENV (see the note in the returned config).
+    process.env['NODE_ENV'] = 'production';
+  }
   return {
     root: pkgDir(`./src/entries/${mode}/`),
     envDir: pkgDir('./'),
@@ -35,12 +39,11 @@ export default defineConfig(({ command, mode }) => {
     // vitest.shared.ts), so build and dev server never need a prior `tsc -b`.
     resolve: { conditions: ['couli-src', ...defaultClientConditions] },
     plugins: [react(), tailwindcss()],
-    // Deploy builds always bundle the production React / React Router branches, whatever
-    // NODE_ENV the caller has (CI and Vitest set it to "test"); the route and landing size budgets
-    // of 规划/03 §12 are measured on exactly this output.
-    ...(command === 'build'
-      ? { define: { 'process.env.NODE_ENV': JSON.stringify('production') } }
-      : {}),
+    // A build is always a production build, also when the caller runs with another NODE_ENV
+    // (Vitest and CI set "test"). Vite reads NODE_ENV after this config function returns, so the
+    // assignment above makes isProduction true: production React branches and `jsx` (not
+    // `jsxDEV`) together. The JSX flag is also pinned so the two can never diverge.
+    ...(command === 'build' ? { oxc: { jsx: { development: false } } } : {}),
     build: {
       outDir: pkgDir(`./dist/web/${mode}/`),
       emptyOutDir: true,
