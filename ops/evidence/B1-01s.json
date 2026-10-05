@@ -1,0 +1,100 @@
+{
+  "task": "B1-01s",
+  "spec_ref": "1955639f5c29cae4f43f6e039dc3c742b5ae3312",
+  "spec_commit": "0f50c3955d25e1851f359de7afac4ffedce02a3a",
+  "red_tests": [
+    "[BR-ID-30 ② 90 天、运行当日 00:00（+08:00）; contract I1b] 2026-10-08 23:59:59.999（+08:00）删到 p20260709、保留 p20260710；再晚 1 毫秒删 p20260710；p20260711 起与 DEFAULT 不动；返回值确切、升序，重复调用返回空数组",
+    "[BR-ID-30 ② 90 天] 跨年与闰年：2027-03-31 23:59:59.999（+08:00，截止 2026-12-31 00:00 +08:00）删到 p20261230；再晚 1 毫秒删 p20261231；2028-05-29 00:00（+08:00）的截止是 2028-02-29 00:00，删到 p20280228、保留 p20280229",
+    "[BR-ID-30 运行当日 00:00（+08:00）; contract I1b] 截止只看 p_now 在 +08:00 的日期：会话时区 Pacific/Kiritimati（+14）或 America/New_York 时结果同上；p_now 以 −04:00 偏移写出也一样",
+    "[BR-ID-30 删除条件 created_at < 截止; contract I1b] 删掉的分区连同其中的行（含当日最后 1 毫秒的行）一起消失；截止当日分区里第 1 毫秒的行与 DEFAULT 里很早的行都保留",
+    "[ADR-0001 §4.2 #4 DEFAULT 兜底; 规划/02 §15.1] 很远的 p_now 删掉 link_logs 的全部日分区（升序），DEFAULT 及其行保留；event_log 与 orders 的旧月分区一个不动",
+    "[contract I1b] 没有可删的分区时返回空数组（不是 NULL）：只有 DEFAULT 时、全部日分区都在留存期内时",
+    "[ADR-0001 §4.2 #4 并发; contract I1b] 六个会话同时删 30 个过期日分区：全部成功，每个分区正好被删、被报告一次，最后只剩 DEFAULT",
+    "[ADR-0001 §4.2 #4 并发; contract I1a、I1b] 删除与预建同时进行（各三个会话，日子互不相同）：全部成功，过期的 10 天正好各删一次，新的 10 天正好各建一次",
+    "[ADR-0001 §4.2 #5; BR-ID-30 +08:00 日界; contract I1 Day] 建 2026-10-05 的分区：名字 link_logs_p20261005、范围正好是 [2026-10-05 00:00 +08:00, 2026-10-06 00:00 +08:00)（UTC 渲染 2026-10-04 16:00 至 2026-10-05 16:00）；前后 1 毫秒的行落在 DEFAULT，边界上的行落进分区",
+    "[contract I1a 幂等] 同一天再建两次：返回同一名字、分区不多、已有的行不动",
+    "[ADR-0001 §4.2 #4 按日的表预建未来 14 天; contract I1] 连续 15 天（跨月、跨年：2026-12-25 至 2027-01-08）各建一个分区，界首尾相接、名字与界确切；闰日 2028-02-29、2000-01-01 与 9999-12-31 也照常",
+    "[BR-ID-30 +08:00; contract I1 Day] 界不随会话时区变：在 Pacific/Kiritimati（+14）与 America/New_York 会话里建的分区，界与 UTC 会话建的同形",
+    "[ADR-0001 §4.2 #4 有数据须先迁出才能建对应区间的分区; contract I1a] DEFAULT 里有 2026-11-25（+08:00，含当日最后 1 毫秒）的行：该日建不了（23514），前一日与后一日照建；行都还在 DEFAULT",
+    "[ADR-0001 §4.2 #4 DEFAULT 兜底; contract I1a] DEFAULT 里只有别的日子的行（前一日最后 1 毫秒、后一日第 1 毫秒）时照建，行留在 DEFAULT",
+    "[ADR-0001 §4.2 #4 并发; contract I1a] 六个会话同时建同样的 15 天：全部成功、每个会话拿到同样的 15 个名字，分区正好 15 个加 DEFAULT",
+    "[ADR-0001 §4.2 #4、#8; contract I1] app.ensure_day_partition(p_table text, p_day date) 返回 text：只有一个重载，plpgsql、SECURITY DEFINER、属主 couli_migrator、函数级设置正好是 search_path、lock_timeout=5s、DateStyle、TimeZone=UTC，EXECUTE 只给 couli_maint",
+    "[ADR-0001 §4.2 #4、#8; BR-ID-30 ②; contract I1] app.drop_expired_day_partitions(p_table text, p_now timestamptz) 返回 text[]：只有一个重载，同样的属主、设置与 ACL",
+    "[ADR-0001 §4.2 #8; 规划/02 §15.1 以专用角色执行] couli_app、couli_payout、couli_readonly 调用两个新函数都被拒（42501），没有建出分区；couli_maint 可以建",
+    "[ADR-0001 §4.2 #8 couli_maint 无 DDL 权限] couli_maint 自己不能建、摘、删 link_logs 的分区（42501），只能经函数；函数删掉过期分区",
+    "[ADR-0001 §4.2 #5; contract I1a b] ensure_day_partition 只认 link_logs：别的表、尚不存在的 events、大小写或空白不同、带 schema、分区名、空串一律 22023 与确切文案，什么都不建",
+    "[contract I1a a、c] ensure_day_partition：NULL 参数 22004；p_day 早于 2000-01-01、晚于 9999-12-31 或为 ±infinity 时 22023，文案确切；NULL 先于名单、名单先于日期；什么都不建",
+    "[BR-ID-30 ⑫、⑰; 规划/02 §15.1; contract I1b c] drop_expired_day_partitions 只认 link_logs：event_log、orders、账务与订单类表名、events、写法不同的名字一律 22023 与确切文案，event_log 与 orders 的旧分区一个不少",
+    "[contract I1b a、b] drop_expired_day_partitions：NULL 参数 22004、p_now 为 ±infinity 时 22023，文案确切；NULL 先于有限性、有限性先于名单；什么都不删",
+    "[db/AGENTS.md 迁移规则 5; contract I1] 迁移不改月分区函数：ensure_month_partition 与 drop_expired_month_partitions 仍以 22023 拒绝 link_logs；新库上 link_logs 只有 DEFAULT 分区（迁移不建日分区）",
+    "[ADR-0001 §4.2 #4; contract I1a Locks] 另一连接的读事务一直持有 link_logs 的锁时：建已有的日子立即返回名字（<2 秒，不申请表锁）；建新的日子 4–9 秒内以 55P03 失败、什么都不建；其间写入 link_logs 的一行在 9 秒内写成",
+    "[BR-ID-30 ②; contract I1b Locks] 另一连接的读事务一直持有 link_logs 的锁时：没有过期分区的删除立即返回空数组（<2 秒，不申请表锁）；有过期分区时 4–9 秒内以 55P03 失败，一个都不删（整条语句回滚）",
+    "[ADR-0001 §4.2 #4; contract I1a Locks（app.users）] 另一连接有一个写 app.users 的事务未结束时：建新的日子要等 app.users 的锁（link_logs 的外键随新分区建立），4–9 秒内以 55P03 失败、什么都不建；建已有的日子与删除仍立即完成",
+    "[ADR-0001 §4.2 #4; contract I2 C.3b 55P03] 读事务一直持有 link_logs 的锁时：第一个日分区等 5 秒以 55P03 失败，记一条 partition_ensure_failed（day 2026-11-20），其余 14 天本轮跳过；整轮在 4–15 秒内结束，月分区照建；锁放开后下一轮建齐 15 天",
+    "[BR-ID-30 ②; contract I2 C.4 55P03] 04:00（+08:00）的运行在读事务持有 link_logs 的锁时：已有的 15 个日分区立即照样列出；删 link_logs 的过期分区 5 秒后以 55P03 失败，记一条 partition_drop_failed，DEFAULT 检查照做；什么都没删，下一轮（锁放开后）删掉",
+    "[ADR-0001 §4.2 #4 按日的表预建未来 14 天、#5; contract I2 C.3b] 新库上一次运行（时钟 2026-11-20T03:04:05Z，+08:00 的 11:04）：先建 8 个月分区，再建 link_logs 2026-11-20 至 2026-12-04 共 15 个日分区（界确切）；报告与日志确切，时钟只读一次；再跑一次报告相同",
+    "[BR-ID-30 +08:00 日界; ADR-0001 §4.2 #10; contract I2] 日子按 +08:00 的自然日：2026-11-19T15:59:59.999Z（+08:00 的 11-19 最后 1 毫秒）建 11-19 至 12-03；再晚 1 毫秒的运行列出 11-20 至 12-04（已有的照样列出）、只新增 12-04；月分区仍按 UTC 月",
+    "[contract I2 默认关闭] dayPartitions 为 false 或不给：与原来逐字相同——只建 8 个月分区、04:00 后也不删 link_logs 的过期日分区、done(8, 0, 0)",
+    "[ADR-0001 §4.2 #4 DEFAULT 有数据须先迁出才能建分区、有数据即告警; contract I2 C.3b、E] link_logs_default 里有 2026-11-25（+08:00）的 1 行：该日建不了，记 partition_ensure_failed { table, day, sqlstate }，其余 14 天照建；告警 link_logs 1 行；报告与日志确切、不含行内容",
+    "[BR-ID-30 每日 04:00（+08:00）删除任务、② 90 天; contract I2 C.4] 03:59:59.999（+08:00）的运行只预建、不删；04:00:00.000 的运行先删 event_log 的过期月分区、再删 link_logs 2026-07-08 至 07-10（截止 2026-07-11 00:00 +08:00），07-11 保留；每个删掉的分区一条日志",
+    "[BR-ID-30 运行当日 00:00（+08:00）; contract I2 C.4] 运行把 now 原样交给删除函数：2026-10-08 23:59:59.999（+08:00）的运行删到 link_logs_p20260709，p20260710 保留",
+    "[ADR-0001 §4.2 #4 并发; contract I2] 两个 worker（各自的 couli_maint 连接池）同时跑两轮：全部成功、报告相同、没有失败日志，日分区正好 15 个",
+    "[ADR-0001 §4.2 #4、#5; contract I2] 常量：日分区表正好是 [link_logs]（冻结），预建 14 天；可删月分区表仍正好是 [event_log]；dayPartitionDays 在 2026-11-19T15:59:59.999Z（+08:00 的 11-19 最后 1 毫秒）给 2026-11-19 至 2026-12-03 共 15 天，再晚 1 毫秒给 2026-11-20 至 2026-12-04",
+    "[BR-ID-30 +08:00 日界; contract I2] dayPartitionDays 跨年、闰年、UTC 已是次日或仍是前日：首日与末日确切、每天各一、升序",
+    "[contract I2] dayPartitionDays 只看参数：不读墙钟（同一参数结果相同，与当前时刻无关）；无效 Date 抛 RangeError",
+    "[contract B、I2] dayPartitions 为 true 或 false（也与 intervalMs、quietDefaultTables 同用）时得到 runOnce / start / stop；创建时不读时钟、不写日志、不碰 db"
+  ],
+  "risk_note": "RV2 by path (db/migrations/**, apps/api/src/modules/platform/maintenance/**). Migration 0012: SECURITY DEFINER functions app.ensure_day_partition and app.drop_expired_day_partitions for link_logs (+08:00 days, 90-day retention per BR-ID-30 ②, 5 s lock waits, couli_maint only); maintenance module option dayPartitions (default off: behaviour unchanged; worker wiring is B1-01w). No money, attribution or authorisation path.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "b68ed53d0fc054347e84aa13d924ba6a9fea106d",
+      "tree": "d293430d3622ce83a20b35751cff0350b850bdcc",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T14:00:20Z",
+      "finished_at": "2026-10-05T14:02:09Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent round 1: pass, 0 findings (observations for B1-01w: DEFAULT rows are never dropped once day partitions are on)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "money review base origin/main round 1: pass, 0 findings, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "round 1 void (exit 12: another session moved a non-task branch in the shared repository during the run; counted); round 2 fail with 1 S1 (a wrong implementation would fail by a framework timeout instead of an assertion), fixed by the author's supplementary commit f71c483 and checked in code review"
+  },
+  "trees": {
+    "packages/money": "83cb7c5abfd03ef162543c3aa1db0033ecf2aff0",
+    "packages/domain": "c7bbadb81089e32cd0ed3ff3e38958080a0134ef",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "672ef710c21e0f6a416ddfdefc8bb851f5edad01",
+    "apps/api/src/modules/platform/maintenance": "117d90eba19c595602dc1992a43bdd21c4fea589",
+    "db/migrations": "575a2aa2fd646480292e4430864f8b008a1a03d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 pnpm test:longrun on a b1-followups-2 worktree (test/properties unchanged by B1-01r–w), 2026-10-05; this task adds no property tests"
+  }
+}

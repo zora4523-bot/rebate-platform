@@ -22,7 +22,7 @@ afterEach(async () => {
 });
 
 // Real Kysely SQL compilation with an in-memory driver; no socket or database.
-async function fixture(instant = '2026-11-20T03:04:05Z') {
+async function fixture(instant = '2026-11-20T03:04:05Z', dayPartitions = false) {
   const driver = new DummyDriver();
   const connection = await driver.acquireConnection();
   const queries: CompiledQuery[] = [];
@@ -50,9 +50,9 @@ async function fixture(instant = '2026-11-20T03:04:05Z') {
     let rows = await control.respond(query);
     if (rows === undefined) {
       if (query.sql.includes('current_user')) rows = [{ role: 'couli_maint' }];
-      else if (query.sql.includes('ensure_month_partition')) {
+      else if (/ensure_(month|day)_partition/.test(query.sql)) {
         rows = [{ partition: `${String(query.parameters[0])}:${String(query.parameters[1])}` }];
-      } else if (query.sql.includes('drop_expired_month_partitions')) rows = [{ partitions: [] }];
+      } else if (/drop_expired_(month|day)_partitions/.test(query.sql)) rows = [{ partitions: [] }];
       else if (query.sql.includes('partition_default_rows')) rows = [];
       else if (query.sql.includes('set_config')) rows = [];
       else throw new Error('unexpected statement');
@@ -77,10 +77,117 @@ async function fixture(instant = '2026-11-20T03:04:05Z') {
     logger: logger as unknown as RootLogger,
     clock,
     intervalMs: 100,
+    dayPartitions,
   });
   instances.push(maintenance);
   return { db, maintenance, queries, transactions, control, logger, clock, now };
 }
+
+it.each(['23514', '55P03'])(
+  '[AC-B1-01s#1] 日预建失败 %s 后完成其余步骤，下一轮重新尝试，日志不泄露错误内容',
+  async (code) => {
+    const f = await fixture('2026-11-20T03:04:05Z', true);
+    f.control.respond = async (query) => {
+      if (query.sql.includes('ensure_day_partition') && query.parameters[1] === '2026-11-22') {
+        throw { code, message: 'private SQL', detail: 'private row data' };
+      }
+      return undefined;
+    };
+    const report = await f.maintenance.runOnce();
+    expect(report.failed).toBe(1);
+    expect(report.ensured).toHaveLength(code === '55P03' ? 10 : 22);
+    expect(f.logger.error.mock.calls).toEqual([
+      [{ table: 'link_logs', day: '2026-11-22', sqlstate: code }, 'partition_ensure_failed'],
+    ]);
+    expect(f.queries.filter((q) => q.sql.includes('ensure_day_partition'))).toHaveLength(
+      code === '55P03' ? 3 : 15,
+    );
+    expect(f.queries.some((q) => q.sql.includes('drop_expired_day_partitions'))).toBe(true);
+    expect(f.queries.at(-1)?.sql).toContain('partition_default_rows');
+    f.control.respond = async () => undefined;
+    expect(await f.maintenance.runOnce()).toMatchObject({ failed: 0 });
+    expect(f.logger.info.mock.calls.at(-1)).toEqual([
+      { ensured: 23, dropped: 0, failed: 0 },
+      'partition_maintenance_done',
+    ]);
+    expect(f.now).toHaveBeenCalledTimes(2);
+  },
+);
+
+it.each([
+  ['2026-10-08T19:59:59.999Z', true, false],
+  ['2026-10-08T20:00:00.000Z', true, true],
+  ['2026-10-08T20:00:00.000Z', false, false],
+] as const)(
+  '[AC-B1-01s#2] 日删除遵守 04:00 门槛和开关（%s，启用=%s，删除=%s），月删除在前且共用 now',
+  async (instant, enabled, shouldDrop) => {
+    const f = await fixture(instant, enabled);
+    f.control.respond = async (query) => {
+      if (query.sql.includes('drop_expired_month_partitions')) {
+        return [{ partitions: ['event_log_p202603'] }];
+      }
+      if (query.sql.includes('drop_expired_day_partitions')) {
+        return [{ partitions: ['link_logs_p20260710'] }];
+      }
+      return undefined;
+    };
+    const report = await f.maintenance.runOnce();
+    const drops = f.queries.filter((q) => q.sql.includes('drop_expired_'));
+    expect(drops.filter((q) => q.sql.includes('drop_expired_day_partitions'))).toHaveLength(
+      shouldDrop ? 1 : 0,
+    );
+    if (shouldDrop) {
+      expect(drops.map((q) => q.parameters)).toEqual([
+        ['event_log', f.now.mock.results[0]!.value],
+        ['link_logs', f.now.mock.results[0]!.value],
+      ]);
+      expect(report.dropped).toEqual(['event_log_p202603', 'link_logs_p20260710']);
+      expect(f.logger.info.mock.calls.slice(0, 2)).toEqual([
+        [{ table: 'event_log', partition: 'event_log_p202603' }, 'partition_dropped'],
+        [{ table: 'link_logs', partition: 'link_logs_p20260710' }, 'partition_dropped'],
+      ]);
+    }
+    expect(report.ensured).toHaveLength(enabled ? 23 : 8);
+    expect(f.now).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('[AC-B1-01s#3] 日删除锁超时只记一次失败，DEFAULT 仍告警，下一定时轮成功', async () => {
+  vi.useFakeTimers();
+  const f = await fixture('2026-11-20T03:04:05Z', true);
+  let attempts = 0;
+  f.control.respond = async (query) => {
+    if (query.sql.includes('drop_expired_day_partitions')) {
+      attempts += 1;
+      if (attempts === 1) throw { code: '55P03', detail: 'private row data' };
+      return [{ partitions: ['link_logs_p20260710'] }];
+    }
+    if (query.sql.includes('partition_default_rows')) {
+      return [{ table_name: 'link_logs', default_partition: 'link_logs_default', row_count: 1n }];
+    }
+    return undefined;
+  };
+  await f.maintenance.start();
+  expect(attempts).toBe(1);
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'link_logs', sqlstate: '55P03' }, 'partition_drop_failed'],
+  ]);
+  expect(f.logger.warn).toHaveBeenCalledExactlyOnceWith(
+    { table: 'link_logs', partition: 'link_logs_default', rows: 1 },
+    'partition_default_has_rows',
+  );
+  expect(f.logger.info.mock.calls.at(-1)).toEqual([
+    { ensured: 23, dropped: 0, failed: 1 },
+    'partition_maintenance_done',
+  ]);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(attempts).toBe(2);
+  expect(f.logger.error).toHaveBeenCalledTimes(1);
+  expect(f.logger.info.mock.calls.at(-1)).toEqual([
+    { ensured: 23, dropped: 1, failed: 0 },
+    'partition_maintenance_done',
+  ]);
+});
 
 it('[AC-B1-01n#5] worker 对 link_logs 降为信息日志，报告仍包含它，orders 仍告警', async () => {
   const f = await fixture();
