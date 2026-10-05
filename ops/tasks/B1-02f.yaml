@@ -6,6 +6,8 @@ type: impl
 # 微信登录与二次验证接口不接受 payout_bind 的尝试；payout_bind 由收款账号保存接口消费（B2-14），本任务不换 openid。
 # 第三方 step-up 的换码验签等 CT-15i（B1-02d）。依据：BR-ID-04 细则（含「收款授权」）、BR-ID-08、BR-ID-12、BR-ID-13、BR-ID-32、
 # 04 §6.1 相关行，由编排者摘入任务书第 2 节。实现路由的接口去掉 x-implementation: planned。
+# 作废接口 POST /v1/idempotency-keys/abandon 的 HTTP 路由在 platform 模块，另立 B1-02g。
+# test_paths（工具接受前写注释）：test/spec/identity/step-up/**。
 refs: []
 refs_hash: {}
 deps: [B1-02e, CT-20a]

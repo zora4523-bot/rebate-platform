@@ -5,13 +5,18 @@ type: impl
 # 2026-10-05 入账，B1-02 拆分的第二段（见 B1-02c 注释）。短信只接假适配器（APP_ENV=local/test，规划/11 §8）。
 # 依据：BR-ID-01（受限会话与判定顺序）、BR-ID-04～07、BR-ID-10、04 §6.1 相关行，由编排者摘入任务书第 2 节（带原文超 24KB）。
 # 提供「按用户作废全部会话」的内部入口（B1-27 后台改手机号要复用；差异清单第一节第 3 件）。
-# 退出与会话被动结束都解除推送绑定：只写 identity 自己的表，推送令牌由 notification 模块解除，本任务发领域事件或调用其 index.ts（规划/02 §4.1）。
-# 实现路由的接口去掉 x-implementation: planned。
+# 推送绑定解除不在本任务：push_tokens 的写者是 notification 模块（还没建），事件总线也没有会话结束事件；
+# 另立 B1-12b（建 notification 模块与解绑入口、登记会话结束事件，新模块要先登记风险表），本任务只吊销会话。
+# JWT 签名密钥、发码存储等新配置按 apps/api/AGENTS.md 进 platform/config（不直接读 process.env），新增环境变量写进
+# .env.example；要装新依赖写 deps_needed，由编排者开 deps 任务。platform 路径为 RV2，本任务整体按 RV2。
+# 实现路由的接口去掉 x-implementation: planned。test_paths（工具接受前写注释）：test/spec/identity/session/**。
 refs: []
 refs_hash: {}
 deps: [B1-02c, B1-02b, CT-02b]
 paths:
   - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - '.env.example'
   - 'contracts/openapi.yaml'
 impl: claude
 tester: codex

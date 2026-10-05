@@ -8,7 +8,8 @@ type: impl
 # 依据：BR-ID-09（含细则「设备标识的无效值」）、04 §6.1 /v1/devices 行，由编排者摘入任务书第 2 节（BR-ID-09 连一跳超 24KB）。
 # 本任务建 apps/api/src/modules/identity/ 的分层骨架（规划/02 §4.2、apps/api/AGENTS.md），后续 e、f 在其上加。
 # 实现路由时去掉 openapi 里 registerDevice 的 x-implementation: planned（contracts/README 规则 10；扩展字段不进生成类型，
-# 不碰 packages/contracts-ts，与同期契约任务的路径不相交）。
+# 不碰 packages/contracts-ts）。openapi.yaml 与 CT-02b 相交，CT-02b 合并后才派。app.module.ts 不在风险表白名单，整体按 RV2：
+# 两家评审、容器验证、证据文件。test_paths（task-file.ts 接受该字段前写在注释里）：test/spec/identity/devices/**。
 refs: []
 refs_hash: {}
 deps: [CT-15b, B1-02a, B1-01i]

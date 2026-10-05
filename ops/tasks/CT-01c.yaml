@@ -4,7 +4,9 @@ title: 契约：取消客服工单后的清理与后台权限点同步——删 
 type: contract
 # 2026-10-05 入账。依据：差异清单 couli-runs/CT-plan/spec-delta-826f86e-492b9ef.md 第二节「CT-01c」（规划 1e4569c）。
 # 必须在 B1-19 的后台接口守卫之前、CT-21a 之前合并（同改 admin.yaml、error-codes.yaml、catalog.test.ts）。
-# 只带 §11.2；04 §2.5 的 recon_diff_status 行、§7 的 20902 行、13 第 96、106、345 行由编排者摘入任务书第 2 节。
+# 只带 §11.2；04 §11.1 的 fund.view 行（加「资金看板」）、§2.5 的 recon_diff_status 行、§7 的 20902 行、
+# 13 §13.11 的 20902 行与 §13 里 ticket 编码作废的两行由编排者按条目标识摘入任务书第 2 节（不按行号）。
+# test_paths（工具接受前写注释）：packages/contracts-ts/src/catalog.test.ts 的新增断言。
 # 20902 的来源条目 BR-ID-36 这次不动（13 §13.11 仍挂着）。pay.* 与 switch.pay 归 CT-21a，不在这里加。
 # 新权限点带不带 step-up 照 04 §11.2 二次验证列；动态码 / 短信档不进 admin.yaml。个数断言 44 → 49。
 refs: []
