@@ -1,3 +1,7 @@
+// This directory is also compiled by the erasable-only spec project: no Nest imports,
+// decorators or non-erasable syntax. Use .ts relative imports and import type for types.
+// Nest providers belong in platform.module.ts, which must call createRedisHandle through
+// this redis/index.ts export (the wiring rules spy on this seam).
 import type { ConnectionConfig } from '../db/index.ts';
 import type { RootLogger } from '../logging/index.ts';
 
@@ -18,6 +22,7 @@ export interface RedisNamespace {
 }
 
 export interface RedisHandle {
+  /** Lowercase letters, digits, _ and -; any length limit must allow at least 64 characters. */
   namespace(name: string): RedisNamespace;
   /** Idempotent; invalidates previously acquired namespaces as well. */
   close(): Promise<void>;
@@ -54,7 +59,7 @@ export class RedisUnavailableError extends Error {
   }
 }
 
-export class RedisClosedError extends Error {
+export class RedisClosedError extends RedisUnavailableError {
   constructor() {
     super();
     throw new Error('NotImplemented: RedisClosedError');
@@ -63,7 +68,9 @@ export class RedisClosedError extends Error {
 
 /**
  * One handle per entry, null for payout (existing ConnectionConfig.redisUrl is null).
- * Connect before resolving; errors are sanitized RedisUnavailableError, never raw driver errors.
+ * Only create the transport here; connect lazily before the first command. On connection
+ * failure/timeout, disconnect and reject that command with a sanitized RedisUnavailableError
+ * without sending it; the next command must attempt a fresh connection.
  * No operation is silently replayed. Timeout options bound connect, command and graceful quit.
  * Bootstrap accepts redisUrl: ConnectionConfig['redisUrl']; Nest exports the REDIS token from
  * platform/index.ts when a URL is supplied, and closes the handle on application shutdown.

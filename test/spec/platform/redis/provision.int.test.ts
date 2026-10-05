@@ -3,6 +3,7 @@
 // checks need a connection. TEST_REDIS_URL is restored after each test and never printed.
 import { createRequire } from 'node:module';
 import { afterEach, expect, it, vi } from 'vitest';
+import { serviceUrl } from './kit.ts';
 
 const requireDb = createRequire(new URL('../../../../packages/db/package.json', import.meta.url));
 const containersPath = requireDb.resolve('testcontainers');
@@ -14,7 +15,7 @@ afterEach(() => {
 });
 
 it.each([undefined, ''])(
-  '[AC-B1-01y-FIXTURE#1] TEST_REDIS_URL=%j 时启动一次性 Redis 7，noeviction，停止容器',
+  '[ADR-0001 §4.2 #17][B1-01y §9.3] TEST_REDIS_URL=%j 时启动一次性 Redis 7，noeviction，停止容器',
   async (unset) => {
     // Without the CI service, first acquire a genuine throwaway container, never localhost's stack.
     let backing: { url: string; stop(): Promise<void> } | undefined;
@@ -29,7 +30,7 @@ it.each([undefined, ''])(
       )();
     }
     try {
-      const service = new URL(backing?.url ?? supplied!);
+      const service = serviceUrl(backing?.url ?? supplied!);
       const command: string[][] = [];
       const images: string[] = [];
       const ports: number[] = [];
@@ -39,6 +40,9 @@ it.each([undefined, ''])(
         getMappedPort: () => Number(service.port || '6379'),
         stop: stopped,
       }));
+      // Deliberately limited double: these seven builder methods plus start, no exec;
+      // Wait only supports forLogMessage/forListeningPorts. packages/db has no ioredis
+      // dependency and cannot add one in this task: readiness uses Wait or node:net.
       const builder = {
         withExposedPorts: (...values: number[]) => {
           ports.push(...values);
@@ -85,11 +89,12 @@ it.each([undefined, ''])(
         expect(images).toHaveLength(1);
         expect(images[0]).toMatch(/^redis:7(?:[.-]|$)/);
         expect(ports).toContain(6379);
+        // Keep --maxmemory-policy and noeviction as separate command arguments.
         const argv = command.flat();
         expect(argv).toContain('--maxmemory-policy');
         expect(argv[argv.indexOf('--maxmemory-policy') + 1]).toBe('noeviction');
         expect(started).toHaveBeenCalledTimes(1);
-        const url = new URL(server.url);
+        const url = serviceUrl(server.url);
         expect(url.hostname === service.hostname).toBe(true);
         expect(url.port === service.port || (url.port === '' && service.port === '6379')).toBe(
           true,
@@ -102,4 +107,5 @@ it.each([undefined, ''])(
       await backing?.stop();
     }
   },
+  180_000,
 );

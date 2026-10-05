@@ -1,4 +1,4 @@
-// B1-01y §9.1–9.3 / ADR-0001 §2, §4.2 #17. AC-B1-01y-* are local test identifiers.
+// B1-01y §9.1–9.3 / ADR-0001 §2, §4.2 #17; review decisions in B1-01y §10.
 import { inspect } from 'node:util';
 import { expect, vi } from 'vitest';
 import { loadConnectionConfig } from '../../../../apps/api/src/modules/platform/db/index.ts';
@@ -72,4 +72,13 @@ export function printable(value: unknown): string {
 export function assertNoSecrets(text: string, secrets: readonly string[]): void {
   // Only booleans reach Vitest: never print an injected TEST_REDIS_URL in a failed assertion.
   expect(secrets.some((secret) => text.includes(secret))).toBe(false);
+}
+
+/** Invalid URLs must not expose the input (which may contain credentials) in TypeError. */
+export function serviceUrl(value: string): URL {
+  try {
+    return new URL(value);
+  } catch {
+    throw new Error('Invalid test Redis service URL');
+  }
 }

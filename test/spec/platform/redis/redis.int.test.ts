@@ -1,13 +1,13 @@
 // Only the orchestrator runs this file: one-shot Redis, never the local stack or production.
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   createRedisHandle,
   RedisClosedError,
   RedisUnavailableError,
 } from '../../../../apps/api/src/modules/platform/redis/index.ts';
-import { connection, failure, memoryLogger } from './kit.ts';
+import { connection, failure, memoryLogger, serviceUrl } from './kit.ts';
 
 interface TestRedis {
   url: string;
@@ -19,6 +19,8 @@ interface RawRedis {
   quit(): Promise<unknown>;
   disconnect(): void;
 }
+// The spec package has no direct ioredis dependency: use the exact driver installed for
+// apps/api (B1-01x), rather than silently adding a second version or changing package.json.
 const requireApi = createRequire(new URL('../../../../apps/api/package.json', import.meta.url));
 const { Redis } = requireApi('ioredis') as {
   Redis: new (url: string, options: object) => RawRedis;
@@ -33,6 +35,16 @@ async function acquire(): Promise<TestRedis> {
   return await (testing['acquireTestRedis'] as () => Promise<TestRedis>)();
 }
 
+// Share one service across this file's command tests; allow image pull time in the hook.
+// The provisioning/stop test below acquires its own handle to check lifecycle independently.
+let sharedServer: TestRedis | undefined;
+beforeAll(async () => {
+  sharedServer = await acquire();
+}, 180_000);
+afterAll(async () => {
+  await sharedServer?.stop();
+}, 30_000);
+
 async function withRedis(
   run: (context: {
     handle: NonNullable<Awaited<ReturnType<typeof createRedisHandle>>>;
@@ -40,9 +52,11 @@ async function withRedis(
     namespace: string;
   }) => Promise<void>,
 ): Promise<void> {
-  const server = await acquire();
+  expect(sharedServer).toBeDefined();
+  const server = sharedServer!;
   const raw = new Redis(server.url, { maxRetriesPerRequest: 0, retryStrategy: () => null });
-  const namespace = `b1_01y_${randomUUID().replaceAll('-', '')}`;
+  // 32 chars, 38 with _other: stay below 40; implementations must allow at least 64 (§10).
+  const namespace = randomUUID().replaceAll('-', '');
   let handle: Awaited<ReturnType<typeof createRedisHandle>> = null;
   try {
     handle = await createRedisHandle(connection('api', server.url), {
@@ -71,13 +85,12 @@ async function withRedis(
         } while (cursor !== '0');
       } finally {
         raw.disconnect();
-        await server.stop();
       }
     }
   }
 }
 
-it('[AC-B1-01y-INT#1] 真实 SET 带秒 TTL；覆盖后 TTL 刷新；到期后消失', async () => {
+it('[ADR-0001 §4.2 #17][B1-01y §9.3] 真实 SET 带秒 TTL；覆盖后 TTL 刷新；到期后消失', async () => {
   await withRedis(async ({ handle, raw, namespace }) => {
     const cache = handle.namespace(namespace);
     await cache.set('item', 'first', 60);
@@ -92,7 +105,7 @@ it('[AC-B1-01y-INT#1] 真实 SET 带秒 TTL；覆盖后 TTL 刷新；到期后�
   });
 });
 
-it('[AC-B1-01y-INT#2] 不同命名空间的同名键隔离；Lua 两个写入键均有 TTL', async () => {
+it('[ADR-0001 §4.2 #17][B1-01y §9.3] 不同命名空间的同名键隔离；Lua 两个写入键均有 TTL', async () => {
   await withRedis(async ({ handle, raw, namespace }) => {
     const first = handle.namespace(namespace);
     const second = handle.namespace(`${namespace}_other`);
@@ -115,7 +128,7 @@ it('[AC-B1-01y-INT#2] 不同命名空间的同名键隔离；Lua 两个写入键
   });
 });
 
-it('[AC-B1-01y-INT#3] 真实 Redis 命令错误向上传递，不伪装成功；关闭后不能再用', async () => {
+it('[ADR-0001 §4.2 #17][B1-01y §9.3] 真实 Redis 命令错误向上传递，不伪装成功；关闭后不能再用', async () => {
   await withRedis(async ({ handle, raw, namespace }) => {
     const cache = handle.namespace(namespace);
     await raw.call(
@@ -135,17 +148,19 @@ it('[AC-B1-01y-INT#3] 真实 Redis 命令错误向上传递，不伪装成功；
       ),
     ).toBeInstanceOf(RedisUnavailableError);
     await handle.close();
-    expect(await failure(() => cache.set('closed', 'value', 30))).toBeInstanceOf(RedisClosedError);
+    const error = await failure(() => cache.set('closed', 'value', 30));
+    expect(error).toBeInstanceOf(RedisClosedError);
+    expect(error).toBeInstanceOf(RedisUnavailableError);
     expect(await raw.call('EXISTS', `${namespace}:closed`)).toBe(0);
   });
 });
 
-it('[AC-B1-01y-INT#4] 一次性 Redis 使用 db 0 和 noeviction；stop 不销毁共享环境服务', async () => {
+it('[ADR-0001 §4.2 #17][B1-01y §9.3] 一次性 Redis 使用 db 0 和 noeviction；stop 不销毁共享环境服务', async () => {
   const server = await acquire();
   const fromEnv = process.env['TEST_REDIS_URL'];
   const raw = new Redis(server.url, { maxRetriesPerRequest: 0, retryStrategy: () => null });
   try {
-    const url = new URL(server.url);
+    const url = serviceUrl(server.url);
     expect(url.pathname === '' || url.pathname === '/' || url.pathname === '/0').toBe(true);
     expect(await raw.call('CONFIG', 'GET', 'maxmemory-policy')).toEqual([
       'maxmemory-policy',
@@ -164,4 +179,4 @@ it('[AC-B1-01y-INT#4] 一次性 Redis 使用 db 0 和 noeviction；stop 不销�
     raw.disconnect();
     await server.stop();
   }
-});
+}, 180_000);

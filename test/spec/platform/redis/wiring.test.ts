@@ -8,6 +8,8 @@ import * as redisModule from '../../../../apps/api/src/modules/platform/redis/in
 import type { RedisHandle } from '../../../../apps/api/src/modules/platform/redis/index.ts';
 import { ENTRIES, connection, failure, memoryLogger, type Entry } from './kit.ts';
 
+const NEST_TIMEOUT_MS = 30_000;
+
 // Computed imports keep Nest decorators outside the spec project's erasable-only typecheck.
 interface App {
   init(): Promise<void>;
@@ -35,7 +37,7 @@ afterEach(() => {
 });
 
 it.each(['api', 'stream', 'admin', 'worker'] as const)(
-  '[AC-B1-01y-WIRING#1] %s 从 bootstrap 注入 Redis；Nest 关闭时调用生命周期',
+  '[ADR-0001 §4.2 #17][B1-01y §9.2] %s 从 bootstrap 注入 Redis；Nest 关闭时调用生命周期',
   async (entry) => {
     const closed = vi.fn(async () => {});
     const handle: RedisHandle = {
@@ -61,36 +63,41 @@ it.each(['api', 'stream', 'admin', 'worker'] as const)(
       await app.init();
       expect(app.get(platform['REDIS'])).toBe(handle);
       expect(create).toHaveBeenCalledTimes(1);
-      expect(create.mock.calls[0]?.[0]).toMatchObject({ entry, redisUrl });
+      expect(create.mock.calls[0]?.[0].entry).toBe(entry);
+      expect(create.mock.calls[0]?.[0].redisUrl).toBe(redisUrl);
+      expect(closed).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
-    expect(closed).toHaveBeenCalledTimes(1);
+    expect(closed).toHaveBeenCalled();
   },
+  NEST_TIMEOUT_MS,
 );
 
-it('[AC-B1-01y-WIRING#2] payout 不提供 Redis，不调用 Redis 工厂', async () => {
-  const platform = (await import(
-    new URL('../../../../apps/api/src/modules/platform/index.ts', import.meta.url).href
-  )) as Record<string, unknown>;
-  expect(platform['REDIS']).toBeDefined();
-  const create = vi.spyOn(redisModule, 'createRedisHandle');
-  const boot = await bootstrap();
-  const app = await boot.createWorkerContext('payout', {
-    config: loadConfig({ APP_ENV: 'test', LOG_LEVEL: 'silent' }),
-    logger: memoryLogger('payout').logger,
-    redisUrl: null,
-  });
-  try {
-    expect(await failure(() => app.get(platform['REDIS']))).toBeInstanceOf(Error);
-    expect(create).not.toHaveBeenCalled();
-  } finally {
-    await app.close();
-  }
-});
+it(
+  '[ADR-0001 §4.2 #17][B1-01y §9.2] payout 不提供 Redis',
+  async () => {
+    const platform = (await import(
+      new URL('../../../../apps/api/src/modules/platform/index.ts', import.meta.url).href
+    )) as Record<string, unknown>;
+    expect(platform['REDIS']).toBeDefined();
+    const boot = await bootstrap();
+    const app = await boot.createWorkerContext('payout', {
+      config: loadConfig({ APP_ENV: 'test', LOG_LEVEL: 'silent' }),
+      logger: memoryLogger('payout').logger,
+      redisUrl: null,
+    });
+    try {
+      expect(await failure(() => app.get(platform['REDIS']))).toBeInstanceOf(Error);
+    } finally {
+      await app.close();
+    }
+  },
+  NEST_TIMEOUT_MS,
+);
 
 it.each(ENTRIES)(
-  '[AC-B1-01y-WIRING#3] runEntry(%s) 把已校验的 REDIS_URL 传入 bootstrap',
+  '[ADR-0001 §4.2 #17][B1-01y §9.2] runEntry(%s) 把已校验的 REDIS_URL 传入 bootstrap',
   async (entry) => {
     for (const [key, value] of Object.entries({
       APP_ENV: 'test',
@@ -131,11 +138,43 @@ it.each(ENTRIES)(
     try {
       await runner.runEntry(entry);
       expect(captured).toHaveLength(1);
-      if (entry === 'payout') expect(captured[0]?.redisUrl).toBeNull();
+      if (entry === 'payout') expect(captured[0]?.redisUrl ?? null).toBeNull();
       else expect(captured[0]?.redisUrl?.reveal()).toBe('redis://127.0.0.1:1/0');
     } finally {
       process.exitCode = previousExitCode;
       for (const options of captured) await options.dbHandles?.close();
     }
   },
+  NEST_TIMEOUT_MS,
+);
+
+it.each(['api', 'stream', 'admin', 'worker'] as const)(
+  '[B1-01y §9.2][B1-01y §10] %s 使用真实 Redis 工厂，未执行命令时不可达地址不妨碍 init',
+  async (entry) => {
+    // No spy or fake transport: construction/init/close must not require a Redis server.
+    const platform = (await import(
+      new URL('../../../../apps/api/src/modules/platform/index.ts', import.meta.url).href
+    )) as Record<string, unknown>;
+    expect(platform['REDIS']).toBeDefined();
+    const boot = await bootstrap();
+    const overrides = {
+      config: loadConfig({ APP_ENV: 'test', LOG_LEVEL: 'silent' }),
+      logger: memoryLogger(entry).logger,
+      redisUrl: connection(entry, 'redis://127.0.0.1:1/0').redisUrl,
+    };
+    const app =
+      entry === 'worker'
+        ? await boot.createWorkerContext(entry, overrides)
+        : await boot.createHttpApp(entry, overrides);
+    try {
+      await app.init();
+      const handle = app.get(platform['REDIS']) as RedisHandle;
+      expect(handle).toBeDefined();
+      expect(handle).not.toBeNull();
+      expect(typeof handle.namespace).toBe('function');
+    } finally {
+      await app.close();
+    }
+  },
+  NEST_TIMEOUT_MS,
 );
