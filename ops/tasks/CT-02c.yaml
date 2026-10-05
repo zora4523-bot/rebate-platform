@@ -7,6 +7,8 @@ type: contract
 # 不向用户返回处理截止时间）、BR-ID-31（10006 白名单内）、BR-ID-01 细则（版本守卫与受限会话），由编排者摘入任务书第 2 节。
 # 枚举 appeal_status、appeal_target_type 已在 identity.yaml，接口用到时登记绑定。申诉次数上限、维持后能否再申诉
 # 规划没有默认值（06），契约不写限制，留给负责人定。分工按规划/11 §1.1（2026-10-05）：Codex 先写一致性测试，Opus 实现。
+# 契约任务没有 spec_commit 阶段（RV1，证据文件非必需）：一致性测试写在本任务 paths 内的 packages/contracts-ts/src/openapi.test.ts，
+# 先提交测试、再提交契约，两段都在 paths 内，guard-git 从基线按 paths 检查（同 CT-01c，PR 91 已按此合并、CI 全绿）。
 refs: []
 refs_hash: {}
 contract_sections: ['6.1']
