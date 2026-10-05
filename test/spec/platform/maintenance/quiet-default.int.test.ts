@@ -6,6 +6,10 @@
 // all sit in its DEFAULT partition until then; the worker reports them at info instead of warn,
 // every other table keeps the warn alert. One clone of the migrated template per test; the module
 // connects as couli_maint, rows are written as couli_app. Top-level it() only (规划/11 §4.3).
+// B1-01w (worker 契约 8, written in ./worker-day-partitions.int.test.ts): the worker's instance no
+// longer passes quietDefaultTables and turns day partitions on, so the last test now expects the
+// warn alert for link_logs too and the 15 day partitions in the report; the option itself (first
+// test) is unchanged.
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
@@ -81,6 +85,14 @@ async function report(run: Promise<MaintenanceReport>): Promise<unknown> {
 const NOW = '2026-11-20T03:04:05Z';
 const MONTHS = monthRange('2026-11', '2027-02');
 const ENSURED = [...names('event_log', MONTHS), ...names('orders', MONTHS)];
+/** The worker's instance (day partitions on, B1-01w) at NOW: link_logs 2026-11-20 … 2026-12-04 (+08:00). */
+const WORKER_ENSURED = [
+  ...ENSURED,
+  ...Array.from({ length: 15 }, (_, i) => {
+    const day = new Date(Date.UTC(2026, 10, 20 + i)).toISOString().slice(0, 10);
+    return `link_logs_p${day.replaceAll('-', '')}`;
+  }),
+];
 /** Both DEFAULT partitions hold rows: event_log 1, link_logs 2 (ordered by table, as A2 returns). */
 const DEFAULT_ROWS = [
   { table: 'event_log', partition: 'event_log_default', rows: 1 },
@@ -148,7 +160,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; maintenance 契约补�
   });
 });
 
-it('[ADR-0001 §4.2 #4、#5; worker 契约 2] worker 接线用的 createWorkerMaintenance：link_logs_default 有 3 行时只记一行 info partition_default_rows_expected、不告警；event_log_default 的行照常 warn；报告照旧含两张表；行内容不进日志', async () => {
+it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警、#5; worker 契约 2、8（B1-01w）] worker 接线用的 createWorkerMaintenance：link_logs_default 有 3 行时告警一行 warn partition_default_has_rows（不再降为 info）；event_log_default 的行同样 warn；报告含两张表与 15 个日分区；行内容不进日志', async () => {
   await withWorld(async (maint, app) => {
     expect(await insertLinkLogs(app, 3)).toEqual(Array(3).fill('app.link_logs_default'));
     const onlyLinkLogs = await runWith(maint, {}, createWorkerMaintenance);
@@ -158,15 +170,20 @@ it('[ADR-0001 §4.2 #4、#5; worker 契约 2] worker 接线用的 createWorkerMa
     const eventRows = { table: 'event_log', partition: 'event_log_default', rows: 1 };
     expect({ onlyLinkLogs, both }).toEqual({
       onlyLinkLogs: {
-        report: { ensured: ENSURED, dropped: [], defaultRows: [linkRows], failed: 0 },
-        lines: [line('info', 'partition_default_rows_expected', linkRows), done(8, 0, 0)],
+        report: { ensured: WORKER_ENSURED, dropped: [], defaultRows: [linkRows], failed: 0 },
+        lines: [line('warn', 'partition_default_has_rows', linkRows), done(23, 0, 0)],
       },
       both: {
-        report: { ensured: ENSURED, dropped: [], defaultRows: [eventRows, linkRows], failed: 0 },
+        report: {
+          ensured: WORKER_ENSURED,
+          dropped: [],
+          defaultRows: [eventRows, linkRows],
+          failed: 0,
+        },
         lines: [
           line('warn', 'partition_default_has_rows', eventRows),
-          line('info', 'partition_default_rows_expected', linkRows),
-          done(8, 0, 0),
+          line('warn', 'partition_default_has_rows', linkRows),
+          done(23, 0, 0),
         ],
       },
     });

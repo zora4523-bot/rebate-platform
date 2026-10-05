@@ -6,14 +6,15 @@
 // file by path; the names, signatures and semantics written here are the contract. Values that no
 // document fixes are marked 待编排会话确认 (suggested defaults).
 //
-// 1. `WORKER_QUIET_DEFAULT_TABLES` — exactly ['link_logs'], frozen. link_logs has only its DEFAULT
-//    partition until its day-partition maintenance exists (a later task), so every link_logs row
-//    sits there; the worker does not alert on it (contract addendum to ./index.ts, below).
+// 1. Worker 契约 8 in test/spec/platform/maintenance/worker-day-partitions.int.test.ts supersedes
+//    the former link_logs DEFAULT exemption: WORKER_QUIET_DEFAULT_TABLES is no longer exported;
+//    every nonempty DEFAULT partition, including link_logs, produces a warn line.
 //
 // 2. `createWorkerMaintenance(options)` → PartitionMaintenance
-//    = createPartitionMaintenance({ ...options, quietDefaultTables: WORKER_QUIET_DEFAULT_TABLES }).
+//    = createPartitionMaintenance({ ...options, dayPartitions: true }) (worker 契约 8.2).
 //    options: exactly the keys db, logger, clock (required) and intervalMs (optional) of section B of
-//    ./index.ts, validated there; any other key (quietDefaultTables included) → MaintenanceError
+//    ./index.ts, validated there; any other key (quietDefaultTables and dayPartitions included)
+//    → MaintenanceError
 //    ('invalid_option') synchronously. Opens no connection, reads no time, logs nothing.
 //
 // 3. `startWorkerServices(parts)` → Promise<WorkerServices> — start and stop order of the worker
@@ -60,7 +61,8 @@
 //      module, whose shape the existing rule tests fix) → startWorkerServices → `started`.
 //    - The maintenance instance is createWorkerMaintenance({ db: <maintenance handle>.db, logger:
 //      <root logger>, clock: <the process clock> }) — the same Clock instance the Nest context gets
-//      (pass it through BootstrapOverrides.clock); intervalMs default.
+//      (pass it through BootstrapOverrides.clock); intervalMs default. Per worker 契约 8.3–8.5,
+//      it also maintains link_logs day partitions and warns on every nonempty DEFAULT partition.
 //    - With COULI_EXIT_AFTER_INIT=1 the worker logs `started` { listening: false }, closes the
 //      context and the maintenance handle and exits 0 without starting the queue or maintenance.
 //    - `started` { listening: false } is logged after startWorkerServices resolved (so after the
@@ -98,9 +100,6 @@ import type { RootLogger } from '../logging/logger.ts';
 import { createPartitionMaintenance, MaintenanceError } from './index.ts';
 import type { PartitionMaintenance, PartitionMaintenanceOptions } from './index.ts';
 
-/** Tables whose DEFAULT rows the worker logs at info instead of warn (section 1). */
-export const WORKER_QUIET_DEFAULT_TABLES: readonly string[] = Object.freeze(['link_logs']);
-
 /** Something the worker starts and stops (the queue runtime, the maintenance schedule). */
 export interface StartStop {
   start(): Promise<void>;
@@ -122,7 +121,7 @@ export interface WorkerServices {
 
 /** The worker's maintenance instance (section 2). */
 export function createWorkerMaintenance(
-  options: Omit<PartitionMaintenanceOptions, 'quietDefaultTables'>,
+  options: Omit<PartitionMaintenanceOptions, 'quietDefaultTables' | 'dayPartitions'>,
 ): PartitionMaintenance {
   if (
     options === null ||
@@ -135,7 +134,7 @@ export function createWorkerMaintenance(
     throw new MaintenanceError('invalid_option');
   return createPartitionMaintenance({
     ...options,
-    quietDefaultTables: WORKER_QUIET_DEFAULT_TABLES,
+    dayPartitions: true,
   });
 }
 

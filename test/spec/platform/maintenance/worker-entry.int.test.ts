@@ -10,6 +10,10 @@
 // no-op there). Children are kept few: one test runs five entries in sequence against one clone of
 // the migrated template, the other runs seven short-lived ones without a database.
 // Top-level it() only (规划/11 §4.3).
+// B1-01w (worker 契约 8, written in ./worker-day-partitions.int.test.ts): the worker's first run now
+// also pre-creates the 15 link_logs day partitions and alerts (warn) on link_logs_default rows like
+// on any other DEFAULT partition; the first test expects that, and checks link_logs' partitions in
+// every scenario. Nothing else here changed.
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -194,8 +198,12 @@ async function partitionNames(app: Kysely<DB>, table: string): Promise<string[]>
 }
 
 const MONTHS = ['202611', '202612', '202701', '202702'];
+/** +08:00 days 2026-11-20 … 2026-12-04 (CLOCK_NOW is 2026-11-20 11:04:05 at +08:00). */
+const DAYS = Array.from({ length: 15 }, (_, i) =>
+  new Date(Date.UTC(2026, 10, 20 + i)).toISOString().slice(0, 10).replaceAll('-', ''),
+);
 
-it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真实入口（dist 子进程）：worker 带 DATABASE_MAINT_URL 时在 pgboss 版本不对（41）时 startup_failed、退出码 1、一个分区都不建（维护在队列之后启动）；payout 设了它也不维护；COULI_EXIT_AFTER_INIT=1 的 worker 不跑维护；APP_ENV=test 的 worker 不设它时记 partition_maintenance_disabled、不维护；worker 带它时 started 之前跑完一轮——预建 event_log 与 orders 各 4 个月、event_log_default 的行告警、link_logs_default 的行只记 info——SIGTERM 后 stopping、stopped、5 秒内以退出码 0 结束（维护池也已关闭，不靠空闲超时）；输出不含任何口令', async () => {
+it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真实入口（dist 子进程）：worker 带 DATABASE_MAINT_URL 时在 pgboss 版本不对（41）时 startup_failed、退出码 1、一个分区都不建（维护在队列之后启动）；payout 设了它也不维护；COULI_EXIT_AFTER_INIT=1 的 worker 不跑维护；APP_ENV=test 的 worker 不设它时记 partition_maintenance_disabled、不维护；worker 带它时 started 之前跑完一轮——预建 event_log 与 orders 各 4 个月、link_logs 2026-11-20 至 12-04 共 15 个日分区（worker 契约 8），event_log_default 与 link_logs_default 的行都告警（warn）——SIGTERM 后 stopping、stopped、5 秒内以退出码 0 结束（维护池也已关闭，不靠空闲超时）；输出不含任何口令', async () => {
   const built = build();
   const database = await createTestDatabase();
   const app = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
@@ -225,6 +233,7 @@ it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真�
     const partitions = async (): Promise<unknown> => ({
       event_log: await partitionNames(app, 'event_log'),
       orders: await partitionNames(app, 'orders'),
+      link_logs: await partitionNames(app, 'link_logs'),
     });
 
     await sql`UPDATE pgboss.version SET version = 41`.execute(app);
@@ -292,7 +301,11 @@ it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真�
     await destroyDb(app).catch(() => undefined);
     await database.drop();
   }
-  const onlyDefault = { event_log: ['event_log_default'], orders: ['orders_default'] };
+  const onlyDefault = {
+    event_log: ['event_log_default'],
+    orders: ['orders_default'],
+    link_logs: ['link_logs_default'],
+  };
   expect(seen).toEqual({
     built: '',
     refused: { code: 1, signal: null, key: ['startup_failed'], partitions: onlyDefault },
@@ -318,7 +331,7 @@ it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真�
       signal: null,
       key: [
         'partition_default_has_rows',
-        'partition_default_rows_expected',
+        'partition_default_has_rows',
         'partition_maintenance_done',
         'started',
         'stopping',
@@ -335,19 +348,19 @@ it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真�
           msg: 'partition_default_has_rows',
         },
         {
-          level: 30,
+          level: 40,
           entry: 'worker',
           env: 'test',
           table: 'link_logs',
           partition: 'link_logs_default',
           rows: 1,
-          msg: 'partition_default_rows_expected',
+          msg: 'partition_default_has_rows',
         },
         {
           level: 30,
           entry: 'worker',
           env: 'test',
-          ensured: 8,
+          ensured: 23,
           dropped: 0,
           failed: 0,
           msg: 'partition_maintenance_done',
@@ -356,6 +369,7 @@ it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真�
       partitions: {
         event_log: ['event_log_default', ...MONTHS.map((m) => `event_log_p${m}`)],
         orders: ['orders_default', ...MONTHS.map((m) => `orders_p${m}`)],
+        link_logs: ['link_logs_default', ...DAYS.map((d) => `link_logs_p${d}`)],
       },
       exitsPromptly: true,
     },

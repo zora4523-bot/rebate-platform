@@ -189,7 +189,7 @@ it('[AC-B1-01s#3] 日删除锁超时只记一次失败，DEFAULT 仍告警，下
   ]);
 });
 
-it('[AC-B1-01n#5] worker 对 link_logs 降为信息日志，报告仍包含它，orders 仍告警', async () => {
+it('[AC-B1-01n#5] worker 按契约 8 预建 23 个分区，link_logs 与 orders 的 DEFAULT 数据均告警', async () => {
   const f = await fixture();
   f.control.respond = async (query) =>
     query.sql.includes('partition_default_rows')
@@ -206,15 +206,18 @@ it('[AC-B1-01n#5] worker 对 link_logs 降为信息日志，报告仍包含它�
   });
   instances.push(worker);
   const report = await worker.runOnce();
+  expect(report.ensured).toHaveLength(23);
   expect(report.defaultRows).toEqual([
     { table: 'link_logs', partition: 'link_logs_default', rows: 2 },
     { table: 'orders', partition: 'orders_default', rows: 3 },
   ]);
   expect(f.logger.info.mock.calls).toEqual([
-    [report.defaultRows[0], 'partition_default_rows_expected'],
-    [{ ensured: 8, dropped: 0, failed: 0 }, 'partition_maintenance_done'],
+    [{ ensured: 23, dropped: 0, failed: 0 }, 'partition_maintenance_done'],
   ]);
-  expect(f.logger.warn.mock.calls).toEqual([[report.defaultRows[1], 'partition_default_has_rows']]);
+  expect(f.logger.warn.mock.calls).toEqual([
+    [report.defaultRows[0], 'partition_default_has_rows'],
+    [report.defaultRows[1], 'partition_default_has_rows'],
+  ]);
 });
 
 it('[AC-B1-01n#6] 创建后修改 quietDefaultTables 不影响日志分级', async () => {

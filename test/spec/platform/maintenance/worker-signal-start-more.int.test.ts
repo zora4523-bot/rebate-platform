@@ -18,6 +18,9 @@
 //     compile. See couli-runs/B1-01t/author-supplement-1.md.
 // Helpers are copied from ./worker-signal-start.int.test.ts (a test file cannot be imported).
 // Top-level it() only (规划/11 §4.3).
+// B1-01w supplementary (worker 契约 8, header of ./worker-day-partitions.int.test.ts): the worker's
+// maintenance now also pre-creates the 15 link_logs day partitions, so its first run reports
+// ensured 23 (8 month + 15 day partitions) instead of 8; only that count changed here.
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import { createRequire } from 'node:module';
@@ -350,7 +353,7 @@ const DONE_LINE: LogRecord = {
   level: 30,
   entry: 'worker',
   env: 'test',
-  ensured: 8,
+  ensured: 23,
   dropped: 0,
   failed: 0,
   msg: 'partition_maintenance_done',

@@ -1,0 +1,68 @@
+{
+  "task": "B1-01w",
+  "spec_ref": "1955639f5c29cae4f43f6e039dc3c742b5ae3312",
+  "spec_commit": "1559c301cd141778fb909e680cf47a9daaecebc0",
+  "red_tests": [
+    "[ADR-0001 §4.2 #4 按日的表预建未来 14 天、DEFAULT 分区有数据即告警; worker 契约 8.1、8.2] createWorkerMaintenance 只调用一次 createPartitionMaintenance，参数是一个普通对象：给定的 db / logger / clock（同一对象）与 intervalMs（只在给了时），加 dayPartitions: true，没有 quietDefaultTables；返回的就是它返回的那个实例；创建时不读时钟、不写日志；worker.ts 不再导出 WORKER_QUIET_DEFAULT_TABLES",
+    "[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; worker 契约 1、2、8（B1-01w）; maintenance 契约 B] worker.ts 不再导出 WORKER_QUIET_DEFAULT_TABLES（link_logs 的 DEFAULT 豁免已撤）；createWorkerMaintenance：合法选项（含 intervalMs）得到 runOnce / start / stop，创建时不读时钟、不写日志；多出的键（含 quietDefaultTables）、缺键、坏 intervalMs 同步抛 invalid_option",
+    "[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警、#5; worker 契约 2、8（B1-01w）] worker 接线用的 createWorkerMaintenance：link_logs_default 有 3 行时告警一行 warn partition_default_has_rows（不再降为 info）；event_log_default 的行同样 warn；报告含两张表与 15 个日分区；行内容不进日志",
+    "[ADR-0001 §4.2 #4 按日的表预建未来 14 天、DEFAULT 分区有数据即告警、#5; BR-ID-30 ② 每日 04:00（+08:00）删除; worker 契约 8.2、8.3、8.4] worker 的维护实例：每轮在 8 个月分区之后预建 link_logs 2026-11-20 至 12-04 共 15 个日分区；03:59:59.999（+08:00）不删、04:00:00.000 删掉过期的 link_logs_p20260801；link_logs_default 的 2 行与 event_log_default 的 1 行每轮都 warn（不记 partition_default_rows_expected），旧行留在 DEFAULT；报告与日志确切、不含行内容",
+    "[ADR-0001 §4.2 #4 DEFAULT 有数据须先迁出才能建对应区间的分区; worker 契约 8.4 不做迁出] link_logs_default 里有 2026-11-22（+08:00）的 1 行：worker 每轮建 11-22 都失败 23514（partition_ensure_failed { table, day, sqlstate }，failed 1，其余 14 天照建）并 warn；时钟走到 11-23 04:00（+08:00）后 11-22 已出窗口，不再失败，warn 照旧，行仍在 DEFAULT",
+    "[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真实入口（dist 子进程）：worker 带 DATABASE_MAINT_URL 时在 pgboss 版本不对（41）时 startup_failed、退出码 1、一个分区都不建（维护在队列之后启动）；payout 设了它也不维护；COULI_EXIT_AFTER_INIT=1 的 worker 不跑维护；APP_ENV=test 的 worker 不设它时记 partition_maintenance_disabled、不维护；worker 带它时 started 之前跑完一轮——预建 event_log 与 orders 各 4 个月、link_logs 2026-11-20 至 12-04 共 15 个日分区（worker 契约 8），event_log_default 与 link_logs_default 的行都告警（warn）——SIGTERM 后 stopping、stopped、5 秒内以退出码 0 结束（维护池也已关闭，不靠空闲超时）；输出不含任何口令",
+    "[ADR-0001 §4.2 #4、#11; worker 契约 7 e] 真实入口（dist 子进程）：维护首轮卡在分区锁上时连收两次同一信号（SIGTERM→SIGTERM、SIGINT→SIGINT，第二次在第一次的 stopping 已记之后发）——第二次被忽略：只一行 stopping、不退出、不记 started；放锁后这一轮做完，按启停顺序停、记 stopped，进程自然结束、退出码 0",
+    "[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 在队列启动时（pgboss.version 被另一会话锁住）收到 SIGTERM——立即记 stopping、不退出、不记 started；放锁后启动照常做完（维护首轮 ensured 23：8 个月分区 + link_logs 15 个日分区，B1-01w），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、两个池都关）、放锁后 5 秒内退出码 0；同一阶段收到 SIGINT 后启动失败（放锁时版本改成 41）：stopping、startup_failed、不记 stopped，进程自然结束、退出码 1；输出不含口令",
+    "[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 的维护首轮卡在 event_log_p202611 的分区锁上时收到 SIGTERM 再收到 SIGINT（或 SIGINT 再 SIGTERM）——只按第一个信号立即记一行 stopping、不退出、不记 started；放锁后这一轮做完（ensured 23 含 link_logs 15 个日分区（B1-01w）、failed 0），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、维护池与主池都关）、放锁后 5 秒内退出码 0；输出不含口令"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/maintenance/**). test-change: the worker's maintenance turns link_logs day partitions on (dayPartitions: true) and drops the B1-01n DEFAULT exemption (WORKER_QUIET_DEFAULT_TABLES removed), so DEFAULT rows alert again per ADR-0001 §4.2 #4; the protected rule tests that pinned the exemption (worker-wiring, quiet-default.int, worker-entry.int) and the B1-01t signal tests (ensured 8 -> 23) are updated: needs the owner label. No money, attribution or authorisation path.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "0c070c1a7b14af7022f39741b09b09e33bc0a5d1",
+      "tree": "6b35ea4d096b2e3705cfbaf0f5bd4d2fff2a7c3e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T14:45:58Z",
+      "finished_at": "2026-10-05T14:47:54Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent rounds 1-2: pass, 0 findings (round 2 checked the supplementary test commit and the rebase)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 2,
+      "scope": "money review rounds 1 (base 375db0b, on top of B1-01s) and 2 (base origin/main after the rebase): pass, 0 findings, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, 0 findings; a supplementary commit after B1-01t merged (its signal tests expect ensured 23 once day partitions are on) was checked in code review round 2"
+  },
+  "trees": {
+    "packages/money": "83cb7c5abfd03ef162543c3aa1db0033ecf2aff0",
+    "packages/domain": "c7bbadb81089e32cd0ed3ff3e38958080a0134ef",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "bd4759801c4b522aa02e8a039e70dac08e79245e",
+    "apps/api/src/modules/platform/maintenance": "6a8c49d1509030a22b79f66538569959c5f88430"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 pnpm test:longrun on a b1-followups-2 worktree (test/properties unchanged by B1-01r–w), 2026-10-05; this task adds no property tests"
+  }
+}
