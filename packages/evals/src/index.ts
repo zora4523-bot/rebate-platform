@@ -5,6 +5,15 @@
 // The JSON Schemas in ../schema/ describe the same shapes as validateCase / validateManifest.
 import { createHash } from 'node:crypto';
 
+export {
+  sha256Hex, modelKey, toolKey, RecordingMiss, RecordingStore, loadRecordings,
+  runReplay, gradeCase, summarize, checkReport, checkSmokeGate, checkDuplicateIds,
+} from './replay.ts';
+export type {
+  ModelRequest, ToolCall, Recording, StreamFrame, TurnOutput, AgentPorts, AgentUnderTest,
+  ResultType, Layer, CaseProblem, CaseResult, RunMeta, Report, SmokeVerdict, ProblemCode,
+} from './replay.ts';
+
 export type EvalSet = 'smoke' | 'find' | 'badcase' | 'baseline-pairs' | 'judges';
 export type Category =
   | 'T1'
