@@ -47,6 +47,9 @@
 // session of its pools (couli-worker, couli-worker-maint) any more; then it is continued.
 // Children are kept few (four, on one clone of the migrated template). Top-level it() only
 // (规划/11 §4.3).
+// B1-01w supplementary (worker 契约 8, header of ./worker-day-partitions.int.test.ts): the worker's
+// maintenance now also pre-creates the 15 link_logs day partitions, so its first run reports
+// ensured 23 (8 month + 15 day partitions) instead of 8; only that count changed here.
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -390,7 +393,7 @@ const DONE_LINE: LogRecord = {
   level: 30,
   entry: 'worker',
   env: 'test',
-  ensured: 8,
+  ensured: 23,
   dropped: 0,
   failed: 0,
   msg: 'partition_maintenance_done',
@@ -419,7 +422,7 @@ function view(run: Observed): unknown {
   return rest;
 }
 
-it('[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 在队列启动时（pgboss.version 被另一会话锁住）收到 SIGTERM——立即记 stopping、不退出、不记 started；放锁后启动照常做完（维护首轮 ensured 8），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、两个池都关）、放锁后 5 秒内退出码 0；同一阶段收到 SIGINT 后启动失败（放锁时版本改成 41）：stopping、startup_failed、不记 stopped，进程自然结束、退出码 1；输出不含口令', async () => {
+it('[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 在队列启动时（pgboss.version 被另一会话锁住）收到 SIGTERM——立即记 stopping、不退出、不记 started；放锁后启动照常做完（维护首轮 ensured 23：8 个月分区 + link_logs 15 个日分区，B1-01w），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、两个池都关）、放锁后 5 秒内退出码 0；同一阶段收到 SIGINT 后启动失败（放锁时版本改成 41）：stopping、startup_failed、不记 stopped，进程自然结束、退出码 1；输出不含口令', async () => {
   const built = build();
   const database = await createTestDatabase();
   const holderDb = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
@@ -483,7 +486,7 @@ it('[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子�
   });
 }, 300_000);
 
-it('[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 的维护首轮卡在 event_log_p202611 的分区锁上时收到 SIGTERM 再收到 SIGINT（或 SIGINT 再 SIGTERM）——只按第一个信号立即记一行 stopping、不退出、不记 started；放锁后这一轮做完（ensured 8、failed 0），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、维护池与主池都关）、放锁后 5 秒内退出码 0；输出不含口令', async () => {
+it('[ADR-0001 §4.2 #4、#11; worker 契约 3、4、7] 真实入口（dist 子进程）：worker 的维护首轮卡在 event_log_p202611 的分区锁上时收到 SIGTERM 再收到 SIGINT（或 SIGINT 再 SIGTERM）——只按第一个信号立即记一行 stopping、不退出、不记 started；放锁后这一轮做完（ensured 23 含 link_logs 15 个日分区（B1-01w）、failed 0），不记 started，按启停顺序停、记 stopped，进程自然结束（无 process.exit、保活定时器已清、维护池与主池都关）、放锁后 5 秒内退出码 0；输出不含口令', async () => {
   const built = build();
   const database = await createTestDatabase();
   const holderDb = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
