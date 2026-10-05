@@ -20,7 +20,11 @@ export interface PlatformRecord {
   readonly stage: string;
 }
 
-/** Runtime capabilities, already resolved by the calling use case; not dictionary marks. */
+/**
+ * 调用方提供运行期开关；catalog 仍须读取 platforms 的能力标记。
+ * searchEnabled 不能启用 search_support='none' 的平台；此时 parseEnabled=false
+ * 表示两种能力均不可用，requirePlatform / registerProductRef 必须拒绝（30131）。
+ */
 export interface ProductCapabilities {
   readonly parseEnabled: boolean;
   readonly searchEnabled: boolean;
