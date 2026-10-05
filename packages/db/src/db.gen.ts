@@ -138,6 +138,19 @@ export interface Blocklist {
   violation_type: string;
 }
 
+export interface CategoryBlocklist {
+  app_id: string;
+  category_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  keyword: string | null;
+  platform: string;
+  reason: string;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string;
+}
+
 export interface ConfigItems {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -473,10 +486,46 @@ export interface PayoutAccountVerifyAttempts {
   verify_date: Timestamp;
 }
 
+export interface Platforms {
+  code: string;
+  convert_support: string;
+  created_at: Generated<Timestamp>;
+  key_prefix: string | null;
+  key_stability: string;
+  order_sync_support: string;
+  search_support: string;
+  stage: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface ProcessedEvents {
   consumer: string;
   created_at: Generated<Timestamp>;
   event_id: string;
+}
+
+export interface ProductKeyAliases {
+  adr_id: string;
+  created_at: Generated<Timestamp>;
+  new_key: string;
+  old_key: string;
+  reason: string;
+}
+
+export interface ProductRefs {
+  app_id: string;
+  canonical_url: string | null;
+  created_at: Generated<Timestamp>;
+  platform: string;
+  product_key: string;
+  raw_fetched_at: Timestamp;
+  raw_item_id: string;
+  refreshed_at: Timestamp;
+  shop_id: string | null;
+  shop_type: string | null;
+  source: string;
+  title: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface PushTokens {
@@ -669,6 +718,7 @@ export interface DB {
   articles: Articles;
   audit_logs: AuditLogs;
   blocklist: Blocklist;
+  category_blocklist: CategoryBlocklist;
   config_items: ConfigItems;
   consent_records: ConsentRecords;
   device_registrations: DeviceRegistrations;
@@ -687,7 +737,10 @@ export interface DB {
   payout_account_changes: PayoutAccountChanges;
   payout_account_verify_attempts: PayoutAccountVerifyAttempts;
   payout_accounts: PayoutAccounts;
+  platforms: Platforms;
   processed_events: ProcessedEvents;
+  product_key_aliases: ProductKeyAliases;
+  product_refs: ProductRefs;
   push_tokens: PushTokens;
   refresh_tokens: RefreshTokens;
   risk_hits: RiskHits;
