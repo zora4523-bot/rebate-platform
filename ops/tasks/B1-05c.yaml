@@ -1,0 +1,30 @@
+id: B1-05c
+repo: rebate-platform
+title: catalog 模块首建：平台字典读取、product_refs 登记与按 BR-PROD-05 顺序取原串、别名解析 resolveProductKey、类目黑名单过滤；定义并装配五个端口（登记 link、来源 link 的 entry_source、报价、查看者、配置读取）
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S1-4、S2-1、S2-7：item_ref 拆到 B1-05h）。05 B1-05 拆分：c 模块基础，h item_ref，f 卡片组装，d 搜索，e 详情，g 缓存。
+# 依据：BR-PROD-01、02（别名只用于一对一派生规则变更）、05（raw_item_id 原样保存与三级取用顺序及各级时限）、10（平台编码、天猫 shop_type）、04 §3.2 catalog 各表行，由编排者摘入任务书第 2 节。
+# 端口（catalog 定义；同编排者裁定 LEDGER-next §6 第 2、3 条「使用方定义端口、实现方实现、app.module 装配」）：
+#  ① LinkRegistrar（linking 实现，B1-06c 装配）——出卡只登记 link 与报价快照、不转链（BR-PRICE-12）；
+#  ② SourceLinkReader（linking 实现，B1-06c 装配）——按来源 link_id 只读取 entry_source，供详情继承（BR-PRICE-07）；
+#  ③ RebateQuoter（报价，BR-CALC-20 / BR-PRICE-06；真实实现归 B2-03 + 等级来源，本批只有 B1-05f 的演示实现，plan-draft 待决定第 1 条）；
+#  ④ ViewerContext（app_id、user_id、device_id；identity 实现，接线任务 B1-02m；未接线时一律游客）；
+#  ⑤ 配置读取（content 实现，经 F1-02b；本任务在 app.module 装配，后续 catalog 任务只用，不直接 import content）。
+# ①② 只定义类型与注入令牌，用到它们的服务等 B1-06c 装配后才注册（不放占位实现）；④ 未接线时装配「一律游客」的默认实现（要求登录的接口因此失败即关），B1-02m 替换。
+# 依赖 union（02 §4.1 catalog → union）：只用 union/index.ts 导出的接口与 DTO。开工前风险表要已登记 catalog/**（#113）。
+# 风险：catalog/** 为 RV1（规划/11 §1.1），app.module.ts 未登记按 RV2，整体 RV2（task.ts show）。
+refs: []
+refs_hash: {}
+deps: [B1-05a, B1-05b, B1-04b, F1-02b]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/catalog/base/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/base/**'
+status: todo
+pr: null

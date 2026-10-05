@@ -11,7 +11,11 @@ type: impl
 # 不做：后台登录、首次绑定、权限守卫、step-up 令牌、/admin/v1 路由（都归 F1-06 其余部分）。
 # 开工前在 ops/risk-map.yaml 登记 apps/api/src/modules/admin/**（保护路径第三类，要负责人标签；11 §1.1 没把 admin 列进 RV1 行，按默认 RV2）。
 # platform 路径为 RV2，本任务整体按 RV2：两家评审、容器验证、证据文件。依据：04 §3.2 audit_logs 行、BR-ID-34、BR-ID-30，由编排者摘入任务书第 2 节。
-# test_paths：test/spec/admin/audit/**、test/spec/admin/totp/**（task-file.ts 还不认该字段；同 B1-02c 注释的做法）。
+# 2026-10-05 W1 搜索转链线第 1 轮台账评审后改（S1-5、S1-6、S2-6）：TOTP 校验原语与审计写入的核心写成无装饰器、只用可擦除语法、可被 node 直接运行的纯模块
+# （入参是 @couli/db 的 Kysely 句柄、Clock、字段加密函数），Nest 包装（审计端口的提供者、注入）另放；供 B1-19c、F1-06c 的命令行直接组装、供 B1-19b 按参数接收校验器。
+# 测试阶段的骨架直接写在含 NotImplemented 的文件里，不要只写一个转出别处的 index 文件；platform/index.ts 的导出由实现阶段加（上一次 Codex 写测试因此被路径守卫判越界）。
+# 第 2 轮台账评审 S2-2：纯模块另提供「校验 super 加动态码」的一体函数（读 admin_users：存在、is_super、状态正常、已绑定 TOTP，再校验动态码并防重放），返回已验证的 super 身份；B1-19b 只接受这个结果。
+# test_paths 现已被 task-file.ts 接受（legacy 台账可省略，但 tester 为 codex 时允许写），按原注释补上。
 refs: []
 refs_hash: {}
 deps: [F1-06a]
@@ -21,6 +25,9 @@ paths:
   - 'apps/api/src/modules/platform/index.ts'
   - 'apps/api/src/modules/platform/platform.module.ts'
   - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/admin/audit/**'
+  - 'test/spec/admin/totp/**'
 impl: claude
 tester: codex
 accept:

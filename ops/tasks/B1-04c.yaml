@@ -1,0 +1,27 @@
+id: B1-04c
+repo: rebate-platform
+title: union 录制回放接入：按 config/union-endpoints/<platform>.json 取 base URL、注入式传输（单元测试不联网不监听）、录制文件回放、provenance.json 读取与来源检查、录制目录约定；WireMock 留 TODO
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S2-4、S1-7）。沿用 LEDGER-next/B1-04c 草稿，改动：原始报文归档拆到 B1-04p（它要等 B1-04a），
+# 本任务去掉对 B1-04a 的依赖；补 test_paths；配置改 .json；WireMock 不做——infra/local/compose.yaml 里 WireMock 还是 TODO、验证容器断网、单测不许 listen，
+# 本任务只做「按配置取 base URL + 可注入的传输 + 从文件回放」，test 环境接 WireMock 写 TODO(规划/11 §4.5): WireMock 接入 — blocked on infra 任务。
+# 依据：02 §6.2 录制回放行、§16.2（公开仓库 fixtures/ 只放合成数据；真实录制在 rebate-private 的 fixtures/union-recordings/<platform>/<scenario>/）、
+# 规划/11 §4.5（provenance.json 字段；非 probe 来源验收不写通过；回放框架记录加载了哪些录制）、09 README §0.2 第 3 条与脱敏要求，由编排者摘入任务书第 2 节。
+# 公开仓库只放 source 为 synthetic 的录制，不按平台文档仿造报文；不放任何真实报文、不抄私有库。带真实录制的回放只在负责人本机跑（05 CT-14、11 §7.3），CI 只跑合成。
+# 完整应用 + PG 的回放场景（test/replay/）归 QA-03。本任务定 fixtures/union-recordings/ 的目录与 provenance.json 格式，建 jd、pdd、taobao 三个子目录（只放合成样例）。
+# 本批没有真实适配器使用它（B1-04e～m 等推广位 / siteId），优先级排在演示适配器与推广位之后。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04b]
+paths:
+  - 'apps/api/src/modules/union/**'
+  - 'fixtures/union-recordings/**'
+test_paths:
+  - 'test/spec/union/replay/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/replay/**'
+status: todo
+pr: null

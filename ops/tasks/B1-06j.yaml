@@ -1,0 +1,24 @@
+id: B1-06j
+repo: rebate-platform
+title: GET /v1/links/{link_id}：App 内链接落地页只读取卡——不登记、不写 link_logs、不转链；link_kind（share / other）、不含 rebate_* 与返后价的卡片子集、quoted_at、viewer_is_sharer；不存在或不属于本 App 30144
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：04 §6.3 GET /v1/links/{link_id} 行（Q-03 默认，待负责人确认）、BR-ATTR-05 细则「App 内打开链接的入口」、BR-ATTR-10、BR-ATTR-11（viewer_is_sharer 只用于提示）、
+# BR-PRICE-06（子集不含返利金额），由编排者摘入任务书第 2 节。购买仍只经 open。x-auth optional：未接身份时 viewer_is_sharer 一律 false。
+# 实现路由时去掉 x-implementation: planned。linking/** 与 openapi.yaml 串行（与 B1-06e～i 任一相交，按看板顺序排）。风险：linking RV2，整体 RV2。
+# 第 1 轮台账评审后改（S1-1）：去掉 planned 后重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入，与 B1-02e / f / g、B1-03i 串行）。
+refs: []
+refs_hash: {}
+deps: [B1-06c, B1-02c]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/linking/landing/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/landing/**'
+status: todo
+pr: null

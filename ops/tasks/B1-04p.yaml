@@ -1,0 +1,23 @@
+id: B1-04p
+repo: rebate-platform
+title: union 原始报文归档：每次联盟调用（含回放传输）写 union_raw_payloads——请求摘要去掉 appKey / secret / sign / session / access_token、响应原文压缩存、耗时与错误码、时间取 Clock；演示适配器不归档
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。从 LEDGER-next/B1-04c 草稿拆出的归档部分。依据：02 §6.1 末条（每次调用记请求摘要、响应原文、耗时、错误码）、
+# 04 §3.2 union_raw_payloads 行、BR-ID-30 ⑦（180 天，留存由 B1-04a 的分区规则做）、09 README 脱敏要求，由编排者摘入任务书第 2 节。
+# 表由 B1-04a 建（只授 INSERT / SELECT，按月分区）；写者 union（02 §4.1）。kind 取值 04 只写 order / rights / query…，按调用用途写 text，不自造枚举约束。
+# 演示适配器（B1-04o）不是平台调用，不归档；回放传输（B1-04c）照真实调用归档，便于以后核对。归档失败不得让业务调用失败（记错误日志与指标），
+# 这一点 02 没写，写进实现说明并在 PR 里列出（同类判断见 02 §14「Redis 不可用」行的降级思路）。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04c, B1-04a]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/archive/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/archive/**'
+status: todo
+pr: null

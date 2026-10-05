@@ -1,0 +1,26 @@
+id: B1-04o
+repo: rebate-platform
+title: union 演示适配器（DemoUnionAdapter）：三平台共用的合成数据——搜索、详情、链接解析、转链、渠道备案、物料流，按种子确定性生成，可按场景注入超时 / 限流 / 下架 / 券失效 / 无佣金；prod 拒绝启动
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。从 LEDGER-next/B1-04b 草稿拆出（原草稿把演示适配器和骨架放在一起，合起来超过 400 行）。
+# 为什么现在要：淘宝推广位（TB_PID）与京东站点编号未到（负责人待提供），真实转链做不了；本线的搜索、详情、转链、解析都先接演示适配器（任务书 W1-search-linking-lane §2）。
+# 硬规则（AGENTS.md 第 7 条、规划/11 §4.5、09 README §0.2 第 3 条）：只造合成数据，不模仿任何平台的报文格式、字段名、签名或错误码；
+# 不读、不抄私有库 rebate-private 的任何录制；输出直接是 B1-04b 的统一 DTO。演示数据不计入 AC-LINK / AC-ORD 验收，验收记录不写通过。
+# 商品 ID 形状要能覆盖 BR-PROD-03 的派生分支（淘宝带 / 不带「-」、京东 itemId 带「_」、拼多多 goods_id 与 goods_sign 分开），便于 B1-05b 的派生测试用；
+# 转链结果按平台给出 jump 所需字段（京东、拼多多：推广链接与可空的 scheme / 小程序路径，09 U-27；淘宝：不转链，只回显推广位与 relation_id，02 §5.1）。
+# 只认 linking 构造的 UnionIdentity（BR-ATTR-05）：身份字段缺失时报错，不从请求里取。时间取注入的 Clock。
+# 启用方式：config/union-endpoints/<platform>.json 里 mode=demo；APP_ENV=prod 时出现 demo 即拒绝启动（同 B1-04b 的 replay 规则）。
+refs: []
+refs_hash: {}
+deps: [B1-04b]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/demo/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/demo/**'
+status: todo
+pr: null

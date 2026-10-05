@@ -1,0 +1,23 @@
+id: B1-06d
+repo: rebate-platform
+title: linking open 第一段「为谁打开」：按 BR-ATTR-05 ①～⑤ 判定（分享 link 用分享者身份、本人、游客 link、他人非分享 link → 为当前用户新建 link 并带 new_link_id，比较基准沿用原 link 快照价）、自己打开自己的分享 link、link 不存在或不属于本 App 30144
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审 S2-7 把原 B1-06d 拆成 d（本任务）与 k（复核、link_logs、attempts）。
+# 依据：BR-ATTR-05（open 的归属规则；他人 link 新建时比较基准沿用原 link 的 quoted_final_price_fen，G-08）、BR-ATTR-11（自己打开自己的分享 link，待决策、按默认改走自购位）、
+# BR-PRICE-12、04 §6.3 open 行，由编排者摘入任务书第 2 节。30144 是 G-08 默认处理（待负责人确认），契约已有。不含路由与平台转链。
+# 登录态只经 B1-06c 的 CallerContext，未接身份时一律游客：非分享 link 需要登录的分支按契约返回 10001。新建 link 走 B1-06c 的登记。
+# 风险：linking/** RV2。linking/** 串行。
+refs: []
+refs_hash: {}
+deps: [B1-06c]
+paths:
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/open-owner/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-owner/**'
+status: todo
+pr: null

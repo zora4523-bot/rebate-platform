@@ -1,0 +1,29 @@
+id: B1-05d
+repo: rebate-platform
+title: GET /v1/products/search：单平台搜索（价格区间含边界、当页排序、has_coupon）、游标只含 search_session_id 与 page_no、会话内去重、过滤无返利并最多补拉 1 页、无结果给物料流前 10 个（只取白名单频道）、搜索开关与联盟故障 50304
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S1-1、S1-7、S2-1、S2-2、S2-9）。依据：04 §6.3 search 行、BR-PROD-07（查询专用推广位 pid_scene=query、缓存键规则——缓存本身在 B1-05g）、
+# BR-PROD-08（去重键、游标）、BR-PROD-10 细则「按平台的搜索开关」（search.enabled.<platform> 关 → 50304 data.reason=search_disabled）、BR-PRICE-08（过滤与补拉、has_more 以上游为准）、
+# BR-PRICE-15、BR-TEXT-17 细则「联盟物料频道」（白名单现为空 → fallback_items 为空数组）、TRADE-20、TRADE-12，由编排者摘入任务书第 2 节。
+# 物料频道白名单从 platform/index.ts 取 CT-15m 生成的常量（apps/api 不读 YAML）。配置只经 B1-05c 的配置读取端口。
+# 卡片走 B1-05f 的 CardAssembler（entry_source=search）；link 登记端口由 B1-06c 实现并装配，所以依赖它。没有缓存时联盟超时 / 限流 / 熔断一律 50304（data.platform），不读商品池（BR-PROD-07）。
+# 取不到 active 的查询专用推广位：按 plan-draft 待决定第 5 条默认（视同联盟不可用：50304 并告警），默认值待负责人确认，做成可替换，PR 里列出。
+# 实现路由时去掉 searchProducts 的 x-implementation: planned，并重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入；与 B1-02e / f / g、B1-03i 等同路径任务串行）。
+# 第 2 轮台账评审 S1：本任务在 catalog 模块里注册 CardAssembler 及用到 LinkRegistrar 等端口的服务（端口由 B1-06c 在 app.module 层以全局提供者装配，catalog 与 linking 不互相 import 模块，不用 forwardRef）；B1-06k、B1-07a 依赖本任务。
+# x-auth optional：查看者经 ViewerContext，未接身份时按游客。风险：catalog RV1、openapi.yaml RV1、route-schemas.gen.ts（platform）RV2，整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-05f, B1-19b, B1-04o, B1-06c, B1-02c, CT-15m]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/catalog/search/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/search/**'
+status: todo
+pr: null

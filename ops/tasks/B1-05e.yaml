@@ -1,0 +1,26 @@
+id: B1-05e
+repo: rebate-platform
+title: GET /v1/products/{product_key}：商品详情（券、券后价、预估返利、取价时间）、派生 key 与请求不一致或派生失败 30143、下架 30141、item_ref 原样透传并作原串来源、每次响应登记新 link_id；无缓存且联盟故障时按「暂时查不到」处理
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S1-1、S1-4）。依据：04 §6.3 详情行、BR-PROD-03 / 05 / 11、BR-PRICE-05、11、12、14（下架与券失效的卡片状态）、
+# BR-PRICE-07（详情继承来源卡的 entry_source，无来源卡按比价风险）、拍板第二批 TRADE-12，由编排者摘入任务书第 2 节。
+# 来源卡 entry_source 只用 B1-05c 定义、B1-06c 实现并装配的 SourceLinkReader 端口，本任务不新定义端口、不改 app.module。
+# 详情的商品池降级（stale=true）要商品池表，本批不建（B1-05a 注释）：没有可用缓存且联盟故障时按 BR-PRICE-11「商品池也没有合格数据」一支处理，PR 列为未完成。
+# 实现路由时去掉 getProduct 的 x-implementation: planned，并重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入）。
+# 风险：catalog RV1、openapi.yaml RV1、route-schemas.gen.ts RV2，整体 RV2。catalog/** 与 openapi.yaml 串行，排在 B1-05d 之后。
+refs: []
+refs_hash: {}
+deps: [B1-05d, B1-02c]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/catalog/detail/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/detail/**'
+status: todo
+pr: null

@@ -1,0 +1,24 @@
+id: B1-06f
+repo: rebate-platform
+title: 淘宝 open 与拼多多备案判定：淘宝按 union_bindings 判 30101 / 30102（带 auth_url、state、auth_methods）与 30153，下发百川打开指令（有本用户我方推广链接时 openByUrl 不传 pid，否则 openByCode + 场景 active 推广位 + relation_id）；拼多多未备案 30111
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线）。依据：02 §5.1 淘宝说明、BR-ATTR-27 淘宝行（「我方推广链接」的取用条件只在那里维护）、BR-ATTR-05 2026-10-03 淘宝段（pid 取 active 推广位，relation_id 取快照 user_id 的 active 绑定；
+# 无 active 绑定 30101 + auth_url，state 绑定新 link_id）、BR-ID-17、BR-ID-18、BR-ID-24（站长授权不可用时未绑定用户即使 no_rebate=true 也 30101 / 30102 auth_unavailable）、05 B1-06 行验收
+# （淘宝 open 的指令只含快照用户的 relation_id 与该场景 active 推广位；他人 link、分享 link 换身份的用例覆盖淘宝），由编排者摘入任务书第 2 节。
+# 淘宝 Adapter 不调任何链接 API（05 B1-04 行）：复核价格只用详情（演示适配器）。指令字段按 CT-02e 合并后的 JumpStep.sdk；百川能否回跳以 CAP-TB-11 为准，不写成能力。
+# 我方推广链接列由 B1-06b 建；只有带当前用户 relation_id、用该场景推广位取得时才写（BR-ATTR-27 淘宝行），跨用户缓存的检索结果不带（B1-05g）。
+# 合并后 B1-06e 里「淘宝一律 50301」的临时处理撤掉。linking/** 串行。风险：linking RV2，整体 RV2（归属与用户授权）。
+refs: []
+refs_hash: {}
+deps: [B1-06h, CT-02e]
+paths:
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/open-taobao/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-taobao/**'
+status: todo
+pr: null

@@ -1,0 +1,31 @@
+id: B1-04b
+repo: rebate-platform
+title: union 模块骨架与治理层接线：UnionAdapter 接口与统一 DTO（02 §6.1）、三个平台适配器预登记（infra/<platform>/ 只登记、未实现即拒绝）、超时 / 重试 / 熔断 / 配额接 platform/http 的 Governor、按平台拆分的 config/union-endpoints/<platform>.json
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S1-7、S2-3）。沿用 LEDGER-next/B1-04b 草稿，改动：①演示适配器拆到 B1-04o；
+# ②不读 union_credentials、不改 platform/config/credential-env.ts 与 .env.example（凭据读取随真实适配器段，写 TODO(规划/11 §4.5): 凭据读取 — blocked on 推广位 / siteId），
+# 因此去掉对 B1-19a 的依赖；③补 test_paths；④端点配置改用 JSON（apps/api 没有 YAML 解析器，实现任务不装依赖；05、09 写的 config/union-endpoints.yaml 待回写为按平台一份 .json）。
+# 依据：02 §6.1（接口、UnionIdentity 只由 linking 构造、每次调用归档）、§6.2 治理层表、09 README §0.2 第 3、4 条、规划/11 §4.5「没有真实录制时」，由编排者摘入任务书第 2 节。
+# 目录约定（编排者裁定 LEDGER-next §6 第 19 条）：适配器放 union/infra/<platform>/（jd、pdd、taobao），本任务只在登记表里预登记，调用未实现平台抛明确错误；
+# 端点配置 config/union-endpoints/<platform>.json，本任务定格式（含 mode：demo / replay / live）与读取、建三个文件（不写任何真实平台细节）。
+# 统一 DTO 按 09 已知事实定形：京东 skuId 可空、订单号一律字符串、金额一律整数分、佣金率按十进制字符串转万分之一整数（BR-CALC-20「不用浮点」；09 3_JD §3.5、CAP-JD-02 行）；
+# 商品 DTO 带 BR-PRICE-01 三字段、佣金率与取数时刻（BR-PRICE-11 quoted_at 的来源）。
+# 商品 DTO 必须能直接传给 packages/domain 的 deriveProductKey（入参类型由 B1-05b 在 packages/domain 定义，本任务的 DTO 满足它，不反向依赖 apps）。
+# Governor 已由 B1-01b 交付（进程内令牌桶）；Redis 令牌桶与桶的键等 CAP-*-12，按可配置键、先用进程内实现。prod 拒绝以 replay / demo 启动。
+# 全部 RV2（union/**、app.module.ts）。union 模块后续任务（B1-04o、B1-19b、B1-04c、B1-04p）都改 union/**，与本任务串行。
+refs: []
+refs_hash: {}
+deps: [B1-01b, B1-05b]
+paths:
+  - 'apps/api/src/modules/union/**'
+  - 'apps/api/src/app.module.ts'
+  - 'config/union-endpoints/**'
+test_paths:
+  - 'test/spec/union/skeleton/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/skeleton/**'
+status: todo
+pr: null

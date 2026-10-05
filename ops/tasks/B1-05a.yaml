@@ -1,0 +1,28 @@
+id: B1-05a
+repo: rebate-platform
+title: 迁移：catalog 基线表——platforms（平台字典，key_prefix、key_stability、能力标记；种子 9 行）、product_refs（主键 app_id + product_key）、product_key_aliases（只插入）、category_blocklist（04 §3.2）
+type: migration
+# 草稿 2026-10-05（W1 搜索转链线）。B1-05 开工盘点：0001～0013 没有任何 catalog 表；写者 catalog（02 §4.1）。
+# 依据：04 §3.2 platforms、product_refs、product_key_aliases、category_blocklist 行与 §2.1；BR-PROD-02（key_prefix 现值、字符集与长度、非 null 不可改）、
+# BR-PROD-03（key_stability 取值 unverified / stable_24h / stable_7d / unstable）、BR-PROD-05（product_refs 字段、source 取 search / detail / parse / pool）、
+# BR-PROD-10（平台编码，不用数字编码），由编排者摘入任务书第 2 节。
+# 种子：platforms 按 BR-PROD-02 写 9 个平台与前缀（eleme 前缀为空），key_stability 一律 unverified（CAP-*-01 未验证，09 未验证的不当事实）；能力标记按 04 §2.1 现值。
+# product_key 列加 BR-PROD-02 的格式 CHECK（长度 ≤128、可打印 ASCII 去 # / ?）；product_refs 的 product_key 非 null 后不可改用禁止 UPDATE 该列的触发器（db/AGENTS.md 第 8 条只许禁止类）。
+# product_key_aliases 只插入（不授 UPDATE / DELETE）。product_pools / pool_items（商品池）本批不建：搜索不读商品池（BR-PROD-07），详情的商品池降级随 F1 商品池任务。
+# 迁移全局串行：排在 F1-06a 之后（plan-draft 迁移槽顺序 F1-06a → B1-05a → B1-06b → B1-04a）。分工与两段式同 B1-19a。
+refs: []
+refs_hash: {}
+deps: [F1-06a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/catalog/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/catalog/**'
+status: todo
+pr: null

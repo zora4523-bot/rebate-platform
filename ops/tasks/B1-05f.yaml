@@ -1,0 +1,25 @@
+id: B1-05f
+repo: rebate-platform
+title: catalog 卡片组装（CardAssembler）：由统一商品 DTO + 报价端口 + 登记端口组出 ProductCard——三个价格字段、rebate_basis 与区间（按 entry_source）、est_net_price_fen、disclaimer_keys、quoted_at / stale / age_sec、cta、item_ref；无返利判定；演示报价实现（非 prod）
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S2-1：配置只经 B1-05c 装配的配置读取端口）。依据：BR-PRICE-01、05、06（buy_type=self，查看者等级，游客按注册默认等级）、
+# 07（无预判权限时按 entry_source 判区间；compare_rate_ratio_bp 占位 5000 只在 App 内展示）、08（返利上限为 0 即 no_rebate；检索场景过滤由调用方做）、09、11（每次请求重算 rebate_* 与整张卡、不缓存卡片）、
+# 12（每张带价卡随卡登记 link_id，快照写入后不可改）、16、21、BR-CALC-20（报价公式与取低口径，只引用、不在 catalog 另写算法），由编排者摘入任务书第 2 节。契约形状以 ProductCard 为准。
+# 报价：catalog 只调 RebateQuoter 端口，不写分账算法（BR-PRICE-06「不得另写估算逻辑」）。真实实现（packages/domain quoteRebate + commission_rules + 等级）归 B2-01 / B2-03 与成长线，都未入账。
+# 本任务带一个演示报价实现：只在 APP_ENV≠prod 且联盟为演示 / 回放模式时可装配，规则值来自非 prod 配置的合成值并调 @couli/money；prod 装配到它即拒绝启动（plan-draft 待决定第 1 条，默认 B）。
+# 配置键（tech_fee_bp、rebate.taobao.compare_rate_ratio_bp 等）只经 B1-05c 的配置读取端口取，缺键用 08 写明的占位或拒绝，不另造默认值。
+# CardAssembler 依赖的登记端口由 B1-06c 装配，组装器在模块里的注册随之推迟（单测用假实现）。风险：catalog/** 为 RV1（task.ts show）。catalog/** 串行，排在 B1-05h 之后。
+refs: []
+refs_hash: {}
+deps: [B1-05c, B1-05h]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+test_paths:
+  - 'test/spec/catalog/card/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/card/**'
+status: todo
+pr: null

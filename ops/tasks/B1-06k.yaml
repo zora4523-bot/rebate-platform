@@ -1,0 +1,24 @@
+id: B1-06k
+repo: rebate-platform
+title: linking open 第二段：价格复核与价格已变动（old 取 link 快照、requote_after_sec 默认 0）、下架 30141 / 券失效、link_logs open 事件（含 cache_hit、expired）、link_open_attempts 与 attempt_id；拼多多比价预判只做开关关闭一支
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审 S2-7 从原 B1-06d 拆出。依据：BR-PRICE-12、13（返利由 >0 变 0 的提示由客户端按响应做）、14、20（link.open.requote_after_sec 默认 0）、
+# BR-ATTR-14（open 每次都记）、BR-ATTR-21（attempt_id、外跳上报与关闭按尝试记录）、04 §8.4，由编排者摘入任务书第 2 节。
+# 复核取价经 catalog（linking → catalog），报价经 B1-05f 的卡片组装，不在 linking 另算；配置只经 B1-06c 的配置读取端口。
+# rebate.pdd.compare_precheck.enabled 默认关（CAP-PDD-04 未验证）：只实现「关」一支，打开的分支写 TODO(规划/11 §4.5): … — blocked on CAP-PDD-04。
+# 幂等走 platform 的 idempotency.execute（B1-01i）；风控钩子由 risk 线（B1-03c）注册，本任务不碰。平台转链与外跳方案在 B1-06e / B1-06f。
+# 风险：linking/** RV2。linking/** 串行，排在 B1-06d 之后。
+refs: []
+refs_hash: {}
+deps: [B1-06d, B1-05f, B1-05d]
+paths:
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/open-requote/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-requote/**'
+status: todo
+pr: null

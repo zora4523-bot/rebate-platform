@@ -1,0 +1,22 @@
+id: B1-05h
+repo: rebate-platform
+title: catalog 商品引用令牌 item_ref：签发（app_id、platform、product_key、raw_item_id、fetched_at，不含 user_id）与校验（缺失、签名无效、解不开、app_id 不符时忽略令牌不报错；签名有效但 product_key 不一致 20001），作 BR-PROD-05 第①级原串来源
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审 S2-7 从 B1-05c 拆出。依据：BR-PROD-11（内容、加密签名、客户端只透传、各种无效情形的处理）、BR-PROD-05（第①级原串的时限），
+# 由编排者摘入任务书第 2 节。ProductCard 的 item_ref 是必填字段，所以卡片组装 B1-05f 依赖本任务；linking 的 convert（B1-06i）经 catalog/index.ts 调校验。
+# 用 platform/crypto 已有的带认证加密（加密即可防篡改），密钥用途沿用现有 keyring；若必须新增密钥用途要改 platform/config，先停下另开任务，不越界。
+# 风险：catalog/** 为 RV1（task.ts show）。catalog/** 串行，排在 B1-05c 之后。
+refs: []
+refs_hash: {}
+deps: [B1-05c]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+test_paths:
+  - 'test/spec/catalog/item-ref/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/item-ref/**'
+status: todo
+pr: null

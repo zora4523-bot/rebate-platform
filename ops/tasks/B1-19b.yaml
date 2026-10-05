@@ -1,0 +1,28 @@
+id: B1-19b
+repo: rebate-platform
+title: union 联盟账号与推广位服务：登记账号与推广位（pending）、补填花卷云确认、置 active（另校验确认时间与截图路径）、retired——所有改 union_accounts / union_pids 的命令都要 super + TOTP 二次验证并写审计；禁止删除；导出「取场景 active 推广位」「是否在白名单」只读查询
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S1-2、S1-5、S1-6、S2-2）。05 B1-19 行拆分：a 迁移（已入账）；b 本任务；c 命令行。后台 HTTP（/admin/v1/union-accounts、
+# union-pids）没有契约、F1-06 登录未建，本批不做。依据：02 §6.3、BR-ATTR-02（新增或修改白名单必须 super 操作、二次验证、写审计；pending / active / retired 都计入白名单）、BR-ATTR-03、
+# BR-ATTR-08（fallback 只作保留位、不用于转链；query 只查价）、BR-ATTR-28（置 active 前确认时间与截图路径必须已填；pending 不用于转链）、BR-PROD-07，由编排者摘入任务书第 2 节。
+# 规则测试覆盖：任何写命令（含登记 pending、补填、retired）没有通过二次验证的 super 一律拒绝且不改数据；状态只进不退 pending → active → retired，不物理删除。
+# 结构（S1-5 / S1-6 裁定「纯模块」做法）：写命令与查询的核心写成无装饰器、只用可擦除语法、可被 node 直接运行的纯模块（入参：@couli/db 的 Kysely 句柄、Clock、审计写入函数、TOTP 校验器），
+# 放 union/ 下单独目录；Nest 包装（注入 DB、Clock 等）另放。TOTP 校验器与审计写入按参数传入（F1-06b 的纯模块提供），不做 Nest 注入，因此不需要改 app.module。
+# union 不 import admin（02 §4.1 union 依赖为「—」）：校验器与审计的类型由 union 定义，按结构类型接收。
+# 导出给 linking / catalog 的只读查询：取某场景当前 active 推广位（同场景多个 active 取最早启用的一个——默认值待负责人确认，plan-draft 待决定第 2 条）、判定某推广位是否在白名单（订单同步 B1-08 用）。
+# 05 验收「三家各至少 1 个推广位经该流程置为 active」等真实推广位，本任务只用合成推广位测试。风险：union RV2。union/** 串行，排在 B1-04o 之后。
+# 第 2 轮台账评审 S2-2：super 身份只接受 F1-06b 纯模块「校验 super 加动态码」一体函数返回的已验证身份，不自行只校验动态码。
+refs: []
+refs_hash: {}
+deps: [B1-19a, F1-06b, B1-04b]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/pids/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pids/**'
+status: todo
+pr: null
