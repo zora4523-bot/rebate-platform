@@ -1,0 +1,26 @@
+{
+  "name": "@couli/bridge-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "couli-src": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./conformance": {
+      "couli-src": "./src/index.conformance.ts",
+      "types": "./dist/index.conformance.d.ts",
+      "default": "./dist/index.conformance.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@couli/contracts-ts": "workspace:*"
+  }
+}

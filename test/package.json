@@ -9,11 +9,24 @@
     "test:longrun": "vitest run --config vitest.longrun.config.ts"
   },
   "devDependencies": {
+    "@couli/admin": "workspace:*",
+    "@couli/bridge-sdk": "workspace:*",
     "@couli/db": "workspace:*",
     "@couli/domain": "workspace:*",
+    "@couli/h5": "workspace:*",
     "@couli/money": "workspace:*",
     "@couli/testing": "workspace:*",
+    "@couli/ui-tokens": "workspace:*",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "fast-check": "4.10.2",
-    "kysely": "0.29.6"
+    "jsdom": "30.1.1",
+    "kysely": "0.29.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "vitest": "5.0.1"
   }
 }

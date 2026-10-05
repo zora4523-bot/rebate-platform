@@ -1,6 +1,8 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "noEmit": true,
     "composite": false,
     "declaration": false,
@@ -14,6 +16,10 @@
     { "path": "../packages/testing" },
     { "path": "../packages/money" },
     { "path": "../packages/domain" },
-    { "path": "../packages/db" }
+    { "path": "../packages/db" },
+    { "path": "../packages/bridge-sdk" },
+    { "path": "../packages/ui-tokens" },
+    { "path": "../apps/h5" },
+    { "path": "../apps/admin" }
   ]
 }
