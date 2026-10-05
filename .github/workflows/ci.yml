@@ -78,7 +78,7 @@ jobs:
       redis:
         image: redis:7.4.11-alpine
         ports:
-          - 6379:6379
+          - 127.0.0.1:6379:6379
         options: >-
           --tmpfs /data
           --health-cmd "redis-cli ping"
@@ -104,6 +104,17 @@ jobs:
           reply="$(docker exec "$REDIS_ID" redis-cli CONFIG SET save '' appendonly no maxmemory 256mb maxmemory-policy noeviction)"
           if [ "$reply" != OK ]; then
             echo "::error::CONFIG SET on the one-shot Redis replied: ${reply}"
+            exit 1
+          fi
+          # From the runner, the way the tests connect (TEST_REDIS_URL): the published port answers.
+          pong=''
+          if exec 3<>/dev/tcp/127.0.0.1/6379; then
+            printf 'PING\r\n' >&3
+            IFS= read -r -t 5 pong <&3 || true
+            exec 3>&-
+          fi
+          if [ "${pong%$'\r'}" != '+PONG' ]; then
+            echo "::error::the one-shot Redis does not answer PING on 127.0.0.1:6379 (got: ${pong})"
             exit 1
           fi
         env:

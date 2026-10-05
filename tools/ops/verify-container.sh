@@ -413,6 +413,11 @@ redis_ready() {
 wait_ready() { # <container> <readiness check> <label>
   local tries=0
   until "$2"; do
+    # A container that has exited will never answer: stop now instead of waiting 60 seconds.
+    if [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" != true ]; then
+      docker logs "$1" >>"$LOG" 2>&1 || true
+      die "$3 exited before it became ready, see $LOG"
+    fi
     tries=$((tries + 1))
     if [ "$tries" -ge 120 ]; then
       docker logs "$1" >>"$LOG" 2>&1 || true

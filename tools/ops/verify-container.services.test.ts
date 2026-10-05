@@ -22,6 +22,8 @@ const PREFIX = 'couli-stubtest';
 const PG_IMAGE = 'pgvector/pgvector:0.8.6-pg18-trixie';
 const REDIS_IMAGE = 'redis:7.4.11-alpine';
 const REDIS_URL = 'redis://redis:6379/0';
+/** The one-shot PostgreSQL URL a container gets; recognised by its value. */
+const PG_URL = /^postgres:\/\/postgres:[0-9a-f]{32}@pg:5432\/postgres$/;
 /** What the host may have set: it must never reach a verify container. */
 const HOST_REDIS_URL = 'redis://host.invalid:1/9';
 /** Settings of infra/local/compose.yaml (ADR-0001 §4.2 #17): no RDB, no AOF, noeviction. */
@@ -32,11 +34,12 @@ const REDIS_SETTINGS = {
   'maxmemory-policy': 'noeviction',
 };
 
-// Stand-in for the docker CLI. Every call is appended to STUB_DOCKER_LOG with the
-// TEST_REDIS_URL it saw (`docker run -e NAME` passes the caller's value of NAME).
-// STUB_DOCKER_FAIL=redis-start fails `run -d` of the Redis container; STUB_DOCKER_LOADING=<n>
-// answers the first n `redis-cli ping` with a LOADING reply (exit 0); STUB_DOCKER_RUN_EXIT is
-// the exit code of the verify / red container.
+// Stand-in for the docker CLI. Every call is appended to STUB_DOCKER_LOG with the environment
+// it hands to the container: `-e NAME` takes the caller's value of NAME, `-e NAME=value` its own.
+// STUB_DOCKER_FAIL=redis-start fails `run -d` of the Redis container; redis-exits makes it a
+// container that has stopped (`inspect` says not running, `exec` fails). STUB_DOCKER_LOADING=<n>
+// answers the first n `redis-cli ping` with a LOADING reply (exit 0); STUB_DOCKER_RUN_EXIT is the
+// exit code of the verify / red container.
 const STUB = String.raw`'use strict';
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -44,15 +47,23 @@ const logFile = process.env.STUB_DOCKER_LOG;
 const earlier = fs.existsSync(logFile)
   ? fs.readFileSync(logFile, 'utf8').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l).args)
   : [];
-fs.appendFileSync(logFile, JSON.stringify({ args, redisUrl: process.env.TEST_REDIS_URL ?? null }) + '\n');
+const env = {};
+args.forEach((a, i) => {
+  if (args[i - 1] !== '-e') return;
+  const eq = a.indexOf('=');
+  if (eq === -1) env[a] = process.env[a] ?? null;
+  else env[a.slice(0, eq)] = a.slice(eq + 1);
+});
+fs.appendFileSync(logFile, JSON.stringify({ args, env }) + '\n');
 const failures = (process.env.STUB_DOCKER_FAIL || '').split(',');
+const aboutRedis = args.some((a) => a.includes('-redis-'));
 function answer(text, code) {
   if (text !== '') process.stdout.write(text + '\n');
   process.exit(code);
 }
 if (args[0] === 'version') answer('28.0.1', 0);
 if (args[0] === 'run' && args.includes('-d')) {
-  if (failures.includes('redis-start') && args.some((a) => a.includes('-redis-'))) {
+  if (failures.includes('redis-start') && aboutRedis) {
     process.stderr.write('stub: cannot start the container\n');
     process.exit(125);
   }
@@ -61,7 +72,12 @@ if (args[0] === 'run' && args.includes('-d')) {
 if (args[0] === 'run' && args.includes('couli-verify-entrypoint')) {
   answer('', Number(process.env.STUB_DOCKER_RUN_EXIT || '0'));
 }
+if (args[0] === 'inspect') answer(failures.includes('redis-exits') && aboutRedis ? 'false' : 'true', 0);
 if (args[0] === 'exec' && args.includes('redis-cli')) {
+  if (failures.includes('redis-exits')) {
+    process.stderr.write('Error response from daemon: container is not running\n');
+    process.exit(1);
+  }
   const pings = earlier.filter((a) => a[0] === 'exec' && a.includes('redis-cli')).length;
   const loading = Number(process.env.STUB_DOCKER_LOADING || '0');
   answer(pings < loading ? 'LOADING Redis is loading the dataset in memory' : 'PONG', 0);
@@ -69,7 +85,7 @@ if (args[0] === 'exec' && args.includes('redis-cli')) {
 answer('', 0);
 `;
 
-type Call = { args: string[]; redisUrl: string | null };
+type Call = { args: string[]; env: Record<string, string | null> };
 type Run = { status: number; stdout: string; stderr: string; calls: Call[] };
 
 let base = '';
@@ -109,6 +125,7 @@ function workspace(name: string): string {
   return dir;
 }
 
+/** Runs the script with the stub docker; the host has TEST_REDIS_URL set. */
 function run(args: string[], env: Record<string, string> = {}): Run {
   logs += 1;
   const log = join(base, `calls-${String(logs)}.jsonl`);
@@ -160,8 +177,22 @@ function containerRuns(calls: readonly Call[], image: string): Call[] {
   );
 }
 
+function entrypointRun(calls: readonly Call[]): Call | undefined {
+  return calls.find((c) => c.args.includes('couli-verify-entrypoint'));
+}
+
+/** The values handed to the container of `call` that are one-shot PostgreSQL URLs. */
+function pgUrls(call: Call | undefined): string[] {
+  return Object.values(call?.env ?? {}).filter((v): v is string => v !== null && PG_URL.test(v));
+}
+
+/** True when TEST_REDIS_URL does not reach the container of `call`, in any form. */
+function noRedisUrl(call: Call | undefined): boolean {
+  return (call?.args ?? []).every((a) => !a.includes('TEST_REDIS_URL'));
+}
+
 it(
-  'pnpm verify: Redis starts beside PostgreSQL on the internal network and the run gets TEST_REDIS_URL',
+  'pnpm verify: Redis starts beside PostgreSQL on the internal network and the run gets both URLs',
   () => {
     const res = run(['V2-01', '--worktree', workspace('verify')], {
       STUB_DOCKER_LOADING: '2',
@@ -206,14 +237,18 @@ it(
       ...Object.entries(REDIS_SETTINGS).flatMap(([key, value]) => [`--${key}`, value]),
     ]);
 
-    // PostgreSQL is still there, on the same network.
+    // PostgreSQL is still there, on the same network, with a fresh random password.
     const pg = containerRuns(calls, PG_IMAGE);
     expect(pg).toHaveLength(1);
     expect(valueOf(pg[0]?.args ?? [], '--network')).toBe(net);
+    expect(valueOf(pg[0]?.args ?? [], '--network-alias')).toBe('pg');
     const pgName = valueOf(pg[0]?.args ?? [], '--name') ?? '';
     expect(pgName).toMatch(/^couli-stubtest-pg-v2-01-1-\d+$/);
+    const pgPassword = pg[0]?.env['POSTGRES_PASSWORD'] ?? '';
+    expect(pgPassword).toMatch(/^[0-9a-f]{32}$/);
 
-    // The run starts only after Redis answered PONG (two LOADING replies first).
+    // The run starts only after Redis answered PONG (two LOADING replies first; the container
+    // was still running each time).
     const verifyAt = calls.findIndex((c) => c.args.includes('couli-verify-entrypoint'));
     const pings = calls.flatMap((c, i) =>
       c.args[0] === 'exec' && c.args.includes('redis-cli') ? [i] : [],
@@ -221,15 +256,22 @@ it(
     expect(pings).toHaveLength(3);
     expect(calls[pings[0] ?? -1]?.args).toEqual(['exec', redisName, 'redis-cli', 'ping']);
     expect(Math.max(...pings)).toBeLessThan(verifyAt);
+    const inspections = calls.filter((c) => c.args[0] === 'inspect');
+    expect(inspections.map((c) => c.args)).toEqual([
+      ['inspect', '-f', '{{.State.Running}}', redisName],
+      ['inspect', '-f', '{{.State.Running}}', redisName],
+    ]);
 
-    // The verify container: same network, TEST_REDIS_URL passed by name with the in-network
-    // address, whatever the host had set.
+    // The verify container: same network; TEST_REDIS_URL passed by name with the in-network
+    // address, whatever the host had set; exactly one PostgreSQL URL (found by its value) with
+    // the password the PostgreSQL container got.
     const verify = calls[verifyAt];
     expect(verify?.args.slice(-2)).toEqual(['couli-verify-entrypoint', 'verify']);
     expect(valueOf(verify?.args ?? [], '--network')).toBe(net);
     expect(passedEnv(verify?.args ?? [])).toContain('TEST_REDIS_URL');
     expect(verify?.args).not.toContain(`TEST_REDIS_URL=${REDIS_URL}`);
-    expect(verify?.redisUrl).toBe(REDIS_URL);
+    expect(verify?.env['TEST_REDIS_URL']).toBe(REDIS_URL);
+    expect(pgUrls(verify)).toEqual([`postgres://postgres:${pgPassword}@pg:5432/postgres`]);
 
     // Cleanup removes both service containers (with their anonymous volumes), then the network.
     const rmAt = calls.findIndex((c) => c.args[0] === 'rm');
@@ -252,7 +294,7 @@ it(
     expect(res.status).toBe(2);
     expect(res.stderr).toContain('cannot start Redis');
     expect(existsSync(join(runs, 'V2-02', 'verify', '1', 'result.json'))).toBe(false);
-    expect(res.calls.some((c) => c.args.includes('couli-verify-entrypoint'))).toBe(false);
+    expect(entrypointRun(res.calls)).toBeUndefined();
 
     const pgName = valueOf(containerRuns(res.calls, PG_IMAGE)[0]?.args ?? [], '--name') ?? '';
     const redisName = valueOf(containerRuns(res.calls, REDIS_IMAGE)[0]?.args ?? [], '--name') ?? '';
@@ -267,6 +309,35 @@ it(
 );
 
 it(
+  'a Redis that exits before it answers stops the run at once, with its logs, and nothing is left behind',
+  () => {
+    const res = run(['V2-04', '--worktree', workspace('redis-exits')], {
+      STUB_DOCKER_FAIL: 'redis-exits',
+    });
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('Redis exited before it became ready');
+    expect(existsSync(join(runs, 'V2-04', 'verify', '1', 'result.json'))).toBe(false);
+    expect(entrypointRun(res.calls)).toBeUndefined();
+
+    const redisName = valueOf(containerRuns(res.calls, REDIS_IMAGE)[0]?.args ?? [], '--name') ?? '';
+    expect(redisName).toMatch(/^couli-stubtest-redis-v2-04-1-\d+$/);
+    // One ping, one look at the container, its logs: no 60-second wait.
+    const pings = res.calls.filter((c) => c.args[0] === 'exec' && c.args.includes('redis-cli'));
+    expect(pings).toHaveLength(1);
+    expect(res.calls.filter((c) => c.args[0] === 'inspect').map((c) => c.args)).toEqual([
+      ['inspect', '-f', '{{.State.Running}}', redisName],
+    ]);
+    expect(res.calls.some((c) => c.args[0] === 'logs' && c.args[1] === redisName)).toBe(true);
+    const pgName = valueOf(containerRuns(res.calls, PG_IMAGE)[0]?.args ?? [], '--name') ?? '';
+    expect(res.calls.find((c) => c.args[0] === 'rm')?.args).toEqual(
+      expect.arrayContaining([pgName, redisName]),
+    );
+    expect(res.calls.some((c) => c.args[0] === 'network' && c.args[1] === 'rm')).toBe(true);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
   '--fast starts no service and passes no TEST_REDIS_URL, even when the host has one',
   () => {
     const res = run(['V2-03', '--worktree', workspace('fast'), '--fast']);
@@ -274,9 +345,15 @@ it(
     const { calls } = res;
     expect(calls.some((c) => c.args[0] === 'network' && c.args[1] === 'create')).toBe(false);
     expect(calls.some((c) => c.args[0] === 'run' && c.args.includes('-d'))).toBe(false);
-    const verify = calls.find((c) => c.args.includes('couli-verify-entrypoint'));
+    const verify = entrypointRun(calls);
     expect(valueOf(verify?.args ?? [], '--network')).toBe('none');
-    expect(verify?.args.some((a) => a.includes('TEST_REDIS_URL'))).toBe(false);
+    expect(noRedisUrl(verify)).toBe(true);
+    // Nothing else is handed over either.
+    expect(Object.keys(verify?.env ?? {}).sort()).toEqual([
+      'PROP_SEED',
+      'VERIFY_SCRIPT',
+      'VERIFY_TIMEOUT_SECS',
+    ]);
   },
   CLI_TIMEOUT,
 );
@@ -292,9 +369,9 @@ function redFixture(name: string, files: Record<string, string>): string {
 }
 
 it(
-  '--red: an integration group gets Redis and TEST_REDIS_URL like PostgreSQL; a unit-only plan gets neither',
+  '--red: an integration group gets Redis and TEST_REDIS_URL like PostgreSQL',
   () => {
-    const int = run([
+    const res = run([
       'B1-02b',
       '--worktree',
       redFixture('red-int', {
@@ -305,24 +382,33 @@ it(
       'main',
     ]);
     // The stub writes no report, so the run stops after the red container (exit 2).
-    expect(int.status).toBe(2);
-    expect(int.stderr).toContain('wrote no report for spec-int');
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('wrote no report for spec-int');
     const net =
-      int.calls.find((c) => c.args[0] === 'network' && c.args[1] === 'create')?.args.at(-1) ?? '';
+      res.calls.find((c) => c.args[0] === 'network' && c.args[1] === 'create')?.args.at(-1) ?? '';
     expect(net).toMatch(/^couli-stubtest-net-b1-02b-1-\d+$/);
-    const redis = containerRuns(int.calls, REDIS_IMAGE);
+    const redis = containerRuns(res.calls, REDIS_IMAGE);
     expect(redis).toHaveLength(1);
     expect(valueOf(redis[0]?.args ?? [], '--network')).toBe(net);
-    const red = int.calls.find((c) => c.args.includes('couli-verify-entrypoint'));
+    const red = entrypointRun(res.calls);
     expect(red?.args.at(-1)).toBe('red');
     expect(valueOf(red?.args ?? [], '--network')).toBe(net);
     expect(passedEnv(red?.args ?? [])).toContain('TEST_REDIS_URL');
-    expect(red?.redisUrl).toBe(REDIS_URL);
+    expect(red?.env['TEST_REDIS_URL']).toBe(REDIS_URL);
+    const pgPassword = containerRuns(res.calls, PG_IMAGE)[0]?.env['POSTGRES_PASSWORD'] ?? '';
+    expect(pgPassword).toMatch(/^[0-9a-f]{32}$/);
+    expect(pgUrls(red)).toEqual([`postgres://postgres:${pgPassword}@pg:5432/postgres`]);
     const redisName = valueOf(redis[0]?.args ?? [], '--name') ?? '';
-    expect(int.calls.find((c) => c.args[0] === 'rm')?.args).toContain(redisName);
-    expect(int.calls.some((c) => c.args[0] === 'network' && c.args[1] === 'rm')).toBe(true);
+    expect(res.calls.find((c) => c.args[0] === 'rm')?.args).toContain(redisName);
+    expect(res.calls.some((c) => c.args[0] === 'network' && c.args[1] === 'rm')).toBe(true);
+  },
+  CLI_TIMEOUT,
+);
 
-    const unit = run([
+it(
+  '--red: a unit-only plan gets no service, no network and no database URL',
+  () => {
+    const res = run([
       'B1-02b',
       '--worktree',
       redFixture('red-unit', {
@@ -332,12 +418,19 @@ it(
       '--base',
       'main',
     ]);
-    expect(unit.status).toBe(2);
-    expect(unit.stderr).toContain('wrote no report for spec-unit');
-    expect(unit.calls.some((c) => c.args[0] === 'run' && c.args.includes('-d'))).toBe(false);
-    const unitRed = unit.calls.find((c) => c.args.includes('couli-verify-entrypoint'));
-    expect(valueOf(unitRed?.args ?? [], '--network')).toBe('none');
-    expect(unitRed?.args.some((a) => a.includes('TEST_REDIS_URL'))).toBe(false);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('wrote no report for spec-unit');
+    expect(res.calls.some((c) => c.args[0] === 'run' && c.args.includes('-d'))).toBe(false);
+    const red = entrypointRun(res.calls);
+    expect(red?.args.at(-1)).toBe('red');
+    expect(valueOf(red?.args ?? [], '--network')).toBe('none');
+    expect(noRedisUrl(red)).toBe(true);
+    // Nothing else is handed over either.
+    expect(Object.keys(red?.env ?? {}).sort()).toEqual([
+      'PROP_SEED',
+      'RED_PLAN',
+      'VERIFY_TIMEOUT_SECS',
+    ]);
   },
   CLI_TIMEOUT,
 );
@@ -359,12 +452,17 @@ it('Redis has one image and one configuration in the verify container, CI and th
   expect(command[0]).toBe('redis-server');
   expect(settings(command.slice(1))).toEqual(REDIS_SETTINGS);
 
-  // CI: a service container takes no command; the same settings are applied with CONFIG SET,
-  // and the integration tests get the published port as TEST_REDIS_URL.
+  // CI: a service container takes no command; the same settings are applied with CONFIG SET.
   const configSet = /redis-cli CONFIG SET (.+?)\)"/.exec(ci)?.[1] ?? '';
   const words = configSet.split(' ').map((w) => (w === "''" ? '' : w));
   expect(settings(words)).toEqual(REDIS_SETTINGS);
-  expect(ci).toContain('          - 6379:6379\n');
+  // The port is published on the loopback address only; the same step checks from the runner
+  // that it answers PING there, and the integration tests get that address as TEST_REDIS_URL.
+  expect(ci).toContain('          - 127.0.0.1:6379:6379\n');
+  expect(ci).not.toMatch(/^ +- 6379:6379$/m);
+  expect(ci).toContain('if exec 3<>/dev/tcp/127.0.0.1/6379; then\n');
+  expect(ci).toContain("printf 'PING\\r\\n' >&3\n");
+  expect(ci).toContain(`if [ "\${pong%$'\\r'}" != '+PONG' ]; then\n`);
   expect(ci).toContain(
     '      - run: pnpm test:int\n        env:\n          TEST_REDIS_URL: redis://127.0.0.1:6379/0\n',
   );
