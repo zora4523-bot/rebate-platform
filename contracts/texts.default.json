@@ -327,6 +327,8 @@
     "withdraw.rules_link": "提现规则",
     "withdraw_detail.copied": "已复制交易流水号",
     "withdraw_detail.copy": "复制",
+    "withdraw_detail.net.actual": "实际到账 {net}",
+    "withdraw_detail.net.expected": "预计到账 {net}",
     "withdraw_detail.trade_no": "交易流水号"
   },
   "fallbacks": {
