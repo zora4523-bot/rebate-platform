@@ -923,6 +923,7 @@ CREATE TABLE app.appeals (
     CONSTRAINT appeals_account_target_check CHECK (((target_type <> 'account'::text) OR (target_id = (user_id)::text))),
     CONSTRAINT appeals_closed_check CHECK (((status = 'processing'::text) = (closed_at IS NULL))),
     CONSTRAINT appeals_handler_check CHECK (((status = 'processing'::text) OR (handler_id IS NOT NULL))),
+    CONSTRAINT appeals_order_target_check CHECK (((target_type <> 'order'::text) OR (target_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text))),
     CONSTRAINT appeals_prev_risk_state_check CHECK (
 CASE
     WHEN (target_type = 'account'::text) THEN ((prev_risk_state IS NOT NULL) AND (prev_risk_state = ANY (ARRAY['banned'::text, 'frozen'::text])))
@@ -1774,11 +1775,11 @@ END),
     CONSTRAINT risk_hits_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text]))),
     CONSTRAINT risk_hits_related_phone_check CHECK (
 CASE
-    WHEN (request_type IS NULL) THEN ((related_phone_hmac IS NULL) AND (related_phone_masked IS NULL))
     WHEN (request_type = ANY (ARRAY['register'::text, 'phone_change'::text])) THEN ((related_phone_hmac IS NOT NULL) AND (related_phone_masked IS NOT NULL))
+    WHEN (ref_type <> 'blocked_request'::text) THEN ((related_phone_hmac IS NULL) AND (related_phone_masked IS NULL))
     ELSE ((related_phone_hmac IS NULL) = (related_phone_masked IS NULL))
 END),
-    CONSTRAINT risk_hits_request_check CHECK (((ref_type = 'blocked_request'::text) = (request_type IS NOT NULL))),
+    CONSTRAINT risk_hits_request_check CHECK (((request_type IS NULL) OR (ref_type = 'blocked_request'::text))),
     CONSTRAINT risk_hits_request_type_check CHECK ((request_type = ANY (ARRAY['register'::text, 'withdraw'::text, 'phone_change'::text, 'payout_account'::text]))),
     CONSTRAINT risk_hits_risk_action_check CHECK ((risk_action = ANY (ARRAY['pass'::text, 'manual_review'::text, 'block'::text, 'void_commission'::text]))),
     CONSTRAINT risk_hits_user_check CHECK (
@@ -1877,6 +1878,8 @@ CREATE TABLE app.user_risk_state (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT user_risk_state_frozen_until_check CHECK (((frozen_until IS NULL) OR (state = ANY (ARRAY['frozen'::text, 'appealing'::text])))),
+    CONSTRAINT user_risk_state_reason_category_check CHECK ((reason_category = ANY (ARRAY['malicious_rights'::text, 'fraud_invite'::text, 'abnormal_trade'::text, 'account_security'::text, 'other'::text]))),
+    CONSTRAINT user_risk_state_reason_category_required_check CHECK (((state = 'normal'::text) OR (reason_category IS NOT NULL))),
     CONSTRAINT user_risk_state_state_check CHECK ((state = ANY (ARRAY['normal'::text, 'frozen'::text, 'appealing'::text, 'banned'::text])))
 );
 
@@ -3732,27 +3735,6 @@ GRANT UPDATE(reason) ON TABLE app.blocklist TO couli_app;
 
 
 --
--- Name: COLUMN blocklist.platform; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(platform) ON TABLE app.blocklist TO couli_app;
-
-
---
--- Name: COLUMN blocklist.union_account_id; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(union_account_id) ON TABLE app.blocklist TO couli_app;
-
-
---
--- Name: COLUMN blocklist.start_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(start_at) ON TABLE app.blocklist TO couli_app;
-
-
---
 -- Name: COLUMN blocklist.end_at; Type: ACL; Schema: app; Owner: -
 --
 
@@ -4369,6 +4351,13 @@ GRANT INSERT(related_phone_masked) ON TABLE app.risk_hits TO couli_app;
 --
 
 GRANT INSERT(amount_fen) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: COLUMN risk_hits.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(created_at) ON TABLE app.risk_hits TO couli_app;
 
 
 --

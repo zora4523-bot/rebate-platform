@@ -13,10 +13,11 @@
 -- appeals.handler_id) are opaque actor identifiers in text, as payout_account_changes.operator
 -- and config_items.updated_by: there is no admin_users table yet.
 -- Business moments (changed_at, frozen_until, deadline_at, closed_at, expire_at, start_at,
--- end_at) have no SQL clock default and come from the injected Clock. Where created_at is a
--- business moment (blocklist 登记时间, appeals 提交时刻 that deadline_at counts from), risk
--- writes it from the Clock in the creating INSERT as sessions in 0013; the default is a
--- fallback. risk_hits.created_at is the exception, see below.
+-- end_at) have no SQL clock default and come from the injected Clock (ADR-0001 §4.2 #10).
+-- Where created_at is a business moment (blocklist 登记时间, appeals 提交时刻 that deadline_at
+-- counts from, risk_hits 命中时间), risk writes it from the Clock in the creating INSERT as
+-- sessions in 0013; the default is only a fallback (SQL now() would record the wrong moment
+-- under the compressed staging clock).
 -- CAS (ADR-0001 §4.1): blocklist, user_risk_state, appeals and risk_rules start row_version
 -- at 0; writers compare the old state and version and increment row_version in the same
 -- UPDATE. No trigger performs a business transition.
@@ -48,6 +49,10 @@
 -- independent of users (no user foreign key) and survives account deletion (BR-ID-31).
 -- union_account_id references union_accounts, whose baseline (and foreign key) comes later.
 -- Platform stays open text as orders.platform (0007). violation_type follows BR-ID-31.
+-- couli_app may update value_hmac, value, violation_type, reason, end_at, expire_at and
+-- status (BR-ID-31 细则 edits the value; BR-ATTR-26 sets end_at later and deactivates);
+-- dimension, platform, union_account_id and start_at have no change scenario in 08 and stay
+-- as inserted (db/AGENTS.md #4).
 --
 -- user_risk_state: the only store of risk_state (04 §2.5; 08's users.risk_state is
 -- user_risk_state.state). Primary key user_id as in 04. A user without a row is normal: users
@@ -55,15 +60,20 @@
 -- NULL for an indefinite freeze; banned never has an end (BR-ID-31) and normal has no
 -- deadline, so frozen_until is allowed only while frozen or appealing (an account appeal keeps
 -- the freeze deadline for an upheld result that restores prev_risk_state). reason is the
--- internal reason, reason_category the user-visible category (open text: BR-ID-31 / BR-TEXT-23
--- give no closed code list). couli_payout reads only (app_id, user_id, state) for the
+-- internal reason (admin only); reason_category is the user-visible category, one of the five
+-- codes of BR-TEXT-23 细则「原因类别」 (malicious_rights, fraud_invite, abnormal_trade,
+-- account_security, other; dictionary risk_reason.<category>), chosen whenever the account is
+-- banned or frozen ("后台封禁、冻结…时必选一项"), so it is required unless state=normal
+-- (appealing keeps the category of the appealed state). couli_payout reads only
+-- (app_id, user_id, state) for the
 -- member_blocked recheck (BR-WDR-13 ③, BR-WDR-05: any appealing is a block, so payout needs
 -- neither prev_risk_state nor frozen_until).
 --
 -- appeals (BR-ID-36): target_type / request_type / status / prev_risk_state follow the
 -- contract enums. target_id is text: an account appeal names the user (target_id must equal
--- user_id), an order appeal the order_id, a blocked_request appeal the blocked-request number
--- (= risk_hits.ref_id), whose encoding is still the contract line's (规划/06 第 22 项 ⑤).
+-- user_id::text), an order appeal the order_id (canonical lowercase UUID, CHECKed, so a case
+-- variant of the same order cannot slip past the partial unique index), a blocked_request
+-- appeal the blocked-request number (= risk_hits.ref_id, see risk_hits).
 -- related_phone_hmac is the HMAC of the related phone number (关联手机号, normalized as
 -- BR-ID-05) of a blocked_request appeal, never the number itself; it is required for the
 -- register and phone_change types (the submitted number always exists) and optional for
@@ -78,11 +88,15 @@
 -- the version columns are updatable.
 --
 -- risk_rules: rule_id is the rule's business code, unique per app; risk_hits references it
--- by (app_id, rule_id), so every rule that can hit (seeded hard rules included, 规划/02 risk/
--- seeds) has a row. version is the rule's own version number set by risk; row_version is the
--- CAS counter. conditions holds the condition JSON (04 条件 JSON); its keys belong to risk.
--- scene and status are open text: 04 and 08 give no closed vocabulary for them. Rules are not
--- deleted (no DELETE grant); hits keep their rule.
+-- by (app_id, rule_id). Consequence of that foreign key: every rule code that can hit (seeded
+-- hard rules included, 规划/02 risk/ seeds) must already have a row under EACH app_id, or
+-- writing the hit fails with 23503 and the surrounding transaction rolls back (including the
+-- blocked request's own result). risk can register a missing code first with
+-- INSERT ... ON CONFLICT (app_id, rule_id) DO NOTHING. A rule has one row that is changed in
+-- place: version is the rule's own version number set by risk, row_version the CAS counter;
+-- hits do not record the version. conditions holds the condition JSON (04 条件 JSON); its keys
+-- belong to risk. scene and status are open text: 04 and 08 give no closed vocabulary for
+-- them. Rules are not deleted (no DELETE grant); hits keep their rule.
 --
 -- risk_hits (BR-ID-36): insert-only, enforced by grants (couli_app has SELECT and column
 -- INSERT, never UPDATE or DELETE). As login_logs / consent_records, no trigger, so a later
@@ -92,20 +106,43 @@
 -- also come from non-blocklist rules (device or IP limits, BR-ID-05, BR-ID-32); blocklist
 -- hits use the blocklist dimension codes. ref_type in {order, withdrawal, blocked_request}
 -- (BR-ID-36 关联对象); other referenced objects (e.g. invite-binding hits, BR-INV-08/09) get a
--- value in the migration of the task that writes them. ref_id is text (order and withdrawal
--- UUIDs, or the blocked-request number shown to admins, encoding by the contract line).
--- A blocked_request row (44001) records request_type (contract blocked_request_type);
--- user_id is NULL for register and the requester otherwise; amount_fen (positive integer
--- fen) only and always for withdraw; related_phone_hmac / related_phone_masked (BR-ID-33:
--- HMAC plus masked number, no plaintext column) come as a pair, required for register and
--- phone_change, optional for withdraw / payout_account, absent on other rows. One request
--- may hit several rules, so ref_id is not unique. created_at is the recording moment from
--- the database default only: as device_registrations.created_at in 0005, couli_app cannot
--- write it, so evidence for appeals and audit cannot be backdated. No rule compares it with
--- Clock moments; a rule that needs a Clock moment adds its own column.
+-- value in the migration of the task that writes them. ref_id is text: the order or
+-- withdrawal UUID, or the blocked-request number shown to admins, which risk generates as a
+-- UUIDv7 before inserting; all hit rows of the same request share it, so ref_id is not unique.
+-- A blocked_request row (44001) records request_type (contract blocked_request_type) when the
+-- interception has a type; request_type appears only on blocked_request rows but is not
+-- required there. That is a deliberate opening for interceptions without a defined type yet,
+-- e.g. a third-party first login refused by the same-device registration limit (BR-ID-05):
+-- 规划/06 第 22 项 ③ only exempts such requests from appeal registration, not from the hit
+-- record BR-ID-36 requires for every hit. appeals keeps request_type mandatory for
+-- blocked_request, because these requests cannot be appealed.
+-- user_id is NULL for register and the requester for the other types (unconstrained when the
+-- type is missing); amount_fen (positive integer fen) only and always for withdraw;
+-- related_phone_hmac / related_phone_masked (BR-ID-33: HMAC plus masked number, no plaintext
+-- column) are required for register and phone_change, an optional pair on the other
+-- blocked_request rows (withdraw, payout_account, or no type), absent on order / withdrawal
+-- rows. created_at is the hit moment, written by risk from the injected Clock (couli_app's
+-- column INSERT includes it); there is no UPDATE or DELETE, so it cannot change afterwards.
 --
 -- Grants: couli_app gets what the single writer needs; couli_readonly reads all five tables;
 -- couli_payout reads user_risk_state (app_id, user_id, state) only; couli_maint gets nothing.
+--
+-- To be written back into 规划/04 §3.2 (choices this migration makes where 04 / 08 defer to
+-- B1-03 or the contract line), plus one 规划 gap:
+--   1. blocklist dimension codes and storage as described above (account side HMAC only with
+--      expire_at; order side plain value, value_hmac NULL; order_no_suffix platform=taobao,
+--      6 characters; channel union_account_id + [start_at, end_at)).
+--   2. Account appeal: target_id = user_id.
+--   3. Blocked-request field names: risk_hits.request_type, related_phone_hmac,
+--      related_phone_masked, amount_fen; appeals.related_phone_hmac.
+--   4. risk_hits.ref_type codes: order, withdrawal, blocked_request.
+--   5. Condition JSON column name: risk_rules.conditions.
+--   6. Gap: risk_hits stores a masked phone number and a phone HMAC, but BR-ID-30 sets no
+--      retention period for it.
+--   7. risk_rules versions only change in place (one row per rule code); hits do not record
+--      the version.
+--   8. The blocked-request number (risk_hits.ref_id) is a UUIDv7 generated by the application
+--      before the insert and shared by all hit rows of the same request.
 
 CREATE TABLE app.blocklist (
   id               uuid NOT NULL,
@@ -183,6 +220,14 @@ CREATE TABLE app.user_risk_state (
     REFERENCES app.users (app_id, id),
   CONSTRAINT user_risk_state_state_check
     CHECK (state IN ('normal', 'frozen', 'appealing', 'banned')),
+  -- BR-TEXT-23 细则「原因类别」 (dictionary risk_reason.<category>).
+  CONSTRAINT user_risk_state_reason_category_check CHECK (
+    reason_category IN (
+      'malicious_rights', 'fraud_invite', 'abnormal_trade', 'account_security', 'other'
+    )
+  ),
+  CONSTRAINT user_risk_state_reason_category_required_check
+    CHECK (state = 'normal' OR reason_category IS NOT NULL),
   CONSTRAINT user_risk_state_frozen_until_check
     CHECK (frozen_until IS NULL OR state IN ('frozen', 'appealing'))
 );
@@ -222,6 +267,11 @@ CREATE TABLE app.appeals (
   ),
   CONSTRAINT appeals_account_target_check
     CHECK (target_type <> 'account' OR target_id = user_id::text),
+  -- Canonical lowercase UUID, so a case variant of the same order cannot bypass the index.
+  CONSTRAINT appeals_order_target_check CHECK (
+    target_type <> 'order'
+    OR target_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  ),
   -- Account appeals keep banned or frozen; order and blocked_request appeals keep nothing.
   CONSTRAINT appeals_prev_risk_state_check CHECK (
     CASE WHEN target_type = 'account'
@@ -296,8 +346,9 @@ CREATE TABLE app.risk_hits (
     CHECK (ref_type IN ('order', 'withdrawal', 'blocked_request')),
   CONSTRAINT risk_hits_request_type_check
     CHECK (request_type IN ('register', 'withdraw', 'phone_change', 'payout_account')),
+  -- A blocked_request row may lack a type for interceptions without one yet (see the header).
   CONSTRAINT risk_hits_request_check
-    CHECK ((ref_type = 'blocked_request') = (request_type IS NOT NULL)),
+    CHECK (request_type IS NULL OR ref_type = 'blocked_request'),
   CONSTRAINT risk_hits_user_check CHECK (
     CASE
       WHEN request_type = 'register' THEN user_id IS NULL
@@ -313,10 +364,10 @@ CREATE TABLE app.risk_hits (
   ),
   CONSTRAINT risk_hits_related_phone_check CHECK (
     CASE
-      WHEN request_type IS NULL
-        THEN related_phone_hmac IS NULL AND related_phone_masked IS NULL
       WHEN request_type IN ('register', 'phone_change')
         THEN related_phone_hmac IS NOT NULL AND related_phone_masked IS NOT NULL
+      WHEN ref_type <> 'blocked_request'
+        THEN related_phone_hmac IS NULL AND related_phone_masked IS NULL
       ELSE (related_phone_hmac IS NULL) = (related_phone_masked IS NULL)
     END
   )
@@ -332,8 +383,7 @@ CREATE INDEX risk_hits_user_idx ON app.risk_hits (app_id, user_id)
 GRANT SELECT, INSERT ON app.blocklist, app.user_risk_state, app.appeals, app.risk_rules
   TO couli_app;
 GRANT UPDATE (
-  value_hmac, value, violation_type, reason, platform, union_account_id, start_at, end_at,
-  expire_at, status, row_version, updated_at
+  value_hmac, value, violation_type, reason, end_at, expire_at, status, row_version, updated_at
 ) ON app.blocklist TO couli_app;
 GRANT UPDATE (
   state, reason, reason_category, frozen_until, changed_by, changed_at, row_version, updated_at
@@ -343,10 +393,10 @@ GRANT UPDATE (status, handler_id, closed_at, row_version, updated_at) ON app.app
 GRANT UPDATE (scene, conditions, risk_action, status, version, row_version, updated_at)
   ON app.risk_rules TO couli_app;
 GRANT SELECT ON app.risk_hits TO couli_app;
--- Insert-only; id is an identity and created_at comes from the default (see the header).
+-- Insert-only; id is an identity; created_at is the Clock hit moment (see the header).
 GRANT INSERT (
   app_id, user_id, rule_id, risk_action, dimension, value_hmac, ref_type, ref_id,
-  request_type, related_phone_hmac, related_phone_masked, amount_fen
+  request_type, related_phone_hmac, related_phone_masked, amount_fen, created_at
 ) ON app.risk_hits TO couli_app;
 GRANT SELECT ON app.blocklist, app.user_risk_state, app.appeals, app.risk_rules, app.risk_hits
   TO couli_readonly;
