@@ -1,0 +1,137 @@
+{
+  "task": "B1-05b",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "d1af6f5511e2eaec65b991b48f0a9cfb710e49e6",
+  "red_tests": [
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-01] [BR-PROD-03] 淘宝取最后一段，无连字符时保留整串与大小写",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-02] [BR-PROD-03] 京东默认 item；取第二段而非最后一段并添加 i_",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-03] [BR-PROD-03] 拼多多只用 goods_id，保留大整数文本和前导零",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-04] [BR-PROD-02] 派生前缀使用调用方快照，不写死三平台前缀",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-05] [BR-PROD-03] 缺失、null、空段或只有另一模式字段时统一派生失败",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-06] [BR-PROD-03] 非 MVP 平台即使有前缀与所有字段也不能派生",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-07] [BR-PROD-02] 派生所需前缀为空或不满足小写 2–3 字母时失败",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-08] [BR-PROD-02/03] 派生结果长度边界包含京东 i_，不限制被丢弃的原串前段",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-09] [BR-PROD-02/03] 非法字符与超长结果失败，不裁剪、转义、trim 或回退",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-10] [BR-PROD-02/03] 原样保留允许的特殊字符，不解 URL 编码或折叠大小写",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-11] [BR-PROD-03] 合成的跨入口载荷派生一致；用户归因字段和数量不进入身份",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-12] [BR-PROD-03] 纯函数可复用冻结入参，模式由本次注入配置决定",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-26] [BR-PROD-02/03] 每条派生路径接受完整合法字符域，分隔符只参与本平台原串拆段",
+    "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-27] [BR-PROD-03] 不参与所选规则的字段即使非法也不改变合法派生结果",
+    "test/spec/domain/product-key/product-key.prop.test.ts > [AC-B1-05b-23] [BR-PROD-02] 属性：合法字符域内校验通过且拆分后逐字节往返",
+    "test/spec/domain/product-key/product-key.prop.test.ts > [AC-B1-05b-24] [BR-PROD-03] 属性：四种派生路径确定，原串变动部分不改变 key 且不修改载荷",
+    "test/spec/domain/product-key/product-key.prop.test.ts > [AC-B1-05b-25] [BR-PROD-02/03] 属性：非法字符插入 stable_id 后校验和派生均失败",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-13] [BR-PROD-02] 格式有效时通过，拆分结果保持原始大小写与前导零",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-14] [BR-PROD-02] 所有允许的 ASCII 字符都能保留，冒号只按第一个拆分",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-15] [BR-PROD-02] 124 字符 stable_id 有效，三字母前缀总长恰为 128",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-16] [BR-PROD-02] 格式非法、125 字符 stable_id、控制字符和非 ASCII 均报 20001",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-17] [BR-PROD-02] 未登记前缀拒绝；登记后的新前缀无需改代码即可校验拆分",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-18] [BR-PROD-02] 前缀映射取本次快照；原有 tb 前缀不在表内时不能硬编码放行",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-19] [BR-PROD-02] 请求 platform 必须与前缀对应平台相同",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-20] [BR-PROD-02] 搜索或解析有一个开启即可，两个都关闭才报 30131",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-21] [BR-PROD-02] 格式、前缀、platform 错误优先于能力关闭",
+    "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-22] [BR-PROD-02] 无商品前缀的行不形成字符串 null 或平台名的商品键"
+  ],
+  "risk_note": "RV2 (packages/domain). product_key pure functions deriveProductKey / validateProductKey / splitProductKey (BR-PROD-02/03); no database, configuration or clock reads; synthetic payloads only. Rule tests by Codex, red in container (three attempts: a property returning false was rewritten as expect; then an explicit timeout for the 100k-run CI step). Written by hand (no evidence generator yet).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d1af6f5511e2eaec65b991b48f0a9cfb710e49e6",
+      "tree": "1697840316b544308be453a8d2e3bdb2dd7aacc1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T19:01:46Z",
+      "finished_at": "2026-10-05T19:01:49Z",
+      "red_tests": [
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-01] [BR-PROD-03] 淘宝取最后一段，无连字符时保留整串与大小写",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-02] [BR-PROD-03] 京东默认 item；取第二段而非最后一段并添加 i_",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-03] [BR-PROD-03] 拼多多只用 goods_id，保留大整数文本和前导零",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-04] [BR-PROD-02] 派生前缀使用调用方快照，不写死三平台前缀",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-05] [BR-PROD-03] 缺失、null、空段或只有另一模式字段时统一派生失败",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-06] [BR-PROD-03] 非 MVP 平台即使有前缀与所有字段也不能派生",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-07] [BR-PROD-02] 派生所需前缀为空或不满足小写 2–3 字母时失败",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-08] [BR-PROD-02/03] 派生结果长度边界包含京东 i_，不限制被丢弃的原串前段",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-09] [BR-PROD-02/03] 非法字符与超长结果失败，不裁剪、转义、trim 或回退",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-10] [BR-PROD-02/03] 原样保留允许的特殊字符，不解 URL 编码或折叠大小写",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-11] [BR-PROD-03] 合成的跨入口载荷派生一致；用户归因字段和数量不进入身份",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-12] [BR-PROD-03] 纯函数可复用冻结入参，模式由本次注入配置决定",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-26] [BR-PROD-02/03] 每条派生路径接受完整合法字符域，分隔符只参与本平台原串拆段",
+        "test/spec/domain/product-key/derive.test.ts > [AC-B1-05b-27] [BR-PROD-03] 不参与所选规则的字段即使非法也不改变合法派生结果",
+        "test/spec/domain/product-key/product-key.prop.test.ts > [AC-B1-05b-23] [BR-PROD-02] 属性：合法字符域内校验通过且拆分后逐字节往返",
+        "test/spec/domain/product-key/product-key.prop.test.ts > [AC-B1-05b-24] [BR-PROD-03] 属性：四种派生路径确定，原串变动部分不改变 key 且不修改载荷",
+        "test/spec/domain/product-key/product-key.prop.test.ts > [AC-B1-05b-25] [BR-PROD-02/03] 属性：非法字符插入 stable_id 后校验和派生均失败",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-13] [BR-PROD-02] 格式有效时通过，拆分结果保持原始大小写与前导零",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-14] [BR-PROD-02] 所有允许的 ASCII 字符都能保留，冒号只按第一个拆分",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-15] [BR-PROD-02] 124 字符 stable_id 有效，三字母前缀总长恰为 128",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-16] [BR-PROD-02] 格式非法、125 字符 stable_id、控制字符和非 ASCII 均报 20001",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-17] [BR-PROD-02] 未登记前缀拒绝；登记后的新前缀无需改代码即可校验拆分",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-18] [BR-PROD-02] 前缀映射取本次快照；原有 tb 前缀不在表内时不能硬编码放行",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-19] [BR-PROD-02] 请求 platform 必须与前缀对应平台相同",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-20] [BR-PROD-02] 搜索或解析有一个开启即可，两个都关闭才报 30131",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-21] [BR-PROD-02] 格式、前缀、platform 错误优先于能力关闭",
+        "test/spec/domain/product-key/validation.test.ts > [AC-B1-05b-22] [BR-PROD-02] 无商品前缀的行不形成字符串 null 或平台名的商品键"
+      ],
+      "expected": [
+        "test/spec/domain/product-key/derive.test.ts",
+        "test/spec/domain/product-key/product-key.prop.test.ts",
+        "test/spec/domain/product-key/validation.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8c3fbc11da082c60796f34800d26339f0545eabc9a673db8d664df9411ca0274"
+        }
+      ]
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "065a5f1fce9a9aee38e654ab0d379b993e4f9dfa",
+      "tree": "5eb502863b6abad3bab8ff54cca8e25197cb45cc",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T19:01:50Z",
+      "finished_at": "2026-10-05T19:03:34Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist (review-money.md): pass; S2: splitProductKey also applies the capability check required by AC-B1-05b-20 (no caller re-splits stored keys yet)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex read-only money review round 1: pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: pass; S2s (property written with expect after the red-check rewrite; jd mode passed to taobao/pdd untested; split requires a capability) recorded in couli-runs/B1-05b; round 3 by Codex only added an explicit timeout (300 s) to AC-B1-05b-25 after the CI 100k-run step timed out at 5 s; assertions unchanged, not re-reviewed"
+  },
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "dba10730ad2e236a9d6ecfc02a3dfbd141ac0531",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (tree f03b0e3, the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others); this task adds no test/properties files",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
