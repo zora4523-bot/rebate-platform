@@ -11,7 +11,9 @@
       "default": "./dist/index.js"
     },
     "./schema/eval-case.schema.json": "./schema/eval-case.schema.json",
-    "./schema/manifest.schema.json": "./schema/manifest.schema.json"
+    "./schema/manifest.schema.json": "./schema/manifest.schema.json",
+    "./schema/recording.schema.json": "./schema/recording.schema.json",
+    "./schema/report.schema.json": "./schema/report.schema.json"
   },
   "scripts": {
     "build": "tsc -b"
