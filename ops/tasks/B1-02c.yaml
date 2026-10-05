@@ -1,0 +1,26 @@
+id: B1-02c
+repo: rebate-platform
+title: identity 模块骨架与设备注册：POST /v1/devices（device_hash 格式与无效清单、id_source、install_secret 加密存储、同设备复注册）
+type: impl
+# 2026-10-05 入账。B1-02 按 PR ≤400 行拆分（规划/11 §3.4）：c 设备注册，e 短信与会话主链，f 二次验证、授权尝试签发、
+# h5-token 与同意记录，d 第三方登录（等 CT-15i）。依据：差异清单 couli-runs/CT-plan/spec-delta-826f86e-492b9ef.md 第一节第 3 件。
+# 契约已在 CT-15b（POST /v1/devices、42901、id_source）；表 devices 已由 B1-02a 建好；测试向量 specs/device-hash.vectors.json。
+# 依据：BR-ID-09（含细则「设备标识的无效值」）、04 §6.1 /v1/devices 行，由编排者摘入任务书第 2 节（BR-ID-09 连一跳超 24KB）。
+# 本任务建 apps/api/src/modules/identity/ 的分层骨架（规划/02 §4.2、apps/api/AGENTS.md），后续 e、f 在其上加。
+# 实现路由时去掉 openapi 里 registerDevice 的 x-implementation: planned（contracts/README 规则 10；扩展字段不进生成类型，
+# 不碰 packages/contracts-ts）。openapi.yaml 与 CT-02b 相交，CT-02b 合并后才派。app.module.ts 不在风险表白名单，整体按 RV2：
+# 两家评审、容器验证、证据文件。test_paths：test/spec/identity/devices/**（task-file.ts 还不认该字段；在它接受前，测试阶段的允许路径由编排会话写进任务书，规则测试只放第一类测试资产目录，spec_commit 前其余改动只许 NotImplemented 骨架，tools/guard/lib/spec-base.ts 已强制）。
+refs: []
+refs_hash: {}
+deps: [CT-15b, B1-02a, B1-01i]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/devices/**'
+status: todo
+pr: null
