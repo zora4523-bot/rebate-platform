@@ -18,9 +18,13 @@
 -- empty byte string as a placeholder meaning "no usable key", then sets NOT NULL and drops
 -- the hash. An empty ciphertext must never be used to verify a signature; readers check
 -- revoked_at first. A revoked X-Device-Id gets 10402 and the client registers again once and
--- replays (BR-ID-09), the existing recovery path. now() is used only for revoked_at /
--- updated_at of this one-time backfill; row_version is incremented as for any CAS write
--- (0005). The column is bytea like the other *_cipher
+-- replays (BR-ID-09), the existing recovery path. The backfill reads no SQL clock
+-- (db/AGENTS.md #6; a CLOCK_NOW environment would otherwise get moments outside the business
+-- clock): the revocation moment is unknown, so revoked_at takes the row's own last_seen_at
+-- (NOT NULL, deterministic); updated_at is left unchanged; row_version is incremented as for
+-- any CAS write (0005). devices_install_secret_present_check allows the empty placeholder
+-- only on revoked rows: a revocation cannot be cleared while the key is empty, and no active
+-- row can be inserted with an empty ciphertext. The column is bytea like the other *_cipher
 -- columns (users.phone_cipher, payout_accounts) and stores the UTF-8 bytes of the
 -- field-encryption ciphertext string (v1.<key_version>.<payload>, platform crypto module).
 -- couli_app keeps its table-level grants from 0005, which cover the new column. couli_readonly
@@ -75,11 +79,13 @@ ALTER TABLE app.devices ADD COLUMN install_secret_cipher bytea;
 -- One-time backfill (see the header): revoke every existing device, empty placeholder key.
 UPDATE app.devices
 SET install_secret_cipher = ''::bytea,
-    revoked_at = COALESCE(revoked_at, now()),
-    row_version = row_version + 1,
-    updated_at = now();
+    revoked_at = COALESCE(revoked_at, last_seen_at),
+    row_version = row_version + 1;
 
 ALTER TABLE app.devices ALTER COLUMN install_secret_cipher SET NOT NULL;
+
+ALTER TABLE app.devices ADD CONSTRAINT devices_install_secret_present_check
+  CHECK (revoked_at IS NOT NULL OR octet_length(install_secret_cipher) > 0);
 
 ALTER TABLE app.devices DROP COLUMN install_secret_hash;
 

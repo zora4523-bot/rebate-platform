@@ -1016,7 +1016,8 @@ CREATE TABLE app.devices (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     install_secret_cipher bytea NOT NULL,
     CONSTRAINT devices_device_hash_check CHECK ((device_hash ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT devices_id_source_check CHECK ((id_source = ANY (ARRAY['idfv'::text, 'android_id'::text, 'oaid'::text, 'odid'::text])))
+    CONSTRAINT devices_id_source_check CHECK ((id_source = ANY (ARRAY['idfv'::text, 'android_id'::text, 'oaid'::text, 'odid'::text]))),
+    CONSTRAINT devices_install_secret_present_check CHECK (((revoked_at IS NOT NULL) OR (octet_length(install_secret_cipher) > 0)))
 );
 
 
