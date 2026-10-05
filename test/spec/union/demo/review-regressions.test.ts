@@ -43,48 +43,45 @@ it.each(['jd', 'pdd'] as const)(
   },
 );
 
-it(
-  '[AC-B1-04o-ASSEMBLY#5] prod 允许全 live 的未实现登记，加入 demo 后才拒绝装配',
-  async () => {
-    // Same public registry extension as assembly.test.ts; implementation wires it later.
-    const assemble = createUnionRegistry as (
-      options: Omit<DemoOptions, 'platform'> & { endpoints: readonly UnionEndpoint[] },
-    ) => UnionRegistry;
-    const endpoints: readonly UnionEndpoint[] = platforms.map((platform) => ({
+it('[AC-B1-04o-ASSEMBLY#5] prod 允许全 live 的未实现登记，加入 demo 后才拒绝装配', async () => {
+  // Same public registry extension as assembly.test.ts; implementation wires it later.
+  const assemble = createUnionRegistry as (
+    options: Omit<DemoOptions, 'platform'> & { endpoints: readonly UnionEndpoint[] },
+  ) => UnionRegistry;
+  const endpoints: readonly UnionEndpoint[] = platforms.map((platform) => ({
+    platform,
+    mode: 'live',
+    baseUrl: 'https://example.invalid/union',
+    quotaKey: `live:${platform}`,
+  }));
+  const options = {
+    endpoints,
+    environment: 'prod' as const,
+    seed: 'catalog-a',
+    clock: new FixedClock(instant),
+  };
+
+  expect(() => assemble(options)).not.toThrow();
+  const registry = assemble(options);
+  expect(registry.registrations()).toHaveLength(platforms.length);
+  for (const platform of platforms) {
+    expect(registry.registrations().find((entry) => entry.platform === platform)).toEqual({
       platform,
-      mode: 'live',
-      baseUrl: 'https://example.invalid/union',
-      quotaKey: `live:${platform}`,
-    }));
-    const options = {
-      endpoints,
-      environment: 'prod' as const,
-      seed: 'catalog-a',
-      clock: new FixedClock(instant),
-    };
+      implemented: false,
+    });
+    await expect(registry.get(platform).searchItems({ keyword }, online)).rejects.toMatchObject({
+      code: 'adapter_unimplemented',
+    });
+  }
 
-    expect(() => assemble(options)).not.toThrow();
-    const registry = assemble(options);
-    expect(registry.registrations()).toHaveLength(platforms.length);
-    for (const platform of platforms) {
-      expect(registry.registrations().find((entry) => entry.platform === platform)).toEqual({
-        platform,
-        implemented: false,
-      });
-      await expect(registry.get(platform).searchItems({ keyword }, online)).rejects.toMatchObject({
-        code: 'adapter_unimplemented',
-      });
-    }
-
-    // Exercise both sides of the boundary in one case: the B1-04b registry ignores options,
-    // so the new case remains red until production demo rejection is implemented.
-    for (const platform of platforms) {
-      const mixed: readonly UnionEndpoint[] = endpoints.map((endpoint) =>
-        endpoint.platform === platform ? { ...endpoint, mode: 'demo', baseUrl: null } : endpoint,
-      );
-      expect(() => assemble({ ...options, endpoints: mixed })).toThrow(
-        expect.objectContaining({ code: 'unsafe_mode' }),
-      );
-    }
-  },
-);
+  // Exercise both sides of the boundary in one case: the B1-04b registry ignores options,
+  // so the new case remains red until production demo rejection is implemented.
+  for (const platform of platforms) {
+    const mixed: readonly UnionEndpoint[] = endpoints.map((endpoint) =>
+      endpoint.platform === platform ? { ...endpoint, mode: 'demo', baseUrl: null } : endpoint,
+    );
+    expect(() => assemble({ ...options, endpoints: mixed })).toThrow(
+      expect.objectContaining({ code: 'unsafe_mode' }),
+    );
+  }
+});
