@@ -10,7 +10,7 @@ type: impl
 # 风险：linking/** RV2。linking/** 串行，排在 B1-06d 之后。
 refs: []
 refs_hash: {}
-deps: [B1-06d, B1-05f]
+deps: [B1-06d, B1-05f, B1-05d]
 paths:
   - 'apps/api/src/modules/linking/**'
 test_paths:

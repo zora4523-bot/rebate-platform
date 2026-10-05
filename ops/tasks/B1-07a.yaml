@@ -13,7 +13,7 @@ type: impl
 # 开工前风险表要已登记 parsing/**（#113）。风险：parsing RV1（规划/11 §1.1），app.module.ts RV2，整体 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-05f, B1-06c, B1-04o, F1-02b, CT-15m]
+deps: [B1-05f, B1-06c, B1-04o, F1-02b, CT-15m, B1-05d]
 paths:
   - 'apps/api/src/modules/parsing/**'
   - 'apps/api/src/app.module.ts'

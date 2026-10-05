@@ -1,7 +1,7 @@
 id: CT-15m
 repo: rebate-platform
 title: 规格生成：specs/link-patterns.yaml 与 specs/material-channels.yaml 生成 apps/api 内的 TS 常量（platform/specs/*.gen.ts，同 route-schemas.gen.ts 先例），供 catalog、parsing 运行时读取（apps/api 不读 YAML、不改依赖）
-type: contract
+type: impl
 # 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审 S1-7 裁定新增，第 2 次裁定改为生成物放进 apps/api（不改 package.json，原 B1-01zb 撤销）。
 # 为什么：B1-07a（平台链接形态表，BR-ATTR-29）与 B1-05d（联盟物料频道白名单，BR-TEXT-17）要在运行时读这两份规格，apps/api 没有 YAML 解析器、实现任务不装依赖。
 # 先例（在途分支 task/B1-02c，不依赖它合并）：B1-02c 的 apps/api/src/modules/platform/validation/scripts/generate-route-schemas.ts 生成同目录上一级的 route-schemas.gen.ts，
@@ -9,16 +9,19 @@ type: contract
 # 同目录测试断言与 specs/*.yaml 逐字一致（防漂移）；platform/index.ts 导出，catalog、parsing 只经 platform/index.ts 取。
 # 生成脚本解析 YAML 只用 apps/api 已有依赖（含 devDependencies）；做不到就停下回报 deps_needed，不手写解析器、不跨 rootDir 引 tools/lib。
 # 结构与校验沿用 contracts-ts 的 scripts/link-patterns.ts（CT-15）与 CT-17e 的频道表规则，不改两份规格的内容（真实域名与频道等样本，05 B1-07、BR-TEXT-17）；版本号原样带出。
-# tester none（契约先例：Codex 评审，测试由实现者写在生成物同目录）。契约槽全局 1 个在途。风险：platform/** RV2。
+# 第 2 轮台账评审 S2-1：不改 contracts/ 与 specs/，按 impl 类型走，Codex 先写规则测试（生成物与 YAML 一致、字段原样带出）。不占契约槽。风险：platform/** RV2。
 refs: []
 refs_hash: {}
 deps: []
+test_paths:
+  - 'test/spec/platform/specs/**'
 paths:
   - 'apps/api/src/modules/platform/specs/**'
   - 'apps/api/src/modules/platform/index.ts'
 impl: claude
-tester: none
+tester: codex
 accept:
   - 'pnpm verify'
+  - 'test/spec/platform/specs/**'
 status: todo
 pr: null

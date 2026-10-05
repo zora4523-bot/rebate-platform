@@ -9,6 +9,7 @@ type: impl
 # 卡片走 B1-05f 的 CardAssembler（entry_source=search）；link 登记端口由 B1-06c 实现并装配，所以依赖它。没有缓存时联盟超时 / 限流 / 熔断一律 50304（data.platform），不读商品池（BR-PROD-07）。
 # 取不到 active 的查询专用推广位：按 plan-draft 待决定第 5 条默认（视同联盟不可用：50304 并告警），默认值待负责人确认，做成可替换，PR 里列出。
 # 实现路由时去掉 searchProducts 的 x-implementation: planned，并重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入；与 B1-02e / f / g、B1-03i 等同路径任务串行）。
+# 第 2 轮台账评审 S1：本任务在 catalog 模块里注册 CardAssembler 及用到 LinkRegistrar 等端口的服务（端口由 B1-06c 在 app.module 层以全局提供者装配，catalog 与 linking 不互相 import 模块，不用 forwardRef）；B1-06k、B1-07a 依赖本任务。
 # x-auth optional：查看者经 ViewerContext，未接身份时按游客。风险：catalog RV1、openapi.yaml RV1、route-schemas.gen.ts（platform）RV2，整体 RV2。
 refs: []
 refs_hash: {}

@@ -11,6 +11,7 @@ type: impl
 # union 不 import admin（02 §4.1 union 依赖为「—」）：校验器与审计的类型由 union 定义，按结构类型接收。
 # 导出给 linking / catalog 的只读查询：取某场景当前 active 推广位（同场景多个 active 取最早启用的一个——默认值待负责人确认，plan-draft 待决定第 2 条）、判定某推广位是否在白名单（订单同步 B1-08 用）。
 # 05 验收「三家各至少 1 个推广位经该流程置为 active」等真实推广位，本任务只用合成推广位测试。风险：union RV2。union/** 串行，排在 B1-04o 之后。
+# 第 2 轮台账评审 S2-2：super 身份只接受 F1-06b 纯模块「校验 super 加动态码」一体函数返回的已验证身份，不自行只校验动态码。
 refs: []
 refs_hash: {}
 deps: [B1-19a, F1-06b, B1-04b]
