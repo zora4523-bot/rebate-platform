@@ -942,6 +942,47 @@ CREATE TABLE app.config_items (
 
 
 --
+-- Name: consent_records; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.consent_records (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    subject_type text NOT NULL,
+    user_id uuid,
+    device_id uuid,
+    type text NOT NULL,
+    version integer NOT NULL,
+    channel text NOT NULL,
+    accepted boolean NOT NULL,
+    client_at timestamp with time zone NOT NULL,
+    server_at timestamp with time zone NOT NULL,
+    text_sha256 text,
+    signer_snapshot jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT consent_records_channel_check CHECK ((channel = ANY (ARRAY['first_launch'::text, 'login_page'::text, 'h5_landing'::text, 'agent_sheet'::text, 'realname_sheet'::text, 'privacy_center'::text, 'login_merge'::text, 'withdraw_flow'::text]))),
+    CONSTRAINT consent_records_labor_agreement_check CHECK (((type <> 'labor_agreement'::text) OR ((subject_type = 'user'::text) AND (text_sha256 IS NOT NULL) AND (signer_snapshot IS NOT NULL)))),
+    CONSTRAINT consent_records_subject_check CHECK ((((subject_type = 'user'::text) AND (user_id IS NOT NULL)) OR ((subject_type = 'device'::text) AND (device_id IS NOT NULL)))),
+    CONSTRAINT consent_records_subject_type_check CHECK ((subject_type = ANY (ARRAY['user'::text, 'device'::text]))),
+    CONSTRAINT consent_records_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'ai_third_party'::text, 'id_verification'::text, 'personalization'::text, 'labor_agreement'::text])))
+);
+
+
+--
+-- Name: consent_records_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.consent_records ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.consent_records_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: device_registrations; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -965,7 +1006,6 @@ CREATE TABLE app.devices (
     user_id uuid,
     device_hash text NOT NULL,
     id_source text NOT NULL,
-    install_secret_hash text NOT NULL,
     platform text NOT NULL,
     app_version text NOT NULL,
     last_login_sid text,
@@ -974,6 +1014,7 @@ CREATE TABLE app.devices (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    install_secret_cipher bytea NOT NULL,
     CONSTRAINT devices_device_hash_check CHECK ((device_hash ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT devices_id_source_check CHECK ((id_source = ANY (ARRAY['idfv'::text, 'android_id'::text, 'oaid'::text, 'odid'::text])))
 );
@@ -1600,6 +1641,40 @@ CREATE TABLE app.push_tokens (
 
 
 --
+-- Name: refresh_tokens; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.refresh_tokens (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    sid text NOT NULL,
+    token_hash text NOT NULL,
+    parent_hash text,
+    rotated_at timestamp with time zone,
+    expire_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: sessions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.sessions (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    sid text NOT NULL,
+    user_id uuid NOT NULL,
+    device_id uuid NOT NULL,
+    revoked_at timestamp with time zone,
+    revoke_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: user_oauth; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1992,6 +2067,14 @@ ALTER TABLE ONLY app.config_items
 
 
 --
+-- Name: consent_records consent_records_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.consent_records
+    ADD CONSTRAINT consent_records_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: device_registrations device_registrations_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2216,6 +2299,46 @@ ALTER TABLE ONLY app.push_tokens
 
 
 --
+-- Name: refresh_tokens refresh_tokens_parent_hash_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_parent_hash_key UNIQUE (app_id, parent_hash);
+
+
+--
+-- Name: refresh_tokens refresh_tokens_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: refresh_tokens refresh_tokens_token_hash_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_token_hash_key UNIQUE (app_id, token_hash);
+
+
+--
+-- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.sessions
+    ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sessions sessions_sid_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.sessions
+    ADD CONSTRAINT sessions_sid_key UNIQUE (app_id, sid);
+
+
+--
 -- Name: user_oauth user_oauth_identity_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2372,6 +2495,20 @@ ALTER TABLE ONLY public.pgmigrations
 --
 
 CREATE INDEX articles_app_category_published_idx ON app.articles USING btree (app_id, category, status, published_at, id, version);
+
+
+--
+-- Name: consent_records_device_type_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX consent_records_device_type_idx ON app.consent_records USING btree (app_id, subject_type, device_id, type, server_at DESC);
+
+
+--
+-- Name: consent_records_user_type_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX consent_records_user_type_idx ON app.consent_records USING btree (app_id, subject_type, user_id, type, server_at DESC);
 
 
 --
@@ -2540,6 +2677,27 @@ CREATE UNIQUE INDEX push_tokens_live_token_key ON app.push_tokens USING btree (a
 --
 
 CREATE INDEX push_tokens_user_bound_sid_idx ON app.push_tokens USING btree (app_id, user_id, bound_sid);
+
+
+--
+-- Name: refresh_tokens_session_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX refresh_tokens_session_idx ON app.refresh_tokens USING btree (app_id, sid);
+
+
+--
+-- Name: sessions_device_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX sessions_device_idx ON app.sessions USING btree (app_id, device_id);
+
+
+--
+-- Name: sessions_user_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX sessions_user_idx ON app.sessions USING btree (app_id, user_id);
 
 
 --
@@ -2760,6 +2918,22 @@ CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app
 
 
 --
+-- Name: consent_records consent_records_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.consent_records
+    ADD CONSTRAINT consent_records_device_fkey FOREIGN KEY (app_id, device_id) REFERENCES app.devices(app_id, id);
+
+
+--
+-- Name: consent_records consent_records_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.consent_records
+    ADD CONSTRAINT consent_records_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: device_registrations device_registrations_merged_into_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2925,6 +3099,38 @@ ALTER TABLE ONLY app.push_tokens
 
 ALTER TABLE ONLY app.push_tokens
     ADD CONSTRAINT push_tokens_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: refresh_tokens refresh_tokens_parent_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_parent_fkey FOREIGN KEY (app_id, parent_hash) REFERENCES app.refresh_tokens(app_id, token_hash);
+
+
+--
+-- Name: refresh_tokens refresh_tokens_session_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_session_fkey FOREIGN KEY (app_id, sid) REFERENCES app.sessions(app_id, sid);
+
+
+--
+-- Name: sessions sessions_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.sessions
+    ADD CONSTRAINT sessions_device_fkey FOREIGN KEY (app_id, device_id) REFERENCES app.devices(app_id, id);
+
+
+--
+-- Name: sessions sessions_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.sessions
+    ADD CONSTRAINT sessions_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -3115,6 +3321,14 @@ GRANT SELECT ON TABLE app.articles TO couli_readonly;
 GRANT SELECT,INSERT,UPDATE ON TABLE app.config_items TO couli_app;
 GRANT SELECT ON TABLE app.config_items TO couli_readonly;
 GRANT SELECT ON TABLE app.config_items TO couli_payout;
+
+
+--
+-- Name: TABLE consent_records; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.consent_records TO couli_app;
+GRANT SELECT ON TABLE app.consent_records TO couli_readonly;
 
 
 --
@@ -3478,6 +3692,57 @@ GRANT UPDATE(row_version) ON TABLE app.push_tokens TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: TABLE refresh_tokens; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.refresh_tokens TO couli_app;
+GRANT SELECT ON TABLE app.refresh_tokens TO couli_readonly;
+
+
+--
+-- Name: COLUMN refresh_tokens.rotated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(rotated_at) ON TABLE app.refresh_tokens TO couli_app;
+
+
+--
+-- Name: COLUMN refresh_tokens.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.refresh_tokens TO couli_app;
+
+
+--
+-- Name: TABLE sessions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.sessions TO couli_app;
+GRANT SELECT ON TABLE app.sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN sessions.revoked_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(revoked_at) ON TABLE app.sessions TO couli_app;
+
+
+--
+-- Name: COLUMN sessions.revoke_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(revoke_reason) ON TABLE app.sessions TO couli_app;
+
+
+--
+-- Name: COLUMN sessions.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.sessions TO couli_app;
 
 
 --
