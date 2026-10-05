@@ -29,6 +29,8 @@
 //   when AUTH reaches a server without a password.
 // - Never enable `DEBUG=ioredis:*` in production: ioredis then writes every command with its
 //   arguments to stderr, AUTH (the password) included.
+// - REDIS_URL must not have a query string. loadConnectionConfig lets one through, but creating
+//   the handle refuses it (RedisValidationError), so that entry fails at startup.
 import { Redis, type RedisOptions as DriverOptions } from 'ioredis';
 import { RedisValidationError } from './errors.ts';
 import type { RedisTransport } from './transport.ts';
@@ -53,7 +55,14 @@ export interface DriverClient {
 
 export type DriverFactory = (options: DriverOptions) => DriverClient;
 
-/** How to reach REDIS_URL: driver options, and the database connect() selects itself. */
+/**
+ * How to reach REDIS_URL: driver options, and the database connect() selects itself.
+ *
+ * ioredis's own record of the database stays at 0: it never sees `db`, and it only tracks a
+ * lowercase `select` command, not the SELECT that connect() sends through call(). Nothing may
+ * rely on that record. Should retryStrategy or autoResendUnfulfilledCommands ever be turned on,
+ * a driver-level reconnect would follow that record (no SELECT) and silently land in db 0.
+ */
 export interface IoredisPlan {
   /** Never carries `db`: SELECT is part of connect()'s own handshake. */
   readonly options: DriverOptions;

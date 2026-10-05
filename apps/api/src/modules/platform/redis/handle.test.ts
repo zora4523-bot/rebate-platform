@@ -314,6 +314,49 @@ it('[B1-01y §9.2] keys and values are checked before any command', async () => 
   }
 });
 
+/** `['a', <hole>, 'b']`: some() and map() would skip index 1. */
+function holed(): string[] {
+  const values = ['a'];
+  values[2] = 'b';
+  return values;
+}
+
+it.each([
+  { label: 'keys new Array(1)', keys: new Array<string>(1), args: [] },
+  { label: 'keys with a hole', keys: holed(), args: [] },
+  { label: 'args new Array(1)', keys: ['k'], args: new Array<string>(1) },
+  { label: 'args with a hole', keys: ['k'], args: holed() },
+])(
+  '[B1-01y §9.2] a sparse array ($label) is refused before any command',
+  async ({ keys, args }) => {
+    const { handle, driver } = await fixture();
+    try {
+      const error = await failure(() =>
+        handle.namespace('catalog').eval('return 1', { keys, args, ttlSeconds: 5 }),
+      );
+      expect(error).toBeInstanceOf(RedisValidationError);
+      expect(driver.connect).not.toHaveBeenCalled();
+      expect(driver.call).not.toHaveBeenCalled();
+    } finally {
+      await handle.close();
+    }
+  },
+);
+
+it('[B1-01y §9.2] eval sends every key prefixed and the TTL as ARGV[1]', async () => {
+  const { handle, driver } = await fixture();
+  try {
+    await handle
+      .namespace('catalog')
+      .eval('return 1', { keys: ['a', 'b'], args: ['', 'x'], ttlSeconds: 5 });
+    expect(driver.call.mock.calls).toEqual([
+      ['EVAL', 'return 1', '2', 'catalog:a', 'catalog:b', '5', '', 'x'],
+    ]);
+  } finally {
+    await handle.close();
+  }
+});
+
 it('[B1-01y §9.2] connect failures log once per outage with flat fields, then the recovery', async () => {
   const { handle, driver, lines } = await fixture();
   try {

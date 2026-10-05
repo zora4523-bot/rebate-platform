@@ -237,6 +237,67 @@ it('[B1-01y §9.2] the PING ready check must answer PONG: LOADING fails connect(
   expect(sent(clients[0])).toEqual([['PING']]);
 });
 
+it.each([
+  {
+    command: 'SELECT',
+    reply: 'QUEUED',
+    url: 'redis://127.0.0.1:1/2',
+    commands: [['SELECT', 2]],
+    message: 'Redis SELECT was not confirmed',
+  },
+  {
+    command: 'PING',
+    reply: 'OK',
+    url: 'redis://127.0.0.1:1/0',
+    commands: [['PING']],
+    message: 'Redis ready check got an unexpected reply',
+  },
+])(
+  '[B1-01y §9.2] a handshake $command answered $reply fails connect() and drops the client',
+  async ({ command, reply, url, commands, message }) => {
+    const { clients, driver } = fakeDriver((client) => {
+      client.call.mockImplementation(async (sentCommand) => {
+        if (sentCommand === command) return reply;
+        return sentCommand === 'PING' ? 'PONG' : 'OK';
+      });
+    });
+    const transport = createIoredisTransport(url, SETTINGS, driver);
+    expect(await failure(() => transport.connect())).toMatchObject({ message });
+    expect(clients[0]?.disconnect).toHaveBeenCalledTimes(1);
+    expect(sent(clients[0])).toEqual(commands);
+    await expect(transport.call('GET', 'k')).rejects.toThrow('Redis connection is not open');
+  },
+);
+
+it('[B1-01y §9.2] disconnect() during the handshake wins over a late PONG; nothing is reported lost', async () => {
+  let answer: (reply: unknown) => void = () => {};
+  const { clients, driver } = fakeDriver((client) => {
+    client.call.mockImplementation((command) =>
+      command === 'PING'
+        ? new Promise<unknown>((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve('OK'),
+    );
+  });
+  const transport = createIoredisTransport('redis://127.0.0.1:1/0', SETTINGS, driver);
+  const lost = vi.fn();
+  transport.onConnectionLost?.(lost);
+  const pending = failure(() => transport.connect());
+  await vi.waitFor(() => {
+    expect(sent(clients[0])).toEqual([['PING']]);
+  });
+  transport.disconnect();
+  answer('PONG');
+  expect(await pending).toMatchObject({
+    message: 'Redis connection was closed while connecting',
+  });
+  await expect(transport.call('GET', 'k')).rejects.toThrow('Redis connection is not open');
+  expect(lost).not.toHaveBeenCalled();
+  expect(clients[0]?.disconnect).toHaveBeenCalledTimes(1);
+  expect(sent(clients[0])).toEqual([['PING']]);
+});
+
 it('[B1-01y §9.2] the handshake is bounded by connectTimeoutMs as a whole', async () => {
   vi.useFakeTimers();
   const { clients, driver } = fakeDriver((client) => {

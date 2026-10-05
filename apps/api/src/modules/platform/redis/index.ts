@@ -134,11 +134,24 @@ function validKey(key: unknown): string {
   return key;
 }
 
+/**
+ * A dense copy of `values`, read once by index. Array methods such as some() and map() skip the
+ * holes of a sparse array, which would reach ioredis as undefined and become '' (an unprefixed
+ * key); read by index, a hole is undefined and refused like any other non-string.
+ */
 function validStrings(values: unknown, name: string): readonly string[] {
-  if (!Array.isArray(values) || values.some((value) => typeof value !== 'string')) {
+  if (!Array.isArray(values)) {
     throw new RedisValidationError(`${name} must be an array of strings`);
   }
-  return values as readonly string[];
+  const checked: string[] = [];
+  for (let index = 0; index < values.length; index++) {
+    const value: unknown = values[index];
+    if (typeof value !== 'string') {
+      throw new RedisValidationError(`${name} must be an array of strings`);
+    }
+    checked.push(value);
+  }
+  return checked;
 }
 
 /** Password forms of the URL, to keep them out of codes even in contrived error messages. */
@@ -370,6 +383,7 @@ function buildHandle(transport: RedisTransport, settings: HandleSettings): Redis
         if (typeof scriptOptions !== 'object' || scriptOptions === null) {
           throw new RedisValidationError('script options must give keys, args and ttlSeconds');
         }
+        // Dense copies: every key below is prefixed, every argument is a string.
         const keys = validStrings(scriptOptions.keys, 'keys').map(prefixed);
         const args = validStrings(scriptOptions.args, 'args');
         const ttl = validTtl(scriptOptions.ttlSeconds);
