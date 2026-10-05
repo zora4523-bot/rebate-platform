@@ -5,6 +5,8 @@ export * from './logging/index.ts';
 export * from './tracing/index.ts';
 export * from './idempotency/index.ts';
 export * from './http/index.ts';
+export { AUDIT_PORT } from './audit/index.ts';
+export type { AuditInput, AuditPort } from './audit/index.ts';
 export { FieldCryptoError, FIELD_CRYPTO_MESSAGES } from './crypto/index.ts';
 export type { FieldCrypto, FieldCryptoErrorCode } from './crypto/index.ts';
 export { contractRouteSchema } from './validation/contract-routes.ts';
