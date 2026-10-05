@@ -10,10 +10,17 @@
 -- 04 §3.2 devices row). Request signatures are HMAC-SHA256(install_secret, ...) (BR-ID-09), so
 -- the server needs the original value; a hash cannot verify a signature.
 -- Deliberate exception to db/AGENTS.md #3 (no expand and contract in one migration): nothing
--- has been released, so devices holds no production rows, and a hash cannot be backfilled
--- into a ciphertext anyway. ADD COLUMN ... NOT NULL without a default fails on a non-empty
--- table, so this migration stops where devices rows exist instead of silently keeping
--- devices whose signatures can never verify. The column is bytea like the other *_cipher
+-- has been released, so there is no production data, and the old hash can never be
+-- backfilled into a ciphertext: splitting this over two releases would not yield one usable
+-- device. So the migration expands, backfills and contracts in one go, and also upgrades
+-- local or staging databases that already have devices rows: it adds the column as NULL-able,
+-- revokes every existing row (none can ever pass signature verification again), stores an
+-- empty byte string as a placeholder meaning "no usable key", then sets NOT NULL and drops
+-- the hash. An empty ciphertext must never be used to verify a signature; readers check
+-- revoked_at first. A revoked X-Device-Id gets 10402 and the client registers again once and
+-- replays (BR-ID-09), the existing recovery path. now() is used only for revoked_at /
+-- updated_at of this one-time backfill; row_version is incremented as for any CAS write
+-- (0005). The column is bytea like the other *_cipher
 -- columns (users.phone_cipher, payout_accounts) and stores the UTF-8 bytes of the
 -- field-encryption ciphertext string (v1.<key_version>.<payload>, platform crypto module).
 -- couli_app keeps its table-level grants from 0005, which cover the new column. couli_readonly
@@ -21,10 +28,6 @@
 -- install_secret_cipher: processes holding the field keys could decrypt a ciphertext read
 -- through the read-only role and forge request signatures. A later migration that adds a
 -- devices column must grant it to couli_readonly explicitly.
--- If a local or staging database already has devices rows, this migration fails by design
--- (there is no production data: orchestrator ruling in ops/tasks/B1-02b.yaml). Rebuild that
--- database (remove the data volume and rerun the local stack), or first delete the devices
--- rows together with the links and push_tokens rows that reference them.
 --
 -- sessions / refresh_tokens are mutable entity tables (04 §3.2 通则; ADR-0001 §4.3): each has
 -- a uuid id (UUIDv7 supplied by the application) and updated_at; sid stays its own column,
@@ -67,9 +70,18 @@
 -- foreign keys therefore keep referenced users and devices rows from being deleted (BR-ID-28
 -- lists device records under "删除或匿名化").
 
-ALTER TABLE app.devices
-  ADD COLUMN install_secret_cipher bytea NOT NULL,
-  DROP COLUMN install_secret_hash;
+ALTER TABLE app.devices ADD COLUMN install_secret_cipher bytea;
+
+-- One-time backfill (see the header): revoke every existing device, empty placeholder key.
+UPDATE app.devices
+SET install_secret_cipher = ''::bytea,
+    revoked_at = COALESCE(revoked_at, now()),
+    row_version = row_version + 1,
+    updated_at = now();
+
+ALTER TABLE app.devices ALTER COLUMN install_secret_cipher SET NOT NULL;
+
+ALTER TABLE app.devices DROP COLUMN install_secret_hash;
 
 CREATE TABLE app.sessions (
   id            uuid NOT NULL,
