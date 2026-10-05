@@ -20,6 +20,9 @@
 # recorded as `phase` in meta.json so that tools/ops/state.ts counts them apart:
 #   test      (default) Codex writes red rule tests and NotImplemented skeletons
 #   handover  Codex implements once after the Opus attempts ran out, RV0 / RV1 only (§2.5)
+#   impl      the old flow: a ledger written before the switch (tools/guard/legacy-tasks.json)
+#             whose ledger names Codex as the implementer (impl: codex), after Claude's rule
+#             tests; counted as an implementation attempt, not as a handover
 # A spec-test review of a task whose rule tests Codex wrote (ledger tester: codex) is refused:
 # that review goes to a fresh Claude subagent (README §11).
 set -euo pipefail
@@ -136,8 +139,8 @@ parse_args() {
     [ -z "$BASE_ARG" ] || fail_usage "--base applies to review only"
     case "$PHASE" in
       '') PHASE=test ;;
-      test | handover) ;;
-      *) fail_usage "unknown phase: $PHASE (expected test or handover)" ;;
+      test | handover | impl) ;;
+      *) fail_usage "unknown phase: $PHASE (expected test, handover or impl)" ;;
     esac
   else
     [ -z "$PHASE" ] || fail_usage "--phase applies to impl only"
@@ -261,6 +264,7 @@ read_task_info() {
   TASK_REFS=''
   TASK_PATHS=''
   TASK_TESTER=''
+  TASK_IMPL=''
   local task_json=''
   if [ -f "$TRUSTED/tools/ops/task.ts" ]; then
     task_json="$(node "$TRUSTED/tools/ops/task.ts" show "$TASK" --json 2>/dev/null || true)"
@@ -284,6 +288,8 @@ read_task_info() {
     esac
     TASK_TESTER="$(printf '%s\n' "$task_json" |
       node "$SELF_DIR/meta.ts" get --file /dev/stdin tester 2>/dev/null || true)"
+    TASK_IMPL="$(printf '%s\n' "$task_json" |
+      node "$SELF_DIR/meta.ts" get --file /dev/stdin impl 2>/dev/null || true)"
   fi
   case "$TASK_RISK" in
     RV0 | RV1 | RV2) ;;
@@ -652,6 +658,15 @@ run_task() {
       *) fail_usage "task $TASK is ${TASK_RISK:-of unknown risk}: a handover implementation by Codex is for RV0 / RV1 only (规划/11 §2.5: RV2 stops, no handover)" ;;
     esac
   fi
+  # The old flow's Codex implementation: only a ledger of the legacy list that names Codex as
+  # its implementer; every other task is implemented by the Opus subagent (README §10).
+  if [ "$MODE" = impl ] && [ "$PHASE" = impl ]; then
+    read_task_info
+    agent_task_is_legacy "$TRUSTED" "$TASK" ||
+      fail_usage "task $TASK is not on tools/guard/legacy-tasks.json: under the default split of 2026-10-05 a Claude Opus subagent implements it (README §10); Codex only implements once on a handover (--phase handover)"
+    [ "$TASK_IMPL" = codex ] ||
+      fail_usage "task $TASK names ${TASK_IMPL:-no} implementer in its trusted ledger, not codex: --phase impl is the old flow for impl: codex ledgers only"
+  fi
 
   RUN="$RUNS/$TASK"
   WT="${WT_ARG:-$RUNS/worktrees/$TASK}"
@@ -713,7 +728,7 @@ run_task() {
   if [ "$MODE" = review ]; then
     meta_args+=(--str "review_type=$REVIEW_TYPE" --str "base=$BASE_SHA" --str "risk=$TASK_RISK")
   else
-    # Which counter the call uses (tools/ops/state.ts callKind): test or handover.
+    # Which counter the call uses (tools/ops/state.ts callKind): test, handover or impl.
     meta_args+=(--str "phase=$PHASE")
   fi
   node "$SELF_DIR/meta.ts" merge --new --file "$RUN/meta.json" --copy-to "$RUN/meta.$MODE.json" \

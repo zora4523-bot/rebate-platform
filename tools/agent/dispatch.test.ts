@@ -765,3 +765,49 @@ it(
     expect(existsSync(join(fx.run, 'dispatch.log'))).toBe(false);
   },
 );
+
+it(
+  '[legacy flow] dispatch: a legacy impl: codex ledger is dispatched as the old Codex implementation',
+  LONG,
+  () => {
+    const fx = fixture('dispatch-legacy', {
+      task: [
+        {
+          when: ['show'],
+          stdout: JSON.stringify({
+            id: TASK,
+            type: 'impl',
+            risk: 'RV2',
+            impl: 'codex',
+            tester: 'claude',
+          }),
+        },
+      ],
+      state: [{ when: ['get'], stdout: stateJson({ spec_commit: 'abc1234' }) }],
+      brief: [{ writeOut: `# 任务 ${TASK}：legacy\n\n- 本轮阶段：impl（旧分工）\n` }],
+    });
+    mkdirSync(join(fx.trusted, 'tools', 'guard'), { recursive: true });
+    writeFileSync(
+      join(fx.trusted, 'tools', 'guard', 'legacy-tasks.json'),
+      JSON.stringify({ baseline: 'fixture', tasks: [TASK] }),
+    );
+    const res = runScript('dispatch.sh', [TASK], fx.env);
+    expect(res.status, res.stderr).toBe(0);
+    expect(lastJsonLine(res.stdout)).toMatchObject({ action: 'dispatched', phase: 'impl' });
+    const meta = waitForRun(fx);
+    expect(meta).toMatchObject({ mode: 'impl', phase: 'impl', exit_code: 0 });
+    const calls = stubCalls(fx);
+    // The implementation counter, an implementation brief, no test_paths asked, no handover mark.
+    expect(calls).toContainEqual(['state', 'bump-attempt', TASK, 'impl']);
+    expect(calls).toContainEqual([
+      'brief',
+      TASK,
+      '--phase',
+      'impl',
+      '--out',
+      join(fx.run, 'brief.md'),
+    ]);
+    const set = calls.find((call) => call[0] === 'state' && call[1] === 'set') ?? [];
+    expect(set).not.toContain('--implementer');
+  },
+);

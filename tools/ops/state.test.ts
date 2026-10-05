@@ -200,6 +200,8 @@ it('[ops/approvals.yaml id 19] an impl-mode Codex call is counted by its phase',
   const impl = { mode: 'impl' as const, review_type: null };
   expect(callKind(meta({ ...impl, phase: 'test' }))).toBe('test');
   expect(callKind(meta({ ...impl, phase: 'handover' }))).toBe('handover');
+  // The old flow of a legacy ledger: a Codex implementation is an implementation attempt.
+  expect(callKind(meta({ ...impl, phase: 'impl' }))).toBe('impl');
   // A meta.json from before 2026-10-05 (no phase) was a Codex implementation.
   expect(callKind(meta({ ...impl, phase: null }))).toBe('impl');
   expect(

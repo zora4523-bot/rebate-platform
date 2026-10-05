@@ -24,9 +24,10 @@
 //     spec-test  rule-test review (a fresh Claude subagent since 2026-10-05)                 2
 //     code       code review (money / general / contract) 3 (raised from 2, owner decision
 //                2026-10-02, ops/approvals.yaml id 17)
-//   A Codex call in impl mode is counted as `test` or `handover` by the `phase` of its meta.json,
-//   never as `impl`; an older meta.json without `phase` (a Codex implementation before
-//   2026-10-05) still counts as `impl`. A state file of the older three-counter shape is read
+//   A Codex call in impl mode is counted as `test`, `handover` or (the old flow of a ledger on
+//   tools/guard/legacy-tasks.json, `phase: impl`) `impl` by the `phase` of its meta.json; Codex
+//   writing tests never counts as `impl`. An older meta.json without `phase` (a Codex
+//   implementation before 2026-10-05) still counts as `impl`. A state file of the older three-counter shape is read
 //   with `test` and `handover` at 0.
 // - a counter is bumped BEFORE the call (a run that dies without a trace stays counted);
 // - `settle`, run by tools/agent/codex-run.sh after every call, takes the bump back when the
@@ -90,7 +91,7 @@ export const ATTEMPT_LIMITS: Record<AttemptKind, number> = {
 };
 
 /** What a Codex call in impl mode does (codex-run.sh impl --phase, recorded in meta.json). */
-export const IMPL_PHASES = ['test', 'handover'] as const;
+export const IMPL_PHASES = ['test', 'handover', 'impl'] as const;
 export type ImplPhase = (typeof IMPL_PHASES)[number];
 
 /** Counters added on 2026-10-05; a state file without them reads them as 0. */

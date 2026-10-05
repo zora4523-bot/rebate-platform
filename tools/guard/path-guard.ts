@@ -39,7 +39,7 @@ runCli(
 
     const root = resolveRoot(args.values.get('cwd'));
     const outcome = args.flags.has('author')
-      ? authorWorktreeCheck(root, base, allowed, taskType, testPaths)
+      ? authorWorktreeCheck(root, base, allowed, taskType, testPaths, taskId)
       : pathGuardCheck(root, base, allowed, taskType);
     if (args.flags.has('json')) {
       for (const problem of outcome.check.problems) console.error(`path-guard: ${problem}`);

@@ -309,6 +309,28 @@ it(
   CLI_TIMEOUT,
 );
 
+it('[legacy flow] a legacy impl: codex ledger gets the old implementation brief, no test_paths needed', () => {
+  // B1-01s shape: Codex implements, Claude wrote the rule tests, no test_paths, on the list.
+  writeFiles(root, {
+    'ops/tasks/X1-06.yaml': taskYaml({ id: 'X1-06', impl: 'codex', tester: 'claude' }),
+    'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: ['X1-06'] }),
+  });
+  try {
+    const impl = readFileSync(generateBrief('X1-06', opts({ attempt: 1 })), 'utf8');
+    expect(impl).toContain('- 本轮阶段：impl（实现（旧分工，台账 impl: codex）');
+    expect(impl).toContain('```\npnpm verify:fast\n');
+    expect(impl).not.toContain('verify-container.sh');
+    expect(impl.trimEnd().split('\n').at(-1)).toBe(
+      'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删。不要运行需要网络、Docker、数据库或监听端口的命令。',
+    );
+    // A test-phase brief of a legacy ledger keeps the old scope instead of refusing.
+    const test = readFileSync(generateBrief('X1-06', opts({ phase: 'test', attempt: 1 })), 'utf8');
+    expect(test).toContain('只新增文件，已有的不改不删）：`test/spec/**`');
+  } finally {
+    removeDir(join(root, 'tools', 'guard', 'legacy-tasks.json'));
+  }
+});
+
 it('refuses a brief over 24 KB and tells that the task must be split', () => {
   writeFiles(root, { 'packages/huge/AGENTS.md': `# huge\n\n${'规则'.repeat(5000)}\n` });
   const out = join(base, 'runs', 'X1-02', 'brief.md');

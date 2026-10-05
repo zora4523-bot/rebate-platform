@@ -38,6 +38,7 @@ import {
   splitTableRow,
 } from './spec.ts';
 import type { Rule, SpecSource } from './spec.ts';
+import { loadLegacyTasks } from '../lib/legacy-tasks.ts';
 import { readState } from './state.ts';
 import type { TaskState } from './state.ts';
 import { readTask, riskOfPaths } from './task.ts';
@@ -69,6 +70,12 @@ const PHASE_TEXT: Record<BriefPhase, string> = {
 
 export type BriefInput = {
   task: TaskFile;
+  /**
+   * The ledger is on tools/guard/legacy-tasks.json (written before the switch was merged): it
+   * keeps the old flow — no test_paths needed, and with impl: codex the implementation brief is
+   * the old one for Codex (verify:fast in its sandbox).
+   */
+  legacy?: boolean;
   /** Default `impl`. */
   phase?: BriefPhase;
   risk: RiskReport['risk'];
@@ -281,12 +288,16 @@ function contractRules(task: TaskFile, spec: SpecSource | undefined): string[] {
 export function renderBrief(input: BriefInput): string {
   const { task, state } = input;
   const phase = input.phase ?? 'impl';
+  // The old flow's Codex implementation (a legacy ledger with impl: codex).
+  const oldCodexImpl = input.legacy === true && task.impl === 'codex' && phase === 'impl';
   const out: string[] = [];
   out.push(`# 任务 ${task.id}：${task.title}`, '');
   out.push(`- 仓库：${task.repo}；分支：\`task/${task.id}\`；第 ${input.attempt} 次尝试`);
   out.push(`- 规格版本：\`SPEC_REF=${input.specRef}\``);
   out.push(`- 风险级：${input.risk}；实现：${task.impl}；规则测试作者：${task.tester}`);
-  out.push(`- 本轮阶段：${phase}（${PHASE_TEXT[phase]}）`);
+  out.push(
+    `- 本轮阶段：${phase}（${oldCodexImpl ? '实现（旧分工，台账 impl: codex）：规则测试已冻结，不改不删' : PHASE_TEXT[phase]}）`,
+  );
   out.push(`- 依赖任务：${task.deps.length === 0 ? '无' : task.deps.join('、')}`, '');
 
   out.push('## 1. 目标', '');
@@ -305,11 +316,16 @@ export function renderBrief(input: BriefInput): string {
   if (phase === 'test') {
     // The rule-test author's three kinds of paths (规划/11 §2.3 step 3; path-guard --author).
     // CR-06: the task's own test_paths, not every rule-test asset of the repository.
-    if (task.test_paths.length === 0) {
+    if (task.test_paths.length === 0 && input.legacy !== true) {
       throw new Error(`task ${task.id} has no test_paths: the test phase needs them in the ledger`);
     }
+    // A legacy ledger without test_paths keeps the old scope: every rule-test asset.
+    const scope =
+      task.test_paths.length > 0
+        ? task.test_paths
+        : prot.class1_add_only.map((g) => g.replace(/#.*$/, ''));
     out.push(
-      `- 本任务的规则测试（台账 \`test_paths\`；只新增文件，已有的不改不删）：${code(task.test_paths)}`,
+      `- 本任务的规则测试（台账 \`test_paths\`；只新增文件，已有的不改不删）：${code(scope)}`,
       "- 任务路径内只放 `NotImplemented` 骨架，逐条顶层语句检查：只许 import、export 列表与转出、type、interface、函数声明和类；函数与方法体只能是 `void <参数>;` 再加最后一句 `throw new Error('NotImplemented: <名字>')`（派生类构造函数第一句可以是只含普通值的 `super(…)`）；类字段不带初始值。`const` / `let` / `var`（含常量）、顶层调用、箭头函数、参数默认值、分支一律不行；要用的常量放进规则测试或写成类型：",
     );
   }
@@ -390,6 +406,11 @@ export function renderBrief(input: BriefInput): string {
       `必须变绿的规则测试：${tests}（由编排者在隔离容器里验证，验收命令：${commands.length === 0 ? '无' : commands.map((c) => `\`${c}\``).join('、')}）。${sandboxNote}`,
       '',
     );
+  } else if (oldCodexImpl) {
+    out.push(
+      `必须变绿的规则测试：${tests}。完整验证由编排者在沙箱外跑。沙箱里没有网络，连不上数据库和 Docker，也不能监听端口：不要跑集成测试、迁移和类型生成，需要时写进 \`outside_needed\`。`,
+      '',
+    );
   } else {
     out.push(
       `必须变绿的规则测试：${tests}。完整验证由编排者在沙箱外跑。测试只经可信容器入口跑：\`<couli-runs>/trusted/rebate-platform/tools/ops/verify-container.sh ${task.id} --fast\`（断网容器里的 \`pnpm verify:fast\`；Docker 不可用就停下报告，不在宿主跑测试）。不连库、不监听端口，不跑集成测试、迁移和类型生成，需要时写进 \`outside_needed\`。`,
@@ -436,7 +457,11 @@ export function renderBrief(input: BriefInput): string {
     review:
       '评审只读：不改任何文件，不提交，不安装依赖。不要运行需要网络、Docker、数据库或监听端口的命令。',
   };
-  out.push(tail[phase]);
+  out.push(
+    oldCodexImpl
+      ? 'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删。不要运行需要网络、Docker、数据库或监听端口的命令。'
+      : tail[phase],
+  );
   return `${out.join('\n')}\n`;
 }
 
@@ -485,7 +510,8 @@ export function generateBrief(id: string, opts: GenerateOptions = {}): string {
   const task = readTask(id, root);
   const state = readState(id);
   const phase = opts.phase ?? 'impl';
-  if (phase === 'test' && task.test_paths.length === 0) {
+  const legacy = loadLegacyTasks(opts.root ?? trustedRoot()).has(id);
+  if (phase === 'test' && task.test_paths.length === 0 && !legacy) {
     throw new CheckError(
       `任务 ${id} 的台账没有 test_paths：测试阶段不派工，先在 ops/tasks/${id}.yaml 补上本任务规则测试的路径（第一类保护路径之内）`,
     );
@@ -503,6 +529,7 @@ export function generateBrief(id: string, opts: GenerateOptions = {}): string {
   const render = (failureTailBytes: number): string =>
     renderBrief({
       task,
+      legacy,
       phase,
       risk: report.risk,
       attempt,

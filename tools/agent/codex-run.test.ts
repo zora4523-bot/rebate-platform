@@ -829,3 +829,64 @@ it(
     expect(log).toContain(`- \`${outside.key}\` S1`);
   },
 );
+
+it(
+  '[legacy flow] a B1-01s-shape ledger keeps the old flow: Codex spec-test review, Codex implementation, Codex review',
+  LONG,
+  () => {
+    const fx = fixture('legacy-flow');
+    // The old split: Claude writes the rule tests, Codex implements; no test_paths.
+    const stub = (fields: Record<string, unknown>): void =>
+      writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+        {
+          when: ['show'],
+          stdout: JSON.stringify({
+            id: TASK,
+            type: 'impl',
+            risk: 'RV2',
+            impl: 'codex',
+            tester: 'claude',
+            ...fields,
+          }),
+        },
+      ]);
+    stub({});
+    const implBrief = `# 任务 ${TASK}：legacy\n\n- 本轮阶段：impl（旧分工）\n`;
+    writeFileSync(join(fx.run, 'brief.md'), implBrief);
+    // Not on the legacy list yet: the old implementation phase is refused.
+    const refused = codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']);
+    expect(refused.status).toBe(2);
+    expect(refused.stderr).toContain('not on tools/guard/legacy-tasks.json');
+    mkdirSync(join(fx.trusted, 'tools', 'guard'), { recursive: true });
+    writeFileSync(
+      join(fx.trusted, 'tools', 'guard', 'legacy-tasks.json'),
+      JSON.stringify({ baseline: 'fixture', tasks: [TASK] }),
+    );
+    // Codex reviews the rule tests Claude wrote.
+    expect(
+      codexRun(fx, [
+        'review',
+        TASK,
+        '--base',
+        fx.baseSha,
+        '--review-type',
+        'spec-test',
+        '--dry-run',
+      ]).status,
+    ).toBe(0);
+    // Codex implements in the old implementation phase (not a handover).
+    const run = codexRun(fx, ['impl', TASK, '--phase', 'impl']);
+    expect(run.status, run.stderr).toBe(0);
+    expect(readJson(join(fx.run, 'meta.impl.json'))['phase']).toBe('impl');
+    // Its code review stays with Codex (the old split's reviewers); nothing marks a handover.
+    expect(
+      codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--review-type', 'money', '--dry-run'])
+        .status,
+    ).toBe(0);
+    // A legacy ledger that names Claude as implementer gets no Codex implementation.
+    stub({ impl: 'claude', tester: 'codex' });
+    expect(codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']).stderr).toContain(
+      'not codex',
+    );
+  },
+);

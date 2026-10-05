@@ -572,3 +572,29 @@ it('[CR2-05] the requirement comes from the trusted ledger and the switch-baseli
   const noRed = commitEvidence({ ...doc, runs: runs.slice(1) });
   expect(check(noRed).problems.join('\n')).toContain('no valid red run');
 });
+
+it('[legacy flow] a legacy ledger needs no red run and no test_paths, but still the full container verify', () => {
+  // A B1-01s-shape ledger: Codex implements, Claude wrote the rule tests, no test_paths; listed
+  // on the trusted legacy list.
+  const legacyTrusted = join(SCRATCH, 'trusted-legacy');
+  for (const file of ['tools/guard/protected-paths.json', 'ops/risk-map.yaml']) {
+    write(legacyTrusted, { [file]: readFileSync(join(REPO, file), 'utf8') });
+  }
+  write(legacyTrusted, {
+    'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: ['B2-01a'] }),
+    'ops/tasks/B2-01a.yaml': readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8')
+      .replace('impl: claude', 'impl: codex')
+      .replace('tester: codex', 'tester: claude')
+      .replace("test_paths:\n  - 'test/spec/money/**'\n", ''),
+  });
+  const doc = evidence();
+  const runs = doc['runs'] as Evidence[];
+  const head = commitEvidence({ ...doc, runs: runs.slice(1) });
+  const input = { prDir: repo, base, head, headRef: 'task/B2-01a', trusted: legacyTrusted };
+  expect(checkEvidence(input).problems).toEqual([]);
+  // The full container verify is still required.
+  const noVerify = commitEvidence({ ...doc, runs: runs.slice(0, 1) });
+  expect(checkEvidence({ ...input, head: noVerify }).problems.join('\n')).toContain(
+    'no container run of `verify`',
+  );
+});

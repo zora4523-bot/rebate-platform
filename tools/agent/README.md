@@ -16,13 +16,15 @@
 
 **执行边界**（规划第 2 轮评审 RO2-01/04）：Codex 沙箱里只做不执行测试的静态检查（类型检查、lint）；任何运行测试的命令都由编排者在隔离容器（`tools/ops/verify-container.sh`）或 CI 里跑；Codex 生成的任何可执行内容（规则测试、骨架、换家实现）都不在宿主上运行。Opus 实现子代理跑测试也只经 `verify-container.sh <id> --fast`，因为里面有 Codex 写的测试。`verify-container.sh` 没有宿主回退（CR-01）：Docker 用不了就停下，交给 CI。
 
+**旧任务按旧流程走完**（编排会话 2026-10-05 补充要求）：`tools/guard/legacy-tasks.json` 列出的 70 个台账（合并分工切换时 origin/main `b97ee61` 上的全部任务）不受新分工约束：不要求 `test_paths`、证据不要求红测记录（仍要完整的容器 `verify`）。其中台账 `impl: codex`、`tester: claude` 的（如 B1-01r～w）照旧：Claude 写规则测试 → Codex spec-test 评审（`codex-run.sh review --review-type spec-test`）→ Codex 实现（`dispatch.sh <id>` 自动选旧的实现阶段：`codex-run.sh impl --phase impl`，计 `attempts.impl`，不算换家、不记 `implementer`，任务书是旧格式：沙箱里可跑 `pnpm verify:fast`）→ Codex / Claude 代码评审。`--phase impl` 只接受这类台账；新任务一律走新分工。
+
 **谁实现的就不评审谁**：台账 `tester` 不是 `claude` 时（Codex 写的或读不到作者）`codex-run.sh review --review-type spec-test` 一律拒绝（CR-08）；换家后（在途状态 `implementer: codex`，或运行目录里有 `phase: handover` 的调用）Codex 的代码评审一律拒绝，改由 Claude 新子代理按 §11 的做法评审（CR-09）。`codex-run.sh impl` 核对任务书「本轮阶段」与 `--phase` 一致，不一致拒绝（CR-14）。
 
 ## 1. 文件
 
 | 文件 | 作用 |
 | --- | --- |
-| `codex-run.sh` | 包装脚本：`impl`（`--phase test` 写测试 / `--phase handover` 换家实现）、`review`、`selfcheck` |
+| `codex-run.sh` | 包装脚本：`impl`（`--phase test` 写测试 / `--phase handover` 换家实现 / `--phase impl` 旧台账的 Codex 实现）、`review`、`selfcheck` |
 | `supervise.pl` | 进程组监管：硬超时、无活动看门狗、整组击杀、确认组内无存活进程 |
 | `dispatch.sh` | 派工前检查 + 后台启动一次 Codex 写测试（或 `--handover` 换家实现） |
 | `post-run.sh` | Codex 运行结束后：先跑守卫，再给出下一步动作 |

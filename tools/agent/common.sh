@@ -76,6 +76,21 @@ agent_is_task_worktree() {
   return 1
 }
 
+# True when task $2 is a ledger listed in <trusted $1>/tools/guard/legacy-tasks.json (written
+# before the default split of 2026-10-05 was merged; it keeps the old flow). A missing or broken
+# list lists nothing.
+agent_task_is_legacy() {
+  node -e '
+    const fs = require("node:fs");
+    try {
+      const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      process.exit(Array.isArray(doc.tasks) && doc.tasks.includes(process.argv[2]) ? 0 : 1);
+    } catch {
+      process.exit(1);
+    }
+  ' "$1/tools/guard/legacy-tasks.json" "$2"
+}
+
 # True while any process of the process group $1 exists.
 agent_group_alive() {
   perl -e 'exit((kill(0, -$ARGV[0]) || $!{EPERM}) ? 0 : 1)' "$1"

@@ -9,8 +9,11 @@
 #                once the task has a spec_commit (the rule tests are committed and frozen).
 #   --handover   Codex implements once after the Opus attempts ran out (规划/11 §2.5 超限换家);
 #                RV0 / RV1 only, checked here with the trusted task.ts and again by codex-run.sh.
-# The phase picks the counter (state.ts bump-attempt test|handover), the brief
-# (brief.ts --phase test|handover) and the wrapper phase (codex-run.sh impl --phase test|handover).
+#   (legacy)     a ledger on tools/guard/legacy-tasks.json with impl: codex keeps the old flow:
+#                the default dispatch is Codex's implementation (phase impl), after Claude's
+#                rule tests.
+# The phase picks the counter (state.ts bump-attempt test|handover|impl), the brief
+# (brief.ts --phase test|handover|impl) and the wrapper phase (codex-run.sh impl --phase …).
 #
 # There is no quota gate: the owner said on 2026-10-02 that the Codex quota is unlimited
 # (ops/approvals.yaml id 15). Only failures stop a task (§2.5), checked in step 2.
@@ -152,35 +155,45 @@ case "$running_pid" in
     ;;
 esac
 
-# Which run is this? Rule tests are written once, before the implementation: with a spec_commit
-# they are frozen, and the implementation belongs to the Opus subagent (README §10). A handover
-# to Codex is for RV0 / RV1 only (规划/11 §2.5: RV2 stops instead).
-if [ "$PHASE" = test ]; then
-  # CR-06: the test phase writes only into the task's test_paths; a ledger without them is not
-  # dispatched (nothing is counted).
-  [ -f "$OPS/task.ts" ] || {
-    log "missing in the trusted root: tools/ops/task.ts"
-    exit 2
-  }
-  test_paths_now="$(node "$OPS/task.ts" show "$TASK" --json 2>/dev/null |
-    node "$SELF_DIR/meta.ts" get --file /dev/stdin test_paths 2>/dev/null || true)"
-  case "$test_paths_now" in
-    '' | '[]' | null) stop 1 test-paths-missing "ops/tasks/$TASK.yaml has no test_paths: add the task's rule-test paths (inside class 1 of the protected paths) before the test phase" ;;
-  esac
-  case "$spec_commit_now" in
-    '' | null) ;;
-    *) stop 1 spec-commit-exists "rule tests are committed (spec_commit $spec_commit_now): the implementation goes to a Claude Opus subagent (tools/agent/README.md §10); a Codex handover is dispatch.sh $TASK --handover" ;;
-  esac
-else
-  [ -f "$OPS/task.ts" ] || {
-    log "missing in the trusted root: tools/ops/task.ts"
-    exit 2
-  }
-  task_risk="$(node "$OPS/task.ts" show "$TASK" --json 2>/dev/null |
-    node "$SELF_DIR/meta.ts" get --file /dev/stdin risk 2>/dev/null || true)"
+# Which run is this? The trusted ledger decides.
+#   - a ledger on tools/guard/legacy-tasks.json that names Codex as implementer (impl: codex):
+#     the old flow, Claude wrote the rule tests and Codex implements (phase impl, the
+#     implementation counter, an implementation brief; no test_paths, no handover);
+#   - otherwise the default split of 2026-10-05: Codex writes the rule tests once (phase test,
+#     test_paths required unless the ledger is a legacy one), frozen after spec_commit; the
+#     implementation belongs to the Opus subagent (README §10);
+#   - --handover: Codex implements once, RV0 / RV1 only (规划/11 §2.5: RV2 stops instead).
+[ -f "$OPS/task.ts" ] || {
+  log "missing in the trusted root: tools/ops/task.ts"
+  exit 2
+}
+task_json="$(node "$OPS/task.ts" show "$TASK" --json 2>/dev/null || true)"
+task_field() {
+  printf '%s\n' "$task_json" | node "$SELF_DIR/meta.ts" get --file /dev/stdin "$1" 2>/dev/null || true
+}
+legacy=0
+if agent_task_is_legacy "$TRUSTED" "$TASK"; then legacy=1; fi
+if [ "$PHASE" = handover ]; then
+  task_risk="$(task_field risk)"
   case "$task_risk" in
     RV0 | RV1) ;;
     *) stop 1 handover-refused "task $TASK is ${task_risk:-of unknown risk}: a Codex handover implementation is for RV0 / RV1 only (规划/11 §2.5: RV2 stops)" ;;
+  esac
+elif [ "$legacy" = 1 ] && [ "$(task_field impl)" = codex ]; then
+  PHASE=impl
+  BRIEF_PHASE=impl
+else
+  # CR-06: the test phase writes only into the task's test_paths; a ledger without them is not
+  # dispatched (nothing is counted), unless it is a legacy ledger (old scope).
+  test_paths_now="$(task_field test_paths)"
+  if [ "$legacy" = 0 ]; then
+    case "$test_paths_now" in
+      '' | '[]' | null) stop 1 test-paths-missing "ops/tasks/$TASK.yaml has no test_paths: add the task's rule-test paths (inside class 1 of the protected paths) before the test phase" ;;
+    esac
+  fi
+  case "$spec_commit_now" in
+    '' | null) ;;
+    *) stop 1 spec-commit-exists "rule tests are committed (spec_commit $spec_commit_now): the implementation goes to a Claude Opus subagent (tools/agent/README.md §10); a Codex handover is dispatch.sh $TASK --handover" ;;
   esac
 fi
 

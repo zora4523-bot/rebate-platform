@@ -333,7 +333,11 @@ export function authorWorktreeCheck(
   taskPaths: readonly string[],
   taskType: string | undefined,
   testPaths: readonly string[],
+  taskId?: string,
 ): PathGuardOutcome {
+  // A legacy ledger (tools/guard/legacy-tasks.json) without test_paths keeps the old scope, all
+  // rule-test assets; any other task without test_paths gets none (CR-06, CR2-02).
+  const legacy = taskId !== undefined && loadLegacyTasks(trustedRoot()).has(taskId);
   const protectedList = loadProtected(trustedRoot());
   const changes = changedFiles(base, { cwd: root });
   const hits = findProtectedHits(changes, protectedList, gitReaders(root, base), { taskType });
@@ -342,7 +346,10 @@ export function authorWorktreeCheck(
     changes,
     {
       taskPaths,
-      testAssets: testPaths,
+      testAssets:
+        testPaths.length > 0 || !legacy
+          ? testPaths
+          : protectedList.class1_add_only.map((g) => splitFragment(g).glob),
       contentAtSpec: (path) => {
         const file = join(root, path);
         return existsSync(file) ? readFileSync(file, 'utf8') : null;
@@ -354,7 +361,7 @@ export function authorWorktreeCheck(
     },
     hits,
   );
-  if (testPaths.length === 0) {
+  if (testPaths.length === 0 && !legacy) {
     detail.ok = false;
     detail.violations.unshift({
       path: 'ops/tasks',
