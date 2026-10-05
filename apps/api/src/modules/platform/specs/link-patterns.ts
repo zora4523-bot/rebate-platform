@@ -1,3 +1,5 @@
+import { LINK_PATTERNS } from './link-patterns.gen.ts';
+
 /** Runtime snapshot of specs/link-patterns.yaml; generation preserves every field and order. */
 export interface LinkPatternsSpec {
   readonly version: string;
@@ -11,5 +13,6 @@ export interface LinkPatternsSpec {
 
 /** Read the generated snapshot without loading YAML at runtime. */
 export function getLinkPatterns(): LinkPatternsSpec {
-  throw new Error('NotImplemented: getLinkPatterns');
+  // The generated constant itself, so every caller shares one table.
+  return LINK_PATTERNS;
 }

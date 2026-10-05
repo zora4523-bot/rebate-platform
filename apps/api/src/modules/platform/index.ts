@@ -10,6 +10,13 @@ export type { FieldCrypto, FieldCryptoErrorCode } from './crypto/index.ts';
 export { contractRouteSchema } from './validation/contract-routes.ts';
 export type { ContractOperationId } from './validation/contract-routes.ts';
 export { fieldsErrorEnvelope } from './validation/index.ts';
+// Generated snapshots of specs/link-patterns.yaml and specs/material-channels.yaml (no YAML at run time).
+export { LINK_PATTERNS } from './specs/link-patterns.gen.ts';
+export { getLinkPatterns } from './specs/link-patterns.ts';
+export type { LinkPatternsSpec } from './specs/link-patterns.ts';
+export { MATERIAL_CHANNELS } from './specs/material-channels.gen.ts';
+export { getMaterialChannels } from './specs/material-channels.ts';
+export type { MaterialChannelsSpec } from './specs/material-channels.ts';
 export { HTTP_ENTRIES, WORKER_ENTRIES, isHttpEntry } from './entries.ts';
 export type { EntryName, HttpEntry, WorkerEntry } from './entries.ts';
 export {
