@@ -65,7 +65,9 @@ it.each(ENTRIES)(
       } else {
         expect(handle).not.toBeNull();
         expect(factory).toHaveBeenCalledExactlyOnceWith(url);
+        await handle!.close();
         expect(driver.connect).not.toHaveBeenCalled();
+        expect(driver.quit).not.toHaveBeenCalled();
       }
     } finally {
       await handle?.close();

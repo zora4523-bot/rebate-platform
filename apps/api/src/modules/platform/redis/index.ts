@@ -21,6 +21,7 @@ export interface RedisNamespace {
   eval(script: string, options: RedisScriptOptions): Promise<unknown>;
 }
 
+/** Keep transport and URL only in closures or #private fields, never inspectable properties. */
 export interface RedisHandle {
   /** Lowercase letters, digits, _ and -; any length limit must allow at least 64 characters. */
   namespace(name: string): RedisNamespace;
@@ -29,7 +30,11 @@ export interface RedisHandle {
   onApplicationShutdown(): Promise<void>;
 }
 
-/** Internal driver seam: production uses ioredis; rules inject a network-free transport. */
+/**
+ * Internal driver seam: production uses ioredis; rules inject a network-free transport.
+ * Readiness checks belong inside connect(); the handle uses call() only for user commands,
+ * never for an extra handshake or PING.
+ */
 export interface RedisTransport {
   connect(): Promise<void>;
   call(command: string, ...args: (string | number)[]): Promise<unknown>;

@@ -39,7 +39,14 @@ async function acquire(): Promise<TestRedis> {
 // The provisioning/stop test below acquires its own handle to check lifecycle independently.
 let sharedServer: TestRedis | undefined;
 beforeAll(async () => {
-  sharedServer = await acquire();
+  const testing = (await import(
+    new URL('../../../../packages/db/src/testing/index.ts', import.meta.url).href
+  )) as Record<string, unknown>;
+  const acquireShared = testing['acquireTestRedis'];
+  // Leave undefined on the skeleton: each test fails its own assertion, not this hook.
+  if (typeof acquireShared === 'function') {
+    sharedServer = await (acquireShared as () => Promise<TestRedis>)();
+  }
 }, 180_000);
 afterAll(async () => {
   await sharedServer?.stop();
@@ -55,8 +62,8 @@ async function withRedis(
   expect(sharedServer).toBeDefined();
   const server = sharedServer!;
   const raw = new Redis(server.url, { maxRetriesPerRequest: 0, retryStrategy: () => null });
-  // 32 chars, 38 with _other: stay below 40; implementations must allow at least 64 (§10).
-  const namespace = randomUUID().replaceAll('-', '');
+  // 25 chars, 31 with _other: stay below 40; implementations must allow at least 64 (§10).
+  const namespace = `t${randomUUID().replaceAll('-', '').slice(0, 24)}`;
   let handle: Awaited<ReturnType<typeof createRedisHandle>> = null;
   try {
     handle = await createRedisHandle(connection('api', server.url), {

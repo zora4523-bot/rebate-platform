@@ -88,7 +88,7 @@ it.each(['', 'Risk', 'risk:other', 'a.b', 'a/b', '*', 'a b', '中文', 'a\n', 'a
 );
 
 // The implementation may cap namespace length, but must support at least 64 characters (§10).
-it.each(['catalog', 'risk_2', 'session-cache', 'a0', 'a'.repeat(64)])(
+it.each(['catalog', 'risk_2', 'session-cache', 'a0', '0a', 'a'.repeat(64)])(
   '[ADR-0001 §4.2 #17][B1-01y §9.2] %s 的读取和写入始终有前缀，SET 与秒 TTL 原子提交',
   async (namespace) => {
     const { handle, driver } = await fixture();

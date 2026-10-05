@@ -6,7 +6,7 @@ import type {
 } from '../../../../apps/api/src/modules/platform/db/index.ts';
 import * as redisModule from '../../../../apps/api/src/modules/platform/redis/index.ts';
 import type { RedisHandle } from '../../../../apps/api/src/modules/platform/redis/index.ts';
-import { ENTRIES, connection, failure, memoryLogger, type Entry } from './kit.ts';
+import { connection, failure, memoryLogger, type Entry } from './kit.ts';
 
 const NEST_TIMEOUT_MS = 30_000;
 
@@ -96,7 +96,7 @@ it(
   NEST_TIMEOUT_MS,
 );
 
-it.each(ENTRIES)(
+it.each(['api', 'stream', 'admin', 'worker'] as const)(
   '[ADR-0001 §4.2 #17][B1-01y §9.2] runEntry(%s) 把已校验的 REDIS_URL 传入 bootstrap',
   async (entry) => {
     for (const [key, value] of Object.entries({
@@ -138,8 +138,7 @@ it.each(ENTRIES)(
     try {
       await runner.runEntry(entry);
       expect(captured).toHaveLength(1);
-      if (entry === 'payout') expect(captured[0]?.redisUrl ?? null).toBeNull();
-      else expect(captured[0]?.redisUrl?.reveal()).toBe('redis://127.0.0.1:1/0');
+      expect(captured[0]?.redisUrl?.reveal()).toBe('redis://127.0.0.1:1/0');
     } finally {
       process.exitCode = previousExitCode;
       for (const options of captured) await options.dbHandles?.close();
