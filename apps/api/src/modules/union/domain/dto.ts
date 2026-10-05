@@ -1,10 +1,9 @@
 // Builders of the unified item and order DTOs. Amounts are integer fen (bigint), commission
 // rates are bp (1/10000) bigints, order numbers are the raw strings; nothing goes through a JS
-// floating-point number.
-//
-// TODO(规划/11 §4.5): 改用 @couli/money 的 parseFen / pctStrToBp — blocked on @couli/api 尚未
-// 依赖 @couli/money（依赖与 tsconfig 引用要由编排者另开 deps 任务加入）。下面两个解析函数逐条照
-// 抄其语义（BR-CALC-26：超过两位小数向下取整），换成库函数时行为不变。
+// floating-point number. All amount and percentage parsing is @couli/money's (BR-CALC-26 has a
+// single implementation there); this file only adds the sign check and maps the library's
+// errors to UnionError('invalid_dto').
+import { InvalidAmount, InvalidRatio, parseFen, pctStrToBp } from '@couli/money';
 import type { Clock } from '../../platform/index.ts';
 import {
   isPlatform,
@@ -16,45 +15,42 @@ import {
   type UnionOrder,
 } from './types.ts';
 
-const MAX_INT64 = 9223372036854775807n;
-const BP_PER_WHOLE = 10000n;
 const ID_FIELDS = ['item_id', 'itemId', 'skuId', 'goods_id', 'goods_sign'] as const;
 
 function invalid(message: string, platform: unknown): UnionError {
   return new UnionError('invalid_dto', message, isPlatform(platform) ? platform : null);
 }
 
-/** Same accepted inputs as @couli/money parseFen, restricted to non-negative amounts. */
+/** A leading "-" or the number -0: refused before parsing (no arithmetic on the value). */
+function isSigned(value: unknown): boolean {
+  return (typeof value === 'string' && value.startsWith('-')) || Object.is(value, -0);
+}
+
+/** @couli/money parseFen, restricted to non-negative amounts. */
 function parseNonNegativeFen(value: unknown, field: string, platform: unknown): bigint {
-  let fen: bigint | undefined;
-  if (typeof value === 'bigint') fen = value;
-  else if (typeof value === 'number' && Number.isSafeInteger(value)) fen = BigInt(value);
-  else if (typeof value === 'string' && /^[0-9]+$/.exec(value)?.[0] === value) {
-    const significant = value.replace(/^0+/, '');
-    if (significant.length <= 19) fen = BigInt(significant === '' ? '0' : significant);
+  const message = `${field} must be a non-negative integer amount in fen`;
+  if (isSigned(value)) throw invalid(message, platform);
+  let fen: bigint;
+  try {
+    fen = parseFen(value);
+  } catch (error) {
+    if (error instanceof InvalidAmount) throw invalid(message, platform);
+    throw error;
   }
-  if (fen === undefined || fen < 0n || fen > MAX_INT64) {
-    throw invalid(`${field} must be a non-negative integer amount in fen`, platform);
-  }
+  if (fen < 0n) throw invalid(message, platform);
   return fen;
 }
 
-/** Same as @couli/money pctStrToBp: percentage string to bp, floored, within 0..100 %. */
+/** @couli/money pctStrToBp (floored to bp, within 0..100 %), without a sign. */
 function percentToBp(text: unknown, platform: unknown): bigint {
-  const match = typeof text === 'string' ? /^([0-9]+)(?:\.([0-9]+))?$/.exec(text) : null;
-  if (match === null || match[0] !== text) {
-    throw invalid('commission_percent must be a plain decimal percentage', platform);
+  const message = 'commission_percent must be a plain decimal percentage within 0..100';
+  if (typeof text !== 'string' || isSigned(text)) throw invalid(message, platform);
+  try {
+    return pctStrToBp(text);
+  } catch (error) {
+    if (error instanceof InvalidRatio) throw invalid(message, platform);
+    throw error;
   }
-  const whole = (match[1] ?? '').replace(/^0+/, '');
-  const fraction = match[2] ?? '';
-  if (whole.length > 19) throw invalid('commission_percent exceeds 100%', platform);
-  const bp =
-    BigInt(whole === '' ? '0' : whole) * 100n + BigInt(fraction.slice(0, 2).padEnd(2, '0'));
-  const hasTail = /[1-9]/.test(fraction.slice(2));
-  if (bp > BP_PER_WHOLE || (bp === BP_PER_WHOLE && hasTail)) {
-    throw invalid('commission_percent exceeds 100%', platform);
-  }
-  return bp;
 }
 
 /** Copies the item identifiers present on the input, unchanged (string or null). */

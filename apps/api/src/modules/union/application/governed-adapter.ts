@@ -5,6 +5,9 @@
 // retry; writes (convert, bindPublisher, createTaolijin) never do — the client replays the
 // same idempotency key instead. The quota limiter is shared and takes one token per attempt
 // for the call's purpose; its bucket key comes from configuration (CAP-*-12 decide the unit).
+// Business refusals from the adapter (UnionError with a business code) are classified
+// `rejected`: not retried and not counted by the breaker; only timeouts, upstream throttling,
+// network and 5xx failures are.
 import {
   createGovernor,
   unionPolicy,
@@ -14,6 +17,7 @@ import {
   type Scheduler,
 } from '../../platform/index.ts';
 import {
+  classifyUnionError,
   isServerIdentity,
   UnionError,
   type CallCtx,
@@ -75,6 +79,7 @@ export function createGovernedAdapter(
     governorFor(ctx).call((signal) => operation(callCtx(ctx, signal)), {
       kind,
       purpose: ctx.purpose,
+      classify: classifyUnionError,
     });
 
   const { bindPublisher, listRefunds, listPunishments, materialFeed, createTaolijin } = adapter;

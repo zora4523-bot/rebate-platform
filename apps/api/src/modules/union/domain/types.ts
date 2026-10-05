@@ -32,9 +32,28 @@ export function isRegisteredPlatform(value: unknown): value is RegisteredPlatfor
   return typeof value === 'string' && (REGISTERED_PLATFORMS as readonly string[]).includes(value);
 }
 
-/** Internal failures, not new HTTP error codes. */
+/**
+ * Internal failures, not new HTTP error codes. Adapters report what the platform answered:
+ * a business refusal (item_unavailable, link_unrecognized, upstream_rejected) or a dependency
+ * failure (upstream_unavailable: network error or 5xx; rate_limited: upstream throttling).
+ */
 export type UnionErrorCode =
-  'adapter_unimplemented' | 'invalid_endpoint' | 'unsafe_mode' | 'invalid_dto' | 'invalid_identity';
+  | 'adapter_unimplemented'
+  | 'invalid_endpoint'
+  | 'unsafe_mode'
+  | 'invalid_dto'
+  | 'invalid_identity'
+  | 'item_unavailable'
+  | 'link_unrecognized'
+  | 'upstream_rejected'
+  | 'upstream_unavailable'
+  | 'rate_limited';
+
+/** The UnionError codes that mean the dependency itself failed (02 §6.2: retry and breaker). */
+const DEPENDENCY_FAILURE_CODES: ReadonlySet<UnionErrorCode> = new Set<UnionErrorCode>([
+  'upstream_unavailable',
+  'rate_limited',
+]);
 
 export class UnionError extends Error {
   readonly code: UnionErrorCode;
@@ -46,6 +65,17 @@ export class UnionError extends Error {
     this.code = code;
     this.platform = platform;
   }
+}
+
+/**
+ * Governor classification of an adapter error. A UnionError with a business code means the
+ * platform (or this module) answered and said no: `rejected`, never retried, not a breaker
+ * failure. Dependency-failure UnionErrors and every other error (network errors, unknown
+ * throws) are `failure`; the Governor's own timeout is always a failure.
+ */
+export function classifyUnionError(error: unknown): 'failure' | 'rejected' {
+  if (error instanceof UnionError && !DEPENDENCY_FAILURE_CODES.has(error.code)) return 'rejected';
+  return 'failure';
 }
 
 export interface UnionEndpoint {
