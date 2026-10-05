@@ -367,8 +367,12 @@ export interface paths {
          *     without a registered device_id cannot record (BR-ID-12: the first-launch consent is kept
          *     locally and reported right after device registration). The current state of a subject and
          *     type is the row with the latest server_at; server_at is the server clock, client_at is the
-         *     tap time on the device. accepted=false is a withdrawal; for a device it also follows
-         *     BR-ID-13 (device sessions revoked, push token cleared, basic mode).
+         *     tap time on the device. Withdrawing the privacy consent (type=privacy, accepted=false, the
+         *     privacy center 【撤回同意】) is always a device-level row even with a token: subject is this
+         *     device, user_id is kept only as an association, other devices' user-level state is not
+         *     changed; the server then revokes this device's sessions and install_secret and clears its
+         *     push token, and the client enters basic mode (BR-ID-13). Other withdrawals (for example
+         *     ai_third_party, BR-AI-13) follow the user / device rule above.
          *     `type` never takes labor_agreement (signed only through the labor agreement endpoint,
          *     BR-WDR-31). `channel` never takes login_merge, h5_landing or withdraw_flow: those rows are
          *     written by the server (login merge, landing registration, labor agreement signing).
