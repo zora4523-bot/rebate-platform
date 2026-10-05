@@ -1,0 +1,22 @@
+id: B1-01r
+repo: rebate-platform
+title: 链路标识：HTTP 响应带响应头 X-Trace-Id，值与响应体 trace_id、访问日志 reqId 相同
+type: impl
+# 后续（couli-runs/followups/B1-01c-url-path-and-trace-id.md 第 6 项）。依据：规划/02 §13 可观测表「响应头
+# X-Trace-Id 回传客户端」；规划/04 §5 公共请求头 X-Trace-Id 与响应 trace_id。值就是 Fastify 的 request id
+# （B1-01p 已收窄：合格的 x-trace-id 原样采用，否则新生成）。三个 HTTP 入口的每个响应都带（含 404、20001、
+# 幂等重放、未捕获异常），连接被中止不发响应时没有。契约 openapi 不在本任务声明这个响应头（OpenAPI 允许
+# 未声明的响应头）；在契约里登记另记 followups/INDEX.md，交契约线。
+refs: []
+refs_hash: {}
+deps: [B1-01p]
+paths:
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/modules/platform/tracing/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/tracing/**'
+status: todo
+pr: null

@@ -1,0 +1,31 @@
+id: B1-01s
+repo: rebate-platform
+title: 分区维护：link_logs 按日分区（+08:00 自然日）预建未来 14 天，过 90 天的日分区按日删除
+type: migration
+# B1-01j / B1-01n 的后续（followups/B1-01g-queue-test-gaps.md B1-01j 节）。依据：ADR-0001 §4.2 第 4、5 项
+# （按日的表预建未来 14 天，link_logs 按日）；BR-ID-30 ② link_logs 90 天按日分区删除、04:00（+08:00）删除
+# 任务与截止口径；规划/04 §3.2 link_logs 按日分区。两段式：先只写迁移（新 SECURITY DEFINER 函数，不改
+# ensure_month_partition），编排者在沙箱外跑迁移与 db:snapshot 并提交生成物，再派模块实现；迁移全局串行。
+# 不改已有受保护规则测试：日分区维护在 createPartitionMaintenance 里是默认关闭的选项；worker 接线开启它并
+# 撤掉 link_logs 的 DEFAULT 豁免会改动 B1-01n 的受保护测试，另立 B1-01w（test-change）。refs 为空，理由同
+# B1-01j（BR-ID-30 整条渲染后任务书超 24KB），规则测试作者按 08 原文写。
+refs: []
+refs_hash: {}
+deps: [B1-01n]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'packages/db/src/partitions.ts'
+  - 'packages/db/src/partitions.test.ts'
+  - 'packages/db/scripts/partitions.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.test.ts'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/maintenance/**'
+  - 'test/spec/db/**'
+status: todo
+pr: null
