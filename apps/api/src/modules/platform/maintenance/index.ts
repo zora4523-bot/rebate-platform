@@ -205,6 +205,140 @@
 //      `../clock/clock.ts` and `../logging/logger.ts` type-only. No pg-boss.
 //    - No `process.env`; no wall clock (section C.2); logs only through `options.logger`.
 //    - Implementation-side unit tests go next to the code (`*.test.ts`, no database).
+//
+// I. Day partitions (task B1-01s; NotImplemented until then). Basis: ADR-0001 §4.2 #4 ("按日的表预建
+//    未来 14 天"; DEFAULT 分区兜底，有数据须先迁出才能建对应区间的分区), #5 (link_logs 按日), #8
+//    (couli_maint); BR-ID-30 (删除条件 created_at < 运行当日 00:00（+08:00）− 留存天数; ② link_logs 90 天，
+//    按日分区删除，不得短于 W_claim + W_backfill = 720 h + 360 h = 45 天); 规划/04 §3.2 (link_logs 按日分区).
+//    Two steps as in B1-01j: first the migration (I1), then — after `pnpm db:snapshot` outside the
+//    sandbox — this module (I2). Rule tests: test/spec/db/partitions/day-*.ts and
+//    test/spec/platform/maintenance/day-*.ts. Sections A–H stay valid unchanged.
+//
+//    Day: the calendar day at the FIXED offset UTC+08:00 (never a session or host time zone; the
+//    month partitions of section A keep their UTC months). The partition of day D of table T is
+//    named `T_pYYYYMMDD` (D's date) and holds [D 00:00:00+08:00, D+1 00:00:00+08:00); rendered under
+//    TimeZone UTC its bound is exactly
+//      FOR VALUES FROM ('<D−1> 16:00:00+00') TO ('<D> 16:00:00+00').
+//
+// I1. Migration — the next free number (待编排会话核对; today `0012_link-logs-day-partitions.sql`).
+//    Rules of section A apply: `-- Up Migration`, no down section, recovery in the header, the
+//    migration creates no partition (packages/db/src/migrations.test.ts also rejects a LINE that
+//    starts with `CREATE TABLE … PARTITION OF … FOR VALUES`: keep such text inside a format string),
+//    grants in the same migration. NOT redefined: app.ensure_month_partition (its allow-list stays
+//    event_log, orders; it keeps rejecting link_logs with 22023), app.drop_expired_month_partitions
+//    (keeps rejecting link_logs with 22023) and app.partition_default_rows. The new text must not
+//    contain `IF p_table NOT IN (` (migrations.test.ts reads the last one as the month allow-list):
+//    use `= ANY (ARRAY[…])`, `<>` or CASE.
+//    Both new functions: exactly one overload each, LANGUAGE plpgsql, SECURITY DEFINER, owned by
+//    couli_migrator, function-level settings exactly, in this order (pg_proc.proconfig):
+//      search_path=pg_catalog, pg_temp | lock_timeout=5s | DateStyle=ISO, YMD | TimeZone=UTC
+//    (as app.drop_expired_month_partitions; 待编排会话确认), `REVOKE ALL … FROM PUBLIC`,
+//    `GRANT EXECUTE … TO couli_maint` and to no other role: ACL exactly
+//    {couli_maint=X/couli_migrator, couli_migrator=X/couli_migrator}. couli_app, couli_payout and
+//    couli_readonly get 42501; couli_maint itself still has no DDL on link_logs (42501).
+//    Day-partitioned tables (allow-list of both functions): exactly 'link_logs' (case-sensitive, no
+//    trimming). `events` does not exist yet; the migration that creates it extends both lists.
+//    Errors are raised with exactly the SQLSTATE and message given here (`%` = the argument).
+//
+//    I1a. `app.ensure_day_partition(p_table text, p_day date) RETURNS text`
+//         Creates the partition of day p_day of app.<p_table> and returns its name; when a partition
+//         of app.<p_table> with that name already exists, returns the name and does nothing else
+//         (no DDL, no table lock: it returns at once even while another session holds a lock on the
+//         table). Checks, in this order:
+//           a. p_table or p_day NULL → 22004
+//              `ensure_day_partition: p_table and p_day are required`
+//           b. p_table is not exactly 'link_logs' → 22023
+//              `ensure_day_partition: table "%" is not day-partitioned`
+//              (event_log, orders, events, 'LINK_LOGS', ' link_logs', 'app.link_logs', a partition
+//              name, '' …)
+//           c. p_day before 2000-01-01 or after 9999-12-31 (also ±infinity) → 22023
+//              `ensure_day_partition: p_day must be between 2000-01-01 and 9999-12-31`
+//              (range 待编排会话确认: keeps the name at exactly 8 digits)
+//           d. app.<p_table> is not a partitioned table → 42P01
+//              `ensure_day_partition: app.% is not a partitioned table`
+//           e. a relation app.<name> exists that is not a partition of app.<p_table> → 42P07
+//              `ensure_day_partition: app.% exists but is not a partition of app.%` (name, table)
+//         Creation: `CREATE TABLE app.<name> PARTITION OF app.<p_table> FOR VALUES FROM (…) TO (…)`
+//         with the bounds of "Day" above (e.g. literals 'YYYY-MM-DD 00:00:00+08'). When the DEFAULT
+//         partition holds a row of that day, PostgreSQL rejects it with 23514 (check_violation);
+//         the error propagates unchanged and nothing is created (rows outside that day do not
+//         matter: they stay in DEFAULT and the partition is created).
+//         Locks: an advisory lock per partition name (suggested key
+//         `hashtextextended('app.ensure_day_partition:' || <name>, 0)`) serialises callers of the
+//         same day; creating takes locks on the parent, on its DEFAULT partition (scanned) and on
+//         app.users (link_logs' foreign keys are cloned onto the new partition: an open transaction
+//         that writes app.users makes the creation wait, measured on PG 18). Every one of these
+//         waits is bounded by the function's lock_timeout (5 s): on expiry the call fails with 55P03
+//         (lock_not_available), nothing is created and no lock request of it stays queued.
+//         Concurrency: simultaneous calls for the same day all succeed, return the same name, and
+//         the partition is created exactly once.
+//
+//    I1b. `app.drop_expired_day_partitions(p_table text, p_now timestamptz) RETURNS text[]`
+//         Drops the day partitions of app.<p_table> whose whole range is past the retention period
+//         and returns their names. Checks, in this order:
+//           a. p_table or p_now NULL → 22004
+//              `drop_expired_day_partitions: p_table and p_now are required`
+//           b. p_now is ±infinity → 22023 `drop_expired_day_partitions: p_now must be finite`
+//           c. p_table is not exactly 'link_logs' → 22023
+//              `drop_expired_day_partitions: table "%" has no partition retention rule`
+//              (also event_log, orders and every RETAINED name of A1: this function never drops
+//              them)
+//           d. app.<p_table> is not a partitioned table → 42P01
+//              `drop_expired_day_partitions: app.% is not a partitioned table`
+//         Retention: link_logs 90 days, written in the SQL function (BR-ID-30 ②; as event_log's 190
+//         days in A1).
+//         Cutoff: let D be the calendar date of p_now at UTC+08:00 (session TimeZone changes
+//         nothing); cutoff = 00:00 of (D − 90 days) at +08:00. A child of app.<p_table> named
+//         exactly `<p_table>_pYYYYMMDD` is dropped exactly when the upper bound of its ACTUAL range
+//         (catalogue, not the name) ≤ cutoff. The partition key of link_logs is created_at, so then
+//         every row it holds has created_at < cutoff: BR-ID-30's created_at condition holds
+//         without reading rows (unlike A1 (ii)). The DEFAULT partition (and its rows, however old)
+//         and any other child are never dropped. Dropping is `DROP TABLE` of the partition (the
+//         append-only trigger does not fire), in the caller's transaction.
+//         Example: p_now 2026-10-08T15:59:59.999Z (D = 2026-10-08, cutoff 2026-07-10 00:00 +08:00)
+//         drops up to link_logs_p20260709; from p_now 2026-10-08T16:00:00Z (D = 2026-10-09,
+//         cutoff 2026-07-11 00:00 +08:00) link_logs_p20260710 goes too; p20260711 stays.
+//         Result: the dropped names in ascending order; '{}' (never NULL) when nothing was dropped.
+//         Locks: a transaction-level advisory lock per table (suggested key
+//         `hashtextextended('app.drop_expired_day_partitions:' || p_table, 0)`) before listing; when
+//         no partition qualifies, returns '{}' WITHOUT requesting any table lock (so it returns at
+//         once even while another session holds a lock on the table). Otherwise the creation
+//         advisory locks of I1a for every candidate, then `LOCK TABLE ONLY app.<p_table> IN ACCESS
+//         EXCLUSIVE MODE`, then re-list under that lock and drop. Every wait is bounded by
+//         lock_timeout 5 s: on expiry 55P03, the whole statement rolls back (nothing dropped,
+//         nothing reported), no lock request stays queued.
+//         Concurrency: simultaneous calls all succeed; every partition is dropped and reported
+//         exactly once.
+//
+// I2. Module — option `dayPartitions` of createPartitionMaintenance (section B)
+//    - Optional. When present it must be exactly true or false; any other value (undefined, null,
+//      'true', 1, a Boolean object …) → MaintenanceError('invalid_option') synchronously.
+//    - Absent or false: everything exactly as sections B–H and their addenda (no day function is
+//      called; report, logs and counts unchanged). The worker wiring (worker.ts) does not change in
+//      this task: B1-01w turns the option on and removes the link_logs DEFAULT exemption.
+//    - true — runOnce, with the same single `now` (C.2):
+//      C.3b after step C.3: for each table of DAY_PARTITIONED_TABLES (exactly ['link_logs'], frozen)
+//           and each day of dayPartitionDays(now) (ascending): `SELECT app.ensure_day_partition(
+//           <table>, '<YYYY-MM-DD>'::date)` as its own statement (lock waits bounded by the
+//           function). Success appends the returned name to `ensured` (after the month names;
+//           existing partitions are listed too). A failure logs `partition_ensure_failed` (error)
+//           { table, day, sqlstate } with day 'YYYY-MM-DD' (待编排会话确认: `day` instead of
+//           `month`), failed += 1, and the next day follows; on 55P03 the remaining days of that
+//           table are skipped in this run (as months, lock-wait addendum).
+//      C.4  unchanged gate (04:00:00.000 +08:00 or later); after DROPPABLE_TABLES (which stays
+//           exactly ['event_log']), for each table of DAY_PARTITIONED_TABLES
+//           `SELECT app.drop_expired_day_partitions(<table>, <now>)`: each returned name is
+//           appended to `dropped` (after event_log's) and logged `partition_dropped`
+//           { table, partition }; a failure (55P03 included) logs `partition_drop_failed`
+//           { table, sqlstate }, failed += 1, and the run goes on.
+//      C.5, C.6 unchanged; `partition_maintenance_done` counts include the day partitions.
+//      Example: a run at 2026-11-20T03:04:05Z on a fresh database reports ensured = the 8 month
+//      names, then link_logs_p20261120 … link_logs_p20261204 (15), and logs done(23, 0, 0).
+//    - `dayPartitionDays(now)`: the 'YYYY-MM-DD' dates (+08:00) of the day containing `now` and the
+//      DAYS_AHEAD (14) following days, ascending (15 strings). An invalid Date → RangeError. Pure:
+//      reads no clock. 2026-11-19T15:59:59.999Z → 2026-11-19 … 2026-12-03;
+//      2026-11-19T16:00:00Z → 2026-11-20 … 2026-12-04.
+//    - Rules of H apply.
 import {
   MONTH_PARTITIONED_TABLES,
   MONTHS_AHEAD,
@@ -222,6 +356,18 @@ export const MAINTENANCE_INTERVAL_MS = 3_600_000;
 /** Tables whose expired partitions the run drops (section C.4). */
 export const DROPPABLE_TABLES: readonly string[] = Object.freeze(['event_log']);
 
+/** Tables partitioned by +08:00 day, maintained when `dayPartitions` is on (section I2). */
+export const DAY_PARTITIONED_TABLES: readonly string[] = Object.freeze(['link_logs']);
+
+/** Days pre-created after the current +08:00 day (section I2; ADR-0001 §4.2 #4). */
+export const DAYS_AHEAD = 14;
+
+/** 'YYYY-MM-DD' (+08:00) of the day of `now` and the DAYS_AHEAD following days (section I2). */
+export function dayPartitionDays(now: Date): string[] {
+  void now;
+  throw new Error('NotImplemented: dayPartitionDays (B1-01s)');
+}
+
 export interface PartitionMaintenanceOptions {
   readonly db: Kysely<DB>;
   readonly logger: RootLogger;
@@ -229,6 +375,8 @@ export interface PartitionMaintenanceOptions {
   readonly intervalMs?: number;
   /** Tables with expected DEFAULT rows (worker contract addendum). */
   readonly quietDefaultTables?: readonly string[];
+  /** Day-partition maintenance of DAY_PARTITIONED_TABLES (section I2); default false. NotImplemented. */
+  readonly dayPartitions?: boolean;
 }
 
 export interface DefaultRows {
