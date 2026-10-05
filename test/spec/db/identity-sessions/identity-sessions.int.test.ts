@@ -372,7 +372,7 @@ it('[AC-B1-02b#11] [04 §3.2 consent_records] both subject lookup indexes end wi
       indexes.rows.some(
         ({ keys, server_desc }) =>
           ['app_id', 'subject_type', subjectId, 'type'].every((key, i) => keys[i] === key) &&
-        /^server_at(?: DESC(?: NULLS (?:FIRST|LAST))?)?$/.test(keys[4] ?? '') &&
+          /^server_at(?: DESC(?: NULLS (?:FIRST|LAST))?)?$/.test(keys[4] ?? '') &&
           server_desc,
       ),
       subjectId,
