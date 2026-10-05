@@ -1,0 +1,61 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (content module is not on the risk-map whitelist; registered RV2 by #100). Read-only content entry: createContentReader with minSupportedVersion(appId, platform, channel) and configValue(appId, key), 60 s cache, read errors thrown, no stale values; SELECT only on the primary handle (ADR-0001 §4.2 #11: dbRead is for admin reports). Rule tests and NotImplemented skeleton by Codex (spec_commit), container red run passed on the pre-format tree (couli-runs/F1-02b/red/2); legacy ledger, no red run record required. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent: round 1 pass with three S3 (stale value after clock rollback on a failed reload, missing unit tests, cached-read note), all adopted; round 2 pass on the increment"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "rounds 1 and 2 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 fail (three S2: appId per call, min-version freshness, #15 readonly handle), round 2 content pass; only Prettier wrapping applied by the orchestrator before the spec commit"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "task": "F1-02b",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "7784fe9aa683f2e4e174d272559be07965af4234",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "ef5463ae82df64bad571df2b1d13797b0cc2cfba",
+      "tree": "1a94876dbbb16f6f31fbffa7d196bad634f642ed",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T16:00:17Z",
+      "finished_at": "2026-10-05T16:02:12Z"
+    }
+  ],
+  "trees": {
+    "packages/money": "83cb7c5abfd03ef162543c3aa1db0033ecf2aff0",
+    "packages/domain": "c7bbadb81089e32cd0ed3ff3e38958080a0134ef",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "b44d34e6c060e5a0bb3109686766f5de4fd9db9d",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  }
+}
