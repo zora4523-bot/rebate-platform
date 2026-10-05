@@ -727,7 +727,13 @@ it('[AC-B1-03a#30] 四种风控动作可写且未知动作被拒 [BR-ID-36]', as
     const row = await hitRow('withdraw');
     // Non-blocked events still record their order reference and HMAC, without request PII.
     if (action !== 'block') {
-      row['ref_type'] = 'order';
+      const refTypes = await allowedValues('risk_hits', 'ref_type');
+      const orderRef =
+        refTypes.length === 0
+          ? 'order'
+          : (refTypes.find((v) => v === 'order') ?? refTypes.find((v) => /^orders?$/.test(v)));
+      expect(orderRef, '需要「订单」取值 [04 §3.2 risk_hits]').toBeDefined();
+      row['ref_type'] = orderRef;
       row['request_type'] = null;
       row['amount_fen'] = null;
       row[await phoneColumn('risk_hits')] = null;

@@ -349,10 +349,11 @@ export async function hitRow(request = 'register'): Promise<Record<string, unkno
   // These encodings are not fixed by the contract; prefer the matching catalog literals.
   const phoneDimension = dimensions.find((v) => /phone/.test(v)) ?? dimensions[0] ?? 'phone';
   const blockedRef =
-    refTypes.find((v) => v === 'blocked_request') ??
-    refTypes.find((v) => /request/.test(v)) ??
-    refTypes[0] ??
-    'blocked_request';
+    refTypes.length === 0
+      ? 'blocked_request'
+      : (refTypes.find((v) => v === 'blocked_request') ??
+        refTypes.find((v) => /blocked?_?req/.test(v)));
+  expect(blockedRef, '需要「被拦截的请求」取值 [04 §3.2 risk_hits]').toBeDefined();
   return {
     app_id: 'couli',
     // insertRow fills rule_id through its actual FK (id or rule_id), as in the existing kit.
