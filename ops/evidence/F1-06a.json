@@ -1,0 +1,59 @@
+{
+  "task": "F1-06a",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "9128f7e5b8bf316dda6ecfbe95d2229b82b32ab9",
+  "red_tests": [],
+  "risk_note": "RV2 migration (db/**). Migration 0016: admin_users (login name unique across the table, password hash, TOTP secret and verify phone as ciphertext, totp_last_step for replay consumption; readonly cannot read secrets; no DELETE), admin_permissions (unique app_id + admin_id + permission_key), audit_logs (insert only, trigger against UPDATE / DELETE, not partitioned); union_accounts.auth_renewed_by foreign key. Rule tests by Codex were run red in containers before the migration (couli-runs/F1-06a/red); legacy ledger, no red run record required. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "944b7c390b0070b6894694437ca33bc75c5665be",
+      "tree": "ab7ecfaa72f569a54c8f2abc5ed2cbbc7197fd5a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T22:02:34Z",
+      "finished_at": "2026-10-05T22:04:14Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent with the money checklist: round 1 pass; round 2 (totp_last_step added for F1-06b's Codex S1 on replay) pass"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "Codex read-only money review: round 1 pass; round 2 after totp_last_step: pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 fail (S1: readonly role could read the TOTP ciphertext) -> Codex round 2; round 2 pass"
+  },
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "c23205d080ed7ec333746c15125e42e540297a96",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (tree f03b0e3, the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
