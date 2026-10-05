@@ -82,17 +82,17 @@ rules:
     impl: claude
     tester: codex
     review: claude+codex
-  # catalog、parsing: 规划/11 §1.1 没有单列，按 §1.2「未列入白名单的任何路径」为 RV2（出卡带预估返利与登记 link）；分工按 2026-10-05 改定的通则。
+  # catalog、parsing: 规划/11 §1.1 第 4 行「其他交易模块」为 RV1，分工同 identity、risk（2026-10-05 改定）。
   - path: 'apps/api/src/modules/catalog/**'
-    risk: RV2
+    risk: RV1
     impl: claude
     tester: codex
-    review: claude+codex
+    review: codex
   - path: 'apps/api/src/modules/parsing/**'
-    risk: RV2
+    risk: RV1
     impl: claude
     tester: codex
-    review: claude+codex
+    review: codex
   - path: 'apps/api/src/modules/platform/**'
     risk: RV2
     impl: claude
