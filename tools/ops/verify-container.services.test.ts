@@ -138,6 +138,13 @@ function run(args: string[], env: Record<string, string> = {}): Run {
       COULI_TRUSTED_ROOT: repoRoot(),
       COULI_VERIFY_PREFIX: PREFIX,
       TEST_REDIS_URL: HOST_REDIS_URL,
+      // What the script hands on to the container from the caller's environment (PROP_SEED,
+      // PROP_RUNS, COULI_VERIFY_TIMEOUT_SECS as VERIFY_TIMEOUT_SECS) is cleared, so the caller's
+      // settings (the orchestrator verifies with PROP_RUNS=100000) do not change what a test
+      // sees; a test sets them explicitly when it needs them.
+      PROP_RUNS: undefined,
+      PROP_SEED: undefined,
+      COULI_VERIFY_TIMEOUT_SECS: undefined,
       STUB_DOCKER_LOG: log,
       ...env,
     },
@@ -197,6 +204,7 @@ it(
     const res = run(['V2-01', '--worktree', workspace('verify')], {
       STUB_DOCKER_LOADING: '2',
       STUB_DOCKER_RUN_EXIT: '3',
+      PROP_RUNS: '7',
     });
     // The exit code of the verify container is the result.
     expect(res.status, res.stderr).toBe(3);
@@ -272,6 +280,8 @@ it(
     expect(verify?.args).not.toContain(`TEST_REDIS_URL=${REDIS_URL}`);
     expect(verify?.env['TEST_REDIS_URL']).toBe(REDIS_URL);
     expect(pgUrls(verify)).toEqual([`postgres://postgres:${pgPassword}@pg:5432/postgres`]);
+    // PROP_RUNS, set explicitly for this run, is passed through unchanged.
+    expect(verify?.env['PROP_RUNS']).toBe('7');
 
     // Cleanup removes both service containers (with their anonymous volumes), then the network.
     const rmAt = calls.findIndex((c) => c.args[0] === 'rm');
