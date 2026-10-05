@@ -18,7 +18,44 @@ function entryFiles(entry: Entry) {
   expect(html).toMatch(/src=["'](?:\.\/|\/)?main\.tsx["']/);
   expect(html).toMatch(/name=["']viewport["']/);
   expect(html).toContain('viewport-fit=cover');
-  expect(main).toMatch(/\bcreateRoot\b/);
+  if (entry === 'landing') {
+    const seen = new Set<string>();
+    function checkStaticImports(file: string) {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const source = ts.createSourceFile(
+        file,
+        requiredText(file),
+        ts.ScriptTarget.Latest,
+        true,
+        file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+      );
+      for (const node of source.statements) {
+        if (
+          !(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) ||
+          !node.moduleSpecifier ||
+          !ts.isStringLiteral(node.moduleSpecifier)
+        )
+          continue;
+        const name = node.moduleSpecifier.text;
+        expect(name === 'react-dom' || name.startsWith('react-dom/'), file).toBe(false);
+        // Follow local static dependencies, including shared modules and re-exports.
+        // Styles/assets and dynamic imports do not add synchronous JS dependencies here.
+        if (!name.startsWith('.') || /\.(?:css|json|svg|png|jpe?g|webp)$/.test(name)) continue;
+        const resolved = ts.resolveModuleName(
+          name,
+          file,
+          { moduleResolution: ts.ModuleResolutionKind.Bundler, allowJs: true },
+          ts.sys,
+        ).resolvedModule;
+        expect(resolved, `static dependency ${name} from ${file}`).toBeDefined();
+        checkStaticImports(resolved!.resolvedFileName);
+      }
+    }
+    checkStaticImports(fileURLToPath(new URL(`${base}main.tsx`, ROOT)));
+  } else {
+    expect(main).toMatch(/\bcreateRoot\b/);
+  }
   return { html, main };
 }
 
