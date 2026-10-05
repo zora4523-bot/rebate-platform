@@ -1,0 +1,155 @@
+{
+  "task": "F1-06c",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "ac6a2f7c9b49227fb28a56e0a9e48e444eecf3c3",
+  "red_tests": [
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#1] confirms before inserting, then persists one bound super and one audit in couli",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#1] confirms before inserting, then persists one bound super and one audit in couli_two",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#2] ordinary accounts do not prevent first-super creation or get modified",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#3] an existing active and bound super refuses before disclosing a binding and changes nothing",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#3] an existing disabled super refuses before disclosing a binding and changes nothing",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#3] an existing unbound super refuses before disclosing a binding and changes nothing",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#3] an existing another app super refuses before disclosing a binding and changes nothing",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF 000000 never commits an account, binding or audit",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF 94287082 never commits an account, binding or audit",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF 28708x never commits an account, binding or audit",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF  287082 never commits an account, binding or audit",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF ２８７０８２ never commits an account, binding or audit",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF null never commits an account, binding or audit",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#5] the displayed URI occurs once, with no copy in logs, files or ordinary output",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#6] a second invocation cannot create, reset or rebind the super",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#7] audit failure rolls back the account and even an already-inserted audit",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#8] encryption failure leaves no partially-created account",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#8] hashing failure leaves no partially-created account",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#8] input failure leaves no partially-created account",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#9] duplicate login never promotes or changes an ordinary account",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#10] nonterminal refuses without exposing a secret or writing anything",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#10] password EOF refuses without exposing a secret or writing anything",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#12] a code that expired while the operator was binding cannot create a super",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#16] bootstrap persists credentials produced by the production hash and secret functions",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#17] a 0-byte secret is refused before disclosure even with its correct code",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#17] a 1-byte secret is refused before disclosure even with its correct code",
+    "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#17] a 19-byte secret is refused before disclosure even with its correct code",
+    "test/spec/admin/bootstrap/concurrency.int.test.ts > [AC-F1-06c-BOOTSTRAP#11] independent processes in app couli with a inserting first create only one global super and audit",
+    "test/spec/admin/bootstrap/concurrency.int.test.ts > [AC-F1-06c-BOOTSTRAP#11] independent processes in app couli with b inserting first create only one global super and audit",
+    "test/spec/admin/bootstrap/concurrency.int.test.ts > [AC-F1-06c-BOOTSTRAP#11] independent processes in app couli_two with a inserting first create only one global super and audit",
+    "test/spec/admin/bootstrap/concurrency.int.test.ts > [AC-F1-06c-BOOTSTRAP#11] independent processes in app couli_two with b inserting first create only one global super and audit",
+    "test/spec/admin/bootstrap/credentials.test.ts > [AC-F1-06c-BOOTSTRAP#13] production password hashes have fresh salts and a verifiable versioned scrypt format",
+    "test/spec/admin/bootstrap/credentials.test.ts > [AC-F1-06c-BOOTSTRAP#14] the production password verifier rejects malformed stored values",
+    "test/spec/admin/bootstrap/credentials.test.ts > [AC-F1-06c-BOOTSTRAP#15] the production binding generator returns distinct secrets of at least 20 bytes"
+  ],
+  "risk_note": "RV2 (admin/**, apps/api/scripts). First super admin bootstrap CLI run by the owner in a terminal: refuses when any super exists (in-transaction advisory lock and recheck), scrypt password hash, TOTP secret shown once and confirmed with a code consumed in PG before one transaction writes the account, binding and audit; app and login echoed for a yes confirmation; managed DB handles keep the verify-full host check. Orchestrator wording-only test edits decided 2026-10-06 (规划/11 §7.3 item 11): two comments no longer name the admin database URL variable; the RFC 6238 test seed is encoded at runtime instead of a gitleaks-flagged literal (couli-runs/F1-06c/orchestrator-test-edit.diff). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ac6a2f7c9b49227fb28a56e0a9e48e444eecf3c3",
+      "tree": "894d1d859ab94b88b039dde7d166c519b5b4411f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T22:44:51Z",
+      "finished_at": "2026-10-05T22:44:59Z",
+      "red_tests": [
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#1] confirms before inserting, then persists one bound super and one audit in couli",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#1] confirms before inserting, then persists one bound super and one audit in couli_two",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#2] ordinary accounts do not prevent first-super creation or get modified",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#3] an existing active and bound super refuses before disclosing a binding and changes nothing",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#3] an existing disabled super refuses before disclosing a binding and changes nothing",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#3] an existing unbound super refuses before disclosing a binding and changes nothing",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#3] an existing another app super refuses before disclosing a binding and changes nothing",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF 000000 never commits an account, binding or audit",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF 94287082 never commits an account, binding or audit",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF 28708x never commits an account, binding or audit",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF  287082 never commits an account, binding or audit",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF ２８７０８２ never commits an account, binding or audit",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#4] bad code/EOF null never commits an account, binding or audit",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#5] the displayed URI occurs once, with no copy in logs, files or ordinary output",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#6] a second invocation cannot create, reset or rebind the super",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#7] audit failure rolls back the account and even an already-inserted audit",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#8] encryption failure leaves no partially-created account",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#8] hashing failure leaves no partially-created account",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#8] input failure leaves no partially-created account",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#9] duplicate login never promotes or changes an ordinary account",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#10] nonterminal refuses without exposing a secret or writing anything",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#10] password EOF refuses without exposing a secret or writing anything",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#12] a code that expired while the operator was binding cannot create a super",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#16] bootstrap persists credentials produced by the production hash and secret functions",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#17] a 0-byte secret is refused before disclosure even with its correct code",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#17] a 1-byte secret is refused before disclosure even with its correct code",
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts > [AC-F1-06c-BOOTSTRAP#17] a 19-byte secret is refused before disclosure even with its correct code",
+        "test/spec/admin/bootstrap/concurrency.int.test.ts > [AC-F1-06c-BOOTSTRAP#11] independent processes in app couli with a inserting first create only one global super and audit",
+        "test/spec/admin/bootstrap/concurrency.int.test.ts > [AC-F1-06c-BOOTSTRAP#11] independent processes in app couli with b inserting first create only one global super and audit",
+        "test/spec/admin/bootstrap/concurrency.int.test.ts > [AC-F1-06c-BOOTSTRAP#11] independent processes in app couli_two with a inserting first create only one global super and audit",
+        "test/spec/admin/bootstrap/concurrency.int.test.ts > [AC-F1-06c-BOOTSTRAP#11] independent processes in app couli_two with b inserting first create only one global super and audit",
+        "test/spec/admin/bootstrap/credentials.test.ts > [AC-F1-06c-BOOTSTRAP#13] production password hashes have fresh salts and a verifiable versioned scrypt format",
+        "test/spec/admin/bootstrap/credentials.test.ts > [AC-F1-06c-BOOTSTRAP#14] the production password verifier rejects malformed stored values",
+        "test/spec/admin/bootstrap/credentials.test.ts > [AC-F1-06c-BOOTSTRAP#15] the production binding generator returns distinct secrets of at least 20 bytes"
+      ],
+      "expected": [
+        "test/spec/admin/bootstrap/bootstrap.int.test.ts",
+        "test/spec/admin/bootstrap/concurrency.int.test.ts",
+        "test/spec/admin/bootstrap/credentials.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "128d12ed85fbcb60528d6501c118f1a0c220d99d680a7ecf87a42c8b73dc9a62"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "bd34668c57be1b39c2fb8ce10c971c7335de9fabcc22469f17b29f33d9bb204f"
+        }
+      ]
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "46d682be333e8d4ca97365c90ab92dd7bfdcf594",
+      "tree": "71588376dc0538b1038a56836653b9668e5c59c7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T22:45:00Z",
+      "finished_at": "2026-10-05T22:46:58Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent with the money checklist: round 1 pass (S2: app id typo irreversible -> confirmation added); round 2 pass; round 3 (unit test seed encoding only) not re-reviewed"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1: CLI re-parsed the database URL and lost the verify-full host check) -> managed DB handles; round 2 pass (S2: password read decoded per chunk; commit outcome unknown message) recorded as follow-ups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 fail (S1: timing-dependent concurrency case; production hash untested) -> Codex round 3; round 2 pass; then orchestrator wording-only edits (no assertion changed)"
+  },
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "6b7077a7a814f985e3d20dda7158c182538fab42",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (tree f03b0e3, the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
