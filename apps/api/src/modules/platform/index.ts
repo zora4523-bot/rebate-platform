@@ -7,6 +7,9 @@ export * from './idempotency/index.ts';
 export * from './http/index.ts';
 export { FieldCryptoError, FIELD_CRYPTO_MESSAGES } from './crypto/index.ts';
 export type { FieldCrypto, FieldCryptoErrorCode } from './crypto/index.ts';
+export { contractRouteSchema } from './validation/contract-routes.ts';
+export type { ContractOperationId } from './validation/contract-routes.ts';
+export type { RouteSchema } from './validation/index.ts';
 export { HTTP_ENTRIES, WORKER_ENTRIES, isHttpEntry } from './entries.ts';
 export type { EntryName, HttpEntry, WorkerEntry } from './entries.ts';
 export {

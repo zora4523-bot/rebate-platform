@@ -40,6 +40,8 @@ export const SENSITIVE_KEYS = Object.freeze([
   'x-step-up-token',
   'x-sign',
   'secret',
+  // Request-signing key of a device (BR-ID-09), returned once by POST /v1/devices.
+  'install_secret',
 ] as const);
 
 function normalizedKey(key: string): string {

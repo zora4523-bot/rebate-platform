@@ -1,8 +1,8 @@
 import { Controller, HttpCode, HttpException, Inject, Post, Req } from '@nestjs/common';
 import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Schema } from '@couli/contracts-ts';
+import { contractRouteSchema } from '../../../platform/index.ts';
 import { RegisterDeviceService } from '../../application/register-device.service.ts';
-import { registerDeviceRouteSchema } from './route-schemas.gen.ts';
 
 type RegisterDeviceResponse = Schema<'RegisterDeviceResponse'>;
 type ErrorEnvelope = Schema<'ErrorEnvelope'>;
@@ -32,7 +32,7 @@ export class DevicesController {
    */
   @Post('devices')
   @HttpCode(200)
-  @RouteSchema(registerDeviceRouteSchema)
+  @RouteSchema(contractRouteSchema('registerDevice'))
   async register(@Req() request: RegisterDeviceRequest): Promise<RegisterDeviceResponse> {
     const result = await this.registerDevice.register({
       appId: request.headers['x-app-id'],

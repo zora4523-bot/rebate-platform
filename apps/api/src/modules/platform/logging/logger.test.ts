@@ -81,6 +81,24 @@ describe('createRootLogger', () => {
     expect(lines[0]).not.toMatch(/p1|t1|s1|13800000000|13900000000|110101199001011234|Bearer zzz/);
   });
 
+  it('redacts the device install_secret (BR-ID-09) at any depth and in camelCase', () => {
+    const { logger, lines, records } = capture();
+    logger.info(
+      {
+        install_secret: 'ia1',
+        installSecret: 'ia2',
+        body: { data: { device_id: 'd1', install_secret: 'ia3' } },
+      },
+      'device registered',
+    );
+    expect(records()[0]).toMatchObject({
+      install_secret: REDACTED,
+      installSecret: REDACTED,
+      body: { data: { device_id: 'd1', install_secret: REDACTED } },
+    });
+    expect(lines[0]).not.toMatch(/ia1|ia2|ia3/);
+  });
+
   it('redacts credential headers in request and response shapes', () => {
     const { logger, lines, records } = capture();
     logger.info(

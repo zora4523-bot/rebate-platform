@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { DynamicModule } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -14,12 +13,11 @@ import {
   DB,
   FIELD_CRYPTO,
   FixedClock,
+  contractRouteSchema,
   createRootLogger,
   loadConfig,
   type FieldCrypto,
 } from '../../../platform/index.ts';
-import { registerDeviceRouteSchema } from './route-schemas.gen.ts';
-import { routeSchemasFile, routeSchemasSource } from './scripts/generate-route-schemas.ts';
 
 const CONTRACT = fileURLToPath(
   new URL('../../../../../../../contracts/openapi.yaml', import.meta.url),
@@ -144,10 +142,9 @@ function register(target: NestFastifyApplication, payload: unknown, extra = {}) 
   });
 }
 
-it('[AC-B1-02c#1] mounts the route schema generated from the current contract', async () => {
-  expect(await readFile(routeSchemasFile, 'utf8')).toBe(await routeSchemasSource());
+it('[AC-B1-02c#1] mounts the contract route schema that the platform module exports', async () => {
   const { schemas } = await build();
-  expect(schemas).toEqual([{ method: 'POST', schema: registerDeviceRouteSchema }]);
+  expect(schemas).toEqual([{ method: 'POST', schema: contractRouteSchema('registerDevice') }]);
 });
 
 it('[AC-B1-02c#1][AC-B1-02c#2] registers without a token or signature and answers the contract envelope', async () => {
