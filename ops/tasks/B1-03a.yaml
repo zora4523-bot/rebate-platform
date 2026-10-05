@@ -1,0 +1,24 @@
+id: B1-03a
+repo: rebate-platform
+title: 迁移：风控基线表——blocklist（维度按 BR-ID-31、BR-ATTR-26）、user_risk_state、appeals（同一对象最多 1 条处理中）、risk_rules、risk_hits（只插入）（04 §3.2）
+type: migration
+# 2026-10-05 入账（差异清单第三节「B1-03a」，编号为该清单所拟）。依据：04 §3.2 risk_rules / risk_hits、blocklist、
+# user_risk_state、appeals 行（规划 #38 已按 08 修正 blocklist 维度与 appeals 唯一约束）；BR-ID-31、BR-ID-36、BR-ATTR-26，
+# 由编排者摘入任务书第 2 节。黑名单重复登记是覆盖还是拒绝、申诉次数，规划没有默认值（06），约束按最保守写、不自选。
+# 分工按规划/11 §1.1（2026-10-05）：Codex 先写规则测试（先红），Claude 新子代理过审，Opus 子代理只写迁移 SQL，
+# 编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行（排在 B1-02b 之后）。
+# test_paths：test/spec/db/risk/**（task-file.ts 接受该字段前由编排会话写进任务书）。
+refs: []
+refs_hash: {}
+deps: [B1-02b]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/risk/**'
+status: todo
+pr: null
