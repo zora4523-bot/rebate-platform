@@ -19,6 +19,8 @@ import {
   seedAdmin,
   seedPid,
   state,
+  storedPid,
+  whitelist,
   type Harness,
 } from './kit.ts';
 
@@ -302,16 +304,17 @@ it('[AC-B1-19b#9] concurrent duplicate registration has one winner and no loser 
   ).toHaveLength(1);
 });
 
-it('[AC-B1-19b#10] distinct concurrent first PIDs preserve the earliest creation time', async () => {
+it('[AC-B1-19b#10] later Clock commits first; sync start still uses the earliest PID creation time', async () => {
   const h = harness(db);
   await seedAdmin(h);
   const account = await seedAccount(h);
   const otherClock = { now: () => new Date('2031-05-06T08:08:09Z') };
   const later = createUnionPidService({ ...h.deps, clock: otherClock });
-  await Promise.all([
-    h.service.registerPid(registration(h, account.id)),
-    later.registerPid(registration(h, account.id)),
-  ]);
+  const laterPid = await later.registerPid(registration(h, account.id));
+  const earlierPid = await h.service.registerPid(registration(h, account.id));
+  expect(laterPid.created_at).toEqual(otherClock.now());
+  expect(earlierPid.created_at).toEqual(h.clock.now());
+  expect(earlierPid.created_at.getTime()).toBeLessThan(laterPid.created_at.getTime());
   const snapshot = await state(h);
   expect(snapshot.pids).toHaveLength(2);
   expect(snapshot.accounts[0]!.sync_start_at?.getTime()).toBe(
@@ -354,6 +357,31 @@ it('[AC-B1-19b#27] registration preserves the schema scene and Taobao-site const
     );
   }
 });
+
+for (const pidScene of ['self_buy', 'share', 'agent', 'fallback', 'query'] as const) {
+  it(`[AC-B1-19b#30] ${pidScene}: verified super registers the requested scene as pending and whitelisted`, async () => {
+    const h = harness(db);
+    await seedAdmin(h);
+    const account = await seedAccount(h);
+    const input = { ...registration(h, account.id), pidScene };
+    const pid = await h.service.registerPid(input);
+    const stored = await storedPid(h, pid.id);
+    expect(stored).toMatchObject({
+      app_id: h.appId,
+      union_account_id: account.id,
+      pid: input.pid,
+      pid_scene: pidScene,
+      status: 'pending',
+    });
+    expect(await h.service.isWhitelisted(whitelist(h, stored))).toBe(true);
+    expect(h.verify).toHaveBeenCalledExactlyOnceWith({
+      appId: h.appId,
+      adminId: h.adminId,
+      code: h.auth.code,
+    });
+    expect((await audits(h)).filter((entry) => entry.target?.includes(pid.id))).toHaveLength(1);
+  });
+}
 
 it('[AC-B1-19b#28] missing code and caller-supplied super claims cannot bypass the combined verifier', async () => {
   const h = harness(db);

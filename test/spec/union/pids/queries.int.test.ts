@@ -74,9 +74,12 @@ it('[AC-B1-19b#21] fallback is whitelist-only and query PID is usable only for p
   const fallback = await seedPid(h, { pid_scene: 'fallback', status: 'active' });
   const query = await seedPid(h, { pid_scene: 'query', status: 'active' });
   const lookup = { appId: h.appId, platform: 'jd' as const, purpose: 'convert' as const };
-  for (const pidScene of ['fallback', 'query'] as const) {
+  for (const pidScene of ['self_buy', 'share', 'agent', 'taolijin', 'fallback', 'query'] as const) {
     expect(await h.service.getActivePid({ ...lookup, pidScene })).toBeNull();
   }
+  expect(
+    await h.service.getActivePid({ ...lookup, purpose: 'query', pidScene: 'fallback' }),
+  ).toBeNull();
   expect(
     (await h.service.getActivePid({ ...lookup, purpose: 'query', pidScene: 'query' }))?.id,
   ).toBe(query.id);

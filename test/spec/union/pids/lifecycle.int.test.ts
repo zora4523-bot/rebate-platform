@@ -224,22 +224,60 @@ it('[AC-B1-19b#17] a confirmed Taobao media sibling does not authorize an unconf
   expect(await h.service.isWhitelisted(whitelist(h, pid))).toBe(true);
 });
 
-it('[AC-B1-19b#18] concurrent activation produces at most one status-change audit', async () => {
-  const h = harness(db);
-  await seedAdmin(h);
-  const pid = await seedPid(h);
-  const input = { ...h.auth, pidId: pid.id, status: 'active' as const };
-  const results = await Promise.allSettled([
-    h.service.setPidStatus(input),
-    h.service.setPidStatus(input),
-  ]);
-  expect(results.some((result) => result.status === 'fulfilled')).toBe(true);
-  expect((await storedPid(h, pid.id)).status).toBe('active');
-  // A repeated command may reject or return its existing result, but cannot activate twice.
-  const changes = (await audits(h)).filter((entry) => {
-    const before = entry.before as { status?: string } | null;
-    const after = entry.after as { status?: string } | null;
-    return before?.status === 'pending' && after?.status === 'active';
+for (const order of ['A-first', 'B-first'] as const) {
+  it(`[AC-B1-19b#18] ${order}: both activation requests observe pending before verification releases; exactly one change audit`, async () => {
+    const h = harness(db);
+    await seedAdmin(h);
+    const pid = await seedPid(h);
+    const input = { ...h.auth, pidId: pid.id, status: 'active' as const };
+    const codes = order === 'A-first' ? ['123456', '234567'] : ['234567', '123456'];
+    const firstArrived = Promise.withResolvers<void>();
+    const bothPending = Promise.withResolvers<void>();
+    const observed: string[] = [];
+    h.verify.mockImplementation(async (request) => {
+      // The first command cannot mutate while the second verifier reads pending.
+      expect((await storedPid(h, pid.id)).status).toBe('pending');
+      observed.push(request.code);
+      if (observed.length === 1) firstArrived.resolve();
+      if (observed.length === 2) bothPending.resolve();
+      await bothPending.promise;
+      return { appId: request.appId, adminId: request.adminId };
+    });
+    const first = Promise.allSettled([h.service.setPidStatus({ ...input, code: codes[0]! })]);
+    try {
+      // Force verifier arrival order without sleeps; early command failure is an assertion failure.
+      expect(
+        await Promise.race([
+          firstArrived.promise.then(() => 'arrived'),
+          first.then(() => 'finished'),
+        ]),
+      ).toBe('arrived');
+      const second = Promise.allSettled([h.service.setPidStatus({ ...input, code: codes[1]! })]);
+      expect(
+        await Promise.race([
+          bothPending.promise.then(() => 'ready'),
+          second.then(() => 'finished'),
+        ]),
+      ).toBe('ready');
+      const results = (await Promise.all([first, second])).flat();
+      expect(observed).toEqual(codes);
+      expect(h.verify).toHaveBeenCalledTimes(2);
+      expect(results.some((result) => result.status === 'fulfilled')).toBe(true);
+      expect((await storedPid(h, pid.id)).status).toBe('active');
+      // A repeated command may reject or return its existing result, but cannot activate twice.
+      const changes = (await audits(h)).filter((entry) => {
+        const before = entry.before as { status?: string } | null;
+        const after = entry.after as { status?: string } | null;
+        return (
+          entry.target?.includes(pid.id) &&
+          before?.status === 'pending' &&
+          after?.status === 'active'
+        );
+      });
+      expect(changes).toHaveLength(1);
+    } finally {
+      bothPending.resolve();
+      await first;
+    }
   });
-  expect(changes).toHaveLength(1);
-});
+}
