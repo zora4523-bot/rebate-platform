@@ -206,7 +206,7 @@
 //    - No `process.env`; no wall clock (section C.2); logs only through `options.logger`.
 //    - Implementation-side unit tests go next to the code (`*.test.ts`, no database).
 //
-// I. Day partitions (task B1-01s; NotImplemented until then). Basis: ADR-0001 §4.2 #4 ("按日的表预建
+// I. Day partitions (task B1-01s). Basis: ADR-0001 §4.2 #4 ("按日的表预建
 //    未来 14 天"; DEFAULT 分区兜底，有数据须先迁出才能建对应区间的分区), #5 (link_logs 按日), #8
 //    (couli_maint); BR-ID-30 (删除条件 created_at < 运行当日 00:00（+08:00）− 留存天数; ② link_logs 90 天，
 //    按日分区删除，不得短于 W_claim + W_backfill = 720 h + 360 h = 45 天); 规划/04 §3.2 (link_logs 按日分区).
@@ -364,8 +364,21 @@ export const DAYS_AHEAD = 14;
 
 /** 'YYYY-MM-DD' (+08:00) of the day of `now` and the DAYS_AHEAD following days (section I2). */
 export function dayPartitionDays(now: Date): string[] {
-  void now;
-  throw new Error('NotImplemented: dayPartitionDays (B1-01s)');
+  const formatter = new Intl.DateTimeFormat('en', {
+    timeZone: '+08:00',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  // A fixed-offset day is always 24 hours; format only the supplied instant, never a clock read.
+  return Array.from({ length: DAYS_AHEAD + 1 }, (_, offset) => {
+    const parts = formatter.formatToParts(now.getTime() + offset * 86_400_000);
+    return ['year', 'month', 'day']
+      .map((type) =>
+        parts.find((part) => part.type === type)!.value.padStart(type === 'year' ? 4 : 2, '0'),
+      )
+      .join('-');
+  });
 }
 
 export interface PartitionMaintenanceOptions {
@@ -375,7 +388,7 @@ export interface PartitionMaintenanceOptions {
   readonly intervalMs?: number;
   /** Tables with expected DEFAULT rows (worker contract addendum). */
   readonly quietDefaultTables?: readonly string[];
-  /** Day-partition maintenance of DAY_PARTITIONED_TABLES (section I2); default false. NotImplemented. */
+  /** Day-partition maintenance of DAY_PARTITIONED_TABLES (section I2); default false. */
   readonly dayPartitions?: boolean;
 }
 
@@ -432,10 +445,12 @@ function validateOptions(options: unknown): asserts options is PartitionMaintena
     'clock',
     'intervalMs',
     'quietDefaultTables',
+    'dayPartitions',
   ]);
   const logger = options['logger'];
   const quiet = options['quietDefaultTables'];
   if (
+    (Object.hasOwn(options, 'dayPartitions') && typeof options['dayPartitions'] !== 'boolean') ||
     (Object.hasOwn(options, 'quietDefaultTables') &&
       (!Array.isArray(quiet) ||
         quiet.length > 32 ||
@@ -470,7 +485,13 @@ export function createPartitionMaintenance(
   options: PartitionMaintenanceOptions,
 ): PartitionMaintenance {
   validateOptions(options);
-  const { db, logger, clock, intervalMs = MAINTENANCE_INTERVAL_MS } = options;
+  const {
+    db,
+    logger,
+    clock,
+    intervalMs = MAINTENANCE_INTERVAL_MS,
+    dayPartitions = false,
+  } = options;
   const quietDefaultTables = new Set(options.quietDefaultTables ?? []);
   let started = false;
   let stopped = false;
@@ -508,6 +529,26 @@ export function createPartitionMaintenance(
       }
     }
 
+    if (dayPartitions) {
+      const days = dayPartitionDays(now);
+      for (const table of DAY_PARTITIONED_TABLES) {
+        for (const day of days) {
+          try {
+            // The SQL function bounds lock waits for this independent statement.
+            const result = await sql<{ partition: string }>`
+              SELECT app.ensure_day_partition(${table}, ${day}::date) AS partition
+            `.execute(db);
+            ensured.push(result.rows[0]!.partition);
+          } catch (error) {
+            failed += 1;
+            const code = sqlstate(error);
+            logger.error({ table, day, sqlstate: code }, 'partition_ensure_failed');
+            if (code === '55P03') break;
+          }
+        }
+      }
+    }
+
     // Fixed +08:00 hour, independent of the host/session timezone. SQL owns retention checks.
     if ((now.getUTCHours() + 8) % 24 >= 4) {
       for (const table of DROPPABLE_TABLES) {
@@ -522,6 +563,22 @@ export function createPartitionMaintenance(
         } catch (error) {
           failed += 1;
           logger.error({ table, sqlstate: sqlstate(error) }, 'partition_drop_failed');
+        }
+      }
+      if (dayPartitions) {
+        for (const table of DAY_PARTITIONED_TABLES) {
+          try {
+            const result = await sql<{ partitions: string[] }>`
+              SELECT app.drop_expired_day_partitions(${table}, ${now}::timestamptz) AS partitions
+            `.execute(db);
+            for (const partition of result.rows[0]!.partitions) {
+              dropped.push(partition);
+              logger.info({ table, partition }, 'partition_dropped');
+            }
+          } catch (error) {
+            failed += 1;
+            logger.error({ table, sqlstate: sqlstate(error) }, 'partition_drop_failed');
+          }
         }
       }
     }
