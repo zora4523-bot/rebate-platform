@@ -1,12 +1,16 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { fileURLToPath } from 'node:url';
-import { APP_CONFIG, type AppConfig } from '../platform/index.ts';
+import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../platform/index.ts';
+import type { UnionEndpoint } from './domain/types.ts';
 import { loadUnionEndpoints } from './infra/endpoints.ts';
 import { createUnionRegistry } from './infra/registry.ts';
 
 /** Nest injection tokens provided by `UnionModule`. */
 export const UNION_ENDPOINTS = Symbol('UNION_ENDPOINTS');
 export const UNION_REGISTRY = Symbol('UNION_REGISTRY');
+
+/** Fixed seed of the demo catalog: the same synthetic items on every start (规划/11 §4.5). */
+export const UNION_DEMO_SEED = 'couli-demo';
 
 /** config/union-endpoints/ at the repository root; same depth from src/ and dist/. */
 export const UNION_ENDPOINTS_DIR = fileURLToPath(
@@ -16,7 +20,7 @@ export const UNION_ENDPOINTS_DIR = fileURLToPath(
 /**
  * Union (规划/02 §4.1, §6): adapter registry and per-platform endpoint configuration. The
  * endpoints are read once while the entry starts; an invalid set, or a demo / replay endpoint in
- * prod, stops the entry. Governed adapters (createGovernedAdapter) are assembled by the callers
+ * prod, stops the entry. Platforms configured as mode=demo get the DemoUnionAdapter. Governed adapters (createGovernedAdapter) are assembled by the callers
  * that own a quota limiter.
  * TODO(规划/11 §4.5): 配额桶容量与 Redis 令牌桶 — blocked on CAP-TB-12、CAP-JD-12、CAP-PDD-12 配额口径
  * TODO(规划/11 §4.5): 凭据读取 — blocked on 推广位 / siteId
@@ -32,7 +36,17 @@ export class UnionModule {
           inject: [APP_CONFIG],
           useFactory: (config: AppConfig) => loadUnionEndpoints(directory, config.appEnv),
         },
-        { provide: UNION_REGISTRY, useFactory: () => createUnionRegistry() },
+        {
+          provide: UNION_REGISTRY,
+          inject: [UNION_ENDPOINTS, APP_CONFIG, CLOCK],
+          useFactory: (endpoints: readonly UnionEndpoint[], config: AppConfig, clock: Clock) =>
+            createUnionRegistry({
+              endpoints,
+              environment: config.appEnv,
+              seed: UNION_DEMO_SEED,
+              clock,
+            }),
+        },
       ],
       exports: [UNION_ENDPOINTS, UNION_REGISTRY],
     };
