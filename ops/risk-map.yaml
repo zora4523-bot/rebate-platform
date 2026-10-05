@@ -36,13 +36,14 @@ rules:
     impl: codex
     tester: claude
     review: claude
-  # identity: 其他交易模块按规划/11 §1.1 为 RV1（Codex 实现、Claude 写 AC 映射测试、Claude 新子代理评审）；
+  # identity: 其他交易模块按规划/11 §1.1 为 RV1；分工按 2026-10-05 负责人改定的 §1.1（§7.3 第 12 项）：
+  # Claude Opus 5.5 子代理实现、Codex 写 AC 映射测试（实现前先写）、Codex 新只读会话评审。
   # 负责人 2026-10-05 在对话中确认「按规划登记」。
   - path: 'apps/api/src/modules/identity/**'
     risk: RV1
-    impl: codex
-    tester: claude
-    review: claude
+    impl: claude
+    tester: codex
+    review: codex
   - path: 'apps/api/src/modules/platform/**'
     risk: RV2
     impl: codex
