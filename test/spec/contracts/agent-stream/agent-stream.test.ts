@@ -5,12 +5,15 @@ import {
   agent_card_type,
   agent_finish_reason,
   availability,
+  display_status,
   match_tag,
+  order_reason,
   platform,
   rebate_basis,
+  tlj_kind,
 } from '../../../../packages/contracts-ts/src/enums.gen.ts';
 
-// CT-08a: 04 §8.1–8.3 + task §9–10. Only the wire contract, not producer/client logic.
+// CT-08a: 04 §8.1–8.3 + task §9–11. Only the wire contract, not producer/client logic.
 type ObjectValue = Record<string, unknown>;
 type Frame = { event: string; id: number; data: ObjectValue };
 type Validator = ((value: unknown) => boolean) & { errors?: unknown };
@@ -456,6 +459,18 @@ it.each(productContainers)(
         est_net_price_fen: nullable ? null : 2890,
       };
       check(frame, wrap(value), true);
+      // Task §11: Agent cards require prices even when the rebate amount is unknown.
+      for (const key of [
+        'price_fen',
+        'coupon_fen',
+        'final_price_fen',
+        'rebate_basis',
+        'availability',
+        'quoted_at',
+        'source',
+      ]) {
+        check(frame, wrap({ ...value, [key]: null }), false);
+      }
       for (const key of ['rebate_min_fen', 'rebate_max_fen']) {
         check(frame, wrap(without(value, key)), false);
         for (const invalid of [nullable ? 100 : null, 100.5, '100']) {
@@ -570,6 +585,91 @@ it('[CT-08a] order_status 和素材的每个金额拒绝小数和字符串', () 
       );
     }
   }
+});
+
+it('[CT-08a] order_status 接受空预计月份、空返利金额和非空原因码', () => {
+  const { frame } = validators();
+  for (const patch of [
+    { display_status: 'PAID', expected_credit_period: null },
+    { est_rebate_fen: null },
+    { display_status: 'INVALID', reason: 'REFUND', expected_credit_period: null },
+    {
+      display_status: 'INVALID',
+      reason: 'REFUND',
+      expected_credit_period: null,
+      est_rebate_fen: null,
+    },
+  ]) {
+    check(frame, card('order_status', { ...order, ...patch }), true);
+  }
+  for (const expected_credit_period of ['2026-01', '2026-12']) {
+    check(frame, card('order_status', { ...order, expected_credit_period }), true);
+  }
+  for (const expected_credit_period of [
+    '2026-00',
+    '2026-13',
+    '2026-1',
+    '26-01',
+    '2026-01-01',
+    'x2026-01',
+    '2026-01x',
+    '',
+    202601,
+  ]) {
+    check(frame, card('order_status', { ...order, expected_credit_period }), false);
+  }
+});
+
+it('[CT-08a] order_status.display_status 与生成枚举完全一致', () => {
+  const { frame, schema } = validators();
+  checkEnum(frame, schema, display_status, (value) =>
+    card('order_status', {
+      ...order,
+      display_status: value,
+      expected_credit_period: value === 'WAITING' ? '2026-11' : null,
+    }),
+  );
+});
+
+it('[CT-08a] order_status.reason 的接受集合为生成枚举加 null', () => {
+  const { frame, schema } = validators();
+  const candidates = [...enumCandidates(schema, order_reason), null];
+  const accepted = candidates.filter((reason) => frame(card('order_status', { ...order, reason })));
+  expect(accepted.sort()).toEqual([...order_reason, null].sort());
+});
+
+it('[CT-08a] order_status 分享的其他商品只允许空标题', () => {
+  const { frame } = validators();
+  const data = { ...order, is_other_product: true, title: null };
+  check(frame, card('order_status', data), true);
+  check(frame, card('order_status', { ...data, title: '不得展示的其他商品' }), false);
+});
+
+it.each(productContainers)('[BR-AI-04] %s 商品全字段正例的每个键都必填', (_name, wrap) => {
+  const { frame } = validators();
+  check(frame, wrap(product), true);
+  for (const key of Object.keys(product)) {
+    check(frame, wrap(without(product, key)), false);
+  }
+});
+
+it.each(Object.entries(cardData))('[CT-08a] %s 的 fallback_text 不得为空串', (type, data) => {
+  const { frame } = validators();
+  const value = card(type, data);
+  check(frame, value, true);
+  check(frame, { ...value, data: { ...value.data, fallback_text: '' } }, false);
+});
+
+it('[CT-08a] rebate_quote.tlj_kind 与生成枚举完全一致', () => {
+  const { frame, schema } = validators();
+  checkEnum(frame, schema, tlj_kind, (value) =>
+    card('rebate_quote', { ...cardData.rebate_quote, tlj_kind: value }),
+  );
+});
+
+it.each(productContainers)('[CT-08a] %s 商品 tlj.kind 与生成枚举完全一致', (_name, wrap) => {
+  const { frame, schema } = validators();
+  checkEnum(frame, schema, tlj_kind, (kind) => wrap({ ...product, tlj: { ...tlj, kind } }));
 });
 
 it('[CT-08a] rebate_quote 的素材逐字段必填且封闭，claim_draft 的 MVP 证据仅 null', () => {
