@@ -8,9 +8,11 @@ type: migration
 # 分工按规划/11 §1.1（2026-10-05）：Codex 先写规则测试（先红），Claude 新子代理过审，Opus 子代理只写迁移 SQL，
 # 编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行（排在 B1-02b 之后）。
 # test_paths：test/spec/db/risk/**（task-file.ts 接受该字段前由编排会话写进任务书）。
+# 2026-10-05 补：规划 1955639 起 appeals.target_type 加 blocked_request、另有 request_type（仅 blocked_request），risk_hits 的被拦请求行
+# 记请求类型、关联手机号 HMAC 与脱敏号、提现类 amount_fen（04 §3.2）；取值以 CT-02d 定稿的 contracts/enums/identity.yaml 为准，故依赖 CT-02d。
 refs: []
 refs_hash: {}
-deps: [B1-02b]
+deps: [B1-02b, CT-02d]
 paths:
   - 'db/migrations/**'
   - 'db/schema.sql'

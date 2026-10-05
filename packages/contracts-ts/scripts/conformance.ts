@@ -55,7 +55,6 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   OauthAttemptPurpose: 'oauth_attempt_purpose',
   LinkKind: 'link_kind',
   AppealStatus: 'appeal_status',
-  AppealTargetType: 'appeal_target_type',
 };
 
 /**
@@ -158,6 +157,8 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'PayoutAccountBankCard/properties/payout_method': 'payout_method',
   'RecordConsentRequest/properties/type': 'consent_type',
   'RecordConsentRequest/properties/channel': 'consent_channel',
+  // blocked_request is registered in the admin console only (04 §3.2 appeals, §6.1).
+  AppealTargetType: 'appeal_target_type',
 };
 
 function isObj(v: unknown): v is Obj {

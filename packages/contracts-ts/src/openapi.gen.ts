@@ -1141,7 +1141,9 @@ export interface paths {
          *     10006 whitelist: a banned user, or one appealing a ban, can call it (BR-ID-31). The
          *     internal deadline (appeals.deadline_at) and the handler are never returned: the
          *     processing time limit is internal only and not shown to users (BR-ID-36 细则, BR-TEXT-23
-         *     细则).
+         *     细则). Only account and order appeals are listed: a blocked_request appeal is registered
+         *     by customer service in the admin console and its result is told in the WeCom (企业微信)
+         *     conversation, not here (04 §6.1; BR-ID-36 细则「被拦截请求申诉」).
          */
         get: operations["listAppeals"];
         put?: never;
@@ -2276,7 +2278,10 @@ export interface components {
          */
         AppealStatus: "processing" | "upheld" | "revoked";
         /**
-         * @description contracts/enums/identity.yaml appeal_target_type (04 §6.1, BR-ID-36).
+         * @description Subset of contracts/enums/identity.yaml appeal_target_type (04 §6.1, BR-ID-36): the
+         *     user-side appeal endpoints take and return account and order only. blocked_request (a
+         *     write request blocked with 44001) is registered by customer service in the admin console
+         *     only and is not accepted here (04 §3.2 appeals, §6.1; BR-ID-36 细则「被拦截请求申诉」).
          * @enum {string}
          */
         AppealTargetType: "account" | "order";
