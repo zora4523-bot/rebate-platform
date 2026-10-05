@@ -8,9 +8,8 @@ type: migration
 # BR-ID-30 ⑦（180 天），由编排者摘入任务书第 2 节。
 # 按 db/AGENTS.md 第 5 条：同一迁移把表名加进 app.ensure_month_partition 的允许名单并同步 packages/db/src/partitions.ts；留存照 0011 的 drop_expired_month_partitions
 # 做法加一条 180 天规则，并同步 platform/maintenance 的 DROPPABLE_TABLES（评审若嫌两件事一起太大，可把留存拆成后续任务）。
-# 这会改到受保护测试的既有断言（Codex 台账评审 2026-10-05）：test/spec/platform/maintenance/contract.test.ts 断言可删表只有 event_log、run.int.test.ts
-# 断言只预建两张表；按规划/11 §3.2 属测试变更，由测试作者在 spec 阶段同 PR 调整并要负责人批准标签。maintenance/index.test.ts 写死的 ensured 计数一并改。
-# 与在途的 B1-01s、B1-01w（同改 maintenance）串行。
+# 登记进允许名单会碰到维护模块受保护测试的写死断言：先由独立的测试变更任务 B1-04n 把它们改成按允许名单推导（规划/11 §4.4，Codex 台账评审第 2 轮），
+# 本任务依赖 B1-04n、不改任何既有测试；maintenance/index.test.ts 的计数也由 B1-04n 改为推导。
 # 主键带分区键（同 orders 的做法），id 用 bigint 以对上 orders.raw_payload_id。列：platform、kind（04 写 order / rights / query…，没给全集，留 text）、
 # payload（压缩字节）、fetched_at、content_hash，另加 02 §6.1 的请求摘要、耗时、错误码。请求摘要不得含 appKey、secret、sign、session、access_token
 # （09 README 脱敏要求），由写入方（B1-04c）保证，迁移头注释写明。只授 INSERT / SELECT。
@@ -18,14 +17,13 @@ type: migration
 # 分工与两段式同 B1-19a；迁移全局串行，排在 F1-06a 之后（B1-04b 骨架不等本任务，B1-04c 的归档要等）。test_paths：test/spec/db/union-raw/**。
 refs: []
 refs_hash: {}
-deps: [F1-06a, B1-01s, B1-01w]
+deps: [F1-06a, B1-04n]
 paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
   - 'packages/db/src/partitions.ts'
   - 'apps/api/src/modules/platform/maintenance/index.ts'
-  - 'apps/api/src/modules/platform/maintenance/index.test.ts'
 impl: claude
 tester: codex
 accept:
