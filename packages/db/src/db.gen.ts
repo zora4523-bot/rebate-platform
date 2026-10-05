@@ -510,6 +510,54 @@ export interface Sessions {
   user_id: string;
 }
 
+export interface UnionAccounts {
+  account_name: string;
+  alert_stage: Generated<string>;
+  app_id: string;
+  auth_expires_at: Timestamp | null;
+  auth_renewed_at: Timestamp | null;
+  auth_renewed_by: string | null;
+  auth_status: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  last_probe_at: Timestamp | null;
+  last_probe_error: string | null;
+  last_probe_ok: boolean | null;
+  platform: string;
+  row_version: Generated<number>;
+  status: string;
+  sync_start_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface UnionCredentials {
+  access_token_cipher: Buffer;
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp | null;
+  id: string;
+  is_current: boolean;
+  refresh_token_cipher: Buffer | null;
+  union_account_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface UnionPids {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  hjy_ignore_confirmed_at: Timestamp | null;
+  hjy_ignore_evidence_path: string | null;
+  id: string;
+  pid: string;
+  pid_scene: string;
+  platform: string;
+  row_version: Generated<number>;
+  site_id: string | null;
+  status: Generated<string>;
+  union_account_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface UserOauth {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -601,6 +649,9 @@ export interface DB {
   risk_hits: RiskHits;
   risk_rules: RiskRules;
   sessions: Sessions;
+  union_accounts: UnionAccounts;
+  union_credentials: UnionCredentials;
+  union_pids: UnionPids;
   user_oauth: UserOauth;
   user_risk_state: UserRiskState;
   user_tip_reads: UserTipReads;
