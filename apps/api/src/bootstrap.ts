@@ -88,6 +88,11 @@ export async function createHttpApp(
       genReqId: (request: IncomingMessage) => resolveTraceId(request.headers['x-trace-id']),
     });
     adapter.getInstance().setValidatorCompiler(createValidatorCompiler());
+    // Cover every HTTP entry, including errors and responses without an envelope/body.
+    adapter.getInstance().addHook('onSend', (request, reply, payload, done) => {
+      reply.header('X-Trace-Id', request.id);
+      done(null, payload);
+    });
     const app = await NestFactory.create<NestFastifyApplication>(
       AppModule.forEntry(options),
       adapter,

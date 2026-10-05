@@ -1,0 +1,65 @@
+{
+  "task": "B1-01r",
+  "spec_ref": "1955639f5c29cae4f43f6e039dc3c742b5ae3312",
+  "spec_commit": "949a0f588e62b8356cdc3f1a58cecc50a22f3895",
+  "red_tests": [
+    "[规划/02 §13][规划/04 §5][规划/03 §4.2] api、stream、admin 三个入口的健康检查 200：响应头 x-trace-id 只有一个值，等于响应体 trace_id 与访问日志两行的 reqId；合格的请求头（小写、大写 UUID，32 位大小写混合十六进制）原样回传，不改大小写",
+    "[规划/02 §13][规划/04 §5] 三个入口：不带 x-trace-id、或带不被采用的值（手机号、旧格式示例 trace-abc_123、重复的两个合格头）时，响应头是新生成的那个 v4 UUID，与响应体 trace_id、访问日志 reqId 相同，每次请求不同，且不回传请求头里的原值",
+    "[规划/02 §13][规划/04 §5] 三个入口：未匹配路由的 404（GET 与 OPTIONS）也带响应头 x-trace-id，等于访问日志 reqId；合格请求头原样、不合格的换成新 UUID",
+    "[规划/02 §13][规划/04 §5 §7 20001] 三个入口：请求校验失败（HTTP 400、code 20001）的响应头 x-trace-id 等于响应体 trace_id 与访问日志 reqId；合格请求头原样、不合格的换成新 UUID",
+    "[规划/02 §13][规划/04 §5] 三个入口：控制器抛出未捕获异常（HTTP 500）的响应也带响应头 x-trace-id，等于访问日志 reqId；合格请求头原样",
+    "[规划/02 §13][规划/04 §5] 三个入口：读请求体时就失败的请求（JSON 格式错误 400、不支持的 Content-Type 415）与没有响应体的 HEAD /healthz 也带响应头 x-trace-id，等于访问日志 reqId"
+  ],
+  "risk_note": "RV2 by path (apps/api/src/modules/platform/**, apps/api/src/bootstrap.ts). Every HTTP response of api, stream and admin carries X-Trace-Id = request.id (the trace id of B1-01p): one onSend hook on the Fastify root instance. No money, attribution or authorisation path.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "b68dccd84ab9d5f38bc3edac102a0fba86aaa538",
+      "tree": "1d96b07c32e7b5cb3e4bca760571fe3ff82102e1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T13:21:04Z",
+      "finished_at": "2026-10-05T13:23:40Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent round 1: pass; 2 S2 (future raw-written SSE routes and the 503 while closing do not pass onSend) recorded as follow-ups under approvals #18"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "money review base origin/main round 1: pass, 1 S2 (400 for an invalid percent-escape URL from Fastify's default onBadUrl has no header; crafted input) recorded as a follow-up, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, 0 findings"
+  },
+  "trees": {
+    "packages/money": "83cb7c5abfd03ef162543c3aa1db0033ecf2aff0",
+    "packages/domain": "c7bbadb81089e32cd0ed3ff3e38958080a0134ef",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "8d5f767ff3281ba21fa6ade95084755dec9e8d3d",
+    "apps/api/src/modules/platform/tracing": "8f2e9ae87c05f176bd56a157d15d7ab842485acd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 pnpm test:longrun on a b1-followups-2 worktree (test/properties unchanged by B1-01r–w), 2026-10-05; this task adds no property tests"
+  }
+}
