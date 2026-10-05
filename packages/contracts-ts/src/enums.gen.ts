@@ -696,14 +696,27 @@ export const appeal_status = [
 export type AppealStatus = (typeof appeal_status)[number];
 
 /**
- * appeal_target_type
- * Source: 规划/04 §6.1；BR-ID-36 (contracts/enums/identity.yaml).
+ * appeals.target_type；用户侧申诉接口（POST / GET /v1/me/appeals）只用 account、order，接口里的 AppealTargetType 是本枚举的子集（04 §6.1）
+ * Source: 规划/04 §3.2 appeals、§6.1；BR-ID-36（含细则「被拦截请求申诉」） (contracts/enums/identity.yaml).
  */
 export const appeal_target_type = [
   "account", // 账号
   "order", // 订单
+  "blocked_request", // 被拦截的请求（被 risk_action=block 拦下、返回 44001 的那一次写请求，类型见 blocked_request_type）；只由后台客服代为登记，用户侧申诉接口不接受
 ] as const;
 export type AppealTargetType = (typeof appeal_target_type)[number];
+
+/**
+ * appeals.request_type 与 risk_hits 的请求类型；仅 target_type=blocked_request（其余为空）；编码由契约线定稿（规划/06 第 22 项 ⑤，照 08 暂定编码）；以后新增会返回 44001 的写操作，上线前在此加值
+ * Source: 规划/04 §3.2 appeals、risk_hits；BR-ID-36 细则「被拦截请求申诉」；编码由契约线定稿（规划/06 第 22 项 ⑤） (contracts/enums/identity.yaml).
+ */
+export const blocked_request_type = [
+  "register", // 注册：用手机号注册或登录时被拦（发验证码、验证码登录即注册、落地页发码与注册，BR-ID-05、BR-ID-32），没有登录态与账号，user_id 为空
+  "withdraw", // 提现提交：POST /v1/withdrawals 被拦、没有建单（BR-WDR-03 ③a、BR-ID-31），另记申请金额（整数分）
+  "phone_change", // 换手机号：绑定或更换手机号时新号码被拦（BR-ID-06）
+  "payout_account", // 收款账号：绑定或更换收款账号时被拦（支付宝、银行卡、微信零钱，BR-WDR-02 ⓪、BR-WDR-33）
+] as const;
+export type BlockedRequestType = (typeof blocked_request_type)[number];
 
 /**
  * 消息模板编码；UNION_AUTH_EXPIRING、UNION_AUTH_EXPIRED 只发站长手机号，不属于用户通知分类
@@ -1399,6 +1412,7 @@ export const enums = {
   tip_key,
   appeal_status,
   appeal_target_type,
+  blocked_request_type,
   notify_template_code,
   notify_category,
   user_level,
