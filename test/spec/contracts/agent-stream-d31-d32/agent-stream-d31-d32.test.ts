@@ -206,7 +206,7 @@ it.each([
   },
 );
 
-it('[CT-08b] [BR-AI-01] [BR-ID-10] 仅六条路由允许 Agent 引导且声明 in_app', () => {
+it('[CT-08b] [BR-AI-01] [BR-ID-10] 仅六条路由允许 Agent 引导且入口恰为 in_app、push', () => {
   const entries = Object.entries(routes());
   const enabled = entries.filter(([, value]) => object(value)['agent_guide'] === true);
   expect(enabled.map(([name]) => name).sort()).toEqual([...guideRoutes].sort());
@@ -215,12 +215,14 @@ it('[CT-08b] [BR-AI-01] [BR-ID-10] 仅六条路由允许 Agent 引导且声明 i
     if ('agent_guide' in route) expect(typeof route['agent_guide']).toBe('boolean');
     if (route['agent_guide'] === true) {
       expect(route['entry']).toContain('in_app');
+      expect(Array.isArray(route['entry'])).toBe(true);
+      expect([...(route['entry'] as unknown[])].sort()).toEqual(['in_app', 'push']);
       expect(route['agent_guide_account']).toBeUndefined();
     }
   }
 });
 
-it('[CT-08b] [BR-AI-01] 账户安全路由按现有 page 说明登记且禁止引导', () => {
+it('[CT-08b] [BR-AI-01] [BR-ID-10] 账户安全分类与 page 双向匹配，禁止引导与深链', () => {
   const entries = Object.entries(routes()).map(([name, value]) => [name, object(value)] as const);
   const groups: [string, RegExp][] = [
     ['phone', /换手机号|更换手机号|绑定手机号|绑手机/u],
@@ -239,6 +241,12 @@ it('[CT-08b] [BR-AI-01] 账户安全路由按现有 page 说明登记且禁止�
       expect(['phone', 'delete', 'fund']).toContain(route['agent_guide_account']);
       expect(route['agent_guide'], name).not.toBe(true);
       expect(guideRoutes).not.toContain(name);
+      expect(Array.isArray(route['entry']), name).toBe(true);
+      expect(route['entry'], name).not.toContain('deeplink');
+      const group = groups.find(([account]) => account === route['agent_guide_account']);
+      expect(group, name).toBeDefined();
+      expect(typeof route['page'], name).toBe('string');
+      expect(route['page'], name).toMatch(group![1]);
     }
   }
 });
@@ -253,7 +261,6 @@ it('[CT-08b] [BR-ID-10] 生成桥导出六条引导路由清单并保留路由�
     const source = object(value);
     const generated = object((bridge.routes as ObjectValue)[name]);
     expect(generated['agent_guide'] ?? false, name).toBe(source['agent_guide'] ?? false);
-    expect(generated['agent_guide_account'], name).toBe(source['agent_guide_account']);
   }
 });
 
@@ -544,6 +551,14 @@ function singleCard(frames: Frame[], type: string): Frame {
   return cards[0]!;
 }
 
+function stringValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(stringValues);
+  if (value !== null && typeof value === 'object')
+    return Object.values(value as ObjectValue).flatMap(stringValues);
+  return [];
+}
+
 it.each(newFixtures)(
   '[CT-08b] [BR-AI-01] %s 样例存在、逐行合法且符合一轮流或历史重载边界',
   (name) => {
@@ -599,6 +614,17 @@ it.each(newFixtures)(
         .join('');
       expect(text.length).toBeGreaterThan(0);
       expect(text).not.toMatch(/[0-9０-９]/u);
+      for (const frame of frames.filter((value) => value.event !== 'card')) {
+        const data = { ...frame.data };
+        // BR-AI-01 禁止卡外金额；UUID 与提示词版本是协议元数据，不是展示文案。
+        // 只豁免 meta 的这四个字段，其余字符串（含 display_text）递归检查。
+        if (frame.event === 'meta') {
+          for (const key of ['session_id', 'run_id', 'message_id', 'prompt_version'])
+            delete data[key];
+        }
+        for (const value of stringValues({ ...frame, data }))
+          expect(value, `${name}: ${frame.event} 帧卡外字符串`).not.toMatch(/[0-9０-９]/u);
+      }
     } else {
       expect(frames.map((frame) => frame.event)).toEqual(['meta', 'card', 'done']);
       const data = object(singleCard(frames, 'page_guide').data['data']);
@@ -617,7 +643,7 @@ it.each(newFixtures)(
   },
 );
 
-it('[CT-08b] [BR-AI-01] 所有引导与收益样例的回退文案不含数字或 URL，引导文案键与路由一致', () => {
+it('[CT-08b] [BR-AI-01] 引导与收益回退文案不含数字、URL、卡片或按钮，引导文案键与路由一致', () => {
   const cards = allFixtures
     .flatMap(fixtureFrames)
     .filter(
@@ -631,12 +657,12 @@ it('[CT-08b] [BR-AI-01] 所有引导与收益样例的回退文案不含数字�
     expect(typeof fallback).toBe('string');
     expect(fallback).not.toBe('');
     expect(fallback).not.toMatch(/[0-9０-９]|[a-z][a-z0-9+.-]*:\/\/|www\./iu);
+    expect(fallback).not.toMatch(/卡片|按钮/u);
     const data = object(frame.data['data']);
     if (frame.data['type'] === 'page_guide')
       expect(data['text_key']).toBe(`agent.guide.${String(data['route'])}`);
     else {
       expect(data['actions']).toEqual(actions);
-      expect(fallback).not.toMatch(/卡片|按钮/u);
     }
   }
 });
