@@ -177,7 +177,7 @@ codes:
     retry: 刷新后
     retry_kind: after_action
     data:
-      resource: [order, order_attribution, withdrawal, settle_batch, ticket]
+      resource: [order, order_attribution, withdrawal, settle_batch]
     sources: [BR-FUND-01, BR-FUND-04, BR-ATTR-20, BR-WDR-08, BR-ID-36]
   - code: 20903
     http: 409

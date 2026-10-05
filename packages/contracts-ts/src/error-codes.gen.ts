@@ -235,7 +235,7 @@ export const errorCodes = {
     retry: "刷新后",
     retry_kind: "after_action",
     retry_kind_by_reason: {},
-    data: {"resource":["order","order_attribution","withdrawal","settle_batch","ticket"]},
+    data: {"resource":["order","order_attribution","withdrawal","settle_batch"]},
     headers: [],
     sources: ["BR-FUND-01","BR-FUND-04","BR-ATTR-20","BR-WDR-08","BR-ID-36"],
     phase: null,

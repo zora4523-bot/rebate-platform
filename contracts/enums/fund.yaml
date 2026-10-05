@@ -261,3 +261,4 @@ enums:
       processing: 处理中
       adjusted: 已调账
       written_off: 已核销
+      closed: 已关闭（不处理）
