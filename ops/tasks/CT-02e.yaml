@@ -9,6 +9,9 @@ type: contract
 # 百川回跳 scheme（契约差异清单 m-06，CT-17d 已登记入站回调）不改；能否回跳以 CAP-TB-11 为准，说明里不写成能力。
 # 04 §8.4 还没有这些字段（变更记录写明「须由负责契约的任务按下面改」），合并后由编排者回写规划 04 §8.4（plan-draft「需回写规划」）。
 # 契约槽全局同时只有 1 个在途（派前看 claims；CT-15k 在同一队列）。openapi.yaml 与本线 HTTP 任务相交，排在 B1-06f 之前。
+# 第 1 轮台账评审后改（S2-5）：按契约任务先例（CT-15c、CT-15k）不设 test_paths，一致性测试放 packages/contracts-ts/src/（已在 paths 内）；测试由实现者写在 packages/contracts-ts/src/。
+# tester 为 none：新台账有测试作者就必须写 test_paths 且只能在第一类保护路径（task.ts check，CR2-02），与「测试放 contracts-ts/src、不设 test_paths」不能同时满足；
+# 契约类型不受「RV2 必须有测试作者」约束（只管 impl / migration）。另一做法是 tester codex + test_paths test/spec/contracts/**（plan-draft §11 S2-5）。
 refs: []
 refs_hash: {}
 contract_sections: ['8.4']
@@ -18,10 +21,8 @@ paths:
   - 'contracts/enums/trade.yaml'
   - 'specs/events.yaml'
   - 'packages/contracts-ts/**'
-test_paths:
-  - 'test/spec/contracts/baichuan/**'
 impl: claude
-tester: codex
+tester: none
 accept:
   - 'pnpm verify'
   - 'pnpm contracts:check'

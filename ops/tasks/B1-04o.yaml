@@ -9,7 +9,7 @@ type: impl
 # 商品 ID 形状要能覆盖 BR-PROD-03 的派生分支（淘宝带 / 不带「-」、京东 itemId 带「_」、拼多多 goods_id 与 goods_sign 分开），便于 B1-05b 的派生测试用；
 # 转链结果按平台给出 jump 所需字段（京东、拼多多：推广链接与可空的 scheme / 小程序路径，09 U-27；淘宝：不转链，只回显推广位与 relation_id，02 §5.1）。
 # 只认 linking 构造的 UnionIdentity（BR-ATTR-05）：身份字段缺失时报错，不从请求里取。时间取注入的 Clock。
-# 启用方式：config/union-endpoints/<platform>.yaml 里 mode=demo；APP_ENV=prod 时出现 demo 即拒绝启动（同 B1-04b 的 replay 规则）。
+# 启用方式：config/union-endpoints/<platform>.json 里 mode=demo；APP_ENV=prod 时出现 demo 即拒绝启动（同 B1-04b 的 replay 规则）。
 refs: []
 refs_hash: {}
 deps: [B1-04b]

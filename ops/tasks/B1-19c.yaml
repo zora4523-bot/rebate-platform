@@ -1,13 +1,14 @@
 id: B1-19c
 repo: rebate-platform
-title: 推广位命令行：apps/api/scripts/union-pids.ts——登记联盟账号与推广位、补填花卷云确认信息、置 active（super 账号 + TOTP 动态码二次验证）、retired、列出；全部写同一审计表，无删除命令
+title: 推广位命令行：apps/api/scripts/union-pids.ts——登记联盟账号与推广位、补填花卷云确认、置 active、retired、列出；每条写命令都先要 super 账号 + TOTP 动态码二次验证并写同一审计表，无删除命令
 type: impl
-# 草稿 2026-10-05（W1 搜索转链线）。05 B1-19 行「F1-06 后台 step-up 可用前，由种子脚本 / CLI 执行，super 用 TOTP 二次验证、写同一审计表」。
-# 只做命令行外壳：参数解析、交互输入动态码（不回显、不进命令历史与日志）、调用 B1-19b 的服务与 F1-06b 的 TOTP 校验；业务规则都在 B1-19b，不在脚本里另写。
-# 运行者：负责人本人（推广位 PID 由负责人从联盟后台取得，代理不经手真实值）；脚本输出不打印 TOTP、密码与凭据。
-# 依据：05 B1-19 行、BR-ATTR-02、BR-ATTR-28、BR-ID-34，由编排者摘入任务书第 2 节。超管由 F1-06c 引导产生。
-# 不改 package.json 的 scripts（保护路径第二类）与 AGENTS.md（第三类）；运行命令写在脚本头注释里。
-# apps/api/scripts/** 不在风险表白名单，按 RV2。
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S1-2、S1-6）。05 B1-19 行「F1-06 后台 step-up 可用前，由种子脚本 / CLI 执行，super 用 TOTP 二次验证、写同一审计表」；
+# 取值以 08 为准（BR-ATTR-02：新增或修改白名单都要 super + 二次验证 + 审计），所以不止置 active，登记、补填、retired 也都要；只读的「列出」不要。
+# 只做命令行外壳：参数解析、交互输入动态码（不回显、不进命令历史与日志）；脚本只组装 @couli/db 与 B1-19b、F1-06b 的纯模块（无装饰器、可被 node 直接运行），
+# 不 import 任何 Nest 模块、不跑 dist。业务规则都在 B1-19b，不在脚本里另写。
+# 运行者：负责人本人（推广位 PID 由负责人从联盟后台取得，代理不经手真实值）；输出不打印 TOTP、密码与凭据。超管由 F1-06c 引导产生。
+# 依据：05 B1-19 行、BR-ATTR-02、BR-ATTR-28、BR-ID-34，由编排者摘入任务书第 2 节。运行命令写在脚本头注释里（不改 README、package.json 的 scripts、AGENTS.md）。
+# 风险：apps/api/scripts/** 未登记，按 RV2。
 refs: []
 refs_hash: {}
 deps: [B1-19b, F1-06c]

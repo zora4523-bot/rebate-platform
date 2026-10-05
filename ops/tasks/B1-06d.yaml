@@ -1,25 +1,23 @@
 id: B1-06d
 repo: rebate-platform
-title: linking open 主流程（不含路由与平台转链）：按 BR-ATTR-05 ①～⑤ 判定为谁打开（分享 link、本人、游客 link、他人 link → 为当前用户新建并带 new_link_id）、价格复核与价格已变动、下架 30141 / 券失效、link_logs open 事件与 link_open_attempts、link 不存在 30144
+title: linking open 第一段「为谁打开」：按 BR-ATTR-05 ①～⑤ 判定（分享 link 用分享者身份、本人、游客 link、他人非分享 link → 为当前用户新建 link 并带 new_link_id，比较基准沿用原 link 快照价）、自己打开自己的分享 link、link 不存在或不属于本 App 30144
 type: impl
-# 草稿 2026-10-05（W1 搜索转链线）。依据：BR-ATTR-05（open 的归属规则；他人 link 新建时比较基准沿用原 link 的 quoted_final_price_fen，G-08）、BR-ATTR-11（自己打开自己的分享 link，待决策、按默认改走自购位）、
-# BR-PRICE-12、13（old 取原 link 快照；返利由 >0 变 0 的提示由客户端按响应做）、14、20（link.open.requote_after_sec 默认 0：每次实时取价）、BR-ATTR-14（open 每次都记，含 cache_hit、expired）、
-# BR-ATTR-21（attempt_id、外跳上报与关闭按尝试记录）、04 §6.3 open 行与 §8.4，由编排者摘入任务书第 2 节。30144 是 G-08 默认处理（待负责人确认），契约已有。
-# 复核取价经 catalog（linking → catalog），报价经 B1-05f 的卡片组装，不在 linking 另算。平台转链与外跳方案在 B1-06e（京东、拼多多）与 B1-06f（淘宝），本任务给出它们的接入点。
-# 拼多多比价预判开关 rebate.pdd.compare_precheck.enabled 默认关（CAP-PDD-04 未验证）：只实现「关」一支，开关打开时的分支写 TODO(规划/11 §4.5): … — blocked on CAP-PDD-04。
-# 幂等走 platform 的 idempotency.execute（B1-01i）；风控钩子由 risk 线（B1-03c）注册，本任务不碰。登录态经本模块的 CallerContext 端口，未接身份时一律游客（plan-draft 待决定第 3 条）。
-# linking/** 串行。整体 RV2。
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审 S2-7 把原 B1-06d 拆成 d（本任务）与 k（复核、link_logs、attempts）。
+# 依据：BR-ATTR-05（open 的归属规则；他人 link 新建时比较基准沿用原 link 的 quoted_final_price_fen，G-08）、BR-ATTR-11（自己打开自己的分享 link，待决策、按默认改走自购位）、
+# BR-PRICE-12、04 §6.3 open 行，由编排者摘入任务书第 2 节。30144 是 G-08 默认处理（待负责人确认），契约已有。不含路由与平台转链。
+# 登录态只经 B1-06c 的 CallerContext，未接身份时一律游客：非分享 link 需要登录的分支按契约返回 10001。新建 link 走 B1-06c 的登记。
+# 风险：linking/** RV2。linking/** 串行。
 refs: []
 refs_hash: {}
-deps: [B1-06c, B1-05f]
+deps: [B1-06c]
 paths:
   - 'apps/api/src/modules/linking/**'
 test_paths:
-  - 'test/spec/linking/open-core/**'
+  - 'test/spec/linking/open-owner/**'
 impl: claude
 tester: codex
 accept:
   - 'pnpm verify'
-  - 'test/spec/linking/open-core/**'
+  - 'test/spec/linking/open-owner/**'
 status: todo
 pr: null

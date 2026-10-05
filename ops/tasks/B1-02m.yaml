@@ -1,0 +1,26 @@
+id: B1-02m
+repo: rebate-platform
+title: 身份接线：identity 实现 catalog 的 ViewerContext、linking 的 CallerContext 与 attr_code 查询三个端口（取当前令牌的 app_id、user_id、device_id 与 users.attr_code），app.module 装配，替换「一律游客 / attr_code 不可用」的默认实现
+type: impl
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审 S1-8 裁定新增。宿主 05 B1-02（identity）。端口由使用方定义（B1-05c、B1-06c），identity 实现、app.module 装配
+# （同编排者裁定 LEDGER-next §6 第 2、3 条）；identity 按结构类型实现，不 import catalog / linking（02 §4.1 identity 依赖 risk、notification）。
+# 依据：BR-ATTR-05（身份只由服务端按令牌注入）、BR-ATTR-06（联盟参数只放 attr_code，不放 user_id）、BR-AI-03、02 §4.1 users.attr_code 归 identity，由编排者摘入任务书第 2 节。
+# 令牌解析与会话校验用 B1-02h（令牌签发与令牌守卫，2026-10-06 B1-02e 拆分后）交付的鉴权守卫 / 守卫，不另写；受限会话（session_scope）与最低版本拦截不在本任务。
+# 规则测试覆盖：游客、登录用户、他 App 令牌三种情形下三个端口的返回；attr_code 缺失时返回「不可用」而不是 user_id。
+# 路径只取 identity 下本任务新建的子目录（与 B1-02e～k 不相交），加 app.module.ts。风险：identity RV1、app.module.ts RV2，整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-02h, B1-06c, B1-05c]
+paths:
+  - 'apps/api/src/modules/identity/ports/**'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/request-context/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/request-context/**'
+status: todo
+pr: null

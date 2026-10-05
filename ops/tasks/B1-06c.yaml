@@ -1,18 +1,20 @@
 id: B1-06c
 repo: rebate-platform
-title: linking 模块首建：出卡登记 link 与报价快照（实现 catalog 的 LinkRegistrar 端口；快照写入后不可改、价格变化一律新 link、可复用条件）、identity_snapshot 固化（用户、平台、按 scene 推出的 pid_scene 与 active 推广位）、entry_source、expire_at；只读查询 link 的来源
+title: linking 模块首建：出卡登记 link 与报价快照（实现并装配 catalog 的 LinkRegistrar、SourceLinkReader）、identity_snapshot 固化（用户、平台、scene 推出的 pid_scene 与 active 推广位）、entry_source、expire_at；定义 CallerContext、attr_code 查询、配置读取三个端口
 type: impl
-# 草稿 2026-10-05（W1 搜索转链线）。05 B1-06 拆分：c 模块与登记，d open 主流程，e 京东拼多多转链与外跳方案及 open 路由，g 授权链接与 state，h 绑定，
-# f 淘宝 open（备案校验与百川指令），i POST /v1/links/convert，j GET /v1/links/{link_id}。
-# 依据：BR-PRICE-12（出卡只登记、不转链、不预转链；同 user / 游客 device、product_key、entry_source 且快照价相同未过期可复用——复用与否代理可自定；游客 link user_id 为空）、
-# BR-ATTR-05（UnionIdentity 只由 linking 按 token 中的 user_id 与 scene 构造；每次出卡固化 identity_snapshot）、BR-ATTR-08（scene → pid_scene）、BR-ATTR-14（register 事件只记 Agent 或提醒出卡，
-# 搜索与详情出卡不写 link_logs）、BR-PRICE-07（entry_source 写入 links、派生请求带 from_link_id 继承）、BR-PROD-05（links 同时存 product_key 与 raw_item_id），由编排者摘入任务书第 2 节。
+# 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S1-4、S1-8、S2-1）。05 B1-06 拆分：c 模块与登记，d 为谁打开，k 复核与日志，e 京东拼多多转链与 open 路由，
+# g 授权链接与 state，h 绑定，f 淘宝 open（备案校验与百川指令），i POST /v1/links/convert，j GET /v1/links/{link_id}。
+# 依据：BR-PRICE-12（出卡只登记、不转链；可复用条件——复用与否代理可自定；游客 link user_id 为空）、BR-ATTR-05（UnionIdentity 只由 linking 按 token 中的 user_id 与 scene 构造；
+# 每次出卡固化 identity_snapshot）、BR-ATTR-06（联盟参数只放 attr_code、不放 user_id）、BR-ATTR-08（scene → pid_scene）、BR-ATTR-14（register 只记 Agent 或提醒出卡）、
+# BR-PRICE-07（entry_source 写入 links、派生请求带 from_link_id 继承）、BR-PROD-05，由编排者摘入任务书第 2 节。
+# 端口（linking 定义）：CallerContext（app_id、user_id、device_id）与 attr_code 查询（users.attr_code 归 identity，02 §4.1）由 identity 实现、B1-02m 装配；
+# 未接线时 CallerContext 一律游客，attr_code 查询一律「不可用」——任何路径不得以 user_id 代替 attr_code（BR-ATTR-06）；配置读取端口由 content 实现（F1-02b），本任务装配。
 # 推广位经 union/index.ts 的只读查询（B1-19b）；取不到 active 推广位时登记照常、pid 为空，到 open 时再判（plan-draft 待决定第 2 条）。
-# 写 links 用 CAS（0006 头注释：row_version 由写者比较并递增）。依赖方向：linking → union、catalog、identity（02 §4.1）；catalog 的端口由本模块实现、app.module 装配。
-# 开工前风险表要已登记 apps/api/src/modules/linking/**（plan-draft 前置 RM-1）。整体 RV2（归属相关）。
+# 写 links 用 CAS（0006 头注释）。依赖方向：linking → union、catalog、identity（02 §4.1）；catalog 的两个端口由本模块实现、app.module 装配。
+# 开工前风险表要已登记 linking/**（#113）。风险：linking/** RV2（规划/11 §1.1 归属相关），整体 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-05c, B1-19b]
+deps: [B1-05c, B1-19b, F1-02b]
 paths:
   - 'apps/api/src/modules/linking/**'
   - 'apps/api/src/app.module.ts'
