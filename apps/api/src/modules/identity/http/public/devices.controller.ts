@@ -1,11 +1,10 @@
 import { Controller, HttpCode, HttpException, Inject, Post, Req } from '@nestjs/common';
 import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Schema } from '@couli/contracts-ts';
-import { contractRouteSchema } from '../../../platform/index.ts';
+import { contractRouteSchema, fieldsErrorEnvelope } from '../../../platform/index.ts';
 import { RegisterDeviceService } from '../../application/register-device.service.ts';
 
 type RegisterDeviceResponse = Schema<'RegisterDeviceResponse'>;
-type ErrorEnvelope = Schema<'ErrorEnvelope'>;
 
 /** What this controller reads of the Fastify request, already checked by the route schema. */
 interface RegisterDeviceRequest {
@@ -42,13 +41,8 @@ export class DevicesController {
       idSource: request.body.id_source,
     });
     if (result.kind === 'invalid_device_hash') {
-      const envelope: ErrorEnvelope = {
-        code: 20001,
-        msg: '参数校验失败',
-        data: { fields: ['device_hash'] },
-        trace_id: request.id,
-      };
-      throw new HttpException(envelope, 400);
+      const { statusCode, body } = fieldsErrorEnvelope(['device_hash'], request.id);
+      throw new HttpException(body, statusCode);
     }
     return {
       code: 0,

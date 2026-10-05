@@ -26,10 +26,18 @@ it('[AC-B1-02c#1] exports routeSchemaOf of every implemented operation and refus
     ),
   );
   expect(contractRouteSchema('getHealthz')).toEqual({});
-  const planned = document.paths?.['/v1/devices/push-token']?.post as
-    Record<string, unknown> | undefined;
-  expect(planned?.['x-implementation']).toBe('planned');
-  for (const id of ['reportPushToken', 'noSuchOperation', 'toString', '__proto__']) {
+  // Every operation still marked planned, taken from the contract rather than named here.
+  const planned = Object.values(document.paths ?? {})
+    .flatMap((item) => Object.values(item ?? {}) as unknown[])
+    .filter(
+      (candidate): candidate is { operationId: string } =>
+        typeof candidate === 'object' &&
+        candidate !== null &&
+        'x-implementation' in candidate &&
+        typeof (candidate as { operationId?: unknown }).operationId === 'string',
+    )
+    .map((candidate) => candidate.operationId);
+  for (const id of [...planned, 'noSuchOperation', 'toString', '__proto__']) {
     expect(() => contractRouteSchema(id as ContractOperationId)).toThrow(
       /^No implemented contract operation /,
     );

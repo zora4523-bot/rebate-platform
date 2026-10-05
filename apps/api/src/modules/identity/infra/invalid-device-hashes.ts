@@ -1,6 +1,6 @@
 // Initial value of config key device.invalid_hashes (BR-ID-09 细则「设备标识的无效值」): the
 // `invalid_hash_seeds` of specs/device-hash.vectors.json, read once when the entry starts.
-// Appending entries at run time (operations) waits for the configuration module.
+// TODO(规划/11 §9.2): device.invalid_hashes 运营追加 — blocked on 配置读取（F1-02b）
 import { readFile } from 'node:fs/promises';
 import { isWellFormedDeviceHash } from '../domain/device.ts';
 

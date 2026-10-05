@@ -48,6 +48,11 @@
 //   that never repeats a submitted value. Any other error (not FST_ERR_VALIDATION, or without
 //   an array `validation`) → undefined: the caller handles it as before.
 //
+// fieldsErrorEnvelope(fields, traceId) → ValidationErrorResponse
+//   The same HTTP 400 / 20001 envelope for a check that runs after the route schema (for example
+//   a device hash on the invalid list, BR-ID-09): `data.fields` is a copy of `fields`, `msg` and
+//   the status are the ones validationErrorEnvelope uses.
+//
 // Wiring (bootstrap.ts, covered by the implementer's unit tests through Fastify `inject`): the
 // Fastify instance uses createValidatorCompiler(); a global Nest exception filter answers
 // FST_ERR_VALIDATION with validationErrorEnvelope and the request's trace id (Nest would answer
@@ -250,6 +255,13 @@ export function validationErrorEnvelope(
     if (typeof property === 'string') segments.push(property);
     fields.add(segments.length > 0 ? segments.join('.') : part);
   }
+  return fieldsErrorEnvelope([...fields], traceId);
+}
+
+export function fieldsErrorEnvelope(
+  fields: readonly string[],
+  traceId: string,
+): ValidationErrorResponse {
   return {
     statusCode: 400,
     body: { code: 20001, msg: '参数校验失败', data: { fields: [...fields] }, trace_id: traceId },

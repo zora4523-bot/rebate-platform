@@ -31,6 +31,7 @@ const headers = { 'x-app-id': 'couli', 'x-platform': 'harmony', 'x-app-version':
 type Validate = ((data: unknown) => boolean) & { errors?: unknown[] | null };
 let validateSuccess: Validate;
 let validateError: Validate;
+let validateServerError: Validate;
 
 beforeAll(async () => {
   const document = await dereference<OpenAPIV3_1.Document>(CONTRACT, {
@@ -50,6 +51,7 @@ beforeAll(async () => {
   ajv.addFormat('int64', { type: 'number', validate: Number.isSafeInteger });
   validateSuccess = ajv.compile(schemaOf('200'));
   validateError = ajv.compile(schemaOf('4XX'));
+  validateServerError = ajv.compile(schemaOf('5XX'));
 });
 
 let app: NestFastifyApplication | undefined;
@@ -210,7 +212,7 @@ it('[AC-B1-02c#9] writes request logs that never carry the issued install_secret
   }
 });
 
-it('still serves the route without database handles or keyring: invalid hashes 20001, others 500', async () => {
+it('still serves the route without database handles or keyring: invalid hashes 20001, others the 50001 envelope', async () => {
   const { app } = await build();
   const invalid = await register(app, { device_hash: emptyHash, id_source: 'idfv' });
   expect(invalid.statusCode).toBe(400);
@@ -222,5 +224,7 @@ it('still serves the route without database handles or keyring: invalid hashes 2
   });
   const valid = await register(app, { device_hash: hash, id_source: 'idfv' });
   expect(valid.statusCode).toBe(500);
-  expect(valid.body).not.toContain('install_secret');
+  const body = valid.json<unknown>();
+  expect(validateServerError(body), JSON.stringify(validateServerError.errors)).toBe(true);
+  expect(body).toEqual({ code: 50001, msg: '服务端错误', trace_id: TRACE });
 });

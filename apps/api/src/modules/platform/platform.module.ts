@@ -1,10 +1,12 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { CLOCK, type Clock } from './clock/index.ts';
 import type { AppConfig } from './config/index.ts';
 import { openConfiguredFieldCrypto } from './config/keyring-startup.ts';
 import type { DbHandles } from './db/index.ts';
 import type { EntryName } from './entries.ts';
 import { createEventBus } from './events/index.ts';
+import { ServerErrorInterceptor } from './http/server-error.ts';
 import { createIdempotency } from './idempotency/index.ts';
 import type { RootLogger } from './logging/index.ts';
 import { createQueueRuntime, type JobQueue } from './queue/index.ts';
@@ -101,6 +103,8 @@ export class PlatformModule {
         { provide: APP_ENTRY, useValue: options.entry },
         { provide: CLOCK, useValue: options.clock },
         { provide: ROOT_LOGGER, useValue: options.logger },
+        // Every entry: an unknown error of an HTTP handler becomes 500 + the 50001 envelope.
+        { provide: APP_INTERCEPTOR, useValue: new ServerErrorInterceptor(options.logger) },
         ...databaseProviders,
         ...cryptoProviders,
       ],

@@ -104,6 +104,15 @@ it('[AC-B1-02c#7] issues a new device id and secret on every registration of the
   const first = await registration.register(command);
   const second = await registration.register(command);
   if (first.kind !== 'registered' || second.kind !== 'registered') throw new Error('expected two');
+  // Lower-case UUIDv7 carrying the clock's millisecond (platform newUuidV7), distinct per call.
+  for (const { deviceId } of [first, second]) {
+    expect(deviceId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(Number.parseInt(deviceId.replace(/-/g, '').slice(0, 12), 16)).toBe(
+      new FixedClock(NOW).now().getTime(),
+    );
+  }
   expect(second.deviceId).not.toBe(first.deviceId);
   expect(second.installSecret).not.toBe(first.installSecret);
   expect(inserts.map(({ row }) => row['device_hash'])).toEqual([hash, hash]);

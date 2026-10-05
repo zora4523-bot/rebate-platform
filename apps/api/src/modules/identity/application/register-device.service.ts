@@ -3,10 +3,16 @@
 // device_id and install_secret and stores the row. It sends no job and publishes no event.
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { DeviceIdSource } from '@couli/contracts-ts';
-import { CLOCK, FIELD_CRYPTO, type Clock, type FieldCrypto } from '../../platform/index.ts';
+import {
+  CLOCK,
+  FIELD_CRYPTO,
+  newUuidV7,
+  type Clock,
+  type FieldCrypto,
+} from '../../platform/index.ts';
 import { installSecretContext, isRegistrableDeviceHash } from '../domain/device.ts';
 import { DevicesRepository } from '../infra/devices.repository.ts';
-import { newDeviceId, newInstallSecret } from '../infra/issue.ts';
+import { newInstallSecret } from '../infra/issue.ts';
 
 /** Token of the invalid-hash list (config device.invalid_hashes), a ReadonlySet of hashes. */
 export const INVALID_DEVICE_HASHES = Symbol('INVALID_DEVICE_HASHES');
@@ -49,7 +55,7 @@ export class RegisterDeviceService {
       throw new Error('identity: device registration needs the field-encryption keyring');
     }
     const now = this.clock.now();
-    const deviceId = newDeviceId(now);
+    const deviceId = newUuidV7(now);
     const installSecret = newInstallSecret();
     const cipher = this.fieldCrypto.encrypt(installSecret, installSecretContext(deviceId));
     await this.devices.insert({
