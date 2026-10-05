@@ -1,0 +1,32 @@
+id: CT-20a
+repo: rebate-platform
+title: 契约：微信零钱通道的枚举——收款方式 wechat、授权尝试用途 payout_bind（枚举与接口同改）、提现暂缓原因 channel_disabled、30303 原因 above_method_max 与文案、两个新枚举、开关与打款权限点说明
+type: contract
+# 2026-10-05 入账。依据：couli-runs/CT-plan/spec-delta-826f86e-492b9ef.md 第二节「CT-20a」（规划 1e4569c）。
+# 范围比 contract-delta.md §6 原拆分多 p-06、p-07 与 p-17 的一条文案：oauth_attempt_purpose 在
+# conformance.ts 里与 openapi 的 OauthAttemptPurpose 绑定为取值完全相同，枚举与接口必须同一个 PR。
+# 只带 §2.4；§6.1 的 oauth-attempts 一行、§7 的 30303 一行、§11.2 的 switch.payout 与 payout.execute
+# 两行、12_TEXT 第 772 行由编排者摘入任务书第 2 节（带 §6.1、§7 会超 24KB）。
+# 两个新枚举（withdrawal_channel_state、payout_attempt_kind）只进枚举文件，不登记 ENUM_BINDINGS，
+# 接口用到它们时由 CT-20b 登记。openapi 两处 payout_channel 加 wechat 留给 CT-20b。
+# 不做：失败原因字典 USER_CONFIRM_TIMEOUT 等微信文案（随 B2-14 的配套契约）；「等用户确认」的消息模板编码（规划未定）。
+# 与 CT-01c、CT-21a 同改 admin.yaml、error-codes.yaml、catalog.test.ts，顺序 CT-20a → CT-01c → CT-21a。
+refs: []
+refs_hash: {}
+contract_sections: ['2.4']
+deps: [CT-15b]
+paths:
+  - 'contracts/enums/fund.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/texts.default.json'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
