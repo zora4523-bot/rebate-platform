@@ -23,6 +23,34 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AdminPermissions {
+  admin_id: string;
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  granted_at: Timestamp;
+  granted_by: string;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  permission_key: string;
+}
+
+export interface AdminUsers {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  is_super: boolean;
+  login_name: string;
+  password_hash: string;
+  row_version: Generated<number>;
+  status: string;
+  totp_bound_at: Timestamp | null;
+  totp_last_step: ColumnType<bigint, bigint, bigint> | null;
+  totp_secret_cipher: Buffer | null;
+  updated_at: Generated<Timestamp>;
+  verify_phone_cipher: Buffer | null;
+  verify_phone_hmac: string | null;
+  verify_phone_set_at: Timestamp | null;
+}
+
 export interface Appeals {
   app_id: string;
   closed_at: Timestamp | null;
@@ -75,6 +103,19 @@ export interface Articles {
   title: string;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+}
+
+export interface AuditLogs {
+  action: string;
+  admin_id: string;
+  after: Json | null;
+  app_id: string;
+  at: Timestamp;
+  before: Json | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  ip: string | null;
+  target: string | null;
 }
 
 export interface Blocklist {
@@ -621,9 +662,12 @@ export interface UserTipReads {
 }
 
 export interface DB {
+  admin_permissions: AdminPermissions;
+  admin_users: AdminUsers;
   app_versions: AppVersions;
   appeals: Appeals;
   articles: Articles;
+  audit_logs: AuditLogs;
   blocklist: Blocklist;
   config_items: ConfigItems;
   consent_records: ConsentRecords;

@@ -872,6 +872,58 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: admin_permissions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.admin_permissions (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    admin_id uuid NOT NULL,
+    permission_key text NOT NULL,
+    granted_by uuid NOT NULL,
+    granted_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: admin_permissions_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.admin_permissions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.admin_permissions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: admin_users; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.admin_users (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    login_name text NOT NULL,
+    password_hash text NOT NULL,
+    totp_secret_cipher bytea,
+    totp_bound_at timestamp with time zone,
+    totp_last_step bigint,
+    is_super boolean NOT NULL,
+    status text NOT NULL,
+    verify_phone_cipher bytea,
+    verify_phone_hmac text,
+    verify_phone_set_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: app_versions; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -969,6 +1021,38 @@ CREATE TABLE app.articles (
     CONSTRAINT articles_category_check CHECK ((category = ANY (ARRAY['help'::text, 'rule'::text, 'notice'::text, 'agreement'::text]))),
     CONSTRAINT articles_notice_content_version_check CHECK ((notice_content_version >= 1)),
     CONSTRAINT articles_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: audit_logs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.audit_logs (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    admin_id uuid NOT NULL,
+    action text NOT NULL,
+    target text,
+    before jsonb,
+    after jsonb,
+    ip inet,
+    at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: audit_logs_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.audit_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.audit_logs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -2295,6 +2379,46 @@ ALTER TABLE ONLY public.pgmigrations ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: admin_permissions admin_permissions_admin_permission_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_permissions
+    ADD CONSTRAINT admin_permissions_admin_permission_key UNIQUE (app_id, admin_id, permission_key);
+
+
+--
+-- Name: admin_permissions admin_permissions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_permissions
+    ADD CONSTRAINT admin_permissions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: admin_users admin_users_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_users
+    ADD CONSTRAINT admin_users_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: admin_users admin_users_login_name_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_users
+    ADD CONSTRAINT admin_users_login_name_key UNIQUE (login_name);
+
+
+--
+-- Name: admin_users admin_users_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_users
+    ADD CONSTRAINT admin_users_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: app_versions app_versions_app_platform_channel_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -2324,6 +2448,14 @@ ALTER TABLE ONLY app.appeals
 
 ALTER TABLE ONLY app.articles
     ADD CONSTRAINT articles_pkey PRIMARY KEY (id, version);
+
+
+--
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.audit_logs
+    ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
 
 
 --
@@ -2847,6 +2979,13 @@ ALTER TABLE ONLY public.pgmigrations
 
 
 --
+-- Name: admin_permissions_granted_by_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX admin_permissions_granted_by_idx ON app.admin_permissions USING btree (app_id, granted_by);
+
+
+--
 -- Name: appeals_processing_deadline_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -2879,6 +3018,27 @@ CREATE INDEX appeals_user_idx ON app.appeals USING btree (app_id, user_id, creat
 --
 
 CREATE INDEX articles_app_category_published_idx ON app.articles USING btree (app_id, category, status, published_at, id, version);
+
+
+--
+-- Name: audit_logs_admin_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX audit_logs_admin_at_idx ON app.audit_logs USING btree (app_id, admin_id, at);
+
+
+--
+-- Name: audit_logs_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX audit_logs_at_idx ON app.audit_logs USING btree (app_id, at);
+
+
+--
+-- Name: audit_logs_target_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX audit_logs_target_idx ON app.audit_logs USING btree (app_id, target, at);
 
 
 --
@@ -3120,6 +3280,13 @@ CREATE INDEX sessions_user_idx ON app.sessions USING btree (app_id, user_id);
 
 
 --
+-- Name: union_accounts_auth_renewed_by_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_accounts_auth_renewed_by_idx ON app.union_accounts USING btree (app_id, auth_renewed_by) WHERE (auth_renewed_by IS NOT NULL);
+
+
+--
 -- Name: union_credentials_account_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -3309,6 +3476,13 @@ ALTER INDEX pgboss.job_pkey ATTACH PARTITION pgboss.job_common_pkey;
 
 
 --
+-- Name: audit_logs audit_logs_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER audit_logs_append_only BEFORE DELETE OR UPDATE ON app.audit_logs FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: device_registrations device_registrations_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -3379,11 +3553,35 @@ CREATE TRIGGER union_pids_no_delete BEFORE DELETE ON app.union_pids FOR EACH ROW
 
 
 --
+-- Name: admin_permissions admin_permissions_admin_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_permissions
+    ADD CONSTRAINT admin_permissions_admin_fkey FOREIGN KEY (app_id, admin_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: admin_permissions admin_permissions_granted_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_permissions
+    ADD CONSTRAINT admin_permissions_granted_by_fkey FOREIGN KEY (app_id, granted_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
 -- Name: appeals appeals_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
 ALTER TABLE ONLY app.appeals
     ADD CONSTRAINT appeals_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: audit_logs audit_logs_admin_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.audit_logs
+    ADD CONSTRAINT audit_logs_admin_fkey FOREIGN KEY (app_id, admin_id) REFERENCES app.admin_users(app_id, id);
 
 
 --
@@ -3619,6 +3817,14 @@ ALTER TABLE ONLY app.sessions
 
 
 --
+-- Name: union_accounts union_accounts_auth_renewed_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_accounts
+    ADD CONSTRAINT union_accounts_auth_renewed_by_fkey FOREIGN KEY (app_id, auth_renewed_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
 -- Name: union_credentials union_credentials_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -3808,6 +4014,133 @@ REVOKE ALL ON FUNCTION app.reject_update_delete() FROM PUBLIC;
 
 
 --
+-- Name: TABLE admin_permissions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE ON TABLE app.admin_permissions TO couli_app;
+GRANT SELECT ON TABLE app.admin_permissions TO couli_readonly;
+
+
+--
+-- Name: TABLE admin_users; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.admin_users TO couli_app;
+
+
+--
+-- Name: COLUMN admin_users.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.login_name; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(login_name) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.password_hash; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(password_hash) ON TABLE app.admin_users TO couli_app;
+
+
+--
+-- Name: COLUMN admin_users.totp_secret_cipher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(totp_secret_cipher) ON TABLE app.admin_users TO couli_app;
+
+
+--
+-- Name: COLUMN admin_users.totp_bound_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(totp_bound_at) ON TABLE app.admin_users TO couli_app;
+GRANT SELECT(totp_bound_at) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.totp_last_step; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(totp_last_step) ON TABLE app.admin_users TO couli_app;
+GRANT SELECT(totp_last_step) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.is_super; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(is_super) ON TABLE app.admin_users TO couli_app;
+GRANT SELECT(is_super) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.admin_users TO couli_app;
+GRANT SELECT(status) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.verify_phone_cipher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(verify_phone_cipher) ON TABLE app.admin_users TO couli_app;
+
+
+--
+-- Name: COLUMN admin_users.verify_phone_hmac; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(verify_phone_hmac) ON TABLE app.admin_users TO couli_app;
+
+
+--
+-- Name: COLUMN admin_users.verify_phone_set_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(verify_phone_set_at) ON TABLE app.admin_users TO couli_app;
+GRANT SELECT(verify_phone_set_at) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.admin_users TO couli_app;
+GRANT SELECT(row_version) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.admin_users TO couli_app;
+GRANT SELECT(updated_at) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
 -- Name: TABLE app_versions; Type: ACL; Schema: app; Owner: -
 --
 
@@ -3864,6 +4197,14 @@ GRANT UPDATE(updated_at) ON TABLE app.appeals TO couli_app;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.articles TO couli_app;
 GRANT SELECT ON TABLE app.articles TO couli_readonly;
+
+
+--
+-- Name: TABLE audit_logs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.audit_logs TO couli_app;
+GRANT SELECT ON TABLE app.audit_logs TO couli_readonly;
 
 
 --
