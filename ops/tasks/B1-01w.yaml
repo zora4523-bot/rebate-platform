@@ -12,6 +12,7 @@ deps: [B1-01s]
 paths:
   - 'apps/api/src/modules/platform/maintenance/worker.ts'
   - 'apps/api/src/modules/platform/maintenance/entry.test.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.test.ts'
 impl: codex
 tester: claude
 accept:
