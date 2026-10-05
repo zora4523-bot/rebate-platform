@@ -160,7 +160,20 @@ export function loadRecordings(
       key: value['key'] as string,
       response: value['response'],
     };
-    const canonical = canonicalJson(item.response);
+    // JSON.parse can still yield a value canonical JSON rejects (1e400 is Infinity): that line
+    // is a `schema` problem and is skipped, never an exception out of the loader.
+    let canonical: string;
+    try {
+      canonical = canonicalJson(item.response);
+    } catch {
+      problems.push({
+        code: 'schema',
+        file,
+        line,
+        message: '/response: must be a JSON value (no non-finite numbers)',
+      });
+      return;
+    }
     const id = slot(item.kind, item.key);
     const previous = kept.get(id);
     if (previous === undefined) {
@@ -253,36 +266,61 @@ function missResult(c: EvalCase, turn: number, miss: RecordingMiss): CaseResult 
   return stopped(c, 'coverage_gap', 'recording_miss', turn, `录制未命中：${miss.kind} ${miss.key}`);
 }
 
+/** Recording misses of one case. Every port handed out during the case (a fresh pair per turn)
+ * writes here, so a miss through a port the agent cached from an earlier turn of the same
+ * conversation still counts. Closed when the case ends: lookups after that (an agent still
+ * running past its timeout) are not attributed to this case or to the next one. */
+interface CaseMisses {
+  open: boolean;
+  turn: number;
+  first: { turn: number; miss: RecordingMiss } | undefined;
+}
+
+function wrapPorts(store: RecordingStore, misses: CaseMisses): AgentPorts {
+  const lookup = (find: () => unknown): unknown => {
+    try {
+      return find();
+    } catch (error) {
+      if (error instanceof RecordingMiss && misses.open && misses.first === undefined) {
+        misses.first = { turn: misses.turn, miss: error };
+      }
+      throw error;
+    }
+  };
+  return {
+    model: async (req) => lookup(() => store.model(req)),
+    tool: async (call) => lookup(() => store.tool(call)),
+  };
+}
+
 async function runCase(
   c: EvalCase,
   agent: AgentUnderTest,
   store: RecordingStore,
   timeoutMs: number,
 ): Promise<CaseResult> {
+  const misses: CaseMisses = { open: true, turn: 0, first: undefined };
+  try {
+    return await runTurns(c, agent, store, timeoutMs, misses);
+  } finally {
+    misses.open = false;
+  }
+}
+
+async function runTurns(
+  c: EvalCase,
+  agent: AgentUnderTest,
+  store: RecordingStore,
+  timeoutMs: number,
+  misses: CaseMisses,
+): Promise<CaseResult> {
   const outputs: TurnOutput[] = [];
   for (const [index, step] of c.turns.entries()) {
     const turn = index + 1;
-    // Ports are wrapped per turn: every miss is remembered (and still thrown), so a miss the
-    // agent swallows still makes the case a coverage gap. Lookups after the turn ended (an agent
-    // still running past its timeout) are not attributed to this case.
-    const turnState: { open: boolean; miss: RecordingMiss | undefined } = {
-      open: true,
-      miss: undefined,
-    };
-    const lookup = (find: () => unknown): unknown => {
-      try {
-        return find();
-      } catch (error) {
-        if (error instanceof RecordingMiss && turnState.open && turnState.miss === undefined) {
-          turnState.miss = error;
-        }
-        throw error;
-      }
-    };
-    const ports: AgentPorts = {
-      model: async (req) => lookup(() => store.model(req)),
-      tool: async (call) => lookup(() => store.tool(call)),
-    };
+    misses.turn = turn;
+    // Every miss is remembered (and still thrown), so a miss the agent swallows, or follows with
+    // another error or a timeout, still makes the case a coverage gap.
+    const ports = wrapPorts(store, misses);
     const input = {
       case_id: c.id,
       turn,
@@ -292,8 +330,7 @@ async function runCase(
       switches: { ...(c.switches ?? {}) },
     };
     const outcome = await settleWithin(() => agent(input, ports), timeoutMs);
-    turnState.open = false;
-    if (turnState.miss !== undefined) return missResult(c, turn, turnState.miss);
+    if (misses.first !== undefined) return missResult(c, misses.first.turn, misses.first.miss);
     if (outcome.kind === 'timeout') {
       return stopped(c, 'error', 'timeout', turn, `第 ${turn} 轮超过 ${timeoutMs} ms 未完成`);
     }

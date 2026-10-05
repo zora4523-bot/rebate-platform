@@ -467,15 +467,16 @@ export function computeManifest(set: EvalSet, version: string, cases: EvalCase[]
 
 /**
  * Shape problems that make a manifest impossible to compare (not an object, missing or extra
- * fields, wrong value types). Value-level differences (an upper-case digest, a wrong count) are
- * left to the comparison and reported as `manifest_mismatch`.
+ * fields, wrong value types, an empty version: manifest.schema.json has minLength 1 and the
+ * smoke verdict names the set as set@version). Value-level differences (an upper-case digest, a
+ * wrong count) are left to the comparison and reported as `manifest_mismatch`.
  */
 function manifestShapeProblems(value: unknown): Problem[] {
   const c = new Collector(undefined);
   const keys = ['set', 'version', 'count', 'by_category', 'content_sha256', 'split_sha256'];
   if (!c.object(value, '', keys, [])) return c.problems;
   if (present(value, 'set')) c.oneOf(value['set'], '/set', EVAL_SETS);
-  if (present(value, 'version')) c.string(value['version'], '/version');
+  if (present(value, 'version')) c.string(value['version'], '/version', { minLength: 1 });
   if (present(value, 'count') && typeof value['count'] !== 'number') {
     c.add('/count', 'must be a number');
   }

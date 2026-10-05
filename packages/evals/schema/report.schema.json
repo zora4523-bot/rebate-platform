@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://couli.invalid/schemas/evals/report.schema.json",
   "title": "Report",
-  "description": "Result of one eval run. Same shape as the structural check in checkReport (packages/evals/src/report.ts); checkReport also checks run validity (empty meta, eval set, case set, summary). Only the SmokeVerdict of a private replay is written back (BR-AI-21).",
+  "description": "Result of one eval run. Same shape as the structural check in checkReport (packages/evals/src/report.ts); checkReport also checks run validity (empty meta, eval set, case set, case result consistency, summary). Only the SmokeVerdict of a private replay is written back (BR-AI-21).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "meta", "cases", "summary"],
@@ -108,9 +108,33 @@
     },
     "layer": { "type": ["string", "null"], "enum": ["L1", "L3", null] },
     "caseResult": {
+      "description": "One case result. The if/then rules below are the shape part of the consistency check; checkReport also checks each problem code against its layer and result type (report_invalid).",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "category", "split", "result", "first_failed_layer", "problems"],
+      "allOf": [
+        {
+          "if": { "properties": { "result": { "const": "pass" } } },
+          "then": {
+            "properties": { "first_failed_layer": { "const": null }, "problems": { "maxItems": 0 } }
+          }
+        },
+        {
+          "if": { "properties": { "result": { "const": "fail" } } },
+          "then": {
+            "properties": {
+              "first_failed_layer": { "enum": ["L1", "L3"] },
+              "problems": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "result": { "enum": ["coverage_gap", "error"] } } },
+          "then": {
+            "properties": { "first_failed_layer": { "const": null }, "problems": { "minItems": 1 } }
+          }
+        }
+      ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "category": { "$ref": "#/$defs/category" },

@@ -94,15 +94,21 @@ const URL_PATTERNS: readonly RegExp[] = [
   /https?:\/\/\S+/iu, // https?://\S+
   /www\.\S+/iu, // www\.\S+
   /[a-z][a-z0-9+.-]*:\/\/\S*/iu, // [a-z][a-z0-9+.-]*://\S*
-  // A domain ending in .com|.cn|.net|.top|.cc|.vip: may be followed by a path, space or
-  // punctuation, never by more name characters (example.community is not a hit).
-  /(?<![A-Za-z0-9-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+(?:com|cn|net|top|cc|vip)(?![A-Za-z0-9-])/iu,
+  // A domain ending in .com|.cn|.net|.top|.cc|.vip (常见域名后缀). Labels may be any Unicode
+  // letters and digits (例子.cn, 请看例子.cn。 are hits; an IDN is still a link). The suffix may
+  // be followed by a path, space, punctuation or CJK text, never by more ASCII name characters
+  // (example.community, config.cnf, a.netx are not hits). A match starts only where a label run
+  // starts, which also keeps the scan linear on long text without dots.
+  /(?<![\p{L}\p{N}\p{M}-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}\p{M}-]*[\p{L}\p{N}\p{M}])?\.)+(?:com|cn|net|top|cc|vip)(?![A-Za-z0-9-])/iu,
 ];
 
 /** Passcode patterns (BR-AI-06 细则 口令): 8–14 letters or digits wrapped in a pair of the same
- * symbol (￥ $ € /, plus ¥) or in parentheses (half or full width); 复制…打开(淘宝|京东|拼多多). */
+ * symbol or in parentheses (half or full width); 复制…打开(淘宝|京东|拼多多). 细则 lists
+ * 「￥ $ € ( （ / 等符号」: the symbol class is every Unicode currency symbol (\p{Sc}: ￥ ¥ $ €
+ * ₤ £ ¢ ₳ …) plus `/`. Markdown marks such as `*` are deliberately not in it (bold is not a
+ * passcode). */
 const PASSCODE_PATTERNS: readonly RegExp[] = [
-  /([￥¥$€/])[A-Za-z0-9]{8,14}\1/u,
+  /([\p{Sc}/])[A-Za-z0-9]{8,14}\1/u,
   /[(（][A-Za-z0-9]{8,14}[)）]/u,
   /复制[\s\S]*?打开(?:淘宝|京东|拼多多)/u,
 ];
