@@ -1,0 +1,32 @@
+id: B1-01y
+repo: rebate-platform
+title: platform/redis：按入口的 Redis 句柄（REDIS_URL）、键必须带 TTL 的写入封装与命名空间、Lua 脚本执行入口、不可用时抛明确错误（由调用方决定是否拒绝）、优雅关闭、集成测试用的一次性 Redis
+type: impl
+# 草稿 2026-10-05。依据：ADR-0001 §2 缓存行、§4.2 第 17 项（noeviction；每个键必须带 TTL、键的基数有上限；内存 70% 告警；防重放 nonce、配额计数不得被静默淘汰；
+# 「写入失败时缓存路径降级为直读 PG」只适用缓存）、§4.2 第 12 项；B1-01f 已把 REDIS_URL 做成按入口必填。
+# 只交付句柄与封装，不写任何风控逻辑（nonce、限流、准入集合都在 risk：B1-03b、e、f、g）；风控与防重放遇到 Redis 不可用不能降级放行，由调用方按各自规则拒绝。
+# 集成测试的 Redis：容器验证与 CI 由 B1-01z 提供一次性 Redis 并注入 TEST_REDIS_URL；本机没有该变量时退回 testcontainers，取法照 acquireAdminPg 放 packages/db/src/testing
+# （.dependency-cruiser.cjs 只豁免该目录与 *.int.test.ts 引用 testcontainers；不改该文件）。集成配置若要加 globalSetup 属保护路径第二类，按规划/11 §3.2 进 ask。
+# 接线：REDIS_URL 现由 entry.ts 读取、bootstrap.ts 传给模块的参数里没有它（Codex 台账评审 2026-10-05），本任务把它经 bootstrap 传进 platform/redis；
+# entry.ts、bootstrap.ts 与在途的 B1-01r、B1-01t 相交，排在它们之后。
+# 日志只打平铺字段，连接串里的密码按 platform/logging 的脱敏清单处理。platform 路径为 RV2：两家评审、容器验证、证据文件。
+# test_paths：test/spec/platform/redis/**（task-file.ts 还不认该字段；同 B1-02c 注释的做法）。
+refs: []
+refs_hash: {}
+deps: [B1-01x, B1-01z, B1-01f, B1-01r, B1-01t]
+paths:
+  - 'apps/api/src/modules/platform/redis/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/platform/logging/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/bootstrap.ts'
+  - 'packages/db/src/testing/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/redis/**'
+status: todo
+pr: null

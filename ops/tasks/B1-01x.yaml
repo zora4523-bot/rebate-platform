@@ -1,0 +1,22 @@
+id: B1-01x
+repo: rebate-platform
+title: 依赖：apps/api 加 ioredis（ADR-0001 §2 缓存行锁定的 5.11.x）
+type: deps
+# 草稿 2026-10-05。B1-03 的签名防重放（BR-ID-09：(device_id, nonce) 600 秒内不重复）、三维限流、发码准入集合（BR-ID-05 细则要求原子操作，
+# 10 AC-S1-79 ⑦⑩ 要求真实 Redis 并发）都要 Redis。现状：infra/local/compose.yaml 已有 redis 7.4，.env.example 与 platform/db 已有 REDIS_URL
+# （B1-01f 按入口必填），但仓库里没有任何 Redis 客户端依赖；B1-01b 注释早已写明「Redis 令牌桶要先装 ioredis（deps 任务）」。
+# 版本取 ADR-0001 §2 的 ioredis 5.11.x（ioredis 6 刚发布、无补丁版，不选）；集成测试的一次性 Redis 用 packages/db 已有的 testcontainers 12.1.0 通用容器，
+# 不另加 @testcontainers/redis。
+# 会改 pnpm-lock.yaml（保护路径第二类，合并前要批准标签）。deps 任务全局串行、先合并进 main，B1-01y 以它为基线（规划/11 §3.4）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

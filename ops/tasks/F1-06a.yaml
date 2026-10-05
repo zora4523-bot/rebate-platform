@@ -1,0 +1,29 @@
+id: F1-06a
+repo: rebate-platform
+title: 迁移：后台账号基线表——admin_users（TOTP 密文与绑定时间、验证手机号三列）、admin_permissions（唯一 app_id + admin_id + permission_key）、audit_logs（只插入）；补 union_accounts.auth_renewed_by 外键（04 §3.2）
+type: migration
+# 草稿 2026-10-05。谁首建这三张表的选择与理由见 B1-19a 注释「选择二」：写者 admin（02 §4.1），宿主 05 F1-06；第一个使用者是 B1-19（05 B1-19 行：
+# F1-06 可用前由种子脚本 / 命令行执行，超管 TOTP 二次验证、写同一审计表），所以排在 B1-19a 之后、B1-19 实现之前。
+# 依据：04 §3.2 admin_users / admin_permissions / audit_logs 行（新版字段：totp_secret_cipher 加密、totp_bound_at 为空即未绑定、verify_phone_cipher /
+# verify_phone_hmac / verify_phone_set_at）；BR-ID-34（含细则「首次绑定身份验证器」）、BR-ID-33、BR-ID-30（audit_logs ≥3 年、确认前不删），由编排者摘入任务书第 2 节。
+# 账号名唯一约束：停用的账号名能否再用负责人没答（差异清单第五节第 5 题），按最保守写——全表唯一、停用后不释放；以后放宽只换索引，不自选。
+# 密码哈希列 04 只写「账号」，列名代理自定（不存明文）；超管不写 admin_permissions（ADD-04），is_super 不加触发器；权限点取值不写 CHECK
+# （取值见 contracts/enums/admin.yaml，以后加权限点不改表）。
+# audit_logs 只插入：不授 UPDATE / DELETE，加禁止 UPDATE / DELETE 触发器；不分区（ADR-0001 §4.2 第 5 项的分区表清单里没有它），
+# 0011 的 drop_expired_month_partitions 已把 audit_logs 列为不删。before / after 存 jsonb，敏感字段由写入方脱敏（BR-ID-33），迁移头注释写明。
+# 同迁移给 B1-19a 建的 union_accounts.auth_renewed_by 补外键到 admin_users（禁止级联）。
+# 分工与两段式同 B1-19a；迁移全局串行，排在 B1-19a 之后。test_paths：test/spec/db/admin/**。
+refs: []
+refs_hash: {}
+deps: [B1-19a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/admin/**'
+status: todo
+pr: null

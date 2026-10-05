@@ -1,0 +1,30 @@
+id: F1-06b
+repo: rebate-platform
+title: admin 模块首建：审计写入端口（platform 定义、admin 实现，只插入 audit_logs）与 TOTP 校验原语（供 B1-19 种子脚本 / 命令行的超管二次验证）
+type: impl
+# 草稿 2026-10-05。为什么现在要：B1-19（F1-06 可用前由命令行执行、超管 TOTP 二次验证并写审计）、B1-03i（申诉提交写审计，BR-ID-36）、
+# B1-03j（冻结到期恢复写审计）都要写 audit_logs，而写者只能是 admin（02 §4.1）。
+# 依赖方向：02 §4.1 里 admin 依赖全部模块，risk、union 的依赖为「—」；它们直接 import admin/index.ts 会成环（.dependency-cruiser.cjs 的 no-circular）。
+# 本任务在 platform 定义审计端口（actor、action、target、before、after、ip、at；at 只取注入的 Clock），admin 实现、app.module 装配，
+# 业务模块只依赖 platform 的端口（编排者 2026-10-05 裁定 §5 第 2 条接受）；不改 02 §4.1 的表归属。
+# TOTP：RFC 6238 校验原语（密钥经 platform/crypto 解密，时间取 Clock；时间窗与同一动态码防重放的取法代理自定并写进说明），供命令行与以后 F1-06 登录复用。
+# 不做：后台登录、首次绑定、权限守卫、step-up 令牌、/admin/v1 路由（都归 F1-06 其余部分）。
+# 开工前在 ops/risk-map.yaml 登记 apps/api/src/modules/admin/**（保护路径第三类，要负责人标签；11 §1.1 没把 admin 列进 RV1 行，按默认 RV2）。
+# platform 路径为 RV2，本任务整体按 RV2：两家评审、容器验证、证据文件。依据：04 §3.2 audit_logs 行、BR-ID-34、BR-ID-30，由编排者摘入任务书第 2 节。
+# test_paths：test/spec/admin/audit/**、test/spec/admin/totp/**（task-file.ts 还不认该字段；同 B1-02c 注释的做法）。
+refs: []
+refs_hash: {}
+deps: [F1-06a]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/modules/platform/audit/**'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/app.module.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/**'
+status: todo
+pr: null
