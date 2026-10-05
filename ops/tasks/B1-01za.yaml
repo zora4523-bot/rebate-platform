@@ -11,7 +11,7 @@ type: impl
 # contracts/error-codes.yaml 的 20001、50001，ADR-0001 §4.2（请求校验），由编排者摘入任务书第 2 节。bootstrap.ts 的在途任务 B1-01r 已合并（#82）；与 B1-01y（bootstrap、platform）、B1-03b 相交，串行。platform 路径 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-02c]
+deps: [B1-02c, CT-01d]
 paths:
   - 'apps/api/src/modules/platform/http/**'
   - 'apps/api/src/modules/platform/validation/**'
@@ -25,5 +25,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/errors/**'
-status: todo
-pr: null
+status: done
+pr: 133

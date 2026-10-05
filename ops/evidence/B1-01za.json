@@ -1,0 +1,85 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (platform/http). One global error filter: request-body errors (FST_ERR_CTP_*) answer 20001 with data.fields=[body] and keep Fastify's 400 / 413 / 415 (413 / 415 declared by CT-01d http_also); validation errors 20001 unchanged; unknown errors incl. guards and response serialization answer 50001 and log unhandled_error (trace_id, error_class, stack, no body); business HttpException passes through; IdempotencyError outcome_unknown still drops the connection. PlatformFastifyAdapter keeps FST_ERR_CTP codes in mapException. B1-02c's ServerErrorInterceptor removed (device registration 500 still 50001). Rule tests by Codex (spec_commit), red confirmed in the container on the spec commit.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent: round 1 pass with four S3 (comment on 413 / 415, known exceptions, test for an error after the reply was sent adopted; Fastify frameworkErrors paths recorded as a follow-up task); round 2 pass on the increment with three S3 (comment and test-robustness wording) deferred to that follow-up task"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1: error-codes 20001 listed only HTTP 400 while 413 / 415 are returned) resolved by contract task CT-01d (http_also); round 2 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 fail (S1: unsupported Content-Type must stay HTTP 415 per the frozen B1-01r tracing test; log convention made explicit; soft JSON parse in the kit; stale comments; business error example; non-Error object with statusCode), round 2 pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "task": "B1-01za",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "731e3eec582b151e0a367e4f11fd2e1fdb06e307",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "e04884ffe5d50cc4e530342daa5c227e5f3f151f",
+      "tree": "7eeb7932439bcb27c4cd334687062b23e20d9da2",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T22:16:52Z",
+      "finished_at": "2026-10-05T22:18:32Z"
+    },
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "731e3eec582b151e0a367e4f11fd2e1fdb06e307",
+      "tree": "580f5749fd6e0ea1ff64bc4a539f2c4e47de03d3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T22:16:47Z",
+      "finished_at": "2026-10-05T22:16:51Z",
+      "red_tests": [
+        "test/spec/platform/errors/global-errors.test.ts > [AC-B1-01za#1][AC-B1-01za#7] 损坏 JSON 返回 body 字段错误且不泄露片段，正常契约校验保留字段名",
+        "test/spec/platform/errors/global-errors.test.ts > [AC-B1-01za#2] application/json 空体返回 400 / 20001 与 fields=[body]",
+        "test/spec/platform/errors/global-errors.test.ts > [AC-B1-01za#3] 不支持的 Content-Type 返回 415 + 契约错误体 20001、fields=[body]",
+        "test/spec/platform/errors/global-errors.test.ts > [AC-B1-01za#4][AC-B1-01za#5][AC-B1-01za#7][AC-B1-01za#8] guard 与控制器统一分类未知异常，保留业务异常及 outcome_unknown",
+        "test/spec/platform/errors/global-errors.test.ts > [AC-B1-01za#6] bigint 响应序列化失败及时返回 500 / 50001，随后仍可处理请求"
+      ],
+      "expected": ["test/spec/platform/errors/global-errors.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f310baf442f349adc79c38510664e7fb67a1ecb2946851aa2013f726433d2f11"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "4790b2cc855f60ad0551c5cecf73ed8b570d23d2",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  }
+}
