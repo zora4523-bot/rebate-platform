@@ -5,7 +5,9 @@ type: contract
 # 2026-10-05 入账。依据：couli-runs/CT-plan/spec-delta-826f86e-492b9ef.md 第一节第 3 件、第三节（规划 1e4569c）；
 # 编排决定 D-5（契约线）已定拆出本任务。B1-02c 的登录主链要用这两个接口。
 # 两个接口都标 x-implementation: planned。版本守卫与受限会话的取值 conformance.ts 已预先登记
-# （logout：版本守卫 false、受限会话 always；consents：两项都 conditional），按表标注，不改 conformance.ts。
+# （logout：版本守卫 false、受限会话 always；consents：两项都 conditional），按表标注，不改这两张表的现有取值；
+# 新增的枚举字段按 contracts/README.md 规则同步登记 ENUM_BINDINGS / ENUM_SUBSETS（consents 的 type 不含
+# labor_agreement，登记为 consent_type 的子集；channel 同理）。
 # consents 的 type、channel 取值见 BR-ID-12 细则（含 login_merge）；labor_agreement 只由 §6.1 的签署接口写入，不走本接口。
 # 申诉两个接口（POST / GET /v1/me/appeals）不在本任务，B1-03 开工前另开后缀，免得拖慢 B1-02c。
 refs: []
