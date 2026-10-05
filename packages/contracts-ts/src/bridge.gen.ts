@@ -879,7 +879,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "BasicMode": {
     "kind": "native",
@@ -894,7 +896,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Login": {
     "kind": "native",
@@ -909,7 +913,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "BindPhone": {
     "kind": "native",
@@ -924,7 +930,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": "phone"
   },
   "Home": {
     "kind": "native",
@@ -941,7 +949,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Search": {
     "kind": "native",
@@ -958,7 +968,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "ProductDetail": {
     "kind": "native",
@@ -975,7 +987,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "AuthSheet": {
     "kind": "native",
@@ -990,7 +1004,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "JumpTip": {
     "kind": "native",
@@ -1005,7 +1021,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "AgentChat": {
     "kind": "native",
@@ -1021,7 +1039,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "AgentConsent": {
     "kind": "native",
@@ -1036,7 +1056,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "OrderList": {
     "kind": "native",
@@ -1052,7 +1074,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": true,
+    "agent_guide_account": null
   },
   "OrderDetail": {
     "kind": "native",
@@ -1068,7 +1092,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "FindOrder": {
     "kind": "h5",
@@ -1084,7 +1110,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Me": {
     "kind": "native",
@@ -1100,7 +1128,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Wallet": {
     "kind": "native",
@@ -1116,7 +1146,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": true,
+    "agent_guide_account": null
   },
   "Withdraw": {
     "kind": "native",
@@ -1132,7 +1164,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": "fund"
   },
   "WithdrawRecords": {
     "kind": "native",
@@ -1148,7 +1182,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": true,
+    "agent_guide_account": null
   },
   "Ledger": {
     "kind": "h5",
@@ -1164,7 +1200,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "RealName": {
     "kind": "native",
@@ -1180,7 +1218,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": "fund"
   },
   "PayoutAccount": {
     "kind": "native",
@@ -1196,7 +1236,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": "fund"
   },
   "LaborAgreement": {
     "kind": "native",
@@ -1211,7 +1253,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": "fund"
   },
   "Settings": {
     "kind": "native",
@@ -1227,7 +1271,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "PrivacyCenter": {
     "kind": "native",
@@ -1243,7 +1289,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "DeleteAccount": {
     "kind": "native",
@@ -1259,7 +1307,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": "delete"
   },
   "RiskNotice": {
     "kind": "native",
@@ -1275,7 +1325,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Appeal": {
     "kind": "native",
@@ -1291,7 +1343,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "ForceUpdate": {
     "kind": "native",
@@ -1306,7 +1360,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "HomePreview": {
     "kind": "native",
@@ -1322,7 +1378,9 @@ export const routes = {
     "entry": [
       "in_app",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "About": {
     "kind": "native",
@@ -1338,7 +1396,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Messages": {
     "kind": "h5",
@@ -1354,7 +1414,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": true,
+    "agent_guide_account": null
   },
   "InviteShare": {
     "kind": "h5",
@@ -1370,7 +1432,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": true,
+    "agent_guide_account": null
   },
   "Rules": {
     "kind": "h5",
@@ -1387,7 +1451,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Help": {
     "kind": "h5",
@@ -1404,7 +1470,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Notice": {
     "kind": "h5",
@@ -1421,7 +1489,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Agreement": {
     "kind": "h5",
@@ -1438,7 +1508,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "WebPage": {
     "kind": "native",
@@ -1454,7 +1526,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "ExternalPage": {
     "kind": "native",
@@ -1471,7 +1545,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "InvitedFriends": {
     "kind": "native",
@@ -1486,7 +1562,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "LevelUpgrade": {
     "kind": "native",
@@ -1501,7 +1579,9 @@ export const routes = {
     "debug_only": false,
     "entry": [
       "in_app"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "LinkLanding": {
     "kind": "native",
@@ -1518,7 +1598,9 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "Earnings": {
     "kind": "h5",
@@ -1534,7 +1616,9 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
   },
   "AuthManage": {
     "kind": "native",
@@ -1550,12 +1634,16 @@ export const routes = {
     "entry": [
       "in_app",
       "push"
-    ]
+    ],
+    "agent_guide": true,
+    "agent_guide_account": null
   }
 } as const;
 export type RouteName = keyof typeof routes;
 /** Routes kept in release builds (debug_only routes are dropped there, TECH-11). */
 export const releaseRouteNames = ["Launch","BasicMode","Login","BindPhone","Home","Search","ProductDetail","AuthSheet","JumpTip","AgentChat","AgentConsent","OrderList","OrderDetail","FindOrder","Me","Wallet","Withdraw","WithdrawRecords","Ledger","RealName","PayoutAccount","LaborAgreement","Settings","PrivacyCenter","DeleteAccount","RiskNotice","Appeal","ForceUpdate","About","Messages","InviteShare","Rules","Help","Notice","Agreement","WebPage","ExternalPage","InvitedFriends","LevelUpgrade","LinkLanding","Earnings","AuthManage"] as const;
+/** Routes an Agent page_guide card or earnings_summary button may open (agent_guide, 04 §10, D31); the client checks its bundled list (03 §7.4). */
+export const agentGuideRouteNames = ["OrderList","Wallet","WithdrawRecords","Messages","InviteShare","AuthManage"] as const;
 export interface RouteParams {
   Launch: components['schemas']["RouteLaunchParams"];
   BasicMode: components['schemas']["RouteBasicModeParams"];

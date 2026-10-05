@@ -46,6 +46,8 @@ enums:
       handoff: 转人工
       clarify: 澄清
       out_of_scope: 范围外
+      page_guide: 页面引导（不是工具，输出带 guide_route；BR-AI-01 细则「页面引导」，D31）
+      earnings_query: 查收益（由 get_my_earnings 工具名推出；BR-AI-01 细则「收益查询」，D32）
   agent_card_type:
     source: 规划/04 §8.3；08 §13.2
     description: Agent 卡片类型；watch_confirm、watch_list 为 P1，MVP 不注册，不列入
@@ -58,6 +60,17 @@ enums:
       auth_required: 需要授权
       notice: 提示
       rule_ref: 规则引用
+      page_guide: 页面引导（D31）
+      earnings_summary: 收益摘要（只读，D32）
+  page_guide_reject_reason:
+    source: 规划/04 §3.2
+    description: agent_runs.page_guide_reject_reason，页面引导意图不出卡的原因（BR-AI-01 细则「页面引导」）
+    values:
+      not_allowed: 不在 agent.page_guide.routes 内（含其他路由名、URL、空值）
+      extra_fields: 带了 agent_intent、guide_route 以外的字段
+      disabled: 开关 agent.page_guide.enabled 为 off
+      untrusted_input: 本条消息含不可信文本或链接
+      params_requested: 用户要求带参数打开
   agent_finish_reason:
     source: 规划/04 §8.2；BR-AI-01、BR-AI-14、BR-AI-16、BR-AI-18
     description: SSE done 事件的 finish_reason

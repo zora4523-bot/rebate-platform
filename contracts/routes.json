@@ -1,5 +1,5 @@
 {
-  "$comment": "Route table (CT-03): route name → native page or H5 path (规划/01 §4.2, 03 §4.4). Every jump is {route, params} (拍板第二批 TECH-04); external links use {route: ExternalPage, params: {url}}. since is per platform (拍板第二批 TECH-07): null = not shipped on that platform yet; an unknown route or a since above the app version opens the upgrade page. h5_path is relative to config.h5_base_url. InvitedFriends and LevelUpgrade are P1 with since null (the bridge answers unsupported); CustomPage, MyWatches and WatchLanding are added when they ship. debug_only routes open only in debug / staging builds (TECH-11). entry lists where a route may be opened from (route_entry: in_app, push, deeplink; values only from 规划/08 BR-ID-10 细则「路由入口矩阵」; InvitedFriends and LevelUpgrade are not in the matrix and are in_app only, orchestrator decision D-13). push means a route the server returned for a message id; any route carried directly in launch parameters is checked as deeplink.",
+  "$comment": "Route table (CT-03): route name → native page or H5 path (规划/01 §4.2, 03 §4.4). Every jump is {route, params} (拍板第二批 TECH-04); external links use {route: ExternalPage, params: {url}}. since is per platform (拍板第二批 TECH-07): null = not shipped on that platform yet; an unknown route or a since above the app version opens the upgrade page. h5_path is relative to config.h5_base_url. InvitedFriends and LevelUpgrade are P1 with since null (the bridge answers unsupported); CustomPage, MyWatches and WatchLanding are added when they ship. debug_only routes open only in debug / staging builds (TECH-11). entry lists where a route may be opened from (route_entry: in_app, push, deeplink; values only from 规划/08 BR-ID-10 细则「路由入口矩阵」; InvitedFriends and LevelUpgrade are not in the matrix and are in_app only, orchestrator decision D-13). push means a route the server returned for a message id; any route carried directly in launch parameters is checked as deeplink. agent_guide (boolean, default false; 规划/04 §10, D31): true only on the candidate routes of 规划/08 BR-AI-01 细则「页面引导」 (Wallet, WithdrawRecords, AuthManage, OrderList, InviteShare, Messages); an Agent page_guide card and the two earnings_summary buttons may open only these, and entry stays as in BR-ID-10. agent_guide_account (phone | delete | fund) marks the account-security routes the Agent never guides to and answers with an agent.guide.account.* text instead (BR-TEXT-22); such routes are never agent_guide.",
   "version": 1,
   "routes": {
     "Launch": {
@@ -72,7 +72,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app"]
+      "entry": ["in_app"],
+      "agent_guide_account": "phone"
     },
     "Home": {
       "page": "首页",
@@ -300,7 +301,8 @@
         },
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide": true
     },
     "OrderDetail": {
       "page": "订单详情",
@@ -378,7 +380,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide": true
     },
     "Withdraw": {
       "page": "提现申请（不接受外部预填：传入参数由路由层丢弃后照常打开，并记 route_params_dropped）",
@@ -396,7 +399,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide_account": "fund"
     },
     "WithdrawRecords": {
       "page": "提现记录",
@@ -420,7 +424,8 @@
         },
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide": true
     },
     "Ledger": {
       "page": "收益明细与余额流水",
@@ -457,7 +462,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide_account": "fund"
     },
     "PayoutAccount": {
       "page": "收款账号（不接受外部预填：传入参数由路由层丢弃后照常打开，并记 route_params_dropped）",
@@ -475,7 +481,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide_account": "fund"
     },
     "LaborAgreement": {
       "page": "劳务协议签署（不接受外部预填：传入参数由路由层丢弃后照常打开，并记 route_params_dropped）",
@@ -493,7 +500,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app"]
+      "entry": ["in_app"],
+      "agent_guide_account": "fund"
     },
     "Settings": {
       "page": "设置（游客与基本模式可达）",
@@ -547,7 +555,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide_account": "delete"
     },
     "RiskNotice": {
       "page": "封禁与冻结说明",
@@ -666,7 +675,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide": true
     },
     "InviteShare": {
       "page": "邀请好友",
@@ -685,7 +695,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide": true
     },
     "Rules": {
       "page": "返利规则",
@@ -947,7 +958,8 @@
         "properties": {},
         "required": []
       },
-      "entry": ["in_app", "push"]
+      "entry": ["in_app", "push"],
+      "agent_guide": true
     }
   }
 }

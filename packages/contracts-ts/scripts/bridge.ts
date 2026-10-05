@@ -36,6 +36,10 @@ export type RouteDef = {
   phase: string;
   debug_only: boolean;
   entry: string[];
+  /** Agent page_guide cards and earnings_summary buttons may open this route (04 §10, D31). */
+  agent_guide: boolean;
+  /** Account-security route the Agent answers with agent.guide.account.<kind> text, or null. */
+  agent_guide_account: AgentGuideAccount | null;
   params: Obj;
 };
 export type AppDef = {
@@ -118,6 +122,10 @@ const METHOD_KEYS = [
 ];
 // The three share pages whose paths share.open lets through on share_domains (04 §9; BR-ATTR-29 细则).
 const SHARE_PAGE_KEYS = ['product_share', 'invite_landing', 'download_guide'] as const;
+// Account-security kinds of routes.json agent_guide_account (BR-AI-01 细则「页面引导」; BR-TEXT-22
+// agent.guide.account.*): phone change or binding, account deletion, funds and real name.
+const AGENT_GUIDE_ACCOUNTS = ['phone', 'delete', 'fund'] as const;
+export type AgentGuideAccount = (typeof AGENT_GUIDE_ACCOUNTS)[number];
 
 class BridgeError extends Error {}
 
@@ -444,6 +452,24 @@ export function loadBridgeCatalog(
     if (typeof auth !== 'string' || !authLevels.includes(auth)) {
       fail(where, `auth must be one of ${authLevels.join(', ')}`);
     }
+    const agentGuide = def['agent_guide'] ?? false;
+    if (typeof agentGuide !== 'boolean') fail(where, 'agent_guide must be a boolean');
+    const agentGuideAccount = def['agent_guide_account'] ?? null;
+    if (
+      agentGuideAccount !== null &&
+      !(AGENT_GUIDE_ACCOUNTS as readonly unknown[]).includes(agentGuideAccount)
+    ) {
+      fail(where, `agent_guide_account must be one of ${AGENT_GUIDE_ACCOUNTS.join(', ')}`);
+    }
+    if (agentGuide && agentGuideAccount !== null) {
+      fail(where, 'an account-security route (agent_guide_account) is never agent_guide');
+    }
+    if (agentGuide && !(entry as string[]).includes('in_app')) {
+      fail(where, 'agent_guide routes are opened by a card tap, so entry must include in_app');
+    }
+    if (agentGuideAccount !== null && (entry as string[]).includes('deeplink')) {
+      fail(where, 'account-security routes never declare deeplink (BR-ID-10 细则)');
+    }
     routes.push({
       name,
       kind,
@@ -453,6 +479,8 @@ export function loadBridgeCatalog(
       phase: typeof def['phase'] === 'string' ? def['phase'] : fail(where, 'phase missing'),
       debug_only: debugOnly,
       entry: entry as string[],
+      agent_guide: agentGuide,
+      agent_guide_account: agentGuideAccount as AgentGuideAccount | null,
       params: closedObjectSchema(`${where} params`, def['params']),
     });
   }
@@ -712,6 +740,8 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
         since: r.since,
         debug_only: r.debug_only,
         entry: r.entry,
+        agent_guide: r.agent_guide,
+        agent_guide_account: r.agent_guide_account,
       },
     ]),
   );
@@ -720,6 +750,12 @@ export async function renderBridge(cat: BridgeCatalog): Promise<string> {
   out.push('/** Routes kept in release builds (debug_only routes are dropped there, TECH-11). */');
   out.push(
     `export const releaseRouteNames = ${JSON.stringify(cat.routes.filter((r) => !r.debug_only).map((r) => r.name))} as const;`,
+  );
+  out.push(
+    '/** Routes an Agent page_guide card or earnings_summary button may open (agent_guide, 04 §10, D31); the client checks its bundled list (03 §7.4). */',
+  );
+  out.push(
+    `export const agentGuideRouteNames = ${JSON.stringify(cat.routes.filter((r) => r.agent_guide).map((r) => r.name))} as const;`,
   );
   out.push('export interface RouteParams {');
   for (const r of cat.routes) out.push(`  ${r.name}: ${s(`Route${r.name}Params`)};`);

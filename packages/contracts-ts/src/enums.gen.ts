@@ -777,6 +777,8 @@ export const agent_intent = [
   "handoff", // 转人工
   "clarify", // 澄清
   "out_of_scope", // 范围外
+  "page_guide", // 页面引导（不是工具，输出带 guide_route；BR-AI-01 细则「页面引导」，D31）
+  "earnings_query", // 查收益（由 get_my_earnings 工具名推出；BR-AI-01 细则「收益查询」，D32）
 ] as const;
 export type AgentIntent = (typeof agent_intent)[number];
 
@@ -793,8 +795,23 @@ export const agent_card_type = [
   "auth_required", // 需要授权
   "notice", // 提示
   "rule_ref", // 规则引用
+  "page_guide", // 页面引导（D31）
+  "earnings_summary", // 收益摘要（只读，D32）
 ] as const;
 export type AgentCardType = (typeof agent_card_type)[number];
+
+/**
+ * agent_runs.page_guide_reject_reason，页面引导意图不出卡的原因（BR-AI-01 细则「页面引导」）
+ * Source: 规划/04 §3.2 (contracts/enums/ops.yaml).
+ */
+export const page_guide_reject_reason = [
+  "not_allowed", // 不在 agent.page_guide.routes 内（含其他路由名、URL、空值）
+  "extra_fields", // 带了 agent_intent、guide_route 以外的字段
+  "disabled", // 开关 agent.page_guide.enabled 为 off
+  "untrusted_input", // 本条消息含不可信文本或链接
+  "params_requested", // 用户要求带参数打开
+] as const;
+export type PageGuideRejectReason = (typeof page_guide_reject_reason)[number];
 
 /**
  * SSE done 事件的 finish_reason
@@ -1418,6 +1435,7 @@ export const enums = {
   user_level,
   agent_intent,
   agent_card_type,
+  page_guide_reject_reason,
   agent_finish_reason,
   watch_status,
   watch_event_status,
