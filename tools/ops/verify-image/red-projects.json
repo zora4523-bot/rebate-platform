@@ -1,0 +1,29 @@
+{
+  "//": "Where each rule-test file of the isolated red run executes (tools/ops/verify-container.sh --red; Codex review CR2-04). Mirrors the include rules of the Vitest configs named here; tools/ops/red-plan.test.ts fails when a config and this table disagree. A file no project takes has no execution entry and fails the red run. Trusted file (protected path, class 3).",
+  "projects": [
+    {
+      "name": "spec-unit",
+      "dir": "test",
+      "config": "vitest.config.ts",
+      "include": ["properties/**/*.test.ts", "spec/**/*.test.ts"],
+      "exclude": ["**/*.int.test.ts"],
+      "database": false
+    },
+    {
+      "name": "spec-int",
+      "dir": "test",
+      "config": "vitest.integration.config.ts",
+      "include": ["spec/**/*.int.test.ts", "acceptance/**/*.test.ts", "smoke/**/*.int.test.ts"],
+      "exclude": [],
+      "database": true
+    },
+    {
+      "name": "testing-unit",
+      "dir": "packages/testing",
+      "config": "vitest.config.ts",
+      "include": ["src/**/*.test.ts"],
+      "exclude": ["**/*.int.test.ts"],
+      "database": false
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { matchesAny } from '../lib/glob.ts';
+import { loadLegacyTasks, needsTestPaths } from '../lib/legacy-tasks.ts';
 import { repoRoot } from '../lib/paths.ts';
 import { listTaskIds, parseTaskFile } from '../lib/task-file.ts';
 import type { TaskFile } from '../lib/task-file.ts';
@@ -159,7 +160,13 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   }
 
   // test_paths (2026-10-05): only the rule-test author's assets, i.e. inside class 1 of the
-  // protected paths, and only for a task that has a rule-test author.
+  // protected paths, and only for a task that has a rule-test author. A task with a rule-test
+  // author needs them, unless its ledger existed at the switch baseline (CR2-02).
+  if (task.test_paths.length === 0 && needsTestPaths(task, loadLegacyTasks(root))) {
+    problems.push(
+      `test_paths: required for a task with a rule-test author (tester: ${task.tester}); only the ledgers listed in tools/guard/legacy-tasks.json may omit it`,
+    );
+  }
   if (task.test_paths.length > 0) {
     if (task.tester === 'none') {
       problems.push(

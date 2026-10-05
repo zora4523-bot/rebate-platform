@@ -49,12 +49,15 @@ type AssertionResult = {
   title?: unknown;
   status?: unknown;
   failureMessages?: unknown;
+  /** Failures with their cause chains (red reporter only). */
+  failures?: unknown;
 };
 type FileResult = {
   name?: unknown;
   status?: unknown;
   message?: unknown;
   assertionResults?: unknown;
+  failures?: unknown;
 };
 
 export type RedProblem = { file: string; test: string | null; reason: string };
@@ -80,7 +83,7 @@ const WRONG_RED: [RegExp, string][] = [
   ],
   [/TEST_PG_ADMIN_URL/, 'test database not configured'],
   [/migrat(?:e|ion)[^\n]*(?:fail|error)|(?:fail|error)[^\n]*migrat(?:e|ion)/i, 'migration failed'],
-  [/(?:fixture|seed)[^\n]*(?:fail|error)/i, 'fixture failed'],
+  [/\b(?:fixture|seeding)\b[^\n]*\b(?:failed|error)\b/i, 'fixture failed'],
   [/Hook timed out|beforeAll|beforeEach|globalSetup|setupFiles/, 'test setup failed'],
   [/Test timed out/, 'timed out'],
   [
@@ -96,26 +99,78 @@ const WRONG_RED: [RegExp, string][] = [
 /** What counts: an assertion, the skeleton's NotImplemented. */
 const RIGHT_CAUSE = /AssertionError|\bexpected\b[\s\S]*\bto\b|\bNotImplemented\b/;
 const PROPERTY = /Property failed after/;
+const RETURNED_FALSE = /Property failed by returning false/;
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** Why a failure message is not a valid red, or null when it is one. */
+export type Cause = { name: string; message: string };
+
+/**
+ * Why a failure is not a valid red, from its chain of causes (the red reporter keeps them:
+ * tools/ops/verify-image/red-reporter.mjs), or null when it is one. The innermost cause decides:
+ * an AssertionError, or the NotImplemented a skeleton throws. A property that merely returned
+ * false shows no assertion and is refused; so is anything else (fail-closed, CR2-03).
+ */
+export function causeVerdict(causes: readonly Cause[]): string | null {
+  const root = causes[causes.length - 1];
+  if (root === undefined) return 'red for an unknown reason (the report carries no failure detail)';
+  if (root.name === 'AssertionError') return null;
+  const all = causes.map((c) => `${c.name}: ${c.message}`).join('\n');
+  for (const [pattern, label] of WRONG_RED) {
+    if (pattern.test(all)) return `red for the wrong reason (${label})`;
+  }
+  if (RETURNED_FALSE.test(root.message)) {
+    return 'red for an unrecognised reason (the property returned false: assert with expect inside properties)';
+  }
+  if (/\bNotImplemented\b/.test(root.message) || /\bNotImplemented\b/.test(root.name)) return null;
+  return `red for an unrecognised reason (${root.name}: not an assertion or NotImplemented)`;
+}
+
+/**
+ * Why a failure message (a plain Vitest JSON report, without causes) is not a valid red, or null
+ * when it is one. A fast-check failure counts only when the message itself shows an assertion or
+ * NotImplemented under "Got error"; Vitest's own JSON reporter drops the cause, so a property
+ * failure there is refused (CR2-03).
+ */
 export function wrongRedReason(message: string): string | null {
   for (const [pattern, label] of WRONG_RED) {
     if (pattern.test(message)) return `red for the wrong reason (${label})`;
   }
   if (PROPERTY.test(message)) {
-    // A counterexample counts when the property returned false (no error) or its error is an
-    // assertion / NotImplemented; the wrapper text alone proves nothing.
     const at = message.search(/Got (?:an )?error/);
-    const cause = at < 0 ? undefined : message.slice(at);
-    if (cause === undefined || RIGHT_CAUSE.test(cause)) return null;
-    return 'red for an unrecognised reason (the counterexample is not an assertion failure)';
+    const cause = at < 0 ? '' : message.slice(at);
+    if (cause !== '' && RIGHT_CAUSE.test(cause)) return null;
+    return 'red for an unrecognised reason (the property failure shows no underlying assertion: run it through verify-container.sh --red)';
   }
   if (RIGHT_CAUSE.test(message)) return null;
   return 'red for an unrecognised reason (not an assertion, a counterexample or NotImplemented)';
+}
+
+type Failure = { causes?: unknown };
+
+function causesOf(failure: Failure): Cause[] {
+  return Array.isArray(failure.causes)
+    ? failure.causes.map((c) => {
+        const r = (typeof c === 'object' && c !== null ? c : {}) as Record<string, unknown>;
+        return { name: text(r['name']), message: text(r['message']) };
+      })
+    : [];
+}
+
+/** Verdict of one failed test: structured causes when the report has them, else the messages. */
+function testVerdict(failures: unknown, messages: string[]): string | null {
+  if (Array.isArray(failures)) {
+    if (failures.length === 0)
+      return 'red for an unknown reason (the report carries no failure detail)';
+    for (const f of failures as Failure[]) {
+      const why = causeVerdict(causesOf(f));
+      if (why !== null) return why;
+    }
+    return null;
+  }
+  return wrongRedReason(messages.join('\n'));
 }
 
 /**
@@ -142,6 +197,13 @@ export function checkRedReports(
       problems.push({ file: '', test: null, reason: 'not a Vitest JSON report' });
       continue;
     }
+    // Errors outside any test (an unhandled rejection, a crashed worker) taint the whole run.
+    const unhandled = (report as { unhandledErrors?: unknown }).unhandledErrors;
+    if (Array.isArray(unhandled) && unhandled.length > 0) {
+      const why =
+        causeVerdict(causesOf(unhandled[0] as Failure)) ?? 'an assertion outside any test';
+      problems.push({ file: '', test: null, reason: `the run had unhandled errors: ${why}` });
+    }
     for (const entry of files) {
       const abs = text(entry.name);
       seen.set(abs.startsWith(prefix) ? abs.slice(prefix.length) : abs, entry);
@@ -163,21 +225,28 @@ export function checkRedReports(
     const tests = Array.isArray(entry.assertionResults)
       ? (entry.assertionResults as AssertionResult[])
       : [];
+    // File-level errors (an import that failed, a crashed beforeAll / afterAll) are never a valid
+    // red: they taint every test of the file.
+    const fileFailures = Array.isArray(entry.failures) ? (entry.failures as Failure[]) : [];
+    const fileWhy = text(entry.message);
+    const fileWrong =
+      fileFailures.length > 0
+        ? (causeVerdict(causesOf(fileFailures[0] as Failure)) ??
+          'an error outside the tests of this file')
+        : fileWhy === ''
+          ? null
+          : (wrongRedReason(fileWhy) ?? 'an error outside the tests of this file');
     if (tests.length === 0) {
-      const why = text(entry.message);
       problems.push({
         file,
         test: null,
         reason:
-          why === ''
+          fileWrong === null
             ? 'no test ran in this rule-test file'
-            : `the file did not load: ${wrongRedReason(why) ?? 'failed before any test ran'}`,
+            : `the file did not load: ${fileWrong}`,
       });
       continue;
     }
-    // A file-level error next to failing tests (a failed afterAll, a crashed setup) taints them.
-    const fileWhy = text(entry.message);
-    const fileWrong = fileWhy === '' ? null : wrongRedReason(fileWhy);
     for (const t of tests) {
       const name = text(t.fullName) || text(t.title);
       const status = text(t.status);
@@ -194,7 +263,7 @@ export function checkRedReports(
         continue;
       }
       const messages = Array.isArray(t.failureMessages) ? t.failureMessages.map(text) : [];
-      const why = wrongRedReason(messages.join('\n')) ?? fileWrong;
+      const why = fileWrong ?? testVerdict(t.failures, messages);
       if (why === null) red.push(`${file} > ${name}`);
       else problems.push({ file, test: name, reason: why });
     }

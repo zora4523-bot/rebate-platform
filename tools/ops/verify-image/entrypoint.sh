@@ -6,12 +6,13 @@
 #   couli-verify-entrypoint verify   offline; copies /src to /work/repo, installs from the
 #                                    read-only store and runs `pnpm verify` under a time limit
 #                                    (VERIFY_SCRIPT=verify:fast: `pnpm run verify:fast` instead)
-#   couli-verify-entrypoint red      offline; copies /src, installs, then runs only the rule-test
-#                                    files named in RED_UNIT / RED_INT (newline separated,
-#                                    repository paths under test/) with the Vitest JSON reporter;
-#                                    reports go to /out/unit.json and /out/int.json. The tests are
-#                                    expected to fail (red): their exit code is recorded in
-#                                    /out/*.exit, not returned; tools/guard/red-check.ts judges.
+#   couli-verify-entrypoint red      offline; copies /src, installs, then runs the groups of
+#                                    RED_PLAN (JSON from tools/ops/red-plan.ts: project dir,
+#                                    Vitest config, files) each with the trusted reporter
+#                                    /red/red-reporter.mjs (mounted read-only); reports go to
+#                                    /out/<project>.json. The tests are expected to fail (red):
+#                                    their exit code is recorded in /out/<project>.exit, not
+#                                    returned; tools/guard/red-check.ts judges.
 set -euo pipefail
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
@@ -68,25 +69,26 @@ case "${1:-}" in
     echo "[red] pnpm install --offline --frozen-lockfile"
     pnpm install --offline --frozen-lockfile --store-dir /store
     cd /work/repo/test
-    run_red() { # run_red <name> <newline-separated repo paths> [vitest args…]
-      local name="$1" list="$2" files=() f rc=0
-      shift 2
-      while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        case "$f" in
-          test/*) files+=("${f#test/}") ;;
-          *) echo "[red] not under test/, cannot run: $f" ;;
-        esac
-      done <<<"$list"
-      [ "${#files[@]}" -gt 0 ] || return 0
-      echo "[red] vitest run ${name}: ${files[*]}"
-      timeout --signal=TERM --kill-after=10 "$limit" pnpm exec vitest run "$@" \
-        --reporter=json --outputFile="/out/${name}.json" "${files[@]}" || rc=$?
+    [ -f /red/red-reporter.mjs ] || { echo "[red] /red/red-reporter.mjs is not mounted" >&2; exit 2; }
+    plan_lines="$(node -e '
+      const plan = JSON.parse(process.env.RED_PLAN ?? "");
+      const ok = (s) => typeof s === "string" && /^[A-Za-z0-9_.\/@-]+$/.test(s) && !s.includes("..");
+      for (const g of plan.groups) {
+        if (![g.name, g.dir, g.config, ...g.files].every(ok)) throw new Error("bad plan entry");
+        console.log([g.name, g.dir, g.config, ...g.files].join(" "));
+      }
+    ')" || { echo "[red] RED_PLAN is missing or invalid" >&2; exit 2; }
+    while read -r name dir config files; do
+      [ -n "$name" ] || continue
+      rc=0
+      echo "[red] ${name}: vitest run --config ${config} in ${dir}: ${files}"
+      # shellcheck disable=SC2086 # files: one word per path, validated above
+      (cd "/work/repo/$dir" && RED_REPORT_OUT="/out/${name}.json" timeout --signal=TERM \
+        --kill-after=10 "$limit" pnpm exec vitest run --config "$config" \
+        --reporter=/red/red-reporter.mjs $files) || rc=$?
       echo "$rc" >"/out/${name}.exit"
-      echo "[red] vitest ${name} exited ${rc} (red is expected)"
-    }
-    run_red unit "${RED_UNIT:-}"
-    run_red int "${RED_INT:-}" --config vitest.integration.config.ts
+      echo "[red] ${name} exited ${rc} (red is expected)"
+    done <<<"$plan_lines"
     ;;
   *)
     echo "usage: couli-verify-entrypoint fetch|verify|red" >&2

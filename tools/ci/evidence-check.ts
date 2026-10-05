@@ -3,7 +3,7 @@
 // and the verified tree is the tree being merged.
 //
 //   node tools/ci/evidence-check.ts --pr <dir> --base <sha> --head <sha> --head-ref <branch>
-//     [--pr-number <n>] [--ci-archive <dir>] [--json]
+//     [--pr-number <n>] [--json]
 //
 // Runs from the BASE copy of the repository (CI checks out `tools/ci` of the base branch, the
 // way guard-git does), with the PR checkout as data: the risk map and the protected-path list
@@ -22,18 +22,14 @@
 //              and `host` are refused as evidence. A container red run (`script: "red"`,
 //              tools/ops/verify-container.sh --red) must have passed red-check (exit 0), list its
 //              red tests and have verified the spec_commit tree.
-//              CI runs (`mode: ci`; 规划/11 §3.2, RO2-05, RO3-01, CR-03, CR-04): browser tests that
-//              can only run in CI for now; never instead of the container run. Every field is
-//              required: phase red|green, run_url, run_id, run_attempt 1, workflow, job, commit
-//              (full SHA), tree (= that commit's tree), report_sha256, spec_commit (= the
-//              evidence's). They are checked against the archived copy
-//              rebate-private/ci-evidence/<run_id>/ (run.json with run_id, head_sha,
-//              run_attempt, conclusion, workflow, job; a report file with that sha256); without
-//              a readable archive the record is refused. green: commit is the head or an ancestor
-//              and differs from it by this task's evidence file only (a new commit that only adds
-//              the evidence is fine; any other change needs a new run), conclusion success,
-//              skipped 0, exit code 0. red: the tested tree is the spec_commit tree, conclusion
-//              failure with a non-zero exit code, and red_tests lists the red tests.
+//              Red run (CR2-05): a task whose rule tests Codex writes (ledger tester: codex)
+//              and that is not a ledger of the switch baseline (tools/guard/legacy-tasks.json)
+//              needs a valid container red run: script red, exit 0 (red-check passed), on the
+//              spec_commit tree, its `expected` list covering every rule-test file the task
+//              added inside its test_paths (base..spec_commit), each with a red test.
+//              CI runs (`mode: ci`) are refused for now (CR2-06): the CI evidence archive
+//              (rebate-private/ci-evidence) is not connected, so nothing a CI record says can be
+//              checked against the run and its report.
 //              Owner waiver (owner decision 2026-10-02, ops/approvals.yaml id 12): on a branch
 //              that is not task/<id> (test-change and gate-change PRs), the evidence file is
 //              not required when the PR carries a valid owner approval label for the head (the
@@ -46,10 +42,14 @@
 // TODO(规划/11 §3.2): `run_attempt` > 1 on funds paths (不许重跑到绿) needs the Actions API and
 //   a remote — blocked on GitHub remote.
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { git, tryGit } from '../lib/git.ts';
+import type { Change } from '../lib/git.ts';
+import { loadLegacyTasks } from '../lib/legacy-tasks.ts';
+import { parseTaskFile } from '../lib/task-file.ts';
+import type { TaskFile } from '../lib/task-file.ts';
+import { expectedRuleTests } from '../guard/lib/red-check.ts';
 import { matchesAny } from '../lib/glob.ts';
 import { loadProtected, splitFragment } from '../guard/lib/protected.ts';
 import type { ProtectedConfig } from '../guard/lib/protected.ts';
@@ -95,8 +95,6 @@ export type EvidenceInput = {
   trusted: string;
   /** Owner approval of the PR for `head`, when it was looked up (see ownerApprovalFromEnv). */
   approval?: OwnerApproval | null;
-  /** rebate-private/ci-evidence; null or absent: CI records in the evidence are refused. */
-  ciArchive?: string | null;
 };
 
 const SHA = /^[0-9a-f]{40,64}$/;
@@ -194,151 +192,20 @@ function class1Hits(prDir: string, from: string, to: string, cfg: ProtectedConfi
     .map((c) => `${c.path} (${c.status})`);
 }
 
-export type CiContext = {
-  prDir: string;
-  head: string;
-  evidencePath: string;
-  headTree: string | null;
-  specCommit: unknown;
-  /** rebate-private/ci-evidence (null: not available, every CI record is refused). */
-  ciArchive: string | null;
+// TODO(规划/11 §3.2, §4.5): accept `mode: ci` records (browser tests) once the CI evidence archive
+// rebate-private/ci-evidence/<run_id>/ is connected: bind run_url, run_id, run_attempt, workflow,
+// job, commit, tree and report_sha256 to the archived run and report, parse the report (tests
+// that ran, failure causes, skipped count) and an allow-list of browser jobs — blocked on the
+// archive (records-from-junit.ts) and the browser workflow (Codex review CR2-06).
+export const CI_REFUSED =
+  'CI 证据归档未接入，暂不接受 mode: ci 记录（规划/11 §3.2；Codex 评审 CR2-06）';
+
+/** What the red-run requirement of a task needs (CR2-05). */
+export type RedRequirement = {
+  required: boolean;
+  /** Rule-test files the task added inside its test_paths, base..spec_commit. */
+  expected: string[];
 };
-
-const RUN_URL = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/actions\/runs\/([0-9]+)(?:\/|$)/;
-
-function sha256File(file: string): string {
-  return createHash('sha256').update(readFileSync(file)).digest('hex');
-}
-
-/** The archived copy of a CI run: run.json and the sha256 of every other file. */
-function archivedRun(
-  archive: string,
-  runId: string,
-): { meta: Record<string, unknown>; files: Set<string> } | string {
-  const dir = join(archive, runId);
-  const metaFile = join(dir, 'run.json');
-  if (!existsSync(metaFile)) return `no archived run ${dir}/run.json (rebate-private/ci-evidence)`;
-  let meta: unknown;
-  try {
-    meta = JSON.parse(readFileSync(metaFile, 'utf8'));
-  } catch {
-    return `${metaFile} is not valid JSON`;
-  }
-  if (!isRecord(meta)) return `${metaFile} is not a JSON object`;
-  const files = new Set<string>();
-  for (const name of readdirSync(dir)) {
-    if (name === 'run.json') continue;
-    const file = join(dir, name);
-    if (statSync(file).isFile()) files.add(sha256File(file));
-  }
-  return { meta, files };
-}
-
-/**
- * A CI run (`mode: ci`; 规划/11 §3.2; RO2-05, RO3-01, CR-03, CR-04): every field present, bound to
- * the archived run and report, and to the right tree for its phase.
- */
-export function ciRunProblems(run: Record<string, unknown>, ctx: CiContext): string[] {
-  const problems: string[] = [];
-  const phase = run['phase'];
-  if (phase !== 'red' && phase !== 'green') problems.push('phase: must be red or green');
-  const runId = typeof run['run_id'] === 'number' ? String(run['run_id']) : run['run_id'];
-  if (typeof runId !== 'string' || !/^[1-9][0-9]*$/.test(runId)) {
-    problems.push('run_id: must be the numeric GitHub Actions run id');
-  }
-  const url = typeof run['run_url'] === 'string' ? RUN_URL.exec(run['run_url']) : null;
-  if (url === null)
-    problems.push('run_url: must be the https://github.com/<o>/<r>/actions/runs/<id> link');
-  else if (url[1] !== runId) problems.push('run_url: does not name run_id');
-  for (const field of ['workflow', 'job']) {
-    if (typeof run[field] !== 'string' || run[field] === '') problems.push(`${field}: required`);
-  }
-  if (run['run_attempt'] !== 1) problems.push('run_attempt: must be 1 (不许重跑到绿)');
-  const commit = run['commit'];
-  const tree = run['tree'];
-  const report = run['report_sha256'];
-  if (typeof commit !== 'string' || !SHA.test(commit)) {
-    problems.push('commit: a CI run must name the full commit SHA it tested');
-  }
-  if (typeof tree !== 'string' || !SHA.test(tree)) problems.push('tree: must be a tree hash');
-  if (typeof report !== 'string' || !/^[0-9a-f]{64}$/.test(report)) {
-    problems.push('report_sha256: must be the sha256 of the archived report');
-  }
-  if (typeof run['spec_commit'] !== 'string' || run['spec_commit'] !== ctx.specCommit) {
-    problems.push('spec_commit: a CI run must be bound to the evidence spec_commit');
-  }
-  if (problems.length > 0) return problems;
-
-  // The tested commit and its tree.
-  const sha = commit as string;
-  const actualTree = treeOf(ctx.prDir, sha);
-  if (actualTree === null) return [`commit: ${sha} is not a commit of this repository`];
-  if (actualTree !== tree) problems.push(`tree: ${String(tree)} is not the tree of ${sha}`);
-
-  // The archived run (rebate-private/ci-evidence/<run_id>/): the record may not claim more.
-  if (ctx.ciArchive === null) {
-    problems.push('the CI evidence archive (rebate-private/ci-evidence) is not available: refused');
-  } else {
-    const archived = archivedRun(ctx.ciArchive, runId as string);
-    if (typeof archived === 'string') {
-      problems.push(archived);
-    } else {
-      const m = archived.meta;
-      const same = (key: string, value: unknown): void => {
-        const got = key === 'run_id' && typeof m[key] === 'number' ? String(m[key]) : m[key];
-        if (got !== value) {
-          problems.push(
-            `archive: run.json ${key} is ${JSON.stringify(m[key])}, the record says ${JSON.stringify(value)}`,
-          );
-        }
-      };
-      same('run_id', runId);
-      same('head_sha', sha);
-      same('run_attempt', run['run_attempt']);
-      same('workflow', run['workflow']);
-      same('job', run['job']);
-      same('conclusion', run['conclusion']);
-      if (!archived.files.has(report as string)) {
-        problems.push('report_sha256: no archived report file has this sha256');
-      }
-    }
-  }
-
-  if (phase === 'green') {
-    if (!isAncestor(ctx.prDir, sha, ctx.head)) {
-      problems.push(`commit: ${sha} is not the head or an ancestor of it`);
-    } else {
-      const tested = headTreeWithoutEvidence(ctx.prDir, sha, ctx.evidencePath);
-      if (tested === null || tested !== ctx.headTree) {
-        problems.push(
-          `commit: the tested tree ${tested ?? '(unknown)'} differs from the head tree ` +
-            `${ctx.headTree ?? '(unknown)'} beyond ${ctx.evidencePath}: sources, tests or ` +
-            'configuration changed after the CI run, run it again',
-        );
-      }
-    }
-    if (run['conclusion'] !== 'success') problems.push('conclusion: a green run must be success');
-    if (run['skipped'] !== 0) problems.push('skipped: must be 0');
-    if (run['exit_code'] !== 0) problems.push('exit_code: must be 0');
-  } else {
-    // A red run tested the rule tests before the implementation: the spec_commit tree.
-    const specTree = typeof ctx.specCommit === 'string' ? treeOf(ctx.prDir, ctx.specCommit) : null;
-    if (specTree === null || actualTree !== specTree) {
-      problems.push(
-        `tree: a red run must have tested the spec_commit tree ${specTree ?? '(unknown)'}, not ${actualTree}`,
-      );
-    }
-    if (run['conclusion'] !== 'failure') problems.push('conclusion: a red run must be failure');
-    if (typeof run['exit_code'] !== 'number' || run['exit_code'] === 0) {
-      problems.push('exit_code: a red run fails (non-zero)');
-    }
-    const red = run['red_tests'];
-    if (!Array.isArray(red) || red.length === 0 || !red.every((t) => typeof t === 'string')) {
-      problems.push('red_tests: must list the tests that were red');
-    }
-  }
-  return problems;
-}
 
 /** Validates one evidence document against the PR; returns the problems found. */
 export function evidenceProblems(
@@ -348,8 +215,8 @@ export function evidenceProblems(
     head: string;
     task: string;
     cfg: ProtectedConfig;
-    /** rebate-private/ci-evidence; null or absent: CI records are refused. */
-    ciArchive?: string | null;
+    /** The red-run requirement (absent: required, no expected files: fail-closed). */
+    red?: RedRequirement;
   },
 ): string[] {
   const problems: string[] = [];
@@ -389,6 +256,8 @@ export function evidenceProblems(
     at('runs', 'must list at least one out-of-sandbox verification');
   } else {
     let verifiedHead = false;
+    let verifiedRed = false;
+    const red = ctx.red ?? { required: true, expected: [] };
     runs.forEach((run, i) => {
       if (!isRecord(run)) {
         at(`runs[${i}]`, 'must be an object');
@@ -398,16 +267,7 @@ export function evidenceProblems(
       const exit = run['exit_code'];
       const tree = run['tree'];
       if (mode === 'ci') {
-        problems.push(
-          ...ciRunProblems(run, {
-            prDir: ctx.prDir,
-            head: ctx.head,
-            evidencePath,
-            headTree,
-            specCommit,
-            ciArchive: ctx.ciArchive ?? null,
-          }).map((p) => `runs[${i}]: ${p}`),
-        );
+        at(`runs[${i}].mode`, CI_REFUSED);
         return;
       }
       if (mode === 'host') {
@@ -437,9 +297,25 @@ export function evidenceProblems(
             `a red run must have run on the spec_commit tree ${specTree ?? '(unknown)'}`,
           );
         }
-        const red = run['red_tests'];
-        if (!Array.isArray(red) || red.length === 0) {
+        const redTests = run['red_tests'];
+        const listed = run['expected'];
+        const before = problems.length;
+        if (!Array.isArray(redTests) || redTests.length === 0) {
           at(`runs[${i}].red_tests`, 'must list the tests that were red');
+        }
+        // Coverage (CR2-05): every rule-test file the task added ran and has a red test.
+        for (const file of red.expected) {
+          if (!Array.isArray(listed) || !listed.includes(file)) {
+            at(`runs[${i}].expected`, `does not cover ${file}, a rule-test file the task added`);
+          } else if (
+            !Array.isArray(redTests) ||
+            !redTests.some((t) => typeof t === 'string' && t.startsWith(`${file} > `))
+          ) {
+            at(`runs[${i}].red_tests`, `no red test of ${file}`);
+          }
+        }
+        if (problems.length === before && exit === 0 && specTree !== null && tree === specTree) {
+          verifiedRed = true;
         }
       } else if (script === 'verify:fast') {
         at(
@@ -453,6 +329,19 @@ export function evidenceProblems(
         );
       }
     });
+    if (red.required && red.expected.length === 0) {
+      at(
+        'runs',
+        'the task added no rule-test file inside its test_paths before spec_commit: nothing was shown red',
+      );
+    } else if (red.required && !verifiedRed) {
+      at(
+        'runs',
+        'no valid red run (container, script red, red-check passed on the spec_commit tree, ' +
+          'covering every rule-test file the task added): the rule tests were never shown red ' +
+          '(规划/11 §2.3 第 3 步; tools/ops/verify-container.sh --red)',
+      );
+    }
     if (!verifiedHead) {
       at(
         'runs',
@@ -510,6 +399,47 @@ export function evidenceProblems(
     }
   }
   return problems;
+}
+
+/**
+ * Whether the task needs a red run, and which rule-test files it must cover (CR2-05). The ledger
+ * comes from the trusted root, or from the head when the PR adds it; the switch-baseline list
+ * from the trusted root. A ledger that cannot be read requires the red run with no expected
+ * file, which fails (fail-closed).
+ */
+export function redRequirement(
+  input: EvidenceInput,
+  task: string,
+  mergeBase: string,
+  evidenceText: string,
+): RedRequirement {
+  const rel = `ops/tasks/${task}.yaml`;
+  const trustedFile = join(input.trusted, rel);
+  let ledger: TaskFile | null = null;
+  try {
+    ledger = existsSync(trustedFile)
+      ? parseTaskFile(readFileSync(trustedFile, 'utf8'), rel)
+      : parseTaskFile(showOrNull(input.prDir, input.head, rel) ?? '', rel);
+  } catch {
+    ledger = null;
+  }
+  if (ledger === null) return { required: true, expected: [] };
+  const legacy = loadLegacyTasks(input.trusted);
+  if (ledger.tester !== 'codex' || legacy.has(ledger.id)) return { required: false, expected: [] };
+  let specCommit: unknown;
+  try {
+    specCommit = (JSON.parse(evidenceText) as Record<string, unknown>)['spec_commit'];
+  } catch {
+    specCommit = null;
+  }
+  if (typeof specCommit !== 'string' || !SHORT_SHA.test(specCommit)) {
+    return { required: true, expected: [] };
+  }
+  const changes = changedBetween(input.prDir, mergeBase, specCommit).map((c) => ({
+    path: c.path,
+    status: c.status as Change['status'],
+  }));
+  return { required: true, expected: expectedRuleTests(changes, ledger.test_paths) };
 }
 
 export function checkEvidence(input: EvidenceInput): EvidenceReport {
@@ -572,6 +502,7 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
   }
 
   if (text !== null && task !== null) {
+    const red = redRequirement(input, task, mergeBase, text);
     let doc: unknown;
     try {
       doc = JSON.parse(text);
@@ -588,7 +519,7 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
           head: input.head,
           task,
           cfg,
-          ciArchive: input.ciArchive ?? null,
+          red,
         }).map((p) => `${evidencePath}: ${p}`),
       );
     }
@@ -617,12 +548,12 @@ async function main(argv: readonly string[]): Promise<number> {
     }
     const value = argv[i + 1];
     if (
-      !['--pr', '--base', '--head', '--head-ref', '--pr-number', '--ci-archive'].includes(arg) ||
+      !['--pr', '--base', '--head', '--head-ref', '--pr-number'].includes(arg) ||
       value === undefined
     ) {
       throw new Error(
         'usage: evidence-check.ts --pr <dir> --base <sha> --head <sha> --head-ref <branch> ' +
-          '[--pr-number <n>] [--ci-archive <rebate-private/ci-evidence>] [--json]',
+          '[--pr-number <n>] [--json]',
       );
     }
     values.set(arg, value);
@@ -645,15 +576,6 @@ async function main(argv: readonly string[]): Promise<number> {
     head,
     headRef,
     trusted: resolve(import.meta.dirname, '../..'),
-    // rebate-private/ci-evidence (规划/11 §3.2, §4.5): --ci-archive, COULI_CI_EVIDENCE, else the
-    // sibling checkout; missing means CI records are refused.
-    ciArchive: ((): string | null => {
-      const dir =
-        values.get('--ci-archive') ??
-        process.env['COULI_CI_EVIDENCE'] ??
-        resolve(import.meta.dirname, '../../../rebate-private/ci-evidence');
-      return existsSync(dir) ? resolve(dir) : null;
-    })(),
   };
   let report = checkEvidence(input);
   // The API is asked only when an approval could change the outcome.

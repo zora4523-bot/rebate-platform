@@ -9,10 +9,13 @@
 #              PostgreSQL, `--network none`. verify-fast/<n>/; never evidence of verification.
 #   --red      the isolated red run of the rule tests Codex wrote (规划/11 §2.3 step 3; CR-12):
 #              only the task's new rule-test files (inside its trusted test_paths, changed
-#              against --base, default the branch point with origin/main), Vitest JSON reports
-#              exported to red/<n>/out/, then tools/guard/red-check.ts reconciles them with the
-#              expected list (exit code = red-check's). Integration files (*.int.test.ts) get the
-#              one-shot PostgreSQL on the internal network; unit files only run with no network.
+#              against --base, default the branch point with origin/main), each run by the
+#              trusted Vitest project that takes it (tools/ops/red-plan.ts, red-projects.json;
+#              a file no project takes stops the run, CR2-04) with the trusted red reporter
+#              (verify-image/red-reporter.mjs, keeps the failure causes, CR2-03); reports go to
+#              red/<n>/out/<project>.json and tools/guard/red-check.ts reconciles them with the
+#              expected list (exit code = red-check's). A project that needs PostgreSQL gets the
+#              one-shot database on the internal network; otherwise the run has no network.
 #   --dry-run  prints what would run (script, commit, tree, red files) as one JSON line and
 #              starts nothing; no run directory is created.
 #
@@ -190,6 +193,8 @@ if ! [[ "$PREFIX" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then die "COULI_VERIFY_PREFIX must
 # The red run: which rule-test files the task added (inside its trusted test_paths), against the
 # base. The same list is what red-check reconciles the reports with (CR-10).
 RED_FILES=''
+RED_PLAN=''
+RED_DB=0
 if [ "$SCRIPT" = red ]; then
   if [ -z "$BASE_ARG" ]; then
     for candidate in origin/main main; do
@@ -206,6 +211,16 @@ if [ "$SCRIPT" = red ]; then
   while IFS= read -r f; do
     [[ "$f" =~ ^[A-Za-z0-9_./@-]+$ ]] && [[ "$f" != *..* ]] || die "unexpected rule-test path: $f"
   done <<<"$RED_FILES"
+  # Which trusted Vitest project runs each file (CR2-04); a file without one stops the run.
+  mkdir -p "$RUNS"
+  red_list="$RUNS/.red-expected.$ID.$$"
+  printf '%s\n' "$RED_FILES" >"$red_list"
+  RED_PLAN="$(cd "$TRUSTED" && node tools/ops/red-plan.ts --expected "$red_list" 2>&1)" || {
+    rm -f "$red_list"
+    die "the red run cannot run every rule-test file: $RED_PLAN"
+  }
+  rm -f "$red_list"
+  RED_DB="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).groups.some((g) => g.database) ? "1" : "0")' "$RED_PLAN")"
 fi
 
 tree_of_worktree() { # prints the git tree of the work tree (uncommitted changes included)
@@ -230,11 +245,14 @@ if [ "$DRY_RUN" = 1 ]; then
   dry_tree='null'
   if [ "$IS_TOP" = 1 ]; then dry_tree="\"$(tree_of_worktree "$RUNS/.dry-index.$ID.$$")\""; fi
   node -e '
-    const [script, commit, tree, files] = process.argv.slice(1);
+    const [script, commit, tree, files, plan] = process.argv.slice(1);
     const out = { script, commit: commit === "" ? null : commit, tree: JSON.parse(tree) };
-    if (script === "red") out.red_files = files.split("\n").filter((l) => l !== "");
+    if (script === "red") {
+      out.red_files = files.split("\n").filter((l) => l !== "");
+      out.red_plan = JSON.parse(plan).groups;
+    }
     process.stdout.write(JSON.stringify(out) + "\n");
-  ' "$SCRIPT" "$head" "$dry_tree" "$RED_FILES"
+  ' "$SCRIPT" "$head" "$dry_tree" "$RED_FILES" "$RED_PLAN"
   exit 0
 fi
 
@@ -443,16 +461,16 @@ if [ -f "$SRC/SPEC_REF" ]; then
 fi
 
 if [ "$SCRIPT" = red ]; then
-  # Unit files run with no network; integration files need the one-shot PostgreSQL below.
-  RED_UNIT="$(printf '%s\n' "$RED_FILES" | grep -v '\.int\.test\.' || true)"
-  RED_INT="$(printf '%s\n' "$RED_FILES" | grep '\.int\.test\.' || true)"
+  # Groups of the plan (tools/ops/red-plan.ts); a group needing PostgreSQL gets the one-shot
+  # database on the internal network, otherwise the run has no network at all.
   printf '%s\n' "$RED_FILES" >"$VDIR/expected.txt"
+  printf '%s\n' "$RED_PLAN" >"$VDIR/plan.json"
   mkdir -p "$VDIR/out"
   chmod 0777 "$VDIR/out"
-  RED_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS" -e RED_UNIT -e RED_INT)
+  RED_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS" -e RED_PLAN)
   [ -z "${PROP_RUNS:-}" ] || RED_ENV+=(-e "PROP_RUNS=$PROP_RUNS")
   RED_NET=(--network none)
-  if [ -n "$RED_INT" ]; then
+  if [ "$RED_DB" = 1 ]; then
     step "creating internal network $NET (integration rule tests)"
     docker network create --internal "${LABELS[@]}" "$NET" >/dev/null
     net_created=1
@@ -472,21 +490,24 @@ if [ "$SCRIPT" = red ]; then
     export TEST_PG_ADMIN_URL="postgres://postgres:$PG_PASSWORD@pg:5432/postgres"
   fi
   step "running the task's rule tests (red run) in $IMAGE (limit ${TIMEOUT_SECS}s)"
-  export RED_UNIT RED_INT
+  export RED_PLAN
   red_rc=0
   docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
     "${RED_NET[@]}" \
     -v "$SRC:/src:ro" \
     -v "$STORE_VOL:/store:ro" \
     -v "$VDIR/out:/out" \
+    -v "$IMG_DIR/red-reporter.mjs:/red/red-reporter.mjs:ro" \
     --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
     ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
     "${RED_ENV[@]}" \
     "$IMAGE" couli-verify-entrypoint red >>"$LOG" 2>&1 </dev/null || red_rc=$?
   [ "$red_rc" = 0 ] || die "the red run did not produce its reports (exit $red_rc), see $LOG"
+  # Every group must have written its report (the red reporter, with failure causes).
   reports=''
-  for f in "$VDIR/out/unit.json" "$VDIR/out/int.json"; do
-    [ -f "$f" ] && reports="${reports:+$reports,}$f"
+  for name in $(node -e 'for (const g of JSON.parse(process.argv[1]).groups) console.log(g.name)' "$RED_PLAN"); do
+    [ -f "$VDIR/out/$name.json" ] || die "the red run wrote no report for $name, see $LOG"
+    reports="${reports:+$reports,}$VDIR/out/$name.json"
   done
   [ -n "$reports" ] || die "the red run wrote no report, see $LOG"
   rc=0

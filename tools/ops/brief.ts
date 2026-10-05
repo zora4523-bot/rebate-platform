@@ -310,7 +310,7 @@ export function renderBrief(input: BriefInput): string {
     }
     out.push(
       `- 本任务的规则测试（台账 \`test_paths\`；只新增文件，已有的不改不删）：${code(task.test_paths)}`,
-      "- 任务路径内只放 `NotImplemented` 骨架，逐个函数检查：每个新增或改动的函数体只能是 `void <参数>;`、`super(…)`、`this.<字段> = <值>;`，最后一句 `throw new Error('NotImplemented: <名字>')`；不能有分支、调用、嵌套函数或表达式体的箭头函数。类型、接口、导出与常量照写：",
+      "- 任务路径内只放 `NotImplemented` 骨架，逐条顶层语句检查：只许 import、export 列表与转出、type、interface、函数声明和类；函数与方法体只能是 `void <参数>;` 再加最后一句 `throw new Error('NotImplemented: <名字>')`（派生类构造函数第一句可以是只含普通值的 `super(…)`）；类字段不带初始值。`const` / `let` / `var`（含常量）、顶层调用、箭头函数、参数默认值、分支一律不行；要用的常量放进规则测试或写成类型：",
     );
   }
   for (const p of task.paths) out.push(`- \`${p}\``);

@@ -11,6 +11,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile } from '../../lib/fsx.ts';
 import { changedBetweenCommits, changedFiles, listTree, showFile, tryGit } from '../../lib/git.ts';
+import { loadLegacyTasks } from '../../lib/legacy-tasks.ts';
 import { specRepo, trustedRoot } from '../../lib/paths.ts';
 import { loadTask, parseTaskFile, TASK_ID_PATTERN } from '../../lib/task-file.ts';
 import { checkAgentsPairs } from './agents-pair.ts';
@@ -284,15 +285,20 @@ export function authorPathsCheck(
   root: string,
   base: string,
   specCommit: string,
-  taskPaths: readonly string[],
-  testPaths: readonly string[] = [],
+  task: { id: string; tester: string; paths: readonly string[]; test_paths: readonly string[] },
 ): CheckResult {
-  // The task's test_paths; a ledger written before 2026-10-05 has none and keeps the old scope
-  // (all rule-test assets) so that its merged history still checks out.
+  // The task's test_paths. Only a ledger of the switch baseline (tools/guard/legacy-tasks.json,
+  // read from the trusted root) may have none and keep the old scope (all rule-test assets);
+  // any other task without test_paths gets no rule-test asset at all (CR2-02, fail-closed).
+  const legacy = loadLegacyTasks(trustedRoot()).has(task.id);
+  const testPaths = task.test_paths;
+  const taskPaths = task.paths;
   const testAssets =
     testPaths.length > 0
       ? [...testPaths]
-      : loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob);
+      : legacy
+        ? loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob)
+        : [];
   const changes = changedBetweenCommits(base, specCommit, { cwd: root });
   const show = (ref: string, path: string): string | null => {
     const res = tryGit(['show', `${ref}:${path}`], { cwd: root });
@@ -304,6 +310,12 @@ export function authorPathsCheck(
     contentAtSpec: (path) => show(specCommit, path),
     contentAtBase: (path) => show(base, path),
   });
+  if (testPaths.length === 0 && !legacy && task.tester !== 'none') {
+    problems.unshift(
+      `task ${task.id} has no test_paths and is not a ledger of the switch baseline ` +
+        '(tools/guard/legacy-tasks.json): add test_paths to its ledger',
+    );
+  }
   return result('path-guard-author', problems, [
     `${changes.length} path(s) changed by the rule-test commits ${base.slice(0, 12)}..${specCommit.slice(0, 12)}`,
   ]);
@@ -388,14 +400,20 @@ export function protectedPathsCheck(
 }
 
 /** Task definition from the trusted root: a branch cannot widen its own `paths`. */
-export function trustedTask(id: string): { paths: string[]; type: string; test_paths: string[] } {
+export function trustedTask(id: string): {
+  paths: string[];
+  type: string;
+  test_paths: string[];
+  tester: string;
+} {
   const task = loadTask(id, trustedRoot());
-  return { paths: task.paths, type: task.type, test_paths: task.test_paths };
+  return { paths: task.paths, type: task.type, test_paths: task.test_paths, tester: task.tester };
 }
 
 export type GuardTask = {
   paths: string[];
   test_paths: string[];
+  tester: string;
   type: string;
   source: 'trusted' | 'head';
   notice: string | null;
@@ -429,6 +447,7 @@ export function guardTask(id: string, root: string, base: string): GuardTask {
   return {
     paths: task.paths,
     test_paths: task.test_paths,
+    tester: task.tester,
     type: task.type,
     source: 'head',
     notice:

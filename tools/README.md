@@ -74,7 +74,8 @@ retry 怎么查（`guard/lib/test-guard.ts`；编排会话 2026-10-03 按 `ops/a
 
 | 守卫 | 出处 | 说明 |
 | --- | --- | --- |
-| 浏览器测试的隔离红测 | 11 §2.3 第 3 步 | `verify-container.sh --red` 只跑 Vitest；Playwright 暂在 CI 跑，证据按 `mode: ci` 记 |
+| 浏览器测试的隔离红测 | 11 §2.3 第 3 步 | `verify-container.sh --red` 只跑 Vitest；Playwright 没有入口，证据的 `mode: ci` 在归档接入前一律拒绝 |
+| CI 证据归档核验 | 11 §3.2、§4.5 | `evidence-check` 暂拒所有 `mode: ci` 记录（CR2-06），归档 `rebate-private/ci-evidence` 接入后再核对运行与报告内容 |
 | `sm-diff.ts` | 11 §4.2 | 状态机双份盲录逐行比对 |
 | `records-check` | 11 §4.5 | 验收记录只能由脚本生成 |
 | mapper 字段检查 | 11 §4.5 | 联盟 mapper 引用的字段都出现在 probe 录制里 |

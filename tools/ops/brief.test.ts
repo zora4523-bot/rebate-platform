@@ -243,7 +243,7 @@ it('[ops/approvals.yaml id 19] the test phase lets Codex add rule tests and skel
     '- 本轮阶段：test（写规则 / 验收测试（Codex）',
     '## 3. 可以改的路径',
     '- 本任务的规则测试（台账 `test_paths`；只新增文件，已有的不改不删）：`test/spec/demo/**`',
-    '- 任务路径内只放 `NotImplemented` 骨架，逐个函数检查',
+    '- 任务路径内只放 `NotImplemented` 骨架，逐条顶层语句检查',
     '- `packages/demo/src/**`',
     '- 第一类保护路径（规则测试资产）里已有的文件：不能改、不能删；`test_paths` 以外的规则测试资产不能碰。',
     '```\npnpm typecheck\npnpm lint\n```',

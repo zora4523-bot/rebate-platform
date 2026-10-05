@@ -19,7 +19,7 @@
 | `spec_ref` | 写规则测试和实现时对应的规划版本 | 仓库根 `SPEC_REF` |
 | `spec_commit` | 规则测试提交号；之后规则测试不得改动。CI 的 guard-git 也读它：核对它是头提交的祖先、基线的后代后，路径守卫从它起算，它之前的提交按规则测试作者的路径检查（`tools/README.md`「任务分支按 spec_commit 分段」，`ops/approvals.yaml` 第 14 条） | `couli-runs/state/<编号>.json` |
 | `red_tests` | 规则测试先红时的测试名列表（红的原因必须是断言失败、断言型的属性反例或骨架的 `NotImplemented`） | `verify-container.sh --red` 的 `red/<n>/result.json` 的 `red_tests` |
-| `runs[]` | 每一次沙箱外运行：`mode`（`container` 或 `ci`；`host` 一律拒绝）、`script`（`verify` 或 `red`）、`commit`、`tree`、`prop_seed`、`exit_code`、起止时间。检查器要求至少一条 `mode: container`、`script: verify`、`exit_code: 0` 且 `tree` 等于头提交去掉本证据文件后的树哈希（验证在写证据之前跑，证据文件不可能在它描述的树里）。`script: verify:fast` 是实现子代理自己的检查，写进证据直接拒绝（CR-02）；`script: red` 要求 `exit_code` 0（red-check 通过）、`tree` 等于 `spec_commit` 的树、`red_tests` 非空 | `couli-runs/<编号>/{verify,red}/<n>/result.json`，由 `tools/ops/verify-container.sh` 写出，字段同名 |
+| `runs[]` | 每一次沙箱外运行：`mode`（`container`；`host` 一律拒绝，`ci` 暂不接受）、`script`（`verify` 或 `red`）、`commit`、`tree`、`prop_seed`、`exit_code`、起止时间。检查器要求至少一条 `mode: container`、`script: verify`、`exit_code: 0` 且 `tree` 等于头提交去掉本证据文件后的树哈希（验证在写证据之前跑，证据文件不可能在它描述的树里）。`script: verify:fast` 是实现子代理自己的检查，写进证据直接拒绝（CR-02）；`script: red` 要求 `exit_code` 0（red-check 通过）、`tree` 等于 `spec_commit` 的树、`red_tests` 非空 | `couli-runs/<编号>/{verify,red}/<n>/result.json`，由 `tools/ops/verify-container.sh` 写出，字段同名 |
 | `reviews[]` | 每家评审的结论：`reviewer`（`claude` / `codex`）、`verdict`、未关闭的 S0 / S1 数、资金清单是否齐全 | 评审输出（`tools/agent/schemas/review.schema.json`） |
 | `trees` | 受保护代码目录的树哈希：路径 → `git rev-parse HEAD:<路径>` | git |
 | `longrun` | 长跑属性测试：次数、种子、结果、对应的资金目录树哈希 | 长跑运行 |
@@ -44,6 +44,8 @@
 }
 ```
 
-`mode: ci`（规划/11 §3.2；规划评审 RO2-05、RO3-01，Codex 评审 CR-03、CR-04，2026-10-05）：暂时只能在 CI 跑的检查（浏览器测试）。它是容器那一条之外的补充，不能代替。字段全部必填：`phase`（`red` / `green`）、`run_url`（`https://github.com/<o>/<r>/actions/runs/<run_id>…`）、`run_id`、`run_attempt`（1）、`workflow`、`job`、`commit`（被测提交的完整 SHA）、`tree`（该提交的树哈希）、`report_sha256`、`spec_commit`（等于本证据的）、`conclusion`、`exit_code`；绿测另有 `skipped`，红测另有 `red_tests`。检查器不在线查 GitHub，改为对照归档件 `rebate-private/ci-evidence/<run_id>/`：`run.json` 里的 `run_id`、`head_sha`、`run_attempt`、`conclusion`、`workflow`、`job` 必须与记录一致，目录里必须有一个文件的 sha256 等于 `report_sha256`；读不到归档（检查器参数 `--ci-archive`、环境变量 `COULI_CI_EVIDENCE`，默认仓库旁的 `rebate-private/ci-evidence`）就拒绝。绿测：被测提交是头提交或它的祖先，两者去掉本任务证据文件后的树哈希相同（证据入库产生的新提交不影响；源码、测试、配置有任何变化须重新跑），`conclusion: success`、`skipped: 0`、`exit_code: 0`；不是「被测提交必须等于头提交」。红测：被测树等于 `spec_commit` 的树，`conclusion: failure`、`exit_code` 非 0、`red_tests` 非空。
+`mode: ci`：**暂不接受**（Codex 评审 CR2-06，2026-10-05）。CI 证据归档 `rebate-private/ci-evidence/<run_id>/` 还没接入，检查器核对不了运行、报告内容（实际跑了哪些测试、失败原因、跳过数）和浏览器 job 身份，所以任何 `mode: ci` 记录都报「CI 证据归档未接入，暂不接受」。接入后的口径见规划/11 §3.2（运行链接与 `run_id`、`run_attempt=1`、工作流与 job、被测提交与树哈希、报告 sha256；红测绑定 `spec_commit` 的树，绿测为头提交的祖先且只差本任务证据文件）。
+
+红测（Codex 评审 CR2-05）：台账 `tester: codex`、又不在 `tools/guard/legacy-tasks.json`（切换基线时已有的台账）里的任务，证据必须有一条有效的容器红测记录：`script: red`、`exit_code: 0`（red-check 通过）、`tree` 等于 `spec_commit` 的树、`expected` 覆盖本任务在 `test_paths` 内新增的每个规则测试文件（基线到 `spec_commit`）、每个文件在 `red_tests` 里至少有一条；缺了就拒绝。台账读不到也拒绝。
 
 合并规则：`runs[].mode` 为 `host` 的结果一律不接受（11 §2.3 第 7 步；宿主回退已取消），完整验证只认 `script: verify` 的容器记录；长跑结果绑定树哈希，不绑定提交号（11 §3.2）。检查器逐项核对：`task` 等于分支 `task/<编号>` 的编号；`spec_ref` 等于头提交的 `SPEC_REF`；`spec_commit` 是头提交的祖先，且此后第一类测试资产只增未改；`reviews[]` 里 `claude` 与 `codex` 都是 `pass`、`open_s0_s1` 为 0、`codex` 的 `checklist_complete` 为 true；`trees` 里每条路径的树哈希等于 `git rev-parse <头提交>:<路径>`；`longrun.passed` 为 true 且 `longrun.tree` 是 `trees` 里的某个值。

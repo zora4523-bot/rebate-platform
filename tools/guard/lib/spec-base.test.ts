@@ -17,7 +17,10 @@ it('allows rule-test assets, the ledger and NotImplemented skeleton shells', () 
         { path: 'ops/tasks/B2-01a.yaml', status: 'M' },
         { path: 'packages/money/src/index.ts', status: 'M' },
       ],
-      scope({ 'packages/money/src/index.ts': "throw new Error('NotImplemented: f');\n" }),
+      scope({
+        'packages/money/src/index.ts':
+          "export function f(): never {\n  throw new Error('NotImplemented: f');\n}\n",
+      }),
     ),
   ).toEqual([]);
   expect(evidencePath('B2-01a')).toBe('ops/evidence/B2-01a.json');

@@ -44,6 +44,8 @@ const OLD_LEDGER_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02c').replace(
   'test_paths:\n  - "test/spec/ledger/**"\n',
   '',
 );
+/** A new task (not a ledger of the switch baseline) that omits test_paths (CR2-02). */
+const NEW_NO_TEST_PATHS_TASK = OLD_LEDGER_TASK.replace('id: B2-02c', 'id: B2-02d');
 const NO_TESTER_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: N1-01').replace(
   'tester: claude',
   'tester: none',
@@ -110,6 +112,10 @@ beforeAll(() => {
     'ops/tasks/B2-02b.yaml': AUTHOR_TASK,
     'ops/tasks/B2-02c.yaml': OLD_LEDGER_TASK,
     'ops/tasks/N1-01.yaml': NO_TESTER_TASK,
+    'ops/tasks/B2-02d.yaml': NEW_NO_TEST_PATHS_TASK,
+    // The fixture's own switch-baseline list: B2-02a stands for a ledger written before
+    // 2026-10-05 (no test_paths, old scope); B2-02d is not on it.
+    'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: ['B2-02a'] }),
     'ops/approvals.yaml': APPROVALS,
   });
   for (const file of [
@@ -986,6 +992,25 @@ describe('run.ts git --task: the path guard starts at spec_commit (owner decisio
       'path-guard-author: apps/api/src/modules/orders/sync.ts: changed in a rule-test commit ' +
         "(before spec_commit) outside the rule-test author's paths",
     );
+  });
+
+  it('[CR2-02] a new task without test_paths gets no rule-test asset in its rule-test commits', () => {
+    const { root, base } = workRepo();
+    writeFiles(root, {
+      'test/spec/money/other.test.ts': "it('[BR-X] other', () => { expect(1).toBe(1); });\n",
+      'apps/api/src/modules/ledger/post.ts': SKELETON,
+    });
+    const spec = commitAll(root, 'test(spec): rule tests and skeleton');
+    writeFiles(root, {
+      'ops/evidence/B2-02d.json': `${JSON.stringify({ task: 'B2-02d', spec_commit: spec }, null, 2)}\n`,
+    });
+    commitAll(root, 'ops(evidence)');
+    const res = guard('run.ts', ['git', '--base', base, '--task', 'B2-02d', '--cwd', root]);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain(
+      'task B2-02d has no test_paths and is not a ledger of the switch baseline',
+    );
+    expect(res.stderr).toContain('test/spec/money/other.test.ts: changed in a rule-test commit');
   });
 
   it('a rule-test commit may not remove implementation files', () => {

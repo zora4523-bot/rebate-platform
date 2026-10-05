@@ -64,6 +64,24 @@ beforeAll(() => {
     'ops/tasks/X1-01h.yaml': good({ id: 'X1-01zz' }),
     'ops/tasks/X1-01i.yaml': good({ id: 'X1-01i', type: 'feature', paths: '[]' }),
     'ops/tasks/X1-01j.yaml': good({ id: 'X1-01j', refs_hash: '{}' }),
+    // The fixture's switch-baseline ledgers: these may omit test_paths (CR2-02).
+    'tools/guard/legacy-tasks.json': JSON.stringify({
+      baseline: 'fixture',
+      tasks: [
+        'X1-01',
+        'X1-01a',
+        'X1-01b',
+        'X1-01c',
+        'X1-01d',
+        'X1-01e',
+        'X1-01g',
+        'X1-01h',
+        'X1-01i',
+        'X1-01j',
+        'X1-02',
+        'X9-01',
+      ],
+    }),
   });
 });
 
@@ -133,6 +151,8 @@ it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a 
       class2_verify_config: [],
       class3_gates: [],
     }),
+    // A new ledger (not on the switch-baseline list) with a rule-test author and no test_paths.
+    'ops/tasks/X1-01n.yaml': good({ id: 'X1-01n', tester: 'codex', impl: 'claude' }),
     'ops/tasks/X1-01k.yaml': good({
       id: 'X1-01k',
       test_paths: "\n  - 'test/spec/demo/**'\n  - 'test/properties/demo/*.test.ts'",
@@ -163,8 +183,15 @@ it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a 
     expect(checkTask('X1-01m', opts('RV1')).join('\n')).toContain(
       'a task without a rule-test author (tester: none) has no test_paths',
     );
+    // CR2-02: a new task that omits test_paths is refused; a switch-baseline ledger is not.
+    expect(checkTask('X1-01n', opts('RV1')).join('\n')).toContain(
+      'test_paths: required for a task with a rule-test author (tester: codex)',
+    );
+    expect(checkTask('X1-01', opts('RV1'))).toEqual([]);
   } finally {
-    for (const id of ['X1-01k', 'X1-01l', 'X1-01m']) removeDir(`${root}/ops/tasks/${id}.yaml`);
+    for (const id of ['X1-01k', 'X1-01l', 'X1-01m', 'X1-01n']) {
+      removeDir(`${root}/ops/tasks/${id}.yaml`);
+    }
   }
 });
 

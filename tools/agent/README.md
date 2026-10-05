@@ -240,5 +240,8 @@ Agent 评测集与注入集放私有库（规划/11 §1.1）。读脚本的结�
 - 本目录的测试要用 `bash`、`perl`、`git`，并在 `REPO/.tmp/` 下建一次性 git 仓库（verify 镜像已装 git）。全部用例本机约 30–90 秒（看机器负载）；孤儿进程要靠 1 号进程回收，容器须带 `--init`（`verify-container.sh` 已带）。2026-10-02 已在 verify 镜像里按同样的加固参数（只读根、断网、`/work` tmpfs、离线装依赖、仓库根没有 `.git`）跑过本目录全部用例：66 条通过，约 25 秒（Linux bash 5.2、perl 5.36、git 2.39）。
 - Codex 沙箱内（`pnpm verify:fast`）能否正常运行这些测试（进程组信号、`.tmp` 下的 `.git`）未测。
 - 2026-10-05 的分工切换（`ops/approvals.yaml` 第 19 条）只改了派工、计数与守卫，还没有真实跑过一轮「Codex 写测试 → 先红 → Claude 过审 → Opus 实现」。§10、§11 的子代理步骤靠编排会话照做，没有脚本强制；位置断言与守卫是事后关口。
-- 隔离红测（`verify-container.sh --red`）只跑 `test/` 包（`@couli/spec-tests`）里的 Vitest 文件；`test_paths` 里别的目录（`packages/testing/**` 的夹具、`db/invariants/**` 的 SQL）不是测试文件，不在对账清单里。浏览器测试（Playwright）的红测还没有入口，暂由 CI 跑并按 `ops/evidence/README.md` 的 `mode: ci` 记录。
-- 骨架检查（`tools/guard/lib/skeleton.ts`）用 Node 自带的 `stripTypeScriptTypes`（实验特性）把 TypeScript 转成 JavaScript 后按函数体逐个看；顶层常量、类型、导出不看。TSX 与装饰器转换不了，按「不是骨架」处理。
+- 隔离红测（`verify-container.sh --red`）只跑项目表里的 Vitest 文件；`db/invariants/**` 的 SQL 不是测试文件，不在对账清单里。浏览器测试（Playwright）的红测还没有入口；CI 证据归档接入前，证据里的 `mode: ci` 记录一律拒绝（CR2-06），所以浏览器测试暂时进不了 RV2 证据。
+- 骨架检查（`tools/guard/lib/skeleton.ts`，CR-05、CR2-01）用 Node 自带的 `stripTypeScriptTypes`（实验特性）把 TypeScript 转成 JavaScript 后逐条看新增或改动的顶层语句：只许 import、export 列表与转出、类型、函数声明（函数体只有 `void <参数>;` 与最后的 NotImplemented 抛出）和只含这类方法、无初始值字段的类；其余可执行语句（含 `export const x = f()`、`= Math.floor`、字面量常量）一律拒绝。旧代码豁免绑定符号名与完整声明文本，同样的函数体换个名字不算旧代码。TSX 与装饰器转换不了，按「不是骨架」处理。
+- 台账 `test_paths`：只有 `tools/guard/legacy-tasks.json` 列出的、切换基线 `dec8a3d` 时已有的台账可以没有（提交守卫对它们沿用全部第一类路径）；之后的新任务只要有测试作者就必须写，`task.ts check` 与提交守卫都拒绝缺字段（CR2-02）。
+- 隔离红测用可信的 Vitest reporter（`tools/ops/verify-image/red-reporter.mjs`，只读挂进容器）保留失败的 cause 链：fast-check 把属性里抛出的错误只放在 `cause` 里，Vitest 自带的 JSON reporter 会丢掉它。red-check 以最内层 cause 判定：`AssertionError` 或骨架的 `NotImplemented` 才算有效红；属性只「返回 false」不算（属性的先红必须在属性里用 `expect` 断言，失败报告才显示底层断言）；看不出原因一律不算（CR2-03）。
+- 每个应跑的文件由可信项目表 `tools/ops/verify-image/red-projects.json`（与 `test/`、`packages/testing/` 的 Vitest 配置逐条核对，见 `tools/ops/red-plan.test.ts`）分到 `spec-unit`、`spec-int`（含 `acceptance/**`，起一次性 PG）或 `testing-unit`；没有项目收的文件（如 `test/replay/**`）让红测直接失败（CR2-04）。

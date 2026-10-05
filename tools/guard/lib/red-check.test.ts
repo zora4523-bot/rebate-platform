@@ -1,7 +1,10 @@
 // Unit tests of the red check (规划/11 §2.3 step 3; ops/approvals.yaml id 19; Codex review
 // CR-10, CR-11 of 2026-10-05).
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import {
+  causeVerdict,
   checkRedReports,
   expectedRuleTests,
   redCheckRequired,
@@ -35,7 +38,10 @@ it('[ops/approvals.yaml id 19] applies to every task with a rule-test author, RV
 
 it('[规划/11 §2.3] red for the right reason: assertion, counterexample, NotImplemented', () => {
   expect(wrongRedReason('AssertionError: expected 3 to be 4')).toBeNull();
-  expect(wrongRedReason('Property failed after 1 tests\nCounterexample: [0]')).toBeNull();
+  // A plain property failure without its cause proves nothing (CR2-03).
+  expect(wrongRedReason('Property failed after 1 tests\nCounterexample: [0]')).toContain(
+    'shows no underlying assertion',
+  );
   expect(
     wrongRedReason(
       'Property failed after 1 tests\nCounterexample: [0]\nGot error: AssertionError: x',
@@ -69,7 +75,7 @@ it('[CR-11] infrastructure failures wrapped by fast-check or a hook are never a 
   );
   expect(wrongRedReason('Error: Build failed with 1 error')).toContain('build failed');
   // A counterexample whose cause is not an assertion is not counted either.
-  expect(wrongRedReason(wrapped('Error: boom'))).toContain('not an assertion failure');
+  expect(wrongRedReason(wrapped('Error: boom'))).toContain('shows no underlying assertion');
 });
 
 it('[CR-10] the expected rule-test files are the ones the task added inside its test_paths', () => {
@@ -160,4 +166,92 @@ it('[CR-10] every expected file must have run and be red; a partial report fails
     'added no rule-test file',
   );
   expect(checkRedReports([{ nope: true }], [a], ROOT).ok).toBe(false);
+});
+
+const FIXTURES = join(import.meta.dirname, 'red-check-fixtures');
+const fixture = (name: string): unknown =>
+  JSON.parse(readFileSync(join(FIXTURES, name), 'utf8')) as unknown;
+const P = 'test/spec/zzprobe/p.test.ts';
+const M = 'test/spec/zzprobe2/m.test.ts';
+
+it('[CR2-03] real red-reporter output: only assertions and NotImplemented are a valid red', () => {
+  // Written by tools/ops/verify-image/red-reporter.mjs on real Vitest 5 + fast-check 4 failures
+  // (paths rewritten to the container's /work/repo).
+  const result = checkRedReports([fixture('red-report.json')], [P, M], ROOT);
+  expect(result.red).toEqual([
+    `${P} > [AC-P#2] assertion inside property`,
+    `${P} > [AC-P#5] NotImplemented inside property`,
+    `${P} > [AC-P#6] plain assertion`,
+  ]);
+  expect(result.problems.map((p) => `${p.test ?? p.file}: ${p.reason.split(' (')[0]}`)).toEqual([
+    '[AC-P#1] typeerror inside property: red for the wrong reason',
+    '[AC-P#3] property returns false: red for an unrecognised reason',
+    '[AC-P#4] database refused inside property: red for the wrong reason',
+    '[AC-P#7] skipped: status "skipped"',
+    `${M}: the file did not load: red for the wrong reason`,
+  ]);
+  expect(result.problems[0]?.reason).toContain('TypeError');
+  expect(result.problems[1]?.reason).toContain('property returned false');
+  expect(result.problems[2]?.reason).toContain('network or database unreachable');
+});
+
+it('[CR2-03] real Vitest JSON output (no causes): every property failure is refused', () => {
+  const result = checkRedReports([fixture('json-report.json')], [P], ROOT);
+  const property = result.problems.filter((p) =>
+    p.reason.includes('shows no underlying assertion'),
+  );
+  // P#1..P#5 are properties: Vitest's JSON reporter drops the cause, so none of them counts.
+  expect(property.map((p) => p.test)).toEqual([
+    '[AC-P#1] typeerror inside property',
+    '[AC-P#2] assertion inside property',
+    '[AC-P#3] property returns false',
+    '[AC-P#4] database refused inside property',
+    '[AC-P#5] NotImplemented inside property',
+  ]);
+  expect(result.red).toEqual([`${P} > [AC-P#6] plain assertion`]);
+});
+
+it('[CR2-03] cause chains: the innermost cause decides; nothing known means refused', () => {
+  expect(causeVerdict([])).toContain('no failure detail');
+  expect(
+    causeVerdict([
+      { name: 'Error', message: 'Property failed after 1 tests' },
+      { name: 'AssertionError', message: 'expected ECONNREFUSED to be 1' },
+    ]),
+  ).toBeNull();
+  expect(causeVerdict([{ name: 'Error', message: 'boom' }])).toContain(
+    'not an assertion or NotImplemented',
+  );
+  expect(
+    checkRedReports(
+      [
+        {
+          testResults: [
+            {
+              name: `${ROOT}/${P}`,
+              assertionResults: [
+                { title: 't', status: 'failed', failureMessages: ['x'], failures: [] },
+              ],
+            },
+          ],
+        },
+      ],
+      [P],
+      ROOT,
+    ).problems[0]?.reason,
+  ).toContain('no failure detail');
+  expect(
+    checkRedReports(
+      [
+        {
+          testResults: [],
+          unhandledErrors: [{ causes: [{ name: 'Error', message: 'connect ECONNREFUSED' }] }],
+        },
+      ],
+      [],
+      ROOT,
+    ).problems.map((p) => p.reason),
+  ).toContain(
+    'the run had unhandled errors: red for the wrong reason (network or database unreachable)',
+  );
 });

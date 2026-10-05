@@ -160,7 +160,7 @@ async function runGit(argv: string[]): Promise<number> {
       );
       results.push(
         runCheck('path-guard-author', () =>
-          authorPathsCheck(root, base, specCommit, task.paths, task.test_paths),
+          authorPathsCheck(root, base, specCommit, { id: taskId ?? '', ...task }),
         ),
       );
     } else {
