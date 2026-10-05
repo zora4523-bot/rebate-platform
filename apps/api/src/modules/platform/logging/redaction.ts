@@ -97,6 +97,21 @@ export function redactPath(path: string): string {
     .join('/');
 }
 
+/** Unwrap blob URLs iteratively so nested origins are written once without recursive calls. */
+function redactURL(url: URL): string {
+  let prefix = '';
+  while (url.protocol === 'blob:') {
+    prefix += 'blob:';
+    const path = url.pathname;
+    try {
+      url = new URL(path);
+    } catch {
+      return prefix + redactPath(path);
+    }
+  }
+  return prefix + redactText(url.origin) + redactPath(url.pathname);
+}
+
 export const UNSERIALIZABLE = '[Unserializable]';
 
 function isBoxed(value: unknown): value is { valueOf(): string | number | boolean | bigint } {
@@ -161,7 +176,7 @@ export function redactValue(
       (typeof value === 'object' && value !== null && errorCopies.has(value));
     freeText ||= freeTextKeys.has(key) || (key === 'err' && !error);
     if (isBinary(value)) return `[Binary ${String(value.byteLength)} bytes]`;
-    if (value instanceof URL) value = redactText(value.origin) + redactPath(value.pathname);
+    if (value instanceof URL) value = redactURL(value);
     if (isBoxed(value)) value = value.valueOf();
     if (
       freeText &&

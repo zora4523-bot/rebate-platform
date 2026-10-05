@@ -63,10 +63,11 @@ function serializeRequest(value: unknown): unknown {
       socket?: { remotePort?: unknown };
     };
     const url = request.routeOptions?.url;
+    const hostname = request.hostname;
     return redactRecord({
       method: request.method,
       url: typeof url === 'string' ? redactPath(url) : '[unmatched]',
-      hostname: request.hostname,
+      hostname: typeof hostname === 'string' ? redactPath(hostname) : hostname,
       remoteAddress: request.ip,
       remotePort: request.socket?.remotePort,
     });
