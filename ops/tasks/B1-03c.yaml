@@ -11,7 +11,8 @@ type: impl
 # （sms-codes 的 purpose 与 action、oauth-attempts、step-up 的 action、consents 的 accepted 与 type、abandon 的原操作）。
 # 最低支持版本经 F1-02b 的 content 只读入口取：risk 定义端口、content 实现、app.module 装配（编排者裁定 §5 第 3、4 条），本任务不建 content 代码。
 # 版本按 x.y.z 比较；X-Platform 为 h5、admin 或没有配置行、没设最低版本时不判定；三端缺 X-App-Version 或不合法按低于处理。
-# 受限会话的签发（scp）在 B1-02e，本任务只做越权拦截。platform 与 app.module.ts 路径，整体按 RV2。
+# 受限会话的签发（scp，登录与刷新时版本低于最低支持版本签 deletion_only）及它要用的版本查询在 B1-02e（identity 定义端口、content 实现、app.module 装配，
+# B1-02e 依赖 F1-02b；Codex 台账评审 2026-10-05），本任务只做接口层 10405 越权拦截。platform 与 app.module.ts 路径，整体按 RV2。
 refs: []
 refs_hash: {}
 deps: [B1-03b, B1-02e, F1-02b]

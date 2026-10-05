@@ -14,6 +14,7 @@ deps: [B1-02e, CT-20a]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
 impl: claude
 tester: codex
 accept:

@@ -8,7 +8,7 @@ type: impl
 # 做法：把 RequestValidationFilter 的两项职责（校验错误 → 20001 ErrorEnvelope、IdempotencyError outcome_unknown 断开连接）与 50001 兜底并成 platform/http 的一个过滤器，
 # bootstrap 只注册它；FST_ERR_CTP_* → 20001（data.fields=['body']，不回显请求体），其余未知异常 → 50001；带 statusCode 的普通错误也按 50001（头注释写明）。
 # 合并后删掉 B1-02c 的 ServerErrorInterceptor（或改为只做日志），行为以本任务的过滤器为准。依据：contracts/openapi.yaml 各操作 4XX / 5XX 引用 ErrorEnvelope、
-# contracts/error-codes.yaml 的 20001、50001，ADR-0001 §4.2（请求校验），由编排者摘入任务书第 2 节。bootstrap.ts 的在途任务 B1-01r 已合并（#82）。platform 路径 RV2。
+# contracts/error-codes.yaml 的 20001、50001，ADR-0001 §4.2（请求校验），由编排者摘入任务书第 2 节。bootstrap.ts 的在途任务 B1-01r 已合并（#82）；与 B1-01y（bootstrap、platform）、B1-03b 相交，串行。platform 路径 RV2。
 refs: []
 refs_hash: {}
 deps: [B1-02c]

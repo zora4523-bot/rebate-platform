@@ -1,16 +1,17 @@
 id: B1-03j
 repo: rebate-platform
-title: 冻结到期任务：frozen_until 到期自动恢复 normal（写审计、发 risk.state_changed）；不定期冻结满 30 天仍无结论只告警、不自动处理
+title: 冻结到期任务：frozen_until 到期自动恢复 normal（写审计、发 risk.state_changed）；不定期冻结满 30 天仍无结论只告警、不自动处理；申诉过了截止时间（第 3 个工作日 24:00）仍未结案只告警
 type: impl
 # 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释）。依据：BR-ID-36 条目行（冻结期限一段，拍板第二批 OPS-12、FUND-17）、04 §3.2 user_risk_state 行，由编排者摘入；
 # 验收参照 10 AC-S1-60 ③④。
 # 定时任务只经 platform 的 JobQueue（任务去重用 singletonKey，ADR-0001 §4.2 第 19 项）；platform/queue/catalog.ts 现有队列里没有风控用的，要新增一条（platform 路径，RV2）。
+# 申诉超时扫描（BR-ID-36「时限与超时告警」，只作内部时限、不改状态；Codex 台账评审 2026-10-05 补）：读 appeals.deadline_at（B1-03i 计算），只告警。
 # 时间只读注入的 Clock，到期按绝对时刻判定。站内信 RISK_STATE_CHANGED 由 notification 订阅 risk.state_changed 发出（模板归 B1-12 其余子任务），本任务只发事件、不推送。
 # 审计经 F1-06b 的审计端口（actor 记系统）；告警出口同 B1-03f 注释。
 # platform 路径，整体按 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-03h, F1-06b]
+deps: [B1-03h, F1-06b, B1-03i]
 paths:
   - 'apps/api/src/modules/risk/**'
   - 'apps/api/src/modules/platform/queue/catalog.ts'

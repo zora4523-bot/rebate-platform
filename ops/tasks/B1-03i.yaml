@@ -20,6 +20,7 @@ paths:
   - 'apps/api/src/modules/risk/**'
   - 'apps/api/src/app.module.ts'
   - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
 test_paths:
   - 'test/spec/risk/appeals/**'
 impl: claude
