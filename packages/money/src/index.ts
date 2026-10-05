@@ -3,21 +3,10 @@
 // Pure arithmetic primitives; commission split policies belong to packages/domain (B2-03).
 // Rules: 规划/08 BR-CALC-01, 02, 08, 26 (text in the task brief).
 
-/** Thrown for an amount that is not an integer number of fen, or is negative where forbidden. */
-export class InvalidAmount extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'InvalidAmount';
-  }
-}
+import { InvalidAmount, InvalidRatio } from './errors.ts';
 
-/** Thrown for a ratio that is not a bigint in 0..10000 (basis points), or a bad sum of ratios. */
-export class InvalidRatio extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'InvalidRatio';
-  }
-}
+export { formatYuan, formatYuanAdmin, formatYuanRange } from './display.ts';
+export { InvalidAmount, InvalidRatio } from './errors.ts';
 
 /** Result of splitByBp: one floor amount per input ratio (same order) and what is left. */
 export type SplitResult = {
