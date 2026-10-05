@@ -70,8 +70,21 @@ jobs:
 
   verify-int:
     # Needs Docker (Testcontainers starts the one-shot PostgreSQL): ubuntu-latest, never ubuntu-slim.
+    # The one-shot Redis of the integration tests (TEST_REDIS_URL) is a service container with
+    # the image of infra/local/compose.yaml and tools/ops/verify-container.sh, data on tmpfs only.
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      redis:
+        image: redis:7.4.11-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --tmpfs /data
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -83,7 +96,21 @@ jobs:
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # A service container takes no command, so the redis-server settings of
+      # infra/local/compose.yaml (no RDB, no AOF, noeviction with an explicit limit;
+      # ADR-0001 §4.2 #17) are applied at run time.
+      - name: Configure the one-shot Redis
+        run: |
+          reply="$(docker exec "$REDIS_ID" redis-cli CONFIG SET save '' appendonly no maxmemory 256mb maxmemory-policy noeviction)"
+          if [ "$reply" != OK ]; then
+            echo "::error::CONFIG SET on the one-shot Redis replied: ${reply}"
+            exit 1
+          fi
+        env:
+          REDIS_ID: ${{ job.services.redis.id }}
       - run: pnpm test:int
+        env:
+          TEST_REDIS_URL: redis://127.0.0.1:6379/0
       - run: pnpm db:check
 
   guard-git:
