@@ -1,0 +1,34 @@
+id: B1-02i
+repo: rebate-platform
+title: identity 建号核心（无路由，供短信登录、第三方首次登录、落地页注册复用）：users 行（手机号密文与盲索引、默认昵称与头像、默认等级、注册方式与渠道）、邀请码与归属码生成、同设备注册上限（device_registrations 计数、按设备加锁、44001 不建号）、注册来源记录、邀请绑定扩展点
+type: impl
+# 草稿 2026-10-05，B1-02e 拆分的一段（见 B1-02e 注释）。依据按规划 b9f54fe，编排者摘入任务书第 2 节（约 10KB）：BR-ID-05 条目行「同设备注册上限」一句；细则「同设备注册上限的计数」整项
+# 及其前面四条（设备哈希 H 的例子、按 device_hash 计、无效设备标识、窗口口径）；BR-ID-04 细则前三条（register_method / registered_channel、默认昵称、不自动合并）；
+# BR-INV-01 条目行与细则；BR-ATTR-06 条目行首段（attr_code）；BR-INV-14 首句（level.default）；BR-INV-06 条目行里 SAVEPOINT 一句；04 §3.2 users、device_registrations 行。
+# 验收参照 10 AC-S1-59 ⑥⑦（同设备计数与并号墓碑）。
+# 只交付 identity 的建号服务（application 层，接收调用方事务），不建路由：B1-02j 短信登录、B1-02d 第三方首次登录、B1-11 落地页注册（没有设备，不写注册来源记录、不判同设备上限）调用它。
+# 同设备注册上限：在建号同一事务内按 (app_id, device_hash) 加事务级锁，先锁、再数、再建；计数与并号成对例外照细则。开关 risk.merge_tombstone_dedupe、上限 risk.device_register_limit、
+# 默认等级 level.default 经 B1-02e 建的配置读取端口取值，未配置用 08 默认值（on、3、L1）。命中返回 44001 且不建号；risk_hits 由 B1-03d 补，本任务不写风控表。
+# 并号时补记 merged_into_user_id 归 B1-20。同一 IP 新注册的记数（44003 触发条件）由 B1-03g 接在本服务的调用点，本任务只留调用点。
+# 邀请码：CSPRNG、32 字符集、6 位，每账号至多 5 个候选；敏感词过滤经端口（场景 invite_code；BR-INV-01 的敏感词库还没有任务承接；在它到位前用本任务新建的最小种子词表 specs/sensitive-words.invite-code.txt（代理默认，常见不雅、辱骂缩写，文件头注明待词库任务替换），
+# 不用营销禁用词表 specs/banned-words.yaml（那是 BR-TEXT-13 文案用的）；邀请码终身不变，不能用空词库（编排者裁定 2026-10-06））；冲突或命中各计 1 次，
+# 全失败回滚整个建号事务并返回 50001、告警（结构化告警日志，出口同 B1-03f 注释）。attr_code：8 位 [0-9a-z]、本 App 唯一，冲突重试次数为代理默认，写进说明。
+# 默认昵称「用户」+ 用户 ID 后 4 位（不计 BR-ID-39 的修改次数）；头像写默认头像标识（常量，写进说明）；registered_channel 取 X-Channel。
+# 邀请绑定：建号事务内在 SAVEPOINT 里调用 growth 的绑定端口（identity 定义、B1-11 实现）；绑定失败只回滚到 savepoint、账号照常提交；端口未接时的返回见 README 裁定点。
+# 手机号由调用方规范化后传入（normalize_phone 在 B1-02e），密文与盲索引用 platform/crypto（上下文名写进说明，唯一约束 (app_id, phone_hmac) 只约束未注销账号）。
+# 只改 identity；若要动 app.module.ts 或 platform，先补台账路径。
+refs: []
+refs_hash: {}
+deps: [B1-02e]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'specs/sensitive-words.invite-code.txt'
+test_paths:
+  - 'test/spec/identity/registration/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/registration/**'
+status: todo
+pr: null

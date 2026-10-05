@@ -1,32 +1,40 @@
 id: B1-02e
 repo: rebate-platform
-title: identity 短信与会话主链：发码（login / bind / step_up）、短信登录（is_new_user、session_scope、device_registrations 计数）、刷新轮换与复用检测、退出（解除推送绑定）
+title: identity 发码 POST /v1/auth/sms-codes（login / bind / step_up）：手机号规范化、验证码存储与「校验并核销」原语（6 位、5 分钟、按手机号与用途、错满 5 次作废）、按手机号频控（60 秒 / 自然小时 5 条 / 自然日 10 条 / 滑动 24 小时保护，只计供应商受理）、号段 44001、短信假适配器
 type: impl
-# 2026-10-05 入账，B1-02 拆分的第二段（见 B1-02c 注释）。短信只接假适配器（APP_ENV=local/test，规划/11 §8）。
-# 依据：BR-ID-01（受限会话与判定顺序）、BR-ID-04～07、BR-ID-10、04 §6.1 相关行，由编排者摘入任务书第 2 节（带原文超 24KB）。
-# 提供「按用户作废全部会话」的内部入口（B1-27 后台改手机号要复用；差异清单第一节第 3 件）。
-# 推送绑定解除不在本任务：push_tokens 的写者是 notification 模块（还没建）。由 B1-12b 补齐（notification 的条件解绑命令，
-# identity 在吊销会话的同一事务内调用，BR-ID-07）；B1-12b 合并前，05 B1-02 行的「退出解除推送绑定」不算完成。
-# JWT 签名密钥、发码存储等新配置按 apps/api/AGENTS.md 进 platform/config（不直接读 process.env），新增环境变量写进
-# .env.example；要装新依赖写 deps_needed，由编排者开 deps 任务。platform 路径为 RV2，本任务整体按 RV2。
-# 实现路由的接口去掉 x-implementation: planned。test_paths：test/spec/identity/session/**（task-file.ts 还不认该字段；在它接受前，测试阶段的允许路径由编排会话写进任务书，规则测试只放第一类测试资产目录，spec_commit 前其余改动只许 NotImplemented 骨架，tools/guard/lib/spec-base.ts 已强制）。
-# 2026-10-05 补（Codex 台账评审）：登录与刷新时版本低于最低支持版本签 deletion_only（BR-ID-01 细则「受限会话」）要用版本查询：identity 定义端口、F1-02b 的 content 实现、
-# app.module 装配；判定链接线照 B1-03c 注释（①～③ 全局 guard / 签名钩子，④ 幂等在 idempotency.execute，④a 之后挂钩子），任务书要带这段。路由 schema 生成物
-# platform/validation/route-schemas.gen.ts 在去掉 planned 后重生成（B1-02c 引入），与 B1-02f / g、B1-03i 串行。
+# 2026-10-05 入账，B1-02 拆分的第二段（见 B1-02c 注释）。同日因依据过大（BR-ID-01、04～07、10 表格行约 15KB、细则约 113KB）与 PR ≤400 行（规划/11 §3.4、§5.3）再拆五段：
+# e 发码（本任务）、h 令牌签发与令牌守卫及退出、i 建号核心、j 短信登录、k 刷新轮换与按用户作废会话；说明见 couli-runs/LEDGER-next/b102e-split/README.md。
+# 依据按规划 b9f54fe（含 #49 每自然小时 5 条），SPEC_REF 推进（PR 111）合并后才派。编排者摘入任务书第 2 节（约 10KB）：BR-ID-05 条目行；细则的状态与默认值、频控各条与例子
+# （60 秒、每日、每小时、同时命中取最晚解除、与通道的关系及滑动 24 小时保护、码作废两例）、「判定位置」前两句、「手机号规范化」整项；04 §6.1 sms-codes 行。验收参照 10 AC-S1-78 ①～④。
+# 发码顺序：签名（B1-03b，全局）→ ③（B1-02h）→ 20001 → 号段 44001（sms.blocked_prefixes，本任务；命中返回结构化结果供 B1-03d 写 risk_hits）→［手机号 HMAC 黑名单 44001：B1-03d］
+# →［44003 三个触发条件：B1-03g］→［设备不同号码数 42901：B1-03g］→ 手机号频控 42901（本任务）。方括号几步只留有序插入点，另留「供应商受理后」计数点（IP 发码条数、全站预算，
+# B1-03g）；captcha_token 照契约接收、不校验。版本闸门与受限会话的请求体条件（purpose、action）归 B1-03c，本任务不判。
+# 存储用 Redis（BR-ID-05 影响面「Redis 限流键」；04 没有验证码表，不建迁移）：码只存 HMAC、错误次数与用途，TTL 5 分钟；频控「预占 → 受理后确认 / 明确拒绝后释放」原子完成，
+# 同号并发只发出一条。Redis 不可用：不发短信、不放行，返回码按编排者裁定 §5 第 8 条的限流口径（42901）。供应商结果未知（超时）的处理见 README 裁定点（默认按已发送计）。
+# 导出 normalize_phone（specs/phone-normalize.vectors.json）与「校验并核销」（20002 / 20003），供 B1-02j 登录、B1-02f step-up、B1-20 绑手机复用；identity 的配置读取端口在本任务建
+# （content 按同形实现、app.module 装配，同 F1-02b 注释），键未配置用 08 默认值。
+# 短信只接假适配器（APP_ENV=local/test，规划/11 §8）。02 §4.1 把「短信」列在 notification（还没建）：本任务在 identity 定义发送端口、假实现暂放 identity/infra，真实适配器接入时放
+# notification 并随迁（README 裁定点）。端口返回「受理 / 明确拒绝 / 结果未知」三类，假实现可注入三类结果、已发消息进进程内发件箱供测试读取；local/test 检测到短信真实密钥变量拒绝启动
+# （platform/config/app-env.ts 的临时匹配按其 TODO 换成短信适配器声明的变量名，一律 SMS_ 开头）。阿里云资料只作任务书引用（私有库 docs-mirror/aliyun-sms/ 的 frequency-limits、send-sms、
+# api-errors；控制台核查记录不进公开仓库），真实接入另立任务。日志不打验证码、captcha_token 与手机号明文（新字段名同步 platform/logging 脱敏清单）。
+# 实现路由时去掉 sendSmsCode 的 x-implementation: planned 并重生成 route-schemas.gen.ts（与 B1-02f / g / h / j / k、B1-03i 串行）。契约描述缺「每自然小时 5 条」，补法见 README 裁定点。
 refs: []
 refs_hash: {}
-deps: [B1-02c, B1-02b, CT-02b, F1-02b]
+deps: [B1-02c, B1-01y, F1-02b]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/logging/**'
   - '.env.example'
-  - 'contracts/openapi.yaml'
   - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/sms-codes/**'
 impl: claude
 tester: codex
 accept:
   - 'pnpm verify'
-  - 'test/spec/identity/session/**'
+  - 'test/spec/identity/sms-codes/**'
 status: todo
 pr: null

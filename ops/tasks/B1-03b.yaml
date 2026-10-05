@@ -14,9 +14,9 @@ type: impl
 # 所以签名检查必须在 Fastify 解析请求体之前完成：在 preParsing 阶段读出原始字节、按 BR-ID-09 先查 X-Device-Id（10402）再验签（10401），通过后把同样的字节交回解析器
 # （或等价地用自定义 JSON 解析器先验签后解析；platform 在 bootstrap 提供注册点，risk 注册检查）。验收含组合场景：签名错 + 损坏 JSON → 10401；签名对 + 损坏 JSON → 20001；
 # 非签名接口不受影响（Codex 台账评审 2026-10-05 第 1、2 轮）；
-# 出错响应经 B1-01za 的全局过滤器出 ErrorEnvelope。令牌守卫（B1-02e）在其后；整条判定链的接线见 B1-03c 注释。
-# 串行：b～k 共享 risk/** 与 app.module.ts，只能依次派；b 另与 B1-02e（identity）、B1-01y / B1-01za（bootstrap、platform）相交；c 与 B1-02g（platform/idempotency）相交；
-# i 与 B1-02e / f / g 共用 platform/validation/route-schemas.gen.ts。
+# 出错响应经 B1-01za 的全局过滤器出 ErrorEnvelope。令牌守卫 ② ③（B1-02h，B1-02e 拆分后）在其后，挂在本任务建的同一注册点（签名之后、Fastify 校验之前），注册点要能按顺序挂多项；整条判定链的接线见 B1-03c 注释。
+# 串行：b～k 共享 risk/** 与 app.module.ts，只能依次派；b 另与 B1-02e / h / i / j / k（identity）、B1-01y / B1-01za（bootstrap、platform）相交；c 与 B1-02g（platform/idempotency）相交；
+# i 与 B1-02e / f / g / h / j / k 共用 platform/validation/route-schemas.gen.ts。
 # 开工前在 ops/risk-map.yaml 登记 apps/api/src/modules/risk/**（规划/11 §1.1：risk 为 RV1；保护路径第三类，要负责人标签）。app.module.ts 不在白名单，整体按 RV2。
 refs: []
 refs_hash: {}

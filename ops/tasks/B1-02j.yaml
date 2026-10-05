@@ -1,0 +1,33 @@
+id: B1-02j
+repo: rebate-platform
+title: identity 短信登录 POST /v1/auth/login/sms：先判受限登录、校验并核销验证码、查找或建号（is_new_user）、登录页两条同意记录与 login_merge、login_logs、签发会话（session_scope）、invite_bind 与首次 App 登录复核扩展点
+type: impl
+# 草稿 2026-10-05，B1-02e 拆分的一段（见 B1-02e 注释）。依据按规划 b9f54fe，编排者摘入任务书第 2 节（约 11KB）：BR-ID-04 条目行「所有登录/注册入口…登录失败不写」一段、
+# 细则两例（勾选后码错不写同意）与 is_new_user 一条；BR-ID-05 条目行「验证码按 (手机号, purpose)…」一句与细则码作废两例；BR-ID-01 细则「判定」一项、「受限会话」的「签发」
+# 「受限登录」两项与「性质」一项；BR-ID-12 条目行中段（当前状态、login_merge 三条件、ai_third_party 与 labor_agreement 不参与）；BR-INV-06、BR-INV-09 条目行；
+# 04 §6.1 login/sms 行，§3.2 login_logs、consent_records 行。验收参照 10 AC-S1-78 ①②、AC-S1-83 ⑯～⑱（受限登录）。
+# 顺序：签名（B1-03b）与 ③（B1-02h）之后，先按请求自报的端、渠道、版本判定是否受限登录（B1-02h 的作用域判定），再规范化手机号（20001）、校验并核销验证码（B1-02e 原语，20002 / 20003），
+# 再按 phone_hmac 查已有账号（注销冷静期内算已有，已完成注销的不算）。受限且查不到 → 10405（data.reason=no_account），不建号、不写任何记录、不签令牌；受限且查到 → 只签 deletion_only，
+# 忽略邀请码（invite_bind=ignored_existing_user），登录本身该写的照写；不受限且查不到 → 调 B1-02i 建号（44001 不建号）；不受限且查到 → 普通登录，带邀请码时 ignored_existing_user。
+# 手机号 HMAC 黑名单 44001 在建号之前（B1-03d 接，本任务留插入点）。封禁用户照常登录（BR-ID-31；⑤ 不拦登录接口）。
+# 成功时同一事务：两条用户级 consent_records（privacy、agreement，version 取 legal_versions，channel=login_page，client_at=consent_at）、login_merge、login_logs（method=sms，
+# device_id_hash 取值见 README 裁定点）、经 B1-02h 建会话；失败不写同意与登录记录。consent_records 仓储（只插入）在本任务建，B1-02f 复用。
+# 首次 App 登录复核（BR-INV-09）经 growth 端口（identity 定义、B1-11 实现；未接时不做事：落地页绑定在 B1-11 之前不存在）。invite_bind 只在规范化后非空的 invite_code 时出现，
+# 建号时的绑定结果来自 B1-02i 的邀请绑定扩展点。推送令牌的登录时绑定由 B1-12b 接进 B1-02h 的建会话扩展点，本任务不碰 push_tokens。
+# 实现路由时去掉 loginBySms 的 x-implementation: planned 并重生成 route-schemas.gen.ts。
+refs: []
+refs_hash: {}
+deps: [B1-02h, B1-02i]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/sms-login/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/sms-login/**'
+status: todo
+pr: null

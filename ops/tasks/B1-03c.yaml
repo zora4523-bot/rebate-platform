@@ -4,18 +4,18 @@ title: 最低支持版本守卫（判定顺序 ④a，10405）与判定链接线
 type: impl
 # 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释）。依据：BR-ID-01 条目行与细则「最低支持版本的接口层拦截」（判定、位置、接口表、受限会话表、10405 与未决幂等键），
 # 04 §5 兼容与最低支持版本两行，由编排者摘入任务书第 2 节（细则很长，节选「判定」「位置」「受限会话」与两张表）。
-# 判定链接线（编排者 2026-10-05 裁定，B1-02e 任务书要带这段）：①～③（签名、令牌、App 来源与作用域）放全局 guard；④ 幂等命中回放在 idempotency.execute 里；
+# 判定链接线（编排者 2026-10-05 裁定，令牌守卫 B1-02h 的任务书要带这段；B1-02e 拆分后改指）：①～③（签名、令牌、App 来源与作用域）放全局 guard；④ 幂等命中回放在 idempotency.execute 里；
 # ④a 及之后的前置检查（版本守卫、10006 等）对幂等接口以「未命中之后、执行之前」的钩子注册进 platform/idempotency（platform 提供注册点，risk 注册检查），
 # 对非幂等接口由 ③ 之后的 guard 直接执行。本任务在 platform/idempotency 加钩子注册点并导出，测「已完成的同键请求照常回放、不跑钩子」「10405 不写幂等记录、不核销 step_up_token」。
 # 策略只读契约扩展 x-min-version-gate、x-session-scopes（CT-17a 已标；conformance.ts 的 GATE_EXCEPTIONS 是 08 接口表的副本），conditional 的请求体条件照 08 接口表实现
 # （sms-codes 的 purpose 与 action、oauth-attempts、step-up 的 action、consents 的 accepted 与 type、abandon 的原操作）。
 # 最低支持版本经 F1-02b 的 content 只读入口取：risk 定义端口、content 实现、app.module 装配（编排者裁定 §5 第 3、4 条），本任务不建 content 代码。
-# 版本按 x.y.z 比较；X-Platform 为 h5、admin 或没有配置行、没设最低版本时不判定；三端缺 X-App-Version 或不合法按低于处理。
-# 受限会话的签发（scp，登录与刷新时版本低于最低支持版本签 deletion_only）及它要用的版本查询在 B1-02e（identity 定义端口、content 实现、app.module 装配，
-# B1-02e 依赖 F1-02b；Codex 台账评审 2026-10-05），本任务只做接口层 10405 越权拦截。platform 与 app.module.ts 路径，整体按 RV2。
+# 版本按 x.y.z 比较；X-Platform 为 h5、admin 或没有配置行、没设最低版本时不判定；三端缺 X-App-Version 或不合法按低于处理。比较复用 B1-02h 在 platform/client-version 导出的纯函数，不另写一份。
+# 受限会话的签发（scp，登录与刷新时版本低于最低支持版本签 deletion_only）及版本查询端口在 B1-02h（作用域判定）、B1-02j（登录）、B1-02k（刷新）；scp 取自 B1-02h 守卫放进请求上下文的值
+# （B1-02e 拆分后改指；Codex 台账评审 2026-10-05），本任务只做接口层 10405 越权拦截。platform 与 app.module.ts 路径，整体按 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-03b, B1-02e, F1-02b]
+deps: [B1-03b, B1-02h, F1-02b]
 paths:
   - 'apps/api/src/modules/risk/**'
   - 'apps/api/src/modules/platform/idempotency/**'

@@ -1,23 +1,30 @@
 id: B1-12b
 repo: rebate-platform
-title: notification 模块首建与推送令牌条件解绑命令；identity 在吊销会话的同一事务内调用（退出、复用检测、被动结束）
+title: notification 模块首建与推送令牌的登录时绑定、条件解绑命令；identity 在建会话与吊销会话的同一事务内调用（登录、退出、复用检测、按用户 / 设备作废）
 type: impl
 # 2026-10-05 入账，承接 B1-02e 拆出的推送解绑（05 B1-02 行「退出登录解除推送绑定（OPS-21），会话被动结束时同样解除」）。
 # 依据：BR-ID-07 细则（同一事务内条件解绑，异步事件不能替代）、04 §3.2 push_tokens 行，由编排者摘入任务书第 2 节。
-# push_tokens 表已由 B1-12a 建好。只做解绑命令与 identity 接线；模板、推送 Adapter、站内消息等归 B1-12 其余子任务。
+# push_tokens 表已由 B1-12a 建好。只做登录时绑定、解绑命令与 identity 接线；模板、推送 Adapter、令牌上报接口、站内消息等归 B1-12 其余子任务。
+# 2026-10-05 B1-02e 拆分后：退出与建会话、吊销会话原语在 B1-02h，复用检测与按用户 / 按设备作废入口在 B1-02k，依赖随之改。登录时绑定（BR-ID-07 细则「登录时绑定」：
+# 同一事务先锁设备行、写 last_login_sid 之后，这台设备已有令牌行且不在冻结期时写 (user_id, bound_sid)）原先没有任务承接，并入本任务，接 B1-02h 建会话原语的同事务扩展点。
+# 依据另加该细则「绑定代际」「登录时绑定」「解绑一律是条件更新」「被动结束会话时解绑」「旧会话终止与当前有效会话并存」各项；验收参照 10 AC-S1-76。
+# 02 §4.1 里 identity 依赖 notification、notification 又依赖 identity（成环）：调用方向按 .dependency-cruiser 的 no-circular 定，
+# 必要时 identity 定义端口、notification 实现、app.module 装配（同 B1-03b 的依赖倒置），并在 PR 说明里写明。
 # 开工前要在 ops/risk-map.yaml 登记 apps/api/src/modules/notification/**（保护路径，需负责人标签）。
-# test_paths：test/spec/notification/unbind/**（同 B1-02c 注释的做法）。
+# test_paths 由 notification/unbind 改为 notification/session-binding（任务未开工；绑定与解绑同测）。
 refs: []
 refs_hash: {}
-deps: [B1-02e, B1-12a]
+deps: [B1-02h, B1-02k, B1-12a]
 paths:
   - 'apps/api/src/modules/notification/**'
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/notification/session-binding/**'
 impl: claude
 tester: codex
 accept:
   - 'pnpm verify'
-  - 'test/spec/notification/unbind/**'
+  - 'test/spec/notification/session-binding/**'
 status: todo
 pr: null

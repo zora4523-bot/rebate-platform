@@ -1,0 +1,32 @@
+id: B1-02k
+repo: rebate-platform
+title: identity 刷新轮换 POST /v1/auth/refresh（每次轮换、30 秒宽限、复用即吊销整条 sid 并 10404、作用域按本次请求重判）与按用户 / 按设备作废全部会话的内部入口
+type: impl
+# 草稿 2026-10-05，B1-02e 拆分的一段（见 B1-02e 注释）。依据按规划 b9f54fe，编排者摘入任务书第 2 节（约 6KB）：BR-ID-07 条目行前半（到「单飞」之前）与细则的默认值、三个例子、
+# 单飞验收、「退出登录…后台可按用户或设备吊销全部 sid」一条、「被动结束会话时解绑」「旧会话终止与当前有效会话并存」两项（只取吊销的触发与条件，解绑本身归 B1-12b）、「作用域 scp」一项；
+# BR-ID-01 细则「受限会话」的「换回正常作用域」一项；BR-ID-06 细则「改号后全部设备退出登录」「被退出的设备」两项（作废入口的使用方）；04 §6.1 refresh 行，§3.2 sessions / refresh_tokens 行；
+# 迁移 0013 头注释里 parent_hash 唯一与填空列一次的两段。验收参照 AC-ACC-05（BR-ID-07 影响面）与 10 AC-S1-83 里刷新得到受限 / 正常作用域的步骤。
+# 刷新：签名（B1-03b）与 ③（B1-02h）之后，按 token_hash 锁住该行。未轮换、未过期、会话未吊销 → 轮换：新行 parent_hash 指向旧行、旧行记 rotated_at、过期重新计 30 天，
+# 作用域经 B1-02h 的判定按本次请求重取，sid 不变；新令牌对用 platform/crypto 的字段加密（数据密钥）写入 Redis refresh_grace:{旧哈希}，TTL 30 秒（数据库仍只存哈希）。
+# 已轮换的旧令牌再提交：X-Device-Id 等于该 sid 的设备、距 rotated_at ≤30 秒、直接后继未轮换、Redis 有记录 → 解密返回同一对，不吊销；否则经 B1-02h 的吊销原语吊销整条 sid 并 10404。
+# 过期或会话已吊销 → 10404。parent_hash 唯一约束挡住并发二次轮换，冲突一方按「已轮换」走宽限判定。Redis 写失败、读失败的处理见 README 裁定点
+# （默认：写失败回滚这次轮换并 50001，读出错 50001 且不吊销；「Redis 无记录」才按复用处理）。
+# 内部入口（identity/index.ts 导出，接收调用方事务）：按用户作废全部会话（B1-27 后台改手机号、B1-20 并号、封禁）、按设备作废全部会话；revoke_reason 用固定取值并写进说明。
+# 吊销会话同事务解除推送绑定由 B1-12b 接（复用检测与两个作废入口都要调）；B1-12b 合并前，05 B1-02 行「会话被动结束时同样解除」不算完成。
+# 实现路由时去掉 refreshToken 的 x-implementation: planned 并重生成 route-schemas.gen.ts。集成测试用 B1-01y 的一次性 Redis；测试会话经 B1-02h 的建会话原语创建，不依赖 B1-02j。
+refs: []
+refs_hash: {}
+deps: [B1-02h, B1-01y]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/session/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/session/**'
+status: todo
+pr: null

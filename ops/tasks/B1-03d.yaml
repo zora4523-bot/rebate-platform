@@ -6,15 +6,15 @@ type: impl
 # BR-ID-05（发码顺序里 44001 的位置、同设备注册上限）、BR-ID-33、04 §3.2 risk_hits / blocklist 行、04 §7 44001 行（只带风控提示编码 risk_msg.<code>），由编排者摘入。
 # 表由 B1-03a 建（维度取值名与列以它合并后的 db/schema.sql 为准）；请求类型用 CT-02d（PR 98 已合并）的 blocked_request_type（register / withdraw / phone_change /
 # payout_account）。拦截请求编号对外的编码随后台接口契约定（CT-02d 注释），ref_id（拦截请求编号，uuid）由应用在插入前生成 UUIDv7、同一次被拦请求的所有命中行共用（risk_hits.id 是不对外的自增主键，ADR-0001 §4.2 第 1 项；B1-03a 评审 2026-10-05）。
-# 只提供 risk/index.ts 的命中服务并接到已存在的调用方：identity 的发码（BR-ID-05 发码顺序第 3 步）、验证码登录即注册、同设备注册上限的 44001（都记 register 类）；
-# 换手机号（B1-20）、收款账号（B2）、提现（B2-05）、联盟备案（B1-06）由各自任务调用本服务，本任务不碰那些模块。
-# B1-02e 若已实现号段 sms.blocked_prefixes 的 44001 或同设备上限，本任务只补手机号 HMAC 维度与 risk_hits，不重复（编排者派 B1-03d 前核对 B1-02e 实际范围，裁定 §5 第 13 条）。
+# 只提供 risk/index.ts 的命中服务并接到已存在的调用方（都记 register 类）：identity 的发码（B1-02e 留的插入点，发码顺序第 3 步）、验证码登录即注册（B1-02j 建号前的插入点）、
+# 同设备注册上限的 44001；换手机号（B1-20）、收款账号（B2）、提现（B2-05）、联盟备案（B1-06）由各自任务调用本服务，本任务不碰那些模块。
+# 分界（B1-02e 拆分后定死，替代原「派前核对」，裁定 §5 第 13 条）：号段 sms.blocked_prefixes 的 44001 由 B1-02e 判定、同设备注册上限的 44001 由 B1-02i 判定，本任务只给二者补 risk_hits，不重复判定；手机号 HMAC 维度在本任务。
 # 规划没有默认值、要负责人定的（差异清单第五节第 1 题：同一个值重复登记是覆盖还是拒绝）不在本任务：本任务只读 blocklist，登记与删除归后台（F1-10）。
 # 订单侧维度（order_no_suffix、channel）的命中处理归 B1-09（BR-ATTR-26）。risk_rules 里黑名单命中对应的规则行必须先存在（risk_hits.rule_id 外键，B1-03a 迁移头注释）：种子或运行时 INSERT … ON CONFLICT DO NOTHING 补登记，由本任务定并写进说明。
 # identity 与 app.module.ts 路径，整体按 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-03a, CT-02d, B1-03b, B1-02e]
+deps: [B1-03a, CT-02d, B1-03b, B1-02j]
 paths:
   - 'apps/api/src/modules/risk/**'
   - 'apps/api/src/modules/identity/**'
