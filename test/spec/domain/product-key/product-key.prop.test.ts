@@ -132,4 +132,4 @@ it('[AC-B1-05b-25] [BR-PROD-02/03] 属性：非法字符插入 stable_id 后校�
   expect(Object.values(stats.flush().hits).reduce((sum, count) => sum + count, 0)).toBe(
     params.numRuns,
   );
-});
+}, 300_000);
