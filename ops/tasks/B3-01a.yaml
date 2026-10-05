@@ -1,0 +1,28 @@
+id: B3-01a
+repo: rebate-platform
+title: 评测框架第一段：评测题与清单的 JSON Schema、加载与校验（格式、哈希、切分不泄题、近似重复、只增或退役、冒烟集组成）与合成样例
+type: impl
+# 2026-10-05 入账（会话「Agent 落地方案」，B3 线由本会话负责，已与代码仓库在途编排会话协调）。
+# 从 05 B3-01 拆出不依赖 CT-08（流协议）的部分；回放运行器、结果分类、分层报告与冒烟门禁脚本在 B3-01b（等 CT-08）。
+# 依据：BR-AI-21（冒烟与全量的组成、门槛，取值只在 08）、BR-AI-19 细则「真实对话的使用」（AI-11）、02 §9.3 与 §16.2
+# （公开库只放加载器、schema 与合成样例；正式评测题在 rebate-private/evals/agent/），方案 docs/proposals/20261005-Agent系统设计与评测进化.md §4.4.3（参考）。
+# 02 §16.2 写的根目录 evals/ 在本仓库落为 workspace 包 packages/evals（pnpm-workspace 只收 apps/*、packages/*、tools、test）。
+# 分工按规划/11 §1.1（2026-10-05）：Codex 先写规则测试（test/spec/evals/**，先红），Claude 新子代理过审，Opus 5.5 实现。
+# 规则测试经相对路径引用 packages/evals/src，测试阶段不改 test/package.json 与锁文件；实现阶段建包并更新 pnpm-lock.yaml。
+refs: [BR-AI-21, BR-AI-19]
+refs_hash:
+  BR-AI-21: 7e5eb4e48745
+  BR-AI-19: f2aa4c7770c8
+deps: []
+paths:
+  - 'packages/evals/**'
+  - 'pnpm-lock.yaml'
+test_paths:
+  - 'test/spec/evals/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/evals/**'
+status: todo
+pr: null

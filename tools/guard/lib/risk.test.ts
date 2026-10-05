@@ -21,6 +21,7 @@ describe('ops/risk-map.yaml', () => {
       'apps/api/src/modules/admin/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/content/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/platform/** RV2 claude/codex/claude+codex',
+      'packages/evals/** RV1 claude/codex/codex',
       'packages/money/** RV2 claude/codex/claude+codex',
       'packages/domain/** RV2 claude/codex/claude+codex',
       'packages/db/** RV2 claude/codex/claude+codex',
