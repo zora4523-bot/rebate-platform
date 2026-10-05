@@ -1,5 +1,6 @@
 // BR-ID-09 and BR-ID-05 excerpts in B1-02c; registerDevice contract, 04 §3.2 / §6.1.
 // Real HTTP injection and per-file migrated database clone; no mocked identity implementation.
+import { createHash, randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
@@ -23,11 +24,13 @@ let database: TestDatabase | undefined;
 let db: Kysely<DB>;
 let app: HttpApp | undefined;
 let dir: string | undefined;
-let validate: Awaited<ReturnType<typeof responseValidator>>;
+let validate: Awaited<ReturnType<typeof responseValidator>>['validate'];
+let validateError: Awaited<ReturnType<typeof responseValidator>>['validateError'];
 const lines: string[] = [];
+const issuedSecrets = new Set<string>();
 
 beforeAll(async () => {
-  validate = await responseValidator();
+  ({ validate, validateError } = await responseValidator());
   database = await createTestDatabase();
   db = createDb({ connectionString: database.urlFor('couli_app'), max: 4 });
   dir = makeDir();
@@ -59,9 +62,10 @@ function success(response: Response, label = '') {
   expect(valid, label).toBe(true);
   expect(body.code).toBe(0);
   expect(body.data.device_id).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   );
   expect(body.data.install_secret.length).toBeGreaterThan(0);
+  issuedSecrets.add(body.data.install_secret);
   return body.data;
 }
 
@@ -69,15 +73,18 @@ async function rejected(payload: Record<string, unknown>, field: string, label: 
   const before = await countDevices(db);
   const response = await register(app!, payload);
   expect(response.statusCode, label).toBe(400);
-  const body = response.json<{ code: number; data: Record<string, unknown> }>();
+  const body = response.json<{ code: number; data?: Record<string, unknown> }>();
+  const valid = validateError(body);
+  expect(validateError.errors ?? [], label).toEqual([]);
+  expect(valid, label).toBe(true);
   expect(body.code, label).toBe(20001);
-  expect(body.data['fields'], label).toEqual([field]);
+  expect(body.data?.['fields'], label).toEqual([field]);
   expect(body.data, label).not.toHaveProperty('device_id');
   expect(body.data, label).not.toHaveProperty('install_secret');
   expect(await countDevices(db), label).toBe(before);
 }
 
-it('[AC-B1-02c#1][BR-ID-09 细则；registerDevice] 全部有效向量无需签名或登录即可注册，响应符合契约', async () => {
+it('[AC-B1-02c#1][BR-ID-09 细则；registerDevice] 全部有效向量及随机合法哈希无需签名或登录即可注册，响应符合契约', async () => {
   expect(vectors.hash_cases.length).toBeGreaterThan(0);
   for (const vector of vectors.hash_cases) {
     success(
@@ -92,12 +99,23 @@ it('[AC-B1-02c#1][BR-ID-09 细则；registerDevice] 全部有效向量无需签�
       vector.note,
     );
   }
+  success(
+    await register(
+      app!,
+      {
+        device_hash: createHash('sha256').update(randomUUID()).digest('hex'),
+        id_source: 'android_id',
+      },
+      headers('android_id'),
+    ),
+    '随机合法哈希也可注册，无效清单不能变成向量白名单',
+  );
 });
 
 it('[AC-B1-02c#2][BR-ID-09；04 §3.2 devices] 注册新增一行，保存请求头、哈希、来源与未绑定未吊销状态', async () => {
-  for (const vector of vectors.hash_cases) {
+  for (const [index, vector] of vectors.hash_cases.entries()) {
     const before = await countDevices(db);
-    const requestHeaders = headers(vector.id_source);
+    const requestHeaders = headers(vector.id_source, 'couli', `2.${index}.0`);
     const data = success(
       await register(
         app!,
@@ -128,7 +146,7 @@ it('[AC-B1-02c#2][BR-ID-09；04 §3.2 devices] 注册新增一行，保存请求
   }
 });
 
-it('[AC-B1-02c#3][BR-ID-09；04 §3.2 devices] install_secret 原值及其 hex/base64 写法不落库', async () => {
+it('[AC-B1-02c#3][BR-ID-09；04 §3.2 devices] install_secret 原串、解码字节及其 hex/base64/base64url 写法不落库', async () => {
   const vector = validCase();
   const data = success(
     await register(app!, { device_hash: vector.device_hash, id_source: vector.id_source }),
@@ -138,15 +156,31 @@ it('[AC-B1-02c#3][BR-ID-09；04 §3.2 devices] install_secret 原值及其 hex/b
   );
   expect(rows).toHaveLength(1);
   const secret = Buffer.from(data.install_secret, 'utf8');
-  const forms = [
-    secret,
-    Buffer.from(secret.toString('hex')),
-    Buffer.from(secret.toString('base64')),
-  ];
+  const rawForms = [secret];
+  if (/^(?:[0-9a-fA-F]{2})+$/.test(data.install_secret))
+    rawForms.push(Buffer.from(data.install_secret, 'hex'));
+  for (const encoding of ['base64url', 'base64'] as const) {
+    const alphabet = encoding === 'base64url' ? /^[A-Za-z0-9_-]+={0,2}$/ : /^[A-Za-z0-9+/]+={0,2}$/;
+    if (!alphabet.test(data.install_secret)) continue;
+    const decoded = Buffer.from(data.install_secret, encoding);
+    // Buffer decoding is permissive; round-trip to exclude malformed encodings.
+    if (decoded.toString(encoding).replace(/=+$/, '') === data.install_secret.replace(/=+$/, ''))
+      rawForms.push(decoded);
+  }
+  const forms = rawForms
+    .flatMap((bytes) => [
+      bytes,
+      Buffer.from(bytes.toString('hex')),
+      Buffer.from(bytes.toString('base64')),
+      Buffer.from(bytes.toString('base64url')),
+    ])
+    .filter((bytes) => bytes.length >= 12);
   expect(Buffer.isBuffer(rows[0]!.install_secret_cipher)).toBe(true);
   expect(rows[0]!.install_secret_cipher.length).toBeGreaterThan(0);
   for (const [column, value] of Object.entries(rows[0]!)) {
-    const bytes = Buffer.isBuffer(value) ? value : Buffer.from(JSON.stringify(value) ?? '');
+    const bytes = Buffer.isBuffer(value)
+      ? value
+      : Buffer.from(typeof value === 'bigint' ? String(value) : (JSON.stringify(value) ?? ''));
     for (const form of forms) expect(bytes.includes(form), `列 ${column} 不含原值`).toBe(false);
   }
 });
@@ -221,15 +255,18 @@ it('[AC-B1-02c#8][04 §3.2 devices；registerDevice] 同哈希在两个App注册
   }
 });
 
-it('[AC-B1-02c#9][BR-ID-09 install_secret；任务§9] 注册期间的真实应用日志不泄露签发的install_secret', async () => {
+it('[AC-B1-02c#9][BR-ID-09 install_secret；任务§9] 全部采集日志不泄露本文件签发的密钥原串及hex/base64写法', async () => {
   const vector = validCase();
   const start = lines.length;
-  const data = success(
-    await register(app!, { device_hash: vector.device_hash, id_source: vector.id_source }),
-  );
+  success(await register(app!, { device_hash: vector.device_hash, id_source: vector.id_source }));
   // Let the HTTP completion log finish before inspecting the synchronous memory destination.
   await new Promise<void>((resolve) => setImmediate(resolve));
-  const captured = lines.slice(start);
-  expect(captured.length, '必须确实采集到请求日志').toBeGreaterThan(0);
-  expect(captured.join('')).not.toContain(data.install_secret);
+  expect(lines.length, '必须确实采集到请求日志').toBeGreaterThan(start);
+  expect(issuedSecrets.size, '必须确实收集到签发的密钥').toBeGreaterThan(0);
+  const captured = lines.join('');
+  for (const secret of issuedSecrets) {
+    expect(captured).not.toContain(secret);
+    expect(captured).not.toContain(Buffer.from(secret).toString('hex'));
+    expect(captured).not.toContain(Buffer.from(secret).toString('base64'));
+  }
 });

@@ -42,11 +42,11 @@ export function validCase(): HashCase {
   return vectors.hash_cases[0]!;
 }
 
-export function headers(source: IdSource = 'idfv', appId = 'couli') {
+export function headers(source: IdSource = 'idfv', appId = 'couli', appVersion = '1.2.3') {
   return {
     'x-app-id': appId,
     'x-platform': source === 'idfv' ? 'ios' : source === 'odid' ? 'harmony' : 'android',
-    'x-app-version': '1.2.3',
+    'x-app-version': appVersion,
   };
 }
 
@@ -142,7 +142,13 @@ export async function responseValidator() {
   expect(operation?.operationId, '前置条件：registerDevice 契约存在').toBe('registerDevice');
   const schema = operation?.responses?.['200']?.content?.['application/json']?.schema;
   expect(schema, '前置条件：200 响应 schema 存在').toBeDefined();
-  return createValidatorCompiler()({ schema: schema!, httpPart: 'body' });
+  const errorSchema = operation?.responses?.['4XX']?.content?.['application/json']?.schema;
+  expect(errorSchema, '前置条件：4XX 错误响应 schema 存在').toBeDefined();
+  const compile = createValidatorCompiler();
+  return {
+    validate: compile({ schema: schema!, httpPart: 'body' }),
+    validateError: compile({ schema: errorSchema!, httpPart: 'body' }),
+  };
 }
 
 export interface DeviceRow {
