@@ -6,6 +6,11 @@
 // method is the canonical signing-string component, not a raw client API method argument:
 // lowercase here is a malformed signing component; clients may uppercase their input first.
 // Each invalid case isolates one expected_reason below; no live clock or replay store is used.
+// Invalid-case expected_sign, when present, signs every field verbatim (no method uppercasing
+// or host stripping). method_case and path_domain therefore cause signature mismatches at
+// the server, which uses the uppercase method and host-free request path per BR-ID-09.
+// Fixture field order: never place nonce or another 32/40-digit hex field immediately after
+// install_secret: the cn-hex-secret gitleaks rule also inspects the following line.
 import { createHash, createHmac } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
@@ -31,7 +36,7 @@ const failureReasons = [
   'path_domain',
 ] as const;
 type FailureReason = (typeof failureReasons)[number];
-type InvalidCase = RequestCase & { expected_reason: FailureReason };
+type InvalidCase = RequestCase & { expected_reason: FailureReason; expected_sign?: string };
 type Vectors = {
   $comment: string;
   version: number;
@@ -85,17 +90,23 @@ function readVectors(): Vectors {
 function signingString(c: RequestCase): string {
   const bodyHash = createHash('sha256').update(Buffer.from(c.body_utf8, 'utf8')).digest('hex');
   // Do not parse the path with URL/URLSearchParams: preserve query bytes and parameter order.
-  return [c.method.toUpperCase(), c.path, c.timestamp, c.nonce, bodyHash].join('\n');
+  return [c.method, c.path, c.timestamp, c.nonce, bodyHash].join('\n');
 }
 
 function failures(c: RequestCase): FailureReason[] {
   const reasons: FailureReason[] = [];
   const timestampValid = c.timestamp.length === 10 && /^[0-9]{10}$/.test(c.timestamp);
   if (!timestampValid) reasons.push('timestamp_format');
-  else if (Math.abs(c.server_time - Number(c.timestamp)) > 300) reasons.push('time_skew');
+  // Check skew independently, even for malformed numeric syntax; a nonnumeric value has
+  // no usable skew and violates only timestamp_format. Format fixtures must isolate it.
+  const timestamp = Number(c.timestamp.trim());
+  if (Number.isFinite(timestamp) && Math.abs(c.server_time - timestamp) > 300) {
+    reasons.push('time_skew');
+  }
   if (c.nonce.length !== 32) reasons.push('nonce_length');
-  else if (!/^[0-9a-f]{32}$/i.test(c.nonce)) reasons.push('nonce_hex');
-  else if (c.nonce !== c.nonce.toLowerCase()) reasons.push('nonce_case');
+  // Character membership and case do not depend on length (or on each other).
+  if (/[^0-9a-f]/i.test(c.nonce)) reasons.push('nonce_hex');
+  if (c.nonce !== c.nonce.toLowerCase()) reasons.push('nonce_case');
   if (c.method !== c.method.toUpperCase()) reasons.push('method_case');
   if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(c.path)) reasons.push('path_domain');
   return reasons;
@@ -156,9 +167,15 @@ it('[AC-CT-15k#5] 时间偏差正负 300 秒通过、正负 301 秒拒绝', () =
   }
 });
 
-it('[AC-CT-15k#6] 每条反例的失败原因与原文规则一致', () => {
+it('[AC-CT-15k#6] 每条反例只违反标注规则，若提供签名则按字段原样计算', () => {
   for (const c of readVectors().invalid_cases) {
-    expect(failures(c), c.note).toEqual([c.expected_reason]);
+    expect.soft(failures(c), c.note).toEqual([c.expected_reason]);
+    if ('expected_sign' in c) {
+      const digest = createHmac('sha256', Buffer.from(c.install_secret, 'utf8'))
+        .update(signingString(c), 'utf8')
+        .digest('hex');
+      expect.soft(c.expected_sign, c.note).toBe(digest);
+    }
   }
 });
 
@@ -176,12 +193,46 @@ it('[AC-CT-15k#7] 反例覆盖时间格式、nonce 格式、小写签名 method 
     true,
   );
   expect(timestamps.some((c) => /[^0-9]/.test(c.timestamp))).toBe(true);
+  expect(
+    timestamps.some((c) => Number.isNaN(Number(c.timestamp.trim()))),
+    '至少一个无法解析成数字的时间戳反例',
+  ).toBe(true);
+  expect(
+    cases.some((c) => c.expected_reason === 'path_domain' && c.path.startsWith('//')),
+    '至少一个以 // 开头的带域名 path 反例',
+  ).toBe(true);
 });
 
 it('[AC-CT-15k#8] 所有 install_secret 均为明显的测试值', () => {
   const vectors = readVectors();
   for (const c of [...vectors.valid_cases, ...vectors.invalid_cases]) {
     expect(c.install_secret.startsWith('test-'), c.note).toBe(true);
-    expect(c.install_secret.length, c.note).toBeGreaterThan(5);
+    expect(c.install_secret, c.note).toMatch(/[^A-Za-z0-9_-]/);
+    // contracts/openapi.yaml RegisterDeviceData.install_secret: 16..128 characters.
+    expect([...c.install_secret].length, c.note).toBeGreaterThanOrEqual(16);
+    expect([...c.install_secret].length, c.note).toBeLessThanOrEqual(128);
   }
+});
+
+it('[AC-CT-15k#9] 正例覆盖 PUT 签名', () => {
+  expect(readVectors().valid_cases.some((c) => c.method === 'PUT')).toBe(true);
+});
+
+it('[AC-CT-15k#10] 正例覆盖超过 64 字节的 HMAC 密钥', () => {
+  expect(
+    readVectors().valid_cases.some((c) => Buffer.byteLength(c.install_secret, 'utf8') > 64),
+  ).toBe(true);
+});
+
+it('[AC-CT-15k#11] 正例覆盖小写百分号编码与重复 query 参数', () => {
+  const cases = readVectors().valid_cases;
+  // Inspect the raw query only: URLSearchParams would decode/normalize the evidence.
+  const queries = cases.filter((c) => c.path.includes('?')).map((c) => c.path.split('?')[1]!);
+  expect(queries.some((query) => /%(?:[a-f][0-9a-f]|[0-9][a-f])/.test(query))).toBe(true);
+  expect(
+    queries.some((query) => {
+      const names = query.split('&').map((parameter) => parameter.split('=')[0]);
+      return new Set(names).size < names.length;
+    }),
+  ).toBe(true);
 });
