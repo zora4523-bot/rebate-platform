@@ -88,6 +88,38 @@ rules:
     impl: claude
     tester: codex
     review: codex
+  # H5、后台与前端共用包（规划/11 §1.1「H5、后台」行：RV0 / RV1，提现、调账页面 RV2，评审另加 Claude 新子代理）。
+  # 提现、调账页面在前，整包 RV1 在后（先匹配先生效）。桥 SDK 与令牌包按 §1.2「桥、页面」为 RV1。
+  - path: 'apps/admin/src/resources/withdrawals/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
+  - path: 'apps/admin/src/resources/adjustments/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
+  - path: 'apps/admin/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
+  - path: 'apps/h5/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
+  - path: 'packages/bridge-sdk/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
+  - path: 'packages/ui-tokens/**'
+    risk: RV1
+    impl: claude
+    tester: codex
+    review: codex
   - path: 'packages/money/**'
     risk: RV2
     impl: claude

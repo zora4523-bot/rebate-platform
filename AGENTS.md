@@ -57,6 +57,12 @@
 | `apps/api/src/modules/content/**` | Claude | Codex | Claude + Codex | RV2 |
 | `apps/api/src/modules/platform/**` | Claude | Codex | Claude + Codex | RV2 |
 | `packages/evals/**` | Claude | Codex | Codex | RV1 |
+| `apps/admin/src/resources/withdrawals/**` | Claude | Codex | Claude + Codex | RV2 |
+| `apps/admin/src/resources/adjustments/**` | Claude | Codex | Claude + Codex | RV2 |
+| `apps/admin/**` | Claude | Codex | Codex | RV1 |
+| `apps/h5/**` | Claude | Codex | Codex | RV1 |
+| `packages/bridge-sdk/**` | Claude | Codex | Codex | RV1 |
+| `packages/ui-tokens/**` | Claude | Codex | Codex | RV1 |
 | `packages/money/**` | Claude | Codex | Claude + Codex | RV2 |
 | `packages/domain/**` | Claude | Codex | Claude + Codex | RV2 |
 | `packages/db/**` | Claude | Codex | Claude + Codex | RV2 |
