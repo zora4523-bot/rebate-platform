@@ -5,14 +5,17 @@
 // §15.1 PG 一行. Start order: queue, then maintenance; stop order: maintenance (waiting for the run
 // in progress), queue, then the resources. No database, no port: the queue and the maintenance are
 // stand-ins that record every call. Top-level it() only (规划/11 §4.3).
+// B1-01w (worker 契约 8, written in ./worker-day-partitions.int.test.ts) removed the link_logs DEFAULT
+// exemption: WORKER_QUIET_DEFAULT_TABLES is no longer exported; the test of contracts 1–2 below
+// checks that instead of its old value. Nothing else here changed.
 import { expect, it } from 'vitest';
 
 import {
   createPartitionMaintenance,
   type PartitionMaintenanceOptions,
 } from '../../../../apps/api/src/modules/platform/maintenance/index.ts';
+import * as workerModule from '../../../../apps/api/src/modules/platform/maintenance/worker.ts';
 import {
-  WORKER_QUIET_DEFAULT_TABLES,
   createWorkerMaintenance,
   startWorkerServices,
   type StartStop,
@@ -379,7 +382,7 @@ function baseOptions(): Record<string, unknown> {
   };
 }
 
-it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; worker 契约 1、2; maintenance 契约 B] WORKER_QUIET_DEFAULT_TABLES 正好是 [link_logs] 且冻结（link_logs 的按日分区维护另立任务）；createWorkerMaintenance：合法选项（含 intervalMs）得到 runOnce / start / stop，创建时不读时钟、不写日志；多出的键（含 quietDefaultTables）、缺键、坏 intervalMs 同步抛 invalid_option', () => {
+it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; worker 契约 1、2、8（B1-01w）; maintenance 契约 B] worker.ts 不再导出 WORKER_QUIET_DEFAULT_TABLES（link_logs 的 DEFAULT 豁免已撤）；createWorkerMaintenance：合法选项（含 intervalMs）得到 runOnce / start / stop，创建时不读时钟、不写日志；多出的键（含 quietDefaultTables）、缺键、坏 intervalMs 同步抛 invalid_option', () => {
   const created: string[] = [];
   for (const extra of [{}, { intervalMs: 100 }]) {
     const clock = countingClock('2026-11-20T03:04:05Z');
@@ -415,13 +418,12 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; worker 契约 1、2; ma
   }
   expect({
     quiet: {
-      tables: [...WORKER_QUIET_DEFAULT_TABLES],
-      frozen: Object.isFrozen(WORKER_QUIET_DEFAULT_TABLES),
+      exported: Object.prototype.hasOwnProperty.call(workerModule, 'WORKER_QUIET_DEFAULT_TABLES'),
     },
     created,
     refused,
   }).toEqual({
-    quiet: { tables: ['link_logs'], frozen: true },
+    quiet: { exported: false },
     created: Array(2).fill('function function function clock 0 lines 0'),
     refused: Object.fromEntries(Object.keys(bad).map((label) => [label, []])),
   });
