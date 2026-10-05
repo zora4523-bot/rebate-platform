@@ -281,17 +281,24 @@ it('batchRisk asks every set on its own when the combined call fails or is not o
   }
 });
 
-it('checkTasks asks the guard once for the risk of every implementation task', () => {
-  const g = countingGuard();
-  const results = checkTasks(['X1-01', 'X1-01a', 'X9-01'], {
-    root,
-    spec,
-    riskSets: g.many,
-    risk: g.one,
+it('checkTasks asks the guard once, for the implementation tasks only', () => {
+  const own = scratchDir('task-batch');
+  writeFiles(own, {
+    'ops/tasks/X1-01.yaml': good(),
+    'ops/tasks/X1-01a.yaml': good({ id: 'X1-01a', paths: "\n  - 'apps/x/**'" }),
+    'ops/tasks/X1-01b.yaml': good({ id: 'X1-01b', type: 'migration', paths: "\n  - 'db/m/**'" }),
+    'ops/tasks/X1-01c.yaml': good({ id: 'X1-01c', type: 'contract', paths: "\n  - 'docs/x/**'" }),
   });
-  expect(results.map((r) => r.id)).toEqual(['X1-01', 'X1-01a', 'X9-01']);
-  expect(g.manyCalls).toEqual([[['packages/demo/src/**']]]);
-  expect(g.oneCalls).toEqual([]);
+  try {
+    const g = countingGuard();
+    const ids = ['X1-01', 'X1-01a', 'X1-01b', 'X1-01c'];
+    const results = checkTasks(ids, { root: own, spec, riskSets: g.many, risk: g.one });
+    expect(results.map((r) => r.id)).toEqual(ids);
+    expect(g.manyCalls).toEqual([[['packages/demo/src/**'], ['apps/x/**'], ['db/m/**']]]);
+    expect(g.oneCalls).toEqual([]);
+  } finally {
+    removeDir(own);
+  }
 });
 
 it('shows a task together with its computed risk', () => {

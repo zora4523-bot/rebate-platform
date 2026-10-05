@@ -369,7 +369,10 @@ function main(argv: string[]): number {
   if (cmd === 'check') {
     const results = checkTasks(
       rest.map((id) => assertTaskId(id)),
-      { onRiskFallback: (reason) => console.error(`notice: risk asked per task (${reason})`) },
+      {
+        onRiskFallback: (reason) =>
+          console.error(`notice: risk asked per task (${reason.split('\n')[0]})`),
+      },
     );
     const failed = results.filter((r) => r.problems.length > 0);
     if (values.json) {

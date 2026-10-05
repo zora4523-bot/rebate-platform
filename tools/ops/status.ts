@@ -71,6 +71,8 @@ export type BoardOptions = {
   root?: string;
   now?: Date;
   risk?: (paths: readonly string[]) => RiskReport;
+  /** Injected by tests: many sets at once (see task.ts riskSources). */
+  riskSets?: (sets: readonly (readonly string[])[]) => RiskReport[];
 };
 
 /** States that hold a task's paths: everything except "queued". */
@@ -144,7 +146,8 @@ export function collectBoard(opts: BoardOptions = {}): Board {
     [...tasks.values()].filter((t) => t.status === 'todo').map((t) => t.paths),
     riskSources({
       ...opts,
-      onRiskFallback: (reason) => warnings.push(`风险级未能合并计算，已逐个任务计算：${reason}`),
+      onRiskFallback: (reason) =>
+        warnings.push(`风险级未能合并计算，已逐个任务计算：${reason.split('\n')[0]}`),
     }),
   );
 
