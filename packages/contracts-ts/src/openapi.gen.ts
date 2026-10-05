@@ -1127,6 +1127,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My appeals
+         * @description Appeals of the current account only (the caller's own, account and order appeals alike),
+         *     newest first; the Appeal page shows progress and results from here (BR-ID-36). In the
+         *     10006 whitelist: a banned user, or one appealing a ban, can call it (BR-ID-31). The
+         *     internal deadline (appeals.deadline_at) and the handler are never returned: the
+         *     processing time limit is internal only and not shown to users (BR-ID-36 细则, BR-TEXT-23
+         *     细则).
+         */
+        get: operations["listAppeals"];
+        put?: never;
+        /**
+         * Submit an appeal
+         * @description Appeal on the account (target_type=account) or on one order (target_type=order, target_id
+         *     = the order_id); who may appeal is BR-ID-36 (① account: risk_state banned or frozen;
+         *     ② order: an order whose rebate risk control voided, BR-ATTR-26). At most one processing
+         *     appeal per target (the account, or one order): while one is processing, submitting again
+         *     returns that original appeal and creates no new one (BR-ID-36). An account appeal sets
+         *     risk_state to appealing and records prev_risk_state (BR-ID-36); target_type=order does not
+         *     change the account's risk state and only marks that order as under appeal (appeal_pending
+         *     on GET /v1/orders/{order_id}, 拍板第二批 OPS-07). For target_type=order an order_id that
+         *     is unknown or not the user's → 30701. How target_id is filled for target_type=account is
+         *     not set by 04 or BR-ID-36; the account appealed is always the caller's own. In the 10006
+         *     whitelist: a banned user, or one appealing a ban, can call it (BR-ID-31). The internal
+         *     deadline (appeals.deadline_at) and the handler are never returned: the processing time
+         *     limit is internal only and not shown to users (BR-ID-36 细则, BR-TEXT-23 细则). The result
+         *     reaches the user as the inbox message APPEAL_RESULT (BR-TEXT-23). Version gate: applied.
+         */
+        post: operations["submitAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/idempotency-keys/abandon": {
         parameters: {
             query?: never;
@@ -2226,6 +2268,63 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["Deletion"] | null;
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description contracts/enums/identity.yaml appeal_status (BR-ID-36).
+         * @enum {string}
+         */
+        AppealStatus: "processing" | "upheld" | "revoked";
+        /**
+         * @description contracts/enums/identity.yaml appeal_target_type (04 §6.1, BR-ID-36).
+         * @enum {string}
+         */
+        AppealTargetType: "account" | "order";
+        SubmitAppealRequest: {
+            target_type: components["schemas"]["AppealTargetType"];
+            target_id?: components["schemas"]["Id"];
+            content: string;
+        };
+        /**
+         * @description One of my appeals (04 §3.2 appeals). No deadline_at or handler_id: the processing time
+         *     limit is internal only (BR-ID-36 细则).
+         */
+        Appeal: {
+            appeal_id: components["schemas"]["Id"];
+            target_type: components["schemas"]["AppealTargetType"];
+            /**
+             * @description The order_id when target_type=order. For target_type=account how it is filled is not
+             *     set by 04 or BR-ID-36.
+             */
+            target_id: string | null;
+            status: components["schemas"]["AppealStatus"];
+            /** @description The text the user submitted. */
+            content: string;
+            /**
+             * Format: date-time
+             * @description Submission time.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When the appeal was closed (upheld or revoked); null while processing.
+             */
+            closed_at: string | null;
+        };
+        AppealResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Appeal"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AppealListData: {
+            items: components["schemas"]["Appeal"][];
+            next_cursor: string | null;
+        };
+        AppealListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AppealListData"];
             trace_id: components["schemas"]["TraceId"];
         };
         /**
@@ -6285,6 +6384,151 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["DeletionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listAppeals: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My appeals, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a91",
+                     *             "target_type": "order",
+                     *             "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *             "status": "processing",
+                     *             "content": "订单返利被作废，请核查。",
+                     *             "created_at": "2026-10-05T09:30:00+08:00",
+                     *             "closed_at": null
+                     *           },
+                     *           {
+                     *             "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a92",
+                     *             "target_type": "order",
+                     *             "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71",
+                     *             "status": "revoked",
+                     *             "content": "另一笔订单返利被作废，请核查。",
+                     *             "created_at": "2026-09-28T15:00:00+08:00",
+                     *             "closed_at": "2026-09-30T11:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AppealListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    submitAppeal: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "target_type": "order",
+                 *       "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                 *       "content": "订单返利被作废，请核查。"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SubmitAppealRequest"];
+            };
+        };
+        responses: {
+            /** @description The appeal, new or the processing one already on this target. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a91",
+                     *         "target_type": "order",
+                     *         "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *         "status": "processing",
+                     *         "content": "订单返利被作废，请核查。",
+                     *         "created_at": "2026-10-05T09:30:00+08:00",
+                     *         "closed_at": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AppealResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

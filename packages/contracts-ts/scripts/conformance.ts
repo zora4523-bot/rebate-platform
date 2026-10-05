@@ -54,6 +54,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   LoginProvider: 'login_provider',
   OauthAttemptPurpose: 'oauth_attempt_purpose',
   LinkKind: 'link_kind',
+  AppealStatus: 'appeal_status',
+  AppealTargetType: 'appeal_target_type',
 };
 
 /**
