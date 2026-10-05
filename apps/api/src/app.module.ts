@@ -1,5 +1,7 @@
 import { type DynamicModule, type Provider, Module } from '@nestjs/common';
 import { AdminModule } from './modules/admin/index.ts';
+import { CatalogModule } from './modules/catalog/index.ts';
+import { createContentReader } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import { IdentityModule } from './modules/identity/index.ts';
 import {
@@ -41,6 +43,9 @@ function requestChecks(options: PlatformOptions): Provider {
  * loads where union platforms are called: `api` (search, linking) and `worker` (order sync); the
  * other worker entries load only the platform and admin modules.
  * The admin module provides the platform audit port on every entry (F1-06b).
+ * The catalog module (platform dictionary, product_refs, aliases, category blocklist) loads on
+ * `api`, where search, detail and parsing run; its configuration port is content's reader,
+ * assembled here so catalog never imports content (B1-05c).
  * Business modules are added to the entries that own them by their tasks (规划/02 §4.1).
  */
 @Module({})
@@ -57,6 +62,9 @@ export class AppModule {
           ? [IdentityModule, RiskModule.forRoot({ imports: [IdentityModule] })]
           : []),
         ...(options.entry === 'api' || options.entry === 'worker' ? [UnionModule.forRoot()] : []),
+        ...(options.entry === 'api'
+          ? [CatalogModule.forRoot((db, clock) => createContentReader({ db, clock }))]
+          : []),
       ],
       providers: isHttpEntry(options.entry) ? [requestChecks(options)] : [],
     };
