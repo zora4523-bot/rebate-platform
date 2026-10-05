@@ -20,7 +20,7 @@ import {
   taskCalls,
 } from './state.ts';
 import type { BreakerReason, TaskState } from './state.ts';
-import { archivedTaskIds, readTask, riskOfPaths } from './task.ts';
+import { archivedTaskIds, batchRisk, readTask } from './task.ts';
 import type { RiskLevel, RiskReport } from './task.ts';
 import { currentSummary } from './usage.ts';
 import type { Summary } from './usage.ts';
@@ -127,7 +127,6 @@ function gitFacts(root: string, warnings: string[]): GitFacts {
 export function collectBoard(opts: BoardOptions = {}): Board {
   const root = opts.root ?? repoRoot();
   const now = opts.now ?? new Date();
-  const riskFn = opts.risk ?? riskOfPaths;
   const warnings: string[] = [];
 
   const tasks = new Map<string, TaskFile>();
@@ -139,6 +138,12 @@ export function collectBoard(opts: BoardOptions = {}): Board {
       warnings.push(`台账文件 ${id}.yaml 无法解析（运行 pnpm ops:task:check）：${first}`);
     }
   }
+
+  // One guard call for every open task instead of one per task (batchRisk).
+  const riskFn = batchRisk(
+    [...tasks.values()].filter((t) => t.status === 'todo').map((t) => t.paths),
+    opts.risk,
+  );
 
   const states = new Map<string, TaskState>();
   try {

@@ -45,6 +45,49 @@ export function riskOfPaths(paths: readonly string[]): RiskReport {
   return parsed;
 }
 
+const RANK: Record<RiskLevel, number> = { RV0: 0, RV1: 1, RV2: 2 };
+
+/**
+ * Risk of many path sets from one call of the trusted guard. risk-of-paths.ts runs as a process of
+ * its own, and one call per task (one Node start-up each) made the whole-ledger check outgrow its
+ * test timeout once the ledger passed a hundred tasks. The guard answers one row per input, in
+ * input order, so each set is put back together exactly as a call of its own would answer it: the
+ * highest row risk (RV2 for an empty set) and `ask` when a row is protected class 2 or 3
+ * (tools/guard/lib/risk.ts riskOfPaths). When the combined call fails, does not answer row for
+ * row, or a set holds a path it was not asked about, that set is asked on its own as before.
+ */
+export function batchRisk(
+  sets: readonly (readonly string[])[],
+  risk: (paths: readonly string[]) => RiskReport = riskOfPaths,
+): (paths: readonly string[]) => RiskReport {
+  // undefined: not asked yet; null: the combined call is unusable.
+  let rows: Map<string, RiskReport['paths'][number]> | null | undefined;
+  return (paths) => {
+    if (rows === undefined) {
+      rows = null;
+      const all = [...new Set(sets.flat())];
+      try {
+        const report = all.length > 0 ? risk(all) : { paths: [] };
+        if (report.paths.length === all.length) {
+          rows = new Map(all.map((p, i) => [p, report.paths[i]!]));
+        }
+      } catch {
+        rows = null;
+      }
+    }
+    const known = rows;
+    if (known === null || paths.some((p) => !known.has(p))) return risk(paths);
+    const own = paths.map((p) => known.get(p)!);
+    let level: RiskLevel = own.length === 0 ? 'RV2' : 'RV0';
+    for (const row of own) if (RANK[row.risk] > RANK[level]) level = row.risk;
+    return {
+      risk: level,
+      ask: own.some((r) => r.protected === 2 || r.protected === 3),
+      paths: own,
+    };
+  };
+}
+
 function tasksDir(root: string): string {
   return join(root, 'ops', 'tasks');
 }
@@ -233,10 +276,21 @@ export type CheckResult = { id: string; problems: string[] };
 export function checkTasks(ids: readonly string[] = [], opts: CheckOptions = {}): CheckResult[] {
   const root = opts.root ?? repoRoot();
   const wanted = ids.length > 0 ? [...ids] : listTaskIds(root);
+  // One guard call for the whole ledger instead of one per task (batchRisk).
+  const risk = batchRisk(
+    wanted.flatMap((id) => {
+      try {
+        return [readTask(id, root).paths];
+      } catch {
+        return [];
+      }
+    }),
+    opts.risk,
+  );
   const results: CheckResult[] = [];
   for (const id of wanted) {
     try {
-      results.push({ id, problems: checkTask(id, opts) });
+      results.push({ id, problems: checkTask(id, { ...opts, risk }) });
     } catch (err) {
       results.push({ id, problems: [err instanceof Error ? err.message : String(err)] });
     }
