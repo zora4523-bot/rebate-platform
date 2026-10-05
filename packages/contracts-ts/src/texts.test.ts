@@ -19,6 +19,18 @@ const { texts, fallbacks } = file;
 /** BR-TEXT-14 table A rows marked 「—」: handled silently, no text. */
 const SILENT = [10002, 10402, 30505, 44003];
 
+it('[AC-CT-19c#1] withdraw_detail.net.actual 默认文案为实际到账 {net}', () => {
+  expect(texts['withdraw_detail.net.actual']).toBe('实际到账 {net}');
+});
+
+it('[AC-CT-19c#2] withdraw_detail.net.expected 默认文案为预计到账 {net}', () => {
+  expect(texts['withdraw_detail.net.expected']).toBe('预计到账 {net}');
+});
+
+it('[AC-CT-19c#3] btn.buy.rebate_suffix 不在本任务的默认文案中', () => {
+  expect(Object.hasOwn(texts, 'btn.buy.rebate_suffix')).toBe(false);
+});
+
 it('has the expected shape, sorted keys and non-empty texts', () => {
   expect(Object.keys(file).sort()).toEqual(['fallbacks', 'texts', 'version']);
   expect(file.version).toBe(1);
