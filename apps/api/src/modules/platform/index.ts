@@ -7,6 +7,9 @@ export * from './idempotency/index.ts';
 export * from './http/index.ts';
 export { FieldCryptoError, FIELD_CRYPTO_MESSAGES } from './crypto/index.ts';
 export type { FieldCrypto, FieldCryptoErrorCode } from './crypto/index.ts';
+export { contractRouteSchema } from './validation/contract-routes.ts';
+export type { ContractOperationId } from './validation/contract-routes.ts';
+export { fieldsErrorEnvelope } from './validation/index.ts';
 export { HTTP_ENTRIES, WORKER_ENTRIES, isHttpEntry } from './entries.ts';
 export type { EntryName, HttpEntry, WorkerEntry } from './entries.ts';
 export {
@@ -23,6 +26,8 @@ export {
 } from './platform.module.ts';
 export type { PlatformOptions } from './platform.module.ts';
 export { EventError, EVENT_NAMES, registerEventConsumer } from './events/index.ts';
+// UUIDv7 of ADR-0001 §4.2 #1 (entity ids), the generator of event ids under a neutral name.
+export { newEventId as newUuidV7 } from './events/index.ts';
 export type {
   EventBus,
   DomainEvent,

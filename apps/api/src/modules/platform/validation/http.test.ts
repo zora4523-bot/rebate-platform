@@ -184,14 +184,21 @@ it('[AC-B1-01d#3] maps real Fastify failures in all four parts to the contract e
   }
 });
 
-it('[AC-B1-01d#4] delegates ordinary errors to the existing Nest handler', async () => {
+it('[AC-B1-01d#4] delegates ordinary errors to the existing Nest handler; unknown errors get the 50001 envelope', async () => {
   await app.init();
   const ordinary = await app.inject({ url: '/__validation/failure' });
   expect(ordinary.statusCode).toBe(400);
   expect(ordinary.json()).toMatchObject({ message: 'ordinary HTTP error' });
-  const crash = await app.inject({ url: '/__validation/crash' });
+  const crash = await app.inject({
+    url: '/__validation/crash',
+    headers: { 'x-trace-id': 'abcdefABCDEF01234567abcdefABCDEF' },
+  });
   expect(crash.statusCode).toBe(500);
-  expect(crash.json()).toEqual({ statusCode: 500, message: 'Internal server error' });
+  expect(crash.json()).toEqual({
+    code: 50001,
+    msg: '服务端错误',
+    trace_id: 'abcdefABCDEF01234567abcdefABCDEF',
+  });
   expect((await app.inject({ url: '/missing' })).statusCode).toBe(404);
 });
 
