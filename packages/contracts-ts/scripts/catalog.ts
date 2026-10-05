@@ -18,6 +18,7 @@ export type EnumDef = {
 export type ErrorCodeDef = {
   code: number;
   http: number;
+  http_also: number[];
   meaning: string;
   action: string;
   retry: string;
@@ -41,6 +42,8 @@ const ENUM_NAME = /^[a-z][a-z0-9_]*$/;
 const ENUM_VALUE = /^[A-Za-z0-9][A-Za-z0-9_]*(\.[A-Za-z0-9][A-Za-z0-9_]*)*$/;
 const DATA_FIELD = /^[a-z][a-z0-9_]*$/;
 const HTTP_STATUSES = new Set([400, 401, 403, 404, 409, 422, 429, 500, 503, 504]);
+// Extra statuses a code may also use (`http_also`): request-body errors keep Fastify's 413 / 415.
+const HTTP_ALSO_STATUSES = new Set([413, 415]);
 
 class CatalogError extends Error {}
 
@@ -66,6 +69,21 @@ function text(where: string, value: unknown): string {
 function stringList(where: string, value: unknown): string[] {
   if (!Array.isArray(value) || value.length === 0) fail(where, 'must be a non-empty list');
   return value.map((item, i) => text(`${where}[${i}]`, item));
+}
+
+function httpAlsoList(where: string, value: unknown, http: number): number[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length === 0) fail(where, 'must be a non-empty list');
+  let previous = 0;
+  for (const status of value) {
+    if (typeof status !== 'number' || !HTTP_ALSO_STATUSES.has(status)) {
+      fail(where, `each status must be one of ${[...HTTP_ALSO_STATUSES].join(', ')}`);
+    }
+    if (status === http) fail(where, `must not repeat http ${http}`);
+    if (status <= previous) fail(where, 'statuses must be ascending and unique');
+    previous = status;
+  }
+  return value as number[];
 }
 
 function rel(file: string): string {
@@ -143,6 +161,7 @@ export function loadErrorCodes(file: string = errorCodesFile): {
     onlyKeys(where, entry, [
       'code',
       'http',
+      'http_also',
       'meaning',
       'action',
       'retry',
@@ -164,6 +183,7 @@ export function loadErrorCodes(file: string = errorCodesFile): {
     if (typeof http !== 'number' || !HTTP_STATUSES.has(http)) {
       fail(where, `http must be one of ${[...HTTP_STATUSES].join(', ')}`);
     }
+    const httpAlso = httpAlsoList(`${where}.http_also`, entry['http_also'], http);
     const retryKind = entry['retry_kind'];
     if (!(RETRY_KINDS as readonly unknown[]).includes(retryKind)) {
       fail(where, `retry_kind must be one of ${RETRY_KINDS.join(', ')}`);
@@ -193,6 +213,7 @@ export function loadErrorCodes(file: string = errorCodesFile): {
     codes.push({
       code,
       http,
+      http_also: httpAlso,
       meaning: text(`${where}.meaning`, entry['meaning']),
       action: text(`${where}.action`, entry['action']),
       retry: text(`${where}.retry`, entry['retry']),
@@ -287,6 +308,7 @@ export function renderErrorCodes(
   for (const c of codes) {
     out.push(`  ${c.code}: {`);
     out.push(`    http: ${c.http},`);
+    out.push(`    http_also: ${JSON.stringify(c.http_also)},`);
     out.push(`    meaning: ${JSON.stringify(c.meaning)},`);
     out.push(`    action: ${JSON.stringify(c.action)},`);
     out.push(`    retry: ${JSON.stringify(c.retry)},`);

@@ -1,0 +1,27 @@
+id: CT-01d
+repo: rebate-platform
+title: 契约：错误码加可选字段 http_also（同一个码在 http 之外还会用到的状态），20001 写 [413, 415]——读请求体就失败时沿用 Fastify 的请求体超限 413、Content-Type 不支持 415
+type: contract
+# 2026-10-06 入账。来由：B1-01za（全局异常过滤器）Codex money 评审 S1——读请求体就失败的请求（FST_ERR_CTP_*）回 20001 +
+# data.fields=[body]，状态码沿用 Fastify（超限 413、不支持的 Content-Type 415；冻结的 B1-01r 规则测试
+# test/spec/platform/tracing/trace-id-response-header.test.ts 断言 415），而 error-codes.yaml 只写 20001.http=400。
+# error-codes.yaml 头注释：http 除 30803、30804 外「按码段由契约任务自定」，本任务不改规划，属契约任务自定范围；
+# 客户端只按 code 处理，不按 HTTP 状态分支（不影响三端与 H5 的处理逻辑）。
+# 做法：catalog.ts 接受可选 http_also（非空、升序、不重复、只能是 413 / 415、不含 http 本身），生成物带 http_also（无则 []）；
+# 20001 写 [413, 415]；文件头注释与 contracts/README 补字段说明；catalog.test.ts 断言只有 20001 带额外状态。
+# 三个原生仓库的契约同步脚本按 contract.lock 锁版本，下次升级锁版本时要接受这个新字段（记入三端线 needs）。
+refs: []
+refs_hash: {}
+contract_sections: ['7']
+deps: []
+paths:
+  - 'contracts/error-codes.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: done
+pr: null

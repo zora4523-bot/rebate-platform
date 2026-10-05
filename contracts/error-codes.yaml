@@ -9,6 +9,9 @@
 #   http        HTTP 状态码。§13.11 与 04 只规定了 30803、30804 为 409，其余按码段由契约任务自定：
 #               鉴权 401 / 403，参数 400，并发 409，业务 422（不存在类 404），限流 429，服务端 5xx。
 #               客户端只按 code 处理，不按 HTTP 状态分支。
+#   http_also   同一个码在 http 之外还会用到的 HTTP 状态（升序、不含 http 本身）。目前只有 20001：读请求体就失败的
+#               请求沿用 HTTP 语义——请求体超过上限 413、Content-Type 不支持 415，响应体照常是 ErrorEnvelope，
+#               data.fields=[body]（CT-01d，来由 B1-01za 全局异常过滤器）。客户端同样只按 code 处理。
 #   meaning     含义（§13.11「含义」列）
 #   action      客户端动作（§13.11「客户端动作」列，去掉文案引用）
 #   retry       §13.11「可重试」列原文
@@ -132,6 +135,7 @@ codes:
     sources: [BR-ID-01]
   - code: 20001
     http: 400
+    http_also: [413, 415]
     meaning: 参数校验失败（data.fields；提醒目标价无效时 data.fields=[target_price]、data.reason=watch_target_invalid；昵称命中内容安全时 data.reason=nickname_sensitive；设备注册时 data.fields=[device_hash] 表示设备标识哈希格式不符或命中无效清单；后台登记或修改设备黑名单时 data.fields=[value]、data.reason=invalid_device_hash 表示该值命中无效设备哈希清单；手机号规范化后不是中国大陆 11 位手机号时 data.fields=[phone]、data.reason=phone_invalid，BR-ID-05 细则「手机号规范化」）
     action: 在对应字段旁提示（带 reason 取子键文案）；device_hash 不向用户提示，客户端按 BR-ID-09 重新读取设备标识后再注册；invalid_device_hash 只出现在后台接口，后台在该字段旁显示后台文案（BR-ID-31 细则），不进用户侧字典
     retry: 否
