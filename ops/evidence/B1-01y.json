@@ -1,0 +1,61 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (platform/redis, platform module, bootstrap, entry, packages/db testing). Lazy per-entry Redis handle (REDIS_URL via entry -> bootstrap -> PlatformModule, REDIS token; payout registers none): first command connects, connect failure or timeout fails that command with RedisUnavailableError and the next one retries; generation counter; TTL-required SET EX writes and EVAL with prefixed keys and TTL as ARGV[1] (sparse arrays refused); RedisClosedError extends RedisUnavailableError; idempotent close that never dials an unconnected handle and drops the client when QUIT fails. ioredis adapter: no reconnect / offline queue / resend / per-request retry / ready check; own handshake (SELECT must answer OK, PING must answer PONG, bounded by connectTimeoutMs, any error event fails it); query strings refused; no console. Secrets only in closures; fixed error messages without cause. acquireTestRedis: TEST_REDIS_URL with a RESP PING, else testcontainers redis:7.4.11-alpine noeviction. Legacy ledger (red run not required); rule tests by Codex, red confirmed in the container (77 tests, 6 files).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "independent read-only Claude subagent: round 1 pass with six S3 (close/connect window, SELECT failure to db 0, query strings, timeout after close, tests) adopted; round 2 pass with four S3 (handshake guard and reply-shape tests, notes) adopted; round 3 pass on the increment and on the rebased bootstrap / platform module (B1-01za filter kept)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail (three S1: SELECT failure swallowed, QUIT failure left the connection open, ready check wrote to console) fixed in round 2; round 2 pass with one S2 (sparse key / arg arrays bypassed prefixing) fixed in round 3; round 3 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by fresh Claude subagents: round 1 fail (S1 eager connect broke entries that must start with Redis unreachable; S2 timeouts, failures that stick), round 2 fail (S1 beforeAll failing on the skeleton, payout case green on the skeleton), round 3 (orchestrator-approved exception round, precedent CT-15h; spec-test counter capped at 2) pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  },
+  "task": "B1-01y",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "4784ba2c3c7824bd125719a6a99061ad1dbed01f",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "2924deb22d3c6ebd8d027b0599d281bf3ba33546",
+      "tree": "bae256e8f88c37d4266ede25da447867e514f5ce",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T23:34:07Z",
+      "finished_at": "2026-10-05T23:35:58Z"
+    }
+  ],
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "f5c0d9c482767cb2347e731b4923feb447b43c7d",
+    "specs": "0f91357f8c12fec010b2beb0a80d407c8b3bb76f"
+  }
+}
