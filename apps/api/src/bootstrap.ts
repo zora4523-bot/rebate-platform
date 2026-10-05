@@ -14,6 +14,7 @@ import { createValidatorCompiler } from './modules/platform/validation/index.ts'
 import {
   type AppConfig,
   type Clock,
+  type ConnectionConfig,
   type DbHandles,
   type EntryName,
   type HttpEntry,
@@ -36,6 +37,11 @@ export interface BootstrapOverrides {
   readonly clock?: Clock;
   /** Defaults to a pino root logger on stdout at `config.logLevel`. */
   readonly logger?: RootLogger;
+  /**
+   * The entry's validated REDIS_URL (`ConnectionConfig.redisUrl`): the platform module provides
+   * a lazy `REDIS` handle and closes it on shutdown. Null (payout) or omitted: no `REDIS`.
+   */
+  readonly redisUrl?: ConnectionConfig['redisUrl'];
 }
 
 function platformOptions(entry: EntryName, overrides: BootstrapOverrides): PlatformOptions {
@@ -44,6 +50,7 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
     entry,
     config,
     ...(overrides.dbHandles === undefined ? {} : { dbHandles: overrides.dbHandles }),
+    ...(overrides.redisUrl === undefined ? {} : { redisUrl: overrides.redisUrl }),
     clock: overrides.clock ?? clockFromConfig(config),
     logger:
       overrides.logger ??

@@ -2,12 +2,13 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { CLOCK, type Clock } from './clock/index.ts';
 import type { AppConfig } from './config/index.ts';
 import { openConfiguredFieldCrypto } from './config/keyring-startup.ts';
-import type { DbHandles } from './db/index.ts';
+import type { ConnectionConfig, DbHandles } from './db/index.ts';
 import type { EntryName } from './entries.ts';
 import { createEventBus } from './events/index.ts';
 import { createIdempotency } from './idempotency/index.ts';
 import type { RootLogger } from './logging/index.ts';
 import { createQueueRuntime, type JobQueue } from './queue/index.ts';
+import { createRedisHandle } from './redis/index.ts';
 
 /** Nest injection tokens provided by `PlatformModule`. */
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -19,6 +20,7 @@ export const IDEMPOTENCY = Symbol('IDEMPOTENCY');
 export const FIELD_CRYPTO = Symbol('FIELD_CRYPTO');
 export const JOB_QUEUE = Symbol('JOB_QUEUE');
 export const EVENT_BUS = Symbol('EVENT_BUS');
+export const REDIS = Symbol('REDIS');
 const DB_LIFECYCLE = Symbol('DB_LIFECYCLE');
 
 export interface PlatformOptions {
@@ -28,6 +30,11 @@ export interface PlatformOptions {
   readonly logger: RootLogger;
   /** Supplied by the process runner; may be omitted by isolated HTTP unit tests. */
   readonly dbHandles?: DbHandles;
+  /**
+   * REDIS_URL of the entry (`ConnectionConfig.redisUrl`): provides `REDIS`. Null (payout) or
+   * omitted (isolated HTTP unit tests): no `REDIS` provider.
+   */
+  readonly redisUrl?: ConnectionConfig['redisUrl'];
 }
 
 /**
@@ -93,6 +100,26 @@ export class PlatformModule {
               },
             },
           ];
+    const redisUrl = options.redisUrl ?? null;
+    const redisProviders =
+      redisUrl === null
+        ? []
+        : [
+            {
+              provide: REDIS,
+              // Lazy handle: building it opens no connection, so entries start while Redis is
+              // unreachable. Nest calls the handle's own onApplicationShutdown on close (after
+              // HTTP entries stopped serving).
+              useFactory: async () => {
+                const handle = await createRedisHandle(
+                  { entry: options.entry, redisUrl },
+                  { logger: options.logger },
+                );
+                if (handle === null) throw new Error('Redis handle missing for a REDIS_URL');
+                return handle;
+              },
+            },
+          ];
     return {
       module: PlatformModule,
       global: true,
@@ -102,6 +129,7 @@ export class PlatformModule {
         { provide: CLOCK, useValue: options.clock },
         { provide: ROOT_LOGGER, useValue: options.logger },
         ...databaseProviders,
+        ...redisProviders,
         ...cryptoProviders,
       ],
       exports: [
@@ -110,6 +138,7 @@ export class PlatformModule {
         CLOCK,
         ROOT_LOGGER,
         ...(keyring === null ? [] : [FIELD_CRYPTO]),
+        ...(redisUrl === null ? [] : [REDIS]),
         ...(handles === undefined ? [] : [DB, IDEMPOTENCY, JOB_QUEUE, EVENT_BUS]),
         ...(handles !== undefined && options.entry === 'admin' && handles.dbRead !== null
           ? [DB_READ]

@@ -31,6 +31,7 @@ export {
   JOB_QUEUE,
   EVENT_BUS,
   PlatformModule,
+  REDIS,
   ROOT_LOGGER,
 } from './platform.module.ts';
 export type { PlatformOptions } from './platform.module.ts';
@@ -50,6 +51,14 @@ export type { ConnectionConfig, DbHandles } from './db/index.ts';
 export { loadMaintConnectionConfig, createMaintDbHandle } from './db/maint.ts';
 export type { MaintConnectionConfig, MaintDbHandle } from './db/maint.ts';
 export { createWorkerMaintenance, startWorkerServices } from './maintenance/worker.ts';
+// Inject `REDIS` (api / stream / admin / worker; payout has none) and take a namespace per module.
+export { RedisClosedError, RedisUnavailableError, RedisValidationError } from './redis/index.ts';
+export type {
+  RedisHandle,
+  RedisNamespace,
+  RedisScriptOptions,
+  RedisUnavailableReason,
+} from './redis/index.ts';
 export type {
   JobQueue,
   JobPayload,

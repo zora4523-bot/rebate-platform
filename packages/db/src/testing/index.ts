@@ -10,6 +10,9 @@ import { PG_TEST_IMAGE, quoteIdent, randomHex } from './provision.ts';
 export { PG_TEST_IMAGE };
 export { TEST_DB_ROLES } from './context.ts';
 export type { TestDbContext, TestDbRole } from './context.ts';
+// One-shot Redis (B1-01y §9.3): TEST_REDIS_URL or a Testcontainers container; needs no globalSetup.
+export { REDIS_TEST_IMAGE, acquireTestRedis } from './redis.ts';
+export type { TestRedis } from './redis.ts';
 
 export type TestDatabase = {
   /** Database name, unique within the cluster. */
