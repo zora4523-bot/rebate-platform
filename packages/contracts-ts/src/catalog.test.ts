@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { expect, it } from 'vitest';
 import { enums, errorCodeRanges, errorCodes, ledger_type, platform, scene } from './index.ts';
 
@@ -55,13 +57,6 @@ it('data shapes of the link and search path match 04 §7', () => {
   });
   expect(errorCodes[50304].data).toEqual({ platform: null, reason: ['search_disabled'] });
   expect(errorCodes[50304].retry_kind_by_reason).toEqual({ search_disabled: 'never' });
-  expect(errorCodes[20902].data.resource).toEqual([
-    'order',
-    'order_attribution',
-    'withdrawal',
-    'settle_batch',
-    'ticket',
-  ]);
   expect(errorCodes[42901].headers).toEqual(['Retry-After']);
 });
 
@@ -99,7 +94,6 @@ it('enums carry the 04 §2 value sets', () => {
   expect(enums.notify_category).toEqual(['service', 'subscription', 'marketing']);
   expect(enums.admin_permission).toContain('user.list');
   expect(enums.admin_permission).toContain('payout.execute');
-  expect(enums.admin_permission).toHaveLength(44);
   expect(enums.admin_permission).toContain('content.fund_terms');
 });
 
@@ -143,4 +137,81 @@ it('fund enums carry the 资金规则对齐 additions (04 §2.4, §2.5)', () => 
   expect(enums.beneficiary_credit_kind).toEqual(['first_credit', 'reassign_credit', 'deferred']);
   expect(enums.beneficiary_credit_status).toEqual(['open', 'done', 'forfeited', 'voided']);
   expect(enums.payout_batch_item_result).toEqual(['paying', 'skipped', 'blocked', 'moved_out']);
+});
+
+// CT-01c §9 acceptance points; the task has no separate business AC identifiers.
+it('[AC-CT-01c#1] removes the cancelled ticket enums (04 §2.5)', () => {
+  expect.soft(enums).not.toHaveProperty('ticket_type');
+  expect.soft(enums).not.toHaveProperty('ticket_status');
+});
+
+it('[AC-CT-01c#2] synchronizes the 49 admin permissions (04 §11.2)', () => {
+  expect.soft(enums.admin_permission).toHaveLength(49);
+  expect.soft(enums.admin_permission).not.toContain('ticket.handle');
+  expect.soft(enums.admin_permission).not.toContain('ticket.data_export');
+  for (const permission of [
+    'content.app_version',
+    'union.pid',
+    'fund.cash_entry',
+    'user.realname_fix',
+    'user.phone_change',
+    'user.data_export',
+    'agent.report',
+  ]) {
+    expect.soft(enums.admin_permission, permission).toContain(permission);
+  }
+});
+
+it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
+  expect(errorCodes[20902].data.resource).toEqual([
+    'order',
+    'order_attribution',
+    'withdrawal',
+    'settle_batch',
+  ]);
+});
+
+it('[AC-CT-01c#4] includes closed in reconciliation statuses (04 §2.5)', () => {
+  expect(enums.recon_diff_status).toEqual([
+    'open',
+    'processing',
+    'adjusted',
+    'written_off',
+    'closed',
+  ]);
+});
+
+// Permission notes are comments in the generated TS catalog, so read the YAML source.
+// Use the same test-only loader as openapi.test.ts, without adding a runtime dependency.
+const testRequire = createRequire(import.meta.url);
+const { parseYamlLite } = testRequire('../../../tools/lib/yaml-lite.ts') as {
+  parseYamlLite(text: string): unknown;
+};
+const adminCatalog = parseYamlLite(
+  readFileSync(new URL('../../../contracts/enums/admin.yaml', import.meta.url), 'utf8'),
+) as { enums: { admin_permission: { values: Record<string, string> } } };
+const permissionNotes = adminCatalog.enums.admin_permission.values;
+
+it.each([
+  'union.pid',
+  'fund.cash_entry',
+  'user.realname_fix',
+  'user.phone_change',
+  'user.data_export',
+  'withdraw.review',
+])('[AC-CT-01c#5] %s requires step-up (04 §11.2)', (permission) => {
+  expect(permissionNotes[permission]).toBeTypeOf('string');
+  expect(permissionNotes[permission]).toContain('（step-up）');
+});
+
+it('[AC-CT-01c#5] agent.report does not require step-up (04 §11.2)', () => {
+  expect(permissionNotes['agent.report']).toBeTypeOf('string');
+  expect(permissionNotes['agent.report']).not.toContain('step-up');
+});
+
+it('[AC-CT-01c#5] content.app_version limits step-up to raising the minimum version (04 §11.2)', () => {
+  const note = permissionNotes['content.app_version'];
+  expect(note).toBeTypeOf('string');
+  expect(note).toContain('（step-up）');
+  expect(note).toMatch(/(?:仅|只).*提高最低支持版本|提高最低支持版本.*(?:才|仅)/);
 });
