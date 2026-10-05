@@ -24,7 +24,7 @@ export const admin_permission = [
   "config.risk", // 风控规则与阈值（step-up）
   "config.business", // 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
   "switch.all", // 全部紧急开关（step-up）
-  "switch.payout", // 仅 withdraw.enabled、payout.enabled、payout.queue_paused（step-up）
+  "switch.payout", // 仅打款类开关：withdraw.enabled、payout.enabled、payout.queue_paused、payout.channel_enabled.<channel>、payout.channel_paused.<channel>（step-up）
   "risk.freeze", // 冻结 / 解冻（step-up）
   "risk.ban", // 封禁 / 解封（step-up）
   "risk.blocklist", // 黑名单增删（step-up）
@@ -212,6 +212,7 @@ export type WithdrawRejectReason = (typeof withdraw_reject_reason)[number];
 export const withdrawal_hold_reason = [
   "payout_disabled", // 打款开关关闭
   "queue_paused", // 打款队列暂停
+  "channel_disabled", // 该收款方式的打款通道关闭或暂停（BR-WDR-33 ①）
   "member_blocked", // 用户受限
   "single_cap", // 单笔上限
   "daily_cap", // 单日上限
@@ -262,13 +263,36 @@ export type WithdrawalReviewMode = (typeof withdrawal_review_mode)[number];
 
 /**
  * payout_accounts.payout_method 与 withdrawals.payout_channel
- * Source: 规划/04 §2.4；BR-WDR-02、BR-WDR-32 (contracts/enums/fund.yaml).
+ * Source: 规划/04 §2.4；BR-WDR-02、BR-WDR-32、BR-WDR-33 (contracts/enums/fund.yaml).
  */
 export const payout_method = [
   "alipay", // 支付宝
   "bank_card", // 本人银行卡
+  "wechat", // 微信零钱（BR-WDR-33；通道开关默认关）
 ] as const;
 export type PayoutMethod = (typeof payout_method)[number];
+
+/**
+ * withdrawals.channel_state，可空，只有微信零钱单在 PAYING 期间有值；不是提现状态（withdrawal_status 不变）
+ * Source: 规划/04 §2.4；BR-WDR-33 ⑤ (contracts/enums/fund.yaml).
+ */
+export const withdrawal_channel_state = [
+  "processing", // 通道处理中
+  "wait_user_confirm", // 等用户在微信里确认收款
+  "canceling", // 撤销中
+] as const;
+export type WithdrawalChannelState = (typeof withdrawal_channel_state)[number];
+
+/**
+ * payout_attempts.kind；cancel 只用于微信零钱单的撤销
+ * Source: 规划/04 §2.4；BR-WDR-13、BR-WDR-33 ⑥ (contracts/enums/fund.yaml).
+ */
+export const payout_attempt_kind = [
+  "transfer", // 转账
+  "query", // 查询
+  "cancel", // 撤销
+] as const;
+export type PayoutAttemptKind = (typeof payout_attempt_kind)[number];
 
 /**
  * 30303 的 data.reason（文案键 error.30303.<reason>，BR-TEXT-14）；编码由契约任务定（contract-delta b2-24）
@@ -279,6 +303,7 @@ export const withdraw_condition_reason = [
   "below_min", // 低于单笔最低金额
   "not_multiple", // 不是规定的整数倍
   "above_max", // 超过单笔最高金额
+  "above_method_max", // 超过当前收款方式的单笔上限（withdraw.method_max_amount_fen.<payout_method>，BR-WDR-33 ④）
   "net_too_small", // 扣除手续费与税后到账金额过小
   "daily_count", // 超过每日提现次数
   "monthly_count", // 超过每月提现次数
@@ -471,11 +496,12 @@ export type DeviceIdSource = (typeof device_id_source)[number];
 
 /**
  * 第三方授权尝试的用途（POST /v1/auth/oauth-attempts）
- * Source: 规划/04 §6.1；BR-ID-04、BR-ID-08 (contracts/enums/identity.yaml).
+ * Source: 规划/04 §6.1；BR-ID-04、BR-ID-08、BR-WDR-33 ② (contracts/enums/identity.yaml).
  */
 export const oauth_attempt_purpose = [
   "login", // 登录
   "step_up", // 二次验证
+  "payout_bind", // 收款授权（只用于绑定微信零钱收款账号；不登录、不签发令牌，BR-ID-04 细则「收款授权」）
 ] as const;
 export type OauthAttemptPurpose = (typeof oauth_attempt_purpose)[number];
 
@@ -1343,6 +1369,8 @@ export const enums = {
   withdraw_hold_kind,
   withdrawal_review_mode,
   payout_method,
+  withdrawal_channel_state,
+  payout_attempt_kind,
   withdraw_condition_reason,
   payout_batch_kind,
   bad_debt_writeoff_status,

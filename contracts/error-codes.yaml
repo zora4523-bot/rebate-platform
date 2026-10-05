@@ -386,6 +386,7 @@ codes:
         - below_min
         - not_multiple
         - above_max
+        - above_method_max
         - net_too_small
         - daily_count
         - monthly_count
