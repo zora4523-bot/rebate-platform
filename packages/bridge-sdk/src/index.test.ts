@@ -188,3 +188,94 @@ it('a request that stays 10002 after renewal drops the renewed token', async () 
   expect(send.mock.calls).toEqual([['t-1'], ['t-2']]);
   await expect(manager.getToken({ forWrite: false })).resolves.toMatchObject({ token: 't-3' });
 });
+
+it('a GET expiring while a read_only write is re-acquiring joins that acquisition', async () => {
+  const replies: ((data: unknown) => void)[] = [];
+  const native = install(
+    ['auth.getH5Token'],
+    (request) =>
+      new Promise<BridgeResponse>((resolve) => {
+        replies.push((data) => resolve({ id: request.id, code: 0, msg: '', data }));
+      }),
+  );
+  const token = (suffix: string, scope: 'standard' | 'read_only') => ({
+    token: `t-${suffix}`,
+    scope,
+    expire_at: '2099-01-01T00:00:00Z',
+  });
+  const manager = createH5TokenManager();
+  const first = manager.getToken({ forWrite: false });
+  await vi.waitFor(() => expect(replies).toHaveLength(1));
+  replies[0]?.(token('0', 'read_only'));
+  await first;
+
+  let expireRead: ((response: { code: number; msg: string }) => void) | undefined;
+  const sendRead = vi.fn<(value: string) => Promise<{ code: number; msg: string }>>(
+    () =>
+      new Promise<{ code: number; msg: string }>((resolve) => {
+        expireRead = resolve;
+      }),
+  );
+  const sendWrite = vi.fn<(value: string) => Promise<{ code: number; msg: string }>>(async () => ({
+    code: 0,
+    msg: '',
+  }));
+  const read = manager.request('GET', sendRead);
+  await vi.waitFor(() => expect(sendRead).toHaveBeenCalledTimes(1));
+  const write = manager.request('POST', sendWrite);
+  await vi.waitFor(() => expect(replies).toHaveLength(2));
+  expireRead?.({ code: 10002, msg: 'expired' });
+  // Let the read observe 10002 and look for a token before the shared acquisition resolves.
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+  expect(native.postMessage).toHaveBeenCalledTimes(2);
+  sendRead.mockResolvedValueOnce({ code: 0, msg: '' });
+  replies[1]?.(token('1', 'standard'));
+  await expect(read).resolves.toEqual({ code: 0, msg: '' });
+  await expect(write).resolves.toEqual({ code: 0, msg: '' });
+  expect(sendRead.mock.calls).toEqual([['t-0'], ['t-1']]);
+  expect(sendWrite.mock.calls).toEqual([['t-1']]);
+  expect(native.postMessage).toHaveBeenCalledTimes(2);
+  await expect(manager.getToken({ forWrite: true })).resolves.toEqual(token('1', 'standard'));
+  expect(native.postMessage).toHaveBeenCalledTimes(2);
+});
+
+it('a read_only denial drops the cached token but keeps an acquisition already in flight', async () => {
+  const replies: ((data: unknown) => void)[] = [];
+  const native = install(
+    ['auth.getH5Token'],
+    (request) =>
+      new Promise<BridgeResponse>((resolve) => {
+        replies.push((data) => resolve({ id: request.id, code: 0, msg: '', data }));
+      }),
+  );
+  const token = (suffix: string, scope: 'standard' | 'read_only') => ({
+    token: `t-${suffix}`,
+    scope,
+    expire_at: '2099-01-01T00:00:00Z',
+  });
+  const manager = createH5TokenManager();
+  const first = manager.getToken({ forWrite: false });
+  await vi.waitFor(() => expect(replies).toHaveLength(1));
+  replies[0]?.(token('0', 'standard'));
+  await first;
+
+  let deny: ((response: { code: number; msg: string; data: unknown }) => void) | undefined;
+  const denied = manager.request(
+    'POST',
+    () =>
+      new Promise<{ code: number; msg: string; data: unknown }>((resolve) => {
+        deny = resolve;
+      }),
+  );
+  await vi.waitFor(() => expect(deny).toBeTypeOf('function'));
+  manager.invalidate();
+  const pending = manager.getToken({ forWrite: false });
+  await vi.waitFor(() => expect(replies).toHaveLength(2));
+  deny?.({ code: 10403, msg: 'restricted', data: { reason: 'h5_read_only' } });
+  await expect(denied).resolves.toMatchObject({ code: 10403 });
+  const joined = manager.getToken({ forWrite: false });
+  replies[1]?.(token('1', 'read_only'));
+  await expect(pending).resolves.toEqual(token('1', 'read_only'));
+  await expect(joined).resolves.toEqual(token('1', 'read_only'));
+  expect(native.postMessage).toHaveBeenCalledTimes(2);
+});

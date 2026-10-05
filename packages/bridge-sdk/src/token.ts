@@ -50,13 +50,23 @@ function isReadOnlyDenial(response: H5ApiResponse<unknown>): boolean {
 export function createH5TokenManager(): H5TokenManager {
   let cached: H5Token | null = null;
   let inflight: Promise<H5Token> | null = null;
-  // Bumped by every discard so a late acquisition cannot resurrect a dropped token.
+  // Bumped by invalidate() so a late acquisition cannot resurrect a dropped token.
   let generation = 0;
 
-  function discard(): void {
+  /** invalidate(): forget the cached token and detach any acquisition still in flight. */
+  function invalidate(): void {
     cached = null;
     inflight = null;
     generation += 1;
+  }
+
+  /**
+   * Drops only the cached token (the given one, or whatever is cached). An acquisition already
+   * in flight was started after that token was issued, so it stays shared: concurrent requests
+   * renew through one auth.getH5Token (single flight, contracts 10002).
+   */
+  function dropCached(token?: H5Token): void {
+    if (token === undefined || cached === token) cached = null;
   }
 
   function acquire(): Promise<H5Token> {
@@ -103,15 +113,16 @@ export function createH5TokenManager(): H5TokenManager {
     let current = await getToken({ forWrite });
     let response = await send(current.token);
     if (response.code === TOKEN_EXPIRED) {
-      if (cached === current) discard();
+      // Reuses a newer cached token or an acquisition already in flight; otherwise asks native.
+      dropCached(current);
       current = await getToken({ forWrite });
       response = await send(current.token);
       // Still expired after one renewal: report the failure, keep nothing stale, no third try.
-      if (response.code === TOKEN_EXPIRED && cached === current) discard();
+      if (response.code === TOKEN_EXPIRED) dropCached(current);
     }
-    if (isReadOnlyDenial(response)) discard();
+    if (isReadOnlyDenial(response)) dropCached();
     return response;
   }
 
-  return { getToken, invalidate: discard, request };
+  return { getToken, invalidate, request };
 }
