@@ -1,0 +1,131 @@
+{
+  "task": "B1-06b",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "6930fb3a4ec7c473bd76007a466262ccc8e05aa5",
+  "red_tests": [
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#1] binding columns preserve external IDs as text and nullable lifecycle timestamps",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#2] binding status accepts the contract values and rejects obsolete cooling or unknown values",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#3] relation ownership is unique for every pair of active, invalid and blocked states",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#4] user uniqueness also includes pending_auth and is independent of account and relation",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#5] unbound and released history does not occupy either unique key; pending_auth does not reserve a relation",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#6] binding unique keys include exactly the specified tenant, platform and account scope",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#7] updates into occupied states cannot bypass either partial unique index",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#8] release and same-user restoration preserve the original bound_at on the existing row",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#9] released rows require both release instants and cannot end cooldown before release",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#10] concurrent relation claims have one winner at the PostgreSQL unique constraint",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#11] auth state has tenant/user/device scope, nullable link and consumption instant, and expiry",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#12] state is globally unique even across apps and after consumption or expiry",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#13] mode permits bind and CHECK rejects rebind, arbitrary values and NULL",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#14] storage supports atomic single consumption and an exclusive expiry boundary",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#15] foreign keys retain users/accounts and never cascade update or delete",
+    "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#16] linking tables reject NULL app_id and grant only the required business access",
+    "test/spec/db/linking-bindings/privacy-columns.int.test.ts > [AC-B1-06b#23] union_bindings has no token, secret, nickname, avatar or account-name columns",
+    "test/spec/db/linking-bindings/privacy-columns.int.test.ts > [AC-B1-06b#24] union_auth_sessions has no token, secret, nickname, avatar or account-name columns",
+    "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#17] links retain nullable promotion URL and acquisition time, with an enabled UPDATE trigger",
+    "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#18] promotion fields may be filled on an already quoted link and repeated identically",
+    "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#19] either promotion field can be filled first without freezing the still-NULL field",
+    "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#20] populated promotion fields cannot be overwritten or cleared, whether inserted or filled later",
+    "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#21] concurrent fills cannot overwrite the winner or mix URL/time pairs",
+    "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#22] promotion columns retain linking writes and read-only reads without delete/reinsert access"
+  ],
+  "risk_note": "RV2 migration (db/**). Migration 0018: union_bindings (partial unique keys and release cooldown columns per BR-ID-19; no token, nickname, avatar or account-name columns per BR-ID-17), union_auth_sessions (state primary key, single use, mode bind only), links promo_url / promo_url_fetched_at (nullable, write once). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6930fb3a4ec7c473bd76007a466262ccc8e05aa5",
+      "tree": "668a913a8de1451788c8f3de2800783f88aa7615",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T23:08:12Z",
+      "finished_at": "2026-10-05T23:08:18Z",
+      "red_tests": [
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#1] binding columns preserve external IDs as text and nullable lifecycle timestamps",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#2] binding status accepts the contract values and rejects obsolete cooling or unknown values",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#3] relation ownership is unique for every pair of active, invalid and blocked states",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#4] user uniqueness also includes pending_auth and is independent of account and relation",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#5] unbound and released history does not occupy either unique key; pending_auth does not reserve a relation",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#6] binding unique keys include exactly the specified tenant, platform and account scope",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#7] updates into occupied states cannot bypass either partial unique index",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#8] release and same-user restoration preserve the original bound_at on the existing row",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#9] released rows require both release instants and cannot end cooldown before release",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#10] concurrent relation claims have one winner at the PostgreSQL unique constraint",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#11] auth state has tenant/user/device scope, nullable link and consumption instant, and expiry",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#12] state is globally unique even across apps and after consumption or expiry",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#13] mode permits bind and CHECK rejects rebind, arbitrary values and NULL",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#14] storage supports atomic single consumption and an exclusive expiry boundary",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#15] foreign keys retain users/accounts and never cascade update or delete",
+        "test/spec/db/linking-bindings/bindings.int.test.ts > [AC-B1-06b#16] linking tables reject NULL app_id and grant only the required business access",
+        "test/spec/db/linking-bindings/privacy-columns.int.test.ts > [AC-B1-06b#23] union_bindings has no token, secret, nickname, avatar or account-name columns",
+        "test/spec/db/linking-bindings/privacy-columns.int.test.ts > [AC-B1-06b#24] union_auth_sessions has no token, secret, nickname, avatar or account-name columns",
+        "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#17] links retain nullable promotion URL and acquisition time, with an enabled UPDATE trigger",
+        "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#18] promotion fields may be filled on an already quoted link and repeated identically",
+        "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#19] either promotion field can be filled first without freezing the still-NULL field",
+        "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#20] populated promotion fields cannot be overwritten or cleared, whether inserted or filled later",
+        "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#21] concurrent fills cannot overwrite the winner or mix URL/time pairs",
+        "test/spec/db/linking-bindings/promotion-links.int.test.ts > [AC-B1-06b#22] promotion columns retain linking writes and read-only reads without delete/reinsert access"
+      ],
+      "expected": [
+        "test/spec/db/linking-bindings/bindings.int.test.ts",
+        "test/spec/db/linking-bindings/privacy-columns.int.test.ts",
+        "test/spec/db/linking-bindings/promotion-links.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a9dbb55c616bee9c6224d2f5bf5c154d1976d7a18058d00b4a3499b15e6d3dac"
+        }
+      ]
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "140e95f26405924221093a52c1c3f7f9e6486295",
+      "tree": "d17be032c8316dc58206aaa572491271533f20d7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T23:08:19Z",
+      "finished_at": "2026-10-05T23:10:07Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: pass; S2: no storage-level cooldown guard under concurrent release and rebind; consumption example in the header lacks app_id; bound_at not write-once (follow-ups for B1-06h)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1: union_accounts did not exist on the branch: B1-19a was not merged yet) -> rebuilt on main with 0015; round 2 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 fail (S1: column set not bounded, tokens or nicknames could be stored) -> Codex round 2 added privacy-column checks; round 2 pass"
+  },
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "5a9a758ccaaadea096d2fd49af9f393dae10b3bb",
+    "specs": "16719411360e6c32760b514e74b29fe005e34a74"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (tree f03b0e3, the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
