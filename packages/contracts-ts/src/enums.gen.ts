@@ -573,6 +573,22 @@ export const consent_type = [
 export type ConsentType = (typeof consent_type)[number];
 
 /**
+ * consent_records.channel，同意发生的入口；login_merge、h5_landing、withdraw_flow 只由服务端写入（登录合并、落地页注册、劳务协议签署），不经 POST /v1/consents 提交
+ * Source: 规划/04 §3.2 consent_records；BR-ID-12 细则 (contracts/enums/identity.yaml).
+ */
+export const consent_channel = [
+  "first_launch", // 首启隐私弹窗
+  "login_page", // 登录页协议勾选
+  "h5_landing", // 邀请落地页注册
+  "agent_sheet", // Agent 同意半屏
+  "realname_sheet", // 实名授权半屏
+  "privacy_center", // 隐私中心
+  "login_merge", // 登录时设备级记录并入用户级
+  "withdraw_flow", // 提现流程中签署劳务协议（BR-WDR-31）
+] as const;
+export type ConsentChannel = (typeof consent_channel)[number];
+
+/**
  * 淘宝授权方式（auth-url 的 auth_methods、bindings 的 auth_method）；按端由服务端配置下发
  * Source: 规划/04 §6.3；BR-ID-17 (contracts/enums/identity.yaml).
  */
@@ -1394,6 +1410,7 @@ export const enums = {
   step_up_action,
   idempotency_abandon_outcome,
   consent_type,
+  consent_channel,
   auth_method,
   union_binding_status,
   union_binding_blocked_reason,
