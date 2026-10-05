@@ -468,24 +468,32 @@ export function computeManifest(set: EvalSet, version: string, cases: EvalCase[]
 /**
  * Shape problems that make a manifest impossible to compare (not an object, missing or extra
  * fields, wrong value types, an empty version: manifest.schema.json has minLength 1 and the
- * smoke verdict names the set as set@version). Value-level differences (an upper-case digest, a
- * wrong count) are left to the comparison and reported as `manifest_mismatch`.
+ * smoke verdict names the set as set@version; a count that is not a non-negative safe integer,
+ * such as 1e400 parsed as Infinity, which canonicalJson cannot encode). Value-level differences
+ * (an upper-case digest, a wrong count) are left to the comparison and reported as
+ * `manifest_mismatch`.
  */
+function isCount(value: unknown): boolean {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
 function manifestShapeProblems(value: unknown): Problem[] {
   const c = new Collector(undefined);
   const keys = ['set', 'version', 'count', 'by_category', 'content_sha256', 'split_sha256'];
   if (!c.object(value, '', keys, [])) return c.problems;
   if (present(value, 'set')) c.oneOf(value['set'], '/set', EVAL_SETS);
   if (present(value, 'version')) c.string(value['version'], '/version', { minLength: 1 });
-  if (present(value, 'count') && typeof value['count'] !== 'number') {
-    c.add('/count', 'must be a number');
+  if (present(value, 'count') && !isCount(value['count'])) {
+    c.add('/count', 'must be a non-negative safe integer');
   }
   if (present(value, 'by_category')) {
     const byCategory = value['by_category'];
     if (!isObject(byCategory)) c.add('/by_category', 'must be an object');
     else {
       for (const [key, count] of Object.entries(byCategory)) {
-        if (typeof count !== 'number') c.add(`/by_category/${key}`, 'must be a number');
+        if (!isCount(count)) {
+          c.add(`/by_category/${key}`, 'must be a non-negative safe integer');
+        }
       }
     }
   }

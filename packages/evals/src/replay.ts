@@ -268,21 +268,32 @@ function missResult(c: EvalCase, turn: number, miss: RecordingMiss): CaseResult 
 
 /** Recording misses of one case. Every port handed out during the case (a fresh pair per turn)
  * writes here, so a miss through a port the agent cached from an earlier turn of the same
- * conversation still counts. Closed when the case ends: lookups after that (an agent still
- * running past its timeout) are not attributed to this case or to the next one. */
+ * conversation still counts. Closed when the case ends. */
 interface CaseMisses {
   open: boolean;
   turn: number;
   first: { turn: number; miss: RecordingMiss } | undefined;
 }
 
-function wrapPorts(store: RecordingStore, misses: CaseMisses): AgentPorts {
+/** State of one runReplay call: the case now running, if any. */
+interface RunnerState {
+  current: CaseMisses | undefined;
+}
+
+/** A miss is recorded on the port's own case while it runs. Once that case has ended, a miss
+ * through its port (an agent that caches the first ports for every case, or one still running
+ * past its timeout) is recorded on the case running now, so a swallowed miss can never let that
+ * case pass; with no case running it is ignored. Only the first miss of a case is kept. */
+function wrapPorts(store: RecordingStore, misses: CaseMisses, runner: RunnerState): AgentPorts {
   const lookup = (find: () => unknown): unknown => {
     try {
       return find();
     } catch (error) {
-      if (error instanceof RecordingMiss && misses.open && misses.first === undefined) {
-        misses.first = { turn: misses.turn, miss: error };
+      if (error instanceof RecordingMiss) {
+        const target = misses.open ? misses : runner.current;
+        if (target !== undefined && target.open && target.first === undefined) {
+          target.first = { turn: target.turn, miss: error };
+        }
       }
       throw error;
     }
@@ -298,12 +309,15 @@ async function runCase(
   agent: AgentUnderTest,
   store: RecordingStore,
   timeoutMs: number,
+  runner: RunnerState,
 ): Promise<CaseResult> {
   const misses: CaseMisses = { open: true, turn: 0, first: undefined };
+  runner.current = misses;
   try {
-    return await runTurns(c, agent, store, timeoutMs, misses);
+    return await runTurns(c, agent, store, timeoutMs, misses, runner);
   } finally {
     misses.open = false;
+    if (runner.current === misses) runner.current = undefined;
   }
 }
 
@@ -313,6 +327,7 @@ async function runTurns(
   store: RecordingStore,
   timeoutMs: number,
   misses: CaseMisses,
+  runner: RunnerState,
 ): Promise<CaseResult> {
   const outputs: TurnOutput[] = [];
   for (const [index, step] of c.turns.entries()) {
@@ -320,7 +335,7 @@ async function runTurns(
     misses.turn = turn;
     // Every miss is remembered (and still thrown), so a miss the agent swallows, or follows with
     // another error or a timeout, still makes the case a coverage gap.
-    const ports = wrapPorts(store, misses);
+    const ports = wrapPorts(store, misses, runner);
     const input = {
       case_id: c.id,
       turn,
@@ -377,9 +392,10 @@ export async function runReplay(opts: {
   const active = opts.cases
     .filter((item) => item.retired === undefined)
     .sort((a, b) => compareCodeUnits(a.id, b.id));
+  const runner: RunnerState = { current: undefined };
   const results: CaseResult[] = [];
   for (const c of active) {
-    results.push(await runCase(c, opts.agent, opts.store, timeoutMs));
+    results.push(await runCase(c, opts.agent, opts.store, timeoutMs, runner));
   }
   return {
     schema_version: 1,

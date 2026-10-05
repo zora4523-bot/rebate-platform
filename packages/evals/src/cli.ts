@@ -14,8 +14,9 @@
 //     package's IDENTITY_FIELDS; exit 0 when equal, 1 on drift, 2 when it cannot be read.
 //
 // smoke-gate also runs the identity-field check when the specs file is present next to the
-// package (in the repository), so the grader's list cannot drift from BR-AI-03 unnoticed; an
-// entry there that cannot be read is an `io` load problem (exit 2).
+// package (in the repository), so the grader's list cannot drift from BR-AI-03 unnoticed. Only
+// ENOENT skips it; an entry there that cannot be read, or a path that cannot be inspected
+// (EACCES…), is an `io` load problem (exit 2).
 import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,15 +64,18 @@ function printLoadProblems(io: CliIo, problems: readonly Problem[]): void {
   }
 }
 
-/** True when a directory entry exists at `path`, a broken link included (reading it is then an
- * `io` problem rather than a silently skipped check). */
-function entryExists(path: string): boolean {
+/** The identity-field check run by smoke-gate. Skipped only when nothing is at `path` (ENOENT:
+ * outside the repository); any entry there, a broken link included, is read and checked. A
+ * failure to even look (EACCES on a parent directory, …) is an `io` problem naming the basename,
+ * never a silently skipped check. */
+function smokeIdentityProblems(path: string): Problem[] {
   try {
     lstatSync(path);
-    return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === 'ENOENT') return [];
+    return [{ code: 'io', file: basename(path), message: 'cannot read file' }];
   }
+  return identityProblems(path);
 }
 
 /** Reads a text file; a failure (directory, broken link, no permission…) is an `io` problem
@@ -113,10 +117,7 @@ function smokeGate(args: string[], io: CliIo): number {
     return 2;
   }
 
-  const loadProblems: Problem[] = [];
-  if (entryExists(DEFAULT_IDENTITY_FILE)) {
-    loadProblems.push(...identityProblems(DEFAULT_IDENTITY_FILE));
-  }
+  const loadProblems: Problem[] = [...smokeIdentityProblems(DEFAULT_IDENTITY_FILE)];
 
   const cases: EvalCase[] = [];
   const files: string[] = [];

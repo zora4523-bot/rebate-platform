@@ -75,8 +75,10 @@ export function checkIdentityFieldsFile(text: string): Problem[] {
 // ---------------------------------------------------------------------------------------------
 // Outbound text patterns (BR-AI-06 细则「过滤正则」).
 
-/** Chinese numerals for 中文数字 + (元|块). */
-const CN_NUMERAL = '[零〇一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟萬億]';
+/** Chinese numerals for 中文数字 + (元|块): simplified, traditional and financial (大写) forms.
+ * NFKC does not fold traditional forms (兩 stays 兩), so each is listed: 這款只要兩元、貳元、參元、
+ * 陸元、壹佰元 are hits. */
+const CN_NUMERAL = '[零〇一二两兩三四五六七八九十百千万萬亿億壹贰貳叁參肆伍陆陸柒捌玖拾佰仟]';
 
 /** Amount patterns, one per item of BR-AI-06 细则 (金额). Specs and quantities (24盒, 500ml,
  * 3件) match none of them. */
