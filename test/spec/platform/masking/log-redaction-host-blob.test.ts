@@ -92,6 +92,9 @@ function loose(logger: RootLogger, level: 'info' | 'error' = 'info'): LooseLog {
 const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const EMAIL_ENCODED = SAMPLES.alipayEmail.replace('@', '%40');
 const DEEP_LEVELS = 50;
+const PERCENT_PHONE = [...SAMPLES.phone]
+  .map((digit) => `%${digit.charCodeAt(0).toString(16)}`)
+  .join('');
 
 /** blob: inputs (as given to new URL) and how Q writes them. */
 const BLOBS = {
@@ -280,6 +283,19 @@ it('[BR-ID-33] 日志（B1-01u 补充 R、S，反例）：origin 为 null 的其
   });
 });
 
+it('[BR-ID-33] 日志（B1-01u 补充 Q，补充用例）：内层不是绝对 URL 的 blob: 路径同样逐段解码判断——百分号编码的邮箱、号码整段替换', () => {
+  const cases: readonly (readonly [string, string])[] = [
+    [`blob:null/cb/${EMAIL_ENCODED}`, `blob:null/cb/${REDACTED}`],
+    [`blob:foo/u/${PERCENT_PHONE}/x`, `blob:foo/u/${REDACTED}/x`],
+  ];
+  const { logger, lines } = capture();
+  logger.info({ links: cases.map(([input]) => new URL(input)) }, 'opaque blob');
+  loose(logger)('%s', new URL(cases[0]?.[0] ?? ''));
+  expect(lines).toHaveLength(2);
+  expectLine(lines[0], { level: 30, links: cases.map(([, output]) => output), msg: 'opaque blob' });
+  expectLine(lines[1], { level: 30, msg: cases[0]?.[1] ?? '' });
+});
+
 // Access log (addendum P). createHttpApp is loaded at run time by URL, as in
 // log-redaction-review.test.ts: bootstrap.ts needs the decorator settings of apps/api, which the
 // `test` TypeScript project does not have, so only the shape used here is declared. One app is
@@ -369,10 +385,6 @@ async function expectHostnames(cases: readonly (readonly [string, string])[]): P
   });
 }
 
-const PERCENT_PHONE = [...SAMPLES.phone]
-  .map((digit) => `%${digit.charCodeAt(0).toString(16)}`)
-  .join('');
-
 it('[BR-ID-33] 访问日志（B1-01u 补充 P）：hostname（取自客户端 Host 头）按路径段规则过安全网——带端口、连字符或空格分隔的手机号、邮箱、只在解码后才命中的邮箱与号码、身份证号、银行卡号、方括号写法、含 / 的 Host 整段替换', async () => {
   await expectHostnames([
     [SAMPLES.phone, REDACTED],
@@ -406,5 +418,12 @@ it('[BR-ID-33] 访问日志（B1-01u 补充 P、S，反例）：不含个人数�
     ['20000000001.example', '20000000001.example'],
     ['a%20b.example', 'a%20b.example'],
     ['xn--fiqs8s.example', 'xn--fiqs8s.example'],
+  ]);
+}, 30_000);
+
+it('[BR-ID-33] 访问日志（B1-01u 补充 P，补充用例）：hostname 只在原文命中、解码一次后不再命中时也整段替换（u13987654321%30.example）', async () => {
+  await expectHostnames([
+    [`u${SAMPLES.phone}%30.example`, REDACTED],
+    [`u${SAMPLES.phone}%30.example:8443`, REDACTED],
   ]);
 }, 30_000);
