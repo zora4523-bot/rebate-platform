@@ -53,7 +53,7 @@ function contractValues(name: 'consent_type' | 'consent_channel'): string[] {
   const block = new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  \\w+:|(?![\\s\\S]))`, 'm').exec(
     source,
   )?.[1];
-  const values = [...(block ?? '').matchAll(/^      ([a-z_]+):/gm)].map((m) => m[1]!);
+  const values = [...(block ?? '').matchAll(/^      ([a-z][a-z0-9_]*):/gm)].map((m) => m[1]!);
   if (values.length === 0) throw new Error(`Missing contract enum ${name}`);
   return values;
 }
