@@ -16,6 +16,11 @@
 //              and no class 1 test asset changed between it and the head, both reviewers pass
 //              with no open S0 / S1, every recorded directory tree hash equals the head's,
 //              long-run result bound to one of those trees.
+//              Handover (规划/11 §2.5, CR-09): when Opus used up its rounds and Codex implemented
+//              once, the evidence carries `handover` and only the Claude review of the handover
+//              implementation must pass (Codex never reviews its own code). Allowed only when the
+//              task ledger's paths are below RV2 and no money / attribution implementation path
+//              changed (RV2 不换家, hard rule 3); otherwise both reviews stay required.
 //              Full verification (owner decision 2026-10-06, ops/approvals.yaml id 21): the
 //              required CI checks of the pull request on its head (ci-gate: verify-fast,
 //              verify-int, guard-git; contracts-gate; longrun-props) are the verification, so no
@@ -204,6 +209,39 @@ function class1Hits(prDir: string, from: string, to: string, cfg: ProtectedConfi
 export const CI_REFUSED =
   'CI 证据归档未接入，暂不接受 mode: ci 记录（规划/11 §3.2；Codex 评审 CR2-06）';
 
+/**
+ * Whether the evidence may record a handover (规划/11 §2.5): computed in checkEvidence from the
+ * ledger (trusted root, else the head) and the changed paths; absent means refused.
+ */
+export type HandoverPolicy = {
+  allowed: boolean;
+  reason: string;
+  /** The ledger's implementation paths: the handover commit must change only these. */
+  paths: readonly string[];
+};
+
+/** Files changed by a single-parent commit; null for a merge, a root commit or an unknown id. */
+function commitFiles(prDir: string, commit: string): string[] | null {
+  const parents = tryGit(['rev-list', '--parents', '-n', '1', commit, '--'], { cwd: prDir });
+  if (parents.status !== 0 || parents.stdout.trim().split(' ').length !== 2) return null;
+  const res = tryGit(
+    [
+      '-c',
+      'core.quotepath=false',
+      'diff-tree',
+      '-r',
+      '-z',
+      '--name-only',
+      '--no-commit-id',
+      '--no-renames',
+      commit,
+      '--',
+    ],
+    { cwd: prDir },
+  );
+  return res.status === 0 ? res.stdout.split('\0').filter((f) => f !== '') : null;
+}
+
 /** What the red-run requirement of a task needs (CR2-05). */
 export type RedRequirement = {
   required: boolean;
@@ -221,6 +259,10 @@ export function evidenceProblems(
     cfg: ProtectedConfig;
     /** The red-run requirement (absent: required, no expected files: fail-closed). */
     red?: RedRequirement;
+    /** Whether a handover may be recorded (absent: refused, both reviews required). */
+    handover?: HandoverPolicy;
+    /** Risk of the pull request: after a handover on RV2 the Claude review carries the checklist. */
+    risk?: RiskLevel;
   },
 ): string[] {
   const problems: string[] = [];
@@ -357,15 +399,23 @@ export function evidenceProblems(
 
   // Handover (规划/11 §2.5 超限换家; tools/agent/README.md §11 item 2, CR-09): after Opus used up
   // its implementation rounds, Codex implemented once and the reviewing side switched to Claude —
-  // Codex never reviews its own implementation. The evidence then names the handover commit, which
-  // must lie on the implementer's range (after spec_commit, an ancestor of the head); only the
-  // Claude review is required to pass. A Codex entry, if present, is the review from before the
-  // handover and is not checked.
+  // Codex never reviews its own implementation. Only for a task below RV2 that changes no money /
+  // attribution implementation path (RV2 不换家, hard rule 3; ctx.handover). The evidence names the
+  // handover commit: a single-parent commit after spec_commit on the head that changes paths of
+  // the task ledger only (and its ledger file); the Claude review that must pass is the one bound
+  // to that commit or a later ancestor of the head. A Codex entry is the review from before the
+  // handover and is not checked. Any defect keeps both reviews required.
   const handover = doc['handover'];
-  let handedOver = false;
+  let handoverCommit: string | null = null;
   if (handover !== undefined) {
+    const policy = ctx.handover ?? { allowed: false, reason: 'no handover policy', paths: [] };
     if (!isRecord(handover)) {
       at('handover', 'must be an object {implementer, commit, note}');
+    } else if (!policy.allowed) {
+      at(
+        'handover',
+        `not allowed: ${policy.reason} (规划/11 §2.5 RV2 不换家, hard rule 3); both reviews stay required`,
+      );
     } else {
       let valid = true;
       if (handover['implementer'] !== 'codex') {
@@ -391,7 +441,23 @@ export function evidenceProblems(
       ) {
         at('handover.commit', `${commit} is not after the rule-test commit`);
       } else {
-        handedOver = valid;
+        const files = commitFiles(ctx.prDir, commit);
+        const ledgerFile = `ops/tasks/${ctx.task}.yaml`;
+        const outside = (files ?? []).filter(
+          (f) => f !== ledgerFile && !matchesAny(f, policy.paths),
+        );
+        if (files === null) {
+          at('handover.commit', `${commit} must be a single-parent commit`);
+        } else if (!files.some((f) => matchesAny(f, policy.paths))) {
+          at('handover.commit', `${commit} changes no implementation path of the task ledger`);
+        } else if (outside.length > 0) {
+          at(
+            'handover.commit',
+            `${commit} changes paths outside the task ledger: ${outside.join(', ')}`,
+          );
+        } else if (valid) {
+          handoverCommit = commit;
+        }
       }
     }
   }
@@ -399,8 +465,35 @@ export function evidenceProblems(
   const reviews = doc['reviews'];
   if (!Array.isArray(reviews)) {
     at('reviews', 'must be a list');
+  } else if (handoverCommit !== null) {
+    const from = handoverCommit;
+    const entry = reviews.find(
+      (r) =>
+        isRecord(r) &&
+        r['reviewer'] === 'claude' &&
+        typeof r['commit'] === 'string' &&
+        COMMIT_ID.test(r['commit']) &&
+        isAncestor(ctx.prDir, from, r['commit']) &&
+        isAncestor(ctx.prDir, r['commit'], ctx.head),
+    );
+    if (!isRecord(entry)) {
+      at(
+        'reviews',
+        `missing the claude review of the handover implementation (an entry whose commit is ${from} ` +
+          'or a later ancestor of the head; 规划/11 §2.5)',
+      );
+    } else {
+      if (entry['verdict'] !== 'pass') at('reviews.claude.verdict', 'must be pass');
+      if (entry['open_s0_s1'] !== 0) at('reviews.claude.open_s0_s1', 'must be 0');
+      if (ctx.risk === 'RV2' && entry['checklist_complete'] !== true) {
+        at(
+          'reviews.claude.checklist_complete',
+          'must be true after a handover on an RV2 pull request (资金评审清单, 规划/11 §3.3)',
+        );
+      }
+    }
   } else {
-    for (const reviewer of handedOver ? ['claude'] : ['claude', 'codex']) {
+    for (const reviewer of ['claude', 'codex']) {
       const entry = reviews.find((r) => isRecord(r) && r['reviewer'] === reviewer);
       if (!isRecord(entry)) {
         at('reviews', `missing the ${reviewer} review (规划/11 §3.2 两家评审)`);
@@ -445,6 +538,50 @@ export function evidenceProblems(
   return problems;
 }
 
+/** The task ledger from the trusted root, or from the head when the PR adds it; null if unreadable. */
+function readLedger(input: EvidenceInput, task: string): TaskFile | null {
+  const rel = `ops/tasks/${task}.yaml`;
+  const trustedFile = join(input.trusted, rel);
+  try {
+    return existsSync(trustedFile)
+      ? parseTaskFile(readFileSync(trustedFile, 'utf8'), rel)
+      : parseTaskFile(showOrNull(input.prDir, input.head, rel) ?? '', rel);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a handover may be recorded (规划/11 §2.5 RV2 不换家, hard rule 3): the ledger is readable,
+ * the risk of its paths (as task.ts and dispatch.sh compute it) is below RV2, and the pull request
+ * changes no money / attribution implementation path. The PR risk is not used: test/** is RV2, so
+ * every task carrying rule tests would count as RV2.
+ */
+export function handoverPolicy(
+  input: EvidenceInput,
+  task: string,
+  moneyPaths: readonly string[],
+  riskMap: ReturnType<typeof loadRiskMap>,
+  cfg: ProtectedConfig,
+): HandoverPolicy {
+  const ledger = readLedger(input, task);
+  if (ledger === null) {
+    return { allowed: false, reason: `ops/tasks/${task}.yaml could not be read`, paths: [] };
+  }
+  const risk = riskOfPaths(ledger.paths, riskMap, cfg).risk;
+  if (risk === 'RV2') {
+    return { allowed: false, reason: 'the task ledger paths are RV2', paths: ledger.paths };
+  }
+  if (moneyPaths.length > 0) {
+    return {
+      allowed: false,
+      reason: `money / attribution implementation paths changed (${moneyPaths.join(', ')})`,
+      paths: ledger.paths,
+    };
+  }
+  return { allowed: true, reason: `task risk ${risk}`, paths: ledger.paths };
+}
+
 /**
  * Whether the task needs a red run, and which rule-test files it must cover (CR2-05). The ledger
  * comes from the trusted root, or from the head when the PR adds it; the switch-baseline list
@@ -457,16 +594,7 @@ export function redRequirement(
   mergeBase: string,
   evidenceText: string,
 ): RedRequirement {
-  const rel = `ops/tasks/${task}.yaml`;
-  const trustedFile = join(input.trusted, rel);
-  let ledger: TaskFile | null = null;
-  try {
-    ledger = existsSync(trustedFile)
-      ? parseTaskFile(readFileSync(trustedFile, 'utf8'), rel)
-      : parseTaskFile(showOrNull(input.prDir, input.head, rel) ?? '', rel);
-  } catch {
-    ledger = null;
-  }
+  const ledger = readLedger(input, task);
   if (ledger === null) return { required: true, expected: [] };
   const legacy = loadLegacyTasks(input.trusted);
   // CR3-03: only a task without a rule-test author, or a legacy ledger, is exempt.
@@ -565,6 +693,8 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
           task,
           cfg,
           red,
+          handover: handoverPolicy(input, task, moneyPaths, riskMap, cfg),
+          risk,
         }).map((p) => `${evidencePath}: ${p}`),
       );
     }
