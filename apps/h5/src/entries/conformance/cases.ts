@@ -96,6 +96,15 @@ const PROBE_PLATFORM = 'taobao';
  */
 const PLATFORM_LINK_SAMPLE_HOSTS: readonly string[] = ['taobao.example.test'];
 
+/**
+ * Share domains of the same ConfigResponse example in contracts/openapi.yaml (share_domains).
+ * share.open lets a share domain through only on a share page path (sharePagePaths); a path no
+ * share page can ever use must be refused with 90403 even while every path_pattern is null.
+ */
+const SHARE_DOMAIN_SAMPLE_HOSTS: readonly string[] = ['s.example.test'];
+/** Reserved path, chosen so it cannot collide with any share page path. */
+const NOT_SHARE_PAGE_PATH = '/__conformance_not_a_share_page__';
+
 /** 90403 variants of one blocked platform address (负面用例 ④). */
 function platformLinkVariants(host: string): { variant: string; url: string }[] {
   return [
@@ -269,7 +278,10 @@ function methodEntries(method: MethodName, meta: MethodMeta): CaseEntry[] {
   return rows;
 }
 
-/** 负面用例 ④: ext.openApp to trade_only targets; platform addresses to openBrowser / share. */
+/**
+ * 负面用例 ④: ext.openApp to trade_only targets; platform addresses to openBrowser / share;
+ * a non-share-page path on a share domain to share.open.
+ */
 function whitelistEntries(): CaseEntry[] {
   const rows: CaseEntry[] = [];
   for (const [target, app] of Object.entries(bridge.apps)) {
@@ -285,6 +297,12 @@ function whitelistEntries(): CaseEntry[] {
       const share = { content: { type: 'link', url, title: PROBE_TEXT } };
       rows.push(entry('share.open', 'negative', name, { code: 90403 }, 'auto', share));
     }
+  }
+  for (const host of SHARE_DOMAIN_SAMPLE_HOSTS) {
+    const url = `https://${host}${NOT_SHARE_PAGE_PATH}`;
+    const name = `share_domain/${host}/not_share_page`;
+    const share = { content: { type: 'link', url, title: PROBE_TEXT } };
+    rows.push(entry('share.open', 'negative', name, { code: 90403 }, 'auto', share));
   }
   return rows;
 }
