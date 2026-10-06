@@ -4,8 +4,8 @@ title: 推广位命令行：apps/api/scripts/union-pids.ts——登记联盟账�
 type: impl
 # 草稿 2026-10-05（W1 搜索转链线），第 1 轮台账评审后改（S1-2、S1-6）。05 B1-19 行「F1-06 后台 step-up 可用前，由种子脚本 / CLI 执行，super 用 TOTP 二次验证、写同一审计表」；
 # 取值以 08 为准（BR-ATTR-02：新增或修改白名单都要 super + 二次验证 + 审计），所以不止置 active，登记、补填、retired 也都要；只读的「列出」不要。
-# 只做命令行外壳：参数解析、交互输入动态码（不回显、不进命令历史与日志）；脚本只组装 @couli/db 与 B1-19b、F1-06b 的纯模块（无装饰器、可被 node 直接运行），
-# 不 import 任何 Nest 模块、不跑 dist。业务规则都在 B1-19b，不在脚本里另写。
+# 只做命令行外壳：参数解析、交互输入动态码（不回显、不进命令历史与日志）；业务规则都在 B1-19b，不在脚本里另写。2026-10-06 编排裁定（B1-19b decision ③）：
+# B1-19b 服务经 platform/index.ts 取 newUuidV7 与幂等、会带入 Nest 装饰器，node 不能直接加载；本脚本改为先 build 再从 apps/api/dist 加载（照 smoke-entries 先例），运行命令写明先 build。每次写命令生成并传幂等键（B1-19b decision ②），并打印供重试。
 # 运行者：负责人本人（推广位 PID 由负责人从联盟后台取得，代理不经手真实值）；输出不打印 TOTP、密码与凭据。超管由 F1-06c 引导产生。
 # 依据：05 B1-19 行、BR-ATTR-02、BR-ATTR-28、BR-ID-34，由编排者摘入任务书第 2 节。运行命令写在脚本头注释里（不改 README、package.json 的 scripts、AGENTS.md）。
 # 风险：apps/api/scripts/** 未登记，按 RV2。

@@ -11,7 +11,7 @@ type: impl
 # CardAssembler 依赖的登记端口由 B1-06c 装配，组装器在模块里的注册随之推迟（单测用假实现）。风险：catalog/** 为 RV1（task.ts show）。catalog/** 串行，排在 B1-05h 之后。
 refs: []
 refs_hash: {}
-deps: [B1-05c, B1-05h]
+deps: [B1-05c, B1-05h, B2-01b]
 paths:
   - 'apps/api/src/modules/catalog/**'
 test_paths:
