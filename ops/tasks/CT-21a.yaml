@@ -1,0 +1,24 @@
+id: CT-21a
+repo: rebate-platform
+title: 契约：后台权限点补收款线的 4 个——admin_permission 加 pay.view、pay.refund、pay.resolve、switch.pay（04 §11.2，2026-10-04 收款；step-up 标注按 04 §11）
+type: contract
+# 2026-10-06 入账（前端线 f1-frontend-2；设计会话裁定 blocked B-8：由前端线入账，范围只收窄到这 4 个权限点）。规划/04 §11.2 在 2026-10-04 收款基础设施
+# （D29，docs/changes/20261004-会员购买与微信支付评估.md）加了 pay.view（支付单、退款单、收款对账明细）、pay.refund（原路退款，不设二次验证，负责人 2026-10-05）、
+# pay.resolve（needs_manual 支付单处置，动态码）、switch.pay（仅收款类开关 pay.enabled、pay.channel_enabled.<pay_channel>，动态码，与 switch.payout 互不包含）；
+# contracts/enums/admin.yaml 没有它们（CT-01c 台账注释写「归 CT-21a」，此前未入账）。后台壳 F1-06e 的「支付单」「紧急开关」菜单要用。
+# 只做：admin.yaml 四个值（说明与 step-up 标注照 04 §11.2 原文）、contracts-ts 生成物与 catalog 测试同步。CT-21 其余部分（pay_channel 等枚举、/v1/pay/* 接口、
+# 错误码 309xx）留给收款线从 CT-21b 起入账，本任务不碰。合并后 F1-06e 规则测试里的「待契约同步」放行集合删掉。契约槽全局 1 个，排在 CT-08c 之后。
+refs: []
+refs_hash: {}
+contract_sections: ['11.2']
+deps: [CT-01c]
+paths:
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: done
+pr: 216

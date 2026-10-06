@@ -1,0 +1,50 @@
+{
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/enums/admin.yaml and the generated packages/contracts-ts enums): admin_permission gains pay.view, pay.refund, pay.resolve and switch.pay from 04 §11.2 (2026-10-04 payments line); notes carry the step-up marks (pay.resolve, switch.pay; pay.refund has none by the owner's 2026-10-05 decision). Ledger rides this PR (entered by the frontend lane on the design session's ruling, blocked B-8). tester none: tests written by the implementer in packages/contracts-ts (same as CT-02e). Implementation by an Opus 5.5 subagent in one run; Codex contract review and Claude contract review passed in round 1. Full verification is the required CI checks (ops/approvals.yaml id 21). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "four values, step-up marks, compatibility and generated file checked against SPEC_REF; no findings"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (second reviewer, contract): pass, no findings; values, step-up marks, order and generated file match 04 §11.2; admin shell consumers unaffected (pending-sync set now redundant, cleanup later)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "tester none (contract task)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "CT-21a",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "1114317844d734271e5f6343ae5e0bb2060efd2d",
+  "runs": [],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "36bf14e263d7a2e9fbcbdeb406aea941fa665abf",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}

@@ -154,8 +154,8 @@ it('[AC-CT-01c#1] removes the cancelled ticket enums (04 §2.5)', () => {
   expect.soft(enums).not.toHaveProperty('ticket_status');
 });
 
-it('[AC-CT-01c#2] synchronizes the 49 admin permissions (04 §11.2)', () => {
-  expect.soft(enums.admin_permission).toHaveLength(49);
+it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 53 since CT-21a)', () => {
+  expect.soft(enums.admin_permission).toHaveLength(53);
   expect.soft(enums.admin_permission).not.toContain('ticket.handle');
   expect.soft(enums.admin_permission).not.toContain('ticket.data_export');
   for (const permission of [
@@ -216,6 +216,32 @@ it.each([
 it('[AC-CT-01c#5] agent.report does not require step-up (04 §11.2)', () => {
   expect(permissionNotes['agent.report']).toBeTypeOf('string');
   expect(permissionNotes['agent.report']).not.toContain('step-up');
+});
+
+// CT-21a: the payments line permissions of 04 §11.2 (2026-10-04).
+it('[CT-21a] adds pay.view, pay.refund, pay.resolve and switch.pay (04 §11.2)', () => {
+  for (const permission of ['pay.view', 'pay.refund', 'pay.resolve', 'switch.pay']) {
+    expect.soft(enums.admin_permission, permission).toContain(permission);
+  }
+});
+
+it.each(['pay.resolve', 'switch.pay'])('[CT-21a] %s requires step-up (04 §11.2)', (permission) => {
+  expect(permissionNotes[permission]).toBeTypeOf('string');
+  expect(permissionNotes[permission]).toContain('（step-up）');
+});
+
+it.each(['pay.view', 'pay.refund'])(
+  '[CT-21a] %s does not require step-up (04 §11.2)',
+  (permission) => {
+    expect(permissionNotes[permission]).toBeTypeOf('string');
+    expect(permissionNotes[permission]).not.toContain('step-up');
+  },
+);
+
+it('[CT-21a] switch.pay and switch.payout do not cover each other (04 §11.2)', () => {
+  expect(permissionNotes['switch.pay']).toContain('pay.enabled');
+  expect(permissionNotes['switch.pay']).not.toContain('payout.');
+  expect(permissionNotes['switch.payout']).not.toMatch(/(?:^|、|：)pay\./);
 });
 
 it('[AC-CT-01c#5] content.app_version limits step-up to raising the minimum version (04 §11.2)', () => {

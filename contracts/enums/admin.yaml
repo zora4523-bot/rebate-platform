@@ -24,6 +24,7 @@ enums:
       config.business: 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
       switch.all: 全部紧急开关（step-up）
       switch.payout: 仅打款类开关：withdraw.enabled、payout.enabled、payout.queue_paused、payout.channel_enabled.<channel>、payout.channel_paused.<channel>（step-up）
+      switch.pay: 仅收款类开关：pay.enabled、pay.channel_enabled.<pay_channel>；与 switch.payout 互不包含（step-up）
       risk.freeze: 冻结 / 解冻（step-up）
       risk.ban: 封禁 / 解封（step-up）
       risk.blocklist: 黑名单增删（step-up）
@@ -45,6 +46,9 @@ enums:
       # ticket.handle、ticket.data_export 于 2026-10-04 随客服工单取消作废，key 不复用（04 §11.2）；个人信息副本导出改归 user.data_export。
       withdraw.review: 提现审核、驳回（step-up）
       payout.execute: 执行打款、needs_manual 处置、W11 凭通道成功证据核销原单（可为本单审核人）（step-up）
+      pay.view: 支付单、退款单、收款对账明细
+      pay.refund: 发起原路退款（不设二次验证）
+      pay.resolve: needs_manual 支付单的处置（step-up）
       payout.manual_entry: 线下打款补录（W8，含银行卡线下转账）与批量手动打款（step-up）
       settle.bill: 月结账单确认、撤销定时、驳回、继续执行、补充批次（step-up）
       settle.statement_upload: 联盟结算明细上传
