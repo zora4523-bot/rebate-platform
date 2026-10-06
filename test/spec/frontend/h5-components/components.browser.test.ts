@@ -60,9 +60,9 @@ function tokenColor(token: string): string {
   return color;
 }
 
-function expectTitle(element: Element): void {
+function expectTitle(element: Element, fontSize = '17px'): void {
   const style = getComputedStyle(element);
-  expect(style.fontSize).toBe('17px');
+  expect(style.fontSize).toBe(fontSize);
   expect(style.fontWeight).toBe('600');
 }
 
@@ -203,7 +203,10 @@ for (const { Component, slug, title } of modalCases) {
     const style = getComputedStyle(modal);
     const box = modal.getBoundingClientRect();
     expectFloatingPanel(modal);
-    expectTitle(page.getByRole('heading', { name: title }).element());
+    expectTitle(
+      page.getByRole('heading', { name: title }).element(),
+      Component === Sheet ? '22px' : '17px',
+    );
     expectPrimary(page.getByRole('button', { name: '确认', exact: true }).element());
     const secondary = page.getByRole('button', { name: '取消', exact: true }).element();
     const secondaryStyle = getComputedStyle(secondary);

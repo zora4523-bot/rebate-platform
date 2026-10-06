@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync, readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { createElement } from 'react';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -29,9 +29,7 @@ it('[AC-F1-01f-TOKENS#1] 六组件可渲染且实现源码不含字面色值或�
       createElement(Sheet, { open: false, title: 'Sheet', closeLabel: 'Close', onClose: vi.fn() }),
     ),
   );
-  const directory = fileURLToPath(
-    new URL('../../../../apps/h5/src/components/base/', import.meta.url),
-  );
+  const directory = resolve(import.meta.dirname, '../../../../apps/h5/src/components/base');
   const files = readdirSync(directory, { recursive: true, encoding: 'utf8' }).filter(
     (path) => /\.(?:tsx?|css)$/.test(path) && !/\.test\.tsx?$/.test(path),
   );
