@@ -69,6 +69,34 @@ it('the image default pnpm version equals the root packageManager', () => {
   expect(dockerfile).not.toMatch(/corepack enable/);
 });
 
+it('[F1-01j] the image default playwright version equals the one of pnpm-lock.yaml', () => {
+  const lock = readFileSync(join(repoRoot(), 'pnpm-lock.yaml'), 'utf8');
+  // The packages and snapshots sections both carry the `playwright@<version>:` key.
+  const keys = [...lock.matchAll(/^ {2}playwright@([^:(]+)[^\n]*:$/gm)].map((m) => m[1]);
+  const versions = new Set(keys);
+  expect([...versions]).toHaveLength(1);
+  const version = [...versions][0] ?? '';
+  expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+  const dockerfile = readFileSync(join(OPS_DIR, 'verify-image', 'Dockerfile'), 'utf8');
+  expect(dockerfile).toContain(`ARG PLAYWRIGHT_VERSION=${version}\n`);
+  // The test package pins the same release (F1-01i).
+  const spec = JSON.parse(readFileSync(join(repoRoot(), 'test', 'package.json'), 'utf8')) as {
+    devDependencies: Record<string, string>;
+  };
+  expect(spec.devDependencies['playwright']).toBe(version);
+  // Installed where the read-only, non-root container finds it; only the headless shell (what
+  // Playwright launches for headless Chromium); Chinese fonts with a built font cache. The
+  // install runs before the switch to the non-root user.
+  expect(dockerfile).toContain('ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright\n');
+  expect(dockerfile).toContain(
+    'npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps --only-shell chromium;',
+  );
+  expect(dockerfile).toContain('fonts-noto-cjk');
+  expect(dockerfile).toContain('fc-cache -f;');
+  expect(dockerfile).toContain('chmod -R a+rX /ms-playwright;');
+  expect(dockerfile.indexOf('install --with-deps')).toBeLessThan(dockerfile.indexOf('USER node\n'));
+});
+
 it(
   'refuses bad usage and worktrees under the temp directories',
   () => {
@@ -79,12 +107,18 @@ it(
       'worktree does not exist',
     );
     const ok = fixture('usage', 'true');
-    expect(run(['V1-01', '--worktree', ok, '--fast', '--red', '--dry-run']).stderr).toContain(
-      'at most one of --fast and --red',
-    );
-    expect(run(['V1-01', '--worktree', ok, '--base', 'main', '--dry-run']).stderr).toContain(
-      '--base applies to --red only',
-    );
+    for (const pair of [
+      ['--fast', '--red'],
+      ['--fast', '--browser'],
+      ['--browser', '--red'],
+    ]) {
+      const res = run(['V1-01', '--worktree', ok, ...pair, '--dry-run']);
+      expect(res.stderr).toContain('at most one of --fast, --red and --browser');
+    }
+    for (const extra of [[], ['--browser']]) {
+      const res = run(['V1-01', '--worktree', ok, ...extra, '--base', 'main', '--dry-run']);
+      expect(res.stderr).toContain('--base applies to --red only');
+    }
     const inTmp = mkdtempSync(join(tmpdir(), 'couli-verify-test-'));
     try {
       writeFileSync(join(inTmp, 'package.json'), '{"scripts":{"verify":"true"}}\n');
@@ -153,6 +187,13 @@ it(
     expect(dirty.tree).toMatch(/^[0-9a-f]{40}$/);
     expect(dirty.tree).not.toBe(headTree);
     expect(fixtureGit(repo, ['status', '--porcelain'])).toBe('?? new-file.txt');
+    const browser = run(['V1-05', '--worktree', repo, '--browser', '--dry-run']);
+    expect(browser.status, browser.stderr).toBe(0);
+    expect(JSON.parse(browser.stdout)).toEqual({
+      script: 'browser',
+      commit: head,
+      tree: dirty.tree,
+    });
     // No run directory and no result for a plan.
     expect(existsSync(join(runs, 'V1-05'))).toBe(false);
   },
@@ -200,6 +241,33 @@ it(
     expect(plan.red_plan.map((g) => `${g.name}: ${g.files.join(' ')}`)).toEqual([
       'spec-int: spec/identity/devices.int.test.ts',
       'spec-unit: spec/identity/devices.test.ts',
+    ]);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[F1-01j] --red --dry-run: a browser rule test is planned for spec-browser, marked browser',
+  () => {
+    const repo = fixture('red-browser', 'node -e "process.exit(0)"');
+    fixtureGit(repo, ['init', '-q', '-b', 'main']);
+    fixtureGit(repo, ['add', '-A']);
+    fixtureGit(repo, ['commit', '-q', '-m', 'fixture']);
+    writeFiles(repo, {
+      'test/spec/identity/devices.browser.test.ts': "it('[BR-ID-05] z', () => {});\n",
+    });
+    const res = run(['B1-02b', '--worktree', repo, '--red', '--base', 'main', '--dry-run']);
+    expect(res.status, res.stderr).toBe(0);
+    const plan = JSON.parse(res.stdout) as { red_plan: unknown[] };
+    expect(plan.red_plan).toEqual([
+      {
+        name: 'spec-browser',
+        dir: 'test',
+        config: 'vitest.browser.config.ts',
+        database: false,
+        browser: true,
+        files: ['spec/identity/devices.browser.test.ts'],
+      },
     ]);
   },
   CLI_TIMEOUT,

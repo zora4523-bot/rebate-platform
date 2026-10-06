@@ -5,6 +5,12 @@
 // thrown inside a property only as `Error.cause`, so without this the red check could not tell a
 // broken assertion from a TypeError or a refused database connection.
 //
+// Browser tests (F1-01j, Vitest browser mode): each file records `browser: true` when its project
+// ran in a real browser, and a cause records `matcher` when it is the failure of a matcher added
+// with expect.extend — the jest-dom style matchers of expect.element (toBeVisible …) throw a plain
+// Error carrying `__vitest_error_context__.assertionName` (vitest 5.0.1 JestExtendError), not an
+// AssertionError. tools/guard/lib/red-check.ts reads both.
+//
 // Trusted file: mounted read-only from the trusted root, never taken from the task snapshot.
 // Uses Node built-ins only and nothing of the repository under test.
 import { writeFileSync } from 'node:fs';
@@ -18,10 +24,13 @@ function chain(error) {
       out.push({ name: typeof current, message: String(current) });
       break;
     }
-    out.push({
+    const entry = {
       name: typeof current.name === 'string' ? current.name : 'Error',
       message: typeof current.message === 'string' ? current.message : '',
-    });
+    };
+    const matcher = current.__vitest_error_context__?.assertionName;
+    if (typeof matcher === 'string' && matcher !== '') entry.matcher = matcher;
+    out.push(entry);
     current = current.cause;
   }
   return out;
@@ -53,6 +62,7 @@ export default class RedReporter {
     }
     this.files.push({
       name: testModule.moduleId,
+      browser: testModule.project?.config?.browser?.enabled === true,
       status: testModule.state(),
       message: errors.map(text).join('\n'),
       failures: errors.map((e) => ({ causes: chain(e) })),

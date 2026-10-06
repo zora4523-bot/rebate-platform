@@ -122,6 +122,16 @@ jobs:
       - run: pnpm test:int
         env:
           TEST_REDIS_URL: redis://127.0.0.1:6379/0
+      # Browser tests (F1-01j, test/vitest.browser.config.ts): the Chromium of the playwright the
+      # lockfile pins (the test package's own CLI, so the version follows pnpm-lock.yaml) with its
+      # system libraries, and the Noto CJK fonts the verify image has, so Chinese text renders
+      # with the same glyphs as in tools/ops/verify-container.sh.
+      - name: Install Chromium and the CJK fonts for the browser tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          pnpm --filter @couli/spec-tests exec playwright install --with-deps chromium
+      - run: pnpm --filter @couli/spec-tests run test:browser
       - run: pnpm db:check
 
   guard-git:

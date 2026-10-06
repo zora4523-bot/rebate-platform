@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:int": "vitest run --config vitest.integration.config.ts",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:longrun": "vitest run --config vitest.longrun.config.ts"
   },
   "devDependencies": {

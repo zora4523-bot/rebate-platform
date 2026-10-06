@@ -4,8 +4,9 @@
 //
 //   node tools/ops/red-plan.ts --expected <file>   (one repository path per line)
 //
-// Prints one JSON document: { groups: [{ name, dir, config, database, files }] } with `files`
-// relative to `dir`. Exit codes: 0 planned, 1 a file has no execution entry, 2 usage.
+// Prints one JSON document: { groups: [{ name, dir, config, database, browser, files }] } with
+// `files` relative to `dir`; `browser` marks a group that runs in a real Chromium (the verify image
+// must have Playwright's browser). Exit codes: 0 planned, 1 a file has no execution entry, 2 usage.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -19,6 +20,8 @@ export type RedProject = {
   include: string[];
   exclude: string[];
   database: boolean;
+  /** Runs in a real Chromium (Vitest browser mode, F1-01j). */
+  browser: boolean;
 };
 
 export type RedGroup = {
@@ -26,6 +29,7 @@ export type RedGroup = {
   dir: string;
   config: string;
   database: boolean;
+  browser: boolean;
   files: string[];
 };
 
@@ -34,6 +38,11 @@ export function loadRedProjects(
 ): RedProject[] {
   const doc = JSON.parse(readFileSync(file, 'utf8')) as { projects?: RedProject[] };
   if (!Array.isArray(doc.projects)) throw new Error(`${file}: projects missing`);
+  for (const p of doc.projects) {
+    if (typeof p.database !== 'boolean' || typeof p.browser !== 'boolean') {
+      throw new Error(`${file}: project ${String(p.name)} needs boolean database and browser`);
+    }
+  }
   return doc.projects;
 }
 
@@ -59,6 +68,7 @@ export function planRed(
       dir: project.dir,
       config: project.config,
       database: project.database,
+      browser: project.browser,
       files: [],
     };
     group.files.push(file.slice(project.dir.length + 1));

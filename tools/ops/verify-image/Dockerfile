@@ -1,6 +1,6 @@
 # Verify image for `tools/ops/verify-container.sh` (规划/11 §2.3 step 7, §9.3 #6; ADR-0001 §7).
 # Built from the trusted root only. The image tag is derived from a hash of this
-# directory plus the pnpm version, so any edit here produces a new image.
+# directory plus the pnpm and playwright versions, so any edit here produces a new image.
 FROM node:24-bookworm-slim
 
 # Must equal the root `packageManager` version exactly: with a different pnpm the
@@ -38,6 +38,50 @@ RUN set -eux; \
     rm -rf /usr/local/lib/node_modules/corepack /usr/local/bin/corepack; \
     npm cache clean --force; \
     install -d -o node -g node /store /work
+
+# Browser tests (F1-01j; test/vitest.browser.config.ts, Vitest browser mode with the playwright
+# provider). Must equal the `playwright@` version of pnpm-lock.yaml exactly: the browser build a
+# Playwright release launches is pinned to that release (browsers.json), so another version would
+# look for a browser directory that is not there. verify-container.sh always passes --build-arg
+# (read from the lockfile of the snapshot, part of the image hash); a guard test keeps this default
+# equal to the lockfile. `none` (a branch whose lockfile has no playwright) builds the image
+# without a browser; verify-container.sh then refuses --browser and a red run of browser tests.
+ARG PLAYWRIGHT_VERSION=1.63.0
+
+# Installed at build time into a fixed, world-readable place: at run time the root file system
+# is read-only and HOME is a tmpfs, so Playwright's default (~/.cache/ms-playwright) is unusable.
+# Kept in the run-time environment so the playwright package of the workspace finds it.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# - `playwright install --with-deps --only-shell chromium`, as root (no sudo in the image):
+#   --with-deps apt-installs the shared libraries the browser needs; --only-shell installs only
+#   chromium-headless-shell, which is what Playwright launches for `headless: true` without a
+#   channel (playwright-core 1.63 ChromiumBrowser.getExecutableName; @vitest/browser-playwright
+#   5.0.1 calls chromium.launch({ headless })), so the full Chromium is not needed. Chromium
+#   runs with Playwright's default --no-sandbox and --disable-dev-shm-usage, which is what lets it
+#   start under --cap-drop ALL, no-new-privileges and the small default /dev/shm.
+# - fonts-noto-cjk (Noto Sans CJK SC …) so Chinese text renders with real glyphs in layouts and
+#   screenshots; fontconfig for fc-cache, which builds the system font cache now (the run-time
+#   root file system is read-only).
+# - Then: the npm / npx cache of root and the apt lists are removed, and /ms-playwright is made
+#   readable by the non-root user the tests run as.
+RUN set -eux; \
+    if [ "${PLAYWRIGHT_VERSION}" = none ]; then \
+      echo "PLAYWRIGHT_VERSION=none: image without a browser"; \
+    else \
+      case "${PLAYWRIGHT_VERSION}" in \
+        *[!0-9.]* | '' | .* | *. | *..*) echo "bad PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION}" >&2; exit 1 ;; \
+      esac; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends fontconfig fonts-noto-cjk; \
+      npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps --only-shell chromium; \
+      test -n "$(find /ms-playwright -maxdepth 1 -name 'chromium_headless_shell-*' -print -quit)"; \
+      fc-cache -f; \
+      fc-list | grep -q 'Noto Sans CJK SC'; \
+      chmod -R a+rX /ms-playwright; \
+      npm cache clean --force; \
+      rm -rf /root/.npm /root/.cache /var/lib/apt/lists/*; \
+    fi
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/couli-verify-entrypoint
 

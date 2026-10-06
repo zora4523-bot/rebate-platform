@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import {
+  browserCauseVerdict,
   causeVerdict,
   checkRedReports,
   expectedRuleTests,
@@ -254,4 +255,97 @@ it('[CR2-03] cause chains: the innermost cause decides; nothing known means refu
   ).toContain(
     'the run had unhandled errors: red for the wrong reason (network or database unreachable)',
   );
+});
+
+const B = 'test/spec/zzbrowser/b.browser.test.ts';
+const LAUNCH = 'test/spec/zzbrowser/launch.browser.test.ts';
+const WAIT = { name: 'Error', message: 'Matcher did not succeed in time.' };
+const UNRECOGNISED = 'red for an unrecognised reason (Error: not an assertion or NotImplemented)';
+
+it('[F1-01j] browser rule tests: an assertion, or an element waited for that never came, is a valid red', () => {
+  // Shapes of vitest 5.0.1 / @vitest/browser 5.0.1 / playwright-core 1.63.0 failures in the form
+  // the red reporter writes; where each one comes from is noted in the fixture ("//").
+  const result = checkRedReports([fixture('browser-report.json')], [B, LAUNCH], ROOT);
+  expect(result.red).toEqual([
+    `${B} > [AC-B#1] element never appears: locator error`,
+    `${B} > [AC-B#2] element never appears: lookup still waiting`,
+    `${B} > [AC-B#3] expect.element matcher fails`,
+    `${B} > [AC-B#4] expect.poll assertion fails`,
+    `${B} > [AC-B#5] plain assertion`,
+    `${B} > [AC-B#6] matcher without a wait`,
+  ]);
+  expect(result.problems.map((p) => `${p.test ?? p.file}: ${p.reason}`)).toEqual([
+    '[AC-B#7] TypeError inside the wait: red for the wrong reason (TypeError)',
+    `[AC-B#8] several elements (strict mode): ${UNRECOGNISED}`,
+    '[AC-B#9] element lookup outside a wait: red for an unrecognised reason ' +
+      '(VitestBrowserElementError: not an assertion or NotImplemented)',
+    `[AC-B#10] the polled assertion hangs: ${UNRECOGNISED}`,
+    '[AC-B#11] test timed out: red for the wrong reason (timed out)',
+    `[AC-B#12] page error inside the wait: ${UNRECOGNISED}`,
+    '[AC-B#13] skipped: status "skipped" (skipped, todo or pending is not red)',
+    `${LAUNCH}: the file did not load: red for the wrong reason (browser not running)`,
+  ]);
+});
+
+it('[F1-01j] the browser reading applies only to browser files the red reporter saw run in a browser', () => {
+  const report = fixture('browser-report.json') as {
+    testResults: Array<{ name: string; browser?: boolean }>;
+  };
+  // Not marked as run in a browser (a node project, or Vitest's own JSON report): the innermost
+  // cause decides, as for every other rule test, so only the bare assertion is red.
+  const unmarked = {
+    ...report,
+    testResults: report.testResults.map((entry) => ({ ...entry, browser: false })),
+  };
+  const plain = checkRedReports([unmarked], [B, LAUNCH], ROOT);
+  expect(plain.red).toEqual([`${B} > [AC-B#5] plain assertion`]);
+  const waited = [
+    '[AC-B#1] element never appears: locator error',
+    '[AC-B#4] expect.poll assertion fails',
+  ];
+  for (const title of waited) {
+    expect(plain.problems.find((p) => p.test === title)?.reason).toBe(UNRECOGNISED);
+  }
+  // A file that is not a browser test file never gets it, marked or not.
+  const nodeFile = B.replace('.browser.test.ts', '.test.ts');
+  const renamed = {
+    ...report,
+    testResults: report.testResults.map((entry) => ({
+      ...entry,
+      name: entry.name.replace('.browser.test.ts', '.test.ts'),
+    })),
+  };
+  const notBrowser = checkRedReports([renamed], [nodeFile], ROOT);
+  expect(notBrowser.red).toEqual([`${nodeFile} > [AC-B#5] plain assertion`]);
+});
+
+it('[F1-01j] browserCauseVerdict looks through the wait only, at an assertion or a missing element', () => {
+  const notFound = {
+    name: 'VitestBrowserElementError',
+    message: "Cannot find element with locator: getByText('x')",
+  };
+  const stillWaiting = { name: 'Error', message: "expect.poll() function didn't resolve in time." };
+  expect(browserCauseVerdict([notFound, WAIT])).toBeNull();
+  expect(browserCauseVerdict([stillWaiting, WAIT])).toBeNull();
+  const assertion = { name: 'AssertionError', message: 'expected 1 to be 2' };
+  expect(browserCauseVerdict([assertion, WAIT])).toBeNull();
+  const matcher = { name: 'Error', message: 'x', matcher: 'toBeVisible' };
+  expect(browserCauseVerdict([matcher, WAIT])).toBeNull();
+  // An outer wrapper does not change what the wait wrapped.
+  const property = { name: 'Error', message: 'Property failed after 1 tests' };
+  expect(browserCauseVerdict([property, notFound, WAIT])).toBeNull();
+  // The wait alone, a wrapped TypeError, a locator message under another error name.
+  expect(browserCauseVerdict([WAIT])).toBe(UNRECOGNISED);
+  const typeError = { name: 'TypeError', message: 'Failed to fetch' };
+  expect(browserCauseVerdict([typeError, WAIT])).toBe('red for the wrong reason (TypeError)');
+  const renamed = { name: 'Error', message: notFound.message };
+  expect(browserCauseVerdict([renamed, WAIT])).toBe(UNRECOGNISED);
+  expect(browserCauseVerdict([])).toContain('no failure detail');
+  // Outside the browser reading nothing changes: the wait's own cause is not an assertion.
+  expect(causeVerdict([notFound, WAIT])).toBe(UNRECOGNISED);
+  // A browser that could not start or went away: never a valid red, wherever it shows up.
+  const closed = { name: 'Error', message: 'Target page, context or browser has been closed' };
+  const notRunning = 'red for the wrong reason (browser not running)';
+  expect(causeVerdict([closed])).toBe(notRunning);
+  expect(browserCauseVerdict([closed, WAIT])).toBe(notRunning);
 });

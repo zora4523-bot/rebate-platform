@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Out-of-sandbox verification (规划/11 §2.3 steps 3, 5 and 7, §4.1, §9.3 #6; ADR-0001 §4.2 #9, §7).
 #
-#   verify-container.sh <id> [--worktree <path>] [--fast | --red [--base <ref>]] [--dry-run]
+#   verify-container.sh <id> [--worktree <path>] [--fast | --red [--base <ref>] | --browser]
+#                           [--dry-run]
 #
 #   (default)  `pnpm verify` — the task's verification; it alone decides the task. verify/<n>/
 #   --fast     `pnpm run verify:fast` — the entry the Claude Opus implementation subagent uses for
@@ -17,7 +18,14 @@
 #              red/<n>/out/<project>.json and tools/guard/red-check.ts reconciles them with the
 #              expected list (exit code = red-check's). A project that needs PostgreSQL gets the
 #              one-shot PostgreSQL and Redis on the internal network; otherwise the run has no
-#              network.
+#              network. A browser rule test (project `browser: true`, spec-browser) needs an
+#              image with Playwright's browser: without playwright in the lockfile the run stops.
+#   --browser  the browser tests (F1-01j): the one browser project of red-projects.json
+#              (spec-browser: every test/spec/**/*.browser.test.ts) in a real headless Chromium,
+#              `--network none` (loopback only). Screenshots and Vitest's JSON report are exported
+#              to browser/<n>/out/ (screenshots/, vitest-report.json) for comparison with the
+#              design boards; exit code = Vitest's. Like --fast an implementer's own check, never
+#              evidence of verification (tools/ci/evidence-check.ts accepts verify and red only).
 #   --dry-run  prints what would run (script, commit, tree, red files) as one JSON line and
 #              starts nothing; no run directory is created.
 #
@@ -38,12 +46,17 @@
 # Exit code = the exit code of the script run (124 = time limit); --red: red-check's. Exit code
 # 2 = usage or infrastructure error (no result.json is written in that case).
 #
-# Output: <runs>/<id>/{verify,verify-fast,red}/<n>/log.txt and result.json
-#   { mode: container, script: verify|verify:fast|red, exit_code, commit, tree, prop_seed,
-#     started_at, finished_at }  — red adds red_tests, expected and reports (path + sha256).
+# Output: <runs>/<id>/{verify,verify-fast,red,browser}/<n>/log.txt and result.json
+#   { mode: container, script: verify|verify:fast|red|browser, exit_code, commit, tree,
+#     prop_seed, started_at, finished_at }  — red adds red_tests, expected and reports (path +
+#     sha256); browser leaves its screenshots and report in out/.
 # `tree` is the git tree of the work tree as verified (uncommitted changes included). The tree
 # is exported once into an immutable snapshot and that snapshot is what gets verified, so the
 # hash and the exit code always describe the same files; git-ignored paths never reach it.
+#
+# The image: tools/ops/verify-image/Dockerfile with the pnpm of `packageManager` and the
+# Playwright browser of the lockfile's `playwright` version (none: no browser); both versions are
+# part of the image tag, so a lockfile that moves either one builds a new image.
 #
 # This script, the Dockerfile and the entrypoint are gates: run them from the
 # trusted root, never from the task worktree (规划/11 §2.4).
@@ -61,7 +74,7 @@ DEFAULT_PROP_SEED=20261001
 
 log() { printf '%s\n' "$*" >&2; }
 die() { log "verify-container: $*"; exit 2; }
-usage() { log "usage: verify-container.sh <id> [--worktree <path>] [--fast | --red [--base <ref>]] [--dry-run]"; exit 2; }
+usage() { log "usage: verify-container.sh <id> [--worktree <path>] [--fast | --red [--base <ref>] | --browser] [--dry-run]"; exit 2; }
 
 sha256_stdin() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
@@ -88,7 +101,7 @@ SCRIPT='verify'
 BASE_ARG=''
 DRY_RUN=0
 set_script() {
-  [ "$SCRIPT" = verify ] || die "give at most one of --fast and --red"
+  [ "$SCRIPT" = verify ] || die "give at most one of --fast, --red and --browser"
   SCRIPT="$1"
 }
 while [ $# -gt 0 ]; do
@@ -99,6 +112,10 @@ while [ $# -gt 0 ]; do
       ;;
     --red)
       set_script 'red'
+      shift
+      ;;
+    --browser)
+      set_script 'browser'
       shift
       ;;
     --base)
@@ -200,6 +217,7 @@ if ! [[ "$PREFIX" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then die "COULI_VERIFY_PREFIX must
 RED_FILES=''
 RED_PLAN=''
 RED_DB=0
+RED_BROWSER=0
 if [ "$SCRIPT" = red ]; then
   if [ -z "$BASE_ARG" ]; then
     for candidate in origin/main main; do
@@ -226,6 +244,23 @@ if [ "$SCRIPT" = red ]; then
   }
   rm -f "$red_list"
   RED_DB="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).groups.some((g) => g.database) ? "1" : "0")' "$RED_PLAN")"
+  RED_BROWSER="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).groups.some((g) => g.browser) ? "1" : "0")' "$RED_PLAN")"
+fi
+
+# --browser: the one browser project of the trusted project table (dir and config).
+BROWSER_DIR=''
+BROWSER_CONFIG=''
+if [ "$SCRIPT" = browser ]; then
+  browser_project="$(node -e '
+    const doc = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+    const found = (doc.projects ?? []).filter((p) => p.browser === true);
+    if (found.length !== 1) throw new Error(`expected one browser project, found ${found.length}`);
+    process.stdout.write(`${found[0].dir} ${found[0].config}`);
+  ' "$IMG_DIR/red-projects.json" 2>&1)" || die "no browser project in $IMG_DIR/red-projects.json: $browser_project"
+  read -r BROWSER_DIR BROWSER_CONFIG <<<"$browser_project"
+  for p in "$BROWSER_DIR" "$BROWSER_CONFIG"; do
+    [[ "$p" =~ ^[A-Za-z0-9_./@-]+$ ]] && [[ "$p" != *..* ]] || die "unexpected browser project path: $p"
+  done
 fi
 
 tree_of_worktree() { # prints the git tree of the work tree (uncommitted changes included)
@@ -266,6 +301,7 @@ case "$SCRIPT" in
   verify) VBASE="$RUN/verify" ;;
   verify:fast) VBASE="$RUN/verify-fast" ;;
   red) VBASE="$RUN/red" ;;
+  browser) VBASE="$RUN/browser" ;;
 esac
 mkdir -p "$VBASE"
 N=1
@@ -352,6 +388,28 @@ finish() {
 # --- container mode ----------------------------------------------------------
 [ -f "$SRC/pnpm-lock.yaml" ] || die "no pnpm-lock.yaml in $WT"
 [ -f "$SRC/pnpm-workspace.yaml" ] || die "no pnpm-workspace.yaml in $WT"
+
+# The Playwright version of the snapshot's lockfile (a `playwright@<version>:` key; the packages
+# and snapshots sections repeat it): the image installs exactly that browser build. `none` when
+# the lockfile has no playwright (a branch from before F1-01i): the image has no browser, and
+# the runs that need one stop here.
+playwright_versions="$(sed -n "s/^  '\{0,1\}playwright@\([^:('][^:(']*\).*:\$/\1/p" "$SRC/pnpm-lock.yaml" | sort -u)"
+case "$(printf '%s' "$playwright_versions" | grep -c '' || true)" in
+  0) PLAYWRIGHT_VERSION='none' ;;
+  1) PLAYWRIGHT_VERSION="$playwright_versions" ;;
+  *) die "pnpm-lock.yaml has more than one playwright version: $(printf '%s' "$playwright_versions" | tr '\n' ' ')" ;;
+esac
+if [ "$PLAYWRIGHT_VERSION" != none ] && ! [[ "$PLAYWRIGHT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  die "unexpected playwright version in pnpm-lock.yaml: $PLAYWRIGHT_VERSION (the image installs exact releases only)"
+fi
+if [ "$PLAYWRIGHT_VERSION" = none ]; then
+  if [ "$SCRIPT" = browser ]; then
+    die "--browser needs playwright in pnpm-lock.yaml: this tree has none, so the verify image is built without a browser"
+  fi
+  if [ "$RED_BROWSER" = 1 ]; then
+    die "the red run has browser rule tests, but pnpm-lock.yaml has no playwright: the verify image is built without a browser"
+  fi
+fi
 docker version --format '{{.Server.Version}}' >/dev/null 2>&1 ||
   die "Docker is not available. Start Docker, or hand the run to CI (there is no host fallback: 规划/11 §4.1, §8)."
 
@@ -363,6 +421,7 @@ fi
 IMAGE_HASH="$({
   cat "$IMG_DIR/Dockerfile" "$IMG_DIR/entrypoint.sh"
   printf 'pnpm@%s\n' "$PNPM_VERSION"
+  printf 'playwright@%s\n' "$PLAYWRIGHT_VERSION"
 } | sha256_stdin | cut -c1-16)"
 IMAGE="couli-verify:$IMAGE_HASH"
 LOCK_HASH="$(sha256_stdin <"$SRC/pnpm-lock.yaml" | cut -c1-16)"
@@ -456,8 +515,9 @@ start_services() { # <what the services are for, for the log>
 }
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  step "building image $IMAGE (pnpm $PNPM_VERSION)"
-  docker build -t "$IMAGE" --build-arg "PNPM_VERSION=$PNPM_VERSION" --label "couli.verify=1" "$IMG_DIR" >>"$LOG" 2>&1 ||
+  step "building image $IMAGE (pnpm $PNPM_VERSION, playwright $PLAYWRIGHT_VERSION)"
+  docker build -t "$IMAGE" --build-arg "PNPM_VERSION=$PNPM_VERSION" \
+    --build-arg "PLAYWRIGHT_VERSION=$PLAYWRIGHT_VERSION" --label "couli.verify=1" "$IMG_DIR" >>"$LOG" 2>&1 ||
     die "image build failed, see $LOG"
 fi
 
@@ -566,6 +626,27 @@ if [ "$SCRIPT" = red ]; then
     --expected-list "$VDIR/expected.txt" --root /work/repo --json) \
     >"$VDIR/red-check.json" 2>>"$LOG" || rc=$?
   [ "$rc" = 0 ] || [ "$rc" = 1 ] || die "red-check failed to run (exit $rc), see $LOG"
+  finish "$rc"
+fi
+
+if [ "$SCRIPT" = browser ]; then
+  # The browser project only, no network at all: Vitest serves the tests and Chromium loads them
+  # on the container's loopback. The output directory takes the screenshots and the report.
+  mkdir -p "$VDIR/out"
+  chmod 0777 "$VDIR/out"
+  step "running the browser tests ($BROWSER_DIR, $BROWSER_CONFIG) in $IMAGE (no network, limit ${TIMEOUT_SECS}s)"
+  BROWSER_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS"
+    -e "BROWSER_DIR=$BROWSER_DIR" -e "BROWSER_CONFIG=$BROWSER_CONFIG")
+  [ -z "${PROP_RUNS:-}" ] || BROWSER_ENV+=(-e "PROP_RUNS=$PROP_RUNS")
+  rc=0
+  docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
+    --network none \
+    -v "$SRC:/src:ro" \
+    -v "$STORE_VOL:/store:ro" \
+    -v "$VDIR/out:/out" \
+    --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
+    "${BROWSER_ENV[@]}" \
+    "$IMAGE" couli-verify-entrypoint browser >>"$LOG" 2>&1 </dev/null || rc=$?
   finish "$rc"
 fi
 

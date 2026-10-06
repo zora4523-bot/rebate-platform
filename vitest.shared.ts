@@ -1,11 +1,18 @@
 // Shared Vitest configuration for every workspace package (conventions C5).
 // Protected path, class 2 (verify config): changing it needs owner approval (规划/11 §4.4).
-import { defaultServerConditions } from 'vite';
+import { defaultClientConditions, defaultServerConditions } from 'vite';
 import { configDefaults, type ViteUserConfig } from 'vitest/config';
 
 // Workspace packages expose their TypeScript sources through the custom export condition
 // `couli-src`, so tests never need a prior build. Vite's own server conditions are kept.
 const CONDITIONS: string[] = ['couli-src', ...defaultServerConditions];
+// Browser tests load modules the way the H5 build does (apps/h5/vite.config.ts): client
+// conditions plus `couli-src`.
+const BROWSER_CONDITIONS: string[] = ['couli-src', ...defaultClientConditions];
+
+// Browser tests (`*.browser.test.ts`) run only in a real Chromium (browserConfig, `test:browser`);
+// the unit tier never picks them up.
+const BROWSER_TEST_FILES = '**/*.browser.test.ts';
 
 const BASE_EXCLUDE: string[] = [...configDefaults.exclude, '**/dist/**', '**/.tmp/**'];
 
@@ -24,14 +31,49 @@ function resolveBlock(): Pick<ViteUserConfig, 'resolve' | 'ssr'> {
   };
 }
 
-/** Unit tests: no database, no ports, no network. Integration files are excluded. */
+/** Unit tests: no database, no ports, no network. Integration and browser files are excluded. */
 export function unitConfig(include: string[] = ['src/**/*.test.ts']): ViteUserConfig {
   return {
     ...resolveBlock(),
     test: {
       ...STRICT,
       include,
-      exclude: [...BASE_EXCLUDE, '**/*.int.test.ts'],
+      exclude: [...BASE_EXCLUDE, '**/*.int.test.ts', BROWSER_TEST_FILES],
+    },
+  };
+}
+
+type BrowserOptions = NonNullable<NonNullable<ViteUserConfig['test']>['browser']>;
+
+/**
+ * Browser tests (`*.browser.test.ts`): Vitest browser mode in a real headless Chromium. The
+ * provider and the Vite plugins come from the caller (test/vitest.browser.config.ts), whose
+ * package depends on them. Screenshots of `page.screenshot()` (and of failures) go to
+ * `screenshotDirectory`; `fsAllow` lists extra directories the page may read back through
+ * `commands.readFile` (an export directory outside the repository).
+ */
+export function browserConfig(opts: {
+  include: string[];
+  plugins: NonNullable<ViteUserConfig['plugins']>;
+  provider: NonNullable<BrowserOptions['provider']>;
+  screenshotDirectory: string;
+  fsAllow?: string[];
+}): ViteUserConfig {
+  return {
+    resolve: { conditions: [...BROWSER_CONDITIONS] },
+    plugins: opts.plugins,
+    ...(opts.fsAllow === undefined ? {} : { server: { fs: { allow: [...opts.fsAllow] } } }),
+    test: {
+      ...STRICT,
+      include: opts.include,
+      exclude: [...BASE_EXCLUDE],
+      browser: {
+        enabled: true,
+        provider: opts.provider,
+        headless: true,
+        instances: [{ browser: 'chromium' }],
+        screenshotDirectory: opts.screenshotDirectory,
+      },
     },
   };
 }

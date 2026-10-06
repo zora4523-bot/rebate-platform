@@ -17,9 +17,12 @@ function arrays(source: string): string[][] {
 it('[CR2-04] the project table mirrors the include rules of the trusted Vitest configs', () => {
   const read = (path: string): string => readFileSync(join(repoRoot(), path), 'utf8');
   const shared = read('vitest.shared.ts');
-  // unitConfig: default include src/**/*.test.ts, integration files excluded.
+  // unitConfig: default include src/**/*.test.ts, integration and browser files excluded.
   expect(shared).toContain("export function unitConfig(include: string[] = ['src/**/*.test.ts'])");
-  expect(shared).toMatch(/exclude: \[\.\.\.BASE_EXCLUDE, '\*\*\/\*\.int\.test\.ts'\]/);
+  expect(shared).toMatch(
+    /exclude: \[\.\.\.BASE_EXCLUDE, '\*\*\/\*\.int\.test\.ts', BROWSER_TEST_FILES\]/,
+  );
+  expect(shared).toContain("const BROWSER_TEST_FILES = '**/*.browser.test.ts';");
   const byName = new Map(projects.map((p) => [p.name, p]));
   expect(arrays(read('test/vitest.config.ts'))[0]).toEqual(byName.get('spec-unit')?.include);
   expect(arrays(read('test/vitest.integration.config.ts'))[0]).toEqual(
@@ -28,12 +31,34 @@ it('[CR2-04] the project table mirrors the include rules of the trusted Vitest c
   expect(read('packages/testing/vitest.config.ts')).toContain('unitConfig()');
   expect(byName.get('testing-unit')?.include).toEqual(['src/**/*.test.ts']);
   for (const name of ['spec-unit', 'testing-unit']) {
-    expect(byName.get(name)?.exclude).toEqual(['**/*.int.test.ts']);
+    expect(byName.get(name)?.exclude).toEqual(['**/*.int.test.ts', '**/*.browser.test.ts']);
   }
   expect(byName.get('spec-int')).toMatchObject({
     config: 'vitest.integration.config.ts',
     database: true,
+    browser: false,
   });
+
+  // F1-01j: the browser project. Its config takes spec/**/*.browser.test.ts through
+  // browserConfig (no exclude beyond the shared one) and is what `test:browser` runs.
+  const browserSource = read('test/vitest.browser.config.ts');
+  expect(arrays(browserSource)[0]).toEqual(byName.get('spec-browser')?.include);
+  expect(browserSource).toContain('browserConfig({');
+  expect(shared).toMatch(/export function browserConfig\([\s\S]*?exclude: \[\.\.\.BASE_EXCLUDE\],/);
+  expect(byName.get('spec-browser')).toEqual({
+    name: 'spec-browser',
+    dir: 'test',
+    config: 'vitest.browser.config.ts',
+    include: ['spec/**/*.browser.test.ts'],
+    exclude: [],
+    database: false,
+    browser: true,
+  });
+  const pkg = JSON.parse(read('test/package.json')) as { scripts: Record<string, string> };
+  expect(pkg.scripts['test:browser']).toBe('vitest run --config vitest.browser.config.ts');
+  // Exactly one browser project: verify-container.sh --browser runs it.
+  expect(projects.filter((p) => p.browser).map((p) => p.name)).toEqual(['spec-browser']);
+  expect(projects.filter((p) => p.name !== 'spec-browser').every((p) => !p.browser)).toBe(true);
 });
 
 it('[CR2-04] acceptance and packages/testing files get their own entry; a file without one fails', () => {
@@ -55,6 +80,7 @@ it('[CR2-04] acceptance and packages/testing files get their own entry; a file w
       dir: 'test',
       config: 'vitest.config.ts',
       database: false,
+      browser: false,
       files: ['spec/money/split.test.ts', 'properties/money/sum.test.ts'],
     },
     {
@@ -62,6 +88,7 @@ it('[CR2-04] acceptance and packages/testing files get their own entry; a file w
       dir: 'test',
       config: 'vitest.integration.config.ts',
       database: true,
+      browser: false,
       files: ['spec/db/ledger.int.test.ts', 'acceptance/order.test.ts'],
     },
     {
@@ -69,8 +96,44 @@ it('[CR2-04] acceptance and packages/testing files get their own entry; a file w
       dir: 'packages/testing',
       config: 'vitest.config.ts',
       database: false,
+      browser: false,
       files: ['src/arb.test.ts'],
     },
   ]);
   expect(plan.unrunnable).toEqual(['test/replay/orders.test.ts', 'db/invariants/ledger.test.ts']);
+});
+
+it('[F1-01j] browser rule tests go to spec-browser only; a browser file outside spec/ has no entry', () => {
+  const plan = planRed(
+    [
+      'test/spec/frontend/browser-env/environment.browser.test.ts',
+      'test/spec/frontend/browser-env/tokens.test.ts',
+      'test/properties/ui/layout.browser.test.ts',
+      'packages/testing/src/dom.browser.test.ts',
+    ],
+    projects,
+  );
+  expect(plan.groups).toEqual([
+    {
+      name: 'spec-browser',
+      dir: 'test',
+      config: 'vitest.browser.config.ts',
+      database: false,
+      browser: true,
+      files: ['spec/frontend/browser-env/environment.browser.test.ts'],
+    },
+    {
+      name: 'spec-unit',
+      dir: 'test',
+      config: 'vitest.config.ts',
+      database: false,
+      browser: false,
+      files: ['spec/frontend/browser-env/tokens.test.ts'],
+    },
+  ]);
+  // The unit projects exclude browser files and no browser project takes them there.
+  expect(plan.unrunnable).toEqual([
+    'test/properties/ui/layout.browser.test.ts',
+    'packages/testing/src/dom.browser.test.ts',
+  ]);
 });
