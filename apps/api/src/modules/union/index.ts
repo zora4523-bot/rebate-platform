@@ -49,6 +49,27 @@ export type {
 export type { UnionRegistration, UnionRegistry } from './infra/registry.ts';
 export { loadUnionEndpoints, parseUnionEndpoints } from './infra/endpoints.ts';
 export { createGovernedAdapter } from './application/governed-adapter.ts';
+export { UnionPidError, createUnionPidService } from './pids/service.ts';
+export type {
+  AccountRow as UnionAccountRow,
+  ActivePidInput,
+  ConfirmHjyInput,
+  PidPlatform,
+  PidRow as UnionPidRow,
+  PidServiceDeps,
+  PidStatus,
+  RegisterAccountInput,
+  RegisterPidInput,
+  SetPidStatusInput,
+  SuperVerification,
+  UnionAuditInput,
+  UnionAuditWriter,
+  UnionPidErrorCode,
+  UnionPidService,
+  VerifiedSuper,
+  WhitelistInput,
+  WriteContext as UnionWriteContext,
+} from './pids/service.ts';
 export type { GovernedAdapterOptions } from './application/governed-adapter.ts';
 export {
   UNION_ENDPOINTS,
