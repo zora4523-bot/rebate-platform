@@ -134,9 +134,16 @@ case "${1:-}" in
       echo "[browser] ${name}: vitest run --config ${config} in ${dir} (${left}s left)"
       p_started=$(date +%s)
       p_rc=0
+      # The command-line reporters replace the config's: build-smoke keeps its strict reporter
+      # (page errors and failed own requests in the diagnostics fail the run).
+      strict=()
+      if [ "$name" = build-smoke ]; then
+        strict=(--reporter=/work/repo/tools/ops/build-smoke/strict-reporter.mjs)
+      fi
       (cd "/work/repo/$dir" && COULI_BROWSER_SCREENSHOT_DIR=/out/screenshots timeout --signal=TERM \
         --kill-after=10 "$left" pnpm exec vitest run --config "$config" \
-        --reporter=default --reporter=json --outputFile.json="/out/${name}.vitest-report.json") || p_rc=$?
+        --reporter=default --reporter=json "${strict[@]}" \
+        --outputFile.json="/out/${name}.vitest-report.json") || p_rc=$?
       p_elapsed=$(( $(date +%s) - p_started ))
       if [ "$p_rc" -eq 137 ] && [ "$p_elapsed" -ge "$left" ]; then p_rc=124; fi
       echo "[browser] ${name}: vitest exited ${p_rc} after ${p_elapsed}s"
