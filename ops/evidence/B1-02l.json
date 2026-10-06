@@ -1,0 +1,50 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (identity). B1-02e hardening from its third review round: MARK checks the reservation against the injected clock (now <= t+D, candidate still owned by the token) and the service re-checks now - reservedAt <= 5 s before handing the SMS over; quota members p: / s: / a: (mark renames p:T to s:T), history() drops unmarked p: older than t+D+60 regardless of the code key; release retried like mark and commit; committed codes live 300 s from acceptance; COMMIT expires the quota key right after ZADD. Ledger tester: none (implementer-written unit and integration tests). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass; the B1-02e round-3 Codex S2 / OOS S1 and Claude S3-1..6 resolved; eight S3 (remaining-risk wording, stale notes, optional strengthening) recorded as follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one out-of-scope note (upgrading with Redis data left by B1-02e) not applicable: B1-02e was never deployed"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "hardening task, ledger tester: none"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-02l",
+  "spec_ref": "18ad5b4aa66235855a92e68f40f8b8ef7822f4dc",
+  "spec_commit": "ed7b9f4cc8b99e67deea81dc8b893f50282290e3",
+  "runs": [],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "e8e9e663b7fdbcd52c9fada559c6a018db21d9dc",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
