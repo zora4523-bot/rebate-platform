@@ -3,9 +3,22 @@
 // (BR-PROD-05), alias resolution resolveProductKey and isSameProduct (BR-PROD-01, BR-PROD-02),
 // the category blocklist filter, and the five ports catalog uses. Rule tests:
 // test/spec/catalog/base/**. Task B1-05h: item_ref issue/verify (BR-PROD-11), rule tests
-// test/spec/catalog/item-ref/**.
+// test/spec/catalog/item-ref/**. Task B1-05f: CardAssembler (priced ProductCard per request,
+// BR-PRICE-01/06/07/08/09/11/17/21) and the non-production demo quoter, rule tests
+// test/spec/catalog/card/**; no Nest provider until B1-06c wires the link registrar.
 export { createCatalog } from './application/catalog.ts';
 export type { CatalogOptions } from './application/catalog.ts';
+export { createCardAssembler, createDemoRebateQuoter } from './application/card-assembler.ts';
+export type {
+  AssembleCardInput,
+  CardAssembler,
+  CardAssemblerOptions,
+  CardQuoteContext,
+  CardRebateQuoter,
+  DemoQuoteRule,
+  DemoRebateQuoterOptions,
+  ProductCard,
+} from './application/card-assembler.ts';
 export { createItemRefService } from './application/item-ref.ts';
 export type {
   ItemRefClaims,
