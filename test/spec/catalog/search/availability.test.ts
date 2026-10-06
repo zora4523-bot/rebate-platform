@@ -1,8 +1,8 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { CatalogError } from '../../../../apps/api/src/modules/catalog/index.ts';
 import { GovernanceError } from '../../../../apps/api/src/modules/platform/http/index.ts';
 import { UnionError } from '../../../../apps/api/src/modules/union/index.ts';
-import { candidate, fixture } from './kit.ts';
+import { candidate, fixture, observed } from './kit.ts';
 
 it.each(['taobao', 'jd', 'pdd'] as const)(
   '[AC-B1-05d#27] %s 搜索开关关闭返回 50304/search_disabled，不查联盟或物料',
@@ -19,6 +19,33 @@ it.each(['taobao', 'jd', 'pdd'] as const)(
     expect(f.register).not.toHaveBeenCalled();
   },
 );
+
+it.each([
+  null,
+  { value: false, version: 1 },
+  { value: 'true', version: 1 },
+  { value: 'on', version: 1 },
+  { value: 1, version: 1 },
+  { value: 0, version: 1 },
+  { value: null, version: 1 },
+  { value: {}, version: 1 },
+  { value: [], version: 1 },
+])('[AC-B1-05d#42] 搜索配置 %j 缺失或不是布尔 true 时默认关闭', async (entry) => {
+  const f = fixture();
+  const configValue = vi.fn(async () => entry);
+  f.options.config.configValue = configValue;
+  const result = await observed(() => f.run());
+  expect(result).toMatchObject({ kind: 'rejected', error: { code: 50304 } });
+  if (result.kind === 'rejected')
+    expect(result.error).toHaveProperty('data', {
+      platform: 'taobao',
+      reason: 'search_disabled',
+    });
+  expect(configValue).toHaveBeenCalledWith('synthetic-app', 'search.enabled.taobao');
+  expect(f.search).not.toHaveBeenCalled();
+  expect(f.materialFeed).not.toHaveBeenCalled();
+  expect(f.register).not.toHaveBeenCalled();
+});
 
 it('[AC-B1-05d#28] 每次请求重读开关，刚成功搜索后关闭也不能继续翻页', async () => {
   const f = fixture();
@@ -79,7 +106,10 @@ it('[AC-B1-05d#30] 搜索调用固定 query 推广位，不携带查看者身份
 it('[AC-B1-05d#31] 没有 active query 推广位按任务默认返回 50304 并告警，不改用转链位', async () => {
   const f = fixture();
   f.getActivePid.mockResolvedValue(null);
-  await expect(f.run()).rejects.toMatchObject({ code: 50304, data: { platform: 'taobao' } });
+  const result = await observed(() => f.run());
+  expect(result).toMatchObject({ kind: 'rejected', error: { code: 50304 } });
+  if (result.kind === 'rejected')
+    expect(result.error).toHaveProperty('data', { platform: 'taobao' });
   expect(f.warn).toHaveBeenCalled();
   expect(f.getActivePid.mock.calls.map(([input]) => input.pidScene)).toEqual(['query']);
   expect(f.search).not.toHaveBeenCalled();
@@ -97,7 +127,10 @@ it.each([
   async (failure) => {
     const f = fixture();
     f.search.mockRejectedValue(failure);
-    await expect(f.run()).rejects.toMatchObject({ code: 50304, data: { platform: 'taobao' } });
+    const result = await observed(() => f.run());
+    expect(result).toMatchObject({ kind: 'rejected', error: { code: 50304 } });
+    if (result.kind === 'rejected')
+      expect(result.error).toHaveProperty('data', { platform: 'taobao' });
     expect(f.materialFeed).not.toHaveBeenCalled();
     expect(f.register).not.toHaveBeenCalled();
   },
@@ -107,6 +140,10 @@ it('[AC-B1-05d#33] 平台本身没有搜索能力时保留 30131，不误报运�
   const f = fixture();
   f.requirePlatform.mockRejectedValue(new CatalogError(30131, 'synthetic unsupported platform'));
   await expect(f.run({ platform: 'meituan' })).rejects.toMatchObject({ code: 30131 });
+  expect(f.requirePlatform).toHaveBeenCalledWith('meituan', {
+    parseEnabled: false,
+    searchEnabled: true,
+  });
   expect(f.search).not.toHaveBeenCalled();
   expect(f.materialFeed).not.toHaveBeenCalled();
 });

@@ -198,6 +198,30 @@ it('[AC-B1-05d#24] 会话 30 分钟无请求过期，活跃翻页刷新空闲时
   }
 });
 
+it('[AC-B1-05d#43] 会话存储过期删除后，合法游标只能报 20001 或从首页新开会话', async () => {
+  const f = fixture();
+  f.pages.set(1, { items: [candidate('first')], hasMore: true });
+  f.pages.set(2, { items: [candidate('second')], hasMore: false });
+  const first = await f.run({ limit: 1 });
+  expect(first.next_cursor).toEqual(expect.any(String));
+  const firstClaims = claims(f, first.next_cursor);
+  expect(firstClaims).toEqual({ search_session_id: expect.any(String), page_no: 2 });
+  f.clock.advanceMs(30 * 60 * 1000);
+  f.sessions.rows.clear();
+  f.search.mockClear();
+  const result = await observed(() => f.run({ limit: 1, cursor: first.next_cursor! }));
+  if (result.kind === 'rejected') {
+    expect(result.error).toMatchObject({ code: 20001 });
+    expect(f.search).not.toHaveBeenCalled();
+  } else {
+    expect(result.value.items.map((card) => card.title)).toEqual(['synthetic-first']);
+    expect(f.search.mock.calls.map(([input]) => input.pageNo)).toEqual([1]);
+    const restarted = claims(f, result.value.next_cursor);
+    expect(restarted).toEqual({ search_session_id: expect.any(String), page_no: 2 });
+    expect(restarted?.search_session_id).not.toBe(firstClaims?.search_session_id);
+  }
+});
+
 it.each([false, true])(
   '[AC-B1-05d#25] 已下发集合最多 500 个，超过后停止会话去重：overflow=%s',
   async (overflow) => {
@@ -209,7 +233,10 @@ it.each([false, true])(
         hasMore: true,
       });
     }
-    f.pages.set(pageCount + 1, { items: [candidate('p1-0')], hasMore: false });
+    f.pages.set(pageCount + 1, {
+      items: overflow ? [candidate('p1-0'), candidate('p11-0')] : [candidate('p1-0')],
+      hasMore: false,
+    });
     let cursor: string | undefined;
     for (let pageNo = 1; pageNo <= pageCount; pageNo += 1) {
       const result = await f.run({ limit: 50, ...(cursor === undefined ? {} : { cursor }) });
@@ -218,7 +245,9 @@ it.each([false, true])(
       cursor = result.next_cursor!;
     }
     const repeated = await f.run({ limit: 50, cursor: cursor! });
-    expect(repeated.items.map((card) => card.title)).toEqual(overflow ? ['synthetic-p1-0'] : []);
+    expect(repeated.items.map((card) => card.title)).toEqual(
+      overflow ? ['synthetic-p1-0', 'synthetic-p11-0'] : [],
+    );
     expect(f.sessions.write.mock.calls.every(([, , session]) => session.seen.length <= 500)).toBe(
       true,
     );

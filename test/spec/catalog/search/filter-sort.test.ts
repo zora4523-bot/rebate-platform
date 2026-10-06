@@ -88,14 +88,14 @@ it.each([true, false, undefined])(
 it('[AC-B1-05d#6] 券后价升序只排当页，相同价格保留相关性次序，不为排序拉后页', async () => {
   const f = fixture();
   f.pages.set(1, {
-    items: [candidate('high', 3000n), candidate('tie-a', 2000n, 1n), candidate('tie-b', 2000n)],
+    items: [candidate('high', 3000n), candidate('tie-z', 2000n, 1n), candidate('tie-a', 2000n)],
     hasMore: true,
   });
   f.pages.set(2, { items: [candidate('cheapest', 1n)], hasMore: false });
   const result = await f.run({ sort: 'final_price_asc' });
   expect(result.items.map((card) => card.title)).toEqual([
+    'synthetic-tie-z',
     'synthetic-tie-a',
-    'synthetic-tie-b',
     'synthetic-high',
   ]);
   expect(f.search.mock.calls.map(([input]) => [input.pageNo, input.sort])).toEqual([
