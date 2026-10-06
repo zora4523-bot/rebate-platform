@@ -6,6 +6,7 @@ import { CatalogModule } from './modules/catalog/index.ts';
 import { createContentReader } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import { IdentityModule, type SmsConfigReader } from './modules/identity/index.ts';
+import { LinkingModule } from './modules/linking/index.ts';
 import {
   CLOCK,
   DB,
@@ -67,6 +68,8 @@ function identityModule(): DynamicModule {
  * The catalog module (platform dictionary, product_refs, aliases, category blocklist) loads on
  * `api`, where search, detail and parsing run; its configuration port is content's reader,
  * assembled here so catalog never imports content (B1-05c).
+ * The linking module (card-time link registration, B1-06c) loads on `api` beside catalog; its
+ * configuration port is content's reader too, assembled here so linking never imports content.
  * Business modules are added to the entries that own them by their tasks (规划/02 §4.1).
  */
 @Module({})
@@ -84,7 +87,10 @@ export class AppModule {
         ...(identity === undefined ? [] : [identity, RiskModule.forRoot({ imports: [identity] })]),
         ...(options.entry === 'api' || options.entry === 'worker' ? [UnionModule.forRoot()] : []),
         ...(options.entry === 'api'
-          ? [CatalogModule.forRoot((db, clock) => createContentReader({ db, clock }))]
+          ? [
+              CatalogModule.forRoot((db, clock) => createContentReader({ db, clock })),
+              LinkingModule.forRoot((db, clock) => createContentReader({ db, clock })),
+            ]
           : []),
       ],
       providers: isHttpEntry(options.entry) ? [requestChecks(options)] : [],

@@ -1,0 +1,24 @@
+// Public surface of the linking module (规划/02 §4.1); other modules import only from this file.
+// Task B1-06c: card-time link registration with its quote snapshot and frozen identity_snapshot
+// (BR-PRICE-12, BR-ATTR-05/06/08/14, D33), implementing catalog's LinkRegistrar and
+// SourceLinkReader; the CallerContext, attr_code and configuration ports. Rule tests:
+// test/spec/linking/register/**.
+export { createLinkRegistration, createSourceLinkReader } from './application/link-registration.ts';
+export type {
+  IdentitySnapshot,
+  LinkRegistration,
+  LinkingOptions,
+  RegistrationContext,
+} from './application/link-registration.ts';
+export { LinkingError } from './domain/rules.ts';
+export type { LinkingErrorCode } from './domain/rules.ts';
+export {
+  AttrCodeReader,
+  CallerContext,
+  LinkingConfigReader,
+  createGuestCallerContext,
+  createUnavailableAttrCodeReader,
+} from './ports.ts';
+export type { Caller } from './ports.ts';
+export { LINK_REGISTRATIONS, LinkingModule } from './linking.module.ts';
+export type { LinkRegistrations, LinkingConfigReaderFactory } from './linking.module.ts';
