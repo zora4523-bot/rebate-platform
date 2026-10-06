@@ -14,7 +14,7 @@ refs: [BR-AI-01, BR-AI-18, BR-ID-10]
 refs_hash:
   BR-AI-01: b624c86b4643
   BR-AI-18: 01b60e6ca170
-  BR-ID-10: fdd5f173f9ff
+  BR-ID-10: 5c432dd5be12
 contract_sections: ['8.3', '8.5']
 deps: [CT-08a]
 paths:
