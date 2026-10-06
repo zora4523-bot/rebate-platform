@@ -36,6 +36,12 @@ function select(...ids: string[]): void {
   window.history.replaceState(null, '', `/?cases=${encodeURIComponent(ids.join(','))}`);
 }
 
+function requiresGesture(method: string): boolean {
+  return mvp.some(
+    ([name, meta]) => name === method && (meta.level === 'L2' || meta.gesture_required),
+  );
+}
+
 it.each(normalMethods)(
   '[AC-F1-01d-PAGE#1] %s 正常调用经真实 SDK；tap 在点击前零调用、完成后不泄露回包',
   async (method) => {
@@ -211,12 +217,34 @@ it.each(['', 'unknown-case'])(
 );
 
 it.each(mvp.filter(([, meta]) => meta.model === 'async' && meta.timeout_ms !== null))(
-  '[AC-F1-01d-PAGE#6] 显式选择 %s/timeout 才启动 harness，采用契约超时',
+  '[AC-F1-01d-PAGE#6] 显式选择 %s/timeout 后需手势的方法等点击，采用契约超时',
   async (method, meta) => {
     vi.useFakeTimers();
     const native = installBridge(() => new Promise(() => {}));
-    select(`${method}/timeout`);
-    render(createConformanceShell());
+    const id = `${method}/timeout`;
+    select(id);
+    const page = render(createConformanceShell());
+    if (requiresGesture(method)) {
+      // 等待超过完整超时窗口，验证 URL 选择本身不会启动调用或超时计时。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(meta.timeout_ms! + 1);
+      });
+      expect(native.postMessage).not.toHaveBeenCalled();
+      expect(result().status).toBe('done');
+      expect(result().cases[0]).toMatchObject({
+        id,
+        trigger: 'harness',
+        outcome: null,
+        pass: null,
+        ms: null,
+      });
+      expect(result().summary).toEqual({ total: 1, passed: 0, failed: 0, pending: 1 });
+      const button = page.container.querySelector<HTMLButtonElement>(
+        `button[data-case-id="${id}"]`,
+      );
+      expect(button).not.toBeNull();
+      fireEvent.click(button!);
+    }
     await act(async () => {
       await vi.advanceTimersByTimeAsync(meta.timeout_ms! - 1);
     });
@@ -274,8 +302,33 @@ it('[AC-F1-01d-PAGE#9] bad_params 实际发送非法参数，不能只在页面�
     (row) => row.category === 'bad_params',
   );
   select(...badCases.map((row) => row.id));
-  render(createConformanceShell());
+  const page = render(createConformanceShell());
   await waitFor(() => expect(result().status).toBe('done'));
+  expect(native.postMessage.mock.calls.map(([request]) => request.method).sort()).toEqual(
+    badCases
+      .filter((row) => !requiresGesture(row.method))
+      .map((row) => row.method)
+      .sort(),
+  );
+  for (const row of badCases.filter((row) => requiresGesture(row.method))) {
+    expect(result().cases.find((candidate) => candidate.id === row.id)).toMatchObject({
+      trigger: 'tap',
+      outcome: null,
+      pass: null,
+      ms: null,
+    });
+    const button = page.container.querySelector<HTMLButtonElement>(
+      `button[data-case-id="${row.id}"]`,
+    );
+    expect(button).not.toBeNull();
+    fireEvent.click(button!);
+    await waitFor(() =>
+      expect(result().cases.find((candidate) => candidate.id === row.id)).toMatchObject({
+        outcome: { ok: false, code: 90002 },
+        pass: true,
+      }),
+    );
+  }
   expect(native.postMessage).toHaveBeenCalledTimes(badCases.length);
   expect(native.postMessage.mock.calls.map(([request]) => request.method).sort()).toEqual(
     badCases.map((row) => row.method).sort(),
@@ -373,6 +426,8 @@ it.each(platforms)(
     );
     expect(rows.length).toBeGreaterThan(0);
     const selected = forPlatform(rows, platform);
+    const waitsForTap = (row: (typeof selected)[number]): boolean =>
+      row.trigger === 'tap' || (row.category === 'timeout' && requiresGesture(row.method));
     const native = installBridge(undefined, { platform });
     select(...rows.map((row) => row.id), 'missing-platform-case');
     const page = render(createConformanceShell());
@@ -387,12 +442,12 @@ it.each(platforms)(
         .sort(),
     ).toEqual(
       selected
-        .filter((row) => row.trigger === 'tap')
+        .filter(waitsForTap)
         .map((row) => row.id)
         .sort(),
     );
     const expectedCalls = selected.filter(
-      (row) => row.trigger !== 'tap' && row.category !== 'unsupported',
+      (row) => !waitsForTap(row) && row.category !== 'unsupported',
     );
     expect(native.postMessage.mock.calls.map(([request]) => request.method).sort()).toEqual(
       expectedCalls.map((row) => row.method).sort(),
@@ -400,7 +455,7 @@ it.each(platforms)(
     for (const row of result().cases) {
       if (row.category === 'unsupported') {
         expect(row).toMatchObject({ outcome: { ok: false, code: 90001 }, pass: true });
-      } else if (row.trigger === 'tap') {
+      } else if (waitsForTap(row)) {
         expect(row).toMatchObject({ outcome: null, pass: null, ms: null });
         const button = page.container.querySelector<HTMLButtonElement>(
           `button[data-case-id="${row.id}"]`,
@@ -410,7 +465,8 @@ it.each(platforms)(
         await waitFor(() =>
           expect(result().cases.find((candidate) => candidate.id === row.id)).toMatchObject({
             outcome: { ok: true },
-            pass: true,
+            // 此测试的原生端总是成功；超时 / 非法参数探针必须如实判为不通过。
+            pass: row.category === 'normal',
           }),
         );
       } else expect(row.outcome).not.toBeNull();

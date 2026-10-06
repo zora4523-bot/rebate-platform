@@ -124,7 +124,7 @@ it.each(mvp)('[AC-F1-01d-CASES#2] %s 的五类覆盖、超时、级别与手势�
   for (const row of bad) {
     expect(row).toMatchObject({
       id: `${method}/bad_params`,
-      trigger: 'auto',
+      trigger: meta.level === 'L2' || meta.gesture_required ? 'tap' : 'auto',
       expect: { code: 90002 },
     });
     expect(
