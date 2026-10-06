@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://couli.invalid/schemas/evals/facts.schema.json",
+  "title": "CaseFacts[]",
+  "description": "Grading facts of a full run, one entry per active case (packages/evals/src/release.ts computeFacts / runEval). validateFacts also checks that checked = verified + mismatched + unverified and that an ungraded entry (coverage_gap, error) has all counts 0 and platform null. partial_leaks appears only on an ungraded entry and only when non-empty: the L1 leak codes found in the turns the case completed before it stopped (and in what is readable of a malformed turn output), each once in code-unit order; the leak metrics add them to summary.counters. partial_checks appears only on an ungraded entry and is never all zero (runEval writes it when a completed turn holds a mismatched or unverified card value or link): the card_values and attribution counts of the turns the case completed before it stopped; the card_values and attribution metrics add them to the graded counts. Read by checkReleaseGate (BR-AI-21).",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["id", "graded", "card_values", "attribution", "platform"],
+    "properties": {
+      "id": { "type": "string", "minLength": 1 },
+      "graded": { "type": "boolean" },
+      "card_values": { "$ref": "#/$defs/checkCount" },
+      "attribution": { "$ref": "#/$defs/checkCount" },
+      "platform": { "enum": ["ok", "mismatch", null] },
+      "platform_expected": {
+        "description": "Only on an ungraded case with an expected args.platform; stopped T1 cases remain in the platform metric denominator.",
+        "const": true
+      },
+      "partial_leaks": { "$ref": "#/$defs/leakCodes" },
+      "partial_checks": { "$ref": "#/$defs/partialChecks" }
+    },
+    "if": { "properties": { "graded": { "const": false } } },
+    "then": {
+      "properties": {
+        "card_values": { "$ref": "#/$defs/zeroCount" },
+        "attribution": { "$ref": "#/$defs/zeroCount" },
+        "platform": { "const": null }
+      }
+    },
+    "else": {
+      "not": {
+        "anyOf": [
+          { "required": ["platform_expected"] },
+          { "required": ["partial_leaks"] },
+          { "required": ["partial_checks"] }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "leakCodes": {
+      "description": "Non-empty, each code once, in code-unit order.",
+      "enum": [
+        ["amount_in_text"],
+        ["identity_arg"],
+        ["url_in_text"],
+        ["amount_in_text", "identity_arg"],
+        ["amount_in_text", "url_in_text"],
+        ["identity_arg", "url_in_text"],
+        ["amount_in_text", "identity_arg", "url_in_text"]
+      ]
+    },
+    "partialChecks": {
+      "description": "Card value and attribution counts of the completed turns of a stopped case; not both all zero.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["card_values", "attribution"],
+      "properties": {
+        "card_values": { "$ref": "#/$defs/checkCount" },
+        "attribution": { "$ref": "#/$defs/checkCount" }
+      },
+      "not": {
+        "properties": {
+          "card_values": { "$ref": "#/$defs/zeroCount" },
+          "attribution": { "$ref": "#/$defs/zeroCount" }
+        }
+      }
+    },
+    "checkCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checked", "verified", "mismatched", "unverified"],
+      "properties": {
+        "checked": { "$ref": "#/$defs/count" },
+        "verified": { "$ref": "#/$defs/count" },
+        "mismatched": { "$ref": "#/$defs/count" },
+        "unverified": { "$ref": "#/$defs/count" }
+      }
+    },
+    "zeroCount": {
+      "type": "object",
+      "properties": {
+        "checked": { "const": 0 },
+        "verified": { "const": 0 },
+        "mismatched": { "const": 0 },
+        "unverified": { "const": 0 }
+      }
+    }
+  }
+}

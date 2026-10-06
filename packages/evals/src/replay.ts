@@ -2,6 +2,7 @@
 // runner (mode A). A recording is found by the digest of the full request, never by call order,
 // so one request asked twice gets the same response and the order of lines in a recording file
 // does not matter. Recordings live in private storage (BR-AI-21); this file only loads them.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { canonicalJson, compareCodeUnits, sha256Hex } from './canonical.ts';
 import { Collector, isObject } from './cases.ts';
 import type { EvalCase, Problem } from './cases.ts';
@@ -266,76 +267,193 @@ function missResult(c: EvalCase, turn: number, miss: RecordingMiss): CaseResult 
   return stopped(c, 'coverage_gap', 'recording_miss', turn, `录制未命中：${miss.kind} ${miss.key}`);
 }
 
-/** Recording misses of one case. Every port handed out during the case (a fresh pair per turn)
- * writes here, so a miss through a port the agent cached from an earlier turn of the same
- * conversation still counts. Closed when the case ends. */
+/** Recording misses of one case run. Closed when the case ends; a closed case records nothing. */
 interface CaseMisses {
   open: boolean;
   turn: number;
   first: { turn: number; miss: RecordingMiss } | undefined;
 }
 
-/** State of one runReplay call: the case now running, if any. */
-interface RunnerState {
-  current: CaseMisses | undefined;
+/** One run of runCases: its port plan, and whether it is still going (B3-01c §16). */
+interface RunState {
+  plan: PortPlan;
+  open: boolean;
 }
 
-/** A miss is recorded on the port's own case while it runs. Once that case has ended, a miss
- * through its port (an agent that caches the first ports for every case, or one still running
- * past its timeout) is recorded on the case running now, so a swallowed miss can never let that
- * case pass; with no case running it is ignored. Only the first miss of a case is kept. */
-function wrapPorts(store: RecordingStore, misses: CaseMisses, runner: RunnerState): AgentPorts {
-  const lookup = (find: () => unknown): unknown => {
+/** The case an agent call is made for. Every agent call runs inside caseContext.run, so the
+ * context follows all of that call's async work (awaits, timers, background tasks). */
+interface CaseContext {
+  runId: number;
+  caseId: string;
+  misses: CaseMisses;
+  run: RunState;
+}
+
+/** Attributes a recording miss to the case whose agent call made the port call, whatever port
+ * was used: one handed out in an earlier turn, case or run (an agent that caches its first
+ * ports) counts against the case running that call (B3-01c §14). When that case has ended (a
+ * long-lived task the agent started in an earlier case) the miss goes to the case the port was
+ * handed to while it runs (B3-01c §16); a late call (past its timeout) on its own ended case's
+ * port records nothing, so it can never touch a later case or run. */
+const caseContext = new AsyncLocalStorage<CaseContext>();
+let lastRunId = 0;
+
+function remember(target: CaseMisses, miss: RecordingMiss): void {
+  if (target.open && target.first === undefined) target.first = { turn: target.turn, miss };
+}
+
+/**
+ * Where the ports of one run come from. A port with a live function calls it and hands its
+ * result or error to the agent as it is (mode B model, integration model and tool); otherwise
+ * the port is served by `store` and every recording miss is tracked (mode A, mode B tool).
+ */
+export interface PortPlan {
+  store: RecordingStore | undefined;
+  model: ((req: ModelRequest) => Promise<unknown>) | undefined;
+  tool: ((call: ToolCall) => Promise<unknown>) | undefined;
+}
+
+/** Only the first miss of a case is kept. A miss goes to the case of the calling context while
+ * it runs, else to the case the port was handed to while that one runs (see caseContext); a call
+ * that carries no context at all (the agent lost it, e.g. a thenable resolved by the runner)
+ * goes to the port's case too. Data comes from the plan of the run the call belongs to: the
+ * calling context's run while it is going (a port cached in an earlier run, even one of another
+ * mode, serves the current run's sources), else the plan the port was made with (B3-01c §16). */
+function wrapPorts(own: CaseContext): AgentPorts {
+  const planOf = (): PortPlan => {
+    const current = caseContext.getStore();
+    return current !== undefined && current.run.open ? current.run.plan : own.run.plan;
+  };
+  const lookup = (plan: PortPlan, find: (store: RecordingStore) => unknown): unknown => {
+    const store = plan.store;
+    if (store === undefined) throw new Error('no recording store for this port');
     try {
-      return find();
+      return find(store);
     } catch (error) {
       if (error instanceof RecordingMiss) {
-        const target = misses.open ? misses : runner.current;
-        if (target !== undefined && target.open && target.first === undefined) {
-          target.first = { turn: target.turn, miss: error };
-        }
+        const current = caseContext.getStore();
+        remember(current !== undefined && current.misses.open ? current.misses : own.misses, error);
       }
       throw error;
     }
   };
   return {
-    model: async (req) => lookup(() => store.model(req)),
-    tool: async (call) => lookup(() => store.tool(call)),
+    model: async (req) => {
+      const plan = planOf();
+      return plan.model === undefined ? lookup(plan, (store) => store.model(req)) : plan.model(req);
+    },
+    tool: async (call) => {
+      const plan = planOf();
+      return plan.tool === undefined ? lookup(plan, (store) => store.tool(call)) : plan.tool(call);
+    },
   };
+}
+
+/** One case as run: its result and every well-formed output the agent returned, in turn order.
+ * A case that reached grading has one per turn; a stopped case (coverage_gap, error) has those of
+ * the turns before it stopped, plus the stopping turn's when the agent returned one after a
+ * swallowed recording miss (its text was emitted all the same). `leakOnly` holds what is still
+ * readable of an output that is not a well-formed TurnOutput (its frames and tool calls), for
+ * the leak checks only (B3-01c §16). */
+export interface CaseRun {
+  case: EvalCase;
+  result: CaseResult;
+  outputs: TurnOutput[];
+  leakOnly: TurnOutput[];
 }
 
 async function runCase(
   c: EvalCase,
   agent: AgentUnderTest,
-  store: RecordingStore,
+  run: RunState,
   timeoutMs: number,
-  runner: RunnerState,
-): Promise<CaseResult> {
+  runId: number,
+): Promise<CaseRun> {
   const misses: CaseMisses = { open: true, turn: 0, first: undefined };
-  runner.current = misses;
+  const context: CaseContext = { runId, caseId: c.id, misses, run };
+  const outputs: TurnOutput[] = [];
+  const leakOnly: TurnOutput[] = [];
   try {
-    return await runTurns(c, agent, store, timeoutMs, misses, runner);
+    const result = await runTurns(c, agent, timeoutMs, context, outputs, leakOnly);
+    return { case: c, result, outputs, leakOnly };
   } finally {
     misses.open = false;
-    if (runner.current === misses) runner.current = undefined;
+  }
+}
+
+/** A copy of what the agent returned when it is a well-formed TurnOutput, else the reason. */
+function copyOutput(value: unknown): { output: TurnOutput } | { problem: string } {
+  let output: unknown;
+  try {
+    output = structuredClone(value);
+  } catch (error) {
+    return { problem: `输出无法复制：${describe(error)}` };
+  }
+  return isTurnOutput(output) ? { output } : { problem: '输出不符合 TurnOutput 结构' };
+}
+
+/** A copy of a value, or the value itself when it cannot be copied. */
+function copyOr(value: unknown): unknown {
+  try {
+    return structuredClone(value);
+  } catch {
+    return value;
+  }
+}
+
+/** What the leak checks can still read of an output that is not a well-formed TurnOutput: the
+ * frames that have a string event and an object data (text.delta keeps only a string delta),
+ * and, when trace.tool_calls is an array, its object entries. Undefined when neither frames nor
+ * tool_calls is an array (B3-01c §16: text already emitted still counts). */
+function leakView(value: unknown): TurnOutput | undefined {
+  try {
+    if (!isObject(value)) return undefined;
+    const rawFrames = value['frames'];
+    const trace = value['trace'];
+    const rawCalls = isObject(trace) ? trace['tool_calls'] : undefined;
+    if (!Array.isArray(rawFrames) && !Array.isArray(rawCalls)) return undefined;
+    const frames: TurnOutput['frames'] = [];
+    for (const item of Array.isArray(rawFrames) ? (rawFrames as unknown[]) : []) {
+      if (!isObject(item) || typeof item['event'] !== 'string' || !isObject(item['data'])) continue;
+      const delta = item['data']['delta'];
+      frames.push({
+        event: item['event'],
+        id: frames.length + 1,
+        data: typeof delta === 'string' ? { delta } : {},
+      });
+    }
+    const calls: TurnOutput['trace']['tool_calls'] = [];
+    for (const item of Array.isArray(rawCalls) ? (rawCalls as unknown[]) : []) {
+      if (!isObject(item)) continue;
+      const name = item['name'];
+      // Only the keys of args are read (identity_arg); a value that is not an object finds none.
+      calls.push({
+        name: typeof name === 'string' ? name : '',
+        args: copyOr(item['args']) as Record<string, unknown>,
+        status: 'ok',
+      });
+    }
+    return { frames, trace: { intent: null, tool_calls: calls } };
+  } catch {
+    return undefined;
   }
 }
 
 async function runTurns(
   c: EvalCase,
   agent: AgentUnderTest,
-  store: RecordingStore,
   timeoutMs: number,
-  misses: CaseMisses,
-  runner: RunnerState,
+  context: CaseContext,
+  outputs: TurnOutput[],
+  leakOnly: TurnOutput[],
 ): Promise<CaseResult> {
-  const outputs: TurnOutput[] = [];
+  const misses = context.misses;
   for (const [index, step] of c.turns.entries()) {
     const turn = index + 1;
     misses.turn = turn;
     // Every miss is remembered (and still thrown), so a miss the agent swallows, or follows with
     // another error or a timeout, still makes the case a coverage gap.
-    const ports = wrapPorts(store, misses, runner);
+    const ports = wrapPorts(context);
     const input = {
       case_id: c.id,
       turn,
@@ -344,8 +462,19 @@ async function runTurns(
       subject: c.subject,
       switches: { ...(c.switches ?? {}) },
     };
-    const outcome = await settleWithin(() => agent(input, ports), timeoutMs);
-    if (misses.first !== undefined) return missResult(c, misses.first.turn, misses.first.miss);
+    const outcome = await settleWithin(
+      () => caseContext.run(context, () => agent(input, ports)),
+      timeoutMs,
+    );
+    const copied = outcome.kind === 'ok' ? copyOutput(outcome.value) : undefined;
+    if (outcome.kind === 'ok' && copied !== undefined && 'problem' in copied) {
+      const view = leakView(outcome.value);
+      if (view !== undefined) leakOnly.push(view);
+    }
+    if (misses.first !== undefined) {
+      if (copied !== undefined && 'output' in copied) outputs.push(copied.output);
+      return missResult(c, misses.first.turn, misses.first.miss);
+    }
     if (outcome.kind === 'timeout') {
       return stopped(c, 'error', 'timeout', turn, `第 ${turn} 轮超过 ${timeoutMs} ms 未完成`);
     }
@@ -353,22 +482,64 @@ async function runTurns(
       if (outcome.error instanceof RecordingMiss) return missResult(c, turn, outcome.error);
       return stopped(c, 'error', 'agent_error', turn, describe(outcome.error));
     }
-    let output: unknown;
-    try {
-      output = structuredClone(outcome.value);
-    } catch (error) {
-      return stopped(c, 'error', 'agent_error', turn, `输出无法复制：${describe(error)}`);
+    if (copied === undefined || 'problem' in copied) {
+      return stopped(
+        c,
+        'error',
+        'agent_error',
+        turn,
+        copied?.problem ?? '输出不符合 TurnOutput 结构',
+      );
     }
-    if (!isTurnOutput(output)) {
-      return stopped(c, 'error', 'agent_error', turn, '输出不符合 TurnOutput 结构');
-    }
-    outputs.push(output);
+    outputs.push(copied.output);
   }
   try {
     return gradeCase(c, outputs, IDENTITY_FIELDS);
   } catch (error) {
     return stopped(c, 'error', 'agent_error', null, `判分失败：${describe(error)}`);
   }
+}
+
+/** `timeoutMs` when it is a finite number ≥ 0, else the default (30000). */
+export function effectiveTimeout(timeoutMs: number | undefined): number {
+  return timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs >= 0
+    ? timeoutMs
+    : DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * The runner shared by runReplay and runEval: the active cases in id order (UTF-16 code units),
+ * turn by turn, with ports from `plan`; one case failing never stops the others.
+ */
+export async function runCases(
+  cases: readonly EvalCase[],
+  agent: AgentUnderTest,
+  plan: PortPlan,
+  timeoutMs: number,
+): Promise<CaseRun[]> {
+  const active = cases
+    .filter((item) => item.retired === undefined)
+    .sort((a, b) => compareCodeUnits(a.id, b.id));
+  lastRunId += 1;
+  const runId = lastRunId;
+  const run: RunState = { plan, open: true };
+  const runs: CaseRun[] = [];
+  try {
+    for (const c of active) runs.push(await runCase(c, agent, run, timeoutMs, runId));
+  } finally {
+    run.open = false;
+  }
+  return runs;
+}
+
+/** The report of a run: meta as given except `unused_recordings`. */
+export function buildReport(meta: RunMeta, results: CaseResult[], unused: number): Report {
+  return {
+    schema_version: 1,
+    meta: { ...meta, unused_recordings: unused },
+    cases: results,
+    summary: summarize(results),
+  };
 }
 
 /**
@@ -385,22 +556,11 @@ export async function runReplay(opts: {
   meta: RunMeta;
   timeoutMs?: number;
 }): Promise<Report> {
-  const timeoutMs =
-    opts.timeoutMs !== undefined && Number.isFinite(opts.timeoutMs) && opts.timeoutMs >= 0
-      ? opts.timeoutMs
-      : DEFAULT_TIMEOUT_MS;
-  const active = opts.cases
-    .filter((item) => item.retired === undefined)
-    .sort((a, b) => compareCodeUnits(a.id, b.id));
-  const runner: RunnerState = { current: undefined };
-  const results: CaseResult[] = [];
-  for (const c of active) {
-    results.push(await runCase(c, opts.agent, opts.store, timeoutMs, runner));
-  }
-  return {
-    schema_version: 1,
-    meta: { ...opts.meta, unused_recordings: opts.store.unused().length },
-    cases: results,
-    summary: summarize(results),
-  };
+  const plan: PortPlan = { store: opts.store, model: undefined, tool: undefined };
+  const runs = await runCases(opts.cases, opts.agent, plan, effectiveTimeout(opts.timeoutMs));
+  return buildReport(
+    opts.meta,
+    runs.map((run) => run.result),
+    opts.store.unused().length,
+  );
 }

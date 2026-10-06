@@ -13,7 +13,10 @@
     "./schema/eval-case.schema.json": "./schema/eval-case.schema.json",
     "./schema/manifest.schema.json": "./schema/manifest.schema.json",
     "./schema/recording.schema.json": "./schema/recording.schema.json",
-    "./schema/report.schema.json": "./schema/report.schema.json"
+    "./schema/report.schema.json": "./schema/report.schema.json",
+    "./schema/facts.schema.json": "./schema/facts.schema.json",
+    "./schema/release-verdict.schema.json": "./schema/release-verdict.schema.json",
+    "./schema/comparison.schema.json": "./schema/comparison.schema.json"
   },
   "scripts": {
     "build": "tsc -b"

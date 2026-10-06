@@ -54,6 +54,21 @@ export {
   runReplay,
 } from './replay.ts';
 export { summarize, checkReport, checkSmokeGate } from './report.ts';
+export {
+  computeFacts,
+  computeMetrics,
+  checkReleaseGate,
+  runEval,
+  compareReports,
+} from './release.ts';
+export type {
+  CheckCount,
+  CaseFacts,
+  MetricId,
+  MetricStatus,
+  Metric,
+  ReleaseVerdict,
+} from './release.ts';
 export type {
   ModelRequest,
   ToolCall,

@@ -40,6 +40,8 @@ export interface StreamFrame {
 export interface TurnOutput {
   frames: StreamFrame[];
   trace: {
+    card_sources?: { card_id: string; fields: Record<string, number | string | boolean | null> }[];
+    link_registrations?: { link_id: string; product_key: string; ok: boolean }[];
     intent: Intent | null;
     tool_calls: {
       name: string;

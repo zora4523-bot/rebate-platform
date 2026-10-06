@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://couli.invalid/schemas/evals/release-verdict.schema.json",
+  "title": "ReleaseVerdict",
+  "description": "What the BR-AI-21 release gate writes back (checkReleaseGate, cli.ts release-gate): pass or fail, the run's identity and the 17 metrics, never case ids, case text or problem messages. metrics is empty when the report or the facts are structurally invalid.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "passed",
+    "eval_set",
+    "content_sha256",
+    "report_sha256",
+    "mode",
+    "vendor",
+    "model_snapshot",
+    "metrics"
+  ],
+  "properties": {
+    "passed": { "type": "boolean" },
+    "eval_set": { "description": "name@version", "type": "string" },
+    "content_sha256": { "type": "string" },
+    "report_sha256": { "description": "sha256Hex(canonicalJson(report))", "type": "string" },
+    "mode": { "enum": ["A", "B", "integration"] },
+    "vendor": { "type": "string" },
+    "model_snapshot": { "type": "string" },
+    "metrics": {
+      "type": "array",
+      "maxItems": 17,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "numerator", "denominator", "status"],
+        "properties": {
+          "id": {
+            "enum": [
+              "full_count",
+              "block_injection",
+              "block_unauthorized",
+              "block_banned",
+              "leak_identity_arg",
+              "leak_amount",
+              "leak_url",
+              "card_values",
+              "attribution",
+              "t1_recognition",
+              "t1_platform",
+              "t2_params",
+              "t3_benefits",
+              "t4_multiturn",
+              "chitchat_refusal",
+              "t5_observe",
+              "t6_observe"
+            ]
+          },
+          "numerator": { "type": "integer", "minimum": 0 },
+          "denominator": { "type": "integer", "minimum": 0 },
+          "status": { "enum": ["pass", "fail", "not_covered", "observe"] }
+        }
+      }
+    }
+  }
+}

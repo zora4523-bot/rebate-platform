@@ -202,7 +202,7 @@ function validateSummary(c: Collector, value: unknown): void {
 }
 
 /** Strict structural check of a report; `[]` when valid. Every problem has code `schema`. */
-function validateReport(value: unknown): Problem[] {
+export function validateReport(value: unknown): Problem[] {
   const c = new Collector(undefined);
   if (!c.object(value, '', ['schema_version', 'meta', 'cases', 'summary'], [])) {
     return c.problems;
