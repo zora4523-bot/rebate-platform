@@ -127,3 +127,9 @@ approvals:
     granted: true
     date: '2026-10-05'
     note: '负责人原话「现在是谁写代码 请修改为让opus5.5 写 codex 对抗review」；追问后选「Codex 写测试（实现前先写、先红）」；同日负责人说「代码仓库那边也一起改」。§7.3 第 12 项「改为」列中标为编排裁定的部分不是负责人原话。规划依据：规划仓库 docs/changes/20261005-实现改由Opus评审由Codex.md 与 规划/11 §1.1、§2.3–§2.5、§7.3 第 12 项'
+  - id: 20
+    row: 4
+    title: '硬规则 2 的限时例外：状态机生成器（CT-04 范围加入 union_pid）合并之前，union_pids.status 以 packages 中 union 领域的纯迁移函数为唯一入口，配合单一写者与 row_version 比较并更新（CAS）防并发覆盖，代码留 TODO 指向生成器；生成器合并后改用生成的 transition()，本条随之作废。只适用于 union_pids.status，不适用于订单、提现、账务等其他状态字段'
+    granted: true
+    date: '2026-10-06'
+    note: '负责人在对话里直接对编排会话回复「A，#135 请你执行」（A = 本例外；编排会话事先说明了 A 与 B「先做生成器」的取舍）；起因 B1-19b 代码评审第 3 轮 Codex 判 S1「approvals 未批准此例外」；本条所在的 PR 由编排会话按负责人同一句授权加标签'
