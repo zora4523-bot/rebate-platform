@@ -3,7 +3,7 @@ repo: rebate-platform
 title: 依赖：apps/api 加 JWT 库 jose（ADR-0001 §2 鉴权与密钥行指定 jose、版本待核），供 B1-02h 签发与校验 ES256 令牌
 type: deps
 # 2026-10-06 入账（B1-02e 拆分台账的 Codex 评审 S1：B1-02h 原写用 node:crypto 自实现 JWT，违反 ADR-0001 §2「JWT 库 jose」）。
-# 版本：ADR §2 写「jose 版本待核」，§9 待核项写明「核对结果补进 §2，不另开 ADR」：本任务按仓库惯例精确锁定一个 6.x 稳定版（满足工作区
+# 版本：ADR §2 写「jose 版本待核」，§5 待核项写明「核对结果补进 §2，不另开 ADR」：本任务按仓库惯例精确锁定一个 6.x 稳定版（满足工作区
 # minimumReleaseAge 7 天），PR 里写明所选版本与理由，规划仓库 ADR-0001 §2 由编排者随后回写（规划小修，00 §8 第 1 类）。
 # 会改 pnpm-lock.yaml（保护路径第二类，合并前要批准标签）。deps 任务全局串行，排在 B1-01x 之后。
 refs: []
@@ -16,5 +16,5 @@ impl: claude
 tester: none
 accept:
   - 'pnpm verify'
-status: todo
-pr: null
+status: done
+pr: 131
