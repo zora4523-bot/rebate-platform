@@ -1,0 +1,67 @@
+{
+  "//": "Real output of tools/ops/verify-image/red-reporter.mjs (round-2 version) from the isolated red run F1-01j red/1 on the candidate copy, 2026-10-06 (verify image with Chromium; red-check PASS): an element that never appears (VitestBrowserElementError wrapped by 'Matcher did not succeed in time.') and a plain assertion. Trimmed only: stack texts cut to their first two frames. `site` here is what that reporter version recorded (the first parsed frame, Vite's pre-bundled poll frame); the current reporter records the first frame outside the dependencies (red-reporter.test.ts).",
+  "reporter": "couli-red-reporter",
+  "testResults": [
+    {
+      "name": "/work/repo/test/spec/frontend/browser-env/demo-red.browser.test.ts",
+      "browser": true,
+      "poll_in_source": false,
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[demo] waits for an element that never appears",
+          "title": "[demo] waits for an element that never appears",
+          "status": "failed",
+          "failureMessages": [
+            "Error: Cannot find element with locator: getByText('不会出现的文字')\n\nARIA tree:\n- text: 已出现\n\nHTML:\n\u001b[36m<body>\u001b[39m\n  \u001b[0m\n  \n\n\u001b[0m\n  \u001b[36m<div>\u001b[39m\n    \u001b[0m已出现\u001b[0m\n  \u001b[36m</div>\u001b[39m\n\u001b[36m</body>\u001b[39m\n    at Proxy.__VITEST_POLL_CHAIN__ (http://localhost:63315/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps/index.m3L2HgmY-ClFbRdXj.js?v=b6c384b3:5767:47)\n    at http://localhost:63315/work/repo/test/spec/frontend/browser-env/demo-red.browser.test.ts?import&browserv=1791261813481:8:68"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "VitestBrowserElementError",
+                  "message": "Cannot find element with locator: getByText('不会出现的文字')\n\nARIA tree:\n- text: 已出现\n\nHTML:\n\u001b[36m<body>\u001b[39m\n  \u001b[0m\n  \n\n\u001b[0m\n  \u001b[36m<div>\u001b[39m\n    \u001b[0m已出现\u001b[0m\n  \u001b[36m</div>\u001b[39m\n\u001b[36m</body>\u001b[39m"
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps/index.m3L2HgmY-ClFbRdXj.js?v=b6c384b3",
+                "line": 5767,
+                "column": 47
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] plain assertion fails",
+          "title": "[demo] plain assertion fails",
+          "status": "failed",
+          "failureMessages": [
+            "AssertionError: expected 414 to be -1 // Object.is equality\n    at http://localhost:63315/work/repo/test/spec/frontend/browser-env/demo-red.browser.test.ts?import&browserv=1791261813481:11:28\n    at http://localhost:63315/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps/plugins.Cigb0uSy-Dj1mblMG.js?v=b6c384b3:3848:35"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "AssertionError",
+                  "message": "expected 414 to be -1 // Object.is equality"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/browser-env/demo-red.browser.test.ts",
+                "line": 13,
+                "column": 29
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "unhandledErrors": []
+}

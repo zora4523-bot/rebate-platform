@@ -28,8 +28,9 @@
 // The poll's own timeout ("expect.poll() function didn't resolve in time.") is what expect.element
 // ends in when the wait runs out while the element lookup is still going, but also what any
 // expect.poll whose function hangs ends in; it counts only when the wait can only have been
-// expect.element: the failing call was made in the test file itself and that file never mentions
-// `poll` (red reporter fields `site`, `poll_in_source`). Rule-test authors therefore wait for
+// expect.element: the failing call was made in the test file itself (`site`: the first stack frame
+// outside the dependencies) and the file's code never uses `poll` (`poll_in_source`; comments and
+// string literals do not count) — both recorded by the red reporter. Rule-test authors wait for
 // elements with expect.element in the test file, never with expect.poll. A browser that did not
 // start, an error thrown by the page, a module not found, a TypeError, a strict-mode violation
 // (several elements) and a bare element lookup outside a wait stay invalid.
@@ -233,13 +234,15 @@ export function browserCauseVerdict(
 
 /**
  * True when `site` (the first parsed stack frame the red reporter recorded) is the test file
- * `abs`: the same absolute path (also as `file://` or Vite's `/@fs` URL), or the URL path the
- * browser loaded it from below the test package (`/spec/…`), without a query.
+ * `abs`: the same absolute path (also behind the browser's http://localhost:<port>, as `file://`
+ * or Vite's `/@fs` URL), or the URL path below the test package (`/spec/…`), without a query.
+ * The red reporter already records the first frame outside the dependencies, normalised.
  */
 function siteIsFile(site: unknown, abs: string): boolean {
   if (typeof site !== 'object' || site === null) return false;
   const raw = text((site as Record<string, unknown>)['file']);
   const file = raw
+    .replace(/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?=\/)/, '')
     .replace(/^file:\/\//, '')
     .replace(/^\/@fs(?=\/)/, '')
     .replace(/[?#].*$/, '');

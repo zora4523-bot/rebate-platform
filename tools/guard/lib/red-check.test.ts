@@ -366,3 +366,70 @@ it('[F1-01j] browserCauseVerdict looks through the wait only, at an assertion or
   expect(causeVerdict([closed])).toBe(notRunning);
   expect(browserCauseVerdict([closed, WAIT])).toBe(notRunning);
 });
+
+const DEMO = 'test/spec/frontend/browser-env/demo-red.browser.test.ts';
+
+it('[F1-01j] real browser red runs: a missing element and an assertion are red, a TypeError is not', () => {
+  // F1-01j red/1 and red/2 on the candidate copy (2026-10-06), see the fixtures' "//".
+  const valid = checkRedReports([fixture('browser-red-1.json')], [DEMO], ROOT);
+  expect(valid).toEqual({
+    ok: true,
+    red: [
+      `${DEMO} > [demo] waits for an element that never appears`,
+      `${DEMO} > [demo] plain assertion fails`,
+    ],
+    problems: [],
+  });
+  const typeError = checkRedReports([fixture('browser-red-2.json')], [DEMO], ROOT);
+  expect(typeError.ok).toBe(false);
+  expect(typeError.problems).toEqual([
+    {
+      file: DEMO,
+      test: '[demo] fails with a TypeError',
+      reason: 'red for the wrong reason (TypeError)',
+    },
+  ]);
+});
+
+it('[F1-01j] the poll timeout of the real run counts only with the test file as its site', () => {
+  type Entry = {
+    poll_in_source: boolean;
+    assertionResults: Array<{ failures: Array<{ causes: unknown; site: unknown }> }>;
+  };
+  // The real missing-element test, as if the poll timer had won the race (the other shape
+  // expect.element ends in), with the site the current reporter would record.
+  function variant(site: unknown, pollInSource = false): unknown {
+    const report = fixture('browser-red-1.json') as { testResults: Entry[] };
+    const entry = report.testResults[0];
+    const failure = entry?.assertionResults[0]?.failures[0];
+    if (entry === undefined || failure === undefined) throw new Error('fixture changed');
+    entry.poll_in_source = pollInSource;
+    failure.causes = [
+      { name: 'Error', message: "expect.poll() function didn't resolve in time." },
+      WAIT,
+    ];
+    failure.site = site;
+    return report;
+  }
+  const missing = `${DEMO} > [demo] waits for an element that never appears`;
+  const abs = `${ROOT}/${DEMO}`;
+  // The test-file frame of the real stack: normalised by the reporter, or still as the browser URL.
+  for (const file of [abs, `http://localhost:63315${abs}?import&browserv=1791261813481`]) {
+    const result = checkRedReports([variant({ file, line: 8, column: 68 })], [DEMO], ROOT);
+    expect(result.red, file).toContain(missing);
+  }
+  // What the round-2 reporter recorded (Vite's pre-bundled poll frame), no site, or a file that
+  // uses expect.poll: refused.
+  const deps =
+    '/work/repo/test/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps/' +
+    'index.m3L2HgmY-ClFbRdXj.js?v=b6c384b3';
+  for (const report of [
+    variant({ file: deps, line: 5767, column: 47 }),
+    variant(null),
+    variant({ file: abs, line: 8, column: 68 }, true),
+  ]) {
+    const result = checkRedReports([report], [DEMO], ROOT);
+    expect(result.red).not.toContain(missing);
+    expect(result.problems.map((p) => p.reason)).toEqual([POLL_REFUSED]);
+  }
+});
