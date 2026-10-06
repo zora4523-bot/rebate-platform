@@ -1,5 +1,9 @@
 // BR-AI-06 细则「按句缓冲」: sentence buffer shared with output-side review (BR-AI-18).
-// Segments come out as raw text (unfiltered); the guard filters them.
+// Segments come out as raw text (unfiltered); the guard filters them. Neither a sentence end nor
+// a forced cut falls inside a link, passcode or amount: an ASCII ? or ! inside a link is not a
+// sentence end, and a forced cut steps back before any hit or open token it would split.
+import { riskSpans } from './filter.ts';
+
 export interface SentenceBuffer {
   push(delta: string): string[];
   end(): string[];
@@ -36,21 +40,80 @@ function stripWhile(text: string, end: number, test: RegExp): number {
   return i;
 }
 
-/** UTF-16 offset where the retained tail of a forced cut starts. */
+function nextCodePointEnd(text: string, start: number): number {
+  const high = text.charCodeAt(start);
+  if (high >= 0xd800 && high <= 0xdbff) {
+    const low = text.charCodeAt(start + 1);
+    if (low >= 0xdc00 && low <= 0xdfff) return start + 2;
+  }
+  return start + 1;
+}
+
+function isTokenAt(text: string, start: number): boolean {
+  if (start < 0 || start >= text.length) return false;
+  return TOKEN_CHAR.test(text.slice(start, nextCodePointEnd(text, start)));
+}
+
+/**
+ * UTF-16 offset where the retained tail of a forced cut starts: the BR-AI-06 run of digits,
+ * points, white space and currency signs, widened (O-G4) until it neither splits an ASCII-like
+ * token, an amount trigger word, nor a hit span; an amount hit at the cut is kept whole, so a
+ * neighbouring amount in the next text still merges into one placeholder.
+ */
 function retainFrom(text: string): number {
   let i = text.length;
   for (const partial of PARTIAL_AT_END) {
-    if (text.endsWith(partial)) return i - partial.length;
+    if (text.endsWith(partial)) {
+      i -= partial.length;
+      break;
+    }
   }
   i = stripWhile(text, i, TOKEN_CHAR);
+  let spans: readonly { start: number; end: number; kind: string }[] | null = null;
   for (;;) {
     const before = i;
     i = stripWhile(text, i, AMOUNT_CHAR);
-    const head = text.slice(0, i);
-    const trigger = TRIGGERS.find((word) => head.endsWith(word));
+    const trigger = TRIGGERS.find((word) => text.startsWith(word, i - word.length));
     if (trigger !== undefined) i -= trigger.length;
-    if (i === before) return i;
+    if (i > 0 && isTokenAt(text, previousCodePointStart(text, i)) && isTokenAt(text, i)) {
+      i = stripWhile(text, i, TOKEN_CHAR);
+    }
+    if (i > 0) {
+      spans ??= riskSpans(text);
+      for (const span of spans) {
+        if (span.start < i && (i < span.end || (i === span.end && span.kind === 'amount'))) {
+          i = span.start;
+        }
+      }
+    }
+    if (i === before || i === 0) return i;
   }
+}
+
+// An ASCII ? or ! continues a link when the URL-character run before it already reads as one
+// (scheme, www. or a listed suffix); fullwidth forms count by their NFKC character.
+const URL_CHAR = /^[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]$/u;
+const LINK_LIKE = /:\/\/|www\.|\.(?:com|cn|net|top|cc|vip)(?![a-z0-9-])/u;
+const PROSE_FULLWIDTH = '，；！？（）';
+
+function asciiForm(ch: string): string {
+  const code = ch.charCodeAt(0);
+  if (ch.length === 1 && code >= 0xff01 && code <= 0xff5e && !PROSE_FULLWIDTH.includes(ch)) {
+    return String.fromCharCode(code - 0xfee0);
+  }
+  return ch;
+}
+
+function insideLink(text: string): boolean {
+  let i = text.length;
+  let run = '';
+  while (i > 0) {
+    const ascii = asciiForm(text.charAt(i - 1));
+    if (!URL_CHAR.test(ascii)) break;
+    run = ascii + run;
+    i -= 1;
+  }
+  return run !== '' && LINK_LIKE.test(run.toLowerCase());
 }
 
 function countCodePoints(text: string): number {
@@ -80,9 +143,10 @@ export function createSentenceBuffer(): SentenceBuffer {
       pendingDot = false;
       if (SPACE.test(ch)) flush(out);
     }
+    const linkMark = (ch === '?' || ch === '!') && insideLink(buffer);
     buffer += ch;
     size += 1;
-    if (SENTENCE_ENDS.has(ch)) {
+    if (SENTENCE_ENDS.has(ch) && !linkMark) {
       flush(out);
     } else if (ch === '.' && !DIGIT.test(previous)) {
       pendingDot = true;

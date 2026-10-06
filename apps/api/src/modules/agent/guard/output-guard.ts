@@ -124,40 +124,57 @@ export function createOutputGuard(deps: { readonly review: SentenceReviewPort })
     }
   };
 
+  const pushNow = async (delta: string): Promise<GuardEmit[]> => {
+    const out: GuardEmit[] = [];
+    if (ended || stopped) return out;
+    for (const segment of buffer.push(delta)) {
+      await handle(segment, out);
+      if (stopped) break;
+    }
+    return out;
+  };
+
+  const endNow = async (): Promise<GuardEmit[]> => {
+    const out: GuardEmit[] = [];
+    if (ended || stopped) return out;
+    ended = true;
+    for (const segment of buffer.end()) {
+      await handle(segment, out);
+      if (stopped) return out;
+    }
+    if (held !== null) {
+      const text = held;
+      held = null;
+      const verdict = await reviewSafely(deps.review, text);
+      if (verdict === 'pass') {
+        out.push({ kind: 'text', text });
+      } else if (verdict === 'block') {
+        stopped = true;
+        safety = 'blocked';
+        out.push(BLOCKED);
+      } else {
+        safety = 'timeout_replaced';
+        out.push(TIMED_OUT);
+      }
+    }
+    return out;
+  };
+
+  // push / end run one at a time even when the caller does not await (sentence count, context
+  // and copySeen always advance in delta order).
+  let queue: Promise<unknown> = Promise.resolve();
+  const serial = (step: () => Promise<GuardEmit[]>): Promise<GuardEmit[]> => {
+    const run = queue.then(step);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+
   return {
-    async push(delta) {
-      const out: GuardEmit[] = [];
-      if (ended || stopped) return out;
-      for (const segment of buffer.push(delta)) {
-        await handle(segment, out);
-        if (stopped) break;
-      }
-      return out;
+    push(delta) {
+      return serial(() => pushNow(delta));
     },
-    async end() {
-      const out: GuardEmit[] = [];
-      if (ended || stopped) return out;
-      ended = true;
-      for (const segment of buffer.end()) {
-        await handle(segment, out);
-        if (stopped) return out;
-      }
-      if (held !== null) {
-        const text = held;
-        held = null;
-        const verdict = await reviewSafely(deps.review, text);
-        if (verdict === 'pass') {
-          out.push({ kind: 'text', text });
-        } else if (verdict === 'block') {
-          stopped = true;
-          safety = 'blocked';
-          out.push(BLOCKED);
-        } else {
-          safety = 'timeout_replaced';
-          out.push(TIMED_OUT);
-        }
-      }
-      return out;
+    end() {
+      return serial(endNow);
     },
     get stopped() {
       return stopped;

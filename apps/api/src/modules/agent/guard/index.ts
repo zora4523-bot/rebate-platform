@@ -20,24 +20,64 @@ export type {
 
 const OPEN_TAG = '<untrusted>';
 const CLOSE_TAG = '</untrusted>';
-const ESCAPED = /[&<>﹤﹥＜＞]/gu;
-const REFERENCE = /&(?:amp|#x([0-9A-F]+));/gu;
 
+/** Replacement for one UTF-16 unit, or null. Every escaped character is a BMP unit. */
+function escapeUnit(unit: number): string | null {
+  switch (unit) {
+    case 0x26:
+      return '&amp;';
+    case 0x3c:
+    case 0x3e:
+    case 0xfe64:
+    case 0xfe65:
+    case 0xff1c:
+    case 0xff1e:
+      return `&#x${unit.toString(16).toUpperCase()};`;
+    default:
+      return null;
+  }
+}
+
+// One pass over the code units; untouched runs are copied by slice.
 export function wrapUntrusted(text: string): string {
-  const inner = text.replace(ESCAPED, (ch) =>
-    ch === '&' ? '&amp;' : `&#x${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase()};`,
-  );
-  return OPEN_TAG + inner + CLOSE_TAG;
+  let out = OPEN_TAG;
+  let last = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const unit = text.charCodeAt(i);
+    if (unit !== 0x26 && unit !== 0x3c && unit !== 0x3e && unit < 0xfe64) continue;
+    const replacement = escapeUnit(unit);
+    if (replacement === null) continue;
+    out += text.slice(last, i) + replacement;
+    last = i + 1;
+  }
+  return out + text.slice(last) + CLOSE_TAG;
 }
 
 export function unwrapUntrusted(wrapped: string): string {
   if (!wrapped.startsWith(OPEN_TAG) || !wrapped.endsWith(CLOSE_TAG)) {
     throw new Error('unwrapUntrusted: not an <untrusted> block');
   }
-  const inner = wrapped.slice(OPEN_TAG.length, wrapped.length - CLOSE_TAG.length);
-  return inner.replace(REFERENCE, (_match, hex: string | undefined) =>
-    hex === undefined ? '&' : String.fromCodePoint(Number.parseInt(hex, 16)),
-  );
+  const end = wrapped.length - CLOSE_TAG.length;
+  let out = '';
+  let last = OPEN_TAG.length;
+  let amp = wrapped.indexOf('&', last);
+  while (amp !== -1 && amp < end) {
+    out += wrapped.slice(last, amp);
+    const semi = wrapped.indexOf(';', amp);
+    const body = semi === -1 || semi >= end ? '' : wrapped.slice(amp + 1, semi);
+    if (body === 'amp') {
+      out += '&';
+      last = semi + 1;
+    } else if (/^#x[0-9A-F]{1,6}$/u.test(body) && Number.parseInt(body.slice(2), 16) <= 0x10ffff) {
+      out += String.fromCodePoint(Number.parseInt(body.slice(2), 16));
+      last = semi + 1;
+    } else {
+      out += '&';
+      last = amp + 1;
+    }
+    amp = wrapped.indexOf('&', last);
+  }
+  return out + wrapped.slice(last, end);
 }
 
 // ---------------------------------------------------------------------------------------------

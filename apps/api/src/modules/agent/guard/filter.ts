@@ -23,8 +23,10 @@ const AMOUNT_PATTERNS: readonly RegExp[] = [
   /满\s*\d+\s*减/gu,
 ];
 
-// URL characters (RFC 3986 ASCII set without , ; ! ' ( ) so a link stops before prose).
-const U = String.raw`[A-Za-z0-9\-._~:/?#\[\]@$&+=%*]`;
+// URL characters: the full RFC 3986 ASCII set (unreserved, gen-delims, sub-delims and %), so a
+// link is deleted whole (O-G3). Prose punctuation is told apart afterwards: only a trailing run
+// of it (and an unbalanced closing bracket) is given back to the text.
+const U = String.raw`[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]`;
 const TLD = '(?:com|cn|net|top|cc|vip)';
 const SCHEME = new RegExp(String.raw`(?<![A-Za-z0-9+.\-])[A-Za-z0-9+.\-]+:\/\/${U}*`, 'gu');
 const WWW = new RegExp(String.raw`www\.${U}*`, 'giu');
@@ -32,7 +34,7 @@ const DOMAIN = new RegExp(
   String.raw`(?<![\p{L}\p{N}\p{M}\-])((?:[\p{L}\p{N}\p{M}\-]+\.)+${TLD})(?![A-Za-z0-9\-])(?:[/?#:]${U}*)?`,
   'giu',
 );
-const TRAILING_PUNCT = /[.:?#\]@$&+=%*~]$/u;
+const TRAILING_PUNCT = /[.,:;!?'*~]$/u;
 const ASCII_HOST_CHAR = /[A-Za-z0-9.\-]/u;
 const ASCII_ALNUM = /[A-Za-z0-9]/u;
 
@@ -51,6 +53,8 @@ interface Folded {
 }
 
 const foldCache = new Map<string, string>();
+// CJK prose punctuation stays as is, so a fullwidth comma or bracket never extends a link.
+const KEEP_UNFOLDED: ReadonlySet<string> = new Set('，；！？（）');
 
 /** Per code point NFKC with a map back to the original UTF-16 offsets; null when unchanged. */
 function fold(text: string): Folded | null {
@@ -62,7 +66,7 @@ function fold(text: string): Folded | null {
   for (const ch of text) {
     let folded = foldCache.get(ch);
     if (folded === undefined) {
-      folded = ch.normalize('NFKC');
+      folded = KEEP_UNFOLDED.has(ch) ? ch : ch.normalize('NFKC');
       if (foldCache.size < 4096) foldCache.set(ch, folded);
     }
     for (let i = 0; i < folded.length; i += 1) {
@@ -77,15 +81,76 @@ function fold(text: string): Folded | null {
 
 function trimEnd(text: string, start: number, end: number, min: number): number {
   let e = end;
-  while (e > min && TRAILING_PUNCT.test(text.slice(e - 1, e))) e -= 1;
+  for (;;) {
+    if (e <= min) break;
+    const ch = text.charAt(e - 1);
+    if (TRAILING_PUNCT.test(ch)) {
+      e -= 1;
+      continue;
+    }
+    const open = ch === ')' ? '(' : ch === ']' ? '[' : '';
+    if (open === '') break;
+    const body = text.slice(start, e);
+    if (body.split(open).length >= body.split(ch).length) break;
+    e -= 1;
+  }
   return Math.max(e, start + 1);
+}
+
+// O-G1: an amount hit covers the whole number next to it (digits, decimals, thousands commas,
+// numerals and place-value words, and the single digit after 块 as in 九块九 or 29块9).
+const CN_SET: ReadonlySet<string> = new Set(CN);
+const PLACE_SET: ReadonlySet<string> = new Set('十百千万萬亿億拾佰仟');
+const SPOKEN_UNIT: ReadonlySet<string> = new Set('块塊');
+const isDigit = (ch: string): boolean => ch >= '0' && ch <= '9';
+const isNumeral = (ch: string): boolean => isDigit(ch) || CN_SET.has(ch);
+
+function threeDigitsAt(text: string, i: number): boolean {
+  return (
+    isDigit(text.charAt(i)) &&
+    isDigit(text.charAt(i + 1)) &&
+    isDigit(text.charAt(i + 2)) &&
+    !isDigit(text.charAt(i + 3))
+  );
+}
+
+function extendAmount(text: string, start: number, end: number): [number, number] {
+  let s = start;
+  for (;;) {
+    const here = text.charAt(s);
+    const before = text.charAt(s - 1);
+    if (s === 0) break;
+    if (CN_SET.has(here) && isNumeral(before)) s -= 1;
+    else if (isDigit(here) && isDigit(before)) s -= 1;
+    else if (isDigit(here) && before === '.' && isDigit(text.charAt(s - 2))) s -= 2;
+    else if (before === ',' && isDigit(text.charAt(s - 2)) && threeDigitsAt(text, s)) s -= 2;
+    else break;
+  }
+  let e = end;
+  for (;;) {
+    const last = text.charAt(e - 1);
+    const next = text.charAt(e);
+    if (e >= text.length) break;
+    if (isDigit(last) && (isDigit(next) || PLACE_SET.has(next))) e += 1;
+    else if (CN_SET.has(last) && isNumeral(next)) e += 1;
+    else if (isDigit(last) && next === '.' && isDigit(text.charAt(e + 1))) e += 2;
+    else if (isDigit(last) && next === ',' && threeDigitsAt(text, e + 1)) e += 4;
+    else if (SPOKEN_UNIT.has(last) && isNumeral(next) && !isNumeral(text.charAt(e + 1))) {
+      e += 1;
+      break;
+    } else break;
+  }
+  return [s, e];
 }
 
 type Add = (start: number, end: number, kind: FilterHit, open?: number) => void;
 
 function scanForm(text: string, add: Add): void {
   for (const pattern of AMOUNT_PATTERNS) {
-    for (const m of text.matchAll(pattern)) add(m.index, m.index + m[0].length, 'amount');
+    for (const m of text.matchAll(pattern)) {
+      const [s, e] = extendAmount(text, m.index, m.index + m[0].length);
+      add(s, e, 'amount');
+    }
   }
   for (const m of text.matchAll(SCHEME)) {
     const min = text.indexOf('://', m.index) + 3;
@@ -152,7 +217,11 @@ export function filterAfter(
   copySeen: boolean,
 ): { text: string; hits: FilterHit[] } {
   const base = context.length;
+  // The delivered text already ends with a placeholder (maybe and horizontal space): an amount
+  // right at the start of this segment joins it instead of adding a second one.
+  const joinsPlaceholder = context.replace(/[\t\p{Zs}]+$/u, '').endsWith(AMOUNT_PLACEHOLDER);
   let current = segment;
+  let first = true;
   const hits: FilterHit[] = [];
   for (;;) {
     const whole = context + current;
@@ -171,9 +240,9 @@ export function filterAfter(
     let cursor = base;
     let index = 0;
     while (index < spans.length) {
-      const first = spans[index] as Span;
-      let start = first.start;
-      let end = first.end;
+      const head = spans[index] as Span;
+      let start = head.start;
+      let end = head.end;
       let amount = false;
       while (index < spans.length) {
         const span = spans[index] as Span;
@@ -184,9 +253,11 @@ export function filterAfter(
         index += 1;
       }
       while (start > cursor && HORIZONTAL_SPACE.test(whole.charAt(start - 1))) start -= 1;
-      out += whole.slice(cursor, start) + (amount ? AMOUNT_PLACEHOLDER : '');
+      const joined = first && joinsPlaceholder && start === base && cursor === base;
+      out += whole.slice(cursor, start) + (amount && !joined ? AMOUNT_PLACEHOLDER : '');
       cursor = end;
     }
+    first = false;
     current = out + whole.slice(cursor);
   }
   return { text: current, hits };
@@ -197,4 +268,11 @@ export function filterSegment(text: string): {
   readonly hits: readonly FilterHit[];
 } {
   return filterAfter('', text, false);
+}
+
+/** Hit spans of a raw buffer (raw and NFKC forms), for the sentence buffer's cut points. */
+export function riskSpans(
+  text: string,
+): readonly { start: number; end: number; kind: FilterHit }[] {
+  return scan(text, false);
 }
