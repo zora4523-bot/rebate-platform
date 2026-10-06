@@ -4,6 +4,7 @@ import type { components, operations } from '@couli/contracts-ts';
 import type { Logger } from 'pino';
 import { GovernanceError, getMaterialChannels, type Clock } from '../platform/index.ts';
 import {
+  DemoUnionError,
   UnionError,
   isPriceAnomaly,
   type Platform,
@@ -202,13 +203,21 @@ function requesterOf(viewer: Viewer): string {
   return viewer.deviceId !== null ? `device:${viewer.deviceId}` : 'guest';
 }
 
-/** Union dependency failures (timeout, rate limit, breaker, quota): 50304, never the pool. */
+/**
+ * Classifies an error thrown by the union upstream call (after the governed adapter's retries).
+ * Business rejections keep their identity: an explicit `invalid_policy` from governance, a
+ * UnionError with a business code (invalid DTO/identity, item unavailable, upstream_rejected …),
+ * a DemoUnionError, or a CatalogError. Everything else is a dependency failure → 50304, never the
+ * pool: governance timeout / circuit_open / quota_exceeded, UnionError upstream_unavailable /
+ * rate_limited, and any other throw (network error, unknown error) so it never surfaces as 500.
+ */
 function isUnionOutage(error: unknown): boolean {
   if (error instanceof GovernanceError) return error.code !== 'invalid_policy';
   if (error instanceof UnionError) {
     return error.code === 'upstream_unavailable' || error.code === 'rate_limited';
   }
-  return false;
+  if (error instanceof DemoUnionError || error instanceof CatalogError) return false;
+  return true;
 }
 
 interface Issued {
@@ -407,6 +416,12 @@ export async function searchProducts(
       refill = await upstream.search(request(startPage + 1));
     } catch (error: unknown) {
       if (!isUnionOutage(error)) throw error;
+      // A refill outage must not pass for "no result": with nothing deliverable from the first
+      // page this is the same 50304 { platform } as a first-page outage (no fallback feed);
+      // otherwise degrade to the first page's cards and its upstream has_more, with an alert.
+      if (dedupeSamePage(issued).length === 0) {
+        unavailable(platform, 'union search unavailable on the refill page');
+      }
       logger.warn(
         { event: 'search_refill_unavailable', platform },
         'search: refill page unavailable, returning the first page only',
