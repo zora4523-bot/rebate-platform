@@ -1,0 +1,115 @@
+{
+  "risk_note": "RV2 (infra/fault/**; not listed in ops/risk-map.yaml). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl. Ledger refs are empty (basis in 规划/05 QA rows, 02 and 09 README §0.2: local / fake upstreams only). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist (n/a: no money, no attribution): pass, 0 S0/S1; 3 S2 (stale comment, host reachability of the internal network, digest lookup not archived) to follow-ups. The WireMock index digest was looked up by the orchestrator outside the sandbox (docker buildx imagetools inspect), as the implementation asked"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh read-only Codex session, not the implementing one: round 1 pass, 0 S0/S1"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rule tests by Claude reviewed by fresh Codex sessions: rounds 1 and 2 each 1 S1 (expected values produced by the code under test), fixed by the test author; past the 2-round limit a fresh Claude subagent closed it: pass (couli-runs/QA-05a/closure-claude.md)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "QA-05a",
+  "spec_ref": "68b2959cf2b680f11f084706fdfcf215beb7fa80",
+  "spec_commit": "773b7802ac016a3cb413d33ceb0b75949646260d",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "773b7802ac016a3cb413d33ceb0b75949646260d",
+      "tree": "0b49b1c205b2c9655358930e378f8d496a680780",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T08:56:08Z",
+      "finished_at": "2026-10-06T08:56:16Z",
+      "red_tests": [
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 默认管理地址是 http://127.0.0.1:<compose 发布端口>；load 不带参数把四个目标的桩导入该地址，导入后每个目标按头、按状态都能注入全部场景",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] load union.jd 只导入京东的桩：京东四种故障按头、按状态都在，别的目标一条不命中",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05 切换场景] bailian：先 load 再 switch，不带 X-Scenario 头的请求命中的就是切到的场景",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05 切换场景] union.taobao：先 load 再 switch，不带 X-Scenario 头的请求命中的就是切到的场景",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05 切换场景] union.jd：先 load 再 switch，不带 X-Scenario 头的请求命中的就是切到的场景",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05 切换场景] union.pdd：先 load 再 switch，不带 X-Scenario 头的请求命中的就是切到的场景",
+        "test/spec/fault/cli.test.ts > [规划/02 §6.2 X-Scenario] 切换后单个请求仍可用 X-Scenario 头覆盖；百炼切回 normal 即恢复正常",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 []：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 [\"explode\"]：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 [\"switch\"]：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 [\"switch\",\"bailian\"]：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 [\"switch\",\"union.meituan\",\"timeout\"]：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 [\"switch\",\"bailian\",\"slow\"]：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 [\"switch\",\"union.taobao\",\"normal\"]：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 [\"switch\",\"union.jd\",\"delay\"]：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 用法错误 [\"load\",\"union.pdd\",\"bogus\"]：退出 2、写 stderr、不发任何管理请求",
+        "test/spec/fault/cli.test.ts > [09 README §0.2 硬规则 5] FAULT_WIREMOCK_URL=https://eco.taobao.com/router/rest 不是本地 WireMock：拒绝，退出 2，不发请求",
+        "test/spec/fault/cli.test.ts > [09 README §0.2 硬规则 5] FAULT_WIREMOCK_URL=http://api.jd.com/routerjson 不是本地 WireMock：拒绝，退出 2，不发请求",
+        "test/spec/fault/cli.test.ts > [09 README §0.2 硬规则 5] FAULT_WIREMOCK_URL=https://gw-api.pinduoduo.com/api/router 不是本地 WireMock：拒绝，退出 2，不发请求",
+        "test/spec/fault/cli.test.ts > [09 README §0.2 硬规则 5] FAULT_WIREMOCK_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 不是本地 WireMock：拒绝，退出 2，不发请求",
+        "test/spec/fault/cli.test.ts > [09 README §0.2 硬规则 5] FAULT_WIREMOCK_URL=http://wiremock.example.com:8080 不是本地 WireMock：拒绝，退出 2，不发请求",
+        "test/spec/fault/cli.test.ts > [规划/02 §12.7] FAULT_WIREMOCK_URL=http://127.0.0.1:19999 是本机或容器内服务名：管理请求只发往它，不带凭据头",
+        "test/spec/fault/cli.test.ts > [规划/02 §12.7] FAULT_WIREMOCK_URL=http://localhost:19999 是本机或容器内服务名：管理请求只发往它，不带凭据头",
+        "test/spec/fault/cli.test.ts > [规划/02 §12.7] FAULT_WIREMOCK_URL=http://[::1]:19999 是本机或容器内服务名：管理请求只发往它，不带凭据头",
+        "test/spec/fault/cli.test.ts > [规划/02 §12.7] FAULT_WIREMOCK_URL=http://wiremock:8080 是本机或容器内服务名：管理请求只发往它，不带凭据头",
+        "test/spec/fault/cli.test.ts > [规划/05 QA-05] 管理接口返回 5xx：退出 1 并在 stderr 说明",
+        "test/spec/fault/compose.test.ts > [规划/05 QA-05 摘要锁定] compose 的每个镜像都写精确版本并按 sha256 摘要锁定，且确有 WireMock 镜像",
+        "test/spec/fault/compose.test.ts > [规划/02 §12.7] compose 单独成项目：不叫 couli-local，端口只绑 127.0.0.1，不用宿主网络",
+        "test/spec/fault/compose.test.ts > [09 README §0.2 硬规则 5] WireMock 不开代理与录制：不能借它把请求转到真实联盟或百炼",
+        "test/spec/fault/compose.test.ts > [规划/05 QA-05] 命令行默认管理地址完整等于 http://127.0.0.1:<compose 发布的 WireMock 端口>（普通 HTTP）",
+        "test/spec/fault/compose.test.ts > [规划/05 QA-05 命令行] 入口 infra/fault/cli.ts 只把参数交给 fault.ts 的 runCli",
+        "test/spec/fault/compose.test.ts > [规划/05 QA-05 说明] README 写明启动、命令、环境变量、X-Scenario 头、全部目标与场景",
+        "test/spec/fault/compose.test.ts > [规划/05 QA-05] 本地栈 infra/local 不加 WireMock：故障注入容器只在 infra/fault",
+        "test/spec/fault/mappings.test.ts > [规划/05 QA-05] 目标只有百炼与三个联盟假上游；百炼支持 normal 与五种故障，联盟只有四种故障",
+        "test/spec/fault/mappings.test.ts > [规划/02 §6.2 X-Scenario] bailian：带 X-Scenario 头的请求按头取场景，每个场景恰好命中一条桩且注入的就是该场景；按场景状态也同样能取到",
+        "test/spec/fault/mappings.test.ts > [规划/02 §6.2 X-Scenario] union.taobao：带 X-Scenario 头的请求按头取场景，每个场景恰好命中一条桩且注入的就是该场景；按场景状态也同样能取到",
+        "test/spec/fault/mappings.test.ts > [规划/02 §6.2 X-Scenario] union.jd：带 X-Scenario 头的请求按头取场景，每个场景恰好命中一条桩且注入的就是该场景；按场景状态也同样能取到",
+        "test/spec/fault/mappings.test.ts > [规划/02 §6.2 X-Scenario] union.pdd：带 X-Scenario 头的请求按头取场景，每个场景恰好命中一条桩且注入的就是该场景；按场景状态也同样能取到",
+        "test/spec/fault/mappings.test.ts > [规划/02 §6.2 超时] 延迟场景短于在线超时 3 秒仍正常应答，超时场景长于离线超时 10 秒（百炼）",
+        "test/spec/fault/mappings.test.ts > [规划/02 §14 千问行] 百炼没带场景头、场景还在初始状态时按 OpenAI 兼容格式正常应答，不延迟、不出错",
+        "test/spec/fault/mappings.test.ts > [AGENTS.md 硬规则 7] union.taobao：没有录制就不伪造平台报文——所有桩都不是 2xx、不带响应体、不转发到真实上游",
+        "test/spec/fault/mappings.test.ts > [AGENTS.md 硬规则 7] union.jd：没有录制就不伪造平台报文——所有桩都不是 2xx、不带响应体、不转发到真实上游",
+        "test/spec/fault/mappings.test.ts > [AGENTS.md 硬规则 7] union.pdd：没有录制就不伪造平台报文——所有桩都不是 2xx、不带响应体、不转发到真实上游",
+        "test/spec/fault/mappings.test.ts > [09 README §0.2 硬规则 5] 百炼桩不转发到真实上游，各目标的桩互不串路径，桩名全局唯一"
+      ],
+      "expected": [
+        "test/spec/fault/cli.test.ts",
+        "test/spec/fault/compose.test.ts",
+        "test/spec/fault/mappings.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8a675e28fec54f86140476aaabbbe377b52f210910f38aa5d8ed140f7120b443"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "4fd30fa8efccb14cfe75f88010c6b3d33b1e0db7",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
