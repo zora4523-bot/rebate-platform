@@ -80,7 +80,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 11. **评审类型跟着风险级**。`--review-type` 不传时，可信副本的 `tools/ops/task.ts show <id>` 算出 RV2 就用 `money`（强制资金清单），否则 `general`；RV2 任务显式传 `general` 被拒绝（`contract`、`spec-test` 仍可用）。评审产出里 `verdict: pass` 却带 S0 / S1 发现的，按无产出处理（退出 10）。
 8. **每次调用都记账并结算轮次**：结束后调用 `tools/ops/usage.ts record`（规划/11 §1.3；只记 token 用量，额度不设限制，记账失败只记警告、不改退出码），再调用 `tools/ops/state.ts settle <id> --meta <meta.<mode>.json>`：没有产出就结束的调用（见 §4）把派发前计上的那一轮还回去；它的 `meta.<mode>.json` 照样留在运行目录，仍计入每任务 10 次与「连续 3 次无产出」两道失败熔断（`state.ts taskCalls`）。`settle` 按调用的 `started_at` 去重，重复执行不会多还；没有在途状态文件时什么都不做；它失败只记警告，这一轮按已计处理。
 
-有产出不等于任务成功。Codex 说「测试通过」不算数，成败只看 `tools/ops/verify-container.sh` 的退出码。
+有产出不等于任务成功。Codex 说「测试通过」不算数，成败看 PR 头提交上的必过 CI 检查（`ops/approvals.yaml` 第 21 条，2026-10-06 起）；本机 `tools/ops/verify-container.sh` 的完整验证可作自查。
 
 ## 4. 退出码
 
@@ -208,7 +208,7 @@ TODO(规划/11 §2.4, §9.3)：上面第 2–4 步尚未执行 — blocked on �
 4. **起子代理**：模型指定 `claude-opus-5-5`（Agent 调用的模型参数选 opus，并在提示词里写明模型锁定）；工作目录就是 `<runs>/worktrees/<id>`（独立 worktree，不用主检出，不在 `/tmp` 下）；提示词 = 任务书全文 + 下面几条硬约束：不提交、不建分支、不 `git add` / `stash` / `reset`、不装依赖、不改 `ops/` 与 `docs/`、不改规则测试与保护路径；跑测试只用 `<runs>/trusted/rebate-platform/tools/ops/verify-container.sh <id> --fast`（断网容器里的 `pnpm verify:fast`，结果在 `<runs>/<id>/verify-fast/<n>/`；Docker 不可用时停下报告，不在宿主直跑测试）；结束时按任务书第 8 节的 JSON 结构回报。子代理在后台跑（规划/11 §2.2），编排会话在等待期间不碰这个 worktree。
 5. **硬超时与取消**（RO-08）：硬超时沿用 30 分钟（规划/11 §2.2，和 Codex 写入型相同；超时的任务要拆小，不加时间）。到点或要放弃时，用 Agent 能力停掉这个子代理（TaskStop），然后**确认它已经停了**再做任何事：子代理的任务状态显示已结束；`verify-container.sh` 起的容器没有残留（`docker ps --filter label=couli.task=<id>` 为空，有就 `docker rm -f`）；worktree 在之后 1 分钟内不再有文件变化。确认之前不重派、不跑守卫、不在这个 worktree 上起新的实现。
 6. **结束后核对**（位置断言，规划/11 §2.4）：起之前记下 `git -C <wt> rev-parse HEAD`、`git -C <wt> for-each-ref refs/heads`、`git -C <wt> diff --cached --name-only`；结束后三者都要不变（暂存区为空），变了按越界处理：这个 worktree 里的东西一律不运行、不提交，先人工看。
-7. **守卫与记录**：从可信副本跑 `path-guard.ts --task <id> --base <spec_commit> --cwd <wt> --json` 与 `protected-paths.ts --base <spec_commit> --cwd <wt> --json`（先守卫、后执行）；再把这一轮结算：`state.ts opus-run <id> --run-id <运行编号> --outcome ok|no-output|timeout|capacity --risk <RV>`。没有结果（无产出、超时、容量或额度错误）的一轮把第 2 步计上的 `attempts.impl` 还回去（和 Codex 无产出一样，按运行编号去重，重复结算不多还，CR-07），同时计入 Opus 失败；连续 3 次或累计 5 次时输出 `next: handover`（RV0 / RV1：`dispatch.sh <id> --handover`）或 `next: blocked`（RV2：标 blocked，不换家）（RO2-03）。有结果的照常进沙箱外验证：`verify-container.sh <id>`（完整 `pnpm verify`）。
+7. **守卫与记录**：从可信副本跑 `path-guard.ts --task <id> --base <spec_commit> --cwd <wt> --json` 与 `protected-paths.ts --base <spec_commit> --cwd <wt> --json`（先守卫、后执行）；再把这一轮结算：`state.ts opus-run <id> --run-id <运行编号> --outcome ok|no-output|timeout|capacity --risk <RV>`。没有结果（无产出、超时、容量或额度错误）的一轮把第 2 步计上的 `attempts.impl` 还回去（和 Codex 无产出一样，按运行编号去重，重复结算不多还，CR-07），同时计入 Opus 失败；连续 3 次或累计 5 次时输出 `next: handover`（RV0 / RV1：`dispatch.sh <id> --handover`）或 `next: blocked`（RV2：标 blocked，不换家）（RO2-03）。有结果的进完整验证：PR 头提交上的必过 CI 检查（`ops/approvals.yaml` 第 21 条）；本机 `verify-container.sh <id>`（完整 `pnpm verify`）可选，作自查或写进证据（写了须在头提交树上通过）。
 
 `verify-container.sh` 的 `--fast` 是为这一步加的（`tools/ops/README.md`）：只跑 `pnpm run verify:fast`，不起 PostgreSQL、容器 `--network none`，结果放 `verify-fast/<n>/`，与决定任务成败的 `verify/<n>/` 分开。
 
