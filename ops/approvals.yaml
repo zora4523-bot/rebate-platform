@@ -151,3 +151,9 @@ approvals:
     granted: true
     date: '2026-10-06'
     note: '负责人问「有哪些任务是可以单独交给codex 来开发 执行 Claude 对抗review的。可以多线程来开发 加快进度」，看过代理列出的六条线后答「同意」（对话中给会话「项目规划阶段看板」，经编排会话转达）；子任务范围同日按 Codex 评审收窄；规划依据：规划仓库 PR couli#59（main 3ce7405），规划/11 §1.1、§2.5「Codex 首发实现」、§7.3 第 14 项，docs/changes/20261006-部分任务改由Codex实现.md；落在本分支 chore/codex-impl-selected-tasks（tools/guard/codex-impl-tasks.json、tools/lib、tools/ops、tools/agent、ops/approvals.yaml；同分支在 ops/risk-map.yaml 登记 apps/api/src/modules/agent/** 为 RV1，那是规划/11 §1.1「Agent 服务」行的同步，不属本条批准内容）；本条所在的 PR 由负责人本人加标签'
+  - id: 24
+    row: 4
+    title: '常设授权扩大：凡需要 owner-approved-<头提交前 12 位> 标签的 PR（保护路径第一、二、三类，含 SPEC_REF、依赖、门禁与规则文件），在两家评审都通过、必过检查全绿后，由编排会话直接加标签并合并，事后在进度与汇报里一句话说明；不再逐个等负责人。仍须负责人本人先确认的：金额与订单归属规则的改动、放宽密钥扫描、删除或削弱资金测试、生产环境'
+    granted: true
+    date: '2026-10-06'
+    note: '负责人原话「不用等我加标签 请你直接加」（对话中直接给编排会话「Couli-runs handoff」）；扩大第 16 条的范围（第 16 条只覆盖门禁流程小改动）；例外四类沿用第 16 条；本条所在的 PR 由编排会话按负责人同一句授权加标签'
