@@ -1,0 +1,24 @@
+id: B1-02l
+repo: rebate-platform
+title: identity 发码加固（B1-02e 第 3 轮评审后续）：mark 按 Clock 查预占期限、额度 zset 记「是否已标记发送」并统一清理未发送的预占、release 重试与剩余风险说明、码寿命按受理时刻、COMMIT 的 EXPIRE 位置、补测试
+type: impl
+# 2026-10-06 入账。来由：B1-02e（PR 166）第 3 轮两家评审 PASS 后剩下的问题，都偏严、只在进程暂停 / 崩溃或连续多次 Redis 故障时触发，按 approvals 第 18 条不挡合并、转本任务。
+# 原文在 couli-runs/B1-02e/review-r3-notes.md：Codex S2（reserve 后进程暂停超 75 秒再 mark 会与另一请求相隔 1 秒各发一条）与 OOS S1（mark 前进程退出，码 key 300 秒后消失、p: 留 25 小时，
+# 未发送的预占被计为一条）；Claude S3-1～6（D 未强制：mark 后 deliver 前查 now−reservedAt；release 用 retried 并重写剩余风险段；把是否已 mark 记进额度 zset，history() 统一清理超过 t+D+60 未 mark 的记录；
+# COMMIT 恢复 t=受理时刻、s 状态与预占转正仍用预占时刻，与回包 expires_in_sec=300 一致；COMMIT 的 EXPIRE 紧挨 ZADD；补「s 状态候选码被核销或错满 5 次后 release 不让旧码复活」与守卫单测）。
+# 不改规则测试与契约；行为只会更精确（不再多挡未发送的预占），不放宽任何频控。tester: none：加固由实现者写单测与 apps/api 集成测试，两家评审照 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-02e]
+paths:
+  - 'apps/api/src/modules/identity/infra/sms-code-store.ts'
+  - 'apps/api/src/modules/identity/infra/sms-code-store.int.test.ts'
+  - 'apps/api/src/modules/identity/application/sms-codes.ts'
+  - 'apps/api/src/modules/identity/application/sms-codes.test.ts'
+  - 'apps/api/src/modules/identity/domain/sms-limits.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
