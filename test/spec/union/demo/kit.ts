@@ -92,18 +92,21 @@ export function expectItem(item: UnionItem, platform: RegisteredPlatform): void 
       : platform === 'jd'
         ? ['itemId', 'skuId']
         : ['goods_id', 'goods_sign'];
-  expect(keys(item)).toEqual(
-    [
-      'platform',
-      ...identifiers,
-      'title',
-      'price_fen',
-      'coupon_fen',
-      'final_price_fen',
-      'commission_rate_bp',
-      'quoted_at',
-    ].sort(),
-  );
+  const required = [
+    'platform',
+    ...identifiers,
+    'title',
+    'price_fen',
+    'coupon_fen',
+    'final_price_fen',
+    'commission_rate_bp',
+    'quoted_at',
+  ];
+  // D33 optional fields appear only when they carry a value.
+  const optional = ['coupon_ids', 'price_status', 'price_anomaly_reason'];
+  const actual = keys(item);
+  expect(actual).toEqual(expect.arrayContaining(required));
+  expect(actual.filter((key) => !required.includes(key) && !optional.includes(key))).toEqual([]);
   expect(item.platform).toBe(platform);
   expect(item.title).toContain('演示');
   expect(item.quoted_at).toBe(instant);
