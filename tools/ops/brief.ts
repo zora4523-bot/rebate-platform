@@ -411,7 +411,7 @@ export function renderBrief(input: BriefInput): string {
   const commands = task.accept.filter(
     (a) => isCommand(a) && a !== 'pnpm verify' && a !== 'pnpm verify:fast',
   );
-  const codexSandbox = phase === 'test' || phase === 'handover';
+  const codexSandbox = phase === 'test' || phase === 'handover' || codexFirstImpl;
   if (codexSandbox) {
     // The Codex sandbox runs no test (RO2-01/04): static checks only.
     out.push('```', 'pnpm typecheck', 'pnpm lint', '```', '');

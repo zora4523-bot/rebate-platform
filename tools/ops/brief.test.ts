@@ -606,6 +606,9 @@ it('[approvals 23] a listed impl: codex, tester: claude ledger gets the Codex-fi
     );
     // Like a handover: static checks only in the sandbox, tests in the container or CI.
     expect(impl).toContain('Codex 沙箱里只做不执行测试的静态检查');
+    // The command block holds the static checks only, no test command (GT-23a S1).
+    expect(impl).toContain('## 6. 验收命令\n\n```\npnpm typecheck\npnpm lint\n```\n');
+    expect(impl).not.toContain('pnpm verify:fast\n');
     expect(impl).toContain(
       '| `tests_passed` | 类型检查与 lint 通过时填 true（测试由编排者在容器里跑） |',
     );
