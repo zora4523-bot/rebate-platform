@@ -2,6 +2,8 @@ import { pid_scene, scene } from '@couli/contracts-ts';
 import { describe, expect, it } from 'vitest';
 import {
   LinkingError,
+  TLJ_OWNER_ONLY_MESSAGE,
+  decideOpenOwner,
   isSwitchOn,
   logsRegistration,
   parseScene,
@@ -46,5 +48,76 @@ describe('linking registration rules', () => {
     for (const value of [false, 'off', null, undefined, 'true', 1, 'ON']) {
       expect(isSwitchOn(value)).toBe(false);
     }
+  });
+});
+
+describe('linking open owner decision', () => {
+  const A = 'synthetic-user-a';
+  const B = 'synthetic-user-b';
+  const base = { scene: 'search', snapshotUserId: A, rowUserId: A } as const;
+
+  it('[AC-B1-06d] a share link opens with the sharer, the sharer himself goes self-buy detail', () => {
+    for (const callerUserId of [null, B]) {
+      expect(decideOpenOwner({ ...base, scene: 'share', pidScene: 'share', callerUserId })).toEqual(
+        { kind: 'use' },
+      );
+    }
+    expect(
+      decideOpenOwner({ ...base, scene: 'share', pidScene: 'share', callerUserId: A }),
+    ).toEqual({ kind: 'register', scene: 'detail', message: null });
+    // The sharer is the snapshot user, not the row's redundant user_id.
+    expect(
+      decideOpenOwner({
+        ...base,
+        scene: 'share',
+        pidScene: 'share',
+        rowUserId: B,
+        callerUserId: B,
+      }),
+    ).toEqual({ kind: 'use' });
+  });
+
+  it('[AC-B1-06d] a non-share link needs login, whoever owns it', () => {
+    for (const snapshotUserId of [null, A]) {
+      expect(
+        decideOpenOwner({
+          ...base,
+          pidScene: 'self_buy',
+          snapshotUserId,
+          rowUserId: snapshotUserId,
+          callerUserId: null,
+        }),
+      ).toEqual({ kind: 'login' });
+    }
+  });
+
+  it('[AC-B1-06d] own links open as they are, guest links are claimed, claimed ones are owned', () => {
+    expect(decideOpenOwner({ ...base, pidScene: 'self_buy', callerUserId: A })).toEqual({
+      kind: 'use',
+    });
+    expect(
+      decideOpenOwner({
+        ...base,
+        pidScene: 'self_buy',
+        snapshotUserId: null,
+        rowUserId: null,
+        callerUserId: B,
+      }),
+    ).toEqual({ kind: 'claim' });
+    expect(
+      decideOpenOwner({ ...base, pidScene: 'self_buy', snapshotUserId: null, callerUserId: A }),
+    ).toEqual({ kind: 'use' });
+    expect(
+      decideOpenOwner({ ...base, pidScene: 'self_buy', snapshotUserId: null, callerUserId: B }),
+    ).toEqual({ kind: 'register', scene: 'search', message: null });
+  });
+
+  it("[AC-B1-06d] another user's link registers the same scene; taolijin falls back to detail", () => {
+    expect(
+      decideOpenOwner({ ...base, scene: 'agent', pidScene: 'agent', callerUserId: B }),
+    ).toEqual({ kind: 'register', scene: 'agent', message: null });
+    expect(
+      decideOpenOwner({ ...base, scene: 'taolijin', pidScene: 'taolijin', callerUserId: B }),
+    ).toEqual({ kind: 'register', scene: 'detail', message: TLJ_OWNER_ONLY_MESSAGE });
   });
 });
