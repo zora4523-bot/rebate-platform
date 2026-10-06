@@ -3,7 +3,7 @@ import type { PublicItem } from './manifest.ts';
 
 /** 私钥头即使嵌在其他内容中也不能被误报或 SDK 豁免覆盖。 */
 export function containsPrivateKey(value: string): boolean {
-  return /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/.test(value);
+  return /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/i.test(value);
 }
 
 function full(pattern: RegExp, value: string): boolean {
@@ -33,6 +33,14 @@ export function isPublicId(item: PublicItem, hit: ScanHit): boolean {
   switch (item.category) {
     case 'request_routing': {
       if (item.id === 'service_hosts') {
+        // HTTPS 不代表公开：webhook 等检测规则已提供凭据上下文，不能被地址格式覆盖。
+        if (/(?:webhook|token|secret|password|credential|private[-_]key)/i.test(hit.rule))
+          return false;
+        // 只自动识别主机及短的静态路径段（含 v1 一类版本段）。长串、混合大小写、
+        // 动态数字与编码路径无法证明不含凭据，交回清单逐项判定；不先用 URL
+        // 归一化，避免 /<令牌>/../ 等路径把凭据抹掉。这里不猜测令牌的熵。
+        if (!full(/^https:\/\/[^/?#]+(?:\/(?:v[1-9][0-9]*|[a-z][a-z-]{0,22}))*\/?$/, value))
+          return false;
         const url = publicUrl(value);
         return url !== null && url.username === '' && url.password === '' && !value.includes('@');
       }
