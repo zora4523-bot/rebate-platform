@@ -1,14 +1,16 @@
 id: B3-02b
 repo: rebate-platform
-title: ModelGateway 第二段：OpenAI 兼容适配器（百炼千问；GLM 同一适配器、只离线登记）——非流式与流式工具调用拼装、前缀缓存标记、快照锁定校验
+title: ModelGateway 第二段：OpenAI 兼容协议层与 HTTP 传输——请求构造（与 @couli/evals 的 ModelRequest 同形）、流式分片拼装成统一事件、厂商差异表、快照锁定、错误五类归类、可中止的 fetch 传输与评测端口传输
 type: impl
-# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
-# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
-# 05 B3-02「百炼 OpenAI 兼容接口、快照锁定、前缀缓存」；02 §9.2「前缀缓存」「模型路由」；BR-AI-14（快照锁定、不用 latest）。
-# 流式工具调用：分片 delta 拼成完整 tool_calls（参数 JSON 跨片）、finish_reason、usage（token 数交给 B3-09 记账，本段只透出）。
-# 录制样例只用合成报文，按 OpenAI 兼容公开格式写，放 openai-compat/__fixtures__；不伪造联盟报文。CAP-X-07 未验证的能力（显式缓存、关闭思考）做成配置项，默认按规划写法。
-# 不在本段：路由与熔断（B3-02c）、Orchestrator 的工具循环（B3-05，Opus）。
-# refs 保留核心 BR（台账评审 GT-23b S1：删 refs 会使规则测试评审把该 BR 的发现移出范围）；连一跳引用的任务书超 24KB，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定，不以摘录为界。
+# 2026-10-06 草稿（B3 拆分子代理，couli-runs/B3-02-03/plan.md §2.1）。替换 CODEX-IMPL/ledger-drafts/B3-02b（范围加 HTTP 传输与评测端口桥）。
+# 依据：05 B3-02「百炼 OpenAI 兼容接口、快照锁定、前缀缓存、各厂商流式工具调用用录制响应回放」；BR-AI-14 细则「多厂商接入」「路由顺序」；
+# 02 §9.2「前缀缓存」「模型路由」、§12.6 千问 Key；09 CAP-X-07、CAP-X-19 文档结论（未实测的特性一律关，做成差异表开关）。
+# 对齐评测：buildModelRequest 的产物与 packages/evals ModelRequest 同形，录制键 = evals modelKey；录制的 response = VendorResponse。
+# 不引入厂商 SDK、不加依赖：只用注入的 fetch 与自写 SSE 解析。Key 由接线注入（KMS / 环境变量），不进日志、错误与录制。
+# 前提（plan.md G1）：B3-02a 的 VendorTransport.send / VendorGateway.invoke 带 AbortSignal；未采纳则本段开工前先补一个只改 vendors/** 的子任务。
+# 真实调用 TODO(规划/11 §6): 百炼 Key 与独立主账号 — blocked on 负责人（06 Q-C21）；GLM 只离线、预算未定不发付费调用（06 Q-C31）。
+# refs 保留 BR-AI-14；连一跳引用任务书超 24KB，编排者手工生成任务书（去一跳引用、补本段用到的细则原文摘录），不经 dispatch.sh。
+# 不在本段：路由与熔断（B3-02c）、无模型降级（B3-02d）、脱敏（B3-05 Preprocessor）、Orchestrator 工具循环（B3-05）。
 refs: [BR-AI-14]
 refs_hash:
   BR-AI-14: 94c980b637dc

@@ -1,18 +1,19 @@
 id: B3-02c
 repo: rebate-platform
-title: ModelGateway 第三段：路由（Flash 主 → Plus 备 → 无模型）、本 run 累计超时 agent.model_timeout_ms、熔断、跨厂商兜底保持关闭、路由厂商须在同意厂商清单内
+title: ModelGateway 第三段：路由（Flash 主 → Plus 备 → 无模型）、单次尝试时限与本 run 累计时限、按条目熔断、同意清单与跨厂商槽位闸、内容拒绝不换模型；门面 index.ts 与评测 B 模式的在线模型端口
 type: impl
-# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
-# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
-# 05 B3-02「路由、超时熔断、跨厂商兜底」；BR-AI-14 细则「路由顺序」「无模型降级」触发条件、「路由配置只能经 PR 修改」；02 §14 千问行。
-# 熔断复用 platform/index.ts 已导出的 createGovernor（B1-01b），不另写熔断器；失败分类（超时、429、5xx）进路由，业务拒绝不计熔断。
-# 同意厂商清单 specs/agent-consent-vendors 尚不存在（谁建见 plan.md Q4）：本段以注入参数接收清单，加载 specs 文件的接线留给建清单的任务；CI 校验属门禁，不在本段。
-# 对外只出 finish_reason 信号（fallback / timeout）与降级原因，done 帧由 B3-03 写；model-gateway/index.ts 归本段（门面），其他段只经各自子目录 index 导出。
-# refs 保留核心 BR（台账评审 GT-23b S1：删 refs 会使规则测试评审把该 BR 的发现移出范围）；连一跳引用的任务书超 24KB，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定，不以摘录为界。
+# 2026-10-06 草稿（B3 拆分子代理，couli-runs/B3-02-03/plan.md §2.1）。替换 CODEX-IMPL/ledger-drafts/B3-02c（deps 加 B3-02b、B3-02d；门面加评测端口）。
+# 依据：05 B3-02「路由、超时熔断、跨厂商兜底、无模型降级」；BR-AI-14 细则「路由顺序」「无模型降级」触发条件、跨厂商兜底保持关闭；
+# BR-AI-21 路由与快照只经 PR、后台只在已评测条目间切换或切无模型（摘录）；BR-AI-16 预算用完走降级（摘录，只收布尔信号）；02 §14 千问行。
+# 熔断与单次时限复用 platform/index.ts 的 createGovernor（每个路由条目一个 Governor，重试 0 次）；时间只取注入的 Scheduler。
+# 路由表与同意厂商清单都经参数注入：仓库路由文件、specs/agent-consent-vendors 与 CI 校验另开任务（plan.md §5），本段不建文件。
+# 失败分流：超时 / 429 / 5xx / 网络 → 备用 → 降级；内容拒绝 → 返回 refused、不换模型（交 B3-05/B3-06 按 BR-AI-18）；鉴权与参数错误 → 告警并降级（代理默认，评审可改）。
+# 只出 ModelOutcome 与降级原因（类型取自 B3-02d）；done / error 帧由 B3-03 写，日预算记账属 B3-09。
+# refs 保留 BR-AI-14；连一跳引用任务书超 24KB，编排者手工生成任务书并补 BR-AI-16、BR-AI-21 的相关句摘录，不经 dispatch.sh。
 refs: [BR-AI-14]
 refs_hash:
   BR-AI-14: 94c980b637dc
-deps: [B3-02a]
+deps: [B3-02b, B3-02d]
 paths:
   - 'apps/api/src/modules/agent/model-gateway/routing/**'
   - 'apps/api/src/modules/agent/model-gateway/index.ts'

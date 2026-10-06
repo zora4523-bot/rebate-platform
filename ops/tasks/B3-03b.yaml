@@ -1,18 +1,21 @@
 id: B3-03b
 repo: rebate-platform
-title: 流式输出第二段：RunManager 生命周期——取消、客户端断开 60 秒未恢复即中止模型调用、单轮 20 秒时限（已下发卡片保留）、会话级 run 锁（TTL = run 最长时长 + 30 秒）
+title: 流式输出第二段：RunManager 生命周期——先写 meta、15 秒心跳、取消（跨实例信号）、单轮时限（从受理起算，已下发卡片保留）、断线宽限后中止、开关关闭与撤回同意的终止、终止帧恰好一个、卡片会话序号、收尾交受理闸结算
 type: impl
-# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
-# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
-# 05 B3-03「取消、断开中止」；02 §9.2「取消与断线」（MVP 不做事件续传）；BR-AI-23 细则（会话级 run 锁与释放）；单轮 20 秒时限见 BR-AI-14 细则（只作指针，不进 refs 以控任务书大小，plan.md Q6）。
-# 中止经 AbortSignal 传给 ModelGateway（B3-02c）；run 持久化（agent_runs）经端口注入，表与迁移不在本段（迁移串行、Opus）。
-# 不在本段：配额（B3-03c）、HTTP 接线（B3-03d）。
-# refs 含 BR-AI-14（单轮 20 秒时限的条款，台账评审 GT-23b r2 S1）；连一跳引用的任务书超 24KB 时，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定。
-refs: [BR-AI-14, BR-AI-23]
+# 2026-10-06 草稿（B3 拆分子代理，couli-runs/B3-02-03/plan.md §2.2）。替换 CODEX-IMPL/ledger-drafts/B3-03b（会话 run 锁移到 B3-03c 的 Lua，本段只调 settle 释放）。
+# 依据：05 B3-03「取消、断开中止」；02 §9.2「取消与断线」（MVP 不做事件续传）；04 §8.1–8.2（心跳、终止帧、card_id 会话序号先帧后内嵌项）；
+# BR-AI-23 细则（run 结束即释放锁）；BR-AI-13（撤回同意 10 秒内以 10004 终止、不退）；BR-AI-12（开关关闭终止进行中的 run，GT-23c S1）与 BR-AI-14（细则「单轮时限」，GT-23b r2 S1）列入 refs。
+# 写帧只经 B3-03a 的 StreamWriter；配额结算只经 B3-03c 的 Admission.settle（退还判定在 B3-03c，本段只报结局）。
+# 跨实例取消用 Redis 键轮询（platform/redis 只有 get/set/eval）；时间只取注入的 Scheduler / Clock；卡片序号经 CardSequence 端口（持久化随 agent 表迁移）。
+# 顺带 B3-03a 评审范围外条目：九种 finish_reason 都能经本段写出（couli-runs/B3-03a/out-of-scope.md）。
+# 不在本段：HTTP 接线与 ①～⑥（B3-03d）、Orchestrator 本体（B3-05）、OutputGuard（B3-06）、trace（B3-09）。
+refs: [BR-AI-12, BR-AI-14, BR-AI-23, BR-AI-13]
 refs_hash:
+  BR-AI-12: e41c99200396
   BR-AI-14: 94c980b637dc
   BR-AI-23: 7e8958be288f
-deps: [B3-03a]
+  BR-AI-13: a782e43adca4
+deps: [B3-03a, B3-03c]
 paths:
   - 'apps/api/src/modules/agent/stream/run/**'
 test_paths:

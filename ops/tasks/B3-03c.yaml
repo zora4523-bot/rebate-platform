@@ -1,27 +1,28 @@
 id: B3-03c
 repo: rebate-platform
-title: 流式输出第三段：配额与限流——受理 ⑧～⑩ 在同一 Redis Lua 脚本里原子判断与扣减、计数键（user_id / device_hash + IP）、自然日（+08:00）、退还条件、quota_left、30502 的 reset_at 与 next
+title: 流式输出第三段：受理闸——BR-AI-23 的 ⑥～⑩（client_msg_id 去重、会话 run 锁、分钟限流、会话轮数、日配额）在一个 Redis Lua 脚本里原子判断与扣减，结算时释放锁并按退还条件退还，quota_left 与 30502 的 reset_at、next
 type: impl
-# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
-# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
-# 05 B3-03「配额」；BR-AI-15（额度、计数键、退还只在本条维护）、BR-AI-23（校验顺序与只在第 ⑩ 步通过后计数）。
-# Redis 只经 platform/index.ts 已导出的 Redis 句柄；时钟只读注入的 Clock（硬规则 5）。单元测试用假 Redis，Lua 脚本的集成测试 *.int.test.ts 由编排者在容器里跑。
-# ①～⑦（开放、身份、同意、会话归属、长度、client_msg_id、进行中 run）经端口注入结果，不在本段实现；风控层 IP 200 条 / 日属 risk 模块。
-# refs 保留核心 BR（台账评审 GT-23b S1：删 refs 会使规则测试评审把该 BR 的发现移出范围）；连一跳引用的任务书超 24KB，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定，不以摘录为界。
+# 2026-10-06 草稿（B3 拆分子代理，couli-runs/B3-02-03/plan.md §2.2）。替换 CODEX-IMPL/ledger-drafts/B3-03c：目录 quota → admission，
+# 范围加 ⑥（client_msg_id）与 ⑦（会话 run 锁），使 ⑥～⑩ 原子；退还判定 shouldRefund 归本段（BR-AI-15 只在本条维护）。
+# 依据：05 B3-03「配额」；BR-AI-15（额度、计数键、自然日、退还、quota_left、30502 data）；BR-AI-23（顺序、只在第 ⑩ 步通过后计数、锁 TTL 与释放）。
+# 时间只取注入的 Clock（毫秒传入脚本，窗口与锁到期按它判定，不靠 Redis TTL；先例 identity/infra/sms-code-store.ts，B1-02e）；TTL 只作回收。
+# 计数键只收调用方给的不透明值（user_id、device_hash、ipKey），本段不碰 IP 明文与加解密；配置值由调用方读 config_items 后传入。
+# ①～⑤（开放、身份、同意、会话归属、长度）由 B3-03d 先判；风控层 IP 200 条 / 日属 risk 模块。Redis 不可用 → 抛错不计数（调用方回 50401，代理默认）。
+# Lua 的原子性与并发用 *.int.test.ts（acquireTestRedis）在容器或 CI 里跑；纯函数部分（自然日、reset_at、next、shouldRefund）用单元测试。
+# refs 两条同列任务书约 26KB：编排者手工生成任务书（去一跳引用），不经 dispatch.sh。
 refs: [BR-AI-15, BR-AI-23]
 refs_hash:
   BR-AI-15: fce0a36758e3
   BR-AI-23: 7e8958be288f
-# agent 目录的 risk-map 行随门禁 PR（approvals 第 23 条）合并，不另立 B3-02r。
 deps: []
 paths:
-  - 'apps/api/src/modules/agent/stream/quota/**'
+  - 'apps/api/src/modules/agent/stream/admission/**'
 test_paths:
-  - 'test/spec/agent/stream-quota/**'
+  - 'test/spec/agent/stream-admission/**'
 impl: codex
 tester: claude
 accept:
   - 'pnpm verify'
-  - 'test/spec/agent/stream-quota/**'
+  - 'test/spec/agent/stream-admission/**'
 status: todo
 pr: null
