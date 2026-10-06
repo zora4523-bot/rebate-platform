@@ -1,0 +1,53 @@
+{
+  "task": "B1-04q",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "7cb31d7c58dcc78412d97867e50931b5d496f8d0",
+  "red_tests": [],
+  "risk_note": "RV2 (deps: pnpm-lock.yaml, apps/api/package.json, apps/api/tsconfig.json). apps/api depends on the workspace packages @couli/money and @couli/domain (no third-party package); needed so union / catalog / linking use the single money implementation (AGENTS.md hard rule 1; B1-04b review S1). Ledger tester none: no rule tests, no red run. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "6b99f9094047dc2b0e83afb47525d19388e41fbc",
+      "tree": "17e7e0a709b9b07a50078ff08af57f2e36ced767",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T23:42:28Z",
+      "finished_at": "2026-10-05T23:44:17Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (review-general): pass, no findings; dependency direction allowed by .dependency-cruiser.cjs, lockfile adds only the two workspace links"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex read-only money review round 1: pass (reviewed before the rebase over B1-01x; the replayed change is identical)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "f5c0d9c482767cb2347e731b4923feb447b43c7d",
+    "specs": "0f91357f8c12fec010b2beb0a80d407c8b3bb76f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (tree f03b0e3, the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}

@@ -41,6 +41,12 @@ importers:
       '@couli/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@couli/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@couli/money':
+        specifier: workspace:*
+        version: link:../../packages/money
       '@nestjs/common':
         specifier: 12.1.0
         version: 12.1.0(reflect-metadata@0.2.2)(rxjs@7.8.2)
