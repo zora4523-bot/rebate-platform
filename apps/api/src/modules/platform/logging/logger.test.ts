@@ -119,6 +119,26 @@ describe('createRootLogger', () => {
     expect(lines[0]).not.toMatch(/cap1|cap2|cap3|13800000000|042019/);
   });
 
+  it('redacts the access-token signing key (BR-ID-07) as an env name, a config field and in camelCase', () => {
+    const { logger, lines, records } = capture();
+    logger.info(
+      {
+        JWT_PRIVATE_KEY_PEM: 'pem1',
+        jwt_private_key_pem: 'pem2',
+        config: { jwt: { kid: 'k1', privateKeyPem: 'pem3', verificationKeys: {} } },
+        private_key_pem: 'pem4',
+      },
+      'jwt config',
+    );
+    expect(records()[0]).toMatchObject({
+      JWT_PRIVATE_KEY_PEM: REDACTED,
+      jwt_private_key_pem: REDACTED,
+      config: { jwt: { kid: 'k1', privateKeyPem: REDACTED, verificationKeys: {} } },
+      private_key_pem: REDACTED,
+    });
+    expect(lines[0]).not.toMatch(/pem1|pem2|pem3|pem4/);
+  });
+
   it('redacts credential headers in request and response shapes', () => {
     const { logger, lines, records } = capture();
     logger.info(

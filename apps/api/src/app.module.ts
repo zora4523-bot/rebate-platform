@@ -36,7 +36,8 @@ import { UnionModule } from './modules/union/index.ts';
  * body is read or validated, and its body keeps Fastify's own handling. ① skips unsigned routes;
  * ② ③ act by the route's contract x-auth and leave routes outside the contract alone.
  * The factory stays synchronous (its async dependencies are providers of their own).
- * The other HTTP entries have no check yet, so bootstrap refuses an x-signed route on them.
+ * The other HTTP entries have no check yet, so bootstrap refuses on them an x-signed route and a
+ * route that takes a token (contract x-auth other than none).
  */
 function requestChecks(options: PlatformOptions): Provider {
   return options.entry === 'api'

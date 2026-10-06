@@ -24,7 +24,9 @@
 //   - none: Authorization is never read (a refresh with an expired access token is not 10002);
 //   - optional: no Authorization → anonymous; with one it must be valid (10002);
 //   - login / phone / realname: no Authorization → 10001; malformed (not `Bearer <token>`, empty,
-//     repeated), bad signature, unknown kid, wrong issuer / audience, expired, claims missing, or
+//     repeated: the registration point hands every value of a repeated header as an array, also
+//     over real HTTP where Node keeps only the first), bad signature, unknown kid, wrong issuer /
+//     audience, expired, claims missing, or
 //     a session that does not exist or is revoked → 10002. The session (sessions, by app_id and
 //     sid) is read on every request, so a revocation applies to the next one (§9.3 #2).
 //   ③ with a token: X-App-Id must equal the token's app_id; without one, on a contract x-signed
@@ -204,6 +206,12 @@ export function createTokenService(deps: { clock: Clock; keys: TokenKeyProvider 
   ) {
     throw new TypeError('createTokenService needs a key id, a P-256 private key and public keys');
   }
+  // A token signed under a kid missing from the verification keys would fail its own check.
+  if (!keys.publicKeys.has(keys.kid)) {
+    throw new TypeError(
+      'createTokenService needs the public key of the signing key id among the verification keys',
+    );
+  }
   const { kid, privateKey } = keys;
   // A snapshot: changing the provider's map later cannot add a verification key.
   const publicKeys: ReadonlyMap<string, KeyObject> = new Map(keys.publicKeys);
@@ -277,6 +285,18 @@ function headerValue(request: RequestCheckInput, name: string): string | undefin
   return typeof value === 'string' ? value : undefined;
 }
 
+/** The checks createTokenCheck built: bootstrap asks whether an entry's plan contains one. */
+const TOKEN_CHECKS = new WeakSet<RequestCheck>();
+
+/**
+ * True for a stage ② ③ check built by createTokenCheck (bootstrap's route guard: an entry whose
+ * plan has none refuses a contract route that needs a token; the same way as risk's
+ * isSignatureCheck for stage ①).
+ */
+export function isTokenCheck(check: unknown): boolean {
+  return typeof check === 'function' && TOKEN_CHECKS.has(check as RequestCheck);
+}
+
 /** Stages ② and ③ after signature, before body validation, using the full contract auth table. */
 export function createTokenCheck(deps: {
   tokens: TokenService;
@@ -297,7 +317,7 @@ export function createTokenCheck(deps: {
     return principal;
   };
 
-  return async (request) => {
+  const check: RequestCheck = async (request) => {
     const template = request.routeTemplate;
     const auth = template === undefined ? undefined : contractAuthOf(request.method, template);
     // Outside the contract: no Authorization is read and no stage applies.
@@ -321,4 +341,6 @@ export function createTokenCheck(deps: {
       }
     }
   };
+  TOKEN_CHECKS.add(check);
+  return check;
 }

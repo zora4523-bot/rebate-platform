@@ -25,6 +25,7 @@ import {
   type RootLogger,
   type WorkerEntry,
   clockFromConfig,
+  contractAuthOf,
   createRootLogger,
   installRequestChecks,
   isContractSignedRoute,
@@ -32,6 +33,7 @@ import {
   refuseRoutes,
   resolveTraceId,
 } from './modules/platform/index.ts';
+import { isTokenCheck } from './modules/identity/index.ts';
 import { isSignatureCheck } from './modules/risk/index.ts';
 
 export interface BootstrapOverrides {
@@ -69,9 +71,11 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
  * `init()` or `listen()`. Fastify logs through the same pino instance as the application, and
  * the Fastify request id is the trace id (well-formed `x-trace-id` header or a random UUID).
  * The request check plan of REQUEST_CHECKS is installed (before body parsing) on every HTTP entry;
- * a plan whose signature check is not its first check is refused (the entry does not start), and
- * a contract x-signed route that the plan's signature check does not cover cannot be registered
- * (the entry does not start).
+ * a plan whose signature check is not its first check, or whose token check comes before its
+ * signature check, is refused (the entry does not start); a contract x-signed route that the
+ * plan's signature check does not cover, and a contract route that needs a token (x-auth other
+ * than none) on an entry whose plan has no token check, cannot be registered (the entry does not
+ * start).
  */
 export async function createHttpApp(
   entry: HttpEntry,
@@ -103,6 +107,15 @@ export async function createHttpApp(
     // validates a body. Installed before init, so it covers every route Nest registers.
     const plan = app.get<RequestCheckPlan>(REQUEST_CHECKS);
     const server = adapter.getInstance();
+    // ② ③ come after ① (BR-ID-01 判定顺序): a token check placed before a signature check would
+    // answer a signed request with 10001 / 10002 / 10403 before its signature (and run ③ without
+    // the verified device), so the entry does not start.
+    const firstToken = plan.checks.findIndex(isTokenCheck);
+    if (firstToken !== -1 && plan.checks.slice(firstToken).some(isSignatureCheck)) {
+      throw new Error(
+        `the ${entry} entry's request check plan must run the token check (BR-ID-01 ②) after the request signature check (BR-ID-01 ①)`,
+      );
+    }
     // ① comes first (BR-ID-01 判定顺序): a plan holding the signature check anywhere else would
     // answer a signed request from a later stage (and run ③ without the verified device) before
     // its signature, so the entry does not start.
@@ -123,6 +136,20 @@ export async function createHttpApp(
         !(signs && (buffered === undefined || buffered(method, template))),
       `the ${entry} entry does not run the request signature check (BR-ID-09 ①) on this contract x-signed route`,
     );
+    // Every contract route that takes a token (x-auth optional / login / phone / realname) must
+    // reach stages ② ③ (BR-ID-01): refused at registration when the plan has no token check
+    // (stream and admin today), so such a route never serves a request no token was checked on.
+    // Routes outside the contract (undefined) and x-auth none register as before.
+    if (firstToken === -1) {
+      refuseRoutes(
+        server,
+        (method, template) => {
+          const auth = contractAuthOf(method, template);
+          return auth !== undefined && auth !== 'none';
+        },
+        `the ${entry} entry does not run the token check (BR-ID-01 ②) on this contract route that takes a token`,
+      );
+    }
     installRequestChecks(server, plan.checks, plan.bufferWhen);
     return app;
   } catch (error) {

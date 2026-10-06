@@ -15,7 +15,8 @@
 //      `rawBody`, and Fastify's own parser reads (and limits) the body after the checks passed;
 //   2. run the checks in the given order on one RequestCheckInput, whose `url` is the origin-form
 //      request target (an absolute-form target loses its scheme and authority, see
-//      originFormTarget); the first check that throws ends the request with its error (the
+//      originFormTarget) and whose `headers` carry every value of a repeated Authorization header
+//      (see checkHeaders); the first check that throws ends the request with its error (the
 //      remaining checks are not called, the body of an unbuffered route is never read);
 //   3. copy `verifiedDevice` (set by stage ①) and `principal` (set by stage ②, read it with
 //      tokenPrincipal of ./token-context.ts) onto the Fastify request for the handler and later
@@ -28,7 +29,8 @@
 // filter writes `{ code, msg, trace_id }` with its HTTP status); any other error is a 50001.
 //
 // refuseRoutes(server, refused, reason) keeps an entry from registering a route its checks do not
-// cover (bootstrap: a contract x-signed route on an entry without the signature check).
+// cover (bootstrap: a contract x-signed route on an entry without the signature check, a contract
+// route that takes a token on an entry without the token check).
 //
 // This file is also compiled by the `test` project: erasable syntax only (no parameter properties,
 // enums, namespaces or decorators), `import type` for type-only imports, relative imports with the
@@ -55,6 +57,10 @@ export interface RequestCheckInput {
   readonly url: string;
   /** Fastify's matched route template; absent for an unmatched route. */
   readonly routeTemplate?: string;
+  /**
+   * The request headers as Fastify parsed them, except that a repeated `authorization` is the
+   * array of all its values in the order sent (checkHeaders), where Node keeps only the first.
+   */
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
   /** The buffered body; empty (nothing was read) on a route the plan's bufferWhen does not select. */
   readonly rawBody: Buffer;
@@ -126,7 +132,11 @@ interface HookRequest extends CheckedRequest {
   readonly id: string;
   readonly method: string;
   readonly url: string;
-  readonly raw: { readonly url?: string | undefined };
+  /** Node's IncomingMessage: the target as sent and the header lines as name / value pairs. */
+  readonly raw: {
+    readonly url?: string | undefined;
+    readonly rawHeaders?: readonly string[] | undefined;
+  };
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
   readonly routeOptions: { readonly url?: string | undefined; readonly bodyLimit: number };
 }
@@ -180,6 +190,34 @@ export function originFormTarget(target: string): string {
 }
 
 /**
+ * The headers handed to the checks. Node's HTTP parser keeps only the first value of a repeated
+ * `authorization` header (IncomingMessage discards the later lines of the headers it treats as
+ * single-valued), so `request.headers` of a real request carrying a valid token and then
+ * `Authorization: Bearer invalid` reads as the valid token alone — while a repeated Authorization
+ * is malformed and must be 10002 (orchestrator ruling B1-02h §9.5 #7). The lines are counted in
+ * `request.raw.rawHeaders` (name / value pairs, names in any case): with more than one
+ * `authorization`, the checks get a copy of the headers whose `authorization` is the array of
+ * every value in the order sent, which the token check refuses like any malformed header.
+ * `request.headers` itself is left as Node built it, and without rawHeaders (or with at most one
+ * Authorization line) it is handed over unchanged.
+ * Only `authorization`: of the headers Node deduplicates this way it is the one a check reads; a
+ * repeated custom header (`x-app-id`, `x-sign`, …) is joined by Node with `, ` and already fails
+ * its comparison.
+ */
+function checkHeaders(request: HookRequest): RequestCheckInput['headers'] {
+  const lines = request.raw.rawHeaders;
+  if (!Array.isArray(lines)) return request.headers;
+  const values: string[] = [];
+  for (let index = 0; index + 1 < lines.length; index += 2) {
+    const name: unknown = lines[index];
+    if (typeof name === 'string' && name.toLowerCase() === 'authorization') {
+      values.push(String(lines[index + 1]));
+    }
+  }
+  return values.length > 1 ? { ...request.headers, authorization: values } : request.headers;
+}
+
+/**
  * Register before init/ready. Run checks in supplied order on every matched route before body
  * parsing; stop on error. Only matched routes that `bufferWhen` selects (all matched routes
  * without it) have their raw body buffered first, bounded by the effective Fastify bodyLimit, and
@@ -226,7 +264,7 @@ export function installRequestChecks(
       method: request.method,
       url: originFormTarget(request.raw.url ?? request.url),
       routeTemplate,
-      headers: request.headers,
+      headers: checkHeaders(request),
       rawBody,
     };
     for (const check of ordered) await check(input);

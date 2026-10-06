@@ -3,8 +3,9 @@
 //
 // createSession — every path that creates a session (the login endpoints of B1-02j, a merge that
 // issues a new session) calls it in the transaction that creates the session:
-//   1. lock the device row (SELECT … FOR UPDATE, scoped by app_id) before anything else, so two
-//      logins on one device serialise and last_login_sid ends at the later one;
+//   1. lock the device row (SELECT … FOR UPDATE, scoped by app_id, not revoked: a revoked device
+//      gets no new session) before anything else, so two logins on one device serialise and
+//      last_login_sid ends at the later one;
 //   2. insert the session (UUIDv7 id, a new opaque random sid, created_at / updated_at from the
 //      Clock) and its first refresh token (only the SHA-256 of the token; parent_hash null);
 //   3. CAS the device row: last_login_sid = the new sid, row_version + 1, guarded by the locked
@@ -53,10 +54,11 @@ export async function createSession(
     .select('row_version')
     .where('app_id', '=', principal.app_id)
     .where('id', '=', principal.device_id)
+    .where('revoked_at', 'is', null)
     .forUpdate()
     .executeTakeFirst();
   if (device === undefined) {
-    throw new Error('identity: a session needs an existing device of the same app');
+    throw new Error('identity: a session needs an unrevoked device of the same app');
   }
   const sid = newSid();
   await transaction

@@ -1,7 +1,10 @@
 // The pre-parsing registration point on a bare Fastify instance (Fastify's default error handler:
 // the status of the thrown error). The envelope through GlobalErrorFilter is covered by
 // global-errors.test.ts and by the rule tests of test/spec/risk/signature.
-import { Readable } from 'node:stream';
+// One case hands raw request bytes to Node's own HTTP server parser (a Duplex emitted as a
+// 'connection', no port): a repeated Authorization header is folded by that parser, which
+// light-my-request cannot reproduce.
+import { Duplex, Readable } from 'node:stream';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createRootLogger } from '../logging/index.ts';
 import { PlatformFastifyAdapter } from './global-errors.ts';
@@ -295,6 +298,72 @@ it('[BR-ID-09] a target rewritten to the absolute form (Fastify rewriteUrl) reac
   });
   expect(response.statusCode).toBe(200);
   expect(urls).toEqual([{ url: '/probe/a%2Fb?b=2&a=%2f', template: '/probe/:id' }]);
+});
+
+/**
+ * Hands the request head (one line each, exactly as given) to the server's own HTTP parser as a
+ * new connection — Node accepts any Duplex emitted as 'connection' — and resolves with the
+ * response once the server ends it (Connection: close). Nothing listens on a port.
+ */
+function rawExchange(
+  server: { emit(event: 'connection', socket: Duplex): boolean },
+  head: readonly string[],
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const socket = new Duplex({
+      read() {},
+      write(chunk: Buffer, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+      final(callback) {
+        callback();
+        const text = Buffer.concat(chunks).toString('utf8');
+        const separator = text.indexOf('\r\n\r\n');
+        resolve({
+          status: Number(/^HTTP\/1\.1 (\d{3}) /.exec(text)?.[1]),
+          body: separator === -1 ? '' : text.slice(separator + 4),
+        });
+      },
+    });
+    socket.on('error', reject);
+    server.emit('connection', socket);
+    socket.push([...head, 'Connection: close', '', ''].join('\r\n'));
+  });
+}
+
+it('[BR-ID-01] through Node HTTP parsing a repeated Authorization reaches the checks as every value; request.headers stays as Node built it', async () => {
+  const instance = server();
+  const seen: unknown[] = [];
+  installRequestChecks(
+    instance,
+    [
+      async (request) => {
+        seen.push(request.headers['authorization']);
+      },
+    ],
+    () => false,
+  );
+  instance.get('/probe', (request) => ({
+    authorization: request.headers.authorization ?? null,
+  }));
+  await instance.ready();
+  const head = ['GET /probe HTTP/1.1', 'Host: 127.0.0.1'];
+  const repeated = await rawExchange(instance.server, [
+    ...head,
+    'Authorization: Bearer first',
+    'authorization: Bearer second',
+  ]);
+  expect(repeated.status).toBe(200);
+  // Node keeps the first line only; the checks see both.
+  expect(JSON.parse(repeated.body)).toEqual({ authorization: 'Bearer first' });
+  const single = await rawExchange(instance.server, [...head, 'Authorization: Bearer only']);
+  expect(single.status).toBe(200);
+  expect(JSON.parse(single.body)).toEqual({ authorization: 'Bearer only' });
+  const none = await rawExchange(instance.server, head);
+  expect(none.status).toBe(200);
+  expect(seen).toEqual([['Bearer first', 'Bearer second'], 'Bearer only', undefined]);
 });
 
 it('[BR-ID-09] refuseRoutes makes the registration of a refused route throw, naming method and route', () => {

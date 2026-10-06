@@ -15,6 +15,7 @@ import {
   createTokenCheck,
   createTokenKeyProvider,
   createTokenService,
+  isTokenCheck,
 } from './access-tokens.ts';
 
 const PRINCIPAL: TokenPrincipal = {
@@ -92,6 +93,40 @@ it('[BR-ID-07] staging / prod without a key refuse; a hand-built bad key is refu
   const ephemeral = await createTokenKeyProvider('local', null);
   expect([...ephemeral.publicKeys.keys()]).toEqual([ephemeral.kid]);
   expect((await createTokenKeyProvider('local', null)).kid).not.toBe(ephemeral.kid);
+});
+
+it('[BR-ID-07] the signing key id must have its public key among the verification keys', () => {
+  const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const clock = new FixedClock('2026-10-06T04:00:00.000Z');
+  for (const publicKeys of [new Map(), new Map([['previous', pair.publicKey]])]) {
+    expect(() =>
+      createTokenService({
+        clock,
+        keys: { kid: 'current', privateKey: pair.privateKey, publicKeys },
+      }),
+    ).toThrow(TypeError);
+  }
+  expect(() =>
+    createTokenService({
+      clock,
+      keys: {
+        kid: 'current',
+        privateKey: pair.privateKey,
+        publicKeys: new Map([['current', pair.publicKey]]),
+      },
+    }),
+  ).not.toThrow();
+});
+
+it('[BR-ID-01] isTokenCheck recognises only the checks createTokenCheck built', () => {
+  const check = createTokenCheck({
+    tokens: service(),
+    sessions: { find: async () => ({ revoked_at: null }) },
+  });
+  expect(isTokenCheck(check)).toBe(true);
+  expect(isTokenCheck(async () => undefined)).toBe(false);
+  expect(isTokenCheck(undefined)).toBe(false);
+  expect(isTokenCheck('check')).toBe(false);
 });
 
 it('[BR-ID-07] issuing refuses a principal without the five claims', async () => {
