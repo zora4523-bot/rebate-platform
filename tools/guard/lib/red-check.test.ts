@@ -261,11 +261,15 @@ const B = 'test/spec/zzbrowser/b.browser.test.ts';
 const LAUNCH = 'test/spec/zzbrowser/launch.browser.test.ts';
 const WAIT = { name: 'Error', message: 'Matcher did not succeed in time.' };
 const UNRECOGNISED = 'red for an unrecognised reason (Error: not an assertion or NotImplemented)';
+const POLL = 'test/spec/zzbrowser/poll.browser.test.ts';
+const POLL_REFUSED =
+  'red for an unrecognised reason (an expect.poll timed out and nothing shows it waited for an ' +
+  'element: wait with expect.element in the test file itself, never expect.poll)';
 
 it('[F1-01j] browser rule tests: an assertion, or an element waited for that never came, is a valid red', () => {
   // Shapes of vitest 5.0.1 / @vitest/browser 5.0.1 / playwright-core 1.63.0 failures in the form
   // the red reporter writes; where each one comes from is noted in the fixture ("//").
-  const result = checkRedReports([fixture('browser-report.json')], [B, LAUNCH], ROOT);
+  const result = checkRedReports([fixture('browser-report.json')], [B, LAUNCH, POLL], ROOT);
   expect(result.red).toEqual([
     `${B} > [AC-B#1] element never appears: locator error`,
     `${B} > [AC-B#2] element never appears: lookup still waiting`,
@@ -273,6 +277,7 @@ it('[F1-01j] browser rule tests: an assertion, or an element waited for that nev
     `${B} > [AC-B#4] expect.poll assertion fails`,
     `${B} > [AC-B#5] plain assertion`,
     `${B} > [AC-B#6] matcher without a wait`,
+    `${B} > [AC-B#16] lookup still waiting, site as the browser URL`,
   ]);
   expect(result.problems.map((p) => `${p.test ?? p.file}: ${p.reason}`)).toEqual([
     '[AC-B#7] TypeError inside the wait: red for the wrong reason (TypeError)',
@@ -283,7 +288,13 @@ it('[F1-01j] browser rule tests: an assertion, or an element waited for that nev
     '[AC-B#11] test timed out: red for the wrong reason (timed out)',
     `[AC-B#12] page error inside the wait: ${UNRECOGNISED}`,
     '[AC-B#13] skipped: status "skipped" (skipped, todo or pending is not red)',
+    // The poll's own timeout counts only for a wait started in the test file (B#2, B#16) of a
+    // file that never mentions poll: not from a helper, not without a stack frame, not in a file
+    // that uses expect.poll (a hung expect.poll looks exactly like this).
+    `[AC-B#14] lookup still waiting, wait started in a helper: ${POLL_REFUSED}`,
+    `[AC-B#15] lookup still waiting, no stack frame: ${POLL_REFUSED}`,
     `${LAUNCH}: the file did not load: red for the wrong reason (browser not running)`,
+    `[AC-P#1] hung expect.poll: ${POLL_REFUSED}`,
   ]);
 });
 
@@ -326,7 +337,10 @@ it('[F1-01j] browserCauseVerdict looks through the wait only, at an assertion or
   };
   const stillWaiting = { name: 'Error', message: "expect.poll() function didn't resolve in time." };
   expect(browserCauseVerdict([notFound, WAIT])).toBeNull();
-  expect(browserCauseVerdict([stillWaiting, WAIT])).toBeNull();
+  // The poll's own timeout: only for a wait that can only have been expect.element.
+  expect(browserCauseVerdict([stillWaiting, WAIT], { elementOnly: true })).toBeNull();
+  expect(browserCauseVerdict([stillWaiting, WAIT], { elementOnly: false })).toBe(POLL_REFUSED);
+  expect(browserCauseVerdict([stillWaiting, WAIT])).toBe(POLL_REFUSED);
   const assertion = { name: 'AssertionError', message: 'expected 1 to be 2' };
   expect(browserCauseVerdict([assertion, WAIT])).toBeNull();
   const matcher = { name: 'Error', message: 'x', matcher: 'toBeVisible' };
@@ -343,6 +357,9 @@ it('[F1-01j] browserCauseVerdict looks through the wait only, at an assertion or
   expect(browserCauseVerdict([])).toContain('no failure detail');
   // Outside the browser reading nothing changes: the wait's own cause is not an assertion.
   expect(causeVerdict([notFound, WAIT])).toBe(UNRECOGNISED);
+  // .tsx rule tests (browser component tests) are expected like .ts ones.
+  const tsx = 'test/spec/frontend/card.browser.test.tsx';
+  expect(expectedRuleTests([{ path: tsx, status: 'A' }], ['test/spec/**'])).toEqual([tsx]);
   // A browser that could not start or went away: never a valid red, wherever it shows up.
   const closed = { name: 'Error', message: 'Target page, context or browser has been closed' };
   const notRunning = 'red for the wrong reason (browser not running)';

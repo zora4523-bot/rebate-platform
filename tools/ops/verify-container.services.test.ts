@@ -4,7 +4,7 @@
 // what is removed at the end — is checked without Docker. Whether the real images behave is the
 // job of tools/ops/verify-container.selftest.sh (run by hand, see tools/ops/README.md).
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { repoRoot } from '../lib/paths.ts';
@@ -41,6 +41,7 @@ const REDIS_SETTINGS = {
 // answers the first n `redis-cli ping` with a LOADING reply (exit 0); STUB_DOCKER_RUN_EXIT is the
 // exit code of the verify / red / browser container. STUB_DOCKER_FAIL=image-missing makes
 // `image inspect` fail, so the script builds the image (the `build` call is recorded).
+// STUB_DOCKER_SCREENSHOT=1 makes the browser container leave one PNG in <out>/screenshots.
 const STUB = String.raw`'use strict';
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -75,6 +76,12 @@ if (args[0] === 'run' && args.includes('-d')) {
   answer('0123456789ab', 0);
 }
 if (args[0] === 'run' && args.includes('couli-verify-entrypoint')) {
+  const out = args.find((a, i) => args[i - 1] === '-v' && a.endsWith(':/out'));
+  if (process.env.STUB_DOCKER_SCREENSHOT === '1' && args.at(-1) === 'browser' && out) {
+    const dir = out.slice(0, -':/out'.length) + '/screenshots/spec/x.browser.test.ts';
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(dir + '/shot-chromium-linux.png', 'png');
+  }
   answer('', Number(process.env.STUB_DOCKER_RUN_EXIT || '0'));
 }
 if (args[0] === 'inspect') answer(failures.includes('redis-exits') && aboutRedis ? 'false' : 'true', 0);
@@ -557,6 +564,8 @@ it(
     };
     expect(result).toMatchObject({ mode: 'container', script: 'browser', exit_code: 1 });
     expect(existsSync(join(dir, 'out'))).toBe(true);
+    // Writable and searchable for the container's uid, not listable, sticky (not 0777).
+    expect(statSync(join(dir, 'out')).mode & 0o7777).toBe(0o1733);
     // The snapshot is not kept.
     expect(existsSync(join(dir, 'src'))).toBe(false);
 
@@ -586,6 +595,83 @@ it(
       BROWSER_CONFIG: 'vitest.browser.config.ts',
     });
     expect(noRedisUrl(browser)).toBe(true);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[F1-01j] --browser: a green run that exported no screenshot fails; with screenshots it passes',
+  () => {
+    const lock = lockWithPlaywright('1.63.0');
+    const empty = run(['V3-04', '--worktree', workspace('browser-empty', lock), '--browser']);
+    expect(empty.status).toBe(1);
+    expect(empty.stderr).toContain('no screenshot was exported');
+    const emptyDir = join(runs, 'V3-04', 'browser', '1');
+    const result = JSON.parse(readFileSync(join(emptyDir, 'result.json'), 'utf8')) as {
+      exit_code: number;
+    };
+    expect(result.exit_code).toBe(1);
+    expect(readFileSync(join(emptyDir, 'log.txt'), 'utf8')).toContain(
+      'browser tests exited 0; screenshots exported: 0',
+    );
+
+    const shots = run(['V3-05', '--worktree', workspace('browser-shots', lock), '--browser'], {
+      STUB_DOCKER_SCREENSHOT: '1',
+    });
+    expect(shots.status, shots.stderr).toBe(0);
+    const shotsDir = join(runs, 'V3-05', 'browser', '1');
+    expect(readFileSync(join(shotsDir, 'log.txt'), 'utf8')).toContain(
+      'browser tests exited 0; screenshots exported: 1',
+    );
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[F1-01j] --red with integration and browser rule tests: two containers, the browser group stays offline',
+  () => {
+    const files = {
+      'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
+      'test/spec/identity/devices.browser.test.ts': "it('[BR-ID-05] z', () => {});\n",
+    };
+    const repo = redFixture('red-mixed', files, lockWithPlaywright('1.63.0'));
+    const res = run(['B1-02b', '--worktree', repo, '--red', '--base', 'main']);
+    // The stub writes no report, so the run stops after the red containers (exit 2).
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('wrote no report for');
+    const net =
+      res.calls.find((c) => c.args[0] === 'network' && c.args[1] === 'create')?.args.at(-1) ?? '';
+    // Other tests of this file ran B1-02b before: the run number is not 1.
+    expect(net).toMatch(/^couli-stubtest-net-b1-02b-\d+-\d+$/);
+    const reds = res.calls.filter((c) => c.args.includes('couli-verify-entrypoint'));
+    expect(reds).toHaveLength(2);
+    function groupsOf(call: Call | undefined): string[] {
+      const plan = JSON.parse(call?.env['RED_PLAN'] ?? '{"groups":[]}') as {
+        groups: { name: string }[];
+      };
+      return plan.groups.map((g) => g.name);
+    }
+    const db = reds.find((c) => groupsOf(c).includes('spec-int'));
+    const offline = reds.find((c) => groupsOf(c).includes('spec-browser'));
+    // The integration group alone on the internal network, with both service URLs.
+    expect(groupsOf(db)).toEqual(['spec-int']);
+    expect(valueOf(db?.args ?? [], '--network')).toBe(net);
+    expect(db?.env['TEST_REDIS_URL']).toBe(REDIS_URL);
+    expect(pgUrls(db)).toHaveLength(1);
+    // The browser group alone with no network and no database URL of any kind.
+    expect(groupsOf(offline)).toEqual(['spec-browser']);
+    expect(valueOf(offline?.args ?? [], '--network')).toBe('none');
+    expect(noRedisUrl(offline)).toBe(true);
+    expect(pgUrls(offline)).toEqual([]);
+    expect(Object.keys(offline?.env ?? {}).sort()).toEqual([
+      'PROP_SEED',
+      'RED_PLAN',
+      'VERIFY_TIMEOUT_SECS',
+    ]);
+    // Two containers, two names; both are removed at the end.
+    const names = reds.map((c) => valueOf(c.args, '--name') ?? '');
+    expect(new Set(names).size).toBe(2);
+    expect(res.calls.find((c) => c.args[0] === 'rm')?.args).toEqual(expect.arrayContaining(names));
   },
   CLI_TIMEOUT,
 );

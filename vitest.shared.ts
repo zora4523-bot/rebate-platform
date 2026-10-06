@@ -10,10 +10,6 @@ const CONDITIONS: string[] = ['couli-src', ...defaultServerConditions];
 // conditions plus `couli-src`.
 const BROWSER_CONDITIONS: string[] = ['couli-src', ...defaultClientConditions];
 
-// Browser tests (`*.browser.test.ts`) run only in a real Chromium (browserConfig, `test:browser`);
-// the unit tier never picks them up.
-const BROWSER_TEST_FILES = '**/*.browser.test.ts';
-
 const BASE_EXCLUDE: string[] = [...configDefaults.exclude, '**/dist/**', '**/.tmp/**'];
 
 // Same strictness for every tier: an empty run, `.only`, retries and assertion-free tests fail.
@@ -31,14 +27,20 @@ function resolveBlock(): Pick<ViteUserConfig, 'resolve' | 'ssr'> {
   };
 }
 
-/** Unit tests: no database, no ports, no network. Integration and browser files are excluded. */
-export function unitConfig(include: string[] = ['src/**/*.test.ts']): ViteUserConfig {
+/**
+ * Unit tests: no database, no ports, no network. Integration files are excluded, and so is
+ * `exclude` (test/vitest.config.ts: the browser rule tests, which only browserConfig runs).
+ */
+export function unitConfig(
+  include: string[] = ['src/**/*.test.ts'],
+  exclude: string[] = [],
+): ViteUserConfig {
   return {
     ...resolveBlock(),
     test: {
       ...STRICT,
       include,
-      exclude: [...BASE_EXCLUDE, '**/*.int.test.ts', BROWSER_TEST_FILES],
+      exclude: [...BASE_EXCLUDE, '**/*.int.test.ts', ...exclude],
     },
   };
 }
@@ -46,7 +48,7 @@ export function unitConfig(include: string[] = ['src/**/*.test.ts']): ViteUserCo
 type BrowserOptions = NonNullable<NonNullable<ViteUserConfig['test']>['browser']>;
 
 /**
- * Browser tests (`*.browser.test.ts`): Vitest browser mode in a real headless Chromium. The
+ * Browser tests (`*.browser.test.{ts,tsx}`): Vitest browser mode in a real headless Chromium. The
  * provider and the Vite plugins come from the caller (test/vitest.browser.config.ts), whose
  * package depends on them. Screenshots of `page.screenshot()` (and of failures) go to
  * `screenshotDirectory`; `fsAllow` lists extra directories the page may read back through

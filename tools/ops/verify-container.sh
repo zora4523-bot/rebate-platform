@@ -16,15 +16,17 @@
 #              a file no project takes stops the run, CR2-04) with the trusted red reporter
 #              (verify-image/red-reporter.mjs, keeps the failure causes, CR2-03); reports go to
 #              red/<n>/out/<project>.json and tools/guard/red-check.ts reconciles them with the
-#              expected list (exit code = red-check's). A project that needs PostgreSQL gets the
-#              one-shot PostgreSQL and Redis on the internal network; otherwise the run has no
-#              network. A browser rule test (project `browser: true`, spec-browser) needs an
+#              expected list (exit code = red-check's). The groups whose project needs
+#              PostgreSQL run in their own container with the one-shot PostgreSQL and Redis on the
+#              internal network; all other groups run in a container with no network and no
+#              database URL. A browser rule test (project `browser: true`, spec-browser) needs an
 #              image with Playwright's browser: without playwright in the lockfile the run stops.
 #   --browser  the browser tests (F1-01j): the one browser project of red-projects.json
-#              (spec-browser: every test/spec/**/*.browser.test.ts) in a real headless Chromium,
+#              (spec-browser: every test/spec/**/*.browser.test.{ts,tsx}) in a real headless Chromium,
 #              `--network none` (loopback only). Screenshots and Vitest's JSON report are exported
 #              to browser/<n>/out/ (screenshots/, vitest-report.json) for comparison with the
-#              design boards; exit code = Vitest's. Like --fast an implementer's own check, never
+#              design boards; exit code = Vitest's, or 1 when Vitest passed but no screenshot
+#              was exported. Like --fast an implementer's own check, never
 #              evidence of verification (tools/ci/evidence-check.ts accepts verify and red only).
 #   --dry-run  prints what would run (script, commit, tree, red files) as one JSON line and
 #              starts nothing; no run directory is created.
@@ -216,7 +218,6 @@ if ! [[ "$PREFIX" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then die "COULI_VERIFY_PREFIX must
 # base. The same list is what red-check reconciles the reports with (CR-10).
 RED_FILES=''
 RED_PLAN=''
-RED_DB=0
 RED_BROWSER=0
 if [ "$SCRIPT" = red ]; then
   if [ -z "$BASE_ARG" ]; then
@@ -243,7 +244,6 @@ if [ "$SCRIPT" = red ]; then
     die "the red run cannot run every rule-test file: $RED_PLAN"
   }
   rm -f "$red_list"
-  RED_DB="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).groups.some((g) => g.database) ? "1" : "0")' "$RED_PLAN")"
   RED_BROWSER="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).groups.some((g) => g.browser) ? "1" : "0")' "$RED_PLAN")"
 fi
 
@@ -431,6 +431,7 @@ NET="$PREFIX-net-$TAG"
 PG_NAME="$PREFIX-pg-$TAG"
 REDIS_NAME="$PREFIX-redis-$TAG"
 VERIFY_NAME="$PREFIX-run-$TAG"
+RED_DB_NAME="$PREFIX-run-db-$TAG"
 FETCH_NAME="$PREFIX-fetch-$TAG"
 STORE_LOCK="$RUNS/lock/verify-store-$LOCK_HASH"
 LABELS=(--label "couli.verify=1" --label "couli.task=$ID")
@@ -441,7 +442,7 @@ net_created=0
 store_locked=0
 cleanup() {
   # Signals do not reach processes inside a container: remove them explicitly.
-  docker rm -f -v "$VERIFY_NAME" "$FETCH_NAME" "$PG_NAME" "$REDIS_NAME" >/dev/null 2>&1 || true
+  docker rm -f -v "$VERIFY_NAME" "$RED_DB_NAME" "$FETCH_NAME" "$PG_NAME" "$REDIS_NAME" >/dev/null 2>&1 || true
   if [ "$net_created" -eq 1 ]; then docker network rm "$NET" >/dev/null 2>&1 || true; fi
   if [ "$store_locked" -eq 1 ]; then rmdir "$STORE_LOCK" 2>/dev/null || true; fi
   rm -rf "$SRC"
@@ -586,34 +587,54 @@ if [ -f "$SRC/SPEC_REF" ]; then
 fi
 
 if [ "$SCRIPT" = red ]; then
-  # Groups of the plan (tools/ops/red-plan.ts); a group needing PostgreSQL gets the one-shot
-  # PostgreSQL and Redis on the internal network, otherwise the run has no network at all.
+  # Groups of the plan (tools/ops/red-plan.ts), split by the project's `database` flag into at
+  # most two containers (Codex review of F1-01j, S1): the groups that need PostgreSQL run in one
+  # with the one-shot PostgreSQL and Redis on the internal network; every other group (unit,
+  # browser) runs in another with no network at all and no database URL — also when the same task
+  # adds both kinds of rule tests.
   printf '%s\n' "$RED_FILES" >"$VDIR/expected.txt"
   printf '%s\n' "$RED_PLAN" >"$VDIR/plan.json"
   mkdir -p "$VDIR/out"
   chmod 0777 "$VDIR/out"
-  RED_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS" -e RED_PLAN)
-  [ -z "${PROP_RUNS:-}" ] || RED_ENV+=(-e "PROP_RUNS=$PROP_RUNS")
-  RED_NET=(--network none)
-  if [ "$RED_DB" = 1 ]; then
+  red_part() { # <1: groups with a database, 0: the others>; prints the plan of those groups or ''
+    node -e '
+      const want = process.argv[2] === "1";
+      const groups = JSON.parse(process.argv[1]).groups.filter((g) => g.database === want);
+      if (groups.length > 0) process.stdout.write(JSON.stringify({ groups }));
+    ' "$RED_PLAN" "$1"
+  }
+  red_container() { # <container name> <plan> <1: database network, 0: no network>
+    local env=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS" -e RED_PLAN)
+    [ -z "${PROP_RUNS:-}" ] || env+=(-e "PROP_RUNS=$PROP_RUNS")
+    local net=(--network none)
+    if [ "$3" = 1 ]; then
+      net=(--network "$NET")
+      env+=(-e TEST_PG_ADMIN_URL -e TEST_REDIS_URL)
+    fi
+    local red_rc=0
+    RED_PLAN="$2" docker run --rm --name "$1" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
+      "${net[@]}" \
+      -v "$SRC:/src:ro" \
+      -v "$STORE_VOL:/store:ro" \
+      -v "$VDIR/out:/out" \
+      -v "$IMG_DIR/red-reporter.mjs:/red/red-reporter.mjs:ro" \
+      --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
+      ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
+      "${env[@]}" \
+      "$IMAGE" couli-verify-entrypoint red >>"$LOG" 2>&1 </dev/null || red_rc=$?
+    [ "$red_rc" = 0 ] || die "the red run did not produce its reports (exit $red_rc), see $LOG"
+  }
+  red_db_plan="$(red_part 1)"
+  red_offline_plan="$(red_part 0)"
+  if [ -n "$red_db_plan" ]; then
     start_services 'integration rule tests'
-    RED_NET=(--network "$NET")
-    RED_ENV+=(-e TEST_PG_ADMIN_URL -e TEST_REDIS_URL)
+    step "running the task's integration rule tests (red run) in $IMAGE on $NET (limit ${TIMEOUT_SECS}s)"
+    red_container "$RED_DB_NAME" "$red_db_plan" 1
   fi
-  step "running the task's rule tests (red run) in $IMAGE (limit ${TIMEOUT_SECS}s)"
-  export RED_PLAN
-  red_rc=0
-  docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
-    "${RED_NET[@]}" \
-    -v "$SRC:/src:ro" \
-    -v "$STORE_VOL:/store:ro" \
-    -v "$VDIR/out:/out" \
-    -v "$IMG_DIR/red-reporter.mjs:/red/red-reporter.mjs:ro" \
-    --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
-    ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
-    "${RED_ENV[@]}" \
-    "$IMAGE" couli-verify-entrypoint red >>"$LOG" 2>&1 </dev/null || red_rc=$?
-  [ "$red_rc" = 0 ] || die "the red run did not produce its reports (exit $red_rc), see $LOG"
+  if [ -n "$red_offline_plan" ]; then
+    step "running the task's other rule tests (red run) in $IMAGE, no network (limit ${TIMEOUT_SECS}s)"
+    red_container "$VERIFY_NAME" "$red_offline_plan" 0
+  fi
   # Every group must have written its report (the red reporter, with failure causes).
   reports=''
   for name in $(node -e 'for (const g of JSON.parse(process.argv[1]).groups) console.log(g.name)' "$RED_PLAN"); do
@@ -632,8 +653,12 @@ fi
 if [ "$SCRIPT" = browser ]; then
   # The browser project only, no network at all: Vitest serves the tests and Chromium loads them
   # on the container's loopback. The output directory takes the screenshots and the report.
+  # The container runs as uid 1000 (node), which is not the owner of the directory on a Linux
+  # host: it needs write and search permission as "other". 1733 gives it exactly that (no
+  # listing, and the sticky bit keeps it from removing what it did not create); the owner keeps
+  # full access to read the results.
   mkdir -p "$VDIR/out"
-  chmod 0777 "$VDIR/out"
+  chmod 1733 "$VDIR/out"
   step "running the browser tests ($BROWSER_DIR, $BROWSER_CONFIG) in $IMAGE (no network, limit ${TIMEOUT_SECS}s)"
   BROWSER_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS"
     -e "BROWSER_DIR=$BROWSER_DIR" -e "BROWSER_CONFIG=$BROWSER_CONFIG")
@@ -647,6 +672,15 @@ if [ "$SCRIPT" = browser ]; then
     --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
     "${BROWSER_ENV[@]}" \
     "$IMAGE" couli-verify-entrypoint browser >>"$LOG" 2>&1 </dev/null || rc=$?
+  # The run exists to export screenshots for the design comparison: a green run that exported
+  # none (no test called page.screenshot, or the export directory was not used) fails.
+  shots="$( (find "$VDIR/out/screenshots" -type f -name '*.png' 2>/dev/null || true) | wc -l | tr -d ' ')"
+  step "browser tests exited $rc; screenshots exported: $shots ($VDIR/out/screenshots)"
+  if [ "$rc" = 0 ] && [ "$shots" = 0 ]; then
+    step "no screenshot was exported to out/screenshots: the browser run counts as failed (exit 1)"
+    log "verify-container: no screenshot was exported to $VDIR/out/screenshots"
+    rc=1
+  fi
   finish "$rc"
 fi
 

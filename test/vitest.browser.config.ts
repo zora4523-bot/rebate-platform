@@ -8,7 +8,7 @@ import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { browserConfig } from '../vitest.shared.ts';
 
-const INCLUDE = ['spec/**/*.browser.test.ts'];
+const INCLUDE = ['spec/**/*.browser.test.{ts,tsx}'];
 
 // Where `page.screenshot()` writes: the git-ignored test/.tmp/ by default; an export directory
 // when COULI_BROWSER_SCREENSHOT_DIR names one (tools/ops/verify-container.sh --browser sets it

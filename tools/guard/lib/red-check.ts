@@ -16,18 +16,23 @@
 // Input is the Vitest JSON report (`vitest run --reporter=json`) of the isolated red run
 // (tools/ops/verify-container.sh --red): those tests are Codex-written and never run on the host.
 //
-// Browser tests (F1-01j; `*.browser.test.ts`, project spec-browser, Vitest browser mode in a real
-// Chromium): red for an assertion, or because the element a test waits for never came, is a valid
-// red (规划/11 §2.3 step 3). A wait is `expect.element(…)` / `expect.poll(…)`: when it runs out,
-// vitest 5.0.1 rethrows its last error with an added innermost cause "Matcher did not succeed in
-// time." (throwWithCause), so the innermost cause alone would refuse every such red. For the files
-// the red reporter marks as run in a browser — and only there — browserCauseVerdict looks through
-// that wrapper at the error it wraps: an AssertionError, a failed expect.element matcher (a
-// `matcher` cause: jest-dom style matchers throw a plain Error), the locator error of an element
-// that never appeared ("Cannot find element with locator", VitestBrowserElementError) or the
-// poll's own timeout while the element lookup was still waiting. A browser that did not start, an
-// error thrown by the page, a module not found, a TypeError, a strict-mode violation (several
-// elements) and a bare element lookup outside a wait stay invalid.
+// Browser tests (F1-01j; `*.browser.test.{ts,tsx}`, project spec-browser, Vitest browser mode in a
+// real Chromium): red for an assertion, or because the element a test waits for never came, is a
+// valid red (规划/11 §2.3 step 3). A wait is `expect.element(…)` / `expect.poll(…)`: when it runs
+// out, vitest 5.0.1 rethrows its last error with an added innermost cause "Matcher did not succeed
+// in time." (throwWithCause), so the innermost cause alone would refuse every such red. For the
+// files the red reporter marks as run in a browser — and only there — browserCauseVerdict looks
+// through that wrapper at the error it wraps: an AssertionError, a failed expect.element matcher
+// (a `matcher` cause: jest-dom style matchers throw a plain Error), the locator error of an
+// element that never appeared ("Cannot find element with locator", VitestBrowserElementError).
+// The poll's own timeout ("expect.poll() function didn't resolve in time.") is what expect.element
+// ends in when the wait runs out while the element lookup is still going, but also what any
+// expect.poll whose function hangs ends in; it counts only when the wait can only have been
+// expect.element: the failing call was made in the test file itself and that file never mentions
+// `poll` (red reporter fields `site`, `poll_in_source`). Rule-test authors therefore wait for
+// elements with expect.element in the test file, never with expect.poll. A browser that did not
+// start, an error thrown by the page, a module not found, a TypeError, a strict-mode violation
+// (several elements) and a bare element lookup outside a wait stay invalid.
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import type { TaskFile } from '../../lib/task-file.ts';
@@ -38,7 +43,7 @@ export function redCheckRequired(task: Pick<TaskFile, 'tester'>): boolean {
 }
 
 /** Test files that Vitest runs (the spec-tests package: unit and integration configs). */
-export const RULE_TEST_FILE = /\.test\.[cm]?[jt]s$/;
+export const RULE_TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
 
 /**
  * The rule-test files a task added or changed: inside its test_paths and named like a test.
@@ -68,6 +73,8 @@ type FileResult = {
   name?: unknown;
   /** The file ran in a real browser (red reporter, F1-01j). */
   browser?: unknown;
+  /** The file's source mentions `poll`, or could not be read (red reporter, F1-01j). */
+  poll_in_source?: unknown;
   status?: unknown;
   message?: unknown;
   assertionResults?: unknown;
@@ -172,7 +179,7 @@ export function wrongRedReason(message: string): string | null {
 }
 
 /** Browser rule-test files: the spec-browser project (tools/ops/verify-image/red-projects.json). */
-export const BROWSER_TEST_FILE = /\.browser\.test\.[cm]?[jt]s$/;
+export const BROWSER_TEST_FILE = /\.browser\.test\.[cm]?[jt]sx?$/;
 
 /** The cause vitest 5.0.1 adds when an expect.poll / expect.element wait runs out. */
 const WAIT_RAN_OUT = 'Matcher did not succeed in time.';
@@ -185,30 +192,62 @@ const ELEMENT_NOT_FOUND = 'Cannot find element with locator: ';
 function waitedForTheRightThing(c: Cause): boolean {
   if (c.name === 'AssertionError') return true;
   if (c.matcher !== undefined && c.matcher !== '') return true;
-  if (c.name === 'VitestBrowserElementError' && c.message.startsWith(ELEMENT_NOT_FOUND)) {
-    return true;
-  }
-  return c.name === 'Error' && c.message === LOOKUP_STILL_WAITING;
+  return c.name === 'VitestBrowserElementError' && c.message.startsWith(ELEMENT_NOT_FOUND);
 }
+
+export type BrowserWait = {
+  /**
+   * The wait can only have been expect.element: the failing call was made in the test file
+   * itself and that file never mentions `poll` (see the header).
+   */
+  elementOnly: boolean;
+};
 
 /**
  * Verdict of a failure of a browser rule test (see the header): an expect.element / expect.poll
- * wait that ran out counts when what it waited for was an assertion or an element; a failed
- * matcher counts like an assertion. Everything else is judged by causeVerdict.
+ * wait that ran out counts when what it waited for was an assertion or an element; the poll's own
+ * timeout counts only for a wait that can only have been expect.element; a failed matcher counts
+ * like an assertion. Everything else is judged by causeVerdict.
  */
-export function browserCauseVerdict(causes: readonly Cause[]): string | null {
+export function browserCauseVerdict(
+  causes: readonly Cause[],
+  wait: BrowserWait = { elementOnly: false },
+): string | null {
   const root = causes[causes.length - 1];
   if (root === undefined) return causeVerdict(causes);
   if (root.name === 'Error' && root.message === WAIT_RAN_OUT && causes.length >= 2) {
     const waited = causes[causes.length - 2];
     if (waited !== undefined && waitedForTheRightThing(waited)) return null;
+    if (waited?.name === 'Error' && waited.message === LOOKUP_STILL_WAITING) {
+      if (wait.elementOnly) return null;
+      return (
+        'red for an unrecognised reason (an expect.poll timed out and nothing shows it waited ' +
+        'for an element: wait with expect.element in the test file itself, never expect.poll)'
+      );
+    }
     return causeVerdict(causes.slice(0, -1));
   }
   if (root.matcher !== undefined && root.matcher !== '') return null;
   return causeVerdict(causes);
 }
 
-type Failure = { causes?: unknown };
+/**
+ * True when `site` (the first parsed stack frame the red reporter recorded) is the test file
+ * `abs`: the same absolute path (also as `file://` or Vite's `/@fs` URL), or the URL path the
+ * browser loaded it from below the test package (`/spec/…`), without a query.
+ */
+function siteIsFile(site: unknown, abs: string): boolean {
+  if (typeof site !== 'object' || site === null) return false;
+  const raw = text((site as Record<string, unknown>)['file']);
+  const file = raw
+    .replace(/^file:\/\//, '')
+    .replace(/^\/@fs(?=\/)/, '')
+    .replace(/[?#].*$/, '');
+  if (file === '' || abs === '') return false;
+  return file === abs || (file.startsWith('/spec/') && abs.endsWith(`/test${file}`));
+}
+
+type Failure = { causes?: unknown; site?: unknown };
 
 function causesOf(failure: Failure): Cause[] {
   return Array.isArray(failure.causes)
@@ -222,14 +261,21 @@ function causesOf(failure: Failure): Cause[] {
     : [];
 }
 
+/** How a browser file of the report is read: null for every other file. */
+type BrowserFile = { abs: string; pollFree: boolean } | null;
+
 /** Verdict of one failed test: structured causes when the report has them, else the messages. */
-function testVerdict(failures: unknown, messages: string[], browser: boolean): string | null {
+function testVerdict(failures: unknown, messages: string[], browser: BrowserFile): string | null {
   if (Array.isArray(failures)) {
     if (failures.length === 0)
       return 'red for an unknown reason (the report carries no failure detail)';
-    const verdict = browser ? browserCauseVerdict : causeVerdict;
     for (const f of failures as Failure[]) {
-      const why = verdict(causesOf(f));
+      const why =
+        browser === null
+          ? causeVerdict(causesOf(f))
+          : browserCauseVerdict(causesOf(f), {
+              elementOnly: browser.pollFree && siteIsFile(f.site, browser.abs),
+            });
       if (why !== null) return why;
     }
     return null;
@@ -291,7 +337,10 @@ export function checkRedReports(
       : [];
     // Browser leniency only for a browser rule-test file that the red reporter saw run in a
     // browser; Vitest's own JSON report (no `browser`, no causes) never gets it.
-    const browser = entry.browser === true && BROWSER_TEST_FILE.test(file);
+    const browser: BrowserFile =
+      entry.browser === true && BROWSER_TEST_FILE.test(file)
+        ? { abs: text(entry.name), pollFree: entry.poll_in_source === false }
+        : null;
     // File-level errors (an import that failed, a crashed beforeAll / afterAll) are never a valid
     // red: they taint every test of the file.
     const fileFailures = Array.isArray(entry.failures) ? (entry.failures as Failure[]) : [];

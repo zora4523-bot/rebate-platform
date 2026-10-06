@@ -6,7 +6,7 @@
       "dir": "test",
       "config": "vitest.config.ts",
       "include": ["properties/**/*.test.ts", "spec/**/*.test.ts"],
-      "exclude": ["**/*.int.test.ts", "**/*.browser.test.ts"],
+      "exclude": ["**/*.int.test.ts", "spec/**/*.browser.test.{ts,tsx}"],
       "database": false,
       "browser": false
     },
@@ -23,7 +23,7 @@
       "name": "spec-browser",
       "dir": "test",
       "config": "vitest.browser.config.ts",
-      "include": ["spec/**/*.browser.test.ts"],
+      "include": ["spec/**/*.browser.test.{ts,tsx}"],
       "exclude": [],
       "database": false,
       "browser": true
@@ -33,7 +33,7 @@
       "dir": "packages/testing",
       "config": "vitest.config.ts",
       "include": ["src/**/*.test.ts"],
-      "exclude": ["**/*.int.test.ts", "**/*.browser.test.ts"],
+      "exclude": ["**/*.int.test.ts"],
       "database": false,
       "browser": false
     }
