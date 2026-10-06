@@ -1,7 +1,7 @@
 // ModelGateway 第四段：无模型降级规划器（B3-02d；规划/08 BR-AI-14 细则「无模型降级」，AI-05；
 // BR-AI-16 预算用完同此）。纯函数：不调模型、不调搜索、不读时钟、不做脱敏。
 // 取词上限、平台、排序、文案键与 50302 的条件只在 08 维护；规则测试在 test/spec/agent/model-degraded/。
-// 50302 怎样把 q 随 SSE error 帧下发由契约定（couli-runs/B3-02-03/plan.md §6 K1），本段只在结果里给出 q。
+// 本段只在错误结果里给出 q；调用方按 SSE 契约映射到 error.fallback_q。
 
 /** 只由 B3-05 Preprocessor 的脱敏函数产出（BR-AI-14 脱敏表）；普通 string 不能直接传入。 */
 export type RedactedText = string & { readonly __brand: 'RedactedText' };
@@ -51,8 +51,7 @@ export type DegradedOutcome =
 
 /** 降级原因对应的 done.finish_reason：预算触发为 budget，其余为 fallback。 */
 export function degradeFinishReason(reason: DegradeReason): DegradeFinishReason {
-  void reason;
-  throw new Error('NotImplemented: degradeFinishReason');
+  return reason === 'budget' ? 'budget' : 'fallback';
 }
 
 /**
@@ -65,20 +64,56 @@ export function planKeywordSearch(
   enabledPlatforms: readonly string[],
   options?: KeywordPlanOptions,
 ): KeywordSearchPlan | null {
-  void text;
-  void enabledPlatforms;
-  void options;
-  throw new Error('NotImplemented: planKeywordSearch');
+  const maxChars = options?.maxChars ?? 30;
+  if (!Number.isSafeInteger(maxChars) || maxChars <= 0) {
+    throw new RangeError('maxChars must be a positive safe integer');
+  }
+
+  const trimmed = text.replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '');
+  if (trimmed === '') return null;
+
+  return {
+    q: Array.from(trimmed).slice(0, maxChars).join(''),
+    platforms: [...enabledPlatforms],
+    sort: 'relevance',
+  };
 }
 
-/** 由按平台的搜索结果判定出卡、空结果或 50302（全部平台都失败时才 50302）。 */
+/**
+ * 由按平台的搜索结果判定出卡、空结果或 50302（全部平台都失败时才 50302）。
+ * 调用方须在计划内每个平台搜索完成后传入结果；缺失结果不能当作搜索失败。
+ */
 export function resolveDegradedOutcome(
   reason: DegradeReason,
   plan: KeywordSearchPlan | null,
   results: readonly PlatformSearchResult[],
 ): DegradedOutcome {
-  void reason;
-  void plan;
-  void results;
-  throw new Error('NotImplemented: resolveDegradedOutcome');
+  const finishReason = degradeFinishReason(reason);
+  const empty: DegradedOutcome = {
+    kind: 'empty',
+    noticeKey: 'agent.degraded.empty',
+    finishReason,
+  };
+  if (plan === null) return empty;
+
+  let hasSuccess = false;
+  const items: unknown[] = [];
+  for (const platform of plan.platforms) {
+    const result = results.find((candidate) => candidate.platform === platform);
+    if (result === undefined) {
+      throw new Error('Missing search result for an enabled platform');
+    }
+    if (result.ok) {
+      hasSuccess = true;
+      for (const item of result.items) items.push(item);
+    }
+  }
+
+  if (items.length > 0) {
+    return { kind: 'cards', textKey: 'agent.degraded', finishReason, items };
+  }
+  if (hasSuccess) return empty;
+
+  // 没有开启的平台也没有可用搜索结果，按全平台失败处理。
+  return { kind: 'error', code: 50302, fallback: { q: plan.q } };
 }
