@@ -28,6 +28,20 @@ export function loadCodexImplTasks(root: string): string[] {
   }
 }
 
+/** Path globs a Codex-first ledger must not reach (`forbidden_paths`); a broken file gives none. */
+export function loadCodexImplForbidden(root: string): string[] {
+  const file = join(root, CODEX_IMPL_TASKS_FILE);
+  if (!existsSync(file)) return [];
+  try {
+    const doc = JSON.parse(readFileSync(file, 'utf8')) as { forbidden_paths?: unknown };
+    return Array.isArray(doc.forbidden_paths)
+      ? doc.forbidden_paths.filter((p): p is string => typeof p === 'string' && p !== '')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 /** True when `id` is listed itself, or is a split task of a row listed whole. */
 export function isCodexImplTask(id: string, entries: readonly string[]): boolean {
   if (!ENTRY.test(id)) return false;

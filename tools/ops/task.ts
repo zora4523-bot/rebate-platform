@@ -7,13 +7,17 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { matchesAny } from '../lib/glob.ts';
-import { isCodexFirst, loadCodexImplTasks } from '../lib/codex-impl-tasks.ts';
+import {
+  isCodexFirst,
+  loadCodexImplForbidden,
+  loadCodexImplTasks,
+} from '../lib/codex-impl-tasks.ts';
 import { loadLegacyTasks, needsTestPaths } from '../lib/legacy-tasks.ts';
 import { repoRoot } from '../lib/paths.ts';
 import { listTaskIds, parseTaskFile } from '../lib/task-file.ts';
 import type { TaskFile } from '../lib/task-file.ts';
 import { assertTaskId, CheckError, runGuard, runMain, TASK_ID, UsageError } from './cli.ts';
-import { literalPrefix } from './overlap.ts';
+import { globsMayOverlap, literalPrefix } from './overlap.ts';
 import { findRule, ruleHash, taskIdKnown } from './spec.ts';
 import type { SpecSource } from './spec.ts';
 
@@ -246,6 +250,30 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   // implements); every other new ledger keeps the default split.
   const legacy = loadLegacyTasks(root);
   const codexFirst = isCodexFirst(task, loadCodexImplTasks(root));
+  if (codexFirst) {
+    // Claude review S2-1: the list is per split task, but a suffix says nothing about content; a
+    // Codex-first ledger may only be implementation work outside funds, attribution, payout,
+    // migrations, contracts, clients and gates (tools/guard/codex-impl-tasks.json forbidden_paths).
+    if (task.type !== 'impl') {
+      problems.push(
+        `type: a Codex implementation (tools/guard/codex-impl-tasks.json) is for type impl only, not ${task.type}`,
+      );
+    }
+    const forbidden = loadCodexImplForbidden(root);
+    if (forbidden.length === 0) {
+      problems.push(
+        'paths: tools/guard/codex-impl-tasks.json has no forbidden_paths; a Codex implementation is refused (fail-closed)',
+      );
+    }
+    for (const glob of task.paths) {
+      const hit = forbidden.find((f) => globsMayOverlap(glob, f));
+      if (hit !== undefined) {
+        problems.push(
+          `paths: "${glob}" reaches "${hit}", which stays with the default split (ops/approvals.yaml id 19), not a Codex implementation`,
+        );
+      }
+    }
+  }
   if (!legacy.has(task.id) && !codexFirst) {
     if (task.impl !== 'claude') {
       problems.push(

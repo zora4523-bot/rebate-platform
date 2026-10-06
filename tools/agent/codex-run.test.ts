@@ -987,5 +987,9 @@ it(
     writeFileSync(list, JSON.stringify({ tasks: [TASK] }));
     const ok = codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']);
     expect(ok.status, ok.stderr).toBe(0);
+    // RV1: the code review of a Codex implementation goes to a fresh Claude subagent (S2-2).
+    const review = codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--dry-run']);
+    expect(review.status).toBe(2);
+    expect(review.stderr).toContain('goes to a fresh Claude subagent');
   },
 );

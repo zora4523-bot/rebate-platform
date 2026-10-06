@@ -174,7 +174,10 @@ task_field() {
 }
 legacy=0
 if agent_task_is_legacy "$TRUSTED" "$TASK"; then legacy=1; fi
-if [ "$PHASE" = handover ]; then
+if [ "$PHASE" = handover ] && [ "$(task_field impl)" = codex ] && [ "$(task_field tester)" = claude ] &&
+  agent_task_is_codex_impl "$TRUSTED" "$TASK"; then
+  stop 1 handover-refused "task $TASK is already a Codex implementation (tools/guard/codex-impl-tasks.json): past its attempts RV0 / RV1 go to an Opus implementation once, recorded by the orchestrator (规划/11 §2.5 Codex 首发实现); RV2 stops"
+elif [ "$PHASE" = handover ]; then
   task_risk="$(task_field risk)"
   case "$task_risk" in
     RV0 | RV1) ;;

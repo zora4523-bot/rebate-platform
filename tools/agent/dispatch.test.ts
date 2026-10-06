@@ -904,5 +904,18 @@ it(
     ]);
     const set = calls.find((call) => call[0] === 'state' && call[1] === 'set') ?? [];
     expect(set).not.toContain('--implementer');
+    // Already a Codex implementation: no Codex handover on top (S2-7).
+    const handover = fixture('dispatch-codex-first-handover', {
+      task: [{ when: ['show'], stdout: task[0]!.stdout.replace('"RV2"', '"RV1"') }],
+      state: [{ when: ['get'], stdout: stateJson({ spec_commit: 'abc1234' }) }],
+    });
+    list(handover.trusted);
+    const refusedHandover = runScript('dispatch.sh', [TASK, '--handover'], handover.env);
+    expect(refusedHandover.status).toBe(1);
+    expect(lastJsonLine(refusedHandover.stdout)).toMatchObject({
+      action: 'none',
+      reason: 'handover-refused',
+    });
+    expect(stubCalls(handover, 'state').some((call) => call[1] === 'bump-attempt')).toBe(false);
   },
 );

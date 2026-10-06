@@ -421,9 +421,11 @@ export function renderBrief(input: BriefInput): string {
   const tests = testIds.length === 0 ? '无' : testIds.map((t) => `\`${t}\``).join('、');
   const sandboxNote =
     'Codex 沙箱里只做不执行测试的静态检查（上面两条）；任何运行测试的命令（含 `pnpm verify:fast`、`pnpm test`）都由编排者在隔离容器或 CI 里跑，你写的东西不在宿主上运行。沙箱里没有网络，连不上数据库和 Docker，也不能监听端口；需要沙箱外的命令写进 `outside_needed`。';
+  const claudeTesterNote =
+    '你是 Claude 子代理，在任务 worktree 里工作：只做不执行测试的静态检查（上面两条）；不要在宿主上运行测试（含 `pnpm verify:fast`、`pnpm test`、`vitest`），先红由编排者在隔离容器里跑。不联网、不连库、不起容器、不监听端口；需要沙箱外的命令写进结果的 `outside_needed`。';
   if (phase === 'test') {
     out.push(
-      `本轮要的是「先红」：类型检查与 lint 通过；新写的规则测试在骨架上全部为红，红的原因只能是断言失败、fast-check 反例或骨架抛出的 \`NotImplemented\`，找不到模块、\`TypeError\`、语法错误的红不算（编排者用 \`tools/ops/verify-container.sh ${task.id} --red\` 在隔离容器里只跑本任务新写的规则测试，\`tools/guard/red-check.ts\` 逐个文件对账；没跑到的文件也算不合格）。规则测试放在：${tests}。${sandboxNote}`,
+      `本轮要的是「先红」：类型检查与 lint 通过；新写的规则测试在骨架上全部为红，红的原因只能是断言失败、fast-check 反例或骨架抛出的 \`NotImplemented\`，找不到模块、\`TypeError\`、语法错误的红不算（编排者用 \`tools/ops/verify-container.sh ${task.id} --red\` 在隔离容器里只跑本任务新写的规则测试，\`tools/guard/red-check.ts\` 逐个文件对账；没跑到的文件也算不合格）。规则测试放在：${tests}。${task.tester === 'claude' ? claudeTesterNote : sandboxNote}`,
       '',
     );
   } else if (phase === 'handover' || codexFirstImpl) {

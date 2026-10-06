@@ -364,7 +364,27 @@ it('[ops/approvals.yaml id 23] a listed row and its split tasks may name impl: c
       class2_verify_config: [],
       class3_gates: [],
     }),
-    'tools/guard/codex-impl-tasks.json': JSON.stringify({ approval: 23, tasks: ['X1-02'] }),
+    'tools/guard/codex-impl-tasks.json': JSON.stringify({
+      approval: 23,
+      tasks: ['X1-02'],
+      forbidden_paths: ['packages/money/**', 'db/**'],
+    }),
+    // Listed, Codex-first pair, but reaching a forbidden path or not an impl task (S2-1).
+    'ops/tasks/X1-02g.yaml': good({
+      id: 'X1-02g',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      paths: "\n  - 'packages/money/src/**'",
+    }),
+    'ops/tasks/X1-02h.yaml': good({
+      id: 'X1-02h',
+      type: 'migration',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      paths: "\n  - 'db/migrations/**'",
+    }),
     // Listed row X1-02, split task with the Codex-first pair.
     'ops/tasks/X1-02c.yaml': good({
       id: 'X1-02c',
@@ -410,11 +430,24 @@ it('[ops/approvals.yaml id 23] a listed row and its split tasks may name impl: c
       'impl: must be claude for a task written after the switch of 2026-10-05 (a Codex handover is recorded at run time, not in the ledger)',
       'tester: must be codex or none for a task written after the switch of 2026-10-05',
     ]);
+    expect(checkTask('X1-02g', opts('RV2'))).toEqual([
+      'paths: "packages/money/src/**" reaches "packages/money/**", which stays with the default split (ops/approvals.yaml id 19), not a Codex implementation',
+    ]);
+    const migration = checkTask('X1-02h', opts('RV2')).join('\n');
+    expect(migration).toContain(
+      'a Codex implementation (tools/guard/codex-impl-tasks.json) is for type impl only, not migration',
+    );
+    expect(migration).toContain('paths: "db/migrations/**" reaches "db/**"');
+    // Without forbidden_paths the list lets nothing through (fail-closed).
+    writeFiles(root, {
+      'tools/guard/codex-impl-tasks.json': JSON.stringify({ approval: 23, tasks: ['X1-02'] }),
+    });
+    expect(checkTask('X1-02c', opts('RV1')).join('\n')).toContain('has no forbidden_paths');
     // A broken list lists nothing (fail-closed).
     writeFiles(root, { 'tools/guard/codex-impl-tasks.json': '{ broken' });
     expect(checkTask('X1-02c', opts('RV1')).join('\n')).toContain('impl: must be claude');
   } finally {
-    for (const id of ['X1-02c', 'X1-02d', 'X1-02e', 'X1-02f', 'X1-01p']) {
+    for (const id of ['X1-02c', 'X1-02d', 'X1-02e', 'X1-02f', 'X1-02g', 'X1-02h', 'X1-01p']) {
       removeDir(`${root}/ops/tasks/${id}.yaml`);
     }
     removeDir(`${root}/tools/guard/codex-impl-tasks.json`);
