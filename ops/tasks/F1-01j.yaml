@@ -1,0 +1,40 @@
+id: F1-01j
+repo: rebate-platform
+title: 验证底座加浏览器测试：验证镜像装与 playwright 同版本的 Chromium 与中文字体，test 包加 Vitest 浏览器项目（spec/**/*.browser.test.ts，真 Chromium），隔离红测、pnpm verify 与 CI 都跑它，red-check 认浏览器测试的有效红，verify-container 加 --browser 入口把截图导出到运行目录供设计稿对比
+type: guard-change
+# 2026-10-06 入账（f1-frontend-2）。负责人就 blocked B-2 选 A（镜像装 Chromium、加浏览器测试项目，要标签）；F1-01f、F1-06e 依赖它，产物冒烟拆到 F1-01k。
+# 做法（00 §8 第 1 类）：Vitest 浏览器模式（provider playwright）+ 可信红测报告器；red-check 按 11 §2.3 第 3 步把浏览器项目里等不到元素
+# （expect.element / poll 超时）算有效红，浏览器起不来、模块找不到、页面脚本出错不算；03 §11 截图由 page.screenshot 产出。
+# Codex 写环境冒烟测试（中文、令牌样式、视口、截图）。自举：红测入口读可信根，合并前浏览器文件无执行入口——走非 task 分支 + 负责人标签（owner
+# waiver），红与判因由编排者实现后用候选副本演示（断言改坏 = 有效红、浏览器改坏 = 无效）写进 PR。
+# 要点：① Dockerfile 按 ARG PLAYWRIGHT_VERSION 装 chromium（--with-deps，可 --only-shell，ENV PLAYWRIGHT_BROWSERS_PATH 只读位置）与 fonts-noto-cjk、
+# fc-cache；版本从锁文件读作 --build-arg 并计入镜像哈希，测试钉住默认值与锁文件一致；② red-projects.json 加 spec-browser（test、
+# vitest.browser.config.ts、spec/**/*.browser.test.ts、不连库），spec-unit 排除它；③ 浏览器配置插件同 apps/h5、couli-src 解析，沿用 vitest.shared
+# 的严格设置（不开 passWithNoTests），截图目录可由环境变量指到导出目录；④ test:browser 进根 verify（test:int 之后；verify:fast 不跑）；
+# ⑤ --browser：断网只跑浏览器项目，截图与报告导出到 browser/<n>/，非证据，实现子代理可用；⑥ CI verify-int 装同版本 chromium 与中文字体后跑；
+# ⑦ 改两份 README 的「浏览器测试没有入口」，规划/11 的由编排者另提同步。合并前可信镜像没有 Chromium：accept 的 pnpm verify 也用候选副本跑
+# （PR 头导出到 worktrees 外作 COULI_TRUSTED_ROOT，记树哈希），非 task 分支不跑 path-guard，PR 前在宿主用可信根跑 run.ts git --task F1-01j 附结果。
+refs: []
+refs_hash: {}
+deps: [F1-01i]
+paths:
+  - 'tools/ops/verify-image/**'
+  - 'tools/ops/verify-container*'
+  - 'tools/ops/red-plan*'
+  - 'tools/ops/{test-helpers.ts,README.md}'
+  - 'tools/agent/README.md'
+  - 'tools/guard/lib/red-check{*,-fixtures/**}'
+  - 'test/vitest{,.browser}.config.ts'
+  - 'test/package.json'
+  - 'package.json'
+  - 'vitest.shared.ts'
+  - '.github/workflows/ci.yml'
+test_paths:
+  - 'test/spec/frontend/browser-env/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/browser-env/**'
+status: todo
+pr: null

@@ -9,7 +9,7 @@ type: impl
 # 「当前账号能做什么」定成一个接口（can(权限点)，放 src/providers/access-control/），本任务用夹具实现，F1-06g 换成 CASL。本任务不连接口：当前账号与权限点来自注入的 provider 接口，测试用夹具；登录、step-up、data provider 各自另有任务。菜单分组与名称按设计稿，文案走 src/texts。
 refs: []
 refs_hash: {}
-deps: [F1-01a, CT-11a]
+deps: [F1-01a, CT-11a, F1-01j]
 paths:
   - 'apps/admin/src/**'
   - 'apps/admin/vite.config.ts'

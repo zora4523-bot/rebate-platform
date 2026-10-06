@@ -7,7 +7,7 @@ type: impl
 # 业务组件（PriceTag、RebateTag 等）不在本任务，随用到它的页面任务做。
 refs: []
 refs_hash: {}
-deps: [CT-11a, F1-01c]
+deps: [CT-11a, F1-01c, F1-01j]
 paths:
   - 'apps/h5/src/components/base/**'
 test_paths:
