@@ -1,5 +1,5 @@
 {
-  "//": "Constructed in the shape of tools/ops/verify-image/red-reporter.mjs output for the build-smoke project (F1-01k round 1, before any real red run): Node file (browser false), Playwright 1.63 error texts (`<api>: <message>`, TimeoutError `Timeout <n>ms exceeded.`). Replace with a real red run of the candidate copy when one exists.",
+  "//": "Constructed in the shape of tools/ops/verify-image/red-reporter.mjs output for the build-smoke project (F1-01k round 2, before any real red run): Node file (browser false), Playwright 1.63 error texts (`<api>: <message>`, TimeoutError `Timeout <n>ms exceeded.`), and each opened entry's annotations as test/spec/frontend/build-smoke/entries.smoke.test.ts writes them (a screenshot `path`, and the diagnostics `{entry, url, diagnostics}` parsed into `json`). A page that throws while rendering shows only as a pageerror in the diagnostics: the test fails on the locator.waitFor timeout. Replace with a real red run of the candidate copy when one exists.",
   "reporter": "couli-red-reporter",
   "testResults": [
     {
@@ -31,6 +31,49 @@
                 "column": 17
               }
             }
+          ],
+          "annotations": [
+            {
+              "message": "admin 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/admin-----3f0c1d2e.png"
+            },
+            {
+              "message": "admin 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "admin",
+                "url": "http://127.0.0.1:40123/",
+                "diagnostics": [
+                  {
+                    "kind": "blocked-request",
+                    "message": "http://127.0.0.1:40123/admin/v1/me/permissions"
+                  },
+                  {
+                    "kind": "requestfailed",
+                    "message": "http://127.0.0.1:40123/admin/v1/me/permissions: net::ERR_BLOCKED_BY_CLIENT"
+                  },
+                  {
+                    "kind": "console.error",
+                    "message": "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT"
+                  },
+                  {
+                    "kind": "blocked-request",
+                    "message": "https://fonts.example.invalid/a.woff2"
+                  },
+                  {
+                    "kind": "requestfailed",
+                    "message": "https://fonts.example.invalid/a.woff2: net::ERR_BLOCKED_BY_CLIENT"
+                  },
+                  {
+                    "kind": "pageerror",
+                    "message": "Error: NotImplemented: AdminShell\n    at http://127.0.0.1:40123/assets/index-B1x2.js:1:2345"
+                  }
+                ]
+              }
+            }
           ]
         },
         {
@@ -52,6 +95,93 @@
                 "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
                 "line": 30,
                 "column": 17
+              }
+            }
+          ],
+          "annotations": []
+        },
+        {
+          "fullName": "[demo] page threw",
+          "title": "[demo] page threw",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/app-----9a8b7c6d.png"
+            },
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40124/",
+                "diagnostics": [
+                  {
+                    "kind": "pageerror",
+                    "message": "TypeError: Cannot read properties of undefined (reading 'routes')\n    at http://127.0.0.1:40124/assets/index-C3d4.js:1:999"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] chunk did not load",
+          "title": "[demo] chunk did not load",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "landing 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "landing",
+                "url": "http://127.0.0.1:40125/",
+                "diagnostics": [
+                  {
+                    "kind": "requestfailed",
+                    "message": "http://127.0.0.1:40125/assets/page-D5e6.js: net::ERR_FAILED"
+                  }
+                ]
               }
             }
           ]
@@ -143,8 +273,8 @@
           ]
         },
         {
-          "fullName": "[demo] page script error",
-          "title": "[demo] page script error",
+          "fullName": "[demo] test code threw",
+          "title": "[demo] test code threw",
           "status": "failed",
           "failureMessages": ["TypeError: Cannot read properties of undefined (reading 'entries')"],
           "failures": [

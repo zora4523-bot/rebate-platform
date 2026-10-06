@@ -2,7 +2,13 @@
 // file uses expect.poll. The stack texts are those of a real red run in the verify image
 // (2026-10-06, F1-01j red/1, cut to the frames that matter).
 import { expect, it } from 'vitest';
-import { frameFile, pollInCode, userSite } from './red-reporter.mjs';
+import RedReporter, {
+  annotationRecord,
+  attachmentText,
+  frameFile,
+  pollInCode,
+  userSite,
+} from './red-reporter.mjs';
 
 const TEST = '/work/repo/test/spec/frontend/browser-env/demo-red.browser.test.ts';
 const DEPS = '/work/repo/test/node_modules/.vite/vitest/da39a3ee/deps/index.m3L2HgmY-ClFbRdXj.js';
@@ -70,4 +76,88 @@ it('[F1-01j] expect.poll in the code counts; poll in element texts, strings and 
   ]) {
     expect(pollInCode(code), code).toBe(true);
   }
+});
+
+// F1-01k: the build smoke rule tests annotate each entry with a JSON body (page errors, failed
+// requests); vitest 5.0.1 labels a plain string body base64 (manageArtifactAttachment).
+const DIAGNOSTICS = {
+  entry: 'app',
+  url: 'http://127.0.0.1:40124/',
+  diagnostics: [{ kind: 'pageerror', message: 'TypeError: boom' }],
+};
+
+it('[F1-01k] attachment bodies: plain JSON as it is, base64 decoded, binary as UTF-8', () => {
+  const json = JSON.stringify(DIAGNOSTICS, null, 2);
+  expect(attachmentText({ body: json, bodyEncoding: 'base64' })).toBe(json);
+  expect(attachmentText({ body: json, bodyEncoding: 'utf-8' })).toBe(json);
+  const b64 = Buffer.from(json, 'utf8').toString('base64');
+  expect(attachmentText({ body: b64, bodyEncoding: 'base64' })).toBe(json);
+  expect(attachmentText({ body: new TextEncoder().encode(json) })).toBe(json);
+  expect(attachmentText({ path: '/a.png' })).toBeNull();
+  expect(attachmentText(null)).toBeNull();
+});
+
+it('[F1-01k] annotations keep message, type, content type, path and a JSON body parsed', () => {
+  expect(
+    annotationRecord({
+      message: 'app 浏览器诊断（不作为断言）',
+      type: 'notice',
+      attachment: {
+        body: JSON.stringify(DIAGNOSTICS),
+        bodyEncoding: 'base64',
+        contentType: 'application/json',
+      },
+    }),
+  ).toEqual({
+    message: 'app 浏览器诊断（不作为断言）',
+    type: 'notice',
+    content_type: 'application/json',
+    json: DIAGNOSTICS,
+  });
+  expect(
+    annotationRecord({
+      message: 'app 首屏截图',
+      type: 'notice',
+      attachment: { path: '/work/repo/test/.vitest/attachments/x.png', contentType: 'image/png' },
+    }),
+  ).toEqual({
+    message: 'app 首屏截图',
+    type: 'notice',
+    content_type: 'image/png',
+    path: '/work/repo/test/.vitest/attachments/x.png',
+  });
+  // A text body that is not JSON is not kept.
+  expect(
+    annotationRecord({ message: 'm', type: 'notice', attachment: { body: 'plain text!' } }),
+  ).toEqual({ message: 'm', type: 'notice' });
+  expect(annotationRecord(undefined)).toEqual({ message: '', type: '' });
+});
+
+it('[F1-01k] every test of the report carries its annotations', () => {
+  const reporter = new RedReporter();
+  const testCase = {
+    fullName: 'entries > app',
+    name: 'app',
+    result: () => ({ state: 'failed', errors: [] }),
+    annotations: () => [
+      {
+        message: 'app 浏览器诊断（不作为断言）',
+        type: 'notice',
+        attachment: { body: JSON.stringify(DIAGNOSTICS), bodyEncoding: 'base64' },
+      },
+    ],
+  };
+  const noAnnotations = { ...testCase, name: 'budget', annotations: undefined };
+  reporter.onTestModuleEnd({
+    moduleId: '/nonexistent/entries.smoke.test.ts',
+    errors: () => [],
+    state: () => 'failed',
+    project: { config: {} },
+    children: { allTests: () => [testCase, noAnnotations] },
+  });
+  const [file] = reporter.files as { assertionResults: { annotations: unknown }[] }[];
+  expect(file?.assertionResults.map((t) => t.annotations)).toEqual([
+    [{ message: 'app 浏览器诊断（不作为断言）', type: 'notice', json: DIAGNOSTICS }],
+    [],
+  ]);
 });

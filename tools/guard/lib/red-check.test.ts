@@ -10,6 +10,8 @@ import {
   expectedRuleTests,
   redCheckRequired,
   smokeCauseVerdict,
+  smokeDiagnosticsOf,
+  smokeDiagnosticsVerdict,
   wrongRedReason,
 } from './red-check.ts';
 
@@ -113,6 +115,7 @@ it('[CR-10] every expected file must have run and be red; a partial report fails
     ok: true,
     red: [`${a} > splits [AC-1]`, `${b} > sums`],
     problems: [],
+    notes: [],
   });
 
   // B never ran: the run picked A only.
@@ -380,6 +383,7 @@ it('[F1-01j] real browser red runs: a missing element and an assertion are red, 
       `${DEMO} > [demo] plain assertion fails`,
     ],
     problems: [],
+    notes: [],
   });
   const typeError = checkRedReports([fixture('browser-red-2.json')], [DEMO], ROOT);
   expect(typeError.ok).toBe(false);
@@ -440,11 +444,21 @@ const SMOKE = 'test/spec/frontend/build-smoke/entries.smoke.test.ts';
 it('[F1-01k] build smoke rule tests: an assertion, or a locator.waitFor that ran out, is a valid red', () => {
   const result = checkRedReports([fixture('smoke-report.json')], [SMOKE], ROOT);
   expect(result.ok).toBe(false);
+  // The wait counts: the page's only error is the skeleton's NotImplemented, and its failed
+  // requests are the ones the test blocked itself (the admin permission endpoint, another host).
   expect(result.red).toEqual([
     `${SMOKE} > [demo] element never came`,
     `${SMOKE} > [demo] assertion`,
   ]);
   expect(result.problems.map((p) => [p.test, p.reason])).toEqual([
+    [
+      '[demo] page threw',
+      "red for the wrong reason (the page threw: TypeError: Cannot read properties of undefined (reading 'routes'))",
+    ],
+    [
+      '[demo] chunk did not load',
+      'red for the wrong reason (a request of the entry failed: http://127.0.0.1:40125/assets/page-D5e6.js: net::ERR_FAILED)',
+    ],
     ['[demo] goto timed out', 'red for the wrong reason (page did not load (page.goto failed))'],
     ['[demo] connection refused', 'red for the wrong reason (page did not load (net::ERR_*))'],
     ['[demo] no browser', 'red for the wrong reason (browser not running)'],
@@ -452,7 +466,88 @@ it('[F1-01k] build smoke rule tests: an assertion, or a locator.waitFor that ran
       '[demo] screenshot timed out',
       'red for the wrong reason (a Playwright timeout outside locator.waitFor: page.screenshot: Timeout 10000ms exceeded.)',
     ],
-    ['[demo] page script error', 'red for the wrong reason (TypeError)'],
+    ['[demo] test code threw', 'red for the wrong reason (TypeError)'],
+  ]);
+  // The size budget opens no page: no diagnostics, judged by the assertion alone, and said so.
+  expect(result.notes).toEqual([
+    `${SMOKE} > [demo] assertion: no browser diagnostics in the report, judged by the failure alone`,
+  ]);
+});
+
+it('[F1-01k] smokeDiagnosticsVerdict: page errors, own failed requests and failed imports refuse a red', () => {
+  const url = 'http://127.0.0.1:40123/';
+  const v = (diagnostics: { kind: string; message: string }[]): string | null =>
+    smokeDiagnosticsVerdict({ url, diagnostics });
+  expect(v([])).toBeNull();
+  expect(v([{ kind: 'pageerror', message: 'Error: NotImplemented: page\n    at x' }])).toBeNull();
+  expect(v([{ kind: 'pageerror', message: 'ReferenceError: x is not defined' }])).toMatch(
+    /the page threw: ReferenceError/,
+  );
+  // NotImplemented further down a stack does not excuse another error.
+  expect(
+    v([{ kind: 'pageerror', message: 'TypeError: boom\n    at NotImplemented (x.js:1:1)' }]),
+  ).toMatch(/the page threw: TypeError: boom/);
+  // Another host's failure is not the entry's; the entry's own is, unless the test blocked it.
+  expect(v([{ kind: 'requestfailed', message: 'https://cdn.invalid/a.js: net::ERR_FAILED' }])).toBe(
+    null,
+  );
+  expect(
+    v([{ kind: 'requestfailed', message: 'http://127.0.0.1:40123/assets/a.js: net::ERR_FAILED' }]),
+  ).toMatch(/a request of the entry failed/);
+  expect(
+    v([
+      { kind: 'blocked-request', message: 'http://127.0.0.1:40123/v1/config' },
+      {
+        kind: 'requestfailed',
+        message: 'http://127.0.0.1:40123/v1/config: net::ERR_BLOCKED_BY_CLIENT',
+      },
+    ]),
+  ).toBeNull();
+  // A URL that cannot be read counts as the entry's own (fail closed).
+  expect(v([{ kind: 'requestfailed', message: 'not a url' }])).toMatch(/request of the entry/);
+  expect(
+    smokeDiagnosticsVerdict({
+      url: '',
+      diagnostics: [
+        { kind: 'requestfailed', message: 'https://cdn.invalid/a.js: net::ERR_FAILED' },
+      ],
+    }),
+  ).toMatch(/request of the entry/);
+  expect(
+    v([
+      {
+        kind: 'console.error',
+        message:
+          'TypeError: Failed to fetch dynamically imported module: http://127.0.0.1:40123/assets/p.js',
+      },
+    ]),
+  ).toMatch(/a module of the page did not load/);
+  // Other console errors stay attachments.
+  expect(v([{ kind: 'console.error', message: 'Warning: something' }])).toBeNull();
+  expect(v([{ kind: 'blocked-websocket', message: 'ws://127.0.0.1:40123/' }])).toBeNull();
+});
+
+it('[F1-01k] smokeDiagnosticsOf reads only diagnostics attachments of the red reporter', () => {
+  expect(smokeDiagnosticsOf(undefined)).toEqual([]);
+  expect(
+    smokeDiagnosticsOf([
+      { message: 'x 首屏截图', type: 'notice', path: '/a.png' },
+      { message: 'other', type: 'notice', json: { hello: 1 } },
+      null,
+      {
+        message: 'x 浏览器诊断（不作为断言）',
+        type: 'notice',
+        json: { entry: 'x', url: 'http://127.0.0.1:1/', diagnostics: [{ kind: 'pageerror' }, 3] },
+      },
+    ]),
+  ).toEqual([
+    {
+      url: 'http://127.0.0.1:1/',
+      diagnostics: [
+        { kind: 'pageerror', message: '' },
+        { kind: '', message: '' },
+      ],
+    },
   ]);
 });
 
@@ -467,6 +562,15 @@ it('[F1-01k] the locator.waitFor reading applies only to smoke files run in Node
   const other = 'test/spec/frontend/build-smoke/entries.test.ts';
   renamed.testResults[0]!.name = `${ROOT}/${other}`;
   expect(waited(checkRedReports([renamed], [other], ROOT))).toBe(false);
+  // A smoke-named file outside test/spec/ is not a rule test of the build-smoke project.
+  for (const elsewhere of [
+    'packages/testing/src/entries.smoke.test.ts',
+    'test/acceptance/entries.smoke.test.ts',
+  ]) {
+    const moved = load();
+    moved.testResults[0]!.name = `${ROOT}/${elsewhere}`;
+    expect(waited(checkRedReports([moved], [elsewhere], ROOT))).toBe(false);
+  }
   // A smoke-named file that ran in a browser is not a build smoke test.
   const inBrowser = load();
   inBrowser.testResults[0]!.browser = true;
