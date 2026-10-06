@@ -1,0 +1,20 @@
+name: couli-fault
+
+services:
+  wiremock:
+    # TODO(规划/11 §4.5): 固定真实镜像摘要 — blocked on 编排者联网核实 3.13.1 的镜像摘要。
+    # Deliberately fail closed until verified; replace the entire interpolation with
+    # the literal sha256 digest before accepting QA-05a. Never substitute a guessed hash.
+    image: wiremock/wiremock:3.13.1@sha256:d61e7720f89483fdef5366843b58d1dfd06bcce5828179c9f2f54de5c28354b0
+    ports:
+      - '127.0.0.1:18089:8080'
+    command:
+      - --disable-request-journal
+      - --async-response-enabled
+      - 'true'
+    networks:
+      - fault
+
+networks:
+  fault:
+    internal: true
