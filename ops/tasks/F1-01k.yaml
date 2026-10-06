@@ -1,0 +1,33 @@
+id: F1-01k
+repo: rebate-platform
+title: 验证底座加构建产物冒烟：容器里构建 H5 三入口与后台产物、在回环地址起静态预览，用 Playwright 打开每个入口检查首屏渲染、无未捕获错误与体积预算，截图导出到运行目录；pnpm verify 与 CI 同样跑
+type: guard-change
+# 2026-10-06 入账（前端线 f1-frontend-2）。负责人 2026-10-06 就 blocked B-2 选 A，方案原文含「构建前端产物 + Playwright 冒烟与截图」；
+# F1-01j 先做组件与页面级的浏览器测试（Vitest 浏览器模式），本任务补构建产物这一层（F1-01j 台账评审 S2-1 拆出）。首批页面任务（F1-03 起）依赖它。
+# 待 F1-01j 合并后写任务书：运行器取 Playwright Test 还是复用 Vitest 浏览器项目里的 globalSetup 起预览服务、判红口径（规划/11 §2.3 第 3 步：开发服务器
+# 与 mock 健康检查通过、页面打开后因断言失败或等不到目标元素而红）、产物体积预算（03 §12）怎样接入。不碰 apps/** 源码，产物只在容器的 tmpfs 里。
+# 运行器定了再按评审补 paths（选 Playwright Test 时要加 protected-paths.json、test-guard、red-plan、两份 README，并另立 @playwright/test 的 deps 任务），
+# 派发前重新评审台账。全是保护路径，合并前要负责人批准标签。
+refs: []
+refs_hash: {}
+deps: [F1-01j, F1-01c]
+paths:
+  - 'tools/ops/verify-image/**'
+  - 'tools/ops/verify-container.sh'
+  - 'tools/ops/*.test.ts'
+  - 'tools/guard/lib/red-check.ts'
+  - 'tools/guard/lib/red-check.test.ts'
+  - 'test/vitest.browser.config.ts'
+  - 'test/playwright.config.ts'
+  - 'test/package.json'
+  - 'package.json'
+  - '.github/workflows/ci.yml'
+test_paths:
+  - 'test/spec/frontend/build-smoke/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/build-smoke/**'
+status: todo
+pr: null

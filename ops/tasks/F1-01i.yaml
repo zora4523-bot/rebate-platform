@@ -1,0 +1,22 @@
+id: F1-01i
+repo: rebate-platform
+title: 依赖：test 包加浏览器测试依赖——playwright 1.63.0、@vitest/browser-playwright 5.0.1（与 vitest 同版本），以及按应用同版本的 @vitejs/plugin-react、@tailwindcss/vite、tailwindcss，供 F1-01j 的 Vitest 浏览器项目在真 Chromium 里渲染 H5 与后台组件、页面并截图
+type: deps
+# 2026-10-06 入账（前端线 f1-frontend-2）。负责人 2026-10-06 就 blocked B-2 选 A：给验证镜像装 Chromium 并加 Playwright 项目（F1-01j，guard-change）；
+# 基础组件与第一批页面开工前要先落地。本任务只装依赖：锁文件只有 deps 任务能改（规划/11 §4.4），F1-01j 的配置、镜像与脚本另走 guard-change。
+# 版本：playwright 1.63.0（2026-09-04 发布，满足 minimumReleaseAge 7 天，无安装脚本、不自动下载浏览器；浏览器由 F1-01j 在镜像构建时按同版本装）；
+# @vitest/browser-playwright 必须与 vitest 5.0.1 同版本（其 peer 依赖钉死 vitest 5.0.1）；@vitejs/plugin-react 6.1.1、@tailwindcss/vite 4.3.3、
+# tailwindcss 4.3.3 取 apps/h5 已锁的同一版本（浏览器项目按应用同样的插件渲染，截图才与产物一致）。只改 devDependencies，不改 scripts。
+# deps 任务全局串行：排在 F1-01a 之后（它把 test 包与前端依赖带进来）。合并前进 ask（规划/11 §4.4）。
+refs: []
+refs_hash: {}
+deps: [F1-01a]
+paths:
+  - 'test/package.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
