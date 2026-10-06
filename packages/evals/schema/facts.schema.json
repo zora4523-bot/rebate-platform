@@ -14,6 +14,10 @@
       "card_values": { "$ref": "#/$defs/checkCount" },
       "attribution": { "$ref": "#/$defs/checkCount" },
       "platform": { "enum": ["ok", "mismatch", null] },
+      "platform_expected": {
+        "description": "Only on an ungraded case with an expected args.platform; stopped T1 cases remain in the platform metric denominator.",
+        "const": true
+      },
       "partial_leaks": { "$ref": "#/$defs/leakCodes" },
       "partial_checks": { "$ref": "#/$defs/partialChecks" }
     },
@@ -26,7 +30,13 @@
       }
     },
     "else": {
-      "not": { "anyOf": [{ "required": ["partial_leaks"] }, { "required": ["partial_checks"] }] }
+      "not": {
+        "anyOf": [
+          { "required": ["platform_expected"] },
+          { "required": ["partial_leaks"] },
+          { "required": ["partial_checks"] }
+        ]
+      }
     }
   },
   "$defs": {

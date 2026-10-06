@@ -35,6 +35,9 @@ export interface CaseFacts {
   card_values: CheckCount;
   attribution: CheckCount;
   platform: 'ok' | 'mismatch' | null;
+  /** Only on an ungraded case with an expected args.platform: keep stopped T1 cases in the
+   * platform metric's denominator (BR-AI-21, B3-01c §18). */
+  platform_expected?: true;
   /** Only on an ungraded case (coverage_gap, error) and only when non-empty: the leak codes
    * (amount_in_text, identity_arg, url_in_text, in that order, each once) that gradeCase's L1
    * checks find in the turns the case did complete before it stopped (B3-01c §14). Graded
@@ -409,6 +412,13 @@ function factsOf(
 ): CaseFacts {
   if (result.result === 'pass' || result.result === 'fail') return computeFacts(c, outputs);
   const facts = ungradedFacts(c.id);
+  if (
+    list(c.expect.tools).some(
+      (tool) => isRecord(tool) && isRecord(tool['args']) && Object.hasOwn(tool['args'], 'platform'),
+    )
+  ) {
+    facts.platform_expected = true;
+  }
   const leaks = partialLeaks([...outputs, ...leakOnly]);
   if (leaks.length > 0) facts.partial_leaks = leaks;
   const done = computeFacts(c, outputs);
@@ -426,7 +436,8 @@ function factsOf(
  * `facts` has one entry per active case in id order: computeFacts for a graded case (pass or
  * fail), all zero and `graded: false` for coverage_gap and error, with `partial_leaks` when the
  * turns completed before the case stopped leak and `partial_checks` when they hold a mismatched
- * or unverified card value or link (the report itself is unchanged).
+ * or unverified card value or link. Stopped cases expecting args.platform also carry
+ * `platform_expected: true` (the report itself is unchanged).
  */
 export async function runEval(opts: {
   cases: EvalCase[];
@@ -536,9 +547,11 @@ export function computeMetrics(report: Report, facts: CaseFacts[]): Metric[] {
   let platformJudged = 0;
   for (const item of cases) {
     if (item.category !== 'T1') continue;
-    const platform = byId.get(item.id)?.platform ?? null;
-    if (platform === null) continue;
-    platformJudged += 1;
+    const fact = byId.get(item.id);
+    const platform = fact?.platform ?? null;
+    if (platform !== null) platformJudged += 1;
+    // Interrupted cases with a platform expectation count as failures, never as absent evidence.
+    if (fact?.platform_expected === true) platformJudged += 1;
     if (platform === 'ok') platformOk += 1;
   }
   const platformStatus: MetricStatus =
@@ -593,7 +606,8 @@ export function validateFacts(value: unknown): Problem[] {
   const c = new Collector(undefined);
   c.array(value, '', (item, path) => {
     const keys = ['id', 'graded', 'card_values', 'attribution', 'platform'];
-    if (!c.object(item, path, keys, ['partial_leaks', 'partial_checks'])) return;
+    if (!c.object(item, path, keys, ['platform_expected', 'partial_leaks', 'partial_checks']))
+      return;
     c.string(item['id'], `${path}/id`, { minLength: 1 });
     c.boolean(item['graded'], `${path}/graded`);
     const ungraded = item['graded'] === false;
@@ -603,6 +617,14 @@ export function validateFacts(value: unknown): Problem[] {
     if (platform !== null) c.oneOf(platform, `${path}/platform`, PLATFORMS);
     if (ungraded && platform !== null)
       c.add(`${path}/platform`, 'must be null when graded is false');
+    if (Object.hasOwn(item, 'platform_expected')) {
+      if (item['platform_expected'] !== true) {
+        c.add(`${path}/platform_expected`, 'must be true');
+      }
+      if (!ungraded) {
+        c.add(`${path}/platform_expected`, 'only allowed when graded is false');
+      }
+    }
     if (Object.hasOwn(item, 'partial_leaks')) {
       validatePartialLeaks(c, item['partial_leaks'], `${path}/partial_leaks`);
       if (item['graded'] !== false) {
