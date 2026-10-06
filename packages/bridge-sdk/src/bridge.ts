@@ -191,11 +191,57 @@ function rethrowLater(error: unknown): void {
   });
 }
 
-/** Subscribes to one contract event; the returned function removes only this subscription. */
-export function on<E extends keyof BridgeEvents>(
+type FieldKind = 'boolean' | 'string' | 'number';
+type KindOf<T> = T extends boolean
+  ? 'boolean'
+  : T extends string
+    ? 'string'
+    : T extends number
+      ? 'number'
+      : never;
+
+/**
+ * Per-event data allowlist, transcribed from contracts/bridge.schema.json `events` (every event is
+ * additionalProperties:false and every listed field is required). The generated contract only has
+ * the types, so this table is type-checked against BridgeEvents and compared with the schema in
+ * the package tests. Event names not in this table are never dispatched by on().
+ */
+export const eventDataFields = {
+  'app.resume': {},
+  'app.pause': {},
+  'auth.changed': { logged_in: 'boolean' },
+  'page.visible': { visible: 'boolean' },
+} as const satisfies {
+  [E in keyof BridgeEvents]: {
+    readonly [K in keyof BridgeEvents[E]]-?: KindOf<BridgeEvents[E][K]>;
+  };
+};
+
+function isContractEvent(event: unknown): event is keyof BridgeEvents {
+  return typeof event === 'string' && Object.hasOwn(eventDataFields, event);
+}
+
+/**
+ * Copies only the contract fields of one event. Fields outside the allowlist (e.g. a token or
+ * clipboard text from a misbehaving native side) never reach subscribers; a missing or mistyped
+ * required field makes the whole event undeliverable (null).
+ */
+function pickEventData<E extends keyof BridgeEvents>(
   event: E,
-  handler: (data: BridgeEvents[E]) => void,
-): () => void {
+  data: unknown,
+): BridgeEvents[E] | null {
+  const fields: Readonly<Record<string, FieldKind>> = eventDataFields[event];
+  const source = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {};
+  const picked: Record<string, unknown> = {};
+  for (const [field, kind] of Object.entries(fields)) {
+    const value = Object.hasOwn(source, field) ? source[field] : undefined;
+    if (typeof value !== kind) return null;
+    picked[field] = value;
+  }
+  return picked as BridgeEvents[E];
+}
+
+function subscribe(event: string, deliver: (data: unknown) => void): () => void {
   const bridge = currentBridge();
   if (bridge === null || typeof bridge.subscribe !== 'function') return () => {};
   let active = true;
@@ -205,7 +251,7 @@ export function on<E extends keyof BridgeEvents>(
       if (!active || typeof message !== 'object' || message === null) return;
       if (message.event !== event) return;
       try {
-        handler((message.data ?? {}) as BridgeEvents[E]);
+        deliver(message.data);
       } catch (error) {
         rethrowLater(error);
       }
@@ -218,6 +264,30 @@ export function on<E extends keyof BridgeEvents>(
     active = false;
     if (typeof unsubscribe === 'function') unsubscribe();
   };
+}
+
+/**
+ * Subscribes to one contract event; the returned function removes only this subscription.
+ * Subscribers receive only the contract fields of that event (eventDataFields); event names
+ * outside the contract are never dispatched, even when a caller bypasses the types.
+ */
+export function on<E extends keyof BridgeEvents>(
+  event: E,
+  handler: (data: BridgeEvents[E]) => void,
+): () => void {
+  if (!isContractEvent(event)) return () => {};
+  return subscribe(event, (raw) => {
+    const data = pickEventData(event, raw);
+    if (data !== null) handler(data);
+  });
+}
+
+/**
+ * Untyped entry behind @couli/bridge-sdk/conformance: delivers the native data unfiltered so the
+ * conformance page can record contract violations for the native UI tests. Not for business pages.
+ */
+export function onUntyped(event: string, handler: (data: unknown) => void): () => void {
+  return subscribe(event, (raw) => handler(raw ?? {}));
 }
 
 /**

@@ -1,9 +1,10 @@
 // Runs the selected cases and publishes window.__RESULT__ (规划/03 §5.5). Bridge calls go only
-// through the untyped conformance `invoke`; events through the SDK's `on()`. Method results are
-// never stored: a success is recorded as `{ ok: true }` and a failure as its code.
+// through the untyped conformance `invoke`; events through the conformance `onRaw()`, which keeps
+// native data unfiltered so contract violations stay visible. Method results are never stored:
+// a success is recorded as `{ ok: true }` and a failure as its code.
 import { bridge } from '@couli/contracts-ts';
-import { isInApp, on } from '@couli/bridge-sdk';
-import { invoke } from '@couli/bridge-sdk/conformance';
+import { isInApp } from '@couli/bridge-sdk';
+import { invoke, onRaw } from '@couli/bridge-sdk/conformance';
 import {
   FRAME_CASE_ID,
   NO_GESTURE_WAIT_MS,
@@ -150,8 +151,10 @@ export class ConformanceController {
       () => {
         for (const type of gestureEvents) window.removeEventListener(type, recordGesture, true);
       },
-      on('app.resume', (data) => this.update((result) => recordEvent(result, 'app.resume', data))),
-      on('app.pause', (data) => this.update((result) => recordEvent(result, 'app.pause', data))),
+      onRaw('app.resume', (data) =>
+        this.update((result) => recordEvent(result, 'app.resume', data)),
+      ),
+      onRaw('app.pause', (data) => this.update((result) => recordEvent(result, 'app.pause', data))),
     ];
     this.remaining = this.frameSrc === null ? 1 : 2;
     if (this.frameSrc !== null) stops.push(this.watchFrame(frameWindow));
