@@ -522,9 +522,43 @@ it('[F1-01k] smokeDiagnosticsVerdict: page errors, own failed requests and faile
       },
     ]),
   ).toMatch(/a module of the page did not load/);
+  // Only a first line that starts with NotImplemented (or Error: NotImplemented) is the
+  // skeleton's; other kinds mentioning it are checked first and refused (Claude review r2, S2).
+  expect(v([{ kind: 'pageerror', message: 'NotImplemented: AdminShell\n    at x' }])).toBeNull();
+  for (const message of [
+    'TypeError: NotImplemented is not a constructor',
+    'ReferenceError: NotImplemented is not defined',
+    'Error: x failed (NotImplemented)',
+    'Uncaught NotImplemented',
+    'Error: NotImplementedYet TypeError: y',
+  ]) {
+    expect(v([{ kind: 'pageerror', message }]), message).toMatch(/the page threw/);
+  }
   // Other console errors stay attachments.
   expect(v([{ kind: 'console.error', message: 'Warning: something' }])).toBeNull();
   expect(v([{ kind: 'blocked-websocket', message: 'ws://127.0.0.1:40123/' }])).toBeNull();
+});
+
+it('[F1-01k] a locator.waitFor timeout without browser diagnostics is not a valid red', () => {
+  type Entry = { assertionResults: { fullName: string; annotations?: unknown[] }[] };
+  const report = fixture('smoke-report.json') as { testResults: Entry[] };
+  const waited = report.testResults[0]!.assertionResults.find(
+    (t) => t.fullName === '[demo] element never came',
+  )!;
+  // Only the screenshot is left: the page events are unknown, the page may have thrown.
+  waited.annotations = waited.annotations!.slice(0, 1);
+  const result = checkRedReports([report], [SMOKE], ROOT);
+  expect(result.red).toEqual([`${SMOKE} > [demo] assertion`]);
+  expect(result.problems[0]).toEqual({
+    file: SMOKE,
+    test: '[demo] element never came',
+    reason:
+      'red for an unproven reason (locator.waitFor ran out but the test wrote no browser diagnostics annotation)',
+  });
+  expect(result.notes).toEqual([
+    `${SMOKE} > [demo] element never came: locator.waitFor timeout without browser diagnostics, judged invalid`,
+    `${SMOKE} > [demo] assertion: no browser diagnostics in the report, judged by the failure alone`,
+  ]);
 });
 
 it('[F1-01k] smokeDiagnosticsOf reads only diagnostics attachments of the red reporter', () => {

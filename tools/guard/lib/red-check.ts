@@ -49,8 +49,13 @@
 // are read: an error the page threw (`pageerror`; the skeleton's NotImplemented excepted), a
 // request to the entry's own origin that failed (`requestfailed`; requests the test itself
 // blocked excepted) or a module of the page that did not load (`console.error` of a failed
-// dynamic import) make the red invalid. A test without such an annotation is judged by its
-// failure alone, and the result says so (`notes`).
+// dynamic import) make the red invalid. Only a page error whose first line starts with
+// `NotImplemented` or `Error: NotImplemented` is the skeleton's (a TypeError, ReferenceError …
+// mentioning it is not; those kinds are checked first, as on the Node side). A wait that ran out
+// in a test without such an annotation is invalid (the page events are unknown); any other red of
+// such a test is judged by its failure alone. Both are said in the result (`notes`). Smoke rule
+// tests that open a page must write the annotation. On a green run the build-smoke project's
+// strict reporter (tools/ops/build-smoke/strict-reporter.mjs) fails on the same page problems.
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import type { TaskFile } from '../../lib/task-file.ts';
@@ -241,6 +246,16 @@ export function smokeCauseVerdict(causes: readonly Cause[]): string | null {
   return causeVerdict(causes);
 }
 
+/** True when a failure of the test is the TimeoutError of a locator.waitFor (red reporter causes). */
+function waitedForAnElement(failures: unknown): boolean {
+  if (!Array.isArray(failures)) return false;
+  return (failures as Failure[]).some((f) => {
+    const causes = causesOf(f);
+    const root = causes[causes.length - 1];
+    return root?.name === 'TimeoutError' && LOCATOR_WAIT_RAN_OUT.test(root.message);
+  });
+}
+
 /** The page events a build smoke test collected for one entry (its diagnostics annotation). */
 export type SmokeDiagnostics = {
   url: string;
@@ -284,6 +299,19 @@ const MODULE_DID_NOT_LOAD =
   /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/;
 
 /**
+ * True when the first line of an error the page threw is the skeleton's NotImplemented: it starts
+ * with `NotImplemented` (the skeleton's own error class) or `Error: NotImplemented` (a plain Error
+ * with that message). A TypeError, ReferenceError … that merely mentions NotImplemented does not
+ * count: as on the Node side (causeVerdict), those kinds are checked first.
+ */
+export function skeletonPageError(first: string): boolean {
+  for (const [pattern] of WRONG_RED) {
+    if (pattern.test(first)) return false;
+  }
+  return /^(?:Error: )?NotImplemented\b/.test(first);
+}
+
+/**
  * Why the page events of one entry make a red invalid (see the header), or null when they do
  * not: an error the page threw other than the skeleton's NotImplemented, a request to the entry's
  * own origin that failed and that the test did not block itself (a `blocked-request` of the same
@@ -296,7 +324,7 @@ export function smokeDiagnosticsVerdict(d: SmokeDiagnostics): string | null {
   );
   for (const x of d.diagnostics) {
     const first = x.message.split('\n')[0] ?? '';
-    if (x.kind === 'pageerror' && !/\bNotImplemented\b/.test(first)) {
+    if (x.kind === 'pageerror' && !skeletonPageError(first)) {
       return `red for the wrong reason (the page threw: ${first})`;
     }
     if (x.kind === 'requestfailed') {
@@ -542,9 +570,18 @@ export function checkRedReports(
           if (why !== null) break;
         }
         if (why === null && diagnostics.length === 0) {
-          notes.push(
-            `${file} > ${name}: no browser diagnostics in the report, judged by the failure alone`,
-          );
+          if (waitedForAnElement(t.failures)) {
+            // A wait that ran out says nothing without the page events: the page may have thrown.
+            why =
+              'red for an unproven reason (locator.waitFor ran out but the test wrote no browser diagnostics annotation)';
+            notes.push(
+              `${file} > ${name}: locator.waitFor timeout without browser diagnostics, judged invalid`,
+            );
+          } else {
+            notes.push(
+              `${file} > ${name}: no browser diagnostics in the report, judged by the failure alone`,
+            );
+          }
         }
       }
       if (why === null) red.push(`${file} > ${name}`);
