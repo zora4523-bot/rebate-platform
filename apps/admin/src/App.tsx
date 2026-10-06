@@ -14,11 +14,22 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { MemoryRouter, Navigate, useLocation, type InitialEntry } from 'react-router';
+import {
+  BrowserRouter,
+  MemoryRouter,
+  Navigate,
+  useLocation,
+  type InitialEntry,
+} from 'react-router';
 import { LoadFailedPage, NoPermissionPage, PagePending, WelcomePage } from './layout/pages.tsx';
 import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
-import type { PermissionSnapshot } from './providers/access-control/index.ts';
+import {
+  createAccessControl,
+  type AccessControl,
+  type PermissionSnapshot,
+} from './providers/access-control/index.ts';
+import { createRefineAccessControl } from './providers/access-control/refine.ts';
 import {
   findMenuItem,
   getAdminMenuGroups,
@@ -61,10 +72,25 @@ export function createAdminShell(options: AdminShellOptions): ReactElement {
   return <AdminApp options={options} />;
 }
 
-function AdminApp({ options }: { readonly options: AdminShellOptions }) {
-  const { permissionsProvider, initialRoute } = options;
-  const [theme] = useState(() => createAntdTheme());
+interface ShellRouterProps {
+  readonly kind: NonNullable<AdminShellOptions['router']>;
+  readonly initialRoute: AdminShellOptions['initialRoute'];
+  readonly children: ReactNode;
+}
+
+// BrowserRouter rather than HashRouter: plain paths (/withdrawals) for deep links and the
+// audit log; the admin host serves index.html for unknown paths (Vite dev server does already).
+function ShellRouter({ kind, initialRoute, children }: ShellRouterProps) {
   const [initialEntries] = useState(() => [initialEntry(initialRoute)]);
+  if (kind === 'browser') {
+    return <BrowserRouter basename={import.meta.env.BASE_URL}>{children}</BrowserRouter>;
+  }
+  return <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>;
+}
+
+function AdminApp({ options }: { readonly options: AdminShellOptions }) {
+  const { permissionsProvider } = options;
+  const [theme] = useState(() => createAntdTheme());
   const [state, setState] = useState<PermissionState>({ status: 'loading' });
   const latestRequest = useRef(0);
 
@@ -88,31 +114,37 @@ function AdminApp({ options }: { readonly options: AdminShellOptions }) {
     loadPermissions();
   }, [loadPermissions]);
 
+  const access = useMemo(
+    () => (state.status === 'ready' ? createAccessControl(state.snapshot) : undefined),
+    [state],
+  );
   const groups = useMemo(
     () => (state.status === 'ready' ? selectAdminMenuGroups(state.snapshot) : NO_GROUPS),
     [state],
   );
-  const accessControlProvider = useMemo<AccessControlProvider>(() => {
-    const visible = new Set<string>(
-      groups.flatMap((group) => [group.key, ...group.items.map((item) => item.id)]),
-    );
-    const can = (resource: string | undefined): boolean =>
-      resource !== undefined && visible.has(resource);
-    return { can: ({ resource }) => Promise.resolve({ can: can(resource) }) };
-  }, [groups]);
+  const accessControlProvider = useMemo<AccessControlProvider>(
+    () => createRefineAccessControl(access, groups),
+    [access, groups],
+  );
 
   return (
     <ConfigProvider theme={theme}>
-      <MemoryRouter initialEntries={initialEntries}>
+      <ShellRouter kind={options.router ?? 'memory'} initialRoute={options.initialRoute}>
         <Refine
           routerProvider={routerProvider}
           resources={RESOURCES}
           accessControlProvider={accessControlProvider}
           options={{ disableTelemetry: true }}
         >
-          <ShellFrame options={options} state={state} groups={groups} onRefresh={loadPermissions} />
+          <ShellFrame
+            options={options}
+            state={state}
+            access={access}
+            groups={groups}
+            onRefresh={loadPermissions}
+          />
         </Refine>
-      </MemoryRouter>
+      </ShellRouter>
     </ConfigProvider>
   );
 }
@@ -120,11 +152,12 @@ function AdminApp({ options }: { readonly options: AdminShellOptions }) {
 interface ShellFrameProps {
   readonly options: AdminShellOptions;
   readonly state: PermissionState;
+  readonly access: AccessControl | undefined;
   readonly groups: readonly AdminMenuGroup[];
   readonly onRefresh: () => void;
 }
 
-function ShellFrame({ options, state, groups, onRefresh }: ShellFrameProps) {
+function ShellFrame({ options, state, access, groups, onRefresh }: ShellFrameProps) {
   const location = useLocation();
   const menuId = location.pathname.replace(/^\/+/, '');
   const match = findMenuItem(groups, menuId);
@@ -134,13 +167,17 @@ function ShellFrame({ options, state, groups, onRefresh }: ShellFrameProps) {
       ? [shellTexts.welcomeCrumb]
       : [match.group.label, match.item.label, ...(subpage === undefined ? [] : [subpage])];
 
-  let content: ReactNode = null;
+  let content: ReactNode = (
+    <p className="admin-secondary" role="status">
+      {shellTexts.loading}
+    </p>
+  );
   if (state.status === 'failed') {
     content = <LoadFailedPage onRetry={onRefresh} />;
-  } else if (state.status === 'ready') {
+  } else if (state.status === 'ready' && access !== undefined) {
     const { snapshot } = state;
     if (match !== undefined && options.renderPage !== undefined) {
-      content = options.renderPage(match.item.id);
+      content = options.renderPage(match.item.id, access);
     } else if (match !== undefined) {
       content = <PagePending title={match.item.label} />;
     } else if (menuId !== '') {

@@ -15,6 +15,7 @@ export type PermissionsProvider = () => Promise<PermissionSnapshot>;
  * Permission keys that 规划/04 §11 added on 2026-10-04 (payments line) and that
  * contracts/enums/admin.yaml does not list yet. 待 CT-21a 同步后删除。
  */
+// TODO(规划/11 §2.3): 契约补上这 4 个权限点后删除本常量与 PendingContractPermission — blocked on CT-21a
 export const PENDING_CONTRACT_PERMISSIONS = [
   'pay.view',
   'pay.refund',
@@ -30,7 +31,8 @@ const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set<string>([
   ...PENDING_CONTRACT_PERMISSIONS,
 ]);
 
-function isKnownPermission(value: string): value is KnownPermission {
+/** True for contract keys and the pending keys above; anything else grants nothing. */
+export function isKnownPermission(value: string): value is KnownPermission {
   return KNOWN_PERMISSIONS.has(value);
 }
 

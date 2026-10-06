@@ -16,6 +16,7 @@ function previewOptions(): AdminShellOptions {
       ? { username: 'cs.xiaoli', displayName: previewTexts.noPermissionName }
       : { username: 'super.admin', displayName: previewTexts.superName },
     environment: 'development',
+    router: 'browser',
     onLogout: () => window.location.reload(),
   };
 }
@@ -28,6 +29,7 @@ function productionOptions(): AdminShellOptions {
     permissionsProvider: unavailable,
     account: { username: '', displayName: '' },
     environment: 'production',
+    router: 'browser',
     onLogout: () => window.location.reload(),
   };
 }
