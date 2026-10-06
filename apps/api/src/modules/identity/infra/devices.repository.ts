@@ -17,12 +17,37 @@ export interface NewDevice {
   readonly now: Date;
 }
 
+export interface UnrevokedDevice {
+  readonly id: string;
+  readonly appId: string;
+  /** UTF-8 bytes of the field-encryption ciphertext of install_secret. */
+  readonly installSecretCipher: Buffer;
+}
+
 @Injectable()
 export class DevicesRepository {
   constructor(
     // Absent only in isolated HTTP unit tests that build an entry without database handles.
     @Optional() @Inject(DB_TOKEN) private readonly db: Kysely<DB> | undefined,
   ) {}
+
+  /**
+   * The row of an issued, unrevoked device (`revoked_at IS NULL`; devices has no status column),
+   * read from the primary on every call so that a revocation applies to the next request.
+   * `id` must already be a well-formed UUID (isWellFormedDeviceId).
+   */
+  async findUnrevoked(id: string): Promise<UnrevokedDevice | undefined> {
+    if (this.db === undefined) throw new Error('identity: no database handle in this process');
+    const row = await this.db
+      .selectFrom('devices')
+      .select(['id', 'app_id', 'install_secret_cipher'])
+      .where('id', '=', id)
+      .where('revoked_at', 'is', null)
+      .executeTakeFirst();
+    return row === undefined
+      ? undefined
+      : { id: row.id, appId: row.app_id, installSecretCipher: row.install_secret_cipher };
+  }
 
   /** A new, unbound, unrevoked device row. Re-registering the same hash adds another row. */
   async insert(device: NewDevice): Promise<void> {

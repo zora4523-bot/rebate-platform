@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { DEVICE_SIGNING_KEYS } from '../risk/index.ts';
+import { DeviceSigningKeysService } from './application/device-signing-keys.service.ts';
 import {
   INVALID_DEVICE_HASHES,
   RegisterDeviceService,
@@ -12,6 +14,8 @@ import { loadInvalidDeviceHashSeeds } from './infra/invalid-device-hashes.ts';
  * Served by the `api` entry (/v1). The database handle and the field cipher are optional at
  * construction so that entries built without them (isolated HTTP unit tests) still register the
  * routes; a registration that needs them fails at request time instead.
+ * Exports the risk module's DEVICE_SIGNING_KEYS port (request signatures, BR-ID-09); app.module
+ * passes this module to RiskModule.
  */
 @Module({
   controllers: [DevicesController],
@@ -20,6 +24,9 @@ import { loadInvalidDeviceHashSeeds } from './infra/invalid-device-hashes.ts';
     { provide: INVALID_DEVICE_HASHES, useFactory: () => loadInvalidDeviceHashSeeds() },
     DevicesRepository,
     RegisterDeviceService,
+    DeviceSigningKeysService,
+    { provide: DEVICE_SIGNING_KEYS, useExisting: DeviceSigningKeysService },
   ],
+  exports: [DEVICE_SIGNING_KEYS],
 })
 export class IdentityModule {}

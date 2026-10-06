@@ -11,10 +11,15 @@
 //   answer may make the client start another sensitive operation).
 // - HttpException (the 20001 envelopes thrown by controllers, every business error, Nest's 404):
 //   written back unchanged by Nest's BaseExceptionFilter; not logged.
+// - RequestRejection (./request-checks.ts: a request check refusing a request before the body is
+//   parsed, e.g. the risk module's 10401 / 10402 signature failures, BR-ID-09): its status (400–499)
+//   and { code, msg, trace_id } without `data`; not logged. A status or code out of range falls
+//   through to 50001 below.
 // - Fastify route schema validation (FST_ERR_VALIDATION): HTTP 400 and 20001 naming the offending
 //   fields (validationErrorEnvelope of ../validation/index.ts).
 // - Fastify request body errors (a FastifyError coded FST_ERR_CTP_* with a 4xx status: malformed or
-//   empty JSON, a body above the limit, a Content-Length mismatch, an unsupported Content-Type):
+//   empty JSON, a body above the limit, a Content-Length mismatch, an unsupported Content-Type;
+//   ./request-checks.ts raises the same FST_ERR_CTP_BODY_TOO_LARGE while buffering a body):
 //   20001 with data.fields ['body'] and Fastify's status (400, 413, 415). 413 and 415 depart from
 //   the HTTP 400 that error-codes.yaml gives 20001; contract task CT-01d declares them in its new
 //   `http_also` field (20001: [413, 415]). Neither the request body nor Fastify's message is
@@ -39,6 +44,7 @@ import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { IdempotencyError } from '../idempotency/index.ts';
 import type { RootLogger } from '../logging/index.ts';
 import { fieldsErrorEnvelope, validationErrorEnvelope } from '../validation/index.ts';
+import { RequestRejection } from './request-checks.ts';
 
 /** The contract ErrorEnvelope as this filter writes it. */
 export interface ErrorEnvelopeBody {
@@ -103,6 +109,21 @@ export function requestBodyErrorEnvelope(
   };
 }
 
+/**
+ * The status and the envelope { code, msg, trace_id } of a RequestRejection with a client status
+ * (400–499) and a contract code (10000–99999); undefined for any other value.
+ */
+export function requestRejectionEnvelope(
+  error: unknown,
+  traceId: string,
+): ErrorResponse | undefined {
+  if (!(error instanceof RequestRejection)) return undefined;
+  const { code, statusCode, message } = error;
+  if (!Number.isInteger(statusCode) || statusCode < 400 || statusCode > 499) return undefined;
+  if (!Number.isInteger(code) || code < 10000 || code > 99999) return undefined;
+  return { statusCode, body: { code, msg: message, trace_id: traceId } };
+}
+
 /** Constructor name of an Error, 'null' for null, typeof for any other value. */
 export function errorClass(error: unknown): string {
   if (error instanceof Error) return error.constructor.name || error.name;
@@ -157,6 +178,7 @@ export class GlobalErrorFilter extends BaseExceptionFilter<unknown> {
     }
     const traceId = http.getRequest<{ id: string }>().id;
     const response =
+      requestRejectionEnvelope(error, traceId) ??
       validationErrorEnvelope(error, traceId) ??
       requestBodyErrorEnvelope(error, traceId) ??
       this.#unhandled(error, traceId);

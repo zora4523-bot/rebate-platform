@@ -61,9 +61,13 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-/** Records the one statement of the repository: insertInto(table).values(row).execute(). */
+/**
+ * Records insertInto(table).values(row).execute(), and every selectFrom(table) — the device lookup
+ * of the request signature check — which finds no unrevoked row (a revoked or unknown device).
+ */
 function fakeDb() {
   const inserts: { table: string; row: Record<string, unknown> }[] = [];
+  const selects: string[] = [];
   const db = {
     insertInto: (table: string) => ({
       values: (row: Record<string, unknown>) => ({
@@ -73,8 +77,17 @@ function fakeDb() {
         },
       }),
     }),
+    selectFrom: (table: string) => {
+      selects.push(table);
+      const query = {
+        select: () => query,
+        where: () => query,
+        executeTakeFirst: async () => undefined,
+      };
+      return query;
+    },
   };
-  return { db, inserts };
+  return { db, inserts, selects };
 }
 
 function fakeCrypto(): FieldCrypto {
@@ -210,6 +223,27 @@ it('[AC-B1-02c#9] writes request logs that never carry the issued install_secret
   ]) {
     expect(logs).not.toContain(form);
   }
+});
+
+it('[BR-ID-09] re-registers with 200 while X-Device-Id still names a revoked device: the route is unsigned and never looks it up', async () => {
+  const { db, inserts, selects } = fakeDb();
+  const { app } = await build({ db, crypto: fakeCrypto() });
+  // The client re-registers after 10402 (BR-ID-09) and may still send its old, revoked id and
+  // stale signature headers; registration ignores them (x-signed false in the contract).
+  const response = await register(
+    app,
+    { device_hash: hash, id_source: 'idfv' },
+    {
+      'x-device-id': '019a0000-0000-7000-8000-00000000dead',
+      'x-timestamp': '1790661600',
+      'x-nonce': '0'.repeat(32),
+      'x-sign': '0'.repeat(64),
+    },
+  );
+  expect(response.statusCode).toBe(200);
+  expect(validateSuccess(response.json()), JSON.stringify(validateSuccess.errors)).toBe(true);
+  expect(inserts).toHaveLength(1);
+  expect(selects).toEqual([]);
 });
 
 it('still serves the route without database handles or keyring: invalid hashes 20001, others the 50001 envelope', async () => {

@@ -20,10 +20,13 @@ import {
   type HttpEntry,
   PinoNestLogger,
   type PlatformOptions,
+  REQUEST_CHECKS,
+  type RequestCheck,
   type RootLogger,
   type WorkerEntry,
   clockFromConfig,
   createRootLogger,
+  installRequestChecks,
   loadConfig,
   resolveTraceId,
 } from './modules/platform/index.ts';
@@ -62,6 +65,7 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
  * Creates an HTTP entry (NestJS on the Fastify adapter) and returns it WITHOUT calling
  * `init()` or `listen()`. Fastify logs through the same pino instance as the application, and
  * the Fastify request id is the trace id (well-formed `x-trace-id` header or a random UUID).
+ * The request checks of REQUEST_CHECKS are installed (before body parsing) on every HTTP entry.
  */
 export async function createHttpApp(
   entry: HttpEntry,
@@ -90,6 +94,10 @@ export async function createHttpApp(
     // The only global filter: every error of a request ends in the contract ErrorEnvelope (or, for
     // an uncertain commit, a closed connection); see platform/http/global-errors.ts.
     app.useGlobalFilters(new GlobalErrorFilter(app.getHttpAdapter(), options.logger));
+    // The pre-parsing registration point (platform/http/request-checks.ts): the request checks of
+    // BR-ID-01 ① (signature) and later ② ③ run in the order app.module lists them, before Fastify
+    // parses or validates a body. Installed before init, so it covers every route Nest registers.
+    installRequestChecks(adapter.getInstance(), app.get<readonly RequestCheck[]>(REQUEST_CHECKS));
     return app;
   } catch (error) {
     await overrides.dbHandles?.close();

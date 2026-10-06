@@ -22,6 +22,7 @@ import { IdempotencyError } from '../idempotency/index.ts';
 import { FixedClock, createRootLogger, loadConfig } from '../index.ts';
 import { createValidatorCompiler } from '../validation/index.ts';
 import { PlatformFastifyAdapter } from './global-errors.ts';
+import { RequestRejection } from './request-checks.ts';
 
 const TRACE = 'abcdefABCDEF01234567abcdefABCDEF';
 const BODY_MARKER = 'body-marker-q7';
@@ -48,6 +49,12 @@ function thrown(kind: string): unknown {
       return new IdempotencyError('outcome_unknown');
     case 'ordinary':
       return new BadRequestException('ordinary HTTP error');
+    case 'rejection':
+      return new RequestRejection(10402, 401, '设备未注册、已失效或非服务端签发');
+    case 'rejection-server-status':
+      return new RequestRejection(10401, 500, 'not a client status');
+    case 'rejection-bad-code':
+      return new RequestRejection(401, 401, 'not a contract code');
     default:
       return new HttpException(
         { code: 20001, msg: 'x', data: { fields: ['a'] }, trace_id: 't' },
@@ -242,6 +249,27 @@ it('[AC-B1-01za#1][AC-B1-01za#2][AC-B1-01za#3] request body errors answer 20001 
   }
   const accepted = await post('/__global_errors/echo', '{"ok":true}');
   expect(accepted.json()).toEqual({ body: { ok: true } });
+});
+
+it('[BR-ID-09] a RequestRejection answers its client status and { code, msg, trace_id } without data, unlogged', async () => {
+  for (const origin of ['controller', 'guard']) {
+    lines.length = 0;
+    const response = await post(`/__global_errors/${origin}/rejection`, '{}');
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      code: 10402,
+      msg: '设备未注册、已失效或非服务端签发',
+      trace_id: TRACE,
+    });
+    expect(validate(response.json())).toBe(true);
+    expect(unhandled()).toEqual([]);
+  }
+  // A status outside 400–499 or a code outside the contract range is a server error.
+  for (const kind of ['rejection-server-status', 'rejection-bad-code']) {
+    lines.length = 0;
+    expectServerError(await post(`/__global_errors/controller/${kind}`, '{}'));
+    expect(unhandled()).toMatchObject([{ trace_id: TRACE, error_class: 'RequestRejection' }]);
+  }
 });
 
 it('[AC-B1-01za#6] a reply that cannot be serialized answers 500 / 50001 and the app keeps serving', async () => {

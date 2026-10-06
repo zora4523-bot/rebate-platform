@@ -26,8 +26,20 @@ export function isRegistrableDeviceHash(
 /**
  * Field-encryption context of devices.install_secret_cipher. It names the column and binds the
  * ciphertext to its row, so a ciphertext copied onto another device row does not decrypt there.
- * Request-signature verification (B1-02e) decrypts with the same context.
+ * Request-signature verification (B1-03b, DeviceSigningKeysService) decrypts with the same context.
  */
 export function installSecretContext(deviceId: string): string {
   return `devices.install_secret:${deviceId}`;
+}
+
+/** A device_id as the server issues it: a UUID in canonical lower-case form (platform newUuidV7). */
+const DEVICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * X-Device-Id may name a server-issued device only in the form the server returned it
+ * (BR-ID-09: only issued values are accepted). Anything else is answered without a lookup: it
+ * cannot be issued, and the uuid column would refuse it.
+ */
+export function isWellFormedDeviceId(value: string): boolean {
+  return DEVICE_ID.test(value);
 }
