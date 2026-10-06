@@ -11,6 +11,7 @@ paths:
   - 'apps/admin/src/providers/auth/**'
   - 'apps/admin/src/pages/login/**'
   - 'apps/admin/src/App.tsx'
+  - 'apps/admin/src/texts/login.ts'
 test_paths:
   - 'test/spec/frontend/admin-auth/**'
 impl: claude

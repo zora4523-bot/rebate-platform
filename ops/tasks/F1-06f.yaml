@@ -4,6 +4,7 @@ title: 后台 StepUpModal：短信档与动态码档两种输入、单个六位�
 type: impl
 # 2026-10-06 入账（前端线 f1-frontend）。依据 03 §9.2「二次验证」（两档的划分与档位来源：/admin/v1/me/permissions 随权限点下发的标注）、§9.2「控件与结构」（d014690，任务书注明提交号）、
 # BR-ID-34、10 AC-S1-157/158，画板 AdmStepUp、AdmStepUpSms 等（复制到运行目录核对 sha256），由编排者摘入任务书第 2 节。
+# 弹窗与输入框的后台文案放 apps/admin/src/texts/step-up.ts（lint 只许 src/texts/** 含中文；2026-10-06 f1-frontend-3 补路径）。
 # 组件只负责取码与回调：发码、校验、拿 step-up 令牌的请求由调用方注入的函数完成（形状等 CT-02f 合并后接上，之前测试用夹具），组件不存令牌。六位动态码输入框单独放 components/otp-input（登录与首次绑定 F1-06h 复用）。
 refs: []
 refs_hash: {}
@@ -11,6 +12,7 @@ deps: [F1-06e]
 paths:
   - 'apps/admin/src/components/step-up/**'
   - 'apps/admin/src/components/otp-input/**'
+  - 'apps/admin/src/texts/step-up.ts'
 test_paths:
   - 'test/spec/frontend/admin-stepup/**'
 impl: claude
