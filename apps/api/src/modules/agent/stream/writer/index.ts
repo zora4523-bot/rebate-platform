@@ -39,6 +39,10 @@
 // only, `import type` for type-only imports, relative imports with `.ts`, no NestJS import, no
 // `process.env`, no clock. Allowed packages: ajv, ajv-formats (already dependencies of @couli/api).
 
+import { readFileSync } from 'node:fs';
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import ajvFormats from 'ajv-formats';
+
 export type StreamEvent =
   'meta' | 'text.delta' | 'tool.status' | 'card' | 'suggestions' | 'error' | 'done';
 
@@ -60,6 +64,7 @@ export interface MetaData {
   readonly prompt_version: string;
   readonly model_label: string;
   readonly ai_label: string;
+  readonly duplicate?: boolean;
 }
 
 export interface TextDeltaInput {
@@ -89,6 +94,7 @@ export interface ErrorData {
   readonly msg: string;
   readonly retryable: boolean;
   readonly fallback: string | null;
+  readonly fallback_q?: string | null;
 }
 
 export interface DoneData {
@@ -134,50 +140,152 @@ export class StreamProtocolError extends Error {
   readonly code: StreamProtocolErrorCode;
 
   constructor(code: StreamProtocolErrorCode, message: string) {
-    super('NotImplemented');
-    void code;
-    void message;
-    throw new Error('NotImplemented: StreamProtocolError');
+    super(message);
+    this.name = 'StreamProtocolError';
+    this.code = code;
   }
 }
 
 export function encodeFrame(frame: StreamFrame): string {
-  void frame;
-  throw new Error('NotImplemented: encodeFrame');
+  return `event: ${frame.event}\nid: ${frame.id}\ndata: ${JSON.stringify(frame.data)}\n\n`;
 }
 
 export function encodePing(): string {
-  throw new Error('NotImplemented: encodePing');
+  return ': ping\n\n';
 }
 
+let defaultValidator: FrameValidator | undefined;
+
 export function createFrameValidator(schema?: object): FrameValidator {
-  void schema;
-  throw new Error('NotImplemented: createFrameValidator');
+  if (schema === undefined && defaultValidator !== undefined) return defaultValidator;
+  const ajv = new Ajv2020({ strict: true, allErrors: true });
+  ajvFormats.default(ajv);
+  ajv.addFormat('int32', {
+    type: 'number',
+    validate: (value: number) =>
+      Number.isInteger(value) && value >= -(2 ** 31) && value <= 2 ** 31 - 1,
+  });
+  ajv.addFormat('int64', { type: 'number', validate: Number.isSafeInteger });
+  // src/ and dist/ have the same depth; loading does not depend on the process cwd.
+  const contract =
+    schema ??
+    (JSON.parse(
+      readFileSync(
+        new URL('../../../../../../../contracts/agent-stream.schema.json', import.meta.url),
+        'utf8',
+      ),
+    ) as object);
+  const validate = ajv.compile(contract);
+  const check: FrameValidator = (frame) => {
+    if (validate(frame)) return { ok: true };
+    return {
+      ok: false,
+      errors: validate.errors?.map(
+        (error) => `${error.instancePath || '/'}: ${error.message ?? error.keyword}`,
+      ) ?? ['Invalid stream frame'],
+    };
+  };
+  if (schema === undefined) defaultValidator = check;
+  return check;
+}
+
+/** Validate the JSON snapshot that will actually reach the sink, detached from the caller. */
+function snapshotData(data: unknown): Record<string, unknown> {
+  try {
+    const json = JSON.stringify(structuredClone(data), (_key, value: unknown) => {
+      // JSON would silently turn these into null (including nullable amount fields).
+      if (typeof value === 'number' && !Number.isFinite(value)) {
+        throw new Error('Non-finite stream value');
+      }
+      return value;
+    });
+    const snapshot: unknown = JSON.parse(json);
+    if (typeof snapshot !== 'object' || snapshot === null || Array.isArray(snapshot)) {
+      throw new Error('Stream data must be an object');
+    }
+    return snapshot as Record<string, unknown>;
+  } catch {
+    throw new StreamProtocolError('invalid_frame', 'Stream data must be a JSON object');
+  }
 }
 
 export class StreamWriter {
+  readonly #sink: StreamSink;
+  readonly #validator: FrameValidator;
+  #seq = 0;
+  #closed = false;
+  #writing = false;
+
   constructor(options: StreamWriterOptions) {
-    void options;
-    throw new Error('NotImplemented: StreamWriter');
+    this.#sink = options.sink;
+    this.#validator = options.validator ?? createFrameValidator();
   }
 
   /** The last seq written; 0 before the first frame. */
   get seq(): number {
-    throw new Error('NotImplemented: StreamWriter.seq');
+    return this.#seq;
   }
 
-  /** True once done or error has been written. */
+  /** True once done/error is written, or the sink fails and delivery becomes uncertain. */
   get closed(): boolean {
-    throw new Error('NotImplemented: StreamWriter.closed');
+    return this.#closed;
   }
 
   emit<E extends StreamEvent>(event: E, data: StreamEventInput[E]): StreamFrame {
-    void event;
-    void data;
-    throw new Error('NotImplemented: StreamWriter.emit');
+    this.#assertWritable();
+    if ((this.#seq === 0) !== (event === 'meta')) {
+      throw new StreamProtocolError('meta_order', 'The first frame must be the only meta frame');
+    }
+    this.#writing = true;
+    try {
+      const id = this.#seq + 1;
+      if (!Number.isSafeInteger(id)) {
+        throw new StreamProtocolError('invalid_frame', 'Stream sequence exceeds the safe range');
+      }
+      const payload = snapshotData(data);
+      if (event === 'text.delta' || event === 'tool.status' || event === 'card') {
+        payload['seq'] = id;
+      }
+      const frame: StreamFrame = { event, id, data: payload };
+      const result = this.#validator(frame);
+      if (!result.ok) {
+        throw new StreamProtocolError('invalid_frame', result.errors.join('; '));
+      }
+      this.#write(encodeFrame(frame));
+      this.#seq = id;
+      this.#closed = event === 'done' || event === 'error';
+      return frame;
+    } finally {
+      this.#writing = false;
+    }
   }
 
   ping(): void {
-    throw new Error('NotImplemented: StreamWriter.ping');
+    this.#assertWritable();
+    this.#writing = true;
+    try {
+      this.#write(encodePing());
+    } finally {
+      this.#writing = false;
+    }
+  }
+
+  #assertWritable(): void {
+    if (this.#closed) {
+      throw new StreamProtocolError('stream_closed', 'The stream is closed');
+    }
+    if (this.#writing) {
+      throw new StreamProtocolError('invalid_frame', 'Reentrant stream writes are not allowed');
+    }
+  }
+
+  #write(chunk: string): void {
+    try {
+      this.#sink.write(chunk);
+    } catch (error) {
+      // A sink may have accepted part or all of the block before throwing. Do not retry it.
+      this.#closed = true;
+      throw error;
+    }
   }
 }
