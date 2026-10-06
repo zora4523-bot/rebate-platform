@@ -1,4 +1,8 @@
-import type { AdminPermission } from '@couli/contracts-ts';
+// Permission snapshot of the signed-in account and the CASL ability built from it (规划/03 §9.2).
+// The snapshot comes from an injected provider: /admin/v1/me/permissions is not in the contract
+// yet (CT-02f), so the shell never calls it itself. The server re-checks every action.
+import { admin_permission, type AdminPermission } from '@couli/contracts-ts';
+import { createMongoAbility, type MongoAbility } from '@casl/ability';
 
 export interface PermissionSnapshot {
   readonly isSuper: boolean;
@@ -7,11 +11,50 @@ export interface PermissionSnapshot {
 
 export type PermissionsProvider = () => Promise<PermissionSnapshot>;
 
-export interface AccessControl {
-  can(permission: AdminPermission): boolean;
+/**
+ * Permission keys that 规划/04 §11 added on 2026-10-04 (payments line) and that
+ * contracts/enums/admin.yaml does not list yet. 待 CT-21a 同步后删除。
+ */
+export const PENDING_CONTRACT_PERMISSIONS = [
+  'pay.view',
+  'pay.refund',
+  'pay.resolve',
+  'switch.pay',
+] as const;
+
+export type PendingContractPermission = (typeof PENDING_CONTRACT_PERMISSIONS)[number];
+export type KnownPermission = AdminPermission | PendingContractPermission;
+
+const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set<string>([
+  ...admin_permission,
+  ...PENDING_CONTRACT_PERMISSIONS,
+]);
+
+function isKnownPermission(value: string): value is KnownPermission {
+  return KNOWN_PERMISSIONS.has(value);
 }
 
+type AdminAbility = MongoAbility<[KnownPermission | 'manage', 'console' | 'all']>;
+
+export interface AccessControl {
+  readonly isSuper: boolean;
+  can(permission: KnownPermission): boolean;
+}
+
+/**
+ * Exact-match permission checks: a super admin holds every key, other accounts only the listed
+ * known keys. Unknown keys (typos, prefixes, CASL's own `manage`) grant nothing.
+ */
 export function createAccessControl(snapshot: PermissionSnapshot): AccessControl {
-  void snapshot;
-  throw new Error('NotImplemented: createAccessControl');
+  const ability = createMongoAbility<AdminAbility>(
+    snapshot.isSuper
+      ? [{ action: 'manage', subject: 'all' }]
+      : snapshot.permissions
+          .filter(isKnownPermission)
+          .map((action) => ({ action, subject: 'console' as const })),
+  );
+  return {
+    isSuper: snapshot.isSuper,
+    can: (permission) => ability.can(permission, 'console'),
+  };
 }
