@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { expect, it } from 'vitest';
 import {
   countDeviceRegistrations,
@@ -6,7 +7,7 @@ import {
 
 const now = new Date('2026-10-06T12:00:00Z');
 const windowMs = 30 * 24 * 60 * 60 * 1000;
-const scope = { app_id: 'couli', device_hash: 'H' };
+const scope = { app_id: 'couli', device_hash: randomBytes(32).toString('hex') };
 function row(
   id: string,
   target: string | null = null,
@@ -27,7 +28,7 @@ it('[BR-ID-05] 滑动 30×24 小时只计算本 App、本设备窗口内记录�
     row('inside', null, { created_at: new Date(now.getTime() - windowMs + 60_000) }),
     row('outside', null, { created_at: new Date(now.getTime() - windowMs - 60_000) }),
     row('other-app', null, { app_id: 'other' }),
-    row('other-device', null, { device_hash: 'D' }),
+    row('other-device', null, { device_hash: randomBytes(32).toString('hex') }),
   ];
   expect(countDeviceRegistrations(rows, scope, now, true)).toBe(2);
 });
@@ -42,16 +43,17 @@ it('[AC-S1-59 ⑥] A/U9 成对只算一条，X/Y 依次占名额，关闭去重�
 });
 
 it('[AC-S1-59 ⑦] 跨设备三个并号墓碑全部计入，两台设备都不退名额', () => {
+  const otherHash = randomBytes(32).toString('hex');
   const rows = [
-    row('A1', null, { device_hash: 'D1' }),
-    row('A2', null, { device_hash: 'D1' }),
-    row('A3', null, { device_hash: 'D1' }),
+    row('A1', null, { device_hash: otherHash }),
+    row('A2', null, { device_hash: otherHash }),
+    row('A3', null, { device_hash: otherHash }),
     row('B1', 'A1'),
     row('B2', 'A2'),
     row('B3', 'A3'),
   ];
   expect(countDeviceRegistrations(rows, scope, now, true)).toBe(3);
-  expect(countDeviceRegistrations(rows, { ...scope, device_hash: 'D1' }, now, true)).toBe(3);
+  expect(countDeviceRegistrations(rows, { ...scope, device_hash: otherHash }, now, true)).toBe(3);
 });
 
 it('[BR-ID-05] 多个源号并入同一在窗口内的目标号，整体只计一个', () => {
@@ -65,7 +67,7 @@ it('[BR-ID-05] 目标滑出窗口或不在本 App/设备，源号照常计数且
   for (const target of [
     row('A', null, { created_at: new Date(now.getTime() - windowMs - 60_000) }),
     row('A', null, { app_id: 'other' }),
-    row('A', null, { device_hash: 'other' }),
+    row('A', null, { device_hash: randomBytes(32).toString('hex') }),
   ]) {
     expect(countDeviceRegistrations([target, row('B', 'A'), row('C', 'A')], scope, now, true)).toBe(
       2,

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
 import {
   createRegistrationService,
+  registrationConstants,
   type RegistrationOptions,
 } from '../../../../apps/api/src/modules/identity/application/registration.ts';
 import {
@@ -33,11 +34,16 @@ it('[BR-INV-06] 未携带或规范化后空邀请码不调用端口，结果无 
     code: null,
   }));
   const omitted = success(await ctx.register({}, { bindInvite: bind }));
-  const empty = success(await ctx.register({ invite_code: '', phone: null }, { bindInvite: bind }));
+  const empty = success(
+    await ctx.register(
+      { invite_code: '', phone: null, register_method: 'wechat' },
+      { bindInvite: bind },
+    ),
+  );
   expect(omitted).not.toHaveProperty('invite_bind');
   expect(empty).not.toHaveProperty('invite_bind');
   expect(bind).not.toHaveBeenCalled();
-}, 30_000);
+});
 
 it('[BR-INV-06] 携带邀请码但端口未接时返回 failed/50001，账号仍提交', async () => {
   const ctx = await context(kit);
@@ -121,8 +127,47 @@ it('[BR-ID-05] 申诉插入点在拦截返回前调用，允许时越过本次�
   );
   const result = success(await ctx.register({}, { allowBlockedRegistration: allow }));
   expect(allow).toHaveBeenCalledTimes(1);
-  expect(seen).toEqual([{ app_id: ctx.appId, device_hash: ctx.hash, count: 3, limit: 3 }]);
+  expect(seen).toEqual([
+    expect.objectContaining({
+      app_id: ctx.appId,
+      device_hash: ctx.hash,
+      count: 3,
+      limit: 3,
+      phone_hmac: kit.crypto.blindIndex(PHONE, registrationConstants().PHONE_BLIND_INDEX_CONTEXT),
+      third_party_digest: null,
+    }),
+  ]);
   expect(await user(kit.db, result.user_id)).toMatchObject({ status: 'normal' });
+  expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 4, registrations: 4 });
+});
+
+it('[BR-ID-05] 第三方建号放行端口收到原身份摘要，无手机号时 phone_hmac 为空', async () => {
+  const ctx = await context(kit);
+  for (let i = 0; i < 3; i++) await seedUser(kit.db, ctx.appId, { hash: ctx.hash });
+  await anchorAfterRecords(kit, ctx);
+  const digest = kit.crypto.blindIndex('wechat:test-subject', 'test.third-party');
+  const allow = vi.fn<NonNullable<RegistrationOptions['allowBlockedRegistration']>>(
+    async () => true,
+  );
+  const result = success(
+    await ctx.register(
+      { phone: null, register_method: 'wechat', third_party_digest: digest },
+      { allowBlockedRegistration: allow },
+    ),
+  );
+  expect(allow).toHaveBeenCalledTimes(1);
+  expect(allow.mock.calls[0]![1]).toMatchObject({
+    app_id: ctx.appId,
+    device_hash: ctx.hash,
+    count: 3,
+    limit: 3,
+    phone_hmac: null,
+    third_party_digest: digest,
+  });
+  expect(await user(kit.db, result.user_id)).toMatchObject({
+    register_method: 'wechat',
+    phone_hmac: null,
+  });
   expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 4, registrations: 4 });
 });
 

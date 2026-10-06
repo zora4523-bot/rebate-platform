@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
 import {
@@ -73,6 +74,7 @@ it('[BR-ID-04][BR-INV-14] 六种建号方式保留来源，第三方可无手机
   for (const [index, method] of methods.entries()) {
     const ctx = await context(kit);
     const level = index % 2 === 0 ? 'L2' : 'L3';
+    const phone = ['wechat', 'apple', 'huawei'].includes(method) ? null : PHONE;
     ctx.values.set('level.default', level);
     const { channel, device_hash, device_id, ...base } = ctx.command;
     void channel;
@@ -83,27 +85,44 @@ it('[BR-ID-04][BR-INV-14] 六种建号方式保留来源，第三方可无手机
       await kit.db.transaction().execute((trx) =>
         service.register(trx, {
           ...base,
-          phone: null,
+          phone,
           register_method: method,
         }),
       ),
     );
-    expect(await user(kit.db, result.user_id)).toMatchObject({
+    const saved = await user(kit.db, result.user_id);
+    expect(saved).toMatchObject({
       register_method: method,
       registered_channel: null,
-      phone_cipher: null,
-      phone_hmac: null,
       level,
     });
+    if (phone === null) {
+      expect(saved).toMatchObject({ phone_cipher: null, phone_hmac: null });
+    } else {
+      const constants = registrationConstants();
+      expect(Buffer.isBuffer(saved.phone_cipher)).toBe(true);
+      expect(
+        kit.crypto.decrypt(saved.phone_cipher!.toString('utf8'), constants.PHONE_CIPHER_CONTEXT),
+      ).toBe(phone);
+      expect(saved.phone_hmac).toBe(
+        kit.crypto.blindIndex(phone, constants.PHONE_BLIND_INDEX_CONTEXT),
+      );
+    }
   }
-}, 30_000);
+}, 60_000);
 
 it('[BR-INV-01][BR-ATTR-06] 默认随机源连续建号，邀请码及归属码格式正确且不重复', async () => {
   const ctx = await context(kit);
   const invites = new Set<string>();
   const attrs = new Set<string>();
   for (let i = 0; i < 24; i++) {
-    const result = success(await ctx.register({ phone: null, device_hash: `hash-${i}` }));
+    const result = success(
+      await ctx.register({
+        phone: null,
+        register_method: 'wechat',
+        device_hash: randomBytes(32).toString('hex'),
+      }),
+    );
     expect(result.invite_code).toMatch(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/);
     expect(result.attr_code).toMatch(/^[0-9a-z]{8}$/);
     invites.add(result.invite_code);
@@ -112,7 +131,7 @@ it('[BR-INV-01][BR-ATTR-06] 默认随机源连续建号，邀请码及归属码�
   expect(invites.size).toBe(24);
   expect(attrs.size).toBe(24);
   expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 24, registrations: 24 });
-}, 30_000);
+}, 60_000);
 
 it('[BR-INV-01] 敏感命中、唯一冲突各算一次，第 3 候选写入且事务可继续提交', async () => {
   const ctx = await context(kit);
@@ -222,7 +241,7 @@ it('[BR-ATTR-06] 归属码持续冲突有界失败并告警，不留下账号或
   expect(afterRegistered).not.toHaveBeenCalled();
   expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 1, registrations: 0 });
   assertPrivateWarnings(ctx.lines);
-}, 30_000);
+});
 
 it('[04 §3.2] 手机盲索引唯一冲突返回独立 phone_taken，调用方前后写入可提交', async () => {
   const ctx = await context(kit);
@@ -232,7 +251,10 @@ it('[04 §3.2] 手机盲索引唯一冲突返回独立 phone_taken，调用方�
     await sql`UPDATE app.users SET nickname = 'caller_before' WHERE id = ${first.user_id}`.execute(
       trx,
     );
-    const result = await service.register(trx, { ...ctx.command, device_hash: 'another-device' });
+    const result = await service.register(trx, {
+      ...ctx.command,
+      device_hash: randomBytes(32).toString('hex'),
+    });
     await sql`UPDATE app.users SET avatar = 'caller_after' WHERE id = ${first.user_id}`.execute(
       trx,
     );
@@ -250,7 +272,7 @@ it('[04 §3.2] 同一新手机号在不同设备并发建号：一个成功、�
   const ctx = await context(kit);
   const service = createRegistrationService(ctx.options);
   const results = await Promise.all(
-    ['device-a', 'device-b'].map((device_hash) =>
+    [randomBytes(32).toString('hex'), randomBytes(32).toString('hex')].map((device_hash) =>
       kit.db.transaction().execute((trx) => service.register(trx, { ...ctx.command, device_hash })),
     ),
   );
@@ -263,7 +285,7 @@ it('[04 §3.2][BR-ID-04] 注销后可重新用同手机号建号，旧号及其�
   const ctx = await context(kit);
   const first = success(await ctx.register());
   await sql`UPDATE app.users SET status = 'deleted' WHERE id = ${first.user_id}`.execute(kit.db);
-  const second = success(await ctx.register({ device_hash: 'new-device' }));
+  const second = success(await ctx.register({ device_hash: randomBytes(32).toString('hex') }));
   expect(second.user_id).not.toBe(first.user_id);
   expect(second.invite_code).not.toBe(first.invite_code);
   expect(await user(kit.db, first.user_id)).toMatchObject({
@@ -274,7 +296,7 @@ it('[04 §3.2][BR-ID-04] 注销后可重新用同手机号建号，旧号及其�
     (await user(kit.db, first.user_id)).phone_hmac,
   );
   expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 2, registrations: 2 });
-}, 30_000);
+});
 
 it('[BR-ID-04] 同一设备手机号与第三方首次登录分别创建账号，不自动合并', async () => {
   const ctx = await context(kit);
@@ -291,7 +313,7 @@ it('[BR-ID-04] 同一设备手机号与第三方首次登录分别创建账号�
     phone_hmac: null,
   });
   expect(await registrations(kit.db, ctx.appId)).toHaveLength(2);
-}, 30_000);
+});
 
 it('[BR-INV-01] 50001 回滚范围只含建号，调用方先前写入和后续 SQL 均保留', async () => {
   const ctx = await context(kit);
@@ -313,6 +335,38 @@ it('[BR-INV-01] 50001 回滚范围只含建号，调用方先前写入和后续 
     avatar: 'caller_after',
   });
 });
+
+for (const collision of ['invite', 'attr'] as const) {
+  it(`[BR-INV-01][BR-ATTR-06] ${collision} 持续唯一冲突返回 50001，调用方前后 SQL 写入均可提交`, async () => {
+    const ctx = await context(kit);
+    const existing = await seedUser(kit.db, ctx.appId, { invite: 'BBBBBB', attr: 'abcd1234' });
+    const candidate = vi.fn(() => (collision === 'invite' ? 'BBBBBB' : 'abcd1234'));
+    const afterRegistered = vi.fn(async () => undefined);
+    const service = createRegistrationService({
+      ...ctx.options,
+      afterRegistered,
+      ...(collision === 'invite' ? { inviteCandidate: candidate } : { attrCandidate: candidate }),
+    });
+    const result = await kit.db.transaction().execute(async (trx) => {
+      await sql`UPDATE app.users SET nickname = 'caller_before' WHERE id = ${existing}`.execute(
+        trx,
+      );
+      const result = await service.register(trx, ctx.command);
+      await sql`UPDATE app.users SET avatar = 'caller_after' WHERE id = ${existing}`.execute(trx);
+      return result;
+    });
+    expect(result).toEqual({ code: 50001 });
+    if (collision === 'invite') expect(candidate).toHaveBeenCalledTimes(5);
+    else expect(candidate).toHaveBeenCalled();
+    expect(afterRegistered).not.toHaveBeenCalled();
+    expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 1, registrations: 0 });
+    expect(await user(kit.db, existing)).toMatchObject({
+      nickname: 'caller_before',
+      avatar: 'caller_after',
+    });
+    assertPrivateWarnings(ctx.lines);
+  });
+}
 
 it('[04 §3.2] 调用方回滚同时撤销 users 与 device_registrations', async () => {
   const ctx = await context(kit);

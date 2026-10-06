@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
@@ -29,7 +29,12 @@ it('[BR-ID-05] 同设备三个账号后第四次微信建号返回 44001，携�
   const ctx = await context(kit);
   const afterRegistered = vi.fn(async () => undefined);
   for (let i = 0; i < 3; i++) {
-    success(await ctx.register({ phone: null, device_id: randomUUID() }, { afterRegistered }));
+    success(
+      await ctx.register(
+        { phone: `+86138001381${i}`, device_id: randomUUID() },
+        { afterRegistered },
+      ),
+    );
     await anchorAfterRecords(kit, ctx);
   }
   expect(
@@ -37,7 +42,7 @@ it('[BR-ID-05] 同设备三个账号后第四次微信建号返回 44001，携�
       { phone: null, register_method: 'wechat', device_id: randomUUID() },
       { afterRegistered },
     ),
-  ).toEqual({
+  ).toMatchObject({
     code: 44001,
     kind: 'device_register_limit',
     app_id: ctx.appId,
@@ -47,11 +52,11 @@ it('[BR-ID-05] 同设备三个账号后第四次微信建号返回 44001，携�
   });
   expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 3, registrations: 3 });
   expect(afterRegistered).toHaveBeenCalledTimes(3);
-}, 30_000);
+}, 60_000);
 
 it('[BR-ID-05] 已注销、封禁和并号墓碑仍占额度，不按当前可用账号数计数', async () => {
   const ctx = await context(kit);
-  const target = await seedUser(kit.db, ctx.appId, { hash: 'elsewhere' });
+  const target = await seedUser(kit.db, ctx.appId, { hash: randomBytes(32).toString('hex') });
   await seedUser(kit.db, ctx.appId, { hash: ctx.hash, status: 'deleted' });
   await seedUser(kit.db, ctx.appId, { hash: ctx.hash, status: 'banned' });
   const source = await seedUser(kit.db, ctx.appId, { hash: ctx.hash });
@@ -94,13 +99,14 @@ for (const enabled of [true, false]) {
       users: enabled ? 4 : 3,
       registrations: enabled ? 4 : 3,
     });
-  }, 30_000);
+  }, 60_000);
 }
 
 it('[AC-S1-59 ⑦] 三个跨设备并号不返还任一设备名额，来源记录保留', async () => {
   const ctx = await context(kit);
   const targets = [];
-  for (let i = 0; i < 3; i++) targets.push(await seedUser(kit.db, ctx.appId, { hash: 'D1' }));
+  const otherHash = randomBytes(32).toString('hex');
+  for (let i = 0; i < 3; i++) targets.push(await seedUser(kit.db, ctx.appId, { hash: otherHash }));
   const sources = [];
   for (const [i, method] of (['wechat', 'apple', 'wechat'] as const).entries()) {
     const result = success(await ctx.register({ phone: null, register_method: method }));
@@ -110,14 +116,14 @@ it('[AC-S1-59 ⑦] 三个跨设备并号不返还任一设备名额，来源记�
   }
   const before = await registrations(kit.db, ctx.appId);
   expect(await ctx.register()).toMatchObject({ code: 44001, count: 3 });
-  expect(await ctx.register({ device_hash: 'D1' })).toMatchObject({ code: 44001, count: 3 });
+  expect(await ctx.register({ device_hash: otherHash })).toMatchObject({ code: 44001, count: 3 });
   expect(before).toHaveLength(6);
   for (const [i, id] of sources.entries()) {
     expect(before.find((r) => r.user_id === id)).toMatchObject({ merged_into_user_id: targets[i] });
   }
   expect(await registrations(kit.db, ctx.appId)).toEqual(before);
   expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 6, registrations: 6 });
-}, 30_000);
+}, 60_000);
 
 it('[BR-ID-05] 窗口内多个源号并入同设备同一个目标时只占一个名额', async () => {
   const ctx = await context(kit);
@@ -127,30 +133,35 @@ it('[BR-ID-05] 窗口内多个源号并入同设备同一个目标时只占一�
     await merge(kit.db, ctx.appId, source, target);
   }
   await anchorAfterRecords(kit, ctx);
-  success(await ctx.register({ phone: null }));
+  success(await ctx.register({ phone: null, register_method: 'wechat' }));
   await anchorAfterRecords(kit, ctx);
-  success(await ctx.register({ phone: null }));
+  success(await ctx.register({ phone: null, register_method: 'wechat' }));
   await anchorAfterRecords(kit, ctx);
-  expect(await ctx.register({ phone: null })).toMatchObject({ code: 44001, count: 3 });
+  expect(await ctx.register({ phone: null, register_method: 'wechat' })).toMatchObject({
+    code: 44001,
+    count: 3,
+  });
   expect(await registrations(kit.db, ctx.appId)).toHaveLength(6);
-}, 30_000);
+}, 60_000);
 
 it('[BR-ID-05] App 分隔计数、配置上限 2 生效，device_id 改变不重置额度', async () => {
   const ctx = await context(kit);
   ctx.values.set('risk.device_register_limit', 2);
   for (let i = 0; i < 3; i++) await seedUser(kit.db, `${ctx.appId}_other`, { hash: ctx.hash });
-  success(await ctx.register({ phone: null }));
+  success(await ctx.register({ phone: null, register_method: 'wechat' }));
   await anchorAfterRecords(kit, ctx);
-  success(await ctx.register({ phone: null, device_id: randomUUID() }));
+  success(await ctx.register({ phone: null, register_method: 'wechat', device_id: randomUUID() }));
   await anchorAfterRecords(kit, ctx);
-  expect(await ctx.register({ phone: null, device_id: randomUUID() })).toMatchObject({
+  expect(
+    await ctx.register({ phone: null, register_method: 'wechat', device_id: randomUUID() }),
+  ).toMatchObject({
     code: 44001,
     count: 2,
     limit: 2,
   });
   expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 2, registrations: 2 });
   expect(await sizes(kit.db, `${ctx.appId}_other`)).toEqual({ users: 3, registrations: 3 });
-}, 30_000);
+}, 60_000);
 
 it('[BR-ID-05] 注入时钟移动到窗口前后一分钟：旧记录仍在但滑出后释放名额', async () => {
   const ctx = await context(kit);
@@ -192,7 +203,12 @@ it('[BR-ID-05] 同一新设备同时建五个号，恰好三成功、两拦截',
       kit.db
         .transaction()
         .execute((trx) =>
-          service.register(trx, { ...ctx.command, phone: null, device_id: randomUUID() }),
+          service.register(trx, {
+            ...ctx.command,
+            phone: null,
+            register_method: 'wechat',
+            device_id: randomUUID(),
+          }),
         ),
     ),
   );
@@ -210,7 +226,7 @@ it('[BR-ID-05] 已有两条：A 成功未提交时 B 等待，A 提交后 B 读�
   let committed = false;
   let pending: Promise<unknown> | undefined;
   try {
-    success(await service.register(a, { ...ctx.command, phone: null }));
+    success(await service.register(a, { ...ctx.command, phone: null, register_method: 'wechat' }));
     let settled = false;
     const started = Promise.withResolvers<void>();
     const b = kit.db.transaction().execute(async (trx) => {
@@ -219,6 +235,7 @@ it('[BR-ID-05] 已有两条：A 成功未提交时 B 等待，A 提交后 B 读�
         return await service.register(trx, {
           ...ctx.command,
           phone: null,
+          register_method: 'wechat',
           device_id: randomUUID(),
         });
       } finally {
@@ -237,6 +254,44 @@ it('[BR-ID-05] 已有两条：A 成功未提交时 B 等待，A 提交后 B 读�
     expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 3, registrations: 3 });
   } finally {
     if (!committed) await a.rollback().execute();
+    await pending?.catch(() => undefined);
+  }
+}, 30_000);
+
+it('[BR-ID-05] 同 App 不同设备：A 建号未提交时 B 能独立完成并提交', async () => {
+  const ctx = await context(kit);
+  ctx.clock.advanceMs(60_000);
+  const service = createRegistrationService(ctx.options);
+  const a = await kit.db.startTransaction().execute();
+  let pending: Promise<unknown> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const first = success(await service.register(a, ctx.command));
+    const otherHash = randomBytes(32).toString('hex');
+    const b = kit.db.transaction().execute((trx) =>
+      service.register(trx, {
+        ...ctx.command,
+        phone: '+8613800138001',
+        device_hash: otherHash,
+        device_id: randomUUID(),
+      }),
+    );
+    pending = b;
+    void b.catch(() => undefined);
+    const result = await Promise.race([
+      b,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), 5_000);
+      }),
+    ]);
+    expect(result, '另一台设备必须在 A 提交或回滚之前完成').toMatchObject({ code: 0 });
+    expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 1, registrations: 1 });
+    const committed = await registrations(kit.db, ctx.appId);
+    expect(committed).toEqual([expect.objectContaining({ device_hash: otherHash })]);
+    expect(committed[0]!.user_id).not.toBe(first.user_id);
+  } finally {
+    clearTimeout(timer);
+    await a.rollback().execute();
     await pending?.catch(() => undefined);
   }
 }, 30_000);

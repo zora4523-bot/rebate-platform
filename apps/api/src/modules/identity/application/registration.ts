@@ -11,6 +11,8 @@ export type InviteBindResult = components['schemas']['InviteBind'];
 export interface RegistrationCommand {
   readonly app_id: string;
   readonly phone: string | null;
+  // B1-02d supplies the third-party identity digest; SMS callers omit it or pass null.
+  readonly third_party_digest?: string | null;
   readonly register_method: RegisterMethod;
   readonly channel?: string;
   readonly device_hash?: string;
@@ -69,7 +71,11 @@ export interface RegistrationOptions {
   // B1-03d: default denies; ordered before returning the device-limit rejection.
   readonly allowBlockedRegistration?: (
     trx: Transaction<DB>,
-    input: DeviceLimitContext,
+    // BR-ID-36 closure: bind the exception to the original device and phone/third-party subject.
+    input: DeviceLimitContext & {
+      readonly phone_hmac: string | null;
+      readonly third_party_digest: string | null;
+    },
   ) => Promise<boolean>;
   // TODO(规划/11 §2.3): BR-INV-14 same-transaction source=register log — blocked on level_change_logs table task.
   readonly recordInitialLevel?: (
@@ -104,6 +110,8 @@ export function createRegistrationService(options: RegistrationOptions): Registr
   void options;
   throw new Error('NotImplemented: createRegistrationService');
 }
+// Seed format: one word per line, blank lines ignored, # prefixes comments.
+// Match invite_code by case-insensitive substring; the header marks replacement by the word-bank task.
 export function createDefaultInviteCodeFilter(): SensitiveWords {
   throw new Error('NotImplemented: createDefaultInviteCodeFilter');
 }
