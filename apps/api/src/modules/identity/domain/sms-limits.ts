@@ -8,8 +8,11 @@
 //   - 5 per natural hour and 10 per natural day, both in +08:00;
 //   - protection until CAP-X-09 settles the channel's day window: 10 per sliding 24 hours.
 // A request that hits several limits waits for the latest release (Retry-After).
-// A code is 6 digits, valid 300 seconds from acceptance, kept per (app, phone, purpose), replaced by
-// the next accepted code of the same key, consumed by a successful check, void after 5 wrong tries.
+// A code is 6 digits, valid 300 seconds from the provider's acceptance (the expires_in_sec of the
+// response), kept per (app, phone, purpose), replaced by the next accepted code of the same key,
+// consumed by a successful check, void after 5 wrong tries. While its send is not committed (the
+// acceptance time is not recorded), the code counts from its reservation, which is earlier: never
+// longer than 300 seconds from acceptance.
 //
 // Also compiled by the `test` project: erasable syntax only, no imports.
 

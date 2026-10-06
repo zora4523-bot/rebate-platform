@@ -78,6 +78,15 @@ async function sent(k: SmsKeys, hash: string, reservedAt: number, acceptedAt = r
 
 const reserveAt = (k: SmsKeys, time: number) => store!.reserve(k, hex(), hex(), 'login', time);
 
+/** The members of the phone's history, without scores (p:, s:, a: plus token). */
+async function members(k: SmsKeys): Promise<string[]> {
+  return (await redis!.namespace('sms').eval("return redis.call('ZRANGE', KEYS[1], 0, -1)", {
+    keys: [`q:${k.phoneKey}`],
+    args: [],
+    ttlSeconds: 1,
+  })) as string[];
+}
+
 it('[BR-ID-05] an uncommitted send keeps counting towards its hour after it left the 60-second window', async () => {
   expect(store).toBeDefined();
   const k = keys();
@@ -249,13 +258,19 @@ it('[BR-ID-05] four wrong tries while sending carry over to the committed code: 
   expect(await store!.verify(k.codeKey, b, at('10:00:04'))).toBe('void');
 });
 
-it('[BR-ID-05] a promoted code expires 300 s after its reservation, not after its acceptance', async () => {
+it('[BR-ID-05] a committed code is valid 300 s from its acceptance; a sending one from its reservation', async () => {
   expect(store).toBeDefined();
   const k = keys();
   const b = hex();
   await sent(k, b, at('10:00:00'), at('10:00:10'));
-  expect(await store!.verify(k.codeKey, hex(), at('10:04:59'))).toBe('wrong');
-  expect(await store!.verify(k.codeKey, b, at('10:05:00'))).toBe('void');
+  expect(await store!.verify(k.codeKey, hex(), at('10:05:00'))).toBe('wrong');
+  expect(await store!.verify(k.codeKey, b, at('10:05:10'))).toBe('void');
+  // Uncommitted, the acceptance time is not known: the earlier reservation time is used.
+  const pending = keys();
+  const c = hex();
+  await sending(pending, c, at('10:00:00'));
+  expect(await store!.verify(pending.codeKey, hex(), at('10:04:59'))).toBe('wrong');
+  expect(await store!.verify(pending.codeKey, c, at('10:05:00'))).toBe('void');
 });
 
 it('[BR-ID-05] a definite rejection drops the sending candidate and puts the previous code back with the candidate’s wrong tries', async () => {
@@ -336,4 +351,83 @@ it('[BR-ID-05] the next reservation puts a sending candidate in force and drops 
   // The dropped reservation counts for nothing: with it, 10:30 would be the sixth of the hour.
   for (const time of ['10:10:00', '10:20:00']) await sent(r, hex(), at(time));
   expect(await reserveAt(r, at('10:30:00'))).toMatchObject({ kind: 'reserved' });
+});
+
+it('[BR-ID-05] the history records the state of a send: p: when reserved, s: once marked, a: once committed', async () => {
+  expect(store).toBeDefined();
+  const k = keys();
+  const token = hex();
+  await store!.reserve(k, token, hex(), 'login', at('10:00:00'));
+  expect(await members(k)).toEqual([`p:${token}`]);
+  expect(await store!.mark(k, token, at('10:00:01'))).toBe(true);
+  expect(await members(k)).toEqual([`s:${token}`]);
+  await store!.commit(k, token, at('10:00:02'));
+  expect(await members(k)).toEqual([`a:${token}`]);
+});
+
+it('[BR-ID-05] mark refuses a reservation older than D, so nothing is sent and the code in force stays valid', async () => {
+  expect(store).toBeDefined();
+  const k = keys();
+  const a = hex();
+  await sent(k, a, at('10:00:00'));
+  const token = hex();
+  await store!.reserve(k, token, hex(), 'login', at('10:01:00'));
+  expect(await store!.mark(k, token, at('10:01:15.001'))).toBe(false);
+  expect(await members(k)).toContain(`p:${token}`);
+  await store!.release(k, token, at('10:01:16'));
+  expect(await store!.verify(k.codeKey, a, at('10:01:17'))).toBe('consumed');
+  // Within D it marks, and a retry after the deadline still answers 1: it was marked in time.
+  const other = keys();
+  const marked = hex();
+  await store!.reserve(other, marked, hex(), 'login', at('10:00:00'));
+  expect(await store!.mark(other, marked, at('10:00:15'))).toBe(true);
+  expect(await store!.mark(other, marked, at('10:00:30'))).toBe(true);
+});
+
+it('[BR-ID-05] an unmarked reservation left by an expired code key or another purpose is dropped after t + D + 60 s and no longer counts', async () => {
+  expect(store).toBeDefined();
+  const phoneKey = hex();
+  const login: SmsKeys = { phoneKey, codeKey: `couli:login:${phoneKey}` };
+  const bind: SmsKeys = { phoneKey, codeKey: `couli:bind:${phoneKey}` };
+  const orphan = hex();
+  await store!.reserve(login, orphan, hex(), 'login', at('10:00:00'));
+  // Its code record is gone (as after the 300 s TTL): nothing on the code key can clean it.
+  await redis!.namespace('sms').eval("return redis.call('DEL', KEYS[1])", {
+    keys: [`c:${login.codeKey}`],
+    args: [],
+    ttlSeconds: 1,
+  });
+  // Another purpose of the same phone: held until 10:01:15, then the orphan is gone.
+  expect(await reserveAt(bind, at('10:01:14'))).toEqual({
+    kind: 'limited',
+    releaseAtMs: at('10:01:15'),
+  });
+  await sent(bind, hex(), at('10:01:15'));
+  expect(await members(login)).not.toContain(`p:${orphan}`);
+  // With the orphan still counted, 10:40 would be the sixth send of the hour.
+  for (const time of ['10:10:00', '10:20:00', '10:30:00']) await sent(bind, hex(), at(time));
+  expect(await reserveAt(bind, at('10:40:00'))).toMatchObject({ kind: 'reserved' });
+});
+
+it('[BR-ID-05] a sending candidate consumed or voided before its release does not bring the previous code back', async () => {
+  expect(store).toBeDefined();
+  const k = keys();
+  const a = hex();
+  const b = hex();
+  await sent(k, a, at('10:00:00'));
+  const token = await sending(k, b, at('10:01:00'));
+  expect(await store!.verify(k.codeKey, b, at('10:01:01'))).toBe('consumed');
+  await store!.release(k, token, at('10:01:02'));
+  expect(await store!.verify(k.codeKey, a, at('10:01:03'))).toBe('void');
+  expect(await store!.verify(k.codeKey, b, at('10:01:04'))).toBe('void');
+
+  const v = keys();
+  const old = hex();
+  await sent(v, old, at('10:00:00'));
+  const voided = await sending(v, hex(), at('10:01:00'));
+  for (let i = 0; i < 5; i++) {
+    expect(await store!.verify(v.codeKey, hex(), at('10:01:01'))).toBe('wrong');
+  }
+  await store!.release(v, voided, at('10:01:02'));
+  expect(await store!.verify(v.codeKey, old, at('10:01:03'))).toBe('void');
 });

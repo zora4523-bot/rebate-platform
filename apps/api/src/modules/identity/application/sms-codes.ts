@@ -17,9 +17,12 @@
 //      candidate equal to a code the record still knows → another code is drawn (at most
 //      SMS_CODE_DRAWS, then 50001); Redis unavailable or no reply → a best-effort release of the
 //      token, then 42901, Retry-After 5, no SMS (the previous code stays valid);
-//   5. mark (at most two attempts) turns the candidate into the sending one: from here the
-//      previous code is void. No answer, or the candidate is gone → best-effort release, 42901,
-//      Retry-After 5, no SMS;
+//   5. mark (at most two attempts) turns the candidate into the sending one while the reservation
+//      is within D: from here the previous code is void. No answer, a reservation too old, or the
+//      candidate gone → release, 42901, Retry-After 5, no SMS. Before sending, the service checks
+//      once more that no more than SMS_IN_FLIGHT_MARGIN_MS passed since the reservation (a stalled
+//      process): otherwise release, 42901, no SMS. So the provider answers within D of the
+//      reservation, the span the store counts an uncommitted send over;
 //   6. the code goes to the sender port, bounded by sendTimeoutMs (a timeout is «unknown»):
 //      - accepted or unknown (timeout, a thrown adapter error, any other answer): counted as sent
 //        (ruling §9.5 #1) — the commit counts the send at the time the provider answered and puts
@@ -30,6 +33,8 @@
 //        the next send may go (≥ 60);
 //      - rejected: the reservation and the candidate are dropped (nothing counted, the previous
 //        code is in force again with the candidate's wrong tries added), the answer is 50001.
+// Every release is retried once with the same token (idempotent); what a failed release leaves is
+// listed in infra/sms-code-store.ts.
 // verifyAndConsume(): see its comment.
 //
 // Nothing is logged that identifies the number or the code: no phone in any form, no code, no
@@ -72,6 +77,9 @@ export interface SmsMessage {
  * accepted, definitely rejected, or outcome unknown. An adapter that fails before anything left
  * the process (a configuration error, a refused credential, a malformed request it builds) must
  * answer `rejected`: a thrown error, a timeout or any other answer counts as sent (`unknown`).
+ * A real adapter must finish or abort its provider call within sendTimeoutMs (an AbortSignal on
+ * the HTTP request): the service stops waiting then and counts the send as unknown, and a call
+ * that still reaches the provider later would be accepted outside the span the quota counts.
  */
 export interface SmsSender {
   send(message: SmsMessage): Promise<SmsDelivery>;
@@ -238,10 +246,11 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
     }
   }
 
-  /** Release of a send that never went out; idempotent, its failure only logged. */
+  /** Release of a send that never went out (or was refused), retried once; failure only logged. */
   async function releaseQuietly(keys: SmsKeys, token: string, fields: object): Promise<void> {
     try {
-      await store.release(keys, token, nowMs());
+      if ((await retried(() => store.release(keys, token, nowMs()))) !== null) return;
+      logger.warn({ ...fields, reason: 'unavailable' }, 'sms_release_failed');
     } catch (error) {
       logger.warn({ ...fields, error_class: errorClass(error) }, 'sms_release_failed');
     }
@@ -301,9 +310,17 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
       const marked = await retried(() => store.mark(keys, token, nowMs()));
       if (marked !== true) {
         logger.warn(
-          { app_id: appId, purpose, reason: marked === null ? 'unavailable' : 'candidate_gone' },
+          { app_id: appId, purpose, reason: marked === null ? 'unavailable' : 'refused' },
           'sms_mark_failed',
         );
+        await releaseQuietly(keys, token, { app_id: appId, purpose });
+        return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
+      }
+      // A process that stalled since the reservation could let the provider answer after
+      // reservation + D, outside the span an uncommitted send is counted over: do not send.
+      const late = nowMs() - reservedAt;
+      if (late > SMS_IN_FLIGHT_MARGIN_MS) {
+        logger.warn({ app_id: appId, purpose, late_ms: late }, 'sms_send_late');
         await releaseQuietly(keys, token, { app_id: appId, purpose });
         return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
       }
@@ -316,8 +333,7 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
         return { code: 50001 };
       }
 
-      // The 60-second window starts when the provider answered; the code's lifetime keeps the
-      // reservation time.
+      // The 60-second window and the committed code's lifetime start when the provider answered.
       const acceptedAt = nowMs();
       let releaseAt = await retried(() => store.commit(keys, token, acceptedAt));
       if (releaseAt === null) {
