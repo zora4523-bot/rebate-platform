@@ -5121,7 +5121,9 @@ components:
         resend_after_sec:
           type: integer
           format: int32
-          description: Seconds until another code may be requested (60, BR-ID-05).
+          description: |
+            Seconds until another code may be requested: at least 60, the latest release among the
+            per-phone limits (BR-ID-05).
         expires_in_sec:
           type: integer
           format: int32

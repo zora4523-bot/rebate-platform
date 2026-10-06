@@ -66,8 +66,9 @@ export class IdentityModule {
         { ...options.config, provide: IDENTITY_CONFIG },
         {
           provide: smsSenderToken(),
-          inject: [APP_CONFIG],
-          useFactory: (config: AppConfig): SmsSender => createSmsSender(config.appEnv),
+          inject: [APP_CONFIG, ROOT_LOGGER],
+          useFactory: (config: AppConfig, logger: RootLogger): SmsSender =>
+            createSmsSender(config.appEnv, logger),
         },
         {
           provide: SMS_CODES,

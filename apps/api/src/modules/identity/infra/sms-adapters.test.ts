@@ -29,14 +29,21 @@ it('[BR-ID-05] without a keyring local / test use a random per-process key; stag
   }
 });
 
-it('[BR-ID-05] the entry sender is the fake in local / test and rejects everything elsewhere until the provider adapter lands', async () => {
+it('[BR-ID-05] the entry sender is the fake in local / test and rejects everything elsewhere until the provider adapter lands, with a startup warn', async () => {
   for (const env of ['local', 'test']) {
-    const sender = createSmsSender(env) as ReturnType<typeof createFakeSmsSender>;
+    const logger = { warn: vi.fn() };
+    const sender = createSmsSender(env, logger) as ReturnType<typeof createFakeSmsSender>;
     expect(await sender.send(message)).toBe('accepted');
     expect(sender.outbox()).toEqual([message]);
+    expect(logger.warn).not.toHaveBeenCalled();
   }
   for (const env of ['staging', 'prod']) {
-    expect(await createSmsSender(env).send(message)).toBe('rejected');
+    const logger = { warn: vi.fn() };
+    const sender = createSmsSender(env, logger);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith({ app_env: env }, 'sms_sender_unconfigured');
+    expect(await sender.send(message)).toBe('rejected');
+    expect(logger.warn).toHaveBeenCalledTimes(1);
   }
 });
 

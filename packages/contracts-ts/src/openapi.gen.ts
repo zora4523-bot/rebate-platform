@@ -1735,7 +1735,8 @@ export interface components {
         SendSmsCodeData: {
             /**
              * Format: int32
-             * @description Seconds until another code may be requested (60, BR-ID-05).
+             * @description Seconds until another code may be requested: at least 60, the latest release among the
+             *     per-phone limits (BR-ID-05).
              */
             resend_after_sec: number;
             /**

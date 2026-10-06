@@ -1,7 +1,8 @@
 // Unit tests of the SMS code service around Redis: the scripts themselves run against a real Redis
-// in the rule tests (test/spec/identity/sms-codes); here the namespace is a stub that answers
-// each script with a canned reply, to pin the order of checks, the short-circuits of the insertion
-// points and the handling of every sender and Redis outcome.
+// in the rule tests (test/spec/identity/sms-codes) and in ../infra/sms-code-store.int.test.ts;
+// here the namespace is a stub that answers each script with a canned reply, to pin the order of
+// checks, the short-circuits of the insertion points and the handling of every sender and Redis
+// outcome.
 import { createHmac } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
 import {
@@ -21,7 +22,7 @@ import {
 const NUMBER = '13912345678';
 const START = '2026-10-06T10:00:00+08:00';
 
-type Kind = 'reserve' | 'confirm' | 'release' | 'store' | 'verify';
+type Kind = 'reserve' | 'commit' | 'release' | 'verify';
 interface Call {
   readonly kind: Kind;
   readonly namespace: string;
@@ -29,12 +30,9 @@ interface Call {
 }
 
 function kindOf(script: string, options: RedisScriptOptions): Kind {
-  const key = options.keys[0] ?? '';
-  if (key.startsWith('q:')) {
-    if (options.args.length === 1) return 'release';
-    return script.includes("'a:' .. token") ? 'confirm' : 'reserve';
-  }
-  return options.args.length === 3 ? 'store' : 'verify';
+  if (options.keys.length === 1) return 'verify';
+  if (script.includes('local candidate = ARGV[14]')) return 'reserve';
+  return script.includes('ZSCORE') ? 'commit' : 'release';
 }
 
 function setup(
@@ -43,6 +41,7 @@ function setup(
     sender?: SmsSender;
     reply?: (kind: Kind, options: RedisScriptOptions) => unknown;
     config?: unknown;
+    sendTimeoutMs?: number;
   } = {},
 ) {
   const clock = new FixedClock(START);
@@ -56,10 +55,9 @@ function setup(
     overrides.reply ??
     ((kind: Kind) =>
       ({
-        reserve: [1, 0],
-        confirm: clock.now().getTime() + 60_000,
+        reserve: [1, clock.now().getTime() + 60_000],
+        commit: clock.now().getTime() + 60_000,
         release: 1,
-        store: 1,
         verify: 3,
       })[kind]);
   const redis: RedisHandle = {
@@ -99,8 +97,16 @@ function setup(
     hmac,
     config: { configValue },
     ...(overrides.hooks === undefined ? {} : { hooks: overrides.hooks }),
+    ...(overrides.sendTimeoutMs === undefined ? {} : { sendTimeoutMs: overrides.sendTimeoutMs }),
   });
-  const send = (phone = NUMBER) => service.send({ app_id: 'couli', phone, purpose: 'login' });
+  const send = (phone = NUMBER) =>
+    service.send({
+      app_id: 'couli',
+      phone,
+      purpose: 'login',
+      device_id: 'd1',
+      client_ip: '203.0.113.7',
+    });
   return { clock, lines, calls, messages, hmac, configValue, service, send };
 }
 
@@ -116,7 +122,13 @@ it('[BR-ID-05] the blocklist insertion point gets the normalised number, and its
   expect(await f.send(`+86 ${NUMBER}`)).toEqual({ code: 44001, kind: 'phone_blocklist' });
   expect(phoneBlocklist).toHaveBeenCalledTimes(1);
   expect(phoneBlocklist).toHaveBeenCalledWith(
-    expect.objectContaining({ app_id: 'couli', phone: NUMBER, purpose: 'login' }),
+    expect.objectContaining({
+      app_id: 'couli',
+      phone: NUMBER,
+      purpose: 'login',
+      device_id: 'd1',
+      client_ip: '203.0.113.7',
+    }),
   );
   expect(captcha).not.toHaveBeenCalled();
   expect(deviceQuota).not.toHaveBeenCalled();
@@ -143,34 +155,48 @@ it('[BR-ID-05] a captcha 44003 short-circuits before the device quota', async ()
   expect(f.calls).toEqual([]);
 });
 
-it('[BR-ID-05] keys and stored values carry HMACs only, with the quota and code TTLs', async () => {
-  const f = setup();
+it('[BR-ID-05] the candidate is stored with the reservation before the SMS goes out; keys and values carry HMACs only', async () => {
+  const sent: string[] = [];
+  const f = setup({
+    sender: {
+      send: async (message) => {
+        sent.push(message.code);
+        expect(f.calls.map((call) => call.kind)).toEqual(['reserve']);
+        return 'accepted';
+      },
+    },
+  });
   expect(await f.send(`0086 ${NUMBER}`)).toEqual({
     code: 0,
     data: { resend_after_sec: 60, expires_in_sec: 300 },
   });
-  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'confirm', 'store']);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit']);
   for (const call of f.calls) {
     expect(call.namespace).toBe('sms');
     expect(JSON.stringify(call.options)).not.toContain(NUMBER);
   }
-  const code = f.messages[0]!.code;
+  const code = sent[0]!;
   expect(code).toMatch(/^[0-9]{6}$/);
-  const [reserve, confirm, store] = f.calls;
+  const [reserve, commit] = f.calls;
   expect(reserve!.options.ttlSeconds).toBe(90_000);
-  expect(confirm!.options.keys).toEqual(reserve!.options.keys);
   expect(reserve!.options.keys[0]).toMatch(/^q:[0-9a-f]{64}$/);
-  expect(store!.options.ttlSeconds).toBe(300);
-  expect(store!.options.keys[0]).toMatch(/^c:couli:login:[0-9a-f]{64}$/);
-  expect(store!.options.args).not.toContain(code);
-  expect(store!.options.args[0]).toBe(f.hmac.mock.results.at(-1)!.value);
+  expect(reserve!.options.keys[1]).toMatch(/^c:couli:login:[0-9a-f]{64}$/);
+  expect(reserve!.options.keys[1]!.endsWith(reserve!.options.keys[0]!.slice(2))).toBe(true);
+  // ARGV[13] code TTL, ARGV[14] candidate HMAC, ARGV[15] purpose (args start at ARGV[2]).
+  expect(reserve!.options.args[11]).toBe('300');
+  expect(reserve!.options.args[12]).toBe(f.hmac.mock.results.at(-1)!.value);
   expect(f.hmac.mock.calls.at(-1)![0]).toContain(code);
+  expect(reserve!.options.args[13]).toBe('login');
+  expect(reserve!.options.args).not.toContain(code);
+  expect(commit!.options.keys).toEqual(reserve!.options.keys);
+  expect(commit!.options.args[1]).toBe(reserve!.options.args[1]);
+  expect(commit!.options.args).not.toContain(code);
 });
 
 it('[BR-ID-05] resend_after_sec is the time until the next send may go (latest release, at least 60)', async () => {
   const nextHour = new Date('2026-10-06T11:00:00+08:00').getTime();
   const f = setup({
-    reply: (kind) => (kind === 'reserve' ? [1, 0] : kind === 'confirm' ? nextHour : 1),
+    reply: (kind) => (kind === 'reserve' ? [1, 0] : kind === 'commit' ? nextHour : 1),
   });
   expect(await f.send()).toEqual({
     code: 0,
@@ -223,6 +249,7 @@ it('[BR-ID-05] a definite rejection releases the reservation and answers 50001, 
       return [1, 0];
     },
   });
+  expect(ok.calls[1]!.options.args[1]).toBe(ok.calls[0]!.options.args[1]);
   expect(await failing.send()).toEqual({ code: 50001 });
   expect(failing.lines.join('')).toContain('sms_release_failed');
 });
@@ -239,17 +266,14 @@ it.each([
   ['throws', throwing],
   ['answers something else', odd],
   ['answers unknown', unknown],
-] as const)(
-  '[BR-ID-05] a sender that %s counts as sent: confirmed, code stored, 0',
-  async (_name, sender) => {
-    const afterAccepted = vi.fn(async () => undefined);
-    const f = setup({ sender, hooks: { afterAccepted } });
-    expect((await f.send()).code).toBe(0);
-    expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'confirm', 'store']);
-    expect(afterAccepted).toHaveBeenCalledTimes(1);
-    expect(f.lines.join('')).not.toContain('socket hang up');
-  },
-);
+] as const)('[BR-ID-05] a sender that %s counts as sent: committed, 0', async (_name, sender) => {
+  const afterAccepted = vi.fn(async () => undefined);
+  const f = setup({ sender, hooks: { afterAccepted } });
+  expect((await f.send()).code).toBe(0);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit']);
+  expect(afterAccepted).toHaveBeenCalledTimes(1);
+  expect(f.lines.join('')).not.toContain('socket hang up');
+});
 
 it('[BR-ID-05] the 60-second window and the code lifetime start when the provider answered', async () => {
   let providerAnswers = (): void => undefined;
@@ -266,21 +290,104 @@ it('[BR-ID-05] the 60-second window and the code lifetime start when the provide
   const accepted = String(new Date(START).getTime() + 30_000);
   expect(slow.calls[0]!.options.args[0]).toBe(String(new Date(START).getTime()));
   expect(slow.calls[1]!.options.args[0]).toBe(accepted);
-  expect(slow.calls[2]!.options.args[1]).toBe(accepted);
 });
 
-it('[BR-ID-05] a store failure after the SMS went out answers 50001, and the post-acceptance counter still runs', async () => {
+it('[BR-ID-05] a failed commit is retried once with the same token and never resends; the answer stays 0 with a conservative wait', async () => {
+  const nextHour = new Date('2026-10-06T11:00:00+08:00').getTime();
   const afterAccepted = vi.fn(async () => undefined);
   const f = setup({
     hooks: { afterAccepted },
     reply: (kind) => {
-      if (kind === 'confirm') throw new RedisUnavailableError('command_failed', 'OOM');
-      return [1, 0];
+      if (kind === 'commit') throw new RedisUnavailableError('command_failed', 'OOM');
+      return [1, nextHour];
     },
   });
-  expect(await f.send()).toEqual({ code: 50001 });
+  expect(await f.send()).toEqual({
+    code: 0,
+    data: { resend_after_sec: 3600, expires_in_sec: 300 },
+  });
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit', 'commit']);
+  expect(f.calls[1]!.options.args[1]).toBe(f.calls[0]!.options.args[1]);
+  expect(f.calls[2]!.options.args[1]).toBe(f.calls[0]!.options.args[1]);
+  expect(f.messages).toHaveLength(1);
   expect(afterAccepted).toHaveBeenCalledTimes(1);
-  expect(f.lines.join('')).toContain('sms_code_store_failed');
+  expect(f.lines.join('')).toContain('sms_commit_failed');
+
+  // Without a limit in the reservation's estimate, the wait is the 60 s window from acceptance.
+  const plain = setup({
+    reply: (kind) => {
+      if (kind === 'commit') throw new RedisUnavailableError('command_timeout');
+      return [1, new Date(START).getTime() + 60_000];
+    },
+  });
+  expect(await plain.send()).toMatchObject({ code: 0, data: { resend_after_sec: 60 } });
+});
+
+it('[BR-ID-05] a commit that fails once and then runs answers from the commit', async () => {
+  let failures = 1;
+  const nextDay = new Date('2026-10-07T00:00:00+08:00').getTime();
+  const f = setup({
+    reply: (kind) => {
+      if (kind === 'commit' && failures-- > 0) throw new RedisUnavailableError('command_timeout');
+      return kind === 'commit' ? nextDay : [1, 0];
+    },
+  });
+  expect(await f.send()).toMatchObject({ code: 0, data: { resend_after_sec: 50_400 } });
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit', 'commit']);
+  expect(f.lines.join('')).not.toContain('sms_commit_failed');
+});
+
+it('[BR-ID-05] a candidate that collides with a known code is drawn again, with the same reservation token', async () => {
+  const replies: unknown[] = [
+    [2, 0],
+    [2, 0],
+  ];
+  const f = setup({
+    reply: (kind) =>
+      kind === 'reserve' ? (replies.shift() ?? [1, 0]) : new Date(START).getTime() + 60_000,
+  });
+  expect((await f.send()).code).toBe(0);
+  const reserves = f.calls.filter((call) => call.kind === 'reserve');
+  expect(reserves).toHaveLength(3);
+  expect(new Set(reserves.map((call) => call.options.args[1])).size).toBe(1);
+  const candidates = reserves.map((call) => call.options.args[12]);
+  expect(new Set(candidates).size).toBe(3);
+  expect(f.messages).toHaveLength(1);
+  // The code sent is the one of the reservation that succeeded.
+  const sentHash = f.hmac.mock.results[
+    f.hmac.mock.calls.findIndex(([text]) => text.endsWith(`:${f.messages[0]!.code}`))
+  ]!.value as string;
+  expect(sentHash).toBe(candidates[2]);
+});
+
+it('[BR-ID-05] eight collisions in a row answer 50001 without sending', async () => {
+  const f = setup({ reply: (kind) => (kind === 'reserve' ? [2, 0] : 1) });
+  expect(await f.send()).toEqual({ code: 50001 });
+  expect(f.calls.filter((call) => call.kind === 'reserve')).toHaveLength(8);
+  expect(f.messages).toEqual([]);
+  expect(f.lines.join('')).toContain('sms_code_collision');
+});
+
+it('[BR-ID-05] a send that outlasts sendTimeoutMs counts as unknown: committed, 0', async () => {
+  const f = setup({ sendTimeoutMs: 20, sender: { send: () => new Promise(() => undefined) } });
+  expect((await f.send()).code).toBe(0);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit']);
+  expect(f.lines.join('')).toContain('sms_delivery_timeout');
+  expect(() => setup({ sendTimeoutMs: 0 })).toThrow(TypeError);
+});
+
+it('[BR-ID-05] a failing post-acceptance counter is logged by class and does not change the answer', async () => {
+  const f = setup({
+    hooks: {
+      afterAccepted: async () => {
+        throw new RangeError(`counter down for ${NUMBER}`);
+      },
+    },
+  });
+  expect(await f.send()).toEqual({ code: 0, data: { resend_after_sec: 60, expires_in_sec: 300 } });
+  const line = f.lines.find((entry) => entry.includes('sms_after_accepted_failed'));
+  expect(line).toContain('"error_class":"RangeError"');
+  expect(f.lines.join('')).not.toContain(NUMBER);
 });
 
 it('[BR-ID-05] a malformed sms.blocked_prefixes keeps the 08 default and logs the key, not the value', async () => {

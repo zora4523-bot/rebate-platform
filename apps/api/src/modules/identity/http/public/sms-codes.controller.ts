@@ -11,6 +11,8 @@ type SendSmsCodeResponse = Schema<'SendSmsCodeResponse'>;
 interface SendSmsCodeRequest extends CheckedRequest {
   /** Trace id set by `genReqId`. */
   readonly id: string;
+  /** Fastify's client address (no proxy trust is configured yet; B1-03g decides). */
+  readonly ip: string;
   readonly body: Schema<'SendSmsCodeRequest'>;
 }
 
@@ -98,7 +100,8 @@ export class SmsCodesController {
   /**
    * Contract operation `sendSmsCode` (BR-ID-05): x-auth none, x-signed. Stage ① (request
    * signature) has already run; the app of the code is the verified device's app_id, as for the
-   * nonce (X-App-Id is compared with it at stage ③). The version gate and the session scope
+   * nonce (X-App-Id is compared with it at stage ③). The device id and the client IP go to the
+   * insertion points (B1-03g limits). The version gate and the session scope
    * (x-min-version-gate conditional) belong to B1-03c; captcha_token is accepted and not checked
    * here (B1-03g).
    */
@@ -118,6 +121,8 @@ export class SmsCodesController {
       app_id: device.appId,
       phone,
       purpose,
+      device_id: device.deviceId,
+      client_ip: request.ip,
       ...(captchaToken === undefined ? {} : { captcha_token: captchaToken }),
       ...(action === undefined ? {} : { action }),
     });

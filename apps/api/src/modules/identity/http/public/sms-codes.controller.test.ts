@@ -98,6 +98,7 @@ function controller(result: SmsResult | null) {
   const reply = { header: (name: string, value: string) => headers.push([name, value]) };
   const request = {
     id: TRACE,
+    ip: '203.0.113.7',
     verifiedDevice: { deviceId: 'd1', appId: 'couli' },
     body: {
       phone: '+86 139 1234 5678',
@@ -109,7 +110,7 @@ function controller(result: SmsResult | null) {
   return { target: new SmsCodesController(service), send, headers, reply, request };
 }
 
-it('[BR-ID-05] the controller passes the verified app and the body, and answers 200 per contract', async () => {
+it('[BR-ID-05] the controller passes the verified app and device, the client IP and the body, and answers 200 per contract', async () => {
   const c = controller({ code: 0, data: { resend_after_sec: 60, expires_in_sec: 300 } });
   const body = await c.target.send(c.request, c.reply);
   valid('200', body);
@@ -123,6 +124,8 @@ it('[BR-ID-05] the controller passes the verified app and the body, and answers 
     app_id: 'couli',
     phone: '+86 139 1234 5678',
     purpose: 'step_up',
+    device_id: 'd1',
+    client_ip: '203.0.113.7',
     captcha_token: 'cap',
     action: 'account_deletion',
   });
