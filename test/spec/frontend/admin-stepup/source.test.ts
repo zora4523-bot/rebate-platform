@@ -4,7 +4,8 @@ import ts from 'typescript';
 import { expect, it } from 'vitest';
 import { COPY } from './fixtures.ts';
 
-const sourceRoot = new URL('../../../../apps/admin/src/', import.meta.url);
+const moduleUrl = import.meta.url;
+const sourceRoot = new URL('../../../../apps/admin/src/', moduleUrl);
 
 function files(directory: URL): URL[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

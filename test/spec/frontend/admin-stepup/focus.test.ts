@@ -42,7 +42,7 @@ for (const tier of ['totp', 'sms'] as const) {
   });
 
   it(`[AC-S1-157#6][AC-F1-06f-FOCUS#2] ${tier} Tab 与 Shift+Tab 按控件顺序在弹窗内循环`, async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(
       createElement(
