@@ -2,4 +2,6 @@
 // is registered for 08 by the orchestrator; once 08 adds it, the contract text wins (see t()).
 export const shellTexts: Readonly<Record<string, string>> = {
   'h5.shell.page_pending': '页面暂未开放',
+  // Retry button of the H5 load-failure page (F1-01e); 08 has no generic retry key yet.
+  'h5.retry': '重试',
 };
