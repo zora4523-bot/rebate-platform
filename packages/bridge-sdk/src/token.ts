@@ -202,14 +202,24 @@ export function createH5TokenManager(): H5TokenManager {
   /**
    * Obtains a token and calls send in the same synchronous continuation as the final generation
    * check, so no invalidate() can slip in between. Once send has been called the request is not
-   * withdrawn; only later requests see the invalidation.
+   * withdrawn; only later requests see the invalidation. A replay is bound to the first send's
+   * generation; crossing invalidate() returns that first response unchanged.
    */
   async function sendCurrent<T>(
     forWrite: boolean,
     send: (token: string) => Promise<H5ApiResponse<T>>,
+    replay?: { stamped: Stamped; response: H5ApiResponse<T> },
   ): Promise<{ stamped: Stamped; response: H5ApiResponse<T> }> {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-      const stamped = await obtain(forWrite);
+      if (replay !== undefined && replay.stamped.generation !== generation) return replay;
+      let stamped: Stamped;
+      try {
+        stamped = await obtain(forWrite);
+      } catch (error) {
+        if (replay !== undefined && replay.stamped.generation !== generation) return replay;
+        throw error;
+      }
+      if (replay !== undefined && replay.stamped.generation !== stamped.generation) return replay;
       if (stamped.generation !== generation) continue;
       const sent = send(stamped.token.token);
       return { stamped, response: await sent };
@@ -228,7 +238,7 @@ export function createH5TokenManager(): H5TokenManager {
     if (response.code === TOKEN_EXPIRED && stamped.generation === generation) {
       // Reuses a newer cached token or an acquisition already in flight; otherwise asks native.
       dropCached(stamped);
-      ({ stamped, response } = await sendCurrent(forWrite, send));
+      ({ stamped, response } = await sendCurrent(forWrite, send, { stamped, response }));
       // Still expired after one renewal: report the failure, keep nothing stale, no third try.
       if (response.code === TOKEN_EXPIRED) dropCached(stamped);
     }

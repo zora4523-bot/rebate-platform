@@ -433,6 +433,55 @@ it.each(['POST', 'GET'])(
   },
 );
 
+it.each([
+  ['POST', 0],
+  ['GET', 0],
+  ['POST', 90401],
+  ['GET', 90401],
+] as const)(
+  '[F1-01l] [AC-F1-01l#handover] %s invalidated during 10002 renewal keeps the original response (next acquisition code %s)',
+  async (method, nextCode) => {
+    const replies: ((response: Omit<BridgeResponse, 'id'>) => void)[] = [];
+    const native = install(
+      ['auth.getH5Token'],
+      (request) =>
+        new Promise<BridgeResponse>((resolve) => {
+          replies.push((response) => resolve({ ...response, id: request.id }));
+        }),
+    );
+    const token = (value: string) => ({
+      token: value,
+      scope: 'standard',
+      expire_at: '2099-01-01T00:00:00Z',
+    });
+    const expired = { code: 10002, msg: 'expired', data: { request: 'original' } };
+    const manager = createH5TokenManager();
+    const send = vi.fn(async () => expired);
+    const pending = manager.request(method, send);
+    await vi.waitFor(() => expect(replies).toHaveLength(1));
+    replies[0]?.({ code: 0, msg: '', data: token('account-A') });
+
+    // The first send has returned 10002 and renewal is now waiting on native.
+    await vi.waitFor(() => expect(replies).toHaveLength(2));
+    expect(send).toHaveBeenCalledExactlyOnceWith('account-A');
+    manager.invalidate();
+    replies[1]?.({ code: 0, msg: '', data: token('account-A-renewed') });
+    await vi.waitFor(() => expect(replies).toHaveLength(3));
+    replies[2]?.({ code: nextCode, msg: '', data: token('account-B') });
+
+    await expect(pending).resolves.toBe(expired);
+    expect(send).toHaveBeenCalledExactlyOnceWith('account-A');
+    expect(native.postMessage).toHaveBeenCalledTimes(3);
+    if (nextCode === 0) {
+      // Aborting the old replay must leave the new account's cached token usable.
+      const sendNext = vi.fn(async () => ({ code: 0, msg: '' }));
+      await expect(manager.request(method, sendNext)).resolves.toEqual({ code: 0, msg: '' });
+      expect(sendNext).toHaveBeenCalledExactlyOnceWith('account-B');
+      expect(native.postMessage).toHaveBeenCalledTimes(3);
+    }
+  },
+);
+
 it('invalidate on every acquisition gives up after a bounded number of attempts with 90500', async () => {
   const manager = createH5TokenManager();
   let n = 0;
