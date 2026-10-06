@@ -51,6 +51,9 @@ function rawSchema(): RawBridgeSchema {
 export const FRAME_CASE_ID = 'frame/negative/subframe';
 const FRAME_METHOD: MethodName = 'app.getEnv';
 
+/** contracts/bridge.schema.json gesture_required: last 1 second, plus a 100 ms margin. */
+export const NO_GESTURE_WAIT_MS = 1100;
+
 /** A method name the contract does not have; the SDK must answer 90001 without native. */
 const UNKNOWN_METHOD = 'conformance.notAMethod';
 

@@ -6,6 +6,7 @@ import { isInApp, on } from '@couli/bridge-sdk';
 import { invoke } from '@couli/bridge-sdk/conformance';
 import {
   FRAME_CASE_ID,
+  NO_GESTURE_WAIT_MS,
   buildCaseTable,
   casesForPlatform,
   isPlatform,
@@ -95,6 +96,8 @@ export class ConformanceController {
   private disposed = false;
   private remaining = 0;
   private frameSettled = false;
+  private lastGestureAt: number | null = null;
+  private cancelGestureWait: (() => void) | null = null;
 
   constructor(search: string, pathname: string) {
     const { cases, unknown_cases } = selectCases(buildCaseTable(), search);
@@ -125,7 +128,18 @@ export class ConformanceController {
   start(frameWindow: () => Window | null): () => void {
     if (this.started) return () => this.dispose();
     this.started = true;
+    const recordGesture = (event: Event) => {
+      if (event.isTrusted) this.lastGestureAt = performance.now();
+    };
+    // Capture clicks anywhere on the page; pointerup also covers taps on disabled buttons,
+    // which can refresh native gesture state even though they do not dispatch a click.
+    window.addEventListener('click', recordGesture, true);
+    window.addEventListener('pointerup', recordGesture, true);
     const stops: (() => void)[] = [
+      () => {
+        window.removeEventListener('click', recordGesture, true);
+        window.removeEventListener('pointerup', recordGesture, true);
+      },
       on('app.resume', (data) => this.update((result) => recordEvent(result, 'app.resume', data))),
       on('app.pause', (data) => this.update((result) => recordEvent(result, 'app.pause', data))),
     ];
@@ -141,6 +155,7 @@ export class ConformanceController {
 
   /** Runs a tap row on a real user click (the click is the gesture native checks). */
   tap(id: string): void {
+    if (this.disposed || this.result.status !== 'done') return;
     const row = this.result.cases.find((candidate) => candidate.id === id);
     if (row === undefined || row.trigger !== 'tap') return;
     void this.execute(row);
@@ -151,6 +166,7 @@ export class ConformanceController {
   private dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.cancelGestureWait?.();
     this.stopAll();
     this.listeners.clear();
   }
@@ -168,9 +184,28 @@ export class ConformanceController {
   }
 
   private async execute(row: ConformanceCase): Promise<void> {
+    if (row.category === 'no_gesture') await this.waitForNoGesture();
+    if (this.disposed) return;
     const since = performance.now();
     const outcome = await probe(row.method, paramsForCase(row));
     this.update((result) => recordOutcome(result, row.id, outcome, elapsed(since)));
+  }
+
+  /** Recheck after each wait: another real click restarts the native gesture window. */
+  private async waitForNoGesture(): Promise<void> {
+    while (!this.disposed && this.lastGestureAt !== null) {
+      const remaining = NO_GESTURE_WAIT_MS - (performance.now() - this.lastGestureAt);
+      if (remaining < 0) return;
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          this.cancelGestureWait = null;
+          resolve();
+        };
+        const timer = setTimeout(finish, Math.ceil(remaining) + 1);
+        this.cancelGestureWait = finish;
+      });
+    }
   }
 
   /**
