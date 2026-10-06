@@ -1,0 +1,92 @@
+{
+  "risk_note": "RV2 (apps/api/src/modules/platform/resilience/**, platform is RV2). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl. Ledger refs are empty (the rows come from 规划/02 §14, not 08). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist (rounding, sign, idempotency, concurrency, partial refund, clock, app_id: n/a or ok): pass, 0 findings; 1 out-of-scope S2 (Jev timeout override above 400 ms) passed to B1-14b"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh read-only Codex session, not the implementing one: round 1 pass, 0 findings; same out-of-scope note on the Jev limit"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rule tests by Claude reviewed by fresh Codex sessions: round 1 and 2 each 1 S1 (expected values shared references with the code under test), both fixed by the test author; past the 2-round limit a fresh Claude subagent closed it: pass (couli-runs/B1-14a/closure-claude.md)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-14a",
+  "spec_ref": "68b2959cf2b680f11f084706fdfcf215beb7fa80",
+  "spec_commit": "2e85d1b78bb62948e7b61260be436f4576300019",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2e85d1b78bb62948e7b61260be436f4576300019",
+      "tree": "b4f0133ea3fd9def39d0f9c78a6eed8d74bfd096",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T08:31:49Z",
+      "finished_at": "2026-10-06T08:31:53Z",
+      "red_tests": [
+        "test/spec/platform/resilience/overrides.test.ts > [02 §14 可按配置覆盖] 覆盖 Jev 超时只改这一项：同行其余参数与其他各行的登记内容不变",
+        "test/spec/platform/resilience/overrides.test.ts > [02 §14 可按配置覆盖] 嵌套字段可部分覆盖：只给 breaker.openMs 时窗口、次数、错误率保持默认",
+        "test/spec/platform/resilience/overrides.test.ts > [02 §14 可按配置覆盖][BR-AI-18] 覆盖内容安全的超时与重试不改它的登记内容：覆盖实例、原实例、随后新建的实例都仍是 fail_closed",
+        "test/spec/platform/resilience/overrides.test.ts > [02 §14 可按配置覆盖][BR-AI-14] 覆盖只作用于传入它的登记表：覆盖实例 300，原实例与之后新建的登记表仍是默认 400",
+        "test/spec/platform/resilience/overrides.test.ts > [02 §14 可按配置覆盖][BR-AI-14] 改动取到的条目不影响同一登记表的下一次读取，也不影响新建的登记表",
+        "test/spec/platform/resilience/overrides.test.ts > [02 §14 可按配置覆盖] 不合法的数值一律 invalid_policy（超时 0 / 小数 / 负数、错误率 100、退避上限低于起点、重试 11 次）",
+        "test/spec/platform/resilience/overrides.test.ts > [02 §14 可按配置覆盖] 未登记的依赖、或想改降级动作与开关的覆盖，一律 invalid_policy（配置不能删改降级）",
+        "test/spec/platform/resilience/overrides.test.ts > [02 §14 登记范围] entry() 查未登记的依赖（如 payout.alipay）抛 invalid_policy",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 登记范围] 登记表只含本段七行，顺序固定；资金、归属、订单补拉、数据库各行不在本表",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 淘宝/京东/拼多多搜索] 超时、限流 → 有缓存读缓存标 stale，无缓存 50304（BR-PROD-07）；自动熔断，无开关；catalog 执行",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 口令解析权限未下] 30132 → 引导用商品名搜索；开关 parse.tpwd.enabled；parsing 执行",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 千问][BR-AI-14] 超时、429、5xx、预算用完 → 备用快照再无模型降级，搜索也失败才 50302；开关 agent.model_route、agent.enabled",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 TypeSafe Jev][BR-AI-14] 超时、限流、失败、月用量触顶 → 回到纯规则核对，不出错误码；开关 jev.enabled、agent.result_check.provider；judge 执行",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 内容安全][BR-AI-18] 超时 → fail-close（不放行），不出错误码；自动，无开关；agent 执行",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 短信] 通道故障 → 切备用通道；开关 sms.provider；notification 执行",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 推送] 通道故障 → 站内消息 + 回前台拉取兜底；自动，无开关；notification 执行",
+        "test/spec/platform/resilience/registry.test.ts > [02 §6.2] 联盟两行（搜索、口令解析）的治理参数就是 02 §6.2 的在线值，与 unionPolicy(online) 一致",
+        "test/spec/platform/resilience/registry.test.ts > [BR-AI-14][02 §9.2 结果核对] Jev 硬超时 400 毫秒，每轮只 1 次请求：不重试",
+        "test/spec/platform/resilience/registry.test.ts > [BR-AI-18] 内容安全审核超时默认 1000 毫秒（agent.safety.timeout_ms），整次审核共用这一时限：不重试",
+        "test/spec/platform/resilience/registry.test.ts > [BR-AI-14] 千问单次调用不超过 agent.model_timeout_ms 默认 8000 毫秒；失败转备用快照，不对同一快照重试",
+        "test/spec/platform/resilience/registry.test.ts > [02 §1 原则 4] 每行的默认策略都能直接交给 createGovernor（不带病运行）",
+        "test/spec/platform/resilience/registry.test.ts > [02 §14 登记范围] entries() 与 entry(id) 给出同一行内容（对照手写的登记内容）"
+      ],
+      "expected": [
+        "test/spec/platform/resilience/overrides.test.ts",
+        "test/spec/platform/resilience/registry.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "50923e03270ceb7a892bf2d3f73d87a4fb457b715dd93497863ab9a3849f7f57"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "9a662af426bcda1e0923db068be0547d8ba5deec",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
