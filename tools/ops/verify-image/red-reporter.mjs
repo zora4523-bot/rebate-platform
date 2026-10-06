@@ -23,6 +23,13 @@
 // http://localhost:63315/node_modules/.vite/…; the test file follows as
 // http://localhost:63315/work/repo/test/spec/…/x.browser.test.ts?import&browserv=…:8:68.
 //
+// Build smoke tests (F1-01k): a page that throws while rendering only fires Playwright's
+// `pageerror`; the rule tests collect such events into an annotation (context.annotate) whose
+// attachment body is JSON `{entry, url, diagnostics: [{kind, message}]}`, and the test itself then
+// fails on a locator.waitFor timeout. So every test records its `annotations` (message, type, the
+// attachment's content type and path, and `json`: the attachment body parsed, when it is JSON);
+// red-check refuses a red whose diagnostics show a page error.
+//
 // Trusted file: mounted read-only from the trusted root, never taken from the task snapshot.
 // Uses Node built-ins only and nothing of the repository under test.
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -167,6 +174,67 @@ function pollInSource(file) {
   }
 }
 
+/**
+ * The text of an attachment body, or null when there is none. Vitest 5.0.1 labels a string body
+ * `bodyEncoding: 'base64'` unless the test said otherwise, also when the test passed plain text
+ * (manageArtifactAttachment): a body that parses as JSON as it is is taken as it is; otherwise a
+ * base64 body is decoded.
+ */
+export function attachmentText(attachment) {
+  if (attachment === null || typeof attachment !== 'object' || attachment.body == null) return null;
+  const body = attachment.body;
+  if (typeof body !== 'string') {
+    try {
+      return Buffer.from(body).toString('utf8');
+    } catch {
+      return null;
+    }
+  }
+  if (attachment.bodyEncoding === 'utf-8') return body;
+  try {
+    JSON.parse(body);
+    return body;
+  } catch {
+    // not JSON as it is: decoded below when it is base64
+  }
+  if (body.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(body)) {
+    return Buffer.from(body, 'base64').toString('utf8');
+  }
+  return body;
+}
+
+/** One annotation of a test as the report keeps it (see the header). */
+export function annotationRecord(annotation) {
+  const a = annotation !== null && typeof annotation === 'object' ? annotation : {};
+  const out = {
+    message: typeof a.message === 'string' ? a.message : '',
+    type: typeof a.type === 'string' ? a.type : '',
+  };
+  const attachment = a.attachment;
+  if (attachment !== null && typeof attachment === 'object') {
+    if (typeof attachment.contentType === 'string') out.content_type = attachment.contentType;
+    if (typeof attachment.path === 'string') out.path = attachment.path;
+    const body = attachmentText(attachment);
+    if (body !== null) {
+      try {
+        out.json = JSON.parse(body);
+      } catch {
+        // not JSON: only JSON bodies are kept
+      }
+    }
+  }
+  return out;
+}
+
+function annotationsOf(testCase) {
+  try {
+    const list = typeof testCase.annotations === 'function' ? testCase.annotations() : [];
+    return Array.isArray(list) ? list.map(annotationRecord) : [];
+  } catch {
+    return [];
+  }
+}
+
 function text(error) {
   if (error === null || typeof error !== 'object') return String(error);
   return typeof error.stack === 'string' && error.stack !== ''
@@ -189,6 +257,7 @@ export default class RedReporter {
         status: result.state,
         failureMessages: (result.errors ?? []).map(text),
         failures,
+        annotations: annotationsOf(testCase),
       });
     }
     this.files.push({

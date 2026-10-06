@@ -35,14 +35,22 @@
 // start, an error thrown by the page, a module not found, a TypeError, a strict-mode violation
 // (several elements) and a bare element lookup outside a wait stay invalid.
 //
-// Build smoke tests (F1-01k; `*.smoke.test.ts`, project build-smoke: Node tests that open the
-// entries the globalSetup built and serves, through the playwright library): red for an assertion,
-// or because the element a test waits for never came — Playwright's TimeoutError of
+// Build smoke tests (F1-01k; `test/spec/**/*.smoke.test.ts`, project build-smoke: Node tests that
+// open the entries the globalSetup built and serves, through the playwright library): red for an
+// assertion, or because the element a test waits for never came — Playwright's TimeoutError of
 // `locator.waitFor` ("locator.waitFor: Timeout <n>ms exceeded.") — is a valid red. Everything else
 // stays invalid: a globalSetup that failed (a build, a server, the health check: no test runs), a
 // browser that did not launch, a page.goto that failed or timed out, a `net::ERR_*`, any other
-// Playwright timeout (screenshot, click …), an error the page threw. Page errors are collected by
-// the tests as report attachments, never asserted.
+// Playwright timeout (screenshot, click …). A page that throws while rendering does not fail the
+// test itself: Playwright only fires `pageerror`, the page stays blank and the wait runs out. The
+// rule tests collect page events into an annotation whose JSON attachment is
+// `{entry, url, diagnostics: [{kind, message}]}` (never asserted), and the red reporter keeps the
+// annotations of every test. Before an assertion or a wait that ran out counts, the diagnostics
+// are read: an error the page threw (`pageerror`; the skeleton's NotImplemented excepted), a
+// request to the entry's own origin that failed (`requestfailed`; requests the test itself
+// blocked excepted) or a module of the page that did not load (`console.error` of a failed
+// dynamic import) make the red invalid. A test without such an annotation is judged by its
+// failure alone, and the result says so (`notes`).
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import type { TaskFile } from '../../lib/task-file.ts';
@@ -78,6 +86,8 @@ type AssertionResult = {
   failureMessages?: unknown;
   /** Failures with their cause chains (red reporter only). */
   failures?: unknown;
+  /** The test's annotations, JSON attachments parsed (red reporter only, F1-01k). */
+  annotations?: unknown;
 };
 type FileResult = {
   name?: unknown;
@@ -92,7 +102,13 @@ type FileResult = {
 };
 
 export type RedProblem = { file: string; test: string | null; reason: string };
-export type RedResult = { ok: boolean; red: string[]; problems: RedProblem[] };
+export type RedResult = {
+  ok: boolean;
+  red: string[];
+  problems: RedProblem[];
+  /** How a valid red was judged when that is worth saying (a smoke test without diagnostics). */
+  notes: string[];
+};
 
 /** Failures that prove nothing about the rule; checked first, they win over any wrapper. */
 const WRONG_RED: [RegExp, string][] = [
@@ -225,6 +241,81 @@ export function smokeCauseVerdict(causes: readonly Cause[]): string | null {
   return causeVerdict(causes);
 }
 
+/** The page events a build smoke test collected for one entry (its diagnostics annotation). */
+export type SmokeDiagnostics = {
+  url: string;
+  diagnostics: { kind: string; message: string }[];
+};
+
+/**
+ * The diagnostics annotations of a test of the red report: every annotation whose JSON
+ * attachment has a `diagnostics` array (the build smoke rule tests write one per entry they open).
+ */
+export function smokeDiagnosticsOf(annotations: unknown): SmokeDiagnostics[] {
+  if (!Array.isArray(annotations)) return [];
+  const out: SmokeDiagnostics[] = [];
+  for (const a of annotations) {
+    if (typeof a !== 'object' || a === null) continue;
+    const json = (a as Record<string, unknown>)['json'];
+    if (typeof json !== 'object' || json === null) continue;
+    const list = (json as Record<string, unknown>)['diagnostics'];
+    if (!Array.isArray(list)) continue;
+    out.push({
+      url: text((json as Record<string, unknown>)['url']),
+      diagnostics: list.map((d) => {
+        const r = (typeof d === 'object' && d !== null ? d : {}) as Record<string, unknown>;
+        return { kind: text(r['kind']), message: text(r['message']) };
+      }),
+    });
+  }
+  return out;
+}
+
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** A failed dynamic import, as the browser logs it (Chromium and others). */
+const MODULE_DID_NOT_LOAD =
+  /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/;
+
+/**
+ * Why the page events of one entry make a red invalid (see the header), or null when they do
+ * not: an error the page threw other than the skeleton's NotImplemented, a request to the entry's
+ * own origin that failed and that the test did not block itself (a `blocked-request` of the same
+ * URL), a dynamic import that failed. A URL that cannot be read counts as the entry's own.
+ */
+export function smokeDiagnosticsVerdict(d: SmokeDiagnostics): string | null {
+  const own = originOf(d.url);
+  const blocked = new Set(
+    d.diagnostics.filter((x) => x.kind === 'blocked-request').map((x) => x.message),
+  );
+  for (const x of d.diagnostics) {
+    const first = x.message.split('\n')[0] ?? '';
+    if (x.kind === 'pageerror' && !/\bNotImplemented\b/.test(first)) {
+      return `red for the wrong reason (the page threw: ${first})`;
+    }
+    if (x.kind === 'requestfailed') {
+      // "<url>: <errorText>" (the rule tests' format)
+      const at = x.message.lastIndexOf(': ');
+      const url = at < 0 ? x.message : x.message.slice(0, at);
+      if (blocked.has(url)) continue;
+      const origin = originOf(url);
+      if (own === null || origin === null || origin === own) {
+        return `red for the wrong reason (a request of the entry failed: ${first})`;
+      }
+    }
+    if (x.kind === 'console.error' && MODULE_DID_NOT_LOAD.test(x.message)) {
+      return `red for the wrong reason (a module of the page did not load: ${first})`;
+    }
+  }
+  return null;
+}
+
 /** Browser rule-test files: the spec-browser project (tools/ops/verify-image/red-projects.json). */
 export const BROWSER_TEST_FILE = /\.browser\.test\.[cm]?[jt]sx?$/;
 
@@ -350,6 +441,7 @@ export function checkRedReports(
 ): RedResult {
   const problems: RedProblem[] = [];
   const red: string[] = [];
+  const notes: string[] = [];
   const prefix = root.endsWith('/') ? root : `${root}/`;
   const seen = new Map<string, FileResult>();
   for (const report of reports) {
@@ -397,10 +489,12 @@ export function checkRedReports(
       entry.browser === true && BROWSER_TEST_FILE.test(file)
         ? { abs: text(entry.name), pollFree: entry.poll_in_source === false }
         : null;
-    // Build smoke leniency (locator.waitFor) only for a build smoke rule-test file that ran in
-    // Node (not in a browser) and only from the red reporter's causes; the plain messages of
-    // Vitest's JSON report never get it.
-    const smoke = entry.browser !== true && SMOKE_TEST_FILE.test(file);
+    // Build smoke leniency (locator.waitFor) only for a build smoke rule-test file of the
+    // build-smoke project (test/spec/**/*.smoke.test.ts, red-projects.json) that ran in Node (not
+    // in a browser), and only from the red reporter's causes; the plain messages of Vitest's JSON
+    // report never get it.
+    const smoke =
+      entry.browser !== true && file.startsWith('test/spec/') && SMOKE_TEST_FILE.test(file);
     // File-level errors (an import that failed, a crashed beforeAll / afterAll) are never a valid
     // red: they taint every test of the file.
     const fileFailures = Array.isArray(entry.failures) ? (entry.failures as Failure[]) : [];
@@ -439,10 +533,23 @@ export function checkRedReports(
         continue;
       }
       const messages = Array.isArray(t.failureMessages) ? t.failureMessages.map(text) : [];
-      const why = fileWrong ?? testVerdict(t.failures, messages, browser, smoke);
+      let why = fileWrong ?? testVerdict(t.failures, messages, browser, smoke);
+      if (why === null && smoke) {
+        // The page events the test collected decide before its red counts (see the header).
+        const diagnostics = smokeDiagnosticsOf(t.annotations);
+        for (const d of diagnostics) {
+          why = smokeDiagnosticsVerdict(d);
+          if (why !== null) break;
+        }
+        if (why === null && diagnostics.length === 0) {
+          notes.push(
+            `${file} > ${name}: no browser diagnostics in the report, judged by the failure alone`,
+          );
+        }
+      }
       if (why === null) red.push(`${file} > ${name}`);
       else problems.push({ file, test: name, reason: why });
     }
   }
-  return { ok: problems.length === 0, red, problems };
+  return { ok: problems.length === 0, red, problems, notes };
 }
