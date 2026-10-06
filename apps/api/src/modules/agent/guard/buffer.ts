@@ -14,10 +14,11 @@ const FORCE_AT = 60;
 const DIGIT = /^\p{Nd}$/u;
 const SPACE = /^\s$/u;
 // A forced cut keeps a tail that may still grow into a hit (O-G4 and cross-segment links,
-// passcodes and 打开…): an ASCII-like token, then amount characters and amount trigger words.
+// passcodes and 打开…): an ASCII-like token, then amount characters (with 块 / 元, so the 角
+// digit after them is never split off) and amount trigger words.
 const TOKEN_CHAR = /^[\x21-\x7e！-～\p{Sc}]$/u;
 const AMOUNT_CHAR =
-  /^[\s\p{Nd}.．%％\p{Sc}零〇一二两兩三四五六七八九十百千万萬亿億壹贰貳叁叄參肆伍陆陸柒捌玖拾佰仟]$/u;
+  /^[\s\p{Nd}.．%％\p{Sc}零〇一二两兩三四五六七八九十百千万萬亿億壹贰貳叁叄參肆伍陆陸柒捌玖拾佰仟块塊元圓圆]$/u;
 const TRIGGERS = ['立减', '到手', '返', '省', '减', '券', '满'];
 const PARTIAL_AT_END = ['打开拼多', '打开淘', '打开京', '打开拼', '打开', '打', '复', '立', '到'];
 

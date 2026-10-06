@@ -16,12 +16,22 @@ describe('[BR-AI-06] amount hits cover the whole number (code review round 2)', 
   });
 
   it.each([
-    ['9块3件包邮。', '见卡片3件包邮。'],
-    ['9块3 件', '见卡片3 件'],
-    ['10块2瓶', '见卡片2瓶'],
-    ['5块3ml', '见卡片3ml'],
-    ['5块2kg装', '见卡片2kg装'],
-  ])('keeps the count after 块 in %s', (input, output) => {
+    ['9块3件包邮。', '见卡片件包邮。'],
+    ['9块3 件', '见卡片 件'],
+    ['10块2瓶', '见卡片瓶'],
+    ['5块3ml', '见卡片ml'],
+    ['5块2kg装', '见卡片kg装'],
+  ])('takes the single digit after 块 in %s even before a count (角位从严)', (input, output) => {
+    expect(filterSegment(input).text).toBe(output);
+  });
+
+  it.each([
+    ['9块15升装', '见卡片15升装'],
+    ['9块1.5升装', '见卡片1.5升装'],
+    ['9块１．５升装', '见卡片１．５升装'],
+    ['29块\n9', '见卡片\n9'],
+    ['9块，3件', '见卡片，3件'],
+  ])('keeps the number after 块 in %s when it is not one 角 digit', (input, output) => {
     expect(filterSegment(input).text).toBe(output);
   });
 

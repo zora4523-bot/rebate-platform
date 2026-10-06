@@ -98,27 +98,30 @@ function trimEnd(text: string, start: number, end: number, min: number): number 
 }
 
 // O-G1: an amount hit covers the whole number next to it (digits, decimals, thousands commas,
-// numerals and place-value words on both sides, as in 1万5千元, and the single digit after 块
-// as in 九块九 or 29块9, unless a quantity or size unit follows it, as in 9块3件).
+// numerals and place-value words on both sides, as in 1万5千元). BR-AI-06「块 / 元」后角位从严
+// (owner decision 2026-10-06): a hit ending in 块 or 元 also takes the one digit right after it
+// (across horizontal space only), whatever follows that digit: one Chinese digit, or exactly one
+// Arabic digit (either width) that is not followed by a point and a digit. So 9块3件 loses the 3.
 const CN_SET: ReadonlySet<string> = new Set(CN);
 const PLACE_SET: ReadonlySet<string> = new Set('十百千万萬亿億拾佰仟');
-const SPOKEN_UNIT: ReadonlySet<string> = new Set('块塊');
-// BR-AI-06「不过滤规格和数量」: units that make the digit after 块 a count, not 角.
-const QUANTITY_UNITS: ReadonlySet<string> = new Set(
-  '件个個只隻双雙套盒包瓶罐桶袋箱支枝片条條张張本台部粒颗顆对對副把份杯听聽卷斤克升米码碼人天次',
-);
-// 包邮 / 包郵 (free shipping) after 九块九 is not a count of 包.
-const NOT_QUANTITY: readonly string[] = ['包邮', '包郵'];
-const ASCII_UNIT = /^(?:ml|kg|mg|g|l|cm|mm|m|oz|lb|pcs|pc)(?![A-Za-z])/iu;
+const JIAO_UNIT: ReadonlySet<string> = new Set('块塊元圓圆');
+const JIAO_CN_DIGIT: ReadonlySet<string> = new Set('〇零一二两三四五六七八九');
 const isDigit = (ch: string): boolean => ch >= '0' && ch <= '9';
 const isNumeral = (ch: string): boolean => isDigit(ch) || CN_SET.has(ch);
+const isAnyWidthDigit = (ch: string): boolean => isDigit(ch) || (ch >= '０' && ch <= '９');
+const isPoint = (ch: string): boolean => ch === '.' || ch === '．';
 
-function quantityUnitAt(text: string, i: number): boolean {
+/** End offset of the 角 digit after a 块 / 元 that ends at `i`, or `i` when there is none. */
+function jiaoEnd(text: string, i: number): number {
   let k = i;
   while (k < text.length && HORIZONTAL_SPACE.test(text.charAt(k))) k += 1;
   const ch = text.charAt(k);
-  if (QUANTITY_UNITS.has(ch)) return !NOT_QUANTITY.some((word) => text.startsWith(word, k));
-  return ASCII_UNIT.test(text.slice(k, k + 4));
+  if (JIAO_CN_DIGIT.has(ch)) return k + 1;
+  if (!isAnyWidthDigit(ch)) return i;
+  const next = text.charAt(k + 1);
+  if (isAnyWidthDigit(next)) return i;
+  if (isPoint(next) && isAnyWidthDigit(text.charAt(k + 2))) return i;
+  return k + 1;
 }
 
 function threeDigitsAt(text: string, i: number): boolean {
@@ -152,13 +155,8 @@ function extendAmount(text: string, start: number, end: number): [number, number
     else if (CN_SET.has(last) && isNumeral(next)) e += 1;
     else if (isDigit(last) && next === '.' && isDigit(text.charAt(e + 1))) e += 2;
     else if (isDigit(last) && next === ',' && threeDigitsAt(text, e + 1)) e += 4;
-    else if (
-      SPOKEN_UNIT.has(last) &&
-      isNumeral(next) &&
-      !isNumeral(text.charAt(e + 1)) &&
-      !quantityUnitAt(text, e + 1)
-    ) {
-      e += 1;
+    else if (JIAO_UNIT.has(last)) {
+      e = jiaoEnd(text, e);
       break;
     } else break;
   }
