@@ -8,16 +8,18 @@
 // links rows are only inserted here (row_version 0); the 0006 guards freeze the snapshot and later
 // writers (open, B1-06d/k) update with CAS.
 import type { DB } from '@couli/db';
-import { sql, type Kysely } from 'kysely';
+import type { PidScene, Scene } from '@couli/contracts-ts';
+import { sql, type Kysely, type RawBuilder, type Selectable } from 'kysely';
 import type { LinkRegistrar, RegisterLinkInput, SourceLinkReader } from '../../catalog/index.ts';
 import { newUuidV7, type Clock } from '../../platform/index.ts';
 import {
   isPlatform,
   isPriceAnomaly,
   type PidPlatform,
+  type Platform,
   type UnionPidService,
 } from '../../union/index.ts';
-import type { AttrCodeReader, CallerContext, LinkingConfigReader } from '../ports.ts';
+import type { AttrCodeReader, Caller, CallerContext, LinkingConfigReader } from '../ports.ts';
 import {
   TLJ_SWITCH,
   LinkingError,
@@ -121,76 +123,38 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
     const quotedAt = instant(item.quoted_at, 'quoted_at');
     const rawFetchedAt = instant(ref.rawFetchedAt, 'raw_fetched_at');
 
-    const userId = caller.userId;
-    // BR-ATTR-06: attr_code only from the port; unavailable stays null, never the user_id.
-    const attrCode =
-      userId === null || attrCodes === undefined
-        ? null
-        : ((await attrCodes.attrCode(appId, userId)) ?? null);
-    const pidRow = await pids.getActivePid({
-      appId,
-      platform: platform as PidPlatform,
-      pidScene,
-      purpose: 'convert',
+    const snapshot = await resolveSnapshot({
+      caller,
+      attrCodes,
+      pids,
+      platform,
+      scene,
+      agentSessionId: context.agentSessionId ?? null,
     });
-    // Only an active row of exactly this app, platform and pid_scene is frozen; anything else
-    // (none, or a row of another scope) leaves pid empty for open to judge.
-    const pid =
-      pidRow !== null &&
-      pidRow.status === 'active' &&
-      pidRow.app_id === appId &&
-      pidRow.platform === platform &&
-      pidRow.pid_scene === pidScene
-        ? pidRow.pid
-        : null;
-    const agentSessionId = context.agentSessionId ?? null;
-
     const now = clock.now();
     const linkId = newUuidV7(now);
-    const snapshot: IdentitySnapshot = {
-      user_id: userId,
-      platform,
-      pid,
-      pid_scene: pidScene,
-      attr_code: typeof attrCode === 'string' && attrCode !== '' ? attrCode : null,
-      agent_session_id: agentSessionId,
-    };
-    const couponIds =
-      item.coupon_ids === undefined || item.coupon_ids === '' ? null : item.coupon_ids;
-
     await db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto('links')
-        .values({
-          link_id: linkId,
-          app_id: appId,
-          user_id: userId,
-          device_id: caller.deviceId,
+      await insertLinkRow(trx, {
+        now,
+        caller,
+        linkId,
+        snapshot,
+        values: {
           platform,
-          product_key: ref.productKey,
-          raw_item_id: ref.rawItemId,
-          raw_fetched_at: rawFetchedAt,
+          productKey: ref.productKey,
+          rawItemId: ref.rawItemId,
+          rawFetchedAt,
           scene,
-          sub_scene: context.subScene ?? null,
-          pid_scene: pidScene,
-          pid,
-          entry_source: input.entrySource,
-          // Only strings and null: JSON.stringify never meets a bigint here.
-          identity_snapshot: sql<
-            DB['links']['identity_snapshot']
-          >`${JSON.stringify(snapshot)}::jsonb`,
-          quoted_final_price_fen: item.final_price_fen,
-          quoted_coupon_fen: item.coupon_fen,
-          quoted_coupon_id: couponIds,
-          quoted_at: quotedAt,
-          expire_at: sql<Date>`${now.toISOString()}::timestamptz + ${urlLifetimeMs(pidScene)} * interval '1 millisecond'`,
-          agent_session_id: agentSessionId,
-          agent_card_id: context.agentCardId ?? null,
-          row_version: 0,
-          created_at: now,
-          updated_at: now,
-        })
-        .execute();
+          subScene: context.subScene ?? null,
+          entrySource: input.entrySource,
+          quotedFinalPriceFen: item.final_price_fen,
+          quotedCouponFen: item.coupon_fen,
+          quotedCouponId:
+            item.coupon_ids === undefined || item.coupon_ids === '' ? null : item.coupon_ids,
+          quotedAt,
+          agentCardId: context.agentCardId ?? null,
+        },
+      });
       if (logsRegistration(scene, pidScene)) {
         await trx
           .insertInto('link_logs')
@@ -198,16 +162,16 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
             app_id: appId,
             link_id: linkId,
             event: 'register',
-            user_id: userId,
+            user_id: snapshot.user_id,
             platform,
             product_key: ref.productKey,
             raw_item_id: ref.rawItemId,
             shop_id: ref.shopId,
             scene,
-            pid_scene: pidScene,
-            pid,
+            pid_scene: snapshot.pid_scene,
+            pid: snapshot.pid,
             quoted_price_fen: item.final_price_fen,
-            agent_session_id: agentSessionId,
+            agent_session_id: snapshot.agent_session_id,
             result_code: 0,
             created_at: now,
           })
@@ -218,4 +182,137 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
   }
 
   return { register, entrySource: (appId, linkId) => sourceLinks.entrySource(appId, linkId) };
+}
+
+/** The card fields a links row is registered with; identity is never among them. */
+export interface LinkRowValues {
+  readonly platform: Platform;
+  readonly productKey: string | null;
+  readonly rawItemId: string | null;
+  readonly rawFetchedAt: string | Date | null;
+  readonly scene: Scene;
+  readonly subScene: string | null;
+  readonly entrySource: string | null;
+  readonly quotedFinalPriceFen: bigint | null;
+  readonly quotedCouponFen: bigint | null;
+  readonly quotedCouponId: string | null;
+  readonly quotedAt: string | Date | null;
+  readonly agentCardId: string | null;
+}
+
+/**
+ * The identity a new link freezes, from the caller only (BR-ATTR-05): user_id, attr_code from the
+ * port (never the user_id, BR-ATTR-06), the active pid of the scene's pid_scene (BR-ATTR-08) and
+ * the Agent session. Read before any transaction: it only reads other modules' ports.
+ */
+export async function resolveSnapshot(args: {
+  readonly caller: Caller;
+  readonly attrCodes: AttrCodeReader | undefined;
+  readonly pids: Pick<UnionPidService, 'getActivePid'>;
+  readonly platform: Platform;
+  readonly scene: Scene;
+  readonly agentSessionId: string | null;
+}): Promise<IdentitySnapshot> {
+  const { caller, attrCodes, pids, platform, scene, agentSessionId } = args;
+  const appId = caller.appId;
+  const pidScene: PidScene = pidSceneOf(scene);
+  const attrCode = await attrCodeOf(attrCodes, appId, caller.userId);
+  const pidRow = await pids.getActivePid({
+    appId,
+    platform: platform as PidPlatform,
+    pidScene,
+    purpose: 'convert',
+  });
+  // Only an active row of exactly this app, platform and pid_scene is frozen; anything else
+  // (none, or a row of another scope) leaves pid empty for open to judge.
+  const pid =
+    pidRow !== null &&
+    pidRow.status === 'active' &&
+    pidRow.app_id === appId &&
+    pidRow.platform === platform &&
+    pidRow.pid_scene === pidScene
+      ? pidRow.pid
+      : null;
+  return {
+    user_id: caller.userId,
+    platform,
+    pid,
+    pid_scene: pidScene,
+    attr_code: attrCode,
+    agent_session_id: agentSessionId,
+  };
+}
+
+/**
+ * The single links insert of the module (B1-06c registration; B1-06d registers the opener's own
+ * link through it too): row_version 0, expire_at from the pid_scene's URL lifetime; the inserted
+ * row is returned as stored.
+ */
+export async function insertLinkRow(
+  executor: Kysely<DB>,
+  args: {
+    readonly now: Date;
+    readonly caller: Caller;
+    readonly linkId: string;
+    readonly snapshot: IdentitySnapshot;
+    readonly values: LinkRowValues;
+  },
+): Promise<Selectable<DB['links']>> {
+  const { now, caller, linkId, snapshot, values } = args;
+  const pidScene = pidSceneOf(values.scene);
+  if (
+    snapshot.pid_scene !== pidScene ||
+    snapshot.platform !== values.platform ||
+    snapshot.user_id !== caller.userId
+  ) {
+    throw new TypeError('linking: identity snapshot does not match the row being registered');
+  }
+  return executor
+    .insertInto('links')
+    .values({
+      link_id: linkId,
+      app_id: caller.appId,
+      user_id: caller.userId,
+      device_id: caller.deviceId,
+      platform: values.platform,
+      product_key: values.productKey,
+      raw_item_id: values.rawItemId,
+      raw_fetched_at: values.rawFetchedAt,
+      scene: values.scene,
+      sub_scene: values.subScene,
+      pid_scene: pidScene,
+      pid: snapshot.pid,
+      entry_source: values.entrySource,
+      identity_snapshot: snapshotJson(snapshot),
+      quoted_final_price_fen: values.quotedFinalPriceFen,
+      quoted_coupon_fen: values.quotedCouponFen,
+      quoted_coupon_id: values.quotedCouponId,
+      quoted_at: values.quotedAt,
+      expire_at: sql<Date>`${now.toISOString()}::timestamptz + ${urlLifetimeMs(pidScene)} * interval '1 millisecond'`,
+      agent_session_id: snapshot.agent_session_id,
+      agent_card_id: values.agentCardId,
+      row_version: 0,
+      created_at: now,
+      updated_at: now,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+}
+
+/** BR-ATTR-06: attr_code only from the port; unavailable or empty stays null, never the user_id. */
+export async function attrCodeOf(
+  attrCodes: AttrCodeReader | undefined,
+  appId: string,
+  userId: string | null,
+): Promise<string | null> {
+  if (userId === null || attrCodes === undefined) return null;
+  const value = await attrCodes.attrCode(appId, userId);
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+/** The jsonb value of a snapshot; only strings and null, so JSON.stringify never meets a bigint. */
+export function snapshotJson(
+  snapshot: IdentitySnapshot,
+): RawBuilder<DB['links']['identity_snapshot']> {
+  return sql<DB['links']['identity_snapshot']>`${JSON.stringify(snapshot)}::jsonb`;
 }

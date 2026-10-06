@@ -1,10 +1,14 @@
 // Pure registration rules of linking (B1-06c): scene validation and the pid_scene it implies
 // (BR-ATTR-08), the URL lifetime behind expire_at (BR-ATTR-05), which registrations are logged
-// (BR-ATTR-14) and how a boolean switch reads. No Nest, no data access.
+// (BR-ATTR-14) and how a boolean switch reads; B1-06d adds whom an open serves (BR-ATTR-05
+// ①～⑤, BR-ATTR-11). No Nest, no data access.
 import { scene as SCENES, type PidScene, type Scene } from '@couli/contracts-ts';
 
-/** The contract error a registration fails with (contracts/error-codes.yaml). */
-export type LinkingErrorCode = 20001;
+/**
+ * The contract errors linking fails with (contracts/error-codes.yaml): 20001 invalid scene,
+ * 10001 login required, 30144 link unknown or of another app.
+ */
+export type LinkingErrorCode = 20001 | 10001 | 30144;
 
 export class LinkingError extends Error {
   readonly code: LinkingErrorCode;
@@ -68,3 +72,54 @@ export function isSwitchOn(value: unknown): boolean {
 
 /** The configuration switch that admits scene=taolijin (contracts scene enum, BR-ATTR-08). */
 export const TLJ_SWITCH = 'tlj.enabled';
+
+/** The scene and pid_scene an opener's own link falls back to: self-buy detail (BR-ATTR-11). */
+export const SELF_BUY_SCENE: Scene = 'detail';
+
+/** The notice when another user's taolijin link is reopened on the self-buy pid (BR-ATTR-05③). */
+export const TLJ_OWNER_ONLY_MESSAGE = '该淘礼金仅限原用户使用';
+
+/**
+ * Whom an open serves (BR-ATTR-05 ①～④, BR-ATTR-11 default):
+ * - use: open the stored link as it is (the sharer's identity, or the caller's own link);
+ * - claim: a guest link the caller claims once (links.user_id, conditional update);
+ * - register: register a new link for the caller (scene given), the original stays untouched;
+ * - login: 10001.
+ */
+export type OpenOwnerDecision =
+  | { readonly kind: 'use' }
+  | { readonly kind: 'claim' }
+  | { readonly kind: 'register'; readonly scene: Scene; readonly message: string | null }
+  | { readonly kind: 'login' };
+
+export function decideOpenOwner(input: {
+  /** pid_scene of the stored link. */
+  readonly pidScene: string | null;
+  /** The link's scene (contract enum); taolijin falls back to detail for another user. */
+  readonly scene: Scene;
+  /** identity_snapshot.user_id: the owner for share links (①) and for the others (②③). */
+  readonly snapshotUserId: string | null;
+  /** links.user_id, set when a guest link is claimed. */
+  readonly rowUserId: string | null;
+  /** The current caller from CallerContext only; null is a guest. */
+  readonly callerUserId: string | null;
+}): OpenOwnerDecision {
+  const { pidScene, scene, snapshotUserId, rowUserId, callerUserId } = input;
+  if (pidScene === 'share') {
+    // ①: anyone opens with the sharer's identity; the sharer himself goes self-buy (BR-ATTR-11).
+    if (callerUserId !== null && callerUserId === snapshotUserId) {
+      return { kind: 'register', scene: SELF_BUY_SCENE, message: null };
+    }
+    return { kind: 'use' };
+  }
+  // ④: a non-share link needs a logged-in caller, whoever owns it.
+  if (callerUserId === null) return { kind: 'login' };
+  const owner = snapshotUserId ?? rowUserId;
+  // ②: the caller's own link, or a guest link not yet claimed.
+  if (owner === callerUserId) return { kind: 'use' };
+  if (owner === null) return { kind: 'claim' };
+  // ③: another user's link; taolijin is never created for the caller (detail, self-buy).
+  return scene === 'taolijin'
+    ? { kind: 'register', scene: SELF_BUY_SCENE, message: TLJ_OWNER_ONLY_MESSAGE }
+    : { kind: 'register', scene, message: null };
+}

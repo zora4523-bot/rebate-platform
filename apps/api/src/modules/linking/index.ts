@@ -3,6 +3,8 @@
 // (BR-PRICE-12, BR-ATTR-05/06/08/14, D33), implementing catalog's LinkRegistrar and
 // SourceLinkReader; the CallerContext, attr_code and configuration ports. Rule tests:
 // test/spec/linking/register/**.
+// Task B1-06d: linking open, first stage — whom the open serves (BR-ATTR-05 ①～⑤, BR-ATTR-11
+// default, BR-PRICE-12 baseline). Rule tests: test/spec/linking/open-owner/**.
 export { createLinkRegistration, createSourceLinkReader } from './application/link-registration.ts';
 export type {
   IdentitySnapshot,
@@ -10,6 +12,12 @@ export type {
   LinkingOptions,
   RegistrationContext,
 } from './application/link-registration.ts';
+export { createLinkOpenOwner } from './application/link-open-owner.ts';
+export type {
+  LinkOpenOwnerOptions,
+  LinkOpenOwnerResult,
+  LinkOpenOwnerService,
+} from './application/link-open-owner.ts';
 export { LinkingError } from './domain/rules.ts';
 export type { LinkingErrorCode } from './domain/rules.ts';
 export {
