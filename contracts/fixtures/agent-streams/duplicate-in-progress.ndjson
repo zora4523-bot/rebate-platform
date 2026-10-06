@@ -1,0 +1,2 @@
+{"event":"meta","id":1,"data":{"session_id":"019a0000-0000-7000-8000-000000000012","run_id":"019a0000-0000-7000-8000-000000000112","message_id":"019a0000-0000-7000-8000-000000000212","prompt_version":"demo-prompt-v1","model_label":"演示模型","ai_label":"内容由 AI 生成，仅供参考","duplicate":true}}
+{"event":"error","id":2,"data":{"code":30506,"msg":"上一条还在回复中","retryable":true,"fallback":null,"fallback_q":null}}
