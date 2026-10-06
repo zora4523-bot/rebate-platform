@@ -1,0 +1,21 @@
+id: B1-05i
+repo: rebate-platform
+title: catalog 卡片按 D33 价格状态出卡：union 报价格异常时检索场景不出卡并记 PRICE_ANOMALY（不显示任何金额）、有价卡 disclaimer_keys 含 price_basis、淘宝券 ID 串与 coupon_fen 随报价快照交给 LinkRegistrar；主动查询的 price_unavailable 卡留 TODO 等契约同步
+type: impl
+# 2026-10-06 入账（W1 搜索转链线），起因同 B1-04r（D33）。依据：BR-PRICE-01（价格异常时检索不出卡、主动查询出 price_unavailable 卡）、BR-PRICE-03（price_basis 免责声明）、BR-PRICE-12（报价快照：淘宝 quoted_coupon_fen、quoted_coupon_id 串），由编排者摘入任务书第 2 节。
+# price_unavailable 卡与契约 ProductCard.link_id 必填的冲突仍在后续清单（B1-05f 记录），本任务不改契约，只做检索场景与快照字段；主动查询分支留 TODO(规划/11 §9.2) 指向契约同步。
+# 金额只经 @couli/money；风险表算 RV1（catalog/**），评审仍按本线做法两家都审。
+refs: []
+refs_hash: {}
+deps: [B1-04r, B1-05f]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+test_paths:
+  - 'test/spec/catalog/price-state/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/price-state/**'
+status: todo
+pr: null

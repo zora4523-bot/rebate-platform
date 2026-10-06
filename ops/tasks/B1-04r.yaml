@@ -1,0 +1,23 @@
+id: B1-04r
+repo: rebate-platform
+title: union 淘宝价格映射按 D33：领域纯函数由 final_promotion_price + 优惠明细（会员 / 券 / 平台立减 / 未识别，名称清单与 unknown_promo、basis 开关作参数，默认值取 08）得出三字段与券 ID 串，核对失败一律价格异常；演示适配器淘宝合成数据改为到手价 + 明细形状并经该函数出价
+type: impl
+# 2026-10-06 入账（W1 搜索转链线），起因：负责人选淘宝价格口径 B（D33，规划 #64，SPEC_REF 18ad5b4，代码仓库 #160）。
+# 依据：BR-PRICE-01（三字段与恒等式、价格异常）、BR-PRICE-02 正文与细则「淘宝优惠明细的分类」（NFKC 归一、判定顺序、默认清单、unknown_promo 默认 unavailable、有效期、计算、核对与异常 ①～④、basis 降级开关、quoted_coupon_id 串）、BR-PRICE-03，由编排者摘入任务书第 2 节。
+# 金额只经 @couli/money（硬规则 1）；清单与开关是服务端配置项（price.taobao.*），本任务以参数传入并给出 08 的默认值，配置读取接线留 TODO(规划/11 §9.2) 指向配置端口任务；切换 basis 为 coupon_only 须负责人同意，代码不得默认切换。
+# 演示适配器只用合成数据（不按平台文档仿造报文、不抄私有库实测值），形状贴近 followups F-29：券只在明细里、13 位毫秒时间、seller_id 按字符串。真实淘宝适配器仍等推广位 / siteId（B1-04e～m 不在本批）。
+# 风险：union/** RV2（金额）。
+refs: []
+refs_hash: {}
+deps: [B1-04o, B2-01b]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/taobao-price/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-price/**'
+status: todo
+pr: null
