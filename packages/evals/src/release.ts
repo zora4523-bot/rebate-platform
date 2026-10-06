@@ -44,9 +44,11 @@ export interface CaseFacts {
    * cases count their leaks in summary.counters instead. */
   partial_leaks?: LeakCode[];
   /** Only on an ungraded case (coverage_gap, error) and only when the turns it completed before
-   * it stopped hold a mismatched or unverified card value or link (a later miss, error or
-   * timeout never erases them, B3-01c §16): computeFacts' card and attribution counts of those
-   * turns. The card_values and attribution metrics add them to the graded cases' counts. */
+   * it stopped, together with what is readable of a malformed output that stopped it (its card
+   * frames, checked against that turn's own card_sources and link_registrations, B3-01d), hold a
+   * mismatched or unverified card value or link (a later miss, error or timeout never erases
+   * them, B3-01c §16): computeFacts' card and attribution counts of those turns. The card_values
+   * and attribution metrics add them to the graded cases' counts. */
   partial_checks?: { card_values: CheckCount; attribution: CheckCount };
 }
 export type MetricId =
@@ -401,14 +403,17 @@ function openEvidence(count: CheckCount): boolean {
 }
 
 /** Facts of a stopped case: all zero and `graded: false`, plus `partial_leaks` (leaks of the
- * completed turns and of what is readable of a malformed output) and `partial_checks` (card and
- * attribution counts of the completed turns, kept when one is mismatched or unverified; a stop
- * after verified evidence only keeps the frozen zero shape). */
+ * completed turns and of what the leak checks can read of a malformed output) and
+ * `partial_checks` (card and attribution counts of the completed turns and of what the card and
+ * link checks can read of a malformed output, B3-01d; kept when one is mismatched or unverified,
+ * so a card without its source is unverified; a stop after verified evidence only keeps the
+ * frozen zero shape). */
 function factsOf(
   c: EvalCase,
   result: CaseResult,
   outputs: TurnOutput[],
   leakOnly: TurnOutput[],
+  checkOnly: TurnOutput[],
 ): CaseFacts {
   if (result.result === 'pass' || result.result === 'fail') return computeFacts(c, outputs);
   const facts = ungradedFacts(c.id);
@@ -421,7 +426,7 @@ function factsOf(
   }
   const leaks = partialLeaks([...outputs, ...leakOnly]);
   if (leaks.length > 0) facts.partial_leaks = leaks;
-  const done = computeFacts(c, outputs);
+  const done = computeFacts(c, [...outputs, ...checkOnly]);
   if (openEvidence(done.card_values) || openEvidence(done.attribution)) {
     facts.partial_checks = { card_values: done.card_values, attribution: done.attribution };
   }
@@ -435,8 +440,9 @@ function factsOf(
  * an old port); a live port's error goes to the agent, and an agent that throws is `error`.
  * `facts` has one entry per active case in id order: computeFacts for a graded case (pass or
  * fail), all zero and `graded: false` for coverage_gap and error, with `partial_leaks` when the
- * turns completed before the case stopped leak and `partial_checks` when they hold a mismatched
- * or unverified card value or link. Stopped cases expecting args.platform also carry
+ * turns completed before the case stopped leak and `partial_checks` when they, or the readable
+ * card frames of a malformed output that stopped it (B3-01d), hold a mismatched or unverified
+ * card value or link. Stopped cases expecting args.platform also carry
  * `platform_expected: true` (the report itself is unchanged).
  */
 export async function runEval(opts: {
@@ -456,7 +462,9 @@ export async function runEval(opts: {
       runs.map((run) => run.result),
       unused,
     ),
-    facts: runs.map((run) => factsOf(run.case, run.result, run.outputs, run.leakOnly)),
+    facts: runs.map((run) =>
+      factsOf(run.case, run.result, run.outputs, run.leakOnly, run.checkOnly),
+    ),
   };
 }
 

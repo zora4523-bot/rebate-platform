@@ -352,14 +352,17 @@ function wrapPorts(own: CaseContext): AgentPorts {
 /** One case as run: its result and every well-formed output the agent returned, in turn order.
  * A case that reached grading has one per turn; a stopped case (coverage_gap, error) has those of
  * the turns before it stopped, plus the stopping turn's when the agent returned one after a
- * swallowed recording miss (its text was emitted all the same). `leakOnly` holds what is still
- * readable of an output that is not a well-formed TurnOutput (its frames and tool calls), for
- * the leak checks only (B3-01c §16). */
+ * swallowed recording miss (its text was emitted all the same). For an output that is not a
+ * well-formed TurnOutput (which always stops the case, as error or, after a swallowed miss, as
+ * coverage_gap), `leakOnly` holds what the leak checks can still read of it (its frames and tool
+ * calls, B3-01c §16) and `checkOnly` what the card and link checks can still read of it (its
+ * card frames, card sources and link registrations, B3-01d). */
 export interface CaseRun {
   case: EvalCase;
   result: CaseResult;
   outputs: TurnOutput[];
   leakOnly: TurnOutput[];
+  checkOnly: TurnOutput[];
 }
 
 async function runCase(
@@ -373,9 +376,10 @@ async function runCase(
   const context: CaseContext = { runId, caseId: c.id, misses, run };
   const outputs: TurnOutput[] = [];
   const leakOnly: TurnOutput[] = [];
+  const checkOnly: TurnOutput[] = [];
   try {
-    const result = await runTurns(c, agent, timeoutMs, context, outputs, leakOnly);
-    return { case: c, result, outputs, leakOnly };
+    const result = await runTurns(c, agent, timeoutMs, context, { outputs, leakOnly, checkOnly });
+    return { case: c, result, outputs, leakOnly, checkOnly };
   } finally {
     misses.open = false;
   }
@@ -439,14 +443,84 @@ function leakView(value: unknown): TurnOutput | undefined {
   }
 }
 
+/** A plain copy of what `read` returns (a structured clone, else a JSON round trip, which is what
+ * the stream would carry); undefined when it cannot be read or copied. */
+function detached(read: () => unknown): unknown {
+  try {
+    const value = read();
+    try {
+      return structuredClone(value);
+    } catch {
+      return JSON.parse(JSON.stringify(value)) as unknown;
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+/** What the card and link checks can still read of an output that is not a well-formed
+ * TurnOutput (B3-01d): every card frame, that is an object with event "card" and an object data
+ * (the frames computeFacts reads in a well-formed output; no frame id or seq is needed), and,
+ * when trace is an object, that turn's own trace.card_sources and trace.link_registrations when
+ * they are arrays. Each frame is read and copied on its own, so one that cannot be read is
+ * skipped without losing the others; sources or registrations that cannot be read are left out,
+ * which leaves the cards unverified. Undefined when no card frame is readable (no card, no
+ * count). The leak checks keep using leakView. */
+function checkView(value: unknown): TurnOutput | undefined {
+  try {
+    if (!isObject(value)) return undefined;
+    const rawFrames = value['frames'];
+    if (!Array.isArray(rawFrames)) return undefined;
+    const items = rawFrames as unknown[];
+    const length = items.length;
+    const frames: TurnOutput['frames'] = [];
+    for (let index = 0; index < length; index += 1) {
+      const item = detached(() => items[index]);
+      if (!isObject(item) || item['event'] !== 'card') continue;
+      const data = item['data'];
+      if (isObject(data)) frames.push({ event: 'card', id: frames.length + 1, data });
+    }
+    if (frames.length === 0) return undefined;
+    let rawTrace: unknown;
+    try {
+      rawTrace = value['trace'];
+    } catch {
+      rawTrace = undefined;
+    }
+    const field = (key: string): unknown =>
+      detached(() => (isObject(rawTrace) ? rawTrace[key] : undefined));
+    const trace: TurnOutput['trace'] = { intent: null, tool_calls: [] };
+    const sources = field('card_sources');
+    if (Array.isArray(sources)) {
+      trace.card_sources = sources as NonNullable<TurnOutput['trace']['card_sources']>;
+    }
+    const registrations = field('link_registrations');
+    if (Array.isArray(registrations)) {
+      trace.link_registrations = registrations as NonNullable<
+        TurnOutput['trace']['link_registrations']
+      >;
+    }
+    return { frames, trace };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Where runTurns puts the outputs of a case (see CaseRun). */
+interface TurnSinks {
+  outputs: TurnOutput[];
+  leakOnly: TurnOutput[];
+  checkOnly: TurnOutput[];
+}
+
 async function runTurns(
   c: EvalCase,
   agent: AgentUnderTest,
   timeoutMs: number,
   context: CaseContext,
-  outputs: TurnOutput[],
-  leakOnly: TurnOutput[],
+  sinks: TurnSinks,
 ): Promise<CaseResult> {
+  const { outputs, leakOnly, checkOnly } = sinks;
   const misses = context.misses;
   for (const [index, step] of c.turns.entries()) {
     const turn = index + 1;
@@ -467,9 +541,13 @@ async function runTurns(
       timeoutMs,
     );
     const copied = outcome.kind === 'ok' ? copyOutput(outcome.value) : undefined;
+    // Kept before the miss check, so a malformed output after a swallowed miss (coverage_gap)
+    // counts the same as one that stops the case as agent_error (B3-01d).
     if (outcome.kind === 'ok' && copied !== undefined && 'problem' in copied) {
       const view = leakView(outcome.value);
       if (view !== undefined) leakOnly.push(view);
+      const cards = checkView(outcome.value);
+      if (cards !== undefined) checkOnly.push(cards);
     }
     if (misses.first !== undefined) {
       if (copied !== undefined && 'output' in copied) outputs.push(copied.output);

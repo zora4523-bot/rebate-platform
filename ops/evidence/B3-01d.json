@@ -1,0 +1,119 @@
+{
+  "task": "B3-01d",
+  "spec_ref": "e9fe98ab6e8890ca40923ccd5b6ae5b56dac5aba",
+  "spec_commit": "ac4a177d6139505489e2fb575dbd963d6ded1d2c",
+  "red_tests": [
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#1] 第1条：格式错误的 product_list 卡片数值不一致仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#1] 第1条：格式错误的 rebate_quote 卡片数值不一致仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#1] 第1条：格式错误的 order_status 卡片数值不一致仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#1] 第1条：格式错误的 earnings_summary 卡片数值不一致仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 missing 记未核实，发布门禁不放行",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 empty 记未核实，发布门禁不放行",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 other-card 记未核实，发布门禁不放行",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 object 记未核实，发布门禁不放行",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 null 记未核实，发布门禁不放行",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#3] 第3条：已核实卡片保留零形状，仅改变来源为不一致才出现 partial_checks",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 wrong-product 仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 rejected 仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 wrong-link 仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 missing 仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 not-array 仍阻止发布",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5] 第5条：无效帧夹在可读卡片前后，不丢弃其余卡片与 trace 证据",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5a] 第5条：trace 为 undefined 时，可读卡片仍记未核实；全不可读只保留前轮",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5a] 第5条：trace 为 null 时，可读卡片仍记未核实；全不可读只保留前轮",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5a] 第5条：trace 为 \"unreadable\" 时，可读卡片仍记未核实；全不可读只保留前轮",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5a] 第5条：trace 为 undefined 时，可读卡片仍记未核实；全不可读只保留前轮",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#6] 第6条：正常完成轮次和异常轮次各计一次，文字泄露仍计 partial_leaks",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#6a] 第6条：正常判分 pass 的 facts 不变，异常输出使用相同卡片证据",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#6a] 第6条：正常判分 fail 的 facts 不变，异常输出使用相同卡片证据",
+    "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2a] 第2、4、6条：前轮同 id 的来源和登记不能核实异常轮次的卡片"
+  ],
+  "risk_note": "RV1 task (packages/evals); the PR also carries rule-test files, so two reviewers. Malformed turns (agent_error or coverage_gap) now keep their readable card frames, card sources and link registrations for partial_checks; a card without a source stays unverified (B3-01c Codex round-3 S2). Rule tests by Codex in one attempt (24 cases), red in the container; Claude spec-test review passed in round 1 with two S2 turned into implementation rules. Implementation by an Opus 5.5 subagent in one run; Codex and Claude code reviews passed in round 1. Branch rebased onto main before the evidence: red repeated at the rebased spec_commit; full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ac4a177d6139505489e2fb575dbd963d6ded1d2c",
+      "tree": "d6f593668669f975e4b69fa85b2cec2433023cb9",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T08:11:24Z",
+      "finished_at": "2026-10-06T08:11:30Z",
+      "red_tests": [
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#1] 第1条：格式错误的 product_list 卡片数值不一致仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#1] 第1条：格式错误的 rebate_quote 卡片数值不一致仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#1] 第1条：格式错误的 order_status 卡片数值不一致仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#1] 第1条：格式错误的 earnings_summary 卡片数值不一致仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 missing 记未核实，发布门禁不放行",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 empty 记未核实，发布门禁不放行",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 other-card 记未核实，发布门禁不放行",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 object 记未核实，发布门禁不放行",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2] 第2条：卡片来源 null 记未核实，发布门禁不放行",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#3] 第3条：已核实卡片保留零形状，仅改变来源为不一致才出现 partial_checks",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 wrong-product 仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 rejected 仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 wrong-link 仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 missing 仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#4] 第4条：格式错误输出的转链登记 not-array 仍阻止发布",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5] 第5条：无效帧夹在可读卡片前后，不丢弃其余卡片与 trace 证据",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5a] 第5条：trace 为 undefined 时，可读卡片仍记未核实；全不可读只保留前轮",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5a] 第5条：trace 为 null 时，可读卡片仍记未核实；全不可读只保留前轮",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5a] 第5条：trace 为 \"unreadable\" 时，可读卡片仍记未核实；全不可读只保留前轮",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#5a] 第5条：trace 为 undefined 时，可读卡片仍记未核实；全不可读只保留前轮",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#6] 第6条：正常完成轮次和异常轮次各计一次，文字泄露仍计 partial_leaks",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#6a] 第6条：正常判分 pass 的 facts 不变，异常输出使用相同卡片证据",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#6a] 第6条：正常判分 fail 的 facts 不变，异常输出使用相同卡片证据",
+        "test/spec/evals-malformed/readable-evidence.test.ts > [BR-AI-21] [AC-B3-01d#2a] 第2、4、6条：前轮同 id 的来源和登记不能核实异常轮次的卡片"
+      ],
+      "expected": ["test/spec/evals-malformed/readable-evidence.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4fcb8d26e78861295ba915d1e93917b07ec9ad9f245993a10f27b7ed28ae2771"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass; one S2 (a frame whose unrelated getter throws makes the whole-frame copy fail and drops the readable card) recorded as a follow-up (couli-runs/B3-01d/review-codex.json)"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagent, round 1 pass with no findings: coverage_gap path collects readable evidence, readability does not need frame id or seq, leakView unchanged (couli-runs/B3-01d/review-claude-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with two S2 (a swallowed recording miss followed by malformed output; a minimal card frame without id or seq) made explicit implementation rules and checked by both code reviewers (couli-runs/B3-01d/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/evals": "1d137b63b3875daa126eeea22effea935dcb2ac2",
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "e933199b220d951038d0ccdb181507758cd54761"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (fcc1221, the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
