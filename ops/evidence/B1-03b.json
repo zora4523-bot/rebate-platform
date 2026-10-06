@@ -1,0 +1,163 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (risk is RV1, but app.module.ts, bootstrap.ts and platform/http are not on the whitelist). Stage ① request signature: a pre-parsing request-check registration point (raw bytes, own bodyLimit 413/20001, ordered checks, verifiedDevice, PassThrough replay) on routes the contract marks x-signed (generated table incl. planned; HEAD falls back to GET); device 10402 -> format and ±300 s 10401 -> HMAC with timingSafeEqual 10401 -> nonce SET NX EX 600 in the risk namespace keyed by the device row's app_id and id; failed signatures take no nonce; Redis failures propagate to 50001; absolute-form targets signed as origin-form. identity implements the risk-defined device key port (no cache, non-UUID ids 10402, decrypt failure 50001). Entries without the signature check refuse to start when a contract-signed route is registered. Rule tests by Codex (spec_commit), red confirmed in the container.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent: round 1 pass with eight S3 (bufferWhen, entry fallback, contract-sourced status and text, regression tests, app.close, revoked row adopted; 300/600 replay boundary sent to the business-rule owner); round 2 pass on the increment with four S3 carried into the B1-02h brief"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass with one S2 (absolute-form request target signed with scheme and host) fixed in round 2; round 2 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by fresh Claude subagents: round 1 fail (two S2: escaped signing string never matched, unsigned routes only tested with empty headers), round 2 pass; round 3 orchestrator-approved exception (the real-app stub route moved off POST /v1/auth/sms-codes so B1-02e can implement it; one filter line applied by the orchestrator exactly as that review proposed after the Codex test rounds were used up) pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-03b",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "ee847eb89e0d854ccc00cf8cc13cf6925e27be16",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "62a850436e027c2e39753b2facda9cf36023dc15",
+      "tree": "a995e55ee9ef1c2cac7ee47f6b4e427f3346d381",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T01:54:13Z",
+      "finished_at": "2026-10-06T01:55:59Z"
+    },
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ee847eb89e0d854ccc00cf8cc13cf6925e27be16",
+      "tree": "8ea944535228953fc884292bd13ddd30ffe93ec5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T01:54:04Z",
+      "finished_at": "2026-10-06T01:54:12Z",
+      "red_tests": [
+        "test/spec/risk/signature/devices.int.test.ts > [BR-ID-09][04 §5] 真实应用healthz和设备注册无需签名；签发密钥可验签并阻止重放",
+        "test/spec/risk/signature/devices.int.test.ts > [BR-ID-09][BR-ID-01] DB无此设备或已吊销返回10402，优先于损坏JSON和签名",
+        "test/spec/risk/signature/devices.int.test.ts > [BR-ID-09][B1-01za] 密文损坏或复制到其他设备行导致解密失败，返回50001且不泄露签名素材",
+        "test/spec/risk/signature/devices.int.test.ts > [BR-ID-09][B1-01za] 服务端未配置字段加密密钥不能把已签发设备当作10402或放行",
+        "test/spec/risk/signature/devices.int.test.ts > [BR-ID-09][BR-ID-01][ADR-0001 §4.2 第17项] 真实应用未传redisUrl时正确签名返回50001，缺设备仍先返回10402",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][04 §5] 所有契约签名操作均拒绝无设备；所有非签名操作均不查设备或nonce",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][BR-ID-01] 验签先于解析与校验：错签和损坏JSON",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][BR-ID-01] 验签先于解析与校验：正确签名和损坏JSON",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][BR-ID-01] 验签先于解析与校验：错签和非法body schema",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][BR-ID-01] 验签先于解析与校验：正确签名和非法body schema",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][BR-ID-01] 大写nonce在契约头校验之前返回10401，未知设备返回10402",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][BR-ID-01] 不支持的Content-Type在验签之后处理，签名正确=false",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][BR-ID-01] 不支持的Content-Type在验签之后处理，签名正确=true",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][CT-01d] 流式body 65字节超过64上限先返回413/20001，签名正确=false",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][CT-01d] 流式body 65字节超过64上限先返回413/20001，签名正确=true",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][CT-01d] 流式body 111字节超过64上限先返回413/20001，签名正确=false",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][CT-01d] 流式body 111字节超过64上限先返回413/20001，签名正确=true",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09] 原始字节跨chunk（含UTF-8字符）验签后原样交还解析器，恰好bodyLimit可通过",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][BR-ID-01] 按注册顺序运行后续检查，失败短路且后续能读到已验证设备",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][ADR-0001 §4.2 第17项] Redis不可用拒绝50001，错签仍10401；日志和响应不含密钥签名串及X-Sign",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][B1-01za] 密钥查询/解密异常是50001而非10402，且不写nonce",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09] 有效签名通过真实契约头/body校验，空body按零字节签名",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09] HTTP匹配模板后仍按原始转义path/query验签，不排序或解码",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-09][ADR-0001 §4.2 第17项] 没有Redis提供者时签名请求失败关闭，不签名请求仍可通过",
+        "test/spec/risk/signature/http.test.ts > [BR-ID-01][B1-01za] 后续检查也早于JSON解析，失败后不调用剩余检查",
+        "test/spec/risk/signature/redis.int.test.ts > [BR-ID-09] 跨两个独立Redis句柄并发重放只有一个成功；持久键含app/device/nonce和600秒TTL",
+        "test/spec/risk/signature/redis.int.test.ts > [BR-ID-09] 重放不延长TTL，Redis键过期后同nonce携新时间戳可再次通过",
+        "test/spec/risk/signature/redis.int.test.ts > [BR-ID-09][BR-ID-01] nonce隔离使用设备行app_id，不使用伪造X-App-Id",
+        "test/spec/risk/signature/redis.int.test.ts > [BR-ID-09][ADR-0001 §4.2 第17项] 已关闭Redis句柄不能放行，坏签名仍先返回10401",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09][04 §5] 签名表与契约全部操作一致，包含 planned，缺省为不签名",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：BR-ID-09 example: links open with query and JSON body, server time equals ts",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：empty body: sha256 of zero bytes (e3b0c442...b855)",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：non-ASCII body (CJK, full-width punctuation, 4-byte emoji) hashed as raw UTF-8 bytes; spacing kept, no JSON reserialization",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：unsorted, percent-encoded query kept as sent: no sorting, no decoding",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：repeated key, empty value and lower-case percent-encoding kept as sent: no dedup, no case normalisation",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：time boundary: server_time - ts = +300 (client clock 300 s slow), accepted",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：time boundary: server_time - ts = -300 (client clock 300 s fast), accepted",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：PUT is signed too: save payout account (x-signed: true), non-ASCII JSON body",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用有效向量：install_secret longer than the 64-byte HMAC block (key is hashed first per RFC 2104)",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：server_time - ts = +301 (client clock 301 s slow)",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：server_time - ts = -301 (client clock 301 s fast; BR-ID-09 example)",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Timestamp with 9 digits; server_time set to the same number so only the format rule breaks",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Timestamp in milliseconds (13 digits); server_time set to the same number so only the format rule breaks",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Timestamp with a fractional part whose numeric value equals server_time",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Timestamp with a leading plus sign whose numeric value equals server_time",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Timestamp in exponent notation: 10 characters, numeric value equals server_time",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Timestamp as an HTTP date (same instant), not a number at all",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Nonce with 31 characters",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Nonce with 33 characters",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Nonce of 64 lower-case hex characters (a full sha256 hex)",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Nonce with upper-case hex digits",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：X-Nonce with a non-hex letter",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：signing-string method in lower case",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：path with scheme and host",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 共用无效向量返回10401且不占nonce：protocol-relative path with host",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09][BR-ID-01] 设备缺失或未签发先于其他错误返回10402：undefined",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09][BR-ID-01] 设备缺失或未签发先于其他错误返回10402：",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09][BR-ID-01] 设备缺失或未签发先于其他错误返回10402：not-a-server-issued-device",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09][BR-ID-01] 设备缺失或未签发先于其他错误返回10402：019a0000-0000-7000-8000-000000000099",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-timestamp=undefined",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-timestamp=",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-timestamp=invalid",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-nonce=undefined",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-nonce=",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-nonce=invalid",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-sign=undefined",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-sign=",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 有效设备的签名头缺失或非法返回10401：x-sign=invalid",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] X-Sign只接受64位小写hex，长短、大小写和首尾篡改均不通过",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] HMAC绑定方法、原始query编码及顺序、原始body字节和设备密钥",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09][BR-ID-01] 错签不占nonce且优先于Redis故障，修正后可成功一次",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09][BR-ID-01] nonce使用设备行app_id；①不比较客户端X-App-Id",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 相同nonce允许不同设备使用；吊销后不得依赖旧查询结果继续放行",
+        "test/spec/risk/signature/signature.test.ts > [BR-ID-09] 秒级时间窗读取注入时钟，客户端时钟头不能扩大窗口"
+      ],
+      "expected": [
+        "test/spec/risk/signature/devices.int.test.ts",
+        "test/spec/risk/signature/http.test.ts",
+        "test/spec/risk/signature/redis.int.test.ts",
+        "test/spec/risk/signature/signature.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "aba7ae3fc80d6ed723b44eec363b4102b2bab9c7c8cec0aa4139b7cd2766f802"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "68fe734adffb0039a4c3ba25482b3ac7560aeb926b17cd68658a485a8c420d00"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "0ea10d8955fe25a3690ddf2245ab2708bf7258ae",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
