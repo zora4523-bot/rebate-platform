@@ -1,0 +1,138 @@
+{
+  "task": "B1-05h",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "1a51c26b28af443420e8899bc0b293952a177a58",
+  "red_tests": [
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#1] 签发内容恰为五个商品字段，不夹带用户或归因上下文",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#2] taobao 的原串逐字保留并可由另一服务实例验证",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#2] jd 的原串逐字保留并可由另一服务实例验证",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#2] jd 的原串逐字保留并可由另一服务实例验证",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#2] pdd 的原串逐字保留并可由另一服务实例验证",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#3] 同卡片重复签发仍使用随机加密，令牌可被不同用户反复透传",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 undefined 返回 null，不报错",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 null 返回 null，不报错",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌  返回 null，不报错",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 not-an-item-ref 返回 null，不报错",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 v1.1.! 返回 null，不报错",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 v1.1.AA 返回 null，不报错",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#5] 篡改 iv 后忽略令牌，即使请求商品不同也不报 20001",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#5] 篡改 body 后忽略令牌，即使请求商品不同也不报 20001",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#5] 篡改 tag 后忽略令牌，即使请求商品不同也不报 20001",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#6] 未知密钥版本和不同密钥无法解密时都忽略",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#7] app_id 不符优先静默忽略，不泄漏令牌内商品是否匹配",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#8] 认证通过且同应用但商品为 tb:Other 时返回错误码 20001",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#8] 认证通过且同应用但商品为 tb:abc001 时返回错误码 20001",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#8] 认证通过且同应用但商品为 jd:AbC001 时返回错误码 20001",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#9] 有效认证却无法解码为完整商品引用的内容静默忽略",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#10] 其他加密字段的密文不能充当 item_ref",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#11] 密钥轮换后仍能验证旧卡片，新签发使用现有 keyring",
+    "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#12] 成功、忽略和业务错误路径不把令牌或解密原串写进输出或错误",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#13] BR-PROD-05 取得 0 毫秒的卡片原串优先于更新的存储记录",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#13] BR-PROD-05 取得 1799999 毫秒的卡片原串优先于更新的存储记录",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#13] BR-PROD-05 取得 1800000 毫秒的卡片原串优先于更新的存储记录",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#14] BR-PROD-05 签发时已取得 1800001 毫秒，不得重新计时挽救过期原串",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#14] BR-PROD-05 签发时已取得 3600000 毫秒，不得重新计时挽救过期原串",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#15] BR-PROD-05 验证同一令牌不延长取得时间，1800 秒后继续后备流程",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#16] 无效引用不打断原串选择，存储可用=true 时继续第②③级",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#16] 无效引用不打断原串选择，存储可用=false 时继续第②③级",
+    "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#17] 过期但认证有效且同应用的不同商品仍须报 20001"
+  ],
+  "risk_note": "RV2 (catalog/**). Catalog item_ref: signed with the existing field crypto over five fields (no user id); verify ignores missing, tampered or foreign-app tokens and answers 20001 only for a valid token of another product. No new secret is introduced. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1a51c26b28af443420e8899bc0b293952a177a58",
+      "tree": "0444ed390b41fcc7dc68c94799ccd30a2e4fdb90",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T05:17:46Z",
+      "finished_at": "2026-10-06T05:17:50Z",
+      "red_tests": [
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#1] 签发内容恰为五个商品字段，不夹带用户或归因上下文",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#2] taobao 的原串逐字保留并可由另一服务实例验证",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#2] jd 的原串逐字保留并可由另一服务实例验证",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#2] jd 的原串逐字保留并可由另一服务实例验证",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#2] pdd 的原串逐字保留并可由另一服务实例验证",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#3] 同卡片重复签发仍使用随机加密，令牌可被不同用户反复透传",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 undefined 返回 null，不报错",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 null 返回 null，不报错",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌  返回 null，不报错",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 not-an-item-ref 返回 null，不报错",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 v1.1.! 返回 null，不报错",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#4] 缺失或无法解码的令牌 v1.1.AA 返回 null，不报错",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#5] 篡改 iv 后忽略令牌，即使请求商品不同也不报 20001",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#5] 篡改 body 后忽略令牌，即使请求商品不同也不报 20001",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#5] 篡改 tag 后忽略令牌，即使请求商品不同也不报 20001",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#6] 未知密钥版本和不同密钥无法解密时都忽略",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#7] app_id 不符优先静默忽略，不泄漏令牌内商品是否匹配",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#8] 认证通过且同应用但商品为 tb:Other 时返回错误码 20001",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#8] 认证通过且同应用但商品为 tb:abc001 时返回错误码 20001",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#8] 认证通过且同应用但商品为 jd:AbC001 时返回错误码 20001",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#9] 有效认证却无法解码为完整商品引用的内容静默忽略",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#10] 其他加密字段的密文不能充当 item_ref",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#11] 密钥轮换后仍能验证旧卡片，新签发使用现有 keyring",
+        "test/spec/catalog/item-ref/item-ref.test.ts > [AC-B1-05h#12] 成功、忽略和业务错误路径不把令牌或解密原串写进输出或错误",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#13] BR-PROD-05 取得 0 毫秒的卡片原串优先于更新的存储记录",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#13] BR-PROD-05 取得 1799999 毫秒的卡片原串优先于更新的存储记录",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#13] BR-PROD-05 取得 1800000 毫秒的卡片原串优先于更新的存储记录",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#14] BR-PROD-05 签发时已取得 1800001 毫秒，不得重新计时挽救过期原串",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#14] BR-PROD-05 签发时已取得 3600000 毫秒，不得重新计时挽救过期原串",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#15] BR-PROD-05 验证同一令牌不延长取得时间，1800 秒后继续后备流程",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#16] 无效引用不打断原串选择，存储可用=true 时继续第②③级",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#16] 无效引用不打断原串选择，存储可用=false 时继续第②③级",
+        "test/spec/catalog/item-ref/raw-source.test.ts > [AC-B1-05h#17] 过期但认证有效且同应用的不同商品仍须报 20001"
+      ],
+      "expected": [
+        "test/spec/catalog/item-ref/item-ref.test.ts",
+        "test/spec/catalog/item-ref/raw-source.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "262fc8f16b0a29080f4268e866726218646e05af1a326bfb7aca3c8ed7ef67b3"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: pass (S2: timestamps without a zone accepted, follow-up for B1-05f)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "checklist_complete": true,
+      "review_type": "money",
+      "note": "round 1 pass (S2: item_ref can exceed the contract maxLength 1024 for very long raw ids, follow-up)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 pass"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "b40c049d29a359f2ef9ce338199307d178410495",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (fcc1221, the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
