@@ -131,11 +131,27 @@ export function createSentenceBuffer(): SentenceBuffer {
   let pendingHigh = '';
   let pendingDot = false;
   let previous = '';
+  // The whole buffer is one ASCII-like token, or only amount characters: retainFrom is then
+  // exactly 0 (nothing can be cut), so a long unbroken run is not rescanned per code point.
+  let allToken = true;
+  let allAmount = true;
 
   const flush = (out: string[]): void => {
     if (buffer !== '') out.push(buffer);
     buffer = '';
     size = 0;
+    allToken = true;
+    allAmount = true;
+  };
+
+  const rescan = (): void => {
+    allToken = true;
+    allAmount = true;
+    for (const ch of buffer) {
+      if (allToken && !TOKEN_CHAR.test(ch)) allToken = false;
+      if (allAmount && !AMOUNT_CHAR.test(ch)) allAmount = false;
+      if (!allToken && !allAmount) break;
+    }
   };
 
   const feed = (ch: string, out: string[]): void => {
@@ -146,18 +162,21 @@ export function createSentenceBuffer(): SentenceBuffer {
     const linkMark = (ch === '?' || ch === '!') && insideLink(buffer);
     buffer += ch;
     size += 1;
+    if (allToken && !TOKEN_CHAR.test(ch)) allToken = false;
+    if (allAmount && !AMOUNT_CHAR.test(ch)) allAmount = false;
     if (SENTENCE_ENDS.has(ch) && !linkMark) {
       flush(out);
     } else if (ch === '.' && !DIGIT.test(previous)) {
       pendingDot = true;
     }
     previous = ch;
-    if (size >= FORCE_AT) {
+    if (size >= FORCE_AT && !allToken && !allAmount) {
       const keep = retainFrom(buffer);
       if (keep > 0) {
         out.push(buffer.slice(0, keep));
         buffer = buffer.slice(keep);
         size = countCodePoints(buffer);
+        rescan();
       }
     }
   };

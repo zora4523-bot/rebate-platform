@@ -98,12 +98,28 @@ function trimEnd(text: string, start: number, end: number, min: number): number 
 }
 
 // O-G1: an amount hit covers the whole number next to it (digits, decimals, thousands commas,
-// numerals and place-value words, and the single digit after 块 as in 九块九 or 29块9).
+// numerals and place-value words on both sides, as in 1万5千元, and the single digit after 块
+// as in 九块九 or 29块9, unless a quantity or size unit follows it, as in 9块3件).
 const CN_SET: ReadonlySet<string> = new Set(CN);
 const PLACE_SET: ReadonlySet<string> = new Set('十百千万萬亿億拾佰仟');
 const SPOKEN_UNIT: ReadonlySet<string> = new Set('块塊');
+// BR-AI-06「不过滤规格和数量」: units that make the digit after 块 a count, not 角.
+const QUANTITY_UNITS: ReadonlySet<string> = new Set(
+  '件个個只隻双雙套盒包瓶罐桶袋箱支枝片条條张張本台部粒颗顆对對副把份杯听聽卷斤克升米码碼人天次',
+);
+// 包邮 / 包郵 (free shipping) after 九块九 is not a count of 包.
+const NOT_QUANTITY: readonly string[] = ['包邮', '包郵'];
+const ASCII_UNIT = /^(?:ml|kg|mg|g|l|cm|mm|m|oz|lb|pcs|pc)(?![A-Za-z])/iu;
 const isDigit = (ch: string): boolean => ch >= '0' && ch <= '9';
 const isNumeral = (ch: string): boolean => isDigit(ch) || CN_SET.has(ch);
+
+function quantityUnitAt(text: string, i: number): boolean {
+  let k = i;
+  while (k < text.length && HORIZONTAL_SPACE.test(text.charAt(k))) k += 1;
+  const ch = text.charAt(k);
+  if (QUANTITY_UNITS.has(ch)) return !NOT_QUANTITY.some((word) => text.startsWith(word, k));
+  return ASCII_UNIT.test(text.slice(k, k + 4));
+}
 
 function threeDigitsAt(text: string, i: number): boolean {
   return (
@@ -122,6 +138,7 @@ function extendAmount(text: string, start: number, end: number): [number, number
     if (s === 0) break;
     if (CN_SET.has(here) && isNumeral(before)) s -= 1;
     else if (isDigit(here) && isDigit(before)) s -= 1;
+    else if (isDigit(here) && PLACE_SET.has(before) && isNumeral(text.charAt(s - 2))) s -= 1;
     else if (isDigit(here) && before === '.' && isDigit(text.charAt(s - 2))) s -= 2;
     else if (before === ',' && isDigit(text.charAt(s - 2)) && threeDigitsAt(text, s)) s -= 2;
     else break;
@@ -135,7 +152,12 @@ function extendAmount(text: string, start: number, end: number): [number, number
     else if (CN_SET.has(last) && isNumeral(next)) e += 1;
     else if (isDigit(last) && next === '.' && isDigit(text.charAt(e + 1))) e += 2;
     else if (isDigit(last) && next === ',' && threeDigitsAt(text, e + 1)) e += 4;
-    else if (SPOKEN_UNIT.has(last) && isNumeral(next) && !isNumeral(text.charAt(e + 1))) {
+    else if (
+      SPOKEN_UNIT.has(last) &&
+      isNumeral(next) &&
+      !isNumeral(text.charAt(e + 1)) &&
+      !quantityUnitAt(text, e + 1)
+    ) {
       e += 1;
       break;
     } else break;
