@@ -12,9 +12,11 @@ type: impl
 # 加严默认见 plan.md §2.7 O-G1–O-G5（BR-AI-06 代理可自定）；08 漏了不带单位的价格（O-G6）先按现文，补 08 后同步。
 # 不改 agent/index.ts、agent.module.ts（B3-03d 的 path）。实现若超 PR 上限，按「过滤、缓冲、句数、审核端口」与「定界、身份判定」拆两段。
 # refs 连一跳引用超 24KB（BR-AI-18 一跳到 BR-AI-01 细则），编排者手工生成任务书，补 BR-TEXT-22 两个话术键行。
+# 2026-10-06 晚：Opus 三轮 + Codex 换家后仍有 S1（「块」后一位数字是角位还是数量），blocked；负责人选「角位从严」，08 BR-AI-06 补条（couli#72，
+# docs/changes/20261006-出站过滤角位从严.md）。按新规则由 Codex 补规则测试（先红）后重新实现，轮次随负责人决定重新计（couli-runs/B3-06a/blocked.md）。
 refs: [BR-AI-06, BR-AI-05, BR-AI-03, BR-AI-18]
 refs_hash:
-  BR-AI-06: b6a8abaa5dab
+  BR-AI-06: ab16403edda2
   BR-AI-05: ee8fd647fd43
   BR-AI-03: 2131432de5c6
   BR-AI-18: 01b60e6ca170
