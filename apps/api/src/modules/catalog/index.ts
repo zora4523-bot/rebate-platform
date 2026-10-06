@@ -8,7 +8,9 @@
 // test/spec/catalog/card/**; no Nest provider until B1-06c wires the link registrar.
 // Task B1-05i: createCatalogCardEntry, the single card entry split by D33 price state (retrieval
 // skips a price anomaly, an active query fails closed with price_unavailable; PRICE_ANOMALY is
-// logged there), rule tests test/spec/catalog/price-state/**.
+// logged there), rule tests test/spec/catalog/price-state/**. Task B1-05d: searchProducts, the
+// single-platform search use case (BR-PROD-07/08/10, BR-PRICE-08/15), rule tests
+// test/spec/catalog/search/**; its HTTP route is still planned (ports not assembled yet).
 export { createCatalogCardEntry } from './application/card-entry.ts';
 export type {
   CatalogCardEntry,
@@ -18,6 +20,20 @@ export type {
   CatalogCardScene,
 } from './application/card-entry.ts';
 export { createCatalog } from './application/catalog.ts';
+export { SEARCH_SEEN_LIMIT, SEARCH_SESSION_TTL_SECONDS, searchProducts } from './search.ts';
+export type {
+  SearchCandidate,
+  SearchCursor,
+  SearchCursorCodec,
+  SearchProductsData,
+  SearchProductsOptions,
+  SearchProductsQuery,
+  SearchSession,
+  SearchSessionStore,
+  SearchUpstream,
+  SearchUpstreamPage,
+  SearchUpstreamRequest,
+} from './search.ts';
 export type { CatalogOptions } from './application/catalog.ts';
 export { createCardAssembler, createDemoRebateQuoter } from './application/card-assembler.ts';
 export type {

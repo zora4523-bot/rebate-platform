@@ -3,7 +3,12 @@
 import type { components } from '@couli/contracts-ts';
 import { applyReserve, fenToJsonNumber, mulDivFloor, subFen } from '@couli/money';
 import type { Clock } from '../../platform/index.ts';
-import type { UnionEnvironment, UnionItem, UnionMode } from '../../union/index.ts';
+import {
+  isPriceAnomaly,
+  type UnionEnvironment,
+  type UnionItem,
+  type UnionMode,
+} from '../../union/index.ts';
 import {
   ageSeconds,
   benefitTagsFor,
@@ -73,23 +78,15 @@ function invalidQuote(reason: string): never {
 }
 
 /**
- * BR-PRICE-01: a priced card needs price_fen > 0, 0 <= coupon_fen < price_fen and
- * final_price_fen = price_fen − coupon_fen > 0. Filtering anomalies is the caller's job; one that
- * slips through fails here rather than being shown as 0 yuan.
+ * BR-PRICE-01 / D33: a priced card needs a valid price state. The only predicate is union's
+ * isPriceAnomaly (price_status = anomaly, or price > 0, 0 ≤ coupon < price, final > 0 and
+ * final = price − coupon failing). Filtering anomalies is the caller's job; one that slips through
+ * fails here rather than being shown as 0 yuan.
  */
 function assertPriced(item: UnionItem): void {
-  const { price_fen: price, coupon_fen: coupon, final_price_fen: final } = item;
-  const reject = (): never => {
+  if (isPriceAnomaly(item)) {
     throw new TypeError('card: price fields violate BR-PRICE-01; caller must not assemble a card');
-  };
-  if (price <= 0n || coupon < 0n || coupon >= price || final <= 0n) reject();
-  let expectedFinal: bigint;
-  try {
-    expectedFinal = subFen(price, coupon);
-  } catch {
-    return reject();
   }
-  if (expectedFinal !== final) reject();
 }
 
 /**
