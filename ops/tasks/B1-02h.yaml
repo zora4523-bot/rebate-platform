@@ -2,8 +2,7 @@ id: B1-02h
 repo: rebate-platform
 title: identity 令牌签发与令牌守卫：access_token（JWT ES256，claims uid / app_id / sid / device_id / scp，2 小时）、refresh_token 生成与哈希、建会话与吊销会话原语、作用域判定、全局判定 ② 10001 / 10002 与 ③ 10403；退出登录 POST /v1/auth/logout
 type: impl
-# 草稿 2026-10-05，B1-02e 拆分的一段（见 B1-02e 注释）。依据按规划 b9f54fe，编排者摘入任务书第 2 节（约 10KB）：BR-ID-01 条目行（判定顺序 ①～④）；BR-ID-07 条目行前半（到「单飞」之前）
-# 与细则的默认值、「退出登录吊销当前 sid」一条、「绑定代际」「登录时绑定」两项（只取 last_login_sid，推送令牌行的绑定归 B1-12b）、「作用域 scp」一项；BR-ID-01 细则「判定」一项与「受限会话」的
+# 草稿 2026-10-05，B1-02e 拆分的一段（见 B1-02e 注释）。依据按规划 b9f54fe，编排者摘入任务书第 2 节（约 10KB）：BR-ID-01 条目行（判定顺序 ①～④）；BR-ID-07 条目行前半（到「单飞」之前）与细则的默认值、「退出登录吊销当前 sid」一条、「绑定代际」「登录时绑定」两项（只取 last_login_sid，推送令牌行的绑定归 B1-12b）、「作用域 scp」一项；BR-ID-01 细则「判定」一项与「受限会话」的
 # 「签发」一项；BR-ID-10 细则「恢复执行时用哪个幂等键」里 1xxxx 不写幂等记录一句；02 §12.1 access_token 行；04 §5 请求头、鉴权级别、拒绝码判定顺序三行；04 §3.2 sessions / refresh_tokens 行；04 §6.1 logout 行。
 # 判定链接线照 B1-03c 注释（编排者 2026-10-05 裁定，任务书带原段）：①～③ 全局；② ③ 必须先于请求体校验（20001），用 B1-03b 在 platform 建的注册点挂在签名之后、Fastify 校验之前，不另建注册点；守卫抛出的错经 B1-01za 的全局过滤器出 ErrorEnvelope；1xxxx 在幂等之前返回，不写幂等记录。
 # ②：x-auth 为 login / phone / realname 时缺令牌 10001；令牌无效、过期、签名不符、sid 已吊销 → 10002（sid 吊销逐请求查库，见 README 裁定点）；optional 带令牌按用户、不带按匿名。
@@ -29,6 +28,7 @@ paths:
   - '.env.example'
   - 'contracts/openapi.yaml'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/risk/http.test.ts'
 test_paths:
   - 'test/spec/identity/token/**'
 impl: claude

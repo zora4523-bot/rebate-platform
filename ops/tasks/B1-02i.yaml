@@ -19,7 +19,7 @@ type: impl
 # 只改 identity；若要动 app.module.ts 或 platform，先补台账路径。
 refs: []
 refs_hash: {}
-deps: [B1-02e]
+deps: [B1-02e, B1-02n]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'specs/sensitive-words.invite-code.txt'
