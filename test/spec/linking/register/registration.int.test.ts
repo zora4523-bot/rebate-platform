@@ -90,7 +90,6 @@ it.each([
   ['push', 'self_buy'],
   ['agent', 'agent'],
   ['share', 'share'],
-  ['taolijin', 'taolijin'],
   ['watch_alert', 'self_buy'],
   ['share_ext', 'self_buy'],
   ['wechat_bot', 'self_buy'],
@@ -120,6 +119,50 @@ it.each([
     });
   },
 );
+
+it('[AC-B1-06c#4] BR-ATTR-08：tlj.enabled=on 时 taolijin 登记成功并固化淘礼金推广位', async () => {
+  const configValue = vi.fn(async (appId: string, key: string) =>
+    appId === 'register-app' && key === 'tlj.enabled' ? { value: 'on', version: 1 } : null,
+  );
+  const f = fixture(db, { context: { scene: 'taolijin' }, config: { configValue } });
+  const { linkId } = await f.service.register(input({ entrySource: 'feed' }));
+  expect(configValue).toHaveBeenCalledWith('register-app', 'tlj.enabled');
+  expect(f.getActivePid).toHaveBeenCalledWith({
+    appId: 'register-app',
+    platform: 'taobao',
+    pidScene: 'taolijin',
+    purpose: 'convert',
+  });
+  expect(await stored(db, linkId)).toMatchObject({
+    scene: 'taolijin',
+    pid_scene: 'taolijin',
+    pid: 'synthetic-taolijin',
+    entry_source: 'feed',
+    identity_snapshot: {
+      user_id: USER_A,
+      platform: 'taobao',
+      pid_scene: 'taolijin',
+      pid: 'synthetic-taolijin',
+    },
+  });
+});
+
+it('[AC-B1-06c#27] tlj.enabled 未配置默认关闭：taolijin 返回 20001 且不写 links', async () => {
+  const f = fixture(db);
+  const before = await db.selectFrom('links').select('link_id').execute();
+  const outcome = await Promise.resolve()
+    .then(() => {
+      const service = createLinkRegistration({ ...f.options, context: { scene: 'taolijin' } });
+      return service.register(input({ entrySource: 'feed' }));
+    })
+    .then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+  expect(outcome).toMatchObject({ error: { code: 20001 } });
+  expect(f.configValue).toHaveBeenCalled();
+  expect(await db.selectFrom('links').select('link_id').execute()).toEqual(before);
+});
 
 it.each(['', 'fallback', 'query', 'SEARCH', 'unknown', undefined, null])(
   '[AC-B1-06c#5] BR-ATTR-08：非法或缺失 scene=%s 返回 20001，不能登记',
