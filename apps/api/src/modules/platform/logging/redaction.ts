@@ -42,6 +42,9 @@ export const SENSITIVE_KEYS = Object.freeze([
   'secret',
   // Request-signing key of a device (BR-ID-09), returned once by POST /v1/devices.
   'install_secret',
+  // Human-verification token of POST /v1/auth/sms-codes and an SMS verification code (BR-ID-05).
+  'captcha_token',
+  'sms_code',
 ] as const);
 
 function normalizedKey(key: string): string {

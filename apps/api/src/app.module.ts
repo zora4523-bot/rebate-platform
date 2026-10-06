@@ -1,11 +1,16 @@
 import { type DynamicModule, type Provider, Module } from '@nestjs/common';
+import type { DB as Database } from '@couli/db';
+import type { Kysely } from 'kysely';
 import { AdminModule } from './modules/admin/index.ts';
 import { CatalogModule } from './modules/catalog/index.ts';
 import { createContentReader } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
-import { IdentityModule } from './modules/identity/index.ts';
+import { IdentityModule, type SmsConfigReader } from './modules/identity/index.ts';
 import {
+  CLOCK,
+  DB,
   PlatformModule,
+  type Clock,
   type PlatformOptions,
   REQUEST_CHECKS,
   type RequestCheck,
@@ -37,6 +42,22 @@ function requestChecks(options: PlatformOptions): Provider {
 }
 
 /**
+ * The identity module of the `api` entry. Its configuration port (sms.blocked_prefixes, BR-ID-05)
+ * is content's cached reader of config_items: content implements the port's shape without importing
+ * identity (same assembly as the risk ports, F1-02b). No database handle (isolated HTTP unit
+ * tests): no reader, and the SMS code route answers 50001.
+ */
+function identityModule(): DynamicModule {
+  return IdentityModule.forRoot({
+    config: {
+      inject: [CLOCK, { token: DB, optional: true }],
+      useFactory: (clock: Clock, db?: Kysely<Database>): SmsConfigReader | null =>
+        db === undefined ? null : createContentReader({ db, clock }),
+    },
+  });
+}
+
+/**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes and the risk module's request signature check, whose
  * device port identity implements. The union module (adapter registry and endpoint configuration)
@@ -51,6 +72,8 @@ function requestChecks(options: PlatformOptions): Provider {
 @Module({})
 export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
+    // One module object for both imports, so Nest builds the identity module once.
+    const identity = options.entry === 'api' ? identityModule() : undefined;
     return {
       module: AppModule,
       imports: [
@@ -58,9 +81,7 @@ export class AppModule {
         // Provides the platform AUDIT_PORT globally on every entry (F1-06b).
         AdminModule,
         ...(isHttpEntry(options.entry) ? [HealthModule] : []),
-        ...(options.entry === 'api'
-          ? [IdentityModule, RiskModule.forRoot({ imports: [IdentityModule] })]
-          : []),
+        ...(identity === undefined ? [] : [identity, RiskModule.forRoot({ imports: [identity] })]),
         ...(options.entry === 'api' || options.entry === 'worker' ? [UnionModule.forRoot()] : []),
         ...(options.entry === 'api'
           ? [CatalogModule.forRoot((db, clock) => createContentReader({ db, clock }))]
