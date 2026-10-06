@@ -19,6 +19,9 @@ const { texts, fallbacks } = file;
 /** BR-TEXT-14 table A rows marked 「—」: handled silently, no text. */
 const SILENT = [10002, 10402, 30505, 44003];
 
+/** 13 §13.11: returned only by the admin login; admin copy stays in apps/admin (03 §9). CT-02f. */
+const ADMIN_ONLY = [10008, 10009];
+
 it('[AC-CT-19c#1] withdraw_detail.net.actual 默认文案为实际到账 {net}', () => {
   expect(texts['withdraw_detail.net.actual']).toBe('实际到账 {net}');
 });
@@ -57,6 +60,7 @@ it('every live MVP error code has error.<code>, silent codes have none', () => {
   for (const [code, def] of Object.entries(errorCodes)) {
     const key = `error.${code}`;
     if (SILENT.includes(Number(code))) expect(texts[key]).toBeUndefined();
+    else if (ADMIN_ONLY.includes(Number(code))) expect(texts[key], key).toBeUndefined();
     else if (!def.deprecated && def.phase === null) expect(texts[key], key).toBeTypeOf('string');
     if (def.deprecated) expect(texts[key]).toBeUndefined();
   }

@@ -55,6 +55,9 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   OauthAttemptPurpose: 'oauth_attempt_purpose',
   LinkKind: 'link_kind',
   AppealStatus: 'appeal_status',
+  AdminStepUpTier: 'admin_step_up_tier',
+  AdminLoginStep: 'admin_login_step',
+  AdminAccountStatus: 'admin_account_status',
 };
 
 /**
@@ -371,6 +374,63 @@ function checkGateAndScopes(
   }
 }
 
+/** Admin console operations (04 §6.6); x-auth takes enum admin_auth_level there. */
+export const ADMIN_PREFIX = '/admin/v1/';
+
+/** Parameters of app requests (04 §5, 03 §4.2) that admin console operations never list. */
+const APP_ONLY_PARAMETERS = [
+  'AppId',
+  'Platform',
+  'AppVersion',
+  'Build',
+  'Channel',
+  'DeviceId',
+  'OptionalDeviceId',
+  'StepUpToken',
+  ...SIGN_HEADERS,
+];
+
+/**
+ * /admin/v1 operations (CT-02f): no app headers, signature, version gate or session scopes;
+ * 429 → TooManyRequests; x-error-codes are live codes; the 200 response has an example.
+ */
+function checkAdminOperation(
+  op: Obj,
+  where: string,
+  live: ReadonlyMap<number, ErrorCodeDef>,
+  problems: string[],
+): void {
+  const params = Array.isArray(op['parameters'])
+    ? op['parameters'].map((p) => refName(p, 'parameters'))
+    : [];
+  for (const name of APP_ONLY_PARAMETERS) {
+    if (params.includes(name)) problems.push(`${where}: admin operations do not list ${name}`);
+  }
+  for (const key of ['x-min-version-gate', 'x-session-scopes']) {
+    if (op[key] !== undefined) problems.push(`${where}: admin operations carry no ${key}`);
+  }
+  if (op['x-signed'] !== undefined && op['x-signed'] !== false) {
+    problems.push(`${where}: admin operations are not signed (x-signed false or absent)`);
+  }
+  if (refName(at(op, 'responses/429'), 'responses') !== 'TooManyRequests') {
+    problems.push(`${where}: admin operations declare 429 → TooManyRequests (42901, Retry-After)`);
+  }
+  const listed = op['x-error-codes'];
+  if (!Array.isArray(listed)) problems.push(`${where}: x-error-codes must be a list`);
+  else {
+    for (const c of listed) {
+      if (typeof c !== 'number' || !live.has(c)) {
+        problems.push(`${where}: x-error-codes ${String(c)} is not an allocated, live code`);
+      }
+    }
+  }
+  const media = at(op, 'responses/200/content');
+  const json = isObj(media) ? media['application/json'] : undefined;
+  if (!isObj(json) || (json['example'] === undefined && !isObj(json['examples']))) {
+    problems.push(`${where}: the 200 response needs at least one example`);
+  }
+}
+
 export function checkConformance(
   enums: readonly EnumDef[],
   codes: readonly ErrorCodeDef[],
@@ -385,6 +445,7 @@ export function checkConformance(
   const schemas = isObj(components['schemas']) ? components['schemas'] : {};
   const enumValues = new Map(enums.map((e) => [e.name, e.values.map((v) => v.value)]));
   const authLevels = enumValues.get('auth_level') ?? [];
+  const adminAuthLevels = enumValues.get('admin_auth_level') ?? [];
   const live = new Map(codes.filter((c) => !c.deprecated).map((c) => [c.code, c]));
   const stepUpActions = enumValues.get('step_up_action') ?? [];
   if (!sameSet(Object.keys(STEP_UP_OPERATIONS), stepUpActions)) {
@@ -432,16 +493,25 @@ export function checkConformance(
       const op = item[method];
       if (!isObj(op)) continue;
       const where = `${method.toUpperCase()} ${path}`;
+      const admin = path.startsWith(ADMIN_PREFIX);
       const auth = op['x-auth'];
-      if (typeof auth !== 'string' || !authLevels.includes(auth)) {
-        problems.push(`${where}: x-auth must be one of ${authLevels.join(', ')}`);
+      const levels = admin ? adminAuthLevels : authLevels;
+      if (typeof auth !== 'string' || !levels.includes(auth)) {
+        problems.push(`${where}: x-auth must be one of ${levels.join(', ')}`);
       }
       const security = op['security'];
       const schemes = Array.isArray(security)
         ? security.map((s) => (isObj(s) ? Object.keys(s).join('+') : '?'))
         : null;
-      const expectSecurity =
-        auth === 'none' ? [] : auth === 'optional' ? ['', 'bearerAuth'] : ['bearerAuth'];
+      const expectSecurity = admin
+        ? auth === 'none'
+          ? []
+          : ['adminBearerAuth']
+        : auth === 'none'
+          ? []
+          : auth === 'optional'
+            ? ['', 'bearerAuth']
+            : ['bearerAuth'];
       if (schemes === null || !sameSet(schemes, expectSecurity)) {
         problems.push(`${where}: security does not match x-auth ${String(auth)}`);
       }
@@ -450,6 +520,10 @@ export function checkConformance(
         problems.push(`${where}: x-implementation may only be "planned"`);
       }
       checkStepUp(op, where, stepUpActions, stepUpByOperation.get(where), problems);
+      if (admin) {
+        checkAdminOperation(op, where, live, problems);
+        continue;
+      }
       if (!path.startsWith('/v1/')) continue;
       checkGateAndScopes(op, where, method, enumValues.get('session_scope') ?? [], problems);
       // NoStoreTooManyRequests is the same response with Cache-Control: no-store (share pages).

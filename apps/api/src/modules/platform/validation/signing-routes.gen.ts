@@ -275,5 +275,60 @@ export const CONTRACT_SIGNING_ROUTES = [
     "method": "POST",
     "path": "/v1/share-pages/:link_id/tpwd",
     "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/login",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/password",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/totp/secret",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/totp/bind",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/totp",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/logout",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/step-up/sms-codes",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/step-up",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/me/permissions",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/admins",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/admins/:admin_id",
+    "signed": false
   }
 ] as const;

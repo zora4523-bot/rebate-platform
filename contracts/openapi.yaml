@@ -36,6 +36,17 @@ info:
     40901. Any operation called with a bearer token may also return 10405 when it does not accept
     the token's session scope (x-session-scopes); operations whose version gate is true or
     conditional, and the restricted logins, list 10405 in x-error-codes.
+
+    Admin console operations live under /admin/v1 (04 §6.6; CT-02f adds auth, me/permissions and
+    the read-only admins list). Their `x-auth` takes enum admin_auth_level: none (the login
+    steps; the intermediate `login_ticket` goes in the request body), admin (admin_token) or
+    super (admin_token of a super admin). After login every request carries
+    `Authorization: Bearer <admin_token>` (security scheme adminBearerAuth); the token is never a
+    cookie, so there is no CSRF token. Admin step-up tokens go in the `X-Step-Up-Token` header.
+    They are not app requests: no X-App-Id / X-Platform / X-Device-Id, no request signature, no
+    version gate, no session scopes; lists page with `page` and `page_size` ≤ 200. Common codes
+    of every admin operation: 10403 (data.reason=admin_ip_not_allowed), 20001, 42901, 50001;
+    with admin or super also 10001 and 10403 (data.reason=admin_permission_denied).
 servers:
   - url: http://127.0.0.1:3100
     description: Local `api` entry (API_HOST / API_PORT defaults).
@@ -56,6 +67,10 @@ tags:
     description: Payout account, withdrawals, wallet and the earnings dashboard (04 §6.1, §6.4).
   - name: content
     description: Articles, notices, update check, inbox messages and page preview (04 §6.2, §6.4).
+  - name: admin-auth
+    description: Admin console login (password, first password change, authenticator binding and code), step-up in two tiers and the signed-in account's permission points (04 §6.6 auth, BR-ID-34).
+  - name: admin-accounts
+    description: Admin accounts, read-only for now; super admin only (04 §6.6 admins, §11).
 paths:
   /healthz:
     get:
@@ -4003,6 +4018,820 @@ paths:
           $ref: '#/components/responses/NoStoreClientError'
         5XX:
           $ref: '#/components/responses/NoStoreServerError'
+  /admin/v1/auth/login:
+    post:
+      operationId: adminLogin
+      tags:
+        - admin-auth
+      summary: Admin login, first step (account and password)
+      description: |
+        First step of the admin login (BR-ID-34; 04 §6.6 auth). The source IP must be on the admin
+        whitelist (10403 `data.reason=admin_ip_not_allowed`, checked before the password). A wrong
+        account or password is 10008 without data (an unknown account is not told apart) and
+        counts towards the consecutive-failure lock; a locked account gets 10009 with
+        `data.locked_until` even with the right password.
+        Success never issues an admin_token: it returns a `login_ticket` for exactly the step in
+        `next` — `totp` (bound authenticator: POST /admin/v1/auth/totp), `change_password` (still on
+        the initial password: POST /admin/v1/auth/password, then the binding) or `bind_totp` (no
+        authenticator bound: POST /admin/v1/auth/totp/secret, then POST
+        /admin/v1/auth/totp/bind). The ticket can call nothing but that step; its lifetime is set
+        by the server and given in `ticket_expires_at`.
+        Not decided by BR-ID-34 and not fixed here: how the initial password is handed out beyond
+        the rule itself, the reset of a lost authenticator (a super-admin action, later task).
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10008
+        - 10009
+        - 10403
+        - 20001
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+            example:
+              username: ops-yi
+              password: example-password
+      responses:
+        '200':
+          description: Account and password accepted; the next step and its ticket.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginStepResponse'
+              examples:
+                totp:
+                  summary: Authenticator bound, enter the current code
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      next: totp
+                      login_ticket: example-login-ticket-totp
+                      ticket_expires_at: '2026-10-07T10:05:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                changePassword:
+                  summary: First login on the initial password, change it first
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      next: change_password
+                      login_ticket: example-login-ticket-password
+                      ticket_expires_at: '2026-10-07T10:05:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                bindTotp:
+                  summary: No authenticator bound yet, bind one
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      next: bind_totp
+                      login_ticket: example-login-ticket-bind
+                      ticket_expires_at: '2026-10-07T10:05:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Login rejected (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                wrongPassword:
+                  $ref: '#/components/examples/AdminWrongPassword'
+                locked:
+                  $ref: '#/components/examples/AdminLocked'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/auth/password:
+    post:
+      operationId: adminChangeInitialPassword
+      tags:
+        - admin-auth
+      summary: Replace the initial password during the first login
+      description: |
+        Takes a `login_ticket` whose `next` was `change_password` (BR-ID-34 细则「首次登录强制改密码」).
+        The new password must differ from the initial one, which stops working once replaced; a
+        new password that is rejected is 20001 with `data.fields=[new_password]` and the ticket
+        stays usable. Password composition rules are not fixed by BR-ID-34 and are left to the
+        admin module task. Success consumes the ticket and returns the next step (`bind_totp` for a
+        new account) with a new ticket; no admin_token is issued before the binding is done.
+        A ticket that is expired, already used, invalid or issued for another step is 10001 with
+        `data.reason=login_ticket_expired` (back to the first step). A locked account is 10009.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10009
+        - 10403
+        - 20001
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChangePasswordRequest'
+            example:
+              login_ticket: example-login-ticket-password
+              new_password: example-new-password
+      responses:
+        '200':
+          description: Password replaced; the next step and its ticket.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginStepResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  next: bind_totp
+                  login_ticket: example-login-ticket-bind
+                  ticket_expires_at: '2026-10-07T10:10:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Password change rejected (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                newPasswordRejected:
+                  $ref: '#/components/examples/AdminNewPasswordRejected'
+                ticketExpired:
+                  $ref: '#/components/examples/AdminLoginTicketExpired'
+                locked:
+                  $ref: '#/components/examples/AdminLocked'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/auth/totp/secret:
+    post:
+      operationId: adminGetTotpBindingSecret
+      tags:
+        - admin-auth
+      summary: Authenticator secret for the first binding
+      description: |
+        Takes a `login_ticket` whose `next` was `bind_totp` and returns the TOTP secret and its
+        otpauth URI (the page draws the QR code from the URI) for the account holder to add to an
+        authenticator app (BR-ID-34 细则「首次绑定身份验证器」). It does not consume the ticket:
+        calling it again with the same ticket returns the same secret; a new login after leaving or
+        timing out generates a new one. Nothing is bound until POST /admin/v1/auth/totp/bind
+        accepts a code. POST so that neither ticket nor secret appears in a URL.
+        A ticket that is expired, already used, invalid or issued for another step is 10001 with
+        `data.reason=login_ticket_expired`. A locked account is 10009.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10009
+        - 10403
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginTicketRequest'
+            example:
+              login_ticket: example-login-ticket-bind
+      responses:
+        '200':
+          description: The secret to bind.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTotpSecretResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  totp_secret: JBSWY3DPEHPK3PXP
+                  otpauth_uri: 'otpauth://totp/Couli%20Admin:ops-yi?secret=JBSWY3DPEHPK3PXP&issuer=Couli%20Admin&digits=6&period=30'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Secret not issued (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                ticketExpired:
+                  $ref: '#/components/examples/AdminLoginTicketExpired'
+                locked:
+                  $ref: '#/components/examples/AdminLocked'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/auth/totp/bind:
+    post:
+      operationId: adminBindTotp
+      tags:
+        - admin-auth
+      summary: Confirm the first binding with a code and sign in
+      description: |
+        Takes the `bind_totp` ticket and the current 6-digit code of the secret from POST
+        /admin/v1/auth/totp/secret. A correct code stores the binding and issues the admin_token
+        (login complete). A wrong code binds nothing and signs nothing in: 20002 with
+        `data.reason=totp_bind_invalid`, the ticket stays usable for another try, and every such
+        failure counts towards the same consecutive-failure lock as a wrong password (BR-ID-34
+        细则「首次绑定身份验证器」); requests during the lock get 10009. A ticket that is expired,
+        already used, invalid or issued for another step is 10001 with
+        `data.reason=login_ticket_expired`.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10009
+        - 10403
+        - 20001
+        - 20002
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTotpCodeRequest'
+            example:
+              login_ticket: example-login-ticket-bind
+              code: '123456'
+      responses:
+        '200':
+          description: Bound and signed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSessionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_token: example-admin-token
+                  expires_at: '2026-10-07T18:00:00+08:00'
+                  idle_timeout_sec: 1800
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Binding rejected (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                bindCodeInvalid:
+                  $ref: '#/components/examples/AdminTotpBindInvalid'
+                ticketExpired:
+                  $ref: '#/components/examples/AdminLoginTicketExpired'
+                locked:
+                  $ref: '#/components/examples/AdminLocked'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/auth/totp:
+    post:
+      operationId: adminVerifyTotp
+      tags:
+        - admin-auth
+      summary: Admin login, second step (authenticator code)
+      description: |
+        Takes the `totp` ticket from POST /admin/v1/auth/login and the current 6-digit code. A
+        correct code issues the admin_token (BR-ID-34). A wrong code is 20002 with
+        `data.reason=totp_invalid`, the ticket stays usable for another try, and every such failure
+        counts towards the consecutive-failure lock; requests during the lock get 10009. A ticket
+        that is expired, already used, invalid or issued for another step is 10001 with
+        `data.reason=login_ticket_expired`.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10009
+        - 10403
+        - 20001
+        - 20002
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTotpCodeRequest'
+            example:
+              login_ticket: example-login-ticket-totp
+              code: '123456'
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSessionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_token: example-admin-token
+                  expires_at: '2026-10-07T18:00:00+08:00'
+                  idle_timeout_sec: 1800
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Code rejected (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                codeInvalid:
+                  $ref: '#/components/examples/AdminTotpInvalid'
+                ticketExpired:
+                  $ref: '#/components/examples/AdminLoginTicketExpired'
+                locked:
+                  $ref: '#/components/examples/AdminLocked'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/auth/logout:
+    post:
+      operationId: adminLogout
+      tags:
+        - admin-auth
+      summary: Sign out of the admin console
+      description: |
+        Revokes the session of the admin_token. The console also drops the token from memory and
+        sessionStorage. An expired or idle-timed-out token is answered 10001 like on any admin
+        operation; nothing is written.
+      x-auth: admin
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: The admin session is revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              example:
+                code: 0
+                msg: ''
+                data: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not signed out (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/auth/step-up/sms-codes:
+    post:
+      operationId: adminSendStepUpSms
+      tags:
+        - admin-auth
+      summary: Send the SMS code of the sms step-up tier
+      description: |
+        Sends a verification code to the verify phone registered on the signed-in admin account
+        (BR-ID-34 短信档; template ADMIN_STEP_UP). An account without a registered verify phone is
+        10003 with `data.tier=sms` and `data.reason=verify_phone_missing` and nothing is sent (the
+        console greys out sms-tier buttons beforehand from `verify_phone_masked` of GET
+        /admin/v1/me/permissions). Sending too often is 42901 with Retry-After. The send limits and
+        the code validity are not fixed by BR-ID-34; the response states the values in force.
+      x-auth: admin
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 42901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: The provider accepted the SMS, or its outcome is unknown (counted as sent).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsCodeResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  resend_after_sec: 60
+                  expires_in_sec: 300
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not sent (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                verifyPhoneMissing:
+                  $ref: '#/components/examples/AdminVerifyPhoneMissing'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/auth/step-up:
+    post:
+      operationId: adminStepUp
+      tags:
+        - admin-auth
+      summary: Admin second verification (totp or sms tier)
+      description: |
+        Returns a step_up_token that records its tier (BR-ID-34): `tier=totp` with the current
+        authenticator code, `tier=sms` with the code sent by POST /admin/v1/auth/step-up/sms-codes.
+        The console sends the token as the `X-Step-Up-Token` request header of the admin
+        operation that answered 10003 and replays that request; the header is never put in the
+        body. An operation that needs the sms tier rejects a totp-tier token with 10003
+        `data.tier=sms`. Which tier each operation needs is annotated per permission in GET
+        /admin/v1/me/permissions (04 §11 step-up column).
+        `tier=sms` on an account without a registered verify phone is 10003 with `data.tier=sms`
+        and `data.reason=verify_phone_missing`. A wrong code is 20002 without a reason; an expired
+        or voided SMS code is 20003. Not fixed by BR-ID-34 and left open here: whether wrong
+        step-up codes count towards the login-failure lock, and the token lifetime and number of
+        uses (the response carries `expire_at`; the server decides).
+      x-auth: admin
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20002
+        - 20003
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminStepUpRequest'
+            examples:
+              totp:
+                summary: Authenticator code
+                value:
+                  tier: totp
+                  code: '123456'
+              sms:
+                summary: SMS code sent to the verify phone
+                value:
+                  tier: sms
+                  code: '654321'
+      responses:
+        '200':
+          description: A step-up token of the requested tier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStepUpResponse'
+              examples:
+                totp:
+                  summary: totp-tier token
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      step_up_token: example-admin-step-up-token-totp
+                      tier: totp
+                      expire_at: '2026-10-07T10:35:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                sms:
+                  summary: sms-tier token
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      step_up_token: example-admin-step-up-token-sms
+                      tier: sms
+                      expire_at: '2026-10-07T10:35:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Verification failed (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                codeInvalid:
+                  $ref: '#/components/examples/AdminStepUpCodeInvalid'
+                codeExpired:
+                  $ref: '#/components/examples/AdminStepUpCodeExpired'
+                verifyPhoneMissing:
+                  $ref: '#/components/examples/AdminVerifyPhoneMissing'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/me/permissions:
+    get:
+      operationId: adminGetMyPermissions
+      tags:
+        - admin-auth
+      summary: The signed-in admin account and its permission points
+      description: |
+        Read after login to build the menu and the CASL rules (03 §9.1–§9.2). A super admin
+        (`is_super=true`) gets every permission point; another account gets the points a super
+        admin ticked for it; an account with none gets an empty list and the console shows the
+        「暂无权限」 page (BR-ID-34 细则「首次绑定身份验证器」). Permission keys are values of
+        contracts/enums/admin.yaml `admin_permission`; clients ignore a key they do not know.
+        Each entry carries its step-up annotation (04 §11 step-up column): `step_up_tier` is the
+        tier every step-up operation of that point needs (null = none needs one), and
+        `step_up_operations` lists the operations whose tier differs from it (e.g. only raising the
+        minimum supported version under `content.app_version` needs totp; only the balance cache
+        recalculation under `fund.recon` needs sms). Operation keys come from specs/permissions.yaml
+        (B1-18). `verify_phone_masked` is null when no verify phone is registered: sms-tier
+        buttons are greyed out with a prompt to register one (03 §9.2).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: The account and its permission points.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMeResponse'
+              examples:
+                finance:
+                  summary: Account with ticked points, verify phone registered
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      username: finance-jia
+                      is_super: false
+                      verify_phone_masked: '138****5678'
+                      permissions:
+                        - key: fund.view
+                          step_up_tier: null
+                          step_up_operations: []
+                        - key: fund.adjust
+                          step_up_tier: sms
+                          step_up_operations: []
+                        - key: fund.recon
+                          step_up_tier: null
+                          step_up_operations:
+                            - operation: fund.recon.balance_recalc
+                              tier: sms
+                        - key: content.app_version
+                          step_up_tier: null
+                          step_up_operations:
+                            - operation: content.app_version.raise_min_supported_version
+                              tier: totp
+                        - key: withdraw.review
+                          step_up_tier: totp
+                          step_up_operations: []
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                noPermission:
+                  summary: Account without any permission point (「暂无权限」 page)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02
+                      username: ops-yi
+                      is_super: false
+                      verify_phone_masked: null
+                      permissions: []
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins:
+    get:
+      operationId: adminListAdmins
+      tags:
+        - admin-accounts
+      summary: List admin accounts (super admin only, read-only)
+      description: |
+        Admin accounts and their permission points, page by page (`page`, `page_size` ≤ 200, 04
+        §5). Super admin only — 「后台账号与权限」 is not a permission point and cannot be granted
+        (04 §11, 拍板第二批 §8 ADD-04); any other account gets 10403 with
+        `data.reason=admin_permission_denied`. Never returns the password, its hash, the TOTP secret
+        or the full verify phone. Creating, disabling and ticking permission points (super admin,
+        step-up, audit) come with a later task.
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of admin accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      username: finance-jia
+                      is_super: false
+                      status: active
+                      totp_bound: true
+                      verify_phone_masked: '138****5678'
+                      locked_until: null
+                      permissions:
+                        - fund.view
+                        - fund.adjust
+                      created_at: '2026-10-05T09:00:00+08:00'
+                    - admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02
+                      username: ops-yi
+                      is_super: false
+                      status: active
+                      totp_bound: false
+                      verify_phone_masked: null
+                      locked_until: '2026-10-07T10:30:00+08:00'
+                      permissions: []
+                      created_at: '2026-10-06T14:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notSuper:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins/{admin_id}:
+    get:
+      operationId: adminGetAdmin
+      tags:
+        - admin-accounts
+      summary: One admin account (super admin only, read-only)
+      description: |
+        Same fields as a list item. Super admin only (10403 `data.reason=admin_permission_denied`
+        otherwise). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`. Never returns the
+        password, its hash, the TOTP secret or the full verify phone.
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminIdPath'
+      responses:
+        '200':
+          description: The admin account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b00
+                  username: owner
+                  is_super: true
+                  status: active
+                  totp_bound: true
+                  verify_phone_masked: '139****0000'
+                  locked_until: null
+                  permissions: []
+                  created_at: '2026-10-01T09:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notSuper:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                unknownAdmin:
+                  $ref: '#/components/examples/AdminUnknownAdmin'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
 components:
   securitySchemes:
     bearerAuth:
@@ -4012,6 +4841,18 @@ components:
       description: |
         `Authorization: Bearer <access_token>`; ES256 JWT with uid, app_id, sid, device_id, scp,
         valid 2 hours (BR-ID-07). After login app_id is taken from the token only.
+    adminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        `Authorization: Bearer <admin_token>` on every /admin/v1 operation after login (CT-02f).
+        admin_token is a JWT signed with its own key (aud=admin, not accepted on /v1), valid
+        8 hours and expiring after 30 minutes without activity (BR-ID-34); expired or idle → 10001
+        without reason. The console keeps it only in memory and sessionStorage and sends it only in
+        this header; it is never a cookie, so requests carry no ambient credential and need no
+        CSRF token. The admin API allows CORS only from the exact admin console origin (02 §3.4).
+        The step-up token of an operation goes in the `X-Step-Up-Token` header (04 §5).
   parameters:
     AppId:
       name: X-App-Id
@@ -4178,6 +5019,34 @@ components:
         minimum: 1
         maximum: 50
         default: 20
+    AdminPage:
+      name: page
+      in: query
+      required: false
+      description: Page number of an admin list, from 1 (04 §5 后台分页).
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        default: 1
+    AdminPageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 200
+        default: 20
+    AdminIdPath:
+      name: admin_id
+      in: path
+      required: true
+      description: Id of an admin account; unknown → 20001 with data.fields=[admin_id].
+      schema:
+        $ref: '#/components/schemas/Id'
   responses:
     NoStoreClientError:
       description: Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则).
@@ -4406,6 +5275,114 @@ components:
         enum:
           - no-store
   examples:
+    AdminWrongPassword:
+      summary: 10008 account or password wrong (no data)
+      value:
+        code: 10008
+        msg: 账号或密码不正确
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminLocked:
+      summary: 10009 account locked until data.locked_until
+      value:
+        code: 10009
+        msg: 账号已锁定，请稍后再试
+        data:
+          locked_until: '2026-10-07T10:30:00+08:00'
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminIpNotAllowed:
+      summary: 10403 source IP not on the admin whitelist
+      value:
+        code: 10403
+        msg: 仅限公司网络访问
+        data:
+          reason: admin_ip_not_allowed
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPermissionDenied:
+      summary: 10403 the account lacks the permission (here not a super admin)
+      value:
+        code: 10403
+        msg: 当前账号没有这项操作的权限，请联系超级管理员开通
+        data:
+          reason: admin_permission_denied
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminLoginTicketExpired:
+      summary: 10001 login ticket expired, used, invalid or for another step
+      value:
+        code: 10001
+        msg: 登录步骤已过期，请重新登录
+        data:
+          reason: login_ticket_expired
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminTokenExpired:
+      summary: 10001 admin_token expired or idle timeout (no reason)
+      value:
+        code: 10001
+        msg: 请先登录
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminTotpInvalid:
+      summary: 20002 wrong authenticator code at login
+      value:
+        code: 20002
+        msg: 动态码不正确，请输入验证器上最新的 6 位动态码
+        data:
+          reason: totp_invalid
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminTotpBindInvalid:
+      summary: 20002 wrong code at the first binding (nothing bound)
+      value:
+        code: 20002
+        msg: 动态码不正确，绑定没有完成。请确认手机时间准确，再输入验证器上最新的 6 位动态码。
+        data:
+          reason: totp_bind_invalid
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminNewPasswordRejected:
+      summary: 20001 new password rejected (e.g. same as the initial password)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - new_password
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminStepUpCodeInvalid:
+      summary: 20002 wrong step-up code (no reason)
+      value:
+        code: 20002
+        msg: 验证码错误，请重新输入
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminStepUpCodeExpired:
+      summary: 20003 SMS step-up code expired or voided
+      value:
+        code: 20003
+        msg: 验证码已失效，请重新获取
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminVerifyPhoneMissing:
+      summary: 10003 sms tier on an account without a verify phone
+      value:
+        code: 10003
+        msg: 这项操作需要短信验证，请先登记验证手机号
+        data:
+          tier: sms
+          reason: verify_phone_missing
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPageSizeInvalid:
+      summary: 20001 page_size above 200
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - page_size
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnknownAdmin:
+      summary: 20001 unknown admin_id
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - admin_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     SearchProductsOk:
       summary: One page of taobao results
       value:
@@ -9068,5 +10045,435 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/EarningsSummary'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminLoginTicket:
+      type: string
+      description: |
+        Intermediate credential of the admin login (BR-ID-34 细则「首次绑定身份验证器」): valid only for
+        the step it was issued for, sent in the request body, never an admin_token.
+      minLength: 1
+      maxLength: 2048
+    AdminLoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: Account name (unique; a disabled account keeps its name, BR-ID-34).
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AdminLoginTicketRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - login_ticket
+      properties:
+        login_ticket:
+          $ref: '#/components/schemas/AdminLoginTicket'
+    AdminChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - login_ticket
+        - new_password
+      properties:
+        login_ticket:
+          $ref: '#/components/schemas/AdminLoginTicket'
+        new_password:
+          type: string
+          description: Must differ from the initial password; composition rules are set by the server.
+          minLength: 1
+          maxLength: 128
+    AdminTotpCode:
+      type: string
+      description: Current 6-digit code of the authenticator, or of the SMS for the sms tier.
+      pattern: '^[0-9]{6}$'
+    AdminTotpCodeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - login_ticket
+        - code
+      properties:
+        login_ticket:
+          $ref: '#/components/schemas/AdminLoginTicket'
+        code:
+          $ref: '#/components/schemas/AdminTotpCode'
+    AdminLoginStep:
+      type: string
+      description: Next login step (enum admin_login_step).
+      enum:
+        - totp
+        - change_password
+        - bind_totp
+    AdminLoginStepData:
+      type: object
+      additionalProperties: false
+      required:
+        - next
+        - login_ticket
+        - ticket_expires_at
+      properties:
+        next:
+          $ref: '#/components/schemas/AdminLoginStep'
+        login_ticket:
+          $ref: '#/components/schemas/AdminLoginTicket'
+        ticket_expires_at:
+          type: string
+          format: date-time
+    AdminLoginStepResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminLoginStepData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminTotpSecretData:
+      type: object
+      additionalProperties: false
+      required:
+        - totp_secret
+        - otpauth_uri
+      properties:
+        totp_secret:
+          type: string
+          description: Base32 TOTP secret, shown for manual entry.
+          minLength: 16
+          maxLength: 128
+          pattern: '^[A-Z2-7]+=*$'
+        otpauth_uri:
+          type: string
+          description: Key URI the console renders as the QR code.
+          maxLength: 2048
+          pattern: '^otpauth://totp/'
+    AdminTotpSecretResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminTotpSecretData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminSession:
+      type: object
+      additionalProperties: false
+      required:
+        - admin_token
+        - expires_at
+        - idle_timeout_sec
+      properties:
+        admin_token:
+          type: string
+          description: Sent in the Authorization header as a Bearer token (security scheme adminBearerAuth).
+          minLength: 1
+          maxLength: 4096
+        expires_at:
+          type: string
+          format: date-time
+          description: Absolute expiry of the session (BR-ID-34).
+        idle_timeout_sec:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Seconds without activity after which the token stops working (BR-ID-34).
+    AdminSessionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminSession'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminStepUpTier:
+      type: string
+      description: Admin step-up tier (enum admin_step_up_tier, BR-ID-34).
+      enum:
+        - totp
+        - sms
+    AdminStepUpRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - tier
+        - code
+      properties:
+        tier:
+          $ref: '#/components/schemas/AdminStepUpTier'
+        code:
+          $ref: '#/components/schemas/AdminTotpCode'
+    AdminStepUpData:
+      type: object
+      additionalProperties: false
+      required:
+        - step_up_token
+        - tier
+        - expire_at
+      properties:
+        step_up_token:
+          type: string
+          description: Sent as the `X-Step-Up-Token` header of the admin operation; records its tier.
+          minLength: 1
+          maxLength: 2048
+        tier:
+          $ref: '#/components/schemas/AdminStepUpTier'
+        expire_at:
+          type: string
+          format: date-time
+    AdminStepUpResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminStepUpData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPermissionKey:
+      type: string
+      description: |
+        A value of contracts/enums/admin.yaml `admin_permission` (04 §11). Kept a string here so the
+        list lives in one place; clients ignore keys they do not know.
+      minLength: 1
+      maxLength: 64
+      pattern: '^[a-z][a-z_]*(\.[a-z_]+)*$'
+    AdminStepUpOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+        - tier
+      properties:
+        operation:
+          type: string
+          description: Operation key from specs/permissions.yaml (B1-18).
+          minLength: 1
+          maxLength: 128
+          pattern: '^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$'
+        tier:
+          $ref: '#/components/schemas/AdminStepUpTier'
+    AdminPermissionGrant:
+      type: object
+      description: A permission point of the account with its step-up annotation (04 §11 step-up column).
+      additionalProperties: false
+      required:
+        - key
+        - step_up_tier
+        - step_up_operations
+      properties:
+        key:
+          $ref: '#/components/schemas/AdminPermissionKey'
+        step_up_tier:
+          description: Tier of every step-up operation of this point; null = none needs step-up.
+          anyOf:
+            - $ref: '#/components/schemas/AdminStepUpTier'
+            - type: 'null'
+        step_up_operations:
+          type: array
+          description: Operations of this point whose tier differs from step_up_tier.
+          items:
+            $ref: '#/components/schemas/AdminStepUpOperation'
+    AdminMe:
+      type: object
+      additionalProperties: false
+      required:
+        - admin_id
+        - username
+        - is_super
+        - verify_phone_masked
+        - permissions
+      properties:
+        admin_id:
+          $ref: '#/components/schemas/Id'
+        username:
+          type: string
+          description: Account name, also shown as the display name.
+          minLength: 1
+          maxLength: 64
+        is_super:
+          type: boolean
+        verify_phone_masked:
+          type:
+            - string
+            - 'null'
+          description: Masked verify phone (BR-ID-33); null = none registered, sms tier unavailable.
+          maxLength: 32
+        permissions:
+          type: array
+          description: Every point for a super admin, the ticked points otherwise; empty = no permission.
+          items:
+            $ref: '#/components/schemas/AdminPermissionGrant'
+    AdminMeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminMe'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAccountStatus:
+      type: string
+      description: Admin account status (enum admin_account_status).
+      enum:
+        - active
+        - disabled
+    AdminAccount:
+      type: object
+      description: Read-only view of an admin account; no password, hash, TOTP secret or full phone.
+      additionalProperties: false
+      required:
+        - admin_id
+        - username
+        - is_super
+        - status
+        - totp_bound
+        - verify_phone_masked
+        - locked_until
+        - permissions
+        - created_at
+      properties:
+        admin_id:
+          $ref: '#/components/schemas/Id'
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        is_super:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/AdminAccountStatus'
+        totp_bound:
+          type: boolean
+          description: false = the next login goes through the first binding.
+        verify_phone_masked:
+          type:
+            - string
+            - 'null'
+          maxLength: 32
+        locked_until:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: End of the current login lock; null when not locked.
+        permissions:
+          type: array
+          description: Ticked points (admin_permissions); empty for a super admin, who has every point.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AdminPermissionKey'
+        created_at:
+          type: string
+          format: date-time
+    AdminAccountResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAccount'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAccountPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAccount'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminAccountPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAccountPage'
         trace_id:
           $ref: '#/components/schemas/TraceId'

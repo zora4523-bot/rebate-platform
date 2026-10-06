@@ -1,0 +1,50 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 by path (contracts plus the generated signing-routes table in apps/api/src/modules/platform/validation; the generator is unchanged, the table only gains eleven /admin/v1 rows with signed=false). Contract for the admin console auth and read-only accounts: login (password, then change the initial password, bind TOTP or enter the TOTP code with a single-use login ticket), logout, step-up in two tiers (totp / sms) with SMS sending, me/permissions with step-up marks per permission and per operation, admins list and detail; adminBearerAuth and X-Step-Up-Token; error codes only those registered in 08 §13.11 with their reasons and data shapes. All operations x-implementation planned. tester none: tests written by the implementer in packages/contracts-ts (CT-02e precedent). Implementation by Opus 5.5 (one run lost to a quota stop, then two rounds); container verify:fast exit 0. Codex money review and Claude contract review passed in round 1. Full verification is the required CI checks (ops/approvals.yaml id 21). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "one S2: login password maxLength 128 below the bootstrap's 1024 limit, follow-up"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (second reviewer, contract): pass; S2 step-up marks cannot say an operation needs none (fund.adjust reject / withdraw), S2 conformance skips the Idempotency-Key check on admin operations; out of scope: texts.default.json error.10003 still the old wording, 10008 / 10009 msg source"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "tester none (contract task)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "CT-02f",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "586d1d8798c187f144432f2e999b76e966833874",
+  "runs": [],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "eb12891e4e149242f6ac5c7b21cf270fc518794c",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}

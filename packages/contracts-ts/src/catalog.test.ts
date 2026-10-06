@@ -111,7 +111,10 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
   // (orchestrator decision j-05; 04 and 08 fix no HTTP status for it).
   expect(errorCodes[10405].http).toBe(403);
   expect(errorCodes[10405].data).toEqual({ min_supported_version: null, reason: ['no_account'] });
-  expect(errorCodes[10403].data).toEqual({ reason: ['h5_read_only'] });
+  // 08 §13.11 10403 row: h5_read_only (BR-ID-32) plus the admin reasons of BR-ID-34 (2026-10-06).
+  expect(errorCodes[10403].data).toEqual({
+    reason: ['h5_read_only', 'admin_ip_not_allowed', 'admin_permission_denied'],
+  });
   expect(errorCodes[20004].data).toEqual({ reason: ['identity_mismatch'] });
   expect(errorCodes[50305].data).toEqual({ provider: ['wechat', 'apple', 'huawei'] });
   expect(errorCodes[20001].data.reason).toEqual([

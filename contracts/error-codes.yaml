@@ -27,11 +27,13 @@ version: 1
 codes:
   - code: 10001
     http: 401
-    meaning: 未登录
-    action: 跳 Login，成功后恢复 pending_action；不登记 pending_action 的操作（BR-ID-10 细则「不适用的动作」）登录后回到发起页，由用户重新提交；这类操作的键出现过结果未知时不换键，登录后回到发起页进入待确认状态（BR-ID-10 细则「敏感操作的幂等键」）
+    meaning: 未登录；后台（/admin/v1）admin_token 过期或空闲超时同码不带 reason；登录、改初始密码或首次绑定的中间凭证过期、已用或无效带 data.reason=login_ticket_expired（BR-ID-34 细则「首次绑定身份验证器」）
+    action: 跳 Login，成功后恢复 pending_action；不登记 pending_action 的操作（BR-ID-10 细则「不适用的动作」）登录后回到发起页，由用户重新提交；这类操作的键出现过结果未知时不换键，登录后回到发起页进入待确认状态（BR-ID-10 细则「敏感操作的幂等键」）；后台：回到登录第一步
     retry: 登录后
     retry_kind: after_action
-    sources: [BR-ID-01, BR-ID-10, BR-AI-11, BR-AI-23, BR-ATTR-05]
+    data:
+      reason: [login_ticket_expired]
+    sources: [BR-ID-01, BR-ID-10, BR-AI-11, BR-AI-23, BR-ATTR-05, BR-ID-34]
   - code: 10002
     http: 401
     meaning: access_token 过期
@@ -41,11 +43,14 @@ codes:
     sources: [BR-ID-01, BR-ID-07]
   - code: 10003
     http: 403
-    meaning: 需要二次验证（含 step_up_token 过期）
-    action: 弹短信验证，拿到 step_up_token 后重放
+    meaning: 需要二次验证（含 step_up_token 过期）；后台 step-up 带 data.tier（所需档位 totp / sms；持动态码档 token 调短信档操作同码，data.tier=sms）；短信档操作而账号未登记验证手机号时另带 data.reason=verify_phone_missing（BR-ID-34）
+    action: 用户侧：弹 StepUpSheet，验证方式按 BR-ID-08（已绑手机号用短信，未绑手机号的注销用第三方重新授权），拿到 step_up_token 后沿用原幂等键重放；后台：按 data.tier 选验证方式（totp 输入动态码、sms 发短信验证码），在 StepUpModal 里完成后重放；verify_phone_missing 不弹验证，提示先登记验证手机号
     retry: 验证后
     retry_kind: after_action
-    sources: [BR-ID-08, BR-WDR-01, BR-WDR-03]
+    data:
+      tier: [totp, sms]
+      reason: [verify_phone_missing]
+    sources: [BR-ID-08, BR-WDR-01, BR-WDR-03, BR-ID-34]
   - code: 10004
     http: 403
     meaning: 需要同意（协议重新同意、AI 单独同意、实名授权、劳务协议 labor_agreement 等）
@@ -93,6 +98,22 @@ codes:
     data:
       stage: [cooling, processing]
     sources: [BR-ID-27]
+  - code: 10008
+    http: 401
+    meaning: 后台账号或密码不正确（只出现在 /admin/v1 的登录第一步；含账号不存在，不区分；不带 data；每次计入 BR-ID-34 的连续失败计数）
+    action: 停在登录第一步提示
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-34]
+  - code: 10009
+    http: 403
+    meaning: 后台账号已锁定（连续失败 5 次，锁定 30 分钟，锁定期间密码正确也拒绝；data.locked_until 为锁定结束时刻，ISO 8601）
+    action: 提示锁定与解锁时刻，登录按钮保持可点（到时可重试）
+    retry: 锁定结束后
+    retry_kind: later
+    data:
+      locked_until: ~
+    sources: [BR-ID-34]
   - code: 10401
     http: 401
     meaning: 请求签名无效或重放（X-Nonce 重复 / 时间戳超窗）
@@ -109,13 +130,13 @@ codes:
     sources: [BR-ID-01, BR-ID-05, BR-ID-09]
   - code: 10403
     http: 403
-    meaning: App 或请求来源不被允许（含令牌作用域越权）；强更检查结果未知时签发的只读 h5_token（scp=read_only）调用 GET 以外的接口时带 data.reason=h5_read_only（BR-ID-32 细则「只读作用域」）
-    action: 不跳登录，仅提示（带 reason 取子键文案）；h5_read_only：H5 SDK 丢弃内存里的令牌，这次请求按普通失败处理、不自动重发，用户再次操作时重新取令牌（规划/03 §5.4）
+    meaning: App 或请求来源不被允许（含令牌作用域越权）；强更检查结果未知时签发的只读 h5_token（scp=read_only）调用 GET 以外的接口时带 data.reason=h5_read_only（BR-ID-32 细则「只读作用域」）；后台来源 IP 不在白名单带 data.reason=admin_ip_not_allowed，已登录账号没有该操作的权限点带 data.reason=admin_permission_denied（BR-ID-34）
+    action: 不跳登录，仅提示（带 reason 取子键文案）；h5_read_only：H5 SDK 丢弃内存里的令牌，这次请求按普通失败处理、不自动重发，用户再次操作时重新取令牌（规划/03 §5.4）；后台两个 reason 都不跳登录，取子键文案
     retry: 否
     retry_kind: never
     data:
-      reason: [h5_read_only]
-    sources: [BR-ID-01, BR-ID-07, BR-ID-32]
+      reason: [h5_read_only, admin_ip_not_allowed, admin_permission_denied]
+    sources: [BR-ID-01, BR-ID-07, BR-ID-32, BR-ID-34]
   - code: 10404
     http: 401
     meaning: refresh_token 失效，需重新登录
@@ -146,18 +167,20 @@ codes:
     sources: [BR-ID-05, BR-ID-09, BR-ID-25, BR-ID-39, BR-AI-23, BR-TEXT-13, BR-WDR-03, BR-WATCH-04]
   - code: 20002
     http: 400
-    meaning: 验证码错误
-    action: 提示重新输入
+    meaning: 验证码错误；后台登录第二步的动态码错误带 data.reason=totp_invalid，首次绑定时的动态码错误带 data.reason=totp_bind_invalid（不绑定、不登录），这两种 reason 每次计入 BR-ID-34 的连续失败计数；后台 step-up 的短信验证码与动态码错误不带 reason（BR-ID-34）
+    action: 提示重新输入；带 reason 时停在当前步骤、清空动态码输入框
     retry: 否
     retry_kind: never
-    sources: [BR-ID-05]
+    data:
+      reason: [totp_invalid, totp_bind_invalid]
+    sources: [BR-ID-05, BR-ID-34]
   - code: 20003
     http: 400
     meaning: 验证码已过期或已作废（含错满 5 次）
     action: 提示重新获取验证码
     retry: 否
     retry_kind: never
-    sources: [BR-ID-05]
+    sources: [BR-ID-05, BR-ID-34]
   - code: 20004
     http: 400
     meaning: 第三方授权凭证或授权尝试无效、已过期或已使用（第三方登录与二次验证的第三方重新授权；含尝试的 provider、用途、设备与请求不符，以及客户端令牌与服务端换码所得的主体不一致；对外不区分具体原因。data.reason=identity_mismatch 表示重新授权得到的第三方账号不是本账号绑定的那一个）
@@ -716,7 +739,7 @@ codes:
     retry: 稍后
     retry_kind: later
     headers: [Retry-After]
-    sources: [BR-TEXT-14, BR-ID-05, BR-INV-02, BR-AI-23]
+    sources: [BR-TEXT-14, BR-ID-05, BR-INV-02, BR-AI-23, BR-ID-34]
   - code: 44001
     http: 403
     meaning: 风控拦截（号段或手机号黑名单、设备或 IP 注册上限、封禁用户的受限操作）
