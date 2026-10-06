@@ -200,20 +200,21 @@ it('every field of the evidence can fail the check', () => {
     ['spec_ref', evidence({ spec_ref: 'd'.repeat(40) }), /spec_ref: differs from SPEC_REF/],
     ['spec_commit not an ancestor', evidence({ spec_commit: 'e'.repeat(40) }), /not an ancestor/],
     [
-      'no container run',
+      'host run',
       evidence({ runs: [{ mode: 'host', exit_code: 0, tree: headTree }] }),
-      /no container run/,
+      /host results are not accepted/,
     ],
     [
       'failed run',
       evidence({ runs: [{ mode: 'container', script: 'verify', exit_code: 1, tree: headTree }] }),
-      /no container run/,
+      /a listed container verify run must have exit code 0/,
     ],
     [
       'other tree',
       evidence({ runs: [{ mode: 'container', script: 'verify', exit_code: 0, tree: otherTree }] }),
-      /no container run/,
+      /a listed container verify run must have exit code 0/,
     ],
+    ['runs not a list', evidence({ runs: 'ci' }), /runs: must be a list/],
     [
       'missing codex review',
       evidence({ reviews: [{ reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 }] }),
@@ -477,8 +478,7 @@ it('[CR-02] a verify:fast record never stands in for the full verification', () 
     }),
   );
   expect(fastOnly).toContain("verify:fast is the implementer's own check");
-  expect(fastOnly).toContain('no container run of `verify` with exit code 0');
-  // Fast passed, the full verification failed: refused.
+  // Fast passed, a listed full verification failed: refused.
   expect(
     problemsOf(
       evidence({
@@ -488,7 +488,7 @@ it('[CR-02] a verify:fast record never stands in for the full verification', () 
         ],
       }),
     ),
-  ).toContain('no container run of `verify`');
+  ).toContain('a listed container verify run must have exit code 0');
   // A record without a script cannot prove which one ran.
   expect(
     problemsOf(evidence({ runs: [{ mode: 'container', exit_code: 0, tree: headTree }] })),
@@ -610,9 +610,10 @@ it('[legacy flow] a legacy ledger needs no red run and no test_paths, but still 
   const head = commitEvidence({ ...doc, runs: runs.slice(1) });
   const input = { prDir: repo, base, head, headRef: 'task/B2-01a', trusted: legacyTrusted };
   expect(checkEvidence(input).problems).toEqual([]);
-  // The full container verify is still required.
+  // The required CI checks are the full verification (ops/approvals.yaml id 21): no container
+  // verify run is needed, an empty run list passes for a ledger without a red-run requirement.
   const noVerify = commitEvidence({ ...doc, runs: runs.slice(0, 1) });
-  expect(checkEvidence({ ...input, head: noVerify }).problems.join('\n')).toContain(
-    'no container run of `verify`',
-  );
+  expect(checkEvidence({ ...input, head: noVerify }).problems).toEqual([]);
+  const noRuns = commitEvidence({ ...doc, runs: [] });
+  expect(checkEvidence({ ...input, head: noRuns }).problems).toEqual([]);
 });
