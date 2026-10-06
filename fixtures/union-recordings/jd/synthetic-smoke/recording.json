@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/synthetic-api/echo?case=synthetic",
+    "body": "synthetic-input"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/plain",
+      "x-synthetic-label": "synthetic-jd"
+    },
+    "body": "synthetic-response-jd"
+  }
+}

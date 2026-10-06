@@ -75,6 +75,7 @@ export {
   createUnionFileReplay,
   createUnionReplayClient,
   parseUnionRecordingProvenance,
+  UnionReplayError,
 } from './infra/replay.ts';
 export type {
   UnionFileReplay,

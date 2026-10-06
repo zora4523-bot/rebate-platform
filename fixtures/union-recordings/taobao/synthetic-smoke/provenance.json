@@ -1,0 +1,8 @@
+{
+  "source": "synthetic",
+  "capabilityId": "CAP-SYNTHETIC",
+  "probeRunId": null,
+  "capturedAt": "2026-10-06T00:00:00.000Z",
+  "originalSha256": "76fb69719bee924775675465a1382165b9603fb0cc3c9c5a7b1cf94ca7bd8c47",
+  "sanitizerVersion": "synthetic-none"
+}
