@@ -1,0 +1,29 @@
+id: B3-01c
+repo: rebate-platform
+title: 评测框架第三段：全量发布门禁（BR-AI-21 各项比率与适用集合、卡片数值与接口比对、转链归因、平台判断）、B 模式与集成模式运行器、按厂商对照报告
+type: impl
+# 2026-10-06 入账（会话「Agent 落地方案」，B3 线由本会话负责）。接 B3-01b（回放、判分、报告、冒烟门禁），供 B3-11 选型与发布验收用。
+# 依据：BR-AI-21（全量 ≥300 条与各项门槛，取值只在 08）、BR-AI-04（卡片数值与接口一致）、BR-AI-06（金额与链接判定）；
+# 01 §8.1 类别与门槛只作指针；方案 docs/proposals/20261005-Agent系统设计与评测进化.md §4.4.2（参考：每项门槛按适用题集合计分母、
+# 上游失败照算失败；差值写百分点并注明样本数，样本不足只写证据不足）与 §8 第 7a 项（T5/T6 只观察）。
+# 卡片数值与转链归因由被测 Agent 的 trace 提供数据源（B3-04/B3-05 实现），缺数据按未覆盖处理、门禁不通过。
+# 不在本段：Jev 辅助打分（CAP-X-13 未验证）、千问以外厂商的预算拦截（B3-02 ModelGateway）、回写到 PR（CT-14）。
+# 顺带 B3-01b 评审第 3 轮的两条 S2：金额单位加繁体（塊、圓）、跨两次运行复用端口的未命中。
+# 分工按规划/11 §1.1（2026-10-05）：Codex 先写规则测试（test/spec/evals-release/**，先红），Claude 新子代理过审，Opus 5.5 实现。
+refs: [BR-AI-21, BR-AI-04, BR-AI-06]
+refs_hash:
+  BR-AI-21: 7e5eb4e48745
+  BR-AI-04: a07587a282ba
+  BR-AI-06: b6a8abaa5dab
+deps: [B3-01b]
+paths:
+  - 'packages/evals/**'
+test_paths:
+  - 'test/spec/evals-release/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/evals-release/**'
+status: todo
+pr: null
