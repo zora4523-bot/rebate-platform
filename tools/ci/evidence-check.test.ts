@@ -265,6 +265,64 @@ it('every field of the evidence can fail the check', () => {
   expect(problemsOf(evidence())).toBe('');
 });
 
+it('[CR-09] after a handover the evidence names the handover commit and only the Claude review must pass', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const impl = git(repo, ['rev-list', '--reverse', `${specCommit}..${head}`]).split('\n')[0]!;
+  const cfg = loadProtected(REPO);
+  const problemsOf = (doc: unknown): string =>
+    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red: RED }).join('\n');
+  const codexBefore = {
+    reviewer: 'codex',
+    verdict: 'fail',
+    open_s0_s1: 1,
+    checklist_complete: true,
+  };
+  const claudePass = { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 };
+  const handover = {
+    implementer: 'codex',
+    commit: impl,
+    note: 'Opus implementation rounds used up',
+  };
+
+  // Without a handover both reviews must pass.
+  expect(problemsOf(evidence({ reviews: [claudePass, codexBefore] }))).toMatch(
+    /reviews.codex.verdict: must be pass/,
+  );
+  // With a valid handover the earlier Codex review is not checked; the Claude review still is.
+  expect(problemsOf(evidence({ handover, reviews: [claudePass, codexBefore] }))).not.toMatch(
+    /reviews|handover/,
+  );
+  expect(problemsOf(evidence({ handover, reviews: [codexBefore] }))).toMatch(
+    /reviews: missing the claude review/,
+  );
+  expect(
+    problemsOf(
+      evidence({ handover, reviews: [{ ...claudePass, verdict: 'fail', open_s0_s1: 1 }] }),
+    ),
+  ).toMatch(/reviews.claude.verdict: must be pass/);
+  // The handover commit must lie after the rule-test commit and on the head; a broken handover
+  // record falls back to requiring both reviews.
+  const cases: [unknown, RegExp][] = [
+    [{ ...handover, commit: specCommit }, /handover.commit: .* is not after the rule-test commit/],
+    [{ ...handover, commit: base }, /handover.commit: .* is not after the rule-test commit/],
+    [
+      { ...handover, commit: 'not-a-sha' },
+      /handover.commit: must be the handover implementation commit id/,
+    ],
+    [{ ...handover, commit: 'f'.repeat(40) }, /handover.commit: .* is not an ancestor of the head/],
+    [{ ...handover, implementer: 'claude' }, /handover.implementer: must be "codex"/],
+    [{ ...handover, note: ' ' }, /handover.note: must say why/],
+    ['codex', /handover: must be an object/],
+  ];
+  for (const [value, pattern] of cases) {
+    const text = problemsOf(evidence({ handover: value, reviews: [claudePass, codexBefore] }));
+    expect(text).toMatch(pattern);
+    if (typeof value === 'object' && (value as { implementer?: string }).implementer === 'codex') {
+      expect(text).toMatch(/reviews.codex.verdict: must be pass/);
+    }
+  }
+});
+
 it('rule tests changed after the rule-test commit fail the check', () => {
   git(repo, ['checkout', '-q', '-b', 'task/B2-01b', 'task/B2-01a']);
   write(repo, { 'test/spec/money/floor.test.ts': 'it("floors differently", () => {});\n' });

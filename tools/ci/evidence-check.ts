@@ -60,7 +60,7 @@ import type { ProtectedConfig } from '../guard/lib/protected.ts';
 import { ownerApprovalFromEnv } from '../guard/lib/owner-approval-env.ts';
 import type { OwnerApproval } from '../guard/lib/owner-approval-env.ts';
 import { loadRiskMap, riskOfPaths } from '../guard/lib/risk.ts';
-import { isAncestor } from '../guard/lib/spec-base.ts';
+import { COMMIT_ID, isAncestor } from '../guard/lib/spec-base.ts';
 import type { RiskLevel } from '../guard/lib/risk.ts';
 
 /**
@@ -355,11 +355,52 @@ export function evidenceProblems(
     }
   }
 
+  // Handover (规划/11 §2.5 超限换家; tools/agent/README.md §11 item 2, CR-09): after Opus used up
+  // its implementation rounds, Codex implemented once and the reviewing side switched to Claude —
+  // Codex never reviews its own implementation. The evidence then names the handover commit, which
+  // must lie on the implementer's range (after spec_commit, an ancestor of the head); only the
+  // Claude review is required to pass. A Codex entry, if present, is the review from before the
+  // handover and is not checked.
+  const handover = doc['handover'];
+  let handedOver = false;
+  if (handover !== undefined) {
+    if (!isRecord(handover)) {
+      at('handover', 'must be an object {implementer, commit, note}');
+    } else {
+      let valid = true;
+      if (handover['implementer'] !== 'codex') {
+        at('handover.implementer', 'must be "codex"');
+        valid = false;
+      }
+      const note = handover['note'];
+      if (typeof note !== 'string' || note.trim() === '') {
+        at('handover.note', 'must say why');
+        valid = false;
+      }
+      const commit = handover['commit'];
+      const spec = doc['spec_commit'];
+      if (typeof commit !== 'string' || !COMMIT_ID.test(commit)) {
+        at('handover.commit', 'must be the handover implementation commit id');
+      } else if (!isAncestor(ctx.prDir, commit, ctx.head)) {
+        at('handover.commit', `${commit} is not an ancestor of the head ${ctx.head}`);
+      } else if (
+        typeof spec !== 'string' ||
+        !COMMIT_ID.test(spec) ||
+        !isAncestor(ctx.prDir, spec, commit) ||
+        isAncestor(ctx.prDir, commit, spec)
+      ) {
+        at('handover.commit', `${commit} is not after the rule-test commit`);
+      } else {
+        handedOver = valid;
+      }
+    }
+  }
+
   const reviews = doc['reviews'];
   if (!Array.isArray(reviews)) {
     at('reviews', 'must be a list');
   } else {
-    for (const reviewer of ['claude', 'codex']) {
+    for (const reviewer of handedOver ? ['claude'] : ['claude', 'codex']) {
       const entry = reviews.find((r) => isRecord(r) && r['reviewer'] === reviewer);
       if (!isRecord(entry)) {
         at('reviews', `missing the ${reviewer} review (规划/11 §3.2 两家评审)`);
