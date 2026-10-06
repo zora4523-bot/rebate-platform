@@ -99,6 +99,26 @@ describe('createRootLogger', () => {
     expect(lines[0]).not.toMatch(/ia1|ia2|ia3/);
   });
 
+  it('redacts the captcha_token and an sms_code of the SMS code flow (BR-ID-05) at any depth', () => {
+    const { logger, lines, records } = capture();
+    logger.info(
+      {
+        captcha_token: 'cap1',
+        captchaToken: 'cap2',
+        body: { phone: '13800000000', purpose: 'login', captcha_token: 'cap3' },
+        sms_code: '042019',
+      },
+      'sms request',
+    );
+    expect(records()[0]).toMatchObject({
+      captcha_token: REDACTED,
+      captchaToken: REDACTED,
+      body: { phone: REDACTED, purpose: 'login', captcha_token: REDACTED },
+      sms_code: REDACTED,
+    });
+    expect(lines[0]).not.toMatch(/cap1|cap2|cap3|13800000000|042019/);
+  });
+
   it('redacts credential headers in request and response shapes', () => {
     const { logger, lines, records } = capture();
     logger.info(

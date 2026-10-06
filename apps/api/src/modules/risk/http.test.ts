@@ -1,10 +1,15 @@
 // Wiring of stage ① in the real api entry (bootstrap → REQUEST_CHECKS → RiskModule → identity's
-// DeviceSigningKeys port), with an in-memory database, field cipher and Redis. The planned signed
-// operations have no production route yet (contract.test.ts), so a test route stands on
-// POST /v1/auth/sms-codes: a Fastify route added before init, or a Nest controller of this file.
+// DeviceSigningKeys port), with an in-memory database, field cipher and Redis. A planned signed
+// operation has no production route (contract.test.ts), so a test route stands on one: a Fastify
+// route added before init, or a Nest controller of this file. The operation is picked from the
+// contract at run time, as test/spec/risk/signature/devices.int.test.ts does, so that implementing
+// an operation never makes this file collide with its real route.
 import { createHash, createHmac } from 'node:crypto';
-import { Body, Controller, Post, Req, type DynamicModule } from '@nestjs/common';
+import { fileURLToPath } from 'node:url';
+import { Body, Controller, Post, Req, type DynamicModule, type Type } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { dereference } from '@readme/openapi-parser';
+import type { OpenAPIV3_1 } from 'openapi-types';
 import { afterEach, expect, it, vi } from 'vitest';
 import { AppModule } from '../../app.module.ts';
 import { createHttpApp } from '../../bootstrap.ts';
@@ -13,9 +18,11 @@ import {
   FIELD_CRYPTO,
   FixedClock,
   REDIS,
+  contractRouteSchema,
   createRootLogger,
   loadConfig,
   type CheckedRequest,
+  type ContractOperationId,
   type FieldCrypto,
   type RedisHandle,
   type RedisNamespace,
@@ -27,8 +34,51 @@ const DEVICE = '019a0000-0000-7000-8000-0000000000d1';
 const REVOKED = '019a0000-0000-7000-8000-0000000000d2';
 const SECRET = 'test-only.risk-wiring.secret';
 const NONCE = 'c3'.repeat(16);
-const SMS = '/v1/auth/sms-codes';
 const BODY = '{"phone":"13800138000","purpose":"login"}';
+
+/** True when the api entry mounts the operation (it has a generated route schema). */
+function implemented(operationId: string): boolean {
+  try {
+    contractRouteSchema(operationId as ContractOperationId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Signed POST operations where stage ① is the only gate and no production route exists: no path
+ * parameter, x-signed, x-auth none (the token stages hang on the same registration point), not
+ * idempotent, no minimum-version gate, still planned (and without a generated route schema).
+ * Sorted by path; the first one carries the test route.
+ */
+async function stubCandidates(): Promise<string[]> {
+  const document = await dereference<OpenAPIV3_1.Document>(
+    fileURLToPath(new URL('../../../../../contracts/openapi.yaml', import.meta.url)),
+    { resolve: { external: false } },
+  );
+  return Object.entries(document.paths ?? {})
+    .filter(([path, item]) => {
+      const post = item?.post as
+        (OpenAPIV3_1.OperationObject & Record<string, unknown>) | undefined;
+      return (
+        post !== undefined &&
+        !path.includes('{') &&
+        post['x-signed'] === true &&
+        post['x-auth'] === 'none' &&
+        post['x-idempotent'] !== true &&
+        post['x-min-version-gate'] === false &&
+        'x-implementation' in post &&
+        typeof post.operationId === 'string' &&
+        !implemented(post.operationId)
+      );
+    })
+    .map(([path]) => path)
+    .sort();
+}
+const CANDIDATES = await stubCandidates();
+/** The test route's path; build() fails the test when the contract leaves no candidate. */
+const STUB = CANDIDATES[0] ?? '/no-planned-signed-operation';
 
 let app: NestFastifyApplication | undefined;
 afterEach(async () => {
@@ -117,13 +167,16 @@ function fakeRedis() {
   return { handle, evalScript };
 }
 
-/** A Nest route on the signed contract template POST /v1/auth/sms-codes (test only). */
-@Controller('v1/auth')
-class SignedProbeController {
-  @Post('sms-codes')
-  send(@Body() body: unknown, @Req() request: CheckedRequest) {
-    return { reached: true, body, verifiedDevice: request.verifiedDevice ?? null };
+/** A Nest route on the signed contract template of `path` (test only). */
+function signedProbeController(path: string): Type {
+  @Controller()
+  class SignedProbeController {
+    @Post(path)
+    send(@Body() body: unknown, @Req() request: CheckedRequest) {
+      return { reached: true, body, verifiedDevice: request.verifiedDevice ?? null };
+    }
   }
+  return SignedProbeController;
 }
 
 /** Absolute-form request target of a request sent with this header (see build). */
@@ -131,6 +184,10 @@ const ABSOLUTE_FORM = 'x-test-absolute-form';
 const AUTHORITY = 'https://api.example.com';
 
 async function build(redis?: RedisHandle, options: { nest?: boolean } = {}) {
+  expect(
+    CANDIDATES.length,
+    'no planned signed POST operation left to carry the test route',
+  ).toBeGreaterThan(0);
   const { db, lookups } = fakeDb();
   const original = AppModule.forEntry;
   vi.spyOn(AppModule, 'forEntry').mockImplementationOnce((entryOptions) => {
@@ -149,7 +206,7 @@ async function build(redis?: RedisHandle, options: { nest?: boolean } = {}) {
       ...root,
       imports: [...(root.imports ?? []), fakes],
       ...(options.nest === true
-        ? { controllers: [...(root.controllers ?? []), SignedProbeController] }
+        ? { controllers: [...(root.controllers ?? []), signedProbeController(STUB)] }
         : {}),
     };
   });
@@ -168,7 +225,7 @@ async function build(redis?: RedisHandle, options: { nest?: boolean } = {}) {
     }
   });
   if (options.nest !== true) {
-    server.post(SMS, (request) => ({
+    server.post(STUB, (request) => ({
       reached: true,
       body: request.body ?? null,
       verifiedDevice: (request as CheckedRequest).verifiedDevice ?? null,
@@ -188,14 +245,14 @@ function signature(signedTarget: string, payload: string, nonce = NONCE): string
 function signed(target: NestFastifyApplication, device = DEVICE, payload = BODY) {
   return target.inject({
     method: 'POST',
-    url: SMS,
+    url: STUB,
     headers: {
       'content-type': 'application/json',
       'x-trace-id': TRACE,
       'x-device-id': device,
       'x-timestamp': String(NOW),
       'x-nonce': NONCE,
-      'x-sign': signature(SMS, payload),
+      'x-sign': signature(STUB, payload),
     },
     payload,
   });
@@ -240,7 +297,7 @@ it('[BR-ID-09][ADR-0001 §4.2 第17项] without REDIS the api entry fails a vali
   expect(response.json()).toEqual({ code: 50001, msg: '服务端错误', trace_id: TRACE });
   const bad = await target.inject({
     method: 'POST',
-    url: SMS,
+    url: STUB,
     headers: {
       'content-type': 'application/json',
       'x-trace-id': TRACE,
@@ -257,7 +314,7 @@ it('[BR-ID-09][ADR-0001 §4.2 第17项] without REDIS the api entry fails a vali
 
 it('[BR-ID-09] an absolute-form request target is verified on its origin form: path and raw query, no scheme or host', async () => {
   const { app: target } = await build(fakeRedis().handle);
-  const url = `${SMS}?b=2&a=%2f`;
+  const url = `${STUB}?b=2&a=%2f`;
   const send = (sign: string, nonce: string) =>
     target.inject({
       method: 'POST',
@@ -299,7 +356,7 @@ it('[BR-ID-09][BR-ID-01] stage ① also covers a route a Nest controller registe
   const { app: target, lookups } = await build(redis.handle, { nest: true });
   const missing = await target.inject({
     method: 'POST',
-    url: SMS,
+    url: STUB,
     headers: { 'content-type': 'application/json', 'x-trace-id': TRACE },
     payload: '{',
   });
@@ -324,7 +381,7 @@ it('[BR-ID-09][B1-01za] a correct signature over the bytes received still answer
   const { app: target } = await build(fakeRedis().handle);
   const response = await target.inject({
     method: 'POST',
-    url: SMS,
+    url: STUB,
     headers: {
       'content-type': 'application/json',
       'content-length': String(Buffer.byteLength(BODY) + 5),
@@ -332,7 +389,7 @@ it('[BR-ID-09][B1-01za] a correct signature over the bytes received still answer
       'x-device-id': DEVICE,
       'x-timestamp': String(NOW),
       'x-nonce': NONCE,
-      'x-sign': signature(SMS, BODY),
+      'x-sign': signature(STUB, BODY),
     },
     payload: BODY,
   });

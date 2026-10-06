@@ -71,12 +71,22 @@ it('[BR-ID-09] the api entry, whose plan runs the signature check on every x-sig
   expect(SIGNED).toBeDefined();
   app = await createHttpApp('api', overrides('api'));
   const server = app.getHttpAdapter().getInstance();
+  // Nest registers the implemented operations in init (which would refuse an unchecked signed
+  // route); a probe then registers every other signed route, before the server is ready.
+  await app.init();
+  let probed = 0;
   for (const route of contractSigningRoutes().filter((candidate) => candidate.signed)) {
+    if (server.hasRoute({ method: route.method, url: route.path })) continue;
     expect(() =>
       server.route({ method: route.method, url: route.path, handler: () => ({}) }),
     ).not.toThrow();
+    probed += 1;
   }
-  await app.init();
+  expect(probed).toBeGreaterThan(0);
+  await server.ready();
+  for (const route of contractSigningRoutes().filter((candidate) => candidate.signed)) {
+    expect(server.hasRoute({ method: route.method, url: route.path })).toBe(true);
+  }
 });
 
 it('[BR-ID-09] an api plan that would leave an x-signed route unbuffered keeps the entry from starting', async () => {

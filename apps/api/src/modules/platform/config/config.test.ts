@@ -140,10 +140,12 @@ describe('loadConfig', () => {
       const problems = problemsOf({
         APP_ENV: appEnv,
         UNION_TAOBAO_APP_SECRET: 'real-secret-value',
-        SMS_ACCESS_KEY: 'another-real-value',
+        SMS_ALIYUN_ACCESS_KEY_SECRET: 'another-real-value',
       });
       expect(problems).toHaveLength(2);
-      expect(problems[0]).toMatch(/^SMS_ACCESS_KEY: looks like a real third-party credential/);
+      expect(problems[0]).toMatch(
+        /^SMS_ALIYUN_ACCESS_KEY_SECRET: looks like a real third-party credential/,
+      );
       expect(problems[1]).toMatch(/^UNION_TAOBAO_APP_SECRET: /);
       expect(problems.join('\n')).not.toMatch(/real-secret-value|another-real-value/);
     },

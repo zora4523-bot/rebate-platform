@@ -98,7 +98,8 @@ export interface paths {
         /**
          * Send an SMS verification code
          * @description Order of checks: signature 10401 / 10402 → 20001 → 44001 → 44003 → 42901 (BR-ID-05). Limits per
-         *     phone: 1 per 60 s, 10 per natural day (+08:00); a code is 6 digits and valid 5 minutes.
+         *     phone: 1 per 60 s, 5 per natural hour (+08:00), 10 per natural day (+08:00); a code is 6 digits
+         *     and valid 5 minutes.
          *     `phone` is normalised by the server (BR-ID-05 细则「手机号规范化」); when the result is not
          *     a mainland mobile number the answer is 20001 with `data.fields=[phone]` and
          *     `data.reason=phone_invalid`, no SMS is sent and nothing counts towards the limits.
@@ -1734,7 +1735,8 @@ export interface components {
         SendSmsCodeData: {
             /**
              * Format: int32
-             * @description Seconds until another code may be requested (60, BR-ID-05).
+             * @description Seconds until another code may be requested: at least 60, the latest release among the
+             *     per-phone limits (BR-ID-05).
              */
             resend_after_sec: number;
             /**
@@ -3763,7 +3765,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The provider accepted the SMS. */
+            /** @description The provider accepted the SMS, or its outcome is unknown (counted as sent). */
             200: {
                 headers: {
                     [name: string]: unknown;
