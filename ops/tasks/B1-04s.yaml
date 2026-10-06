@@ -9,9 +9,9 @@ type: test-change
 # 改法：只放宽到 B1-04r 定下的 DTO 形状（三个可选字段，缺省视同 price_status='ok'）与 BR-PRICE-03 细则允许的两个键；断言的行为与含义不变；改前（现在的实现）改后都绿，不改任何实现代码。
 # 精确断言（有券 price_basis、无券 price_basis.general；coupon_expired 不带 coupon_ids）由 B1-04r、B1-05i 在各自新测试目录里写。
 # 保护路径第一类，改已有文件，合并要负责人标签 owner-approved-<头提交前 12 位>（need-label 登记）；实现 Claude；路径在 test/** 属 RV2，证据要求 Claude、Codex 两家评审都 pass（Codex 即 §4.4 的「另一家」）。
-refs: [BR-PRICE-02, BR-PRICE-03]
+# refs 精简（2026-10-06）：任务书上限 24KB，BR-PRICE-02 一条（含细则）就有 29.5KB、BR-PRICE-01 与 03 合起来也超限，所以 refs 只留放得下的条目，其余由编排者按「依据摘录」摘入任务书第 2 节；08 这几条变了由编排者对照 refs 之外的依据重新核对（couli-runs/W1-search-linking/decision-orchestrator.md）。
+refs: [BR-PRICE-03]
 refs_hash:
-  BR-PRICE-02: b622624c8da7
   BR-PRICE-03: 51dcba492d39
 deps: [B1-05f, B1-04o]
 paths:

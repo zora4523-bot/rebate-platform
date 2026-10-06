@@ -11,11 +11,9 @@ type: impl
 # 演示数据：不模仿平台报文格式与字段名（AGENTS.md 硬规则 7），直接造领域结构；明细项的起止时间相对注入的取数时刻生成（或不给起止，按 08「没给起止时间的项按接口给出即有效」），不得写死绝对时间——否则 [AC-B1-04o-DATA#5] 把时钟拨到 2042 年时会判过期成价格异常；普通搜索、物料流里的名称全部在默认清单内（不产生价格异常）；coupon_expired 在淘宝演示里表示「券从明细里消失」；新增场景 price_anomaly（明细对不上）与 unknown_promo（清单外名称）才产出价格异常。
 # 受保护测试：demo kit 的全部键 toEqual 与 [AC-B1-04o-SCENARIO#3] 会挡住新字段，按规划/11 §4.4 由独立的 test-change 任务 B1-04s 先放宽（改前改后都绿，需负责人标签）；本任务 deps 含 B1-04s，自己的精确断言（coupon_expired 不带 coupon_ids 等）写在 test/spec/union/taobao-price/**。
 # 风险：union/** RV2（金额），两家评审。
-refs: [BR-PRICE-01, BR-PRICE-02, BR-PRICE-03]
-refs_hash:
-  BR-PRICE-01: 9ff41b3629dd
-  BR-PRICE-02: b622624c8da7
-  BR-PRICE-03: 51dcba492d39
+# refs 精简（2026-10-06）：任务书上限 24KB，BR-PRICE-02 一条（含细则）就有 29.5KB、BR-PRICE-01 与 03 合起来也超限，所以 refs 只留放得下的条目，其余由编排者按「依据摘录」摘入任务书第 2 节；08 这几条变了由编排者对照 refs 之外的依据重新核对（couli-runs/W1-search-linking/decision-orchestrator.md）。
+refs: []
+refs_hash: {}
 deps: [B1-04o, B2-01b, B1-04s]
 paths:
   - 'apps/api/src/modules/union/**'
