@@ -1,13 +1,26 @@
 // All keys are supplied through KEYS so RedisNamespace can prefix every access.
 // ARGV[1] is the platform's TTL; ARGV[2] is the operation payload. Redis TTL is GC only.
-// Session hash: msg:<client_msg_id> -> run_id, run:<run_id> -> ticket + settlement,
-// last -> run_id, rounds -> lifetime accepted rounds. Keeping these in one expiring hash
-// prevents an acceptance outliving its settlement marker (or vice versa).
+// Session JSON string: msg:<client_msg_id> -> run_id, run:<run_id> -> encoded ticket + settlement,
+// last -> run_id, rounds -> lifetime accepted rounds. One expiring snapshot keeps acceptance
+// and settlement together. Unlike HGETALL's unordered fields, GET preserves the exact bytes
+// across read-only rejections, duplicates and repeated settlements. Only successful writes
+// serialize the snapshot; reading it never refreshes its TTL.
 const COMMON = `
 local ttl = tonumber(ARGV[1])
 local p = cjson.decode(ARGV[2])
+local function loadSession()
+  -- Preserve tickets from the previous hash layout; replace it only when a write is due.
+  if redis.call('TYPE', KEYS[1]).ok == 'hash' then
+    local fields = redis.call('HGETALL', KEYS[1])
+    local snapshot = {}
+    for i = 1, #fields, 2 do snapshot[fields[i]] = fields[i + 1] end
+    return snapshot
+  end
+  return cjson.decode(redis.call('GET', KEYS[1]) or '{}')
+end
+local session = loadSession()
 local function record(run)
-  local raw = redis.call('HGET', KEYS[1], 'run:' .. run)
+  local raw = session['run:' .. run]
   if not raw then error('Missing admission record') end
   return cjson.decode(raw)
 end
@@ -29,7 +42,7 @@ export const ADMIT_SCRIPT = `${COMMON}
 local ticket = p.ticket
 local now = ticket.acceptedAtMs
 local lock = redis.call('GET', KEYS[2])
-local duplicate = redis.call('HGET', KEYS[1], 'msg:' .. p.clientMsgId)
+local duplicate = session['msg:' .. p.clientMsgId]
 -- ⑥ duplicates win over every other gate and never mutate stored values.
 if duplicate then
   local old = record(duplicate)
@@ -48,7 +61,7 @@ if lock then
     return cjson.encode({kind = 'rejected', code = 30506})
   end
 end
-local last = redis.call('HGET', KEYS[1], 'last')
+local last = session.last
 if last then
   local old = record(last)
   if not old.settled then
@@ -65,7 +78,7 @@ if used >= p.limits.perMinute then
   return cjson.encode({kind = 'rejected', code = 42901, retryAfterSeconds = wait})
 end
 -- ⑨ rounds do not reset with the day and are never refunded.
-local rounds = tonumber(redis.call('HGET', KEYS[1], 'rounds') or '0')
+local rounds = tonumber(session.rounds or '0')
 if rounds >= p.limits.maxRounds then
   return cjson.encode({kind = 'rejected', code = 30504, reason = 'round_limit'})
 end
@@ -78,13 +91,16 @@ for i, limit in ipairs(p.dailyLimits) do
   end
 end
 -- A run id is generated once per request by the caller; never overwrite an older ticket.
-if redis.call('HEXISTS', KEYS[1], 'run:' .. ticket.runId) == 1 then
+if session['run:' .. ticket.runId] then
   return redis.error_reply('Admission run id reused')
 end
 local encoded = cjson.encode({ticket = ticket, settled = false, refunded = false})
-redis.call('HSET', KEYS[1], 'msg:' .. p.clientMsgId, ticket.runId,
-  'run:' .. ticket.runId, encoded, 'last', ticket.runId, 'rounds', rounds + 1)
-redis.call('EXPIRE', KEYS[1], ttl)
+session['msg:' .. p.clientMsgId] = ticket.runId
+session['run:' .. ticket.runId] = encoded
+session.last = ticket.runId
+session.rounds = tostring(rounds + 1)
+local snapshot = cjson.encode(session)
+redis.call('SET', KEYS[1], snapshot, 'EX', ttl)
 redis.call('SET', KEYS[2], ticket.runId, 'EX', ttl)
 redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', string.format('%.0f', now - 60000))
 redis.call('ZADD', KEYS[3], now, p.windowMember)
@@ -130,8 +146,9 @@ for i = 1, n do today[i] = count(KEYS[currentFirst + i - 1]) end
 old.settled = true
 old.refunded = p.refund
 local encoded = cjson.encode(old)
-redis.call('HSET', KEYS[1], 'run:' .. t.runId, encoded)
-redis.call('EXPIRE', KEYS[1], ttl)
+session['run:' .. t.runId] = encoded
+local snapshot = cjson.encode(session)
+redis.call('SET', KEYS[1], snapshot, 'EX', ttl)
 if lock == t.runId then redis.call('DEL', KEYS[2]) end
 local left = nil
 for i, limit in ipairs(p.dailyLimits) do
