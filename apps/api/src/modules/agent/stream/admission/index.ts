@@ -54,10 +54,11 @@
 // caller's opaque values (userId, deviceHash, ipKey, sessionId, clientMsgId) only.
 // Redis unavailable (RedisUnavailableError or any failed call): admit rejects with
 // AdmissionUnavailableError and counts nothing; the caller answers 50401. When it is unknown
-// whether the admit eval ran (command_timeout, unexpected_reply, a reply that is not the script's
-// JSON), admit first makes one compensating settle eval for req.runId as server_error with 0 cards
-// (BR-AI-15 refund), applied only if this very request was recorded (msg:<clientMsgId> → runId);
-// otherwise it changes nothing. The settled mark keeps it once-only against a later settle.
+// whether the admit eval ran (command_timeout, command_failed, unexpected_reply, a reply that is
+// not the script's JSON), admit first makes one compensating settle eval for req.runId as
+// server_error with 0 cards (BR-AI-15 refund), applied only if this very request was recorded
+// (msg:<clientMsgId> → runId); otherwise it changes nothing. The settled mark keeps it once-only
+// against a later settle.
 //
 // shouldRefund: endings server_error, disabled, timeout, input_review_timeout with
 // cardsDelivered = 0 → true; anything else → false (BR-AI-15 refund list).
@@ -275,13 +276,19 @@ export function createRedisAdmission(deps: AdmissionDeps): Admission {
     }
   }
 
-  // Unknown whether the script ran. connect_* and closed never sent it; command_failed is an error
-  // reply, and both scripts raise errors only before their first write.
+  // Unknown whether the script ran. platform/redis reports command_failed both for an error reply
+  // and for a connection that broke after the command was sent (reply lost), so it counts as
+  // ambiguous like command_timeout: compensating a script that never ran finds no record for this
+  // runId and changes nothing. connect_failed / connect_timeout are raised before anything is
+  // sent. closed means the handle is shut down (even mid-command): nothing can be sent on it any
+  // more, so no compensation is tried; that run is left to ⑥ / ⑦ or the sweeper B3-03e.
   function ambiguous(error: unknown): boolean {
     return (
       error instanceof AmbiguousReply ||
       (error instanceof RedisUnavailableError &&
-        (error.reason === 'command_timeout' || error.reason === 'unexpected_reply'))
+        (error.reason === 'command_timeout' ||
+          error.reason === 'command_failed' ||
+          error.reason === 'unexpected_reply'))
     );
   }
 
