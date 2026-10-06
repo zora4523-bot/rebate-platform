@@ -1,0 +1,40 @@
+{
+  "//": "Real output of tools/ops/verify-image/red-reporter.mjs (round-2 version) from the isolated red run F1-01j red/2 on the candidate copy, 2026-10-06 (red-check FAIL): a TypeError. Trimmed only: stack texts cut to their first two frames.",
+  "reporter": "couli-red-reporter",
+  "testResults": [
+    {
+      "name": "/work/repo/test/spec/frontend/browser-env/demo-red.browser.test.ts",
+      "browser": true,
+      "poll_in_source": false,
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[demo] fails with a TypeError",
+          "title": "[demo] fails with a TypeError",
+          "status": "failed",
+          "failureMessages": [
+            "TypeError: Cannot read properties of null (reading 'x')\n    at http://localhost:63315/work/repo/test/spec/frontend/browser-env/demo-red.browser.test.ts?import&browserv=1791261915278:5:15\n    at http://localhost:63315/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps/plugins.Cigb0uSy-Dj1mblMG.js?v=f5a1dd86:3848:35"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TypeError",
+                  "message": "Cannot read properties of null (reading 'x')"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/browser-env/demo-red.browser.test.ts",
+                "line": 6,
+                "column": 16
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "unhandledErrors": []
+}

@@ -4,7 +4,7 @@
 // what is removed at the end — is checked without Docker. Whether the real images behave is the
 // job of tools/ops/verify-container.selftest.sh (run by hand, see tools/ops/README.md).
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { repoRoot } from '../lib/paths.ts';
@@ -39,7 +39,9 @@ const REDIS_SETTINGS = {
 // STUB_DOCKER_FAIL=redis-start fails `run -d` of the Redis container; redis-exits makes it a
 // container that has stopped (`inspect` says not running, `exec` fails). STUB_DOCKER_LOADING=<n>
 // answers the first n `redis-cli ping` with a LOADING reply (exit 0); STUB_DOCKER_RUN_EXIT is the
-// exit code of the verify / red container.
+// exit code of the verify / red / browser container. STUB_DOCKER_FAIL=image-missing makes
+// `image inspect` fail, so the script builds the image (the `build` call is recorded).
+// STUB_DOCKER_SCREENSHOT=1 makes the browser container leave one PNG in <out>/screenshots.
 const STUB = String.raw`'use strict';
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -62,6 +64,10 @@ function answer(text, code) {
   process.exit(code);
 }
 if (args[0] === 'version') answer('28.0.1', 0);
+if (args[0] === 'image' && args[1] === 'inspect' && failures.includes('image-missing')) {
+  process.stderr.write('Error: No such image\n');
+  process.exit(1);
+}
 if (args[0] === 'run' && args.includes('-d')) {
   if (failures.includes('redis-start') && aboutRedis) {
     process.stderr.write('stub: cannot start the container\n');
@@ -70,6 +76,12 @@ if (args[0] === 'run' && args.includes('-d')) {
   answer('0123456789ab', 0);
 }
 if (args[0] === 'run' && args.includes('couli-verify-entrypoint')) {
+  const out = args.find((a, i) => args[i - 1] === '-v' && a.endsWith(':/out'));
+  if (process.env.STUB_DOCKER_SCREENSHOT === '1' && args.at(-1) === 'browser' && out) {
+    const dir = out.slice(0, -':/out'.length) + '/screenshots/spec/x.browser.test.ts';
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(dir + '/shot-chromium-linux.png', 'png');
+  }
   answer('', Number(process.env.STUB_DOCKER_RUN_EXIT || '0'));
 }
 if (args[0] === 'inspect') answer(failures.includes('redis-exits') && aboutRedis ? 'false' : 'true', 0);
@@ -107,8 +119,45 @@ beforeAll(() => {
 });
 afterAll(() => removeDir(base));
 
+const PLAIN_LOCK = "lockfileVersion: '9.0'\n";
+
+/**
+ * A pnpm 10 lockfile that has playwright `version` (and playwright-core, which must not be
+ * taken for it): an importer entry, the packages section and the snapshots section.
+ */
+function lockWithPlaywright(version: string): string {
+  return [
+    "lockfileVersion: '9.0'",
+    '',
+    'importers:',
+    '',
+    '  test:',
+    '    devDependencies:',
+    '      playwright:',
+    `        specifier: ${version}`,
+    `        version: ${version}`,
+    '',
+    'packages:',
+    '',
+    `  playwright-core@${version}:`,
+    '    resolution: {integrity: sha512-core}',
+    '',
+    `  playwright@${version}:`,
+    '    resolution: {integrity: sha512-playwright}',
+    '',
+    'snapshots:',
+    '',
+    `  playwright-core@${version}: {}`,
+    '',
+    `  playwright@${version}:`,
+    '    dependencies:',
+    `      playwright-core: ${version}`,
+    '',
+  ].join('\n');
+}
+
 /** A workspace the container path accepts (pinned pnpm, lockfile, workspace file). */
-function workspace(name: string): string {
+function workspace(name: string, lock = PLAIN_LOCK): string {
   const root = JSON.parse(readFileSync(join(repoRoot(), 'package.json'), 'utf8')) as {
     packageManager: string;
   };
@@ -120,7 +169,7 @@ function workspace(name: string): string {
       2,
     )}\n`,
     'pnpm-workspace.yaml': 'packages: []\n',
-    'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+    'pnpm-lock.yaml': lock,
   });
   return dir;
 }
@@ -369,8 +418,8 @@ it(
 );
 
 /** A git fixture whose task (B1-02b, legacy ledger, see verify-container.test.ts) adds `files`. */
-function redFixture(name: string, files: Record<string, string>): string {
-  const repo = workspace(name);
+function redFixture(name: string, files: Record<string, string>, lock = PLAIN_LOCK): string {
+  const repo = workspace(name, lock);
   fixtureGit(repo, ['init', '-q', '-b', 'main']);
   fixtureGit(repo, ['add', '-A']);
   fixtureGit(repo, ['commit', '-q', '-m', 'fixture']);
@@ -441,6 +490,250 @@ it(
       'RED_PLAN',
       'VERIFY_TIMEOUT_SECS',
     ]);
+  },
+  CLI_TIMEOUT,
+);
+
+/** The image tag of the `docker build` call, or null when the script built nothing. */
+function builtImage(calls: readonly Call[]): string | null {
+  const build = calls.find((c) => c.args[0] === 'build');
+  return build === undefined ? null : valueOf(build.args, '-t');
+}
+
+/** `--build-arg` values of the `docker build` call. */
+function buildArgs(calls: readonly Call[]): string[] {
+  const build = calls.find((c) => c.args[0] === 'build')?.args ?? [];
+  return build.flatMap((arg, i) => (build[i - 1] === '--build-arg' ? [arg] : []));
+}
+
+it(
+  '[F1-01j] the image is built with the playwright version of the lockfile, and the tag changes with it',
+  () => {
+    function fast(name: string, lock: string): Run {
+      return run(['V3-01', '--worktree', workspace(name, lock), '--fast'], {
+        STUB_DOCKER_FAIL: 'image-missing',
+      });
+    }
+    const v163 = fast('pw-163', lockWithPlaywright('1.63.0'));
+    expect(v163.status, v163.stderr).toBe(0);
+    const root = JSON.parse(readFileSync(join(repoRoot(), 'package.json'), 'utf8')) as {
+      packageManager: string;
+    };
+    const pnpm = root.packageManager.replace('pnpm@', '');
+    expect(buildArgs(v163.calls)).toEqual([`PNPM_VERSION=${pnpm}`, 'PLAYWRIGHT_VERSION=1.63.0']);
+    const tag163 = builtImage(v163.calls) ?? '';
+    expect(tag163).toMatch(/^couli-verify:[0-9a-f]{16}$/);
+    // The run uses the image it built.
+    expect(entrypointRun(v163.calls)?.args).toContain(tag163);
+
+    // Same version, same image; another version or none, another image.
+    const again = fast('pw-163-again', lockWithPlaywright('1.63.0'));
+    expect(builtImage(again.calls)).toBe(tag163);
+    const v164 = fast('pw-164', lockWithPlaywright('1.64.0'));
+    expect(buildArgs(v164.calls)).toContain('PLAYWRIGHT_VERSION=1.64.0');
+    const none = fast('pw-none', PLAIN_LOCK);
+    expect(none.status, none.stderr).toBe(0);
+    expect(buildArgs(none.calls)).toContain('PLAYWRIGHT_VERSION=none');
+    const tags = [tag163, builtImage(v164.calls), builtImage(none.calls)];
+    expect(new Set(tags).size).toBe(3);
+
+    // Two versions in one lockfile: no guess, the run stops before Docker is asked anything.
+    const two = fast(
+      'pw-two',
+      `${lockWithPlaywright('1.63.0')}\n  playwright@1.64.0:\n    resolution: {integrity: x}\n`,
+    );
+    expect(two.status).toBe(2);
+    expect(two.stderr).toContain('more than one playwright version');
+    expect(two.calls).toEqual([]);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[F1-01j] --browser: the browser project only, no network, screenshots and report exported to browser/<n>/out',
+  () => {
+    const ws = workspace('browser', lockWithPlaywright('1.63.0'));
+    const res = run(['V3-02', '--worktree', ws, '--browser'], { STUB_DOCKER_RUN_EXIT: '1' });
+    // Vitest's exit code is the result; result.json says browser.
+    expect(res.status, res.stderr).toBe(1);
+    const dir = join(runs, 'V3-02', 'browser', '1');
+    const result = JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8')) as {
+      mode: string;
+      script: string;
+      exit_code: number;
+    };
+    expect(result).toMatchObject({ mode: 'container', script: 'browser', exit_code: 1 });
+    expect(existsSync(join(dir, 'out'))).toBe(true);
+    // Writable and searchable for the container's uid, not listable, sticky (not 0777).
+    expect(statSync(join(dir, 'out')).mode & 0o7777).toBe(0o1733);
+    // The snapshot is not kept.
+    expect(existsSync(join(dir, 'src'))).toBe(false);
+
+    const { calls } = res;
+    expect(calls.some((c) => c.args[0] === 'network' && c.args[1] === 'create')).toBe(false);
+    expect(calls.some((c) => c.args[0] === 'run' && c.args.includes('-d'))).toBe(false);
+    const browser = entrypointRun(calls);
+    const args = browser?.args ?? [];
+    expect(args.slice(-2)).toEqual(['couli-verify-entrypoint', 'browser']);
+    expect(valueOf(args, '--network')).toBe('none');
+    // The output directory is the one writable mount besides the tmpfs; the snapshot and the
+    // store stay read-only; no planning snapshot, no red reporter.
+    const mounts = args.flatMap((a, i) => (args[i - 1] === '-v' ? [a] : []));
+    expect(mounts).toEqual([
+      expect.stringMatching(/\/V3-02\/browser\/1\/src:\/src:ro$/),
+      expect.stringMatching(/^couli-stubtest-store-[0-9a-f]{16}:\/store:ro$/),
+      expect.stringMatching(/\/V3-02\/browser\/1\/out:\/out$/),
+    ]);
+    // The hardening of every verify container.
+    for (const flag of ['--init', '--read-only', 'no-new-privileges']) expect(args).toContain(flag);
+    expect(valueOf(args, '--cap-drop')).toBe('ALL');
+    // The project comes from the trusted table; nothing else is handed over.
+    expect(browser?.env).toEqual({
+      PROP_SEED: '20261001',
+      VERIFY_TIMEOUT_SECS: '1200',
+      BROWSER_DIR: 'test',
+      BROWSER_CONFIG: 'vitest.browser.config.ts',
+    });
+    expect(noRedisUrl(browser)).toBe(true);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[F1-01j] --browser: a green run that exported no screenshot fails; with screenshots it passes',
+  () => {
+    const lock = lockWithPlaywright('1.63.0');
+    const empty = run(['V3-04', '--worktree', workspace('browser-empty', lock), '--browser']);
+    expect(empty.status).toBe(1);
+    expect(empty.stderr).toContain('no screenshot was exported');
+    const emptyDir = join(runs, 'V3-04', 'browser', '1');
+    const result = JSON.parse(readFileSync(join(emptyDir, 'result.json'), 'utf8')) as {
+      exit_code: number;
+    };
+    expect(result.exit_code).toBe(1);
+    expect(readFileSync(join(emptyDir, 'log.txt'), 'utf8')).toContain(
+      'browser tests exited 0; screenshots exported: 0',
+    );
+
+    const shots = run(['V3-05', '--worktree', workspace('browser-shots', lock), '--browser'], {
+      STUB_DOCKER_SCREENSHOT: '1',
+    });
+    expect(shots.status, shots.stderr).toBe(0);
+    const shotsDir = join(runs, 'V3-05', 'browser', '1');
+    expect(readFileSync(join(shotsDir, 'log.txt'), 'utf8')).toContain(
+      'browser tests exited 0; screenshots exported: 1',
+    );
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[F1-01j] --red with integration and browser rule tests: two containers, the browser group stays offline',
+  () => {
+    const files = {
+      'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
+      'test/spec/identity/devices.browser.test.ts': "it('[BR-ID-05] z', () => {});\n",
+    };
+    const repo = redFixture('red-mixed', files, lockWithPlaywright('1.63.0'));
+    const res = run(['B1-02b', '--worktree', repo, '--red', '--base', 'main']);
+    // The stub writes no report, so the run stops after the red containers (exit 2).
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('wrote no report for');
+    const net =
+      res.calls.find((c) => c.args[0] === 'network' && c.args[1] === 'create')?.args.at(-1) ?? '';
+    // Other tests of this file ran B1-02b before: the run number is not 1.
+    expect(net).toMatch(/^couli-stubtest-net-b1-02b-\d+-\d+$/);
+    const reds = res.calls.filter((c) => c.args.includes('couli-verify-entrypoint'));
+    expect(reds).toHaveLength(2);
+    function groupsOf(call: Call | undefined): string[] {
+      const plan = JSON.parse(call?.env['RED_PLAN'] ?? '{"groups":[]}') as {
+        groups: { name: string }[];
+      };
+      return plan.groups.map((g) => g.name);
+    }
+    const db = reds.find((c) => groupsOf(c).includes('spec-int'));
+    const offline = reds.find((c) => groupsOf(c).includes('spec-browser'));
+    // The integration group alone on the internal network, with both service URLs.
+    expect(groupsOf(db)).toEqual(['spec-int']);
+    expect(valueOf(db?.args ?? [], '--network')).toBe(net);
+    expect(db?.env['TEST_REDIS_URL']).toBe(REDIS_URL);
+    expect(pgUrls(db)).toHaveLength(1);
+    // The browser group alone with no network and no database URL of any kind.
+    expect(groupsOf(offline)).toEqual(['spec-browser']);
+    expect(valueOf(offline?.args ?? [], '--network')).toBe('none');
+    expect(noRedisUrl(offline)).toBe(true);
+    expect(pgUrls(offline)).toEqual([]);
+    expect(Object.keys(offline?.env ?? {}).sort()).toEqual([
+      'PROP_SEED',
+      'RED_PLAN',
+      'VERIFY_TIMEOUT_SECS',
+    ]);
+    // Two containers, two names; both are removed at the end.
+    const names = reds.map((c) => valueOf(c.args, '--name') ?? '');
+    expect(new Set(names).size).toBe(2);
+    expect(res.calls.find((c) => c.args[0] === 'rm')?.args).toEqual(expect.arrayContaining(names));
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[F1-01j] --browser on a lockfile without playwright stops (exit 2, no result) before Docker',
+  () => {
+    const res = run(['V3-03', '--worktree', workspace('browser-old'), '--browser']);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('--browser needs playwright in pnpm-lock.yaml');
+    expect(res.calls).toEqual([]);
+    expect(existsSync(join(runs, 'V3-03', 'browser', '1', 'result.json'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[F1-01j] --red with a browser rule test: the spec-browser group runs without network; without playwright the run stops',
+  () => {
+    const files = {
+      'test/spec/identity/devices.browser.test.ts': "it('[BR-ID-05] z', () => {});\n",
+    };
+    const res = run([
+      'B1-02b',
+      '--worktree',
+      redFixture('red-browser', files, lockWithPlaywright('1.63.0')),
+      '--red',
+      '--base',
+      'main',
+    ]);
+    // The stub writes no report, so the run stops after the red container (exit 2).
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('wrote no report for spec-browser');
+    expect(res.calls.some((c) => c.args[0] === 'run' && c.args.includes('-d'))).toBe(false);
+    const red = entrypointRun(res.calls);
+    expect(red?.args.at(-1)).toBe('red');
+    expect(valueOf(red?.args ?? [], '--network')).toBe('none');
+    const plan = JSON.parse(red?.env['RED_PLAN'] ?? '{}') as { groups?: unknown };
+    expect(plan.groups).toEqual([
+      {
+        name: 'spec-browser',
+        dir: 'test',
+        config: 'vitest.browser.config.ts',
+        database: false,
+        browser: true,
+        files: ['spec/identity/devices.browser.test.ts'],
+      },
+    ]);
+
+    const old = run([
+      'B1-02b',
+      '--worktree',
+      redFixture('red-browser-old', files),
+      '--red',
+      '--base',
+      'main',
+    ]);
+    expect(old.status).toBe(2);
+    expect(old.stderr).toContain(
+      'the red run has browser rule tests, but pnpm-lock.yaml has no playwright',
+    );
+    expect(entrypointRun(old.calls)).toBeUndefined();
   },
   CLI_TIMEOUT,
 );

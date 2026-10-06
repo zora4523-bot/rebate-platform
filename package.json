@@ -38,7 +38,7 @@
     "ops:handoff": "node tools/ops/handoff.ts",
     "ops:usage": "node tools/ops/usage.ts",
     "verify:fast": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run depcruise && pnpm run test && pnpm --filter @couli/api run smoke:entries && pnpm run contracts:check && pnpm run guard:static",
-    "verify": "pnpm run verify:fast && pnpm run test:int && pnpm run db:check"
+    "verify": "pnpm run verify:fast && pnpm run test:int && pnpm --filter @couli/spec-tests run test:browser && pnpm run db:check"
   },
   "devDependencies": {
     "@types/node": "24.13.6",

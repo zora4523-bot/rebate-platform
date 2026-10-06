@@ -1,0 +1,466 @@
+{
+  "//": "Synthetic, kept for shapes no real run has produced yet (strict mode, matcher failures, browser launch failure, hung expect.poll …); the shapes real runs did produce are in browser-red-1.json / browser-red-2.json (F1-01j red/1, red/2, 2026-10-06), which confirmed the locator-error shape below. Hand-built in the shape tools/ops/verify-image/red-reporter.mjs writes, for browser rule tests (F1-01j). Not a recorded run: the error shapes follow node_modules sources — vitest 5.0.1 dist/chunks/index.*.js createExpectPoll/throwWithCause (the last error rethrown with the added cause 'Matcher did not succeed in time.', or \"expect.poll() function/assertion didn't resolve in time.\" when the poll timer wins), JestExtendError (expect.extend matchers: name Error, __vitest_error_context__.assertionName -> `matcher`); @vitest/browser 5.0.1 dist/expect-element.js (expect.element = expect.poll over locator.findElement), dist/context.js getElementError (VitestBrowserElementError, 'Cannot find element with locator: ...'), dist/locators-*.js (strict mode violation); @vitest/utils 5.0.1 serializeValue (name, message and cause survive the trip from the browser); playwright-core 1.63.0 lib/coreBundle.js registry ('Executable doesn't exist at ...', revision 1243 of browsers.json). `site` (first frame of Vitest's parsed stack: vitest 5.0.1 syncUpdateStacks, browser parseErrorStacktrace) and `poll_in_source` are what red-reporter.mjs records to tell an expect.element wait from a generic expect.poll; their real values (path form of `site.file` in browser mode) are the first thing to check against a real run.",
+  "reporter": "couli-red-reporter",
+  "testResults": [
+    {
+      "name": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+      "browser": true,
+      "poll_in_source": false,
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[AC-B#1] element never appears: locator error",
+          "title": "[AC-B#1] element never appears: locator error",
+          "status": "failed",
+          "failureMessages": [
+            "VitestBrowserElementError: Cannot find element with locator: getByText('稍后出现', { exact: true })\n\n<body>\n  <div />\n</body>\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "VitestBrowserElementError",
+                  "message": "Cannot find element with locator: getByText('稍后出现', { exact: true })\n\n<body>\n  <div />\n</body>"
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 10,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#2] element never appears: lookup still waiting",
+          "title": "[AC-B#2] element never appears: lookup still waiting",
+          "status": "failed",
+          "failureMessages": [
+            "Error: expect.poll() function didn't resolve in time.\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "expect.poll() function didn't resolve in time."
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 11,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#3] expect.element matcher fails",
+          "title": "[AC-B#3] expect.element matcher fails",
+          "status": "failed",
+          "failureMessages": [
+            "Error: expect(element).toBeVisible()\n\nReceived element is not visible:\n  <div style=\"display: none;\" />\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "expect(element).toBeVisible()\n\nReceived element is not visible:\n  <div style=\"display: none;\" />",
+                  "matcher": "toBeVisible"
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 12,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#4] expect.poll assertion fails",
+          "title": "[AC-B#4] expect.poll assertion fails",
+          "status": "failed",
+          "failureMessages": [
+            "AssertionError: expected 1 to be 2 // Object.is equality\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "AssertionError",
+                  "message": "expected 1 to be 2 // Object.is equality"
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 13,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#5] plain assertion",
+          "title": "[AC-B#5] plain assertion",
+          "status": "failed",
+          "failureMessages": [
+            "AssertionError: expected 0 to be greater than 0\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "AssertionError",
+                  "message": "expected 0 to be greater than 0"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 14,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#6] matcher without a wait",
+          "title": "[AC-B#6] matcher without a wait",
+          "status": "failed",
+          "failureMessages": [
+            "Error: expect(element).toHaveTextContent()\n\nExpected element to have text content:\n  凑狸返利\nReceived:\n  \n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "expect(element).toHaveTextContent()\n\nExpected element to have text content:\n  凑狸返利\nReceived:\n  ",
+                  "matcher": "toHaveTextContent"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 15,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#7] TypeError inside the wait",
+          "title": "[AC-B#7] TypeError inside the wait",
+          "status": "failed",
+          "failureMessages": [
+            "TypeError: Cannot read properties of null (reading 'textContent')\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TypeError",
+                  "message": "Cannot read properties of null (reading 'textContent')"
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 16,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#8] several elements (strict mode)",
+          "title": "[AC-B#8] several elements (strict mode)",
+          "status": "failed",
+          "failureMessages": [
+            "Error: strict mode violation: getByText('凑狸') resolved to 2 elements:\n    1) <div>凑狸</div> aka getByText('凑狸').first()\n    2) <span>凑狸</span> aka getByText('凑狸').nth(1)\n\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "strict mode violation: getByText('凑狸') resolved to 2 elements:\n    1) <div>凑狸</div> aka getByText('凑狸').first()\n    2) <span>凑狸</span> aka getByText('凑狸').nth(1)\n"
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 17,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#9] element lookup outside a wait",
+          "title": "[AC-B#9] element lookup outside a wait",
+          "status": "failed",
+          "failureMessages": [
+            "VitestBrowserElementError: Cannot find element with locator: getByRole('button')\n\n<body>\n  <div />\n</body>\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "VitestBrowserElementError",
+                  "message": "Cannot find element with locator: getByRole('button')\n\n<body>\n  <div />\n</body>"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 18,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#10] the polled assertion hangs",
+          "title": "[AC-B#10] the polled assertion hangs",
+          "status": "failed",
+          "failureMessages": [
+            "Error: expect.poll() assertion didn't resolve in time.\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "expect.poll() assertion didn't resolve in time."
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 19,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#11] test timed out",
+          "title": "[AC-B#11] test timed out",
+          "status": "failed",
+          "failureMessages": [
+            "Error: Test timed out in 15000ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "Test timed out in 15000ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 20,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#12] page error inside the wait",
+          "title": "[AC-B#12] page error inside the wait",
+          "status": "failed",
+          "failureMessages": [
+            "Error: boom from the page\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:3"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "boom from the page"
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/b.browser.test.ts",
+                "line": 21,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#13] skipped",
+          "title": "[AC-B#13] skipped",
+          "status": "skipped",
+          "failureMessages": [],
+          "failures": []
+        },
+        {
+          "fullName": "[AC-B#14] lookup still waiting, wait started in a helper",
+          "title": "[AC-B#14] lookup still waiting, wait started in a helper",
+          "status": "failed",
+          "failureMessages": [
+            "Error: expect.poll() function didn't resolve in time.\n    at /work/repo/test/spec/zzbrowser/kit.ts:7:5"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "expect.poll() function didn't resolve in time."
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/kit.ts",
+                "line": 7,
+                "column": 5
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#15] lookup still waiting, no stack frame",
+          "title": "[AC-B#15] lookup still waiting, no stack frame",
+          "status": "failed",
+          "failureMessages": [
+            "Error: expect.poll() function didn't resolve in time.\n    at /work/repo/test/spec/zzbrowser/b.browser.test.ts:10:5"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "expect.poll() function didn't resolve in time."
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": null
+            }
+          ]
+        },
+        {
+          "fullName": "[AC-B#16] lookup still waiting, site as the browser URL",
+          "title": "[AC-B#16] lookup still waiting, site as the browser URL",
+          "status": "failed",
+          "failureMessages": [
+            "Error: expect.poll() function didn't resolve in time.\n    at /spec/zzbrowser/b.browser.test.ts?import&t=1:30:5"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "expect.poll() function didn't resolve in time."
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/spec/zzbrowser/b.browser.test.ts?import&t=1",
+                "line": 30,
+                "column": 5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "/work/repo/test/spec/zzbrowser/launch.browser.test.ts",
+      "browser": true,
+      "poll_in_source": false,
+      "status": "failed",
+      "message": "Error: browserType.launch: Executable doesn't exist at /ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux-arm64/chrome-headless-shell\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝",
+      "failures": [
+        {
+          "causes": [
+            {
+              "name": "Error",
+              "message": "browserType.launch: Executable doesn't exist at /ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux-arm64/chrome-headless-shell\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+            }
+          ]
+        }
+      ],
+      "assertionResults": []
+    },
+    {
+      "name": "/work/repo/test/spec/zzbrowser/poll.browser.test.ts",
+      "browser": true,
+      "poll_in_source": true,
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[AC-P#1] hung expect.poll",
+          "title": "[AC-P#1] hung expect.poll",
+          "status": "failed",
+          "failureMessages": [
+            "Error: expect.poll() function didn't resolve in time.\n    at /work/repo/test/spec/zzbrowser/poll.browser.test.ts:12:5"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "expect.poll() function didn't resolve in time."
+                },
+                {
+                  "name": "Error",
+                  "message": "Matcher did not succeed in time."
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzbrowser/poll.browser.test.ts",
+                "line": 12,
+                "column": 5
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "unhandledErrors": []
+}
