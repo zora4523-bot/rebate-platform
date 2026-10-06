@@ -4,7 +4,7 @@ title: 最低支持版本守卫（判定顺序 ④a，10405）与判定链接线
 type: impl
 # 草稿 2026-10-05，B1-03 拆分的一段（见 B1-03b 注释）。依据：BR-ID-01 条目行与细则「最低支持版本的接口层拦截」（判定、位置、接口表、受限会话表、10405 与未决幂等键），
 # 04 §5 兼容与最低支持版本两行，由编排者摘入任务书第 2 节（细则很长，节选「判定」「位置」「受限会话」与两张表）。
-# 判定链接线（编排者 2026-10-05 裁定，令牌守卫 B1-02h 的任务书要带这段；B1-02e 拆分后改指）：①～③（签名、令牌、App 来源与作用域）放全局 guard；④ 幂等命中回放在 idempotency.execute 里；
+# 判定链接线（编排者 2026-10-05 裁定，令牌守卫 B1-02h 的任务书要带这段；B1-02e 拆分后改指）：①～③（签名、令牌、App 来源与作用域）挂在 B1-03b 建的「Fastify 解析请求体之前」注册点（platform/http 的 installRequestChecks，签名排第一；2026-10-06 更正，原写「放全局 guard」）；④ 幂等命中回放在 idempotency.execute 里；
 # ④a 及之后的前置检查（版本守卫、10006 等）对幂等接口以「未命中之后、执行之前」的钩子注册进 platform/idempotency（platform 提供注册点，risk 注册检查），
 # 对非幂等接口由 ③ 之后的 guard 直接执行。本任务在 platform/idempotency 加钩子注册点并导出，测「已完成的同键请求照常回放、不跑钩子」「10405 不写幂等记录、不核销 step_up_token」。
 # 策略只读契约扩展 x-min-version-gate、x-session-scopes（CT-17a 已标；conformance.ts 的 GATE_EXCEPTIONS 是 08 接口表的副本），conditional 的请求体条件照 08 接口表实现
