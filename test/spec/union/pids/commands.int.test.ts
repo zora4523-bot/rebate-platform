@@ -155,7 +155,11 @@ for (const [name, prepare] of Object.entries(commands)) {
         hjy_ignore_evidence_path: EVIDENCE,
       });
     }
-    expect(JSON.stringify(entries)).not.toContain(`"code":"${h.auth.code}"`);
+    expect(
+      JSON.stringify(entries, (_key, value: unknown) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      ),
+    ).not.toContain(`"code":"${h.auth.code}"`);
     expect(h.verify).toHaveBeenCalledExactlyOnceWith({
       appId: h.appId,
       adminId: upper,
