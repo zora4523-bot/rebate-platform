@@ -1,0 +1,68 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (pnpm-lock.yaml, root package.json / tsconfig, eslint and depcruise config, test/ config are class-2 protected or unlisted; owner approval label). Deps task: exact-version frontend dependencies (ADR-0001 §2 lines, 7-day minimum release age) and four new workspace packages (apps/h5, apps/admin, packages/bridge-sdk, packages/ui-tokens) with config and placeholder entries only; eslint adds .tsx coverage, react-hooks rules, a no-Chinese-literal rule for app sources and a bridge-sdk/conformance import restriction; no existing rule relaxed. Implementation by an Opus 5.5 subagent in two rounds. Ledger tester: none. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (money prompt) on round 1: pass with three S2 (vite couli-src condition, fixed in round 2; Tailwind source and .gen.css formatting, carried into the F1-01c / CT-11a briefs) and one out-of-scope note (Refine telemetry off, F1-06e brief)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "rounds 1 and 2 pass (round 2 covers the round-2 increment); one S2 both rounds: the per-entry index.html files are created by F1-01c, accepted"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent on the rebase onto main 3a22210+: pnpm-lock.yaml regenerated from the reviewed lock (importers/packages/snapshots structurally identical to the reviewed change, main's ioredis entries kept) and test/tsconfig.json rewriteRelativeImportExtensions:false (noEmit, so the rewrite never applied; main's CT-08a/b rule tests import contracts-ts sources by relative path, TS2878 with the project reference). Pass, S3 only"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "deps task, ledger tester: none"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "F1-01a",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "acaacba032f5643c821ca66d6cd934144ec6f493",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "73843dcde6bba57aa5065272cdbb9fae9adc27ba",
+      "tree": "392dbf0e91ffa034047b05604b941d571f64559c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T02:57:06Z",
+      "finished_at": "2026-10-06T02:59:32Z"
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "d35004e81c2b3de7b68c4eefae14a193c7823759",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}

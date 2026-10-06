@@ -102,7 +102,7 @@ module.exports = {
       // `couli-src` makes workspace packages resolve to their TypeScript sources (conventions C4).
       conditionNames: ['couli-src', 'import', 'node', 'default', 'types'],
       mainFields: ['module', 'main', 'types', 'typings'],
-      extensions: ['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.json', '.d.ts'],
+      extensions: ['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs', '.json', '.d.ts'],
     },
   },
 };

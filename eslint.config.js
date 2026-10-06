@@ -1,9 +1,10 @@
 // ESLint flat config (ESLint 10 + typescript-eslint 8).
 // Protected path, class 2 (verify config): changing it needs owner approval (规划/11 §4.4).
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
-const TS_FILES = ['**/*.ts', '**/*.mts', '**/*.cts'];
-const TEST_FILES = ['**/*.test.ts', 'test/**/*.ts'];
+const TS_FILES = ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'];
+const TEST_FILES = ['**/*.test.ts', '**/*.test.tsx', 'test/**/*.ts'];
 const FUNDS_PURE_FILES = ['packages/money/**/*.ts', 'packages/domain/**/*.ts'];
 
 // 规划/11 §4.1: no `.skip` / `.only` (any chained form, e.g. `describe.only`, `it.skip.each`,
@@ -64,6 +65,32 @@ const NO_WALL_CLOCK_IN_APP = [
   },
 ];
 
+// 规划/03 §10.3: front-end source never hard-codes Chinese copy; it reads dictionary keys
+// (src/texts/** holds the dictionaries). CJK symbols and punctuation, CJK ideographs (incl.
+// extension A and compatibility forms) and full-width forms.
+const CJK = '[\\u3000-\\u303f\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff\\uff00-\\uffef]';
+const CJK_MESSAGE =
+  'No hard-coded Chinese in front-end source: use a dictionary key (规划/03 §10.3).';
+const NO_HARD_CODED_CHINESE = [
+  { selector: `Literal[value=/${CJK}/]`, message: CJK_MESSAGE },
+  { selector: `TemplateElement[value.cooked=/${CJK}/]`, message: CJK_MESSAGE },
+  { selector: `JSXText[value=/${CJK}/]`, message: CJK_MESSAGE },
+];
+const FRONTEND_SOURCES = ['apps/h5/src/**/*.{ts,tsx}', 'apps/admin/src/**/*.{ts,tsx}'];
+const FRONTEND_TEXTS = ['apps/h5/src/texts/**', 'apps/admin/src/texts/**'];
+
+// TECH-28: the untyped bridge `invoke` is for the conformance page only.
+const CONFORMANCE_SUBPATH = '@couli/bridge-sdk/conformance';
+const CONFORMANCE_MESSAGE =
+  'The untyped bridge invoke is for entries/conformance only: use @couli/bridge-sdk (TECH-28).';
+const H5_CONFORMANCE_ENTRY = 'apps/h5/src/entries/conformance/**';
+const NO_DYNAMIC_CONFORMANCE_IMPORT = [
+  {
+    selector: `ImportExpression[source.value='${CONFORMANCE_SUBPATH}']`,
+    message: CONFORMANCE_MESSAGE,
+  },
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -85,7 +112,12 @@ export default tseslint.config(
   },
   {
     // Type-aware rules only where promises matter at runtime: app and library sources.
-    files: ['apps/*/src/**/*.ts', 'packages/*/src/**/*.ts'],
+    files: [
+      'apps/*/src/**/*.ts',
+      'apps/*/src/**/*.tsx',
+      'packages/*/src/**/*.ts',
+      'packages/*/src/**/*.tsx',
+    ],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -98,8 +130,31 @@ export default tseslint.config(
     },
   },
   {
+    // React front ends (规划/03 §8, §9): rules of hooks plus the React Compiler checks.
+    files: ['apps/h5/**/*.{ts,tsx}', 'apps/admin/**/*.{ts,tsx}'],
+    extends: [reactHooks.configs.flat.recommended],
+  },
+  {
+    files: ['apps/h5/src/**/*.{ts,tsx}'],
+    ignores: [H5_CONFORMANCE_ENTRY],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [{ name: CONFORMANCE_SUBPATH, message: CONFORMANCE_MESSAGE }],
+          patterns: [
+            {
+              group: [`${CONFORMANCE_SUBPATH}/*`, '**/packages/bridge-sdk/**'],
+              message: CONFORMANCE_MESSAGE,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Application code logs through pino only; CLIs under tools/ and scripts/ may print.
-    files: ['**/*.ts', '**/*.mts', '**/*.cts', '**/*.js', '**/*.mjs', '**/*.cjs'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts', '**/*.js', '**/*.mjs', '**/*.cjs'],
     ignores: ['tools/**', '**/scripts/**'],
     rules: { 'no-console': 'error' },
   },
@@ -123,5 +178,21 @@ export default tseslint.config(
     // both lists in a single entry.
     files: ['packages/money/**/*.test.ts', 'packages/domain/**/*.test.ts'],
     rules: { 'no-restricted-syntax': ['error', ...NO_SKIP_OR_ONLY, ...NO_WALL_CLOCK_OR_FLOAT] },
+  },
+  {
+    // Front-end sources (tests and dictionaries excluded). No earlier `no-restricted-syntax`
+    // entry matches these files, so nothing is replaced.
+    files: FRONTEND_SOURCES,
+    ignores: [...TEST_FILES, ...FRONTEND_TEXTS],
+    rules: { 'no-restricted-syntax': ['error', ...NO_HARD_CODED_CHINESE] },
+  },
+  {
+    // apps/h5 outside the conformance entry: the entry above plus the dynamic-import ban, in one
+    // entry because it replaces the previous one for these files.
+    files: ['apps/h5/src/**/*.{ts,tsx}'],
+    ignores: [...TEST_FILES, ...FRONTEND_TEXTS, H5_CONFORMANCE_ENTRY],
+    rules: {
+      'no-restricted-syntax': ['error', ...NO_HARD_CODED_CHINESE, ...NO_DYNAMIC_CONFORMANCE_IMPORT],
+    },
   },
 );

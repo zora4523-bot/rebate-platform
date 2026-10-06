@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "rootDir": "src",
+    "outDir": "dist/tsc",
+    "tsBuildInfoFile": "dist/tsc/tsconfig.tsbuildinfo"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/bridge-sdk" },
+    { "path": "../../packages/ui-tokens" },
+    { "path": "../../packages/contracts-ts" },
+    { "path": "../../packages/money" }
+  ]
+}

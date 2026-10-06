@@ -1,12 +1,16 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
     "noEmit": true,
     "composite": false,
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": false
   },
   "include": ["**/*.ts"],
   "exclude": ["node_modules"],
@@ -14,6 +18,9 @@
     { "path": "../packages/testing" },
     { "path": "../packages/money" },
     { "path": "../packages/domain" },
-    { "path": "../packages/db" }
+    { "path": "../packages/db" },
+    { "path": "../packages/contracts-ts" },
+    { "path": "../packages/bridge-sdk" },
+    { "path": "../packages/ui-tokens" }
   ]
 }
