@@ -8,17 +8,7 @@
 const COMMON = `
 local ttl = tonumber(ARGV[1])
 local p = cjson.decode(ARGV[2])
-local function loadSession()
-  -- Preserve tickets from the previous hash layout; replace it only when a write is due.
-  if redis.call('TYPE', KEYS[1]).ok == 'hash' then
-    local fields = redis.call('HGETALL', KEYS[1])
-    local snapshot = {}
-    for i = 1, #fields, 2 do snapshot[fields[i]] = fields[i + 1] end
-    return snapshot
-  end
-  return cjson.decode(redis.call('GET', KEYS[1]) or '{}')
-end
-local session = loadSession()
+local session = cjson.decode(redis.call('GET', KEYS[1]) or '{}')
 local function record(run)
   local raw = session['run:' .. run]
   if not raw then error('Missing admission record') end
@@ -115,7 +105,14 @@ return cjson.encode({kind = 'accepted', ticket = ticket, quotaLeft = left})
 `;
 
 // KEYS: session, lock, acceptance-day counters, settlement-day counters (may repeat).
+// p.clientMsgId is set only by admit's compensation after an ambiguous failure: settle only when
+// this very request was recorded (msg:<clientMsgId> -> ticket.runId), else change nothing.
 export const SETTLE_SCRIPT = `${COMMON}
+if p.clientMsgId then
+  if session['msg:' .. p.clientMsgId] ~= p.ticket.runId or not session['run:' .. p.ticket.runId] then
+    return cjson.encode({absent = true})
+  end
+end
 local old = record(p.ticket.runId)
 local t = old.ticket
 local supplied = p.ticket

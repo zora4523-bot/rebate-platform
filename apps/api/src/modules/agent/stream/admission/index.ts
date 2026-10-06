@@ -7,8 +7,9 @@
 // Spec: BR-AI-23 table row and 细则 as of planning e9fe98a (2026-10-06: ⑥ with a running original
 // ends with 30506, ⑥⑦ and ⑧–⑩ in one Lua, the run lock holds the run_id, 「受理记录与收尾」).
 //
-// admit(req, limits) — exactly one Redis eval per call (no other get / set / eval) judges, in this
-// order, and returns the first hit:
+// admit(req, limits) — exactly one Redis eval per call (no other get / set / eval; the only extra
+// eval is the compensation after an ambiguous failure, below) judges, in this order, and returns
+// the first hit:
 //   ⑥ (sessionId, clientMsgId) already accepted → duplicate{ticket of that acceptance, state};
 //     nothing else is judged (also while a lock is held or the day quota is used up), nothing is
 //     counted or written. state: 'running' when the session lock holds that ticket's runId and is
@@ -52,7 +53,11 @@
 // runMaxMs + lockGraceMs: a key holding the lock or the last ticket outlives the lock. Keys are built from the
 // caller's opaque values (userId, deviceHash, ipKey, sessionId, clientMsgId) only.
 // Redis unavailable (RedisUnavailableError or any failed call): admit rejects with
-// AdmissionUnavailableError and counts nothing; the caller answers 50401.
+// AdmissionUnavailableError and counts nothing; the caller answers 50401. When it is unknown
+// whether the admit eval ran (command_timeout, unexpected_reply, a reply that is not the script's
+// JSON), admit first makes one compensating settle eval for req.runId as server_error with 0 cards
+// (BR-AI-15 refund), applied only if this very request was recorded (msg:<clientMsgId> → runId);
+// otherwise it changes nothing. The settled mark keeps it once-only against a later settle.
 //
 // shouldRefund: endings server_error, disabled, timeout, input_review_timeout with
 // cardsDelivered = 0 → true; anything else → false (BR-AI-15 refund list).
@@ -64,6 +69,7 @@
 // `import type` for type-only imports, relative imports with `.ts`, no NestJS import, no
 // process.env, time only from the injected Clock.
 import type { Clock, RedisNamespace } from '../../../platform/index.ts';
+import { RedisUnavailableError } from '../../../platform/redis/index.ts';
 import { ADMIT_SCRIPT, SETTLE_SCRIPT } from './scripts.ts';
 
 export type QuotaSubject =
@@ -252,20 +258,50 @@ export function createRedisAdmission(deps: AdmissionDeps): Admission {
   // Session ownership/expiry and PG takeover are the caller's responsibility (B3-03d).
   const ttlSeconds = Math.max(48 * 60 * 60, Math.ceil(lockMs / 1000) + 1);
 
+  // The eval reached Redis but its reply is unusable: the script may or may not have run.
+  class AmbiguousReply extends Error {}
+
   async function evaluate<T>(script: string, keys: string[], payload: unknown): Promise<T> {
+    const result = await deps.redis.eval(script, {
+      keys,
+      args: [JSON.stringify(payload)],
+      ttlSeconds,
+    });
+    if (typeof result !== 'string') throw new AmbiguousReply();
     try {
-      const result = await deps.redis.eval(script, {
-        keys,
-        args: [JSON.stringify(payload)],
-        ttlSeconds,
-      });
-      if (typeof result !== 'string') throw new Error('Unexpected admission reply');
       return JSON.parse(result) as T;
     } catch {
-      // No replay after an ambiguous Redis failure: retrying client_msg_id recovers its ticket.
-      // Never expose Redis errors (which may contain identifiers) to the caller.
-      throw new AdmissionUnavailableError('Admission storage unavailable');
+      throw new AmbiguousReply();
     }
+  }
+
+  // Unknown whether the script ran. connect_* and closed never sent it; command_failed is an error
+  // reply, and both scripts raise errors only before their first write.
+  function ambiguous(error: unknown): boolean {
+    return (
+      error instanceof AmbiguousReply ||
+      (error instanceof RedisUnavailableError &&
+        (error.reason === 'command_timeout' || error.reason === 'unexpected_reply'))
+    );
+  }
+
+  function settleEval<T>(
+    ticket: AdmissionTicket,
+    refund: boolean,
+    limits: AdmissionLimits,
+    clientMsgId?: string,
+  ): Promise<T> {
+    const today = dayKeyOf(deps.clock.now());
+    return evaluate<T>(
+      SETTLE_SCRIPT,
+      [
+        key('session', ticket.sessionId),
+        key('lock', ticket.sessionId),
+        ...dailyKeys(ticket.subject, ticket.dayKey),
+        ...dailyKeys(ticket.subject, today),
+      ],
+      { ticket, refund, dailyLimits: dailyLimits(ticket.subject, limits), clientMsgId },
+    );
   }
 
   return {
@@ -281,38 +317,49 @@ export function createRedisAdmission(deps: AdmissionDeps): Admission {
         acceptedAtMs: now.getTime(),
         lockExpiresAtMs: now.getTime() + lockMs,
       };
-      return evaluate<AdmissionResult>(
-        ADMIT_SCRIPT,
-        [
-          key('session', req.sessionId),
-          key('lock', req.sessionId),
-          key('minute', subjectKeys(req.subject)[0]!),
-          ...dailyKeys(req.subject, ticket.dayKey),
-        ],
-        {
-          ticket,
-          clientMsgId: req.clientMsgId,
-          windowMember: key(req.sessionId, req.clientMsgId),
-          limits,
-          dailyLimits: dailyLimits(req.subject, limits),
-          resetAt: nextResetAt(now),
-          next: nextStepOf(req.subject),
-        },
-      );
+      try {
+        return await evaluate<AdmissionResult>(
+          ADMIT_SCRIPT,
+          [
+            key('session', req.sessionId),
+            key('lock', req.sessionId),
+            key('minute', subjectKeys(req.subject)[0]!),
+            ...dailyKeys(req.subject, ticket.dayKey),
+          ],
+          {
+            ticket,
+            clientMsgId: req.clientMsgId,
+            windowMember: key(req.sessionId, req.clientMsgId),
+            limits,
+            dailyLimits: dailyLimits(req.subject, limits),
+            resetAt: nextResetAt(now),
+            next: nextStepOf(req.subject),
+          },
+        );
+      } catch (error) {
+        if (ambiguous(error)) {
+          // The caller gets no ticket and never starts this run: if the admit did run, settle it
+          // now as server_error with 0 cards so the day count is given back (BR-AI-15) and the
+          // lock is released. One attempt; when it fails too, the record stays unsettled and is
+          // finished by a retry of the same client_msg_id or the next message of the session
+          // (⑥ / ⑦ unsettled, BR-AI-23 「谁来收尾」), or else by the sweeper B3-03e (runs with
+          // no terminal state whose lock has expired).
+          const failed: RunOutcome = { ending: 'server_error', cardsDelivered: 0 };
+          await settleEval(ticket, shouldRefund(failed), limits, req.clientMsgId).catch(
+            () => undefined,
+          );
+        }
+        // Never expose Redis errors (which may contain identifiers) to the caller.
+        throw new AdmissionUnavailableError('Admission storage unavailable');
+      }
     },
     async settle(ticket, outcome, limits) {
       validateLimits(limits);
-      const today = dayKeyOf(deps.clock.now());
-      return evaluate<SettleResult>(
-        SETTLE_SCRIPT,
-        [
-          key('session', ticket.sessionId),
-          key('lock', ticket.sessionId),
-          ...dailyKeys(ticket.subject, ticket.dayKey),
-          ...dailyKeys(ticket.subject, today),
-        ],
-        { ticket, refund: shouldRefund(outcome), dailyLimits: dailyLimits(ticket.subject, limits) },
-      );
+      try {
+        return await settleEval<SettleResult>(ticket, shouldRefund(outcome), limits);
+      } catch {
+        throw new AdmissionUnavailableError('Admission storage unavailable');
+      }
     },
   };
 }
