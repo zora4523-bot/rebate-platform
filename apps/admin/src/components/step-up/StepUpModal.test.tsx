@@ -174,3 +174,96 @@ it('isolates every body child under it, restores original values, and keeps Esca
   expect(hiddenAlready.hasAttribute('aria-hidden')).toBe(false);
   document.removeEventListener('keydown', below);
 });
+
+function resendButton(): HTMLButtonElement {
+  return screen.getByRole<HTMLButtonElement>('button', {
+    name: (name) => name.startsWith(stepUpTexts.resend),
+  });
+}
+
+function smsProps(overrides: Partial<StepUpModalProps> = {}): StepUpModalProps {
+  return props({
+    tier: 'sms',
+    maskedPhone: '1',
+    onResend: async () => ({ ok: true }),
+    ...overrides,
+  });
+}
+
+it('sms: 42901 on resend without Retry-After waits 5 seconds, not 60', async () => {
+  const onResend = vi.fn(async (): Promise<StepUpResult> => ({ ok: false, code: 42901 }));
+  render(<StepUpModal {...smsProps({ onResend })} />);
+  await advance(60);
+  expect(resendButton().disabled).toBe(false);
+  await act(async () => {
+    fireEvent.click(resendButton());
+  });
+  expect(onResend).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('alert').textContent).toContain(stepUpTexts.errors.frequent);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(5));
+  await advance(4);
+  expect(resendButton().disabled).toBe(true);
+  await advance(1);
+  expect(resendButton().disabled).toBe(false);
+});
+
+it('sms: a 20003 for a code replaced by a resend meanwhile keeps the new countdown', async () => {
+  const pending = deferred();
+  render(<StepUpModal {...smsProps({ onSubmit: () => pending.promise })} />);
+  await advance(60);
+  fireEvent.change(input(), { target: { value: '123456' } });
+  await act(async () => {
+    fireEvent.click(submit());
+  });
+  await act(async () => {
+    fireEvent.click(resendButton());
+  });
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(60));
+  await act(async () => {
+    pending.resolve({ ok: false, code: 20003 });
+  });
+  expect(screen.getByRole('alert').textContent).toContain(stepUpTexts.errors.generic);
+  expect(screen.getByRole('alert').textContent).not.toContain(stepUpTexts.errors.expired);
+  expect(resendButton().disabled).toBe(true);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(60));
+});
+
+it('sms: a 20003 for the current code expires it and enables resend at once', async () => {
+  render(<StepUpModal {...smsProps({ onSubmit: async () => ({ ok: false, code: 20003 }) })} />);
+  fireEvent.change(input(), { target: { value: '123456' } });
+  await act(async () => {
+    fireEvent.click(submit());
+  });
+  expect(screen.getByRole('alert').textContent).toContain(stepUpTexts.errors.expired);
+  expect(resendButton().disabled).toBe(false);
+});
+
+it('recomputes the resend countdown from its deadline after the machine sleeps', async () => {
+  render(<StepUpModal {...smsProps()} />);
+  await advance(10);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(50));
+  // Wall clock jumps 30 s while no timer fires (sleep / throttled tab).
+  vi.setSystemTime(Date.now() + 30_000);
+  await advance(1);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(19));
+  vi.setSystemTime(Date.now() + 60_000);
+  await advance(1);
+  expect(resendButton().disabled).toBe(false);
+});
+
+it('recomputes the 42901 submit lock from its deadline after the machine sleeps', async () => {
+  const onSubmit = vi.fn(async (): Promise<StepUpResult> => ({
+    ok: false,
+    code: 42901,
+    retryAfterSeconds: 30,
+  }));
+  render(<StepUpModal {...props({ onSubmit })} />);
+  fireEvent.change(input(), { target: { value: '123456' } });
+  await act(async () => {
+    fireEvent.click(submit());
+  });
+  expect(submit().disabled).toBe(true);
+  vi.setSystemTime(Date.now() + 29_500);
+  await advance(1);
+  expect(submit().disabled).toBe(false);
+});

@@ -70,6 +70,17 @@ function restoreFocus(panel: HTMLElement, previous: HTMLElement | null): void {
   });
 }
 
+/** Whole seconds left until `deadline` (epoch ms) at `now`; 0 once it has passed. */
+function secondsLeft(deadline: number, now: number): number {
+  return deadline > now ? Math.ceil((deadline - now) / 1000) : 0;
+}
+
+/** Milliseconds until the displayed whole-second value of an active deadline next changes. */
+function untilNextSecond(deadline: number, now: number): number | undefined {
+  if (deadline <= now) return undefined;
+  return (deadline - now) % 1000 || 1000;
+}
+
 /** Whole seconds from a Retry-After value; missing or unusable values fall back to `fallback`. */
 function retryAfter(seconds: number | undefined, fallback: number): number {
   return seconds !== undefined && Number.isFinite(seconds) && seconds > 0
@@ -148,13 +159,35 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   // Bumped on every opening and closing; results of requests started under an older
   // generation are dropped (no onVerified, no state change).
   const generationRef = useRef(0);
+  // Bumped on every successful resend. A 20003 from a submission made under an older send round
+  // refers to a code that has already been replaced, so it must not expire the new one.
+  const sendRoundRef = useRef(0);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
   const [invalid, setInvalid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
-  const [countdown, setCountdown] = useState(tier === 'sms' ? RESEND_INTERVAL_SECONDS : 0);
-  const [submitLock, setSubmitLock] = useState(0);
+  // Countdowns are kept as deadlines (epoch ms) and recomputed from the clock on every tick, so
+  // a throttled or sleeping machine does not stretch them.
+  const [now, setNow] = useState(() => Date.now());
+  const [resendAt, setResendAt] = useState(() =>
+    tier === 'sms' ? now + RESEND_INTERVAL_SECONDS * 1000 : 0,
+  );
+  const [unlockAt, setUnlockAt] = useState(0);
+  const countdown = secondsLeft(resendAt, now);
+  const submitLock = secondsLeft(unlockAt, now);
+
+  function startCountdown(seconds: number): void {
+    const start = Date.now();
+    setNow(start);
+    setResendAt(seconds > 0 ? start + seconds * 1000 : 0);
+  }
+
+  function lockSubmit(seconds: number): void {
+    const start = Date.now();
+    setNow(start);
+    setUnlockAt(start + seconds * 1000);
+  }
 
   function dismiss(): void {
     generationRef.current += 1;
@@ -201,16 +234,13 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   }, [applicationRoot]);
 
   useEffect(() => {
-    if (countdown <= 0) return;
-    const timer = setTimeout(() => setCountdown((seconds) => Math.max(0, seconds - 1)), 1000);
+    const delays = [untilNextSecond(resendAt, now), untilNextSecond(unlockAt, now)].filter(
+      (delay): delay is number => delay !== undefined,
+    );
+    if (delays.length === 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.min(...delays));
     return () => clearTimeout(timer);
-  }, [countdown]);
-
-  useEffect(() => {
-    if (submitLock <= 0) return;
-    const timer = setTimeout(() => setSubmitLock((seconds) => Math.max(0, seconds - 1)), 1000);
-    return () => clearTimeout(timer);
-  }, [submitLock]);
+  }, [resendAt, unlockAt, now]);
 
   const complete = code.length === OTP_LENGTH;
   const canSubmit = complete && submitLock <= 0;
@@ -223,6 +253,7 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   function applyFailure(
     result: Extract<StepUpResult, { ok: false }>,
     source: 'submit' | 'resend',
+    sendRound: number,
   ): void {
     if (result.code === ERROR_INCORRECT) {
       setError(stepUpTexts.errors.incorrect);
@@ -232,18 +263,23 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
       return;
     }
     if (result.code === ERROR_EXPIRED && tier === 'sms') {
+      // A newer code was sent while this one was being checked: the expiry concerns the old
+      // code only, so keep the new countdown and show the generic failure instead.
+      if (sendRound !== sendRoundRef.current) {
+        setError(stepUpTexts.errors.generic);
+        return;
+      }
       setError(stepUpTexts.errors.expired);
-      setCountdown(0);
+      startCountdown(0);
       return;
     }
     if (result.code === ERROR_TOO_FREQUENT) {
+      // 08 §13.11: wait Retry-After seconds, 5 when it is missing (SMS resends included; the
+      // 60-second interval applies only after a successful send).
+      const seconds = retryAfter(result.retryAfterSeconds, RETRY_AFTER_DEFAULT_SECONDS);
       setError(stepUpTexts.errors.frequent);
-      if (source === 'submit') {
-        setSubmitLock(retryAfter(result.retryAfterSeconds, RETRY_AFTER_DEFAULT_SECONDS));
-      }
-      if (tier === 'sms') {
-        setCountdown(retryAfter(result.retryAfterSeconds, RESEND_INTERVAL_SECONDS));
-      }
+      if (source === 'submit') lockSubmit(seconds);
+      if (tier === 'sms') startCountdown(seconds);
       return;
     }
     setError(stepUpTexts.errors.generic);
@@ -252,6 +288,7 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   async function submit(): Promise<void> {
     if (!canSubmit || busyRef.current) return;
     const generation = generationRef.current;
+    const sendRound = sendRoundRef.current;
     busyRef.current = true;
     setSubmitting(true);
     setError(undefined);
@@ -266,7 +303,7 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
     busyRef.current = false;
     setSubmitting(false);
     if (!result.ok) {
-      applyFailure(result, 'submit');
+      applyFailure(result, 'submit', sendRound);
       return;
     }
     const token = result.stepUpToken;
@@ -287,8 +324,10 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
     }
     if (generation !== generationRef.current) return;
     setResending(false);
-    if (result.ok) setCountdown(RESEND_INTERVAL_SECONDS);
-    else applyFailure(result, 'resend');
+    if (result.ok) {
+      sendRoundRef.current += 1;
+      startCountdown(RESEND_INTERVAL_SECONDS);
+    } else applyFailure(result, 'resend', sendRoundRef.current);
   }
 
   return createPortal(
