@@ -365,9 +365,7 @@
     "seed": 20261001,
     "passed": true,
     "mode": "local",
-    "tests": 33,
-    "files": 7,
-    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 record of the B3-01a run on the same test/properties tree (f03b0e3, unchanged on main); B3-01c changes packages/evals and test/spec/evals-release only",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (fcc1221, the tree of the 1,000,000-run record in ops/evidence/B2-01b.json). Corrected 2026-10-06: the note first named the B3-01a run on f03b0e3, but test/properties had already changed in #146",
     "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
   },
   "handover": {
