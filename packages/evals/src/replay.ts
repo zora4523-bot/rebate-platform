@@ -275,67 +275,89 @@ interface CaseMisses {
   first: { turn: number; miss: RecordingMiss } | undefined;
 }
 
-/** State of one runReplay call: the case now running, if any. */
-interface RunnerState {
-  current: CaseMisses | undefined;
+/** Cases running now, shared by every run of this module (runReplay and runEval alike). A miss
+ * through a port whose own case has ended (an agent that caches the first ports it got, in this
+ * run or an earlier one, or one still running past its timeout) is recorded on every case
+ * running now, so a swallowed miss can never let a case pass; with no case running it is
+ * ignored. Sequential runs have at most one such case; overlapping runs only get stricter. */
+const runningCases = new Set<CaseMisses>();
+
+function remember(target: CaseMisses, miss: RecordingMiss): void {
+  if (target.open && target.first === undefined) target.first = { turn: target.turn, miss };
 }
 
-/** A miss is recorded on the port's own case while it runs. Once that case has ended, a miss
- * through its port (an agent that caches the first ports for every case, or one still running
- * past its timeout) is recorded on the case running now, so a swallowed miss can never let that
- * case pass; with no case running it is ignored. Only the first miss of a case is kept. */
-function wrapPorts(store: RecordingStore, misses: CaseMisses, runner: RunnerState): AgentPorts {
-  const lookup = (find: () => unknown): unknown => {
+/**
+ * Where the ports of one run come from. A port with a live function calls it and hands its
+ * result or error to the agent as it is (mode B model, integration model and tool); otherwise
+ * the port is served by `store` and every recording miss is tracked (mode A, mode B tool).
+ */
+export interface PortPlan {
+  store: RecordingStore | undefined;
+  model: ((req: ModelRequest) => Promise<unknown>) | undefined;
+  tool: ((call: ToolCall) => Promise<unknown>) | undefined;
+}
+
+/** Only the first miss of a case is kept. */
+function wrapPorts(plan: PortPlan, misses: CaseMisses): AgentPorts {
+  const lookup = (find: (store: RecordingStore) => unknown): unknown => {
+    const store = plan.store;
+    if (store === undefined) throw new Error('no recording store for this port');
     try {
-      return find();
+      return find(store);
     } catch (error) {
       if (error instanceof RecordingMiss) {
-        const target = misses.open ? misses : runner.current;
-        if (target !== undefined && target.open && target.first === undefined) {
-          target.first = { turn: target.turn, miss: error };
-        }
+        if (misses.open) remember(misses, error);
+        else for (const running of runningCases) remember(running, error);
       }
       throw error;
     }
   };
+  const { model, tool } = plan;
   return {
-    model: async (req) => lookup(() => store.model(req)),
-    tool: async (call) => lookup(() => store.tool(call)),
+    model: async (req) => (model === undefined ? lookup((store) => store.model(req)) : model(req)),
+    tool: async (call) => (tool === undefined ? lookup((store) => store.tool(call)) : tool(call)),
   };
+}
+
+/** One case as run: its result and, for a case that reached grading, the outputs of its turns. */
+export interface CaseRun {
+  case: EvalCase;
+  result: CaseResult;
+  outputs: TurnOutput[];
 }
 
 async function runCase(
   c: EvalCase,
   agent: AgentUnderTest,
-  store: RecordingStore,
+  plan: PortPlan,
   timeoutMs: number,
-  runner: RunnerState,
-): Promise<CaseResult> {
+): Promise<CaseRun> {
   const misses: CaseMisses = { open: true, turn: 0, first: undefined };
-  runner.current = misses;
+  const outputs: TurnOutput[] = [];
+  runningCases.add(misses);
   try {
-    return await runTurns(c, agent, store, timeoutMs, misses, runner);
+    const result = await runTurns(c, agent, plan, timeoutMs, misses, outputs);
+    return { case: c, result, outputs };
   } finally {
     misses.open = false;
-    if (runner.current === misses) runner.current = undefined;
+    runningCases.delete(misses);
   }
 }
 
 async function runTurns(
   c: EvalCase,
   agent: AgentUnderTest,
-  store: RecordingStore,
+  plan: PortPlan,
   timeoutMs: number,
   misses: CaseMisses,
-  runner: RunnerState,
+  outputs: TurnOutput[],
 ): Promise<CaseResult> {
-  const outputs: TurnOutput[] = [];
   for (const [index, step] of c.turns.entries()) {
     const turn = index + 1;
     misses.turn = turn;
     // Every miss is remembered (and still thrown), so a miss the agent swallows, or follows with
     // another error or a timeout, still makes the case a coverage gap.
-    const ports = wrapPorts(store, misses, runner);
+    const ports = wrapPorts(plan, misses);
     const input = {
       case_id: c.id,
       turn,
@@ -371,6 +393,41 @@ async function runTurns(
   }
 }
 
+/** `timeoutMs` when it is a finite number ≥ 0, else the default (30000). */
+export function effectiveTimeout(timeoutMs: number | undefined): number {
+  return timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs >= 0
+    ? timeoutMs
+    : DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * The runner shared by runReplay and runEval: the active cases in id order (UTF-16 code units),
+ * turn by turn, with ports from `plan`; one case failing never stops the others.
+ */
+export async function runCases(
+  cases: readonly EvalCase[],
+  agent: AgentUnderTest,
+  plan: PortPlan,
+  timeoutMs: number,
+): Promise<CaseRun[]> {
+  const active = cases
+    .filter((item) => item.retired === undefined)
+    .sort((a, b) => compareCodeUnits(a.id, b.id));
+  const runs: CaseRun[] = [];
+  for (const c of active) runs.push(await runCase(c, agent, plan, timeoutMs));
+  return runs;
+}
+
+/** The report of a run: meta as given except `unused_recordings`. */
+export function buildReport(meta: RunMeta, results: CaseResult[], unused: number): Report {
+  return {
+    schema_version: 1,
+    meta: { ...meta, unused_recordings: unused },
+    cases: results,
+    summary: summarize(results),
+  };
+}
+
 /**
  * Replays the active cases in id order (UTF-16 code units), turn by turn, against `agent` with
  * ports served by `store`; one case failing never stops the others. A recording miss in a turn
@@ -385,22 +442,11 @@ export async function runReplay(opts: {
   meta: RunMeta;
   timeoutMs?: number;
 }): Promise<Report> {
-  const timeoutMs =
-    opts.timeoutMs !== undefined && Number.isFinite(opts.timeoutMs) && opts.timeoutMs >= 0
-      ? opts.timeoutMs
-      : DEFAULT_TIMEOUT_MS;
-  const active = opts.cases
-    .filter((item) => item.retired === undefined)
-    .sort((a, b) => compareCodeUnits(a.id, b.id));
-  const runner: RunnerState = { current: undefined };
-  const results: CaseResult[] = [];
-  for (const c of active) {
-    results.push(await runCase(c, opts.agent, opts.store, timeoutMs, runner));
-  }
-  return {
-    schema_version: 1,
-    meta: { ...opts.meta, unused_recordings: opts.store.unused().length },
-    cases: results,
-    summary: summarize(results),
-  };
+  const plan: PortPlan = { store: opts.store, model: undefined, tool: undefined };
+  const runs = await runCases(opts.cases, opts.agent, plan, effectiveTimeout(opts.timeoutMs));
+  return buildReport(
+    opts.meta,
+    runs.map((run) => run.result),
+    opts.store.unused().length,
+  );
 }

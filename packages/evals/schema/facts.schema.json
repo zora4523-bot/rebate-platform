@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://couli.invalid/schemas/evals/facts.schema.json",
+  "title": "CaseFacts[]",
+  "description": "Grading facts of a full run, one entry per active case (packages/evals/src/release.ts computeFacts / runEval). validateFacts also checks that checked = verified + mismatched + unverified and that an ungraded entry (coverage_gap, error) has all counts 0 and platform null. Read by checkReleaseGate (BR-AI-21).",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["id", "graded", "card_values", "attribution", "platform"],
+    "properties": {
+      "id": { "type": "string", "minLength": 1 },
+      "graded": { "type": "boolean" },
+      "card_values": { "$ref": "#/$defs/checkCount" },
+      "attribution": { "$ref": "#/$defs/checkCount" },
+      "platform": { "enum": ["ok", "mismatch", null] }
+    },
+    "if": { "properties": { "graded": { "const": false } } },
+    "then": {
+      "properties": {
+        "card_values": { "$ref": "#/$defs/zeroCount" },
+        "attribution": { "$ref": "#/$defs/zeroCount" },
+        "platform": { "const": null }
+      }
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "checkCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checked", "verified", "mismatched", "unverified"],
+      "properties": {
+        "checked": { "$ref": "#/$defs/count" },
+        "verified": { "$ref": "#/$defs/count" },
+        "mismatched": { "$ref": "#/$defs/count" },
+        "unverified": { "$ref": "#/$defs/count" }
+      }
+    },
+    "zeroCount": {
+      "type": "object",
+      "properties": {
+        "checked": { "const": 0 },
+        "verified": { "const": 0 },
+        "mismatched": { "const": 0 },
+        "unverified": { "const": 0 }
+      }
+    }
+  }
+}

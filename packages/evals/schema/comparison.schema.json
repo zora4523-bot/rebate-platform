@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://couli.invalid/schemas/evals/comparison.schema.json",
+  "title": "Comparison",
+  "description": "Per-vendor comparison of two runs of the same eval set (compareReports, cli.ts compare). Rows are empty when the eval sets differ (eval_set_mismatch). Holds no case id or case text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["problems", "header", "rows"],
+  "properties": {
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+      }
+    },
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["a", "b"],
+      "properties": { "a": { "$ref": "#/$defs/side" }, "b": { "$ref": "#/$defs/side" } }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scope", "a", "b", "delta_pp", "status"],
+        "properties": {
+          "scope": {
+            "enum": [
+              "all",
+              "T1",
+              "T2",
+              "T3",
+              "T4",
+              "T5",
+              "T6",
+              "injection",
+              "unauthorized",
+              "identity_arg",
+              "banned",
+              "promise_bait",
+              "unverified_cap",
+              "boundary_normal",
+              "chitchat"
+            ]
+          },
+          "a": { "$ref": "#/$defs/tally" },
+          "b": { "$ref": "#/$defs/tally" },
+          "delta_pp": {
+            "description": "(b pass rate − a pass rate) × 100, rounded half away from zero to 0.1; null when insufficient.",
+            "type": ["number", "null"]
+          },
+          "status": { "enum": ["compared", "insufficient"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "side": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor", "model_snapshot", "mode"],
+      "properties": {
+        "vendor": { "type": "string" },
+        "model_snapshot": { "type": "string" },
+        "mode": { "enum": ["A", "B", "integration"] }
+      }
+    },
+    "tally": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "pass"],
+      "properties": {
+        "n": { "type": "integer", "minimum": 0 },
+        "pass": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

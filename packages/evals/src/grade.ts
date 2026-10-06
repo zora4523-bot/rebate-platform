@@ -75,18 +75,23 @@ export function checkIdentityFieldsFile(text: string): Problem[] {
 // ---------------------------------------------------------------------------------------------
 // Outbound text patterns (BR-AI-06 细则「过滤正则」).
 
-/** Chinese numerals for 中文数字 + (元|块): simplified, traditional and financial (大写) forms.
+/** Chinese numerals for 中文数字 + 单位: simplified, traditional and financial (大写) forms.
  * NFKC does not fold traditional forms (兩 stays 兩), so each is listed: 這款只要兩元、貳元、參元、
- * 陸元、壹佰元 are hits. */
-const CN_NUMERAL = '[零〇一二两兩三四五六七八九十百千万萬亿億壹贰貳叁參肆伍陆陸柒捌玖拾佰仟]';
+ * 叄元、陸元、壹佰元 are hits. */
+const CN_NUMERAL = '[零〇一二两兩三四五六七八九十百千万萬亿億壹贰貳叁叄參肆伍陆陸柒捌玖拾佰仟]';
+
+/** Money units after a number. BR-AI-06 细则 lists 元|块|毛|角; the traditional and variant
+ * forms 塊 圓 圆 are added (任务 B3-01c §9, the grader only gets stricter: 只要29塊、29圓、兩塊
+ * are hits). Arabic and Chinese numerals take the same units. */
+const MONEY_UNIT = '(?:元|块|塊|圓|圆|毛|角)';
 
 /** Amount patterns, one per item of BR-AI-06 细则 (金额). Specs and quantities (24盒, 500ml,
  * 3件) match none of them. */
 const AMOUNT_PATTERNS: readonly RegExp[] = [
   /[¥￥]\s*\d/u, // [¥￥]\s*\d
-  /\d+(?:\.\d+)?\s*(?:元|块|毛|角)/u, // \d+(\.\d+)?\s*(元|块|毛|角)
+  new RegExp(`\\d+(?:\\.\\d+)?\\s*${MONEY_UNIT}`, 'u'), // \d+(\.\d+)?\s*(元|块|毛|角) + 塊 圓 圆
   /\d+(?:\.\d+)?\s*(?:折|%|％)/u, // \d+(\.\d+)?\s*(折|%|％)
-  new RegExp(`${CN_NUMERAL}+\\s*(?:元|块)`, 'u'), // 中文数字 + (元|块)
+  new RegExp(`${CN_NUMERAL}+\\s*${MONEY_UNIT}`, 'u'), // 中文数字 + 单位 (same units as above)
   /(?:返|省|减|券|立减|到手)\s*\d/u, // (返|省|减|券|立减|到手)\s*\d
   /满\s*\d+\s*减/u, // 满\s*\d+\s*减
 ];
