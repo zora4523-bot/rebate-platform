@@ -1,0 +1,123 @@
+{
+  "risk_note": "RV2 (infra/drills/queue/**; not listed in ops/risk-map.yaml). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl. Ledger refs are empty (basis in 规划/05 QA rows, 02 and 09 README §0.2: local / fake upstreams only). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist (n/a): pass, 0 S0/S1; 1 S2 (local URL check stricter than the frozen comment) to follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh read-only Codex session, not the implementing one: round 1 pass, 0 S0/S1"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Claude reviewed by a fresh Codex session: round 1 pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "QA-05b",
+  "spec_ref": "68b2959cf2b680f11f084706fdfcf215beb7fa80",
+  "spec_commit": "70a88f0272fa325b70093785837db384f5a37226",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "70a88f0272fa325b70093785837db384f5a37226",
+      "tree": "8763a93399e00a6ce1ebf03c4e1811a5b484b5a1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T09:02:56Z",
+      "finished_at": "2026-10-06T09:03:02Z",
+      "red_tests": [
+        "test/spec/drills/queue/judge.test.ts > [02 §11 至少一次投递] 重复投递但业务效果各一次：判定通过，并计出重投数",
+        "test/spec/drills/queue/judge.test.ts > [02 §18 消费端去重] 同一任务产生第二次业务效果：duplicate_effect",
+        "test/spec/drills/queue/judge.test.ts > [QA-05 任务不丢] 已入队任务没有业务效果（含快照里查不到）：lost",
+        "test/spec/drills/queue/judge.test.ts > [02 §11 任一队列 failed >0] 任务终态 failed 单独报出，与 lost 按固定顺序并列",
+        "test/spec/drills/queue/judge.test.ts > [QA-05 排空] 状态 created 的任务只报 not_drained，不同时报 lost",
+        "test/spec/drills/queue/judge.test.ts > [QA-05 排空] 状态 retry 的任务只报 not_drained，不同时报 lost",
+        "test/spec/drills/queue/judge.test.ts > [QA-05 排空] 状态 active 的任务只报 not_drained，不同时报 lost",
+        "test/spec/drills/queue/judge.test.ts > [02 §14 Redis 行 不补投] 快照中出现未发送的任务：unexpected_job，排在已发送任务的问题之后并按 id 升序",
+        "test/spec/drills/queue/run.test.ts > [QA-05 停掉 worker] worker-stop：中断后补入队、重启 worker、排空后核对",
+        "test/spec/drills/queue/run.test.ts > [QA-05 停掉 worker] worker-kill：中断后补入队、重启 worker、排空后核对",
+        "test/spec/drills/queue/run.test.ts > [QA-05 停在处理中途] 中断发生在快照已见到业务效果之后",
+        "test/spec/drills/queue/run.test.ts > [02 §11 至少一次投递 + 消费端去重] worker 被杀后重投：效果仍各一次，重投计 1",
+        "test/spec/drills/queue/run.test.ts > [02 §18 消费端去重] 消费端不去重时演练判不通过：duplicate_effect",
+        "test/spec/drills/queue/run.test.ts > [QA-05 任务不丢] 被杀时丢掉在途任务，演练判不通过：lost",
+        "test/spec/drills/queue/run.test.ts > [02 §14 PostgreSQL 行 断线自动重连] 断开队列连接后不重启 worker，靠它自己重连排空",
+        "test/spec/drills/queue/run.test.ts > [02 §14 PostgreSQL 行 断线自动重连] worker 不重连：排空超时后报 not_drained，等待有界且只走注入时钟",
+        "test/spec/drills/queue/run.test.ts > [02 §14 Redis 行] Redis 停着时入队照常、任务照常执行；先排空再恢复 Redis，不补投",
+        "test/spec/drills/queue/run.test.ts > [02 §14 Redis 行] 任务执行依赖 Redis 的系统在 Redis 停机期间排不空：判不通过",
+        "test/spec/drills/queue/run.test.ts > [02 §14 Redis 行 入队不依赖 Redis] 停机期间入队失败：step_failed，仍恢复 Redis、停 worker",
+        "test/spec/drills/queue/run.test.ts > [02 §14 Redis 行 不需要恢复后补投] worker-stop：每个 id 只发送一次，只有两次入队",
+        "test/spec/drills/queue/run.test.ts > [02 §14 Redis 行 不需要恢复后补投] worker-kill：每个 id 只发送一次，只有两次入队",
+        "test/spec/drills/queue/run.test.ts > [02 §14 Redis 行 不需要恢复后补投] queue-disconnect：每个 id 只发送一次，只有两次入队",
+        "test/spec/drills/queue/run.test.ts > [02 §14 Redis 行 不需要恢复后补投] redis-down：每个 id 只发送一次，只有两次入队",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 只在本地栈] 回环地址放行：postgres://couli_app@127.0.0.1:54329/couli",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 只在本地栈] 回环地址放行：postgresql://couli_app@LOCALHOST:54329/couli",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 只在本地栈] 回环地址放行：postgres://couli_app@[::1]:54329/couli",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 不碰 staging / prod] 非回环目标报 not_local：postgres://couli_app@db.staging.example:5432/couli redis://127.0.0.1:63790",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 不碰 staging / prod] 非回环目标报 not_local：postgres://couli_app@10.0.0.5:5432/couli redis://127.0.0.1:63790",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 不碰 staging / prod] 非回环目标报 not_local：postgres://couli_app@127.0.0.1.example:5432/couli redis://127.0.0.1:63790",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 不碰 staging / prod] 非回环目标报 not_local：postgres://couli_app@127.0.0.1:54329/couli redis://redis.prod.example:6379",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 只在本地栈] 协议不对或无法解析报 invalid_option：http://127.0.0.1:54329/couli redis://127.0.0.1:63790",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 只在本地栈] 协议不对或无法解析报 invalid_option：postgres://couli_app@127.0.0.1:54329/couli postgres://127.0.0.1:63790",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 只在本地栈] 协议不对或无法解析报 invalid_option：not a url redis://127.0.0.1:63790",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 不碰 staging / prod] runDrill 对非本地目标在任何执行器动作之前拒绝",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练参数] 参数越界 { jobsBefore: 0 } 时 invalid_option 且不动执行器",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练参数] 参数越界 { jobsDuring: 501 } 时 invalid_option 且不动执行器",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练参数] 参数越界 { pollMs: 50 } 时 invalid_option 且不动执行器",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练参数] 参数越界 { drainTimeoutMs: 500 } 时 invalid_option 且不动执行器",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练记录写运行目录] 记录文件名按场景与开始时刻（UTC）",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练记录不入库] runsDir /w/rebate-platform → record_in_repo",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练记录不入库] runsDir /w/rebate-platform/.tmp/runs → record_in_repo",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练记录不入库] runsDir /w/other/../rebate-platform/x → record_in_repo",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练记录不入库] runsDir relative/runs → invalid_option",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行：场景与运行目录必填，--jobs 默认 20",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行参数不合法 [\"--scenario\",\"db-failover\",\"--runs-dir\",\"/w/r\"] → invalid_option",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行参数不合法 [\"--runs-dir\",\"/w/r\"] → invalid_option",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行参数不合法 [\"--scenario\",\"redis-down\"] → invalid_option",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行参数不合法 [\"--scenario\",\"redis-down\",\"--runs-dir\",\"r\"] → invalid_option",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行参数不合法 [\"--scenario\",\"redis-down\",\"--runs-dir\",\"/w/r\",\"--jobs\",\"0\"] → invalid_option",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行参数不合法 [\"--scenario\",\"redis-down\",\"--runs-dir\",\"/w/r\",\"--jobs\",\"2.5\"] → invalid_option",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行参数不合法 [\"--scenario\",\"redis-down\",\"--scenario\",\"worker-stop\",\"--runs-dir\",\"/w/r\"] → invalid_option",
+        "test/spec/drills/queue/target-and-record.test.ts > [QA-05 演练脚本] 命令行参数不合法 [\"--scenario\",\"redis-down\",\"--runs-dir\",\"/w/r\",\"--prod\"] → invalid_option"
+      ],
+      "expected": [
+        "test/spec/drills/queue/judge.test.ts",
+        "test/spec/drills/queue/run.test.ts",
+        "test/spec/drills/queue/target-and-record.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b39364d7699edfd9bdacfa9c80bc5ede9f580a33bb8da0fc6b1e53762e7759c9"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "114091a6cc9b01753b43118deb29482631771c7e",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
