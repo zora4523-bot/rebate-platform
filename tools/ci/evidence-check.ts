@@ -13,22 +13,27 @@
 //   RV0 / RV1  pass; an evidence file for the task, when present, is validated all the same.
 //   RV2        ops/evidence/<id>.json must exist at the head (id from the branch `task/<id>`):
 //              task id, spec_ref = SPEC_REF of the head, spec_commit is an ancestor of the head
-//              and no class 1 test asset changed between it and the head, one container run
-//              with exit code 0 whose tree is the head tree, both reviewers pass with no open
-//              S0 / S1, every recorded directory tree hash equals the head's, long-run result
-//              bound to one of those trees.
-//              Runs (CR-02): only a container run of the full `verify` script (`script:
-//              "verify"`) counts as the verification; `verify:fast` (the implementer's own check)
-//              and `host` are refused as evidence. A container red run (`script: "red"`,
+//              and no class 1 test asset changed between it and the head, both reviewers pass
+//              with no open S0 / S1, every recorded directory tree hash equals the head's,
+//              long-run result bound to one of those trees.
+//              Full verification (owner decision 2026-10-06, ops/approvals.yaml id 21): the
+//              required CI checks of the pull request on its head (ci-gate: verify-fast,
+//              verify-int, guard-git; contracts-gate; longrun-props) are the verification, so no
+//              container run of `verify` is required here. The workflows and the verify recipe are
+//              protected paths (.github/** class 3, package.json scripts and verify configs class
+//              2), so a pull request cannot weaken what CI runs without an owner label.
+//              Runs (CR-02): a container run of the full `verify` script (`script: "verify"`) may
+//              still be listed and then must be green on the head tree; `verify:fast` (the
+//              implementer's own check) and `host` are refused as evidence. A container red run
+//              (`script: "red"`,
 //              tools/ops/verify-container.sh --red) must have passed red-check (exit 0), list its
 //              red tests and have verified the spec_commit tree.
 //              Red run (CR2-05, CR3-03): every task except one without a rule-test author
 //              (tester: none) and the legacy ledgers (tools/guard/legacy-tasks.json) needs a valid container red run: script red, exit 0 (red-check passed), on the
 //              spec_commit tree, its `expected` list covering every rule-test file the task
 //              added inside its test_paths (base..spec_commit), each with a red test.
-//              CI runs (`mode: ci`) are refused for now (CR2-06): the CI evidence archive
-//              (rebate-private/ci-evidence) is not connected, so nothing a CI record says can be
-//              checked against the run and its report.
+//              CI records (`mode: ci`) in the evidence file are refused (CR2-06): nothing a copied
+//              record says can be checked against a run; the CI checks count by themselves.
 //              Owner waiver (owner decision 2026-10-02, ops/approvals.yaml id 12): on a branch
 //              that is not task/<id> (test-change and gate-change PRs), the evidence file is
 //              not required when the PR carries a valid owner approval label for the head (the
@@ -251,10 +256,9 @@ export function evidenceProblems(
   const evidencePath = `ops/evidence/${ctx.task}.json`;
   const headTree = headTreeWithoutEvidence(ctx.prDir, ctx.head, evidencePath);
   const runs = doc['runs'];
-  if (!Array.isArray(runs) || runs.length === 0) {
-    at('runs', 'must list at least one out-of-sandbox verification');
+  if (!Array.isArray(runs)) {
+    at('runs', 'must be a list (empty when no container run is recorded)');
   } else {
-    let verifiedHead = false;
     let verifiedRed = false;
     const red = ctx.red ?? { required: true, expected: [] };
     runs.forEach((run, i) => {
@@ -281,7 +285,15 @@ export function evidenceProblems(
       if (typeof tree !== 'string' || !SHA.test(tree)) at(`runs[${i}].tree`, 'must be a tree hash');
       const script = run['script'];
       if (script === 'verify') {
-        if (exit === 0 && tree === headTree) verifiedHead = true;
+        // Optional since the required CI checks are the verification; a listed run must not
+        // pretend: green, on the head tree (without the evidence file).
+        if (exit !== 0 || tree !== headTree) {
+          at(
+            `runs[${i}]`,
+            `a listed container verify run must have exit code 0 on the head tree ${headTree ?? '(unknown)'} ` +
+              '(or leave it out: the required CI checks are the full verification, ops/approvals.yaml id 21)',
+          );
+        }
       } else if (script === 'red') {
         // The isolated red run (verify-container.sh --red): red-check passed on the spec_commit tree.
         const specTree =
@@ -339,14 +351,6 @@ export function evidenceProblems(
         'no valid red run (container, script red, red-check passed on the spec_commit tree, ' +
           'covering every rule-test file the task added): the rule tests were never shown red ' +
           '(规划/11 §2.3 第 3 步; tools/ops/verify-container.sh --red)',
-      );
-    }
-    if (!verifiedHead) {
-      at(
-        'runs',
-        `no container run of \`verify\` with exit code 0 verified the head tree ${headTree ?? '(unknown)'} ` +
-          '(the head tree without the evidence file itself; RV2 accepts container results ' +
-          'only, 规划/11 §2.3 第 7 步)',
       );
     }
   }
