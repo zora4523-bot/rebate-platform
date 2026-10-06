@@ -2,9 +2,17 @@
 // Task B1-05c: platform dictionary (BR-PROD-10), product_refs registration and the raw-ID order
 // (BR-PROD-05), alias resolution resolveProductKey and isSameProduct (BR-PROD-01, BR-PROD-02),
 // the category blocklist filter, and the five ports catalog uses. Rule tests:
-// test/spec/catalog/base/**.
+// test/spec/catalog/base/**. Task B1-05h: item_ref issue/verify (BR-PROD-11), rule tests
+// test/spec/catalog/item-ref/**.
 export { createCatalog } from './application/catalog.ts';
 export type { CatalogOptions } from './application/catalog.ts';
+export { createItemRefService } from './application/item-ref.ts';
+export type {
+  ItemRefClaims,
+  ItemRefOptions,
+  ItemRefRequest,
+  ItemRefService,
+} from './application/item-ref.ts';
 export { CatalogError, RAW_ID_MAX_AGE_MS } from './domain/rules.ts';
 export type { CatalogErrorCode } from './domain/rules.ts';
 export type {
