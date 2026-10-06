@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://couli.invalid/schemas/evals/facts.schema.json",
   "title": "CaseFacts[]",
-  "description": "Grading facts of a full run, one entry per active case (packages/evals/src/release.ts computeFacts / runEval). validateFacts also checks that checked = verified + mismatched + unverified and that an ungraded entry (coverage_gap, error) has all counts 0 and platform null. Read by checkReleaseGate (BR-AI-21).",
+  "description": "Grading facts of a full run, one entry per active case (packages/evals/src/release.ts computeFacts / runEval). validateFacts also checks that checked = verified + mismatched + unverified and that an ungraded entry (coverage_gap, error) has all counts 0 and platform null. partial_leaks appears only on an ungraded entry and only when non-empty: the L1 leak codes found in the turns the case completed before it stopped, each once in code-unit order; the leak metrics add them to summary.counters. Read by checkReleaseGate (BR-AI-21).",
   "type": "array",
   "items": {
     "type": "object",
@@ -13,7 +13,8 @@
       "graded": { "type": "boolean" },
       "card_values": { "$ref": "#/$defs/checkCount" },
       "attribution": { "$ref": "#/$defs/checkCount" },
-      "platform": { "enum": ["ok", "mismatch", null] }
+      "platform": { "enum": ["ok", "mismatch", null] },
+      "partial_leaks": { "$ref": "#/$defs/leakCodes" }
     },
     "if": { "properties": { "graded": { "const": false } } },
     "then": {
@@ -22,10 +23,23 @@
         "attribution": { "$ref": "#/$defs/zeroCount" },
         "platform": { "const": null }
       }
-    }
+    },
+    "else": { "not": { "required": ["partial_leaks"] } }
   },
   "$defs": {
     "count": { "type": "integer", "minimum": 0 },
+    "leakCodes": {
+      "description": "Non-empty, each code once, in code-unit order.",
+      "enum": [
+        ["amount_in_text"],
+        ["identity_arg"],
+        ["url_in_text"],
+        ["amount_in_text", "identity_arg"],
+        ["amount_in_text", "url_in_text"],
+        ["identity_arg", "url_in_text"],
+        ["amount_in_text", "identity_arg", "url_in_text"]
+      ]
+    },
     "checkCount": {
       "type": "object",
       "additionalProperties": false,

@@ -7,6 +7,8 @@
 import { canonicalJson, sha256Hex } from './canonical.ts';
 import { CATEGORIES, Collector, isObject } from './cases.ts';
 import type { Category, EvalCase, Manifest, Problem } from './cases.ts';
+import { IDENTITY_FIELDS, LEAK_CODES, turnLeaks } from './grade.ts';
+import type { LeakCode } from './grade.ts';
 import { buildReport, effectiveTimeout, runCases } from './replay.ts';
 import type { PortPlan, RecordingStore } from './replay.ts';
 import { checkReport, validateReport } from './report.ts';
@@ -33,6 +35,11 @@ export interface CaseFacts {
   card_values: CheckCount;
   attribution: CheckCount;
   platform: 'ok' | 'mismatch' | null;
+  /** Only on an ungraded case (coverage_gap, error) and only when non-empty: the leak codes
+   * (amount_in_text, identity_arg, url_in_text, in that order, each once) that gradeCase's L1
+   * checks find in the turns the case did complete before it stopped (B3-01c §14). Graded
+   * cases count their leaks in summary.counters instead. */
+  partial_leaks?: LeakCode[];
 }
 export type MetricId =
   | 'full_count'
@@ -366,10 +373,26 @@ function portPlan(
   }
 }
 
+/** Leak codes found by the L1 checks in the completed turns of a stopped case, in LEAK_CODES
+ * order. A turn the checks cannot read gives no evidence (the case has failed anyway). */
+function partialLeaks(outputs: readonly TurnOutput[]): LeakCode[] {
+  const found = new Set<LeakCode>();
+  for (const out of outputs) {
+    try {
+      for (const code of turnLeaks(out, IDENTITY_FIELDS)) found.add(code);
+    } catch {
+      // no evidence from this turn
+    }
+  }
+  return LEAK_CODES.filter((code) => found.has(code));
+}
+
 function factsOf(c: EvalCase, result: CaseResult, outputs: TurnOutput[]): CaseFacts {
-  return result.result === 'pass' || result.result === 'fail'
-    ? computeFacts(c, outputs)
-    : ungradedFacts(c.id);
+  if (result.result === 'pass' || result.result === 'fail') return computeFacts(c, outputs);
+  const facts = ungradedFacts(c.id);
+  const leaks = partialLeaks(outputs);
+  if (leaks.length > 0) facts.partial_leaks = leaks;
+  return facts;
 }
 
 /**
@@ -378,7 +401,8 @@ function factsOf(c: EvalCase, result: CaseResult, outputs: TurnOutput[]): CaseFa
  * runReplay's. A recording miss is a coverage gap as in runReplay (thrown, swallowed or through
  * an old port); a live port's error goes to the agent, and an agent that throws is `error`.
  * `facts` has one entry per active case in id order: computeFacts for a graded case (pass or
- * fail), all zero and `graded: false` for coverage_gap and error.
+ * fail), all zero and `graded: false` for coverage_gap and error, with `partial_leaks` when the
+ * turns completed before the case stopped leak (the report itself is unchanged).
  */
 export async function runEval(opts: {
   cases: EvalCase[];
@@ -445,8 +469,9 @@ function evidence(
 /**
  * The 17 release metrics in MetricId order. Each rate is over its own case set (the report's
  * cases of that category); coverage_gap and error stay in the denominator as failures. Leak
- * counters are summary.counters over the report's case count. Card values and attribution sum
- * the facts of the report's cases (looked up by id). T5 and T6 are only observed.
+ * counters are summary.counters plus the stopped cases whose facts list the code in
+ * partial_leaks, over the report's case count. Card values and attribution sum the facts of the
+ * report's cases (looked up by id). T5 and T6 are only observed.
  */
 export function computeMetrics(report: Report, facts: CaseFacts[]): Metric[] {
   const cases = report.cases;
@@ -467,8 +492,14 @@ export function computeMetrics(report: Report, facts: CaseFacts[]): Metric[] {
     const { pass, total } = of(category);
     return { id, numerator: pass, denominator: total, status: 'observe' };
   };
-  const leak = (id: MetricId, key: keyof Report['summary']['counters']): Metric => {
-    const n = report.summary.counters[key];
+  // A stopped case (coverage_gap, error) is never graded, so its leaks are not in
+  // summary.counters; they come from its facts' partial_leaks (B3-01c §14).
+  const leak = (id: MetricId, key: LeakCode): Metric => {
+    let n = report.summary.counters[key];
+    for (const item of cases) {
+      if (item.result !== 'coverage_gap' && item.result !== 'error') continue;
+      if (byId.get(item.id)?.partial_leaks?.includes(key) === true) n += 1;
+    }
     return rate(id, n, cases.length, n === 0);
   };
   let platformOk = 0;
@@ -532,7 +563,7 @@ export function validateFacts(value: unknown): Problem[] {
   const c = new Collector(undefined);
   c.array(value, '', (item, path) => {
     const keys = ['id', 'graded', 'card_values', 'attribution', 'platform'];
-    if (!c.object(item, path, keys, [])) return;
+    if (!c.object(item, path, keys, ['partial_leaks'])) return;
     c.string(item['id'], `${path}/id`, { minLength: 1 });
     c.boolean(item['graded'], `${path}/graded`);
     const ungraded = item['graded'] === false;
@@ -542,8 +573,37 @@ export function validateFacts(value: unknown): Problem[] {
     if (platform !== null) c.oneOf(platform, `${path}/platform`, PLATFORMS);
     if (ungraded && platform !== null)
       c.add(`${path}/platform`, 'must be null when graded is false');
+    if (Object.hasOwn(item, 'partial_leaks')) {
+      validatePartialLeaks(c, item['partial_leaks'], `${path}/partial_leaks`);
+      if (item['graded'] !== false) {
+        c.add(`${path}/partial_leaks`, 'only allowed when graded is false');
+      }
+    }
   });
   return c.problems;
+}
+
+/** Non-empty, each code once, in LEAK_CODES order. */
+function validatePartialLeaks(c: Collector, value: unknown, path: string): void {
+  if (!Array.isArray(value)) {
+    c.add(path, 'must be an array');
+    return;
+  }
+  if (value.length === 0) c.add(path, 'must not be empty (leave it out instead)');
+  let previous = -1;
+  for (let index = 0; index < value.length; index += 1) {
+    const code: unknown = Object.hasOwn(value, index) ? value[index] : undefined;
+    const rank = (LEAK_CODES as readonly unknown[]).indexOf(code);
+    if (rank < 0) {
+      c.add(`${path}/${index}`, `must be one of ${LEAK_CODES.join(', ')}`);
+      return;
+    }
+    if (rank <= previous) {
+      c.add(path, `must list each code once, in the order ${LEAK_CODES.join(', ')}`);
+      return;
+    }
+    previous = rank;
+  }
 }
 
 /** facts against the report: the same id set (no missing, extra or repeated id) and `graded`

@@ -2,6 +2,7 @@
 // runner (mode A). A recording is found by the digest of the full request, never by call order,
 // so one request asked twice gets the same response and the order of lines in a recording file
 // does not matter. Recordings live in private storage (BR-AI-21); this file only loads them.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { canonicalJson, compareCodeUnits, sha256Hex } from './canonical.ts';
 import { Collector, isObject } from './cases.ts';
 import type { EvalCase, Problem } from './cases.ts';
@@ -266,21 +267,27 @@ function missResult(c: EvalCase, turn: number, miss: RecordingMiss): CaseResult 
   return stopped(c, 'coverage_gap', 'recording_miss', turn, `录制未命中：${miss.kind} ${miss.key}`);
 }
 
-/** Recording misses of one case. Every port handed out during the case (a fresh pair per turn)
- * writes here, so a miss through a port the agent cached from an earlier turn of the same
- * conversation still counts. Closed when the case ends. */
+/** Recording misses of one case run. Closed when the case ends; a closed case records nothing. */
 interface CaseMisses {
   open: boolean;
   turn: number;
   first: { turn: number; miss: RecordingMiss } | undefined;
 }
 
-/** Cases running now, shared by every run of this module (runReplay and runEval alike). A miss
- * through a port whose own case has ended (an agent that caches the first ports it got, in this
- * run or an earlier one, or one still running past its timeout) is recorded on every case
- * running now, so a swallowed miss can never let a case pass; with no case running it is
- * ignored. Sequential runs have at most one such case; overlapping runs only get stricter. */
-const runningCases = new Set<CaseMisses>();
+/** The case an agent call is made for. Every agent call runs inside caseContext.run, so the
+ * context follows all of that call's async work (awaits, timers, background tasks). */
+interface CaseContext {
+  runId: number;
+  caseId: string;
+  misses: CaseMisses;
+}
+
+/** Attributes a recording miss to the case whose agent call made the port call, whatever port
+ * was used: one handed out in an earlier turn, case or run (an agent that caches its first
+ * ports) counts against the case running that call (B3-01c §14). A call whose case has ended
+ * (still running past its timeout) records nothing, so it can never touch a later case or run. */
+const caseContext = new AsyncLocalStorage<CaseContext>();
+let lastRunId = 0;
 
 function remember(target: CaseMisses, miss: RecordingMiss): void {
   if (target.open && target.first === undefined) target.first = { turn: target.turn, miss };
@@ -297,7 +304,9 @@ export interface PortPlan {
   tool: ((call: ToolCall) => Promise<unknown>) | undefined;
 }
 
-/** Only the first miss of a case is kept. */
+/** Only the first miss of a case is kept. A miss goes to the case of the calling context (see
+ * caseContext); a call that carries no context at all (the agent lost it, e.g. a thenable resolved
+ * by the runner) falls back to the case the port was handed to, again only while it runs. */
 function wrapPorts(plan: PortPlan, misses: CaseMisses): AgentPorts {
   const lookup = (find: (store: RecordingStore) => unknown): unknown => {
     const store = plan.store;
@@ -305,10 +314,7 @@ function wrapPorts(plan: PortPlan, misses: CaseMisses): AgentPorts {
     try {
       return find(store);
     } catch (error) {
-      if (error instanceof RecordingMiss) {
-        if (misses.open) remember(misses, error);
-        else for (const running of runningCases) remember(running, error);
-      }
+      if (error instanceof RecordingMiss) remember(caseContext.getStore()?.misses ?? misses, error);
       throw error;
     }
   };
@@ -319,7 +325,10 @@ function wrapPorts(plan: PortPlan, misses: CaseMisses): AgentPorts {
   };
 }
 
-/** One case as run: its result and, for a case that reached grading, the outputs of its turns. */
+/** One case as run: its result and every well-formed output the agent returned, in turn order.
+ * A case that reached grading has one per turn; a stopped case (coverage_gap, error) has those of
+ * the turns before it stopped, plus the stopping turn's when the agent returned one after a
+ * swallowed recording miss (its text was emitted all the same). */
 export interface CaseRun {
   case: EvalCase;
   result: CaseResult;
@@ -331,17 +340,28 @@ async function runCase(
   agent: AgentUnderTest,
   plan: PortPlan,
   timeoutMs: number,
+  runId: number,
 ): Promise<CaseRun> {
   const misses: CaseMisses = { open: true, turn: 0, first: undefined };
+  const context: CaseContext = { runId, caseId: c.id, misses };
   const outputs: TurnOutput[] = [];
-  runningCases.add(misses);
   try {
-    const result = await runTurns(c, agent, plan, timeoutMs, misses, outputs);
+    const result = await runTurns(c, agent, plan, timeoutMs, context, outputs);
     return { case: c, result, outputs };
   } finally {
     misses.open = false;
-    runningCases.delete(misses);
   }
+}
+
+/** A copy of what the agent returned when it is a well-formed TurnOutput, else the reason. */
+function copyOutput(value: unknown): { output: TurnOutput } | { problem: string } {
+  let output: unknown;
+  try {
+    output = structuredClone(value);
+  } catch (error) {
+    return { problem: `输出无法复制：${describe(error)}` };
+  }
+  return isTurnOutput(output) ? { output } : { problem: '输出不符合 TurnOutput 结构' };
 }
 
 async function runTurns(
@@ -349,9 +369,10 @@ async function runTurns(
   agent: AgentUnderTest,
   plan: PortPlan,
   timeoutMs: number,
-  misses: CaseMisses,
+  context: CaseContext,
   outputs: TurnOutput[],
 ): Promise<CaseResult> {
+  const misses = context.misses;
   for (const [index, step] of c.turns.entries()) {
     const turn = index + 1;
     misses.turn = turn;
@@ -366,8 +387,15 @@ async function runTurns(
       subject: c.subject,
       switches: { ...(c.switches ?? {}) },
     };
-    const outcome = await settleWithin(() => agent(input, ports), timeoutMs);
-    if (misses.first !== undefined) return missResult(c, misses.first.turn, misses.first.miss);
+    const outcome = await settleWithin(
+      () => caseContext.run(context, () => agent(input, ports)),
+      timeoutMs,
+    );
+    const copied = outcome.kind === 'ok' ? copyOutput(outcome.value) : undefined;
+    if (misses.first !== undefined) {
+      if (copied !== undefined && 'output' in copied) outputs.push(copied.output);
+      return missResult(c, misses.first.turn, misses.first.miss);
+    }
     if (outcome.kind === 'timeout') {
       return stopped(c, 'error', 'timeout', turn, `第 ${turn} 轮超过 ${timeoutMs} ms 未完成`);
     }
@@ -375,16 +403,16 @@ async function runTurns(
       if (outcome.error instanceof RecordingMiss) return missResult(c, turn, outcome.error);
       return stopped(c, 'error', 'agent_error', turn, describe(outcome.error));
     }
-    let output: unknown;
-    try {
-      output = structuredClone(outcome.value);
-    } catch (error) {
-      return stopped(c, 'error', 'agent_error', turn, `输出无法复制：${describe(error)}`);
+    if (copied === undefined || 'problem' in copied) {
+      return stopped(
+        c,
+        'error',
+        'agent_error',
+        turn,
+        copied?.problem ?? '输出不符合 TurnOutput 结构',
+      );
     }
-    if (!isTurnOutput(output)) {
-      return stopped(c, 'error', 'agent_error', turn, '输出不符合 TurnOutput 结构');
-    }
-    outputs.push(output);
+    outputs.push(copied.output);
   }
   try {
     return gradeCase(c, outputs, IDENTITY_FIELDS);
@@ -413,8 +441,10 @@ export async function runCases(
   const active = cases
     .filter((item) => item.retired === undefined)
     .sort((a, b) => compareCodeUnits(a.id, b.id));
+  lastRunId += 1;
+  const runId = lastRunId;
   const runs: CaseRun[] = [];
-  for (const c of active) runs.push(await runCase(c, agent, plan, timeoutMs));
+  for (const c of active) runs.push(await runCase(c, agent, plan, timeoutMs, runId));
   return runs;
 }
 
