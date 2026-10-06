@@ -1,0 +1,32 @@
+id: B3-06a
+repo: rebate-platform
+title: OutputGuard 第一段（纯函数，不接线）：金额 / URL / 口令出站过滤与按句缓冲、说明文字 ≤2 句、按句内容安全的审核端口与命中 / 超时处置、<untrusted> 定界、工具参数身份字段的拒绝判定
+type: impl
+# 2026-10-06 草稿（会话「Agent 落地方案」拆分子代理，couli-runs/B3-09a-06a/plan.md §2）。05 B3-06 的第一段，不依赖 B3-05 编排器；B3-05 以后在模块内 import guard/index.ts。
+# 依据：BR-AI-06 细则（过滤正则、按句缓冲、≤2 句、命中记 trace；决策人代理可自定）；BR-AI-05（<untrusted> 包裹与定界符转义）；BR-AI-03 细则（身份字段清单与比较、拒绝并告警、
+# 不得丢弃字段后继续执行——任务说明的「剔除」按此实现为拒绝）；BR-AI-18 输出侧（命中替换 agent.refuse.output_blocked 并结束，超时整段缓冲再审，再超时 agent.refuse.safety_timeout、卡片照常）。
+# 独立实现，不依赖 packages/evals（grade.ts 头注释：判分与 OutputGuard 故意分开写）；一致性由测试把 Guard 输出交 gradeCase 判，L1 不得有 amount_in_text、url_in_text、
+# too_many_sentences，因此 Guard 检测面须 ⊇ 判分器（塊 圓 圆、繁体与大写数字、\p{Sc} 口令符号、NFKC 形态）。按 08 原文写，不复制 grade.ts 正则。
+# 身份字段放常量 IDENTITY_FIELDS，测试与 specs/agent-identity-fields.txt 比对；不在运行时读文件，不碰 platform/specs（RV2）。
+# 审核端口只定接口与处置；阿里云适配器与 agent.safety.timeout_ms 计时在 B3-06b；身份参数注入属 ToolRegistry（B3-04 / B3-05）；固定话术文案属 B3-13。
+# 加严默认见 plan.md §2.7 O-G1–O-G5（BR-AI-06 代理可自定）；08 漏了不带单位的价格（O-G6）先按现文，补 08 后同步。
+# 不改 agent/index.ts、agent.module.ts（B3-03d 的 path）。实现若超 PR 上限，按「过滤、缓冲、句数、审核端口」与「定界、身份判定」拆两段。
+# refs 连一跳引用超 24KB（BR-AI-18 一跳到 BR-AI-01 细则），编排者手工生成任务书，补 BR-TEXT-22 两个话术键行。
+refs: [BR-AI-06, BR-AI-05, BR-AI-03, BR-AI-18]
+refs_hash:
+  BR-AI-06: b6a8abaa5dab
+  BR-AI-05: ee8fd647fd43
+  BR-AI-03: 2131432de5c6
+  BR-AI-18: 01b60e6ca170
+deps: []
+paths:
+  - 'apps/api/src/modules/agent/guard/**'
+test_paths:
+  - 'test/spec/agent/output-guard/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/output-guard/**'
+status: todo
+pr: null
