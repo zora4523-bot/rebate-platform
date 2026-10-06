@@ -3,6 +3,7 @@
 // data, never an upstream response format.
 import type { components } from '@couli/contracts-ts';
 import type { QuotaPurpose } from '../../platform/index.ts';
+import type { PriceAnomalyReason } from './taobao-price.ts';
 
 export type Platform = components['schemas']['PlatformCode'];
 export type RegisteredPlatform = Extract<Platform, 'jd' | 'pdd' | 'taobao'>;
@@ -120,6 +121,9 @@ export interface UnionItem extends ItemRef {
   readonly final_price_fen: bigint;
   readonly commission_rate_bp: bigint;
   readonly quoted_at: string;
+  readonly coupon_ids?: string;
+  readonly price_status?: 'ok' | 'anomaly';
+  readonly price_anomaly_reason?: PriceAnomalyReason;
 }
 
 export interface UnionItemDetail extends UnionItem {
