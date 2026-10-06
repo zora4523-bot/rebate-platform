@@ -8,7 +8,7 @@ type: impl
 # rebate.pdd.compare_precheck.enabled 默认关（CAP-PDD-04 未验证）：只实现「关」一支，打开的分支写 TODO(规划/11 §4.5): … — blocked on CAP-PDD-04。
 # 幂等走 platform 的 idempotency.execute（B1-01i）；风控钩子由 risk 线（B1-03c）注册，本任务不碰。平台转链与外跳方案在 B1-06e / B1-06f。
 # 风险：linking/** RV2。linking/** 串行，排在 B1-06d 之后。
-# D33（2026-10-06，PR #165 台账评审）：本任务负责 open 复核的两件事（BR-PRICE-02 细则「报价快照与原券」）——快照里任一券 ID 不在复核结果的券项里即判 coupon_gone（券后价没变也一样）；复核结果仍计入已失效的券按价格异常处理（不按 BR-PRICE-14 按无券重算）。复核取价经 B1-05i 的 catalog 主动查询入口，比较新旧价之前先过 union 的 isPriceAnomaly（异常价全为 0，不得当降价）。编排者摘录任务书时须包含该细则。
+# D33（2026-10-06，PR #165 台账评审）：本任务负责 open 复核的两件事（BR-PRICE-02 细则「报价快照与原券」）——快照里任一券 ID 不在复核结果的券项里即判 coupon_gone（券后价没变也一样）；复核结果仍计入已失效的券按价格异常处理（不按 BR-PRICE-14 按无券重算）。复核取价经 B1-05i 的 catalog 主动查询入口，比较新旧价之前先过 union 的 isPriceAnomaly（异常价全为 0，不得当降价）；复核判为价格异常（含主动查询入口返回的 price_unavailable 结果）一律走 BR-PRICE-13 的复核失败分支。编排者摘录任务书时须包含该细则。
 refs: []
 refs_hash: {}
 deps: [B1-06d, B1-05f, B1-05d, B1-04r, B1-05i]
