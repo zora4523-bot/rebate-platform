@@ -1,0 +1,27 @@
+id: B1-02n
+repo: rebate-platform
+title: 迁移：device_registrations.created_at 改由应用时钟写入——couli_app 可在 INSERT 时给 created_at，触发器拒绝倒填（早于库时间超过容差）、照旧不许改写，使同设备注册上限在 staging 压缩时钟（CLOCK_NOW）下仍按同一时钟计数
+type: migration
+# 2026-10-06 入账。来由：B1-02i（建号核心）Codex money 评审第 1 轮 S1——建号计数窗口按注入 Clock（ADR-0001 §4.2 第 10 项，B1-02i 裁定 9.5 第 1 条），
+# 而 0005 让 device_registrations.created_at 只能取库默认 now()（防倒填出 BR-ID-05 计数窗口）；staging 用 CLOCK_NOW 把时钟推到将来时新记录全被排除，上限失效。
+# 做法：新迁移（编号接 main 最大号之后，与其他会话协调）给 couli_app 增加 INSERT (created_at) 列权限；BEFORE INSERT 触发器在 NEW.created_at 早于 now() − 容差
+# （代理默认 5 分钟，写进迁移注释）时报错，允许将来时间（staging 时钟领先）；不给 UPDATE (created_at)，原有 device_registrations_no_rewrite 照旧；不传 created_at 时仍取默认 now()。
+# 依据：BR-ID-05「同设备注册上限的计数」（窗口口径）、04 §3.2 device_registrations 行、ADR-0001 §4.2 第 10 项；0005 头注释第 29–30 行的防倒填意图保留。
+# 分工按规划/11 §1.1：Codex 先写规则测试（先红），Claude 新子代理过审，Opus 子代理只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；迁移全局串行。
+# B1-02i 依赖本任务：合并后 B1-02i 的建号写入 created_at = 建号使用的同一个 Clock 时刻。
+refs: []
+refs_hash: {}
+deps: [B1-02b]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/identity/registration-clock/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/identity/registration-clock/**'
+status: todo
+pr: null
