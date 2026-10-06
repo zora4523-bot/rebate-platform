@@ -1,51 +1,77 @@
 // Permission snapshot of the signed-in account and the CASL ability built from it (规划/03 §9.2).
-// The snapshot comes from an injected provider: /admin/v1/me/permissions is not in the contract
-// yet (CT-02f), so the shell never calls it itself. The server re-checks every action.
-import { admin_permission, type AdminPermission } from '@couli/contracts-ts';
+// The snapshot comes from GET /admin/v1/me/permissions (permissionsFromMe) or an injected
+// provider; menus and buttons are hidden by it and the server checks every action again (10403).
+import { admin_permission, type AdminPermission, type Schema } from '@couli/contracts-ts';
 import { createMongoAbility, type MongoAbility } from '@casl/ability';
+
+export type KnownPermission = AdminPermission;
+export type StepUpTier = Schema<'AdminStepUpTier'>;
+
+/** Step-up annotation of one permission point: default tier plus per-operation exceptions. */
+export interface StepUpAnnotation {
+  readonly tier: StepUpTier | null;
+  readonly operations: Readonly<Record<string, StepUpTier>>;
+}
 
 export interface PermissionSnapshot {
   readonly isSuper: boolean;
   readonly permissions: readonly string[];
+  /** Optional for the existing injected shell snapshots. */
+  readonly stepUp?: Readonly<Partial<Record<KnownPermission, StepUpAnnotation>>>;
 }
 
 export type PermissionsProvider = () => Promise<PermissionSnapshot>;
 
-/**
- * Permission keys that 规划/04 §11 added on 2026-10-04 (payments line) and that
- * contracts/enums/admin.yaml does not list yet. 待 CT-21a 同步后删除。
- */
-// TODO(规划/11 §2.3): 契约补上这 4 个权限点后删除本常量与 PendingContractPermission — blocked on CT-21a
-export const PENDING_CONTRACT_PERMISSIONS = [
-  'pay.view',
-  'pay.refund',
-  'pay.resolve',
-  'switch.pay',
-] as const;
+export interface AccessControl {
+  readonly isSuper: boolean;
+  can(permission: string): boolean;
+  /** Tier the operation needs (exception first, else the point's default); null = none or no access. */
+  stepUpTier(permission: string, operation?: string): StepUpTier | null;
+}
 
-export type PendingContractPermission = (typeof PENDING_CONTRACT_PERMISSIONS)[number];
-export type KnownPermission = AdminPermission | PendingContractPermission;
+const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set<string>(admin_permission);
+const STEP_UP_TIERS: ReadonlySet<string> = new Set<StepUpTier>(['totp', 'sms']);
 
-const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set<string>([
-  ...admin_permission,
-  ...PENDING_CONTRACT_PERMISSIONS,
-]);
-
-/** True for contract keys and the pending keys above; anything else grants nothing. */
+/** True only for contract keys (contracts/enums/admin.yaml); anything else grants nothing. */
 export function isKnownPermission(value: string): value is KnownPermission {
   return KNOWN_PERMISSIONS.has(value);
 }
 
-type AdminAbility = MongoAbility<[KnownPermission | 'manage', 'console' | 'all']>;
-
-export interface AccessControl {
-  readonly isSuper: boolean;
-  can(permission: KnownPermission): boolean;
+function isStepUpTier(value: unknown): value is StepUpTier {
+  return typeof value === 'string' && STEP_UP_TIERS.has(value);
 }
 
 /**
- * Exact-match permission checks: a super admin holds every key, other accounts only the listed
- * known keys. Unknown keys (typos, prefixes, CASL's own `manage`) grant nothing.
+ * Converts the `data` of /admin/v1/me/permissions. Keys outside the contract (typos, wildcards,
+ * future points) are dropped together with their annotations; the input is not modified.
+ */
+export function permissionsFromMe(meResponseData: Schema<'AdminMe'>): PermissionSnapshot {
+  const permissions: KnownPermission[] = [];
+  const stepUp: Partial<Record<KnownPermission, StepUpAnnotation>> = {};
+  for (const grant of meResponseData.permissions) {
+    const key = grant.key;
+    if (!isKnownPermission(key) || permissions.includes(key)) continue;
+    permissions.push(key);
+    // Object.fromEntries defines own properties, so operation keys such as "__proto__" stay data.
+    const operations: Record<string, StepUpTier> = Object.fromEntries(
+      grant.step_up_operations
+        .filter((item) => typeof item.operation === 'string' && isStepUpTier(item.tier))
+        .map((item) => [item.operation, item.tier]),
+    );
+    stepUp[key] = {
+      tier: isStepUpTier(grant.step_up_tier) ? grant.step_up_tier : null,
+      operations,
+    };
+  }
+  return { isSuper: meResponseData.is_super === true, permissions, stepUp };
+}
+
+type AdminAbility = MongoAbility<[KnownPermission | 'manage', 'console' | 'all']>;
+
+/**
+ * Exact-match permission checks: a super admin holds every contract key, other accounts only the
+ * listed known keys. Unknown keys (typos, prefixes, CASL's own `manage`) grant nothing and have no
+ * step-up tier. Super admins still get the step-up tiers the server annotated.
  */
 export function createAccessControl(snapshot: PermissionSnapshot): AccessControl {
   const ability = createMongoAbility<AdminAbility>(
@@ -55,8 +81,20 @@ export function createAccessControl(snapshot: PermissionSnapshot): AccessControl
           .filter(isKnownPermission)
           .map((action) => ({ action, subject: 'console' as const })),
   );
+  const stepUp = snapshot.stepUp ?? {};
+  const can = (permission: string): boolean =>
+    isKnownPermission(permission) && ability.can(permission, 'console');
   return {
     isSuper: snapshot.isSuper,
-    can: (permission) => ability.can(permission, 'console'),
+    can,
+    stepUpTier(permission, operation) {
+      if (!can(permission) || !Object.hasOwn(stepUp, permission)) return null;
+      const annotation = stepUp[permission as KnownPermission];
+      if (annotation === undefined) return null;
+      if (operation !== undefined && Object.hasOwn(annotation.operations, operation)) {
+        return annotation.operations[operation] ?? null;
+      }
+      return annotation.tier;
+    },
   };
 }

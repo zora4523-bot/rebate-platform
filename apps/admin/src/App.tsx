@@ -1,8 +1,14 @@
 // Admin app root (规划/03 §9.1): Ant Design theme, router, Refine (telemetry off) and the shell
-// layout. Permissions come from the injected provider; menus are hidden by permission key and
-// the server checks every action again.
+// layout, wired to the /admin/v1 data provider and the CASL access control. Permissions come from
+// the injected provider; menus are hidden by permission key and the server checks every action
+// again.
 import './styles/admin.css';
-import { Refine, type AccessControlProvider, type ResourceProps } from '@refinedev/core';
+import {
+  Refine,
+  type AccessControlProvider,
+  type DataProvider,
+  type ResourceProps,
+} from '@refinedev/core';
 import routerProvider from '@refinedev/react-router';
 import { ConfigProvider } from 'antd';
 import {
@@ -30,6 +36,7 @@ import {
   type PermissionSnapshot,
 } from './providers/access-control/index.ts';
 import { createRefineAccessControl } from './providers/access-control/refine.ts';
+import { createDataProvider } from './providers/data/index.ts';
 import {
   findMenuItem,
   getAdminMenuGroups,
@@ -67,8 +74,25 @@ function subpageOf(state: unknown): string | undefined {
   return typeof state.subpage === 'string' ? state.subpage : undefined;
 }
 
+/**
+ * Shell options plus the REST data provider (providers/data). Without one, the app talks to
+ * /admin/v1 on its own origin without a token until the login flow supplies one.
+ */
+export interface AdminAppOptions extends AdminShellOptions {
+  readonly dataProvider?: DataProvider;
+}
+
+function defaultDataProvider(): DataProvider {
+  return createDataProvider({
+    baseUrl: window.location.origin,
+    fetch: (input, init) => globalThis.fetch(input, init),
+    getToken: () => null,
+    onError: () => undefined,
+  });
+}
+
 /** Builds the admin app element; the caller mounts it (main.tsx, tests). */
-export function createAdminShell(options: AdminShellOptions): ReactElement {
+export function createAdminShell(options: AdminAppOptions): ReactElement {
   return <AdminApp options={options} />;
 }
 
@@ -88,9 +112,10 @@ function ShellRouter({ kind, initialRoute, children }: ShellRouterProps) {
   return <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>;
 }
 
-function AdminApp({ options }: { readonly options: AdminShellOptions }) {
+function AdminApp({ options }: { readonly options: AdminAppOptions }) {
   const { permissionsProvider } = options;
   const [theme] = useState(() => createAntdTheme());
+  const [dataProvider] = useState(() => options.dataProvider ?? defaultDataProvider());
   const [state, setState] = useState<PermissionState>({ status: 'loading' });
   const latestRequest = useRef(0);
 
@@ -133,6 +158,7 @@ function AdminApp({ options }: { readonly options: AdminShellOptions }) {
         <Refine
           routerProvider={routerProvider}
           resources={RESOURCES}
+          dataProvider={dataProvider}
           accessControlProvider={accessControlProvider}
           options={{ disableTelemetry: true }}
         >
