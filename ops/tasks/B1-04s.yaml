@@ -1,0 +1,28 @@
+id: B1-04s
+repo: rebate-platform
+title: 受保护测试为 D33 新字段放宽（改前改后都绿）：演示商品键集合断言允许可选 coupon_ids、price_status、price_anomaly_reason；[AC-B1-04o-SCENARIO#3] 的 coupon_expired 比较不要求保留 coupon_ids；[AC-B1-05f#8] 口径说明键放宽为含 price_basis 或 price_basis.general 之一
+type: test-change
+# 2026-10-06 入账（W1 搜索转链线），PR #165 台账评审第 2 轮 S1-1、S1-2 按规划/11 §4.4 先立独立的测试变更任务（先例 B1-04n）。
+# 要改的受保护测试：test/spec/union/demo/kit.ts 第 95～106 行对演示商品全部键 toEqual（三平台）；test/spec/union/demo/scenarios.test.ts 的 [AC-B1-04o-SCENARIO#3]（原商品展开后 toEqual，会保留 coupon_ids）；
+# test/spec/catalog/card/assembly.test.ts 的 [AC-B1-05f#8]（第 196 行，无券卡断言含 price_basis，与 BR-PRICE-03 细则「无券商品与混排列表的口径说明」相反）。
+# 改动理由与出处：规划 08 03_PRICE 第 158 行细则「无券商品与混排列表的口径说明」与 BR-PRICE-17 正文（2026-10-06，规划 docs/changes/20261006-待确认事项整批确认与交由Jev判断.md §9）定了无券卡用 price_basis.general；淘宝新字段来自 BR-PRICE-02 细则「淘宝优惠明细的分类」与「报价快照与原券」（D33，docs/changes/20261006-淘宝价格取接口到手价扣除会员项.md）。
+# 改法：只放宽到 B1-04r 定下的 DTO 形状（三个可选字段，缺省视同 price_status='ok'）与 BR-PRICE-03 细则允许的两个键；断言的行为与含义不变；改前（现在的实现）改后都绿，不改任何实现代码。
+# 精确断言（有券 price_basis、无券 price_basis.general；coupon_expired 不带 coupon_ids）由 B1-04r、B1-05i 在各自新测试目录里写。
+# 保护路径第一类，改已有文件，合并要负责人标签 owner-approved-<头提交前 12 位>（need-label 登记）；实现 Claude；路径在 test/** 属 RV2，证据要求 Claude、Codex 两家评审都 pass（Codex 即 §4.4 的「另一家」）。
+refs: [BR-PRICE-02, BR-PRICE-03]
+refs_hash:
+  BR-PRICE-02: b622624c8da7
+  BR-PRICE-03: 51dcba492d39
+deps: [B1-05f, B1-04o]
+paths:
+  - 'test/spec/union/demo/kit.ts'
+  - 'test/spec/union/demo/scenarios.test.ts'
+  - 'test/spec/catalog/card/assembly.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/demo/**'
+  - 'test/spec/catalog/card/**'
+status: todo
+pr: null
