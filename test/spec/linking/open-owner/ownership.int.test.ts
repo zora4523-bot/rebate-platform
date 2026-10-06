@@ -1,10 +1,8 @@
 // B1-06d: only ownership and registration. Authorization, price re-check, attempts,
 // open logs and wire responses belong to B1-06e/f/k, and are not simulated here.
-// TODO(规划/11 §7.1): 补游客 link 的 id 与一次性归属验收 — blocked on
-// 任务要求新建 link，而所附 BR-ATTR-05② 要求认领原 link，业务口径尚未统一。
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import type { Kysely } from 'kysely';
+import { ColumnNode, TableNode, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createGuestCallerContext } from '../../../../apps/api/src/modules/linking/index.ts';
 import { seed } from '../register/kit.ts';
@@ -20,6 +18,7 @@ import {
   START,
   stored,
   unknownPriceLink,
+  unknownPricePddLink,
   USER_A,
   USER_B,
   USER_C,
@@ -415,8 +414,11 @@ it.each([DEVICE_A, DEVICE_B, null])(
   '[AC-B1-06d#17] BR-ATTR-05②/PRICE-12：游客 link 使用当前登录用户，设备 %s 不限制打开且保留比较基准',
   async (deviceId) => {
     const original = await sourceLink(db, { scene: 'search' }, { userId: null });
+    const before = await allLinks(db);
     const f = ownerFixture(db, { userId: USER_B, deviceId });
     const result = await ownerService(f).open({ linkId: original.link_id });
+    expect(result.new_link_id).toBeNull();
+    expect(result.link.link_id).toBe(original.link_id);
     expect(result.link.user_id).toBe(USER_B);
     expect(result.link.app_id).toBe('register-app');
     expect(result.identitySnapshot.user_id).toBe(USER_B);
@@ -424,10 +426,161 @@ it.each([DEVICE_A, DEVICE_B, null])(
     expect(result.link).toEqual(await stored(db, result.link.link_id));
     expect(result.old_final_price_fen).toBe('10000');
     expect(await stored(db, original.link_id)).toMatchObject({
+      user_id: USER_B,
       quoted_final_price_fen: original.quoted_final_price_fen,
       quoted_coupon_fen: original.quoted_coupon_fen,
       quoted_coupon_id: original.quoted_coupon_id,
       quoted_at: original.quoted_at,
     });
+    expect(await allLinks(db)).toHaveLength(before.length);
   },
 );
+
+it('[AC-B1-06d#18] BR-ATTR-05②③：游客 link 被 B 认领后，C 打开新建自己的 link，不能改写 B 的归属', async () => {
+  const original = await sourceLink(db, { scene: 'search' }, { userId: null });
+  const before = await allLinks(db);
+  const resultB = await ownerService(ownerFixture(db, { userId: USER_B })).open({
+    linkId: original.link_id,
+  });
+  const claimed = await stored(db, original.link_id);
+  expect(resultB.new_link_id).toBeNull();
+  expect(resultB.link).toEqual(claimed);
+  expect(claimed.user_id).toBe(USER_B);
+  expect(resultB.identitySnapshot.user_id).toBe(USER_B);
+  expect(await allLinks(db)).toHaveLength(before.length);
+
+  const resultC = await ownerService(ownerFixture(db, { userId: USER_C })).open({
+    linkId: original.link_id,
+  });
+  expect(resultC.new_link_id).toEqual(expect.any(String));
+  expect(resultC.new_link_id).not.toBe(original.link_id);
+  const fresh = await stored(db, resultC.new_link_id!);
+  expect(resultC.link).toEqual(fresh);
+  expect(fresh).toMatchObject({
+    app_id: original.app_id,
+    user_id: USER_C,
+    platform: original.platform,
+    product_key: original.product_key,
+    scene: original.scene,
+    pid_scene: original.pid_scene,
+    quoted_final_price_fen: original.quoted_final_price_fen,
+    quoted_coupon_fen: original.quoted_coupon_fen,
+    quoted_coupon_id: original.quoted_coupon_id,
+    quoted_at: original.quoted_at,
+  });
+  expect(resultC.identitySnapshot).toEqual(fresh.identity_snapshot);
+  expect(resultC.identitySnapshot).toMatchObject({ user_id: USER_C, attr_code: 'demo0003' });
+  expect(resultC.old_final_price_fen).toBe('10000');
+  expect(await stored(db, original.link_id)).toEqual(claimed);
+  expect(await allLinks(db)).toHaveLength(before.length + 1);
+});
+
+it('[AC-B1-06d#19] BR-ATTR-05②③：并发认领游客 link 只成功写入一次，未认领者得到自己的新 link', async () => {
+  const original = await sourceLink(db, { scene: 'search' }, { userId: null });
+  const before = await allLinks(db);
+  // Observe real update results without changing SQL, results or execution order.
+  // Zero affected rows is a lost conditional update; either user may win the claim.
+  const ownershipUpdates = new WeakSet<object>();
+  const affectedRows: bigint[] = [];
+  const observedDb = db.withPlugin({
+    transformQuery({ node, queryId }) {
+      if (
+        node.kind === 'UpdateQueryNode' &&
+        node.table !== undefined &&
+        TableNode.is(node.table) &&
+        node.table.table.identifier.name === 'links' &&
+        node.updates?.some(
+          ({ column }) => ColumnNode.is(column) && column.column.name === 'user_id',
+        )
+      ) {
+        ownershipUpdates.add(queryId);
+      }
+      return node;
+    },
+    async transformResult({ queryId, result }) {
+      if (ownershipUpdates.has(queryId)) affectedRows.push(result.numAffectedRows ?? -1n);
+      return result;
+    },
+  });
+  const serviceB = ownerService(ownerFixture(observedDb, { userId: USER_B }));
+  const serviceC = ownerService(ownerFixture(observedDb, { userId: USER_C }));
+  const results = await Promise.all([
+    serviceB.open({ linkId: original.link_id }),
+    serviceC.open({ linkId: original.link_id }),
+  ]);
+  expect(affectedRows.filter((count) => count !== 0n)).toEqual([1n]);
+  expect(results.filter((result) => result.new_link_id === null)).toHaveLength(1);
+  const claimed = await stored(db, original.link_id);
+  expect([USER_B, USER_C]).toContain(claimed.user_id);
+  expect(claimed).toMatchObject({
+    quoted_final_price_fen: original.quoted_final_price_fen,
+    quoted_coupon_fen: original.quoted_coupon_fen,
+    quoted_coupon_id: original.quoted_coupon_id,
+    quoted_at: original.quoted_at,
+  });
+  for (const [result, userId, attrCode] of [
+    [results[0], USER_B, 'demo0002'],
+    [results[1], USER_C, 'demo0003'],
+  ] as const) {
+    expect(result.link.user_id).toBe(userId);
+    expect(result.identitySnapshot).toMatchObject({ user_id: userId, attr_code: attrCode });
+    expect(result.old_final_price_fen).toBe('10000');
+    if (userId === claimed.user_id) {
+      expect(result.new_link_id).toBeNull();
+      expect(result.link).toEqual(claimed);
+    } else {
+      expect(result.new_link_id).toEqual(expect.any(String));
+      expect(result.new_link_id).not.toBe(original.link_id);
+      const fresh = await stored(db, result.new_link_id!);
+      expect(result.link).toEqual(fresh);
+      expect(fresh).toMatchObject({
+        app_id: original.app_id,
+        user_id: userId,
+        scene: original.scene,
+        pid_scene: original.pid_scene,
+        product_key: original.product_key,
+        quoted_final_price_fen: original.quoted_final_price_fen,
+        quoted_coupon_fen: original.quoted_coupon_fen,
+        quoted_coupon_id: original.quoted_coupon_id,
+        quoted_at: original.quoted_at,
+      });
+      expect(fresh.identity_snapshot).toEqual(result.identitySnapshot);
+    }
+  }
+  expect(await allLinks(db)).toHaveLength(before.length + 1);
+});
+
+it('[AC-B1-06d#20] BR-ATTR-05③/PRICE-08：他人拼多多 amount_unknown link 为当前用户新登记，不伪造报价', async () => {
+  const original = await unknownPricePddLink(db);
+  const before = await allLinks(db);
+  const result = await ownerService(ownerFixture(db, { userId: USER_B })).open({
+    linkId: original.link_id,
+  });
+  expect(result.new_link_id).toEqual(expect.any(String));
+  expect(result.new_link_id).not.toBe(original.link_id);
+  const fresh = await stored(db, result.new_link_id!);
+  expect(result.link).toEqual(fresh);
+  // links has no rebate_basis column: null product/quote fields represent amount_unknown.
+  expect(fresh).toMatchObject({
+    app_id: original.app_id,
+    user_id: USER_B,
+    platform: 'pdd',
+    scene: original.scene,
+    pid_scene: original.pid_scene,
+    entry_source: original.entry_source,
+    product_key: null,
+    quoted_final_price_fen: null,
+    quoted_coupon_fen: null,
+    quoted_coupon_id: null,
+    quoted_at: null,
+  });
+  expect(result.identitySnapshot).toEqual(fresh.identity_snapshot);
+  expect(result.identitySnapshot).toMatchObject({
+    user_id: USER_B,
+    platform: 'pdd',
+    attr_code: 'demo0002',
+  });
+  expect(result.old_final_price_fen).toBeNull();
+  expect(await stored(db, original.link_id)).toEqual(original);
+  expect(await allLinks(db)).toHaveLength(before.length + 1);
+});

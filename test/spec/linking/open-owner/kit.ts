@@ -85,6 +85,27 @@ export async function unknownPriceLink(db: Kysely<DB>) {
   return stored(db, linkId);
 }
 
+/** Synthetic PDD direct-link card: no product information or quote snapshot. */
+export async function unknownPricePddLink(db: Kysely<DB>) {
+  const original = await sourceLink(db, { scene: 'clipboard' }, {}, 'pdd');
+  const linkId = newUuidV7(new Date(START));
+  await db
+    .insertInto('links')
+    .values({
+      ...original,
+      link_id: linkId,
+      product_key: null,
+      raw_item_id: null,
+      raw_fetched_at: null,
+      quoted_final_price_fen: null,
+      quoted_coupon_fen: null,
+      quoted_coupon_id: null,
+      quoted_at: null,
+    })
+    .execute();
+  return stored(db, linkId);
+}
+
 export function ownerService(f: ReturnType<typeof ownerFixture>) {
   // Construct outside rejection assertions: the skeleton must make negative cases red too.
   return createLinkOpenOwner(f.options);
