@@ -1,0 +1,34 @@
+id: B3-09a
+repo: rebate-platform
+title: 迁移：Agent 六表——agent_sessions（含卡号序列）、agent_runs（final_event、ended_at 与 BR-AI-23 收尾列）、agent_messages（唯一 app_id+session_id+client_msg_id）、agent_tool_calls、agent_result_sets、agent_cards（04 §3.2）
+type: migration
+# 2026-10-06 草稿（会话「Agent 落地方案」拆分子代理，couli-runs/B3-09a-06a/plan.md §1）。05 B3-09 的第一段：只做迁移，不写模块代码。
+# 依据：04 §3.2 agent_* 六行与表头通则、§3.1、§8.1「重复消息」、§8.3 card_id 与 earnings_summary 留痕；BR-AI-23 细则「受理记录与收尾」；BR-AI-19 细则（收益卡不存金额）；
+# BR-AI-06（filter_hits、output_truncated）、BR-AI-16（cost_mfen、单价版本）、BR-AI-20（所有者）由编排者摘入任务书第 2 节；枚举取值以 contracts/enums/ops.yaml 为准。
+# 表设计见 plan.md §1.4：[S] 列（accepted_at、quota_subjects、end_reason、card_delivered、settle_result、settled_at、sessions.card_seq、prompt_version NOT NULL、
+# messages (run_id, role) 唯一）B3-03 线 2026-10-06 已确认（重复消息的原 message_id 由 agent_messages (run_id, role) 找回，不另加列）；[G] 列 output_truncated、price_version 与 [S] 列已回写 04（couli#69）。
+# 04「user_id（游客为 device_id）」拆为 user_id 可空 + device_id 必填（plan.md O1）。只写禁止类触发器：收尾列写一次、card_delivered 不回退、user_text 只能清空、card_seq 不减。
+# 不分区（ADR-0001 §4.2 第 5 项未列；分区会破坏 client_msg_id 唯一与外键目标）。不授 DELETE：BR-ID-30 ① 清理与 BR-AI-22 注销清理另起任务（plan.md O8）。
+# links / orders / link_logs 的 agent_* 列不补外键（留存期不同，0006 的待办在头注释关闭）；agent_cards.link_id 外键指向 links。
+# 只读角色不给自由文本列（user_text、text、report_reason、args、conditions）。
+# 两段式（db/AGENTS.md）：Opus 只写迁移 SQL，编排者在沙箱外跑迁移与 pnpm db:snapshot 并提交生成物；编号 0020（身份线 B1-02n 占 0019，2026-10-06 约定；落地时以 db/migrations/ 最新号 +1 为准）。
+# 迁移全局串行：B1-02n（0019）合并后再派；B1-04a 等 B1-04n 未派，本任务无逻辑依赖。B3-03d 开工条件 ② 即本任务；B3-03b CardSequence 的持久化落在 card_seq。
+# refs 连一跳引用超 24KB，编排者手工生成任务书（B3-03c 先例），并补 04 六行原文与 plan.md §1.4 表。
+refs: [BR-AI-23, BR-AI-19]
+refs_hash:
+  BR-AI-23: e4d4c7173f74
+  BR-AI-19: f2aa4c7770c8
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/agent/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/agent/**'
+status: todo
+pr: null
