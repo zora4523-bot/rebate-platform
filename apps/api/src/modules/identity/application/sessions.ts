@@ -1,6 +1,28 @@
+// Session primitives of identity (规划/08 BR-ID-07 and its 细则「登录时绑定」「退出登录」; 04 §3.2
+// sessions / refresh_tokens; migration 0013). Both run inside the caller's transaction.
+//
+// createSession — every path that creates a session (the login endpoints of B1-02j, a merge that
+// issues a new session) calls it in the transaction that creates the session:
+//   1. lock the device row (SELECT … FOR UPDATE, scoped by app_id) before anything else, so two
+//      logins on one device serialise and last_login_sid ends at the later one;
+//   2. insert the session (UUIDv7 id, a new opaque random sid, created_at / updated_at from the
+//      Clock) and its first refresh token (only the SHA-256 of the token; parent_hash null);
+//   3. CAS the device row: last_login_sid = the new sid, row_version + 1, guarded by the locked
+//      row_version (devices is a CAS entity, 0005);
+//   4. call `afterCreated` with the same transaction (the extension point for B1-12b's push token
+//      binding), then return the issued pair. The access token carries the caller's scp.
+// A refresh (B1-02k) keeps the sid and does not touch last_login_sid.
+//
+// revokeSession — fills sessions.revoked_at / revoke_reason once (`revoked_at IS NULL` in the
+// WHERE clause; 0 rows = already revoked or unknown, answered false). It writes nothing else:
+// refresh tokens are judged through their session (0013 header; orchestrator ruling §9.5 #5), so
+// refresh_tokens.rotated_at never stands for a revocation. Used by logout and by B1-02k.
+//
+// Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
+import { randomBytes } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
-import type { Clock, TokenPrincipal } from '../../platform/index.ts';
+import { newUuidV7, type Clock, type TokenPrincipal } from '../../platform/index.ts';
 import type { TokenService } from './access-tokens.ts';
 
 export interface IssuedSession {
@@ -10,30 +32,98 @@ export interface IssuedSession {
   readonly session_scope: TokenPrincipal['scp'];
 }
 
+/** An opaque session id: 128 random bits, base64url (04 §3.2 keeps sid opaque text). */
+function newSid(): string {
+  return randomBytes(16).toString('base64url');
+}
+
 /** Caller owns the transaction. Lock device first, insert session and hashed refresh, CAS device.
  * afterCreated is the same-transaction extension point for B1-12b, after last_login_sid is set.
  */
-export function createSession(
+export async function createSession(
   transaction: Transaction<DB>,
   principal: Omit<TokenPrincipal, 'sid'>,
   deps: { clock: Clock; tokens: TokenService },
   afterCreated?: (transaction: Transaction<DB>, session: IssuedSession) => Promise<void>,
 ): Promise<IssuedSession> {
-  void transaction;
-  void principal;
-  void deps;
-  void afterCreated;
-  throw new Error('NotImplemented: createSession');
+  const { clock, tokens } = deps;
+  const now = clock.now();
+  const device = await transaction
+    .selectFrom('devices')
+    .select('row_version')
+    .where('app_id', '=', principal.app_id)
+    .where('id', '=', principal.device_id)
+    .forUpdate()
+    .executeTakeFirst();
+  if (device === undefined) {
+    throw new Error('identity: a session needs an existing device of the same app');
+  }
+  const sid = newSid();
+  await transaction
+    .insertInto('sessions')
+    .values({
+      id: newUuidV7(now),
+      app_id: principal.app_id,
+      sid,
+      user_id: principal.uid,
+      device_id: principal.device_id,
+      revoked_at: null,
+      revoke_reason: null,
+      created_at: now,
+      updated_at: now,
+    })
+    .execute();
+  const refresh = tokens.issueRefresh();
+  await transaction
+    .insertInto('refresh_tokens')
+    .values({
+      id: newUuidV7(now),
+      app_id: principal.app_id,
+      sid,
+      token_hash: refresh.hash,
+      parent_hash: null,
+      rotated_at: null,
+      expire_at: refresh.expireAt,
+      created_at: now,
+      updated_at: now,
+    })
+    .execute();
+  const bound = await transaction
+    .updateTable('devices')
+    .set({ last_login_sid: sid, row_version: device.row_version + 1, updated_at: now })
+    .where('app_id', '=', principal.app_id)
+    .where('id', '=', principal.device_id)
+    .where('row_version', '=', device.row_version)
+    .executeTakeFirst();
+  if (bound.numUpdatedRows !== 1n) {
+    throw new Error('identity: the locked device row changed before last_login_sid was written');
+  }
+  const session: IssuedSession = Object.freeze({
+    sid,
+    access_token: await tokens.issueAccess({ ...principal, sid }),
+    refresh_token: refresh.token,
+    session_scope: principal.scp,
+  });
+  if (afterCreated !== undefined) await afterCreated(transaction, session);
+  return session;
 }
 
 /** Fill sessions.revoked_at/revoke_reason once; never mark refresh_tokens.rotated_at. */
-export function revokeSession(
+export async function revokeSession(
   transaction: Transaction<DB>,
   input: { app_id: string; sid: string; reason: string },
   clock: Clock,
 ): Promise<boolean> {
-  void transaction;
-  void input;
-  void clock;
-  throw new Error('NotImplemented: revokeSession');
+  if (typeof input.reason !== 'string' || input.reason === '') {
+    throw new TypeError('revokeSession needs a reason');
+  }
+  const now = clock.now();
+  const result = await transaction
+    .updateTable('sessions')
+    .set({ revoked_at: now, revoke_reason: input.reason, updated_at: now })
+    .where('app_id', '=', input.app_id)
+    .where('sid', '=', input.sid)
+    .where('revoked_at', 'is', null)
+    .executeTakeFirst();
+  return result.numUpdatedRows > 0n;
 }

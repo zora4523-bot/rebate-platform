@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { APP_ENVS, type AppEnv } from './app-env.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
+import { JWT_ENV_NAMES, readJwtKeyConfig, type JwtKeyConfig } from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
 
 export { APP_ENVS, type AppEnv } from './app-env.ts';
@@ -44,6 +45,12 @@ export interface AppConfig {
   readonly streamPort: number;
   readonly adminPort: number;
   readonly keyring: KeyringConfig | null;
+  /**
+   * The access-token signing key of the api entry (./jwt.ts, B1-02h). Null when no JWT_* variable
+   * is set: local / test then sign with an ephemeral key pair, staging / prod refuse to start
+   * when identity's key provider is created. A hand-built config without it counts as null.
+   */
+  readonly jwt: JwtKeyConfig | null;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -81,6 +88,20 @@ export function startupViolations(
 }
 
 /**
+ * The JWT signing key part of loadConfig: its problems are merged only when at least one JWT_*
+ * variable is set, so an environment without them keeps exactly its other problems; a missing
+ * cloud key is refused at startup by identity's key provider (contract in ./jwt.ts).
+ */
+function readJwt(
+  appEnv: AppEnv,
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly jwt: JwtKeyConfig | null; readonly problems: readonly string[] } {
+  const result = readJwtKeyConfig(appEnv, env);
+  const set = JWT_ENV_NAMES.some((name) => (env[name] ?? '') !== '');
+  return set ? result : { jwt: null, problems: [] };
+}
+
+/**
  * Validates the environment and returns the typed configuration. Variables set to an empty
  * string count as unset. Throws one `ConfigError` listing every problem.
  */
@@ -101,6 +122,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     if (appEnv.success) {
       problems.push(...startupViolations(appEnv.data, env));
       problems.push(...readKeyringConfig(appEnv.data, env).problems);
+      problems.push(...readJwt(appEnv.data, env).problems);
     }
     throw new ConfigError(problems);
   }
@@ -109,6 +131,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   const violations = startupViolations(values.APP_ENV, env);
   const { keyring, problems } = readKeyringConfig(values.APP_ENV, env);
   violations.push(...problems);
+  const { jwt, problems: jwtProblems } = readJwt(values.APP_ENV, env);
+  violations.push(...jwtProblems);
   if (violations.length > 0) throw new ConfigError(violations);
 
   return {
@@ -121,5 +145,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     streamPort: values.STREAM_PORT,
     adminPort: values.ADMIN_PORT,
     keyring,
+    jwt,
   };
 }

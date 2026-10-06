@@ -5,3 +5,12 @@ export {
   findCredentialLikeEnvNames,
   looksLikeRealCredentialEnvName,
 } from './credential-env.ts';
+// The access-token signing key contract (B1-02h): identity's key provider parses the PEM values
+// with the same functions loadConfig validated them with.
+export {
+  JWT_ENV_NAMES,
+  isJwtKeyId,
+  parseP256PrivateKeyPem,
+  parseP256PublicKeyPem,
+  readJwtKeyConfig,
+} from './jwt.ts';

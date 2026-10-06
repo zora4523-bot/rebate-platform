@@ -14,6 +14,7 @@ import {
   type RequestCheck,
   type RequestCheckInput,
 } from './request-checks.ts';
+import { tokenPrincipal } from './token-context.ts';
 
 let adapter: PlatformFastifyAdapter | undefined;
 afterEach(async () => {
@@ -140,9 +141,12 @@ it('[BR-ID-09] originFormTarget drops the scheme and authority of an absolute-fo
     ['https://api.example.com?b=2&a=1', '/?b=2&a=1'],
     // Origin-form targets, including one whose path starts with `//`, stay as they are.
     ['//api.example.com/v1/auth/sms-codes', '//api.example.com/v1/auth/sms-codes'],
-    // Not a target the router turns into a path: left unchanged (it matches no route).
+    // Not an absolute-form target: left unchanged. ftp: matches no route.
     ['ftp://api.example.com/v1/auth/sms-codes', 'ftp://api.example.com/v1/auth/sms-codes'],
     ['*', '*'],
+    // Matches the route /v1/auth/sms-codes (find-my-way skips the first character), yet stays as
+    // sent: the signing string keeps `*v1/...`, so a client that signed `/v1/...` gets 10401.
+    ['*v1/auth/sms-codes?a=1', '*v1/auth/sms-codes?a=1'],
   ] as const) {
     expect({ target, origin: originFormTarget(target) }).toEqual({ target, origin: expected });
   }
@@ -173,9 +177,12 @@ it('[BR-ID-09] an absolute-form request target reaches the checks in origin form
   expect(urls).toEqual(['/probe/a%2Fb?b=2&a=%2f']);
 });
 
-it('[BR-ID-01] only routes that bufferWhen selects are buffered and checked; the others keep Fastify body handling', async () => {
+it('[BR-ID-01] checks run on every matched route; only routes bufferWhen selects are buffered first, the others keep Fastify body handling', async () => {
   const instance = server(8);
-  const check = vi.fn(async () => undefined);
+  const seen: { template: string | undefined; rawBody: string }[] = [];
+  const check = vi.fn(async (request: RequestCheckInput) => {
+    seen.push({ template: request.routeTemplate, rawBody: request.rawBody.toString() });
+  });
   const bufferWhen = vi.fn((method: string, template: string) => template === '/probe/:id');
   installRequestChecks(instance, [check], bufferWhen);
   route(instance);
@@ -188,8 +195,10 @@ it('[BR-ID-01] only routes that bufferWhen selects are buffered and checked; the
   });
   expect(open.statusCode).toBe(200);
   expect(open.json()).toEqual({ body: { a: 1 } });
-  expect(check).not.toHaveBeenCalled();
-  // Fastify's own parser still guards the route outside the plan.
+  // Checked on its headers: nothing was read before the check.
+  expect(seen).toEqual([{ template: '/open', rawBody: '' }]);
+  expect(bufferWhen).toHaveBeenCalledWith('POST', '/open');
+  // Fastify's own parser still limits the unbuffered route, after its checks passed.
   const large = await instance.inject({
     method: 'POST',
     url: '/open',
@@ -197,8 +206,7 @@ it('[BR-ID-01] only routes that bufferWhen selects are buffered and checked; the
     payload: '{"too":"long"}',
   });
   expect(large.statusCode).toBe(413);
-  expect(check).not.toHaveBeenCalled();
-  expect(bufferWhen).toHaveBeenCalledWith('POST', '/open');
+  expect(check).toHaveBeenCalledTimes(2);
   const selected = await instance.inject({
     method: 'POST',
     url: '/probe/1',
@@ -206,8 +214,87 @@ it('[BR-ID-01] only routes that bufferWhen selects are buffered and checked; the
     payload: '{"a":1}',
   });
   expect(selected.statusCode).toBe(200);
-  expect(check).toHaveBeenCalledTimes(1);
+  expect(seen.at(-1)).toEqual({ template: '/probe/:id', rawBody: '{"a":1}' });
   expect(bufferWhen).toHaveBeenCalledWith('POST', '/probe/:id');
+});
+
+it('[BR-ID-01] a check refusing an unbuffered route answers before its body is read or parsed', async () => {
+  const instance = server(8);
+  installRequestChecks(
+    instance,
+    [
+      async () => {
+        throw new RequestRejection(10001, 401, 'rejected');
+      },
+    ],
+    () => false,
+  );
+  instance.post('/open', () => ({ reached: true }));
+  for (const payload of ['{"far":"above the body limit"}', '{"broken":']) {
+    const response = await instance.inject({
+      method: 'POST',
+      url: '/open',
+      headers: { 'content-type': 'application/json' },
+      payload,
+    });
+    expect(response.statusCode).toBe(401);
+  }
+});
+
+it('[BR-ID-07] the principal a check attaches reaches the handler; a request without one has none', async () => {
+  const instance = server();
+  const principal = Object.freeze({
+    uid: 'user-1',
+    app_id: 'couli',
+    sid: 'session-1',
+    device_id: 'device-1',
+    scp: 'full' as const,
+  });
+  installRequestChecks(
+    instance,
+    [
+      async (request) => {
+        if (request.headers['x-test-principal'] === '1') request.principal = principal;
+      },
+    ],
+    () => false,
+  );
+  instance.get('/whoami', (request) => ({
+    principal: tokenPrincipal(request) ?? null,
+    carried: (request as CheckedRequest).principal ?? null,
+  }));
+  const signedIn = await instance.inject({
+    method: 'GET',
+    url: '/whoami',
+    headers: { 'x-test-principal': '1' },
+  });
+  expect(signedIn.json()).toEqual({ principal, carried: principal });
+  const anonymous = await instance.inject({ method: 'GET', url: '/whoami' });
+  expect(anonymous.json()).toEqual({ principal: null, carried: null });
+});
+
+it('[BR-ID-09] a target rewritten to the absolute form (Fastify rewriteUrl) reaches the checks in origin form', async () => {
+  adapter = new PlatformFastifyAdapter({
+    loggerInstance: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
+    rewriteUrl: (request: { url?: string | undefined }) =>
+      `https://api.example.com${request.url ?? ''}`,
+  });
+  const instance = adapter.getInstance();
+  const urls: { url: string; template: string | undefined }[] = [];
+  installRequestChecks(instance, [
+    async (request) => {
+      urls.push({ url: request.url, template: request.routeTemplate });
+    },
+  ]);
+  route(instance);
+  const response = await instance.inject({
+    method: 'POST',
+    url: '/probe/a%2Fb?b=2&a=%2f',
+    headers: { 'content-type': 'application/json' },
+    payload: '{}',
+  });
+  expect(response.statusCode).toBe(200);
+  expect(urls).toEqual([{ url: '/probe/a%2Fb?b=2&a=%2f', template: '/probe/:id' }]);
 });
 
 it('[BR-ID-09] refuseRoutes makes the registration of a refused route throw, naming method and route', () => {
