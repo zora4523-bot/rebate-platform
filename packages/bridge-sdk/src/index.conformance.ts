@@ -1,6 +1,10 @@
-// @couli/bridge-sdk/conformance: the untyped `invoke` used only by the bridge conformance page
-// (apps/h5 entries/conformance; ESLint forbids this subpath anywhere else in apps/h5/src).
-// TODO(规划/11 §2.3): the untyped invoke is implemented by F1-01b — blocked on F1-01b
+// Untyped entry reserved for the conformance page (enforced by the existing H5 lint rule).
+import { invokeUntyped } from './bridge.ts';
 
-/** Export subpath of this entry; the only export until F1-01b lands. */
+/** Export subpath of this entry. */
 export const ENTRY_NAME = '@couli/bridge-sdk/conformance';
+
+/** Same data / rejected BridgeFailure convention as call(); unknown or unsupported → 90001. */
+export function invoke(method: string, params: unknown): Promise<unknown> {
+  return invokeUntyped(method, params);
+}
