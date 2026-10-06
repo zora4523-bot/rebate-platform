@@ -30,10 +30,7 @@ it('[BR-ID-05] 同设备三个账号后第四次微信建号返回 44001，携�
   const afterRegistered = vi.fn(async () => undefined);
   for (let i = 0; i < 3; i++) {
     success(
-      await ctx.register(
-        { phone: `1380013810${i}`, device_id: randomUUID() },
-        { afterRegistered },
-      ),
+      await ctx.register({ phone: `1380013810${i}`, device_id: randomUUID() }, { afterRegistered }),
     );
     await anchorAfterRecords(kit, ctx);
   }
@@ -200,16 +197,14 @@ it('[BR-ID-05] 同一新设备同时建五个号，恰好三成功、两拦截',
   const service = createRegistrationService(ctx.options);
   const results = await Promise.all(
     Array.from({ length: 5 }, () =>
-      kit.db
-        .transaction()
-        .execute((trx) =>
-          service.register(trx, {
-            ...ctx.command,
-            phone: null,
-            register_method: 'wechat',
-            device_id: randomUUID(),
-          }),
-        ),
+      kit.db.transaction().execute((trx) =>
+        service.register(trx, {
+          ...ctx.command,
+          phone: null,
+          register_method: 'wechat',
+          device_id: randomUUID(),
+        }),
+      ),
     ),
   );
   expect(results.filter((r) => 'code' in r && r.code === 0)).toHaveLength(3);

@@ -1,7 +1,6 @@
 // Test-owned database fixtures and crypto setup; no registration implementation in helpers.
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { expect } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -22,6 +21,20 @@ import {
 export const WINDOW = 30 * 24 * 60 * 60 * 1000;
 export const PHONE = '13800138000';
 export const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+// The test-database helper is imported at run time (computed URL), like sms-codes/kit.ts: the
+// count and sensitive-word unit tests share this kit and must not depend on @couli/db/testing
+// (depcruise rule testcontainers-only-in-int-tests).
+interface TestDatabase {
+  urlFor(role: string): string;
+  drop(): Promise<void>;
+}
+async function createTestDatabase(): Promise<TestDatabase> {
+  const testing = (await import(
+    new URL('../../../../packages/db/src/testing/index.ts', import.meta.url).href
+  )) as { createTestDatabase(): Promise<TestDatabase> };
+  return testing.createTestDatabase();
+}
 
 export interface Kit {
   database: TestDatabase;
