@@ -65,7 +65,9 @@ it('[BR-ID-09][04 §5] 所有契约签名操作均拒绝无设备；所有非签
   } finally {
     await server.close();
   }
-});
+  // Every rejected() dereferences the contract and compiles the envelope schema (one per signed
+  // operation): about 3 s locally, just over the 5 s default on CI runners.
+}, 30_000);
 
 for (const [label, body, validSign, code] of [
   ['错签和损坏JSON', '{"broken":', false, 10401],
