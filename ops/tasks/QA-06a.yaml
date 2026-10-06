@@ -1,0 +1,23 @@
+id: QA-06a
+repo: rebate-platform
+title: k6 压测脚本：搜索、转链、Agent SSE、同步四个场景按峰值 3 倍加压，阈值（P95、错误率）与场景参数放同目录配置，只打本地与 WireMock
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 QA-06（B1-14「含 QA-06」，编号取 QA-06：05 有独立行，便于门禁整行放行，plan.md 说明）；01 §7.3 / §8 的 P95 目标与 02 §15.1 容量只作指针。
+# k6 只用容器镜像（grafana/k6，按摘要锁定），不进 npm 依赖；脚本读同目录 JSON 配置，规则测试只做静态核对（场景齐全、3 倍系数、阈值键齐、目标主机只允许回环与 WireMock）。
+# 真实联盟接口压测只按 09 README §0.2 硬规则 5，本批不做。
+refs: []
+refs_hash: {}
+deps: [QA-05a]
+paths:
+  - 'infra/load/k6/**'
+test_paths:
+  - 'test/spec/load/k6/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/load/k6/**'
+status: todo
+pr: null

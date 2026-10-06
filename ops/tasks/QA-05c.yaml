@@ -1,0 +1,22 @@
+id: QA-05c
+repo: rebate-platform
+title: 开关切换演练脚本（暂不开工）：逐个切换 02 §14 列出的非资金开关（agent.model_route、agent.enabled、jev.enabled、convert.enabled.<platform>、sms.provider 等），核对降级表现与恢复
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 开工条件：开关读写入口已实现（content 模块 config_items / kill_switches 与后台接口，尚未入账）；QA-05a 合并。
+# 资金开关（payout.*、pay.*）不在本批，留第 12 项分工。
+refs: []
+refs_hash: {}
+deps: [QA-05a]
+paths:
+  - 'infra/drills/switches/**'
+test_paths:
+  - 'test/spec/drills/switches/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/drills/switches/**'
+status: todo
+pr: null

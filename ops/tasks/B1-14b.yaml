@@ -1,0 +1,23 @@
+id: B1-14b
+repo: rebate-platform
+title: 降级接线第一段（暂不开工）：platform/index.ts 导出登记表；用 QA-05a 的注入工具验证百炼行与联盟查询熔断登记的降级
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 开工条件：platform/index.ts 无在途占用（现被 B1-02h、B1-03c、F1-06b、CT-15m 占用）；union 模块 B1-04b/c/o/p、B1-19b 合并；B3-02c 合并（百炼行由 ModelGateway 执行，本段只核对接线）。
+# 联盟搜索降级的 50304 与读缓存属 catalog（BR-PROD-07，B1-05 线），本段不改 catalog，只核对熔断打开时 union 返回可识别的 circuit_open。
+# union 在门禁 forbidden_paths 内（归属，MONEY_PATHS）：联盟治理按登记表取参的接线留给第 12 项分工（Opus 实现、Codex 测试），另立 union 线任务；本段不碰 union。
+refs: []
+refs_hash: {}
+deps: [B1-14a, QA-05a, B1-04p, B3-02c]
+paths:
+  - 'apps/api/src/modules/platform/index.ts'
+test_paths:
+  - 'test/spec/platform/resilience-wiring/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/resilience-wiring/**'
+status: todo
+pr: null

@@ -1,0 +1,22 @@
+id: B1-14c
+repo: rebate-platform
+title: 降级接线第二段（暂不开工）：短信主备通道切换（sms.provider）与推送失败回落站内消息，按登记表取参并用 QA-05a 注入验证
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 02 §14 短信、推送行；短信与推送的写者是 notification 模块（02 §4.1）。开工条件：B1-12b 合并（建 notification 模块），短信发送适配器已有假实现；
+# 只用假通道（AGENTS.md §6：非生产的短信适配器只能是假实现），不调用真实短信、推送接口。
+refs: []
+refs_hash: {}
+deps: [B1-14a, B1-14b, QA-05a, B1-12b]
+paths:
+  - 'apps/api/src/modules/notification/resilience/**'
+test_paths:
+  - 'test/spec/notification/resilience/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/resilience/**'
+status: todo
+pr: null

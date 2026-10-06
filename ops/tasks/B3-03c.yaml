@@ -1,0 +1,27 @@
+id: B3-03c
+repo: rebate-platform
+title: 流式输出第三段：配额与限流——受理 ⑧～⑩ 在同一 Redis Lua 脚本里原子判断与扣减、计数键（user_id / device_hash + IP）、自然日（+08:00）、退还条件、quota_left、30502 的 reset_at 与 next
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 B3-03「配额」；BR-AI-15（额度、计数键、退还只在本条维护）、BR-AI-23（校验顺序与只在第 ⑩ 步通过后计数）。
+# Redis 只经 platform/index.ts 已导出的 Redis 句柄；时钟只读注入的 Clock（硬规则 5）。单元测试用假 Redis，Lua 脚本的集成测试 *.int.test.ts 由编排者在容器里跑。
+# ①～⑦（开放、身份、同意、会话归属、长度、client_msg_id、进行中 run）经端口注入结果，不在本段实现；风控层 IP 200 条 / 日属 risk 模块。
+# refs 保留核心 BR（台账评审 GT-23b S1：删 refs 会使规则测试评审把该 BR 的发现移出范围）；连一跳引用的任务书超 24KB，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定，不以摘录为界。
+refs: [BR-AI-15, BR-AI-23]
+refs_hash:
+  BR-AI-15: fce0a36758e3
+  BR-AI-23: 7e8958be288f
+# agent 目录的 risk-map 行随门禁 PR（approvals 第 23 条）合并，不另立 B3-02r。
+deps: []
+paths:
+  - 'apps/api/src/modules/agent/stream/quota/**'
+test_paths:
+  - 'test/spec/agent/stream-quota/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-quota/**'
+status: todo
+pr: null

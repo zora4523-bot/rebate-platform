@@ -1,0 +1,25 @@
+id: B3-07b
+repo: rebate-platform
+title: 素材第二段（暂不开工）：素材结构化（标题、素材参考价两行、券、规格；缺失规格不补猜）与未知权益提示（淘礼金一律 unknown）
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 B3-07 验收「缺失规格与未验证权益不冒充确定结论」；BR-TEXT-15（首版只用 unknown 与关闭分支）、BR-PRICE-10（素材参考价不可信、两行展示）。
+# A/B/C 判定不在本批（留第 12 项分工，随淘礼金接入后验证，CAP-TB-09）；话术取值在 contracts/texts.default.json（B3-13），本段只出文案键。
+# 开工条件：V-07 样本到位、B3-07a 合并。
+refs: [BR-TEXT-15, BR-PRICE-10]
+refs_hash:
+  BR-TEXT-15: 6c123a5ccc02
+  BR-PRICE-10: 43f0c5212c55
+deps: [B3-07a]
+paths:
+  - 'apps/api/src/modules/parsing/material/structure/**'
+test_paths:
+  - 'test/spec/parsing/material-structure/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/parsing/material-structure/**'
+status: todo
+pr: null
