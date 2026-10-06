@@ -588,3 +588,40 @@ it('a contract task quotes only the named 04 sections and lists BR refs by id an
   });
   expect(() => generateBrief('X1-03', opts({ spec: contractSpec }))).toThrow(/04 §9: not found/);
 });
+
+it('[approvals 23] a listed impl: codex, tester: claude ledger gets the Codex-first implementation brief and a Claude test brief', () => {
+  writeFiles(root, {
+    'ops/tasks/X1-07.yaml': taskYaml({
+      id: 'X1-07',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+    'tools/guard/codex-impl-tasks.json': JSON.stringify({ approval: 23, tasks: ['X1-07'] }),
+  });
+  try {
+    const impl = readFileSync(generateBrief('X1-07', opts({ attempt: 1 })), 'utf8');
+    expect(impl).toContain(
+      '- 本轮阶段：impl（实现（Codex 首发，规划/11 §1.1 例外，台账 impl: codex）',
+    );
+    // Like a handover: static checks only in the sandbox, tests in the container or CI.
+    expect(impl).toContain('Codex 沙箱里只做不执行测试的静态检查');
+    expect(impl).toContain(
+      '| `tests_passed` | 类型检查与 lint 通过时填 true（测试由编排者在容器里跑） |',
+    );
+    expect(impl.trimEnd().split('\n').at(-1)).toBe(
+      'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删。只做静态检查，不运行测试；不要运行需要网络、Docker、数据库或监听端口的命令。',
+    );
+    const test = readFileSync(generateBrief('X1-07', opts({ phase: 'test', attempt: 1 })), 'utf8');
+    expect(test).toContain('写规则 / 验收测试（Claude 子代理）');
+    expect(test).toContain('只新增文件，已有的不改不删）：`test/spec/demo/**`');
+    // Not listed: the default implementation brief.
+    writeFiles(root, {
+      'tools/guard/codex-impl-tasks.json': JSON.stringify({ approval: 23, tasks: ['X1-08'] }),
+    });
+    const plain = readFileSync(generateBrief('X1-07', opts({ attempt: 1 })), 'utf8');
+    expect(plain).not.toContain('Codex 首发');
+  } finally {
+    removeDir(join(root, 'tools', 'guard', 'codex-impl-tasks.json'));
+  }
+});

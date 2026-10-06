@@ -38,6 +38,7 @@ import {
   splitTableRow,
 } from './spec.ts';
 import type { Rule, SpecSource } from './spec.ts';
+import { isCodexFirst, loadCodexImplTasks } from '../lib/codex-impl-tasks.ts';
 import { loadLegacyTasks, ruleTestScope } from '../lib/legacy-tasks.ts';
 import { readState } from './state.ts';
 import type { TaskState } from './state.ts';
@@ -76,6 +77,11 @@ export type BriefInput = {
    * the old one for Codex (verify:fast in its sandbox).
    */
   legacy?: boolean;
+  /**
+   * The task is on tools/guard/codex-impl-tasks.json (owner 2026-10-06, ops/approvals.yaml
+   * id 23): with impl: codex and tester: claude, Claude writes the rule tests and Codex implements.
+   */
+  codexImpl?: boolean;
   /** Default `impl`. */
   phase?: BriefPhase;
   risk: RiskReport['risk'];
@@ -290,13 +296,31 @@ export function renderBrief(input: BriefInput): string {
   const phase = input.phase ?? 'impl';
   // The old flow's Codex implementation (a legacy ledger with impl: codex).
   const oldCodexImpl = input.legacy === true && task.impl === 'codex' && phase === 'impl';
+  // A Codex-first implementation (ops/approvals.yaml id 23): like a handover, the sandbox only
+  // runs static checks and the orchestrator runs the tests in the isolated container or CI.
+  const codexFirstImpl =
+    !oldCodexImpl &&
+    input.codexImpl === true &&
+    task.impl === 'codex' &&
+    task.tester === 'claude' &&
+    phase === 'impl';
+  const phaseText =
+    phase === 'test' && task.tester === 'claude'
+      ? PHASE_TEXT.test.replace('（Codex）', '（Claude 子代理）')
+      : PHASE_TEXT[phase];
   const out: string[] = [];
   out.push(`# 任务 ${task.id}：${task.title}`, '');
   out.push(`- 仓库：${task.repo}；分支：\`task/${task.id}\`；第 ${input.attempt} 次尝试`);
   out.push(`- 规格版本：\`SPEC_REF=${input.specRef}\``);
   out.push(`- 风险级：${input.risk}；实现：${task.impl}；规则测试作者：${task.tester}`);
   out.push(
-    `- 本轮阶段：${phase}（${oldCodexImpl ? '实现（旧分工，台账 impl: codex）：规则测试已冻结，不改不删' : PHASE_TEXT[phase]}）`,
+    `- 本轮阶段：${phase}（${
+      oldCodexImpl
+        ? '实现（旧分工，台账 impl: codex）：规则测试已冻结，不改不删'
+        : codexFirstImpl
+          ? '实现（Codex 首发，规划/11 §1.1 例外，台账 impl: codex）：规则测试是 Claude 写的，已冻结，不改不删；沙箱里只做静态检查'
+          : phaseText
+    }）`,
   );
   out.push(`- 依赖任务：${task.deps.length === 0 ? '无' : task.deps.join('、')}`, '');
 
@@ -402,7 +426,7 @@ export function renderBrief(input: BriefInput): string {
       `本轮要的是「先红」：类型检查与 lint 通过；新写的规则测试在骨架上全部为红，红的原因只能是断言失败、fast-check 反例或骨架抛出的 \`NotImplemented\`，找不到模块、\`TypeError\`、语法错误的红不算（编排者用 \`tools/ops/verify-container.sh ${task.id} --red\` 在隔离容器里只跑本任务新写的规则测试，\`tools/guard/red-check.ts\` 逐个文件对账；没跑到的文件也算不合格）。规则测试放在：${tests}。${sandboxNote}`,
       '',
     );
-  } else if (phase === 'handover') {
+  } else if (phase === 'handover' || codexFirstImpl) {
     out.push(
       `必须变绿的规则测试：${tests}（由编排者在隔离容器里验证，验收命令：${commands.length === 0 ? '无' : commands.map((c) => `\`${c}\``).join('、')}）。${sandboxNote}`,
       '',
@@ -438,7 +462,7 @@ export function renderBrief(input: BriefInput): string {
   out.push(
     phase === 'test'
       ? '| `tests_passed` | 类型检查与 lint 通过时填 true（测试由编排者在容器里跑，先红由它核对） |'
-      : phase === 'handover'
+      : phase === 'handover' || codexFirstImpl
         ? '| `tests_passed` | 类型检查与 lint 通过时填 true（测试由编排者在容器里跑） |'
         : '| `tests_passed` | 验收命令是否通过 |',
   );
@@ -461,7 +485,9 @@ export function renderBrief(input: BriefInput): string {
   out.push(
     oldCodexImpl
       ? 'Do not commit. Do not install dependencies. Do not modify any file under `ops/` or `docs/`. 规则测试已冻结，不改不删。不要运行需要网络、Docker、数据库或监听端口的命令。'
-      : tail[phase],
+      : codexFirstImpl
+        ? tail.handover
+        : tail[phase],
   );
   return `${out.join('\n')}\n`;
 }
@@ -512,6 +538,7 @@ export function generateBrief(id: string, opts: GenerateOptions = {}): string {
   const state = readState(id);
   const phase = opts.phase ?? 'impl';
   const legacy = loadLegacyTasks(opts.root ?? trustedRoot()).has(id);
+  const codexImpl = isCodexFirst(task, loadCodexImplTasks(opts.root ?? trustedRoot()));
   if (phase === 'test' && task.test_paths.length === 0 && !legacy) {
     throw new CheckError(
       `任务 ${id} 的台账没有 test_paths：测试阶段不派工，先在 ops/tasks/${id}.yaml 补上本任务规则测试的路径（第一类保护路径之内）`,
@@ -531,6 +558,7 @@ export function generateBrief(id: string, opts: GenerateOptions = {}): string {
     renderBrief({
       task,
       legacy,
+      codexImpl,
       phase,
       risk: report.risk,
       attempt,

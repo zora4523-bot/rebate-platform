@@ -842,3 +842,67 @@ it(
     expect(stubCalls(fx)).toContainEqual(['state', 'bump-attempt', TASK, 'test']);
   },
 );
+
+it(
+  '[approvals 23] dispatch: a codex-impl-tasks.json ledger (impl: codex, tester: claude) is dispatched as the Codex implementation once spec_commit is set',
+  LONG,
+  () => {
+    const task = [
+      {
+        when: ['show'],
+        stdout: JSON.stringify({
+          id: TASK,
+          type: 'impl',
+          risk: 'RV2',
+          impl: 'codex',
+          tester: 'claude',
+          test_paths: ['test/spec/demo/**'],
+        }),
+      },
+    ];
+    const list = (root: string): void => {
+      mkdirSync(join(root, 'tools', 'guard'), { recursive: true });
+      writeFileSync(
+        join(root, 'tools', 'guard', 'codex-impl-tasks.json'),
+        JSON.stringify({ approval: 23, tasks: [TASK] }),
+      );
+    };
+    // Without spec_commit Claude's rule tests are not frozen yet: nothing is counted.
+    const early = fixture('dispatch-codex-first-early', {
+      task,
+      state: [{ when: ['get'], stdout: stateJson({}) }],
+    });
+    list(early.trusted);
+    const refused = runScript('dispatch.sh', [TASK], early.env);
+    expect(refused.status).toBe(1);
+    expect(lastJsonLine(refused.stdout)).toMatchObject({
+      action: 'none',
+      reason: 'spec-commit-missing',
+    });
+    expect(stubCalls(early, 'state').some((call) => call[1] === 'bump-attempt')).toBe(false);
+
+    const fx = fixture('dispatch-codex-first', {
+      task,
+      state: [{ when: ['get'], stdout: stateJson({ spec_commit: 'abc1234' }) }],
+      brief: [{ writeOut: `# 任务 ${TASK}：codex first\n\n- 本轮阶段：impl（Codex 首发）\n` }],
+    });
+    list(fx.trusted);
+    const res = runScript('dispatch.sh', [TASK], fx.env);
+    expect(res.status, res.stderr).toBe(0);
+    expect(lastJsonLine(res.stdout)).toMatchObject({ action: 'dispatched', phase: 'impl' });
+    const meta = waitForRun(fx);
+    expect(meta).toMatchObject({ mode: 'impl', phase: 'impl', exit_code: 0 });
+    const calls = stubCalls(fx);
+    expect(calls).toContainEqual(['state', 'bump-attempt', TASK, 'impl']);
+    expect(calls).toContainEqual([
+      'brief',
+      TASK,
+      '--phase',
+      'impl',
+      '--out',
+      join(fx.run, 'brief.md'),
+    ]);
+    const set = calls.find((call) => call[0] === 'state' && call[1] === 'set') ?? [];
+    expect(set).not.toContain('--implementer');
+  },
+);

@@ -11,7 +11,8 @@
 #                RV0 / RV1 only, checked here with the trusted task.ts and again by codex-run.sh.
 #   (legacy)     a ledger on tools/guard/legacy-tasks.json with impl: codex keeps the old flow:
 #                the default dispatch is Codex's implementation (phase impl), after Claude's
-#                rule tests.
+#                rule tests. The same for a task of tools/guard/codex-impl-tasks.json with
+#                impl: codex, tester: claude (ops/approvals.yaml id 23), once spec_commit is set.
 # The phase picks the counter (state.ts bump-attempt test|handover|impl), the brief
 # (brief.ts --phase test|handover|impl) and the wrapper phase (codex-run.sh impl --phase …).
 #
@@ -180,6 +181,15 @@ if [ "$PHASE" = handover ]; then
     *) stop 1 handover-refused "task $TASK is ${task_risk:-of unknown risk}: a Codex handover implementation is for RV0 / RV1 only (规划/11 §2.5: RV2 stops)" ;;
   esac
 elif [ "$legacy" = 1 ] && [ "$(task_field impl)" = codex ]; then
+  PHASE=impl
+  BRIEF_PHASE=impl
+elif [ "$(task_field impl)" = codex ] && [ "$(task_field tester)" = claude ] &&
+  agent_task_is_codex_impl "$TRUSTED" "$TASK"; then
+  # Owner 2026-10-06 (ops/approvals.yaml id 23): Claude wrote the rule tests first; Codex
+  # implements once they are committed and frozen (spec_commit recorded).
+  case "$spec_commit_now" in
+    '' | null) stop 1 spec-commit-missing "task $TASK is a Codex implementation (tools/guard/codex-impl-tasks.json): commit Claude's red rule tests and record spec_commit first (state.ts set --spec-commit)" ;;
+  esac
   PHASE=impl
   BRIEF_PHASE=impl
 else

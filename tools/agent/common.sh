@@ -91,6 +91,29 @@ agent_task_is_legacy() {
   ' "$1/tools/guard/legacy-tasks.json" "$2"
 }
 
+# True when task $2 is listed in <trusted $1>/tools/guard/codex-impl-tasks.json (owner 2026-10-06,
+# ops/approvals.yaml id 23: Codex implements, Claude wrote the rule tests): listed itself (B1-14a),
+# or a split task of a row listed whole (B3-02 lists B3-02a). Same matching as
+# tools/lib/codex-impl-tasks.ts. A missing or broken list lists nothing. The ledger still has to
+# name impl: codex with tester: claude (checked by the callers).
+agent_task_is_codex_impl() {
+  node -e '
+    const fs = require("node:fs");
+    try {
+      const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const id = process.argv[2];
+      const entry = /^[A-Z][A-Z0-9]*-[0-9]{2}[a-z]*$/;
+      const row = /^[A-Z][A-Z0-9]*-[0-9]{2}$/;
+      const ok = entry.test(id) && Array.isArray(doc.tasks) && doc.tasks.some((e) =>
+        typeof e === "string" && entry.test(e) &&
+        (e === id || (row.test(e) && e === id.replace(/[a-z]+$/, ""))));
+      process.exit(ok ? 0 : 1);
+    } catch {
+      process.exit(1);
+    }
+  ' "$1/tools/guard/codex-impl-tasks.json" "$2"
+}
+
 # True while any process of the process group $1 exists.
 agent_group_alive() {
   perl -e 'exit((kill(0, -$ARGV[0]) || $!{EPERM}) ? 0 : 1)' "$1"

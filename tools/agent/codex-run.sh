@@ -22,7 +22,9 @@
 #   handover  Codex implements once after the Opus attempts ran out, RV0 / RV1 only (§2.5)
 #   impl      the old flow: a ledger written before the switch (tools/guard/legacy-tasks.json)
 #             whose ledger names Codex as the implementer (impl: codex), after Claude's rule
-#             tests; counted as an implementation attempt, not as a handover
+#             tests; counted as an implementation attempt, not as a handover. Since 2026-10-06
+#             also a task of tools/guard/codex-impl-tasks.json with impl: codex, tester: claude
+#             (ops/approvals.yaml id 23)
 # A spec-test review of a task whose rule tests Codex wrote (ledger tester: codex) is refused:
 # that review goes to a fresh Claude subagent (README §11).
 set -euo pipefail
@@ -660,10 +662,18 @@ run_task() {
   fi
   # The old flow's Codex implementation: only a ledger of the legacy list that names Codex as
   # its implementer; every other task is implemented by the Opus subagent (README §10).
+  # Since 2026-10-06 also a task of tools/guard/codex-impl-tasks.json whose trusted ledger names
+  # impl: codex with tester: claude (ops/approvals.yaml id 23; Claude wrote the rule tests first).
   if [ "$MODE" = impl ] && [ "$PHASE" = impl ]; then
     read_task_info
-    agent_task_is_legacy "$TRUSTED" "$TASK" ||
-      fail_usage "task $TASK is not on tools/guard/legacy-tasks.json: under the default split of 2026-10-05 a Claude Opus subagent implements it (README §10); Codex only implements once on a handover (--phase handover)"
+    if agent_task_is_legacy "$TRUSTED" "$TASK"; then
+      :
+    elif agent_task_is_codex_impl "$TRUSTED" "$TASK"; then
+      [ "$TASK_IMPL" != codex ] || [ "$TASK_TESTER" = claude ] ||
+        fail_usage "task $TASK is on tools/guard/codex-impl-tasks.json but its trusted ledger names ${TASK_TESTER:-no} rule-test author, not claude: a Codex implementation needs Claude's rule tests (ops/approvals.yaml id 23)"
+    else
+      fail_usage "task $TASK is not on tools/guard/legacy-tasks.json: under the default split of 2026-10-05 a Claude Opus subagent implements it (README §10); Codex only implements once on a handover (--phase handover), or a task of tools/guard/codex-impl-tasks.json (ops/approvals.yaml id 23)"
+    fi
     [ "$TASK_IMPL" = codex ] ||
       fail_usage "task $TASK names ${TASK_IMPL:-no} implementer in its trusted ledger, not codex: --phase impl is the old flow for impl: codex ledgers only"
   fi

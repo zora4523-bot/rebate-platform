@@ -356,3 +356,67 @@ it(
   },
   CLI_TIMEOUT,
 );
+
+it('[ops/approvals.yaml id 23] a listed row and its split tasks may name impl: codex with tester: claude; nothing else changes', () => {
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    'tools/guard/codex-impl-tasks.json': JSON.stringify({ approval: 23, tasks: ['X1-02'] }),
+    // Listed row X1-02, split task with the Codex-first pair.
+    'ops/tasks/X1-02c.yaml': good({
+      id: 'X1-02c',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+    // Listed row, but the pair is not the Codex-first one.
+    'ops/tasks/X1-02d.yaml': good({
+      id: 'X1-02d',
+      impl: 'codex',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+    // Listed row, Codex-first pair, but no test_paths: Claude's rule tests still need them.
+    'ops/tasks/X1-02e.yaml': good({ id: 'X1-02e', impl: 'codex', tester: 'claude' }),
+    // Listed row keeping the default split is still fine (a withdrawn exception, 规划/11 §2.5).
+    'ops/tasks/X1-02f.yaml': good({
+      id: 'X1-02f',
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+    // Row X1-01 is not listed: the Codex-first pair stays refused.
+    'ops/tasks/X1-01p.yaml': good({
+      id: 'X1-01p',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+  });
+  try {
+    expect(checkTask('X1-02c', opts('RV2'))).toEqual([]);
+    expect(checkTask('X1-02c', opts('RV1'))).toEqual([]);
+    expect(checkTask('X1-02d', opts('RV1'))).toEqual([
+      'impl: must be claude for a task written after the switch of 2026-10-05 (a Codex handover is recorded at run time, not in the ledger)',
+    ]);
+    expect(checkTask('X1-02e', opts('RV1')).join('\n')).toContain(
+      'test_paths: required for a task with a rule-test author (tester: claude)',
+    );
+    expect(checkTask('X1-02f', opts('RV2'))).toEqual([]);
+    expect(checkTask('X1-01p', opts('RV1'))).toEqual([
+      'impl: must be claude for a task written after the switch of 2026-10-05 (a Codex handover is recorded at run time, not in the ledger)',
+      'tester: must be codex or none for a task written after the switch of 2026-10-05',
+    ]);
+    // A broken list lists nothing (fail-closed).
+    writeFiles(root, { 'tools/guard/codex-impl-tasks.json': '{ broken' });
+    expect(checkTask('X1-02c', opts('RV1')).join('\n')).toContain('impl: must be claude');
+  } finally {
+    for (const id of ['X1-02c', 'X1-02d', 'X1-02e', 'X1-02f', 'X1-01p']) {
+      removeDir(`${root}/ops/tasks/${id}.yaml`);
+    }
+    removeDir(`${root}/tools/guard/codex-impl-tasks.json`);
+  }
+});
