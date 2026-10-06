@@ -64,3 +64,35 @@ describe('[BR-AI-06] sentence buffer on a long unbroken run', () => {
     expect(buffer.end()).toEqual([link]);
   });
 });
+
+describe('[BR-AI-06] an amount inside a link or passcode is deleted with it (code review r2-1)', () => {
+  it.each([
+    ['前文 ￥1234AbCd￥ 后文', '前文 后文', true],
+    ['前文 ¥1234AbCd¥ 后文', '前文 后文', true],
+    ['前文 $1234AbCd$ 后文', '前文 后文', false],
+    ['前文 €1234AbCd€ 后文', '前文 后文', false],
+    ['前文 (1234AbCd) 后文', '前文 后文', false],
+    ['前文 （1234AbCd） 后文', '前文 后文', false],
+    ['点 https://s.click.taobao.com/t?q=%E5%95%86 看看', '点 看看', true],
+    ['点 https://a.com/p?x=29%E5%85%83 看看', '点 看看', true],
+  ])('deletes %s whole instead of leaving the placeholder', (input, output, amount) => {
+    const result = filterSegment(input);
+    expect(result.text).toBe(output);
+    expect(result.hits.includes('amount')).toBe(amount);
+  });
+
+  it('still uses the placeholder when the amount runs past the link', () => {
+    const result = filterSegment('看 https://a.com/p?x=29元 吧');
+    expect(result.text).toBe('看见卡片 吧');
+    expect(result.hits).toEqual(expect.arrayContaining(['amount', 'url']));
+  });
+
+  it('keeps a passcode whole across the forced flush and deletes it', () => {
+    const buffer = createSentenceBuffer();
+    const prose = '好'.repeat(55);
+    const code = '￥1234AbCd￥';
+    const segments = [...buffer.push(`${prose} ${code} 后文`), ...buffer.end()];
+    expect(segments.some((segment) => segment.includes(code))).toBe(true);
+    expect(segments.map((segment) => filterSegment(segment).text).join('')).not.toContain('见卡片');
+  });
+});

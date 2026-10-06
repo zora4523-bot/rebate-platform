@@ -254,8 +254,25 @@ export function filterAfter(
           base,
         ),
       }))
-      .sort((a, b) => a.start - b.start || b.end - a.end);
+      .sort(
+        (a, b) =>
+          a.start - b.start ||
+          b.end - a.end ||
+          Number(a.kind === 'amount') - Number(b.kind === 'amount'),
+      );
     if (spans.length === 0) break;
+    // Deletion wins over an amount found wholly inside a URL, scheme or passcode hit (as in
+    // ￥1234AbCd￥ or a %E5%85%83-encoded link): the whole string goes. An amount that only
+    // partly overlaps one still turns the merged span into the placeholder, so no price leaks.
+    const inside: boolean[] = [];
+    let deleteEnd = -1;
+    for (const span of spans) {
+      if (span.kind === 'amount') inside.push(span.end <= deleteEnd);
+      else {
+        inside.push(false);
+        deleteEnd = Math.max(deleteEnd, span.end);
+      }
+    }
     let out = '';
     let cursor = base;
     let index = 0;
@@ -268,7 +285,7 @@ export function filterAfter(
         const span = spans[index] as Span;
         if (span.start > end && !onlyHorizontalSpace(whole, end, span.start)) break;
         end = Math.max(end, span.end);
-        if (span.kind === 'amount') amount = true;
+        if (span.kind === 'amount' && inside[index] !== true) amount = true;
         if (!hits.includes(span.kind)) hits.push(span.kind);
         index += 1;
       }
