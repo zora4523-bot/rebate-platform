@@ -65,6 +65,7 @@ export function createUnionRegistry(options?: DemoUnionRegistryOptions): UnionRe
             seed: options.seed,
             clock: options.clock,
             environment: options.environment,
+            ...(options.warn === undefined ? {} : { warn: options.warn }),
           })
         : unimplementedAdapter(platform),
     ]),

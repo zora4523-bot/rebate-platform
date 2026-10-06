@@ -4,7 +4,7 @@
 // and its data is never AC-LINK / AC-ORD evidence. Links are https://demo.invalid/… only.
 // APP_ENV=prod refuses to construct it (same rule as replay in infra/endpoints.ts).
 import { createHash } from 'node:crypto';
-import { mulDivFloor, splitByBp } from '@couli/money';
+import { addFen, mulDivFloor, splitByBp, subFen } from '@couli/money';
 import { GovernanceError, type Clock } from '../../../platform/index.ts';
 import {
   isRegisteredPlatform,
@@ -32,15 +32,30 @@ import {
   type UnionItemDetail,
   type UnionOrder,
 } from '../../domain/types.ts';
+import {
+  mapTaobaoPrice,
+  type TaobaoPriceWarning,
+  type TaobaoPromotion,
+} from '../../domain/taobao-price.ts';
 
 /** Internal demo scenarios in CallCtx.scenario; never vendor response codes or payloads.
  * timeout -> Error.code=timeout; rate_limit -> Error.code=quota_exceeded (both GovernanceError);
  * delisted -> Error.code=demo_delisted for detail/resolve/convert, empty search/feed;
  * coupon_expired -> coupon_fen=0, final_price_fen=price_fen;
  * no_commission -> commission_rate_bp=0. Scenarios affect only the current call.
+ * Taobao prices go through mapTaobaoPrice (BR-PRICE-02, D33): coupon_expired removes the coupon
+ * items from the synthetic promotion detail; price_anomaly makes the detail disagree with the
+ * promotion final price by one fen (calc_diff); unknown_promo adds an unlisted promotion name
+ * (unknown_promo under the default switch). These two are Taobao-only scenarios.
  */
 export type DemoScenario =
-  'timeout' | 'rate_limit' | 'delisted' | 'coupon_expired' | 'no_commission';
+  | 'timeout'
+  | 'rate_limit'
+  | 'delisted'
+  | 'coupon_expired'
+  | 'no_commission'
+  | 'price_anomaly'
+  | 'unknown_promo';
 
 const SCENARIOS: readonly DemoScenario[] = [
   'timeout',
@@ -48,7 +63,10 @@ const SCENARIOS: readonly DemoScenario[] = [
   'delisted',
   'coupon_expired',
   'no_commission',
+  'price_anomaly',
+  'unknown_promo',
 ];
+const TAOBAO_ONLY_SCENARIOS: readonly DemoScenario[] = ['price_anomaly', 'unknown_promo'];
 
 export interface DemoUnionOptions {
   readonly platform: RegisteredPlatform;
@@ -56,6 +74,8 @@ export interface DemoUnionOptions {
   readonly clock: Clock;
   /** Supplied by validated application config; prod must reject before serving data. */
   readonly environment: UnionEnvironment;
+  /** Receives PRICE_CALC_DIFF / PRICE_PROMO_UNKNOWN events (name only, no item data). */
+  readonly warn?: (warning: TaobaoPriceWarning) => void;
 }
 
 /** Optional argument of createUnionRegistry: endpoints with mode=demo get a DemoUnionAdapter. */
@@ -64,6 +84,7 @@ export interface DemoUnionRegistryOptions {
   readonly seed: string;
   readonly clock: Clock;
   readonly environment: UnionEnvironment;
+  readonly warn?: (warning: TaobaoPriceWarning) => void;
 }
 
 export type DemoUnionErrorCode = 'demo_delisted' | 'demo_unknown_scenario';
@@ -89,6 +110,10 @@ const DEMO_HOST = 'demo.invalid';
 const BP = 10_000n;
 /** Synthetic prices are PRICE_CEILING_FEN scaled by a seeded ratio of 200–10 000 bp (998–49 900 fen). */
 const PRICE_CEILING_FEN = 49_900n;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+/** A synthetic name outside every default list; used only by the unknown_promo scenario. */
+const DEMO_UNLISTED_TITLE = '演示清单外优惠';
 const DETAIL_TEXT = '演示商品详情：合成数据，仅供开发联调，不对应任何平台的真实商品。';
 
 interface CatalogEntry {
@@ -100,6 +125,57 @@ interface CatalogEntry {
   /** Coupon as a share of the price; amounts are derived through @couli/money only. */
   readonly coupon_bp: bigint;
   readonly commission_rate_bp: bigint;
+  /** Taobao only: synthetic promotion detail (domain structure, not a platform payload). */
+  readonly promotions?: readonly DemoPromotion[];
+}
+
+/** Times are offsets from the injected fetch time, so the detail never ages out. */
+interface DemoPromotion {
+  readonly title: string;
+  readonly amount_fen: bigint;
+  readonly id?: string;
+  readonly start_offset_ms?: number;
+  readonly end_offset_ms?: number;
+}
+
+/**
+ * Taobao promotion detail built from the seeded ratios; every title is in the default lists of
+ * BR-PRICE-02, so normal searches and feeds never produce an anomaly.
+ */
+function taobaoPromotions(
+  index: number,
+  hash: string,
+  price: bigint,
+  couponBp: bigint,
+): readonly DemoPromotion[] {
+  const promotions: DemoPromotion[] = [];
+  if (couponBp > 0n) {
+    promotions.push({
+      title: index % 2 === 0 ? '商品券' : '店铺券',
+      amount_fen: mulDivFloor(price, couponBp, BP),
+      id: `demo-coupon-${hash.slice(0, 8)}`,
+      ...(index % 4 === 1 ? { start_offset_ms: -HOUR_MS, end_offset_ms: DAY_MS } : {}),
+    });
+    if (index % 6 === 1) {
+      promotions.push({
+        title: '店铺券',
+        amount_fen: mulDivFloor(price, 100n, BP),
+        id: `demo-coupon-${hash.slice(8, 16)}`,
+      });
+    }
+  }
+  if (index % 4 === 2 || index % 4 === 3) {
+    promotions.push({
+      title: index % 4 === 2 ? '百亿补贴' : '限时优惠',
+      amount_fen: mulDivFloor(price, 500n, BP),
+      start_offset_ms: -HOUR_MS,
+      end_offset_ms: DAY_MS,
+    });
+  }
+  if (index % 5 === 1) {
+    promotions.push({ title: '88VIP', amount_fen: mulDivFloor(price, 500n, BP) });
+  }
+  return Object.freeze(promotions.map((promotion) => Object.freeze(promotion)));
 }
 
 function digest(parts: readonly string[]): string {
@@ -159,6 +235,9 @@ function buildCatalog(platform: RegisteredPlatform, seed: string): readonly Cata
         price_fen: price,
         coupon_bp: couponBp,
         commission_rate_bp: commission,
+        ...(platform === 'taobao'
+          ? { promotions: taobaoPromotions(index, hash, price, couponBp) }
+          : {}),
       }),
     );
   }
@@ -176,6 +255,7 @@ export class DemoUnionAdapter implements UnionAdapter {
   readonly #catalog: readonly CatalogEntry[];
   readonly #feed: readonly CatalogEntry[];
   readonly #byLinkId: ReadonlyMap<string, CatalogEntry>;
+  readonly #warn: ((warning: TaobaoPriceWarning) => void) | undefined;
 
   constructor(options: DemoUnionOptions) {
     const { platform, seed, clock, environment } = options;
@@ -193,6 +273,7 @@ export class DemoUnionAdapter implements UnionAdapter {
     this.platform = platform;
     this.#seed = seed;
     this.#clock = clock;
+    this.#warn = options.warn;
     this.#catalog = buildCatalog(platform, seed);
     // The feed walks the same catalog in a different order, so every feed item has a detail.
     this.#feed = Object.freeze([...this.#catalog].reverse());
@@ -284,7 +365,11 @@ export class DemoUnionAdapter implements UnionAdapter {
   #scenario(ctx: CallCtx): DemoScenario | undefined {
     const scenario = ctx.scenario;
     if (scenario === undefined) return undefined;
-    if (!(SCENARIOS as readonly string[]).includes(scenario)) {
+    if (
+      !(SCENARIOS as readonly string[]).includes(scenario) ||
+      (this.platform !== 'taobao' &&
+        (TAOBAO_ONLY_SCENARIOS as readonly string[]).includes(scenario))
+    ) {
       throw new DemoUnionError('demo_unknown_scenario', 'Unknown demo scenario', this.platform);
     }
     const dependency = `union:demo:${this.platform}`;
@@ -345,6 +430,8 @@ export class DemoUnionAdapter implements UnionAdapter {
   }
 
   #item(entry: CatalogEntry, scenario: DemoScenario | undefined): UnionItem {
+    const now = this.#clock.now();
+    if (entry.promotions !== undefined) return this.#taobaoItem(entry, scenario, now);
     // coupon_fen = floor(price * bp / 10000); final_price_fen = price - coupon (the remainder).
     const couponBp = scenario === 'coupon_expired' ? 0n : entry.coupon_bp;
     const split = splitByBp(entry.price_fen, [couponBp]);
@@ -355,7 +442,53 @@ export class DemoUnionAdapter implements UnionAdapter {
       coupon_fen: split.shares[0] ?? 0n,
       final_price_fen: split.remainder,
       commission_rate_bp: scenario === 'no_commission' ? 0n : entry.commission_rate_bp,
-      quoted_at: this.#clock.now().toISOString(),
+      quoted_at: now.toISOString(),
+    });
+  }
+
+  /** Taobao: the synthetic detail goes through the same pure mapping as live data would. */
+  #taobaoItem(entry: CatalogEntry, scenario: DemoScenario | undefined, now: Date): UnionItem {
+    const nowMs = now.getTime();
+    const source = entry.promotions ?? [];
+    const kept =
+      scenario === 'coupon_expired'
+        ? source.filter((promotion) => promotion.id === undefined)
+        : [...source];
+    if (scenario === 'unknown_promo') {
+      kept.push({ title: DEMO_UNLISTED_TITLE, amount_fen: mulDivFloor(entry.price_fen, 100n, BP) });
+    }
+    const promotions: TaobaoPromotion[] = kept.map((promotion) => ({
+      title: promotion.title,
+      amount_fen: promotion.amount_fen,
+      ...(promotion.id === undefined ? {} : { id: promotion.id }),
+      ...(promotion.start_offset_ms === undefined
+        ? {}
+        : { start_ms: nowMs + promotion.start_offset_ms }),
+      ...(promotion.end_offset_ms === undefined ? {} : { end_ms: nowMs + promotion.end_offset_ms }),
+    }));
+    let total = 0n;
+    for (const promotion of kept) total = addFen(total, promotion.amount_fen);
+    let promotionFinal = subFen(entry.price_fen, total);
+    // One fen off: the detail no longer reconciles with the promotion final price.
+    if (scenario === 'price_anomaly') promotionFinal = subFen(promotionFinal, 1n);
+    const result = mapTaobaoPrice(
+      { discount_fen: entry.price_fen, promotion_final_fen: promotionFinal, promotions },
+      nowMs,
+    );
+    if (this.#warn !== undefined) for (const warning of result.warnings) this.#warn(warning);
+    return Object.freeze({
+      ...entry.ref,
+      title: entry.title,
+      price_fen: result.price_fen,
+      coupon_fen: result.coupon_fen,
+      final_price_fen: result.final_price_fen,
+      commission_rate_bp: scenario === 'no_commission' ? 0n : entry.commission_rate_bp,
+      quoted_at: now.toISOString(),
+      ...(result.coupon_ids === undefined ? {} : { coupon_ids: result.coupon_ids }),
+      price_status: result.price_status,
+      ...(result.price_anomaly_reason === undefined
+        ? {}
+        : { price_anomaly_reason: result.price_anomaly_reason }),
     });
   }
 
