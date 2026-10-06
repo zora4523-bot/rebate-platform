@@ -20,5 +20,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/bridge-sdk/**'
-status: todo
-pr: null
+status: done
+pr: 170
