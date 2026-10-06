@@ -15,6 +15,7 @@ it.each([
   { source: 'detail', basis: 'price_compare_risk' },
   { source: 'watch', basis: 'price_compare_risk' },
   { source: null, basis: 'price_compare_risk' },
+  { source: 'unknown_source', basis: 'price_compare_risk' },
 ])(
   '[AC-B1-05f#12] BR-PRICE-07：淘宝无预判结果，$source 按 $basis 报价',
   async ({ source, basis }) => {

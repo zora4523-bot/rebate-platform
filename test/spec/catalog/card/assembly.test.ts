@@ -118,6 +118,21 @@ it('[AC-B1-05f#5] BR-PRICE-11：age 在报价完成后取响应时刻，不取�
   expect(card.quoted_at).toBe(QUOTED_AT);
 });
 
+it('[AC-B1-05f#24] BR-PRICE-11：UTC 取价时间转成同一时刻的 +08:00，年龄不变', async () => {
+  const f = fixture();
+  const utcQuotedAt = '2026-10-06T02:00:00.000Z';
+  const card = await f.service.assemble(
+    request({
+      item: item({ quoted_at: utcQuotedAt }),
+      ref: ref({ rawFetchedAt: utcQuotedAt, receivedAt: utcQuotedAt }),
+      stale: true,
+    }),
+  );
+  expect(card.quoted_at).toBe('2026-10-06T10:00:00+08:00');
+  expect(card.age_sec).toBe(300);
+  expect(card.stale).toBe(true);
+});
+
 it.each(['search', 'feed', 'agent', 'parse', 'rebate_quote', 'tlj_pool'])(
   '[AC-B1-05f#6] BR-PRICE-08：$0 上限为零统一 no_rebate，由调用方决定是否过滤',
   async (entrySource) => {

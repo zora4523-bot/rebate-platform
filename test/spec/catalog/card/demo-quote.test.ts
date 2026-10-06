@@ -47,6 +47,8 @@ it.each([
     // Min rate=617: gross=617, fee=85, N=532, after reserve=466, self=212 (not 426/2=213).
     expect(result.rebateMinFen).toBe(212n);
     expect(result.rebateMaxFen).toBe(426n);
+    // Net uses the lower rebate: 10003 - 212, not the upper rebate.
+    expect(result.estNetPriceFen).toBe(9791n);
     expect(result.rebateBasis).toBe('price_compare_risk');
     expect(config.configValue).toHaveBeenCalledWith('card-app-a', RULE_KEY);
     expect(config.configValue).toHaveBeenCalledWith('card-app-a', 'tech_fee_bp');
@@ -88,6 +90,8 @@ it.each(['taobao', 'jd', 'pdd'] as const)(
     const expected = { taobao: 388n, jd: 405n, pdd: 450n }[platform];
     expect(result.rebateMinFen).toBe(expected);
     expect(result.rebateMaxFen).toBe(expected);
+    const expectedNet = { taobao: 9612n, jd: 9595n, pdd: 9550n }[platform];
+    expect(result.estNetPriceFen).toBe(expectedNet);
     expect(result.rebateBasis).toBe('normal');
   },
 );
@@ -139,6 +143,7 @@ it('[AC-B1-05f#21] BR-PRICE-07/08：零下限仍有返利，零上限为无返�
   const positive = await quoter.quote(tiny, viewer(), context);
   expect(positive.rebateMinFen).toBe(0n);
   expect(positive.rebateMaxFen).toBe(1n);
+  expect(positive.estNetPriceFen).toBe(1n);
   expect(positive.rebateBasis).toBe('price_compare_risk');
   const zero = await quoter.quote({ ...tiny, commission_rate_bp: 0n }, viewer(), context);
   expect(zero.rebateMinFen).toBe(0n);
@@ -146,3 +151,32 @@ it('[AC-B1-05f#21] BR-PRICE-07/08：零下限仍有返利，零上限为无返�
   expect(zero.rebateBasis).toBe('no_rebate');
   expect(zero.estNetPriceFen).toBeNull();
 });
+
+it('[AC-B1-05f#23] BR-CALC-20：预留步向下取整，本人全额份额保留一分差异', async () => {
+  const create = demoFactory();
+  const config = configuration();
+  config.values.set('tech_fee_bp', { taobao: 0 });
+  config.values.set(RULE_KEY, { reserve_bp: 1234, self_share_bp: 10000 });
+  const quoter = create({ appEnv: 'test', unionMode: 'demo', config, ruleConfigKey: RULE_KEY });
+  const result = await quoter.quote(item(), viewer(), {
+    ...context,
+    entrySource: 'pool',
+    rebateBasis: 'normal',
+  });
+  // gross=N=1000; floor(1000 * 8766 / 10000)=876, not rounded 877; self=876.
+  expect(result.rebateMinFen).toBe(876n);
+  expect(result.rebateMaxFen).toBe(876n);
+});
+
+it.each(['jd', 'pdd'] as const)(
+  '[AC-B1-05f#20] tech_fee_bp 仅含淘宝时拒绝 $0 报价，不补平台默认值',
+  async (platform) => {
+    const create = demoFactory();
+    const config = configuration();
+    config.values.set('tech_fee_bp', { taobao: 0 });
+    const quoter = create({ appEnv: 'test', unionMode: 'demo', config, ruleConfigKey: RULE_KEY });
+    await expect(
+      quoter.quote(item({ platform }), viewer(), { ...context, rebateBasis: 'normal' }),
+    ).rejects.toThrow(/config|missing|rule|配置|缺少/iu);
+  },
+);
