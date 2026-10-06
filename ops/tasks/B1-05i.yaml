@@ -9,11 +9,9 @@ type: impl
 # price_unavailable 卡：契约里三个价格字段已是 NullableFen，冲突只在 ProductCard.link_id 必填；契约同步（含回写规划 04）记 followups F-37，本任务不改契约，主动查询分支按上面「失败即关」过渡并留 TODO(规划/11 §9.2) 指向 F-37。
 # 受保护测试：[AC-B1-05f#8] 对无券卡断言含 price_basis，与 BR-PRICE-03 细则相反，按规划/11 §4.4 由 test-change 任务 B1-04s 先放宽为两键之一（需负责人标签）；本任务 deps 含 B1-04s，有券 / 无券的精确断言写在 test/spec/catalog/price-state/**。
 # 金额只经 @couli/money；风险表算 RV1（catalog/**），评审仍按本线做法两家都审。
-refs: [BR-PRICE-01, BR-PRICE-03, BR-PRICE-12]
-refs_hash:
-  BR-PRICE-01: 9ff41b3629dd
-  BR-PRICE-03: 51dcba492d39
-  BR-PRICE-12: d34f9f17f4ae
+# refs 精简（2026-10-06）：任务书上限 24KB，BR-PRICE-02 一条（含细则）就有 29.5KB、BR-PRICE-01 与 03 合起来也超限，所以 refs 只留放得下的条目，其余由编排者按「依据摘录」摘入任务书第 2 节；08 这几条变了由编排者对照 refs 之外的依据重新核对（couli-runs/W1-search-linking/decision-orchestrator.md）。
+refs: []
+refs_hash: {}
 deps: [B1-04r, B1-05f, B1-04s]
 paths:
   - 'apps/api/src/modules/catalog/**'
