@@ -1,7 +1,7 @@
 // B1-05f: CardAssembler (one priced ProductCard per call) and a non-production demo quoter.
 // Amounts stay integer fen (bigint) until the JSON boundary; arithmetic only via @couli/money.
 import type { components } from '@couli/contracts-ts';
-import { applyReserve, fenToJsonNumber, mulDivFloor } from '@couli/money';
+import { applyReserve, fenToJsonNumber, mulDivFloor, subFen } from '@couli/money';
 import type { Clock } from '../../platform/index.ts';
 import type { UnionEnvironment, UnionItem, UnionMode } from '../../union/index.ts';
 import {
@@ -79,9 +79,17 @@ function invalidQuote(reason: string): never {
  */
 function assertPriced(item: UnionItem): void {
   const { price_fen: price, coupon_fen: coupon, final_price_fen: final } = item;
-  if (price <= 0n || coupon < 0n || coupon >= price || final <= 0n || price - coupon !== final) {
+  const reject = (): never => {
     throw new TypeError('card: price fields violate BR-PRICE-01; caller must not assemble a card');
+  };
+  if (price <= 0n || coupon < 0n || coupon >= price || final <= 0n) reject();
+  let expectedFinal: bigint;
+  try {
+    expectedFinal = subFen(price, coupon);
+  } catch {
+    return reject();
   }
+  if (expectedFinal !== final) reject();
 }
 
 /**
@@ -277,7 +285,7 @@ export function createDemoRebateQuoter(options: DemoRebateQuoterOptions): CardRe
 
     const self = (rateBp: bigint): bigint => {
       const gross = mulDivFloor(final, rateBp, BP);
-      const n = gross - mulDivFloor(gross, feeBp, BP);
+      const n = subFen(gross, mulDivFloor(gross, feeBp, BP));
       return mulDivFloor(applyReserve(n, reserveBp).after_reserve_fen, selfShareBp, BP);
     };
 
@@ -293,7 +301,7 @@ export function createDemoRebateQuoter(options: DemoRebateQuoterOptions): CardRe
     return {
       rebateMinFen: min,
       rebateMaxFen: max,
-      estNetPriceFen: final - min,
+      estNetPriceFen: subFen(final, min),
       rebateBasis: basis,
     };
   }
