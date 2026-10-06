@@ -174,9 +174,7 @@ export function outbox(app: HttpApp) {
 export async function responseValidator() {
   const requireApi = createRequire(new URL('apps/api/package.json', ROOT));
   const parser = requireApi('@readme/openapi-parser') as {
-    dereference(
-      path: string,
-    ): Promise<{
+    dereference(path: string): Promise<{
       paths: Record<
         string,
         { post: { responses: Record<string, { content: Record<string, { schema: JsonSchema }> }> } }
