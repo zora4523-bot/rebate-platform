@@ -1,0 +1,133 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/model-gateway/vendors/** is RV1). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl. Refs BR-AI-14; the brief with its one-hop text passes 24 KB, so the orchestrator wrote it with brief.ts minus the one-hop text plus a pointer to the full BR text. No real model call, no real key: synthetic recordings and fake transports only. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist: pass, 0 S0/S1; 2 S2 to follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh read-only Codex session, not the implementing one: round 1 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rounds 1 and 2 by fresh Codex sessions (1 and 5 S1: shared references, licence dimensions, data classes, metering), fixed by the test author; a fresh Claude subagent closed it (one more S1 fixed, re-check pass). The orchestrator added an optional AbortSignal (G1) before freezing"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B3-02a",
+  "spec_ref": "68b2959cf2b680f11f084706fdfcf215beb7fa80",
+  "spec_commit": "080b35091d71dbe9367b53ee4fdc40709c7d46d7",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "080b35091d71dbe9367b53ee4fdc40709c7d46d7",
+      "tree": "408c67643ef0da2308bc216f9eb8653d963e396b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T10:43:56Z",
+      "finished_at": "2026-10-06T10:44:07Z",
+      "red_tests": [
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#8] 线上千问调用经传输发出，只记入线上计量（日预算口径），记录时刻取注入时钟",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#9] 运行时拦截：glm 进入线上调用被拒（vendor_not_online），不发请求、不计量",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#9] 运行时拦截：deepseek 进入线上调用被拒（vendor_unknown），不发请求、不计量",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#10] 离线用途不处理用户输入与生产数据：qwen 离线收到 user_input 被拒，不发请求",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#10] 离线用途不处理用户输入与生产数据：qwen 离线收到 production 被拒，不发请求",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#10] 离线用途不处理用户输入与生产数据：glm 离线收到 user_input 被拒，不发请求",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#10] 离线用途不处理用户输入与生产数据：glm 离线收到 production 被拒，不发请求",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#11] 没有登记外发许可时，qwen 离线收到改写样本被拒",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#11] 没有登记外发许可时，glm 离线收到改写样本被拒",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#12] 改写样本：与许可的厂商、接入平台、业务空间、模型、用途完全一致才放行",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#13] 改写样本许可不继承：只变接入平台（智谱直连）即拒绝，不调传输",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#13] 改写样本许可不继承：只变业务空间 B即拒绝，不调传输",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#13] 改写样本许可不继承：只变模型 m2即拒绝，不调传输",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#13] 改写样本许可不继承：只变用途 prompt_rewrite即拒绝，不调传输",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#14] 改写样本许可不跨厂商：GLM 的许可不放行同路径同用途的千问",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#15] 改写样本：书面确认不训练与千问以外的法务同意分开判断——GLM 未书面确认不训练",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#15] 改写样本：书面确认不训练与千问以外的法务同意分开判断——GLM 已确认不训练但无法务同意",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#15] 改写样本：书面确认不训练与千问以外的法务同意分开判断——千问未书面确认不训练",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#15] 改写样本：书面确认不训练与千问以外的法务同意分开判断——千问已确认、无法务同意（千问不需要）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#16] 负责人聚合统计写成的评测题：千问可用；GLM 只有额度没有批准时拒绝；有批准记录后放行",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#17] 离线可处理合成数据、公开商品数据与提示词：qwen 离线 synthetic 到达传输层（GLM 已定额度）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#17] 离线可处理合成数据、公开商品数据与提示词：qwen 离线 public_product 到达传输层（GLM 已定额度）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#17] 离线可处理合成数据、公开商品数据与提示词：qwen 离线 prompt 到达传输层（GLM 已定额度）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#17] 离线可处理合成数据、公开商品数据与提示词：glm 离线 synthetic 到达传输层（GLM 已定额度）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#17] 离线可处理合成数据、公开商品数据与提示词：glm 离线 public_product 到达传输层（GLM 已定额度）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#17] 离线可处理合成数据、公开商品数据与提示词：glm 离线 prompt 到达传输层（GLM 已定额度）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#18] 千问以外厂商在负责人定额度前不发生付费离线调用（06 Q-C31）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#19] 未定额度时 GLM 仍可走不计费的录制回放，回放不产生计量",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#20] 千问离线不设预算上限：未列入额度清单也放行，且只记离线计量、不进日预算",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#21] 离线按厂商独立计量：连续调用的请求、返回与各次用量都落到对应厂商",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#22] 不计费传输上的线上调用同样不计量（回放不占日预算）",
+        "test/spec/agent/model-vendors/gateway.test.ts > [BR-AI-14 多厂商接入#23] 换厂商不改变模型可见内容：请求体按调用方原样交给传输，不按厂商改写，也不改动调用方对象",
+        "test/spec/agent/model-vendors/gateway.test.ts > [编排决定 G1#1] 调用时传入的取消信号原样（同一对象）交给传输",
+        "test/spec/agent/model-vendors/gateway.test.ts > [编排决定 G1#2] 调用前已取消的信号：不调传输、不计量，以 aborted 结束",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#1] 登记表只有规划已登记的千问与智谱 GLM，不新增厂商，每家带 09 能力条目",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#2] 千问登记线上 + 离线，经百炼接入，能力条目 CAP-X-07",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#3] GLM 只登记离线，两条接入路径都登记，能力条目 CAP-X-19，离线付费须先定额度",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#4] 改写样本外发许可按接入路径与用途分别登记，登记表不带厂商级的总许可字段",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#5] 只有登记了线上用途的厂商才在线上可用：登记表中线上厂商只有千问",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#6] 类型层拦截：OnlineVendorId 只接受千问，离线厂商不能写进线上调用",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#7] 运行时拦截：\"glm\" 不是线上登记的厂商，assertOnlineVendor 拒绝",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#7] 运行时拦截：\"deepseek\" 不是线上登记的厂商，assertOnlineVendor 拒绝",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#7] 运行时拦截：\"doubao\" 不是线上登记的厂商，assertOnlineVendor 拒绝",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#7] 运行时拦截：\"QWEN\" 不是线上登记的厂商，assertOnlineVendor 拒绝",
+        "test/spec/agent/model-vendors/registry.test.ts > [BR-AI-14 多厂商接入#7] 运行时拦截：\"\" 不是线上登记的厂商，assertOnlineVendor 拒绝",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#1；02 §9.3] 回放传输不计费；按 vendor + model + body 命中对应那条录制，body 键序不影响命中",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#2；02 §9.3] vendor 不同即未命中：报 recording_miss，不回落到真实调用",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#2；02 §9.3] model 不同即未命中：报 recording_miss，不回落到真实调用",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#2；02 §9.3] body 不同即未命中：报 recording_miss，不回落到真实调用",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#3；02 §12.7] 合成且厂商已登记的录制通过校验并原样返回",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#4；02 §12.7] 未标合成 的录制被拒（recording_invalid）",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#4；02 §12.7] 缺合成标记 的录制被拒（recording_invalid）",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#4；02 §12.7] 未登记厂商 的录制被拒（recording_invalid）",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#4；02 §12.7] 缺 response 的录制被拒（recording_invalid）",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·离线密钥由人持有、不进仓库#5；02 §12.6、§12.7] 录制里出现请求头 Authorization即拒绝（recording_has_secret）",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·离线密钥由人持有、不进仓库#5；02 §12.6、§12.7] 录制里出现请求头 小写 authorization即拒绝（recording_has_secret）",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·离线密钥由人持有、不进仓库#5；02 §12.6、§12.7] 录制里出现api_key 字段即拒绝（recording_has_secret）",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·离线密钥由人持有、不进仓库#5；02 §12.6、§12.7] 录制里出现嵌套的 apiKey即拒绝（recording_has_secret）",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#6；02 §9.3] 按文件名顺序读取目录下的 *.json 录制，忽略其他文件；任一录制不合规则整体失败",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#7；05 B3-02] 本目录 __fixtures__ 的合成录制全部合规，且每个登记厂商至少一条",
+        "test/spec/agent/model-vendors/replay.test.ts > [BR-AI-14 多厂商接入·录制回放#8；02 §9.3 结果确定] 回放每次返回完整分片：调用方改动上一次结果不影响下一次回放",
+        "test/spec/agent/model-vendors/replay.test.ts > [编排决定 G1#3] 回放传输收到已取消的信号即拒绝（aborted），不返回录制"
+      ],
+      "expected": [
+        "test/spec/agent/model-vendors/gateway.test.ts",
+        "test/spec/agent/model-vendors/registry.test.ts",
+        "test/spec/agent/model-vendors/replay.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "e399d2f042b3c521e9c65aaabcf84312c71e7deaa5a1b1ef83df0e665f51dc9e"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "be82a6ab38887f74aea9df251632c7bc20b664e2",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
