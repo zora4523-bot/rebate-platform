@@ -17,5 +17,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/h5-components/**'
-status: todo
-pr: null
+status: done
+pr: 218
