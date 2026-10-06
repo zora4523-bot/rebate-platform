@@ -1,0 +1,115 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/stream/admission/** is RV1). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl. Refs BR-AI-15, BR-AI-23 (BR-AI-23 as revised in planning e9fe98a); brief written by hand as for B3-02a. After the Codex attempts ran out, one Opus fallback commit (规划/11 §2.5 Codex 首发实现) added runId compensation for a lost admit reply; an exception round (orchestrator ruling, option A) let Opus treat command_failed as uncertain too. After the round-4 reviews, one mechanical commit changed only the import path of RedisUnavailableError to the platform index (CI depcruise modules-only-via-index; same re-export, no behaviour change). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "scope": "fresh read-only Claude subagents with the money checklist each round: round 1 pass (2 S2); round 3 after the Opus fallback 1 S1 (command_failed not compensated); round 4 (exception round, orchestrator option A) after 954790d: pass, 0 S0/S1, 2 S2 (compensation vs late admit ordering; app_id not in keys) and 1 out of scope (B3-03d final event), all in followups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 4,
+      "note": "fresh read-only Codex sessions (none implemented): round 1 pass; round 2 and round 3 S1 (round 3: command_failed after the command was sent not compensated, same as Claude); round 4 is the exception round on 954790d: the round-3 S1 is gone, raw verdict fail with 1 new S1 (when the Redis outage lasts until the compensating eval also fails, the 1 daily quota taken by that admission is not refunded; the fallback B3-03e is not implemented yet). Orchestrator ruling option B (couli-runs CODEX-IMPL/decision-orchestrator.md, under ops/approvals.yaml id 18: needs a sustained outage across two calls, Agent quota is not a money rule): downgraded to S2 and moved to B3-03e (settle such a run by runId as server_error with 0 cards and refund, BR-AI-15); open_s0_s1 is 0 after that ruling, stated in the PR description (降级说明)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rounds 1 and 2 by fresh Codex sessions (8 and 6 S1), rewritten to the revised BR-AI-23 by the test author; a fresh Claude subagent closed it (message_id S1 fixed). The frozen rule tests were not changed afterwards (git diff cf83ba6 -- test/spec empty before landing)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B3-03c",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "baa989afebf2c21e182d3401bc7dd45cc76b2954",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "baa989afebf2c21e182d3401bc7dd45cc76b2954",
+      "tree": "011238ed5a68dae3816788af0bdb27775ba19b97",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T15:17:41Z",
+      "finished_at": "2026-10-06T15:17:51Z",
+      "red_tests": [
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] 并发：会员只剩 1 条时在不同会话并发 8 条，恰好 1 条受理（quota_left=0），其余 30502",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] 并发：同一会话并发 8 条不同 client_msg_id，恰好 1 条受理，其余 30506",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] 并发：同一 client_msg_id 并发 8 次，恰好 1 条受理，其余 duplicate 指向它，只计 1 条",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] 会话锁到期 = 受理 + run 最长时长 + 30 秒（按注入时钟毫秒），值为 run_id：到期前 30506，到期后未结算则交出遗留票据",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] 不同时长配置：锁到期随 runMaxMs 与宽限变化",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] done / error / 取消结算后锁即释放：时钟不动，同会话下一条立即受理；旧票据再结算不删新 run 的锁",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] 一次 admit 的判断与写入在同一次 eval 内完成（不另行 get / set / eval）",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] 并发临界：分钟窗口剩 1 条、游客设备剩 1 条、IP 剩 1 条时两连接并发 8 条，各恰好 1 条受理",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-15][BR-AI-23] 受理、结算、去重写下的每个键都有正的 TTL",
+        "test/spec/agent/stream-admission/lock.int.test.ts > [BR-AI-23] 未结算时锁与受理状态的 Redis 回收期不早于 runMaxMs + 宽限（容差 5 秒），逻辑边界仍按注入时钟",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-23] 同时不满足多条时返回顺序在前的码（⑦>⑧>⑨>⑩），被拒请求不改动任何存储值",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-23] ⑥ 已受理的 (会话, client_msg_id) 再来返回原受理票据：原 run 进行中为 running（锁占着、日额度用完也一样），结算后为 settled；不计数；被拒的 client_msg_id 不登记",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-23] 崩溃收尾：锁过期而未结算 → 同键为 unsettled、同会话新消息先得 unsettled{遗留票据}（不写任何值）；补结算后才受理，迟到的原结算不改结论、不删新锁",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-15] 游客分钟窗口只按 device_hash：同一分钟换 ipKey、换 loggedIn 仍 42901，且 42901 不耗日额度",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-15][BR-AI-23] ⑨ 轮数按会话累计、不随自然日清零：满轮后跨午夜同会话仍 30504，新会话可受理",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-15][BR-AI-23] ⑧ 60 秒滑动窗口：超限 42901 且 Retry-After=ceil(剩余秒)≥1，窗口滑过后恢复，42901 不占日额度",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-15] 分钟限流游客按 device_hash 计（同 IP 不同设备互不影响）",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-15][BR-AI-23] ⑨ 会话满轮数后 30504{round_limit} 且不计配额；退还只退日配额，不减轮数与分钟窗口",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-15] 会员分钟窗口按 user_id 隔离：A 满上限后换会话、换实例仍 42901，同一时刻 B 可受理",
+        "test/spec/agent/stream-admission/order.int.test.ts > [BR-AI-15] 分钟窗口跨午夜保留：23:59:55 受理满 10 条，00:00:00 新会话仍 42901，满 60 秒才恢复（日额度已重置）",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 会员按 user_id 计：quota_left 逐条递减到 0，下一条 30502{reset_at 次日 00:00+08:00, next none}，跨设备合计",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 自然日 +08:00 00:00 重置：23:59:59.999 仍 30502，00:00:00.000 起重新计数",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 游客档：device_hash 与 IP 两个计数任一到上限即 30502，quota_left 取较小者，同 IP 不同设备合计",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 同一 device_hash 登录前后共用计数（只登录不绑手机仍 30502）；绑手机后按 user_id 重新计，游客计数不迁移",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 退还：服务端原因且无卡片退 1 条（quota_left 计入退还）；有卡片或照常计数的结局不退；同票据二次结算不再退（返回首次结算结论）、不退到负数",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 游客退还 device_hash 与 IP 两个计数",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 跨日退还退受理日：23:59:50 受理、次日 00:00:20 以服务端原因无卡结束 → 退前一日，新一日不受影响，settle 返回结算当日剩余",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 游客两个计数的日界：23:59:59.999 设备满或 IP 满仍 30502（reset_at、next 照身份），00:00 两个计数都重置",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 结束原因 × 卡片 0/1（服务端原因另加 2）用真实 settle 结算：只有服务端原因且无卡退 1 条，经后续受理核对计数",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 跨日已出卡后失败不退：23:59:50 受理、次日 00:00:20 以 server_error 结束且已下发 1 张卡 → 前一日仍计 1 条",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] settle 的 quota_left 是结算时的真实剩余：两会话交错受理与结算，含中间退还",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 游客结算的 quota_left = min(设备剩余, IP 剩余)：IP 剩余较小时正常结束与退还后都取 IP",
+        "test/spec/agent/stream-admission/quota.int.test.ts > [BR-AI-15] 两连接并发重复结算同一票据（屏障让两次 eval 同时放行）只退 1 条；settle 的去重与退还在同一次 eval",
+        "test/spec/agent/stream-admission/rules.test.ts > [BR-AI-15] 默认值：会员 30 条/日，游客档 3 条/device_hash/日 + 30 条/IP/日，10 条/分，每会话 30 轮",
+        "test/spec/agent/stream-admission/rules.test.ts > [BR-AI-15] 自然日按 +08:00：日界两侧分属两天，reset_at 为次日 00:00+08:00",
+        "test/spec/agent/stream-admission/rules.test.ts > [BR-AI-15] 任意时刻：reset_at 在 (now, now+24h]，前一毫秒仍属当日，reset_at 起属次日",
+        "test/spec/agent/stream-admission/rules.test.ts > [BR-AI-15] 30502 的 data.next：游客 login，已登录未绑手机 bind_phone，已绑手机 none",
+        "test/spec/agent/stream-admission/rules.test.ts > [BR-AI-15] 退还：服务端原因结束且未下发卡片才退 1 条，其余结局照常计数",
+        "test/spec/agent/stream-admission/rules.test.ts > [BR-AI-23] Redis 不可用：admit 抛 AdmissionUnavailableError，不写任何键（调用方回 50401）"
+      ],
+      "expected": [
+        "test/spec/agent/stream-admission/lock.int.test.ts",
+        "test/spec/agent/stream-admission/order.int.test.ts",
+        "test/spec/agent/stream-admission/quota.int.test.ts",
+        "test/spec/agent/stream-admission/rules.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "fc5bb032c55f7c6972c05f3c209d42e2a854375a69d50e3ad4fadbac9700c067"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "081e7cb022e2684536dfeae20acb2603276c93d7313b2eaceb4cfc81aafa33e2"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "a53e01e6665b105002078e7b4ee1db31eff0bb5a",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
