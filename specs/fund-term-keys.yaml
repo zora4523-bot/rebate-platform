@@ -139,6 +139,7 @@ ordinary:
     - agent.suggest.no_result.3
     - agent.timeout
     - agent.welcome
+    - ai_label
     - btn.buy
     - btn.buy.coupon
     - buy.opening

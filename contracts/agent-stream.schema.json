@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Agent stream contract (CT-08a). Frames, events and cards: 规划/04 §8.1–8.3; client handling: 规划/03 §7.2. One SSE frame `event: <type>` / `id: <seq>` / `data: <json>` is written here as one object {event, id, data}; the heartbeat comment line `: ping` (every 15 s) is not a frame and is validated by $defs/ping. id (= seq) increases within a run; done and error are the only terminal events. Known card types are validated strictly; any other type is an unknown card: only the envelope is checked and the client shows fallback_text (03 §7.2). page_guide and earnings_summary are added by CT-08b; until then they are unknown cards. Fixtures: contracts/fixtures/agent-streams/*.ndjson.",
+  "$comment": "Agent stream contract (CT-08a). Frames, events and cards: 规划/04 §8.1–8.3; client handling: 规划/03 §7.2. One SSE frame `event: <type>` / `id: <seq>` / `data: <json>` is written here as one object {event, id, data}; the heartbeat comment line `: ping` (every 15 s) is not a frame and is validated by $defs/ping. id (= seq) increases within a run; done and error are the only terminal events. Known card types are validated strictly; any other type is an unknown card: only the envelope is checked and the client shows fallback_text (03 §7.2). page_guide (D31) and earnings_summary (D32) are registered by CT-08b; $defs also holds the model-side shapes page_guide_intent, get_my_earnings_args and get_my_earnings_result (04 §8.5), which are not frames. Fixtures: contracts/fixtures/agent-streams/*.ndjson.",
   "title": "AgentStreamFrame",
   "type": "object",
   "additionalProperties": false,
@@ -128,16 +128,18 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
     },
+    "route_name": {
+      "description": "Route name from contracts/routes.json (PascalCase, never a URL).",
+      "type": "string",
+      "pattern": "^[A-Z][A-Za-z0-9]*$"
+    },
     "route_target": {
-      "description": "Route name from contracts/routes.json with its params (TECH-04); the client opens it only after a user tap.",
+      "description": "Route name from contracts/routes.json with optional params, same as RouteTarget in openapi.yaml and nav.open (TECH-04); the client opens it only after a user tap.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["route", "params"],
+      "required": ["route"],
       "properties": {
-        "route": {
-          "type": "string",
-          "pattern": "^[A-Z][A-Za-z0-9]*$"
-        },
+        "route": { "$ref": "#/$defs/route_name" },
         "params": {
           "type": "object",
           "additionalProperties": true
@@ -269,7 +271,7 @@
       }
     },
     "card": {
-      "description": "Card envelope (04 §8.3). The 8 registered types (contracts/enums agent_card_type) validate data strictly; any other type is an unknown card whose data is not inspected and which the client shows as fallback_text (03 §7.2).",
+      "description": "Card envelope (04 §8.3). The 10 registered types (contracts/enums agent_card_type) validate data strictly; any other type is an unknown card whose data is not inspected and which the client shows as fallback_text (03 §7.2).",
       "type": "object",
       "additionalProperties": false,
       "required": ["seq", "card_id", "type", "schema_version", "data", "fallback_text"],
@@ -347,6 +349,22 @@
           }
         },
         {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["page_guide"] },
+            "data": { "$ref": "#/$defs/card_page_guide" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "data"],
+          "properties": {
+            "type": { "type": "string", "enum": ["earnings_summary"] },
+            "data": { "$ref": "#/$defs/card_earnings_summary" }
+          }
+        },
+        {
           "description": "Unknown card: any type outside the registered ones.",
           "type": "object",
           "required": ["type"],
@@ -362,7 +380,9 @@
                   "handoff",
                   "auth_required",
                   "notice",
-                  "rule_ref"
+                  "rule_ref",
+                  "page_guide",
+                  "earnings_summary"
                 ]
               }
             }
@@ -494,10 +514,11 @@
           "enum": ["taobao_union", "jd_union", "pdd_union"]
         },
         "disclaimer_keys": {
-          "description": "Ordered dictionary keys (BR-PRICE-17), including price_basis.",
+          "description": "Ordered dictionary keys (BR-PRICE-17). Always holds a price basis key: price_basis on a card with a coupon, price_basis.general on one without (BR-PRICE-03); which one is not enforced here.",
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1 },
+          "contains": { "type": "string", "enum": ["price_basis", "price_basis.general"] }
         },
         "ad_label": {
           "description": "Ad label (BR-TEXT-17); null on Agent relevance cards in MVP (BR-AI-10).",
@@ -774,14 +795,29 @@
       }
     },
     "card_auth_required": {
-      "description": "Authorization needed; the client resumes after it. resume_link_id is null when there is no link to resume.",
+      "description": "Authorization needed; the client resumes after it. resume_link_id is null when there is no link to resume. platform is null when the prompt is not about a union platform (a guest or a user without a phone asking about orders or earnings, BR-AI-01); union_auth always names the platform.",
       "type": "object",
       "additionalProperties": false,
       "required": ["platform", "reason", "resume_link_id"],
       "properties": {
-        "platform": { "$ref": "#/$defs/platform" },
+        "platform": {
+          "anyOf": [{ "$ref": "#/$defs/platform" }, { "type": "null" }]
+        },
         "reason": { "type": "string", "enum": ["union_auth", "login", "bind_phone"] },
         "resume_link_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 }
+      },
+      "if": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": {
+          "reason": { "type": "string", "enum": ["union_auth"] }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "platform": { "$ref": "#/$defs/platform" }
+        }
       }
     },
     "card_notice": {
@@ -810,6 +846,151 @@
         "published_version": { "type": "string", "minLength": 1 },
         "action": { "$ref": "#/$defs/route_target" }
       }
+    },
+    "card_page_guide": {
+      "description": "Page guide card (D31; BR-AI-01 细则「页面引导」). route is a route name only: never a URL, params or any number. The server sends only routes in agent.page_guide.routes that are agent_guide in routes.json; the schema does not pin that list, and a client whose bundled routes.json does not mark the route agent_guide treats the card as unknown (03 §7.4). text_key is agent.guide.<route> (BR-TEXT-22) and fallback_text is the same text; the button text is agent.guide.open and the client opens the route (entry in_app, no params) only after a user tap.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "text_key"],
+      "properties": {
+        "route": { "$ref": "#/$defs/route_name" },
+        "text_key": {
+          "description": "agent.guide.<route> (BR-TEXT-22).",
+          "type": "string",
+          "pattern": "^agent\\.guide\\.[A-Z][A-Za-z0-9]*$"
+        }
+      }
+    },
+    "earnings_action_wallet": {
+      "description": "First earnings_summary button: open Wallet, no params.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "text_key"],
+      "properties": {
+        "route": { "type": "string", "enum": ["Wallet"] },
+        "text_key": { "type": "string", "enum": ["agent.earnings.open_wallet"] }
+      }
+    },
+    "earnings_action_records": {
+      "description": "Second earnings_summary button: open WithdrawRecords, no params.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "text_key"],
+      "properties": {
+        "route": { "type": "string", "enum": ["WithdrawRecords"] },
+        "text_key": { "type": "string", "enum": ["agent.earnings.open_records"] }
+      }
+    },
+    "earnings_actions": {
+      "description": "Exactly the two buttons in this order (04 §8.3); both routes are agent_guide in routes.json and open only after a user tap.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        { "$ref": "#/$defs/earnings_action_wallet" },
+        { "$ref": "#/$defs/earnings_action_records" }
+      ],
+      "items": false
+    },
+    "earnings_latest_withdrawal": {
+      "description": "The user's latest withdrawal: title_key is the dictionary key of its main status title, from the same display function as the withdrawal records; amount_fen is the applied amount, labelled agent.earnings.applied_amount. No net amount, tax, fee, reason, timing or confirm deadline (04 §8.3).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title_key", "amount_fen"],
+      "properties": {
+        "title_key": { "$ref": "#/$defs/text_key" },
+        "amount_fen": { "$ref": "#/$defs/fen" }
+      }
+    },
+    "earnings_summary_live": {
+      "description": "Earnings card as sent once over SSE. The first four amounts and flags have the same names and meaning as GET /v1/wallet/summary (BR-FUND-18).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "as_of",
+        "withdrawable_fen",
+        "estimated_total_fen",
+        "next_credit_period",
+        "credit_overdue",
+        "latest_withdrawal",
+        "actions"
+      ],
+      "properties": {
+        "as_of": {
+          "description": "Time the numbers were read.",
+          "$ref": "#/$defs/timestamp"
+        },
+        "withdrawable_fen": { "$ref": "#/$defs/fen" },
+        "estimated_total_fen": { "$ref": "#/$defs/fen" },
+        "next_credit_period": {
+          "description": "YYYY-MM, or null when there is no expected month.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+        },
+        "credit_overdue": { "type": "boolean" },
+        "latest_withdrawal": {
+          "anyOf": [{ "$ref": "#/$defs/earnings_latest_withdrawal" }, { "type": "null" }]
+        },
+        "actions": { "$ref": "#/$defs/earnings_actions" }
+      }
+    },
+    "earnings_summary_history": {
+      "description": "The same card reloaded from history (GET messages, 04 §6.5): the server keeps no amounts, so only as_of and actions come back.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["as_of", "actions"],
+      "properties": {
+        "as_of": { "$ref": "#/$defs/timestamp" },
+        "actions": { "$ref": "#/$defs/earnings_actions" }
+      }
+    },
+    "card_earnings_summary": {
+      "description": "Read-only earnings card (D32; BR-AI-01 细则「收益查询」, BR-AI-04): the live shape over SSE or the history shape. fallback_text is agent.earnings.fallback, with no numbers and no mention of the card or its buttons.",
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/$defs/earnings_summary_live" },
+        { "$ref": "#/$defs/earnings_summary_history" }
+      ]
+    },
+    "page_guide_intent": {
+      "description": "Model output in a turn without tool calls that asks for a page guide (04 §8.5, D31); not a frame. The server accepts guide_route only when it is in agent.page_guide.routes and otherwise records agent_runs.page_guide_reject_reason (contracts/enums page_guide_reject_reason).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_intent", "guide_route"],
+      "properties": {
+        "agent_intent": { "type": "string", "enum": ["page_guide"] },
+        "guide_route": { "type": "string" }
+      }
+    },
+    "get_my_earnings_args": {
+      "description": "Arguments of the read-only tool get_my_earnings (04 §8.5, D32): an empty object; any field is invalid_args (BR-AI-03). Identity is injected by the server.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    },
+    "get_my_earnings_result": {
+      "description": "What get_my_earnings returns to the model (04 §8.5, D32): a card reference, or unavailable when the numbers could not be read (no card then). Never amounts, months or withdrawal status.",
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["card_id", "status"],
+          "properties": {
+            "card_id": { "$ref": "#/$defs/card_id" },
+            "status": { "type": "string", "enum": ["shown"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {
+            "status": { "type": "string", "enum": ["unavailable"] }
+          }
+        }
+      ]
     }
   }
 }

@@ -33,5 +33,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/contracts/agent-stream-d31-d32/**'
-status: todo
-pr: null
+status: done
+pr: 144

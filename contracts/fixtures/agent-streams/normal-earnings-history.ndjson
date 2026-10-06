@@ -1,0 +1,1 @@
+{"event":"card","id":4,"data":{"seq":4,"card_id":"c1","type":"earnings_summary","schema_version":1,"data":{"as_of":"2026-10-06T10:00:00+08:00","actions":[{"route":"Wallet","text_key":"agent.earnings.open_wallet"},{"route":"WithdrawRecords","text_key":"agent.earnings.open_records"}]},"fallback_text":"请到钱包页查看收益与提现进度。"}}
