@@ -38,6 +38,15 @@ export type {
   UnionRefund,
 } from './domain/types.ts';
 export { makeUnionItem, makeUnionOrder } from './domain/dto.ts';
+export { mapTaobaoPrice, isPriceAnomaly } from './domain/taobao-price.ts';
+export type {
+  PriceAnomalyReason,
+  TaobaoPriceInput,
+  TaobaoPriceOptions,
+  TaobaoPriceResult,
+  TaobaoPriceWarning,
+  TaobaoPromotion,
+} from './domain/taobao-price.ts';
 export { createUnionRegistry } from './infra/registry.ts';
 export { DemoUnionAdapter, DemoUnionError } from './infra/demo/demo-adapter.ts';
 export type {
