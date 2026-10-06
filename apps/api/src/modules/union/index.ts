@@ -72,6 +72,26 @@ export type {
 } from './pids/service.ts';
 export type { GovernedAdapterOptions } from './application/governed-adapter.ts';
 export {
+  createUnionFileReplay,
+  createUnionReplayClient,
+  parseUnionRecordingProvenance,
+  UnionReplayError,
+} from './infra/replay.ts';
+export type {
+  UnionFileReplay,
+  UnionFileReplayOptions,
+  UnionLoadedRecording,
+  UnionRecordingProvenance,
+  UnionReplayClient,
+  UnionReplayClientOptions,
+  UnionReplayErrorCode,
+  UnionReplayReport,
+  UnionReplayRequest,
+  UnionTransport,
+  UnionTransportRequest,
+  UnionTransportResponse,
+} from './infra/replay.ts';
+export {
   UNION_ENDPOINTS,
   UNION_ENDPOINTS_DIR,
   UNION_REGISTRY,
