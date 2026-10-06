@@ -3,6 +3,7 @@
 // repository holds only `source: synthetic` samples; real recordings live in the private repo.
 // Nothing here listens on a port or opens a socket: the client hands every request to an
 // injected transport, and the file replay is such a transport backed by the recording files.
+import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { join, relative, isAbsolute, sep } from 'node:path';
@@ -331,12 +332,38 @@ function matches(envelope: RecordingEnvelope, request: UnionTransportRequest): b
  * host is not compared, so any configured base URL replays the same files.
  * provenance.json carries UnionRecordingProvenance; payload bodies remain opaque strings.
  * Synthetic examples use scenario synthetic-smoke and no upstream field names.
- * A recording enters the report only once it was actually replayed; the report is eligible as
- * acceptance evidence only when every loaded recording is a probe (规划/11 §4.5).
+ * A recording enters the report as soon as both files were read and validated, before request
+ * matching or cancellation, so a mismatched or aborted load still counts. The same
+ * <platform>/<scenario> is listed again whenever its files changed. Once any non-probe source
+ * was loaded the report stays ineligible as acceptance evidence (规划/11 §4.5).
  */
 export function createUnionFileReplay(options: UnionFileReplayOptions): UnionFileReplay {
   const { directory, clock } = options;
   const loaded: UnionLoadedRecording[] = [];
+  /** Content fingerprints of `loaded`, index for index: platform, scenario and both files. */
+  const fingerprints: string[] = [];
+  let sawNonProbe = false;
+
+  function register(
+    platform: RegisteredPlatform,
+    scenario: string,
+    folder: string,
+    provenance: UnionRecordingProvenance,
+    fingerprint: string,
+  ): void {
+    if (provenance.source !== 'probe') sawNonProbe = true;
+    if (fingerprints.includes(fingerprint)) return;
+    fingerprints.push(fingerprint);
+    loaded.push(
+      Object.freeze({
+        platform,
+        scenario,
+        directory: folder,
+        provenance,
+        loadedAt: clock.now().toISOString(),
+      }),
+    );
+  }
 
   async function load(
     platform: RegisteredPlatform,
@@ -345,6 +372,7 @@ export function createUnionFileReplay(options: UnionFileReplayOptions): UnionFil
     folder: string;
     envelope: RecordingEnvelope;
     provenance: UnionRecordingProvenance;
+    fingerprint: string;
   }> {
     const platformDir = join(directory, platform);
     const folder = join(platformDir, scenario);
@@ -368,7 +396,10 @@ export function createUnionFileReplay(options: UnionFileReplayOptions): UnionFil
       parseJson(provenanceText, 'invalid_provenance'),
     );
     const envelope = parseEnvelope(parseJson(recordingText, 'invalid_recording'));
-    return { folder, envelope, provenance };
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify([platform, scenario, provenanceText, recordingText]))
+      .digest('hex');
+    return { folder, envelope, provenance, fingerprint };
   }
 
   const transport: UnionTransport = async (request) => {
@@ -378,7 +409,9 @@ export function createUnionFileReplay(options: UnionFileReplayOptions): UnionFil
     if (!METHODS.includes(request.method)) throw badRequest('request method is not supported');
     const scenario = scenarioHeader(request.headers);
     request.signal?.throwIfAborted();
-    const { folder, envelope, provenance } = await load(request.platform, scenario);
+    const { folder, envelope, provenance, fingerprint } = await load(request.platform, scenario);
+    // Register before matching or the abort check: the source was read, so it must be reported.
+    register(request.platform, scenario, folder, provenance, fingerprint);
     if (!matches(envelope, request)) {
       throw new UnionReplayError(
         'recording_mismatch',
@@ -386,19 +419,6 @@ export function createUnionFileReplay(options: UnionFileReplayOptions): UnionFil
       );
     }
     request.signal?.throwIfAborted();
-    if (
-      !loaded.some((entry) => entry.platform === request.platform && entry.scenario === scenario)
-    ) {
-      loaded.push(
-        Object.freeze({
-          platform: request.platform,
-          scenario,
-          directory: folder,
-          provenance,
-          loadedAt: clock.now().toISOString(),
-        }),
-      );
-    }
     return {
       status: envelope.response.status,
       headers: { ...envelope.response.headers },
@@ -413,7 +433,9 @@ export function createUnionFileReplay(options: UnionFileReplayOptions): UnionFil
       return Object.freeze({
         recordings,
         acceptanceEligible:
-          recordings.length > 0 && recordings.every((entry) => entry.provenance.source === 'probe'),
+          recordings.length > 0 &&
+          !sawNonProbe &&
+          recordings.every((entry) => entry.provenance.source === 'probe'),
       });
     },
   };
