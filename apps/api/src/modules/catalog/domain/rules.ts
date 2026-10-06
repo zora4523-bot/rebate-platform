@@ -9,16 +9,19 @@ import type {
 } from './types.ts';
 
 /** Contract error codes this module raises (contracts/error-codes.yaml). */
-export type CatalogErrorCode = 20001 | 30131 | 30141 | 30143 | 50401;
+export type CatalogErrorCode = 20001 | 30131 | 30141 | 30143 | 50304 | 50401;
 
 /** A business error carrying its contract code; HTTP mapping belongs to the controllers. */
 export class CatalogError extends Error {
   readonly code: CatalogErrorCode;
+  /** Envelope `data` for codes that carry it (50304: platform, optional reason). */
+  readonly data?: Readonly<Record<string, string>>;
 
-  constructor(code: CatalogErrorCode, message: string) {
+  constructor(code: CatalogErrorCode, message: string, data?: Readonly<Record<string, string>>) {
     super(message);
     this.name = 'CatalogError';
     this.code = code;
+    if (data !== undefined) this.data = data;
   }
 }
 
