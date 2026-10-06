@@ -80,20 +80,25 @@ async function withApp(
   expect(db).toBeDefined();
   // Select inside each test, so an exhausted candidate list is an assertion failure,
   // not a beforeAll failure that prevents the rule assertions from running.
+  // Only operations where stage ① is the sole gate: no token (②③ hang on the same
+  // registration point), no idempotency key, no minimum-version gate, still planned.
   const candidates = Object.entries((await contract()).paths)
     .filter(
       ([path, item]) =>
         !path.includes('{') &&
         item.post?.['x-signed'] === true &&
+        item.post['x-auth'] === 'none' &&
+        item.post['x-idempotent'] !== true &&
+        item.post['x-min-version-gate'] === false &&
+        'x-implementation' in item.post &&
         typeof item.post.operationId === 'string' &&
         !Object.hasOwn(CONTRACT_ROUTE_SCHEMAS, item.post.operationId),
     )
     .map(([path]) => path)
     .sort();
-  expect(
-    candidates.length,
-    '没有可用作桩的未实现签名 POST 接口，改用别的测试办法',
-  ).toBeGreaterThan(0);
+  expect(candidates.length, '没有可用作桩的未实现签名 POST 接口，改用别的测试办法').toBeGreaterThan(
+    0,
+  );
   const stubPath = candidates[0]!;
   const directory = makeDir();
   const lines: string[] = [];
