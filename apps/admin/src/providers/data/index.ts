@@ -24,6 +24,8 @@ export interface AdminApiErrorDetails {
   readonly traceId?: string;
   readonly kind: 'api' | 'network' | 'parse' | 'http' | 'request';
   readonly retryAfterSeconds?: number;
+  /** Underlying exception (network failure, body read failure, unexpected throw); never shown. */
+  readonly cause?: unknown;
 }
 
 /** Local (negative) codes; server codes are preserved verbatim. */
@@ -37,14 +39,27 @@ export const LOCAL_ERROR_CODES = {
 } as const;
 
 /**
- * `msg` of local errors is a stable key, not copy (规划/03 §10.3): the unified error handler maps
- * it (and `kind`) to dictionary text; server errors keep the server's `msg`.
+ * `msg` of local errors is always a stable `admin_api.*` key, never copy or a raw exception
+ * message (规划/03 §10.3): the unified error handler maps it (and `kind`) to dictionary text; the
+ * underlying exception, if any, is kept on `cause`. Server errors keep the server's `msg`.
  */
-const LOCAL_MESSAGES = {
+export const LOCAL_MESSAGES = {
   network: 'admin_api.network_error',
+  /** The server answered with a redirect; refused so the token never leaves /admin/v1. */
+  redirect: 'admin_api.redirect_refused',
   parse: 'admin_api.parse_error',
   http: 'admin_api.http_error',
+  addressOutsidePrefix: 'admin_api.address_outside_prefix',
+  invalidResource: 'admin_api.invalid_resource',
+  invalidQuery: 'admin_api.invalid_query',
+  missingId: 'admin_api.missing_id',
+  filtersUnsupported: 'admin_api.filters_sorters_unsupported',
+  paginationModeUnsupported: 'admin_api.pagination_mode_unsupported',
+  operationUnsupported: 'admin_api.operation_unsupported',
+  unexpected: 'admin_api.unexpected_error',
 } as const;
+
+export type LocalMessageKey = (typeof LOCAL_MESSAGES)[keyof typeof LOCAL_MESSAGES];
 
 /** Retry-After default for 42901 when the header is missing or unreadable (error-codes.yaml). */
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
@@ -64,7 +79,10 @@ export class AdminApiError extends Error {
   readonly retryAfterSeconds?: number;
 
   constructor(details: AdminApiErrorDetails) {
-    super(details.msg === '' ? `Admin API error ${details.code}` : details.msg);
+    super(
+      details.msg === '' ? `Admin API error ${details.code}` : details.msg,
+      details.cause === undefined ? undefined : { cause: details.cause },
+    );
     this.name = 'AdminApiError';
     this.code = details.code;
     this.msg = details.msg;
@@ -111,13 +129,14 @@ interface AdminRequest {
   readonly meta?: MetaQuery | undefined;
 }
 
-function requestError(msg: string): AdminApiError {
+function requestError(msg: LocalMessageKey, data: unknown = null, cause?: unknown): AdminApiError {
   return new AdminApiError({
     kind: 'request',
     code: LOCAL_ERROR_CODES.request,
     msg,
-    data: null,
+    data,
     httpStatus: 0,
+    ...(cause === undefined ? {} : { cause }),
   });
 }
 
@@ -136,7 +155,7 @@ function positiveInteger(value: unknown, fallback: number): number {
 
 function appendQuery(url: URL, query: unknown): void {
   if (query === undefined || query === null) return;
-  if (typeof query !== 'object') throw requestError('query must be an object');
+  if (typeof query !== 'object') throw requestError(LOCAL_MESSAGES.invalidQuery);
   for (const [key, value] of Object.entries(query)) {
     for (const item of Array.isArray(value) ? value : [value]) {
       if (item === undefined || item === null) continue;
@@ -159,14 +178,19 @@ function headerTraceId(response: Response, body: unknown): string | undefined {
   return undefined;
 }
 
-/** Retry-After as delta-seconds or an HTTP date; missing or unreadable → 5 seconds. */
+/**
+ * Retry-After in seconds. The contract sends integer delta-seconds; an HTTP date is only a
+ * fallback, and since it depends on the local clock, a date that works out to ≤ 0 seconds (clock
+ * ahead, or already past) also yields the 5-second default. Missing or unreadable → 5 seconds.
+ */
 function retryAfterSeconds(response: Response): number {
   const header = response.headers.get('Retry-After')?.trim();
   if (header === undefined || header === '') return DEFAULT_RETRY_AFTER_SECONDS;
   if (/^\d+$/.test(header)) return Number(header);
   const date = Date.parse(header);
   if (Number.isNaN(date)) return DEFAULT_RETRY_AFTER_SECONDS;
-  return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+  const seconds = Math.ceil((date - Date.now()) / 1000);
+  return seconds > 0 ? seconds : DEFAULT_RETRY_AFTER_SECONDS;
 }
 
 interface Envelope {
@@ -195,7 +219,7 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
 
   /** Resolves a Refine URL (relative to the origin, or absolute) and keeps it under /admin/v1/. */
   function resolveUrl(raw: string): URL {
-    if (hasUnsafePathText(raw)) throw requestError('address outside /admin/v1');
+    if (hasUnsafePathText(raw)) throw requestError(LOCAL_MESSAGES.addressOutsidePrefix);
     let url: URL;
     try {
       url =
@@ -203,7 +227,7 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
           ? new URL(`${basePath}${raw}`, base)
           : new URL(raw);
     } catch {
-      throw requestError('address outside /admin/v1');
+      throw requestError(LOCAL_MESSAGES.addressOutsidePrefix);
     }
     if (
       url.origin !== base.origin ||
@@ -211,7 +235,7 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
       url.password !== '' ||
       !url.pathname.startsWith(`${basePath}${API_PREFIX}/`)
     ) {
-      throw requestError('address outside /admin/v1');
+      throw requestError(LOCAL_MESSAGES.addressOutsidePrefix);
     }
     url.hash = '';
     return url;
@@ -221,7 +245,7 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
   function resourceUrl(resource: string, id?: string): URL {
     const segments = resource.split('/');
     if (!segments.every((segment) => /^[A-Za-z0-9_-]+$/.test(segment))) {
-      throw requestError('invalid resource name');
+      throw requestError(LOCAL_MESSAGES.invalidResource);
     }
     const suffix = id === undefined ? '' : `/${encodeURIComponent(id)}`;
     return resolveUrl(`${API_PREFIX}/${segments.join('/')}${suffix}`);
@@ -246,18 +270,38 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
         headers,
         ...(body === undefined ? {} : { body }),
         credentials: 'omit',
+        // A followed redirect would resend the Bearer (and step-up) token to an address outside
+        // /admin/v1, so redirects make fetch reject; that rejection is a network error (-1).
+        redirect: 'error',
       });
     } catch (cause) {
       throw new AdminApiError({
         kind: 'network',
         code: LOCAL_ERROR_CODES.network,
         msg: LOCAL_MESSAGES.network,
-        data: cause instanceof Error ? cause.message : null,
+        data: null,
         httpStatus: 0,
+        cause,
+      });
+    }
+    // Defence in depth for fetch implementations that ignore `redirect: 'error'`: a redirect
+    // response (or one already followed) is refused the same way, as a network error (-1).
+    if (
+      response.redirected ||
+      response.type === 'opaqueredirect' ||
+      (response.status >= 300 && response.status < 400)
+    ) {
+      throw new AdminApiError({
+        kind: 'network',
+        code: LOCAL_ERROR_CODES.network,
+        msg: LOCAL_MESSAGES.redirect,
+        data: null,
+        httpStatus: response.status,
+        ...withTrace(headerTraceId(response, undefined)),
       });
     }
 
-    const parseError = (): AdminApiError =>
+    const parseError = (cause?: unknown): AdminApiError =>
       new AdminApiError({
         kind: 'parse',
         code: LOCAL_ERROR_CODES.parse,
@@ -265,13 +309,30 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
         data: null,
         httpStatus: response.status,
         ...withTrace(headerTraceId(response, undefined)),
+        ...(cause === undefined ? {} : { cause }),
       });
 
+    // Reading the body can fail after the headers arrived (connection reset): that is a network
+    // error (-1), not a parse error. Only invalid JSON or a wrong envelope shape is -2.
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (cause) {
+      throw new AdminApiError({
+        kind: 'network',
+        code: LOCAL_ERROR_CODES.network,
+        msg: LOCAL_MESSAGES.network,
+        data: null,
+        httpStatus: response.status,
+        ...withTrace(headerTraceId(response, undefined)),
+        cause,
+      });
+    }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(await response.text());
-    } catch {
-      throw parseError();
+      parsed = JSON.parse(text);
+    } catch (cause) {
+      throw parseError(cause);
     }
     if (!isEnvelope(parsed)) throw parseError();
     const traceId = headerTraceId(response, parsed);
@@ -307,10 +368,11 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
     try {
       return await work();
     } catch (cause) {
+      // Unexpected throws keep the original exception on `cause`; msg stays a key.
       const error =
         cause instanceof AdminApiError
           ? cause
-          : requestError(cause instanceof Error ? cause.message : 'request failed');
+          : requestError(LOCAL_MESSAGES.unexpected, null, cause);
       try {
         options.onError(error);
       } catch {
@@ -322,7 +384,7 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
 
   const unsupported = (operation: string) => () =>
     run<never>(() =>
-      Promise.reject(requestError(`${operation} is not in the /admin/v1 contract yet`)),
+      Promise.reject(requestError(LOCAL_MESSAGES.operationUnsupported, { operation })),
     );
 
   return {
@@ -333,10 +395,16 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
     ): Promise<GetListResponse<TData>> {
       return run(async () => {
         if ((params.filters?.length ?? 0) > 0 || (params.sorters?.length ?? 0) > 0) {
-          throw requestError('filters and sorters are not in the /admin/v1 list contract');
+          throw requestError(LOCAL_MESSAGES.filtersUnsupported);
+        }
+        const pagination = params.pagination;
+        // The contract only pages on the server (no "fetch everything" endpoint), so 'off' and
+        // 'client' are refused instead of silently returning just the first page.
+        const mode: unknown = pagination?.mode;
+        if (mode !== undefined && mode !== 'server') {
+          throw requestError(LOCAL_MESSAGES.paginationModeUnsupported, { mode });
         }
         const url = resourceUrl(params.resource);
-        const pagination = params.pagination;
         const page = positiveInteger(pagination?.currentPage ?? pagination?.current, 1);
         const pageSize = Math.min(
           positiveInteger(pagination?.pageSize, DEFAULT_PAGE_SIZE),
@@ -369,7 +437,7 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
     ): Promise<GetOneResponse<TData>> {
       return run(async () => {
         const id = String(params.id);
-        if (id === '') throw requestError('missing id');
+        if (id === '') throw requestError(LOCAL_MESSAGES.missingId);
         const data = await send({
           url: resourceUrl(params.resource, id),
           method: 'GET',
@@ -384,7 +452,7 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
     ): Promise<CustomResponse<TData>> {
       return run(async () => {
         if ((params.filters?.length ?? 0) > 0 || (params.sorters?.length ?? 0) > 0) {
-          throw requestError('filters and sorters are not in the /admin/v1 contract');
+          throw requestError(LOCAL_MESSAGES.filtersUnsupported);
         }
         const url = resolveUrl(params.url);
         appendQuery(url, params.query);
