@@ -10,6 +10,7 @@ type: contract
 # 只写契约与生成物（x-implementation: planned），后端由 admin 模块任务实现（F1-06 其余部分，另行入账）；admins 只做列表与详情的只读形状，创建、停用、勾选权限点随后续任务。
 # 2026-10-06 f1-frontend-3：contract_sections 去掉 '11'（整张权限点表 26KB，任务书超 24KB 上限）；§11 的 step-up 列由实现者按 SPEC_REF 读原文，权限点只引用
 # contracts/enums/admin.yaml。BR-ID-34 已改为首次登录先改初始密码再绑定 TOTP（2026-10-06），登录流程含这一步。
+# 2026-10-07：paths 加 signing-routes.gen.ts——它由 openapi.yaml 全部接口（含 planned）生成，新增 /admin/v1 接口后必须重生成，否则 signing-routes.test 失败；该路径属 RV2，本任务按两家评审走。
 # 契约槽全局同时 1 个在途（派前看 claims）；openapi.yaml 与各线 HTTP 任务相交，按就绪计算排队。测试由实现者写在 packages/contracts-ts/src/（同 CT-02e 先例）。
 refs: []
 refs_hash: {}
@@ -20,6 +21,7 @@ paths:
   - 'contracts/error-codes.yaml'
   - 'contracts/enums/admin.yaml'
   - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
 impl: claude
 tester: none
 accept:
