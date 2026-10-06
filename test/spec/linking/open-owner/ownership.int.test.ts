@@ -436,7 +436,7 @@ it.each([DEVICE_A, DEVICE_B, null])(
   },
 );
 
-it('[AC-B1-06d#18] BR-ATTR-05②③：游客 link 被 B 认领后，C 打开新建自己的 link，不能改写 B 的归属', async () => {
+it('[AC-B1-06d#18] BR-ATTR-05②③：游客 link 被 B 认领后，B 再次打开沿用原 link，C 打开新建自己的 link', async () => {
   const original = await sourceLink(db, { scene: 'search' }, { userId: null });
   const before = await allLinks(db);
   const resultB = await ownerService(ownerFixture(db, { userId: USER_B })).open({
@@ -447,6 +447,16 @@ it('[AC-B1-06d#18] BR-ATTR-05②③：游客 link 被 B 认领后，C 打开新�
   expect(resultB.link).toEqual(claimed);
   expect(claimed.user_id).toBe(USER_B);
   expect(resultB.identitySnapshot.user_id).toBe(USER_B);
+  expect(await allLinks(db)).toHaveLength(before.length);
+
+  const resultBAgain = await ownerService(ownerFixture(db, { userId: USER_B })).open({
+    linkId: original.link_id,
+  });
+  expect(resultBAgain.new_link_id).toBeNull();
+  expect(resultBAgain.link.link_id).toBe(original.link_id);
+  expect(resultBAgain.link).toEqual(claimed);
+  expect(resultBAgain.identitySnapshot.user_id).toBe(USER_B);
+  expect(await stored(db, original.link_id)).toEqual(claimed);
   expect(await allLinks(db)).toHaveLength(before.length);
 
   const resultC = await ownerService(ownerFixture(db, { userId: USER_C })).open({
