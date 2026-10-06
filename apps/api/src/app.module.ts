@@ -7,23 +7,30 @@ import {
   type PlatformOptions,
   REQUEST_CHECKS,
   type RequestCheck,
+  type RequestCheckPlan,
+  isContractSignedRoute,
   isHttpEntry,
 } from './modules/platform/index.ts';
 import { RiskModule, SIGNATURE_CHECK } from './modules/risk/index.ts';
 
 /**
- * The ordered request checks bootstrap installs before Fastify parses a body (规划/08 BR-ID-01):
- * ① the request signature on the `api` entry, which serves every x-signed operation; the token
- * stages ② ③ (B1-02h) follow it in this list. The other HTTP entries have none yet.
+ * The request check plan bootstrap installs before Fastify parses a body (规划/08 BR-ID-01):
+ * on the `api` entry, which serves every x-signed operation, ① the request signature, buffered and
+ * run only on the contract x-signed routes (other routes keep Fastify's own body handling); the
+ * token stages ② ③ (B1-02h) follow it in this list, and their route scope is settled with them.
+ * The other HTTP entries have no check yet, so bootstrap refuses an x-signed route on them.
  */
 function requestChecks(options: PlatformOptions): Provider {
   return options.entry === 'api'
     ? {
         provide: REQUEST_CHECKS,
         inject: [SIGNATURE_CHECK],
-        useFactory: (signature: RequestCheck): readonly RequestCheck[] => [signature],
+        useFactory: (signature: RequestCheck): RequestCheckPlan => ({
+          checks: [signature],
+          bufferWhen: isContractSignedRoute,
+        }),
       }
-    : { provide: REQUEST_CHECKS, useValue: [] };
+    : { provide: REQUEST_CHECKS, useValue: { checks: [] } satisfies RequestCheckPlan };
 }
 
 /**

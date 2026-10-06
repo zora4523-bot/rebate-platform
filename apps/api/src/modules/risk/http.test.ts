@@ -1,9 +1,9 @@
 // Wiring of stage ① in the real api entry (bootstrap → REQUEST_CHECKS → RiskModule → identity's
 // DeviceSigningKeys port), with an in-memory database, field cipher and Redis. The planned signed
 // operations have no production route yet (contract.test.ts), so a test route stands on
-// POST /v1/auth/sms-codes, added before init like any route Nest registers.
+// POST /v1/auth/sms-codes: a Fastify route added before init, or a Nest controller of this file.
 import { createHash, createHmac } from 'node:crypto';
-import type { DynamicModule } from '@nestjs/common';
+import { Body, Controller, Post, Req, type DynamicModule } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterEach, expect, it, vi } from 'vitest';
 import { AppModule } from '../../app.module.ts';
@@ -117,11 +117,24 @@ function fakeRedis() {
   return { handle, evalScript };
 }
 
-async function build(redis?: RedisHandle) {
+/** A Nest route on the signed contract template POST /v1/auth/sms-codes (test only). */
+@Controller('v1/auth')
+class SignedProbeController {
+  @Post('sms-codes')
+  send(@Body() body: unknown, @Req() request: CheckedRequest) {
+    return { reached: true, body, verifiedDevice: request.verifiedDevice ?? null };
+  }
+}
+
+/** Absolute-form request target of a request sent with this header (see build). */
+const ABSOLUTE_FORM = 'x-test-absolute-form';
+const AUTHORITY = 'https://api.example.com';
+
+async function build(redis?: RedisHandle, options: { nest?: boolean } = {}) {
   const { db, lookups } = fakeDb();
   const original = AppModule.forEntry;
-  vi.spyOn(AppModule, 'forEntry').mockImplementationOnce((options) => {
-    const root = original(options);
+  vi.spyOn(AppModule, 'forEntry').mockImplementationOnce((entryOptions) => {
+    const root = original(entryOptions);
     const fakes: DynamicModule = {
       module: class FakeInfraModule {},
       global: true,
@@ -132,30 +145,47 @@ async function build(redis?: RedisHandle) {
       ],
       exports: [DB, FIELD_CRYPTO, ...(redis === undefined ? [] : [REDIS])],
     };
-    return { ...root, imports: [...(root.imports ?? []), fakes] };
+    return {
+      ...root,
+      imports: [...(root.imports ?? []), fakes],
+      ...(options.nest === true
+        ? { controllers: [...(root.controllers ?? []), SignedProbeController] }
+        : {}),
+    };
   });
   app = await createHttpApp('api', {
     config: loadConfig({ APP_ENV: 'test' }),
     clock: new FixedClock(new Date(NOW * 1000)),
     logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
   });
-  app
-    .getHttpAdapter()
-    .getInstance()
-    .post(SMS, (request) => ({
+  const server = app.getHttpAdapter().getInstance();
+  // light-my-request always sends the origin form. After routing, this hook leaves a request as
+  // Node's HTTP parser hands Fastify an absolute-form target: route matched by its path,
+  // request.raw.url holding scheme, authority, path and query.
+  server.addHook('onRequest', async (request) => {
+    if (request.headers[ABSOLUTE_FORM] !== undefined) {
+      request.raw.url = `${AUTHORITY}${request.raw.url ?? ''}`;
+    }
+  });
+  if (options.nest !== true) {
+    server.post(SMS, (request) => ({
       reached: true,
       body: request.body ?? null,
       verifiedDevice: (request as CheckedRequest).verifiedDevice ?? null,
     }));
+  }
   await app.init();
   return { app, lookups };
 }
 
-function signed(target: NestFastifyApplication, device = DEVICE, payload = BODY) {
+function signature(signedTarget: string, payload: string, nonce = NONCE): string {
   const bodyHash = createHash('sha256').update(payload).digest('hex');
-  const sign = createHmac('sha256', SECRET)
-    .update(['POST', SMS, String(NOW), NONCE, bodyHash].join('\n'))
+  return createHmac('sha256', SECRET)
+    .update(['POST', signedTarget, String(NOW), nonce, bodyHash].join('\n'))
     .digest('hex');
+}
+
+function signed(target: NestFastifyApplication, device = DEVICE, payload = BODY) {
   return target.inject({
     method: 'POST',
     url: SMS,
@@ -165,7 +195,7 @@ function signed(target: NestFastifyApplication, device = DEVICE, payload = BODY)
       'x-device-id': device,
       'x-timestamp': String(NOW),
       'x-nonce': NONCE,
-      'x-sign': sign,
+      'x-sign': signature(SMS, payload),
     },
     payload,
   });
@@ -223,4 +253,94 @@ it('[BR-ID-09][ADR-0001 §4.2 第17项] without REDIS the api entry fails a vali
   });
   expect(bad.statusCode).toBe(401);
   expect(bad.json()).toMatchObject({ code: 10401, trace_id: TRACE });
+});
+
+it('[BR-ID-09] an absolute-form request target is verified on its origin form: path and raw query, no scheme or host', async () => {
+  const { app: target } = await build(fakeRedis().handle);
+  const url = `${SMS}?b=2&a=%2f`;
+  const send = (sign: string, nonce: string) =>
+    target.inject({
+      method: 'POST',
+      url,
+      headers: {
+        'content-type': 'application/json',
+        'x-trace-id': TRACE,
+        [ABSOLUTE_FORM]: '1',
+        'x-device-id': DEVICE,
+        'x-timestamp': String(NOW),
+        'x-nonce': nonce,
+        'x-sign': sign,
+      },
+      payload: BODY,
+    });
+  const accepted = await send(signature(url, BODY), NONCE);
+  expect(accepted.statusCode).toBe(200);
+  expect(accepted.json()).toMatchObject({
+    reached: true,
+    verifiedDevice: { deviceId: DEVICE, appId: 'couli' },
+  });
+  // Signed over the whole absolute target (path_domain of specs/request-sign.vectors.json).
+  const withDomain = 'd4'.repeat(16);
+  const refused = await send(signature(`${AUTHORITY}${url}`, BODY, withDomain), withDomain);
+  expect(refused.statusCode).toBe(401);
+  expect(refused.json()).toEqual({
+    code: 10401,
+    msg: '请求签名无效或重放（X-Nonce 重复 / 时间戳超窗）',
+    trace_id: TRACE,
+  });
+  const wrong = 'e5'.repeat(16);
+  const forged = await send('0'.repeat(64), wrong);
+  expect(forged.statusCode).toBe(401);
+  expect(forged.json()).toMatchObject({ code: 10401, trace_id: TRACE });
+});
+
+it('[BR-ID-09][BR-ID-01] stage ① also covers a route a Nest controller registers on a signed template', async () => {
+  const redis = fakeRedis();
+  const { app: target, lookups } = await build(redis.handle, { nest: true });
+  const missing = await target.inject({
+    method: 'POST',
+    url: SMS,
+    headers: { 'content-type': 'application/json', 'x-trace-id': TRACE },
+    payload: '{',
+  });
+  expect(missing.statusCode).toBe(401);
+  expect(missing.json()).toEqual({
+    code: 10402,
+    msg: '设备未注册、已失效或非服务端签发',
+    trace_id: TRACE,
+  });
+  expect(lookups).toEqual([]);
+  const accepted = await signed(target);
+  expect(accepted.statusCode).toBe(201);
+  expect(accepted.json()).toEqual({
+    reached: true,
+    body: { phone: '13800138000', purpose: 'login' },
+    verifiedDevice: { deviceId: DEVICE, appId: 'couli' },
+  });
+  expect(redis.evalScript).toHaveBeenCalledTimes(1);
+});
+
+it('[BR-ID-09][B1-01za] a correct signature over the bytes received still answers 400 / 20001 when Content-Length disagrees', async () => {
+  const { app: target } = await build(fakeRedis().handle);
+  const response = await target.inject({
+    method: 'POST',
+    url: SMS,
+    headers: {
+      'content-type': 'application/json',
+      'content-length': String(Buffer.byteLength(BODY) + 5),
+      'x-trace-id': TRACE,
+      'x-device-id': DEVICE,
+      'x-timestamp': String(NOW),
+      'x-nonce': NONCE,
+      'x-sign': signature(SMS, BODY),
+    },
+    payload: BODY,
+  });
+  expect(response.statusCode).toBe(400);
+  expect(response.json()).toEqual({
+    code: 20001,
+    msg: '参数校验失败',
+    data: { fields: ['body'] },
+    trace_id: TRACE,
+  });
 });

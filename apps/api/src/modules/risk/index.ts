@@ -3,7 +3,9 @@
 // Also compiled by the `test` project: this file and everything it exports use erasable syntax
 // only, `import type` for type-only imports and relative imports with `.ts`; no parameter
 // decorators or parameter properties (RiskModule carries a class decorator only, like
-// PlatformModule). The ports are plain interfaces, so identity implements them without Nest types.
+// PlatformModule). Loading this file loads @nestjs/common (through risk.module.ts and
+// ../platform/index.ts). The ports are plain interfaces, so identity implements them without Nest
+// types.
 export { RiskModule } from './risk.module.ts';
 export type { RiskModuleOptions } from './risk.module.ts';
 export {
@@ -11,6 +13,7 @@ export {
   SIGNATURE_CHECK,
   SignatureError,
   createSignatureCheck,
+  isSignatureCheck,
 } from './application/signature-check.ts';
 export type {
   DeviceSigningKey,

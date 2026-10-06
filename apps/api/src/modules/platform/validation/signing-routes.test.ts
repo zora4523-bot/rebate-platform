@@ -9,7 +9,11 @@ import { contractSigningRoutes, isContractSignedRoute } from './signing-routes.t
 const METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
 
 it('[BR-ID-09] the generated signing table matches the current contract', async () => {
-  expect(await readFile(signingRoutesFile, 'utf8')).toBe(await signingRoutesSource());
+  expect(
+    await readFile(signingRoutesFile, 'utf8'),
+    'signing-routes.gen.ts drifted from contracts/openapi.yaml: regenerate it from the repository ' +
+      'root with `node apps/api/src/modules/platform/validation/scripts/generate-signing-routes.ts`',
+  ).toBe(await signingRoutesSource());
 });
 
 it('[BR-ID-09] lists every contract operation once, planned ones included, x-signed missing = false', async () => {

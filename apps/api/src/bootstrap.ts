@@ -21,15 +21,18 @@ import {
   PinoNestLogger,
   type PlatformOptions,
   REQUEST_CHECKS,
-  type RequestCheck,
+  type RequestCheckPlan,
   type RootLogger,
   type WorkerEntry,
   clockFromConfig,
   createRootLogger,
   installRequestChecks,
+  isContractSignedRoute,
   loadConfig,
+  refuseRoutes,
   resolveTraceId,
 } from './modules/platform/index.ts';
+import { isSignatureCheck } from './modules/risk/index.ts';
 
 export interface BootstrapOverrides {
   /** Process-owned handles; omitted when building isolated HTTP unit tests. */
@@ -65,12 +68,15 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
  * Creates an HTTP entry (NestJS on the Fastify adapter) and returns it WITHOUT calling
  * `init()` or `listen()`. Fastify logs through the same pino instance as the application, and
  * the Fastify request id is the trace id (well-formed `x-trace-id` header or a random UUID).
- * The request checks of REQUEST_CHECKS are installed (before body parsing) on every HTTP entry.
+ * The request check plan of REQUEST_CHECKS is installed (before body parsing) on every HTTP entry,
+ * and a contract x-signed route that the plan's signature check does not cover cannot be registered
+ * (the entry does not start).
  */
 export async function createHttpApp(
   entry: HttpEntry,
   overrides: BootstrapOverrides = {},
 ): Promise<NestFastifyApplication> {
+  let app: NestFastifyApplication | undefined;
   try {
     const options = platformOptions(entry, overrides);
     const adapter = new PlatformFastifyAdapter({
@@ -83,23 +89,38 @@ export async function createHttpApp(
       reply.header('X-Trace-Id', request.id);
       done(null, payload);
     });
-    const app = await NestFactory.create<NestFastifyApplication>(
-      AppModule.forEntry(options),
-      adapter,
-      {
-        logger: new PinoNestLogger(options.logger),
-        abortOnError: false,
-      },
-    );
+    app = await NestFactory.create<NestFastifyApplication>(AppModule.forEntry(options), adapter, {
+      logger: new PinoNestLogger(options.logger),
+      abortOnError: false,
+    });
     // The only global filter: every error of a request ends in the contract ErrorEnvelope (or, for
     // an uncertain commit, a closed connection); see platform/http/global-errors.ts.
     app.useGlobalFilters(new GlobalErrorFilter(app.getHttpAdapter(), options.logger));
     // The pre-parsing registration point (platform/http/request-checks.ts): the request checks of
-    // BR-ID-01 ① (signature) and later ② ③ run in the order app.module lists them, before Fastify
-    // parses or validates a body. Installed before init, so it covers every route Nest registers.
-    installRequestChecks(adapter.getInstance(), app.get<readonly RequestCheck[]>(REQUEST_CHECKS));
+    // BR-ID-01 ① (signature) and later ② ③ run in the order app.module lists them, on the routes
+    // its plan selects, before Fastify parses or validates a body. Installed before init, so it
+    // covers every route Nest registers.
+    const plan = app.get<RequestCheckPlan>(REQUEST_CHECKS);
+    const server = adapter.getInstance();
+    // Every contract x-signed route this entry registers must reach stage ① (BR-ID-09): refused
+    // at registration when the plan has no signature check (stream and admin today) or does not
+    // buffer the route. Nest registers its routes in init, which then rejects.
+    const signs = plan.checks.some(isSignatureCheck);
+    const buffered = plan.bufferWhen;
+    refuseRoutes(
+      server,
+      (method, template) =>
+        isContractSignedRoute(method, template) &&
+        !(signs && (buffered === undefined || buffered(method, template))),
+      `the ${entry} entry does not run the request signature check (BR-ID-09 ①) on this contract x-signed route`,
+    );
+    installRequestChecks(server, plan.checks, plan.bufferWhen);
     return app;
   } catch (error) {
+    // Raised after NestFactory.create (installing the plan): close the application so its
+    // providers shut down. Its close error is dropped: the original error is the one to report.
+    // The database handles are closed again below (idempotent) for errors raised before the app.
+    await app?.close().catch(() => undefined);
     await overrides.dbHandles?.close();
     throw error;
   }

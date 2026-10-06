@@ -61,33 +61,49 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+/** A device row the fake database starts with: issued earlier, then revoked (revoked_at set). */
+const REVOKED_DEVICE = '019a0000-0000-7000-8000-00000000dead';
+
 /**
- * Records insertInto(table).values(row).execute(), and every selectFrom(table) — the device lookup
- * of the request signature check — which finds no unrevoked row (a revoked or unknown device).
+ * Records insertInto(table).values(row).execute() into `devices`, which starts with the revoked row
+ * REVOKED_DEVICE, and every selectFrom(table) — the device lookup of the request signature check,
+ * which honours `id = ?` and `revoked_at is null` like the repository's query.
  */
 function fakeDb() {
   const inserts: { table: string; row: Record<string, unknown> }[] = [];
   const selects: string[] = [];
+  const devices: Record<string, unknown>[] = [
+    { id: REVOKED_DEVICE, app_id: 'couli', revoked_at: new Date('2026-10-04T00:00:00.000Z') },
+  ];
   const db = {
     insertInto: (table: string) => ({
       values: (row: Record<string, unknown>) => ({
         execute: async () => {
           inserts.push({ table, row });
+          if (table === 'devices') devices.push(row);
           return [];
         },
       }),
     }),
     selectFrom: (table: string) => {
       selects.push(table);
+      const conditions: unknown[][] = [];
       const query = {
         select: () => query,
-        where: () => query,
-        executeTakeFirst: async () => undefined,
+        where: (...condition: unknown[]) => {
+          conditions.push(condition);
+          return query;
+        },
+        // where('id', '=', id) and where('revoked_at', 'is', null): both compare the column value.
+        executeTakeFirst: async () =>
+          devices.find((row) =>
+            conditions.every(([column, , value]) => row[String(column)] === value),
+          ),
       };
       return query;
     },
   };
-  return { db, inserts, selects };
+  return { db, inserts, selects, devices };
 }
 
 function fakeCrypto(): FieldCrypto {
@@ -226,7 +242,10 @@ it('[AC-B1-02c#9] writes request logs that never carry the issued install_secret
 });
 
 it('[BR-ID-09] re-registers with 200 while X-Device-Id still names a revoked device: the route is unsigned and never looks it up', async () => {
-  const { db, inserts, selects } = fakeDb();
+  const { db, inserts, selects, devices } = fakeDb();
+  expect(devices).toEqual([
+    expect.objectContaining({ id: REVOKED_DEVICE, revoked_at: expect.any(Date) }),
+  ]);
   const { app } = await build({ db, crypto: fakeCrypto() });
   // The client re-registers after 10402 (BR-ID-09) and may still send its old, revoked id and
   // stale signature headers; registration ignores them (x-signed false in the contract).
@@ -234,7 +253,7 @@ it('[BR-ID-09] re-registers with 200 while X-Device-Id still names a revoked dev
     app,
     { device_hash: hash, id_source: 'idfv' },
     {
-      'x-device-id': '019a0000-0000-7000-8000-00000000dead',
+      'x-device-id': REVOKED_DEVICE,
       'x-timestamp': '1790661600',
       'x-nonce': '0'.repeat(32),
       'x-sign': '0'.repeat(64),
@@ -242,7 +261,12 @@ it('[BR-ID-09] re-registers with 200 while X-Device-Id still names a revoked dev
   );
   expect(response.statusCode).toBe(200);
   expect(validateSuccess(response.json()), JSON.stringify(validateSuccess.errors)).toBe(true);
+  // A new row beside the revoked one, which nothing looked up or changed.
+  const issued = response.json<{ data: { device_id: string } }>().data.device_id;
+  expect(issued).not.toBe(REVOKED_DEVICE);
   expect(inserts).toHaveLength(1);
+  expect(inserts[0]!.row).toMatchObject({ id: issued, revoked_at: null });
+  expect(devices[0]).toMatchObject({ id: REVOKED_DEVICE, revoked_at: expect.any(Date) });
   expect(selects).toEqual([]);
 });
 

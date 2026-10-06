@@ -17,15 +17,23 @@
 // The app dimension is the device row's app_id; X-App-Id is not compared here (that is stage ③,
 // 10403). On success only the device id and app id are published to the request context.
 // Nothing here logs; install_secret, the signing string and X-Sign never leave this function.
+// The HTTP status and the fallback text of 10401 / 10402 are those of contracts/error-codes.yaml
+// (`http`, `meaning`); the compiler checks them against @couli/contracts-ts (a type-only import:
+// the package is a dev dependency of @couli/api) and signature-check.test.ts compares the values.
 //
 // Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
-// for type-only imports, relative imports with `.ts`, no NestJS, no decorators.
+// for type-only imports, relative imports with `.ts`, no decorators. This file calls no Nest API,
+// but it is not Nest-free at run time: it imports ../../platform/index.ts, which exports
+// PlatformModule, and ../index.ts also exports RiskModule (risk.module.ts), so loading either index
+// loads @nestjs/common.
+import type { errorCodes } from '@couli/contracts-ts';
 import {
   RedisUnavailableError,
   RequestRejection,
   isContractSignedRoute,
   type Clock,
   type RedisHandle,
+  type RequestCheck,
   type RequestCheckInput,
 } from '../../platform/index.ts';
 import {
@@ -70,20 +78,36 @@ const NAMESPACE = 'risk';
 /** Reserve a nonce: one SET NX EX with the TTL the Redis handle passes as ARGV[1]. */
 const RESERVE_NONCE = "return redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1])";
 
-/** Fallback texts (clients show the dictionary text error.<code>); fixed, never a value. */
-const MESSAGES = {
-  10401: '请求签名无效或重放',
-  10402: '设备未注册、已失效或非服务端签发',
-} as const;
+type SignatureCode = 10401 | 10402;
 
-/** The global error filter maps these two business failures to HTTP 401/ErrorEnvelope. */
+/**
+ * HTTP status and fallback text (`msg`; clients show the dictionary text error.<code>) of the two
+ * stage ① codes, as contracts/error-codes.yaml declares them: `satisfies` fails the build when the
+ * generated catalogue says otherwise. Fixed texts, never a submitted value.
+ */
+export const SIGNATURE_REJECTIONS = Object.freeze({
+  10401: Object.freeze({ http: 401, meaning: '请求签名无效或重放（X-Nonce 重复 / 时间戳超窗）' }),
+  10402: Object.freeze({ http: 401, meaning: '设备未注册、已失效或非服务端签发' }),
+} as const) satisfies {
+  readonly [C in SignatureCode]: Pick<(typeof errorCodes)[C], 'http' | 'meaning'>;
+};
+
+/** The global error filter answers these with their contract status and { code, msg, trace_id }. */
 export class SignatureError extends RequestRejection {
-  declare readonly code: 10401 | 10402;
+  declare readonly code: SignatureCode;
 
-  constructor(code: 10401 | 10402) {
-    super(code, 401, MESSAGES[code]);
+  constructor(code: SignatureCode) {
+    super(code, SIGNATURE_REJECTIONS[code].http, SIGNATURE_REJECTIONS[code].meaning);
     this.name = 'SignatureError';
   }
+}
+
+/** The checks createSignatureCheck built: bootstrap asks whether an entry's plan contains one. */
+const SIGNATURE_CHECKS = new WeakSet<RequestCheck>();
+
+/** True for a stage ① check built by createSignatureCheck (bootstrap's route guard). */
+export function isSignatureCheck(check: unknown): boolean {
+  return typeof check === 'function' && SIGNATURE_CHECKS.has(check as RequestCheck);
 }
 
 function headerValue(request: SignatureRequest, name: string): string | undefined {
@@ -98,15 +122,13 @@ function headerValue(request: SignatureRequest, name: string): string | undefine
  * Lua returns SET ... NX EX ARGV[1] unchanged: 'OK' on reservation, nil on replay.
  * Bad HMAC never reserves a nonce. On success publish only deviceId/appId to the context.
  */
-export function createSignatureCheck(
-  dependencies: SignatureDependencies,
-): (request: SignatureRequest) => Promise<void> {
+export function createSignatureCheck(dependencies: SignatureDependencies): RequestCheck {
   const { devices, clock } = dependencies;
   if (typeof devices?.findActive !== 'function' || typeof clock?.now !== 'function') {
     throw new TypeError('createSignatureCheck needs the device port and the clock');
   }
   const nonces = dependencies.redis?.namespace(NAMESPACE);
-  return async (request) => {
+  const check: RequestCheck = async (request: SignatureRequest) => {
     if (!isContractSignedRoute(request.method, request.routeTemplate)) return;
 
     const deviceId = headerValue(request, 'x-device-id');
@@ -146,4 +168,6 @@ export function createSignatureCheck(
     if (reply !== 'OK') throw new RedisUnavailableError('unexpected_reply');
     request.verifiedDevice = Object.freeze({ deviceId: device.deviceId, appId: device.appId });
   };
+  SIGNATURE_CHECKS.add(check);
+  return check;
 }

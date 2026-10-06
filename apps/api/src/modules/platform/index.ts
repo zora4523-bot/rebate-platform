@@ -6,11 +6,18 @@ export * from './tracing/index.ts';
 export * from './idempotency/index.ts';
 export * from './http/index.ts';
 // The pre-parsing registration point of the request checks (BR-ID-01 stages ①–③; bootstrap).
-export { installRequestChecks, REQUEST_CHECKS, RequestRejection } from './http/request-checks.ts';
+export {
+  installRequestChecks,
+  refuseRoutes,
+  REQUEST_CHECKS,
+  RequestRejection,
+} from './http/request-checks.ts';
 export type {
   CheckedRequest,
   RequestCheck,
   RequestCheckInput,
+  RequestCheckPlan,
+  RouteFilter,
   VerifiedDevice,
 } from './http/request-checks.ts';
 export { AUDIT_PORT } from './audit/index.ts';
