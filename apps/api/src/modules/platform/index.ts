@@ -85,3 +85,7 @@ export type {
   JobHandler,
   QueueRuntime,
 } from './queue/index.ts';
+export { tokenPrincipal, type TokenPrincipal } from './http/token-context.ts';
+export { contractAuthRoutes, contractAuthOf, type ContractAuth } from './http/auth-routes.ts';
+export { compareClientVersions } from './client-version/index.ts';
+export type { JwtKeyConfig } from './config/jwt.ts';
