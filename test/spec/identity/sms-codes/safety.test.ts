@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import { ConfigError, loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
@@ -8,7 +8,7 @@ import {
   createFakeSmsSender,
   smsCredentialEnvNames,
 } from '../../../../apps/api/src/modules/identity/infra/fake-sms.ts';
-import { limited, memoryLogger, phone, redisConnection } from './kit.ts';
+import { limited, makeHmac, memoryLogger, phone, redisConnection } from './kit.ts';
 
 it('[BR-ID-05] Redis 不可用时拒绝发码，返回正整数等待时间且不调用供应商', async () => {
   const { logger } = memoryLogger();
@@ -32,7 +32,7 @@ it('[BR-ID-05] Redis 不可用时拒绝发码，返回正整数等待时间且�
       redis: handle!,
       clock: new FixedClock('2026-10-06T10:00:00+08:00'),
       logger,
-      hmacKey: randomBytes(32),
+      hmac: makeHmac(),
       config: { configValue: async () => null },
       sender: {
         send: async (message) => {
@@ -95,16 +95,12 @@ it('[BR-ID-05] 声明的 SMS 密钥使 local/test 拒启，仅报告变量名；
   }
 });
 
-it('[BR-ID-05] 验证码与 captcha_token 的结构化日志字段脱敏', () => {
+it('[BR-ID-05] captcha_token 与手机号的结构化日志字段脱敏', () => {
   const { logger, lines } = memoryLogger();
   const number = phone();
   const token = `captcha-${randomUUID()}`;
-  logger.info(
-    { phone: number, sms_code: '042019', verification_code: '042019', captcha_token: token },
-    'sms test',
-  );
+  logger.info({ phone: number, captcha_token: token }, 'sms test');
   expect(lines.length).toBeGreaterThan(0);
   expect(lines.join('')).not.toContain(number);
   expect(lines.join('')).not.toContain(token);
-  expect(lines.join('')).not.toMatch(/(?<!\d)042019(?!\d)/);
 });

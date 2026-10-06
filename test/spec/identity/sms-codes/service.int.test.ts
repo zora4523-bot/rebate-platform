@@ -7,6 +7,7 @@ import {
 } from '../../../../apps/api/src/modules/identity/application/sms-codes.ts';
 import {
   acquireRedis,
+  fullWidthPhone,
   limited,
   phone,
   success,
@@ -33,7 +34,7 @@ it('[AC-S1-78 ②][BR-ID-05] 三种 purpose 共用规范化手机号的 60 秒�
     expect(f.sender.outbox()[0]?.phone).toBe(f.number);
     f.clock.advanceMs(59_000);
     limited(await f.send('bind', `+86 ${f.number}`), 1);
-    limited(await f.send('step_up', `0086-${f.number}`), 1);
+    limited(await f.send('step_up', fullWidthPhone(f.number)), 1);
     f.clock.advanceMs(1000);
     success(await f.send('step_up', `86${f.number}`));
     expect(f.sender.outbox()).toHaveLength(2);
@@ -71,7 +72,7 @@ it('[BR-ID-05] 10:59:50 第五条，10:59:55 同时限流取较晚解除点，Re
   });
 });
 
-it('[BR-ID-05] 自然日第 11 条受限；24 小时保护同时命中时取最晚解除点', async () => {
+it('[BR-ID-05] 自然日第 11 条受限；自然日与滑动 24 小时保护在次日零点同时解除', async () => {
   expect(server).toBeDefined();
   await withFixture(server!, async (f) => {
     // First send at midnight: natural-day and rolling-day release coincide at next midnight.
@@ -122,6 +123,7 @@ it('[BR-ID-05] 验证码六位数字，299 秒仍可核销，满 300 秒过期�
     const second = f.lastCode();
     f.clock.advanceMs(300_000);
     expect(await f.verify(second)).toEqual({ code: 20003 });
+    expect(await f.verify(wrong(second))).toEqual({ code: 20003 });
   });
 });
 
@@ -208,8 +210,7 @@ it.each(['login', 'bind', 'step_up'] as const)(
       const second = f.lastCode();
       for (let n = 0; n < 4; n++)
         expect(await f.verify(wrong(second), purpose)).toEqual({ code: 20002 });
-      // Fifth mismatch invalidates; the rule does not specify its own response code.
-      expect([20002, 20003]).toContain((await f.verify(wrong(second), purpose)).code);
+      expect(await f.verify(wrong(second), purpose)).toEqual({ code: 20002 });
       expect(await f.verify(second, purpose)).toEqual({ code: 20003 });
       expect(await f.verify(wrong(second), purpose)).toEqual({ code: 20003 });
     });
@@ -254,7 +255,7 @@ it('[BR-ID-05] 同码并发校验并核销只有一个成功，错误计数也�
     success(await f.send());
     const next = f.lastCode();
     const failures = await Promise.all(Array.from({ length: 5 }, () => f.verify(wrong(next))));
-    expect(failures.every((r) => r.code === 20002 || r.code === 20003)).toBe(true);
+    expect(failures).toEqual(Array.from({ length: 5 }, () => ({ code: 20002 })));
     expect(await f.verify(next)).toEqual({ code: 20003 });
   });
 });
@@ -350,7 +351,12 @@ it('[BR-ID-05] 同号跨服务并发十二次含不同 purpose/App，供应商�
     const two = createSmsCodeService({ ...f.options, sender });
     const first = one.send({ app_id: 'couli', phone: f.number, purpose: 'login' });
     try {
-      await entered.promise;
+      await Promise.race([
+        entered.promise,
+        first.then(() => {
+          expect.fail('first send returned before reaching sender');
+        }),
+      ]);
       const purposes: SmsPurpose[] = ['login', 'bind', 'step_up'];
       const rest = await Promise.all(
         Array.from({ length: 11 }, (_, i) =>
@@ -418,7 +424,7 @@ it.each(['170', '171', '162', '165', '167'])(
   },
 );
 
-it('[BR-ID-05] 只读 sms.blocked_prefixes，按 App 读取 E.164 前缀；空配置可解除默认号段', async () => {
+it('[BR-ID-05] 按 App 读取 sms.blocked_prefixes 的 E.164 前缀；空配置可解除默认号段', async () => {
   expect(server).toBeDefined();
   const configValue = vi.fn(async (appId: string) => ({
     value: appId === 'couli' ? ['+86139'] : [],
@@ -431,9 +437,6 @@ it('[BR-ID-05] 只读 sms.blocked_prefixes，按 App 读取 E.164 前缀；空�
       success(await f.send('login', phone('170'), 'other-app'));
       expect(configValue.mock.calls.map((call) => call[0])).toContain('other-app');
       expect(configValue).toHaveBeenCalledWith('couli', 'sms.blocked_prefixes');
-      expect(
-        configValue.mock.calls.every((call) => (call as unknown[])[1] === 'sms.blocked_prefixes'),
-      ).toBe(true);
     },
     { config: { configValue } },
   );
@@ -450,12 +453,17 @@ it('[BR-ID-05] 插入点有序短路，手机号频控最后判定；只有受�
       success(await f.send());
       expect(order).toEqual(['blocklist', 'captcha', 'device']);
       expect(accepted).toHaveBeenCalledTimes(1);
+      expect(accepted).toHaveBeenCalledWith(
+        expect.objectContaining({ app_id: 'couli', phone: f.number, purpose: 'login' }),
+      );
       order.length = 0;
       blockCaptcha = true;
       expect(await f.send()).toEqual({ code: 44003 });
       expect(order).toEqual(['blocklist', 'captcha']);
       blockCaptcha = false;
+      order.length = 0;
       limited(await f.send(), 60);
+      expect(order).toEqual(['blocklist', 'captcha', 'device']);
       f.clock.advanceMs(60_000);
       f.sender.enqueueResult('rejected');
       expect((await f.send()).code).toBe(50001);
@@ -467,7 +475,13 @@ it('[BR-ID-05] 插入点有序短路，手机号频控最后判定；只有受�
     {
       hooks: {
         phoneBlocklist: async (request) => {
-          expect(request.phone).toMatch(/^1[3-9]\d{9}$/);
+          expect(request).toEqual(
+            expect.objectContaining({
+              app_id: 'couli',
+              phone: expect.stringMatching(/^1[3-9]\d{9}$/),
+              purpose: 'login',
+            }),
+          );
           order.push('blocklist');
           return null;
         },

@@ -187,5 +187,18 @@ export async function responseValidator() {
   const schema =
     document.paths['/v1/auth/sms-codes']!.post.responses['200']!.content['application/json']!
       .schema;
-  return createValidatorCompiler()({ schema, httpPart: 'body' });
+  const errorSchema =
+    document.paths['/v1/auth/sms-codes']!.post.responses['4XX']!.content['application/json']!
+      .schema;
+  const compile = createValidatorCompiler();
+  return {
+    validate: compile({ schema, httpPart: 'body' }),
+    validateError: compile({ schema: errorSchema, httpPart: 'body' }),
+  };
+}
+
+export async function validateErrorResponse(response: Response): Promise<void> {
+  const { validateError } = await responseValidator();
+  expect(validateError(response.json())).toBe(true);
+  expect(validateError.errors ?? []).toEqual([]);
 }

@@ -12,7 +12,7 @@ const vectors = JSON.parse(
     error?: { code: number; fields: string[]; reason: string };
   }[];
 };
-it.each(vectors.cases)('[AC-S1-78 ③][BR-ID-05] 共享规范化向量：$note', (vector) => {
+it.each(vectors.cases)('[AC-S1-78 ③][BR-ID-05] 共享规范化向量 %#：$note', (vector) => {
   const result = normalize_phone(vector.input);
   if (vector.expected !== undefined) {
     expect(result).toEqual({ code: 0, phone: vector.expected });

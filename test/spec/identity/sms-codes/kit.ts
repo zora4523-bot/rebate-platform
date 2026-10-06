@@ -1,4 +1,4 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { expect } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import { loadConnectionConfig } from '../../../../apps/api/src/modules/platform/db/index.ts';
@@ -30,6 +30,15 @@ export async function acquireRedis(): Promise<TestRedis | undefined> {
 export function phone(prefix = '139'): string {
   return prefix + Array.from({ length: 11 - prefix.length }, () => randomInt(10)).join('');
 }
+export function makeHmac(): (text: string) => string {
+  const key = randomBytes(32);
+  return (text) => createHmac('sha256', key).update(text).digest('hex');
+}
+export function fullWidthPhone(number: string): string {
+  return `86${number}`.replace(/[0-9]/g, (digit) =>
+    String.fromCharCode(digit.charCodeAt(0) + 0xfee0),
+  );
+}
 export function memoryLogger() {
   const lines: string[] = [];
   const logger = createRootLogger(
@@ -57,7 +66,7 @@ export async function fixture(server: TestRedis, overrides: Partial<SmsCodeOptio
       sender,
       logger,
       config: { configValue: async () => null },
-      hmacKey: randomBytes(32),
+      hmac: makeHmac(),
       ...overrides,
     };
     const service = createSmsCodeService(options);

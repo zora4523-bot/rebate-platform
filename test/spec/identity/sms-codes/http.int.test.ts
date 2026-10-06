@@ -7,8 +7,15 @@ import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
-import { acquireRedis, memoryLogger, phone, type TestRedis } from './kit.ts';
-import { buildApp, device, outbox, responseValidator, type HttpApp } from './http-kit.ts';
+import { acquireRedis, fullWidthPhone, memoryLogger, phone, type TestRedis } from './kit.ts';
+import {
+  buildApp,
+  device,
+  outbox,
+  responseValidator,
+  validateErrorResponse,
+  type HttpApp,
+} from './http-kit.ts';
 
 let server: TestRedis | undefined;
 let database: TestDatabase | undefined;
@@ -60,7 +67,7 @@ it.each(['login', 'bind', 'step_up'])(
     });
     expect(response.statusCode).toBe(200);
     const body = response.json<{ code: number; data: unknown }>();
-    const validate = await responseValidator();
+    const { validate } = await responseValidator();
     expect(validate(body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     expect(body.code).toBe(0);
@@ -82,8 +89,9 @@ it('[AC-S1-78 ②][BR-ID-05] HTTP 规范化别名共享频控，429 带 Retry-Af
   const send = await device(app!, clock);
   const number = phone();
   expect((await send({ phone: number, purpose: 'login' })).statusCode).toBe(200);
-  const response = await send({ phone: `0086-${number}`, purpose: 'login' });
+  const response = await send({ phone: fullWidthPhone(number), purpose: 'login' });
   expect(response.statusCode).toBe(429);
+  await validateErrorResponse(response);
   expect(response.json<{ code: number }>().code).toBe(42901);
   expect(String(response.headers['retry-after'])).toBe('60');
   expect(outbox(app!).filter((m) => m.phone === number)).toHaveLength(1);
@@ -97,6 +105,7 @@ it.each(['', '+852 5123 4567', '12345678901', '1380013800'])(
     const send = await device(app!, clock);
     const response = await send({ phone: input, purpose: 'login' });
     expect(response.statusCode).toBe(400);
+    await validateErrorResponse(response);
     expect(response.json()).toMatchObject({
       code: 20001,
       data: { fields: ['phone'], reason: 'phone_invalid' },
@@ -111,6 +120,7 @@ it('[BR-ID-05] HTTP purpose 越界返回 20001，不能发短信', async () => {
   const number = phone();
   const response = await send({ phone: number, purpose: 'password_reset' });
   expect(response.statusCode).toBe(400);
+  await validateErrorResponse(response);
   expect(response.json()).toMatchObject({ code: 20001, data: { fields: ['purpose'] } });
   expect(outbox(app!).some((m) => m.phone === number)).toBe(false);
 });
@@ -122,6 +132,7 @@ it('[BR-ID-05] HTTP 规范化后的默认号段返回 403/44001，data 不带自
   const number = phone('170');
   const response = await send({ phone: `+86 ${number}`, purpose: 'login' });
   expect(response.statusCode).toBe(403);
+  await validateErrorResponse(response);
   const body = response.json<{ code: number; data?: Record<string, unknown> | null }>();
   expect(body.code).toBe(44001);
   if (body.data != null) {

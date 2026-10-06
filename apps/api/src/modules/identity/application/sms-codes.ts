@@ -58,7 +58,7 @@ export interface SmsCodeOptions {
   readonly sender: SmsSender;
   readonly config: SmsConfigReader;
   readonly logger: RootLogger;
-  readonly hmacKey: Uint8Array;
+  readonly hmac: (text: string) => string;
   readonly hooks?: SmsHooks;
 }
 export interface SmsCodeService {

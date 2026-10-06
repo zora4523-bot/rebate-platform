@@ -1,8 +1,7 @@
-import { randomBytes } from 'node:crypto';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { createSmsCodeService } from '../../../../apps/api/src/modules/identity/application/sms-codes.ts';
 import type { RedisHandle } from '../../../../apps/api/src/modules/platform/redis/index.ts';
-import { acquireRedis, success, withFixture, type TestRedis } from './kit.ts';
+import { acquireRedis, makeHmac, success, withFixture, type TestRedis } from './kit.ts';
 
 let server: TestRedis | undefined;
 beforeAll(async () => {
@@ -38,11 +37,13 @@ it('[BR-ID-05] Redis 状态在独立服务实例间共享，密钥参与验证�
       close: () => handle.close(),
       onApplicationShutdown: () => handle.onApplicationShutdown(),
     };
-    const service = createSmsCodeService({ ...f.options, redis: observed });
+    const hmac = vi.fn(f.options.hmac);
+    const service = createSmsCodeService({ ...f.options, redis: observed, hmac });
     success(await service.send({ app_id: 'couli', phone: f.number, purpose: 'login' }));
     const code = f.lastCode();
     expect(touched.size).toBeGreaterThan(0);
     let alive = 0;
+    const stored: string[] = [];
     // Read only the keys handed to Redis by this test; no SCAN/FLUSH or assumed identity key format.
     for (const { namespace, key } of touched.values()) {
       const result = (await handle.namespace(namespace).eval(
@@ -62,12 +63,20 @@ it('[BR-ID-05] Redis 状态在独立服务实例间共享，密钥参与验证�
       )) as [number, string];
       if (result[0] === -2) continue;
       alive++;
+      stored.push(`${key} ${result[1]}`);
       expect(result[0]).toBeGreaterThan(0);
       expect(`${key} ${result[1]}`).not.toMatch(new RegExp(`(?<!\\d)${code}(?!\\d)`));
     }
     expect(alive).toBeGreaterThan(0);
+    const codeHashes = hmac.mock.results
+      .filter(
+        (result, index) => result.type === 'return' && hmac.mock.calls[index]![0].includes(code),
+      )
+      .map((result) => result.value as string);
+    expect(codeHashes.length).toBeGreaterThan(0);
+    expect(codeHashes.some((hash) => stored.some((value) => value.includes(hash)))).toBe(true);
     const request = { app_id: 'couli', phone: f.number, purpose: 'login' as const, code };
-    const otherKey = createSmsCodeService({ ...f.options, hmacKey: randomBytes(32) });
+    const otherKey = createSmsCodeService({ ...f.options, hmac: makeHmac() });
     expect((await otherKey.verifyAndConsume(request)).code).not.toBe(0);
     const sameKey = createSmsCodeService(f.options);
     expect(await sameKey.verifyAndConsume(request)).toEqual({ code: 0 });
