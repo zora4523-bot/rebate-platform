@@ -1,0 +1,90 @@
+{
+  "task": "CT-08c",
+  "spec_ref": "68b2959cf2b680f11f084706fdfcf215beb7fa80",
+  "spec_commit": "ebe986672f910bebe6db48a1cbaf04d28da87948",
+  "red_tests": [
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#1] fallback_q 接受关键词、null 和缺省，保留旧 fallback 取值",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#1] fallback_q 拒绝错误类型、空串及非 search_page 的关键词",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#2] duplicate 接受 true、false、缺省，拒绝其他类型",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#2] duplicate 不放宽 meta 其余必填字段、字段类型或额外字段限制",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#3] duplicate-ended-done：已结束重放仅有 meta 和终止帧",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#3] duplicate-ended-error：已结束重放仅有 meta 和终止帧",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#3] duplicate-in-progress：两帧，30506 可重试且无降级入口或关键词",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#3] error-search-fallback：正常受理，50302 以搜索入口及非空关键词结束",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#4] 新样例所有错误码及 30506、50302 均已登记在错误码契约",
+    "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#5] 11 个旧样例原样兼容，显式 duplicate=false、fallback_q=null 也兼容"
+  ],
+  "risk_note": "RV1 contract task (contracts/agent-stream.schema.json and fixtures); the PR also carries rule-test files, so two reviewers. error.fallback_q and meta.duplicate are optional so the frozen CT-08a / CT-08b tests keep passing; four new fixtures for the duplicate message (planning 04 §8.1) and the 50302 search fallback. Rule tests by Codex in one attempt (10 cases), red in the container; Claude spec-test review passed in round 1. Implementation by an Opus 5.5 subagent in one run (container verify:fast exit 0). Codex contract review and Claude review passed in round 1. Branch rebased onto main before the evidence: red repeated at the rebased spec_commit; full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ebe986672f910bebe6db48a1cbaf04d28da87948",
+      "tree": "0d77e01d04c0124453f278e83e029fe8fd2e3be1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T08:40:12Z",
+      "finished_at": "2026-10-06T08:40:16Z",
+      "red_tests": [
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#1] fallback_q 接受关键词、null 和缺省，保留旧 fallback 取值",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#1] fallback_q 拒绝错误类型、空串及非 search_page 的关键词",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#2] duplicate 接受 true、false、缺省，拒绝其他类型",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#2] duplicate 不放宽 meta 其余必填字段、字段类型或额外字段限制",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#3] duplicate-ended-done：已结束重放仅有 meta 和终止帧",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#3] duplicate-ended-error：已结束重放仅有 meta 和终止帧",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#3] duplicate-in-progress：两帧，30506 可重试且无降级入口或关键词",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#3] error-search-fallback：正常受理，50302 以搜索入口及非空关键词结束",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#4] 新样例所有错误码及 30506、50302 均已登记在错误码契约",
+        "test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts > [AC-CT-08c#5] 11 个旧样例原样兼容，显式 duplicate=false、fallback_q=null 也兼容"
+      ],
+      "expected": ["test/spec/contracts/agent-stream-duplicate/agent-stream-duplicate.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "90e08367a1dc5f9e41a6fa52b0a787bfefe6ea14937ab802028e22f1cc3028ec"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "contract",
+      "checklist_complete": true,
+      "note": "round 1 pass with no findings (couli-runs/CT-08c/review-codex.json)"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "contract",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagent, round 1 pass; two out-of-scope S2 recorded as follow-ups (contracts/README.md fixture notes after CT-11a; the 50302 keyword field in error-codes.yaml and planning BR-TEXT-14) (couli-runs/CT-08c/review-claude-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with two S2 (stream invariants of the 50302 fixture; no extra tightening) made explicit implementation rules (couli-runs/CT-08c/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "7870b542682ab628b616742ba0805f4c728ea8a4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (fcc1221, the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

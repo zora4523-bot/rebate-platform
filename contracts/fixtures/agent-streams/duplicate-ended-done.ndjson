@@ -1,0 +1,2 @@
+{"event":"meta","id":1,"data":{"session_id":"019a0000-0000-7000-8000-000000000001","run_id":"019a0000-0000-7000-8000-000000000101","message_id":"019a0000-0000-7000-8000-000000000201","prompt_version":"demo-prompt-v1","model_label":"演示模型","ai_label":"内容由 AI 生成，仅供参考","duplicate":true}}
+{"event":"done","id":2,"data":{"finish_reason":"stop","quota_left":29}}

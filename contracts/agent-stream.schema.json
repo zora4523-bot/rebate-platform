@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Agent stream contract (CT-08a). Frames, events and cards: 规划/04 §8.1–8.3; client handling: 规划/03 §7.2. One SSE frame `event: <type>` / `id: <seq>` / `data: <json>` is written here as one object {event, id, data}; the heartbeat comment line `: ping` (every 15 s) is not a frame and is validated by $defs/ping. id (= seq) increases within a run; done and error are the only terminal events. Known card types are validated strictly; any other type is an unknown card: only the envelope is checked and the client shows fallback_text (03 §7.2). page_guide (D31) and earnings_summary (D32) are registered by CT-08b; $defs also holds the model-side shapes page_guide_intent, get_my_earnings_args and get_my_earnings_result (04 §8.5), which are not frames. Fixtures: contracts/fixtures/agent-streams/*.ndjson.",
+  "$comment": "Agent stream contract (CT-08a). Frames, events and cards: 规划/04 §8.1–8.3; client handling: 规划/03 §7.2. One SSE frame `event: <type>` / `id: <seq>` / `data: <json>` is written here as one object {event, id, data}; the heartbeat comment line `: ping` (every 15 s) is not a frame and is validated by $defs/ping. id (= seq) increases within a run; done and error are the only terminal events. Known card types are validated strictly; any other type is an unknown card: only the envelope is checked and the client shows fallback_text (03 §7.2). page_guide (D31) and earnings_summary (D32) are registered by CT-08b; $defs also holds the model-side shapes page_guide_intent, get_my_earnings_args and get_my_earnings_result (04 §8.5), which are not frames. CT-08c adds error.fallback_q and meta.duplicate (both optional, so frames without them stay valid): a repeated client_msg_id gets a response of exactly two frames, meta with duplicate=true and one terminal frame, whose id starts at 1 and is unrelated to the original run's seq (04 §8.1 duplicate messages, BR-AI-23). Fixtures: contracts/fixtures/agent-streams/*.ndjson.",
   "title": "AgentStreamFrame",
   "type": "object",
   "additionalProperties": false,
@@ -182,6 +182,10 @@
           "description": "From texts.ai_label (BR-TEXT-16).",
           "type": "string",
           "minLength": 1
+        },
+        "duplicate": {
+          "description": "true when client_msg_id already exists in this session: no new run, the ids above are the original run's and only one terminal frame follows (04 §8.1 duplicate messages, BR-AI-23). false for a normally accepted message; absent is the same as false.",
+          "type": "boolean"
         }
       }
     },
@@ -238,6 +242,24 @@
           "description": "Fallback entry for the client, e.g. search_page; null when there is none.",
           "type": ["string", "null"],
           "minLength": 1
+        },
+        "fallback_q": {
+          "description": "Keyword prefilled on the search page; a string only with fallback=search_page and a usable keyword, e.g. 50302 when the no-model keyword search also failed (BR-AI-14, BR-TEXT-14). null otherwise; absent is the same as null.",
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      },
+      "if": {
+        "type": "object",
+        "required": ["fallback_q"],
+        "properties": {
+          "fallback_q": { "type": "string" }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "fallback": { "type": "string", "enum": ["search_page"] }
         }
       }
     },
