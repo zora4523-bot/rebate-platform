@@ -1,0 +1,103 @@
+{
+  "red_tests": [
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#10] tokens.gen.css 与契约重新生成的文本逐字一致",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#11] tailwind.gen.css 与契约重新生成的文本逐字一致",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#12] theme.gen.ts 与契约重新生成的文本逐字一致且已定型",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#13] 包主入口暴露生成主题且两个 CSS 子路径可消费",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#14] TS 序列化使用入参，重复生成稳定且不改写输入",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#3] CSS 的每个叶子令牌与规划 :root 的变量名、值逐项一致",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#4] 代表值覆盖新背景、语义颜色、字号、字体、单位、阴影和焦点",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#5] MVP 强制浅色且不输出深色覆盖规则",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#6] Tailwind 4 主题使用有效命名空间并引用全部令牌，不能自引用",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#7] TS 主题每个叶子只引用一个 CSS 令牌，覆盖全部令牌",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#8] 生成器使用入参中的值和新增令牌，不能硬编码固定快照",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#9] 两份 CSS 生成结果已经过仓库 Prettier 定型",
+    "test/spec/frontend/ui-tokens/snapshot.test.ts > [AC-CT-11a#1] 契约完整保留固定规划版本的令牌、metadata 与 schemaVersion",
+    "test/spec/frontend/ui-tokens/snapshot.test.ts > [AC-CT-11a#2] README 已交付清单同一行记录令牌版本与完整来源提交"
+  ],
+  "risk_note": "RV1 (packages/ui-tokens, contracts/design-tokens.json). Design tokens: a fixed snapshot of the planning repository's design/tokens/design-tokens.json (v0.3.0, planning b9f54fe) and a generator for web CSS variables, a Tailwind 4 @theme and a TS theme object, generated files checked for drift. Rule tests by Codex (red first), implementation by an Opus 5.5 subagent. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "one S2 (themeFromTokens writes through a crafted constructor / prototype key; needs deliberately built input), accepted, noted in the PR"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (second reviewer): pass, no S0/S1; snapshot byte-identical to planning b9f54fe, 89 CSS variables identical to planning variables.css, drift tests red on any hand edit; S2 themeFromTokens prototype keys (same as Codex S2); S3 integer-key ordering, snapshot test uses toEqual"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "RV1 since #120 (apps/h5, packages/bridge-sdk, packages/ui-tokens): the rule-test review is required for RV2 only (规划/11 §2.3 step 3)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "tests": 33,
+    "files": 7,
+    "note": "not rerun for this task: packages/money and test/properties are byte-identical to main, whose tree carries the 1M-run long property run (PROP_RUNS=1000000, PROP_SEED=20261001; CI longrun job runs only when those paths change)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "CT-11a",
+  "spec_ref": "e9fe98ab6e8890ca40923ccd5b6ae5b56dac5aba",
+  "spec_commit": "4c8cb2aaa2c25f592a04349b02318054049102f9",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4c8cb2aaa2c25f592a04349b02318054049102f9",
+      "tree": "9086266051e3ec89210a0187ab13df1a91492a82",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T08:22:43Z",
+      "finished_at": "2026-10-06T08:23:03Z",
+      "red_tests": [
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#10] tokens.gen.css 与契约重新生成的文本逐字一致",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#11] tailwind.gen.css 与契约重新生成的文本逐字一致",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#12] theme.gen.ts 与契约重新生成的文本逐字一致且已定型",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#13] 包主入口暴露生成主题且两个 CSS 子路径可消费",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#14] TS 序列化使用入参，重复生成稳定且不改写输入",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#3] CSS 的每个叶子令牌与规划 :root 的变量名、值逐项一致",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#4] 代表值覆盖新背景、语义颜色、字号、字体、单位、阴影和焦点",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#5] MVP 强制浅色且不输出深色覆盖规则",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#6] Tailwind 4 主题使用有效命名空间并引用全部令牌，不能自引用",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#7] TS 主题每个叶子只引用一个 CSS 令牌，覆盖全部令牌",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#8] 生成器使用入参中的值和新增令牌，不能硬编码固定快照",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#9] 两份 CSS 生成结果已经过仓库 Prettier 定型",
+        "test/spec/frontend/ui-tokens/snapshot.test.ts > [AC-CT-11a#1] 契约完整保留固定规划版本的令牌、metadata 与 schemaVersion",
+        "test/spec/frontend/ui-tokens/snapshot.test.ts > [AC-CT-11a#2] README 已交付清单同一行记录令牌版本与完整来源提交"
+      ],
+      "expected": [
+        "test/spec/frontend/ui-tokens/drift.test.ts",
+        "test/spec/frontend/ui-tokens/generation.test.ts",
+        "test/spec/frontend/ui-tokens/snapshot.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "518adc3574a0d643fa32604cf2bbbd6203ab6738c6e09b4e99b8b53f2584e5c8"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "2eee06d43e474d3c7d2f54c12e68548cb011ad05",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
