@@ -1468,6 +1468,300 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin login, first step (account and password)
+         * @description First step of the admin login (BR-ID-34; 04 §6.6 auth). The source IP must be on the admin
+         *     whitelist (10403 `data.reason=admin_ip_not_allowed`, checked before the password). A wrong
+         *     account or password is 10008 without data (an unknown account is not told apart) and
+         *     counts towards the consecutive-failure lock; a locked account gets 10009 with
+         *     `data.locked_until` even with the right password.
+         *     Success never issues an admin_token: it returns a `login_ticket` for exactly the step in
+         *     `next` — `totp` (bound authenticator: POST /admin/v1/auth/totp), `change_password` (still on
+         *     the initial password: POST /admin/v1/auth/password, then the binding) or `bind_totp` (no
+         *     authenticator bound: POST /admin/v1/auth/totp/secret, then POST
+         *     /admin/v1/auth/totp/bind). The ticket can call nothing but that step; its lifetime is set
+         *     by the server and given in `ticket_expires_at`.
+         *     Not decided by BR-ID-34 and not fixed here: how the initial password is handed out beyond
+         *     the rule itself, the reset of a lost authenticator (a super-admin action, later task).
+         */
+        post: operations["adminLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace the initial password during the first login
+         * @description Takes a `login_ticket` whose `next` was `change_password` (BR-ID-34 细则「首次登录强制改密码」).
+         *     The new password must differ from the initial one, which stops working once replaced; a
+         *     new password that is rejected is 20001 with `data.fields=[new_password]` and the ticket
+         *     stays usable. Password composition rules are not fixed by BR-ID-34 and are left to the
+         *     admin module task. Success consumes the ticket and returns the next step (`bind_totp` for a
+         *     new account) with a new ticket; no admin_token is issued before the binding is done.
+         *     A ticket that is expired, already used, invalid or issued for another step is 10001 with
+         *     `data.reason=login_ticket_expired` (back to the first step). A locked account is 10009.
+         */
+        post: operations["adminChangeInitialPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/totp/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authenticator secret for the first binding
+         * @description Takes a `login_ticket` whose `next` was `bind_totp` and returns the TOTP secret and its
+         *     otpauth URI (the page draws the QR code from the URI) for the account holder to add to an
+         *     authenticator app (BR-ID-34 细则「首次绑定身份验证器」). It does not consume the ticket:
+         *     calling it again with the same ticket returns the same secret; a new login after leaving or
+         *     timing out generates a new one. Nothing is bound until POST /admin/v1/auth/totp/bind
+         *     accepts a code. POST so that neither ticket nor secret appears in a URL.
+         *     A ticket that is expired, already used, invalid or issued for another step is 10001 with
+         *     `data.reason=login_ticket_expired`. A locked account is 10009.
+         */
+        post: operations["adminGetTotpBindingSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/totp/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the first binding with a code and sign in
+         * @description Takes the `bind_totp` ticket and the current 6-digit code of the secret from POST
+         *     /admin/v1/auth/totp/secret. A correct code stores the binding and issues the admin_token
+         *     (login complete). A wrong code binds nothing and signs nothing in: 20002 with
+         *     `data.reason=totp_bind_invalid`, the ticket stays usable for another try, and every such
+         *     failure counts towards the same consecutive-failure lock as a wrong password (BR-ID-34
+         *     细则「首次绑定身份验证器」); requests during the lock get 10009. A ticket that is expired,
+         *     already used, invalid or issued for another step is 10001 with
+         *     `data.reason=login_ticket_expired`.
+         */
+        post: operations["adminBindTotp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin login, second step (authenticator code)
+         * @description Takes the `totp` ticket from POST /admin/v1/auth/login and the current 6-digit code. A
+         *     correct code issues the admin_token (BR-ID-34). A wrong code is 20002 with
+         *     `data.reason=totp_invalid`, the ticket stays usable for another try, and every such failure
+         *     counts towards the consecutive-failure lock; requests during the lock get 10009. A ticket
+         *     that is expired, already used, invalid or issued for another step is 10001 with
+         *     `data.reason=login_ticket_expired`.
+         */
+        post: operations["adminVerifyTotp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign out of the admin console
+         * @description Revokes the session of the admin_token. The console also drops the token from memory and
+         *     sessionStorage. An expired or idle-timed-out token is answered 10001 like on any admin
+         *     operation; nothing is written.
+         */
+        post: operations["adminLogout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/step-up/sms-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send the SMS code of the sms step-up tier
+         * @description Sends a verification code to the verify phone registered on the signed-in admin account
+         *     (BR-ID-34 短信档; template ADMIN_STEP_UP). An account without a registered verify phone is
+         *     10003 with `data.tier=sms` and `data.reason=verify_phone_missing` and nothing is sent (the
+         *     console greys out sms-tier buttons beforehand from `verify_phone_masked` of GET
+         *     /admin/v1/me/permissions). Sending too often is 42901 with Retry-After. The send limits and
+         *     the code validity are not fixed by BR-ID-34; the response states the values in force.
+         */
+        post: operations["adminSendStepUpSms"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/step-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin second verification (totp or sms tier)
+         * @description Returns a step_up_token that records its tier (BR-ID-34): `tier=totp` with the current
+         *     authenticator code, `tier=sms` with the code sent by POST /admin/v1/auth/step-up/sms-codes.
+         *     The console sends the token as the `X-Step-Up-Token` request header of the admin
+         *     operation that answered 10003 and replays that request; the header is never put in the
+         *     body. An operation that needs the sms tier rejects a totp-tier token with 10003
+         *     `data.tier=sms`. Which tier each operation needs is annotated per permission in GET
+         *     /admin/v1/me/permissions (04 §11 step-up column).
+         *     `tier=sms` on an account without a registered verify phone is 10003 with `data.tier=sms`
+         *     and `data.reason=verify_phone_missing`. A wrong code is 20002 without a reason; an expired
+         *     or voided SMS code is 20003. Not fixed by BR-ID-34 and left open here: whether wrong
+         *     step-up codes count towards the login-failure lock, and the token lifetime and number of
+         *     uses (the response carries `expire_at`; the server decides).
+         */
+        post: operations["adminStepUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/me/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The signed-in admin account and its permission points
+         * @description Read after login to build the menu and the CASL rules (03 §9.1–§9.2). A super admin
+         *     (`is_super=true`) gets every permission point; another account gets the points a super
+         *     admin ticked for it; an account with none gets an empty list and the console shows the
+         *     「暂无权限」 page (BR-ID-34 细则「首次绑定身份验证器」). Permission keys are values of
+         *     contracts/enums/admin.yaml `admin_permission`; clients ignore a key they do not know.
+         *     Each entry carries its step-up annotation (04 §11 step-up column): `step_up_tier` is the
+         *     tier every step-up operation of that point needs (null = none needs one), and
+         *     `step_up_operations` lists the operations whose tier differs from it (e.g. only raising the
+         *     minimum supported version under `content.app_version` needs totp; only the balance cache
+         *     recalculation under `fund.recon` needs sms). Operation keys come from specs/permissions.yaml
+         *     (B1-18). `verify_phone_masked` is null when no verify phone is registered: sms-tier
+         *     buttons are greyed out with a prompt to register one (03 §9.2).
+         */
+        get: operations["adminGetMyPermissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List admin accounts (super admin only, read-only)
+         * @description Admin accounts and their permission points, page by page (`page`, `page_size` ≤ 200, 04
+         *     §5). Super admin only — 「后台账号与权限」 is not a permission point and cannot be granted
+         *     (04 §11, 拍板第二批 §8 ADD-04); any other account gets 10403 with
+         *     `data.reason=admin_permission_denied`. Never returns the password, its hash, the TOTP secret
+         *     or the full verify phone. Creating, disabling and ticking permission points (super admin,
+         *     step-up, audit) come with a later task.
+         */
+        get: operations["adminListAdmins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins/{admin_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One admin account (super admin only, read-only)
+         * @description Same fields as a list item. Super admin only (10403 `data.reason=admin_permission_denied`
+         *     otherwise). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`. Never returns the
+         *     password, its hash, the TOTP secret or the full verify phone.
+         */
+        get: operations["adminGetAdmin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3432,6 +3726,180 @@ export interface components {
             data: components["schemas"]["EarningsSummary"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Intermediate credential of the admin login (BR-ID-34 细则「首次绑定身份验证器」): valid only for
+         *     the step it was issued for, sent in the request body, never an admin_token.
+         */
+        AdminLoginTicket: string;
+        AdminLoginRequest: {
+            /** @description Account name (unique; a disabled account keeps its name, BR-ID-34). */
+            username: string;
+            password: string;
+        };
+        AdminLoginTicketRequest: {
+            login_ticket: components["schemas"]["AdminLoginTicket"];
+        };
+        AdminChangePasswordRequest: {
+            login_ticket: components["schemas"]["AdminLoginTicket"];
+            /** @description Must differ from the initial password; composition rules are set by the server. */
+            new_password: string;
+        };
+        /** @description Current 6-digit code of the authenticator, or of the SMS for the sms tier. */
+        AdminTotpCode: string;
+        AdminTotpCodeRequest: {
+            login_ticket: components["schemas"]["AdminLoginTicket"];
+            code: components["schemas"]["AdminTotpCode"];
+        };
+        /**
+         * @description Next login step (enum admin_login_step).
+         * @enum {string}
+         */
+        AdminLoginStep: "totp" | "change_password" | "bind_totp";
+        AdminLoginStepData: {
+            next: components["schemas"]["AdminLoginStep"];
+            login_ticket: components["schemas"]["AdminLoginTicket"];
+            /** Format: date-time */
+            ticket_expires_at: string;
+        };
+        AdminLoginStepResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminLoginStepData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminTotpSecretData: {
+            /** @description Base32 TOTP secret, shown for manual entry. */
+            totp_secret: string;
+            /** @description Key URI the console renders as the QR code. */
+            otpauth_uri: string;
+        };
+        AdminTotpSecretResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminTotpSecretData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminSession: {
+            /** @description Sent in the Authorization header as a Bearer token (security scheme adminBearerAuth). */
+            admin_token: string;
+            /**
+             * Format: date-time
+             * @description Absolute expiry of the session (BR-ID-34).
+             */
+            expires_at: string;
+            /**
+             * Format: int32
+             * @description Seconds without activity after which the token stops working (BR-ID-34).
+             */
+            idle_timeout_sec: number;
+        };
+        AdminSessionResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminSession"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Admin step-up tier (enum admin_step_up_tier, BR-ID-34).
+         * @enum {string}
+         */
+        AdminStepUpTier: "totp" | "sms";
+        AdminStepUpRequest: {
+            tier: components["schemas"]["AdminStepUpTier"];
+            code: components["schemas"]["AdminTotpCode"];
+        };
+        AdminStepUpData: {
+            /** @description Sent as the `X-Step-Up-Token` header of the admin operation; records its tier. */
+            step_up_token: string;
+            tier: components["schemas"]["AdminStepUpTier"];
+            /** Format: date-time */
+            expire_at: string;
+        };
+        AdminStepUpResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminStepUpData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description A value of contracts/enums/admin.yaml `admin_permission` (04 §11). Kept a string here so the
+         *     list lives in one place; clients ignore keys they do not know.
+         */
+        AdminPermissionKey: string;
+        AdminStepUpOperation: {
+            /** @description Operation key from specs/permissions.yaml (B1-18). */
+            operation: string;
+            tier: components["schemas"]["AdminStepUpTier"];
+        };
+        /** @description A permission point of the account with its step-up annotation (04 §11 step-up column). */
+        AdminPermissionGrant: {
+            key: components["schemas"]["AdminPermissionKey"];
+            /** @description Tier of every step-up operation of this point; null = none needs step-up. */
+            step_up_tier: components["schemas"]["AdminStepUpTier"] | null;
+            /** @description Operations of this point whose tier differs from step_up_tier. */
+            step_up_operations: components["schemas"]["AdminStepUpOperation"][];
+        };
+        AdminMe: {
+            admin_id: components["schemas"]["Id"];
+            /** @description Account name, also shown as the display name. */
+            username: string;
+            is_super: boolean;
+            /** @description Masked verify phone (BR-ID-33); null = none registered, sms tier unavailable. */
+            verify_phone_masked: string | null;
+            /** @description Every point for a super admin, the ticked points otherwise; empty = no permission. */
+            permissions: components["schemas"]["AdminPermissionGrant"][];
+        };
+        AdminMeResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminMe"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Admin account status (enum admin_account_status).
+         * @enum {string}
+         */
+        AdminAccountStatus: "active" | "disabled";
+        /** @description Read-only view of an admin account; no password, hash, TOTP secret or full phone. */
+        AdminAccount: {
+            admin_id: components["schemas"]["Id"];
+            username: string;
+            is_super: boolean;
+            status: components["schemas"]["AdminAccountStatus"];
+            /** @description false = the next login goes through the first binding. */
+            totp_bound: boolean;
+            verify_phone_masked: string | null;
+            /**
+             * Format: date-time
+             * @description End of the current login lock; null when not locked.
+             */
+            locked_until: string | null;
+            /** @description Ticked points (admin_permissions); empty for a super admin, who has every point. */
+            permissions: components["schemas"]["AdminPermissionKey"][];
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminAccountResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAccount"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminAccountPage: {
+            items: components["schemas"]["AdminAccount"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminAccountPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAccountPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -3567,6 +4035,12 @@ export interface components {
         Cursor: string;
         /** @description Page size, at most 50 (04 §5). */
         Limit: number;
+        /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+        AdminPage: number;
+        /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+        AdminPageSize: number;
+        /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+        AdminIdPath: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: {
@@ -7247,6 +7721,565 @@ export interface operations {
             429: components["responses"]["NoStoreTooManyRequests"];
             "4XX": components["responses"]["NoStoreClientError"];
             "5XX": components["responses"]["NoStoreServerError"];
+        };
+    };
+    adminLogin: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "username": "ops-yi",
+                 *       "password": "example-password"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Account and password accepted; the next step and its ticket. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLoginStepResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Login rejected (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminChangeInitialPassword: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "login_ticket": "example-login-ticket-password",
+                 *       "new_password": "example-new-password"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password replaced; the next step and its ticket. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "next": "bind_totp",
+                     *         "login_ticket": "example-login-ticket-bind",
+                     *         "ticket_expires_at": "2026-10-07T10:10:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminLoginStepResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Password change rejected (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetTotpBindingSecret: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "login_ticket": "example-login-ticket-bind"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminLoginTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description The secret to bind. */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["NoStore"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "totp_secret": "JBSWY3DPEHPK3PXP",
+                     *         "otpauth_uri": "otpauth://totp/Couli%20Admin:ops-yi?secret=JBSWY3DPEHPK3PXP&issuer=Couli%20Admin&digits=6&period=30"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminTotpSecretResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Secret not issued (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminBindTotp: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "login_ticket": "example-login-ticket-bind",
+                 *       "code": "123456"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminTotpCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Bound and signed in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_token": "example-admin-token",
+                     *         "expires_at": "2026-10-07T18:00:00+08:00",
+                     *         "idle_timeout_sec": 1800
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminSessionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Binding rejected (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminVerifyTotp: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "login_ticket": "example-login-ticket-totp",
+                 *       "code": "123456"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminTotpCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_token": "example-admin-token",
+                     *         "expires_at": "2026-10-07T18:00:00+08:00",
+                     *         "idle_timeout_sec": 1800
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminSessionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Code rejected (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminLogout: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The admin session is revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not signed out (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSendStepUpSms: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The provider accepted the SMS, or its outcome is unknown (counted as sent). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "resend_after_sec": 60,
+                     *         "expires_in_sec": 300
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SendSmsCodeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not sent (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminStepUp: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminStepUpRequest"];
+            };
+        };
+        responses: {
+            /** @description A step-up token of the requested tier. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStepUpResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Verification failed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetMyPermissions: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account and its permission points. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListAdmins: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of admin accounts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "username": "finance-jia",
+                     *             "is_super": false,
+                     *             "status": "active",
+                     *             "totp_bound": true,
+                     *             "verify_phone_masked": "138****5678",
+                     *             "locked_until": null,
+                     *             "permissions": [
+                     *               "fund.view",
+                     *               "fund.adjust"
+                     *             ],
+                     *             "created_at": "2026-10-05T09:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02",
+                     *             "username": "ops-yi",
+                     *             "is_super": false,
+                     *             "status": "active",
+                     *             "totp_bound": false,
+                     *             "verify_phone_masked": null,
+                     *             "locked_until": "2026-10-07T10:30:00+08:00",
+                     *             "permissions": [],
+                     *             "created_at": "2026-10-06T14:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAccountPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetAdmin: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+                admin_id: components["parameters"]["AdminIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The admin account. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b00",
+                     *         "username": "owner",
+                     *         "is_super": true,
+                     *         "status": "active",
+                     *         "totp_bound": true,
+                     *         "verify_phone_masked": "139****0000",
+                     *         "locked_until": null,
+                     *         "permissions": [],
+                     *         "created_at": "2026-10-01T09:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
         };
     };
 }

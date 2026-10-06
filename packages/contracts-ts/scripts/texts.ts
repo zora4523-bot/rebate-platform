@@ -25,6 +25,13 @@ const PLACEHOLDER_NAME = /^[a-z][a-z0-9_]*$/;
  */
 export const SILENT_CODES: readonly number[] = [10002, 10402, 30505, 44003];
 
+/**
+ * Codes returned only by /admin/v1 (13 §13.11: 10008, 10009 appear only in the admin login).
+ * Their text is admin copy, which stays in apps/admin and not in the app bundle (规划/03 §9,
+ * contracts/README「后台文案不进这里」), so they have no error.<code> key here. CT-02f.
+ */
+export const ADMIN_ONLY_CODES: readonly number[] = [10008, 10009];
+
 type Obj = Record<string, unknown>;
 
 function isObj(v: unknown): v is Obj {
@@ -149,10 +156,15 @@ export function checkTexts(codes: readonly ErrorCodeDef[], file: string = textsF
   for (const silent of SILENT_CODES) {
     if (!byCode.has(silent)) problems.push(`${where}: SILENT_CODES: ${silent} is not a code`);
   }
+  for (const admin of ADMIN_ONLY_CODES) {
+    if (!byCode.has(admin)) problems.push(`${where}: ADMIN_ONLY_CODES: ${admin} is not a code`);
+  }
   for (const c of codes) {
     const has = `error.${c.code}` in texts;
     if (SILENT_CODES.includes(c.code)) {
       if (has) problems.push(`${where}: texts.error.${c.code}: code is silent (BR-TEXT-14 「—」)`);
+    } else if (ADMIN_ONLY_CODES.includes(c.code)) {
+      if (has) problems.push(`${where}: texts.error.${c.code}: admin-only code (规划/03 §9)`);
     } else if (!c.deprecated && c.phase === null && !has) {
       problems.push(`${where}: texts: missing error.${c.code}`);
     }

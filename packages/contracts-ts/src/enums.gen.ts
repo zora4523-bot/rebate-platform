@@ -64,6 +64,48 @@ export const admin_permission = [
 export type AdminPermission = (typeof admin_permission)[number];
 
 /**
+ * 后台 step-up 的档位；step_up_token 记档位，动态码档的 token 不能用于短信档操作；10003 的 data.tier 取本枚举
+ * Source: 规划/08 BR-ID-34（二次验证分两档）；规划/04 §6.6 auth、§11 step-up 列（CT-02f） (contracts/enums/admin.yaml).
+ */
+export const admin_step_up_tier = [
+  "totp", // 动态码档（身份验证器 TOTP）
+  "sms", // 短信档（向账号登记的验证手机号发验证码）
+] as const;
+export type AdminStepUpTier = (typeof admin_step_up_tier)[number];
+
+/**
+ * 后台登录第一步通过后的下一步，凭中间凭证 login_ticket 完成；两步都完成才签发 admin_token
+ * Source: 规划/08 BR-ID-34 细则「首次绑定身份验证器」「首次登录强制改密码」；规划/04 §6.6 auth（CT-02f） (contracts/enums/admin.yaml).
+ */
+export const admin_login_step = [
+  "totp", // 已绑定身份验证器，输入动态码
+  "change_password", // 仍在用初始密码，先改密码
+  "bind_totp", // 未绑定身份验证器，先绑定
+] as const;
+export type AdminLoginStep = (typeof admin_login_step)[number];
+
+/**
+ * 后台账号状态；停用的账号名仍占用，不再分配给新账号
+ * Source: 规划/04 §3.2 admin_users.status；规划/08 BR-ID-34 细则「停用后台账号」（CT-02f） (contracts/enums/admin.yaml).
+ */
+export const admin_account_status = [
+  "active", // 正常
+  "disabled", // 已停用
+] as const;
+export type AdminAccountStatus = (typeof admin_account_status)[number];
+
+/**
+ * /admin/v1 接口的鉴权级别；中间凭证 login_ticket 放请求体，不是鉴权级别
+ * Source: 规划/04 §6.6 auth、§11（CT-02f；/admin/v1 接口的 x-auth） (contracts/enums/admin.yaml).
+ */
+export const admin_auth_level = [
+  "none", // 不需要 admin_token（登录各步，来源 IP 仍须在白名单内）
+  "admin", // 需要 admin_token（Authorization Bearer）
+  "super", // 需要超级管理员的 admin_token（后台账号与权限，只限超管、不可授予）
+] as const;
+export type AdminAuthLevel = (typeof admin_auth_level)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -1379,6 +1421,10 @@ export type TljKind = (typeof tlj_kind)[number];
 /** Every enum of contracts/enums, by name. */
 export const enums = {
   admin_permission,
+  admin_step_up_tier,
+  admin_login_step,
+  admin_account_status,
+  admin_auth_level,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,
