@@ -3,6 +3,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import * as conformance from './index.conformance.ts';
 import * as entry from './index.ts';
+import { readFileSync } from 'node:fs';
+import { eventDataFields } from './bridge.ts';
 import { BridgeError, Capability, call, createH5TokenManager, has, isInApp, on } from './index.ts';
 import type { BridgeEvent, BridgeRequest, BridgeResponse } from './index.ts';
 
@@ -37,6 +39,7 @@ it('entries export the SDK surface and the conformance invoke', () => {
   expect(entry.PACKAGE_NAME).toBe('@couli/bridge-sdk');
   expect(conformance.ENTRY_NAME).toBe('@couli/bridge-sdk/conformance');
   expect(typeof conformance.invoke).toBe('function');
+  expect(Object.keys(conformance).sort()).toEqual(['ENTRY_NAME', 'invoke', 'onRaw']);
   expect(Object.keys(entry).sort()).toEqual(
     [
       'BridgeContract',
@@ -136,7 +139,7 @@ it('on() outside the App is a no-op and malformed events are ignored', () => {
   stopPause();
 });
 
-it('concurrent token reads share one acquisition, and invalidate drops a late result', async () => {
+it('concurrent token reads share one acquisition, and invalidate re-acquires for waiting reads', async () => {
   const replies: ((response: BridgeResponse) => void)[] = [];
   const native = install(
     ['auth.getH5Token'],
@@ -163,12 +166,15 @@ it('concurrent token reads share one acquisition, and invalidate drops a late re
   const c = manager.getToken({ forWrite: false });
   await vi.waitFor(() => expect(replies).toHaveLength(2));
   manager.invalidate();
+  // F1-01l: c was waiting when invalidate() ran, so the late result is dropped for c as well and
+  // c waits for a fresh acquisition, which a later read joins.
   replies[1]?.({ id: '', code: 0, msg: '', data: token('dropped') });
-  await expect(c).resolves.toEqual(token('dropped'));
-  const d = manager.getToken({ forWrite: false });
   await vi.waitFor(() => expect(replies).toHaveLength(3));
+  const d = manager.getToken({ forWrite: false });
   replies[2]?.({ id: '', code: 0, msg: '', data: token('three') });
+  await expect(c).resolves.toEqual(token('three'));
   await expect(d).resolves.toEqual(token('three'));
+  expect(native.postMessage).toHaveBeenCalledTimes(3);
 });
 
 it('a request that stays 10002 after renewal drops the renewed token', async () => {
@@ -278,4 +284,94 @@ it('a read_only denial drops the cached token but keeps an acquisition already i
   await expect(pending).resolves.toEqual(token('1', 'read_only'));
   await expect(joined).resolves.toEqual(token('1', 'read_only'));
   expect(native.postMessage).toHaveBeenCalledTimes(2);
+});
+
+it('the event allowlist matches contracts/bridge.schema.json events', () => {
+  const schema = JSON.parse(
+    readFileSync(new URL('../../../contracts/bridge.schema.json', import.meta.url), 'utf8'),
+  ) as {
+    events: Record<
+      string,
+      {
+        additionalProperties: boolean;
+        properties: Record<string, { type: string }>;
+        required: string[];
+      }
+    >;
+  };
+  const fromSchema = Object.fromEntries(
+    Object.entries(schema.events).map(([event, def]) => {
+      expect(def.additionalProperties, event).toBe(false);
+      expect([...def.required].sort(), event).toEqual(Object.keys(def.properties).sort());
+      return [
+        event,
+        Object.fromEntries(Object.entries(def.properties).map(([k, v]) => [k, v.type])),
+      ];
+    }),
+  );
+  expect(eventDataFields).toEqual(fromSchema);
+});
+
+it('on() drops events whose required fields are missing or mistyped; onRaw passes data through', () => {
+  const native = install([], () => undefined);
+  const auth = vi.fn();
+  const raw = vi.fn();
+  const stopAuth = on('auth.changed', auth);
+  const stopRaw = conformance.onRaw('app.pause', raw);
+  native.emit({ event: 'auth.changed', data: { logged_in: 'yes' } });
+  native.emit({ event: 'auth.changed', data: {} });
+  native.emit({ event: 'auth.changed' });
+  expect(auth).not.toHaveBeenCalled();
+  native.emit({ event: 'app.pause', data: { unexpected: 'probe' } });
+  native.emit({ event: 'app.pause' });
+  expect(raw.mock.calls).toEqual([[{ unexpected: 'probe' }], [{}]]);
+  stopAuth();
+  stopRaw();
+});
+
+it('a malformed getH5Token result is never cached or surfaced in the error', async () => {
+  let n = 0;
+  install(['auth.getH5Token'], (request) => {
+    n += 1;
+    const data =
+      n === 1
+        ? { token: 'secret-1', scope: 'standard', expire_at: '2099-02-30T00:00:00Z' }
+        : {
+            token: `t-${n}`,
+            scope: 'read_only',
+            expire_at: '2099-01-01T08:00:00+08:00',
+            extra: 'x',
+          };
+    return { id: request.id, code: 0, msg: '', data };
+  });
+  const manager = createH5TokenManager();
+  const failure = await manager.getToken({ forWrite: false }).catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(BridgeError);
+  expect(JSON.stringify(failure) + String(failure)).not.toContain('secret-1');
+  await expect(manager.getToken({ forWrite: false })).resolves.toEqual({
+    token: 't-2',
+    scope: 'read_only',
+    expire_at: '2099-01-01T08:00:00+08:00',
+  });
+});
+
+it('invalidate between acquisition and send re-acquires before sending', async () => {
+  let n = 0;
+  install(['auth.getH5Token'], (request) => {
+    n += 1;
+    return {
+      id: request.id,
+      code: 0,
+      msg: '',
+      data: { token: `t-${n}`, scope: 'standard', expire_at: '2099-01-01T00:00:00Z' },
+    };
+  });
+  const manager = createH5TokenManager();
+  await manager.getToken({ forWrite: true });
+  const send = vi.fn(async () => ({ code: 0, msg: '' }));
+  const pending = manager.request('POST', send);
+  // getToken resolves from the cache; invalidate before request() resumes and calls send.
+  manager.invalidate();
+  await expect(pending).resolves.toEqual({ code: 0, msg: '' });
+  expect(send.mock.calls).toEqual([['t-2']]);
 });
