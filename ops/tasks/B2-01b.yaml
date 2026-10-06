@@ -1,0 +1,24 @@
+id: B2-01b
+repo: rebate-platform
+title: packages/money 加整数分加减：addFen、subFen（结果须为整数分 bigint；subFen 可选「结果不得为负」检查，负数抛 InvalidAmount）
+type: impl
+# 2026-10-06（W1 搜索转链线）。为什么：AGENTS.md 硬规则 1「金额只用 packages/money 运算」，而 packages/money 目前只有乘除取整、按比例拆分与预留，
+# 没有加减。B1-05f（卡片组装与演示报价：返后价 = 券后价 − 返利下限、技术服务费扣减、价格三字段恒等式）与 B1-04o 的 Codex 资金评审都判
+# 「在 money 包外直接做 bigint 减法」为 S1。依据：BR-CALC-01（金额整数分）、BR-CALC-08（逐步取整）、BR-PRICE-09（返后价 = final_price − rebate_min），由编排者摘入任务书第 2 节。
+# 只加两个纯函数与导出，不改已有函数语义；入参非 bigint 或越过安全范围按已有 InvalidAmount 规则拒绝（与 parseFen / fenToJsonNumber 一致）。
+# packages/money 为 RV2：Codex 先写规则测试（先红）、Claude 新子代理过审、Opus 实现、两家资金评审。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'packages/money/src/**'
+test_paths:
+  - 'test/spec/money/add-sub/**'
+  - 'test/properties/money/add-sub/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/money/add-sub/**'
+status: todo
+pr: null
