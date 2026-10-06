@@ -34,6 +34,15 @@
 // elements with expect.element in the test file, never with expect.poll. A browser that did not
 // start, an error thrown by the page, a module not found, a TypeError, a strict-mode violation
 // (several elements) and a bare element lookup outside a wait stay invalid.
+//
+// Build smoke tests (F1-01k; `*.smoke.test.ts`, project build-smoke: Node tests that open the
+// entries the globalSetup built and serves, through the playwright library): red for an assertion,
+// or because the element a test waits for never came — Playwright's TimeoutError of
+// `locator.waitFor` ("locator.waitFor: Timeout <n>ms exceeded.") — is a valid red. Everything else
+// stays invalid: a globalSetup that failed (a build, a server, the health check: no test runs), a
+// browser that did not launch, a page.goto that failed or timed out, a `net::ERR_*`, any other
+// Playwright timeout (screenshot, click …), an error the page threw. Page errors are collected by
+// the tests as report attachments, never asserted.
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import type { TaskFile } from '../../lib/task-file.ts';
@@ -179,6 +188,43 @@ export function wrongRedReason(message: string): string | null {
   return 'red for an unrecognised reason (not an assertion, a counterexample or NotImplemented)';
 }
 
+/** Build smoke rule-test files: the build-smoke project (red-projects.json, F1-01k). */
+export const SMOKE_TEST_FILE = /\.smoke\.test\.[cm]?[jt]sx?$/;
+
+/** Failures of a build smoke test that prove nothing about the page under test. */
+const SMOKE_WRONG_RED: [RegExp, string][] = [
+  [/\bnet::ERR_[A-Z_]+/, 'page did not load (net::ERR_*)'],
+  [/\bpage\.goto:/, 'page did not load (page.goto failed)'],
+  [/\bbrowserType\.launch\b|\bchromium\.launch\b/, 'browser not running'],
+];
+
+/** The message of the TimeoutError Playwright throws when locator.waitFor runs out. */
+const LOCATOR_WAIT_RAN_OUT = /^locator\.waitFor: Timeout \d+ms exceeded\./;
+
+/**
+ * Verdict of a failure of a build smoke rule test (see the header): an AssertionError, or the
+ * TimeoutError of a locator.waitFor whose element never came, is a valid red; a page that did not
+ * load, a browser that did not launch, and everything causeVerdict refuses are not.
+ */
+export function smokeCauseVerdict(causes: readonly Cause[]): string | null {
+  const all = causes.map((c) => `${c.name}: ${c.message}`).join('\n');
+  for (const [pattern, label] of SMOKE_WRONG_RED) {
+    if (pattern.test(all)) return `red for the wrong reason (${label})`;
+  }
+  const root = causes[causes.length - 1];
+  if (
+    root?.name === 'TimeoutError' &&
+    causes.length === 1 &&
+    LOCATOR_WAIT_RAN_OUT.test(root.message)
+  ) {
+    return null;
+  }
+  if (root?.name === 'TimeoutError') {
+    return `red for the wrong reason (a Playwright timeout outside locator.waitFor: ${root.message.split('\n')[0] ?? ''})`;
+  }
+  return causeVerdict(causes);
+}
+
 /** Browser rule-test files: the spec-browser project (tools/ops/verify-image/red-projects.json). */
 export const BROWSER_TEST_FILE = /\.browser\.test\.[cm]?[jt]sx?$/;
 
@@ -268,17 +314,24 @@ function causesOf(failure: Failure): Cause[] {
 type BrowserFile = { abs: string; pollFree: boolean } | null;
 
 /** Verdict of one failed test: structured causes when the report has them, else the messages. */
-function testVerdict(failures: unknown, messages: string[], browser: BrowserFile): string | null {
+function testVerdict(
+  failures: unknown,
+  messages: string[],
+  browser: BrowserFile,
+  smoke: boolean,
+): string | null {
   if (Array.isArray(failures)) {
     if (failures.length === 0)
       return 'red for an unknown reason (the report carries no failure detail)';
     for (const f of failures as Failure[]) {
       const why =
-        browser === null
-          ? causeVerdict(causesOf(f))
-          : browserCauseVerdict(causesOf(f), {
+        browser !== null
+          ? browserCauseVerdict(causesOf(f), {
               elementOnly: browser.pollFree && siteIsFile(f.site, browser.abs),
-            });
+            })
+          : smoke
+            ? smokeCauseVerdict(causesOf(f))
+            : causeVerdict(causesOf(f));
       if (why !== null) return why;
     }
     return null;
@@ -344,6 +397,10 @@ export function checkRedReports(
       entry.browser === true && BROWSER_TEST_FILE.test(file)
         ? { abs: text(entry.name), pollFree: entry.poll_in_source === false }
         : null;
+    // Build smoke leniency (locator.waitFor) only for a build smoke rule-test file that ran in
+    // Node (not in a browser) and only from the red reporter's causes; the plain messages of
+    // Vitest's JSON report never get it.
+    const smoke = entry.browser !== true && SMOKE_TEST_FILE.test(file);
     // File-level errors (an import that failed, a crashed beforeAll / afterAll) are never a valid
     // red: they taint every test of the file.
     const fileFailures = Array.isArray(entry.failures) ? (entry.failures as Failure[]) : [];
@@ -382,7 +439,7 @@ export function checkRedReports(
         continue;
       }
       const messages = Array.isArray(t.failureMessages) ? t.failureMessages.map(text) : [];
-      const why = fileWrong ?? testVerdict(t.failures, messages, browser);
+      const why = fileWrong ?? testVerdict(t.failures, messages, browser, smoke);
       if (why === null) red.push(`${file} > ${name}`);
       else problems.push({ file, test: name, reason: why });
     }

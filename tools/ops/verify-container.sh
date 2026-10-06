@@ -21,12 +21,17 @@
 #              internal network; all other groups run in a container with no network and no
 #              database URL. A browser rule test (project `browser: true`, spec-browser) needs an
 #              image with Playwright's browser: without playwright in the lockfile the run stops.
-#   --browser  the browser tests (F1-01j): the one browser project of red-projects.json
-#              (spec-browser: every test/spec/**/*.browser.test.{ts,tsx}) in a real headless Chromium,
-#              `--network none` (loopback only). Screenshots and Vitest's JSON report are exported
-#              to browser/<n>/out/ (screenshots/, vitest-report.json) for comparison with the
-#              design boards; exit code = Vitest's, or 1 when Vitest passed but no screenshot
-#              was exported. Like --fast an implementer's own check, never
+#   --browser  the browser tests: every browser project of red-projects.json, in its order, in one
+#              container with `--network none` (loopback only) and the image's headless Chromium:
+#              spec-browser (F1-01j: every test/spec/**/*.browser.test.{ts,tsx}, Vitest browser
+#              mode) and build-smoke (F1-01k: builds the H5 entries and the admin console, serves
+#              them on 127.0.0.1 and opens each one; every test/spec/**/*.smoke.test.ts).
+#              Screenshots and one Vitest JSON report per project are exported to browser/<n>/out/
+#              (screenshots/ — the build smoke's are screenshots/smoke-<entry>.png —,
+#              <project>.vitest-report.json) for comparison with the design boards; the log counts
+#              both kinds. Exit code = the first failing project's (every project still runs), or
+#              1 when all passed but no screenshot was exported. Like --fast an implementer's own
+#              check, never
 #              evidence of verification (tools/ci/evidence-check.ts accepts verify and red only).
 #   --dry-run  prints what would run (script, commit, tree, red files) as one JSON line and
 #              starts nothing; no run directory is created.
@@ -247,20 +252,22 @@ if [ "$SCRIPT" = red ]; then
   RED_BROWSER="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).groups.some((g) => g.browser) ? "1" : "0")' "$RED_PLAN")"
 fi
 
-# --browser: the one browser project of the trusted project table (dir and config).
-BROWSER_DIR=''
-BROWSER_CONFIG=''
+# --browser: the browser projects of the trusted project table (name, dir and config), in order;
+# handed to the entrypoint as BROWSER_PROJECTS ("<name>:<dir>:<config>", space-separated).
+BROWSER_PROJECTS=''
 if [ "$SCRIPT" = browser ]; then
-  browser_project="$(node -e '
+  browser_projects="$(node -e '
     const doc = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
     const found = (doc.projects ?? []).filter((p) => p.browser === true);
-    if (found.length !== 1) throw new Error(`expected one browser project, found ${found.length}`);
-    process.stdout.write(`${found[0].dir} ${found[0].config}`);
-  ' "$IMG_DIR/red-projects.json" 2>&1)" || die "no browser project in $IMG_DIR/red-projects.json: $browser_project"
-  read -r BROWSER_DIR BROWSER_CONFIG <<<"$browser_project"
-  for p in "$BROWSER_DIR" "$BROWSER_CONFIG"; do
-    [[ "$p" =~ ^[A-Za-z0-9_./@-]+$ ]] && [[ "$p" != *..* ]] || die "unexpected browser project path: $p"
-  done
+    if (found.length === 0) throw new Error("expected at least one browser project, found none");
+    for (const p of found) console.log(`${p.name} ${p.dir} ${p.config}`);
+  ' "$IMG_DIR/red-projects.json" 2>&1)" || die "no browser project in $IMG_DIR/red-projects.json: $browser_projects"
+  while read -r b_name b_dir b_config; do
+    for p in "$b_name" "$b_dir" "$b_config"; do
+      [[ "$p" =~ ^[A-Za-z0-9_./@-]+$ ]] && [[ "$p" != *..* ]] || die "unexpected browser project entry: $p"
+    done
+    BROWSER_PROJECTS="${BROWSER_PROJECTS:+$BROWSER_PROJECTS }$b_name:$b_dir:$b_config"
+  done <<<"$browser_projects"
 fi
 
 tree_of_worktree() { # prints the git tree of the work tree (uncommitted changes included)
@@ -651,17 +658,18 @@ if [ "$SCRIPT" = red ]; then
 fi
 
 if [ "$SCRIPT" = browser ]; then
-  # The browser project only, no network at all: Vitest serves the tests and Chromium loads them
-  # on the container's loopback. The output directory takes the screenshots and the report.
+  # The browser projects only, no network at all: Vitest serves the browser tests and Chromium
+  # loads them on the container's loopback; the build smoke serves its builds there too. The
+  # output directory takes the screenshots and the reports.
   # The container runs as uid 1000 (node), which is not the owner of the directory on a Linux
   # host: it needs write and search permission as "other". 1733 gives it exactly that (no
   # listing, and the sticky bit keeps it from removing what it did not create); the owner keeps
   # full access to read the results.
   mkdir -p "$VDIR/out"
   chmod 1733 "$VDIR/out"
-  step "running the browser tests ($BROWSER_DIR, $BROWSER_CONFIG) in $IMAGE (no network, limit ${TIMEOUT_SECS}s)"
+  step "running the browser tests ($BROWSER_PROJECTS) in $IMAGE (no network, limit ${TIMEOUT_SECS}s)"
   BROWSER_ENV=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS"
-    -e "BROWSER_DIR=$BROWSER_DIR" -e "BROWSER_CONFIG=$BROWSER_CONFIG")
+    -e "BROWSER_PROJECTS=$BROWSER_PROJECTS")
   [ -z "${PROP_RUNS:-}" ] || BROWSER_ENV+=(-e "PROP_RUNS=$PROP_RUNS")
   rc=0
   docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
@@ -675,7 +683,10 @@ if [ "$SCRIPT" = browser ]; then
   # The run exists to export screenshots for the design comparison: a green run that exported
   # none (no test called page.screenshot, or the export directory was not used) fails.
   shots="$( (find "$VDIR/out/screenshots" -type f -name '*.png' 2>/dev/null || true) | wc -l | tr -d ' ')"
-  step "browser tests exited $rc; screenshots exported: $shots ($VDIR/out/screenshots)"
+  # The build smoke writes smoke-<entry>.png at the top of the directory; Vitest browser mode
+  # writes below a directory per test file.
+  smoke_shots="$( (find "$VDIR/out/screenshots" -maxdepth 1 -type f -name 'smoke-*.png' 2>/dev/null || true) | wc -l | tr -d ' ')"
+  step "browser tests exited $rc; screenshots exported: $shots (browser tests $((shots - smoke_shots)), build smoke $smoke_shots; $VDIR/out/screenshots)"
   if [ "$rc" = 0 ] && [ "$shots" = 0 ]; then
     step "no screenshot was exported to out/screenshots: the browser run counts as failed (exit 1)"
     log "verify-container: no screenshot was exported to $VDIR/out/screenshots"
