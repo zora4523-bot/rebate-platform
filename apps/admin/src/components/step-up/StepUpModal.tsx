@@ -16,6 +16,9 @@ import './step-up.css';
 /** Seconds before an SMS code may be requested again (design-hifi sample-data「验证码重发 60 秒」). */
 export const RESEND_INTERVAL_SECONDS = 60;
 
+/** Submit lock after 42901 when the response carries no usable Retry-After (08 §13.11). */
+export const RETRY_AFTER_DEFAULT_SECONDS = 5;
+
 const ERROR_INCORRECT = 20002;
 const ERROR_EXPIRED = 20003;
 const ERROR_TOO_FREQUENT = 42901;
@@ -67,17 +70,40 @@ function restoreFocus(panel: HTMLElement, previous: HTMLElement | null): void {
   });
 }
 
-/** Hide the application behind the dialog (`inert` + `aria-hidden`); returns the undo. */
-function isolate(root: HTMLElement | null): () => void {
-  if (root === null) return () => {};
-  const hadInert = root.hasAttribute('inert');
-  const ariaHidden = root.getAttribute('aria-hidden');
-  root.setAttribute('inert', '');
-  root.setAttribute('aria-hidden', 'true');
+/** Whole seconds from a Retry-After value; missing or unusable values fall back to `fallback`. */
+function retryAfter(seconds: number | undefined, fallback: number): number {
+  return seconds !== undefined && Number.isFinite(seconds) && seconds > 0
+    ? Math.ceil(seconds)
+    : fallback;
+}
+
+/**
+ * Hide everything behind the dialog (`inert` + `aria-hidden`): every direct child of `body`
+ * except the dialog's own layer — so antd Modal / Drawer portals underneath are isolated too —
+ * plus the application root when it is nested deeper. Original values are restored on undo.
+ */
+function isolate(layer: HTMLElement, root: HTMLElement | null): () => void {
+  const targets = new Set<HTMLElement>();
+  for (const child of Array.from(document.body.children)) {
+    if (child instanceof HTMLElement && child !== layer) targets.add(child);
+  }
+  if (root !== null && !root.contains(layer)) targets.add(root);
+  const saved = Array.from(targets, (element) => ({
+    element,
+    inert: element.getAttribute('inert'),
+    ariaHidden: element.getAttribute('aria-hidden'),
+  }));
+  for (const { element } of saved) {
+    element.setAttribute('inert', '');
+    element.setAttribute('aria-hidden', 'true');
+  }
   return () => {
-    if (!hadInert) root.removeAttribute('inert');
-    if (ariaHidden === null) root.removeAttribute('aria-hidden');
-    else root.setAttribute('aria-hidden', ariaHidden);
+    for (const { element, inert, ariaHidden } of saved) {
+      if (inert === null) element.removeAttribute('inert');
+      else element.setAttribute('inert', inert);
+      if (ariaHidden === null) element.removeAttribute('aria-hidden');
+      else element.setAttribute('aria-hidden', ariaHidden);
+    }
   };
 }
 
@@ -114,22 +140,37 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   const copy = stepUpTexts[tier];
   const titleId = useId();
   const descriptionId = useId();
+  const layerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
+  // Bumped on every opening and closing; results of requests started under an older
+  // generation are dropped (no onVerified, no state change).
+  const generationRef = useRef(0);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
   const [invalid, setInvalid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
   const [countdown, setCountdown] = useState(tier === 'sms' ? RESEND_INTERVAL_SECONDS : 0);
+  const [submitLock, setSubmitLock] = useState(0);
+
+  function dismiss(): void {
+    generationRef.current += 1;
+    busyRef.current = false;
+    setSubmitting(false);
+    setResending(false);
+    onClose();
+  }
 
   const handleKeyDown = useEffectEvent((event: KeyboardEvent, panel: HTMLElement) => {
     if (event.key === 'Escape') {
       if (event.isComposing) return;
       event.preventDefault();
-      onClose();
+      // Keep the Escape from reaching layers underneath (antd Modal / Drawer would close too).
+      event.stopPropagation();
+      dismiss();
       return;
     }
     if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -140,15 +181,19 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   const applicationRoot = props.applicationRoot;
   useLayoutEffect(() => {
     const panel = panelRef.current;
-    if (panel === null) return;
+    const layer = layerRef.current;
+    if (panel === null || layer === null) return;
+    generationRef.current += 1;
     const active = document.activeElement;
     const previous = active instanceof HTMLElement && active !== document.body ? active : null;
-    const undo = isolate(applicationRoot ?? document.getElementById('root'));
+    const undo = isolate(layer, applicationRoot ?? document.getElementById('root'));
     titleRef.current?.focus();
     const listener = (event: KeyboardEvent) => handleKeyDown(event, panel);
-    document.addEventListener('keydown', listener);
+    // Capture on window so the dialog sees keys before any layer underneath.
+    window.addEventListener('keydown', listener, true);
     return () => {
-      document.removeEventListener('keydown', listener);
+      generationRef.current += 1;
+      window.removeEventListener('keydown', listener, true);
       // Lift the isolation first: an inert opener cannot take focus back.
       undo();
       restoreFocus(panel, previous);
@@ -161,14 +206,24 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
     return () => clearTimeout(timer);
   }, [countdown]);
 
+  useEffect(() => {
+    if (submitLock <= 0) return;
+    const timer = setTimeout(() => setSubmitLock((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [submitLock]);
+
   const complete = code.length === OTP_LENGTH;
+  const canSubmit = complete && submitLock <= 0;
 
   function handleChange(value: string): void {
     setCode(value);
     setInvalid(false);
   }
 
-  function applyFailure(result: Extract<StepUpResult, { ok: false }>): void {
+  function applyFailure(
+    result: Extract<StepUpResult, { ok: false }>,
+    source: 'submit' | 'resend',
+  ): void {
     if (result.code === ERROR_INCORRECT) {
       setError(stepUpTexts.errors.incorrect);
       setInvalid(true);
@@ -183,14 +238,20 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
     }
     if (result.code === ERROR_TOO_FREQUENT) {
       setError(stepUpTexts.errors.frequent);
-      if (tier === 'sms') setCountdown(result.retryAfterSeconds ?? RESEND_INTERVAL_SECONDS);
+      if (source === 'submit') {
+        setSubmitLock(retryAfter(result.retryAfterSeconds, RETRY_AFTER_DEFAULT_SECONDS));
+      }
+      if (tier === 'sms') {
+        setCountdown(retryAfter(result.retryAfterSeconds, RESEND_INTERVAL_SECONDS));
+      }
       return;
     }
     setError(stepUpTexts.errors.generic);
   }
 
   async function submit(): Promise<void> {
-    if (!complete || busyRef.current) return;
+    if (!canSubmit || busyRef.current) return;
+    const generation = generationRef.current;
     busyRef.current = true;
     setSubmitting(true);
     setError(undefined);
@@ -199,16 +260,23 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
       result = await onSubmit(code);
     } catch {
       result = { ok: false, code: 0 };
-    } finally {
-      busyRef.current = false;
-      setSubmitting(false);
     }
-    if (result.ok) onVerified(result.stepUpToken ?? '');
-    else applyFailure(result);
+    // Cancelled, closed or unmounted meanwhile: drop the stale result.
+    if (generation !== generationRef.current) return;
+    busyRef.current = false;
+    setSubmitting(false);
+    if (!result.ok) {
+      applyFailure(result, 'submit');
+      return;
+    }
+    const token = result.stepUpToken;
+    if (typeof token === 'string' && token !== '') onVerified(token);
+    else setError(stepUpTexts.errors.generic);
   }
 
   async function resend(): Promise<void> {
     if (onResend === undefined || countdown > 0 || resending) return;
+    const generation = generationRef.current;
     setResending(true);
     setError(undefined);
     let result: StepUpResult;
@@ -216,15 +284,15 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
       result = await onResend();
     } catch {
       result = { ok: false, code: 0 };
-    } finally {
-      setResending(false);
     }
+    if (generation !== generationRef.current) return;
+    setResending(false);
     if (result.ok) setCountdown(RESEND_INTERVAL_SECONDS);
-    else applyFailure(result);
+    else applyFailure(result, 'resend');
   }
 
   return createPortal(
-    <div className="step-up-layer">
+    <div ref={layerRef} className="step-up-layer">
       <div className="step-up-backdrop" aria-hidden="true" />
       <div
         ref={panelRef}
@@ -242,7 +310,7 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
             type="button"
             aria-label={stepUpTexts.close}
             className="step-up-close"
-            onClick={onClose}
+            onClick={dismiss}
           >
             <CloseIcon />
           </button>
@@ -290,13 +358,13 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
           />
         </div>
         <div className="step-up-actions">
-          <button type="button" className="step-up-button step-up-button-default" onClick={onClose}>
+          <button type="button" className="step-up-button step-up-button-default" onClick={dismiss}>
             {stepUpTexts.cancel}
           </button>
           <button
             type="button"
             className="step-up-button step-up-button-primary"
-            disabled={!complete}
+            disabled={!canSubmit}
             aria-busy={submitting ? true : undefined}
             onClick={() => void submit()}
           >
