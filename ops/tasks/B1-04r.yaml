@@ -1,19 +1,27 @@
 id: B1-04r
 repo: rebate-platform
-title: union 淘宝价格映射按 D33：领域纯函数由 final_promotion_price + 优惠明细（会员 / 券 / 平台立减 / 未识别，名称清单与 unknown_promo、basis 开关作参数，默认值取 08）得出三字段与券 ID 串，核对失败一律价格异常；演示适配器淘宝合成数据改为到手价 + 明细形状并经该函数出价
+title: union 淘宝价格映射按 D33：领域纯函数由到手价 + 优惠明细（会员 / 券 / 平台立减 / 未识别；名称清单与 unknown_promo、basis 开关作参数，默认值取 08）得出三字段与券 ID 串，核对 ①～⑤ 任一不过即价格异常；UnionItem 加可选 coupon_ids 与 price_status；演示适配器淘宝数据经该函数出价，新增价格异常场景
 type: impl
-# 2026-10-06 入账（W1 搜索转链线），起因：负责人选淘宝价格口径 B（D33，规划 #64，SPEC_REF 18ad5b4，代码仓库 #160）。
-# 依据：BR-PRICE-01（三字段与恒等式、价格异常）、BR-PRICE-02 正文与细则「淘宝优惠明细的分类」（NFKC 归一、判定顺序、默认清单、unknown_promo 默认 unavailable、有效期、计算、核对与异常 ①～④、basis 降级开关、quoted_coupon_id 串）、BR-PRICE-03，由编排者摘入任务书第 2 节。
-# 金额只经 @couli/money（硬规则 1）；清单与开关是服务端配置项（price.taobao.*），本任务以参数传入并给出 08 的默认值，配置读取接线留 TODO(规划/11 §9.2) 指向配置端口任务；切换 basis 为 coupon_only 须负责人同意，代码不得默认切换。
-# 演示适配器只用合成数据（不按平台文档仿造报文、不抄私有库实测值），形状贴近 followups F-29：券只在明细里、13 位毫秒时间、seller_id 按字符串。真实淘宝适配器仍等推广位 / siteId（B1-04e～m 不在本批）。
-# 风险：union/** RV2（金额）。
-refs: []
-refs_hash: {}
+# 2026-10-06 入账（W1 搜索转链线），起因：负责人选淘宝价格口径 B（D33，规划 #64，SPEC_REF 18ad5b4，代码仓库 #160）；第 1 轮台账评审后改（couli-runs/W1-search-linking/review-ledger-d33.md）。
+# 依据：BR-PRICE-01（三字段、恒等式、价格异常）、BR-PRICE-02 正文与细则「淘宝优惠明细的分类」（NFKC 归一与去首尾空白、判定顺序、默认清单、unknown_promo 默认 unavailable、有效期、计算、核对与异常 ①～⑤、basis 降级开关、报价快照与原券的券 ID 串）、BR-PRICE-03，由编排者摘入任务书第 2 节。
+# 纯函数：输入是领域结构（折扣价、到手价、明细项的名称 / 金额 / 起止时间 / ID，时间按 08 的毫秒时间戳规则解析），不是平台响应；取数时刻 now 作参数传入（硬规则 5）；金额只经 @couli/money（硬规则 1）。
+# 告警：核对失败、明细含过期或未开始项记 PRICE_CALC_DIFF；未识别名称每次记 PRICE_PROMO_UNKNOWN（只带名称，不带商品信息）。basis 默认 promotion_path；切到 coupon_only 改变对外口径，须负责人同意，代码不得默认切换。
+# DTO 形状（本任务定，B1-05i 用）：UnionItem 新增可选字段 coupon_ids（淘宝券 promotion_id 按字典序升序、英文逗号连接；无券或非淘宝不给）与 price_status（'ok' | 'anomaly'；缺省视同 'ok'）、price_anomaly_reason（异常时的原因码）。三个价格字段保持必填 bigint 不改可空；price_status='anomaly' 时三字段一律置 0n，使任何未看状态的调用方经 assertPriced（price_fen<=0）也失败即关，不出任何金额。
+# 配置：清单与开关是服务端配置项 price.taobao.*；union 不能依赖 content（02 §4.1），本任务把它们作纯函数参数并给 08 默认值，配置端口由 union 定义、app.module 装配，接线留 TODO(规划/11 §9.2) 指向 followups F-36，须在真实淘宝适配器（B1-04e～m）开工前接好。
+# 演示数据：不模仿平台报文格式与字段名（AGENTS.md 硬规则 7），直接造领域结构；普通搜索、物料流里的名称全部在默认清单内（不产生价格异常）；coupon_expired 在淘宝演示里表示「券从明细里消失」；新增场景 price_anomaly（明细对不上）与 unknown_promo（清单外名称）才产出价格异常。
+# 受保护测试：test/spec/union/demo/kit.ts 第 95～106 行对演示商品全部键做 toEqual，淘宝有券商品多出 coupon_ids 会失败——本任务 test_paths 含该文件，由 Codex 在写规则测试阶段只把键集合断言改为允许新增的两个可选字段（意图不变），改已有受保护文件，PR 需负责人 owner-approved 标签（need-label 登记）。
+# 风险：union/** RV2（金额）；含 test/** 改动，整体 RV2，两家评审。
+refs: [BR-PRICE-01, BR-PRICE-02, BR-PRICE-03]
+refs_hash:
+  BR-PRICE-01: 9ff41b3629dd
+  BR-PRICE-02: b622624c8da7
+  BR-PRICE-03: 51dcba492d39
 deps: [B1-04o, B2-01b]
 paths:
   - 'apps/api/src/modules/union/**'
 test_paths:
   - 'test/spec/union/taobao-price/**'
+  - 'test/spec/union/demo/kit.ts'
 impl: claude
 tester: codex
 accept:
