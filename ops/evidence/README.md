@@ -51,4 +51,10 @@
 
 合并规则：`runs[].mode` 为 `host` 的结果一律不接受（11 §2.3 第 7 步；宿主回退已取消），完整验证以 PR 头提交上的必过 CI 检查为准（`ops/approvals.yaml` 第 21 条，2026-10-06 起），证据文件里的容器 `verify` 记录可选；长跑结果绑定树哈希，不绑定提交号（11 §3.2）。检查器逐项核对：`task` 等于分支 `task/<编号>` 的编号；`spec_ref` 等于头提交的 `SPEC_REF`；`spec_commit` 是头提交的祖先，且此后第一类测试资产只增未改；`reviews[]` 里 `claude` 与 `codex` 都是 `pass`、`open_s0_s1` 为 0、`codex` 的 `checklist_complete` 为 true（换家例外见下段）；`trees` 里每条路径的树哈希等于 `git rev-parse <头提交>:<路径>`；`longrun.passed` 为 true 且 `longrun.tree` 是 `trees` 里的某个值。
 
-换家（规划/11 §2.5，CR-09）：Opus 实现轮次用完、Codex 实现一次之后，Codex 不评审自己的实现，证据写 `handover`，只要求 Claude 评审通过。检查器只在这些条件都满足时接受：台账（可信副本，没有就读头提交）的 `paths` 按风险图算出低于 RV2，且 PR 没改资金与归属实现路径（`MONEY_PATHS`）——RV2 不换家；`handover.commit` 是 `spec_commit` 之后、头提交祖先上的单亲提交，至少改了一条台账 `paths` 内的文件，且只改台账 `paths` 与 `ops/tasks/<编号>.yaml`；有一条 `claude` 条目的 `commit` 是换家实现提交或其后、头提交的祖先，`pass`、`open_s0_s1` 为 0，PR 风险为 RV2（带规则测试的任务都是）时 `checklist_complete` 为 true。任一条不满足，换家记录不算数，照旧要求两家评审。
+换家（规划/11 §2.5，CR-09）：Opus 实现轮次用完、Codex 实现一次之后，Codex 不评审自己的实现，证据写 `handover`，只要求 Claude 评审通过。检查器只在这些条件都满足时接受：
+
+- 台账（可信副本，没有才读头提交）的 `paths` 按风险图算出低于 RV2；PR 没改资金与归属实现路径（`MONEY_PATHS`）；除第一类规则测试资产、本任务台账与证据文件、`docs/**` 之外的改动也低于 RV2——RV2 不换家。
+- `handover.commit` 是 `spec_commit` 之后、头提交祖先上的单亲提交，标题带 `(handover, Codex)`，至少改了一条台账 `paths` 内的文件，且只改台账 `paths` 与 `ops/tasks/<编号>.yaml`。
+- 至少有一条 `claude` 条目的 `commit` 是换家实现提交或其后、头提交的祖先（spec-test 评审不算）；这样的条目全部 `pass`、`open_s0_s1` 为 0、`checklist_complete` 为 true；评审提交到头提交之间只改了本任务证据与台账文件。
+
+任一条不满足，换家记录不算数，照旧要求两家评审（这时要去掉 `handover`、补齐两家评审）。路径守卫（guard-git）另外保证所有改动都在台账 `paths` 内。

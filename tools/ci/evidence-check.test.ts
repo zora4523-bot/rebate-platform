@@ -8,11 +8,13 @@ import {
   CI_REFUSED,
   checkEvidence,
   evidenceProblems,
+  handoverPolicy,
   headTreeWithoutEvidence,
   redRequirement,
 } from './evidence-check.ts';
 import type { HandoverPolicy } from './evidence-check.ts';
 import { loadProtected } from '../guard/lib/protected.ts';
+import { loadRiskMap } from '../guard/lib/risk.ts';
 
 const REPO = resolve(import.meta.dirname, '../..');
 const SCRATCH = join(REPO, '.tmp', `ci-evidence-${process.pid}`);
@@ -154,7 +156,7 @@ beforeAll(() => {
   });
   write(repo, { 'packages/money/src/index.ts': 'export const a = 2;\n' });
   git(repo, ['add', '-A']);
-  git(repo, ['commit', '-q', '-m', 'impl']);
+  git(repo, ['commit', '-q', '-m', 'impl (handover, Codex)']);
 });
 
 afterAll(() => {
@@ -277,7 +279,7 @@ it('[CR-09] after a handover the evidence names the handover commit and only the
   };
   const problemsOf = (
     doc: unknown,
-    opts: { handover?: HandoverPolicy | undefined; risk?: 'RV1' | 'RV2'; at?: string } = {},
+    opts: { handover?: HandoverPolicy | undefined; at?: string } = {},
   ): string => {
     const policy = 'handover' in opts ? opts.handover : allowed;
     return evidenceProblems(doc, {
@@ -287,7 +289,6 @@ it('[CR-09] after a handover the evidence names the handover commit and only the
       cfg,
       red: RED,
       ...(policy === undefined ? {} : { handover: policy }),
-      risk: opts.risk ?? 'RV2',
     }).join('\n');
   };
   const codexBefore = {
@@ -318,7 +319,7 @@ it('[CR-09] after a handover the evidence names the handover commit and only the
   for (const commit of [impl, head]) {
     expect(
       problemsOf(evidence({ handover, reviews: [{ ...claudePass, commit }, codexBefore] })),
-    ).not.toMatch(/reviews|handover/);
+    ).toBe('');
   }
   expect(problemsOf(evidence({ handover, reviews: [codexBefore] }))).toMatch(
     /reviews: missing the claude review of the handover implementation/,
@@ -335,14 +336,23 @@ it('[CR-09] after a handover the evidence names the handover commit and only the
       evidence({ handover, reviews: [{ ...claudePass, verdict: 'fail', open_s0_s1: 1 }] }),
     ),
   ).toMatch(/reviews.claude.verdict: must be pass[\s\S]*reviews.claude.open_s0_s1: must be 0/);
-  // On an RV2 pull request the Claude review carries the funds checklist the Codex one carried.
+  // Every bound Claude review counts (a failing later round fails), spec-test reviews do not, and
+  // the Claude review carries the funds checklist the Codex one carried.
+  expect(
+    problemsOf(
+      evidence({
+        handover,
+        reviews: [claudePass, { ...claudePass, commit: head, verdict: 'fail' }, codexBefore],
+      }),
+    ),
+  ).toMatch(/reviews.claude.verdict: must be pass/);
+  expect(
+    problemsOf(evidence({ handover, reviews: [{ ...claudePass, review_type: 'spec-test' }] })),
+  ).toMatch(/reviews: missing the claude review of the handover implementation/);
   const noChecklist = { ...claudePass, checklist_complete: false };
   expect(problemsOf(evidence({ handover, reviews: [noChecklist, codexBefore] }))).toMatch(
     /reviews.claude.checklist_complete: must be true after a handover/,
   );
-  expect(
-    problemsOf(evidence({ handover, reviews: [noChecklist, codexBefore] }), { risk: 'RV1' }),
-  ).not.toMatch(/reviews|handover/);
 
   // RV2 不换家: without an allowing policy the handover is refused and both reviews stay required.
   for (const policy of [
@@ -370,9 +380,45 @@ it('[CR-09] after a handover the evidence names the handover commit and only the
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'side']);
   git(repo, ['checkout', '-q', 'handover-shapes']);
+  const side = git(repo, ['rev-parse', 'handover-side']);
   git(repo, ['merge', '-q', '--no-ff', '-m', 'merge', 'handover-side']);
   const merge = git(repo, ['rev-parse', 'HEAD']);
+  write(repo, { 'packages/money/src/index.ts': 'export const a = 4;\n' });
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'an Opus fix']);
+  const unmarked = git(repo, ['rev-parse', 'HEAD']);
+  const ledgerCommit = (ledger: string): string => {
+    write(repo, {
+      'packages/money/src/index.ts': `export const a = '${ledger}';\n`,
+      [ledger]: 'id: x\n',
+    });
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '-m', `with ${ledger} (handover, Codex)`]);
+    return git(repo, ['rev-parse', 'HEAD']);
+  };
+  const ownLedger = ledgerCommit('ops/tasks/B2-01a.yaml');
+  const otherLedger = ledgerCommit('ops/tasks/B9-01a.yaml');
   git(repo, ['checkout', '-q', 'task/B2-01a']);
+
+  // The handover commit may also change the task's own ledger file, no other one.
+  const at = (commit: string): string =>
+    problemsOf(
+      evidence({ handover: { ...handover, commit }, reviews: [{ ...claudePass, commit }] }),
+      { at: commit },
+    );
+  expect(at(ownLedger)).not.toMatch(/handover|reviews/);
+  expect(at(otherLedger)).toMatch(
+    /handover.commit: .* changes paths outside the task ledger: ops\/tasks\/B9-01a.yaml/,
+  );
+
+  // A Claude review of a commit off the head's history does not count; a change after the review
+  // other than the task's evidence and ledger files fails.
+  expect(problemsOf(evidence({ handover, reviews: [{ ...claudePass, commit: side }] }))).toMatch(
+    /reviews: missing the claude review of the handover implementation/,
+  );
+  expect(problemsOf(evidence({ handover, reviews: [claudePass] }), { at: mixed })).toMatch(
+    /reviews.claude.commit: changed after the Claude review .*: docs\/README.md, packages\/money\/src\/index.ts/,
+  );
 
   // The handover commit must be a single-parent implementation commit after the rule-test commit
   // on the head, changing paths of the task ledger only; any defect falls back to both reviews.
@@ -393,13 +439,14 @@ it('[CR-09] after a handover the evidence names the handover commit and only the
       /handover.commit: .* changes paths outside the task ledger: docs\/README.md/,
     ],
     [{ ...handover, commit: merge }, /handover.commit: .* must be a single-parent commit/],
+    [{ ...handover, commit: unmarked }, /handover.commit: .* does not carry the handover marker/],
     [{ ...handover, implementer: 'claude' }, /handover.implementer: must be "codex"/],
     [{ ...handover, note: ' ' }, /handover.note: must say why/],
     ['codex', /handover: must be an object/],
   ];
   for (const [value, pattern] of cases) {
-    const reviews = [{ ...claudePass, commit: merge }, codexBefore];
-    const text = problemsOf(evidence({ handover: value, reviews }), { at: merge });
+    const reviews = [{ ...claudePass, commit: unmarked }, codexBefore];
+    const text = problemsOf(evidence({ handover: value, reviews }), { at: unmarked });
     expect(text, JSON.stringify(value)).toMatch(pattern);
     expect(text, JSON.stringify(value)).toMatch(/reviews.codex.verdict: must be pass/);
   }
@@ -509,6 +556,51 @@ it('[CR-09] checkEvidence refuses a handover on a money task and accepts one on 
   );
   expect(noChecklist.problems.join('\n')).toMatch(/reviews.claude.checklist_complete/);
   git(repo, ['checkout', '-q', 'task/B2-01a']);
+
+  // Variants on top of the handover commit, each with the same evidence.
+  const variant = (name: string, files: Record<string, string>) => {
+    git(repo, ['checkout', '-q', '-b', name, handoverCommit]);
+    write(repo, files);
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '-m', name]);
+    const head = commitDoc(doc([claude, codexFail]));
+    git(repo, ['checkout', '-q', 'task/B2-01a']);
+    return check(head, 'task/B3-01z').problems.join('\n');
+  };
+  // A money / attribution path changed (RV2 不换家) refuses the handover.
+  const moneyVariant = variant('b3z-money', { 'packages/money/src/m.ts': 'export {};\n' });
+  expect(moneyVariant).toMatch(
+    /handover: not allowed: money \/ attribution implementation paths changed/,
+  );
+  expect(moneyVariant).toMatch(/reviews.codex.verdict: must be pass/);
+  // So does any other RV2 path outside the rule tests, the task's own files and docs.
+  expect(variant('b3z-db', { 'packages/db/src/x.ts': 'export {};\n' })).toMatch(
+    /handover: not allowed: changed paths are RV2 \(packages\/db\/src\/x.ts\)/,
+  );
+  // A change after the bound Claude review fails.
+  expect(
+    variant('b3z-later', { 'packages/evals/src/index.ts': 'export const gate = 2;\n' }),
+  ).toMatch(
+    /reviews.claude.commit: changed after the Claude review .*: packages\/evals\/src\/index.ts/,
+  );
+  // The ledger comes from the trusted root: the head rewriting it changes nothing.
+  const rewritten = readFileSync(join(TRUSTED, 'ops/tasks/B3-01z.yaml'), 'utf8').replace(
+    'packages/evals/**',
+    'packages/db/**',
+  );
+  expect(variant('b3z-ledger', { 'ops/tasks/B3-01z.yaml': rewritten })).toBe('');
+  // An unreadable ledger refuses the handover.
+  const unreadable = handoverPolicy(
+    { prDir: repo, base, head: handoverCommit, headRef: 'task/B3-01y', trusted: TRUSTED },
+    'B3-01y',
+    ['packages/evals/src/index.ts'],
+    loadRiskMap(TRUSTED),
+    loadProtected(TRUSTED),
+  );
+  expect(unreadable).toMatchObject({
+    allowed: false,
+    reason: 'ops/tasks/B3-01y.yaml could not be read',
+  });
 });
 
 it('rule tests changed after the rule-test commit fail the check', () => {
