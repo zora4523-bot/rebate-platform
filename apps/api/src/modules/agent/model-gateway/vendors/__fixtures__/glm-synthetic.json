@@ -1,0 +1,16 @@
+{
+  "synthetic": true,
+  "vendor": "glm",
+  "model": "glm-synthetic-snapshot",
+  "request": {
+    "messages": [{ "role": "user", "content": "合成：评价这段商品描述" }],
+    "stream": true
+  },
+  "response": {
+    "chunks": [
+      { "synthetic": true, "delta": "合成 GLM 分片一" },
+      { "synthetic": true, "delta": "合成 GLM 分片二" }
+    ],
+    "usage": { "input_tokens": 18, "output_tokens": 8 }
+  }
+}

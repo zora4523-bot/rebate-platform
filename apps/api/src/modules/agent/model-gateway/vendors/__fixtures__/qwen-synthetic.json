@@ -1,0 +1,16 @@
+{
+  "synthetic": true,
+  "vendor": "qwen",
+  "model": "qwen-synthetic-snapshot",
+  "request": {
+    "messages": [{ "role": "user", "content": "合成：找一款保温杯" }],
+    "stream": true
+  },
+  "response": {
+    "chunks": [
+      { "synthetic": true, "delta": "合成千问分片一" },
+      { "synthetic": true, "delta": "合成千问分片二" }
+    ],
+    "usage": { "input_tokens": 12, "output_tokens": 6 }
+  }
+}
