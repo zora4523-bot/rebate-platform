@@ -1,0 +1,28 @@
+id: CT-08c
+repo: rebate-platform
+title: 契约——Agent 流的降级关键词与重复消息：error 帧加 fallback_q、meta 加 duplicate，重复消息样例（已结束重放终止帧、进行中 30506）与搜索也失败的 50302 样例
+type: contract
+# 2026-10-06 入账（会话「Agent 落地方案」）。依据：规划 12 §9.1 X-09、X-10（couli#67）；08 BR-AI-23 ⑥ 与细则「受理记录与收尾」、BR-AI-14 细则（50302 带 q）；取值只在 08。
+# 形状：04 §8.1「重复消息」（两帧：meta duplicate=true + 原终止帧重放或 30506；id 从 1 起与原 run seq 无关）、§8.2（error.fallback_q 可空，meta.duplicate）、§7 的 50302 行。
+# 受 CT-08a / CT-08b 冻结规则测试约束：不含新字段的完整 error / meta 帧仍须通过，所以 fallback_q、duplicate 在 schema 里可缺省（缺省等同 null / false），服务端照常写出。
+# 样例另起新文件（不改已冻结测试读取的 11 个文件）：重复消息已结束（重放 done）、已结束（重放 error）、进行中（30506）、50302 带 fallback_q。
+# 不在本段：openapi.yaml 的 /v1/agent/*（下一个契约任务，与其他 openapi 任务串行）、agent 表迁移、03 三端样例分类与 10 验收（规划余项）。
+# 分工按规划/11 §1.1（2026-10-05）：Codex 先写规则测试（test/spec/contracts/agent-stream-duplicate/**，先红），Claude 新子代理过审，Opus 5.5 实现。
+refs: [BR-AI-23, BR-AI-14]
+refs_hash:
+  BR-AI-23: e4d4c7173f74
+  BR-AI-14: 94c980b637dc
+contract_sections: ['8.1', '8.2']
+deps: [CT-08b]
+paths:
+  - 'contracts/agent-stream.schema.json'
+  - 'contracts/fixtures/agent-streams/**'
+test_paths:
+  - 'test/spec/contracts/agent-stream-duplicate/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/contracts/agent-stream-duplicate/**'
+status: todo
+pr: null
