@@ -1,0 +1,25 @@
+id: F1-01l
+repo: rebate-platform
+title: bridge-sdk 令牌管理器与事件收口——invalidate（换号或退出）之后，已在等进行中取令牌的请求不得用旧令牌发出；getH5Token 返回值校验；事件 data 按契约白名单过滤
+type: impl
+# 2026-10-06 入账（前端线 f1-frontend-2；负责人经设计会话要求做掉）。来源：F1-01b（#170，已合并）Claude 第二评审 S2——invalidate() 只断开进行中的取令牌，
+# 已在 await 这次取令牌的 request() 照样拿到旧令牌并发出请求：页面收到 auth.changed（退出或换号）调 invalidate 时，恰好开始的写请求会用旧账号令牌发出。
+# 同一评审的 S3 一并收口：原生回 code 0 却不带合法 token / scope 时按 90500 处理、不缓存；事件 data 只保留契约 bridge.schema.json 该事件声明的属性
+# （app.resume / app.pause 为空对象），不把原生多带的字段（令牌、剪贴板内容）转给订阅者。依据：规划/03 §5.2–§5.4、BR-ID-32、04 §9（编排者摘入任务书）。
+# 一致性测试页要原样记录事件 data（F1-01d 冻结测试 PAGE#13）：conformance 子路径另给不过滤的 onRaw，controller.ts 改用它（故在 paths 内）。
+# 做法要点：request 在拿到令牌后比对代次（invalidate 递增），代次变了就重新取令牌后再发（不发旧令牌）；规则测试钉住交错时序。
+refs: []
+refs_hash: {}
+deps: [F1-01b]
+paths:
+  - 'packages/bridge-sdk/src/**'
+  - 'apps/h5/src/entries/conformance/controller.ts'
+test_paths:
+  - 'test/spec/frontend/bridge-sdk-token/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/bridge-sdk-token/**'
+status: todo
+pr: null
