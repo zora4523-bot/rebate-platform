@@ -64,6 +64,7 @@
 // `import type` for type-only imports, relative imports with `.ts`, no NestJS import, no
 // process.env, time only from the injected Clock.
 import type { Clock, RedisNamespace } from '../../../platform/index.ts';
+import { ADMIT_SCRIPT, SETTLE_SCRIPT } from './scripts.ts';
 
 export type QuotaSubject =
   | { readonly tier: 'member'; readonly userId: string }
@@ -165,30 +166,153 @@ export interface AdmissionDeps {
 export class AdmissionUnavailableError extends Error {}
 
 export function admissionDefaults(): AdmissionLimits {
-  throw new Error('NotImplemented: admissionDefaults');
+  return { memberDaily: 30, guestDaily: 3, guestIpDaily: 30, perMinute: 10, maxRounds: 30 };
 }
 
 export function shouldRefund(outcome: RunOutcome): boolean {
-  void outcome;
-  throw new Error('NotImplemented: shouldRefund');
+  return (
+    outcome.cardsDelivered === 0 &&
+    ['server_error', 'disabled', 'timeout', 'input_review_timeout'].includes(outcome.ending)
+  );
+}
+
+const DAY_MS = 86_400_000;
+// Quota days are civil dates, not ledger accounting dates. Format only the supplied instant.
+const DAY_FORMAT = new Intl.DateTimeFormat('en-US', {
+  timeZone: '+08:00',
+  calendar: 'gregory',
+  numberingSystem: 'latn',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function formatDay(ms: number): string {
+  const parts = DAY_FORMAT.formatToParts(ms);
+  const part = (type: string) => parts.find((p) => p.type === type)!.value;
+  return `${part('year').padStart(4, '0')}-${part('month')}-${part('day')}`;
 }
 
 export function dayKeyOf(now: Date): string {
-  void now;
-  throw new Error('NotImplemented: dayKeyOf');
+  return formatDay(now.getTime());
 }
 
 export function nextResetAt(now: Date): string {
-  void now;
-  throw new Error('NotImplemented: nextResetAt');
+  return `${formatDay(now.getTime() + DAY_MS)}T00:00:00+08:00`;
 }
 
 export function nextStepOf(subject: QuotaSubject): NextStep {
-  void subject;
-  throw new Error('NotImplemented: nextStepOf');
+  return subject.tier === 'member' ? 'none' : subject.loggedIn ? 'bind_phone' : 'login';
+}
+
+// JSON tuples preserve opaque identifiers (including separators) without key collisions.
+function key(...parts: string[]): string {
+  return JSON.stringify(parts);
+}
+
+function subjectKeys(subject: QuotaSubject): string[] {
+  return subject.tier === 'member'
+    ? [key('member', subject.userId)]
+    : [key('device', subject.deviceHash), key('ip', subject.ipKey)];
+}
+
+function dailyKeys(subject: QuotaSubject, day: string): string[] {
+  return subjectKeys(subject).map((subjectKey) => key('day', subjectKey, day));
+}
+
+function dailyLimits(subject: QuotaSubject, limits: AdmissionLimits): number[] {
+  return subject.tier === 'member'
+    ? [limits.memberDaily]
+    : [limits.guestDaily, limits.guestIpDaily];
+}
+
+function nonNegativeInteger(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError('Admission settings must be non-negative safe integers');
+  }
+}
+
+function validateLimits(limits: AdmissionLimits): void {
+  for (const value of [
+    limits.memberDaily,
+    limits.guestDaily,
+    limits.guestIpDaily,
+    limits.perMinute,
+    limits.maxRounds,
+  ])
+    nonNegativeInteger(value);
 }
 
 export function createRedisAdmission(deps: AdmissionDeps): Admission {
-  void deps;
-  throw new Error('NotImplemented: createRedisAdmission');
+  nonNegativeInteger(deps.runMaxMs);
+  nonNegativeInteger(deps.lockGraceMs);
+  const lockMs = deps.runMaxMs + deps.lockGraceMs;
+  nonNegativeInteger(lockMs);
+  // Retain acceptance and settlement together, at least 48 h and beyond the logical lock.
+  // Session ownership/expiry and PG takeover are the caller's responsibility (B3-03d).
+  const ttlSeconds = Math.max(48 * 60 * 60, Math.ceil(lockMs / 1000) + 1);
+
+  async function evaluate<T>(script: string, keys: string[], payload: unknown): Promise<T> {
+    try {
+      const result = await deps.redis.eval(script, {
+        keys,
+        args: [JSON.stringify(payload)],
+        ttlSeconds,
+      });
+      if (typeof result !== 'string') throw new Error('Unexpected admission reply');
+      return JSON.parse(result) as T;
+    } catch {
+      // No replay after an ambiguous Redis failure: retrying client_msg_id recovers its ticket.
+      // Never expose Redis errors (which may contain identifiers) to the caller.
+      throw new AdmissionUnavailableError('Admission storage unavailable');
+    }
+  }
+
+  return {
+    async admit(req, limits) {
+      validateLimits(limits);
+      const now = deps.clock.now();
+      const ticket: AdmissionTicket = {
+        runId: req.runId,
+        messageId: req.messageId,
+        sessionId: req.sessionId,
+        subject: req.subject,
+        dayKey: dayKeyOf(now),
+        acceptedAtMs: now.getTime(),
+        lockExpiresAtMs: now.getTime() + lockMs,
+      };
+      return evaluate<AdmissionResult>(
+        ADMIT_SCRIPT,
+        [
+          key('session', req.sessionId),
+          key('lock', req.sessionId),
+          key('minute', subjectKeys(req.subject)[0]!),
+          ...dailyKeys(req.subject, ticket.dayKey),
+        ],
+        {
+          ticket,
+          clientMsgId: req.clientMsgId,
+          windowMember: key(req.sessionId, req.clientMsgId),
+          limits,
+          dailyLimits: dailyLimits(req.subject, limits),
+          resetAt: nextResetAt(now),
+          next: nextStepOf(req.subject),
+        },
+      );
+    },
+    async settle(ticket, outcome, limits) {
+      validateLimits(limits);
+      const today = dayKeyOf(deps.clock.now());
+      return evaluate<SettleResult>(
+        SETTLE_SCRIPT,
+        [
+          key('session', ticket.sessionId),
+          key('lock', ticket.sessionId),
+          ...dailyKeys(ticket.subject, ticket.dayKey),
+          ...dailyKeys(ticket.subject, today),
+        ],
+        { ticket, refund: shouldRefund(outcome), dailyLimits: dailyLimits(ticket.subject, limits) },
+      );
+    },
+  };
 }
