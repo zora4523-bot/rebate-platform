@@ -13,7 +13,9 @@ it('[AC-B1-04c-REPORT#6] 仅加载 probe 来源时满足报告的来源资格检
 
     expect(await replay.transport(request('jd', scenario))).toEqual(recording().response);
     expect(replay.report()).toEqual({
-      recordings: [{ platform: 'jd', scenario, directory, provenance: metadata, loadedAt: instant }],
+      recordings: [
+        { platform: 'jd', scenario, directory, provenance: metadata, loadedAt: instant },
+      ],
       acceptanceEligible: true,
     });
   });
