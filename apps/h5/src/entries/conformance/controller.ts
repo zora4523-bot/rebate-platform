@@ -9,7 +9,9 @@ import {
   NO_GESTURE_WAIT_MS,
   buildCaseTable,
   casesForPlatform,
+  contractTimeoutMs,
   isPlatform,
+  needsGesture,
   paramsForCase,
   selectCases,
 } from './cases.ts';
@@ -32,6 +34,14 @@ export const FRAME_MESSAGE_TYPE: FrameReport['type'] = 'couli.bridge-conformance
 /** Without a report from the subframe within this time, the subframe call did not succeed. */
 export const FRAME_WAIT_MS = 3000;
 const FRAME_SILENT: CaseOutcome = { ok: false, code: 90003 };
+/**
+ * Per-case watchdog of the automatic run. Sync methods and several async ones have no contract
+ * timeout (timeout_ms null), so a native side that never replies would stall the queue and keep
+ * status at 'running'. 15 s is the longest contract timeout (net.signedRequest); methods that do
+ * have a timeout get it on top, so the SDK's own 90003 always comes first.
+ */
+export const CASE_WATCHDOG_MS = 15_000;
+const CASE_SILENT: CaseOutcome = { ok: false, code: 90003 };
 const NATIVE_ERROR = 90500;
 
 function isBridgeErrorCode(code: unknown): code is number {
@@ -98,6 +108,7 @@ export class ConformanceController {
   private frameSettled = false;
   private lastGestureAt: number | null = null;
   private cancelGestureWait: (() => void) | null = null;
+  private readonly watchdogs = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(search: string, pathname: string) {
     const { cases, unknown_cases } = selectCases(buildCaseTable(), search);
@@ -131,14 +142,13 @@ export class ConformanceController {
     const recordGesture = (event: Event) => {
       if (event.isTrusted) this.lastGestureAt = performance.now();
     };
-    // Capture clicks anywhere on the page; pointerup also covers taps on disabled buttons,
-    // which can refresh native gesture state even though they do not dispatch a click.
-    window.addEventListener('click', recordGesture, true);
-    window.addEventListener('pointerup', recordGesture, true);
+    // Capture clicks anywhere on the page; pointer and touch events also cover taps on disabled
+    // buttons or blank areas, which can refresh native gesture state without dispatching a click.
+    const gestureEvents = ['click', 'pointerdown', 'pointerup', 'touchend'] as const;
+    for (const type of gestureEvents) window.addEventListener(type, recordGesture, true);
     const stops: (() => void)[] = [
       () => {
-        window.removeEventListener('click', recordGesture, true);
-        window.removeEventListener('pointerup', recordGesture, true);
+        for (const type of gestureEvents) window.removeEventListener(type, recordGesture, true);
       },
       on('app.resume', (data) => this.update((result) => recordEvent(result, 'app.resume', data))),
       on('app.pause', (data) => this.update((result) => recordEvent(result, 'app.pause', data))),
@@ -153,12 +163,23 @@ export class ConformanceController {
     return () => this.dispose();
   }
 
-  /** Runs a tap row on a real user click (the click is the gesture native checks). */
+  /**
+   * Rows that run only on a button press: tap rows, and — when named in `?cases=` — the timeout
+   * harness rows of gesture methods (native checks the gesture before it can time out).
+   */
+  readonly awaitsTap = (row: ConformanceCase): boolean =>
+    row.trigger === 'tap' ||
+    (this.explicit &&
+      row.trigger === 'harness' &&
+      row.category === 'timeout' &&
+      needsGesture(row.method));
+
+  /** Runs a button row on a real user click (the click is the gesture native checks). */
   tap(id: string): void {
     if (this.disposed || this.result.status !== 'done') return;
     const row = this.result.cases.find((candidate) => candidate.id === id);
-    if (row === undefined || row.trigger !== 'tap') return;
-    void this.execute(row);
+    if (row === undefined || !this.awaitsTap(row)) return;
+    void this.execute(row, false);
   }
 
   private stopAll: () => void = () => {};
@@ -167,6 +188,8 @@ export class ConformanceController {
     if (this.disposed) return;
     this.disposed = true;
     this.cancelGestureWait?.();
+    for (const timer of this.watchdogs) clearTimeout(timer);
+    this.watchdogs.clear();
     this.stopAll();
     this.listeners.clear();
   }
@@ -183,12 +206,35 @@ export class ConformanceController {
     if (this.remaining === 0) this.update(completeAutoRuns);
   }
 
-  private async execute(row: ConformanceCase): Promise<void> {
+  /**
+   * `guarded`: the automatic run arms the watchdog so one silent call cannot stall the queue.
+   * Button rows are not guarded: they block nothing, and their native flows (login, platform
+   * authorisation, system dialogs) may legitimately take longer than the watchdog.
+   */
+  private async execute(row: ConformanceCase, guarded: boolean): Promise<void> {
     if (row.category === 'no_gesture') await this.waitForNoGesture();
     if (this.disposed) return;
     const since = performance.now();
-    const outcome = await probe(row.method, paramsForCase(row));
+    const call = probe(row.method, paramsForCase(row));
+    const outcome = guarded ? await this.watch(call, row.method) : await call;
     this.update((result) => recordOutcome(result, row.id, outcome, elapsed(since)));
+  }
+
+  /** First of the reply and the watchdog wins; a reply after the watchdog is ignored. */
+  private watch(call: Promise<CaseOutcome>, method: string): Promise<CaseOutcome> {
+    const ms = (contractTimeoutMs(method) ?? 0) + CASE_WATCHDOG_MS;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.watchdogs.delete(timer);
+        resolve(CASE_SILENT);
+      }, ms);
+      this.watchdogs.add(timer);
+      void call.then((outcome) => {
+        clearTimeout(timer);
+        this.watchdogs.delete(timer);
+        resolve(outcome);
+      });
+    });
   }
 
   /** Recheck after each wait: another real click restarts the native gesture window. */
@@ -210,7 +256,8 @@ export class ConformanceController {
 
   /**
    * app.getEnv first, then one call at a time in table order, so native UI effects never
-   * overlap. Loaded without `cases`: auto rows only; harness rows run only when named.
+   * overlap. Loaded without `cases`: auto rows only; harness rows run only when named, except
+   * those that wait for a button (awaitsTap).
    */
   private async runAll(): Promise<void> {
     const platform = await resolvePlatform();
@@ -219,11 +266,12 @@ export class ConformanceController {
     const runs = this.result.cases.filter(
       (row) =>
         row.id !== FRAME_CASE_ID &&
+        !this.awaitsTap(row) &&
         (row.trigger === 'auto' || (this.explicit && row.trigger === 'harness')),
     );
     for (const row of runs) {
       if (this.disposed) return;
-      await this.execute(row);
+      await this.execute(row, true);
     }
     this.finishOne();
   }

@@ -252,6 +252,25 @@ function limitedPlatforms(method: string): ConformancePlatform[] | null {
   return supported.length === 0 || supported.length === PLATFORMS.length ? null : supported;
 }
 
+/** L2 methods and gesture_required methods need a user tap shortly before the call. */
+function isGestureMeta(meta: MethodMeta): boolean {
+  return meta.level === 'L2' || meta.gesture_required === true;
+}
+
+/** Whether a contract method needs a user gesture; false for names the contract lacks. */
+export function needsGesture(method: string): boolean {
+  return Object.hasOwn(bridge.bridgeMethods, method)
+    ? isGestureMeta(bridge.bridgeMethods[method as MethodName])
+    : false;
+}
+
+/** The contract's reply timeout of a method; null when it has none or the method is unknown. */
+export function contractTimeoutMs(method: string): number | null {
+  return Object.hasOwn(bridge.bridgeMethods, method)
+    ? bridge.bridgeMethods[method as MethodName].timeout_ms
+    : null;
+}
+
 function methodEntries(method: MethodName, meta: MethodMeta): CaseEntry[] {
   const valid = VALID_PARAMS[method];
   const missing = PLATFORMS.filter((platform) => meta.since[platform] === null);
@@ -262,8 +281,11 @@ function methodEntries(method: MethodName, meta: MethodMeta): CaseEntry[] {
   const rows: CaseEntry[] = missing.map((platform) =>
     entry(method, 'unsupported', platform, { code: 90001 }, 'auto', valid, [platform]),
   );
-  const gesture = meta.level === 'L2' || meta.gesture_required;
+  const gesture = isGestureMeta(meta);
   const normalTrigger: CaseTrigger = gesture || hasSideEffect(method) ? 'tap' : 'auto';
+  // Native checks login → gesture (90404) → params (90002): without a tap a gesture method
+  // answers 90404 before it ever looks at the bad params.
+  const badParamsTrigger: CaseTrigger = gesture ? 'tap' : 'auto';
   // ext.openApp answers 90403 for trade_only targets, so its normal needs a target that is not.
   if (method !== 'ext.openApp' || openableAppTarget() !== null) {
     rows.push(entry(method, 'normal', null, { ok: true }, normalTrigger, valid));
@@ -272,7 +294,8 @@ function methodEntries(method: MethodName, meta: MethodMeta): CaseEntry[] {
     rows.push(entry(method, 'timeout', null, { code: 90003 }, 'harness', valid));
   }
   if (hasParams(method)) {
-    rows.push(entry(method, 'bad_params', null, { code: 90002 }, 'auto', badParams(method)));
+    const bad = badParams(method);
+    rows.push(entry(method, 'bad_params', null, { code: 90002 }, badParamsTrigger, bad));
   }
   if (gesture) rows.push(entry(method, 'no_gesture', null, { code: 90404 }, 'auto', valid));
   if (meta.level === 'L1' || meta.level === 'L2') {

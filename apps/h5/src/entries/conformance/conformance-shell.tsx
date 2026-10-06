@@ -2,7 +2,7 @@ import { useEffect, useRef, useSyncExternalStore, type ReactElement } from 'reac
 import { ConformanceController, runChildFrame } from './controller.ts';
 
 /**
- * Tap rows render as buttons (`data-case-id`, labelled with the case id) that native UI tests
+ * Tap rows (and selected timeout probes of gesture methods) render as buttons (`data-case-id`, labelled with the case id) that native UI tests
  * press to supply the user gesture; the selected subframe probe renders a hidden same-origin
  * iframe. Everything the suites assert lives in window.__RESULT__.
  */
@@ -10,7 +10,7 @@ function ConformancePage({ controller }: { controller: ConformanceController }):
   const result = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const frameRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => controller.start(() => frameRef.current?.contentWindow ?? null), [controller]);
-  const taps = result.cases.filter((row) => row.trigger === 'tap');
+  const taps = result.cases.filter(controller.awaitsTap);
   return (
     <main className="min-h-dvh p-4" data-status={result.status}>
       {controller.frameSrc === null ? null : (
