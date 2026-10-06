@@ -27,6 +27,7 @@ interface Call {
   readonly kind: Kind;
   readonly namespace: string;
   readonly options: RedisScriptOptions;
+  readonly script: string;
 }
 
 function kindOf(script: string): Kind {
@@ -73,7 +74,7 @@ function setup(
       },
       eval: async (script: string, options: RedisScriptOptions) => {
         const kind = kindOf(script);
-        calls.push({ kind, namespace, options });
+        calls.push({ kind, namespace, options, script });
         if (kind === 'mark') return (overrides.mark ?? (() => 1))();
         return reply(kind, options);
       },
@@ -464,7 +465,7 @@ it('[BR-ID-05] a reservation whose reply is lost is released with its token, not
     },
   });
   expect(await down.send()).toEqual({ code: 42901, retryAfterSec: 5 });
-  expect(down.calls.map((call) => call.kind)).toEqual(['reserve', 'release']);
+  expect(down.calls.map((call) => call.kind)).toEqual(['reserve', 'release', 'release']);
   expect(down.lines.join('')).toContain('sms_release_failed');
 });
 
@@ -473,7 +474,7 @@ it('[BR-ID-05] a candidate that cannot be marked as sending is released and no S
   expect(await gone.send()).toEqual({ code: 42901, retryAfterSec: 5 });
   expect(gone.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'release']);
   expect(gone.messages).toEqual([]);
-  expect(gone.lines.join('')).toContain('"reason":"candidate_gone"');
+  expect(gone.lines.join('')).toContain('"reason":"refused"');
 
   const down = setup({
     mark: () => {
@@ -518,5 +519,78 @@ it('[BR-ID-05] a send rejected only after sendTimeoutMs leaves no unhandled reje
     expect(f.lines.join('')).not.toContain('provider gave up late');
   } finally {
     process.off('unhandledRejection', unhandled);
+  }
+});
+
+it('[BR-ID-05] a process that stalled more than the margin after the reservation releases instead of sending', async () => {
+  let stall = 5_001;
+  const late = setup({
+    mark: () => {
+      late.clock.advanceMs(stall);
+      return 1;
+    },
+  });
+  expect(await late.send()).toEqual({ code: 42901, retryAfterSec: 5 });
+  expect(late.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'release']);
+  expect(late.calls[2]!.options.args[1]).toBe(late.calls[0]!.options.args[1]);
+  expect(late.messages).toEqual([]);
+  expect(late.lines.join('')).toContain('"late_ms":5001');
+
+  stall = 5_000;
+  const onTime = setup({
+    mark: () => {
+      onTime.clock.advanceMs(stall);
+      return 1;
+    },
+  });
+  expect((await onTime.send()).code).toBe(0);
+  expect(onTime.messages).toHaveLength(1);
+});
+
+it('[BR-ID-05] a release is retried once with the same token; a second failure is only logged', async () => {
+  let failures = 1;
+  const rejecting: SmsSender = { send: async () => 'rejected' };
+  const flaky = setup({
+    sender: rejecting,
+    reply: (kind) => {
+      if (kind === 'release' && failures-- > 0) throw new RedisUnavailableError('command_timeout');
+      return [1, 0];
+    },
+  });
+  expect(await flaky.send()).toEqual({ code: 50001 });
+  expect(flaky.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'release', 'release']);
+  expect(flaky.calls[3]!.options.args[1]).toBe(flaky.calls[0]!.options.args[1]);
+  expect(flaky.lines.join('')).not.toContain('sms_release_failed');
+
+  const down = setup({
+    sender: rejecting,
+    reply: (kind) => {
+      if (kind === 'release') throw new RedisUnavailableError('command_timeout');
+      return [1, 0];
+    },
+  });
+  expect(await down.send()).toEqual({ code: 50001 });
+  expect(down.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'release', 'release']);
+  expect(down.lines.join('')).toContain('sms_release_failed');
+});
+
+// A key without a TTL could only appear if a script failed between the write that creates a key
+// and that key's EXPIRE. That cannot be provoked from outside a Lua script (once a script has
+// written, Redis no longer refuses its commands for memory), so the order itself is pinned: in
+// every script that may create a key, each ZADD and HSET is followed directly by an EXPIRE.
+it('[BR-ID-05] every ZADD and HSET of the send scripts is followed directly by an EXPIRE', async () => {
+  const scripts = new Map<Kind, string>();
+  for (const f of [setup({ sender: { send: async () => 'rejected' } }), setup()]) {
+    await f.send();
+    for (const call of f.calls) scripts.set(call.kind, call.script);
+  }
+  expect([...scripts.keys()].sort()).toEqual(['commit', 'mark', 'release', 'reserve']);
+  for (const [kind, script] of scripts) {
+    const calls = [...script.matchAll(/redis\.call\('([A-Z]+)'/g)].map((match) => match[1]);
+    calls.forEach((name, index) => {
+      if (name === 'ZADD' || name === 'HSET') {
+        expect(`${kind}: ${name} → ${calls[index + 1] ?? 'end'}`).toBe(`${kind}: ${name} → EXPIRE`);
+      }
+    });
   }
 });

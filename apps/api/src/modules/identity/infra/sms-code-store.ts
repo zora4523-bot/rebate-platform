@@ -1,67 +1,85 @@
 // Redis store of the SMS codes and of the per-phone send quota (BR-ID-05; orchestrator ruling B1-02e
-// §9.3 #2–#4: Redis, no table; every key carries a TTL; every step one atomic Lua call; review
-// rounds 1–2: an uncommitted send is never forgotten and is counted conservatively, the candidate
-// code is stored before the SMS goes out, and a reservation whose reply was lost never voids the
-// code in force).
+// §9.3 #2–#4: Redis, no table; every key carries a TTL; every step one atomic Lua call; B1-02e review
+// rounds 1–2 and B1-02l: an uncommitted send is never forgotten and is counted conservatively, the
+// candidate code is stored before the SMS goes out, a reservation that was never marked as sending
+// never voids the code in force and is cleaned up wherever it was left).
 //
 // Namespace `sms` (platform/redis prefixes every key with `sms:`). Keys hold no phone number and
 // no code in clear: the caller passes `phoneKey`, an HMAC of the normalised number, and code HMACs
 // (hex, so `,` never occurs in one).
 //   q:<phoneKey>                    sorted set, the send history of one phone over every app and
-//                                   purpose: `a:<token>` scored with the acceptance time of an
-//                                   accepted (or outcome unknown) SMS; `p:<token>` scored with the
-//                                   reservation time of a send not committed (reserved, in flight,
-//                                   or its commit failed). TTL 25 h, refreshed on every write
-//                                   (garbage collection only).
+//                                   purpose, one member per send of token T:
+//                                     p:T  reserved, not marked: no SMS has left (score: reservation
+//                                          time t);
+//                                     s:T  marked as sending: the SMS may be out, its commit has not
+//                                          run (score: t);
+//                                     a:T  committed: accepted or outcome unknown (score: acceptance
+//                                          time).
+//                                   TTL 25 h, refreshed on every write (garbage collection only).
 //   c:<app_id>:<purpose>:<phoneKey> hash, the codes of one app, purpose and phone:
 //                                     h, t, e    the code in force: HMAC ('' when none), issued at
 //                                                (ms), wrong tries;
 //                                     n, k, nt, ne, s  the candidate of a send not committed: HMAC
-//                                                ('' when none), reservation token, reservation
-//                                                time, wrong tries, state `r` (reserved, not sent)
-//                                                or `s` (sending: the SMS may be out);
+//                                                ('' when none), token, reservation time, wrong
+//                                                tries, state `r` (reserved) or `s` (sending);
 //                                     u          purpose;
 //                                     v          HMACs of replaced, consumed and voided codes,
 //                                                comma-separated, newest last, at most VOID_LIMIT.
 //                                   TTL 300 s, refreshed on every write (garbage collection only).
 //
-// Conservative counting (review round 2). The acceptance time of an uncommitted `p:` at reservation
-// time t lies somewhere in [t, t + D], D = the caller's in-flight bound (send timeout plus a margin
-// for the steps around it). A `p:` therefore counts in every natural hour and day that interval
-// touches, holds the 60-second window until t + D + 60 s, and stays in the rolling 24 hours until
-// now − 24 h passes t + D. An `a:` counts at its acceptance time exactly. Retry-After and the
-// resend estimate follow the same counting, so they are never shorter than the rules allow.
+// Conservative counting. D is the caller's in-flight bound (send timeout plus a margin): mark is
+// refused after t + D and the service sends only while now − t is within the margin, so a send
+// reserved at t is accepted, if at all, within [t, t + D]. An `s:` (and a `p:`, while it may still
+// be marked) counts over that interval: in every natural hour and day it touches, in the 60-second
+// window until t + D + 60 s, in the rolling 24 hours until now − 24 h passes t + D. An `a:` counts
+// at its acceptance time exactly. Every quota script drops a `p:` older than t + D + 60 s: it can no
+// longer be marked, so it was never sent, whatever became of its code record (expired, or another
+// app or purpose). Retry-After and the resend estimate follow the same counting, so they are never
+// shorter than the rules allow.
+//
+// Code lifetime: a sending candidate is valid from its reservation time (it may be out already); a
+// committed code from its acceptance time, as the response promises (expires_in_sec = 300); a
+// sending candidate put in force by a later reservation (its commit never ran) keeps its
+// reservation time.
 //
 // State machine of one send (token T, candidate C):
-//   reserve  — first a reserved (`r`) candidate of the record that can no longer be in flight
-//              (nt + D + 60 s passed) is dropped together with its `p:`: it was never sent. Then:
-//              limits hold → limited; C equals h, n or a void HMAC → collision (the caller draws
-//              another code); in both cases nothing else is written. Otherwise one call adds p:T and
-//              stores C as candidate in state `r`. A candidate still there is settled first: `s`
-//              (it may have gone out) becomes the code in force, the code it replaces goes to v;
-//              `r` (never sent) is dropped with its `p:`. While C is `r` the code in force stays
-//              valid and C cannot be verified.
-//   mark     — `r` → `s` for T's candidate, before the SMS is sent; idempotent; 0 when the record no
-//              longer holds T's candidate (then the caller must not send). From `s` on, C is the
-//              current code and h is void.
-//   commit   — after acceptance or an unknown outcome: p:T becomes a:T at the acceptance time and,
-//              if the candidate is still T's, C becomes the code in force (h=C, t=nt, e=ne) and the
-//              replaced code goes to v. Idempotent per token. When it never runs, p:T keeps counting
-//              conservatively and C stays verifiable.
-//   release  — after a definite rejection, or when reserve / mark did not answer: p:T is removed
-//              and T's candidate dropped; the code in force is valid again, its wrong tries plus the
-//              candidate's when the candidate was `s` (five void it). Idempotent.
+//   reserve  — first a reserved (`r`) candidate of the record that can no longer be marked
+//              (nt + D + 60 s passed) is dropped together with its `p:`. Then: limits hold →
+//              limited; C equals h, n or a void HMAC → collision (the caller draws another code); in
+//              both cases nothing else is written. Otherwise one call adds p:T and stores C as
+//              candidate in state `r`. A candidate still there is settled first: `s` (it may have
+//              gone out) becomes the code in force, the code it replaces goes to v; `r` is dropped
+//              with its `p:`. While C is `r` the code in force stays valid and C cannot be verified.
+//   mark     — only while now ≤ t + D and the record still holds T's candidate: p:T becomes s:T
+//              (same score) and the candidate `s`; idempotent once marked. Otherwise 0, and the
+//              caller must not send. From `s` on, C is the current code and h is void.
+//   commit   — after acceptance or an unknown outcome: p:T / s:T becomes a:T at the acceptance time
+//              and, if the candidate is still T's, C becomes the code in force (h=C, t=acceptance,
+//              e=ne) and the replaced code goes to v. Idempotent per token.
+//   release  — after a definite rejection, or when the send never left: p:T / s:T is removed and
+//              T's candidate dropped; the code in force is valid again, its wrong tries plus the
+//              candidate's when the candidate was `s` (five void it). Idempotent; a candidate already
+//              consumed or voided is no longer T's, so release never revives the code it replaced.
 //   verify   — a code in v, or the previous code while the candidate is `s`, is void; the current
-//              code is n when the candidate is `s`, else h, valid for the code lifetime from nt / t
-//              (a promoted code keeps its reservation time); a match consumes it, the fifth wrong
-//              try voids it; consuming or voiding moves the current code (and with `s` the previous
-//              one) to v.
-// Residual risk: mark ran but its reply was lost and the best-effort release after it failed too
-// (two Redis faults in a row). The candidate then stays `s` with p:T counting although no SMS went
-// out: the previous code is void and the never-delivered candidate is current until it expires or
-// the next reservation puts it in force, and the phone has one send too many counted. Both errors
-// are on the strict side (no SMS more than the rules allow, no void code accepted); the user asks
-// for a new code once the window allows it.
+//              code is n when the candidate is `s`, else h; a match consumes it, the fifth wrong try
+//              voids it; consuming or voiding moves the current code (and with `s` the previous one)
+//              to v.
+//
+// What a Redis fault leaves behind (the service retries mark, commit and release once each):
+//   - reserve's reply lost, mark refused (0) or never run (process stopped between reserve and
+//     mark, or both mark attempts failed before running), each followed by a failed release (two
+//     faults): p:T counts until t + D + 60 s and is then dropped by the next quota script on this
+//     phone, whatever the code record; the `r` candidate never voids the code in force and goes
+//     with the next reservation of its key or with the key's TTL.
+//   - mark ran but both of its replies were lost, and both release attempts failed (at least four
+//     faults), or the send was refused after mark (late, definite rejection) and both release
+//     attempts failed (two faults, or a stall plus two faults): s:T counts as a send over
+//     [t, t + D] and the candidate `s` stays current, so the previous code is void and the
+//     undelivered candidate is current until it expires (300 s from t) or the next reservation of
+//     its key puts it in force. One send too many is counted; no SMS more than the rules allow
+//     goes out and no void code is accepted. The user asks for a new code once the window allows.
+//   - commit failed twice after the provider answered: s:T keeps counting over [t, t + D] (the
+//     acceptance is within it) and the candidate stays current: correct, only conservative.
 // Times are the injected Clock's epoch milliseconds, passed in by the caller: windows and expiry are
 // judged on them, never on Redis TTLs (ADR-0001 §4.2 #10; a FixedClock does not move Redis time).
 //
@@ -69,8 +87,9 @@
 // expires it with ARGV[1]. Reserve, mark, commit and release share one argument layout and must
 // change both keys atomically, and the keys live for different times (25 h of history, 300 s of
 // codes): they expire the quota key with ARGV[1] and the code key with ARGV[13], the code TTL,
-// which each of them checks (≥ 1) before any write; every key a script writes gets a TTL in the
-// same call.
+// which each of them checks (≥ 1) before any write. Only ZADD and HSET can create a key, and each
+// is followed directly by the EXPIRE of its key: once a script has written, Redis no longer refuses
+// its commands for memory, so nothing can fail between the two (sms-codes.test.ts pins the order).
 //
 // Failures are platform/redis errors (RedisUnavailableError when Redis cannot answer, also for an
 // error reply); the caller decides.
@@ -137,16 +156,19 @@ local per_hour, per_day = tonumber(ARGV[9]), tonumber(ARGV[10])
 local per_window, window = tonumber(ARGV[11]), tonumber(ARGV[12])
 local max_errors = ${String(SMS_CODE_MAX_ERRORS)}
 local wrote = false
--- Each entry as [low, high]: an a: at its acceptance time, a p: over [reservation, reservation + D].
--- An entry leaves the rolling window when now - window reaches its high end.
+-- Each entry as [low, high]: an a: at its acceptance time, an s: (and a p: that may still be
+-- marked) over [reservation, reservation + D]. A p: older than reservation + D + 60 s can no longer
+-- be marked: it was never sent and is dropped. An entry leaves the rolling window when
+-- now - window reaches its high end.
 local function history()
   local entries = redis.call('ZRANGE', key, 0, -1, 'WITHSCORES')
   local lows, highs = {}, {}
   for i = 1, #entries, 2 do
     local at = tonumber(entries[i + 1])
+    local kind = string.sub(entries[i], 1, 2)
     local high = at
-    if string.sub(entries[i], 1, 2) == 'p:' then high = at + in_flight end
-    if high <= now - window then
+    if kind ~= 'a:' then high = at + in_flight end
+    if (kind == 'p:' and high + interval <= now) or high <= now - window then
       redis.call('ZREM', key, entries[i])
       wrote = true
     else
@@ -246,15 +268,28 @@ highs[#highs + 1] = now + in_flight
 return {1, release_at(lows, highs)}
 `;
 
-/** T's candidate goes from reserved to sending: 1, or 0 when the record no longer holds it. */
+/**
+ * T's candidate goes from reserved to sending while now ≤ t + D: 1, idempotent once marked; 0 when
+ * the reservation is too old, gone, or the record no longer holds T's candidate.
+ */
 const MARK = `-- sms:mark
 ${QUOTA_LIB}
 local r = redis.call('HMGET', code_key, 'n', 'k', 's')
 if r[2] ~= token or not r[1] or r[1] == '' then return 0 end
-if r[3] ~= 's' then
-  redis.call('HSET', code_key, 's', 's')
-  redis.call('EXPIRE', code_key, code_ttl)
+if redis.call('ZSCORE', key, 's:' .. token) then
+  if r[3] ~= 's' then
+    redis.call('HSET', code_key, 's', 's')
+    redis.call('EXPIRE', code_key, code_ttl)
+  end
+  return 1
 end
+local reserved = redis.call('ZSCORE', key, 'p:' .. token)
+if not reserved or now > tonumber(reserved) + in_flight then return 0 end
+redis.call('ZREM', key, 'p:' .. token)
+redis.call('ZADD', key, reserved, 's:' .. token)
+redis.call('EXPIRE', key, ARGV[1])
+redis.call('HSET', code_key, 's', 's')
+redis.call('EXPIRE', code_key, code_ttl)
 return 1
 `;
 
@@ -262,19 +297,20 @@ return 1
 const COMMIT = `-- sms:commit
 ${QUOTA_LIB}
 if not redis.call('ZSCORE', key, 'a:' .. token) then
-  redis.call('ZREM', key, 'p:' .. token)
+  redis.call('ZREM', key, 'p:' .. token, 's:' .. token)
   redis.call('ZADD', key, now, 'a:' .. token)
+  redis.call('EXPIRE', key, ARGV[1])
 end
-local r = redis.call('HMGET', code_key, 'h', 'n', 'k', 'nt', 'ne', 'v')
+local r = redis.call('HMGET', code_key, 'h', 'n', 'k', 'ne', 'v')
 if r[3] == token and r[2] and r[2] ~= '' then
-  redis.call('HSET', code_key, 'h', r[2], 't', r[4] or ARGV[2], 'e', r[5] or '0', 'n', '', 'k', '',
-    'nt', '', 'ne', '0', 's', '', 'v', with_void(r[6] or '', r[1] or ''))
+  -- In force from the acceptance time, as the response promises (expires_in_sec).
+  redis.call('HSET', code_key, 'h', r[2], 't', ARGV[2], 'e', r[4] or '0', 'n', '', 'k', '',
+    'nt', '', 'ne', '0', 's', '', 'v', with_void(r[5] or '', r[1] or ''))
   redis.call('EXPIRE', code_key, code_ttl)
 end
 local lows, highs = history()
-local release = release_at(lows, highs)
-redis.call('EXPIRE', key, ARGV[1])
-return release
+touch_quota()
+return release_at(lows, highs)
 `;
 
 /**
@@ -283,7 +319,7 @@ return release
  */
 const RELEASE = `-- sms:release
 ${QUOTA_LIB}
-redis.call('ZREM', key, 'p:' .. token)
+redis.call('ZREM', key, 'p:' .. token, 's:' .. token)
 if redis.call('EXISTS', key) == 1 then redis.call('EXPIRE', key, ARGV[1]) end
 local r = redis.call('HMGET', code_key, 'h', 'e', 'k', 'ne', 's', 'v')
 if r[3] == token then
@@ -377,7 +413,10 @@ export interface SmsCodeStore {
     purpose: string,
     nowMs: number,
   ): Promise<ReserveOutcome>;
-  /** Idempotent. False when the record no longer holds T's candidate: do not send. */
+  /**
+   * Idempotent once marked. False when the reservation is older than the in-flight bound, gone, or
+   * the record no longer holds T's candidate: do not send.
+   */
   mark(keys: SmsKeys, token: string, nowMs: number): Promise<boolean>;
   /** Idempotent per token. Returns when the next send of this phone may go (epoch ms). */
   commit(keys: SmsKeys, token: string, nowMs: number): Promise<number>;
