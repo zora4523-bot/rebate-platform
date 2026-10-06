@@ -375,3 +375,82 @@ it('invalidate between acquisition and send re-acquires before sending', async (
   await expect(pending).resolves.toEqual({ code: 0, msg: '' });
   expect(send.mock.calls).toEqual([['t-2']]);
 });
+
+it('a write waiting across invalidate takes a read_only re-acquisition as is, without a third', async () => {
+  const replies: ((data: unknown) => void)[] = [];
+  const native = install(
+    ['auth.getH5Token'],
+    (request) =>
+      new Promise<BridgeResponse>((resolve) => {
+        replies.push((data) => resolve({ id: request.id, code: 0, msg: '', data }));
+      }),
+  );
+  const manager = createH5TokenManager();
+  const send = vi.fn(async () => ({
+    code: 10403,
+    msg: 'restricted',
+    data: { reason: 'h5_read_only' },
+  }));
+  const pending = manager.request('POST', send);
+  await vi.waitFor(() => expect(replies).toHaveLength(1));
+  manager.invalidate();
+  replies[0]?.({ token: 't-old', scope: 'standard', expire_at: '2099-01-01T00:00:00Z' });
+  await vi.waitFor(() => expect(replies).toHaveLength(2));
+  replies[1]?.({ token: 't-new', scope: 'read_only', expire_at: '2099-01-01T00:00:00Z' });
+  await expect(pending).resolves.toMatchObject({ code: 10403 });
+  expect(send.mock.calls).toEqual([['t-new']]);
+  expect(native.postMessage).toHaveBeenCalledTimes(2);
+});
+
+it.each(['POST', 'GET'])(
+  '%s sent before invalidate is not replayed with the next generation token on 10002',
+  async (method) => {
+    let n = 0;
+    const native = install(['auth.getH5Token'], (request) => {
+      n += 1;
+      return {
+        id: request.id,
+        code: 0,
+        msg: '',
+        data: { token: `t-${n}`, scope: 'standard', expire_at: '2099-01-01T00:00:00Z' },
+      };
+    });
+    const manager = createH5TokenManager();
+    let expire: ((response: { code: number; msg: string }) => void) | undefined;
+    const send = vi.fn(
+      () =>
+        new Promise<{ code: number; msg: string }>((resolve) => {
+          expire = resolve;
+        }),
+    );
+    const pending = manager.request(method, send);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    manager.invalidate();
+    expire?.({ code: 10002, msg: 'expired' });
+    await expect(pending).resolves.toEqual({ code: 10002, msg: 'expired' });
+    expect(send.mock.calls).toEqual([['t-1']]);
+    expect(native.postMessage).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('invalidate on every acquisition gives up after a bounded number of attempts with 90500', async () => {
+  const manager = createH5TokenManager();
+  let n = 0;
+  const native = install(['auth.getH5Token'], (request) => {
+    n += 1;
+    manager.invalidate();
+    return {
+      id: request.id,
+      code: 0,
+      msg: '',
+      data: { token: `secret-${n}`, scope: 'standard', expire_at: '2099-01-01T00:00:00Z' },
+    };
+  });
+  const send = vi.fn(async () => ({ code: 0, msg: '' }));
+  const failure = await manager.request('POST', send).catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(BridgeError);
+  expect(failure).toMatchObject({ code: 90500 });
+  expect(JSON.stringify(failure) + String(failure)).not.toContain('secret-');
+  expect(send).not.toHaveBeenCalled();
+  expect(native.postMessage).toHaveBeenCalledTimes(3);
+});

@@ -92,11 +92,30 @@ function parseToken(result: unknown): H5Token | null {
   return Object.freeze({ token, expire_at: expireAt, scope: scope as H5Token['scope'] });
 }
 
+/**
+ * Upper bound on attempts in each re-acquire loop (getting a token, and the check right before
+ * send). Every extra attempt means invalidate() ran again meanwhile; a real account switch followed
+ * by a logout needs at most 3, so more means invalidate() is being called in a loop and the request
+ * fails (90500) instead of asking native for tokens without end.
+ */
+const MAX_ATTEMPTS = 3;
+
+function tooManyInvalidations(): BridgeError {
+  return new BridgeError(NATIVE_ERROR, 'H5 token was invalidated repeatedly while acquiring');
+}
+
+/** A token together with the invalidate() generation it was acquired in. */
+interface Stamped {
+  readonly token: H5Token;
+  readonly generation: number;
+}
+
 /** Acquires via has('auth.getH5Token') + call; the returned manager owns only page memory. */
 export function createH5TokenManager(): H5TokenManager {
-  let cached: H5Token | null = null;
-  let inflight: Promise<H5Token> | null = null;
-  // Bumped by invalidate() so a late acquisition cannot resurrect a dropped token.
+  let cached: Stamped | null = null;
+  let inflight: Promise<Stamped> | null = null;
+  // Bumped by invalidate() (account switch or logout). A token is usable only while its own
+  // generation is still the current one; a late acquisition cannot resurrect a dropped token.
   let generation = 0;
 
   /**
@@ -114,28 +133,30 @@ export function createH5TokenManager(): H5TokenManager {
    * in flight was started after that token was issued, so it stays shared: concurrent requests
    * renew through one auth.getH5Token (single flight, contracts 10002).
    */
-  function dropCached(token?: H5Token): void {
-    if (token === undefined || cached === token) cached = null;
+  function dropCached(stamped?: Stamped): void {
+    if (stamped === undefined || cached === stamped) cached = null;
   }
 
-  function acquire(): Promise<H5Token> {
+  /** One shared auth.getH5Token; the result is stamped with the generation it started in. */
+  function acquire(): Promise<Stamped> {
     if (inflight !== null) return inflight;
     const cap = has('auth.getH5Token');
     if (cap === null) {
       return Promise.reject(new BridgeError(90001, 'auth.getH5Token is not supported'));
     }
     const epoch = generation;
-    const pending: Promise<H5Token> = call(cap, {}).then(
+    const pending: Promise<Stamped> = call(cap, {}).then(
       (result) => {
         const token = parseToken(result);
+        const stamped = token === null ? null : Object.freeze({ token, generation: epoch });
         if (generation === epoch) {
-          cached = token;
+          cached = stamped;
           inflight = null;
         }
-        if (token === null) {
+        if (stamped === null) {
           throw new BridgeError(NATIVE_ERROR, 'auth.getH5Token returned a malformed result');
         }
-        return token;
+        return stamped;
       },
       (error: unknown) => {
         if (generation === epoch) {
@@ -145,42 +166,55 @@ export function createH5TokenManager(): H5TokenManager {
         throw error;
       },
     );
-    inflight = pending;
+    // invalidate() may run synchronously inside postMessage; never share a detached acquisition.
+    if (generation === epoch) inflight = pending;
     return pending;
   }
 
   /**
-   * A token is handed out only if no invalidate() happened while it was being obtained: an
-   * acquisition that started before invalidate() (account switch or logout) is discarded, success
-   * or failure, and the caller waits for a fresh one instead (F1-01l).
+   * A token of the current generation. An acquisition that started before invalidate() is
+   * discarded, success or failure, and a fresh one is awaited instead (F1-01l). A write with a
+   * cached read_only token asks native once more and uses whatever scope comes back; the server
+   * then answers 10403 h5_read_only if it is still read_only (BR-ID-32).
    */
-  async function getToken({ forWrite }: { forWrite: boolean }): Promise<H5Token> {
-    for (;;) {
+  async function obtain(forWrite: boolean): Promise<Stamped> {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      if (cached !== null && !(forWrite && cached.token.scope === 'read_only')) return cached;
+      // acquire() either joins the in-flight acquisition or starts one; both belong to this
+      // generation because invalidate() detaches the in-flight one.
       const epoch = generation;
-      // A read_only token is fine for GET; before anything else ask native again (BR-ID-32).
-      if (cached !== null && !(forWrite && cached.scope === 'read_only')) return cached;
-      let token: H5Token;
+      let stamped: Stamped;
       try {
-        token = await acquire();
+        stamped = await acquire();
       } catch (error) {
         if (generation === epoch) throw error;
         continue;
       }
-      if (generation === epoch) return token;
+      if (stamped.generation === generation) return stamped;
     }
+    throw tooManyInvalidations();
+  }
+
+  async function getToken({ forWrite }: { forWrite: boolean }): Promise<H5Token> {
+    return (await obtain(forWrite)).token;
   }
 
   /**
-   * The token request() passes to send: re-checked right before sending, so an invalidate() that
-   * lands between acquisition and send still forces a fresh token. Once send has been called the
-   * request is not withdrawn; only later requests see the invalidation.
+   * Obtains a token and calls send in the same synchronous continuation as the final generation
+   * check, so no invalidate() can slip in between. Once send has been called the request is not
+   * withdrawn; only later requests see the invalidation.
    */
-  async function tokenForSend(forWrite: boolean): Promise<H5Token> {
-    for (;;) {
-      const epoch = generation;
-      const token = await getToken({ forWrite });
-      if (generation === epoch) return token;
+  async function sendCurrent<T>(
+    forWrite: boolean,
+    send: (token: string) => Promise<H5ApiResponse<T>>,
+  ): Promise<{ stamped: Stamped; response: H5ApiResponse<T> }> {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      const stamped = await obtain(forWrite);
+      if (stamped.generation !== generation) continue;
+      const sent = send(stamped.token.token);
+      return { stamped, response: await sent };
     }
+    throw tooManyInvalidations();
   }
 
   async function request<T>(
@@ -188,15 +222,15 @@ export function createH5TokenManager(): H5TokenManager {
     send: (token: string) => Promise<H5ApiResponse<T>>,
   ): Promise<H5ApiResponse<T>> {
     const forWrite = method.trim().toUpperCase() !== 'GET';
-    let current = await tokenForSend(forWrite);
-    let response = await send(current.token);
-    if (response.code === TOKEN_EXPIRED) {
+    let { stamped, response } = await sendCurrent(forWrite, send);
+    // 10002 on a token from before an invalidate() (another account, or logged out) is returned
+    // as is: replaying it with the new generation's token would act for a different account.
+    if (response.code === TOKEN_EXPIRED && stamped.generation === generation) {
       // Reuses a newer cached token or an acquisition already in flight; otherwise asks native.
-      dropCached(current);
-      current = await tokenForSend(forWrite);
-      response = await send(current.token);
+      dropCached(stamped);
+      ({ stamped, response } = await sendCurrent(forWrite, send));
       // Still expired after one renewal: report the failure, keep nothing stale, no third try.
-      if (response.code === TOKEN_EXPIRED) dropCached(current);
+      if (response.code === TOKEN_EXPIRED) dropCached(stamped);
     }
     if (isReadOnlyDenial(response)) dropCached();
     return response;
