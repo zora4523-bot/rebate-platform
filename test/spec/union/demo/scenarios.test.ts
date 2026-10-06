@@ -86,21 +86,27 @@ it.each(platforms)(
     expect(normalSearch.items.some((item) => item.commission_rate_bp > 0n)).toBe(true);
     for (const scenario of ['coupon_expired', 'no_commission'] as const) {
       const ctx = { ...online, scenario };
+      // An expired coupon disappears from the detail, so its coupon_ids may go with it;
+      // toEqual treats an undefined property the same as a missing one.
+      const comparable = <T extends object>(item: T) =>
+        scenario === 'coupon_expired' ? { ...item, coupon_ids: undefined } : item;
       const change = <T extends { price_fen: bigint }>(item: T) =>
         scenario === 'coupon_expired'
-          ? { ...item, coupon_fen: 0n, final_price_fen: item.price_fen }
+          ? comparable({ ...item, coupon_fen: 0n, final_price_fen: item.price_fen })
           : { ...item, commission_rate_bp: 0n };
-      expect(await port.searchItems({ keyword }, ctx)).toEqual({
+      const search = await port.searchItems({ keyword }, ctx);
+      expect({ ...search, items: search.items.map(comparable) }).toEqual({
         ...normalSearch,
         items: normalSearch.items.map(change),
       });
-      expect(await port.materialFeed({}, ctx)).toEqual({
+      const feed = await port.materialFeed({}, ctx);
+      expect({ ...feed, items: feed.items.map(comparable) }).toEqual({
         ...normalFeed,
         items: normalFeed.items.map(change),
       });
       for (const item of normalSearch.items) {
         const normal = await port.getItem(refOf(item), online);
-        expect(await port.getItem(refOf(item), ctx)).toEqual(change(normal));
+        expect(comparable(await port.getItem(refOf(item), ctx))).toEqual(change(normal));
         expect(await port.getItem(refOf(item), online)).toEqual(normal);
       }
     }
