@@ -1,3 +1,7 @@
+import type { bridge } from '@couli/contracts-ts';
+
+export type ConformancePlatform = bridge.BridgeMethods['app.getEnv']['result']['platform'];
+
 export type CaseCategory =
   'normal' | 'timeout' | 'unsupported' | 'bad_params' | 'no_gesture' | 'negative';
 
@@ -11,6 +15,7 @@ export interface ConformanceCase {
   category: CaseCategory;
   expect: CaseExpectation;
   trigger: CaseTrigger;
+  platforms?: ConformancePlatform[];
 }
 
 export interface CaseResult extends ConformanceCase {

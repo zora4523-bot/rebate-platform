@@ -3,12 +3,14 @@ import { expect, vi } from 'vitest';
 import { BridgeContract } from '@couli/bridge-sdk';
 import type {
   BridgeEvent,
+  BridgeErrorCode,
   BridgeRequest,
   BridgeResponse,
   BridgeTransport,
 } from '@couli/bridge-sdk';
 import type {
   ConformanceCase,
+  ConformancePlatform,
   ConformanceResult,
 } from '../../../../apps/h5/src/entries/conformance/model.ts';
 
@@ -125,11 +127,30 @@ export function validParams(schema: Schema, value: unknown): boolean {
 }
 
 export const mvp = Object.entries(contract.bridgeMethods).filter(([, meta]) =>
-  Object.values(meta.since).every((version) => version !== null),
+  Object.values(meta.since).some((version) => version !== null),
 );
 export const deferred = Object.entries(contract.bridgeMethods).filter(([, meta]) =>
+  Object.values(meta.since).every((version) => version === null),
+);
+export const partial = mvp.filter(([, meta]) =>
   Object.values(meta.since).some((version) => version === null),
 );
+export const platforms = Object.keys(
+  contract.bridgeMethods['app.getEnv'].since,
+) as ConformancePlatform[];
+export const openAppTarget = Object.entries(contract.apps).find(([, app]) => !app.trade_only)?.[0];
+export const normalMethods = mvp.filter(
+  ([method]) => method !== 'ext.openApp' || openAppTarget !== undefined,
+);
+
+export function forPlatform(
+  rows: readonly ConformanceCase[],
+  platform: ConformancePlatform | null,
+): ConformanceCase[] {
+  return rows.filter(
+    (row) => !row.platforms || (platform !== null && row.platforms.includes(platform)),
+  );
+}
 
 // Safety oracle, not a duplicate method catalogue: matching normals must require a tap.
 export function requiresTap(method: string): boolean {
@@ -145,13 +166,39 @@ export function installBridge(
     msg: '',
     data: {},
   }),
+  environment: { platform?: ConformancePlatform | null; code?: BridgeErrorCode } = {},
 ) {
   const listeners = new Set<(event: BridgeEvent) => void>();
+  const platform = environment.platform === undefined ? 'ios' : environment.platform;
+  // Keep bootstrap traffic separate so existing assertions still count actual case calls.
+  // The page resolves the platform first, then invokes each selected case independently.
+  const environmentCalls = vi.fn(
+    (request: BridgeRequest): BridgeResponse | Promise<BridgeResponse> => ({
+      id: request.id,
+      code: environment.code ?? 0,
+      msg: '',
+      data: platform === null ? {} : { platform },
+    }),
+  );
   const postMessage = vi.fn(respond);
+  let environmentRead = false;
+  const transportPostMessage = vi.fn((request: BridgeRequest) => {
+    if (
+      !environmentRead &&
+      new URLSearchParams(window.location.search).get('frame') !== 'child' &&
+      request.method === 'app.getEnv'
+    ) {
+      environmentRead = true;
+      return environmentCalls(request);
+    }
+    return postMessage(request);
+  });
   const transport: BridgeTransport = {
     version: 1,
-    methods: mvp.map(([method]) => method),
-    postMessage,
+    methods: mvp
+      .filter(([, meta]) => meta.since[platform ?? 'ios'] !== null)
+      .map(([method]) => method),
+    postMessage: transportPostMessage,
     subscribe(listener) {
       listeners.add(listener);
       return () => {
@@ -162,6 +209,8 @@ export function installBridge(
   vi.stubGlobal('__REBATE_BRIDGE__', transport);
   return {
     postMessage,
+    environmentCalls,
+    transportPostMessage,
     emit(event: BridgeEvent) {
       for (const listener of listeners) listener(event);
     },
@@ -201,8 +250,14 @@ export function assertResultSchema(value: ConformanceResult): void {
       'ms',
       'outcome',
       'pass',
+      ...(row.platforms ? ['platforms'] : []),
       'trigger',
     ]);
+    if (row.platforms) {
+      expect(row.platforms.length).toBeGreaterThan(0);
+      expect(new Set(row.platforms).size).toBe(row.platforms.length);
+      for (const platform of row.platforms) expect(platforms).toContain(platform);
+    }
     expect(typeof row.id).toBe('string');
     expect(typeof row.method).toBe('string');
     expect(['normal', 'timeout', 'unsupported', 'bad_params', 'no_gesture', 'negative']).toContain(

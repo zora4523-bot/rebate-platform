@@ -12,6 +12,10 @@ import {
   deferred,
   linkPatternHosts,
   mvp,
+  normalMethods,
+  openAppTarget,
+  partial,
+  platforms,
   rawContract,
   requiresTap,
   sampleCases,
@@ -19,7 +23,7 @@ import {
   validParams,
 } from './kit.ts';
 
-it('[AC-F1-01d-CASES#1] 用例 ID 唯一、稳定排序，normal 完整覆盖三端 MVP', () => {
+it('[AC-F1-01d-CASES#1] 用例 ID 唯一、稳定排序，normal 覆盖至少一端支持且有合法目标的方法', () => {
   const rows = buildCaseTable();
   const ids = rows.map((row) => row.id);
   expect(ids.length).toBeGreaterThan(0);
@@ -31,9 +35,26 @@ it('[AC-F1-01d-CASES#1] 用例 ID 唯一、稳定排序，normal 完整覆盖三
       .filter((row) => row.category === 'normal')
       .map((row) => row.method)
       .sort(),
-  ).toEqual(mvp.map(([method]) => method).sort());
+  ).toEqual(normalMethods.map(([method]) => method).sort());
   for (const row of rows) {
-    expect(Object.keys(row).sort()).toEqual(['category', 'expect', 'id', 'method', 'trigger']);
+    expect(Object.keys(row).sort()).toEqual([
+      'category',
+      'expect',
+      'id',
+      'method',
+      ...(row.platforms ? ['platforms'] : []),
+      'trigger',
+    ]);
+    const partialMethod = partial.find(([method]) => row.method === method);
+    if (partialMethod) {
+      const expectedPlatforms = platforms.filter((platform) =>
+        row.category === 'unsupported'
+          ? row.id === `${row.method}/unsupported/${platform}` &&
+            partialMethod[1].since[platform] === null
+          : partialMethod[1].since[platform] !== null,
+      );
+      expect(row.platforms?.slice().sort()).toEqual(expectedPlatforms.sort());
+    } else expect(row.platforms).toBeUndefined();
     expect(['auto', 'tap', 'harness']).toContain(row.trigger);
     if (row.id === 'frame/negative/subframe') {
       expect(row).toEqual({
@@ -61,9 +82,12 @@ it.each(mvp)('[AC-F1-01d-CASES#2] %s 的五类覆盖、超时、级别与手势�
     (row) => row.method === method && row.id !== 'frame/negative/subframe',
   );
   const normal = rows.filter((row) => row.category === 'normal');
-  expect(normal).toHaveLength(1);
-  expect(normal[0]).toMatchObject({ id: `${method}/normal`, expect: { ok: true } });
-  if (requiresTap(method) || meta.level === 'L2') expect(normal[0]?.trigger).toBe('tap');
+  const hasNormal = method !== 'ext.openApp' || openAppTarget !== undefined;
+  expect(normal).toHaveLength(hasNormal ? 1 : 0);
+  if (hasNormal) {
+    expect(normal[0]).toMatchObject({ id: `${method}/normal`, expect: { ok: true } });
+    if (requiresTap(method) || meta.level === 'L2') expect(normal[0]?.trigger).toBe('tap');
+  }
   if (
     [
       'app.getEnv',
@@ -76,9 +100,14 @@ it.each(mvp)('[AC-F1-01d-CASES#2] %s 的五类覆盖、超时、级别与手势�
     expect(normal[0]?.trigger).toBe('auto');
   }
   const schema = rawContract.methods[method]!.params;
-  expect(validParams(schema, paramsForCase(normal[0]!)), `${method}: valid normal params`).toBe(
-    true,
-  );
+  if (hasNormal) {
+    expect(validParams(schema, paramsForCase(normal[0]!)), `${method}: valid normal params`).toBe(
+      true,
+    );
+    if (method === 'ext.openApp') {
+      expect(paramsForCase(normal[0]!)).toMatchObject({ target: openAppTarget });
+    }
+  }
 
   const timeout = rows.filter((row) => row.category === 'timeout');
   expect(timeout).toHaveLength(meta.model === 'async' && meta.timeout_ms !== null ? 1 : 0);
@@ -125,10 +154,15 @@ it.each(mvp)('[AC-F1-01d-CASES#2] %s 的五类覆盖、超时、级别与手势�
   }
 });
 
-it('[AC-F1-01d-CASES#3] unsupported 包含未知方法与所有有 null since 的方法，不进入 MVP 正常组', () => {
+it('[AC-F1-01d-CASES#3] unsupported 区分全端 P1 与部分端 null since，不能误判支持端', () => {
   const rows = buildCaseTable();
   const unsupported = rows.filter((row) => row.category === 'unsupported');
-  expect(unsupported).toHaveLength(deferred.length + 1);
+  const unsupportedPlatforms = partial.flatMap(([method, meta]) =>
+    platforms
+      .filter((platform) => meta.since[platform] === null)
+      .map((platform) => ({ method, platform })),
+  );
+  expect(unsupported).toHaveLength(deferred.length + unsupportedPlatforms.length + 1);
   const unknown = unsupported.filter((row) => !Object.hasOwn(contract.bridgeMethods, row.method));
   expect(unknown).toHaveLength(1);
   for (const row of unsupported)
@@ -143,6 +177,19 @@ it('[AC-F1-01d-CASES#3] unsupported 包含未知方法与所有有 null since �
         expect: { code: 90001 },
       },
     ]);
+  }
+  for (const { method, platform } of unsupportedPlatforms) {
+    expect(unsupported.filter((row) => row.id === `${method}/unsupported/${platform}`)).toEqual([
+      {
+        id: `${method}/unsupported/${platform}`,
+        method,
+        category: 'unsupported',
+        trigger: 'auto',
+        expect: { code: 90001 },
+        platforms: [platform],
+      },
+    ]);
+    expect(rows.some((row) => row.id === `${method}/unsupported`)).toBe(false);
   }
 });
 
