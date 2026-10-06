@@ -1,0 +1,25 @@
+id: B3-01d
+repo: rebate-platform
+title: 评测框架第四段：格式错误的输出里可读的卡片帧、卡片数据源与转链登记也计入中断题的已完成轮次核对；有卡片但缺数据源记为未核实
+type: impl
+# 2026-10-06 入账（会话「Agent 落地方案」，B3 线由本会话负责）。B3-01c 代码评审第 3 轮 Codex S2（couli-runs/B3-01c/review-codex-r3.json）：
+# 被测 Agent 返回不符合 TurnOutput 形状的轮次（判 agent_error）时，replay.ts 只保留文字增量，丢掉可读的卡片帧与 trace 的
+# card_sources、link_registrations，factsOf 因而没有 partial_checks，卡片数值不一致可被漏判（BR-AI-21「卡片数值与接口一致 100%」）。
+# 本段：异常输出中能读出的卡片帧、card_sources、link_registrations 照常进 partial_checks；有卡片但缺数据源记为未覆盖（不放行），
+# 与 B3-01c 的「缺数据为未覆盖」同口径。不改 B3-01c 的冻结规则测试与指标定义。
+# 分工按规划/11 §1.1（2026-10-05）：Codex 先写规则测试（test/spec/evals-malformed/**，先红），Claude 新子代理过审，Opus 5.5 实现。
+refs: [BR-AI-21]
+refs_hash:
+  BR-AI-21: 7e5eb4e48745
+deps: [B3-01c]
+paths:
+  - 'packages/evals/**'
+test_paths:
+  - 'test/spec/evals-malformed/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/evals-malformed/**'
+status: todo
+pr: null
