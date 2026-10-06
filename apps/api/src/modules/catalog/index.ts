@@ -6,6 +6,17 @@
 // test/spec/catalog/item-ref/**. Task B1-05f: CardAssembler (priced ProductCard per request,
 // BR-PRICE-01/06/07/08/09/11/17/21) and the non-production demo quoter, rule tests
 // test/spec/catalog/card/**; no Nest provider until B1-06c wires the link registrar.
+// Task B1-05i: createCatalogCardEntry, the single card entry split by D33 price state (retrieval
+// skips a price anomaly, an active query fails closed with price_unavailable; PRICE_ANOMALY is
+// logged there), rule tests test/spec/catalog/price-state/**.
+export { createCatalogCardEntry } from './application/card-entry.ts';
+export type {
+  CatalogCardEntry,
+  CatalogCardEntryOptions,
+  CatalogCardInput,
+  CatalogCardResult,
+  CatalogCardScene,
+} from './application/card-entry.ts';
 export { createCatalog } from './application/catalog.ts';
 export type { CatalogOptions } from './application/catalog.ts';
 export { createCardAssembler, createDemoRebateQuoter } from './application/card-assembler.ts';

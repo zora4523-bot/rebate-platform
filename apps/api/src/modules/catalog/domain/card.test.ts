@@ -20,9 +20,15 @@ describe('card rules', () => {
   });
 
   it('[AC-B1-05f] BR-PRICE-17 / 21: disclaimer order, cta and tags', () => {
-    expect(disclaimerKeysFor('normal')).toEqual(['price_basis', 'rebate_estimate']);
-    expect(disclaimerKeysFor('price_compare_risk')).toEqual(['price_basis', 'rebate_compare']);
-    expect(disclaimerKeysFor('no_rebate')).toEqual(['price_basis']);
+    expect(disclaimerKeysFor('normal', 1n)).toEqual(['price_basis', 'rebate_estimate']);
+    expect(disclaimerKeysFor('price_compare_risk', 1n)).toEqual(['price_basis', 'rebate_compare']);
+    expect(disclaimerKeysFor('no_rebate', 1n)).toEqual(['price_basis']);
+    expect(disclaimerKeysFor('normal', 0n)).toEqual(['price_basis.general', 'rebate_estimate']);
+    expect(disclaimerKeysFor('price_compare_risk', 0n)).toEqual([
+      'price_basis.general',
+      'rebate_compare',
+    ]);
+    expect(disclaimerKeysFor('no_rebate', 0n)).toEqual(['price_basis.general']);
     expect(ctaKeyFor('no_rebate', 100n)).toBe('btn.buy.no_rebate');
     expect(ctaKeyFor('normal', 0n)).toBe('btn.buy');
     expect(ctaKeyFor('price_compare_risk', 1n)).toBe('btn.buy.coupon');

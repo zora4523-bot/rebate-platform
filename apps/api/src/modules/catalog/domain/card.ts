@@ -30,11 +30,16 @@ export function quoteBasisFor(platform: Platform, entrySource: string | null): Q
 
 export type CardBasis = QuoteBasis | 'no_rebate';
 
-/** BR-PRICE-17: price_basis first; then rebate_estimate (normal) or rebate_compare (range). */
-export function disclaimerKeysFor(basis: CardBasis): string[] {
-  if (basis === 'normal') return ['price_basis', 'rebate_estimate'];
-  if (basis === 'price_compare_risk') return ['price_basis', 'rebate_compare'];
-  return ['price_basis'];
+/**
+ * BR-PRICE-17 / BR-PRICE-03: the price-basis key goes first — price_basis when the card shows a
+ * coupon price (coupon_fen > 0), price_basis.general when it only shows the selling price; then
+ * rebate_estimate (normal) or rebate_compare (range); no_rebate adds no rebate key.
+ */
+export function disclaimerKeysFor(basis: CardBasis, couponFen: bigint): string[] {
+  const priceKey = couponFen > 0n ? 'price_basis' : 'price_basis.general';
+  if (basis === 'normal') return [priceKey, 'rebate_estimate'];
+  if (basis === 'price_compare_risk') return [priceKey, 'rebate_compare'];
+  return [priceKey];
 }
 
 /** BR-PRICE-21 three states: 有券有返 / 无券有返 / 无返利 (button keys per BR-TEXT-12). */

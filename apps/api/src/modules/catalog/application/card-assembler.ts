@@ -190,7 +190,7 @@ export function createCardAssembler(options: CardAssemblerOptions): CardAssemble
       // Response instant: read after the quote and registration (BR-PRICE-11).
       age_sec: ageSeconds(quotedAtMs, clock.now().getTime()),
       source,
-      disclaimer_keys: disclaimerKeysFor(cardBasis),
+      disclaimer_keys: disclaimerKeysFor(cardBasis, item.coupon_fen),
       availability: 'ok',
     };
   }
