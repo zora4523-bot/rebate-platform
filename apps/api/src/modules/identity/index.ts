@@ -10,13 +10,18 @@ export { normalize_phone } from './domain/normalize-phone.ts';
 export type { NormalizedPhone } from './domain/normalize-phone.ts';
 export type { SmsConfigReader } from './application/sms-codes.ts';
 export type { MinimumVersionReader } from './application/session-scope.ts';
+// Account creation core (B1-02i): SMS login, third-party first login and the landing page reuse it.
 export {
   createRegistrationService,
   createDefaultInviteCodeFilter,
   countDeviceRegistrations,
   registrationConstants,
+  DEFAULT_AVATAR,
+  PHONE_BLIND_INDEX_CONTEXT,
+  PHONE_CIPHER_CONTEXT,
 } from './application/registration.ts';
 export type {
+  RegisterMethod,
   RegistrationCommand,
   RegistrationOptions,
   RegistrationResult,
