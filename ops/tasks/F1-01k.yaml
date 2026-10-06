@@ -1,26 +1,31 @@
 id: F1-01k
 repo: rebate-platform
-title: 验证底座加构建产物冒烟：容器里构建 H5 三入口与后台产物、在回环地址起静态预览，用 Playwright 打开每个入口检查首屏渲染、无未捕获错误与体积预算，截图导出到运行目录；pnpm verify 与 CI 同样跑
+title: 验证底座加构建产物冒烟：容器里构建 H5 三入口与后台产物、回环地址起静态预览，用 playwright 库驱动 Chromium 打开每个入口，检查首屏渲染、无未捕获错误与体积预算，截图导出；pnpm verify、隔离红测与 CI 同样跑
 type: guard-change
-# 2026-10-06 入账（前端线 f1-frontend-2）。负责人 2026-10-06 就 blocked B-2 选 A，方案原文含「构建前端产物 + Playwright 冒烟与截图」；
-# F1-01j 先做组件与页面级的浏览器测试（Vitest 浏览器模式），本任务补构建产物这一层（F1-01j 台账评审 S2-1 拆出）。首批页面任务（F1-03 起）依赖它。
-# 待 F1-01j 合并后写任务书：运行器取 Playwright Test 还是复用 Vitest 浏览器项目里的 globalSetup 起预览服务、判红口径（规划/11 §2.3 第 3 步：开发服务器
-# 与 mock 健康检查通过、页面打开后因断言失败或等不到目标元素而红）、产物体积预算（03 §12）怎样接入。不碰 apps/** 源码，产物只在容器的 tmpfs 里。
-# 运行器定了再按评审补 paths（选 Playwright Test 时要加 protected-paths.json、test-guard、red-plan、两份 README，并另立 @playwright/test 的 deps 任务），
-# 派发前重新评审台账。全是保护路径，合并前要负责人批准标签。
+# 2026-10-06 入账（f1-frontend）；同日 f1-frontend-2 定运行器重写（F1-01j 台账评审 S2-4）。负责人就 B-2 选 A，原文含「构建前端产物 + Playwright 冒烟与截图」，
+# F1-01j 做了组件级浏览器测试，本任务补构建产物这一层，首批页面（F1-03 起）依赖它。运行器（00 §8 第 1 类）：不引 @playwright/test——test 包加 Node 环境的
+# Vitest 项目 build-smoke（spec/**/*.smoke.test.ts），globalSetup 在子进程里 `vite build` H5 三入口（APP_ENV=test）与后台到 tmpfs，127.0.0.1 每入口一个 0 号端口
+# 的只读静态服务，健康检查（每个入口回 200）不过就抛错；测试用已装的 playwright 库启动镜像里的 Chromium。接口一律经 page.route 返回契约示例的假数据
+# （mock 边界，不连真后端）。判红（11 §2.3 第 3 步）：只有 AssertionError 与等元素超时（locator.waitFor 的 TimeoutError）算有效红；globalSetup 失败、
+# page.goto 失败、net::ERR_*、launch 失败、页面脚本错误一律无效（未捕获错误只收集成报告附件，不写成断言）；red-check 为 build-smoke 补判因与夹具。
+# 体积预算（03 §12）在真实产物上算。截图只导出、不比基准（基准比对另议）。自举同 F1-01j：非 task 分支 + 负责人标签（owner waiver），候选副本演示有效 / 无效红。
+# 要点：① red-projects.json 加 build-smoke，单元层排除 *.smoke.test.ts；② vitest.shared 加 smokeConfig（严格设置不变）；③ test:smoke 进根 verify 与 CI；
+# ④ --browser 同时跑并导出截图；⑤ globalSetup 与静态服务放 tools/ops/build-smoke/**（已属第三类保护路径，免改保护清单）；⑥ 两份 README。按第 24 条加标签。
 refs: []
 refs_hash: {}
 deps: [F1-01j, F1-01c]
 paths:
   - 'tools/ops/verify-image/**'
-  - 'tools/ops/verify-container.sh'
-  - 'tools/ops/*.test.ts'
-  - 'tools/guard/lib/red-check.ts'
-  - 'tools/guard/lib/red-check.test.ts'
-  - 'test/vitest.browser.config.ts'
-  - 'test/playwright.config.ts'
+  - 'tools/ops/verify-container*'
+  - 'tools/ops/red-plan*'
+  - 'tools/ops/README.md'
+  - 'tools/agent/README.md'
+  - 'tools/guard/lib/red-check{*,-fixtures/**}'
+  - 'test/vitest{,.browser,.build-smoke}.config.ts'
+  - 'tools/ops/build-smoke/**'
   - 'test/package.json'
   - 'package.json'
+  - 'vitest.shared.ts'
   - '.github/workflows/ci.yml'
 test_paths:
   - 'test/spec/frontend/build-smoke/**'
