@@ -1,4 +1,4 @@
-import type { ScanHit } from './index.ts';
+import type { ScanHit } from './types.ts';
 import type { PublicItem } from './manifest.ts';
 
 /** 私钥头即使嵌在其他内容中也不能被误报或 SDK 豁免覆盖。 */

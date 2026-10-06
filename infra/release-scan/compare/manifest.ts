@@ -1,5 +1,5 @@
 import { parseYamlLite, YamlLiteError } from '../../../tools/lib/yaml-lite.ts';
-import type { ClientPlatform, PublicIdCategory } from './index.ts';
+import type { ClientPlatform, PublicIdCategory } from './types.ts';
 
 export interface PublicItem {
   id: string;
