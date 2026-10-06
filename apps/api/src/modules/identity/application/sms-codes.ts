@@ -11,20 +11,25 @@
 //      (44003, B1-03g) → deviceQuota (42901, B1-03g). They get the request with the normalised
 //      number, the device id and the client IP;
 //   4. one atomic call reserves the per-phone quota (60 s / natural hour / natural day / rolling
-//      24 h) and stores the new random code as the candidate of (app, phone, purpose)
-//      (infra/sms-code-store.ts): a limit → 42901 with the latest release; a candidate equal to a
-//      code the record still knows → another code is drawn (at most SMS_CODE_DRAWS, then 50001);
-//      Redis unavailable → 42901, Retry-After 5, no SMS. From here the previous code is void;
-//   5. the code goes to the sender port, bounded by sendTimeoutMs (a timeout is «unknown»):
+//      24 h, uncommitted sends counted over [reservation, reservation + D], D = sendTimeoutMs +
+//      SMS_IN_FLIGHT_MARGIN_MS) and stores the new random code as the reserved candidate of (app,
+//      phone, purpose) (infra/sms-code-store.ts): a limit → 42901 with the latest release; a
+//      candidate equal to a code the record still knows → another code is drawn (at most
+//      SMS_CODE_DRAWS, then 50001); Redis unavailable or no reply → a best-effort release of the
+//      token, then 42901, Retry-After 5, no SMS (the previous code stays valid);
+//   5. mark (at most two attempts) turns the candidate into the sending one: from here the
+//      previous code is void. No answer, or the candidate is gone → best-effort release, 42901,
+//      Retry-After 5, no SMS;
+//   6. the code goes to the sender port, bounded by sendTimeoutMs (a timeout is «unknown»):
 //      - accepted or unknown (timeout, a thrown adapter error, any other answer): counted as sent
 //        (ruling §9.5 #1) — the commit counts the send at the time the provider answered and puts
 //        the candidate in force; it is retried once with the same token (idempotent, nothing is
-//        resent). If it still fails, the reservation keeps counting at its reservation time and the
+//        resent). If it still fails, the reservation keeps counting conservatively and the
 //        candidate stays the current code, so the answer is still 0. afterAccepted runs (B1-03g
 //        counters; its failure is logged, never answered). resend_after_sec is the seconds until
 //        the next send may go (≥ 60);
 //      - rejected: the reservation and the candidate are dropped (nothing counted, the previous
-//        code is in force again), the answer is 50001.
+//        code is in force again with the candidate's wrong tries added), the answer is 50001.
 // verifyAndConsume(): see its comment.
 //
 // Nothing is logged that identifies the number or the code: no phone in any form, no code, no
@@ -140,10 +145,15 @@ export interface SmsCodeService {
 
 /** Default bound of one send (review round 1 S3-2). */
 export const SMS_SEND_TIMEOUT_MS = 10_000;
+/**
+ * Added to sendTimeoutMs for the in-flight bound D of an uncommitted send: the mark attempts before
+ * the send and the clock read after it (review round 2).
+ */
+export const SMS_IN_FLIGHT_MARGIN_MS = 5_000;
 /** Codes drawn before a run of collisions answers 50001 (review round 1). */
 export const SMS_CODE_DRAWS = 8;
-/** Commit attempts with the same token after the provider answered (the first and one retry). */
-const COMMIT_ATTEMPTS = 2;
+/** Attempts of mark and of commit with the same token (the first and one retry). */
+const ATTEMPTS = 2;
 
 const CODE_FORMAT = /^[0-9]{6}$/;
 const CODE_SPACE = 10 ** SMS_CODE_DIGITS;
@@ -166,7 +176,9 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
   if (!Number.isSafeInteger(sendTimeoutMs) || sendTimeoutMs < 1) {
     throw new TypeError('createSmsCodeService: sendTimeoutMs must be a positive integer');
   }
-  const store = createSmsCodeStore(options.redis);
+  const store = createSmsCodeStore(options.redis, {
+    inFlightMs: sendTimeoutMs + SMS_IN_FLIGHT_MARGIN_MS,
+  });
   // Domain-separated inputs of the one injected HMAC; app ids are [a-z0-9_] and purposes fixed.
   const phoneKey = (phone: string): string => options.hmac(`phone:${phone}`);
   const keysOf = (appId: string, purpose: SmsPurpose, phone: string): SmsKeys => {
@@ -214,15 +226,24 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
     return 'unknown';
   }
 
-  /** Commit with the same token, retried once on a Redis failure; null when it did not run. */
-  async function commit(keys: SmsKeys, token: string, acceptedAt: number): Promise<number | null> {
+  /** Runs a store step, retried once on a Redis failure; null when it did not answer. */
+  async function retried<T>(step: () => Promise<T>): Promise<T | null> {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await store.commit(keys, token, acceptedAt);
+        return await step();
       } catch (error) {
         if (!(error instanceof RedisUnavailableError)) throw error;
-        if (attempt >= COMMIT_ATTEMPTS) return null;
+        if (attempt >= ATTEMPTS) return null;
       }
+    }
+  }
+
+  /** Release of a send that never went out; idempotent, its failure only logged. */
+  async function releaseQuietly(keys: SmsKeys, token: string, fields: object): Promise<void> {
+    try {
+      await store.release(keys, token, nowMs());
+    } catch (error) {
+      logger.warn({ ...fields, error_class: errorClass(error) }, 'sms_release_failed');
     }
   }
 
@@ -261,6 +282,9 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
       } catch (error) {
         if (!(error instanceof RedisUnavailableError)) throw error;
         logger.warn({ app_id: appId, purpose, reason: error.reason }, 'sms_quota_unavailable');
+        // The call may have run with its reply lost: undo it, so that nothing counts and the
+        // reserved candidate goes (the code in force was never void).
+        await releaseQuietly(keys, token, { app_id: appId, purpose });
         return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
       }
       if (reservation.kind === 'collision') {
@@ -273,24 +297,31 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
         return { code: 42901, retryAfterSec };
       }
 
+      // From here the candidate is the current code; without that, no SMS goes out.
+      const marked = await retried(() => store.mark(keys, token, nowMs()));
+      if (marked !== true) {
+        logger.warn(
+          { app_id: appId, purpose, reason: marked === null ? 'unavailable' : 'candidate_gone' },
+          'sms_mark_failed',
+        );
+        await releaseQuietly(keys, token, { app_id: appId, purpose });
+        return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
+      }
+
       const delivery = await deliver({ app_id: appId, phone, purpose, code });
       if (delivery === 'rejected') {
-        try {
-          await store.release(keys, token, nowMs());
-        } catch (error) {
-          if (!(error instanceof RedisUnavailableError)) throw error;
-          // Counted as sent and the candidate stays current: stricter, never looser.
-          logger.warn({ app_id: appId, purpose, reason: error.reason }, 'sms_release_failed');
-        }
+        // A failed release leaves the send counted and the candidate current: stricter, not looser.
+        await releaseQuietly(keys, token, { app_id: appId, purpose });
         logger.warn({ app_id: appId, purpose }, 'sms_code_rejected');
         return { code: 50001 };
       }
 
-      // The 60-second window and the code's lifetime start when the provider answered.
+      // The 60-second window starts when the provider answered; the code's lifetime keeps the
+      // reservation time.
       const acceptedAt = nowMs();
-      let releaseAt = await commit(keys, token, acceptedAt);
+      let releaseAt = await retried(() => store.commit(keys, token, acceptedAt));
       if (releaseAt === null) {
-        // The reservation still counts (at its reservation time) and the candidate is current.
+        // The reservation still counts (conservatively) and the candidate is current.
         logger.error({ app_id: appId, purpose }, 'sms_commit_failed');
         releaseAt = Math.max(reservation.releaseAtMs, acceptedAt + SMS_RESEND_INTERVAL_MS);
       }

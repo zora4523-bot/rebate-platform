@@ -22,17 +22,17 @@ import {
 const NUMBER = '13912345678';
 const START = '2026-10-06T10:00:00+08:00';
 
-type Kind = 'reserve' | 'commit' | 'release' | 'verify';
+type Kind = 'reserve' | 'mark' | 'commit' | 'release' | 'verify';
 interface Call {
   readonly kind: Kind;
   readonly namespace: string;
   readonly options: RedisScriptOptions;
 }
 
-function kindOf(script: string, options: RedisScriptOptions): Kind {
-  if (options.keys.length === 1) return 'verify';
-  if (script.includes('local candidate = ARGV[14]')) return 'reserve';
-  return script.includes('ZSCORE') ? 'commit' : 'release';
+function kindOf(script: string): Kind {
+  const kind = /^-- sms:([a-z]+)/.exec(script)?.[1];
+  if (kind === undefined) throw new Error('unlabelled script');
+  return kind as Kind;
 }
 
 function setup(
@@ -40,6 +40,8 @@ function setup(
     hooks?: SmsHooks;
     sender?: SmsSender;
     reply?: (kind: Kind, options: RedisScriptOptions) => unknown;
+    /** Answer of mark (default: 1, the candidate is now sending). */
+    mark?: () => unknown;
     config?: unknown;
     sendTimeoutMs?: number;
   } = {},
@@ -56,6 +58,7 @@ function setup(
     ((kind: Kind) =>
       ({
         reserve: [1, clock.now().getTime() + 60_000],
+        mark: 1,
         commit: clock.now().getTime() + 60_000,
         release: 1,
         verify: 3,
@@ -69,8 +72,9 @@ function setup(
         throw new Error('the SMS code store only runs scripts');
       },
       eval: async (script: string, options: RedisScriptOptions) => {
-        const kind = kindOf(script, options);
+        const kind = kindOf(script);
         calls.push({ kind, namespace, options });
+        if (kind === 'mark') return (overrides.mark ?? (() => 1))();
         return reply(kind, options);
       },
     }),
@@ -161,7 +165,7 @@ it('[BR-ID-05] the candidate is stored with the reservation before the SMS goes 
     sender: {
       send: async (message) => {
         sent.push(message.code);
-        expect(f.calls.map((call) => call.kind)).toEqual(['reserve']);
+        expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'mark']);
         return 'accepted';
       },
     },
@@ -170,14 +174,14 @@ it('[BR-ID-05] the candidate is stored with the reservation before the SMS goes 
     code: 0,
     data: { resend_after_sec: 60, expires_in_sec: 300 },
   });
-  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit']);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'commit']);
   for (const call of f.calls) {
     expect(call.namespace).toBe('sms');
     expect(JSON.stringify(call.options)).not.toContain(NUMBER);
   }
   const code = sent[0]!;
   expect(code).toMatch(/^[0-9]{6}$/);
-  const [reserve, commit] = f.calls;
+  const [reserve, mark, commit] = f.calls;
   expect(reserve!.options.ttlSeconds).toBe(90_000);
   expect(reserve!.options.keys[0]).toMatch(/^q:[0-9a-f]{64}$/);
   expect(reserve!.options.keys[1]).toMatch(/^c:couli:login:[0-9a-f]{64}$/);
@@ -187,7 +191,11 @@ it('[BR-ID-05] the candidate is stored with the reservation before the SMS goes 
   expect(reserve!.options.args[12]).toBe(f.hmac.mock.results.at(-1)!.value);
   expect(f.hmac.mock.calls.at(-1)![0]).toContain(code);
   expect(reserve!.options.args[13]).toBe('login');
+  // ARGV[16] the in-flight bound: send timeout plus margin.
+  expect(reserve!.options.args[14]).toBe(String(10_000 + 5_000));
   expect(reserve!.options.args).not.toContain(code);
+  expect(mark!.options.keys).toEqual(reserve!.options.keys);
+  expect(mark!.options.args[1]).toBe(reserve!.options.args[1]);
   expect(commit!.options.keys).toEqual(reserve!.options.keys);
   expect(commit!.options.args[1]).toBe(reserve!.options.args[1]);
   expect(commit!.options.args).not.toContain(code);
@@ -238,8 +246,8 @@ it('[BR-ID-05] a definite rejection releases the reservation and answers 50001, 
   const afterAccepted = vi.fn(async () => undefined);
   const ok = setup({ sender: rejecting, hooks: { afterAccepted } });
   expect(await ok.send()).toEqual({ code: 50001 });
-  expect(ok.calls.map((call) => call.kind)).toEqual(['reserve', 'release']);
-  expect(ok.calls[1]!.options.keys).toEqual(ok.calls[0]!.options.keys);
+  expect(ok.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'release']);
+  expect(ok.calls[2]!.options.keys).toEqual(ok.calls[0]!.options.keys);
   expect(afterAccepted).not.toHaveBeenCalled();
 
   const failing = setup({
@@ -249,7 +257,7 @@ it('[BR-ID-05] a definite rejection releases the reservation and answers 50001, 
       return [1, 0];
     },
   });
-  expect(ok.calls[1]!.options.args[1]).toBe(ok.calls[0]!.options.args[1]);
+  expect(ok.calls[2]!.options.args[1]).toBe(ok.calls[0]!.options.args[1]);
   expect(await failing.send()).toEqual({ code: 50001 });
   expect(failing.lines.join('')).toContain('sms_release_failed');
 });
@@ -270,12 +278,12 @@ it.each([
   const afterAccepted = vi.fn(async () => undefined);
   const f = setup({ sender, hooks: { afterAccepted } });
   expect((await f.send()).code).toBe(0);
-  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit']);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'commit']);
   expect(afterAccepted).toHaveBeenCalledTimes(1);
   expect(f.lines.join('')).not.toContain('socket hang up');
 });
 
-it('[BR-ID-05] the 60-second window and the code lifetime start when the provider answered', async () => {
+it('[BR-ID-05] the 60-second window starts when the provider answered', async () => {
   let providerAnswers = (): void => undefined;
   const slow = setup({
     sender: {
@@ -289,7 +297,8 @@ it('[BR-ID-05] the 60-second window and the code lifetime start when the provide
   expect((await slow.send()).code).toBe(0);
   const accepted = String(new Date(START).getTime() + 30_000);
   expect(slow.calls[0]!.options.args[0]).toBe(String(new Date(START).getTime()));
-  expect(slow.calls[1]!.options.args[0]).toBe(accepted);
+  expect(slow.calls[2]!.kind).toBe('commit');
+  expect(slow.calls[2]!.options.args[0]).toBe(accepted);
 });
 
 it('[BR-ID-05] a failed commit is retried once with the same token and never resends; the answer stays 0 with a conservative wait', async () => {
@@ -306,9 +315,9 @@ it('[BR-ID-05] a failed commit is retried once with the same token and never res
     code: 0,
     data: { resend_after_sec: 3600, expires_in_sec: 300 },
   });
-  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit', 'commit']);
-  expect(f.calls[1]!.options.args[1]).toBe(f.calls[0]!.options.args[1]);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'commit', 'commit']);
   expect(f.calls[2]!.options.args[1]).toBe(f.calls[0]!.options.args[1]);
+  expect(f.calls[3]!.options.args[1]).toBe(f.calls[0]!.options.args[1]);
   expect(f.messages).toHaveLength(1);
   expect(afterAccepted).toHaveBeenCalledTimes(1);
   expect(f.lines.join('')).toContain('sms_commit_failed');
@@ -333,7 +342,7 @@ it('[BR-ID-05] a commit that fails once and then runs answers from the commit', 
     },
   });
   expect(await f.send()).toMatchObject({ code: 0, data: { resend_after_sec: 50_400 } });
-  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit', 'commit']);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'commit', 'commit']);
   expect(f.lines.join('')).not.toContain('sms_commit_failed');
 });
 
@@ -371,7 +380,7 @@ it('[BR-ID-05] eight collisions in a row answer 50001 without sending', async ()
 it('[BR-ID-05] a send that outlasts sendTimeoutMs counts as unknown: committed, 0', async () => {
   const f = setup({ sendTimeoutMs: 20, sender: { send: () => new Promise(() => undefined) } });
   expect((await f.send()).code).toBe(0);
-  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'commit']);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'commit']);
   expect(f.lines.join('')).toContain('sms_delivery_timeout');
   expect(() => setup({ sendTimeoutMs: 0 })).toThrow(TypeError);
 });
@@ -433,4 +442,81 @@ it('[BR-ID-05] an unexpected script answer is a Redis failure, not a verdict', a
     }),
   ).rejects.toBeInstanceOf(RedisUnavailableError);
   expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 5 });
+});
+
+it('[BR-ID-05] a reservation whose reply is lost is released with its token, nothing is sent, 42901 with Retry-After 5', async () => {
+  const f = setup({
+    reply: (kind) => {
+      if (kind === 'reserve') throw new RedisUnavailableError('command_timeout');
+      return 1;
+    },
+  });
+  expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 5 });
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'release']);
+  expect(f.calls[1]!.options.args[1]).toBe(f.calls[0]!.options.args[1]);
+  expect(f.calls[1]!.options.keys).toEqual(f.calls[0]!.options.keys);
+  expect(f.messages).toEqual([]);
+
+  // The best-effort release may fail as well: the answer does not change.
+  const down = setup({
+    reply: () => {
+      throw new RedisUnavailableError('connect_failed');
+    },
+  });
+  expect(await down.send()).toEqual({ code: 42901, retryAfterSec: 5 });
+  expect(down.calls.map((call) => call.kind)).toEqual(['reserve', 'release']);
+  expect(down.lines.join('')).toContain('sms_release_failed');
+});
+
+it('[BR-ID-05] a candidate that cannot be marked as sending is released and no SMS goes out', async () => {
+  const gone = setup({ mark: () => 0 });
+  expect(await gone.send()).toEqual({ code: 42901, retryAfterSec: 5 });
+  expect(gone.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'release']);
+  expect(gone.messages).toEqual([]);
+  expect(gone.lines.join('')).toContain('"reason":"candidate_gone"');
+
+  const down = setup({
+    mark: () => {
+      throw new RedisUnavailableError('command_timeout');
+    },
+  });
+  expect(await down.send()).toEqual({ code: 42901, retryAfterSec: 5 });
+  expect(down.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'mark', 'release']);
+  expect(down.calls[3]!.options.args[1]).toBe(down.calls[0]!.options.args[1]);
+  expect(down.messages).toEqual([]);
+  expect(down.lines.join('')).toContain('"reason":"unavailable"');
+
+  let failures = 1;
+  const flaky = setup({
+    mark: () => {
+      if (failures-- > 0) throw new RedisUnavailableError('command_timeout');
+      return 1;
+    },
+  });
+  expect((await flaky.send()).code).toBe(0);
+  expect(flaky.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'mark', 'commit']);
+  expect(flaky.messages).toHaveLength(1);
+});
+
+it('[BR-ID-05] a send rejected only after sendTimeoutMs leaves no unhandled rejection behind', async () => {
+  const unhandled = vi.fn();
+  process.on('unhandledRejection', unhandled);
+  try {
+    const f = setup({
+      sendTimeoutMs: 20,
+      sender: {
+        send: () =>
+          new Promise((_resolve, reject) => {
+            setTimeout(() => reject(new Error('provider gave up late')), 60);
+          }),
+      },
+    });
+    expect((await f.send()).code).toBe(0);
+    expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'mark', 'commit']);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(f.lines.join('')).not.toContain('provider gave up late');
+  } finally {
+    process.off('unhandledRejection', unhandled);
+  }
 });
