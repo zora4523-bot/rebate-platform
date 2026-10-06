@@ -12,7 +12,7 @@ type: impl
 # 推广位经 union/index.ts 的只读查询（B1-19b）；取不到 active 推广位时登记照常、pid 为空，到 open 时再判（plan-draft 待决定第 2 条）。
 # 写 links 用 CAS（0006 头注释）。依赖方向：linking → union、catalog、identity（02 §4.1）；catalog 的两个端口由本模块实现、app.module 装配。
 # 开工前风险表要已登记 linking/**（#113）。风险：linking/** RV2（规划/11 §1.1 归属相关），整体 RV2。
-# D33（2026-10-06，PR #165 台账评审 S1-3）：本任务另须按 BR-PRICE-02 细则「报价快照与原券」做——淘宝判断报价是否变化时除 final_price_fen 外还比较券 ID 串（UnionItem.coupon_ids，B1-04r）与 coupon_fen，任一不同即新建快照、不复用；open 复核时快照里任一券 ID 不在复核结果的券项里即判 coupon_gone（券后价没变也一样）；复核结果仍计入已失效的券按价格异常处理（不按 BR-PRICE-14 按无券重算）。编排者摘录任务书时须包含该细则。
+# D33（2026-10-06，PR #165 台账评审）：本任务负责报价快照的复用条件——淘宝判断报价是否变化时除 final_price_fen 外还比较券 ID 串（UnionItem.coupon_ids，B1-04r）与 coupon_fen，任一不同即新建快照、不复用（BR-PRICE-02 细则「报价快照与原券」）；价格异常的商品不登记（经 B1-05i 入口）。编排者摘录任务书时须包含该细则。
 refs: []
 refs_hash: {}
 deps: [B1-05c, B1-19b, F1-02b, B1-04r]

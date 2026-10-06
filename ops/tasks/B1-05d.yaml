@@ -11,7 +11,7 @@ type: impl
 # 实现路由时去掉 searchProducts 的 x-implementation: planned，并重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入；与 B1-02e / f / g、B1-03i 等同路径任务串行）。
 # 第 2 轮台账评审 S1：本任务在 catalog 模块里注册 CardAssembler 及用到 LinkRegistrar 等端口的服务（端口由 B1-06c 在 app.module 层以全局提供者装配，catalog 与 linking 不互相 import 模块，不用 forwardRef）；B1-06k、B1-07a 依赖本任务。
 # x-auth optional：查看者经 ViewerContext，未接身份时按游客。风险：catalog RV1、openapi.yaml RV1、route-schemas.gen.ts（platform）RV2，整体 RV2。
-# D33（2026-10-06，PR #165 台账评审 S2-4）：检索出卡一律经 B1-05i 的 catalog 唯一出卡入口（价格异常时跳过并记 PRICE_ANOMALY，不在本任务另判）。
+# D33（2026-10-06，PR #165 台账评审）：检索出卡一律经 B1-05i 的 catalog 唯一出卡入口（价格异常时跳过并记 PRICE_ANOMALY，不在本任务另判）；价格区间、有券筛选、排序等直接读价格的步骤先过 union 的 isPriceAnomaly（异常价全为 0），异常商品不参与。
 refs: []
 refs_hash: {}
 deps: [B1-05f, B1-19b, B1-04o, B1-06c, B1-02c, CT-15m, B1-05i]

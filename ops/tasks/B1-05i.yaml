@@ -1,24 +1,24 @@
 id: B1-05i
 repo: rebate-platform
-title: catalog 唯一出卡入口按 D33 价格状态分检索 / 主动查询：检索遇价格异常返回跳过并记 PRICE_ANOMALY（不显示任何金额）；主动查询失败即关（不登记 link、不编造 link_id、返回带类型的 price_unavailable 结果，卡片等契约同步）；口径说明键有券 price_basis、无券 price_basis.general
+title: catalog 唯一出卡入口按 D33 价格状态分检索 / 主动查询：检索遇价格异常（union 判定或 BR-PRICE-01 校验不过）跳过该卡并记 PRICE_ANOMALY（不显示任何金额，不让整页失败）；主动查询记 PRICE_ANOMALY 并失败即关（不登记 link、不编造 link_id、返回带类型的 price_unavailable 结果，卡片等契约同步）；口径说明键有券 price_basis、无券 price_basis.general
 type: impl
 # 2026-10-06 入账（W1 搜索转链线），起因同 B1-04r（D33）；第 1 轮台账评审后改（couli-runs/W1-search-linking/review-ledger-d33.md）。
 # 依据：BR-PRICE-01（价格异常时检索不出卡、主动查询出 price_unavailable 卡）、BR-PRICE-03 及细则「无券商品与混排列表的口径说明」（有券卡 price_basis、无券卡 price_basis.general）、BR-PRICE-12（报价快照），由编排者摘入任务书第 2 节。
-# 入口：catalog 提供唯一的出卡入口，区分检索（搜索、feeds、Agent 检索）与主动查询；检索遇 price_status='anomaly'（B1-04r 定义）返回「跳过」并记 PRICE_ANOMALY，B1-05d、B1-07a、B1-06k 的检索一律经此入口（三者 deps 已加 B1-05i）。
+# 入口：catalog 提供唯一的出卡入口，区分检索（搜索、feeds、Agent 检索）与主动查询（详情、parse、open 复核取价）；异常判定用 union 导出的 isPriceAnomaly（B1-04r），京东、拼多多违反 BR-PRICE-01 的商品同样按价格异常处理：检索跳过该卡并记 PRICE_ANOMALY，主动查询记 PRICE_ANOMALY 并走下文的失败即关。B1-05d（检索）、B1-07a 与 B1-06k（主动查询）一律经此入口（三者 deps 已加 B1-05i）。
 # 券 ID 串：沿用 RegisterLinkInput.item 上的 coupon_ids（B1-04r），不在 LinkRegistrar 端口另加平行字段；无返利卡不写报价快照在 linking 侧（BR-PRICE-08）。
 # price_unavailable 卡：契约里三个价格字段已是 NullableFen，冲突只在 ProductCard.link_id 必填；契约同步（含回写规划 04）记 followups F-37，本任务不改契约，主动查询分支按上面「失败即关」过渡并留 TODO(规划/11 §9.2) 指向 F-37。
-# 受保护测试：test/spec/catalog/card/assembly.test.ts 的 [AC-B1-05f#8]（第 195 行）对无券卡断言含 price_basis，与 BR-PRICE-03 细则相反——本任务 test_paths 含该文件，由 Codex 在写规则测试阶段只把该断言改为按有无券区分（意图对齐 08），改已有受保护文件，PR 需负责人 owner-approved 标签（need-label 登记）。
-# 金额只经 @couli/money；风险表算 RV1（catalog/**），含 test/** 改动，整体按 RV2 两家评审。
-refs: [BR-PRICE-01, BR-PRICE-03]
+# 受保护测试：[AC-B1-05f#8] 对无券卡断言含 price_basis，与 BR-PRICE-03 细则相反，按规划/11 §4.4 由 test-change 任务 B1-04s 先放宽为两键之一（需负责人标签）；本任务 deps 含 B1-04s，有券 / 无券的精确断言写在 test/spec/catalog/price-state/**。
+# 金额只经 @couli/money；风险表算 RV1（catalog/**），评审仍按本线做法两家都审。
+refs: [BR-PRICE-01, BR-PRICE-03, BR-PRICE-12]
 refs_hash:
   BR-PRICE-01: 9ff41b3629dd
   BR-PRICE-03: 51dcba492d39
-deps: [B1-04r, B1-05f]
+  BR-PRICE-12: d34f9f17f4ae
+deps: [B1-04r, B1-05f, B1-04s]
 paths:
   - 'apps/api/src/modules/catalog/**'
 test_paths:
   - 'test/spec/catalog/price-state/**'
-  - 'test/spec/catalog/card/assembly.test.ts'
 impl: claude
 tester: codex
 accept:

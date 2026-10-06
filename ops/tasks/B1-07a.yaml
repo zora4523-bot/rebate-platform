@@ -11,7 +11,7 @@ type: impl
 # 配置读取端口由本任务定义并装配（content 实现，经 F1-02b）；B1-07b 只用。卡片走 catalog 的 CardAssembler（entry_source=parse）。
 # 按 url 解析函数只经 parsing/index.ts 导出，由 B1-06i 装配到 linking 的端口（结构类型，parsing 不 import linking，02 §4.1 parsing → union、catalog）。
 # 开工前风险表要已登记 parsing/**（#113）。风险：parsing RV1（规划/11 §1.1），app.module.ts RV2，整体 RV2。
-# D33（2026-10-06，PR #165 台账评审 S2-4）：检索出卡一律经 B1-05i 的 catalog 唯一出卡入口（价格异常时跳过并记 PRICE_ANOMALY，不在本任务另判）。
+# D33（2026-10-06，PR #165 台账评审）：parse 是主动查询（BR-PRICE-01），出卡经 B1-05i 入口的主动查询分支——价格异常时应出 price_unavailable 卡；该卡要等契约同步（followups F-37，尚无台账编号，立项后加进本任务 deps），在此之前按 B1-05i 的失败即关返回带类型的 price_unavailable 结果，不得跳过成「什么都不给」。
 refs: []
 refs_hash: {}
 deps: [B1-05f, B1-06c, B1-04o, F1-02b, CT-15m, B1-05d, B1-05i]
