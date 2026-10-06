@@ -55,25 +55,19 @@ export {
 } from './replay.ts';
 export { summarize, checkReport, checkSmokeGate } from './report.ts';
 export {
-  releaseApplicability,
-  gradeReleaseCase,
+  computeFacts,
+  computeMetrics,
   checkReleaseGate,
-  runCandidate,
-  runIntegration,
-  compareVendors,
+  runEval,
+  compareReports,
 } from './release.ts';
 export type {
-  ReleaseMetric,
-  MetricOutcome,
-  ReleaseExpectation,
-  ReleaseTurnOutput,
-  ReleaseCaseResult,
-  ReleaseReport,
-  ReleaseMetricCount,
+  CheckCount,
+  CaseFacts,
+  MetricId,
+  MetricStatus,
+  Metric,
   ReleaseVerdict,
-  ReleaseAgent,
-  ReleaseRunOptions,
-  VendorComparison,
 } from './release.ts';
 export type {
   ModelRequest,

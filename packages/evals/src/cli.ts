@@ -179,6 +179,19 @@ function identityFields(args: string[], io: CliIo): number {
   return problems.length === 0 ? 0 : 1;
 }
 
+// B3-01c test phase: command handlers are shells; main dispatch is wired by the implementer.
+export function releaseGate(args: string[], io: CliIo): number {
+  void args;
+  void io;
+  throw new Error('NotImplemented: release-gate');
+}
+
+export function compare(args: string[], io: CliIo): number {
+  void args;
+  void io;
+  throw new Error('NotImplemented: compare');
+}
+
 /** Runs one command; returns the exit code. An unexpected exception is exit 2 with the code
  * `internal` only: no stack trace or absolute path is printed, and it is never read as a gate
  * verdict (exit 1). */

@@ -1,173 +1,126 @@
 import { expect, it } from 'vitest';
-import { compareVendors } from '../../../packages/evals/src/index.ts';
-import type { RunMeta } from '../../../packages/evals/src/index.ts';
-import { fullFixture, mark } from './fixtures.ts';
+import { CATEGORIES, compareReports, summarize } from '../../../packages/evals/src/index.ts';
+import type { Category } from '../../../packages/evals/src/index.ts';
+import { expectNoPrivateText, fixture, mark } from './fixtures.ts';
 
-it('[AC-B3-01c-V01#1] 对照报告按厂商与快照分列，差值是百分点，注明分子分母', () => {
-  const baseline = fullFixture().report;
-  const candidate = structuredClone(baseline);
-  baseline.meta.vendor = 'synthetic-vendor-a';
-  candidate.meta.vendor = 'synthetic-vendor-b';
-  candidate.meta.model_snapshot = 'synthetic-snapshot-b';
-  mark(baseline, 'parameters', 10);
-  mark(candidate, 'parameters', 5);
-  const before = structuredClone({ baseline, candidate });
-  const comparison = compareVendors(baseline, candidate, 30);
-  expect(comparison.baseline).toEqual({
-    vendor: 'synthetic-vendor-a',
-    model_snapshot: baseline.meta.model_snapshot,
-    mode: 'integration',
-  });
-  expect(comparison.candidate).toEqual({
-    vendor: 'synthetic-vendor-b',
-    model_snapshot: 'synthetic-snapshot-b',
-    mode: 'integration',
-  });
-  expect(comparison.usable).toBe(true);
-  expect(comparison.rows.find((r) => r.metric === 'parameters')).toEqual({
-    metric: 'parameters',
-    baseline: { numerator: 90, denominator: 100 },
-    candidate: { numerator: 95, denominator: 100 },
-    delta_percentage_points: 5,
-    status: 'comparable',
-  });
-  expect({ baseline, candidate }).toEqual(before);
-  expect(JSON.parse(JSON.stringify(comparison))).toEqual(comparison);
+it('[B3-01c] [AC-B3-01c-C01] 仅 content_sha256 不同拒绝，rows 为空', () => {
+  const f = fixture(Array<Category>(30).fill('T1'));
+  const b = structuredClone(f.report);
+  b.meta.eval_set.content_sha256 = 'e'.repeat(64);
+  const got = compareReports(f.report, b);
+  expect(got.problems.map((p) => p.code)).toEqual(['eval_set_mismatch']);
+  expect(got.rows).toEqual([]);
 });
 
-it('[AC-B3-01c-V02#1] 回退时差值为负百分点，不能把相对增减率当百分点', () => {
-  const baseline = fullFixture().report;
-  const candidate = structuredClone(baseline);
-  mark(candidate, 'parameters', 7);
-  expect(
-    compareVendors(baseline, candidate, 30).rows.find((r) => r.metric === 'parameters'),
-  ).toMatchObject({
-    baseline: { numerator: 100, denominator: 100 },
-    candidate: { numerator: 93, denominator: 100 },
-    delta_percentage_points: -7,
+it('[B3-01c] [AC-B3-01c-C02] prompt、采样、提交、模式等元信息不同仍可对照，header 只有三字段', () => {
+  const f = fixture(Array<Category>(30).fill('T1'));
+  const b = structuredClone(f.report);
+  Object.assign(b.meta, {
+    vendor: 'synthetic-other',
+    model_snapshot: 'snapshot-other',
+    mode: 'integration',
+    prompt_sha256: 'f'.repeat(64),
+    sampling: { temperature: 1 },
+    code_commit: 'a'.repeat(40),
+    tool_schema_version: 'other',
+    grader_version: 'other',
+    recordings_sha256: 'e'.repeat(64),
+    started_at: '2026-10-07T00:00:00Z',
+    finished_at: '2026-10-07T00:01:00Z',
   });
+  b.meta.eval_set.version = 'other-version';
+  b.meta.eval_set.split_sha256 = 'f'.repeat(64);
+  const got = compareReports(f.report, b);
+  expect(got.problems).toEqual([]);
+  expect(got.header).toEqual({
+    a: { vendor: f.report.meta.vendor, model_snapshot: f.report.meta.model_snapshot, mode: 'B' },
+    b: { vendor: 'synthetic-other', model_snapshot: 'snapshot-other', mode: 'integration' },
+  });
+  expect(got.rows).toEqual(
+    ['all', 'T1'].map((scope) => ({
+      scope,
+      a: { n: 30, pass: 30 },
+      b: { n: 30, pass: 30 },
+      delta_pp: 0,
+      status: 'compared',
+    })),
+  );
+  expect(expectNoPrivateText(JSON.stringify(got), f.cases)).toBe(true);
 });
 
-it.each([20, 21])(
-  '[AC-B3-01c-V03#1] 20 条安全切片与调用者给的最小样本数 %i 比较，不自设发布门槛',
-  (minimum) => {
-    const baseline = fullFixture().report;
-    const comparison = compareVendors(baseline, structuredClone(baseline), minimum);
-    expect(comparison.rows.find((r) => r.metric === 'injection')).toEqual({
-      metric: 'injection',
-      baseline: { numerator: 20, denominator: 20 },
-      candidate: { numerator: 20, denominator: 20 },
-      delta_percentage_points: minimum === 20 ? 0 : null,
-      status: minimum === 20 ? 'comparable' : 'insufficient_evidence',
-    });
+it.each([29, 30])('[B3-01c] [AC-B3-01c-C03] 默认 minSample=30，n=%i 的证据状态', (n) => {
+  const f = fixture(Array<Category>(n).fill('T1'));
+  expect(compareReports(f.report, f.report).rows).toEqual(
+    ['all', 'T1'].map((scope) => ({
+      scope,
+      a: { n, pass: n },
+      b: { n, pass: n },
+      delta_pp: n < 30 ? null : 0,
+      status: n < 30 ? 'insufficient' : 'compared',
+    })),
+  );
+});
+
+it.each(['a', 'b'] as const)(
+  '[B3-01c] [AC-B3-01c-C04] 任一边 %s 小于样本下限均 insufficient',
+  (side) => {
+    const a = fixture(Array<Category>(30).fill('T1')).report;
+    const b = structuredClone(a);
+    const short = side === 'a' ? a : b;
+    short.cases.pop();
+    short.summary.total--;
+    short.summary.pass--;
+    short.summary.by_category.T1!.total--;
+    short.summary.by_category.T1!.pass--;
+    const got = compareReports(a, b);
+    expect(got.problems).toEqual([]);
+    expect(got.rows.every((r) => r.status === 'insufficient' && r.delta_pp === null)).toBe(true);
   },
 );
 
-it('[AC-B3-01c-V04] 零样本写证据不足，不输出 100%、NaN 或排名', () => {
-  const baseline = fullFixture().report;
-  for (const c of baseline.cases) delete c.metrics.attribution;
-  const comparison = compareVendors(baseline, structuredClone(baseline), 30);
-  expect(comparison.rows.find((r) => r.metric === 'attribution')).toMatchObject({
-    baseline: { numerator: 0, denominator: 0 },
-    candidate: { numerator: 0, denominator: 0 },
-    delta_percentage_points: null,
-    status: 'insufficient_evidence',
+it.each([1, -1])('[B3-01c] [AC-B3-01c-C05] 0/30 与 20/30 差值按百分点四舍五入，方向 %i', (sign) => {
+  const f = fixture(Array<Category>(30).fill('T1'));
+  const a = structuredClone(f.report);
+  const b = structuredClone(f.report);
+  for (let i = 0; i < 30; i++) mark(a, i, 'fail');
+  for (let i = 20; i < 30; i++) mark(b, i, i % 2 ? 'error' : 'coverage_gap');
+  const got = sign === 1 ? compareReports(a, b) : compareReports(b, a);
+  expect(got.rows).toEqual(
+    ['all', 'T1'].map((scope) => ({
+      scope,
+      a: { n: 30, pass: sign === 1 ? 0 : 20 },
+      b: { n: 30, pass: sign === 1 ? 20 : 0 },
+      delta_pp: sign === 1 ? 66.7 : -66.7,
+      status: 'compared',
+    })),
+  );
+  expect(expectNoPrivateText(JSON.stringify(got), f.cases)).toBe(true);
+});
+
+it('[B3-01c] [AC-B3-01c-C06] minSample 可覆盖；行序 all 后按 CATEGORIES 并集，未出现类别不列', () => {
+  const f = fixture(['T6', 'T1', 'banned']);
+  const b = structuredClone(f.report);
+  b.cases[0]!.category = 'T2';
+  b.summary = summarize(b.cases);
+  const got = compareReports(f.report, b, { minSample: 1 });
+  expect(got.problems).toEqual([]);
+  expect(got.rows.map((r) => r.scope)).toEqual([
+    'all',
+    ...CATEGORIES.filter((c) => ['T1', 'T2', 'T6', 'banned'].includes(c)),
+  ]);
+  expect(got.rows.find((r) => r.scope === 'T1')).toEqual({
+    scope: 'T1',
+    a: { n: 1, pass: 1 },
+    b: { n: 1, pass: 1 },
+    delta_pp: 0,
+    status: 'compared',
   });
-});
-
-const experimentFields: (keyof Pick<
-  RunMeta,
-  | 'prompt_sha256'
-  | 'sampling'
-  | 'tool_schema_version'
-  | 'code_commit'
-  | 'grader_version'
-  | 'eval_set'
-  | 'mode'
-  | 'recordings_sha256'
->)[] = [
-  'prompt_sha256',
-  'sampling',
-  'tool_schema_version',
-  'code_commit',
-  'grader_version',
-  'eval_set',
-  'mode',
-  'recordings_sha256',
-];
-it.each(experimentFields)('[AC-B3-01c-V05#1] %s 不同的实验不能输出可比较的厂商优劣', (field) => {
-  const baseline = fullFixture().report;
-  const candidate = structuredClone(baseline);
-  if (field === 'sampling') candidate.meta.sampling = { temperature: 1 };
-  else if (field === 'eval_set') candidate.meta.eval_set.content_sha256 = 'e'.repeat(64);
-  else if (field === 'mode') candidate.meta.mode = 'B';
-  else candidate.meta[field] = 'e'.repeat(64);
-  const comparison = compareVendors(baseline, candidate, 30);
-  expect(comparison.usable).toBe(false);
-  expect(
-    comparison.rows.every(
-      (r) => r.delta_percentage_points === null && r.status === 'not_comparable',
-    ),
-  ).toBe(true);
-});
-
-it.each(['expectations', 'ids', 'split', 'category', 'duplicate', 'applicability'] as const)(
-  '[AC-B3-01c-V06#1] %s 不同不可通过只比总数伪装为相同样本',
-  (change) => {
-    const baseline = fullFixture().report;
-    const candidate = structuredClone(baseline);
-    const first = candidate.cases[0]!;
-    if (change === 'expectations') candidate.expectations_sha256 = 'e'.repeat(64);
-    if (change === 'ids') first.id = 'other-case';
-    if (change === 'split') first.split = 'tune';
-    if (change === 'category') first.category = 'T6';
-    if (change === 'duplicate') candidate.cases[1] = structuredClone(first);
-    if (change === 'applicability') delete first.metrics.injection;
-    const comparison = compareVendors(baseline, candidate, 30);
-    expect(comparison.usable).toBe(false);
-    expect(comparison.rows.every((r) => r.delta_percentage_points === null)).toBe(true);
-  },
-);
-
-it.each([
-  'injection',
-  'unauthorized',
-  'banned',
-  'identity_arg',
-  'amount_in_text',
-  'url_in_text',
-] as const)('[AC-B3-01c-V07] %s 失败的厂商即使参数高分也不能用于选型', (metric) => {
-  const baseline = fullFixture().report;
-  const candidate = structuredClone(baseline);
-  mark(candidate, metric, 1);
-  expect(compareVendors(baseline, candidate, 30).usable).toBe(false);
-});
-
-it.each(['coverage_gap', 'error'] as const)('[AC-B3-01c-V08] %s 报告不能用来排名', (outcome) => {
-  const baseline = fullFixture().report;
-  const candidate = structuredClone(baseline);
-  mark(candidate, 'parameters', 1, outcome);
-  expect(compareVendors(baseline, candidate, 30).usable).toBe(false);
-});
-
-it('[AC-B3-01c-V09#1] 同口径 B 模式允许候选对照，并保留模式标识', () => {
-  const baseline = fullFixture().report;
-  baseline.meta.mode = 'B';
-  baseline.meta.recordings_sha256 = 'd'.repeat(64);
-  const candidate = structuredClone(baseline);
-  candidate.meta.vendor = 'synthetic-vendor-b';
-  const comparison = compareVendors(baseline, candidate, 30);
-  expect(comparison.usable).toBe(true);
-  expect(comparison.baseline.mode).toBe('B');
-  expect(comparison.candidate.mode).toBe('B');
-});
-
-it('[AC-B3-01c-V10] 题序和不同运行时间不改变对照结果', () => {
-  const baseline = fullFixture().report;
-  const candidate = structuredClone(baseline);
-  const expected = compareVendors(baseline, candidate, 30);
-  candidate.cases.reverse();
-  candidate.meta.started_at = '2026-10-06T10:00:00+08:00';
-  candidate.meta.finished_at = '2026-10-06T10:01:00+08:00';
-  expect(compareVendors(baseline, candidate, 30)).toEqual(expected);
+  expect(got.rows.find((r) => r.scope === 'T2')).toEqual({
+    scope: 'T2',
+    a: { n: 0, pass: 0 },
+    b: { n: 1, pass: 1 },
+    delta_pp: null,
+    status: 'insufficient',
+  });
+  expect(got.rows.find((r) => r.scope === 'T6')?.status).toBe('insufficient');
 });
