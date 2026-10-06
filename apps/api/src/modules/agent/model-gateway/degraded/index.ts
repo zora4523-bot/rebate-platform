@@ -80,7 +80,8 @@ export function planKeywordSearch(
 }
 
 /**
- * 由按平台的搜索结果判定出卡、空结果或 50302（全部平台都失败时才 50302）。
+ * 由按平台的搜索结果判定出卡、空结果或 50302（计划内有平台且全部都失败时才 50302；
+ * 已开启平台为空时出空结果）。
  * 调用方须在计划内每个平台搜索完成后传入结果；缺失结果不能当作搜索失败。
  */
 export function resolveDegradedOutcome(
@@ -95,6 +96,8 @@ export function resolveDegradedOutcome(
     finishReason,
   };
   if (plan === null) return empty;
+  // 没有开启的平台就没有搜索，也就没有平台失败：出空结果，不是 50302。
+  if (plan.platforms.length === 0) return empty;
 
   let hasSuccess = false;
   const items: unknown[] = [];
@@ -114,6 +117,6 @@ export function resolveDegradedOutcome(
   }
   if (hasSuccess) return empty;
 
-  // 没有开启的平台也没有可用搜索结果，按全平台失败处理。
+  // 计划非空且每个平台都明确失败。
   return { kind: 'error', code: 50302, fallback: { q: plan.q } };
 }
