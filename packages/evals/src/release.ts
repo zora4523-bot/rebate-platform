@@ -40,6 +40,11 @@ export interface CaseFacts {
    * checks find in the turns the case did complete before it stopped (B3-01c §14). Graded
    * cases count their leaks in summary.counters instead. */
   partial_leaks?: LeakCode[];
+  /** Only on an ungraded case (coverage_gap, error) and only when the turns it completed before
+   * it stopped hold a mismatched or unverified card value or link (a later miss, error or
+   * timeout never erases them, B3-01c §16): computeFacts' card and attribution counts of those
+   * turns. The card_values and attribution metrics add them to the graded cases' counts. */
+  partial_checks?: { card_values: CheckCount; attribution: CheckCount };
 }
 export type MetricId =
   | 'full_count'
@@ -387,11 +392,29 @@ function partialLeaks(outputs: readonly TurnOutput[]): LeakCode[] {
   return LEAK_CODES.filter((code) => found.has(code));
 }
 
-function factsOf(c: EvalCase, result: CaseResult, outputs: TurnOutput[]): CaseFacts {
+/** A count with evidence that is not verified (a mismatch or an unverified card or link). */
+function openEvidence(count: CheckCount): boolean {
+  return count.mismatched + count.unverified > 0;
+}
+
+/** Facts of a stopped case: all zero and `graded: false`, plus `partial_leaks` (leaks of the
+ * completed turns and of what is readable of a malformed output) and `partial_checks` (card and
+ * attribution counts of the completed turns, kept when one is mismatched or unverified; a stop
+ * after verified evidence only keeps the frozen zero shape). */
+function factsOf(
+  c: EvalCase,
+  result: CaseResult,
+  outputs: TurnOutput[],
+  leakOnly: TurnOutput[],
+): CaseFacts {
   if (result.result === 'pass' || result.result === 'fail') return computeFacts(c, outputs);
   const facts = ungradedFacts(c.id);
-  const leaks = partialLeaks(outputs);
+  const leaks = partialLeaks([...outputs, ...leakOnly]);
   if (leaks.length > 0) facts.partial_leaks = leaks;
+  const done = computeFacts(c, outputs);
+  if (openEvidence(done.card_values) || openEvidence(done.attribution)) {
+    facts.partial_checks = { card_values: done.card_values, attribution: done.attribution };
+  }
   return facts;
 }
 
@@ -402,7 +425,8 @@ function factsOf(c: EvalCase, result: CaseResult, outputs: TurnOutput[]): CaseFa
  * an old port); a live port's error goes to the agent, and an agent that throws is `error`.
  * `facts` has one entry per active case in id order: computeFacts for a graded case (pass or
  * fail), all zero and `graded: false` for coverage_gap and error, with `partial_leaks` when the
- * turns completed before the case stopped leak (the report itself is unchanged).
+ * turns completed before the case stopped leak and `partial_checks` when they hold a mismatched
+ * or unverified card value or link (the report itself is unchanged).
  */
 export async function runEval(opts: {
   cases: EvalCase[];
@@ -421,7 +445,7 @@ export async function runEval(opts: {
       runs.map((run) => run.result),
       unused,
     ),
-    facts: runs.map((run) => factsOf(run.case, run.result, run.outputs)),
+    facts: runs.map((run) => factsOf(run.case, run.result, run.outputs, run.leakOnly)),
   };
 }
 
@@ -454,10 +478,15 @@ function evidence(
   byId: Map<string, CaseFacts>,
 ): Metric {
   const sum = zeroCount();
-  for (const item of cases) {
-    const count = byId.get(item.id)?.[id];
-    if (count === undefined) continue;
+  const add = (count: CheckCount | undefined): void => {
+    if (count === undefined) return;
     for (const field of COUNT_FIELDS) sum[field] += count[field];
+  };
+  for (const item of cases) {
+    const facts = byId.get(item.id);
+    add(facts?.[id]);
+    // A stopped case's completed turns still count (B3-01c §16).
+    if (item.result === 'coverage_gap' || item.result === 'error') add(facts?.partial_checks?.[id]);
   }
   // Any mismatch fails, whatever the share (49 verified + 1 mismatched fails); otherwise any
   // unverified card, or no card at all, is not covered.
@@ -471,7 +500,8 @@ function evidence(
  * cases of that category); coverage_gap and error stay in the denominator as failures. Leak
  * counters are summary.counters plus the stopped cases whose facts list the code in
  * partial_leaks, over the report's case count. Card values and attribution sum the facts of the
- * report's cases (looked up by id). T5 and T6 are only observed.
+ * report's cases (looked up by id), with the partial_checks of the stopped ones. T5 and T6 are
+ * only observed.
  */
 export function computeMetrics(report: Report, facts: CaseFacts[]): Metric[] {
   const cases = report.cases;
@@ -563,7 +593,7 @@ export function validateFacts(value: unknown): Problem[] {
   const c = new Collector(undefined);
   c.array(value, '', (item, path) => {
     const keys = ['id', 'graded', 'card_values', 'attribution', 'platform'];
-    if (!c.object(item, path, keys, ['partial_leaks'])) return;
+    if (!c.object(item, path, keys, ['partial_leaks', 'partial_checks'])) return;
     c.string(item['id'], `${path}/id`, { minLength: 1 });
     c.boolean(item['graded'], `${path}/graded`);
     const ungraded = item['graded'] === false;
@@ -579,8 +609,27 @@ export function validateFacts(value: unknown): Problem[] {
         c.add(`${path}/partial_leaks`, 'only allowed when graded is false');
       }
     }
+    if (Object.hasOwn(item, 'partial_checks')) {
+      validatePartialChecks(c, item['partial_checks'], `${path}/partial_checks`);
+      if (item['graded'] !== false) {
+        c.add(`${path}/partial_checks`, 'only allowed when graded is false');
+      }
+    }
   });
   return c.problems;
+}
+
+/** Both counts valid; not all zero (leave it out instead). */
+function validatePartialChecks(c: Collector, value: unknown, path: string): void {
+  if (!c.object(value, path, ['card_values', 'attribution'], [])) return;
+  const before = c.problems.length;
+  validateCount(c, value['card_values'], `${path}/card_values`, false);
+  validateCount(c, value['attribution'], `${path}/attribution`, false);
+  if (c.problems.length > before) return;
+  const counts = [value['card_values'], value['attribution']] as unknown as CheckCount[];
+  if (counts.every((count) => count.checked === 0)) {
+    c.add(path, 'must not be all zero (leave it out instead)');
+  }
 }
 
 /** Non-empty, each code once, in LEAK_CODES order. */
