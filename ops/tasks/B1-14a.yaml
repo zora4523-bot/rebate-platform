@@ -1,0 +1,23 @@
+id: B1-14a
+repo: rebate-platform
+title: 外部依赖熔断配置与降级登记表：02 §14 中非资金、非归属行（联盟查询、百炼、Jev、内容安全、短信、推送）的超时、熔断阈值、降级动作、开关名，可按配置覆盖
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 B1-14「外部依赖熔断与降级表落地」中交给 Codex 的部分（规划/11 §1.1 例外条）；02 §6.2 治理层（联盟阈值）、§14 降级表。refs 为空：取值在 02，不在 08。
+# 只建登记表与校验（每行有依赖、故障表现、降级动作、开关、归属模块；联盟行沿用 platform/http 的 unionPolicy，不重复数值）；放 platform/resilience/，不改 platform/http（B1-02h 占用）。
+# 不在本批（留第 12 项分工）：支付宝、银行卡通道、订单接口补拉、PostgreSQL 主库与数据库恢复各行。不导出到 platform/index.ts（在途占用），导出随 B1-14b。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/resilience/**'
+test_paths:
+  - 'test/spec/platform/resilience/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/resilience/**'
+status: todo
+pr: null

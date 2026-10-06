@@ -1,0 +1,25 @@
+id: QA-09b
+repo: rebate-platform
+title: 制品扫描第二段：制品读取（.ipa / .apk / .aab / .hap / .app 按 zip 解包、H5 与后台产物目录遍历）、密钥检测规则（私钥头、02 §12.6 各密钥的格式特征、高熵串，规则里不写密钥值）与可调用的扫描函数（不含命令行入口）
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 02 §12.6「发布制品密钥扫描」；只用 Node 内置模块（zip 用 node:zlib），不加依赖；植入假密钥的样例制品由测试作者在 .tmp/ 现场生成，不入库任何像真密钥的串。
+# 本段导出 detect/ 下的扫描函数（读取 + 检测 + 调 QA-09a 比对）；命令行入口 cli.ts 归 QA-09c 统一装配（GT-23b S2）；接入流水线不在本段。
+# refs 保留核心 BR（台账评审 GT-23b S1：删 refs 会使规则测试评审把该 BR 的发现移出范围）；连一跳引用的任务书超 24KB，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定，不以摘录为界。
+refs: [BR-ID-09]
+refs_hash:
+  BR-ID-09: 873689964ec1
+deps: [QA-09a]
+paths:
+  - 'infra/release-scan/detect/**'
+  - 'infra/release-scan/README.md'
+test_paths:
+  - 'test/spec/release-scan/detect/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/release-scan/detect/**'
+status: todo
+pr: null

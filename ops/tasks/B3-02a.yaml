@@ -1,0 +1,28 @@
+id: B3-02a
+repo: rebate-platform
+title: ModelGateway 第一段：厂商适配器接口与厂商登记（线上 / 离线用途分开、计量分开）、录制回放传输（只用合成录制）
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 B3-02「多厂商适配器与厂商登记……各厂商流式工具调用用录制响应回放」；BR-AI-14 细则「多厂商接入」（取值只在 08）。
+# 登记只放已在规划登记的厂商：千问（百炼，线上 + 离线）、智谱 GLM（只离线，CAP-X-19 未开始）；不新增厂商。离线厂商不得进入线上路由（类型与运行时双拦）。
+# 回放传输读本目录 __fixtures__ 的合成录制（公开库只放合成样例，02 §9.3、§12.7）；不连任何真实接口、不读密钥。
+# 真实接入写 TODO(规划/11 §6): 百炼 / GLM 真实调用 — blocked on 负责人提供 key 与供应商登记（06 Q-C21、Q-C31）。
+# 不在本段：OpenAI 兼容报文（B3-02b）、路由与熔断（B3-02c）、无模型降级（B3-02d）、脱敏（见 plan.md 开放问题 Q3）。
+# refs 保留核心 BR（台账评审 GT-23b S1：删 refs 会使规则测试评审把该 BR 的发现移出范围）；连一跳引用的任务书超 24KB，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定，不以摘录为界。
+refs: [BR-AI-14]
+refs_hash:
+  BR-AI-14: 94c980b637dc
+# agent 目录的 risk-map 行随门禁 PR（approvals 第 23 条）合并，不另立 B3-02r。
+deps: []
+paths:
+  - 'apps/api/src/modules/agent/model-gateway/vendors/**'
+test_paths:
+  - 'test/spec/agent/model-vendors/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/model-vendors/**'
+status: todo
+pr: null

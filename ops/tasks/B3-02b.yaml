@@ -1,0 +1,26 @@
+id: B3-02b
+repo: rebate-platform
+title: ModelGateway 第二段：OpenAI 兼容适配器（百炼千问；GLM 同一适配器、只离线登记）——非流式与流式工具调用拼装、前缀缓存标记、快照锁定校验
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 B3-02「百炼 OpenAI 兼容接口、快照锁定、前缀缓存」；02 §9.2「前缀缓存」「模型路由」；BR-AI-14（快照锁定、不用 latest）。
+# 流式工具调用：分片 delta 拼成完整 tool_calls（参数 JSON 跨片）、finish_reason、usage（token 数交给 B3-09 记账，本段只透出）。
+# 录制样例只用合成报文，按 OpenAI 兼容公开格式写，放 openai-compat/__fixtures__；不伪造联盟报文。CAP-X-07 未验证的能力（显式缓存、关闭思考）做成配置项，默认按规划写法。
+# 不在本段：路由与熔断（B3-02c）、Orchestrator 的工具循环（B3-05，Opus）。
+# refs 保留核心 BR（台账评审 GT-23b S1：删 refs 会使规则测试评审把该 BR 的发现移出范围）；连一跳引用的任务书超 24KB，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定，不以摘录为界。
+refs: [BR-AI-14]
+refs_hash:
+  BR-AI-14: 94c980b637dc
+deps: [B3-02a]
+paths:
+  - 'apps/api/src/modules/agent/model-gateway/openai-compat/**'
+test_paths:
+  - 'test/spec/agent/model-openai-compat/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/model-openai-compat/**'
+status: todo
+pr: null

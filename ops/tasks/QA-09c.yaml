@@ -1,0 +1,23 @@
+id: QA-09c
+repo: rebate-platform
+title: 制品扫描第三段：Release 制品调试与测试环境残留规则——staging / test / local 域名、时钟偏移与环境切换标识、debug_only 路由与一致性测试页入口、可调试标志、WebView 调试开关
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 QA-09 后半句；03 §3.6；10 AC-S1-86（植入测试域名或调试路由的 Release 制品被阻断）。域名表取 02 §3.4，路由的 debug_only 取 contracts/routes.json（只读）。
+# 命令行入口 infra/release-scan/cli.ts 由本段装配（读取、密钥检测、白名单比对、残留规则；GT-23b S2），--release 开启残留规则；规则只阻断，不设豁免（清单外一律阻断，见 02 §12.6）。
+refs: []
+refs_hash: {}
+deps: [QA-09b]
+paths:
+  - 'infra/release-scan/residue/**'
+  - 'infra/release-scan/cli.ts'
+test_paths:
+  - 'test/spec/release-scan/residue/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/release-scan/residue/**'
+status: todo
+pr: null

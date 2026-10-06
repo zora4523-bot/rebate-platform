@@ -1,0 +1,21 @@
+id: QA-06b
+repo: rebate-platform
+title: WireMock 压测桩（暂不开工）：联盟查询与转链按 replay 格式、百炼流式应答，供 QA-06a 加压
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 开工条件：B1-04c 合并（联盟录制与 fixtures/union-recordings 的合成样例格式定下）；无真实录制时不伪造平台报文（AGENTS.md 硬规则 7）。百炼部分可复用 B3-02b 的合成录制。
+refs: []
+refs_hash: {}
+deps: [QA-05a, B1-04c]
+paths:
+  - 'infra/load/wiremock/**'
+test_paths:
+  - 'test/spec/load/wiremock/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/load/wiremock/**'
+status: todo
+pr: null

@@ -1,0 +1,28 @@
+id: B3-03d
+repo: rebate-platform
+title: 流式输出第四段（暂不开工）：HTTP 接线——POST /v1/agent/sessions/{id}/messages 的 SSE 响应、POST /v1/agent/runs/{run_id}/cancel、受理顺序 ①～⑩ 串起、agent 模块入口与 stream 进程挂载
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 开工条件（deps 只能写已入账任务，其余写在这里）：① contracts/openapi.yaml 有 /v1/agent/* 路径（契约线任务，尚未入账）；② agent_sessions / agent_runs 迁移已合并；
+# ③ B3-05 Orchestrator 接口定稿；④ apps/api/src/app.module.ts 无在途占用（现被 B1-02e、B1-02h、B1-03c～k、F1-06b 等占用）。派发前重新评审台账。
+# 依据：05 B3-03；BR-AI-23 受理顺序；02 §9.1 组件图（stream 进程）。
+refs: [BR-AI-23]
+refs_hash:
+  BR-AI-23: 7e8958be288f
+deps: [B3-03b, B3-03c]
+paths:
+  - 'apps/api/src/modules/agent/http/**'
+  - 'apps/api/src/modules/agent/index.ts'
+  - 'apps/api/src/modules/agent/agent.module.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/main.stream.ts'
+test_paths:
+  - 'test/spec/agent/stream-http/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-http/**'
+status: todo
+pr: null

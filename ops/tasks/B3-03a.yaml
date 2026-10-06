@@ -1,0 +1,25 @@
+id: B3-03a
+repo: rebate-platform
+title: 流式输出第一段：StreamWriter——SSE 帧编码（event / id / data）、seq 单调、ping、终止帧（done / error）有且只有一个、逐帧按 contracts/agent-stream.schema.json 校验
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 B3-03「SSE 帧、seq、ping」，开工条件 CT-08 已合并（CT-08a #125、CT-08b #144，均 done）。形状以 contracts/agent-stream.schema.json 与 contracts/fixtures/agent-streams/*.ndjson 为准。
+# 规则测试以 11 类样例流逐帧回放：本段写出的帧序列与样例同形（seq 从 1 起、ping 不占 seq 等以 schema 为准）。校验用 apps/api 已有的 ajv，不加依赖。
+# refs 为空：帧形状属契约（04 §8.1–8.2 → contracts/），无对应 BR；OutputGuard（BR-AI-06）不在本段。
+# 不在本段：HTTP 路由与 Fastify 原始响应接线（B3-03d）、卡片组装（B3-05）。
+refs: []
+refs_hash: {}
+# agent 目录的 risk-map 行随门禁 PR（approvals 第 23 条）合并，不另立 B3-02r。
+deps: []
+paths:
+  - 'apps/api/src/modules/agent/stream/writer/**'
+test_paths:
+  - 'test/spec/agent/stream-writer/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-writer/**'
+status: todo
+pr: null

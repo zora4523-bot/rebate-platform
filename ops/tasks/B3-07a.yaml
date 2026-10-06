@@ -1,0 +1,24 @@
+id: B3-07a
+repo: rebate-platform
+title: 素材第一段（暂不开工）：黑话词典 specs/material-slang.csv 与归一化函数（parsing 模块内的代码部分）
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 B3-07（开工条件：V-07 通用素材样本到位，人工）；01 F-AGENT-02、AF-11；02 §4.1 parsing 行「素材结构化中的代码部分、黑话词典」、§16.2 specs/material-slang.csv。
+# 放 parsing 模块（slang_dict 表的写者是 parsing）；与 B1-07a/b 的 parsing/** 相交，须等两者合并后派发。词典「后台可增补」的表与迁移、后台页面不在本段。
+# 词条只从 V-07 样本整理，不臆造；样本未到位前不写任务书。
+refs: []
+refs_hash: {}
+deps: [B1-07b]
+paths:
+  - 'specs/material-slang.csv'
+  - 'apps/api/src/modules/parsing/material/slang/**'
+test_paths:
+  - 'test/spec/parsing/material-slang/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/parsing/material-slang/**'
+status: todo
+pr: null

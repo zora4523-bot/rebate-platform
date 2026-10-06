@@ -1,0 +1,25 @@
+id: QA-09a
+repo: rebate-platform
+title: 制品扫描第一段：命中项与 specs/client-public-ids.yaml 比对——公开标识按类别与格式放行、false_positives 按规则与文件放行、exceptions 只认带批准记录的、never_accepted 一律阻断，出报告与退出码
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 QA-09 中交给 Codex 的部分（扫描器与白名单比对）；02 §12.6「安装包里只放公开标识」及放行两类、不可豁免；BR-ID-09（签名材料与共享盐不得进包）。
+# 清单文件不写取值（CT-15h/k），类别到格式的对照表放本段代码；YAML 用 tools/lib/yaml-lite.ts（只读导入，不改 tools/）。不放宽、不改 .gitleaks.toml 与源码仓库的密钥扫描。
+# 不在本批：接入三端、H5、后台发布流水线与各端制品验收（归各线，改 .github/ 按 规划/11 §7.3 第 11 项）。
+# refs 保留核心 BR（台账评审 GT-23b S1：删 refs 会使规则测试评审把该 BR 的发现移出范围）；连一跳引用的任务书超 24KB，编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定，不以摘录为界。
+refs: [BR-ID-09]
+refs_hash:
+  BR-ID-09: 873689964ec1
+deps: []
+paths:
+  - 'infra/release-scan/compare/**'
+test_paths:
+  - 'test/spec/release-scan/compare/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/release-scan/compare/**'
+status: todo
+pr: null

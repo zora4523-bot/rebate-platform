@@ -1,0 +1,22 @@
+id: QA-05b
+repo: rebate-platform
+title: 队列中断演练脚本：本地栈里停掉 worker / 断开队列连接后恢复，核对已入队任务不丢、不重复产生业务效果（至少一次投递 + 消费端去重）
+type: impl
+# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
+# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 05 QA-05「队列中断」；02 §14 Redis 行与 §11（任务入队在 PG 业务事务内）；硬规则 4（至少一次投递、消费端去重）。只在本地栈或测试库跑，不碰 staging / prod。
+# 演练记录写到运行目录，不入库；规则测试为集成测试（*.int.test.ts），由编排者在容器里跑。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'infra/drills/queue/**'
+test_paths:
+  - 'test/spec/drills/queue/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/drills/queue/**'
+status: todo
+pr: null
