@@ -9,6 +9,7 @@ import {
   checkRedReports,
   expectedRuleTests,
   redCheckRequired,
+  smokeCauseVerdict,
   wrongRedReason,
 } from './red-check.ts';
 
@@ -432,4 +433,76 @@ it('[F1-01j] the poll timeout of the real run counts only with the test file as 
     expect(result.red).not.toContain(missing);
     expect(result.problems.map((p) => p.reason)).toEqual([POLL_REFUSED]);
   }
+});
+
+const SMOKE = 'test/spec/frontend/build-smoke/entries.smoke.test.ts';
+
+it('[F1-01k] build smoke rule tests: an assertion, or a locator.waitFor that ran out, is a valid red', () => {
+  const result = checkRedReports([fixture('smoke-report.json')], [SMOKE], ROOT);
+  expect(result.ok).toBe(false);
+  expect(result.red).toEqual([
+    `${SMOKE} > [demo] element never came`,
+    `${SMOKE} > [demo] assertion`,
+  ]);
+  expect(result.problems.map((p) => [p.test, p.reason])).toEqual([
+    ['[demo] goto timed out', 'red for the wrong reason (page did not load (page.goto failed))'],
+    ['[demo] connection refused', 'red for the wrong reason (page did not load (net::ERR_*))'],
+    ['[demo] no browser', 'red for the wrong reason (browser not running)'],
+    [
+      '[demo] screenshot timed out',
+      'red for the wrong reason (a Playwright timeout outside locator.waitFor: page.screenshot: Timeout 10000ms exceeded.)',
+    ],
+    ['[demo] page script error', 'red for the wrong reason (TypeError)'],
+  ]);
+});
+
+it('[F1-01k] the locator.waitFor reading applies only to smoke files run in Node, from the red reporter', () => {
+  type Entry = { name: string; browser: boolean; assertionResults: { failures?: unknown }[] };
+  const load = (): { testResults: Entry[] } =>
+    fixture('smoke-report.json') as { testResults: Entry[] };
+  const waited = (r: ReturnType<typeof checkRedReports>): boolean =>
+    r.red.some((x) => x.endsWith('[demo] element never came'));
+  // The same file name outside the smoke pattern: an ordinary unit test, the timeout is refused.
+  const renamed = load();
+  const other = 'test/spec/frontend/build-smoke/entries.test.ts';
+  renamed.testResults[0]!.name = `${ROOT}/${other}`;
+  expect(waited(checkRedReports([renamed], [other], ROOT))).toBe(false);
+  // A smoke-named file that ran in a browser is not a build smoke test.
+  const inBrowser = load();
+  inBrowser.testResults[0]!.browser = true;
+  expect(waited(checkRedReports([inBrowser], [SMOKE], ROOT))).toBe(false);
+  // Vitest's own JSON report (messages only, no causes): refused.
+  const plain = load();
+  for (const t of plain.testResults[0]!.assertionResults) delete t.failures;
+  expect(waited(checkRedReports([plain], [SMOKE], ROOT))).toBe(false);
+  // A globalSetup that failed runs no test: the file is not in the report.
+  expect(checkRedReports([{ testResults: [] }], [SMOKE], ROOT).problems).toEqual([
+    { file: SMOKE, test: null, reason: 'not in the report: this rule-test file did not run' },
+  ]);
+});
+
+it('[F1-01k] smokeCauseVerdict: only the bare locator.waitFor TimeoutError and assertions count', () => {
+  const wait = 'locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for x';
+  expect(smokeCauseVerdict([{ name: 'TimeoutError', message: wait }])).toBeNull();
+  expect(smokeCauseVerdict([{ name: 'AssertionError', message: 'expected 1 to be 2' }])).toBeNull();
+  // Wrapped, or named otherwise, it is not the wait of the test.
+  expect(
+    smokeCauseVerdict([
+      { name: 'Error', message: 'wrapper' },
+      { name: 'TimeoutError', message: wait },
+    ]),
+  ).not.toBeNull();
+  expect(smokeCauseVerdict([{ name: 'Error', message: wait }])).not.toBeNull();
+  expect(
+    smokeCauseVerdict([
+      { name: 'TimeoutError', message: 'locator.click: Timeout 5000ms exceeded.' },
+    ]),
+  ).toMatch(/outside locator\.waitFor/);
+  // A failed globalSetup reported as an error outside the tests.
+  expect(
+    smokeCauseVerdict([
+      { name: 'Error', message: 'build smoke: the admin build (vite build) exited 1' },
+    ]),
+  ).toMatch(/unrecognised/);
+  expect(smokeCauseVerdict([])).toMatch(/unknown reason/);
 });

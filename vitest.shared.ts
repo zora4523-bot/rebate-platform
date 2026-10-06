@@ -98,6 +98,28 @@ export function integrationConfig(opts: {
   };
 }
 
+/**
+ * Build smoke (`*.smoke.test.ts`, F1-01k): Node tests against production builds that the
+ * `globalSetup` makes and serves on the loopback (tools/ops/build-smoke/global-setup.ts); the
+ * tests drive the image's Chromium through the `playwright` library. Builds take minutes, and the
+ * one browser per test makes several tests at once pointless: files run one after another.
+ */
+export function smokeConfig(opts: { include: string[]; globalSetup: string[] }): ViteUserConfig {
+  return {
+    ...resolveBlock(),
+    test: {
+      ...STRICT,
+      include: opts.include,
+      exclude: [...BASE_EXCLUDE],
+      environment: 'node',
+      globalSetup: opts.globalSetup,
+      fileParallelism: false,
+      testTimeout: 60_000,
+      hookTimeout: 60_000,
+    },
+  };
+}
+
 /** Long-run property tier; per-test timeout is 10 minutes (规划/11 §4.2). */
 export function longrunConfig(include: string[]): ViteUserConfig {
   return {

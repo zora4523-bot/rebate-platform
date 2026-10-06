@@ -132,6 +132,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           pnpm --filter @couli/spec-tests exec playwright install --with-deps chromium
       - run: pnpm --filter @couli/spec-tests run test:browser
+      # Build smoke (F1-01k, test/vitest.build-smoke.config.ts): builds the H5 entries (APP_ENV=test)
+      # and the admin console into a temporary directory, serves each on 127.0.0.1 and opens it in
+      # the same Chromium (playwright library): first screen, initial-JS budgets, no jsxDEV.
+      # Screenshots stay in test/.tmp/build-smoke/screenshots/ on the runner.
+      - run: pnpm --filter @couli/spec-tests run test:smoke
       - run: pnpm db:check
 
   guard-git:

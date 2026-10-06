@@ -1,0 +1,170 @@
+{
+  "//": "Constructed in the shape of tools/ops/verify-image/red-reporter.mjs output for the build-smoke project (F1-01k round 1, before any real red run): Node file (browser false), Playwright 1.63 error texts (`<api>: <message>`, TimeoutError `Timeout <n>ms exceeded.`). Replace with a real red run of the candidate copy when one exists.",
+  "reporter": "couli-red-reporter",
+  "testResults": [
+    {
+      "name": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+      "browser": false,
+      "poll_in_source": false,
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[demo] element never came",
+          "title": "[demo] element never came",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] assertion",
+          "title": "[demo] assertion",
+          "status": "failed",
+          "failureMessages": [
+            "AssertionError: landing: expected 70000 to be less than or equal to 61440"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "AssertionError",
+                  "message": "landing: 实测 70000 字节，预算 61440 字节: expected 70000 to be less than or equal to 61440"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] goto timed out",
+          "title": "[demo] goto timed out",
+          "status": "failed",
+          "failureMessages": ["TimeoutError: page.goto: Timeout 15000ms exceeded."],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "page.goto: Timeout 15000ms exceeded.\nCall log:\n  - navigating to \"http://127.0.0.1:40123/\", waiting until \"load\"\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] connection refused",
+          "title": "[demo] connection refused",
+          "status": "failed",
+          "failureMessages": [
+            "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:40123/"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:40123/\nCall log:\n  - navigating to \"http://127.0.0.1:40123/\", waiting until \"load\"\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] no browser",
+          "title": "[demo] no browser",
+          "status": "failed",
+          "failureMessages": ["Error: browserType.launch: Executable doesn't exist"],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "browserType.launch: Executable doesn't exist at /ms-playwright/chromium_headless_shell-1200/chrome-linux/headless_shell"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] screenshot timed out",
+          "title": "[demo] screenshot timed out",
+          "status": "failed",
+          "failureMessages": ["TimeoutError: page.screenshot: Timeout 10000ms exceeded."],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "page.screenshot: Timeout 10000ms exceeded.\nCall log:\n  - taking page screenshot\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] page script error",
+          "title": "[demo] page script error",
+          "status": "failed",
+          "failureMessages": ["TypeError: Cannot read properties of undefined (reading 'entries')"],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TypeError",
+                  "message": "Cannot read properties of undefined (reading 'entries')"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "unhandledErrors": []
+}

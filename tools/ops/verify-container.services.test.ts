@@ -41,7 +41,9 @@ const REDIS_SETTINGS = {
 // answers the first n `redis-cli ping` with a LOADING reply (exit 0); STUB_DOCKER_RUN_EXIT is the
 // exit code of the verify / red / browser container. STUB_DOCKER_FAIL=image-missing makes
 // `image inspect` fail, so the script builds the image (the `build` call is recorded).
-// STUB_DOCKER_SCREENSHOT=1 makes the browser container leave one PNG in <out>/screenshots.
+// STUB_DOCKER_SCREENSHOT=1 makes the browser container leave one PNG in <out>/screenshots (where
+// Vitest browser mode writes), STUB_DOCKER_SMOKE_SHOTS=<n> n build smoke PNGs (smoke-<i>.png at the
+// top of <out>/screenshots).
 const STUB = String.raw`'use strict';
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -81,6 +83,12 @@ if (args[0] === 'run' && args.includes('couli-verify-entrypoint')) {
     const dir = out.slice(0, -':/out'.length) + '/screenshots/spec/x.browser.test.ts';
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(dir + '/shot-chromium-linux.png', 'png');
+  }
+  const smokeShots = Number(process.env.STUB_DOCKER_SMOKE_SHOTS || '0');
+  if (smokeShots > 0 && args.at(-1) === 'browser' && out) {
+    const dir = out.slice(0, -':/out'.length) + '/screenshots';
+    fs.mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < smokeShots; i += 1) fs.writeFileSync(dir + '/smoke-' + i + '.png', 'png');
   }
   answer('', Number(process.env.STUB_DOCKER_RUN_EXIT || '0'));
 }
@@ -550,7 +558,7 @@ it(
 );
 
 it(
-  '[F1-01j] --browser: the browser project only, no network, screenshots and report exported to browser/<n>/out',
+  '[F1-01j, F1-01k] --browser: the browser projects only, no network, screenshots and reports exported to browser/<n>/out',
   () => {
     const ws = workspace('browser', lockWithPlaywright('1.63.0'));
     const res = run(['V3-02', '--worktree', ws, '--browser'], { STUB_DOCKER_RUN_EXIT: '1' });
@@ -587,12 +595,12 @@ it(
     // The hardening of every verify container.
     for (const flag of ['--init', '--read-only', 'no-new-privileges']) expect(args).toContain(flag);
     expect(valueOf(args, '--cap-drop')).toBe('ALL');
-    // The project comes from the trusted table; nothing else is handed over.
+    // The projects come from the trusted table, in its order; nothing else is handed over.
     expect(browser?.env).toEqual({
       PROP_SEED: '20261001',
       VERIFY_TIMEOUT_SECS: '1200',
-      BROWSER_DIR: 'test',
-      BROWSER_CONFIG: 'vitest.browser.config.ts',
+      BROWSER_PROJECTS:
+        'spec-browser:test:vitest.browser.config.ts build-smoke:test:vitest.build-smoke.config.ts',
     });
     expect(noRedisUrl(browser)).toBe(true);
   },
@@ -621,7 +629,17 @@ it(
     expect(shots.status, shots.stderr).toBe(0);
     const shotsDir = join(runs, 'V3-05', 'browser', '1');
     expect(readFileSync(join(shotsDir, 'log.txt'), 'utf8')).toContain(
-      'browser tests exited 0; screenshots exported: 1',
+      'browser tests exited 0; screenshots exported: 1 (browser tests 1, build smoke 0;',
+    );
+
+    // F1-01k: the build smoke's screenshots alone also count; the log tells the two kinds apart.
+    const smoke = run(['V3-06', '--worktree', workspace('browser-smoke', lock), '--browser'], {
+      STUB_DOCKER_SCREENSHOT: '1',
+      STUB_DOCKER_SMOKE_SHOTS: '4',
+    });
+    expect(smoke.status, smoke.stderr).toBe(0);
+    expect(readFileSync(join(runs, 'V3-06', 'browser', '1', 'log.txt'), 'utf8')).toContain(
+      'browser tests exited 0; screenshots exported: 5 (browser tests 1, build smoke 4;',
     );
   },
   CLI_TIMEOUT,
