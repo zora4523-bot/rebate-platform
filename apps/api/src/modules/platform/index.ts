@@ -5,6 +5,21 @@ export * from './logging/index.ts';
 export * from './tracing/index.ts';
 export * from './idempotency/index.ts';
 export * from './http/index.ts';
+// The pre-parsing registration point of the request checks (BR-ID-01 stages ①–③; bootstrap).
+export {
+  installRequestChecks,
+  refuseRoutes,
+  REQUEST_CHECKS,
+  RequestRejection,
+} from './http/request-checks.ts';
+export type {
+  CheckedRequest,
+  RequestCheck,
+  RequestCheckInput,
+  RequestCheckPlan,
+  RouteFilter,
+  VerifiedDevice,
+} from './http/request-checks.ts';
 export { AUDIT_PORT } from './audit/index.ts';
 export type { AuditInput, AuditPort } from './audit/index.ts';
 export { FieldCryptoError, FIELD_CRYPTO_MESSAGES } from './crypto/index.ts';
@@ -12,6 +27,9 @@ export type { FieldCrypto, FieldCryptoErrorCode } from './crypto/index.ts';
 export { contractRouteSchema } from './validation/contract-routes.ts';
 export type { ContractOperationId } from './validation/contract-routes.ts';
 export { fieldsErrorEnvelope } from './validation/index.ts';
+// Generated x-signed table of every contract operation (BR-ID-09; no openapi at run time).
+export { contractSigningRoutes, isContractSignedRoute } from './validation/signing-routes.ts';
+export type { SigningRoute } from './validation/signing-routes.ts';
 // Generated snapshots of specs/link-patterns.yaml and specs/material-channels.yaml (no YAML at run time).
 export { LINK_PATTERNS } from './specs/link-patterns.gen.ts';
 export { getLinkPatterns } from './specs/link-patterns.ts';
