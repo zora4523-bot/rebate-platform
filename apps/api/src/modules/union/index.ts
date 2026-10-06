@@ -39,6 +39,13 @@ export type {
 } from './domain/types.ts';
 export { makeUnionItem, makeUnionOrder } from './domain/dto.ts';
 export { createUnionRegistry } from './infra/registry.ts';
+export { DemoUnionAdapter, DemoUnionError } from './infra/demo/demo-adapter.ts';
+export type {
+  DemoScenario,
+  DemoUnionErrorCode,
+  DemoUnionOptions,
+  DemoUnionRegistryOptions,
+} from './infra/demo/demo-adapter.ts';
 export type { UnionRegistration, UnionRegistry } from './infra/registry.ts';
 export { loadUnionEndpoints, parseUnionEndpoints } from './infra/endpoints.ts';
 export { createGovernedAdapter } from './application/governed-adapter.ts';
