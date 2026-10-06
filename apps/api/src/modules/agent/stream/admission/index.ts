@@ -69,8 +69,8 @@
 // Rules for the implementation: also compiled by the `test` project: erasable syntax only,
 // `import type` for type-only imports, relative imports with `.ts`, no NestJS import, no
 // process.env, time only from the injected Clock.
+import { RedisUnavailableError } from '../../../platform/index.ts';
 import type { Clock, RedisNamespace } from '../../../platform/index.ts';
-import { RedisUnavailableError } from '../../../platform/redis/index.ts';
 import { ADMIT_SCRIPT, SETTLE_SCRIPT } from './scripts.ts';
 
 export type QuotaSubject =
