@@ -10,3 +10,20 @@ export { normalize_phone } from './domain/normalize-phone.ts';
 export type { NormalizedPhone } from './domain/normalize-phone.ts';
 export type { SmsConfigReader } from './application/sms-codes.ts';
 export type { MinimumVersionReader } from './application/session-scope.ts';
+export {
+  createRegistrationService,
+  createDefaultInviteCodeFilter,
+  countDeviceRegistrations,
+  registrationConstants,
+} from './application/registration.ts';
+export type {
+  RegistrationCommand,
+  RegistrationOptions,
+  RegistrationResult,
+  RegistrationService,
+  RegistrationConstants,
+  DeviceLimitContext,
+  DeviceRegistrationRecord,
+  InviteBindResult,
+  SensitiveWords,
+} from './application/registration.ts';
