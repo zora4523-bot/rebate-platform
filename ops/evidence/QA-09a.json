@@ -1,0 +1,109 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; infra/release-scan/compare/** not listed in ops/risk-map.yaml). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl. Refs BR-ID-09; brief written by hand as for B3-02a. Allowlist comparison only tightens the scan: never_accepted material always blocks; no secret literal in the code or fixtures (gitleaks clean). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "round 1 fresh Claude subagent: fail, 1 S1 (service_hosts let through URLs with token paths) + 1 S2 (PGP key header); Codex implementation attempt 2 fixed both; round 2 by another fresh Claude subagent: pass, 0 S0/S1, 1 S2; after the CI fix (Codex attempt 3: shared types moved to types.ts against a circular import) round 3 by a fresh Claude subagent: pass, 0 S0/S1, 1 S2"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "fresh read-only Codex sessions, not the implementing one: round 1 pass, round 2 (after the fix) pass; round 3 (after the CI fix) pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rounds 1 and 2 by fresh Codex sessions (4 and 1 S1), fixed by the test author; a fresh Claude subagent closed it: pass After CI showed three property tests exceeding the default 5 s timeout, the orchestrator added an explicit 900 s timeout to those tests inside the spec commit (no assertion or run count changed) and replayed the implementation commits; red run redone on the new spec commit."
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "QA-09a",
+  "spec_ref": "68b2959cf2b680f11f084706fdfcf215beb7fa80",
+  "spec_commit": "cc64d62fa125e4fd006421063ee33bc6c20282d7",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "cc64d62fa125e4fd006421063ee33bc6c20282d7",
+      "tree": "ef1115dca54b42aaf84a20fc2ce60a98eaf91385",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-06T11:46:30Z",
+      "finished_at": "2026-10-06T11:46:39Z",
+      "red_tests": [
+        "test/spec/release-scan/compare/exceptions.test.ts > [02 §12.6 安全豁免#1] approval 指向 granted=true 的批准记录时放行，依据指向条目下标",
+        "test/spec/release-scan/compare/exceptions.test.ts > [02 §12.6 安全豁免#2] approval 指向 granted=false 的记录、或批准清单里没有的 id，不放行",
+        "test/spec/release-scan/compare/exceptions.test.ts > [02 §12.6 安全豁免#3] 没写 approval、或 approval 不是批准记录 id（文字说明）时不放行",
+        "test/spec/release-scan/compare/exceptions.test.ts > [02 §12.6 安全豁免#4] 批准清单为空时，任何例外条目都不生效",
+        "test/spec/release-scan/compare/exceptions.test.ts > [02 §12.6 安全豁免#5] 例外只放行写明的 rule 与 file：别的文件或别的规则照旧阻断",
+        "test/spec/release-scan/compare/exceptions.test.ts > [02 §12.6 安全豁免#6] 缺 scope_if_leaked / server_side_limit（泄露后果与服务端限制）的条目使清单无效，退出码 2",
+        "test/spec/release-scan/compare/false-positives.test.ts > [02 §12.6 误报过滤#1] rule 与 file 都相同的命中放行，依据指向条目下标",
+        "test/spec/release-scan/compare/false-positives.test.ts > [02 §12.6 误报过滤#2] 同一文件、不同检测规则的命中不放行",
+        "test/spec/release-scan/compare/false-positives.test.ts > [02 §12.6 误报过滤#3] 文件名只按全等比较：同名在别的目录、加后缀、大小写不同都不放行",
+        "test/spec/release-scan/compare/false-positives.test.ts > [02 §12.6 误报过滤#4] file 写成通配（'**'）不放行任何别的文件",
+        "test/spec/release-scan/compare/false-positives.test.ts > [02 §12.6 误报过滤#5] reason 为空或缺 rule/file 的条目使清单无效：退出码 2，全部命中阻断",
+        "test/spec/release-scan/compare/never-accepted.test.ts > [02 §12.6 不可豁免#1] never_accepted 命中在每个端都阻断，原因 never_accepted、无依据",
+        "test/spec/release-scan/compare/never-accepted.test.ts > [02 §12.6 不可豁免#2] 命中内容符合公开标识格式也不放行（微信 AppID 形状被标为 never_accepted）",
+        "test/spec/release-scan/compare/never-accepted.test.ts > [02 §12.6 不可豁免#3] 同 rule、同 file 的 false_positives 条目不能放行 never_accepted 命中",
+        "test/spec/release-scan/compare/never-accepted.test.ts > [02 §12.6 不可豁免#4][BR-ID-09] 带有效负责人批准的 exceptions 条目也不能放行 never_accepted 命中",
+        "test/spec/release-scan/compare/never-accepted.test.ts > [02 §12.6 不可豁免#5] 命中原文含私钥头时，即使检测段漏标 never_accepted 也按不可豁免阻断",
+        "test/spec/release-scan/compare/never-accepted.test.ts > [02 §12.6 不可豁免#6] 一个 never_accepted 命中让整份报告不通过，其余可放行命中照常放行",
+        "test/spec/release-scan/compare/never-accepted.test.ts > [02 §12.6 不可豁免#7] 阻断项在前、公开标识在后：整体仍阻断，逐项判定与汇总都对（最终结果不只取最后一项）",
+        "test/spec/release-scan/compare/never-accepted.test.ts > [02 §12.6 不可豁免#8][BR-ID-09] 同 rule、同 file、不同 line/match 的两条命中逐条独立判定（不按 rule+file 缓存放行）",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#1] 微信 AppID 在 ios/android/harmony 放行，依据为清单条目 wechat_app_id",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#2] 微信 AppID 出现在 h5、admin 制品里阻断（该条目 platforms 不含这两端）",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#3] 格式要整段匹配：AppID 前后多出字符、或 wx 后接 32 位十六进制都不算公开标识",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#4] 清单删去 wechat 条目后，同一 AppID 在 ios 也阻断（放行只认清单登记）",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#5] Sentry DSN 在 h5 放行（crash_report_endpoint），在 admin 阻断",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#6] 带 secret 段的旧式 DSN 不是公开标识，任何端都阻断",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#7] PEM 公钥在 ios 放行（config_public_keys），在 h5 阻断",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#8] https 服务地址在五端都放行（service_hosts）；带用户名口令的地址任何端都阻断",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#9] 32/40 位小写十六进制串（服务端密钥常见格式）在任何端都不按公开标识放行",
+        "test/spec/release-scan/compare/public-ids.test.ts > [02 §12.6 公开标识#10] 24–64 位 base64 / base64url 字符的随机串在任何端都不按公开标识放行",
+        "test/spec/release-scan/compare/public-ids.test.ts > [BR-ID-09][02 §12.6 公开标识#11] 43 位无填充 base64url（install_secret 形状的签名材料）任何端都不按公开标识放行",
+        "test/spec/release-scan/compare/public-ids.test.ts > [BR-ID-09][02 §12.6 公开标识#12] 含 - 与 _ 、以合法末字符结尾的合成签名材料：未标不可豁免也阻断，标了则原因为 never_accepted",
+        "test/spec/release-scan/compare/report.test.ts > [05 QA-09 报告#1] 仓库真实清单可读；没有命中时退出码 0、报告通过且无错误",
+        "test/spec/release-scan/compare/report.test.ts > [05 QA-09 报告#2] 清单外的命中阻断：原因 unlisted，退出码 1，判定与输入命中同序且原样带回命中",
+        "test/spec/release-scan/compare/report.test.ts > [05 QA-09 报告#3] 全部命中都在清单内时退出码 0",
+        "test/spec/release-scan/compare/report.test.ts > [05 QA-09 报告#4] 清单无效时退出码 2、errors 非空，连公开标识也不放行",
+        "test/spec/release-scan/compare/report.test.ts > [05 QA-09 报告#5] 清单无效时即使没有命中也退出码 2（坏清单不能让发布通过）"
+      ],
+      "expected": [
+        "test/spec/release-scan/compare/exceptions.test.ts",
+        "test/spec/release-scan/compare/false-positives.test.ts",
+        "test/spec/release-scan/compare/never-accepted.test.ts",
+        "test/spec/release-scan/compare/public-ids.test.ts",
+        "test/spec/release-scan/compare/report.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8b1e7feb06b4ae044b8bfaa61103b3c42d518cc70c341f4afe3edb96d5fbcc05"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "e4afdf6d5971824281474edb6279f41bad169d66",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
