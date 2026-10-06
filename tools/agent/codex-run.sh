@@ -342,16 +342,9 @@ check_implementer() {
       if [ "$mode" = impl ] && [ "$phase" = handover ]; then implementer=codex; fi
     done
   fi
-  # A Codex-first task (tools/guard/codex-impl-tasks.json, ops/approvals.yaml id 23) of RV0 / RV1
-  # is reviewed by a fresh Claude subagent only (规划/11 §1.1 例外); RV2 keeps a fresh Codex
-  # session as its second reviewer, which is not the implementing one (every call is new).
-  if [ "$TASK_IMPL" = codex ] && [ "$TASK_TESTER" = claude ] &&
-    agent_task_is_codex_impl "$TRUSTED" "$TASK"; then
-    case "$TASK_RISK" in
-      RV2) ;;
-      *) fail_usage "task $TASK is a Codex implementation (tools/guard/codex-impl-tasks.json) of ${TASK_RISK:-unknown risk}: its $REVIEW_TYPE review goes to a fresh Claude subagent (规划/11 §1.1 例外; RV2 only adds a Codex review)" ;;
-    esac
-  fi
+  # A Codex-first task (tools/guard/codex-impl-tasks.json, ops/approvals.yaml id 23) is not
+  # refused here: its PR always adds rule tests (test/**, RV2), so evidence-check asks for both
+  # reviews and a fresh Codex session (never the implementing one) is one of them (GT-23a r2).
   if [ "$implementer" = codex ]; then
     fail_usage "task $TASK was implemented by Codex (handover): its $REVIEW_TYPE review goes to a fresh Claude subagent, not to Codex (规划/11 §2.5; tools/agent/README.md §10)"
   fi

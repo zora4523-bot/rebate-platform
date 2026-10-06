@@ -3,10 +3,13 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { findApproval, parseApprovals } from '../guard/lib/approvals.ts';
+import { MONEY_PATHS } from '../ci/evidence-check.ts';
+import { globsMayOverlap } from '../ops/overlap.ts';
 import {
   CODEX_IMPL_TASKS_FILE,
   isCodexFirst,
   isCodexImplTask,
+  loadCodexImplForbidden,
   loadCodexImplTasks,
 } from './codex-impl-tasks.ts';
 import { repoRoot } from './paths.ts';
@@ -64,4 +67,26 @@ it('[approvals 23] a missing or broken list lists nothing; malformed entries are
   expect(loadCodexImplTasks(root)).toEqual(['B3-02', 'B1-14a']);
   writeFileSync(file, JSON.stringify({ tasks: 'B3-02' }));
   expect(loadCodexImplTasks(root)).toEqual([]);
+});
+
+it('[approvals 23] forbidden_paths cover every funds and attribution path of evidence-check (MONEY_PATHS)', () => {
+  const forbidden = loadCodexImplForbidden(repoRoot());
+  for (const glob of MONEY_PATHS) {
+    const expanded = glob.includes('{')
+      ? glob
+          .replace(/^(.*)\{([^}]*)\}(.*)$/, (_m, a: string, list: string, b: string) =>
+            list
+              .split(',')
+              .map((x) => `${a}${x}${b}`)
+              .join('|'),
+          )
+          .split('|')
+      : [glob];
+    for (const g of expanded) {
+      expect(
+        forbidden.some((f) => globsMayOverlap(g, f)),
+        g,
+      ).toBe(true);
+    }
+  }
 });

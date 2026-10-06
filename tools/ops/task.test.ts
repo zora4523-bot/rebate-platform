@@ -367,7 +367,14 @@ it('[ops/approvals.yaml id 23] a listed row and its split tasks may name impl: c
     'tools/guard/codex-impl-tasks.json': JSON.stringify({
       approval: 23,
       tasks: ['X1-02'],
-      forbidden_paths: ['packages/money/**', 'db/**'],
+      forbidden_paths: ['packages/money/**', 'db/**', 'apps/api/src/modules/commission/**'],
+    }),
+    'ops/tasks/X1-02i.yaml': good({
+      id: 'X1-02i',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      paths: "\n  - 'apps/api/src/**'",
     }),
     // Listed, Codex-first pair, but reaching a forbidden path or not an impl task (S2-1).
     'ops/tasks/X1-02g.yaml': good({
@@ -433,6 +440,10 @@ it('[ops/approvals.yaml id 23] a listed row and its split tasks may name impl: c
     expect(checkTask('X1-02g', opts('RV2'))).toEqual([
       'paths: "packages/money/src/**" reaches "packages/money/**", which stays with the default split (ops/approvals.yaml id 19), not a Codex implementation',
     ]);
+    // A glob that may reach a forbidden module is refused too.
+    expect(checkTask('X1-02i', opts('RV2')).join('\n')).toContain(
+      'reaches "apps/api/src/modules/commission/**"',
+    );
     const migration = checkTask('X1-02h', opts('RV2')).join('\n');
     expect(migration).toContain(
       'a Codex implementation (tools/guard/codex-impl-tasks.json) is for type impl only, not migration',
@@ -447,7 +458,16 @@ it('[ops/approvals.yaml id 23] a listed row and its split tasks may name impl: c
     writeFiles(root, { 'tools/guard/codex-impl-tasks.json': '{ broken' });
     expect(checkTask('X1-02c', opts('RV1')).join('\n')).toContain('impl: must be claude');
   } finally {
-    for (const id of ['X1-02c', 'X1-02d', 'X1-02e', 'X1-02f', 'X1-02g', 'X1-02h', 'X1-01p']) {
+    for (const id of [
+      'X1-02c',
+      'X1-02d',
+      'X1-02e',
+      'X1-02f',
+      'X1-02g',
+      'X1-02h',
+      'X1-02i',
+      'X1-01p',
+    ]) {
       removeDir(`${root}/ops/tasks/${id}.yaml`);
     }
     removeDir(`${root}/tools/guard/codex-impl-tasks.json`);

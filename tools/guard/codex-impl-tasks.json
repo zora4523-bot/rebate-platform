@@ -31,6 +31,14 @@
     "apps/android/**",
     "apps/harmony/**",
     "apps/api/src/modules/linking/**",
+    "apps/api/src/modules/billing/**",
+    "apps/api/src/modules/refund/**",
+    "apps/api/src/modules/invite/**",
+    "apps/api/src/modules/rebate/**",
+    "apps/api/src/modules/attribution/**",
+    "apps/api/src/modules/reconciliation/**",
+    "apps/api/src/modules/commission/**",
+    "apps/api/src/modules/union/**",
     "apps/api/src/modules/ledger/**",
     "apps/api/src/modules/payout/**",
     "apps/api/src/modules/withdrawal/**",
@@ -46,5 +54,5 @@
     "ops/**",
     "specs/commission-examples.csv"
   ],
-  "//forbidden_paths": "A listed ledger whose paths may reach any of these (funds, attribution, payout, orders, migrations, contracts, clients, gates) is refused by task.ts check whatever its suffix: those parts stay with id 19 (Claude review S2-1, 2026-10-06). Only type impl is let through."
+  "//forbidden_paths": "A listed ledger whose paths may reach any of these (funds, attribution, payout, orders, migrations, contracts, clients, gates; a superset of MONEY_PATHS in tools/ci/evidence-check.ts) is refused by task.ts check whatever its suffix: those parts stay with id 19 (Claude review S2-1, Codex review GT-23a round 2, 2026-10-06). Only type impl is let through."
 }
