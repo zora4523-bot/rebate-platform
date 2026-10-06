@@ -139,3 +139,15 @@ approvals:
     granted: true
     date: '2026-10-06'
     note: '负责人在对话里直接对编排会话回复「改成认 GitHub 上的检查结果」（起因：本机 Docker 负载过高，容器完整验证排队；编排会话事先说明了 CI 工作流与验证配方属保护路径、PR 改不动）；落在本分支 chore/gates-ci-full-verify（tools/ci/evidence-check.ts 与其测试、tools/ops/README.md、ops/approvals.yaml）；规划/11 §2.3 第 7 步、§3.2 的同步改动另在规划仓库提交；本条所在的 PR 由编排会话按负责人同一句授权加标签'
+  - id: 22
+    row: 13
+    title: '待确认、待决策的取值与方案选择（原须负责人确认或选择的事项）改由代理用 TypeSafe Jev 判断后回写、事后在变更记录报告，负责人可随时推翻；专业确认、资料提供、实测与 规划/11 §7.1 第 2–4 类不变；本条不放宽门禁：保护路径改动仍按第 16 条与 §4.4（金额与订单归属规则、放宽密钥扫描、删除或削弱资金测试、生产环境仍先问负责人）'
+    granted: true
+    date: '2026-10-06'
+    note: '负责人原话「全部按建议走吧 不要限制的太死了。以后这些问题 不用我处理 请都交给jev」（对话中给会话 project-planning-kanban）；规划依据：规划仓库 PR couli#55，规划/11 §7.1 与 §7.3 第 13 项、00 §9，docs/changes/20261006-待确认事项整批确认与交由Jev判断.md；Jev 的密钥不进任何文件；本条所在的 PR 由负责人本人加标签'
+  - id: 23
+    row: 14
+    title: '部分任务改由 Codex 实现：规划/11 §1.1「例外：改由 Codex 实现的任务」所列子任务（B3-02、B3-03；B3-07 中素材结构化、黑话词典与未知权益提示（A/B/C 判定待淘礼金接入后另定，不在内）；B1-14 中非资金、非归属外部依赖的熔断降级与 k6 / WireMock，即 QA-06；QA-05 的故障注入工具与桩、开关切换与队列中断演练；QA-09 的制品扫描器与白名单比对）台账可写 impl: codex、tester: claude：Claude 子代理先写规则测试（先红），Codex 新只读会话过审测试，Codex 经 codex-run.sh impl --phase impl 实现（沙箱只做静态检查，测试在隔离容器或 CI 跑），评审按路径风险级（RV0 / RV1 由 Claude 新子代理，RV2 两家：Claude 新子代理 + 不是实现会话的 Codex 新只读会话）；改派不改风险级与合并门槛；放行按子任务编号登记在 tools/guard/codex-impl-tasks.json（门禁可信根）；资金、归属、打款、订单补拉、数据库恢复与主库切换、发布流水线接入、迁移、契约、三端仍按第 19 条'
+    granted: true
+    date: '2026-10-06'
+    note: '负责人问「有哪些任务是可以单独交给codex 来开发 执行 Claude 对抗review的。可以多线程来开发 加快进度」，看过代理列出的六条线后答「同意」（对话中给会话「项目规划阶段看板」，经编排会话转达）；子任务范围同日按 Codex 评审收窄；规划依据：规划仓库 PR couli#59（main 3ce7405），规划/11 §1.1、§2.5「Codex 首发实现」、§7.3 第 14 项，docs/changes/20261006-部分任务改由Codex实现.md；落在本分支 chore/codex-impl-selected-tasks（tools/guard/codex-impl-tasks.json、tools/lib、tools/ops、tools/agent、ops/approvals.yaml；同分支在 ops/risk-map.yaml 登记 apps/api/src/modules/agent/** 为 RV1，那是规划/11 §1.1「Agent 服务」行的同步，不属本条批准内容）；本条所在的 PR 由负责人本人加标签'

@@ -890,3 +890,106 @@ it(
     );
   },
 );
+
+it(
+  '[approvals 23] a task of codex-impl-tasks.json with impl: codex, tester: claude gets the Codex implementation phase; Codex reviews the Claude rule tests',
+  LONG,
+  () => {
+    const fx = fixture('codex-first');
+    const stub = (fields: Record<string, unknown>): void =>
+      writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+        {
+          when: ['show'],
+          stdout: JSON.stringify({
+            id: TASK,
+            type: 'impl',
+            risk: 'RV2',
+            impl: 'codex',
+            tester: 'claude',
+            test_paths: ['test/spec/demo/**'],
+            ...fields,
+          }),
+        },
+      ]);
+    stub({});
+    writeFileSync(
+      join(fx.run, 'brief.md'),
+      `# 任务 ${TASK}：codex first\n\n- 本轮阶段：impl（Codex 首发）\n`,
+    );
+    // Not listed: the implementation phase stays refused for a new ledger.
+    const refused = codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']);
+    expect(refused.status).toBe(2);
+    expect(refused.stderr).toContain('codex-impl-tasks.json');
+    mkdirSync(join(fx.trusted, 'tools', 'guard'), { recursive: true });
+    writeFileSync(
+      join(fx.trusted, 'tools', 'guard', 'codex-impl-tasks.json'),
+      JSON.stringify({ approval: 23, tasks: [TASK] }),
+    );
+    // Codex reviews the rule tests Claude wrote (规划/11 §1.1 例外, step 4).
+    expect(
+      codexRun(fx, [
+        'review',
+        TASK,
+        '--base',
+        fx.baseSha,
+        '--review-type',
+        'spec-test',
+        '--dry-run',
+      ]).status,
+    ).toBe(0);
+    const run = codexRun(fx, ['impl', TASK, '--phase', 'impl']);
+    expect(run.status, run.stderr).toBe(0);
+    expect(readJson(join(fx.run, 'meta.impl.json'))['phase']).toBe('impl');
+    // RV2: a fresh Codex read-only session may still review (not a handover).
+    expect(
+      codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--review-type', 'money', '--dry-run'])
+        .status,
+    ).toBe(0);
+    // Listed, but the rule tests are Codex's: no Codex implementation.
+    stub({ tester: 'codex' });
+    const wrongTester = codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']);
+    expect(wrongTester.status).toBe(2);
+    expect(wrongTester.stderr).toContain('not claude');
+    // Listed, but the ledger names Claude as implementer.
+    stub({ impl: 'claude', tester: 'codex' });
+    expect(codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']).stderr).toContain(
+      'not codex',
+    );
+  },
+);
+
+it(
+  '[approvals 23] a split task of a listed row is listed; another row or a broken list is not',
+  LONG,
+  () => {
+    const fx = fixture('codex-first-list');
+    writeStub(join(fx.trusted, 'tools', 'ops', 'task.ts'), 'task', [
+      {
+        when: ['show'],
+        stdout: JSON.stringify({
+          id: TASK,
+          type: 'impl',
+          risk: 'RV1',
+          impl: 'codex',
+          tester: 'claude',
+        }),
+      },
+    ]);
+    writeFileSync(join(fx.run, 'brief.md'), `# 任务 ${TASK}：x\n\n- 本轮阶段：impl（x）\n`);
+    mkdirSync(join(fx.trusted, 'tools', 'guard'), { recursive: true });
+    const list = join(fx.trusted, 'tools', 'guard', 'codex-impl-tasks.json');
+    writeFileSync(list, JSON.stringify({ tasks: ['T1-02'] }));
+    expect(codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']).status).toBe(2);
+    writeFileSync(list, '{ not json');
+    expect(codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']).status).toBe(2);
+    writeFileSync(list, JSON.stringify({ tasks: [`${TASK}a`] }));
+    expect(codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']).status).toBe(2);
+    writeFileSync(list, JSON.stringify({ tasks: [TASK] }));
+    const ok = codexRun(fx, ['impl', TASK, '--phase', 'impl', '--dry-run']);
+    expect(ok.status, ok.stderr).toBe(0);
+    // A fresh Codex session may review it too: the PR adds rule tests, so evidence-check asks for
+    // both reviews (GT-23a round 2).
+    const review = codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--dry-run']);
+    expect(review.status, review.stderr).toBe(0);
+  },
+);
