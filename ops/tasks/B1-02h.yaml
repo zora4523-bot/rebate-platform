@@ -29,6 +29,7 @@ paths:
   - '.env.example'
   - 'contracts/openapi.yaml'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/risk/http.test.ts'
 test_paths:
   - 'test/spec/identity/token/**'
 impl: claude
