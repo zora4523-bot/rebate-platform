@@ -31,7 +31,7 @@ it('[BR-ID-05] 同设备三个账号后第四次微信建号返回 44001，携�
   for (let i = 0; i < 3; i++) {
     success(
       await ctx.register(
-        { phone: `+86138001381${i}`, device_id: randomUUID() },
+        { phone: `1380013810${i}`, device_id: randomUUID() },
         { afterRegistered },
       ),
     );
@@ -79,13 +79,13 @@ for (const enabled of [true, false]) {
     const before = await registrations(kit.db, ctx.appId);
     expect(before).toHaveLength(2);
     expect(before.find((r) => r.user_id === u9)?.merged_into_user_id).toBe(a);
-    success(await ctx.register({ phone: '+8613800138001' }));
+    success(await ctx.register({ phone: '13800138001' }));
     await anchorAfterRecords(kit, ctx);
-    const y = await ctx.register({ phone: '+8613800138002' });
+    const y = await ctx.register({ phone: '13800138002' });
     if (enabled) {
       success(y);
       await anchorAfterRecords(kit, ctx);
-      expect(await ctx.register({ phone: '+8613800138003' })).toMatchObject({
+      expect(await ctx.register({ phone: '13800138003' })).toMatchObject({
         code: 44001,
         count: 3,
       });
@@ -271,7 +271,7 @@ it('[BR-ID-05] 同 App 不同设备：A 建号未提交时 B 能独立完成并�
     const b = kit.db.transaction().execute((trx) =>
       service.register(trx, {
         ...ctx.command,
-        phone: '+8613800138001',
+        phone: '13800138001',
         device_hash: otherHash,
         device_id: randomUUID(),
       }),

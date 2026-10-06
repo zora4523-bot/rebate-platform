@@ -20,7 +20,7 @@ import {
 } from '../../../../apps/api/src/modules/identity/application/registration.ts';
 
 export const WINDOW = 30 * 24 * 60 * 60 * 1000;
-export const PHONE = '+8613800138000';
+export const PHONE = '13800138000';
 export const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
 export interface Kit {
@@ -106,7 +106,7 @@ export function assertPrivateWarnings(lines: readonly string[]) {
   const parsed = lines.map((line) => JSON.parse(line) as { level: number });
   expect(parsed.some((line) => line.level === 40)).toBe(true);
   expect(lines.join('')).not.toContain(PHONE);
-  expect(lines.join('')).not.toContain(PHONE.slice(3));
+  expect(lines.join('')).not.toContain(`+86${PHONE}`);
 }
 export async function sizes(db: Kysely<DB>, app: string) {
   const { rows } = await sql<{ users: number; registrations: number }>`

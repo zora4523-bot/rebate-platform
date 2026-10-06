@@ -10,6 +10,7 @@ export type RegisterMethod = 'sms' | 'wechat' | 'apple' | 'huawei' | 'h5_landing
 export type InviteBindResult = components['schemas']['InviteBind'];
 export interface RegistrationCommand {
   readonly app_id: string;
+  // normalize_phone output: 11 digits without +86; third-party callers may pass null.
   readonly phone: string | null;
   // B1-02d supplies the third-party identity digest; SMS callers omit it or pass null.
   readonly third_party_digest?: string | null;

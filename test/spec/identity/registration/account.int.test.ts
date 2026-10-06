@@ -66,7 +66,7 @@ it('[BR-ID-04][BR-INV-14][04 §3.2] 手机建号写密文/盲索引、默认资�
     }),
   ]);
   expect(ctx.lines.join('')).not.toContain(PHONE);
-  expect(ctx.lines.join('')).not.toContain(PHONE.slice(3));
+  expect(ctx.lines.join('')).not.toContain(`+86${PHONE}`);
 });
 
 it('[BR-ID-04][BR-INV-14] 六种建号方式保留来源，第三方可无手机号、渠道未给为 NULL，等级取配置', async () => {

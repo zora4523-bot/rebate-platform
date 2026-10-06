@@ -76,7 +76,7 @@ for (const mode of ['throw', 'sql'] as const) {
     const bind = vi.fn<NonNullable<RegistrationOptions['bindInvite']>>(async (trx) => {
       await sql`UPDATE app.users SET nickname = 'binding-write' WHERE id = ${marker}`.execute(trx);
       if (mode === 'sql') await sql`SELECT 1 / 0`.execute(trx);
-      throw new Error(`provider exposed ${PHONE} / ${PHONE.slice(3)}`);
+      throw new Error(`provider exposed ${PHONE} / +86${PHONE}`);
     });
     const result = success(await ctx.register({ invite_code: 'ABCDEF' }, { bindInvite: bind }));
     expect(result.invite_bind).toEqual({ result: 'failed', code: 50001 });
@@ -175,13 +175,21 @@ it('[BR-ID-05] 申诉端口不允许则仍返回 44001，判定所需计数及�
   const ctx = await context(kit);
   for (let i = 0; i < 3; i++) await seedUser(kit.db, ctx.appId, { hash: ctx.hash });
   await anchorAfterRecords(kit, ctx);
-  const allow = vi.fn(async () => false);
+  const allow = vi.fn<NonNullable<RegistrationOptions['allowBlockedRegistration']>>(
+    async () => false,
+  );
   expect(await ctx.register({}, { allowBlockedRegistration: allow })).toMatchObject({
     code: 44001,
     count: 3,
     limit: 3,
   });
   expect(allow).toHaveBeenCalledTimes(1);
+  expect(allow.mock.calls[0]![1]).toMatchObject({
+    app_id: ctx.appId,
+    device_hash: ctx.hash,
+    count: 3,
+    limit: 3,
+  });
   expect(await sizes(kit.db, ctx.appId)).toEqual({ users: 3, registrations: 3 });
 });
 
