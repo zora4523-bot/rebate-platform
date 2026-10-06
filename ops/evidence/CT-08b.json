@@ -1,0 +1,138 @@
+{
+  "task": "CT-08b",
+  "spec_ref": "b9f54fe21a32ec3b7d6c95be6c073c7acf359d14",
+  "spec_commit": "fc385d990c78c94540e86c3be69bb69ed620d4bf",
+  "red_tests": [
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-AI-18] agent_intent 源枚举与生成枚举恰好为规定集合",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-AI-18] agent_card_type 源枚举与生成枚举恰好为规定集合",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-AI-18] page_guide_reject_reason 源枚举与生成枚举恰好为规定集合",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-ID-10] 仅六条路由允许 Agent 引导且入口恰为 in_app、push",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-ID-10] 账户安全分类与 page 双向匹配，禁止引导与深链",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-ID-10] 生成桥导出六条引导路由清单并保留路由标记",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] page_guide 仅两个必填字段，路由语法不限定六条白名单",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] earnings_summary 实时必填字段不能缺失且允许空提现、空月份",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 收益金额是非空 int64 整数，最近提现仅标题键和申请金额",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 收益卡历史重载只允许 as_of 与 actions，拒绝部分金额快照",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 实时 收益卡时间为 +08:00，按钮固定顺序、目标和文案且封闭",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 历史 收益卡时间为 +08:00，按钮固定顺序、目标和文案且封闭",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 预计结算月份只接受 YYYY-MM 或 null",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] page_guide_intent 模型输出仅意图与字符串路由",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] get_my_earnings_args 只接受空对象，拒绝身份与其他参数",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] get_my_earnings_result 两种封闭结果均不向模型泄露金额、月份、提现状态",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] normal-page-guide 样例存在、逐行合法且符合一轮流或历史重载边界",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] normal-earnings 样例存在、逐行合法且符合一轮流或历史重载边界",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] normal-earnings-history 样例存在、逐行合法且符合一轮流或历史重载边界",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] unknown-card-page-guide 样例存在、逐行合法且符合一轮流或历史重载边界",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 引导与收益回退文案不含数字、URL、卡片或按钮，引导文案键与路由一致",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] 所有样例 meta.ai_label 和 error.msg 使用默认文案",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] 每个完整或断开流样例都属于不同会话，历史单卡不引入 meta",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] auth_required(login) 可不对应联盟平台，union_auth 必须有平台",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] auth_required(bind_phone) 可不对应联盟平台，union_auth 必须有平台",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] rule_ref.action 与 RouteTarget 一致，允许省略 params",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] 两类商品卡 disclaimer_keys 必含一种价格口径键，但 schema 不按券额强制选择",
+    "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] 所有商品样例按有券与无券选择价格口径键并披露佣金"
+  ],
+  "risk_note": "RV2 because specs/fund-term-keys.yaml is outside the risk-map whitelist (contracts/** is RV1); that file only gains the ordinary text key ai_label, reviewed as a money change per its header. Contract for the D31 page guide card and the D32 read-only earnings card: two card types, agent_intent and agent_card_type values, page_guide_reject_reason, routes.json agent_guide and the account-security mapping with the generated route list, model-side $defs, texts.default.json ai_label (BR-TEXT-16), new and corrected fixtures; also the CT-08a review leftovers (auth_required.platform nullable for login / bind_phone, rule_ref params optional, price_basis / price_basis.general). Rule tests by Codex (two attempts) reviewed by a fresh Claude subagent in two rounds; implementation by an Opus 5.5 subagent in two runs (the second only classified ai_label after the ledger gained the specs path). Branch rebased onto main before the evidence: red repeated at the rebased spec_commit, container verify at the rebased head.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fc385d990c78c94540e86c3be69bb69ed620d4bf",
+      "tree": "fe4ed3b9246c121b547e833ca2cee87b703413d4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T23:58:14Z",
+      "finished_at": "2026-10-05T23:58:18Z",
+      "red_tests": [
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-AI-18] agent_intent 源枚举与生成枚举恰好为规定集合",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-AI-18] agent_card_type 源枚举与生成枚举恰好为规定集合",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-AI-18] page_guide_reject_reason 源枚举与生成枚举恰好为规定集合",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-ID-10] 仅六条路由允许 Agent 引导且入口恰为 in_app、push",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] [BR-ID-10] 账户安全分类与 page 双向匹配，禁止引导与深链",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-ID-10] 生成桥导出六条引导路由清单并保留路由标记",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] page_guide 仅两个必填字段，路由语法不限定六条白名单",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] earnings_summary 实时必填字段不能缺失且允许空提现、空月份",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 收益金额是非空 int64 整数，最近提现仅标题键和申请金额",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 收益卡历史重载只允许 as_of 与 actions，拒绝部分金额快照",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 实时 收益卡时间为 +08:00，按钮固定顺序、目标和文案且封闭",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 历史 收益卡时间为 +08:00，按钮固定顺序、目标和文案且封闭",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 预计结算月份只接受 YYYY-MM 或 null",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] page_guide_intent 模型输出仅意图与字符串路由",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] get_my_earnings_args 只接受空对象，拒绝身份与其他参数",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] get_my_earnings_result 两种封闭结果均不向模型泄露金额、月份、提现状态",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] normal-page-guide 样例存在、逐行合法且符合一轮流或历史重载边界",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] normal-earnings 样例存在、逐行合法且符合一轮流或历史重载边界",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] normal-earnings-history 样例存在、逐行合法且符合一轮流或历史重载边界",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] unknown-card-page-guide 样例存在、逐行合法且符合一轮流或历史重载边界",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] 引导与收益回退文案不含数字、URL、卡片或按钮，引导文案键与路由一致",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] 所有样例 meta.ai_label 和 error.msg 使用默认文案",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] 每个完整或断开流样例都属于不同会话，历史单卡不引入 meta",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] auth_required(login) 可不对应联盟平台，union_auth 必须有平台",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] [BR-AI-01] auth_required(bind_phone) 可不对应联盟平台，union_auth 必须有平台",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] rule_ref.action 与 RouteTarget 一致，允许省略 params",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] 两类商品卡 disclaimer_keys 必含一种价格口径键，但 schema 不按券额强制选择",
+        "test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts > [CT-08b] 所有商品样例按有券与无券选择价格口径键并披露佣金"
+      ],
+      "expected": ["test/spec/contracts/agent-stream-d31-d32/agent-stream-d31-d32.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d601f4dffbc8d06b79b65eeb282ff5d36408d48148cb4129cdedf4f1f54de5d7"
+        }
+      ]
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "03aa57fe57f9c0a934c1d2163d0bf66013756698",
+      "tree": "9c8133a6ac30d0b4f9cb028507ac1cd59cb78937",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-05T23:59:19Z",
+      "finished_at": "2026-10-06T00:01:04Z"
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "pass; one S2 (bridge.ts accepts an explicit null for agent_guide / agent_guide_account) recorded as a follow-up (couli-runs/CT-08b/review-codex-r1.json)"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagent: pass, no findings; one out-of-scope S2 (specs/fund-term-keys.yaml lacks the 08 classification of agent.guide.* / agent.earnings.* keys, to land with B3-13) (couli-runs/CT-08b/review-claude-money.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "round 1 fail (S1 the six guide routes entry not pinned to the BR-ID-10 matrix; four S2), round 2 pass with one S2 (a made-up withdrawal title key in a test constant; the fixtures use withdrawal_status.PENDING_REVIEW.label)"
+  },
+  "trees": {
+    "packages/money": "5557415da8858f7990210c8d996fc2281f7d516b",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f03b0e39669af8c8a52e00f8a2776080dc239780",
+    "test/spec": "b68ada2a21027d8ae95df5963c40188ffb0f54e0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 record of the B3-01a run on the same test/properties tree (f03b0e3, unchanged on main); CT-08b changes contracts/, packages/contracts-ts, specs/fund-term-keys.yaml and test/spec/contracts only",
+    "tree": "f03b0e39669af8c8a52e00f8a2776080dc239780"
+  }
+}
