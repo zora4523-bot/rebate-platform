@@ -17,6 +17,7 @@
 | `agent-stream.schema.json` | Agent 流协议（CT-08a，04 §8.1–8.3）：JSON Schema 2020-12，根是一帧 `{event, id, data}`（SSE 的 `event:` / `id:` / `data:` 三行），按 `event` 区分 `meta`、`text.delta`、`tool.status`、`card`、`suggestions`、`error`、`done`（`done`、`error` 是唯一终止事件）；心跳 `: ping` 不是帧，由 `$defs/ping` 校验。已注册的 10 类卡片（`product_list`、`rebate_quote`、`order_status`、`claim_draft`、`handoff`、`auth_required`、`notice`、`rule_ref`，CT-08b 加的 `page_guide`（D31）、`earnings_summary`（D32），与 `enums/` 的 `agent_card_type` 一致）严格校验 `data`；其他 `type` 按未知卡片只校验外壳，客户端显示 `fallback_text`（03 §7.2）。`page_guide` 只带 `route`、`text_key`（`agent.guide.<route>`），schema 不把 `route` 限在 6 条候选内（客户端遇到包内 `agent_guide` 以外的路由按未知卡片回退）；`earnings_summary` 两种形状二选一：SSE 下发的实时形状（金额、月份、最近一笔提现与 2 个固定按钮），历史接口重载的形状只有 `as_of` 与 `actions`。`$defs` 另有模型侧形状（不是帧）：`page_guide_intent`、`get_my_earnings_args`、`get_my_earnings_result`（04 §8.5）。同名枚举取值与 `enums/` 一致；暂不生成 TS 类型，与 04 和 `enums/` 的一致性由 `test/spec/contracts/agent-stream/`、`test/spec/contracts/agent-stream-d31-d32/` 检查 |
 | `fixtures/agent-streams/*.ndjson` | Agent 流样例（CT-08a），7 类各一个：`normal`、`tool-failed`、`cancelled`、`disconnected`（断线，没有终止帧）、`unknown-card`、`error`、`fallback`（无模型降级，`done.finish_reason=fallback`）。CT-08b 在已有类别下加 4 个（文件名以类别名开头）：`normal-page-guide`（问「提现记录在哪看」，只出 1 张 `page_guide` 卡，没有文本与 suggestions）、`normal-earnings`（`get_my_earnings` 出 1 张实时收益卡加固定模板文本，卡片以外不出现数字）、`normal-earnings-history`（历史接口重载的同一张收益卡，只有一行 `card` 帧，不是一轮流）、`unknown-card-page-guide`（route 为 `Settings` 的引导卡，客户端按未知卡片回退）。每行一个 JSON 对象（一帧，或心跳 `{"comment":"ping"}`）；每个流文件是一个独立会话的第一轮（`session_id` 两两不同），`card_id` 按出现顺序（卡片帧在前、其内嵌商品卡在后）为 c1、c2…连续；`meta.ai_label` 与 `error.msg` 取 `texts.default.json` 的默认文案；商品卡有券放 `price_basis`、无券放 `price_basis.general`，都带 `agent.disclaimer.commission`。全部是合成数据，链接只用 `https://example.com/`；三端 StreamReducer 的单元测试与快照测试用这批样例（03 §7.2） |
 | `texts.default.json` | 客户端包内默认文案（CT-16e）：BR-TEXT-12 字典机制的兜底，接口没下发或字典没有该键时用。键与文案照 08 原文转写，一字不改：BR-TEXT-14 表 A（`error.<code>`）、表 B（`error.<code>.<reason>`）、表 C、表 D，BR-TEXT-01 收益看板（`earnings.*`），BR-TEXT-03（`order.price_compare.hint`），BR-TEXT-16（`ai_label`），BR-TEXT-22 固定话术。`texts` 是默认文案，`{name}` 占位符照原样保留；`fallbacks` 是 08 给出的变量缺失时的写法（表 A「包内默认（变量缺失时）」等）。**表 D（`privacy.*`、`perm.*`）是代理起草的占位措辞，待法务定稿（规划/06 Q-F14），不得用于提审与公开版本**；08 只写了要点、没写文案的键（如 `privacy.first_launch.*`）不建。后台文案不进这里。`pnpm contracts:check` 校验键名、值非空、键按字母序且不重复，并核对 `error-codes.yaml` 每个未废弃、非 P1 的码都有 `error.<code>`（表 A 标「—」静默处理的 10002、10402、30505、44003 除外，登记在 `packages/contracts-ts/scripts/texts.ts`） |
+| `design-tokens.json` | 设计令牌（CT-11a）：规划仓库 `design/tokens/design-tokens.json` 的固定版本快照，令牌版本 0.3.0（`metadata.version`），来源提交 b9f54fe21a32ec3b7d6c95be6c073c7acf359d14（规划 03 §10.1）。内容与该版本逐字相同，不手改；升级时整份换成规划仓库新提交的版本，并在这一行改版本号与来源提交。`packages/ui-tokens` 由它生成 Web 用 CSS 变量（`--<令牌路径以 - 相连>`，取值写法同规划仓库 `scripts/sync-brand.py` 生成的 `variables.css`，只有浅色）、Tailwind 4 `@theme` 别名与 TS 主题对象；改了它要运行 `node packages/ui-tokens/scripts/generate.ts` 并在同一个 PR 里提交生成物（`test/spec/frontend/ui-tokens` 逐字核对漂移） |
 
 ## 以后会放在这里的文件（规划/02 §16.2）
 
@@ -25,7 +26,6 @@
 | 文件 | 内容 | 由谁创建 |
 | --- | --- | --- |
 | `home-schema.json` | 首页页面与组件 props | 契约任务 |
-| `design-tokens.json` | 颜色、字号、间距、圆角 | 契约任务 |
 
 ## 命令
 
