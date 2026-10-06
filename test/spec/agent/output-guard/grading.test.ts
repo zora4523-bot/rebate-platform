@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import fc from 'fast-check';
-import { propParams } from '@couli/testing';
+import { propParams, propRuns } from '@couli/testing';
 import { gradeCase } from '../../../../packages/evals/src/index.ts';
 import type { EvalCase, TurnOutput } from '../../../../packages/evals/src/index.ts';
 import type { GuardEmit } from '../../../../apps/api/src/modules/agent/guard/index.ts';
@@ -99,7 +99,7 @@ it.each([
 
 it(
   '[AC-B3-06a#23] 风险片段随机拼接并切分后无金额、URL、口令或超句数泄漏',
-  { timeout: 60_000 },
+  { timeout: Math.max(60_000, propRuns() * 10) },
   async () => {
     await fc.assert(
       fc.asyncProperty(

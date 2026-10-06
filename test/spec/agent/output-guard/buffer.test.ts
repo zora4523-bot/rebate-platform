@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import fc from 'fast-check';
-import { propParams } from '@couli/testing';
+import { propParams, propRuns } from '@couli/testing';
 import { createSentenceBuffer } from '../../../../apps/api/src/modules/agent/guard/index.ts';
 import { cutText, riskParts, runGuard } from './kit.ts';
 
@@ -84,7 +84,7 @@ it('[AC-B3-06a#10] 整个 60 字都是待续金额时不得泄漏数字，end �
 
 it(
   '[AC-B3-06a#11] 任意 delta 切分不改变原文缓冲片段、过滤片段及摘要',
-  { timeout: 60_000 },
+  { timeout: Math.max(60_000, propRuns() * 10) },
   async () => {
     await fc.assert(
       fc.asyncProperty(

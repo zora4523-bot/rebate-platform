@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import fc from 'fast-check';
-import { propParams } from '@couli/testing';
+import { propParams, propRuns } from '@couli/testing';
 import * as guard from '../../../../apps/api/src/modules/agent/guard/index.ts';
 
 function assertWrapped(input: string): void {
@@ -29,19 +29,23 @@ it.each([
   assertWrapped(input);
 });
 
-it('[AC-B3-06a#19] 全 Unicode（含补充平面与孤立代理项）定界往返属性', () => {
-  fc.assert(
-    fc.property(
-      fc
-        .array(fc.integer({ min: 0, max: 0x10ffff }), { maxLength: 96 })
-        .map((points) => String.fromCodePoint(...points)),
-      (input) => {
-        assertWrapped(input);
-      },
-    ),
-    propParams(),
-  );
-});
+it(
+  '[AC-B3-06a#19] 全 Unicode（含补充平面与孤立代理项）定界往返属性',
+  { timeout: Math.max(60_000, propRuns() * 10) },
+  () => {
+    fc.assert(
+      fc.property(
+        fc
+          .array(fc.integer({ min: 0, max: 0x10ffff }), { maxLength: 96 })
+          .map((points) => String.fromCodePoint(...points)),
+        (input) => {
+          assertWrapped(input);
+        },
+      ),
+      propParams(),
+    );
+  },
+);
 
 it('[AC-B3-06a#20] 身份常量逐项等于唯一清单，无重复且每项均被识别', () => {
   const listed = readFileSync(
