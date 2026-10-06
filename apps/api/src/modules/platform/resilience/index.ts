@@ -42,6 +42,7 @@
 // syntax only, `import type` for type-only imports, `.ts` extensions, no NestJS, no
 // `process.env`, no logging, no wall clock. Not exported from ../index.ts yet (B1-14b).
 import type { BreakerPolicy, GovernancePolicy, RetryPolicy } from '../http/index.ts';
+import { createGovernor, GovernanceError, unionPolicy } from '../http/index.ts';
 
 export type DependencyId =
   | 'union.search'
@@ -102,7 +103,183 @@ export interface ResilienceRegistry {
   entry(dependency: DependencyId): ResilienceEntry;
 }
 
+const ROWS: readonly Omit<ResilienceEntry, 'policy'>[] = [
+  {
+    dependency: 'union.search',
+    ownerModule: 'catalog',
+    failureModes: ['timeout', 'rate_limited'],
+    degrade: { action: 'stale_cache_or_error', errorCode: 50304 },
+    switches: [],
+  },
+  {
+    dependency: 'union.tpwd_parse',
+    ownerModule: 'parsing',
+    failureModes: ['permission_missing'],
+    degrade: { action: 'guide_title_search', errorCode: 30132 },
+    switches: ['parse.tpwd.enabled'],
+  },
+  {
+    dependency: 'model.qwen',
+    ownerModule: 'agent',
+    failureModes: ['timeout', 'rate_limited', 'server_error', 'budget_exhausted'],
+    degrade: { action: 'backup_then_no_model', errorCode: 50302 },
+    switches: ['agent.model_route', 'agent.enabled'],
+  },
+  {
+    dependency: 'judge.jev',
+    ownerModule: 'judge',
+    failureModes: ['timeout', 'rate_limited', 'server_error', 'budget_exhausted'],
+    degrade: { action: 'rules_only', errorCode: null },
+    switches: ['jev.enabled', 'agent.result_check.provider'],
+  },
+  {
+    dependency: 'content_safety',
+    ownerModule: 'agent',
+    failureModes: ['timeout'],
+    degrade: { action: 'fail_closed', errorCode: null },
+    switches: [],
+  },
+  {
+    dependency: 'sms',
+    ownerModule: 'notification',
+    failureModes: ['channel_down'],
+    degrade: { action: 'backup_provider', errorCode: null },
+    switches: ['sms.provider'],
+  },
+  {
+    dependency: 'push',
+    ownerModule: 'notification',
+    failureModes: ['channel_down'],
+    degrade: { action: 'inbox_fallback', errorCode: null },
+    switches: [],
+  },
+];
+
+function defaultPolicy(dependency: DependencyId): GovernancePolicy {
+  const online = unionPolicy('online');
+  if (dependency === 'union.search' || dependency === 'union.tpwd_parse') return online;
+
+  // Where the spec does not fix thresholds, reuse the online breaker/backoff defaults.
+  // SMS and push use its timeout too, with no automatic retry of channel writes.
+  const timeoutMs =
+    dependency === 'judge.jev'
+      ? 400
+      : dependency === 'content_safety'
+        ? 1000
+        : dependency === 'model.qwen'
+          ? 8000
+          : online.timeoutMs;
+  return { ...online, timeoutMs, retries: { ...online.retries, maxRetries: 0 } };
+}
+
+function invalidPolicy(dependency: string): never {
+  throw new GovernanceError('invalid_policy', dependency, 'Invalid resilience configuration');
+}
+
+/** Accept configuration records only, and snapshot own data fields without invoking getters. */
+function fields(
+  value: unknown,
+  allowed: readonly string[],
+  dependency: string,
+): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return invalidPolicy(dependency);
+  }
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return invalidPolicy(dependency);
+  const result: Record<string, unknown> = {};
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string' || !allowed.includes(key)) return invalidPolicy(dependency);
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !Object.hasOwn(descriptor, 'value')) {
+      return invalidPolicy(dependency);
+    }
+    result[key] = descriptor.value;
+  }
+  return result;
+}
+
+function numericFields(
+  value: unknown,
+  allowed: readonly string[],
+  dependency: string,
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const [key, number] of Object.entries(fields(value, allowed, dependency))) {
+    if (typeof number !== 'number') return invalidPolicy(dependency);
+    result[key] = number;
+  }
+  return result;
+}
+
+function mergePolicy(
+  defaults: GovernancePolicy,
+  override: unknown,
+  dependency: DependencyId,
+): GovernancePolicy {
+  const values = fields(override, ['timeoutMs', 'retries', 'breaker'], dependency);
+  let timeoutMs = defaults.timeoutMs;
+  if (Object.hasOwn(values, 'timeoutMs')) {
+    if (typeof values.timeoutMs !== 'number') return invalidPolicy(dependency);
+    timeoutMs = values.timeoutMs;
+  }
+  return {
+    timeoutMs,
+    retries: {
+      ...defaults.retries,
+      ...(Object.hasOwn(values, 'retries')
+        ? numericFields(values.retries, ['maxRetries', 'baseDelayMs', 'maxDelayMs'], dependency)
+        : {}),
+    },
+    breaker: {
+      ...defaults.breaker,
+      ...(Object.hasOwn(values, 'breaker')
+        ? numericFields(
+            values.breaker,
+            ['windowMs', 'minRequests', 'failureRatePercent', 'openMs'],
+            dependency,
+          )
+        : {}),
+    },
+  };
+}
+
+function copyEntry(entry: ResilienceEntry): ResilienceEntry {
+  return {
+    ...entry,
+    failureModes: [...entry.failureModes],
+    degrade: { ...entry.degrade },
+    switches: [...entry.switches],
+    policy: {
+      ...entry.policy,
+      retries: { ...entry.policy.retries },
+      breaker: { ...entry.policy.breaker },
+    },
+  };
+}
+
 export function createResilienceRegistry(overrides?: ResilienceOverrides): ResilienceRegistry {
-  void overrides;
-  throw new Error('NotImplemented: createResilienceRegistry');
+  const configured = fields(
+    overrides === undefined ? {} : overrides,
+    ROWS.map((row) => row.dependency),
+    'resilience',
+  );
+  const entries = new Map<DependencyId, ResilienceEntry>();
+  for (const row of ROWS) {
+    const defaults = defaultPolicy(row.dependency);
+    const policy = Object.hasOwn(configured, row.dependency)
+      ? mergePolicy(defaults, configured[row.dependency], row.dependency)
+      : defaults;
+    // Reuse the governor's numeric constraints. Construction starts no calls or timers.
+    createGovernor(row.dependency, policy);
+    entries.set(row.dependency, { ...row, policy });
+  }
+  return {
+    entries: () => [...entries.values()].map(copyEntry),
+    entry(dependency) {
+      const entry = entries.get(dependency);
+      if (entry === undefined) return invalidPolicy(dependency);
+      return copyEntry(entry);
+    },
+  };
 }
