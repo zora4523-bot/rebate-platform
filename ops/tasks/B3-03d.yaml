@@ -12,7 +12,7 @@ type: impl
 # 风险级 RV2（app.module.ts、main.stream.ts 不在 risk-map），两家评审。
 refs: [BR-AI-23, BR-AI-20]
 refs_hash:
-  BR-AI-23: 7e8958be288f
+  BR-AI-23: e4d4c7173f74
   BR-AI-20: ed15f04bab16
 deps: [B3-03b, B3-03c]
 paths:

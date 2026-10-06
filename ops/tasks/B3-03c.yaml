@@ -13,7 +13,7 @@ type: impl
 refs: [BR-AI-15, BR-AI-23]
 refs_hash:
   BR-AI-15: fce0a36758e3
-  BR-AI-23: 7e8958be288f
+  BR-AI-23: e4d4c7173f74
 deps: []
 paths:
   - 'apps/api/src/modules/agent/stream/admission/**'
