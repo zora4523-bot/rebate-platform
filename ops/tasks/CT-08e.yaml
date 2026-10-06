@@ -1,0 +1,37 @@
+id: CT-08e
+repo: rebate-platform
+title: 契约——openapi.yaml 补 Agent 会话历史、反馈、举报（04 §6.5）：历史按轮游标，回复带完成状态与内容可读状态（12 §9.1 X-10 余项），卡片外壳去 seq、收益卡只取历史形状；反馈与举报的请求体与目标检查；ops.yaml 三个新枚举
+type: contract
+# 2026-10-06 草稿（会话「Agent 落地方案」契约规划子代理，couli-runs/CT-08d/plan.md §10；编排者定 D1 拆分，本段接 CT-08d）。
+# 片段 openapi-fragment-CT-08e.yaml 已在 f118031 导出副本上叠加 CT-08d 后并入试跑：conformance + codegen、redocly lint、contracts-ts、test/spec/contracts、platform/validation 全过，例子逐卡过流协议 schema。
+# 依据：04 §6.5、§8.1、§8.2（contract_sections 嵌入）；编排者另摘入 04 §5 分页一行、§3.2 agent_messages 与 agent_cards 行、§8.3 收益卡「历史接口只返回 as_of 与 actions」一句；
+# BR-AI-19（trace 异步落库、收益卡不存金额）、BR-AI-13、BR-ID-15（举报时限）、BR-PRICE-11（age 按响应时刻）、BR-ID-01 版本闸门表 Agent 行各一句（plan.md §9）。取值只在 08。
+# 形状（plan.md §3.3、§3.6–§3.7，合并后编排者回写 04 §2.5、§3.2、§6.5）：GET 走 ①–④，过期会话 200 + expired=true；按轮分页，首页最新、页内正序；
+# reply.status running / ended / interrupted，content_status ready / pending / unavailable；历史查询不收尾遗留 run（D3：兜底收尾归 B3-03）。
+# D2 已定：agent_cards 加 schema_version、fallback_text，回复行（agent_messages assistant 行）受理时同步写，trace 补 text 与 card_ids，text 非空即内容已落库——由 B3-09a 迁移落实。
+# 卡片外壳去 seq，data 按流协议 card_*，收益卡只认 earnings_summary_history；商品卡 age_sec 按响应时刻重算。反馈 up / down 后者为准、举报原因枚举且第一次为准，消息不存在或非本人 30504、本人用户消息 20001。
+# 新枚举 agent_reply_status、agent_reply_content_status、agent_report_reason（ops.yaml），ENUM_BINDINGS 加 4 个（含 agent_finish_reason）；signing-routes.gen.ts 重新生成。体量 openapi +547 行。
+# D4：本段接口的路由随 B3-09 后续段实现；B3-03d 合并后另起的小契约任务去 planned 标记时，本段已挂路由的接口一并处理。
+# 契约槽全局 1 个（11 §3.4），排在 CT-08d 之后；分工按规划/11 §1.1：Codex 先写规则测试（test/spec/contracts/agent-history/**，先红），Claude 新子代理过审，Opus 5.5 实现。
+refs: [BR-AI-23, BR-AI-20]
+refs_hash:
+  BR-AI-23: e4d4c7173f74
+  BR-AI-20: ed15f04bab16
+contract_sections: ['6.5', '8.1', '8.2']
+deps: [CT-08d]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/ops.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+test_paths:
+  - 'test/spec/contracts/agent-history/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/agent-history/**'
+status: todo
+pr: null

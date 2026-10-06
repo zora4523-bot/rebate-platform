@@ -1,0 +1,37 @@
+id: CT-08d
+repo: rebate-platform
+title: 契约——openapi.yaml 补 Agent 会话与消息流接口（04 §6.5）：新建会话、当前会话、发送消息（200 为 text/event-stream，帧形状引用流协议，含重复消息两帧）、停止生成；error-codes 30502 补 data、30506 含义同步
+type: contract
+# 2026-10-06 草稿（会话「Agent 落地方案」契约规划子代理，couli-runs/CT-08d/plan.md §10；编排者定 D1 拆分：本段 + CT-08e 历史、反馈、举报）。接 CT-08c。
+# 片段 openapi-fragment-CT-08d.yaml 已在 f118031 导出副本上单独并入试跑：conformance + codegen、redocly lint、contracts-ts、test/spec/contracts、platform/validation 全过。
+# 依据：04 §6.5、§8.1「重复消息」、§8.2（contract_sections 嵌入）；编排者另摘入 04 §5 鉴权级别 / 最低支持版本两行、§7 的 305xx 与 30502 行；BR-AI-15（30502 的 reset_at、next）、
+# BR-AI-13（撤回后一律 10004）、BR-ID-01 版本闸门表 Agent 行、BR-ID-03 收紧开关、BR-ID-09 敏感接口清单、01 §4 情境入口各一句（plan.md §9）。取值只在 08。
+# 形状默认（plan.md §2、§3.1–§3.2、§3.4–§3.5，合并后编排者回写 04 §6.5、§7）：x-auth optional（04 写 none，同 search / consents）、x-signed false、x-idempotent false、三个 POST 版本闸门 true，全部 planned。
+# 新建会话复用尚无一轮的最新未过期会话（天然幂等）；发送消息 text 不设 maxLength（⑤ 在 ①–④ 之后判），context 三选一；④ 的 30504 不带 data；cancel 不存在 / 非本人 / 不在进行一律 30505。
+# SSE：200 只声明 text/event-stream、schema type string、Cache-Control no-cache，帧形状只在 agent-stream.schema.json（不跨文件 $ref）；受理前拒绝为 JSON 外壳；conformance.ts 加 STREAM_OPERATIONS。
+# signing-routes.gen.ts 列出全部契约 operation（含 planned），用 apps/api/.../scripts/generate-signing-routes.ts 重新生成。体量 openapi +437 行（略超 400，编排者已接受拆分后的体量）。
+# D4：B3-03d 是 Codex 实现、碰不了 contracts/**；B3-03d 合并后另起小契约任务去掉本段接口的 x-implementation: planned（并重新生成 route-schemas.gen.ts、signing-routes.gen.ts）。
+# 契约槽全局 1 个（11 §3.4）：与 CT-02e、CT-02f 的 openapi.yaml、packages/contracts-ts/** 相交，串行；B3-03d、CT-08e 依赖本段，建议先派。
+# 分工按规划/11 §1.1：Codex 先写规则测试（test/spec/contracts/agent-http/**，先红），Claude 新子代理过审，Opus 5.5 实现；任务书超 24KB 时编排者手工生成（B3-03c 先例）。
+refs: [BR-AI-23, BR-AI-20]
+refs_hash:
+  BR-AI-23: e4d4c7173f74
+  BR-AI-20: ed15f04bab16
+contract_sections: ['6.5', '8.1', '8.2']
+deps: [CT-08c]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+test_paths:
+  - 'test/spec/contracts/agent-http/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/agent-http/**'
+status: todo
+pr: null
