@@ -193,10 +193,10 @@ it('[AC-B1-05f#8] 无券正常返利使用普通购买按钮，JSON 金额保留
     net: 9007199254740990n,
   });
   expect(card.cta).toEqual({ text_key: 'btn.buy' });
-  // BR-PRICE-03: a no-coupon card may carry price_basis.general instead of price_basis.
+  // BR-PRICE-03: a no-coupon card carries exactly one of price_basis and price_basis.general.
   expect(
     card.disclaimer_keys.filter((key) => key === 'price_basis' || key === 'price_basis.general'),
-  ).not.toHaveLength(0);
+  ).toHaveLength(1);
   expect(card.disclaimer_keys).not.toContain('rebate_compare');
 });
 

@@ -107,6 +107,11 @@ export function expectItem(item: UnionItem, platform: RegisteredPlatform): void 
   const actual = keys(item);
   expect(actual).toEqual(expect.arrayContaining(required));
   expect(actual.filter((key) => !required.includes(key) && !optional.includes(key))).toEqual([]);
+  // Plain demo search and material feeds never produce a price anomaly (B1-04r).
+  expect(actual).not.toContain('price_anomaly_reason');
+  if (actual.includes('price_status')) {
+    expect(Reflect.get(item, 'price_status')).toBe('ok');
+  }
   expect(item.platform).toBe(platform);
   expect(item.title).toContain('演示');
   expect(item.quoted_at).toBe(instant);
