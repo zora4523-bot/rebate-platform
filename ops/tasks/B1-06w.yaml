@@ -1,20 +1,20 @@
 id: B1-06w
 repo: rebate-platform
-title: linking / parsing 生产装配：在 app.module 接 open 所需的取价端口、转链缓存（Redis）、受治理联盟上游与注册表、catalog 卡片入口，parsing 所需的受治理上游、LinkRegistrar、报价器、SourceLinkReader；真实应用 POST /v1/links/{link_id}/open 与 POST /v1/inputs/parse 能出结果（演示适配器、非 prod）
+title: linking 生产装配：在 app.module 接 open 所需的取价端口、转链缓存（Redis）、受治理联盟上游与注册表；真实应用 POST /v1/links/{link_id}/open 对京东、拼多多 link 能出外跳方案（演示适配器、非 prod），prod 只下发已验证外跳路径
 type: impl
-# 草稿 2026-10-07（W1 搜索转链线）。B1-06e（open 路由与京东拼多多转链）与 B1-07b（parse 路由）都卡在同一处：所需端口要在 app.module.ts 装配，超出各自 paths，
-# 现由兜底服务占位（open 恒 503/50301、parse 每项 50001）。编排决定合成本装配任务（couli-runs/B1-06e/decision-orchestrator.md、B1-07b/decision-orchestrator.md）。
-# 沿用 B1-05j 在 app.module 建好的全局提供者（受治理联盟上游在装配时建一次、跨请求复用；LinkRegistrar、演示报价器、Redis）；B1-07b 的剩余路由改动（task/B1-07b 上的 wip）可并入本任务或先由 B1-07b 落地。
-# 规则测试：真实 AppModule 装配下（createHttpApp + inject，不监听端口；演示适配器、测试 Redis 与数据库只在 *.int.test.ts 里 import），open 京东 / 拼多多 link 返回 200 与外跳方案、parse 合法合成链接返回卡；
-# 不替换被测服务，只观察（先例 B1-05j governed.int.test.ts）。prod 装配演示适配器 / 演示报价器拒绝启动。风险：app.module.ts RV2、linking RV2、parsing RV1，整体 RV2。
+# 草稿 2026-10-07、2026-10-08 改（W1 搜索转链线）。B1-06e（open 路由与京东拼多多转链）所需端口要在 app.module.ts 装配，超出其 paths，现由兜底服务占位（open 恒 503/50301）。
+# parsing 的装配归 B1-07b（2026-10-08 改：B1-07b paths 加 app.module.ts），本任务只做 linking；编排决定见 couli-runs/B1-06e、B1-07b 的 decision-orchestrator.md。
+# 沿用 B1-05j 在 app.module 建好的全局提供者（受治理联盟上游每进程建一次、跨请求复用；LinkRegistrar、演示报价器、Redis）。
+# 规则测试：真实 AppModule 装配下（createHttpApp + inject，不监听端口；演示适配器、测试 Redis 与数据库只在 *.int.test.ts 里 import），open 京东 / 拼多多 link 返回 200 与外跳方案；
+# 不替换被测服务，只观察（先例 B1-05j governed.int.test.ts）。prod 装配演示适配器 / 演示报价器拒绝启动。风险：app.module.ts RV2、linking RV2，整体 RV2。
 # 装配前必须补的放行判断（B1-06e 资金评审 S2）：APP_ENV=prod 时只下发已验证的外跳路径（CAP-JD-11、CAP-PDD-11 未验证前不下发或按丢归因处理），拼多多 scheme 不写死、取自 apps.json 并经验证标记。
+# linking/** 串行：B1-06e → B1-06m → B1-06p → 本任务；app.module.ts 与 B1-07b 串行。
 refs: []
 refs_hash: {}
-deps: [B1-05j, B1-06e, B1-07b]
+deps: [B1-05j, B1-06e, B1-06m, B1-06p, B1-07b]
 paths:
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/linking/**'
-  - 'apps/api/src/modules/parsing/**'
 test_paths:
   - 'test/spec/linking/wiring/**'
 impl: claude
