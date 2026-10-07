@@ -4,6 +4,7 @@
 // Rule tests: test/spec/parsing/core/**. The POST /v1/inputs/parse route is B1-07b.
 export {
   createParsing,
+  DEPENDENCY_DOWN,
   OFF_SHELF,
   ParsingError,
   parseUrl,

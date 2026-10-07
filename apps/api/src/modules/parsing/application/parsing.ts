@@ -7,18 +7,29 @@
 //   recognized (including a stage pending permission: adapter_unimplemented), a union_host-only
 //   page (home, store), or resolveLink refusing the link;
 // - 30131: the platform or link is unsupported (no table hit, a platform without union adapter or
-//   derivation rule), or a recognized product whose product_key cannot be derived.
+//   derivation rule), or a recognized product whose product_key cannot be derived;
+// - 30141: the union says the item is delisted at detail (or the demo adapter's delisted scenario);
+// - 50301: a union dependency failure (upstream unavailable, throttled, governor timeout, breaker
+//   open, quota exhausted). In parseInput it is that hit's own result: other hits still card.
 // The user's original URL or password is only the input hit: it never becomes canonicalUrl, a card
 // field or an open target (BR-PRICE-08, BR-ATTR-27). No convert call happens here (TRADE-03).
 import type { components } from '@couli/contracts-ts';
 import { deriveProductKey, ProductKeyUnderivable } from '@couli/domain';
 import type { Catalog, CatalogCardEntry, ProductCard, ProductRef } from '../../catalog/index.ts';
-import { getLinkPatterns, type Clock, type LinkPatternsSpec } from '../../platform/index.ts';
 import {
+  GovernanceError,
+  getLinkPatterns,
+  type Clock,
+  type GovernanceErrorCode,
+  type LinkPatternsSpec,
+} from '../../platform/index.ts';
+import {
+  DemoUnionError,
   isPlatform,
   isRegisteredPlatform,
   UnionError,
   type CallCtx,
+  type UnionErrorCode,
   type ItemRef,
   type Platform,
   type RegisteredPlatform,
@@ -32,11 +43,13 @@ import type { ParsingConfigReader } from '../ports.ts';
 export type ParsingHit = components['schemas']['InputHit'];
 
 /** The parse error codes this module decides (contracts/error-codes.yaml). */
-export type ParsingErrorCode = 30131 | 30132 | 30141;
+export type ParsingErrorCode = 30131 | 30132 | 30141 | 50301;
 
 export const UNSUPPORTED = 30131;
 export const UNRECOGNIZED = 30132;
 export const OFF_SHELF = 30141;
+/** error-codes.yaml 50301 without reason (maintenance): the platform dependency is down. */
+export const DEPENDENCY_DOWN = 50301;
 
 /** Rejection of parseUrl; parseInput reports the same codes as typed results instead. */
 export class ParsingError extends Error {
@@ -86,11 +99,24 @@ const JD_MODE = 'product_key.jd.mode';
 const TPWD_PLATFORM: RegisteredPlatform = 'taobao';
 
 /** Union refusals that mean "no concrete product" (business answers, not dependency failures). */
-const UNRECOGNIZED_UNION_CODES = new Set<string>([
+const UNRECOGNIZED_UNION_CODES: ReadonlySet<UnionErrorCode> = new Set<UnionErrorCode>([
   'link_unrecognized',
   'adapter_unimplemented',
   'upstream_rejected',
   'invalid_dto',
+]);
+
+/** Union dependency failures (02 §6.2: retried and counted by the breaker before reaching us). */
+const DEPENDENCY_UNION_CODES: ReadonlySet<UnionErrorCode> = new Set<UnionErrorCode>([
+  'upstream_unavailable',
+  'rate_limited',
+]);
+
+/** Governor outcomes that mean the dependency is unavailable; invalid_policy is a config bug. */
+const DEPENDENCY_GOVERNANCE_CODES: ReadonlySet<GovernanceErrorCode> = new Set<GovernanceErrorCode>([
+  'timeout',
+  'circuit_open',
+  'quota_exceeded',
 ]);
 
 type Step<T> =
@@ -110,10 +136,25 @@ interface Identified {
   readonly productKey: string;
 }
 
+/**
+ * Maps an error from a governed union call to its parse code; null means rethrow (a programming
+ * or configuration fault, not an answer about this hit). `notFound` is the item_unavailable code
+ * of the stage: 30132 at resolveLink (no concrete product), 30141 at detail (delisted).
+ */
 function unionRefusal(error: unknown, notFound: ParsingErrorCode): ParsingErrorCode | null {
-  if (!(error instanceof UnionError)) return null;
-  if (error.code === 'item_unavailable') return notFound;
-  return UNRECOGNIZED_UNION_CODES.has(error.code) ? UNRECOGNIZED : null;
+  if (error instanceof UnionError) {
+    if (error.code === 'item_unavailable') return notFound;
+    if (DEPENDENCY_UNION_CODES.has(error.code)) return DEPENDENCY_DOWN;
+    return UNRECOGNIZED_UNION_CODES.has(error.code) ? UNRECOGNIZED : null;
+  }
+  if (error instanceof DemoUnionError) {
+    // The demo delisted scenario is explicit at every stage (resolve, detail, convert).
+    return error.code === 'demo_delisted' ? OFF_SHELF : UNRECOGNIZED;
+  }
+  if (error instanceof GovernanceError) {
+    return DEPENDENCY_GOVERNANCE_CODES.has(error.code) ? DEPENDENCY_DOWN : null;
+  }
+  return null;
 }
 
 function nonEmpty(value: string | null | undefined): string | undefined {
@@ -292,10 +333,11 @@ export function createParsing(options: ParsingOptions): ParsingService {
     }
     const identified = await resolver.identify(hit.platform, candidate.raw, context);
     if (!identified.ok) return { kind: 'error', hit, error_code: identified.code };
-    // BR-PROD-08 ⑤: one card per (platform, resolved key) within this message.
+    // BR-PROD-08 ⑤: one card per (platform, resolved key) within this message. The key is taken
+    // only once a candidate has carded (or got its typed price_unavailable result): a failed
+    // earlier candidate of the same key leaves room for a later one.
     const dedupKey = `${identified.value.platform}\u0000${identified.value.resolvedKey}`;
     if (seen.has(dedupKey)) return null;
-    seen.add(dedupKey);
     const product = await resolver.detail(identified.value, context);
     if (!product.ok) return { kind: 'error', hit, error_code: product.code };
     const result = await options.cards.assemble({
@@ -307,8 +349,10 @@ export function createParsing(options: ParsingOptions): ParsingService {
     });
     switch (result.kind) {
       case 'card':
+        seen.add(dedupKey);
         return { kind: 'card', hit, card: result.card };
       case 'price_unavailable':
+        seen.add(dedupKey);
         return { kind: 'price_unavailable', hit, productKey: product.value.ref.productKey };
       default:
         throw new Error('parsing: the active-query card entry skipped an item');
