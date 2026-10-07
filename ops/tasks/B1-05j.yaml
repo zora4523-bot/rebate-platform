@@ -1,0 +1,30 @@
+id: B1-05j
+repo: rebate-platform
+title: GET /v1/products/search 路由装配：catalog 搜索控制器、在 app.module 装配 LinkRegistrar / RebateQuoter（演示报价）/ 受治理联盟上游 / Redis 会话存储，去掉 searchProducts 的 x-implementation planned 并重生成 route-schemas；50304 挂 cause 与告警带错误信息；补拉页故障与物料兜底业务拒绝的规则测试
+type: impl
+# 草稿 2026-10-06（W1 搜索转链线），由 B1-05d 拆出（couli-runs/B1-05d/decision-orchestrator.md：控制器所需端口要在 app.module.ts 装配，超出 B1-05d paths；B1-05d 只交 catalog 用例层，#215）。
+# 依据：04 §6.3 search 行、BR-PROD-07（查询专用推广位、无缓存时联盟故障 50304 data.platform）、BR-PROD-08（游标、会话去重）、BR-PRICE-08、BR-PROD-10 细则「按平台的搜索开关」，由编排者摘入任务书第 2 节。
+# 装配：LinkRegistrar 由 B1-06c 的 LinkingModule 提供（catalog 与 linking 不互相 import 模块、不用 forwardRef，经 app.module 全局提供者）；RebateQuoter 在真实报价（B2-03）前用演示报价，留 TODO(规划/11 §4.5)；
+# 联盟上游经 union 治理层（UNION_REGISTRY 经 union 公开出口提供）；会话存储用 platform 的 Redis（B1-02c 已有客户端）。x-auth optional：查看者经 ViewerContext，未接身份时按游客。
+# 本任务一并处理 followups（couli-runs/followups/W1-search-linking.md 中分给 B1-05j 的条目）：① isUnionOutage 吞掉的上游内部程序缺陷要在 50304 上挂 cause、告警带错误信息；② 物料兜底遇业务拒绝不得整个搜索 500（降级为空 fallback_items 并告警）；
+# ③ 重试层用尽的网络错误一律 50304（B1-05d 643532e 已改，补规则测试）；④ 补拉页联盟故障：本页无卡 50304 {platform}、有卡降级返回第 1 页（643532e 的分支目前没有规则测试，Claude 评审探针 couli-runs/B1-05d/probe-claude/r2-outage.test.ts 可参考情形，不抄）；
+# ⑤ 同游标重试丢当页、并发同游标 seen 集合后写覆盖（BR-PROD-08；按页记已下发或请求幂等）；⑥ 只为下发的卡登记 link（未下发的候选不写 links）。⑤⑥ 若改动过大可再拆，PR 写明。
+# 规则测试经 HTTP 入口（不监听端口，用 Nest 测试模块注入）或 catalog 公开入口观察；骨架写在会抛 NotImplemented 的同一文件里；规则测试阶段不改 openapi.yaml 与 route-schemas.gen.ts。
+# 风险：catalog RV1、openapi.yaml RV1、route-schemas.gen.ts（platform）RV2、app.module.ts RV2，整体 RV2。route-schemas.gen.ts 与 B1-02e / f / g、B1-03i 等同路径任务串行。
+refs: []
+refs_hash: {}
+deps: [B1-05d, B1-06c, B1-02c]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/catalog/search-route/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/search-route/**'
+status: todo
+pr: null
