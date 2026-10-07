@@ -1,0 +1,107 @@
+{
+  "task": "B1-06w",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "d89ee8553890d57af79645b07611ff7c9411daaf",
+  "red_tests": [
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#1] 真实应用 jd open 经治理取价和转链、重算卡片、注册新 link 并把 jump 写进 Redis",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#1] 真实应用 pdd open 经治理取价和转链、重算卡片、注册新 link 并把 jump 写进 Redis",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#2] 身份端口不替换时，真实游客非分享 open 返回 10001 而非暂停占位 50301",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#10] prod jd 的 CAP 外跳路径全未验证时不能下发方案",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#10] prod pdd 的 CAP 外跳路径全未验证时不能下发方案",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#11] prod jd 只验证 H5 时主路径是 H5，fallback 也不能夹带未验证路径",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#11] prod pdd 只验证 H5 时主路径是 H5，fallback 也不能夹带未验证路径",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#12] ios 验证标记不能放行 android 客户端",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#12] ios 验证标记不能放行 harmony 客户端",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#12] ios 验证标记不能放行 h5 客户端",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#12] ios 验证标记不能放行 web 客户端",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#13] 京东标记不能放行拼多多，候选 scheme 不能靠平台名称自动获准",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#14] 已验证拼多多 scheme synthetic-pdd-a 来自注入的 apps.json，不写死 pinduoduo",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#14] 已验证拼多多 scheme synthetic-pdd-b 来自注入的 apps.json，不写死 pinduoduo",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#15] apps.json 未给拼多多 scheme，即使标记为已验证也不能凭空补一个",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#17] prod 京东验证了三种路径后保留已安装端的主路径与回退顺序",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#16] prod jd 的缓存主路径和 fallback 同样须验证",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#16] prod pdd 的缓存主路径和 fallback 同样须验证",
+    "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#18] prod 已验证 H5 缓存仍可复用，不必重新转链"
+  ],
+  "risk_note": "RV2 (app.module.ts and linking/**; attribution and jump paths). linking production wiring: the real open service replaces PausedLinkOpen; price fetch through the governed union, card requote through the catalog card entry and the existing quoter with its config read before the transaction (no second pool connection inside it), a Redis jump cache up to 900 s keyed by app, identity owner, pid, client and installed, one process-wide single flight. prod hands out only jump paths marked verified per platform and client, schemes only from apps.json, and refuses with 50301 before any price fetch or conversion when none is verified (CAP-JD-11 / CAP-PDD-11 unverified today); non-prod keeps the BR-ATTR-27 default matrix. Identity ports stay placeholders for B1-02m; the default CallerContext takes the signature-verified device (same app as X-App-Id) as a guest's device, and a caller with neither user nor device is answered 10001 before the idempotency layer. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d89ee8553890d57af79645b07611ff7c9411daaf",
+      "tree": "4769dbe444d06a651046fe03c7bb4bb39a955834",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T22:02:13Z",
+      "finished_at": "2026-10-07T22:02:23Z",
+      "red_tests": [
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#1] 真实应用 jd open 经治理取价和转链、重算卡片、注册新 link 并把 jump 写进 Redis",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#1] 真实应用 pdd open 经治理取价和转链、重算卡片、注册新 link 并把 jump 写进 Redis",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#2] 身份端口不替换时，真实游客非分享 open 返回 10001 而非暂停占位 50301",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#10] prod jd 的 CAP 外跳路径全未验证时不能下发方案",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#10] prod pdd 的 CAP 外跳路径全未验证时不能下发方案",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#11] prod jd 只验证 H5 时主路径是 H5，fallback 也不能夹带未验证路径",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#11] prod pdd 只验证 H5 时主路径是 H5，fallback 也不能夹带未验证路径",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#12] ios 验证标记不能放行 android 客户端",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#12] ios 验证标记不能放行 harmony 客户端",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#12] ios 验证标记不能放行 h5 客户端",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#12] ios 验证标记不能放行 web 客户端",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#13] 京东标记不能放行拼多多，候选 scheme 不能靠平台名称自动获准",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#14] 已验证拼多多 scheme synthetic-pdd-a 来自注入的 apps.json，不写死 pinduoduo",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#14] 已验证拼多多 scheme synthetic-pdd-b 来自注入的 apps.json，不写死 pinduoduo",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#15] apps.json 未给拼多多 scheme，即使标记为已验证也不能凭空补一个",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#17] prod 京东验证了三种路径后保留已安装端的主路径与回退顺序",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#16] prod jd 的缓存主路径和 fallback 同样须验证",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#16] prod pdd 的缓存主路径和 fallback 同样须验证",
+        "test/spec/linking/wiring/app.int.test.ts > [AC-B1-06w#18] prod 已验证 H5 缓存仍可复用，不必重新转链"
+      ],
+      "expected": ["test/spec/linking/wiring/app.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "660d6a8db65f85466075ab6b235d70756d5b27c0274d869fdc525114fc189d30"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents with the money checklist: round 1 pass (S2 prod admission after the conversion, fixed); round 2 pass with no findings, checked that the verified-device subject cannot be spoofed or cross apps and that guests opening share links keep the sharer's attribution"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 a guest non-share open had no idempotency subject and answered 500 instead of 10001) -> fixed in implementation 2; round 2 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs: the first updated links rows and hit the immutability trigger) reviewed by a fresh Claude subagent: pass with two S2 (non-prod default matrix not asserted; prod allow-listed testers out of scope); only the identity ports are replaced, per the orchestrator decision"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "c02b5dd3a46b76a5be0292fd29fba77f8ebcc60e",
+    "specs": "0100f2ee7f7133fd83e159c2e144148e7a4b59d4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
