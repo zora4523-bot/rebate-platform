@@ -2,7 +2,15 @@ import { type DynamicModule, type Provider, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { AdminModule } from './modules/admin/index.ts';
-import { CatalogModule } from './modules/catalog/index.ts';
+import {
+  CatalogModule,
+  GovernedUnion,
+  LinkRegistrar,
+  RebateQuoter,
+  createDemoRebateQuoter,
+  type CatalogConfigReader,
+  type RegisterLinkInput,
+} from './modules/catalog/index.ts';
 import { createContentReader } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import {
@@ -10,12 +18,21 @@ import {
   TOKEN_CHECK,
   type IdentityConfigReader,
 } from './modules/identity/index.ts';
-import { LinkingModule } from './modules/linking/index.ts';
+import {
+  LINK_REGISTRATIONS,
+  LinkingModule,
+  type LinkRegistrations,
+} from './modules/linking/index.ts';
 import { ParsingModule } from './modules/parsing/index.ts';
 import {
+  APP_CONFIG,
   CLOCK,
   DB,
   PlatformModule,
+  createMemoryQuotaLimiter,
+  quotaShares,
+  systemScheduler,
+  type AppConfig,
   type Clock,
   type PlatformOptions,
   REQUEST_CHECKS,
@@ -25,7 +42,18 @@ import {
   isHttpEntry,
 } from './modules/platform/index.ts';
 import { RiskModule, SIGNATURE_CHECK } from './modules/risk/index.ts';
-import { UnionModule } from './modules/union/index.ts';
+import {
+  REGISTERED_PLATFORMS,
+  UNION_ENDPOINTS,
+  UNION_REGISTRY,
+  UnionModule,
+  createGovernedAdapter,
+  type RegisteredPlatform,
+  type UnionAdapter,
+  type UnionEndpoint,
+  type UnionMode,
+  type UnionRegistry,
+} from './modules/union/index.ts';
 
 /**
  * The request check plan bootstrap installs before Fastify parses a body (规划/08 BR-ID-01):
@@ -69,6 +97,111 @@ function identityModule(): DynamicModule {
   });
 }
 
+/** Synthetic config key of the demo quoter's rule (DemoQuoteRule); never a commission rule. */
+const DEMO_QUOTE_RULE_KEY = 'demo.rebate_quote_rule';
+
+/**
+ * Per-platform quota of the governed union adapters.
+ * TODO(规划/11 §4.5): 配额桶容量与 Redis 令牌桶 — blocked on CAP-TB-12、CAP-JD-12、CAP-PDD-12 配额口径
+ */
+const UNION_QUOTA = { capacity: 100, refillPerSecond: 10 } as const;
+
+/**
+ * Every registered union adapter wrapped once by union's governance layer (规划/02 §6.2): one
+ * breaker pair and one quota bucket per platform for the whole process, so an outage seen by one
+ * request opens the breaker for the next (B1-05j).
+ */
+function governedUnion(
+  registry: UnionRegistry,
+  endpoints: readonly UnionEndpoint[],
+): GovernedUnion {
+  const scheduler = systemScheduler();
+  const adapters = new Map<RegisteredPlatform, UnionAdapter>();
+  for (const platform of REGISTERED_PLATFORMS) {
+    const endpoint = endpoints.find((entry) => entry.platform === platform);
+    if (endpoint === undefined) continue;
+    const quota = createMemoryQuotaLimiter(
+      { bucketKey: endpoint.quotaKey, ...UNION_QUOTA, shares: quotaShares('mvp') },
+      scheduler,
+    );
+    adapters.set(
+      platform,
+      createGovernedAdapter(registry.get(platform), { endpoint, scheduler, quota }),
+    );
+  }
+  return {
+    adapter(platform) {
+      const adapter = adapters.get(platform);
+      if (adapter === undefined) throw new Error(`union: no endpoint for ${platform}`);
+      return adapter;
+    },
+  };
+}
+
+/** The strongest union mode configured: one live endpoint makes the whole process live. */
+function unionModeOf(endpoints: readonly UnionEndpoint[]): UnionMode {
+  if (endpoints.some((entry) => entry.mode === 'live')) return 'live';
+  return endpoints.some((entry) => entry.mode === 'replay') ? 'replay' : 'demo';
+}
+
+const UNAVAILABLE_QUOTE_CONFIG: CatalogConfigReader = {
+  configValue: () => Promise.reject(new Error('quoter: no database handle in this process')),
+};
+
+@Module({})
+class CatalogPortsModule {}
+
+/**
+ * Global providers of catalog's search ports, assembled here so catalog and linking never import
+ * each other (no forwardRef):
+ * - GovernedUnion: union adapters wrapped once per process (also for later parsing wiring);
+ * - LinkRegistrar: linking's card registration in the search scene (BR-PRICE-12), per request;
+ * - RebateQuoter: the demo quoter (BR-CALC-20 with synthetic rule values). It refuses prod and
+ *   live union endpoints, so such an entry does not start;
+ *   TODO(规划/11 §4.5): 真实报价器 — blocked on B2-03（佣金规则与用户等级）
+ * - the linking module itself is re-exported, so its SourceLinkReader is visible to catalog.
+ */
+function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModule {
+  return {
+    module: CatalogPortsModule,
+    global: true,
+    imports: [union, linking],
+    providers: [
+      {
+        provide: GovernedUnion,
+        inject: [UNION_REGISTRY, UNION_ENDPOINTS],
+        useFactory: governedUnion,
+      },
+      {
+        provide: LinkRegistrar,
+        inject: [LINK_REGISTRATIONS],
+        useFactory: (registrations: LinkRegistrations): LinkRegistrar => {
+          const registration = registrations.forContext({ scene: 'search' });
+          return { register: (input: RegisterLinkInput) => registration.register(input) };
+        },
+      },
+      {
+        provide: RebateQuoter,
+        inject: [APP_CONFIG, UNION_ENDPOINTS, CLOCK, { token: DB, optional: true }],
+        useFactory: (
+          config: AppConfig,
+          endpoints: readonly UnionEndpoint[],
+          clock: Clock,
+          db?: Kysely<Database>,
+        ): RebateQuoter =>
+          createDemoRebateQuoter({
+            appEnv: config.appEnv,
+            unionMode: unionModeOf(endpoints),
+            config:
+              db === undefined ? UNAVAILABLE_QUOTE_CONFIG : createContentReader({ db, clock }),
+            ruleConfigKey: DEMO_QUOTE_RULE_KEY,
+          }),
+      },
+    ],
+    exports: [GovernedUnion, LinkRegistrar, RebateQuoter, linking],
+  };
+}
+
 /**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes, the risk module's request signature check, whose
@@ -83,6 +216,8 @@ function identityModule(): DynamicModule {
  * configuration port is content's reader too, assembled here so linking never imports content.
  * The parsing module (parse_input core, B1-07a) loads on `api` as well; its configuration port
  * (parse.tpwd.enabled, product_key.jd.mode) is content's reader, so parsing never imports content.
+ * On `api`, catalogPorts makes the governed union adapters, linking's registrar and the demo
+ * quoter global, for catalog's GET /v1/products/search (B1-05j).
  * Business modules are added to the entries that own them by their tasks (规划/02 §4.1).
  */
 @Module({})
@@ -90,6 +225,13 @@ export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
     // One module object for both imports, so Nest builds the identity module once.
     const identity = options.entry === 'api' ? identityModule() : undefined;
+    // One module object per import: Nest builds union and linking once.
+    const union =
+      options.entry === 'api' || options.entry === 'worker' ? UnionModule.forRoot() : undefined;
+    const linking =
+      options.entry === 'api'
+        ? LinkingModule.forRoot((db, clock) => createContentReader({ db, clock }))
+        : undefined;
     return {
       module: AppModule,
       imports: [
@@ -98,11 +240,12 @@ export class AppModule {
         AdminModule,
         ...(isHttpEntry(options.entry) ? [HealthModule] : []),
         ...(identity === undefined ? [] : [identity, RiskModule.forRoot({ imports: [identity] })]),
-        ...(options.entry === 'api' || options.entry === 'worker' ? [UnionModule.forRoot()] : []),
-        ...(options.entry === 'api'
+        ...(union === undefined ? [] : [union]),
+        ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [
+              catalogPorts(union, linking),
               CatalogModule.forRoot((db, clock) => createContentReader({ db, clock })),
-              LinkingModule.forRoot((db, clock) => createContentReader({ db, clock })),
+              linking,
               ParsingModule.forRoot((db, clock) => createContentReader({ db, clock })),
             ]
           : []),

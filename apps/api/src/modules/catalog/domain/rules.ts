@@ -17,8 +17,14 @@ export class CatalogError extends Error {
   /** Envelope `data` for codes that carry it (50304: platform, optional reason). */
   readonly data?: Readonly<Record<string, string>>;
 
-  constructor(code: CatalogErrorCode, message: string, data?: Readonly<Record<string, string>>) {
-    super(message);
+  constructor(
+    code: CatalogErrorCode,
+    message: string,
+    data?: Readonly<Record<string, string>>,
+    /** The underlying failure (e.g. a swallowed union error behind 50304); never sent to clients. */
+    options?: { readonly cause?: unknown },
+  ) {
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'CatalogError';
     this.code = code;
     if (data !== undefined) this.data = data;
