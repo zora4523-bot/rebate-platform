@@ -6,13 +6,16 @@ type: impl
 # x-signed: true 与 x-min-version-gate：签名（B1-03b）与最低支持版本拦截（B1-03c）由 risk 线全局接，本任务不实现；对外放量须在 B1-03b 合并后（plan-draft 待决定第 3 条）。
 # 识别核心在 B1-07a；本任务只做控制器与响应组装、契约校验测试。去掉 planned 后重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入）。
 # 风险：parsing RV1、openapi.yaml RV1、route-schemas.gen.ts RV2，整体 RV2。openapi.yaml 与本线其他路由任务串行。
+# 2026-10-08 改（编排决定 couli-runs/B1-07b/decision-orchestrator.md）：控制器经 ParsingModule.forRoot 注入 createParsing 以避开环依赖，需在 app.module.ts 传入并按 B1-05j 建好的全局提供者接 parsing 所需端口；
+# 故 paths 加 app.module.ts（RV2）、deps 加 B1-05j。B1-06w 只余 linking 的生产装配与放行判断。
 refs: []
 refs_hash: {}
-deps: [B1-07a, B1-02c]
+deps: [B1-07a, B1-02c, B1-05j]
 paths:
   - 'apps/api/src/modules/parsing/**'
   - 'contracts/openapi.yaml'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/parsing/http/**'
 impl: claude
