@@ -27,7 +27,7 @@
 
 import { lstat } from 'node:fs/promises';
 import { compareHits } from '../compare/index.ts';
-import type { ApprovalRecord, ClientPlatform, CompareReport, ScanHit } from '../compare/index.ts';
+import type { DetectOptions, ScanHit, ScanInput, ScanResult } from './types.ts';
 import { textViews } from './encoding.ts';
 import { artifactPlatform, readArtifact } from './read.ts';
 import { detectText, resolveOptions } from './rules.ts';
@@ -35,63 +35,18 @@ import { detectText, resolveOptions } from './rules.ts';
 export { readArtifact } from './read.ts';
 export { defaultDetectOptions, shannonEntropy } from './rules.ts';
 
-export type { ApprovalRecord, ClientPlatform, CompareReport, ScanHit } from '../compare/index.ts';
-
-/** 检测规则编号（写进 ScanHit.rule）。 */
-export type DetectRuleId =
-  | 'private-key'
-  | 'request-sign-material'
-  | 'server-secret'
-  | 'aliyun-access-key'
-  | 'credential-url'
-  | 'keyed-credential'
-  | 'high-entropy';
-
-/** 高熵规则的阈值。 */
-export interface DetectOptions {
-  /** 候选串的最短长度（字符数，含）。 */
-  minLength: number;
-  /** 香农熵下限（bit / 字符，含）。 */
-  minEntropy: number;
-}
-
-/** 制品里的一个文件（解包或遍历后）。 */
-export interface ArtifactEntry {
-  /** 相对路径，用 `/` 分隔；嵌套制品写作「内层制品路径/内层条目路径」。 */
-  path: string;
-  content: Uint8Array;
-}
-
-export interface ReadResult {
-  entries: ArtifactEntry[];
-  /** 读取错误；为空表示整个制品都读到了。 */
-  errors: string[];
-}
-
-export interface ScanInput {
-  /** 制品文件（.ipa / .apk / .aab / .hap / .app）或构建产物目录。 */
-  path: string;
-  platform: ClientPlatform;
-  /** specs/client-public-ids.yaml 原文。 */
-  manifestYaml: string;
-  /** ops/approvals.yaml 的批准列表（调用方从可信副本读出）。 */
-  approvals: readonly ApprovalRecord[];
-  /** 覆盖高熵阈值；未给的项取 defaultDetectOptions()。 */
-  options?: Partial<DetectOptions>;
-}
-
-export interface ScanResult {
-  platform: ClientPlatform;
-  /** 全部检测命中（与 report.decisions 同序）。 */
-  hits: ScanHit[];
-  /** QA-09a compareHits 的报告。 */
-  report: CompareReport;
-  /** 读取错误；非空时 exit_code 为 2。 */
-  errors: string[];
-  /** 0 = 全部放行；1 = 有阻断；2 = 读取错误或清单无效。 */
-  exit_code: 0 | 1 | 2;
-  passed: boolean;
-}
+export type {
+  ApprovalRecord,
+  ArtifactEntry,
+  ClientPlatform,
+  CompareReport,
+  DetectOptions,
+  DetectRuleId,
+  ReadResult,
+  ScanHit,
+  ScanInput,
+  ScanResult,
+} from './types.ts';
 
 /** 对一个文件的内容跑全部检测规则；file 原样写进命中的 file。 */
 export function detectSecrets(
@@ -100,7 +55,7 @@ export function detectSecrets(
   options?: Partial<DetectOptions>,
 ): ScanHit[] {
   const thresholds = resolveOptions(options);
-  return textViews(content).flatMap((text) => detectText(file, text, thresholds));
+  return textViews(content, file).flatMap((text) => detectText(file, text, thresholds));
 }
 
 /** 读取 + 检测 + 与公开标识清单比对（QA-09a compareHits）。 */

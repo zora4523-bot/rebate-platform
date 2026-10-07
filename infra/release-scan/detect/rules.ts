@@ -1,4 +1,4 @@
-import type { DetectOptions, DetectRuleId, ScanHit } from './index.ts';
+import type { DetectOptions, DetectRuleId, ScanHit } from './types.ts';
 
 export function defaultDetectOptions(): DetectOptions {
   return { minLength: 20, minEntropy: 3.5 };
@@ -49,7 +49,7 @@ const PRIORITY: readonly DetectRuleId[] = [
 ];
 
 function fieldRule(name: string): DetectRuleId | undefined {
-  const key = name.replace(/[_-]/g, '').toLowerCase();
+  const key = name.replace(/[._-]/g, '').toLowerCase();
   if (/salt(?:rounds|length|len|size|bits|count|iterations|cost)$/.test(key)) return;
   if (/installsecret|sign.*(?:key|secret)|hmac|salt/.test(key)) return 'request-sign-material';
   if (/secret|password|passwd|privatekey|apiv3/.test(key)) return 'server-secret';
@@ -63,20 +63,35 @@ function fields(text: string): Array<{ name: string; value: string; start: numbe
   const add = (name: string, value: string, start: number): void => {
     found.push({ name, value, start });
   };
-  const assignment = /(?<![\w$-])["'`]?([A-Za-z_$][\w$-]*)["'`]?\s*[:=]\s*/g;
+  const assignment = /(?<![\w$.-])["'`]?([A-Za-z_$][\w$.-]*)["'`]?\s*([:=])\s*/g;
   let m: RegExpExecArray | null;
   while ((m = assignment.exec(text))) {
     // 普通变量赋值不能吞掉内层对象字段，例如压缩后的 c={appSecret:"…"}。
     if (!fieldRule(m[1]!)) continue;
-    const raw =
-      /^(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`|([^\s<\x00-\x1f"'`]+))/.exec(
-        text.slice(assignment.lastIndex),
-      );
-    if (!raw) continue;
-    const value = raw[1] ?? raw[2] ?? raw[3] ?? raw[4] ?? '';
-    const quoted = raw[4] === undefined;
-    add(m[1]!, value, assignment.lastIndex + (quoted ? 1 : 0));
-    assignment.lastIndex += raw[0].length;
+    const valueAt = assignment.lastIndex;
+    const raw = /^(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`)/.exec(
+      text.slice(valueAt),
+    );
+    if (raw) {
+      add(m[1]!, raw[1] ?? raw[2] ?? raw[3] ?? '', valueAt + 1);
+      assignment.lastIndex += raw[0].length;
+      continue;
+    }
+    // 行首配置赋值允许标点（冻结属性测试涵盖逗号、括号等盐值）。
+    // 内联代码的裸值则在语法分隔符处截止，不能吞掉后面的字段。
+    let before = m.index - 1;
+    while (before >= 0 && (text[before] === ' ' || text[before] === '\t')) before--;
+    const config = before < 0 || text[before] === '\n' || text[before] === '\r';
+    const bare = (
+      config && m[2] === '=' ? /^[^\s<\x00-\x1f"'`]+/ : /^[^\s<\x00-\x1f"'`,{}();\u005b\u005d]+/
+    ).exec(text.slice(valueAt));
+    if (!bare) continue;
+    // 冒号在配置行中表示取值；代码里的标识符、调用和表达式不是字面材料。
+    const codeTail = /^[ \t]*[,});]/.test(text.slice(valueAt + bare[0].length));
+    if (m[2] === ':' && (!config || codeTail) && !/^(?:[+-]?\d+(?:\.\d+)?)$/.test(bare[0]))
+      continue;
+    add(m[1]!, bare[0], valueAt);
+    assignment.lastIndex += bare[0].length;
   }
   const resource = /<string\b[^>]*\bname\s*=\s*(["'])([^"']+)\1[^>]*>([^<]*)/gi;
   for (const m of text.matchAll(resource)) {
@@ -96,6 +111,24 @@ function fields(text: string): Array<{ name: string; value: string; start: numbe
   return found;
 }
 
+/** DER 私钥外层是 SEQUENCE + version INTEGER + RSA INTEGER / PKCS#8 SEQUENCE。
+ * SPKI 公钥从算法 SEQUENCE 开始，不含 version，因此不会升级为不可豁免。
+ */
+function privateDerPrefix(value: string): boolean {
+  if (value.length < 32 || !value.startsWith('M')) return false;
+  const bytes = Buffer.from(value.slice(0, 128), 'base64');
+  if (bytes[0] !== 0x30) return false;
+  const length = bytes[1];
+  if (length === undefined || length === 0x80 || length > 0x84) return false;
+  const at = length < 0x80 ? 2 : 2 + (length & 0x7f);
+  return (
+    bytes[at] === 2 &&
+    bytes[at + 1] === 1 &&
+    (bytes[at + 2] === 0 || bytes[at + 2] === 1) &&
+    (bytes[at + 3] === 2 || bytes[at + 3] === 0x30)
+  );
+}
+
 export function detectText(file: string, text: string, options: DetectOptions): ScanHit[] {
   const candidates: Candidate[] = [];
   const add = (rule: DetectRuleId, start: number, length: number): void => {
@@ -113,7 +146,9 @@ export function detectText(file: string, text: string, options: DetectOptions): 
     /-----BEGIN ([A-Z0-9 ]*(?:PRIVATE KEY(?: BLOCK)?|PUBLIC KEY))-----/gi,
   )) {
     const footer = `-----END ${m[1]}-----`;
-    const end = text.toUpperCase().indexOf(footer.toUpperCase(), m.index + m[0].length);
+    const footerPattern = new RegExp(footer, 'gi');
+    footerPattern.lastIndex = m.index + m[0].length;
+    const end = footerPattern.exec(text)?.index ?? -1;
     // 缺 footer 的私钥也阻断，并将紧接的正文并入同一命中。
     const tail =
       end < 0 ? (/^[\sA-Za-z0-9+/=\\-]*/.exec(text.slice(m.index + m[0].length))?.[0] ?? '') : '';
@@ -143,27 +178,50 @@ export function detectText(file: string, text: string, options: DetectOptions): 
     } else if (hasHigh(m[0])) add('high-entropy', m.index, m[0].length);
   }
   for (const m of text.matchAll(/[A-Za-z0-9+/=_-]+/g)) {
+    if (privateDerPrefix(m[0])) add('private-key', m.index, m[0].length);
     if (high(m[0])) add('high-entropy', m.index, m[0].length);
   }
 
-  // 优先级相同的先保留外层完整块（URL / PEM），再考虑其正文。
-  candidates.sort(
-    (a, b) =>
-      PRIORITY.indexOf(a.rule) - PRIORITY.indexOf(b.rule) || a.start - b.start || b.end - a.end,
-  );
-  const selected: Candidate[] = [];
-  for (const candidate of candidates) {
-    if (!selected.some((s) => candidate.start < s.end && candidate.end > s.start)) {
-      selected.push(candidate);
+  // 每层优先级都与已选区间线性合并；避免压缩大文件中逐候选遍历全部命中。
+  candidates.sort((a, b) => a.start - b.start || b.end - a.end);
+  let selected: Candidate[] = [];
+  for (const rule of PRIORITY) {
+    const merged: Candidate[] = [];
+    let cursor = 0;
+    for (const candidate of candidates) {
+      if (candidate.rule !== rule) continue;
+      while (cursor < selected.length && selected[cursor]!.end <= candidate.start) {
+        merged.push(selected[cursor++]!);
+      }
+      const previous = merged[merged.length - 1];
+      const next = selected[cursor];
+      if (
+        (!previous || previous.end <= candidate.start) &&
+        (!next || candidate.end <= next.start)
+      ) {
+        merged.push(candidate);
+      }
     }
+    while (cursor < selected.length) merged.push(selected[cursor++]!);
+    selected = merged;
   }
-  return selected
-    .sort((a, b) => a.start - b.start)
-    .map(({ rule, start, end }) => ({
-      rule,
-      file,
-      line: text.slice(0, start).split('\n').length,
-      match: text.slice(start, end),
-      never_accepted: rule !== 'keyed-credential' && rule !== 'high-entropy',
-    }));
+  const newlines: number[] = [];
+  for (let at = text.indexOf('\n'); at >= 0; at = text.indexOf('\n', at + 1)) newlines.push(at);
+  const lineAt = (start: number): number => {
+    let low = 0;
+    let high = newlines.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (newlines[mid]! < start) low = mid + 1;
+      else high = mid;
+    }
+    return low + 1;
+  };
+  return selected.map(({ rule, start, end }) => ({
+    rule,
+    file,
+    line: lineAt(start),
+    match: text.slice(start, end),
+    never_accepted: rule !== 'keyed-credential' && rule !== 'high-entropy',
+  }));
 }

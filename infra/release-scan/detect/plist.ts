@@ -84,7 +84,7 @@ export function plistText(bytes: Buffer): string {
         break;
       case 4:
         // data 也可能藏有签名材料，保留可读字节和 base64 两种视图。
-        value = { data: body(size).toString('latin1'), base64: body(size).toString('base64') };
+        value = body(size);
         break;
       case 5:
         value = body(size).toString('latin1');
@@ -129,27 +129,42 @@ export function plistText(bytes: Buffer): string {
   // 分对象输出，避免共享引用展开造成指数级内存消耗。
   parse(top, 0);
   for (let ref = 0; ref < count; ref++) parse(ref, 0);
-  const seen = new Set<unknown>();
+  const seen = new Map<object, Set<string | undefined>>();
+  const emitted = new Set<string>();
   const lines: string[] = [];
-  const emit = (value: unknown): void => {
+  let emissions = 0;
+  const scalar = (value: unknown, key?: string): void => {
+    if (++emissions > 200_000) invalid();
+    if (key !== undefined) emitted.add(key);
+    if (typeof value === 'string') emitted.add(value);
+    lines.push(
+      key === undefined ? JSON.stringify(value) : `${JSON.stringify(key)}:${JSON.stringify(value)}`,
+    );
+  };
+  const emit = (value: unknown, parent?: string): void => {
     if (value && typeof value === 'object') {
-      if (seen.has(value)) return;
-      seen.add(value);
-      if (Array.isArray(value)) value.forEach(emit);
+      const contexts = seen.get(value) ?? new Set<string | undefined>();
+      if (contexts.has(parent)) return;
+      contexts.add(parent);
+      seen.set(value, contexts);
+      if (++emissions > 200_000) invalid();
+      if (Buffer.isBuffer(value)) {
+        scalar(value.toString('latin1'), parent);
+        scalar(value.toString('base64'), parent);
+      } else if (Array.isArray(value)) value.forEach((child) => emit(child, parent));
       else
         for (const [key, child] of Object.entries(value)) {
-          if (child && typeof child === 'object') emit(child);
-          else lines.push(`${JSON.stringify(key)}:${JSON.stringify(child)}`);
+          emit(child, key);
         }
-    }
+    } else scalar(value, parent);
   };
   emit(cache.get(top));
-  for (const value of cache.values()) emit(value);
-  // 独立的字符串也要扫；已出现在键值对中的字符串不重复报。
-  const rendered = lines.join('\n');
   for (const value of cache.values()) {
-    if (typeof value === 'string' && !rendered.includes(JSON.stringify(value)))
-      lines.push(JSON.stringify(value));
+    if (value && typeof value === 'object' && !seen.has(value)) emit(value);
+  }
+  // 独立的字符串也要扫；已出现在键值对中的字符串不重复报。
+  for (const value of cache.values()) {
+    if (typeof value === 'string' && !emitted.has(value)) scalar(value);
   }
   return lines.join('\n');
 }

@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { lstat, open, readdir } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { crc32, inflateRawSync } from 'node:zlib';
-import type { ClientPlatform, ReadResult } from './index.ts';
+import type { ClientPlatform, ReadResult } from './types.ts';
 
 const PLATFORMS: Readonly<Record<string, ClientPlatform>> = {
   '.ipa': 'ios',
@@ -125,8 +125,7 @@ function unpack(
           dataEnd > cdStart ||
           bytes.readUInt16LE(local + 6) !== flags ||
           bytes.readUInt16LE(local + 8) !== method ||
-          !bytes.subarray(local + 30, local + 30 + localNameSize).equals(rawName) ||
-          ranges.some(([start, stop]) => local < stop && dataEnd > start)
+          !bytes.subarray(local + 30, local + 30 + localNameSize).equals(rawName)
         )
           fail();
         let recordEnd = dataEnd;
@@ -141,7 +140,6 @@ function unpack(
           )
             fail();
         }
-        if (ranges.some(([start, stop]) => local < stop && recordEnd > start)) fail();
         ranges.push([local, recordEnd]);
         if (
           !(flags & 8) &&
@@ -165,6 +163,10 @@ function unpack(
       }
     }
     if (cursor !== end) fail();
+    ranges.sort((a, b) => a[0] - b[0]);
+    for (let i = 1; i < ranges.length; i++) {
+      if (ranges[i]![0] < ranges[i - 1]![1]) fail();
+    }
   } catch {
     result.errors.push(`ZIP unreadable: ${prefix || '<artifact>'}`);
   }
