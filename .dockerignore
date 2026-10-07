@@ -1,0 +1,35 @@
+# Build context for infra/staging/Dockerfile (B1-01zc). Only source and the lockfile go in:
+# dependencies are installed inside the image from pnpm-lock.yaml, build output is rebuilt.
+
+# environment files and key material never enter the image (规划/11 §8)
+.env
+.env*
+**/.env
+**/.env*
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+
+# version control and orchestration workspaces
+.git
+.github
+couli-runs
+**/couli-runs
+
+# local dependencies and build output: rebuilt from the lockfile inside the image
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.turbo
+**/.turbo
+
+# test scratch space, coverage and reports
+**/.tmp
+**/coverage
+**/reports
+.DS_Store
+**/.DS_Store

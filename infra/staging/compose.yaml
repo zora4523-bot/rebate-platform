@@ -1,0 +1,175 @@
+# Staging stack (B1-01zc): five long-running processes from ONE backend image.
+# Started only by infra/staging/deploy.sh, which runs the migration first and passes
+#   --env-file /etc/couli/staging.env  (compose interpolation of the port numbers only)
+# The image is built on the developer machine and loaded with `docker load`; this file
+# never builds or pulls. COULI_API_TAG is exported by deploy.sh (the tag being deployed).
+# Connection strings and credentials come only from the node env files (root, 600):
+#   /etc/couli/staging.env         api / stream / worker / admin
+#   /etc/couli/staging-payout.env  payout only (its own database role; payout never uses Redis)
+# HTTP ports are published on 127.0.0.1 only; worker and payout publish nothing.
+name: couli-staging
+
+services:
+  # user-facing HTTP API (/v1)
+  api:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - apps/api/dist/main.api.js
+    env_file:
+      - /etc/couli/staging.env
+    environment:
+      # Listen on the container interface so the 127.0.0.1-only host port reaches it.
+      API_HOST: '0.0.0.0'
+    ports:
+      - host_ip: 127.0.0.1
+        target: '${API_PORT:-3100}'
+        published: '${API_PORT:-3100}'
+    healthcheck:
+      # Probes this process own /healthz on API_PORT; any error or non-2xx exits 1.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "fetch('http://127.0.0.1:' + (process.env.API_PORT || '3100') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # Agent SSE streaming endpoint
+  stream:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - apps/api/dist/main.stream.js
+    env_file:
+      - /etc/couli/staging.env
+    environment:
+      # Listen on the container interface so the 127.0.0.1-only host port reaches it.
+      API_HOST: '0.0.0.0'
+    ports:
+      - host_ip: 127.0.0.1
+        target: '${STREAM_PORT:-3101}'
+        published: '${STREAM_PORT:-3101}'
+    healthcheck:
+      # Probes this process own /healthz on STREAM_PORT; any error or non-2xx exits 1.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "fetch('http://127.0.0.1:' + (process.env.STREAM_PORT || '3101') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # pg-boss queue worker; no port
+  worker:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - apps/api/dist/main.worker.js
+    env_file:
+      - /etc/couli/staging.env
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # back-office HTTP API (/admin/v1)
+  admin:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - apps/api/dist/main.admin.js
+    env_file:
+      - /etc/couli/staging.env
+    environment:
+      # Listen on the container interface so the 127.0.0.1-only host port reaches it.
+      API_HOST: '0.0.0.0'
+    ports:
+      - host_ip: 127.0.0.1
+        target: '${ADMIN_PORT:-3102}'
+        published: '${ADMIN_PORT:-3102}'
+    healthcheck:
+      # Probes this process own /healthz on ADMIN_PORT; any error or non-2xx exits 1.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "fetch('http://127.0.0.1:' + (process.env.ADMIN_PORT || '3102') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # payout queue worker; own database role, no Redis, no port
+  payout:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - apps/api/dist/main.payout.js
+    env_file:
+      - /etc/couli/staging-payout.env
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
