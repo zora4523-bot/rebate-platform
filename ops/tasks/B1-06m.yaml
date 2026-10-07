@@ -1,0 +1,31 @@
+id: B1-06m
+repo: rebate-platform
+title: linking open 业务写入与幂等记录同一事务（归属阶段新建 link、复核新 link、open 日志、attempt 与幂等键记录一起提交，故障时全不留、同键重试只一套、重放返回这一套）；单飞窗口内首次 50303 结论不被缓存改判
+type: impl
+# 2026-10-07（W1 搜索转链线），由 B1-06k（#226）拆出：Codex 两轮 S1「业务写入与幂等响应分两次提交」降为 S2（couli-runs/B1-06k/decision-orchestrator.md 末节）；PR #231 台账评审后按编排裁定改写。
+# 方案（定）：open 改用 platform 已有的 executeInTransaction，业务写入全在其 trx 内；不做「按幂等键可重入」（无幂等键列，需改表另立迁移）。旧夹具由 B1-06n 放宽（deps）。
+# 验收：故障发生在业务写入之后、幂等记录完成之前时，该次 link、open 日志、attempt、幂等键记录全不留；同键重试只产生一套写入；之后同键重放返回这一套编号且不再取价、转链。
+# 故障注入：新 kit 保留真实 execute，用真实 createIdempotency 包一层 executeInTransaction（handler 之后抛错）；注入故障时 open 原样抛出、不转 50303、不另写日志；「重试只一套」先断言注入那次被拒，保证现实现上因断言变红。
+# 单飞：窗口内同一身份键首次 50303 后，同 link 新幂等键 open 仍 50303（B1-06k Codex 范围外 S1）。
+# 实现要点：① 不存储结果（非 0 且不在 3xxxx，如 50303）的 open 日志在幂等事务外另写，attempt 不写（冻结用例 AC#14/#15/#37/#40 要日志）；
+# ② link-open-owner 新建 link 与认领改为可选接收 trx（冻结 kit 调 open({ linkId }) 不变）；③ 单飞跨请求共享的新 link：共享结论只在提交后发布（或各自事务内 ON CONFLICT 插入），
+# 发起方回滚时其他请求不得引用不存在的 link（规则测试覆盖）；④ 外部调用（取价、转链）期间占事务连接，本任务接受并在 linking 注释写明，platform 新入口另议。
+# jump.expire_at 检查归 B1-06e。依据 BR-PRICE-12、BR-PRICE-13、BR-PRICE-20、BR-ATTR-05 由编排者摘入任务书第 2 节（refs 只留放得下 24KB 上限的 BR-PRICE-12、20；BR-PRICE-13 含细则单条 43KB、BR-ATTR-05 也超限，评审提示须写明单飞 50303 在本任务范围内）。
+# 新规则测试放 test/spec/linking/open-idempotency/**，@couli/db/testing 只在 *.int.test.ts 里 import。风险：linking/** RV2，platform/idempotency RV2（预计不改）。
+refs: [BR-PRICE-12, BR-PRICE-20]
+refs_hash:
+  BR-PRICE-12: d34f9f17f4ae
+  BR-PRICE-20: 7529667f1f23
+deps: [B1-06k, B1-06n]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/modules/platform/idempotency/**'
+test_paths:
+  - 'test/spec/linking/open-idempotency/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-idempotency/**'
+status: todo
+pr: null

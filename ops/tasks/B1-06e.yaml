@@ -12,6 +12,7 @@ type: impl
 # 淘宝 open 在 B1-06f 之前一律按 50301 处理，不出半成品。无 active 推广位：plan-draft 待决定第 2 条默认（50301 并告警），默认值待负责人确认，做成可替换。
 # 实现路由时去掉 openLink 的 x-implementation: planned 并重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入）。
 # x-signed：签名由 risk 线全局守卫（B1-03b），本任务不实现；对外放量须在 B1-03b 合并后。风险：linking RV2，整体 RV2。
+# 2026-10-07（B1-06m 台账评审）：复核失败用转链缓存外跳前检查 jump.expire_at，已过期不用（B1-06k Codex 第 2 轮 S2）。
 refs: []
 refs_hash: {}
 deps: [B1-06k, B1-04o, B1-02c]
