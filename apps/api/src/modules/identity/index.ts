@@ -1,4 +1,6 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { revokeSessionsByUser, revokeSessionsByDevice } from './application/revoke-sessions.ts';
+export type { AfterSessionsRevoked, SessionRevokeReason } from './application/revoke-sessions.ts';
 export { IdentityModule } from './identity.module.ts';
 export type { IdentityConfigReader, IdentityModuleOptions } from './identity.module.ts';
 // The token stages ② ③ (BR-ID-01) for the api entry's request check plan (app.module).
