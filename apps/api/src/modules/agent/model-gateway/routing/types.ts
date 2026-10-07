@@ -121,13 +121,13 @@ export interface ModelRouterOptions {
   readonly budgetExhausted: () => boolean;
   readonly config: ModelRouterConfig;
   readonly scheduler: Scheduler;
-  /** 失败尝试已收到的用量的计量去处（与 VendorGateway 的线上计量同一个）。 */
+  /** 兼容旧接线；成功和失败用量统一由 VendorGateway 的计量去处记录。 */
   readonly meter: UsageSink;
-  /** 计量时刻。 */
+  /** 兼容旧接线；计量时刻取 VendorGateway 的 Clock。 */
   readonly clock: Clock;
   /**
-   * 与 gateway 的 transport.billable 一致；false 时不补记失败用量（回放、评测端口适配器 createPortTransport）。
-   * 省略时取 createMeteredVendorGateway 登记的值，未登记按计费处理；与登记值矛盾则构造即拒绝。
+   * 兼容旧接线；与 createMeteredVendorGateway 登记值矛盾则构造即拒绝。
+   * 是否计量由 VendorGateway 的 transport.billable 决定。
    */
   readonly billable?: boolean;
   readonly onAlert?: (alert: RouterAlert) => void;

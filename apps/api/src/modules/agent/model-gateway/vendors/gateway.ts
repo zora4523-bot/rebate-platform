@@ -5,8 +5,11 @@ import type {
   OfflineVendorCall,
   VendorGateway,
   VendorGatewayOptions,
+  VendorResponse,
+  VendorUsage,
 } from './types.ts';
 import { assertOnlineVendor, registrationFor } from './registry.ts';
+import { claimFailureUsage } from './billing.ts';
 
 const OFFLINE_USES: readonly OfflineUse[] = [
   'eval_compare',
@@ -114,22 +117,32 @@ export function createVendorGateway(input: VendorGatewayOptions): VendorGateway 
           throw new VendorError('offline_budget_unset', 'Offline budget approval is required');
         }
       }
-      const response = await options.transport.send(
-        { vendor: call.vendor, model: call.model, body: call.body },
-        signal,
-      );
-      if (billable) {
+      const recordUsage = (usage: VendorUsage): void => {
         const meter = call.purpose === 'online' ? options.onlineMeter : options.offlineMeter;
         meter.record({
           vendor: call.vendor,
           purpose: call.purpose,
           use: call.purpose === 'offline' ? call.use : null,
           model: call.model,
-          input_tokens: response.usage.input_tokens,
-          output_tokens: response.usage.output_tokens,
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
           recorded_at: options.clock.now(),
         });
+      };
+      let response: VendorResponse;
+      try {
+        response = await options.transport.send(
+          { vendor: call.vendor, model: call.model, body: call.body },
+          signal,
+        );
+      } catch (error) {
+        if (billable) {
+          const usage = claimFailureUsage(error);
+          if (usage !== null) recordUsage(usage);
+        }
+        throw error;
       }
+      if (billable) recordUsage(response.usage);
       return response;
     },
   };
