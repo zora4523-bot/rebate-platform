@@ -71,7 +71,8 @@ it.each(['jd', 'pdd'] as const)(
       purpose: 'convert',
     });
     expect(request).toMatchObject({ idempotencyKey: input.idempotencyKey, item: { platform } });
-    expect(result.expire_at).toBe(input.owner.link.expire_at.toISOString());
+    // The jump plan expires 900 s after this conversion (BR-ATTR-05: links.expire_at only describes the copy issued at registration).
+    expect(result.expire_at).toBe(new Date(f.clock.now().getTime() + 900_000).toISOString());
     const converted = await f.convert.mock.results[0]!.value;
     expect(converted.kind).toBe('url');
     if (converted.kind === 'url') expect(JSON.stringify(result)).toContain(converted.url);
