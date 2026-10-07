@@ -8,6 +8,7 @@ import {
   LinkRegistrar,
   RebateQuoter,
   createDemoRebateQuoter,
+  createItemRefService,
   type CatalogConfigReader,
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
@@ -19,8 +20,12 @@ import {
   type IdentityConfigReader,
 } from './modules/identity/index.ts';
 import {
+  LINK_OPEN_PORTS,
   LINK_REGISTRATIONS,
   LinkingModule,
+  loadLinkOpenApps,
+  openScopedConfig,
+  type LinkOpenPorts,
   type LinkRegistrations,
 } from './modules/linking/index.ts';
 // The composition root may reach catalog's wiring helper: the process item_ref cipher of local /
@@ -185,6 +190,28 @@ const UNAVAILABLE_QUOTE_CONFIG: CatalogConfigReader = {
   configValue: () => Promise.reject(new Error('quoter: no database handle in this process')),
 };
 
+/** The quoter's configuration reader: one per process, shared with the open's pre-reads. */
+const QUOTE_CONFIG = Symbol('QUOTE_CONFIG');
+
+/**
+ * Every key the demo quoter reads (card-assembler.ts: its rule, the tech fee and the taobao
+ * compare ratio). An open pre-reads them before its transaction (B1-06m); a key missing here
+ * fails that open's re-check closed instead of borrowing a second connection.
+ * TODO(规划/11 §4.5): 真实报价器自带预读清单 — blocked on B2-03（佣金规则与用户等级）
+ */
+const DEMO_QUOTE_KEYS = [
+  DEMO_QUOTE_RULE_KEY,
+  'tech_fee_bp',
+  'rebate.taobao.compare_rate_ratio_bp',
+] as const;
+
+/**
+ * Jump paths verified per platform and client for prod (B1-06e fund review S2): none yet, so a
+ * prod open hands out no jump and answers 50301; non-prod hands out the default matrix.
+ * TODO(规划/11 §4.5): 按实测登记已验证的外跳路径 — blocked on CAP-JD-11、CAP-PDD-11
+ */
+const VERIFIED_JUMP_PATHS: LinkOpenPorts['verifiedPaths'] = {};
+
 @Module({})
 class CatalogPortsModule {}
 
@@ -196,6 +223,8 @@ class CatalogPortsModule {}
  * - RebateQuoter: the demo quoter (BR-CALC-20 with synthetic rule values). It refuses prod and
  *   live union endpoints, so such an entry does not start;
  *   TODO(规划/11 §4.5): 真实报价器 — blocked on B2-03（佣金规则与用户等级）
+ * - LINK_OPEN_PORTS: linking's open (B1-06w) — the same governed adapters and quoter, an
+ *   item_ref issuer, contracts/apps.json and the prod-verified jump paths;
  * - the linking module itself is re-exported, so its SourceLinkReader is visible to catalog.
  */
 function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModule {
@@ -218,24 +247,67 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
         },
       },
       {
+        // Inside an open it answers only from the open's pre-reads; elsewhere it reads through.
+        provide: QUOTE_CONFIG,
+        inject: [CLOCK, { token: DB, optional: true }],
+        useFactory: (clock: Clock, db?: Kysely<Database>): CatalogConfigReader =>
+          db === undefined
+            ? UNAVAILABLE_QUOTE_CONFIG
+            : openScopedConfig(createContentReader({ db, clock })),
+      },
+      {
         provide: RebateQuoter,
-        inject: [APP_CONFIG, UNION_ENDPOINTS, CLOCK, { token: DB, optional: true }],
+        inject: [APP_CONFIG, UNION_ENDPOINTS, QUOTE_CONFIG],
         useFactory: (
           config: AppConfig,
           endpoints: readonly UnionEndpoint[],
-          clock: Clock,
-          db?: Kysely<Database>,
+          quoteConfig: CatalogConfigReader,
         ): RebateQuoter =>
           createDemoRebateQuoter({
             appEnv: config.appEnv,
             unionMode: unionModeOf(endpoints),
-            config:
-              db === undefined ? UNAVAILABLE_QUOTE_CONFIG : createContentReader({ db, clock }),
+            config: quoteConfig,
             ruleConfigKey: DEMO_QUOTE_RULE_KEY,
           }),
       },
+      {
+        provide: LINK_OPEN_PORTS,
+        inject: [
+          GovernedUnion,
+          RebateQuoter,
+          QUOTE_CONFIG,
+          APP_CONFIG,
+          { token: FIELD_CRYPTO, optional: true },
+        ],
+        useFactory: (
+          union: GovernedUnion,
+          quoter: RebateQuoter,
+          quoteConfig: CatalogConfigReader,
+          config: AppConfig,
+          crypto?: FieldCrypto,
+        ): LinkOpenPorts => {
+          if (crypto === undefined && config.appEnv !== 'local' && config.appEnv !== 'test') {
+            throw new Error('linking: item_ref needs the field keyring outside local / test');
+          }
+          return {
+            union,
+            quoter,
+            // The re-checked card's item_ref is never sent by an open; it is issued as for any card.
+            itemRefs: createItemRefService({ crypto: crypto ?? createProcessItemRefCipher() }),
+            quoteReads: {
+              prepare: async (appId) => {
+                await Promise.allSettled(
+                  DEMO_QUOTE_KEYS.map((key) => quoteConfig.configValue(appId, key)),
+                );
+              },
+            },
+            apps: loadLinkOpenApps(),
+            verifiedPaths: VERIFIED_JUMP_PATHS,
+          };
+        },
+      },
     ],
-    exports: [GovernedUnion, LinkRegistrar, RebateQuoter, linking],
+    exports: [GovernedUnion, LinkRegistrar, RebateQuoter, LINK_OPEN_PORTS, linking],
   };
 }
 

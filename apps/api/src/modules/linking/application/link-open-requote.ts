@@ -139,7 +139,8 @@ export interface LinkOpenConversionInput {
 /** The conversion port: convert, plus the optional admission and plan variant (B1-06e). */
 export interface LinkOpenConversionPort {
   convert(input: LinkOpenConversionInput): Promise<LinkOpenJump>;
-  admit?(owner: LinkOpenOwnerResult): Promise<void>;
+  /** The client is passed so an admission may depend on it (B1-06w: prod verified paths). */
+  admit?(owner: LinkOpenOwnerResult, client: LinkOpenConversionInput['client']): Promise<void>;
   variant?(input: Pick<LinkOpenConversionInput, 'client' | 'installed'>): string;
   /**
    * B1-06m: pre-reads what admit and convert may read, before the open's transaction (no read
@@ -157,9 +158,24 @@ export interface LinkOpenRequoteOptions extends LinkOpenOwnerOptions {
     put(key: LinkOpenCacheKey, value: LinkOpenCachedJump): Promise<void>;
   };
   readonly idempotency: Pick<Idempotency, 'executeInTransaction'>;
+  /**
+   * B1-06w: the single-flight windows shared by every service built with it. The composition
+   * root builds one per process (the service itself is built per request); omitted, the service
+   * keeps its own.
+   */
+  readonly flights?: LinkOpenFlights;
   // TODO(规划/11 §4.5): 拼多多比价预判开关打开的分支 — blocked on CAP-PDD-04。
   // B1-06m: catalog, prices, conversion and cache are called while the open holds its transaction
   // connection; their implementations must not take another pooled database connection then.
+}
+
+/** Opaque process-wide single-flight state (B1-06w); see LinkOpenRequoteOptions.flights. */
+export interface LinkOpenFlights {
+  readonly windows: Map<string, unknown>;
+}
+
+export function createLinkOpenFlights(): LinkOpenFlights {
+  return { windows: new Map() };
 }
 
 export interface LinkOpenRequoteInput {
@@ -365,7 +381,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     pids,
     ...(attrCodes === undefined ? {} : { attrCodes }),
   });
-  const flights = new Map<string, Flight>();
+  const flights = (options.flights ?? createLinkOpenFlights()).windows as Map<string, Flight>;
 
   async function setting(appId: string, key: string, fallback: number): Promise<number> {
     const value = await config.configValue(appId, key);
@@ -689,7 +705,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     // BR-PROD-10: a paused platform answers 50301 before any cache or price work.
     if (conversion.admit !== undefined) {
       try {
-        await conversion.admit(owner);
+        await conversion.admit(owner, input.client);
       } catch (error) {
         return failure(conversionFailure(error).code === 50301 ? 50301 : 50303, owner);
       }
@@ -1087,6 +1103,9 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       return { code: 30144, data: null };
     }
     const caller = await callerContext.current();
+    // B1-06w: a caller with neither a user nor a verified device has no idempotency subject;
+    // without one the open can only ask for login (10001), never reach the idempotency store.
+    if (caller.userId === null && caller.deviceId === null) return { code: 10001, data: null };
     const afterRollback: { log?: () => Promise<unknown> } = {};
     // B1-06m: the reads first, then one transaction that takes no second pooled connection.
     const response = await withOpenReads(

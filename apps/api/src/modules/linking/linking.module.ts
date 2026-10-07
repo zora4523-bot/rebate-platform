@@ -2,10 +2,50 @@ import type { DB as Database } from '@couli/db';
 import { type DynamicModule, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { Kysely } from 'kysely';
-import { SourceLinkReader } from '../catalog/index.ts';
-import { CLOCK, DB, type Clock, type HandlerResult } from '../platform/index.ts';
-import { createUnionPidService, type UnionPidService } from '../union/index.ts';
+import {
+  SourceLinkReader,
+  createCatalogCardEntry,
+  type CardRebateQuoter,
+  type ItemRefService,
+  type ViewerContext,
+} from '../catalog/index.ts';
+import {
+  APP_CONFIG,
+  CLOCK,
+  DB,
+  IDEMPOTENCY,
+  REDIS,
+  ROOT_LOGGER,
+  type AppConfig,
+  type Clock,
+  type HandlerResult,
+  type Idempotency,
+  type RedisHandle,
+  type RootLogger,
+  type VerifiedDevice,
+} from '../platform/index.ts';
+import {
+  createUnionPidService,
+  type RegisteredPlatform,
+  type UnionAdapter,
+  type UnionPidService,
+} from '../union/index.ts';
 import { LinkOpenService, type LinkOpenInput } from './application/link-open.ts';
+import { createLinkOpenPrices } from './application/link-open-prices.ts';
+import { createLinkOpenFlights, type LinkOpenFlights } from './application/link-open-requote.ts';
+// Through the module namespace, so the composition is observable where it is built.
+import {
+  createWiredLinkOpen,
+  type LinkOpenApps,
+  type LinkOpenEnvironment,
+  type LinkOpenQuoteReads,
+} from './application/link-open-wiring.ts';
+import {
+  LINK_JUMP_REDIS_NAMESPACE,
+  NO_JUMP_CACHE,
+  createRedisJumpCache,
+  type LinkJumpCache,
+} from './infra/jump-cache.ts';
 import {
   createLinkRegistration,
   createSourceLinkReader,
@@ -36,6 +76,34 @@ export interface LinkRegistrations {
 /** Nest injection tokens provided by `LinkingModule`. */
 export const LINK_REGISTRATIONS = Symbol('LINK_REGISTRATIONS');
 export const LINKING_PIDS = Symbol('LINKING_PIDS');
+/** The open's ports outside linking, provided by app.module.ts (B1-06w). */
+export const LINK_OPEN_PORTS = Symbol('LINK_OPEN_PORTS');
+/** Process-wide open state: the shared single-flight windows and the Redis jump cache. */
+const LINK_OPEN_PROCESS = Symbol('LINK_OPEN_PROCESS');
+
+/**
+ * B1-06w: what the open needs from other modules, assembled by the composition root so linking
+ * imports neither the union registry nor catalog's providers. None of them may take a database
+ * connection while the open holds its transaction (B1-06m): the union adapters call HTTP, the
+ * quoter's configuration is pre-read through quoteReads, the item_ref issuer only encrypts.
+ */
+export interface LinkOpenPorts {
+  /** The process's governed union adapters (one per platform, B1-05j). */
+  readonly union: { adapter(platform: RegisteredPlatform): UnionAdapter };
+  /** The quoter of catalog's card entry (the demo quoter until B2-03). */
+  readonly quoter: CardRebateQuoter;
+  readonly itemRefs: Pick<ItemRefService, 'issue'>;
+  readonly quoteReads: LinkOpenQuoteReads;
+  /** contracts/apps.json as read when the entry started. */
+  readonly apps: LinkOpenApps;
+  /** Jump paths verified per platform and client (CAP-JD-11 / CAP-PDD-11). */
+  readonly verifiedPaths: LinkOpenEnvironment['verifiedPaths'];
+}
+
+interface LinkOpenProcess {
+  readonly flights: LinkOpenFlights;
+  readonly cache: LinkJumpCache;
+}
 
 type PidReader = Pick<UnionPidService, 'getActivePid'>;
 
@@ -57,6 +125,8 @@ class UnscopedCallerContext extends CallerContext {
 
 interface ScopedRequest {
   readonly headers?: Readonly<Record<string, string | string[] | undefined>>;
+  /** Set by the signature check (request-checks stage ①) once the device's signature verified. */
+  readonly verifiedDevice?: VerifiedDevice;
 }
 
 /**
@@ -76,10 +146,10 @@ function pidReader(db: Kysely<Database>, clock: Clock): PidReader {
 }
 
 /**
- * The open use case until its ports are composed in this process: every open fails closed with
- * 50301 (conversion paused) — no cache, no conversion, no link written.
+ * The open use case of a process without its ports (no database, idempotency or LINK_OPEN_PORTS:
+ * isolated HTTP unit tests): every open fails closed with 50301 (conversion paused) — no cache,
+ * no conversion, no link written.
  */
-// TODO(规划/11 §4.5): open 用例装配（复核取价端口、转链缓存、union 注册表与 catalog 卡片入口） — blocked on app.module.ts 组合根接线。
 class PausedLinkOpen extends LinkOpenService {
   override open(input: LinkOpenInput): Promise<HandlerResult> {
     return Promise.resolve({
@@ -96,10 +166,13 @@ class PausedLinkOpen extends LinkOpenService {
 /**
  * Linking (规划/02 §4.1), B1-06c: card-time link registration (catalog's LinkRegistrar) and the
  * read-only entry_source of a link (catalog's SourceLinkReader). Ports:
- * - CallerContext: a guest of the request's app (X-App-Id), device unknown, until identity
- *   replaces it (B1-02m);
+ * - CallerContext: a guest of the request's app (X-App-Id) and of the device its signature
+ *   verified (none when unsigned), until identity replaces it (B1-02m);
  * - AttrCodeReader: unavailable until identity replaces it (B1-02m); never a user_id fallback;
  * - LinkingConfigReader: built once per process by the factory app.module.ts passes (content).
+ * B1-06w: POST /v1/links/{link_id}/open is served by the wired open (link-open-wiring.ts), built
+ * per request from LINK_OPEN_PORTS (app.module.ts: governed union, quoter, item_ref issuer,
+ * apps.json, verified jump paths), the process's Redis jump cache and single-flight windows.
  */
 @Module({})
 export class LinkingModule {
@@ -108,7 +181,100 @@ export class LinkingModule {
       module: LinkingModule,
       controllers: [LinkOpenController],
       providers: [
-        { provide: LinkOpenService, useFactory: (): LinkOpenService => new PausedLinkOpen() },
+        {
+          provide: LINK_OPEN_PROCESS,
+          inject: [CLOCK, ROOT_LOGGER, { token: REDIS, optional: true }],
+          useFactory: (clock: Clock, logger: RootLogger, redis?: RedisHandle): LinkOpenProcess => ({
+            flights: createLinkOpenFlights(),
+            cache:
+              redis === undefined
+                ? NO_JUMP_CACHE
+                : createRedisJumpCache(redis.namespace(LINK_JUMP_REDIS_NAMESPACE), clock, logger),
+          }),
+        },
+        {
+          // Per request, like its CallerContext; the flights and the cache are the process's.
+          provide: LinkOpenService,
+          scope: Scope.REQUEST,
+          inject: [
+            { token: DB, optional: true },
+            { token: IDEMPOTENCY, optional: true },
+            { token: LINK_OPEN_PORTS, optional: true },
+            LINK_OPEN_PROCESS,
+            APP_CONFIG,
+            CLOCK,
+            ROOT_LOGGER,
+            CallerContext,
+            AttrCodeReader,
+            LinkingConfigReader,
+            LINKING_PIDS,
+            SourceLinkReader,
+          ],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            idempotency: Idempotency | undefined,
+            ports: LinkOpenPorts | undefined,
+            process: LinkOpenProcess,
+            appConfig: AppConfig,
+            clock: Clock,
+            logger: RootLogger,
+            callerContext: CallerContext,
+            attrCodes: AttrCodeReader,
+            config: LinkingConfigReader,
+            pids: PidReader,
+            sourceLinks: SourceLinkReader,
+          ): LinkOpenService => {
+            if (db === undefined || idempotency === undefined || ports === undefined) {
+              return new PausedLinkOpen();
+            }
+            // The card's viewer is the opener; inside the open the registrar only reserves the
+            // renewed snapshot with the opened link's identity (openRegistrationScope).
+            const viewerContext: ViewerContext = {
+              current: async () => {
+                const caller = await callerContext.current();
+                return { appId: caller.appId, userId: caller.userId, deviceId: caller.deviceId };
+              },
+            };
+            const registrar = createLinkRegistration({
+              db,
+              clock,
+              callerContext,
+              attrCodes,
+              config,
+              pids,
+              context: { scene: 'search' },
+            });
+            return createWiredLinkOpen({
+              db,
+              clock,
+              callerContext,
+              attrCodes,
+              config,
+              pids,
+              catalog: createCatalogCardEntry({
+                clock,
+                viewerContext,
+                quoter: ports.quoter,
+                registrar,
+                sourceLinks,
+                itemRefs: ports.itemRefs,
+                logger,
+              }),
+              prices: createLinkOpenPrices({ clock, union: ports.union }),
+              cache: process.cache,
+              idempotency,
+              flights: process.flights,
+              registry: { get: (platform) => ports.union.adapter(platform) },
+              logger,
+              quoteReads: ports.quoteReads,
+              environment: {
+                appEnv: appConfig.appEnv,
+                apps: ports.apps,
+                verifiedPaths: ports.verifiedPaths,
+              },
+            });
+          },
+        },
         {
           provide: LinkingConfigReader,
           inject: [{ token: DB, optional: true }, CLOCK],
@@ -134,9 +300,13 @@ export class LinkingModule {
           inject: [REQUEST],
           useFactory: (request: ScopedRequest): CallerContext => {
             const appId = request.headers?.['x-app-id'];
-            return typeof appId === 'string' && appId !== ''
-              ? createGuestCallerContext({ appId, deviceId: null })
-              : new UnscopedCallerContext();
+            if (typeof appId !== 'string' || appId === '') return new UnscopedCallerContext();
+            // B1-06w: the guest's device is the one the signature check verified for this app
+            // (the open's idempotency subject); an unverified X-Device-Id is never trusted.
+            const device = request.verifiedDevice;
+            const deviceId =
+              device !== undefined && device.appId === appId ? device.deviceId : null;
+            return createGuestCallerContext({ appId, deviceId });
           },
         },
         {

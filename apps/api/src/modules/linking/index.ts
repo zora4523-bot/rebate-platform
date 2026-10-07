@@ -28,8 +28,23 @@ export {
   createUnavailableAttrCodeReader,
 } from './ports.ts';
 export type { Caller } from './ports.ts';
-export { LINK_REGISTRATIONS, LinkingModule } from './linking.module.ts';
-export type { LinkRegistrations, LinkingConfigReaderFactory } from './linking.module.ts';
+export { LINK_OPEN_PORTS, LINK_REGISTRATIONS, LinkingModule } from './linking.module.ts';
+export type {
+  LinkOpenPorts,
+  LinkRegistrations,
+  LinkingConfigReaderFactory,
+} from './linking.module.ts';
+// Task B1-06w: the open's production wiring (jump-path admission per environment, apps.json,
+// the Redis jump cache). Rule tests: test/spec/linking/wiring/**.
+export { createWiredLinkOpen } from './application/link-open-wiring.ts';
+export type {
+  LinkOpenApps,
+  LinkOpenEnvironment,
+  LinkOpenQuoteReads,
+  WiredLinkOpenOptions,
+} from './application/link-open-wiring.ts';
+export { openScopedConfig } from './application/link-open-reads.ts';
+export { loadLinkOpenApps } from './infra/apps-json.ts';
 export { createLinkOpenRequote } from './application/link-open-requote.ts';
 export type {
   LinkOpenCacheKey,

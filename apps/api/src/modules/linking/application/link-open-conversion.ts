@@ -10,7 +10,7 @@
 // - convert.enabled.<platform> off, taobao before B1-06f, a missing attr_code or no active pid →
 //   50301 (with a warning for the last two); any adapter failure (timeout, circuit, quota, error)
 //   → 50303 carrying the unpromoted product page for the explicit no-rebate purchase (BR-PRICE-08).
-import type { components } from '@couli/contracts-ts';
+import { bridge, type components } from '@couli/contracts-ts';
 import type { Clock } from '../../platform/index.ts';
 import {
   UnionIdentity,
@@ -45,6 +45,21 @@ export interface JdPddIdentity extends UnionIdentity {
   readonly custom_parameters?: Readonly<{ app: 'n'; uid?: string; sc: string; lk?: string }>;
 }
 
+/** Read from contracts/apps.json by the composition root; no platform scheme literals here. */
+export interface LinkOpenApps {
+  readonly apps: Readonly<
+    Record<
+      'jd' | 'pdd',
+      {
+        readonly status: string;
+        readonly ios: { readonly query_schemes: readonly string[] };
+        readonly android: { readonly packages: readonly string[] };
+        readonly harmony: { readonly query_schemes: readonly string[] };
+      }
+    >
+  >;
+}
+
 export interface LinkConversionOptions {
   readonly clock: Clock;
   readonly callerContext: CallerContext;
@@ -53,6 +68,11 @@ export interface LinkConversionOptions {
   readonly pids: Pick<UnionPidService, 'getActivePid'>;
   readonly registry: Pick<UnionRegistry, 'get'>;
   readonly logger: { warn(fields: Readonly<Record<string, unknown>>, message: string): void };
+  /**
+   * B1-06w: contracts/apps.json as the composition root read it; the app scheme of a platform is
+   * taken from it only. Omitted: the generated snapshot of the same file (@couli/contracts-ts).
+   */
+  readonly apps?: LinkOpenApps;
 }
 
 export interface JdPddConversionInput extends LinkOpenConversionInput {
@@ -141,23 +161,44 @@ export function effectiveNoRebate(
 }
 
 /** The demo item reference the adapter looks up; only the link's stored raw item id. */
-function itemRefOf(platform: 'jd' | 'pdd', rawItemId: string): ItemRef {
+export function itemRefOf(platform: 'jd' | 'pdd', rawItemId: string): ItemRef {
   return platform === 'jd' ? { platform, itemId: rawItemId } : { platform, goods_sign: rawItemId };
 }
 
+/** RFC 3986 scheme syntax; anything else in apps.json is not used as a scheme. */
+const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]{0,63}$/;
+
 /**
- * Launch paths derived from the converted URL. The app schemes come from contracts/apps.json
- * (candidates, unverified: CAP-JD-11 / CAP-PDD-11); production admission of each path is separate.
+ * The platform app's scheme as contracts/apps.json declares it (the iOS query scheme, else the
+ * Harmony one); null when it declares none, and then no scheme step is built (B1-06w: never a
+ * platform literal here). Candidates stay unverified (CAP-JD-11 / CAP-PDD-11); production
+ * admission of each path is link-open-wiring.ts's.
  */
-function pathsOf(platform: 'jd' | 'pdd', url: string): LinkJumpPaths {
+export function appSchemeOf(apps: LinkOpenApps | undefined, platform: 'jd' | 'pdd'): string | null {
+  const declared =
+    apps === undefined
+      ? [...bridge.apps[platform].ios_query_schemes, ...bridge.apps[platform].harmony_query_schemes]
+      : [...apps.apps[platform].ios.query_schemes, ...apps.apps[platform].harmony.query_schemes];
+  const scheme = declared.find((entry) => typeof entry === 'string' && SCHEME.test(entry));
+  return scheme ?? null;
+}
+
+/**
+ * Launch paths derived from the converted URL. The app scheme comes from contracts/apps.json
+ * (candidates, unverified: CAP-JD-11 / CAP-PDD-11); production admission of each path is separate.
+ * TODO(规划/11 §4.5): 拼多多以转链返回的 schema_url 为准 — blocked on CAP-PDD-11 实测。
+ */
+function pathsOf(platform: 'jd' | 'pdd', url: string, scheme: string | null): LinkJumpPaths {
   const encoded = encodeURIComponent(url);
   return {
     scheme:
-      platform === 'jd'
-        ? `openApp.jdMobile://virtual?params=${encodeURIComponent(
-            JSON.stringify({ category: 'jump', des: 'm', url }),
-          )}`
-        : `pinduoduo://com.xunmeng.pinduoduo/?url=${encoded}`,
+      scheme === null
+        ? null
+        : platform === 'jd'
+          ? `${scheme}://virtual?params=${encodeURIComponent(
+              JSON.stringify({ category: 'jump', des: 'm', url }),
+            )}`
+          : `${scheme}://com.xunmeng.pinduoduo/?url=${encoded}`,
     universalLink: url,
     h5: url,
   };
@@ -367,7 +408,7 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
       platform,
       client: input.client,
       installed: input.installed ?? 'unknown',
-      paths: pathsOf(platform, url),
+      paths: pathsOf(platform, url, appSchemeOf(options.apps, platform)),
       expireAt: await jumpExpiry(link.app_id),
     });
   }
@@ -377,7 +418,8 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
 
 /** Normalized adapter paths, not vendor response payloads. */
 export interface LinkJumpPaths {
-  readonly scheme: string;
+  /** null: apps.json declares no scheme for the platform, so no scheme step exists. */
+  readonly scheme: string | null;
   readonly universalLink: string;
   readonly h5: string;
 }
@@ -393,7 +435,7 @@ export function buildDefaultLinkJump(input: {
   readonly expireAt: string;
 }): LinkOpenJump {
   const { platform, client, paths } = input;
-  const scheme: Step = { type: 'scheme', value: paths.scheme };
+  const schemes: Step[] = paths.scheme === null ? [] : [{ type: 'scheme', value: paths.scheme }];
   const universal: Step = { type: 'universal_link', value: paths.universalLink };
   const h5: Step = { type: 'h5', value: paths.h5 };
   // H5 (and web) cannot detect installed apps: fixed to the browser page (BR-ATTR-27 ①).
@@ -402,8 +444,8 @@ export function buildDefaultLinkJump(input: {
   }
   const installedSteps: Step[] =
     platform === 'jd' && (client === 'ios' || client === 'android')
-      ? [scheme, universal, h5]
-      : [scheme, h5];
+      ? [...schemes, universal, h5]
+      : [...schemes, h5];
   const notInstalled: Step[] = [h5];
   const installed = input.installed ?? 'unknown';
   let steps: Step[];
