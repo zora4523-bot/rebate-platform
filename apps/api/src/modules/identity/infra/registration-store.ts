@@ -33,9 +33,11 @@ export async function rollbackToSavepoint(trx: Transaction<DB>, name: Savepoint)
 
 /**
  * Transaction-level lock of one (app_id, device_hash): the same-device count and the account
- * creation run under it (BR-ID-05 细则「并发」: lock, then count, then create). Held until the
- * caller's transaction ends (a released savepoint hands it to the parent); another device is
- * never blocked by it. The key space is the 64-bit hash of a name prefixed by this module.
+ * creation run under it (BR-ID-05 细则「并发」: lock, then count, then create). A transaction-level
+ * advisory lock is not tied to the savepoint it was taken after: neither RELEASE nor ROLLBACK TO
+ * SAVEPOINT frees it, so it is held until the caller's whole transaction commits or rolls back,
+ * also when this service answers 44001, 50001 or phone_taken. Another device is never blocked by
+ * it. The key space is the 64-bit hash of a name prefixed by this module.
  */
 export async function lockDeviceRegistrations(
   trx: Transaction<DB>,
@@ -45,6 +47,41 @@ export async function lockDeviceRegistrations(
   await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`identity.device_registrations:${appId}:${deviceHash}`}, 0))`.execute(
     trx,
   );
+}
+
+/**
+ * The isolation level of the caller's transaction (PostgreSQL's transaction_isolation setting,
+ * e.g. 'read committed'). The count after the device lock is correct only when each statement
+ * takes a fresh snapshot (READ COMMITTED); the service refuses the snapshot levels before
+ * locking, like the guard of migration 0011.
+ */
+export async function transactionIsolation(trx: Transaction<DB>): Promise<string> {
+  const { rows } = await sql<{
+    isolation: string;
+  }>`SELECT current_setting('transaction_isolation') AS isolation`.execute(trx);
+  const isolation = rows[0]?.isolation;
+  if (typeof isolation !== 'string') throw new Error('registration: transaction_isolation unread');
+  return isolation;
+}
+
+/**
+ * Whether an account not deleted already holds this phone blind index in the app (the partial
+ * unique index (app_id, phone_hmac) WHERE status <> 'deleted' of app.users).
+ */
+export async function phoneHeld(
+  trx: Transaction<DB>,
+  appId: string,
+  phoneHmac: string,
+): Promise<boolean> {
+  const row = await trx
+    .selectFrom('users')
+    .select('id')
+    .where('app_id', '=', appId)
+    .where('phone_hmac', '=', phoneHmac)
+    .where('status', '<>', 'deleted')
+    .limit(1)
+    .executeTakeFirst();
+  return row !== undefined;
 }
 
 /**
@@ -147,8 +184,11 @@ export async function insertUser(trx: Transaction<DB>, user: NewUser): Promise<I
 }
 
 /**
- * The registration source record of an account created on a device (BR-ID-05 细则). created_at
- * and merged_into_user_id keep their database defaults: couli_app may insert only these columns.
+ * The registration source record of an account created on a device (BR-ID-05 细则). created_at is
+ * the injected Clock's instant of this creation — the same value the same-device window was
+ * computed from — so the count and the record share one time base even when the Clock leads the
+ * database (staging CLOCK_NOW); couli_app's INSERT grant on created_at comes from migration 0019.
+ * merged_into_user_id keeps its database default (NULL; only the merge transaction writes it).
  */
 export async function insertDeviceRegistration(
   trx: Transaction<DB>,
@@ -157,6 +197,8 @@ export async function insertDeviceRegistration(
     readonly deviceHash: string;
     readonly userId: string;
     readonly registerMethod: string;
+    /** The Clock instant this creation was decided at. */
+    readonly createdAt: Date;
   },
 ): Promise<void> {
   await trx
@@ -166,6 +208,7 @@ export async function insertDeviceRegistration(
       device_hash: record.deviceHash,
       user_id: record.userId,
       register_method: record.registerMethod,
+      created_at: record.createdAt,
     })
     .execute();
 }

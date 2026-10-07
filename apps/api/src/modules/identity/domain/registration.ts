@@ -48,6 +48,17 @@ export const REGISTER_METHODS = [
   'admin',
 ] as const;
 export type RegisterMethod = (typeof REGISTER_METHODS)[number];
+/**
+ * Methods of the app (SMS login, third-party first login): the account is created on a device, so
+ * the caller is expected to pass the device_hash of its device row and the same-device limit
+ * applies. The landing page (h5_landing) and admin have no device.
+ */
+export const DEVICE_REGISTER_METHODS: ReadonlySet<RegisterMethod> = new Set([
+  'sms',
+  'wechat',
+  'apple',
+  'huawei',
+]);
 /** Methods whose sign-up is the phone number itself: a phone is required. */
 export const PHONE_REGISTER_METHODS: ReadonlySet<RegisterMethod> = new Set(['sms', 'h5_landing']);
 
@@ -97,9 +108,9 @@ export interface DeviceRegistrationRecord {
 
 /**
  * The same-device count of BR-ID-05 细则「同设备注册上限的计数」 at `now` (the injected Clock):
- * the records of this app and device_hash whose created_at lies in the sliding window
- * (now − 30×24 h, now] — a record leaves the window when now − window reaches it; a record newer
- * than `now` still counts. Tombstones of deletion, banning and merging count like any record.
+ * the records of this app and device_hash with created_at > now − 30×24 h: the lower bound is
+ * open (a record leaves the window once now − window reaches it) and there is no upper bound (a
+ * record newer than `now` still counts). Tombstones of deletion, banning and merging count like any record.
  * With `mergeTombstoneDedupe` on, a merge source whose target's record is also among those
  * records is not counted (the pair counts once, through the target); several sources merged into
  * the same such target all go with it. A source whose target registered elsewhere, or whose

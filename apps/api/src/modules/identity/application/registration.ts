@@ -4,15 +4,19 @@
 // transaction, which it passes in and commits.
 //
 // register(trx, command), in order:
-//   1. the command is checked (a caller bug throws a TypeError before anything is written);
+//   1. the command is checked (a caller bug throws a TypeError before anything is written); an app
+//      method (sms, wechat, apple, huawei) without device_hash is let through with a warning;
 //   2. SAVEPOINT: the whole creation runs after it, and every answer but 0 rolls back to it, so the
 //      caller's own writes before and after stay intact and it may commit or roll back safely;
 //   3. configuration through the identity configuration port, the 08 default when a key is missing
 //      or malformed (malformed also logs a warning): level.default (L1) and, on a device,
 //      risk.merge_tombstone_dedupe (on) and risk.device_register_limit (3);
-//   4. on a device (device_hash given; the landing page has none and skips 4–5): a transaction lock
-//      on (app_id, device_hash), then the count of the device's registration records in the sliding
-//      window ending at the injected Clock (countDeviceRegistrations);
+//   4. on a device (device_hash given; the landing page has none and skips 4–5): the caller's
+//      transaction must be READ COMMITTED (a snapshot level throws, answered 50001); a transaction
+//      lock on (app_id, device_hash); a phone already held by an account not deleted answers
+//      { outcome: 'phone_taken' } here, before any limit (an existing account logging in on the
+//      device is not affected, BR-ID-05); then the count of the device's registration records
+//      with created_at > Clock − 30×24 h (countDeviceRegistrations);
 //   5. count ≥ limit: the release port of B1-03d (one-time pass after a granted appeal, BR-ID-36
 //      结案; default: no) — true goes on as usual, anything else answers 44001
 //      device_register_limit with what B1-03d needs to record the hit;
@@ -22,15 +26,18 @@
 //      or a collision costs one) and an attr_code (at most 5 candidates). Either run out → 50001 and
 //      a warning. A phone held by an account not deleted → { outcome: 'phone_taken' } (the caller
 //      logs in instead);
-//   7. on a device, the registration source record;
+//   7. on a device, the registration source record, created_at = the same Clock instant as the
+//      window of step 4 (not the database's now());
 //   8. the level-log port (BR-INV-14 source=register; default: nothing, the table does not exist);
 //   9. a normalised, non-empty invite_code → the binding port after its own savepoint: anything but
-//      bound (failed, a throw, a failed statement) rolls back to it only; the account stays. No
-//      port → { failed, 50001 };
+//      bound (failed, a throw, a failed statement — also one the port caught itself, which makes
+//      the RELEASE fail) rolls back to it only; the account stays. No port → { failed, 50001 };
 //  10. the B1-03g port (same-IP registration count) once, before the caller commits; its failure
-//      is logged and rolled back to its own savepoint, never answered.
-// Any other error rolls back to the savepoint of step 2 and answers 50001 (logged as an error);
-// when even that rollback fails, the error rejects.
+//      (a throw, or a failed statement that makes the RELEASE fail) is logged and rolled back to
+//      its own savepoint, never answered.
+// Any other error rolls back to the savepoint of step 2 and answers 50001 (logged as an error with
+// its class and, for a database error, SQLSTATE, constraint and table — never its message or
+// detail, which may quote a phone); when even that rollback fails, the error rejects.
 //
 // Nothing logged identifies the person: no phone in any form, no device hash or id, no IP, no
 // invite code, no message of a port's error (only its class).
@@ -46,6 +53,7 @@ import { normalize_phone } from '../domain/normalize-phone.ts';
 import {
   ATTR_CODE_CANDIDATES,
   DEFAULT_AVATAR,
+  DEVICE_REGISTER_METHODS,
   DEFAULT_DEVICE_REGISTER_LIMIT,
   DEFAULT_LEVEL_KEY,
   DEFAULT_MERGE_TOMBSTONE_DEDUPE,
@@ -75,9 +83,11 @@ import {
   insertDeviceRegistration,
   insertUser,
   lockDeviceRegistrations,
+  phoneHeld,
   releaseSavepoint,
   rollbackToSavepoint,
   savepoint,
+  transactionIsolation,
   type NewUser,
   type Savepoint,
 } from '../infra/registration-store.ts';
@@ -198,7 +208,8 @@ export function registrationConstants(): RegistrationConstants {
 /**
  * The invite_code scene of the sensitive-word port backed by the seed list
  * specs/sensitive-words.invite-code.txt (case-insensitive substring match), until the BR-INV-01
- * word bank replaces it. Throws when the list is missing or empty.
+ * word bank replaces it. Reads the list on each call; the call throws when the list is missing or
+ * empty (nothing is read at import; the wiring task builds it once at start-up).
  */
 export function createDefaultInviteCodeFilter(): SensitiveWords {
   const matches = createSensitiveWordMatcher(loadInviteCodeSensitiveWords());
@@ -217,8 +228,47 @@ function errorClass(error: unknown): string {
   return error === null ? 'null' : typeof error;
 }
 
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/;
+
+/**
+ * Loggable facts of an error: its class and, for a database error (node-postgres DatabaseError),
+ * the SQLSTATE and the constraint and table names. Never the message, detail, where or hint: those
+ * may quote the row (a phone, a code).
+ */
+export function errorFields(error: unknown): {
+  readonly error_class: string;
+  readonly sqlstate?: string;
+  readonly constraint?: string;
+  readonly table?: string;
+} {
+  const fields: { error_class: string; sqlstate?: string; constraint?: string; table?: string } = {
+    error_class: errorClass(error),
+  };
+  if (typeof error !== 'object' || error === null) return fields;
+  const { code, constraint, table } = error as {
+    code?: unknown;
+    constraint?: unknown;
+    table?: unknown;
+  };
+  if (typeof code === 'string' && SQLSTATE.test(code)) fields.sqlstate = code;
+  if (typeof constraint === 'string' && IDENTIFIER.test(constraint)) fields.constraint = constraint;
+  if (typeof table === 'string' && IDENTIFIER.test(table)) fields.table = table;
+  return fields;
+}
+
+/** Snapshot isolation levels under which the count after the device lock could miss a commit. */
+const SNAPSHOT_ISOLATION: ReadonlySet<string> = new Set(['repeatable read', 'serializable']);
+
+export class RegistrationIsolationError extends Error {
+  constructor(isolation: string) {
+    super(`registration: a device registration needs read committed, not ${isolation}`);
+    this.name = 'RegistrationIsolationError';
+  }
+}
+
 /** The binding port's answer in the contract's shape, or null when it is not one. */
-function bindResultOf(value: unknown): InviteBindResult | null {
+export function bindResultOf(value: unknown): InviteBindResult | null {
   if (typeof value !== 'object' || value === null) return null;
   const { result, code } = value as { result?: unknown; code?: unknown };
   if (result === 'failed') {
@@ -235,7 +285,7 @@ function optionalString(value: unknown): boolean {
 }
 
 /** Caller bugs, refused before any write. The phone must already be normalize_phone output. */
-function checkCommand(command: RegistrationCommand): void {
+export function checkCommand(command: RegistrationCommand): void {
   if (typeof command.app_id !== 'string' || command.app_id.length === 0) {
     throw new TypeError('registration: app_id must be a non-empty string');
   }
@@ -361,12 +411,20 @@ export function createRegistrationService(options: RegistrationOptions): Registr
       answer = await port(trx, input);
     } catch (error) {
       await undo(trx, 'identity_registration_invite_bind', error);
-      logger.warn({ ...fields, error_class: errorClass(error) }, 'registration_invite_bind_failed');
+      logger.warn({ ...fields, ...errorFields(error) }, 'registration_invite_bind_failed');
       return BIND_INTERNAL_ERROR;
     }
     const result = bindResultOf(answer);
     if (result?.result === 'bound') {
-      await releaseSavepoint(trx, 'identity_registration_invite_bind');
+      try {
+        await releaseSavepoint(trx, 'identity_registration_invite_bind');
+      } catch (error) {
+        // The port caught a failed statement of its own: the transaction is aborted and RELEASE
+        // fails. Its writes are undone like any other failure of the port.
+        await undo(trx, 'identity_registration_invite_bind', error);
+        logger.warn({ ...fields, ...errorFields(error) }, 'registration_invite_bind_failed');
+        return BIND_INTERNAL_ERROR;
+      }
       return result;
     }
     await rollbackToSavepoint(trx, 'identity_registration_invite_bind');
@@ -390,15 +448,15 @@ export function createRegistrationService(options: RegistrationOptions): Registr
     await savepoint(trx, 'identity_registration_after');
     try {
       await port(trx, input);
+      // Fails when the port caught a failed statement of its own (the transaction is aborted).
+      await releaseSavepoint(trx, 'identity_registration_after');
     } catch (error) {
       await undo(trx, 'identity_registration_after', error);
       logger.error(
-        { app_id: input.app_id, error_class: errorClass(error) },
+        { app_id: input.app_id, ...errorFields(error) },
         'registration_after_registered_failed',
       );
-      return;
     }
-    await releaseSavepoint(trx, 'identity_registration_after');
   }
 
   /** Steps 3–10; runs after the registration savepoint. */
@@ -426,8 +484,18 @@ export function createRegistrationService(options: RegistrationOptions): Registr
         parseDeviceRegisterLimit,
         DEFAULT_DEVICE_REGISTER_LIMIT,
       );
+      // The count below sees registrations committed while it waited for the lock only when each
+      // statement takes a fresh snapshot.
+      const isolation = await transactionIsolation(trx);
+      if (SNAPSHOT_ISOLATION.has(isolation)) throw new RegistrationIsolationError(isolation);
       // Lock, then count, then create (BR-ID-05 细则「并发」).
       await lockDeviceRegistrations(trx, appId, deviceHash);
+      // An existing account is not affected by the limit (BR-ID-05): its phone answers
+      // phone_taken (the caller logs it in) even on a device that is full.
+      if (phoneHmac !== null && (await phoneHeld(trx, appId, phoneHmac))) {
+        logger.info({ app_id: appId, register_method: registerMethod }, 'registration_phone_taken');
+        return { outcome: 'phone_taken' };
+      }
       const records = await deviceRegistrationsSince(
         trx,
         appId,
@@ -505,7 +573,14 @@ export function createRegistrationService(options: RegistrationOptions): Registr
     }
 
     if (deviceHash !== undefined) {
-      await insertDeviceRegistration(trx, { appId, deviceHash, userId, registerMethod });
+      // The same Clock instant the window was computed from (step 4), never the database's now().
+      await insertDeviceRegistration(trx, {
+        appId,
+        deviceHash,
+        userId,
+        registerMethod,
+        createdAt: now,
+      });
     }
     await options.recordInitialLevel?.(trx, {
       app_id: appId,
@@ -540,6 +615,19 @@ export function createRegistrationService(options: RegistrationOptions): Registr
       command: RegistrationCommand,
     ): Promise<RegistrationResult> {
       checkCommand(command);
+      if (
+        command.device_hash === undefined &&
+        DEVICE_REGISTER_METHODS.has(command.register_method)
+      ) {
+        // An app sign-up without its device escapes the same-device limit (BR-ID-05); the callers
+        // (B1-02j, B1-02d) take device_hash from the device row. Warned, not refused: the frozen
+        // rule test of the six register methods creates sms / wechat / apple / huawei accounts
+        // without a device; refusing waits for that test's revision.
+        logger.warn(
+          { app_id: command.app_id, register_method: command.register_method },
+          'registration_device_hash_missing',
+        );
+      }
       await savepoint(trx, 'identity_registration');
       let result: RegistrationResult;
       try {
@@ -550,7 +638,7 @@ export function createRegistrationService(options: RegistrationOptions): Registr
           {
             app_id: command.app_id,
             register_method: command.register_method,
-            error_class: errorClass(error),
+            ...errorFields(error),
           },
           'registration_failed',
         );
