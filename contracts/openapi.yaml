@@ -3640,8 +3640,12 @@ paths:
         (BR-PRICE-13; ownership rules BR-ATTR-05). `price_changed=true` means the client asks
         the user before jumping; whenever the new price differs, `new_link_id` replaces the card
         (BR-PRICE-12). Re-check failure with a cached link of this user ≤ 900 s jumps with
-        `requote_failed=true`; without cache, 50303. Share links open anonymously; other links
-        need login (10001). amount_unknown cards are converted without price re-check
+        `requote_failed=true`; without cache, 50303. A `no_rebate=true` open does not need the
+        re-check to succeed: on re-check failure it still jumps with `requote_failed=true`, no
+        rebate and no quote snapshot, converted on the self_buy slot without user parameters, or
+        to the unpromoted product page when that conversion fails too (BR-PRICE-13, BR-ID-18,
+        BR-PRICE-08); a share link opened by anyone but the sharer ignores `no_rebate`. Share
+        links open anonymously; other links need login (10001). amount_unknown cards are converted without price re-check
         (BR-PRICE-08). The client waits at most 8 s and retries with the same Idempotency-Key
         (拍板第二批 TRADE-22). Every call writes a link_log `open` row (BR-ATTR-14). When the
         rebate drops from > 0 to 0 (new_rebate_max_fen = 0) the client also asks before jumping,
@@ -9533,7 +9537,9 @@ components:
             card with it whether or not the user continues.
         requote_failed:
           type: boolean
-          description: Re-check failed and the user's cached link (≤ 900 s) is used (BR-PRICE-13).
+          description: |
+            Re-check failed: the user's cached link (≤ 900 s) is used, or, for a `no_rebate=true`
+            open, the no-rebate conversion or unpromoted product page (BR-PRICE-13).
         new_rebate_min_fen:
           $ref: '#/components/schemas/NullableFen'
         new_rebate_max_fen:

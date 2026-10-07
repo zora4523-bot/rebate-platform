@@ -1,0 +1,95 @@
+{
+  "task": "B1-06p",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "a523f7f8237ee2aeb890aedf8eb086249e91acd0",
+  "red_tests": [
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] jd timeout 后 1000 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] jd timeout 后 3001 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] jd circuit_open 后 1000 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] jd circuit_open 后 3001 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] pdd timeout 后 1000 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] pdd timeout 后 3001 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] pdd circuit_open 后 1000 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] pdd circuit_open 后 3001 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#2] jd 复核与转链均失败，返回无推广参数商品页且记录成功尝试",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#2] pdd 复核与转链均失败，返回无推广参数商品页且记录成功尝试",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#3] 京东 item 键缺 SKU：仍尝试无返利转链，失败后告警并保留 50303",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#4] jd 他人打开分享仍忽略 no_rebate，同窗口分享者自己点则能无返利外跳",
+    "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#4] pdd 他人打开分享仍忽略 no_rebate，同窗口分享者自己点则能无返利外跳"
+  ],
+  "risk_note": "RV2 (linking/**; attribution and money; openapi.yaml description only). BR-PRICE-13 2026-10-08 addition (planning couli#80): a no-rebate open after a failed requote (timeout, open circuit, price anomaly) with no no-rebate cache converts anew on the self_buy pid without any user parameter, never through the normal attribution cache; no quote snapshot and no new link (a valid no-rebate open registers no link in the owner stage, the original link carries the log and the attempt, per BR-PRICE-08), price_changed false, new_final_price_fen null, requote_failed true (orchestrator decision), zero rebate, attempt written; the plain product page when the conversion also fails, 50303 with an alert only when no page can be built. Another user's share link still ignores no_rebate. Pre-read config promises handled as soon as they start (B1-06m round 2 S2). openLink and requote_failed descriptions synced, contracts regenerated. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a523f7f8237ee2aeb890aedf8eb086249e91acd0",
+      "tree": "4d990f50061a43f066250d9a368f2a6e45280c04",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T20:35:42Z",
+      "finished_at": "2026-10-07T20:35:49Z",
+      "red_tests": [
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] jd timeout 后 1000 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] jd timeout 后 3001 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] jd circuit_open 后 1000 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] jd circuit_open 后 3001 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] pdd timeout 后 1000 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] pdd timeout 后 3001 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] pdd circuit_open 后 1000 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#1] pdd circuit_open 后 3001 ms 点击无返利购买：新转链、无报价写入、可幂等重放",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#2] jd 复核与转链均失败，返回无推广参数商品页且记录成功尝试",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#2] pdd 复核与转链均失败，返回无推广参数商品页且记录成功尝试",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#3] 京东 item 键缺 SKU：仍尝试无返利转链，失败后告警并保留 50303",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#4] jd 他人打开分享仍忽略 no_rebate，同窗口分享者自己点则能无返利外跳",
+        "test/spec/linking/open-norebate/open.int.test.ts > [AC-B1-06p#4] pdd 他人打开分享仍忽略 no_rebate，同窗口分享者自己点则能无返利外跳"
+      ],
+      "expected": ["test/spec/linking/open-norebate/open.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "16eb5aa4d3689a1263a87a48c17ba7bf4984272bb082053dee7a6e1ac0fe9b96"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents with the money checklist: round 1 pass (out-of-scope S2 jd alert false positive, fixed); round 2 pass, confirmed attribution and rebate unchanged by skipping link registration for valid no-rebate opens (orders stay in the unattributed pool, BR-ID-18), mutation probe on the pre-read fix; out-of-scope S2 on BR-ATTR-11 wording to followups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 the no-rebate fallback committed the owner-stage quote link) -> fixed in implementation 2; round 2 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: pass with one S2 (the normal-cache guard can be vacuous). Before the commit the orchestrator gave the guest opener of #4 a synthetic device id as its idempotency subject (fixture value only)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "5510516b111e5346d5cabe6f5085e4847550e069",
+    "specs": "0100f2ee7f7133fd83e159c2e144148e7a4b59d4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

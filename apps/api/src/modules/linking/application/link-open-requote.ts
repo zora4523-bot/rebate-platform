@@ -21,6 +21,10 @@
 //   price_unavailable, fetch or assembly failures → the requote-failed branch: the identity's
 //   conversion cache (≤ link.convert_cache_ttl_sec, at most 900 s) with requote_failed, else 50303.
 //   A failed conversion after a good price is 50303 too.
+// B1-06p: an explicit no_rebate open (BR-PRICE-13 2026-10-08) does not need the re-check: on its
+//   failure it still converts without attribution (or jumps to the unpromoted page), with
+//   requote_failed=true, no rebate and no snapshot; 50303 only when no page can be built. The
+//   owner stage registers no link for such an open (link-open-owner.ts), so it commits none.
 // - conversion and its cache are ports; the cache key is the frozen identity's owner (never the
 //   opener or links.user_id), app, platform, product, pid, pid_scene and no_rebate.
 // B1-06e: the conversion port may admit first (convert.enabled.<platform> → 50301 before any
@@ -78,6 +82,7 @@ import {
 } from './link-registration.ts';
 import {
   createLinkOpenOwner,
+  noRebateApplies,
   readSnapshot,
   type LinkOpenOwnerOptions,
   type LinkOpenOwnerResult,
@@ -589,12 +594,18 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     };
   }
 
-  /** BR-PRICE-13 failure branch: this identity's fresh cache with requote_failed, else 50303. */
+  /**
+   * BR-PRICE-13 failure branch: this identity's fresh cache with requote_failed, else 50303. An
+   * explicit no_rebate purchase does not need the re-check (BR-PRICE-13, 2026-10-08): it converts
+   * on the self_buy slot without user parameters, else jumps to the unpromoted page.
+   */
   async function requoteFailed(
     flight: Flight,
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
+    item?: AssembleCardInput['item'],
   ): Promise<Settled> {
+    if (input.noRebate === true) return noRebateAfterFailedRequote(flight, owner, input, item);
     // One lookup per identity key and window: a first 50303 is not turned into a cached jump by
     // a conversion another open stored meanwhile; a reused jump still has to be usable now.
     const key = cacheKeyOf(owner, input);
@@ -621,6 +632,44 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         requote_failed: true,
         new_rebate_min_fen: null,
         new_rebate_max_fen: null,
+        no_rebate_cause: null,
+        availability: 'ok',
+        quoted_at: null,
+      },
+    };
+  }
+
+  /**
+   * BR-PRICE-13 (2026-10-08) with BR-ID-18 / BR-PRICE-08: the no_rebate open after a failed
+   * re-check — no quote snapshot, no price-change prompt, no rebate shown, requote_failed=true;
+   * the no-rebate conversion (its own cache key, never the attributed one), or when that fails
+   * the unpromoted product page; 50303 only when neither exists. The effective no_rebate already
+   * excludes another user's share link (BR-ATTR-05 ①).
+   */
+  async function noRebateAfterFailedRequote(
+    flight: Flight,
+    owner: LinkOpenOwnerResult,
+    input: LinkOpenRequoteInput,
+    item: AssembleCardInput['item'] | undefined,
+  ): Promise<Settled> {
+    const converted = await sharedConversion(flight, owner, input, item);
+    const fallback =
+      converted.kind === 'failed' ? await conversionFallback(converted, owner, input) : null;
+    if (converted.kind === 'failed' && fallback === null) return failure(converted.code, owner);
+    return {
+      code: 0,
+      linkId: owner.link.link_id,
+      quotedPriceFen: owner.link.quoted_final_price_fen,
+      cacheHit: converted.kind === 'ok' && converted.cacheHit,
+      data: {
+        jump: converted.kind === 'ok' ? converted.jump : fallback!,
+        price_changed: false,
+        old_final_price_fen: owner.old_final_price_fen,
+        new_final_price_fen: null,
+        new_link_id: owner.new_link_id,
+        requote_failed: true,
+        new_rebate_min_fen: '0',
+        new_rebate_max_fen: '0',
         no_rebate_cause: null,
         availability: 'ok',
         quoted_at: null,
@@ -725,7 +774,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       flight.cards.set(cardKey, pendingCard);
     }
     const card = await pendingCard;
-    if (card.kind === 'failed') return requoteFailed(flight, owner, input);
+    if (card.kind === 'failed') return requoteFailed(flight, owner, input, price.input.item);
 
     const snapshot = {
       finalFen: oldFen,
@@ -892,6 +941,13 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       const sharedByOther = pidScene === 'share' && userId !== caller.userId;
       identities.push({ userId, pidScene, noRebate: requestedNoRebate === true && !sharedByOther });
     };
+    // B1-06p: the owner stage registers nothing for an applicable no_rebate (link-open-owner.ts).
+    const registersFor = (snapshotUserId: string | null) =>
+      !noRebateApplies(
+        caller.userId,
+        { pid_scene: snapshot.pid_scene, user_id: snapshotUserId },
+        requestedNoRebate,
+      );
     const decide = (rowUserId: string | null, snapshotUserId: string | null) =>
       decideOpenOwner({
         pidScene: link.pid_scene,
@@ -901,16 +957,19 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         callerUserId: caller.userId,
       });
     const first = decide(link.user_id, snapshot.user_id);
-    const outcomes = [first];
+    const outcomes: { decision: ReturnType<typeof decide>; snapshotUserId: string | null }[] = [
+      { decision: first, snapshotUserId: snapshot.user_id },
+    ];
     // A claim lost to another opener decides again as another user's link.
     const other = 'claimed-by-another-opener';
-    if (first.kind === 'claim') outcomes.push(decide(other, other));
-    for (const decision of outcomes) {
+    if (first.kind === 'claim')
+      outcomes.push({ decision: decide(other, other), snapshotUserId: other });
+    for (const { decision, snapshotUserId } of outcomes) {
       if (decision.kind === 'use') add(snapshot.user_id, snapshot.pid_scene);
       if (decision.kind === 'claim') add(caller.userId, snapshot.pid_scene);
       if (decision.kind === 'register') {
         const pidScene = pidSceneOf(decision.scene);
-        registers.push(pidScene);
+        if (registersFor(snapshotUserId)) registers.push(pidScene);
         add(caller.userId, pidScene);
       }
     }
@@ -923,13 +982,19 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
    */
   async function prepareReads(caller: Caller, input: LinkOpenRequoteInput): Promise<void> {
     const appId = caller.appId;
+    // Settled from the start: a setting read that rejects while the link is still being read must
+    // not surface as an unhandled rejection (it fails again where the open uses it).
     const reads: Promise<unknown>[] = [
-      REQUOTE_AFTER_SEC,
-      PRICE_CHANGE_MIN_FEN,
-      PRICE_CHANGE_RATIO_BP,
-      CONVERT_CACHE_TTL_SEC,
-      PDD_PRECHECK_SWITCH,
-    ].map((key) => config.configValue(appId, key));
+      Promise.allSettled(
+        [
+          REQUOTE_AFTER_SEC,
+          PRICE_CHANGE_MIN_FEN,
+          PRICE_CHANGE_RATIO_BP,
+          CONVERT_CACHE_TTL_SEC,
+          PDD_PRECHECK_SWITCH,
+        ].map((key) => config.configValue(appId, key)),
+      ),
+    ];
     const link = await db
       .selectFrom('links')
       .selectAll()
@@ -980,7 +1045,10 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     });
     let owner: LinkOpenOwnerResult;
     try {
-      owner = await owners.open({ linkId: request.linkId }, trx);
+      owner = await owners.open(
+        { linkId: request.linkId, noRebate: request.noRebate === true },
+        trx,
+      );
     } catch (error) {
       if (error instanceof LinkingError) return envelope(error.code);
       throw error;

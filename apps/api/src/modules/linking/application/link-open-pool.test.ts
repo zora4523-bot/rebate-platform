@@ -45,9 +45,15 @@ class CountingDriver implements Driver {
   readonly rollbacks: number[] = [];
   readonly open = new Set<DatabaseConnection>();
   readonly respond: (query: CompiledQuery) => unknown[];
+  /** Milliseconds a query waits before answering (a slow database), by query. */
+  readonly delayMs: (query: CompiledQuery) => number;
 
-  constructor(respond: (query: CompiledQuery) => unknown[]) {
+  constructor(
+    respond: (query: CompiledQuery) => unknown[],
+    delayMs: (query: CompiledQuery) => number = () => 0,
+  ) {
     this.respond = respond;
+    this.delayMs = delayMs;
   }
 
   async init(): Promise<void> {}
@@ -62,6 +68,8 @@ class CountingDriver implements Driver {
           parameters: query.parameters,
           inTransaction: this.open.has(connection),
         });
+        const delay = this.delayMs(query);
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
         return { rows: this.respond(query) as R[], numAffectedRows: 1n };
       },
       streamQuery: () => {
@@ -140,24 +148,32 @@ function linkA(clock: FixedClock) {
 }
 
 /** B opens A's link: the owner stage registers a link for B inside the transaction. */
-function fixture(price: () => Promise<LinkOpenPrice>) {
+function fixture(
+  price: () => Promise<LinkOpenPrice>,
+  faults: { readonly settingsFail?: boolean; readonly slowLinks?: boolean } = {},
+) {
   const clock = new FixedClock(NOW);
   const original = linkA(clock);
-  const driver = new CountingDriver((query) => {
-    if (query.sql.startsWith('select') && query.sql.includes('"links"')) return [original];
-    if (query.sql.startsWith('insert into "links"')) {
-      return [
-        {
-          ...original,
-          link_id: '0199a3b4-5c6d-7000-8000-0000000000b1',
-          user_id: USER_B,
-          pid: 'synthetic-pid-b',
-          expire_at: clock.now(),
-        },
-      ];
-    }
-    return [];
-  });
+  const isLinkRead = (query: CompiledQuery) =>
+    query.sql.startsWith('select') && query.sql.includes('"links"');
+  const driver = new CountingDriver(
+    (query) => {
+      if (query.sql.startsWith('select') && query.sql.includes('"links"')) return [original];
+      if (query.sql.startsWith('insert into "links"')) {
+        return [
+          {
+            ...original,
+            link_id: '0199a3b4-5c6d-7000-8000-0000000000b1',
+            user_id: USER_B,
+            pid: 'synthetic-pid-b',
+            expire_at: clock.now(),
+          },
+        ];
+      }
+      return [];
+    },
+    (query) => (faults.slowLinks === true && isLinkRead(query) ? 20 : 0),
+  );
   const db = new Kysely<DB>({
     dialect: {
       createDriver: () => driver,
@@ -172,6 +188,10 @@ function fixture(price: () => Promise<LinkOpenPrice>) {
   const config = {
     configValue: async (appId: string, key: string) => {
       void appId;
+      // A pool fault: every setting but the convert switch rejects at once.
+      if (faults.settingsFail === true && key !== 'convert.enabled.jd') {
+        throw new Error('synthetic settings connection failure');
+      }
       await poolRead();
       return key === 'convert.enabled.jd' ? { value: true, version: 1 } : null;
     },
@@ -318,5 +338,83 @@ describe('linking open connection use (B1-06m)', () => {
       result_code: 50303,
       quoted_price_fen: 2990n,
     });
+  });
+
+  it("[AC-B1-06p] a no_rebate open of another user's link after a failed requote registers no link", async () => {
+    const f = fixture(() => Promise.reject(new Error('synthetic price failure')));
+    const outcome = await f.service.open({ ...f.request, noRebate: true });
+    expect(outcome.code).toBe(0);
+    expect(outcome.data).toMatchObject({
+      new_link_id: null,
+      requote_failed: true,
+      new_rebate_min_fen: '0',
+      new_rebate_max_fen: '0',
+      quoted_at: null,
+    });
+    expect(f.driver.secondDuringTransaction).toEqual([]);
+    // BR-PRICE-08: no quote snapshot is written; the log and attempt name the opened link.
+    expect(f.driver.seen.filter((q) => q.sql.startsWith('insert into "links"'))).toEqual([]);
+    expect(lastInsert(f.driver.seen, 'link_logs')).toMatchObject({
+      inTransaction: true,
+      link_id: LINK_A,
+      user_id: USER_B,
+      opener_user_id: USER_B,
+      no_rebate: true,
+      result_code: 0,
+    });
+    expect(lastInsert(f.driver.seen, 'link_open_attempts')).toMatchObject({
+      inTransaction: true,
+      link_id: LINK_A,
+      user_id: USER_B,
+    });
+    expect(f.driver.held).toBe(0);
+  });
+
+  it("[AC-B1-06p] a no_rebate open of another user's link with a good price registers no link either", async () => {
+    const f = fixture(async () => ({
+      kind: 'available',
+      input: {
+        item: {
+          platform: 'jd',
+          final_price_fen: 2990n,
+          coupon_fen: 0n,
+          coupon_ids: '',
+          quoted_at: NOW,
+        },
+        stale: false,
+      } as unknown as Extract<LinkOpenPrice, { kind: 'available' }>['input'],
+    }));
+    const outcome = await f.service.open({ ...f.request, noRebate: true });
+    expect(outcome.code).toBe(0);
+    expect(outcome.data).toMatchObject({ new_link_id: null, requote_failed: false });
+    expect(f.driver.secondDuringTransaction).toEqual([]);
+    expect(f.driver.seen.filter((q) => q.sql.startsWith('insert into "links"'))).toEqual([]);
+  });
+
+  it('[AC-B1-06m] a setting read that fails while the link is still read is never unhandled', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    let outcome: unknown;
+    try {
+      const f = fixture(() => Promise.reject(new Error('synthetic price failure')), {
+        settingsFail: true,
+        slowLinks: true,
+      });
+      outcome = await f.service.open(f.request).then(
+        (value) => value,
+        (error: unknown) => error,
+      );
+      // Let any rejection left without a handler be reported before looking.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(f.driver.held).toBe(0);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
+    // The failed setting fails the open where it is used, as when it was read in place.
+    expect(outcome).toBeInstanceOf(Error);
   });
 });
