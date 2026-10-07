@@ -1,9 +1,48 @@
+// Blocklist hits and 44001 (规划/08 BR-ID-31 黑名单, BR-ID-36 risk_hits 与「被拦截请求申诉」, BR-ID-05
+// 发码 / 同设备注册上限, BR-ID-33 脱敏; 04 §3.2 blocklist / risk_rules / risk_hits, §7 44001).
+//
+// Account-side matching (0014 header): (app_id, dimension, value_hmac) with status='active' and
+// expire_at later than the injected Clock; several entries for one value are allowed and any one
+// hits. Matching never consults users, so a deleted account's values still hit (BR-ID-31).
+// Values arrive in plaintext (hashed here with blindIndex and the per-dimension context of
+// blocklistHmacContexts()) or as a precomputed HMAC; the device dimension stores the device hash
+// itself (64 lowercase hex, BR-ID-09) and is never hashed again.
+//
+// Every hit writes risk_hits rows (ref_type blocked_request) in an independent short transaction
+// of its own (db.transaction(), never the caller's transaction): whatever the blocked request
+// rolls back, the hit record stays (orchestrator ruling B1-03d §9.3). Before the rows, the rule
+// codes are registered with INSERT … ON CONFLICT (app_id, rule_id) DO NOTHING, so the foreign key
+// risk_hits → risk_rules never fails on a first hit. One blocked request has one UUIDv7 ref_id
+// (the 拦截请求编号) shared by all its rows. The related phone is stored only as its users.phone
+// blind index and its masked form 138****5678 (BR-ID-33); the answer carries only the message
+// code blocklist.<violation_type> (04 §7), never the registration reason.
+//
+// Rule codes (orchestrator ruling, to be registered in 规划/06): BLACKLIST_<DIMENSION>,
+// SMS_BLOCKED_PREFIX and DEVICE_REGISTER_LIMIT; scene is the request type (register, withdraw,
+// phone_change, payout_account; blocked_request when the request has no type), risk_action
+// block, status active, version 1, conditions {}.
+//
+// Nothing logged identifies the person: no phone, value, HMAC or device hash.
+//
+// Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
+// for types, `.ts` relative imports, no decorators.
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
-import type { Clock, FieldCrypto, RootLogger } from '../../platform/index.ts';
+import { sql, type Kysely, type Transaction } from 'kysely';
+import { newUuidV7, type Clock, type FieldCrypto, type RootLogger } from '../../platform/index.ts';
 
 export type BlocklistDimension =
   'phone' | 'id_no' | 'alipay' | 'bank_card' | 'wechat_openid' | 'device' | 'relation_id';
+
+/** The blindIndex context of each non-device dimension. phone equals identity's users.phone. */
+const HMAC_CONTEXTS: Readonly<Record<Exclude<BlocklistDimension, 'device'>, string>> =
+  Object.freeze({
+    phone: 'users.phone',
+    id_no: 'blocklist.id_no',
+    alipay: 'payout_accounts.alipay',
+    bank_card: 'payout_accounts.bank_card',
+    wechat_openid: 'payout_accounts.wechat_openid',
+    relation_id: 'blocklist.relation_id',
+  });
 
 /** Shared by risk, backend registration (F1-10) and payout accounts (B2).
  * A function exposes the shared contexts because test-stage skeletons cannot initialize constants.
@@ -12,7 +51,7 @@ export type BlocklistDimension =
 export function blocklistHmacContexts(): Readonly<
   Record<Exclude<BlocklistDimension, 'device'>, string>
 > {
-  throw new Error('NotImplemented: blocklistHmacContexts');
+  return HMAC_CONTEXTS;
 }
 
 export interface BlockedRequest {
@@ -83,7 +122,183 @@ export interface BlocklistOptions {
   readonly logger: RootLogger;
 }
 
+/** Rule code of a blocklist hit on one dimension (BLACKLIST_PHONE, BLACKLIST_DEVICE, …). */
+function blocklistRule(dimension: BlocklistDimension): string {
+  return `BLACKLIST_${dimension.toUpperCase()}`;
+}
+
+/** BR-ID-33 default mask: the first 3 and the last 4 characters, e.g. 138****5678. */
+function maskPhone(phone: string): string {
+  return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
+}
+
+interface HitRow {
+  readonly dimension: string;
+  readonly value_hmac: string;
+  readonly rule_id: string;
+}
+
 export function createBlocklistService(options: BlocklistOptions): BlocklistService {
-  void options;
-  throw new Error('NotImplemented: createBlocklistService');
+  const { db, clock, crypto, logger } = options;
+
+  function digestOf(input: BlocklistInput): string {
+    if (input.value_hmac !== undefined) return input.value_hmac;
+    if (input.dimension === 'device') return input.value;
+    return crypto.blindIndex(input.value, HMAC_CONTEXTS[input.dimension]);
+  }
+
+  /** The violation type of an active, unexpired entry of this value, or null. */
+  async function matchOn(
+    reader: Kysely<DB>,
+    appId: string,
+    dimension: BlocklistDimension,
+    valueHmac: string,
+  ): Promise<string | null> {
+    const row = await reader
+      .withSchema('app')
+      .selectFrom('blocklist')
+      .select('violation_type')
+      .where('app_id', '=', appId)
+      .where('dimension', '=', dimension)
+      .where('value_hmac', '=', valueHmac)
+      .where('status', '=', 'active')
+      .where('expire_at', '>', clock.now())
+      .orderBy('created_at', 'desc')
+      .orderBy('id', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    return row?.violation_type ?? null;
+  }
+
+  /** The hit rows of one blocked request, in one short transaction of their own. */
+  async function writeHits(
+    request: BlockedRequest,
+    rows: readonly HitRow[],
+  ): Promise<{ readonly ref_id: string }> {
+    const now = clock.now();
+    const refId = request.ref_id ?? newUuidV7(now);
+    const register = request.request_type === 'register';
+    const userId = register ? null : (request.user_id ?? null);
+    const amount = request.request_type === 'withdraw' ? (request.amount_fen ?? null) : null;
+    const relatedHmac = crypto.blindIndex(request.related_phone, HMAC_CONTEXTS.phone);
+    const scene = request.request_type ?? 'blocked_request';
+    await db.transaction().execute(async (trx) => {
+      const app = trx.withSchema('app');
+      for (const ruleId of new Set(rows.map((row) => row.rule_id))) {
+        await app
+          .insertInto('risk_rules')
+          .values({
+            id: newUuidV7(now),
+            app_id: request.app_id,
+            rule_id: ruleId,
+            scene,
+            conditions: sql`'{}'::jsonb`,
+            risk_action: 'block',
+            status: 'active',
+            version: 1,
+          })
+          .onConflict((oc) => oc.columns(['app_id', 'rule_id']).doNothing())
+          .execute();
+      }
+      await app
+        .insertInto('risk_hits')
+        .values(
+          rows.map((row) => ({
+            app_id: request.app_id,
+            user_id: userId,
+            rule_id: row.rule_id,
+            risk_action: 'block',
+            dimension: row.dimension,
+            value_hmac: row.value_hmac,
+            ref_type: 'blocked_request',
+            ref_id: refId,
+            request_type: request.request_type,
+            related_phone_hmac: relatedHmac,
+            related_phone_masked: maskPhone(request.related_phone),
+            amount_fen: amount,
+            created_at: now,
+          })),
+        )
+        .execute();
+    });
+    for (const row of rows) {
+      logger.info(
+        {
+          app_id: request.app_id,
+          rule_id: row.rule_id,
+          dimension: row.dimension,
+          request_type: request.request_type,
+          ref_id: refId,
+        },
+        'risk_blocked_request_hit',
+      );
+    }
+    return { ref_id: refId };
+  }
+
+  function hitOf(violation: string, refId: string): BlocklistHit {
+    return { code: 44001, data: { risk_msg_code: `blocklist.${violation}` }, ref_id: refId };
+  }
+
+  return Object.freeze({
+    async check(input: BlocklistInput): Promise<BlocklistHit | null> {
+      const valueHmac = digestOf(input);
+      const violation = await matchOn(db, input.app_id, input.dimension, valueHmac);
+      if (violation === null) return null;
+      const { ref_id: refId } = await writeHits(input, [
+        {
+          dimension: input.dimension,
+          value_hmac: valueHmac,
+          rule_id: blocklistRule(input.dimension),
+        },
+      ]);
+      return hitOf(violation, refId);
+    },
+
+    async checkRegistration(
+      trx: Transaction<DB>,
+      input: RegistrationBlocklistInput,
+    ): Promise<BlocklistHit | null> {
+      // Read in the caller's transaction; the record goes through its own short transaction.
+      const candidates: { dimension: BlocklistDimension; value_hmac: string }[] = [
+        { dimension: 'phone', value_hmac: input.phone_hmac },
+      ];
+      if (input.device_hash !== undefined) {
+        candidates.push({ dimension: 'device', value_hmac: input.device_hash });
+      }
+      const rows: HitRow[] = [];
+      let violation: string | null = null;
+      for (const candidate of candidates) {
+        const matched = await matchOn(trx, input.app_id, candidate.dimension, candidate.value_hmac);
+        if (matched === null) continue;
+        violation ??= matched;
+        rows.push({ ...candidate, rule_id: blocklistRule(candidate.dimension) });
+      }
+      if (violation === null) return null;
+      const { ref_id: refId } = await writeHits(
+        { app_id: input.app_id, request_type: 'register', related_phone: input.related_phone },
+        rows,
+      );
+      return hitOf(violation, refId);
+    },
+
+    async recordHit(input: RecordBlockedHit): Promise<{ readonly ref_id: string }> {
+      return writeHits(input, [
+        { dimension: input.dimension, value_hmac: input.value_hmac, rule_id: input.rule_id },
+      ]);
+    },
+
+    async allowBlockedRegistration(
+      trx: Transaction<DB>,
+      input: BlockedRegistrationInput,
+    ): Promise<boolean> {
+      // The one-time release after a revoked appeal (BR-ID-05 细则, BR-ID-36 结案) is stored by the
+      // backend appeal task; until that store exists there is no release record, so the answer
+      // is the default denial. The read (and its consumption) will run on trx only.
+      void trx;
+      void input;
+      // TODO(规划/11 §2.3): read and consume the one-time registration release in trx — blocked on the backend appeal-closure task that defines its store
+      return false;
+    },
+  });
 }

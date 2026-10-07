@@ -18,9 +18,10 @@
 //        answer is read again after the rollback (the current value, null when removed);
 //      - restricted, account → deletion_only session; invite_code ignored (ignored_existing_user
 //        when one was sent);
-//      - full, no account → the phone blocklist port (B1-03d; 44001) → registration.register (B1-02i,
-//        device_hash from the device row): 0 → is_new_user; 44001 / 50001 → that answer, all
-//        rolled back; phone_taken (a concurrent first login won) → log in the winner's account,
+//      - full, no account → the device row's device_hash, the blocklist port (B1-03d; 44001;
+//        registrationBlocklist with phone and device, else the older phoneBlocklist) →
+//        registration.register (B1-02i): 0 → is_new_user; 44001 / 50001 → that answer, all
+//        rolled back (a device-limit 44001 then has its risk hit recorded, recordDeviceLimit); phone_taken (a concurrent first login won) → log in the winner's account,
 //        is_new_user=false, ignored_existing_user when a code was sent;
 //      - full, account → a normal login, ignored_existing_user when a code was sent;
 //   5. on success, in the same transaction: the user's consent lock (lockUserConsents), the two
@@ -69,6 +70,7 @@ import { hasLoginLog, insertLoginLog } from '../infra/login-logs.ts';
 import type { TokenService } from './access-tokens.ts';
 import {
   snapshotRegistrationConfig,
+  type DeviceLimitContext,
   type InviteBindResult,
   type RegistrationService,
 } from './registration.ts';
@@ -161,6 +163,13 @@ export interface SmsLoginOptions {
       readonly device_hash?: string;
     },
   ) => Promise<{ readonly code: 44001; readonly data?: { readonly risk_msg_code: string } } | null>;
+  /**
+   * B1-03d: records the risk hit of a same-device registration limit refusal (B1-02i), called
+   * after the login transaction rolled back. Plaintext phone only for risk's HMAC / masking.
+   */
+  readonly recordDeviceLimit?: (
+    input: DeviceLimitContext & { readonly phone: string },
+  ) => Promise<void>;
 }
 
 export interface SmsLoginService {
@@ -177,10 +186,13 @@ type SessionScope = 'full' | 'deletion_only';
 /** An answer that ends the transaction with a rollback (thrown out of the callback). */
 class LoginAbort extends Error {
   readonly result: SmsLoginResult | 'no_account';
-  constructor(result: SmsLoginResult | 'no_account') {
+  /** The same-device limit refusal, whose risk hit is recorded after the rollback. */
+  readonly deviceLimit: DeviceLimitContext | undefined;
+  constructor(result: SmsLoginResult | 'no_account', deviceLimit?: DeviceLimitContext) {
     super('identity: sms login rolled back');
     this.name = 'LoginAbort';
     this.result = result;
+    this.deviceLimit = deviceLimit;
   }
 }
 
@@ -188,6 +200,16 @@ const IGNORED_EXISTING_USER: InviteBindResult = Object.freeze({
   result: 'ignored_existing_user',
   code: null,
 });
+
+/** Only the message code of a blocklist refusal reaches the answer (04 §7). */
+function refusal(blocked: {
+  readonly code: 44001;
+  readonly data?: { readonly risk_msg_code: string };
+}): SmsLoginResult {
+  return blocked.data === undefined
+    ? { code: 44001 }
+    : { code: 44001, data: { risk_msg_code: blocked.data.risk_msg_code } };
+}
 
 /** A Date at `ms` without constructing one from the wall clock (the Clock rule of apps/api). */
 function instantAt(like: Date, ms: number): Date {
@@ -317,12 +339,23 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
     }
     // BR-ID-01 受限登录: no account is created, bound or merged.
     if (scope === 'deletion_only') throw new LoginAbort('no_account');
+    const deviceHash = await deviceHashOf(trx, appId, command.device_id);
+    // BR-ID-31: the blocklist before creating an account; registrationBlocklist (phone and
+    // device) is preferred, phoneBlocklist is the B1-02j port used only when it is absent.
+    const registrationBlocklist = options.registrationBlocklist;
     const blocklist = options.phoneBlocklist;
-    if (blocklist !== undefined) {
+    if (registrationBlocklist !== undefined) {
+      const blocked = await registrationBlocklist(trx, {
+        app_id: appId,
+        phone,
+        phone_hmac: phoneHmac,
+        ...(deviceHash === undefined ? {} : { device_hash: deviceHash }),
+      });
+      if (blocked !== null) throw new LoginAbort(refusal(blocked));
+    } else if (blocklist !== undefined) {
       const blocked = await blocklist(trx, { app_id: appId, phone_hmac: phoneHmac });
       if (blocked !== null) throw new LoginAbort(blocked);
     }
-    const deviceHash = await deviceHashOf(trx, appId, command.device_id);
     if (deviceHash === undefined) {
       throw new Error('identity: an SMS login needs the device row of the verified device');
     }
@@ -351,7 +384,17 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
         tokens: await signIn(trx, command, winner, scope),
       };
     }
-    if (registered.code === 44001) throw new LoginAbort({ code: 44001 });
+    if (registered.code === 44001) {
+      throw new LoginAbort(
+        { code: 44001 },
+        {
+          app_id: registered.app_id,
+          device_hash: registered.device_hash,
+          count: registered.count,
+          limit: registered.limit,
+        },
+      );
+    }
     if (registered.code !== 0) throw new LoginAbort({ code: 50001 });
     const account: LoginAccount = { id: registered.user_id, parent_bind_source: null };
     return {
@@ -406,6 +449,12 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       } catch (error) {
         if (!(error instanceof LoginAbort)) throw error;
         if (error.result !== 'no_account') {
+          // After the rollback, so the hit outlives it and no second pooled connection is held
+          // inside the transaction. A failed record rejects: every hit is recorded (BR-ID-36).
+          const limited = error.deviceLimit;
+          if (limited !== undefined && options.recordDeviceLimit !== undefined) {
+            await options.recordDeviceLimit({ ...limited, phone });
+          }
           logger.info({ app_id: appId, code: error.result.code }, 'sms_login_refused');
           return error.result;
         }

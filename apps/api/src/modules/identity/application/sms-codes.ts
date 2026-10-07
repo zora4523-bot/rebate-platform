@@ -6,7 +6,7 @@
 //   1. normalize_phone → 20001 phone_invalid (no SMS, nothing counted);
 //   2. prefix blocklist sms.blocked_prefixes of the request's app (08 default when the key is
 //      missing or malformed) on the E.164 form → 44001, kind blocked_prefix (B1-03d records the
-//      risk hit from this structured result);
+//      risk hit through hooks.blockedPrefix);
 //   3. insertion points, in order, each short-circuits: phoneBlocklist (44001, B1-03d) → captcha
 //      (44003, B1-03g) → deviceQuota (42901, B1-03g). They get the request with the normalised
 //      number, the device id and the client IP;
@@ -121,6 +121,8 @@ export interface SmsConfigReader {
 }
 /** Ordered seams for B1-03d/g, after normalisation/prefix checks and before phone quota. */
 export interface SmsHooks {
+  /** B1-03d: records the risk hit of a prefix refusal already decided here (no new decision). */
+  readonly blockedPrefix?: (request: SmsRequest) => Promise<void>;
   readonly phoneBlocklist?: (
     request: SmsRequest,
   ) => Promise<Extract<SmsResult, { code: 44001 }> | null>;
@@ -268,6 +270,9 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
 
       if (isBlockedPrefix(phone, await blockedPrefixes(appId))) {
         logger.info({ app_id: appId, purpose, kind: 'blocked_prefix' }, 'sms_code_blocked');
+        // B1-03d: the risk hit of this decision (its own short transaction; a failure rejects,
+        // since every hit must be recorded, BR-ID-36).
+        await hooks.blockedPrefix?.(checked);
         return { code: 44001, kind: 'blocked_prefix' };
       }
       const blocked = (await hooks.phoneBlocklist?.(checked)) ?? null;

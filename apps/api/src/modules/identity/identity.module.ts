@@ -15,7 +15,7 @@ import {
   type RequestCheck,
   type RootLogger,
 } from '../platform/index.ts';
-import { DEVICE_SIGNING_KEYS } from '../risk/index.ts';
+import { DEVICE_SIGNING_KEYS, type BlocklistService } from '../risk/index.ts';
 import {
   createTokenCheck,
   createTokenKeyProvider,
@@ -41,6 +41,7 @@ import {
   type SensitiveWords,
 } from './application/registration.ts';
 import { createSmsLoginService, type SmsLoginService } from './application/sms-login.ts';
+import { identityRiskPorts, type IdentityRiskPorts } from './application/risk-ports.ts';
 import type { MinimumVersionReader } from './application/session-scope.ts';
 import {
   IDENTITY_CONFIG,
@@ -75,6 +76,13 @@ export interface IdentityModuleOptions {
    * the process has no database.
    */
   readonly config: Omit<FactoryProvider<IdentityConfigReader | null>, 'provide'>;
+  /**
+   * Builds risk's blocklist service (B1-03d), assembled by app.module: SMS send, SMS login before
+   * creating an account and the same-device limit use it (application/risk-ports.ts). Null when
+   * the process has no database or field cipher; absent, the ports keep their defaults (no
+   * blocklist, no release).
+   */
+  readonly blocklist?: Omit<FactoryProvider<BlocklistService | null>, 'provide'>;
 }
 
 /**
@@ -96,6 +104,10 @@ export interface IdentityModuleOptions {
  */
 /** The invite-code sensitive-word filter of the registration core (createDefaultInviteCodeFilter). */
 const INVITE_CODE_WORDS = Symbol('INVITE_CODE_WORDS');
+/** risk's blocklist service as app.module builds it (IdentityModuleOptions.blocklist), or null. */
+const BLOCKLIST_SERVICE = Symbol('IDENTITY_BLOCKLIST_SERVICE');
+/** identity's ports onto risk's blocklist (identityRiskPorts), or null without one. */
+const RISK_PORTS = Symbol('IDENTITY_RISK_PORTS');
 
 @Module({})
 export class IdentityModule {
@@ -111,6 +123,20 @@ export class IdentityModule {
         DeviceSigningKeysService,
         { provide: DEVICE_SIGNING_KEYS, useExisting: DeviceSigningKeysService },
         { ...options.config, provide: IDENTITY_CONFIG },
+        options.blocklist === undefined
+          ? { provide: BLOCKLIST_SERVICE, useValue: null }
+          : { ...options.blocklist, provide: BLOCKLIST_SERVICE },
+        {
+          provide: RISK_PORTS,
+          inject: [BLOCKLIST_SERVICE, { token: FIELD_CRYPTO, optional: true }],
+          useFactory: (
+            risk: BlocklistService | null,
+            fieldCrypto?: FieldCrypto,
+          ): IdentityRiskPorts | null =>
+            risk === null || fieldCrypto === undefined
+              ? null
+              : identityRiskPorts(risk, fieldCrypto),
+        },
         {
           provide: smsSenderToken(),
           inject: [APP_CONFIG, ROOT_LOGGER],
@@ -125,6 +151,7 @@ export class IdentityModule {
             ROOT_LOGGER,
             smsSenderToken(),
             IDENTITY_CONFIG,
+            RISK_PORTS,
             { token: REDIS, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -134,6 +161,7 @@ export class IdentityModule {
             logger: RootLogger,
             sender: SmsSender,
             reader: SmsConfigReader | null,
+            risk: IdentityRiskPorts | null,
             redis?: RedisHandle,
             fieldCrypto?: FieldCrypto,
           ): SmsCodeService | null =>
@@ -146,6 +174,7 @@ export class IdentityModule {
                   config: reader,
                   logger,
                   hmac: createSmsHmac(config.appEnv, fieldCrypto),
+                  ...(risk === null ? {} : { hooks: risk.smsHooks }),
                 }),
         },
         {
@@ -179,6 +208,7 @@ export class IdentityModule {
             SMS_CODES,
             TOKEN_SERVICE,
             INVITE_CODE_WORDS,
+            RISK_PORTS,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -189,6 +219,7 @@ export class IdentityModule {
             sms: SmsCodeService | null,
             tokens: TokenService,
             sensitiveWords: SensitiveWords,
+            risk: IdentityRiskPorts | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): SmsLoginService | null =>
@@ -201,14 +232,16 @@ export class IdentityModule {
                   logger,
                   versions: reader,
                   sms,
-                  // TODO(规划/11 §2.3): invite binding (bindInvite), B1-03d / B1-03g ports — blocked on B1-11, B1-03d, B1-03g
+                  // TODO(规划/11 §2.3): invite binding (bindInvite), B1-03g ports — blocked on B1-11, B1-03g
                   registration: createRegistrationService({
                     clock,
                     config: reader,
                     crypto: fieldCrypto,
                     logger,
                     sensitiveWords,
+                    ...(risk === null ? {} : risk.registration),
                   }),
+                  ...(risk === null ? {} : risk.login),
                   // Registration keys are snapshotted before the login transaction opens.
                   config: reader,
                   tokens,

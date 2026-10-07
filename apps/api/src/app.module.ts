@@ -36,20 +36,29 @@ import {
   APP_CONFIG,
   CLOCK,
   DB,
+  FIELD_CRYPTO,
   PlatformModule,
+  ROOT_LOGGER,
   createMemoryQuotaLimiter,
   quotaShares,
   systemScheduler,
   type AppConfig,
   type Clock,
+  type FieldCrypto,
   type PlatformOptions,
+  type RootLogger,
   REQUEST_CHECKS,
   type RequestCheck,
   type RequestCheckPlan,
   isContractSignedRoute,
   isHttpEntry,
 } from './modules/platform/index.ts';
-import { RiskModule, SIGNATURE_CHECK } from './modules/risk/index.ts';
+import {
+  RiskModule,
+  SIGNATURE_CHECK,
+  createBlocklistService,
+  type BlocklistService,
+} from './modules/risk/index.ts';
 import {
   REGISTERED_PLATFORMS,
   UNION_ENDPOINTS,
@@ -94,6 +103,9 @@ function requestChecks(options: PlatformOptions): Provider {
  * reader of config_items and app_versions: content implements the port's shape without importing
  * identity (same assembly as the risk ports, F1-02b). No database handle (isolated HTTP unit
  * tests): no reader, and the SMS code route answers 50001.
+ * Its blocklist port is risk's blocklist service (B1-03d: SMS send, SMS login before creating an
+ * account, the same-device limit), built here so identity and risk stay plain ports to each
+ * other; without a database or field cipher there is none.
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
@@ -101,6 +113,23 @@ function identityModule(): DynamicModule {
       inject: [CLOCK, { token: DB, optional: true }],
       useFactory: (clock: Clock, db?: Kysely<Database>): IdentityConfigReader | null =>
         db === undefined ? null : createContentReader({ db, clock }),
+    },
+    blocklist: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        crypto?: FieldCrypto,
+      ): BlocklistService | null =>
+        db === undefined || crypto === undefined
+          ? null
+          : createBlocklistService({ db, clock, crypto, logger }),
     },
   });
 }
