@@ -1,5 +1,6 @@
 // Package tests for the review round 2 fixes (F1-06h): 20001 fields, binding-secret retry,
-// session end on the done step, identity refresh, overlapping identity and logout calls.
+// session end on the done step, identity refresh, overlapping identity and logout calls; round 3:
+// logout joins only within one session generation, and the revoke request has a timeout.
 import { afterEach, expect, it, vi } from 'vitest';
 import { createAuthProvider, type AdminAuthProvider } from './index.ts';
 
@@ -217,4 +218,47 @@ it('overlapping logouts join; a late answer never ends a session started afterwa
   await one;
   expect(h.auth.getToken()).toBe(SESSION.admin_token);
   expect(h.values.size).toBe(1);
+});
+
+it('while session A revoke hangs, logging in as B and out again clears and revokes B', async () => {
+  const h = setup();
+  await h.auth.login(CREDENTIALS);
+  await h.auth.login({ step: 'totp', code: '123456' });
+  const hang = deferred();
+  h.queue('/admin/v1/auth/logout', () => hang.promise);
+  const first = h.auth.logout({});
+  await h.auth.login(CREDENTIALS);
+  h.queue('/admin/v1/auth/totp', () => ok({ ...SESSION, admin_token: 'example-admin-token-b' }));
+  await h.auth.login({ step: 'totp', code: '123456' });
+  expect(h.auth.getToken()).toBe('example-admin-token-b');
+  const second = h.auth.logout({});
+  expect(second).not.toBe(first);
+  expect(h.auth.getToken()).toBeNull();
+  expect(h.values.size).toBe(0);
+  await expect(second).resolves.toMatchObject({ success: true });
+  expect(
+    h.calls.filter((c) => c.path.endsWith('/auth/logout')).map((c) => c.authorization),
+  ).toEqual([`Bearer ${SESSION.admin_token}`, 'Bearer example-admin-token-b']);
+  hang.resolve(ok({}));
+  await first;
+  expect(h.auth.getToken()).toBeNull();
+});
+
+it('a revoke that never answers is given up after 10 seconds; the local session is gone at once', async () => {
+  vi.useFakeTimers({ now: NOW });
+  const h = setup();
+  await h.auth.login(CREDENTIALS);
+  await h.auth.login({ step: 'totp', code: '123456' });
+  h.queue('/admin/v1/auth/logout', () => new Promise<Response>(() => undefined));
+  let settled = false;
+  const request = h.auth.logout({}).then((result) => {
+    settled = true;
+    return result;
+  });
+  expect(h.auth.getToken()).toBeNull();
+  await vi.advanceTimersByTimeAsync(9_999);
+  expect(settled).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  await expect(request).resolves.toMatchObject({ success: true, redirectTo: '/login' });
+  expect(h.auth.getToken()).toBeNull();
 });

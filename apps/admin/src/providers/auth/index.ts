@@ -88,6 +88,9 @@ export interface AdminAuthProvider extends AuthProvider {
 const STORAGE_KEY = 'couli.admin.session';
 const LOGIN_PATH = '/login';
 const MAX_TIMER_MS = 2_147_483_647;
+/** A revoke still unanswered after this is given up; the local session is already gone. */
+const LOGOUT_TIMEOUT_MS = 10_000;
+const loggedOut = (): AuthActionResponse => ({ success: true, redirectTo: LOGIN_PATH });
 
 const CODE_NOT_SIGNED_IN = 10001;
 const CODE_BAD_PASSWORD = 10008;
@@ -109,6 +112,12 @@ interface StoredSession {
   readonly expiresAt: number;
   readonly idleMs: number;
   readonly lastActive: number;
+}
+
+interface LogoutRequest {
+  /** The session generation right after this logout ended its session. */
+  readonly generation: number;
+  promise: Promise<AuthActionResponse>;
 }
 
 interface PendingLogin {
@@ -273,7 +282,9 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
   // Bumped whenever a session starts or ends; session calls compare it instead of the object
   // (recording activity replaces the object without changing the session).
   let generation = 0;
-  let logoutRequest: Promise<AuthActionResponse> | null = null;
+  // The revoke under way, tagged with the generation it left behind: only a call made while that
+  // generation is still current (no session started since) joins it.
+  let logoutRequest: LogoutRequest | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let started = options.manualStart !== true;
 
@@ -559,35 +570,52 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
   }
 
   /**
-   * Drops the local session at once, then revokes its token on the server. A second call while
-   * the first is under way joins it; the late answer never touches a session started afterwards.
+   * Drops the local session at once, then revokes its token on the server (given up after
+   * LOGOUT_TIMEOUT_MS). A second call before any new session starts joins the first; a call after
+   * a new session started clears and revokes that session on its own. A late answer never
+   * touches a session started afterwards.
    */
   function logout(): Promise<AuthActionResponse> {
-    if (logoutRequest !== null) return logoutRequest;
+    if (logoutRequest !== null && logoutRequest.generation === generation) {
+      return logoutRequest.promise;
+    }
     epoch += 1;
     pending = null;
     const token = session?.token ?? null;
     setSnapshot({ step: 'credentials', username: '' });
     endSession();
     if (token === null) return Promise.resolve({ success: true, redirectTo: LOGIN_PATH });
+    const controller = new AbortController();
     const revoke = createDataProvider({
       baseUrl: options.api.baseUrl,
-      fetch: options.api.fetch,
+      fetch: (input, init) => options.api.fetch(input, { ...init, signal: controller.signal }),
       getToken: () => token,
       onError: () => undefined,
     });
-    const request = (async (): Promise<AuthActionResponse> => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<void>((resolve) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        resolve();
+      }, LOGOUT_TIMEOUT_MS);
+    });
+    const entry: LogoutRequest = { generation, promise: Promise.resolve(loggedOut()) };
+    entry.promise = (async (): Promise<AuthActionResponse> => {
       try {
-        await revoke.custom({ url: '/admin/v1/auth/logout', method: 'post' });
+        await Promise.race([
+          revoke.custom({ url: '/admin/v1/auth/logout', method: 'post' }),
+          expired,
+        ]);
       } catch {
         // Already expired or unreachable: the local session is gone either way.
       } finally {
-        logoutRequest = null;
+        clearTimeout(timeout);
+        if (logoutRequest === entry) logoutRequest = null;
       }
-      return { success: true, redirectTo: LOGIN_PATH };
+      return loggedOut();
     })();
-    logoutRequest = request;
-    return request;
+    logoutRequest = entry;
+    return entry.promise;
   }
 
   if (session !== null) {
