@@ -27,5 +27,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/open-norebate/**'
-status: todo
-pr: null
+status: done
+pr: 264
