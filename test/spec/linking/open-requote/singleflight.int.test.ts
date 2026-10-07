@@ -102,10 +102,17 @@ it('[AC-B1-06k#30] 身份键变化且复核失败：无返利请求不能取得�
   f.fetch.mockRejectedValue(new Error('synthetic-fetch-failure'));
   const s = service(f);
   expect(success(await s.open(f.request(original.link_id))).requote_failed).toBe(true);
-  expect(await s.open(f.request(original.link_id, { noRebate: true }))).toEqual({
-    code: 50303,
-    data: null,
-  });
+  // BR-PRICE-13 (planning couli#80, 2026-10-08): a no-rebate open after a failed requote may
+  // either still answer 50303 or convert anew without attribution; it never reuses the normal
+  // attribution cache. Both outcomes are asserted exactly (B1-06q, test-change).
+  const noRebate = await s.open(f.request(original.link_id, { noRebate: true }));
+  if (noRebate.code === 50303) {
+    expect(noRebate).toEqual({ code: 50303, data: null });
+  } else {
+    expect(success(noRebate).jump).toEqual(jump('synthetic-without-attribution'));
+    expect(success(noRebate).jump).not.toEqual(jump());
+    expect(f.convert).toHaveBeenLastCalledWith(expect.objectContaining({ noRebate: true }));
+  }
   expect(f.cache.get).toHaveBeenLastCalledWith(expect.objectContaining({ noRebate: true }));
 });
 
