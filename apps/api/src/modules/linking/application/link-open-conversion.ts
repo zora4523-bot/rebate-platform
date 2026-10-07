@@ -18,7 +18,12 @@ import {
   type UnionPidService,
   type UnionRegistry,
 } from '../../union/index.ts';
-import { isSwitchOn } from '../domain/rules.ts';
+import {
+  CONVERT_CACHE_TTL_SEC,
+  MAX_CONVERT_CACHE_TTL_SEC,
+  intSetting,
+  isSwitchOn,
+} from '../domain/rules.ts';
 import type { AttrCodeReader, Caller, CallerContext, LinkingConfigReader } from '../ports.ts';
 import { attrCodeOf } from './link-registration.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
@@ -49,6 +54,9 @@ export interface JdPddConversionInput extends LinkOpenConversionInput {
   readonly idempotencyKey: string;
   readonly traceId: string;
 }
+
+/** The plan's usable period after a conversion (BR-ATTR-05 ②, contract JumpPlan.expire_at). */
+const URL_LIFETIME_FALLBACK_SEC = MAX_CONVERT_CACHE_TTL_SEC;
 
 export interface LinkConversion {
   convert(input: JdPddConversionInput): Promise<LinkOpenJump>;
@@ -146,7 +154,28 @@ function pathsOf(platform: 'jd' | 'pdd', url: string): LinkJumpPaths {
 
 // TODO(规划/11 §4.5): 真实转链 — blocked on 推广位 / siteId。
 export function createLinkOpenConversion(options: LinkConversionOptions): LinkConversion {
-  const { callerContext, attrCodes, config, pids, registry, logger } = options;
+  const { clock, callerContext, attrCodes, config, pids, registry, logger } = options;
+
+  /**
+   * This conversion's jump expiry: now + link.convert_cache_ttl_sec (default and ceiling 900 s;
+   * 0 or invalid falls back to 900). links.expire_at only describes the copy issued at
+   * registration and is never reused here. The demo / governed adapter reports no URL expiry
+   * yet; when one is reported the shorter of the two applies.
+   */
+  async function jumpExpiry(appId: string): Promise<string> {
+    const configured = intSetting(
+      (await config.configValue(appId, CONVERT_CACHE_TTL_SEC))?.value,
+      URL_LIFETIME_FALLBACK_SEC,
+    );
+    const sec =
+      configured > 0 && configured <= MAX_CONVERT_CACHE_TTL_SEC
+        ? configured
+        : URL_LIFETIME_FALLBACK_SEC;
+    // Every Clock returns a fresh Date, so moving this one is local.
+    const at = clock.now();
+    at.setTime(at.getTime() + sec * 1000);
+    return at.toISOString();
+  }
 
   async function switchOn(appId: string, key: string): Promise<boolean> {
     const value = await config.configValue(appId, key);
@@ -261,9 +290,16 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
     const identity = await identityFor(owner, platform, noRebate, input.traceId);
     let noRebateUrl = '';
     try {
-      noRebateUrl = link.product_key === null ? '' : noRebateProductUrl(link.product_key);
+      noRebateUrl =
+        link.product_key === null ? '' : noRebateProductUrl(link.product_key, input.item);
     } catch {
       noRebateUrl = '';
+    }
+    if (noRebateUrl === '') {
+      logger.warn(
+        { event: 'linking.open.no_rebate_page_unavailable', app_id: link.app_id, platform },
+        'linking: no unpromoted product page for the no-rebate purchase',
+      );
     }
     if (link.raw_item_id === null || link.raw_item_id === '') {
       throw failed('linking: link has no raw item id to convert', noRebateUrl);
@@ -288,7 +324,7 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
       client: input.client,
       installed: input.installed ?? 'unknown',
       paths: pathsOf(platform, url),
-      expireAt: link.expire_at.toISOString(),
+      expireAt: await jumpExpiry(link.app_id),
     });
   }
 
@@ -344,13 +380,36 @@ export function buildDefaultLinkJump(input: {
 }
 
 const PRODUCT_KEY = /^(jd|pdd):([0-9]{1,20})$/;
+/** BR-PROD-03 default jd item mode: jd:i_<B segment>; the page needs the numeric sku instead. */
+const JD_ITEM_KEY = /^jd:i_[0-9A-Za-z]{1,128}$/;
+const DIGITS = /^[0-9]{1,20}$/;
 
-/** Canonical unpromoted product page for the explicit no-rebate action; never a pasted URL. */
-export function noRebateProductUrl(productKey: string): string {
-  const match = typeof productKey === 'string' ? PRODUCT_KEY.exec(productKey) : null;
-  if (match === null) throw new Error('linking: not a product key with an unpromoted page');
-  const [, platform, id] = match;
+function pageOf(platform: 'jd' | 'pdd', id: string): string {
   return platform === 'jd'
     ? `https://item.jd.com/${id}.html`
     : `https://mobile.yangkeduo.com/goods.html?goods_id=${id}`;
+}
+
+/**
+ * Canonical unpromoted product page for the explicit no-rebate action (BR-PRICE-08); never a
+ * pasted or converted URL. A numeric key builds it directly. A default item-mode jd key
+ * (jd:i_<B>) carries no sku, so the numeric skuId of the latest re-check item of the same
+ * platform is used; the union DTO exposes no product-page URL field to prefer over it.
+ */
+export function noRebateProductUrl(
+  productKey: string,
+  item?: Pick<ItemRef, 'platform' | 'skuId'> | null,
+): string {
+  const match = typeof productKey === 'string' ? PRODUCT_KEY.exec(productKey) : null;
+  if (match !== null) return pageOf(match[1] as 'jd' | 'pdd', match[2]!);
+  if (
+    typeof productKey === 'string' &&
+    JD_ITEM_KEY.test(productKey) &&
+    item?.platform === 'jd' &&
+    typeof item.skuId === 'string' &&
+    DIGITS.test(item.skuId)
+  ) {
+    return pageOf('jd', item.skuId);
+  }
+  throw new Error('linking: not a product key with an unpromoted page');
 }

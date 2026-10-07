@@ -8,6 +8,7 @@ import {
   createLinkOpenRequote,
   type LinkOpenRequoteInput,
   type LinkOpenRequoteOptions,
+  type LinkOpenRequoteOutcome,
   type LinkOpenRequoteResult,
 } from './link-open-requote.ts';
 
@@ -25,13 +26,21 @@ export class LinkOpenService {
 
 type OpenLinkResult = components['schemas']['OpenLinkResult'];
 
+/**
+ * HTTP status per contracts/error-codes.yaml for every code an open can answer, including the
+ * idempotency layer's own envelopes (20001 / 20901 / 20903 / 40901), which must stay 400 / 409.
+ */
 const STATUS: Readonly<Record<number, number>> = {
   0: 200,
   10001: 401,
   20001: 400,
+  20901: 409,
+  20903: 409,
   30141: 422,
   30144: 404,
   30602: 422,
+  40901: 409,
+  50001: 500,
   50301: 503,
   50303: 503,
 };
@@ -41,9 +50,13 @@ const MESSAGES: Readonly<Record<number, string>> = {
   0: 'ok',
   10001: '请先登录',
   20001: '参数错误',
+  20901: '请求重复且内容不同',
+  20903: '该请求已放弃',
   30141: '商品已下架',
   30144: '链接不存在',
   30602: '淘礼金已领完',
+  40901: '请求处理中，请稍后',
+  50001: '服务端错误',
   50301: '该平台暂时无法购买，请稍后再试',
   50303: '暂时无法确认价格或生成链接，请稍后再试',
 };
@@ -77,23 +90,29 @@ class ComposedLinkOpen extends LinkOpenService {
   }
 
   override async open(input: LinkOpenInput): Promise<HandlerResult> {
-    const outcome = await this.#requote.open(input);
-    if (outcome.code === 0 && outcome.data !== null) {
-      return {
-        status: 200,
-        envelope: { code: 0, msg: MESSAGES[0]!, data: wire(outcome.data), trace_id: input.traceId },
-      };
-    }
-    // Error envelopes carry no data here (ErrorEnvelope: data only for codes that define it).
+    return openHttpResult(await this.#requote.open(input), input.traceId);
+  }
+}
+
+/** The HTTP result of an open outcome: status per contracts/error-codes.yaml, never 500 by gap. */
+export function openHttpResult(outcome: LinkOpenRequoteOutcome, traceId: string): HandlerResult {
+  if (outcome.code === 0 && outcome.data !== null) {
     return {
-      status: STATUS[outcome.code] ?? 500,
-      envelope: {
-        code: outcome.code,
-        msg: MESSAGES[outcome.code] ?? '服务端错误',
-        trace_id: input.traceId,
-      },
+      status: 200,
+      envelope: { code: 0, msg: MESSAGES[0]!, data: wire(outcome.data), trace_id: traceId },
     };
   }
+  // Error envelopes carry data only for codes that define it (ErrorEnvelope): here 20001,
+  // which only the idempotency layer answers, for the Idempotency-Key header.
+  return {
+    status: STATUS[outcome.code] ?? 500,
+    envelope: {
+      code: outcome.code,
+      msg: MESSAGES[outcome.code] ?? '服务端错误',
+      ...(outcome.code === 20001 ? { data: { fields: ['idempotency-key'] } } : {}),
+      trace_id: traceId,
+    },
+  };
 }
 
 /** Compose ownership/requote with server conversion; serialize fen as safe JSON integers. */

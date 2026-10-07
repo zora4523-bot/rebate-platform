@@ -98,6 +98,8 @@ export interface LinkOpenCachedJump {
 
 export interface LinkOpenConversionInput {
   readonly owner: LinkOpenOwnerResult;
+  /** The latest re-check item of this flight, when one was fetched (BR-PRICE-08 page source). */
+  readonly item?: AssembleCardInput['item'];
   readonly noRebate: boolean;
   readonly installed: components['schemas']['OpenLinkRequest']['installed'];
   readonly client: LinkOpenRequoteInput['client'];
@@ -227,13 +229,18 @@ const MESSAGES: Readonly<Record<number, string>> = {
   50303: 'requote_failed',
 };
 
+/** HTTP status per contracts/error-codes.yaml for every code an open can answer. */
 const STATUS: Readonly<Record<number, number>> = {
   0: 200,
   10001: 401,
   20001: 400,
+  20901: 409,
+  20903: 409,
   30141: 422,
   30144: 404,
   30602: 422,
+  40901: 409,
+  50001: 500,
   50301: 503,
   50303: 503,
 };
@@ -343,6 +350,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
   async function convertFor(
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
+    item: AssembleCardInput['item'] | undefined,
   ): Promise<Converted> {
     const noRebate = input.noRebate === true;
     const key = cacheKeyOf(owner, input);
@@ -352,6 +360,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     try {
       jump = await conversion.convert({
         owner,
+        ...(item === undefined ? {} : { item }),
         noRebate,
         installed: input.installed ?? 'unknown',
         client: input.client,
@@ -458,11 +467,12 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     flight: Flight,
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
+    item?: AssembleCardInput['item'],
   ): Promise<Converted> {
     const key = JSON.stringify(cacheKeyOf(owner, input));
     let pending = flight.conversions.get(key);
     if (pending === undefined) {
-      pending = convertFor(owner, input);
+      pending = convertFor(owner, input, item);
       flight.conversions.set(key, pending);
     }
     return pending;
@@ -482,18 +492,31 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
    * A failed conversion: 50301 / 50303 for the open, except an explicit no_rebate purchase whose
    * conversion failed, which jumps to the unpromoted product page (BR-PRICE-08) — never cached.
    */
-  function conversionFallback(
+  async function conversionFallback(
     converted: Extract<Converted, { kind: 'failed' }>,
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
-  ): LinkOpenJump | null {
+  ): Promise<LinkOpenJump | null> {
     if (converted.code !== 50303 || input.noRebate !== true || converted.noRebateUrl === null) {
       return null;
     }
+    // Issued now, like a converted plan: never the registration-time links.expire_at.
+    const configured = await setting(
+      owner.link.app_id,
+      CONVERT_CACHE_TTL_SEC,
+      MAX_CONVERT_CACHE_TTL_SEC,
+    );
+    const sec =
+      configured > 0 && configured <= MAX_CONVERT_CACHE_TTL_SEC
+        ? configured
+        : MAX_CONVERT_CACHE_TTL_SEC;
+    // Every Clock returns a fresh Date, so moving this one is local.
+    const expireAt = clock.now();
+    expireAt.setTime(expireAt.getTime() + sec * 1000);
     return {
       primary: { type: 'h5', value: converted.noRebateUrl },
       fallbacks: [],
-      expire_at: owner.link.expire_at.toISOString(),
+      expire_at: expireAt.toISOString(),
     };
   }
 
@@ -582,7 +605,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         // BR-PRICE-20: the snapshot stands as new; conversion is still real time.
         const converted = await sharedConversion(flight, owner, input);
         const fallback =
-          converted.kind === 'failed' ? conversionFallback(converted, owner, input) : null;
+          converted.kind === 'failed' ? await conversionFallback(converted, owner, input) : null;
         if (converted.kind === 'failed' && fallback === null) return failure(converted.code, owner);
         return {
           code: 0,
@@ -644,9 +667,9 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     // BR-PRICE-08: a no_rebate purchase never writes a quote snapshot, so it never renews.
     const renewed = input.noRebate !== true && quoteSnapshotChanged(snapshot, current);
 
-    const converted = await sharedConversion(flight, owner, input);
+    const converted = await sharedConversion(flight, owner, input, price.input.item);
     const fallback =
-      converted.kind === 'failed' ? conversionFallback(converted, owner, input) : null;
+      converted.kind === 'failed' ? await conversionFallback(converted, owner, input) : null;
     if (converted.kind === 'failed' && fallback === null) return failure(converted.code, owner);
     const effective = renewed ? card.linkId : link.link_id;
     const rebates =
