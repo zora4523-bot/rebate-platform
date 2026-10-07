@@ -1,0 +1,25 @@
+id: B1-06m
+repo: rebate-platform
+title: linking open 幂等加固：业务写入（新 link、open 日志、attempt）与幂等响应同一事务（或业务写入按幂等键可重入），崩溃恢复后同键重试返回首次 new_link_id 与 attempt_id；复核失败用缓存外跳前检查 jump.expire_at；单飞窗口内首次 50303 结论不被缓存改判
+type: impl
+# 草稿 2026-10-07（W1 搜索转链线），由 B1-06k 拆出（couli-runs/B1-06k/decision-orchestrator.md 末节：Codex 两轮 S1「业务写入与幂等响应不同事务」降为 S2，正确修法要改冻结夹具）。
+# 依据：BR-PRICE-13（幂等重放返回首次结果、3000 毫秒单飞返回相同结果、复核失败用 ≤900 秒缓存）、04 §3.2 link_open_attempts（同一 Idempotency-Key 的重放返回原值、不新插）、TRADE-22，由编排者摘入任务书第 2 节。
+# 幂等走 platform 的 idempotency（B1-01i）：若其 execute 不支持把业务写入放进同一事务，本任务在 platform 侧补「事务内执行」入口（paths 含 platform/idempotency/**，与同路径任务串行），或让 open 的业务写入按幂等键可重入（不改表结构为前提；需要改表另立迁移任务）。
+# 规则测试要覆盖：进程在业务提交后、幂等响应保存前退出（用可控故障注入），租约到期后同键重试只有一条新 link 与一条 attempt、返回首次编号；jump.expire_at 已过的缓存不用于复核失败外跳；单飞窗口内首次 50303 后，同 link 新幂等键 open 仍为 50303。
+# B1-06k 的夹具（test/spec/linking/open-requote/kit.ts）已冻结；新规则测试放 test/spec/linking/open-idempotency/**，需要的夹具在新目录另建（@couli/db/testing 只在 *.int.test.ts 里 import）。
+# 风险：linking/** RV2，platform/idempotency RV2。
+refs: []
+refs_hash: {}
+deps: [B1-06k]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/modules/platform/idempotency/**'
+test_paths:
+  - 'test/spec/linking/open-idempotency/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-idempotency/**'
+status: todo
+pr: null
