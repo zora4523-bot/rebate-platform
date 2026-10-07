@@ -4,6 +4,8 @@ title: 后台登录与 auth provider：账号密码 + 动态码登录、新账�
 type: impl
 # 2026-10-06 入账（前端线 f1-frontend）。依据 BR-ID-34（含细则「首次绑定身份验证器」、8 小时 / 空闲 30 分钟、失败 5 次锁定 30 分钟的提示以 08 为准）、04 §6.6 auth、03 §9.3 providers/auth、
 # CT-02f 合并后的契约与示例，画板 AdmLogin、AdmLoginTotp、AdmLoginTotpBind*（复制到运行目录核对 sha256），由编排者摘入任务书第 2 节。admin_token 的传递方式以 CT-02f 为准，不写 localStorage；动态码输入复用 F1-06f 的 otp-input；先于后端开发，只用契约示例夹具。
+# 2026-10-07 f1-frontend-3：test_paths 加冒烟规则测试——登录接入后后台生产构建首屏变成登录页，F1-01k 的 SMOKE#4（首屏「权限加载失败」）
+# 必须同 PR 改为断言登录页，否则合并后 main 红；改既有规则测试属第一类 add-only，合并要负责人标签。
 refs: []
 refs_hash: {}
 deps: [F1-06f, F1-06g]
@@ -14,6 +16,7 @@ paths:
   - 'apps/admin/src/texts/login.ts'
 test_paths:
   - 'test/spec/frontend/admin-auth/**'
+  - 'test/spec/frontend/build-smoke/entries.smoke.test.ts'
 impl: claude
 tester: codex
 accept:
