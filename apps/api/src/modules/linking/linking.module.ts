@@ -52,6 +52,13 @@ import {
   type LinkRegistration,
   type RegistrationContext,
 } from './application/link-registration.ts';
+import {
+  LinkLandingService,
+  createLandingLinks,
+  createLinkLanding,
+  createSnapshotCardReader,
+} from './application/link-landing.ts';
+import { LinkLandingController } from './http/public/landing.controller.ts';
 import { LinkOpenController } from './http/public/open.controller.ts';
 import {
   AttrCodeReader,
@@ -173,13 +180,15 @@ class PausedLinkOpen extends LinkOpenService {
  * B1-06w: POST /v1/links/{link_id}/open is served by the wired open (link-open-wiring.ts), built
  * per request from LINK_OPEN_PORTS (app.module.ts: governed union, quoter, item_ref issuer,
  * apps.json, verified jump paths), the process's Redis jump cache and single-flight windows.
+ * B1-06j: GET /v1/links/{link_id} (link landing card) reads only: no registration, no link_log,
+ * no conversion.
  */
 @Module({})
 export class LinkingModule {
   static forRoot(configReader: LinkingConfigReaderFactory): DynamicModule {
     return {
       module: LinkingModule,
-      controllers: [LinkOpenController],
+      controllers: [LinkOpenController, LinkLandingController],
       providers: [
         {
           provide: LINK_OPEN_PROCESS,
@@ -274,6 +283,33 @@ export class LinkingModule {
               },
             });
           },
+        },
+        {
+          // B1-06j: the landing card, per request like its CallerContext. Read-only: the links
+          // row in the caller's app scope and a card from its quote snapshot (item_ref issuer of
+          // LINK_OPEN_PORTS; no union call, no registration, no link_log).
+          provide: LinkLandingService,
+          scope: Scope.REQUEST,
+          inject: [
+            { token: DB, optional: true },
+            { token: LINK_OPEN_PORTS, optional: true },
+            CLOCK,
+            CallerContext,
+          ],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            ports: LinkOpenPorts | undefined,
+            clock: Clock,
+            callerContext: CallerContext,
+          ): LinkLandingService =>
+            createLinkLanding({
+              callerContext,
+              links: db === undefined ? { find: unavailable } : createLandingLinks(db),
+              cards:
+                ports === undefined
+                  ? { read: unavailable }
+                  : createSnapshotCardReader({ clock, itemRefs: ports.itemRefs }),
+            }),
         },
         {
           provide: LinkingConfigReader,
