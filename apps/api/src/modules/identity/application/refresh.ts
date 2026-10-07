@@ -16,7 +16,8 @@
 //      step 4), a new row with parent_hash = the old hash and expire_at = now + 30 days, the scope
 //      judged again from this request (computed before the transaction, see below), the same sid,
 //      an access token; then the new
-//      pair, encrypted under the context 'identity.refresh_grace', is written to Redis
+//      pair together with the successor row's token_hash (`successor_hash`, kept inside the entry
+//      only), encrypted under the context 'identity.refresh_grace', is written to Redis
 //      `refresh_grace:<old hash>` for 30 seconds BEFORE the transaction commits, so a failed Redis
 //      write rolls the whole rotation back (50001; the old token still rotates next time).
 //   4. rotated → the grace of BR-ID-07: now − rotated_at ≤ 30 s, the direct successor (the row
@@ -24,7 +25,11 @@
 //      for) not rotated, and a Redis entry → the stored pair is decrypted and returned as it was
 //      (its session_scope too, not judged again), nothing revoked. Any condition failing → revoke
 //      the whole sid ('refresh_reuse') + afterRevoked + 10404. A failed Redis read is 50001 and
-//      revokes nothing: only a missing entry counts as reuse.
+//      revokes nothing: only a missing entry counts as reuse. The entry's successor_hash must equal
+//      the committed direct successor's token_hash: a late SET of a rolled-back rotation can
+//      overwrite the entry with a pair that was never stored, so a mismatch is a cache
+//      inconsistency, not reuse — 50001, nothing revoked or issued, a warn 'refresh_grace_mismatch'
+//      with 8-character hash prefixes.
 //   5. a concurrent second rotation: the row lock serialises the two requests, so the later one
 //      reads the committed rotated_at and goes to step 4; the (app_id, parent_hash) unique
 //      constraint is the second guard — a 23505 on it rolls the attempt back and the request is
@@ -112,8 +117,14 @@ function errorFields(error: unknown): { error_name: string; error_code?: string 
   return typeof code === 'string' ? { error_name: name, error_code: code } : { error_name: name };
 }
 
+/** A grace entry: the pair as answered plus the committed successor's token_hash. */
+interface GraceEntry {
+  pair: RefreshPair;
+  successorHash: string;
+}
+
 /** A decrypted grace entry; anything else is a failure (50001), never a reuse. */
-function parsePair(plaintext: string): RefreshPair {
+function parseEntry(plaintext: string): GraceEntry {
   const value = JSON.parse(plaintext) as Record<string, unknown> | null;
   if (
     typeof value !== 'object' ||
@@ -122,16 +133,20 @@ function parsePair(plaintext: string): RefreshPair {
     typeof value.access_expires_at !== 'string' ||
     typeof value.refresh_token !== 'string' ||
     typeof value.refresh_expires_at !== 'string' ||
-    !SCOPES.has(value.session_scope)
+    !SCOPES.has(value.session_scope) ||
+    typeof value.successor_hash !== 'string'
   ) {
     throw new Error('identity: a malformed refresh grace entry');
   }
   return {
-    access_token: value.access_token,
-    access_expires_at: value.access_expires_at,
-    refresh_token: value.refresh_token,
-    refresh_expires_at: value.refresh_expires_at,
-    session_scope: value.session_scope as RefreshPair['session_scope'],
+    pair: {
+      access_token: value.access_token,
+      access_expires_at: value.access_expires_at,
+      refresh_token: value.refresh_token,
+      refresh_expires_at: value.refresh_expires_at,
+      session_scope: value.session_scope as RefreshPair['session_scope'],
+    },
+    successorHash: value.successor_hash,
   };
 }
 
@@ -205,7 +220,11 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
     // Before the commit: a failed write throws and rolls the rotation back.
     await redis
       .namespace(GRACE_NAMESPACE)
-      .set(tokenHash, crypto.encrypt(JSON.stringify(pair), GRACE_CONTEXT), GRACE_TTL_SECONDS);
+      .set(
+        tokenHash,
+        crypto.encrypt(JSON.stringify({ ...pair, successor_hash: issued.hash }), GRACE_CONTEXT),
+        GRACE_TTL_SECONDS,
+      );
     return pair;
   }
 
@@ -223,7 +242,7 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
     }
     const successor = await trx
       .selectFrom('refresh_tokens')
-      .select('rotated_at')
+      .select(['token_hash', 'rotated_at'])
       .where('app_id', '=', appId)
       .where('parent_hash', '=', tokenHash)
       .forUpdate()
@@ -234,7 +253,21 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
     // A failed read throws (50001, nothing revoked); only a missing entry is reuse.
     const stored = await redis.namespace(GRACE_NAMESPACE).get(tokenHash);
     if (stored === null) return reuse(trx, appId, sid, tokenHash, 'grace_entry_missing');
-    const pair = parsePair(crypto.decrypt(stored, GRACE_CONTEXT));
+    const { pair, successorHash } = parseEntry(crypto.decrypt(stored, GRACE_CONTEXT));
+    if (successorHash !== successor.token_hash) {
+      // Not reuse: the entry does not describe the committed successor (a late write of a
+      // rolled-back rotation). Nothing is revoked and nothing is issued.
+      logger.warn(
+        {
+          app_id: appId,
+          token_hash_prefix: tokenHash.slice(0, 8),
+          cached_successor_prefix: successorHash.slice(0, 8),
+          stored_successor_prefix: successor.token_hash.slice(0, 8),
+        },
+        'refresh_grace_mismatch',
+      );
+      return { code: 50001 };
+    }
     logger.info({ app_id: appId, token_hash_prefix: tokenHash.slice(0, 8) }, 'refresh_grace_hit');
     return { code: 0, data: pair };
   }

@@ -37,6 +37,12 @@ const STORED: RefreshPair = {
   refresh_expires_at: '2026-11-07T04:00:00.000Z',
   session_scope: 'deletion_only',
 };
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+/** The committed successor's token_hash in the scripted database. */
+const SUCCESSOR_HASH = sha256('stored-refresh');
+/** A grace entry as a rotation writes it: the pair plus the successor's token_hash. */
+const entry = (successorHash: string = SUCCESSOR_HASH) =>
+  `identity.refresh_grace|${JSON.stringify({ ...STORED, successor_hash: successorHash })}`;
 
 interface State {
   rotatedAt: Date | null;
@@ -44,6 +50,8 @@ interface State {
   /** Errors the next refresh_tokens inserts throw, in order. */
   insertErrors: unknown[];
   successorRotatedAt: Date | null | undefined;
+  /** token_hash of the committed direct successor row. */
+  successorHash: string;
   /** Whether a failed insert's competing rotation shows on the next read (default true). */
   competitorVisible: boolean;
 }
@@ -66,6 +74,7 @@ async function setup(
     expireAt: new Date(clock.now().getTime() + 86400_000),
     insertErrors: [],
     successorRotatedAt: undefined,
+    successorHash: SUCCESSOR_HASH,
     competitorVisible: true,
     ...init,
   };
@@ -81,7 +90,7 @@ async function setup(
               rows:
                 state.successorRotatedAt === undefined
                   ? []
-                  : [{ rotated_at: state.successorRotatedAt }],
+                  : [{ token_hash: state.successorHash, rotated_at: state.successorRotatedAt }],
             };
           }
           return { rows: [{ sid: SID, rotated_at: state.rotatedAt, expire_at: state.expireAt }] };
@@ -198,7 +207,12 @@ it('[BR-ID-07] a rotation writes the encrypted pair to refresh_grace before the 
   expect(f.namespaces).toContain('refresh_grace');
   expect(f.store.size).toBe(1);
   const [stored] = [...f.store.values()];
-  expect(JSON.parse(stored!.slice('identity.refresh_grace|'.length))).toEqual(result.data);
+  // The pair as answered plus the inserted successor's token_hash; the response has no extra field.
+  expect(JSON.parse(stored!.slice('identity.refresh_grace|'.length))).toEqual({
+    ...result.data,
+    successor_hash: sha256(result.data.refresh_token),
+  });
+  expect(Object.keys(result.data)).not.toContain('successor_hash');
   expect(f.events.slice(-1)).toEqual(['commit']);
   expect(f.events.indexOf('update')).toBeLessThan(f.events.indexOf('insert'));
 });
@@ -214,8 +228,8 @@ it('[BR-ID-07] a 23505 on the single-successor constraint is retried once and me
   const f = await setup({ insertErrors: [parentConflict()] });
   f.store.set(
     // The grace key is the presented token's SHA-256 (hex).
-    createHash('sha256').update('presented-refresh').digest('hex'),
-    `identity.refresh_grace|${JSON.stringify(STORED)}`,
+    sha256('presented-refresh'),
+    entry(),
   );
   expect(await f.refresh()).toEqual({ code: 0, data: STORED });
   expect(transactions(f.events)).toEqual(['begin', 'rollback', 'begin', 'commit']);
@@ -279,10 +293,7 @@ it('[BR-ID-07] the scope is read once before the transaction and never inside it
 
 it('[BR-ID-07] a retried attempt after a 23505 reuses the scope: zero reads after the first begin', async () => {
   const f = await setup({ insertErrors: [parentConflict()] });
-  f.store.set(
-    createHash('sha256').update('presented-refresh').digest('hex'),
-    `identity.refresh_grace|${JSON.stringify(STORED)}`,
-  );
+  f.store.set(sha256('presented-refresh'), entry());
   expect(await f.refresh()).toEqual({ code: 0, data: STORED });
   expect(transactions(f.events)).toEqual(['begin', 'rollback', 'begin', 'commit']);
   expect(f.events.filter((event) => event === 'versions')).toHaveLength(1);
@@ -297,5 +308,36 @@ it('[BR-ID-07] a failed scope read answers 50001 without opening a transaction',
   expect(await f.refresh()).toEqual({ code: 50001 });
   expect(f.events).toEqual(['versions']);
   expect(f.store.size).toBe(0);
+  expect(f.sids).toEqual([]);
+});
+
+it('[BR-ID-07] a grace entry naming the committed successor returns the identical pair', async () => {
+  const f = await setup({ successorRotatedAt: null });
+  f.state.rotatedAt = f.clock.now();
+  f.clock.advanceMs(10_000);
+  f.store.set(sha256('presented-refresh'), entry());
+  expect(await f.refresh()).toEqual({ code: 0, data: STORED });
+  expect(f.events.filter((event) => event === 'update' || event === 'insert')).toEqual([]);
+  expect(f.sids).toEqual([]);
+});
+
+it('[BR-ID-07] a grace entry whose successor hash differs from the committed successor answers 50001: nothing revoked or issued', async () => {
+  const f = await setup({ successorRotatedAt: null });
+  f.state.rotatedAt = f.clock.now();
+  // A late write of a rolled-back rotation overwrote the entry with a pair never stored.
+  f.store.set(sha256('presented-refresh'), entry(sha256('never-stored-refresh')));
+  const before = new Map(f.store);
+  expect(await f.refresh()).toEqual({ code: 50001 });
+  expect(f.events.filter((event) => event === 'update' || event === 'insert')).toEqual([]);
+  expect(f.sids).toEqual([]);
+  expect(f.store).toEqual(before);
+});
+
+it('[BR-ID-07] a grace entry without a successor hash is malformed: 50001, nothing revoked', async () => {
+  const f = await setup({ successorRotatedAt: null });
+  f.state.rotatedAt = f.clock.now();
+  f.store.set(sha256('presented-refresh'), `identity.refresh_grace|${JSON.stringify(STORED)}`);
+  expect(await f.refresh()).toEqual({ code: 50001 });
+  expect(f.events.filter((event) => event === 'update' || event === 'insert')).toEqual([]);
   expect(f.sids).toEqual([]);
 });
