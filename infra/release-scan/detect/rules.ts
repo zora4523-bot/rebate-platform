@@ -246,8 +246,11 @@ export function detectText(file: string, text: string, options: DetectOptions): 
     const tail =
       end < 0 ? (/^[\sA-Za-z0-9+/=\\-]*/.exec(text.slice(m.index + m[0].length))?.[0] ?? '') : '';
     const length = end < 0 ? m[0].length + tail.length : end + footer.length - m.index;
-    if (/PRIVATE/i.test(m[1]!)) add('private-key', m.index, length);
-    else if (hasHigh(text.slice(m.index, m.index + length))) add('high-entropy', m.index, length);
+    // 头尾成对但中间没有 base64 正文（如 SDK 里的 PEM 头尾常量）不是密钥。
+    const bodyless = end >= 0 && !/[A-Za-z0-9+/]{16,}/.test(text.slice(m.index + m[0].length, end));
+    if (/PRIVATE/i.test(m[1]!)) {
+      if (!bodyless) add('private-key', m.index, length);
+    } else if (hasHigh(text.slice(m.index, m.index + length))) add('high-entropy', m.index, length);
   }
 
   for (const { name, value, start } of fields(file, text)) {
@@ -266,7 +269,15 @@ export function detectText(file: string, text: string, options: DetectOptions): 
     // 只在 authority 的 userinfo 中判口令，路径或 query 的冒号不算。
     const authority = m[0].slice(m[0].indexOf('://') + 3).split(/[/?#]/, 1)[0]!;
     const userInfo = authority.slice(0, authority.lastIndexOf('@'));
-    if (authority.includes('@') && /:[^:]+$/.test(userInfo)) {
+    // 口令段只剩格式占位（%@、%ld、%02x 等）时是格式串模板，不是口令。
+    const secret = userInfo
+      .slice(userInfo.indexOf(':') + 1)
+      .replace(
+        /%[-+ #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:hh|h|ll|l|q|z|t|j|L)?[@diouxXeEfFgGaAcCsSp]/g,
+        '',
+      )
+      .replace(/%$/, '');
+    if (authority.includes('@') && /:[^:]+$/.test(userInfo) && secret.length > 0) {
       add('credential-url', m.index, m[0].length);
     } else if (hasHigh(m[0])) add('high-entropy', m.index, m[0].length);
   }
