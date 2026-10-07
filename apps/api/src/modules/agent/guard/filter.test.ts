@@ -131,4 +131,22 @@ describe('[BR-AI-06] 复制…打开X is not split by the forced flush (code rev
     expect(out.length).toBeGreaterThan(0);
     expect(Array.from(out[0] ?? '').length).toBe(2000);
   });
+
+  it.each(['好', '😀'])(
+    '[AC-B3-06a#10] resumes flushing every 60 code points after the copy hold limit (%s)',
+    (char) => {
+      const input = `复制${char.repeat(5000)}`;
+      for (const deltas of [[input], [...input]]) {
+        const buffer = createSentenceBuffer();
+        const out = deltas.flatMap((delta) => buffer.push(delta));
+        expect(out).toEqual([
+          `复制${char.repeat(1998)}`,
+          ...Array.from({ length: 50 }, () => char.repeat(60)),
+        ]);
+        const tail = buffer.end();
+        expect(tail).toEqual([char.repeat(2)]);
+        expect([...out, ...tail].join('')).toBe(input);
+      }
+    },
+  );
 });

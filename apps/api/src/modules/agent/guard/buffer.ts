@@ -155,6 +155,10 @@ export function createSentenceBuffer(): SentenceBuffer {
   };
 
   const rescan = (): void => {
+    // A forced cut may have delivered 复制; only an unmatched one in the retained tail holds it.
+    const copyStart = buffer.lastIndexOf('复制');
+    copyOpen =
+      copyStart >= 0 && !COPY_OPEN_ENDS.some((end) => buffer.indexOf(end, copyStart + 2) >= 0);
     allToken = true;
     allAmount = true;
     for (const ch of buffer) {
