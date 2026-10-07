@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   attempts,
@@ -14,7 +15,7 @@ import {
   USER_B,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 it.each([
   ['fetch_error', 899999, true],

@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   attempts,
@@ -13,7 +14,7 @@ import {
   success,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 it('[AC-B1-06k#41] D33：无原券的卡新增券且券后价未变，换快照但不误报 coupon_gone', async () => {
   const db = database();

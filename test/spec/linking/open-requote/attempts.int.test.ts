@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 import {
@@ -14,7 +15,7 @@ import {
   USER_B,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 it.each(['ios', 'android', 'harmony', 'h5', 'web'] as const)(
   '[AC-B1-06k#20] BR-ATTR-14/21：%s 成功 open 写完整证据与 UUIDv7 尝试，使用注入时钟',

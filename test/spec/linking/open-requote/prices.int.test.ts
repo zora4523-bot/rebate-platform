@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   databaseFixture,
@@ -12,7 +13,7 @@ import {
   USER_B,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 it.each([
   [2990n, 3090n, true],

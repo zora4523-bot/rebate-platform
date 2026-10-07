@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   attempts,
@@ -13,7 +14,7 @@ import {
   success,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 it('[AC-B1-06k#9] BR-PRICE-14：下架优先于缓存、券失效及价格变化，30141 且无 jump/attempt', async () => {
   const db = database();

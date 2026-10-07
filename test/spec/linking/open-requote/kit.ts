@@ -1,7 +1,6 @@
 // Synthetic ports only at the unimplemented conversion boundary. Ownership, registration,
 // catalog assembly, idempotency and database writes use their real public entry points.
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, vi } from 'vitest';
 import {
@@ -34,9 +33,15 @@ import { caller, input, pid, seed, START, USER_A } from '../register/kit.ts';
 export { stored, unknownPricePddLink } from '../open-owner/kit.ts';
 export { DEVICE_A, DEVICE_B, QUOTED, START, USER_A, USER_B } from '../register/kit.ts';
 
+/** Test database handle; the factory comes from @couli/db/testing, which only *.int.test.ts may import. */
+interface TestDatabaseHandle {
+  urlFor(role: 'couli_app'): string;
+  drop(): Promise<void>;
+}
+
 /** Called at module scope; only the container integration runner executes these hooks. */
-export function databaseFixture() {
-  let database: TestDatabase;
+export function databaseFixture(createTestDatabase: () => Promise<TestDatabaseHandle>) {
+  let database: TestDatabaseHandle;
   let db: Kysely<DB>;
   beforeAll(async () => {
     database = await createTestDatabase();

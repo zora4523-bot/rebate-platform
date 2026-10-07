@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   attempts,
@@ -15,7 +16,7 @@ import {
   USER_B,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 it('[AC-B1-06k#27] BR-PRICE-13：3000ms 含边界共用结论，3001ms 重查；不同键每次签新 attempt', async () => {
   const db = database();
