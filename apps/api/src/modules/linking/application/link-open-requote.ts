@@ -157,9 +157,24 @@ export interface LinkOpenRequoteOptions extends LinkOpenOwnerOptions {
     put(key: LinkOpenCacheKey, value: LinkOpenCachedJump): Promise<void>;
   };
   readonly idempotency: Pick<Idempotency, 'executeInTransaction'>;
+  /**
+   * B1-06w: the single-flight windows shared by every service built with it. The composition
+   * root builds one per process (the service itself is built per request); omitted, the service
+   * keeps its own.
+   */
+  readonly flights?: LinkOpenFlights;
   // TODO(规划/11 §4.5): 拼多多比价预判开关打开的分支 — blocked on CAP-PDD-04。
   // B1-06m: catalog, prices, conversion and cache are called while the open holds its transaction
   // connection; their implementations must not take another pooled database connection then.
+}
+
+/** Opaque process-wide single-flight state (B1-06w); see LinkOpenRequoteOptions.flights. */
+export interface LinkOpenFlights {
+  readonly windows: Map<string, unknown>;
+}
+
+export function createLinkOpenFlights(): LinkOpenFlights {
+  return { windows: new Map() };
 }
 
 export interface LinkOpenRequoteInput {
@@ -365,7 +380,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     pids,
     ...(attrCodes === undefined ? {} : { attrCodes }),
   });
-  const flights = new Map<string, Flight>();
+  const flights = (options.flights ?? createLinkOpenFlights()).windows as Map<string, Flight>;
 
   async function setting(appId: string, key: string, fallback: number): Promise<number> {
     const value = await config.configValue(appId, key);

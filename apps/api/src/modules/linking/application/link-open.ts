@@ -10,6 +10,7 @@ import {
   type LinkOpenRequoteOptions,
   type LinkOpenRequoteOutcome,
   type LinkOpenRequoteResult,
+  type LinkOpenRequoteService,
 } from './link-open-requote.ts';
 
 export interface LinkOpenInput extends LinkOpenRequoteInput {
@@ -82,9 +83,9 @@ function wire(data: LinkOpenRequoteResult): OpenLinkResult {
 }
 
 class ComposedLinkOpen extends LinkOpenService {
-  readonly #requote: ReturnType<typeof createLinkOpenRequote>;
+  readonly #requote: LinkOpenRequoteService;
 
-  constructor(requote: ReturnType<typeof createLinkOpenRequote>) {
+  constructor(requote: LinkOpenRequoteService) {
     super();
     this.#requote = requote;
   }
@@ -113,6 +114,11 @@ export function openHttpResult(outcome: LinkOpenRequoteOutcome, traceId: string)
       trace_id: traceId,
     },
   };
+}
+
+/** The HTTP-facing open of an already composed requote service (B1-06w wiring). */
+export function linkOpenOf(requote: LinkOpenRequoteService): LinkOpenService {
+  return new ComposedLinkOpen(requote);
 }
 
 /** Compose ownership/requote with server conversion; serialize fen as safe JSON integers. */
