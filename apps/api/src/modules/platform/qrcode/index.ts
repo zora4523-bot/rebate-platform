@@ -132,10 +132,11 @@ export async function renderQrCodeSvg(text: string, options?: QrCodeOptions): Pr
 export async function renderQrCodePng(text: string, options?: QrCodeOptions): Promise<Buffer> {
   const r = resolveWithMinimum(text, options);
   // qrcode 1.5.4 sizes the PNG as floor(N × (width / N)) (N = modules + 2 × margin), which loses a
-  // pixel to floating point for many (N, width) pairs (512 → 511). Only for those pairs, half a pixel
-  // more makes the floor land on `size` (checked for every pair in range); the others render exactly
-  // as the library does.
+  // pixel to floating point for many (N, width) pairs (512 → 511). Only for those pairs a millionth of a
+  // pixel more makes the floor land on `size`; checked for every pair in range, with every module row
+  // and column still getting pixels (half a pixel would push the last one out at the smallest sizes).
+  // The other pairs render exactly as the library does.
   const n = moduleCount(text, r) + 2 * r.margin;
-  const width = Math.floor(n * (r.width / n)) === r.width ? r.width : r.width + 0.5;
+  const width = Math.floor(n * (r.width / n)) === r.width ? r.width : r.width + 1e-6;
   return encode(() => QRCode.toBuffer(text, { type: 'png', ...r, width }));
 }
