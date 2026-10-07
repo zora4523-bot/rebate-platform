@@ -88,10 +88,10 @@ export function fixture(db: Kysely<DB>, opener: Partial<Caller> = {}) {
     clock,
     viewerContext: { current },
     quoter: {
-      quote: async () => ({
+      quote: async (_item, _viewer, context) => ({
         rebateMinFen: 229n,
         rebateMaxFen: 229n,
-        rebateBasis: 'normal',
+        rebateBasis: context?.rebateBasis ?? 'normal',
         estNetPriceFen: null,
       }),
     },
