@@ -15,12 +15,28 @@ import {
   type HandlerResult,
   type RootLogger,
 } from '../../../../apps/api/src/modules/platform/index.ts';
+import { createTokenCheck } from '../../../../apps/api/src/modules/identity/application/access-tokens.ts';
 import { createSignatureCheck } from '../../../../apps/api/src/modules/risk/index.ts';
 import {
   createValidatorCompiler,
   type JsonSchema,
 } from '../../../../apps/api/src/modules/platform/validation/index.ts';
 import { EXPIRES, LINK, START } from './kit.ts';
+
+// Since B1-02h the api entry refuses a contract route that takes a token unless its request
+// check plan runs the token check (BR-ID-01 ②). The plan here keeps the real signature check and
+// adds the real token check; these requests carry no Authorization (x-auth optional on open), so
+// its token service and session lookup are never reached.
+const tokenCheck = createTokenCheck({
+  tokens: {
+    verifyAccess: async () => {
+      throw new Error('synthetic token service not used');
+    },
+  } as unknown as Parameters<typeof createTokenCheck>[0]['tokens'],
+  sessions: { find: async () => null } as unknown as Parameters<
+    typeof createTokenCheck
+  >[0]['sessions'],
+});
 
 // Only dependency ports are replaced. Controllers, route schema, Fastify and the global error
 // filter come from the real createHttpApp. Signature verification stays real, Redis stays local.
@@ -124,7 +140,7 @@ async function withHttp(
         ...(module.providers ?? []),
         {
           provide: REQUEST_CHECKS,
-          useValue: { checks: [signature], bufferWhen: isContractSignedRoute },
+          useValue: { checks: [signature, tokenCheck], bufferWhen: isContractSignedRoute },
         },
       ],
     };
