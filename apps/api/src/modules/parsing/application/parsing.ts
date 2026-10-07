@@ -14,6 +14,7 @@
 // The user's original URL or password is only the input hit: it never becomes canonicalUrl, a card
 // field or an open target (BR-PRICE-08, BR-ATTR-27). No convert call happens here (TRADE-03).
 import type { components } from '@couli/contracts-ts';
+import type { Logger } from 'pino';
 import { deriveProductKey, ProductKeyUnderivable } from '@couli/domain';
 import type { Catalog, CatalogCardEntry, ProductCard, ProductRef } from '../../catalog/index.ts';
 import {
@@ -50,6 +51,12 @@ export const UNRECOGNIZED = 30132;
 export const OFF_SHELF = 30141;
 /** error-codes.yaml 50301 without reason (maintenance): the platform dependency is down. */
 export const DEPENDENCY_DOWN = 50301;
+/**
+ * error-codes.yaml 50001: a non-business failure while one hit was handled (a database or other
+ * internal fault). parseInput reports it as that hit's own result and logs a warning, so the
+ * other hits of the message still card (B1-07b).
+ */
+export const INTERNAL_FAILURE = 50001;
 
 /** Rejection of parseUrl; parseInput reports the same codes as typed results instead. */
 export class ParsingError extends Error {
@@ -72,6 +79,8 @@ export interface ParsingOptions {
   ) => Pick<UnionAdapter, 'resolveLink' | 'getItem'>;
   /** Omission uses platform.getLinkPatterns(); overrides are synthetic test fixtures. */
   readonly linkPatterns?: LinkPatternsSpec;
+  /** Warning sink of a hit isolated by a non-business failure (flat fields only, no input text). */
+  readonly logger?: Pick<Logger, 'warn'>;
 }
 
 /** Internal D33 result; price_unavailable is deliberately not a fabricated wire card. */
@@ -312,24 +321,31 @@ export async function parseUrl(
 export function createParsing(options: ParsingOptions): ParsingService {
   const resolver = createResolver(options);
 
+  /** The candidate's hit, or the typed result it ends with before any I/O. */
+  function hitOf(
+    candidate: Candidate,
+  ): { readonly hit: ParsingHit } | { readonly result: ParsingResult } {
+    if (candidate.kind === 'tpwd') {
+      return { hit: { platform: TPWD_PLATFORM, kind: 'tpwd', raw: candidate.raw } };
+    }
+    const classified = resolver.classify(candidate.raw);
+    if (classified.hit === null) {
+      return { result: { kind: 'error', hit: null, error_code: UNSUPPORTED } };
+    }
+    if (classified.category === 'union_host') {
+      return { result: { kind: 'error', hit: classified.hit, error_code: UNRECOGNIZED } };
+    }
+    return { hit: classified.hit };
+  }
+
   async function parseCandidate(
     candidate: Candidate,
+    hit: ParsingHit,
     context: CallCtx,
     seen: Set<string>,
   ): Promise<ParsingResult | null> {
-    let hit: ParsingHit;
-    if (candidate.kind === 'tpwd') {
-      hit = { platform: TPWD_PLATFORM, kind: 'tpwd', raw: candidate.raw };
-      if (!(await resolver.tpwdEnabled(context.appId))) {
-        return { kind: 'error', hit, error_code: UNRECOGNIZED };
-      }
-    } else {
-      const classified = resolver.classify(candidate.raw);
-      if (classified.hit === null) return { kind: 'error', hit: null, error_code: UNSUPPORTED };
-      hit = classified.hit;
-      if (classified.category === 'union_host') {
-        return { kind: 'error', hit, error_code: UNRECOGNIZED };
-      }
+    if (candidate.kind === 'tpwd' && !(await resolver.tpwdEnabled(context.appId))) {
+      return { kind: 'error', hit, error_code: UNRECOGNIZED };
     }
     const identified = await resolver.identify(hit.platform, candidate.raw, context);
     if (!identified.ok) return { kind: 'error', hit, error_code: identified.code };
@@ -367,7 +383,29 @@ export function createParsing(options: ParsingOptions): ParsingService {
     const results: ParsingResult[] = [];
     // Sequential, in text order: the fourth candidate is never read (BR-AI-01 parse_input row).
     for (const candidate of candidates) {
-      const result = await parseCandidate(candidate, context, seen);
+      const early = hitOf(candidate);
+      if ('result' in early) {
+        results.push(early.result);
+        continue;
+      }
+      let result: ParsingResult | null;
+      try {
+        result = await parseCandidate(candidate, early.hit, context, seen);
+      } catch (error: unknown) {
+        // A non-business failure (database, configuration read, card registration, a programming
+        // fault) ends only this hit: earlier cards are kept and later candidates still run. Flat
+        // fields only: never the input text, the raw link or the error message (it may echo them).
+        options.logger?.warn(
+          {
+            event: 'parse_hit_failed',
+            platform: early.hit.platform,
+            kind: early.hit.kind,
+            error_class: error instanceof Error ? error.name : typeof error,
+          },
+          'parsing: hit failed with a non-business error',
+        );
+        result = { kind: 'error', hit: early.hit, error_code: INTERNAL_FAILURE };
+      }
       if (result !== null) results.push(result);
     }
     return results;

@@ -1,0 +1,141 @@
+{
+  "task": "B1-07b",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "1fd8a7c9dd8bffe5fe1d2f96b17bbc9b05d9a8ff",
+  "red_tests": [
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\"} 返回20001且不进入解析（scene）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"\",\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":123,\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":null,\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":[\"https://tb.example.test/item/a?other_pid=synthetic-promoter\"],\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":null} 返回20001且不进入解析（scene）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":1} 返回20001且不进入解析（scene）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"\"} 返回20001且不进入解析（scene）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"share\"} 返回20001且不进入解析（scene）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"agent\"} 返回20001且不进入解析（scene）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"clipboard\",\"user_id\":\"synthetic-user\"} 返回20001且不进入解析（user_id）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"clipboard\",\"app_id\":\"other\"} 返回20001且不进入解析（app_id）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"clipboard\",\"device_id\":\"other\"} 返回20001且不进入解析（device_id）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"clipboard\",\"entry_source\":\"pool\"} 返回20001且不进入解析（entry_source）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 [] 返回20001且不进入解析（body）",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#2] clipboard 游客出卡，真实解析与出卡链路使用服务端上下文，只登记报价不转链",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#2] search 游客出卡，真实解析与出卡链路使用服务端上下文，只登记报价不转链",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#2] share_ext 游客出卡，真实解析与出卡链路使用服务端上下文，只登记报价不转链",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#14] 未接身份时不能用客户端身份头将游客提升为登录用户",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#3] 4000字文本合法，报价取联盟解析价，不采用分享文案价格或指令",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#4] 三个命中按文本顺序返回，第四个不解析，重复商品只出一张卡",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#5] 口令也经同一解析核心出卡，命中原文与顺序保留",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#6] 中间项link_unrecognized只返回自身错误30132，两侧卡保留",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#6] 中间项item_unavailable只返回自身错误30141，两侧卡保留",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#6] 中间项upstream_unavailable只返回自身错误50301，两侧卡保留",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#7] 已识别但无法派生商品键返回30131，不丢其他项",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#8] 数据库类非业务异常逐项隔离且告警，保留之前和之后的卡",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#9] price_unavailable用现有错误项表达，不带金额或link_id，也不丢同消息正常卡",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#10] 主动输入无返利仍出卡，按钮与金额符合现有契约，不转链",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#11] 联盟域非商品页https://jd.example.test/在HTTP与parseUrl均返回30132",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#11] 联盟域非商品页https://tb.example.test/store在HTTP与parseUrl均返回30132",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#12] 没有具体商品的输入\"普通合成文案\"返回30132，不构造候选卡或假hit",
+    "test/spec/parsing/http/route.test.ts > [AC-B1-07b#12] 没有具体商品的输入\"x\"返回30132，不构造候选卡或假hit",
+    "test/spec/parsing/http/schema.test.ts > [AC-B1-07b#13] parseInput不再planned，optional鉴权与生成的请求schema和契约一致"
+  ],
+  "risk_note": "RV2 (app.module.ts and route-schemas.gen.ts RV2, parsing RV1). POST /v1/inputs/parse route over the merged B1-07a parse_input core: body validation (text, scene), one result per recognised hit in input order, cards register links and quote snapshots without conversion (BR-PRICE-12), price_unavailable answered as a per-hit 50303 without amounts or link_id, guest access (x-auth optional), per-hit isolation of non-business failures; app.module wires the governed union upstream, the demo quoter, the entry-source reader and parsing link registrars per scene from linking (entry_source parse); parseInput no longer planned, route schemas regenerated. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1fd8a7c9dd8bffe5fe1d2f96b17bbc9b05d9a8ff",
+      "tree": "4db75cc3c5636d5cc5092a5abdbbc7bf1bb0a0bb",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T18:56:37Z",
+      "finished_at": "2026-10-07T18:56:52Z",
+      "red_tests": [
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\"} 返回20001且不进入解析（scene）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"\",\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":123,\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":null,\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":[\"https://tb.example.test/item/a?other_pid=synthetic-promoter\"],\"scene\":\"clipboard\"} 返回20001且不进入解析（text）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":null} 返回20001且不进入解析（scene）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":1} 返回20001且不进入解析（scene）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"\"} 返回20001且不进入解析（scene）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"share\"} 返回20001且不进入解析（scene）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"agent\"} 返回20001且不进入解析（scene）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"clipboard\",\"user_id\":\"synthetic-user\"} 返回20001且不进入解析（user_id）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"clipboard\",\"app_id\":\"other\"} 返回20001且不进入解析（app_id）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"clipboard\",\"device_id\":\"other\"} 返回20001且不进入解析（device_id）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 {\"text\":\"https://tb.example.test/item/a?other_pid=synthetic-promoter\",\"scene\":\"clipboard\",\"entry_source\":\"pool\"} 返回20001且不进入解析（entry_source）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#1] 非法请求 [] 返回20001且不进入解析（body）",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#2] clipboard 游客出卡，真实解析与出卡链路使用服务端上下文，只登记报价不转链",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#2] search 游客出卡，真实解析与出卡链路使用服务端上下文，只登记报价不转链",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#2] share_ext 游客出卡，真实解析与出卡链路使用服务端上下文，只登记报价不转链",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#14] 未接身份时不能用客户端身份头将游客提升为登录用户",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#3] 4000字文本合法，报价取联盟解析价，不采用分享文案价格或指令",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#4] 三个命中按文本顺序返回，第四个不解析，重复商品只出一张卡",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#5] 口令也经同一解析核心出卡，命中原文与顺序保留",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#6] 中间项link_unrecognized只返回自身错误30132，两侧卡保留",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#6] 中间项item_unavailable只返回自身错误30141，两侧卡保留",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#6] 中间项upstream_unavailable只返回自身错误50301，两侧卡保留",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#7] 已识别但无法派生商品键返回30131，不丢其他项",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#8] 数据库类非业务异常逐项隔离且告警，保留之前和之后的卡",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#9] price_unavailable用现有错误项表达，不带金额或link_id，也不丢同消息正常卡",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#10] 主动输入无返利仍出卡，按钮与金额符合现有契约，不转链",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#11] 联盟域非商品页https://jd.example.test/在HTTP与parseUrl均返回30132",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#11] 联盟域非商品页https://tb.example.test/store在HTTP与parseUrl均返回30132",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#12] 没有具体商品的输入\"普通合成文案\"返回30132，不构造候选卡或假hit",
+        "test/spec/parsing/http/route.test.ts > [AC-B1-07b#12] 没有具体商品的输入\"x\"返回30132，不构造候选卡或假hit",
+        "test/spec/parsing/http/schema.test.ts > [AC-B1-07b#13] parseInput不再planned，optional鉴权与生成的请求schema和契约一致"
+      ],
+      "expected": ["test/spec/parsing/http/route.test.ts", "test/spec/parsing/http/schema.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "859635029e556b7dfe1da788e13db177032e2a672153005dd832083f4d84248a"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: pass, one S2 to followups (local/test item_ref ephemeral key per route instead of one process provider; app.module imports catalog infra directly); confirmed the orchestrator's spec fixture fixes changed no assertion"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: pass. During implementation the orchestrator fixed the unmerged spec commit (fixture only, no assertion changed: a valid 32-hex trace id header, since the platform regenerates any other value; #6 advances the frozen core fixture's ManualScheduler until the request settles), red re-run on it"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "051dd9cd6abc948c06c832bba160af57a5576cf0",
+    "specs": "0100f2ee7f7133fd83e159c2e144148e7a4b59d4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

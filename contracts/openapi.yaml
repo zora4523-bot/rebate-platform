@@ -3586,7 +3586,6 @@ paths:
       x-signed: true
       x-idempotent: false
       x-min-version-gate: true
-      x-implementation: planned
       x-error-codes:
         - 30131
         - 30132

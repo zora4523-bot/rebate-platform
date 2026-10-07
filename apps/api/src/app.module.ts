@@ -23,7 +23,15 @@ import {
   LinkingModule,
   type LinkRegistrations,
 } from './modules/linking/index.ts';
-import { ParsingModule } from './modules/parsing/index.ts';
+// The composition root may reach catalog's wiring helper: the process item_ref cipher of local /
+// test without a field keyring, shared with parsing's card entry (not a module-to-module import).
+import { createProcessItemRefCipher } from './modules/catalog/infra/search-wiring.ts';
+import {
+  ParsingLinkRegistrars,
+  ParsingModule,
+  createParsing,
+  type ParseScene,
+} from './modules/parsing/index.ts';
 import {
   APP_CONFIG,
   CLOCK,
@@ -203,6 +211,34 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
 }
 
 /**
+ * Parsing's card-time link registration (POST /v1/inputs/parse, B1-07b): linking's per-request
+ * registration in the request's entry scene (clipboard / search / share_ext), assembled here so
+ * parsing never imports linking. Global beside catalogPorts, whose linking export it uses.
+ */
+@Module({})
+class ParsingPortsModule {}
+
+function parsingPorts(): DynamicModule {
+  return {
+    module: ParsingPortsModule,
+    global: true,
+    providers: [
+      {
+        provide: ParsingLinkRegistrars,
+        inject: [LINK_REGISTRATIONS],
+        useFactory: (registrations: LinkRegistrations): ParsingLinkRegistrars => ({
+          forScene(scene: ParseScene): LinkRegistrar {
+            const registration = registrations.forContext({ scene });
+            return { register: (input: RegisterLinkInput) => registration.register(input) };
+          },
+        }),
+      },
+    ],
+    exports: [ParsingLinkRegistrars],
+  };
+}
+
+/**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes, the risk module's request signature check, whose
  * device port identity implements, and identity's token check. The union module (adapter registry
@@ -217,7 +253,8 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
  * The parsing module (parse_input core, B1-07a) loads on `api` as well; its configuration port
  * (parse.tpwd.enabled, product_key.jd.mode) is content's reader, so parsing never imports content.
  * On `api`, catalogPorts makes the governed union adapters, linking's registrar and the demo
- * quoter global, for catalog's GET /v1/products/search (B1-05j).
+ * quoter global, for catalog's GET /v1/products/search (B1-05j) and parsing's POST
+ * /v1/inputs/parse (B1-07b), which registers its links through parsingPorts in the request's scene.
  * Business modules are added to the entries that own them by their tasks (规划/02 §4.1).
  */
 @Module({})
@@ -246,7 +283,13 @@ export class AppModule {
               catalogPorts(union, linking),
               CatalogModule.forRoot((db, clock) => createContentReader({ db, clock })),
               linking,
-              ParsingModule.forRoot((db, clock) => createContentReader({ db, clock })),
+              parsingPorts(),
+              // createParsing from parsing's public surface, so the route builds its service
+              // through index.ts like any other caller.
+              ParsingModule.forRoot((db, clock) => createContentReader({ db, clock }), {
+                createParsing,
+                localItemRefCipher: createProcessItemRefCipher,
+              }),
             ]
           : []),
       ],
