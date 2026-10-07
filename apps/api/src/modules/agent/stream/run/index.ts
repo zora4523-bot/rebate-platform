@@ -201,21 +201,15 @@ export interface RunManagerDeps {
 }
 
 export function runConfigDefaults(): RunConfig {
-  throw new Error('NotImplemented: runConfigDefaults');
+  return {
+    maxRunMs: 20_000,
+    heartbeatMs: 15_000,
+    disconnectGraceMs: 60_000,
+    guardPollMs: 5_000,
+    signalPollMs: 500,
+  };
 }
 
-export function numberCard(card: UnnumberedCard, firstNo: number): NumberedCard {
-  void card;
-  void firstNo;
-  throw new Error('NotImplemented: numberCard');
-}
-
-export function createRedisRunRegistry(deps: RedisRunRegistryDeps): RunRegistry {
-  void deps;
-  throw new Error('NotImplemented: createRedisRunRegistry');
-}
-
-export function createRunManager(deps: RunManagerDeps): RunManager {
-  void deps;
-  throw new Error('NotImplemented: createRunManager');
-}
+export { numberCard } from './cards.ts';
+export { createRedisRunRegistry } from './registry.ts';
+export { createRunManager } from './manager.ts';
