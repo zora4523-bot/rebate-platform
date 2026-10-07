@@ -22,5 +22,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/qrcode/**'
-status: todo
-pr: null
+status: done
+pr: 262

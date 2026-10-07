@@ -98,3 +98,4 @@ export {
 // Client version comparison of BR-ID-01 细则 (session scope B1-02h, version gate ④a B1-03c).
 export { compareClientVersions, isVersionGatedPlatform } from './client-version/index.ts';
 export type { JwtKeyConfig } from './config/jwt.ts';
+export * from './qrcode/index.ts';
