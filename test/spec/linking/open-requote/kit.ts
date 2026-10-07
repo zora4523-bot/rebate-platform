@@ -140,15 +140,18 @@ export function fixture(db: Kysely<DB>, opener: Partial<Caller> = {}) {
     jump(value.noRebate ? 'synthetic-without-attribution' : 'synthetic-rebate'),
   );
   const cache = memoryCache();
+  // The real idempotency object is injected whole; both entry points stay spied (calling through)
+  // so the system under test may store each request via execute or executeInTransaction.
   const idempotency = createIdempotency({ db, clock, logger: { warn: vi.fn() } });
-  const execute = vi.fn(idempotency.execute.bind(idempotency));
+  const execute = vi.spyOn(idempotency, 'execute');
+  const executeInTransaction = vi.spyOn(idempotency, 'executeInTransaction');
   const options: LinkOpenRequoteOptions = {
     ...base,
     catalog: { assemble },
     prices: { fetch },
     conversion: { convert },
     cache,
-    idempotency: { execute },
+    idempotency,
   };
   let serial = 0;
   const request = (
@@ -175,6 +178,7 @@ export function fixture(db: Kysely<DB>, opener: Partial<Caller> = {}) {
     convert,
     cache,
     execute,
+    executeInTransaction,
     request,
   };
 }
