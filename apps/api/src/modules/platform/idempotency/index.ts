@@ -204,6 +204,8 @@
 //     hook or interceptor: controllers / use cases of the operations marked I call execute or
 //     executeInTransaction (the transactional handler needs `trx`), after signature and token
 //     checks (BR-ID-01 ①–③) and before everything else. The abandon route is B1-02.
+//     Stage ④a (B1-03c): every instance carries the post-miss check list of ./post-miss.ts,
+//     awaited in both modes after a miss or before an expired-lease takeover, before any write.
 //
 // 12. Rules for the implementation: this file is compiled by the `test` project too
 //     (erasableSyntaxOnly, no decorators): erasable syntax only (no parameter properties, enum,
@@ -410,6 +412,13 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
     throw new IdempotencyError('invalid_option');
   }
   const { db, clock, logger } = options;
+  // Stage ④a registration point (./post-miss.ts registers into it), read per request.
+  const postMissChecks: ((request: IdempotentRequest) => Promise<void>)[] = [];
+
+  /** After a miss (or an expired lease about to be taken over), before any write or handler. */
+  async function afterMiss(request: IdempotentRequest) {
+    for (const check of [...postMissChecks]) await check(request);
+  }
 
   async function finish(row: Row, request: IdempotentRequest, response?: IdempotentResponse) {
     const owned = sql<boolean>`id = ${row.id} AND status = 'processing'
@@ -430,7 +439,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       logger.warn({ method: request.method, path: request.path }, 'idempotency_record_lost');
   }
 
-  return {
+  const instance: Idempotency = {
     async execute(request, handler) {
       const prepared = prepare(request);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
@@ -438,12 +447,19 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       const claimed = await transaction(db, request.traceId, async (trx) => {
         await lockScope(trx, prepared.scope);
         return boundedClaim(trx, async () => {
+          let checked = false;
           for (;;) {
             const row = await findRow(trx, prepared.scope);
-            const now = clock.now();
+            let now = clock.now();
             if (row !== undefined) {
               if (row.status !== 'processing' || now.getTime() - row.created_at.getTime() < lease) {
                 return existingResponse(row, prepared.hash, request.traceId);
+              }
+              // An expired lease is taken over like a missing key: ④a runs before the takeover.
+              if (!checked) {
+                await afterMiss(request);
+                checked = true;
+                now = clock.now();
               }
               const taken = await trx
                 .updateTable('idempotency_keys')
@@ -456,6 +472,11 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
                 .executeTakeFirst();
               if (taken !== undefined) return taken;
             } else {
+              if (!checked) {
+                await afterMiss(request);
+                checked = true;
+                now = clock.now();
+              }
               const inserted = await insertRow(
                 trx,
                 prepared.scope,
@@ -488,9 +509,14 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       return transaction(db, request.traceId, async (trx) => {
         await lockScope(trx, prepared.scope);
         const claim = await boundedClaim(trx, async () => {
+          let checked = false;
           for (;;) {
             const row = await findRow(trx, prepared.scope);
             if (row !== undefined) return existingResponse(row, prepared.hash, request.traceId);
+            if (!checked) {
+              await afterMiss(request);
+              checked = true;
+            }
             const inserted = await insertRow(
               trx,
               prepared.scope,
@@ -576,6 +602,23 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       return Number(result.numDeletedRows);
     },
   };
+  POST_MISS_CHECKS.set(instance, postMissChecks);
+  return instance;
+}
+
+const POST_MISS_CHECKS = new WeakMap<
+  Idempotency,
+  ((request: IdempotentRequest) => Promise<void>)[]
+>();
+
+/**
+ * For ./post-miss.ts only (registerIdempotencyPostMissCheck is the API): the live post-miss check
+ * list of an instance built by createIdempotency, undefined for any other object.
+ */
+export function postMissChecksOf(
+  idempotency: Idempotency,
+): ((request: IdempotentRequest) => Promise<void>)[] | undefined {
+  return POST_MISS_CHECKS.get(idempotency);
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
