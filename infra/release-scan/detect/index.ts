@@ -84,8 +84,8 @@ export async function scanArtifact(input: ScanInput): Promise<ScanResult> {
     // 与 artifactTextViews 同一关联语义：清单引用经同一包的资源表解析，签名字段引用解析不了记读取错误。
     const associated = artifactTextViews(entries);
     errors.push(...associated.errors);
-    // 原值视图紧跟它的来源视图；同一条目已按任一规则报过的同一取值，原值视图里的可豁免重复
-    // （high-entropy / keyed-credential）不再另报，不可豁免的命中照报。
+    // 原值视图紧跟它的来源视图；去重键为（规则、取值）：同一条目已按同一规则报过的同一取值，
+    // 原值视图里的 high-entropy 重复不再另报。keyed-credential 与其他规则在原值视图里一律保留。
     const reported = new Map<string, Set<string>>();
     for (const view of associated.views) {
       const found = detectText(
@@ -98,13 +98,9 @@ export async function scanArtifact(input: ScanInput): Promise<ScanResult> {
       let seen = reported.get(view.path);
       if (!seen) reported.set(view.path, (seen = new Set()));
       for (const hit of found) {
-        if (
-          view.rawStrings === true &&
-          (hit.rule === 'high-entropy' || hit.rule === 'keyed-credential') &&
-          seen.has(hit.match)
-        )
-          continue;
-        if (view.rawStrings !== true) seen.add(hit.match);
+        const key = `${hit.rule}\u0000${hit.match}`;
+        if (view.rawStrings === true && hit.rule === 'high-entropy' && seen.has(key)) continue;
+        seen.add(key);
         hits.push(hit);
       }
     }

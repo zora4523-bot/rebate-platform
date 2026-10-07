@@ -3,7 +3,7 @@
 // （SaveHeader / SaveLimitKeyConfigs / SaveIdSets / SaveRecordItem）与 resource_data.h 的 ResType。
 // 口径：结构损坏、越界一律抛错（fail-closed）；所有配置（语言、地区等）的候选值都参与检测与引用解析。
 
-import { associationNames, emitFinal, LineSink, UNRESOLVED } from './lines.ts';
+import { associationNames, emitFinal, LineSink, UNRESOLVED, printableRuns } from './lines.ts';
 import type { FileReader, Final, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
@@ -88,6 +88,9 @@ export function parseResourcesIndex(bytes: Buffer, readFile?: FileReader): Harmo
   const label = version.subarray(0, nul < 0 ? 128 : nul).toString('latin1');
   if (!/^[\x20-\x7e]+$/.test(label)) invalid();
   if (u32(128) !== bytes.length) invalid();
+  // 已按结构解析的字节；其余（未被 IDSS 引用的记录、结构间的空隙）取可打印串作孤立字符串，不丢原始字节里的文本。
+  const covered = new Uint8Array(bytes.length);
+  covered.fill(1, 0, 136);
   const configCount = u32(132);
   if (configCount > 100_000) invalid();
   let pos = 136;
@@ -98,8 +101,9 @@ export function parseResourcesIndex(bytes: Buffer, readFile?: FileReader): Harmo
     idss.push(u32(pos + 4));
     const params = u32(pos + 8);
     if (params > 64) invalid();
+    if (pos + 12 + params * 8 > bytes.length) invalid();
+    covered.fill(1, pos, pos + 12 + params * 8);
     pos += 12 + params * 8;
-    if (pos > bytes.length) invalid();
   }
   const headerEnd = pos;
   const records: IndexRecord[] = [];
@@ -150,6 +154,7 @@ export function parseResourcesIndex(bytes: Buffer, readFile?: FileReader): Harmo
           .filter((part) => part !== '')
       : [value.toString('utf8')];
     const result = { type, id, name, values };
+    covered.fill(1, offset, end);
     byOffset.set(offset, result);
     records.push(result);
     return result;
@@ -168,6 +173,7 @@ export function parseResourcesIndex(bytes: Buffer, readFile?: FileReader): Harmo
     tag(at, 'IDSS');
     const count = u32(at + 4);
     if (count > 1_000_000 || at + 8 + count * 8 > bytes.length) invalid();
+    covered.fill(1, at, at + 8 + count * 8);
     for (let i = 0; i < count; i++) {
       tick();
       const id = u32(at + 8 + i * 8);
@@ -230,6 +236,17 @@ export function parseResourcesIndex(bytes: Buffer, readFile?: FileReader): Harmo
       if (!resolved.ok && fieldRule(r.name) === 'request-sign-material') invalid();
       for (const final of resolved.finals) emitFinal(emit, final, r.name, readFile, invalid);
     }
+  }
+  sink.emit(label);
+  for (let at = 0; at < bytes.length;) {
+    if (covered[at]) {
+      at++;
+      continue;
+    }
+    let end = at;
+    while (end < bytes.length && !covered[end]) end++;
+    for (const run of printableRuns(bytes.subarray(at, end))) sink.emit(run);
+    at = end;
   }
   return {
     text: sink.text(),

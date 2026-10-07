@@ -27,7 +27,7 @@ type PValue = { kind: 'text'; text: string; file: boolean } | { kind: 'ref'; ref
 
 interface Context {
   work: number;
-  /** 未知字段里的可打印串。 */
+  /** 孤立字符串：未知字段与不参与关联的已知文本字段（注释、命名空间、样式标签、引用名等）。 */
   loose: string[];
 }
 
@@ -95,11 +95,28 @@ function unknown(f: Field, ctx: Context): void {
   if (f.wire === 2) for (const run of printableRuns(f.bytes)) ctx.loose.push(run);
 }
 
-/** 内容用不到的已知消息：仍逐层做 wire 校验，内部截断同样拒绝。 */
+/** 不参与关联的已知文本字段（Value.comment 等）：解码后保留为孤立字符串参与检测，不丢弃。 */
+function keep(f: Field, ctx: Context): void {
+  const value = text(f);
+  if (value !== '') ctx.loose.push(value);
+}
+
+/**
+ * 内容用不到的已知消息：仍逐层做 wire 校验，内部截断同样拒绝。
+ * 其中不再下钻的长度限定字段（Visibility / OverlayableItem 的 comment、XmlNamespace 的 prefix / uri、
+ * StyledString.Span 的 tag 等）取可打印串作孤立字符串，保留原始字节扫描能看到的文本。
+ */
 function opaque(f: Field, ctx: Context, depth: number, nested: readonly number[] = []): void {
   for (const g of decode(want(f, 2).bytes, ctx, depth + 1)) {
     if (nested.includes(g.num)) opaque(g, ctx, depth + 1);
+    else unknown(g, ctx);
   }
+}
+
+/** 只校验、不参与关联的引用：引用名保留为孤立字符串。 */
+function looseReference(f: Field, ctx: Context, depth: number): void {
+  const ref = reference(want(f, 2).bytes, ctx, depth);
+  if (ref && ref.name !== '') ctx.loose.push(ref.name);
 }
 
 /** Source { path_idx=1, position=2 (SourcePosition) } */
@@ -221,9 +238,10 @@ function itemsOf(
   const out: PValue[] = [];
   for (const f of decode(buf, ctx, depth)) {
     if (f.num === itemField) out.push(...item(want(f, 2).bytes, ctx, depth + 1));
-    else if (refFields.includes(f.num)) reference(want(f, 2).bytes, ctx, depth + 1);
+    else if (refFields.includes(f.num)) looseReference(f, ctx, depth + 1);
     else if (f.num === 1) source(f, ctx, depth);
-    else if (f.num === 2) text(f);
+    else if (f.num === 2)
+      keep(f, ctx); // comment
     else unknown(f, ctx);
   }
   return out;
@@ -243,7 +261,7 @@ function compound(buf: Buffer, ctx: Context, depth: number): ConfigValue {
       case 2: // Style { parent=1 Reference, parent_source=2, entry=3 { key=3 Reference, item=4 } }
         result.structure = true;
         for (const g of body()) {
-          if (g.num === 1) reference(want(g, 2).bytes, ctx, depth + 2);
+          if (g.num === 1) looseReference(g, ctx, depth + 2);
           else if (g.num === 2) source(g, ctx, depth + 1);
           else if (g.num === 3)
             result.values.push(...itemsOf(want(g, 2).bytes, ctx, depth + 2, 4, [3]));
@@ -272,7 +290,8 @@ function compound(buf: Buffer, ctx: Context, depth: number): ConfigValue {
             if (h.num === 4) result.values.push(...item(want(h, 2).bytes, ctx, depth + 3));
             else if (h.num === 3) want(h, 0);
             else if (h.num === 1) source(h, ctx, depth + 2);
-            else if (h.num === 2) text(h);
+            else if (h.num === 2)
+              keep(h, ctx); // comment
             else unknown(h, ctx);
           }
         }
@@ -295,7 +314,8 @@ function value(buf: Buffer, ctx: Context, depth: number): ConfigValue {
   const result: ConfigValue = { values: [], structure: false };
   for (const f of decode(buf, ctx, depth)) {
     if (f.num === 1) source(f, ctx, depth);
-    else if (f.num === 2) text(f);
+    else if (f.num === 2)
+      keep(f, ctx); // comment：源码注释也可能留有签名材料
     else if (f.num === 3) want(f, 0);
     else if (f.num === 4) result.values.push(...item(want(f, 2).bytes, ctx, depth + 1));
     else if (f.num === 5) {
@@ -356,8 +376,10 @@ export function parseResourcesPb(bytes: Buffer, readFile?: FileReader): ProtoTab
     const types: Field[] = [];
     for (const g of decode(want(f, 2).bytes, ctx, 1)) {
       if (g.num === 1) pkgId = idOf(g, ctx, 1);
-      else if (g.num === 2) pkg = text(g);
-      else if (g.num === 3) types.push(want(g, 2));
+      else if (g.num === 2) {
+        pkg = text(g);
+        keep(g, ctx); // package_name：只作孤立字符串
+      } else if (g.num === 3) types.push(want(g, 2));
       else unknown(g, ctx);
     }
     for (const t of types) {
@@ -397,6 +419,8 @@ export function parseResourcesPb(bytes: Buffer, readFile?: FileReader): ProtoTab
           (entryId > 0xffff || (typeId ?? 0) > 0xff || (pkgId ?? 0) > 0xff)
         )
           invalid();
+        // 没有取值的条目名不会作为键输出，保留为孤立字符串。
+        if (configs.every((c) => c.values.length === 0) && name !== '') ctx.loose.push(name);
         entries.push({ pkg, type, name, ...(id === undefined ? {} : { id }), configs });
       }
     }
@@ -514,7 +538,8 @@ export function protoXmlText(
     let raw: string | undefined;
     const compiled: PValue[] = [];
     for (const f of decode(buf, ctx, depth)) {
-      if (f.num === 1) text(f);
+      if (f.num === 1)
+        keep(f, ctx); // namespace_uri
       else if (f.num === 2) name = text(f);
       else if (f.num === 3) raw = text(f);
       else if (f.num === 4)
@@ -553,7 +578,8 @@ export function protoXmlText(
     for (const f of decode(buf, ctx, depth)) {
       if (f.num === 1)
         opaque(f, ctx, depth, [3]); // XmlNamespace { prefix, uri, source }
-      else if (f.num === 2 || f.num === 3) text(f);
+      else if (f.num === 2 || f.num === 3)
+        keep(f, ctx); // namespace_uri / name
       else if (f.num === 4) attrs.push(attribute(want(f, 2).bytes, depth + 1));
       else if (f.num === 5) children.push(want(f, 2).bytes);
       else unknown(f, ctx);

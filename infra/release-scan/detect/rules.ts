@@ -160,17 +160,13 @@ const SWITCH_PREFIX = /^(?:use|enable|disable|is|has|should|can|need|allow|with|
 /** 材料本体词（含 sharedsalt、hmackey、signingsecret 连写）；hmac、sign、signature 这类纯算法名不算。 */
 const MATERIAL_WORD = /(?:salt|secret|key)$/;
 
-/** JSON 数字盐的最短位数：0 / 1 这类开关值、3600 这类时长都不是盐（冻结用例 20240101 为 8 位）。 */
-const NUMERIC_MATERIAL_DIGITS = 6;
-
 /**
  * JSON 数字取值按签名材料检测的条件：键名本身是签名材料名、含材料本体词（salt / secret / *_key），
- * 不以开关前缀开头，不带算法参数或时效词，且数字至少 6 位。
+ * 不以开关前缀开头，不带算法参数或时效词。不设位数门槛：任何数字（短数字、负数、小数、科学计数法）都检测；
+ * 开关与参数（useHmac:1、hmac:0、hmacKeyExpiry:3600、saltRounds:10）只按键名语义排除。
  */
-function numericMaterial(name: string, value: string): boolean {
+function numericMaterial(name: string): boolean {
   if (fieldRule(name) !== 'request-sign-material') return false;
-  if (value.replace(/^-/, '').replace(/[.eE].*$/, '').length < NUMERIC_MATERIAL_DIGITS)
-    return false;
   const words = name
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -257,7 +253,7 @@ function fields(
       quotedKey &&
       separator === ':' &&
       /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(bare) &&
-      numericMaterial(name, bare)
+      numericMaterial(name)
     ) {
       add(name, bare, valueAt);
       assignment.lastIndex += bare.length;
