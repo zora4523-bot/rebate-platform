@@ -6,12 +6,28 @@
 .env*
 **/.env
 **/.env*
+*.env
+**/*.env
 *.pem
+**/*.pem
 *.key
+**/*.key
+*.crt
+**/*.crt
 *.p12
+**/*.p12
 *.pfx
+**/*.pfx
 *.keystore
+**/*.keystore
 *.jks
+**/*.jks
+**/keyring*.json
+**/id_rsa*
+**/id_ecdsa*
+**/id_ed25519*
+**/id_dsa*
+**/.ssh
 
 # version control and orchestration workspaces
 .git

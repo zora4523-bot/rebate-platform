@@ -7,7 +7,7 @@
 | `Dockerfile` | 多阶段镜像：Node 24，按 `pnpm-lock.yaml` 离线安装，构建 `@couli/api`；运行阶段用非 root 用户 `node` |
 | `compose.yaml` | 五个服务，同一个镜像，`command` 选入口；只用 `image:`，不构建、不拉取 |
 | `deploy.sh` | 部署与回退脚本，参数是镜像标签 |
-| `../../.dockerignore` | 构建上下文排除环境文件、`.git`、`node_modules`、构建产物 |
+| `../../.dockerignore` | 构建上下文排除环境文件、证书与密钥文件、SSH 私钥、`.git`、`node_modules`、构建产物 |
 
 ## 1. 首次准备（节点上，一次）
 
@@ -15,9 +15,11 @@
 
 | 文件 | 给谁用 | 内容（只列变量名） |
 | --- | --- | --- |
-| `/etc/couli/staging.env` | api、stream、worker、admin | APP_ENV、API_PORT / STREAM_PORT / ADMIN_PORT、DATABASE_URL、DATABASE_READ_URL、DATABASE_MAINT_URL、REDIS_URL |
-| `/etc/couli/staging-payout.env` | 只给 payout | payout 自己的 DATABASE_URL（payout 不连 Redis，ADR-0001 §4.2 第 20 项） |
+| `/etc/couli/staging.env` | api、stream、worker、admin | API_PORT / STREAM_PORT / ADMIN_PORT、DATABASE_URL、DATABASE_READ_URL、DATABASE_MAINT_URL、REDIS_URL、FIELD_KEY_PROVIDER、FIELD_KEYRING_FILE、FIELD_MASTER_KEY_FILE |
+| `/etc/couli/staging-payout.env` | 只给 payout | payout 自己的 DATABASE_URL，以及同样的三个 FIELD_* 变量（payout 不连 Redis，ADR-0001 §4.2 第 20 项） |
 | `/etc/couli/staging-migrator.env` | 只给迁移步骤 | MIGRATOR_DATABASE_URL |
+
+`APP_ENV` 不放在环境文件里：`compose.yaml` 给五个服务都直接写死 `APP_ENV: staging`（它不是口令）。
 
 注意事项：
 
@@ -25,6 +27,44 @@
 - 端口变量不写时用应用默认值（3100 / 3101 / 3102）；三个 HTTP 端口只发布到节点的 `127.0.0.1`，worker 与 payout 不发布端口。
 - 部署文件放在节点的一个目录里（例如 `/opt/couli/staging/`），`compose.yaml` 与 `deploy.sh` 放在同一目录；`deploy.sh` 按自身位置找 `compose.yaml`。
 - 上一次成功的标签记在 `/var/lib/couli/staging-api.tag`，脚本会自动创建这个目录和文件。
+- 同一时间只允许一次部署：脚本用 `flock` 锁住 `/run/lock/couli-staging-deploy.lock`，拿不到锁直接非零退出。
+
+### 1.1 数据库证书（自签）
+
+数据库用自签证书，CA 放在节点的 `/etc/pki/ca.crt`。五个服务和迁移容器都把它只读挂到容器内同一路径。三个环境文件里的数据库连接串末尾都要带 `?sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt`（已有查询参数时用 `&` 接上）。
+
+### 1.2 环境文件的写法
+
+- 每行写成「变量名=值」，值不加引号。`compose.yaml` 用 `format: raw` 读取服务的环境文件，值里的 `$` 不会被展开。
+- `deploy.sh` 还会用 `--env-file /etc/couli/staging.env` 让 Compose 读出端口号，这一步会对整个文件做 `$` 展开（可能把 `$` 后面的字符当变量名打印成警告）。所以**口令只用字母和数字**；节点上现有口令已经是字母数字。
+
+### 1.3 字段加密密钥环（ADR-0003）
+
+五个服务都把节点目录 `/etc/couli-keys` 只读挂到容器内 `/run/couli-keys`。注意不是 `/etc/couli/keys`：规则测试禁止任何服务挂载 `/etc/couli` 下的路径（那里放着环境文件），所以密钥单独放在 `/etc/couli-keys`。
+
+两个环境文件（`staging.env` 与 `staging-payout.env`）都要写：
+
+| 变量 | 值 |
+| --- | --- |
+| FIELD_KEY_PROVIDER | `local` |
+| FIELD_KEYRING_FILE | `/run/couli-keys/keyring.json` |
+| FIELD_MASTER_KEY_FILE | `/run/couli-keys/master.key` |
+
+首次生成（节点上以 root 执行一次；`keyring-init.ts` 由任务 B1-01zd 提供，参数与文件格式以它为准）：
+
+```sh
+install -d -m 700 /etc/couli-keys
+openssl rand -hex 32 > /etc/couli-keys/master.key
+docker run --rm --pull never --user 0 --volume /etc/couli-keys:/keys couli-api:<标签> \
+  node apps/api/scripts/keyring-init.ts "$(cat /etc/couli-keys/master.key)" /keys/keyring.json
+chown -R 1000:1000 /etc/couli-keys
+chmod 400 /etc/couli-keys/master.key /etc/couli-keys/keyring.json
+chmod 500 /etc/couli-keys
+```
+
+容器以 `node` 用户（uid 1000）运行，所以目录和文件属主是 1000，目录 500、文件 400。主密钥丢失后已加密的字段无法解开，生成后另行离线备份。
+
+**B1-01zd 合并之前**，应用在 `APP_ENV=staging` 下仍拒绝 `FIELD_KEY_PROVIDER=local`，五个进程都会启动失败，部署会走失败分支。
 
 ## 2. 在开发机构建并传到节点
 
@@ -50,11 +90,14 @@ scp infra/staging/compose.yaml infra/staging/deploy.sh <staging 节点>:/opt/cou
 脚本依次打印每一步结果：
 
 1. 检查镜像已经 `docker load` 到节点；
-2. 用新镜像一次性运行迁移（`node packages/db/scripts/migrate.ts`，只读 `staging-migrator.env`），迁移失败直接停下，正在运行的进程不受影响；
-3. `docker compose up -d --force-recreate --wait` 重建全部五个进程，等 api / stream / admin 的 `/healthz` 健康检查通过（上限 180 秒）；
-4. 成功后把新标签写入 `/var/lib/couli/staging-api.tag`。
+2. 用新镜像一次性运行迁移（`node packages/db/scripts/migrate.ts`，只读 `staging-migrator.env`，挂载数据库 CA），迁移失败直接停下，正在运行的进程不受影响；迁移脚本出错时只打印错误类型和去掉口令的消息；
+3. `docker compose up -d --force-recreate --wait` 重建全部五个进程并等五个健康检查都通过（上限 240 秒）：api / stream / admin 要求本进程 `/healthz` 返回 2xx，五个进程都要求容器已连续运行 30 秒。容器一旦重启，运行时长和健康状态都会清零，所以启动后崩溃、反复重启的进程（包括 worker 与 payout）会让这一步失败；
+4. 成功后把新标签写入 `/var/lib/couli/staging-api.tag`；
+5. 删除更早的 `couli-api` 镜像，只保留本次和上一次成功的标签（回退要用），避免写满与数据库共用的 20G 系统盘。
 
 脚本不打印任何环境文件的内容，也不开启命令跟踪。
+
+健康判定的边界：worker 与 payout 没有端口，健康检查只能看到「进程连续活了 30 秒」，看不到队列是否已经开始消费；进程如果卡在等数据库连接而没有退出，这一步也会通过，部署后要看日志确认。
 
 ## 4. 回退
 

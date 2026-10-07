@@ -6,6 +6,9 @@
 # Connection strings and credentials come only from the node env files (root, 600):
 #   /etc/couli/staging.env         api / stream / worker / admin
 #   /etc/couli/staging-payout.env  payout only (its own database role; payout never uses Redis)
+# Every service mounts read-only: the database CA (/etc/pki/ca.crt) and the field-encryption
+# key ring directory (/etc/couli-keys -> /run/couli-keys). All five health checks also require
+# 30s of uptime, so `up --wait` only succeeds once every process has stayed up that long.
 # HTTP ports are published on 127.0.0.1 only; worker and payout publish nothing.
 name: couli-staging
 
@@ -18,25 +21,41 @@ services:
       - node
       - apps/api/dist/main.api.js
     env_file:
-      - /etc/couli/staging.env
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging.env
+        format: raw
     environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
     ports:
       - host_ip: 127.0.0.1
         target: '${API_PORT:-3100}'
         published: '${API_PORT:-3100}'
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
     healthcheck:
-      # Probes this process own /healthz on API_PORT; any error or non-2xx exits 1.
+      # Healthy only when this process own /healthz on API_PORT answers 2xx AND the
+      # container has run for 30s without a restart (a restart resets the uptime).
       test:
         - CMD
         - node
         - '-e'
-        - "fetch('http://127.0.0.1:' + (process.env.API_PORT || '3100') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; fetch('http://127.0.0.1:' + (process.env.API_PORT || '3100') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok && age >= 30 ? 0 : 1), () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 60s
     init: true
     restart: unless-stopped
     stop_grace_period: 30s
@@ -58,25 +77,41 @@ services:
       - node
       - apps/api/dist/main.stream.js
     env_file:
-      - /etc/couli/staging.env
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging.env
+        format: raw
     environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
     ports:
       - host_ip: 127.0.0.1
         target: '${STREAM_PORT:-3101}'
         published: '${STREAM_PORT:-3101}'
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
     healthcheck:
-      # Probes this process own /healthz on STREAM_PORT; any error or non-2xx exits 1.
+      # Healthy only when this process own /healthz on STREAM_PORT answers 2xx AND the
+      # container has run for 30s without a restart (a restart resets the uptime).
       test:
         - CMD
         - node
         - '-e'
-        - "fetch('http://127.0.0.1:' + (process.env.STREAM_PORT || '3101') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; fetch('http://127.0.0.1:' + (process.env.STREAM_PORT || '3101') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok && age >= 30 ? 0 : 1), () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 60s
     init: true
     restart: unless-stopped
     stop_grace_period: 30s
@@ -98,7 +133,36 @@ services:
       - node
       - apps/api/dist/main.worker.js
     env_file:
-      - /etc/couli/staging.env
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging.env
+        format: raw
+    environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
+    healthcheck:
+      # No port: healthy once the process has run for 30s without a restart. A restart
+      # resets the container uptime and health, so a crash loop never reports healthy
+      # and deploy.sh rolls back.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; process.exit(age >= 30 ? 0 : 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     init: true
     restart: unless-stopped
     stop_grace_period: 30s
@@ -120,25 +184,41 @@ services:
       - node
       - apps/api/dist/main.admin.js
     env_file:
-      - /etc/couli/staging.env
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging.env
+        format: raw
     environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
     ports:
       - host_ip: 127.0.0.1
         target: '${ADMIN_PORT:-3102}'
         published: '${ADMIN_PORT:-3102}'
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
     healthcheck:
-      # Probes this process own /healthz on ADMIN_PORT; any error or non-2xx exits 1.
+      # Healthy only when this process own /healthz on ADMIN_PORT answers 2xx AND the
+      # container has run for 30s without a restart (a restart resets the uptime).
       test:
         - CMD
         - node
         - '-e'
-        - "fetch('http://127.0.0.1:' + (process.env.ADMIN_PORT || '3102') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; fetch('http://127.0.0.1:' + (process.env.ADMIN_PORT || '3102') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok && age >= 30 ? 0 : 1), () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 60s
     init: true
     restart: unless-stopped
     stop_grace_period: 30s
@@ -160,7 +240,36 @@ services:
       - node
       - apps/api/dist/main.payout.js
     env_file:
-      - /etc/couli/staging-payout.env
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging-payout.env
+        format: raw
+    environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
+    healthcheck:
+      # No port: healthy once the process has run for 30s without a restart. A restart
+      # resets the container uptime and health, so a crash loop never reports healthy
+      # and deploy.sh rolls back.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; process.exit(age >= 30 ? 0 : 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     init: true
     restart: unless-stopped
     stop_grace_period: 30s
