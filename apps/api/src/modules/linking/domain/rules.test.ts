@@ -2,6 +2,11 @@ import { pid_scene, scene } from '@couli/contracts-ts';
 import { describe, expect, it } from 'vitest';
 import {
   LinkingError,
+  couponGone,
+  couponIdsOf,
+  intSetting,
+  priceChanged,
+  quoteSnapshotChanged,
   TLJ_OWNER_ONLY_MESSAGE,
   decideOpenOwner,
   isSwitchOn,
@@ -119,5 +124,61 @@ describe('linking open owner decision', () => {
     expect(
       decideOpenOwner({ ...base, scene: 'taolijin', pidScene: 'taolijin', callerUserId: B }),
     ).toEqual({ kind: 'register', scene: 'detail', message: TLJ_OWNER_ONLY_MESSAGE });
+  });
+});
+
+describe('linking open re-check rules', () => {
+  it.each([
+    [2990n, 3090n, true],
+    [2990n, 3080n, false],
+    [1000n, 950n, true],
+    [1000n, 951n, false],
+    [1000n, 1050n, true],
+    [300000n, 300100n, true],
+    [2990n, 2990n, false],
+  ] as const)('[AC-B1-06k] BR-PRICE-13 threshold %s → %s = %s', (oldFen, newFen, changed) => {
+    expect(priceChanged(oldFen, newFen, 100n, 500n)).toBe(changed);
+  });
+
+  it('[AC-B1-06k] BR-PRICE-13 configured thresholds and huge prices stay integer', () => {
+    expect(priceChanged(1500n, 1650n, 200n, 1000n)).toBe(true);
+    expect(priceChanged(1500n, 1649n, 200n, 1000n)).toBe(false);
+    expect(priceChanged(9007199254740993n, 9007199254740991n, 100n, 500n)).toBe(false);
+  });
+
+  it('[AC-B1-06k] D33 coupon_gone by coupon ID, else by face value', () => {
+    const snap = (couponFen: bigint | null, couponIds: string | null) => ({ couponFen, couponIds });
+    expect(couponGone(snap(100n, 'a,z'), { couponFen: 100n, couponIds: 'z' })).toBe(true);
+    expect(couponGone(snap(100n, 'a'), { couponFen: 100n, couponIds: 'a,b' })).toBe(false);
+    expect(couponGone(snap(100n, 'a'), { couponFen: 0n, couponIds: null })).toBe(true);
+    expect(couponGone(snap(0n, null), { couponFen: 100n, couponIds: 'n' })).toBe(false);
+    expect(couponGone(snap(100n, null), { couponFen: 100n, couponIds: null })).toBe(false);
+    expect(couponGone(snap(100n, null), { couponFen: 50n, couponIds: null })).toBe(true);
+  });
+
+  it('[AC-B1-06k] D33 a snapshot changes on price, coupon amount or coupon IDs', () => {
+    const base = { finalFen: 2990n, couponFen: 100n, couponIds: 'a' };
+    expect(quoteSnapshotChanged(base, { ...base })).toBe(false);
+    expect(quoteSnapshotChanged(base, { ...base, finalFen: 2991n })).toBe(true);
+    expect(quoteSnapshotChanged(base, { ...base, couponFen: 150n })).toBe(true);
+    expect(quoteSnapshotChanged(base, { ...base, couponIds: 'b' })).toBe(true);
+    expect(
+      quoteSnapshotChanged(
+        { ...base, couponFen: null, couponIds: null },
+        {
+          finalFen: 2990n,
+          couponFen: 0n,
+          couponIds: couponIdsOf(''),
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it('[AC-B1-06k] settings read only non-negative safe integers', () => {
+    expect(intSetting(300, 0)).toBe(300);
+    expect(intSetting(undefined, 0)).toBe(0);
+    expect(intSetting(-1, 900)).toBe(900);
+    expect(intSetting('300', 0)).toBe(0);
+    expect(intSetting(1.5, 0)).toBe(0);
   });
 });

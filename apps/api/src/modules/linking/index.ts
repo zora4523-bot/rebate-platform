@@ -30,3 +30,16 @@ export {
 export type { Caller } from './ports.ts';
 export { LINK_REGISTRATIONS, LinkingModule } from './linking.module.ts';
 export type { LinkRegistrations, LinkingConfigReaderFactory } from './linking.module.ts';
+export { createLinkOpenRequote } from './application/link-open-requote.ts';
+export type {
+  LinkOpenCacheKey,
+  LinkOpenCachedJump,
+  LinkOpenConversionInput,
+  LinkOpenJump,
+  LinkOpenPrice,
+  LinkOpenRequoteInput,
+  LinkOpenRequoteOptions,
+  LinkOpenRequoteOutcome,
+  LinkOpenRequoteResult,
+  LinkOpenRequoteService,
+} from './application/link-open-requote.ts';
