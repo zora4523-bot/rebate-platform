@@ -35,6 +35,7 @@ import {
   type SmsSender,
 } from './application/sms-codes.ts';
 import { createLogout, type Logout } from './application/logout.ts';
+import { createRefreshService, type RefreshService } from './application/refresh.ts';
 import {
   createDefaultInviteCodeFilter,
   createRegistrationService,
@@ -46,6 +47,7 @@ import type { MinimumVersionReader } from './application/session-scope.ts';
 import {
   IDENTITY_CONFIG,
   LOGOUT,
+  REFRESH,
   SMS_CODES,
   SMS_LOGIN,
   TOKEN_CHECK,
@@ -54,6 +56,7 @@ import {
 } from './application/tokens.ts';
 import { DevicesController } from './http/public/devices.controller.ts';
 import { LogoutController } from './http/public/logout.controller.ts';
+import { RefreshController } from './http/public/refresh.controller.ts';
 import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
@@ -86,7 +89,8 @@ export interface IdentityModuleOptions {
 }
 
 /**
- * Identity (规划/02 §4.1): devices, SMS codes, SMS login (B1-02j), session tokens and logout today;
+ * Identity (规划/02 §4.1): devices, SMS codes, SMS login (B1-02j), session tokens, refresh rotation
+ * (B1-02k) and logout today;
  * consent records follow. Served by the `api` entry (/v1). The database handle, the field cipher
  * and Redis are optional at construction so that entries built without them (isolated HTTP unit
  * tests) still register the routes; a request that needs them fails at request time instead
@@ -114,7 +118,13 @@ export class IdentityModule {
   static forRoot(options: IdentityModuleOptions): DynamicModule {
     return {
       module: IdentityModule,
-      controllers: [DevicesController, SmsCodesController, SmsLoginController, LogoutController],
+      controllers: [
+        DevicesController,
+        SmsCodesController,
+        SmsLoginController,
+        RefreshController,
+        LogoutController,
+      ],
       providers: [
         // Read once while the entry starts; a missing or malformed list stops the entry.
         { provide: INVALID_DEVICE_HASHES, useFactory: () => loadInvalidDeviceHashSeeds() },
@@ -245,6 +255,39 @@ export class IdentityModule {
                   // Registration keys are snapshotted before the login transaction opens.
                   config: reader,
                   tokens,
+                }),
+        },
+        {
+          // The unbinding hook of a reuse revocation (afterRevoked) joins with B1-12b.
+          provide: REFRESH,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            IDENTITY_CONFIG,
+            TOKEN_SERVICE,
+            { token: DB, optional: true },
+            { token: REDIS, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            reader: IdentityConfigReader | null,
+            tokens: TokenService,
+            db?: Kysely<Database>,
+            redis?: RedisHandle,
+            fieldCrypto?: FieldCrypto,
+          ): RefreshService | null =>
+            db === undefined || redis === undefined || fieldCrypto === undefined || reader === null
+              ? null
+              : createRefreshService({
+                  db,
+                  clock,
+                  tokens,
+                  crypto: fieldCrypto,
+                  redis,
+                  versions: reader,
+                  logger,
                 }),
         },
         {

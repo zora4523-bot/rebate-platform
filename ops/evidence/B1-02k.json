@@ -1,0 +1,121 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (identity refresh rotation POST /v1/auth/refresh, BR-ID-07 / BR-ID-01 restricted session; internal revoke-by-user / revoke-by-device). Token row locked by (app_id, sha256); unknown / cross-app / expired / revoked answer 10404 without revocation; device mismatch revokes the sid (refresh_reuse) with the afterRevoked hook; rotation fills rotated_at once, inserts the parent_hash successor with a 30-day expiry from the injected Clock, re-decides the scope from this request, keeps the sid, and stores the encrypted pair in Redis refresh_grace (30 s) before commit; grace returns the identical pair only within 30 s with an unrotated successor and an existing entry (read failure 50001, missing entry = reuse → revoke); concurrent double rotation handled by the row lock and the parent_hash unique constraint. Contract refreshToken leaves planned; route-schemas regenerated. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "independent read-only Claude subagents: round 1 fail (S1 sessionScope read inside the rotation transaction), round 2 pass, round 3 pass with no findings (grace entry carries the successor hash and is served only when it matches the committed successor row; mismatch → 50001 without revocation)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail (S1 sessionScope read inside the rotation transaction borrowed a second pool connection) fixed in round 2; round 2 fail (S1 a late Redis SET after a timeout could overwrite the grace entry with a rolled-back pair) fixed in round 3 by storing and verifying the successor hash; round 3 pass with no findings, checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 rounds) reviewed by fresh Claude subagents: round 1 pass with three S2; the orchestrator found a channel value outside the contract enum when running the frozen suite on the host, Codex round 2 fixed it and hardened the three S2 points; round 2 pass with no findings; the orchestrator Prettier-formatted one test file and squashed the rounds into one test commit"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-02k",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "8bb586a1996df575c714279bee197cb92e7dc2e8",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "8bb586a1996df575c714279bee197cb92e7dc2e8",
+      "tree": "b677e34535f800dd27dcd409ca0dc420d70a9d17",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T22:50:41Z",
+      "finished_at": "2026-10-07T22:50:55Z",
+      "red_tests": [
+        "test/spec/identity/session/http.int.test.ts > [AC-S1-171#2][AC-S1-83#12] 真签名200外壳；忽略坏access，低版本刷新受限，再升级恢复full",
+        "test/spec/identity/session/http.int.test.ts > [AC-S1-171#2][AC-S1-171#3] 真签名10秒与30秒宽限原样返回，31秒401/10404且整条吊销",
+        "test/spec/identity/session/http.int.test.ts > [AC-S1-171#4] D2用自己的真实签名提交D1未轮换令牌，整条吊销，D1也10404",
+        "test/spec/identity/session/http.int.test.ts > [AC-S1-171#6] 冒用D1但无密钥10401，既不轮换也不吊销；之后合法签名仍成功",
+        "test/spec/identity/session/http.int.test.ts > [AC-S1-171#5] 真签名未知令牌10404，无会话副作用；来源app不符先10403",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销所有活跃sid，reason=logout且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销所有活跃sid，reason=refresh_reuse且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销所有活跃sid，reason=phone_changed且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销所有活跃sid，reason=merged且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销所有活跃sid，reason=banned且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销所有活跃sid，reason=admin_revoked且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销所有活跃sid，reason=device_revoked且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-07] 按user吊销限定app_id，错误app不影响任何会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销与caller失败同事务回滚",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按user吊销与hook失败同事务回滚",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销所有活跃sid，reason=logout且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销所有活跃sid，reason=refresh_reuse且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销所有活跃sid，reason=phone_changed且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销所有活跃sid，reason=merged且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销所有活跃sid，reason=banned且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销所有活跃sid，reason=admin_revoked且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销所有活跃sid，reason=device_revoked且不改已吊销会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-07] 按device吊销限定app_id，错误app不影响任何会话",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销与caller失败同事务回滚",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-ACC-05][BR-ID-06/07] 按device吊销与hook失败同事务回滚",
+        "test/spec/identity/session/revocation.int.test.ts > [AC-S1-171#3] 复用吊销的解绑钩子可读本事务吊销结果，钩子失败使吊销回滚",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#2] 每次刷新轮换：哈希链、30天重计、JWT与设备指针保持同sid",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#2] 宽限数据以指定context加密，Redis TTL为30秒且不含明文令牌",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#2] 10000ms同设备重提返回逐字相同令牌对，不重新判作用域",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#2] 30000ms同设备重提返回逐字相同令牌对，不重新判作用域",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#3] 30001ms旧令牌复用吊销整条sid，即使Redis键仍在",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#3] 31000ms旧令牌复用吊销整条sid，即使Redis键仍在",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#3] R2已轮换，8秒时重提R1也吊销R3所属sid；旧sid不触碰新登录指针",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#3] Redis无记录按复用吊销，读失败50001保留会话并可恢复宽限",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#2] Redis写失败50001，轮换事务回滚，原令牌仍可再次轮换",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#4] 设备不符（rotated=false）不签发、整条吊销、原设备也10404",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#4] 设备不符（rotated=true）不签发、整条吊销、原设备也10404",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#5] refresh到期边界2592000000ms返回10404不轮换",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#5] refresh到期边界2678400000ms返回10404不轮换",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#2] 轮换后退出登录，30秒宽限内重提R1仍10404且保留logout原因",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#5] 已吊销和未知令牌10404；未知令牌不影响其他会话",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-ACC-05][BR-ID-07] 哈希查找限定已验证设备的app，跨app提交不泄露或吊销原会话",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-171#2] 真实PG并发刷新返回同一对，只有一个直接后继",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-83#18] 低版本得到deletion_only，upgrade刷新恢复full且sid不变",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-83#18] 低版本得到deletion_only，lower-minimum刷新恢复full且sid不变",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-83#18] 低版本得到deletion_only，delete-minimum刷新恢复full且sid不变",
+        "test/spec/identity/session/rotation.int.test.ts > [AC-S1-83#12] 平台和渠道按本次请求读取，不沿用设备注册资料"
+      ],
+      "expected": [
+        "test/spec/identity/session/http.int.test.ts",
+        "test/spec/identity/session/revocation.int.test.ts",
+        "test/spec/identity/session/rotation.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ddd6e37f6769891ae2658a87f86306548c7b373abca182f2ea1bab4f72015b48"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "74cd905e9dbb56eb4be8c94a017238c78da9ae3a",
+    "specs": "0100f2ee7f7133fd83e159c2e144148e7a4b59d4"
+  }
+}

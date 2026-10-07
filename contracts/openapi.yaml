@@ -818,7 +818,6 @@ paths:
       x-session-scopes:
         - full
         - deletion_only
-      x-implementation: planned
       x-error-codes:
         - 10404
       security: []

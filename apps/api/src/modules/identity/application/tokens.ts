@@ -27,3 +27,8 @@ export const LOGOUT = Symbol('LOGOUT');
 
 /** The SmsLoginService; null when the process has no database, Redis or field cipher. */
 export const SMS_LOGIN = Symbol('SMS_LOGIN');
+
+// Nest token of the refresh wiring (B1-02k, identity.module.ts).
+
+/** The RefreshService; null when the process has no database, Redis or field cipher. */
+export const REFRESH = Symbol('REFRESH');

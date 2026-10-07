@@ -12,7 +12,8 @@
 //      row_version (devices is a CAS entity, 0005);
 //   4. call `afterCreated` with the same transaction (the extension point for B1-12b's push token
 //      binding), then return the issued pair. The access token carries the caller's scp.
-// A refresh (B1-02k) keeps the sid and does not touch last_login_sid.
+// A refresh (B1-02k, refresh.ts) keeps the sid and does not touch last_login_sid; it reads the
+// access expiry the same way (accessExpiry).
 //
 // revokeSession — fills sessions.revoked_at / revoke_reason once (`revoked_at IS NULL` in the
 // WHERE clause; 0 rows = already revoked or unknown, answered false). It writes nothing else:
@@ -48,7 +49,7 @@ function newSid(): string {
  * decoded, not verified), so an answer never drifts from the JWT when the Clock crosses a second
  * between reads. Built from `like` (a Clock instant), never from the wall clock.
  */
-function accessExpiry(token: string, like: Date): Date {
+export function accessExpiry(token: string, like: Date): Date {
   const { exp } = decodeJwt(token);
   if (typeof exp !== 'number' || !Number.isSafeInteger(exp)) {
     throw new Error('identity: the issued access token has no exp');
