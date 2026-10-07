@@ -64,8 +64,13 @@ const MONEY_COLUMN_ALTER =
 const TYPE_HEAD = /^(?:"?pg_catalog"?\s*\.\s*)?(?:"([^"]+)"|([a-z_][a-z0-9_]*))([\s\S]*)$/i;
 const LOCK_TIMEOUT = /\bSET\s+(?:LOCAL\s+)?lock_timeout\b/i;
 const STATEMENT_TIMEOUT = /\bSET\s+(?:LOCAL\s+)?statement_timeout\b/i;
-/** Statements an ignore reaches only through squawk's next-line rule are checked when they change a table. */
+/**
+ * Statements an ignore reaches only through squawk's line rule (other statements on the comment's
+ * line, or on the line after it) are checked when they drop, rename, retype or truncate: an ADD COLUMN,
+ * a GRANT or an index on a funds table next to an ignored line stays legal.
+ */
 const ALTERING = /^\s*(?:ALTER|DROP|TRUNCATE)\b/i;
+const DESTRUCTIVE = /\b(?:DROP|RENAME|TYPE|TRUNCATE)\b/i;
 // Matched anywhere in the file, not only right after `--` or the comment opener: squawk strips the
 // whitespace (newlines included) inside a block comment before it reads the directive, so a
 // directive on its own line inside a block comment counts. Erring towards refusal is fine here.
@@ -195,9 +200,10 @@ function withoutComments(sql: string): string {
       out += `'${blank(sql.slice(i + 1, Math.min(j, sql.length)))}${closed ? "'" : ''}`;
       i = closed ? j + 1 : sql.length;
     } else if (c === '"') {
+      // Quoted identifiers are kept (table names are read from them); a `;` inside one is blanked.
       const j = sql.indexOf('"', i + 1);
       const end = j === -1 ? sql.length : j + 1;
-      out += sql.slice(i, end);
+      out += sql.slice(i, end).replace(/;/g, ' ');
       i = end;
     } else if (c === '$' && !/[\w$]/.test(sql[i - 1] ?? '')) {
       const tag = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i))?.[0];
@@ -345,15 +351,15 @@ export function checkMigration(file: string, sql: string): Problem[] {
     const statements = trailing
       ? [code.slice(code.lastIndexOf(';', prev - 1) + 1, prev)]
       : [code.slice(prev + 1, own)];
-    // Statements reached only through the next-line rule: checked when they alter or drop a table,
-    // so a GRANT or an index on a funds table right after an ignored line stays legal.
-    const reached = trailing ? code.slice(prev + 1, end) : code.slice(own + 1, end);
-    // Only statements that start on the comment's line or the line after it: a statement after a
-    // blank line is out of the ignore's reach.
-    let offset = trailing ? prev + 1 : own + 1;
-    for (const part of reached.split(';')) {
+    // Statements reached only through squawk's line rule: every statement touching the comment's line
+    // or starting on the line after it (a statement after a blank line is out of reach), checked when
+    // it is destructive (see DESTRUCTIVE).
+    const lineStart = code.lastIndexOf('\n', commentEnd) + 1;
+    let offset = code.lastIndexOf(';', lineStart - 1) + 1;
+    for (const part of code.slice(offset, end).split(';')) {
       const begins = offset + part.length - part.trimStart().length;
-      if (begins < windowEnd && ALTERING.test(part)) statements.push(part);
+      if (begins < windowEnd && ALTERING.test(part) && DESTRUCTIVE.test(part))
+        statements.push(part);
       offset += part.length + 1;
     }
     const statement = statements.join(';');

@@ -175,9 +175,8 @@ it('checkMigration: a trailing same-line ignore after the semicolon, a block-com
   ]);
   const trailingNext =
     'ALTER TABLE app.articles DROP COLUMN c; -- squawk-ignore ban-drop-column\nALTER TABLE app.orders ADD COLUMN n bigint;\n';
-  expect(checkMigration('x.sql', trailingNext).map((p) => p.message)).toEqual([
-    expect.stringContaining('funds or attribution table orders'),
-  ]);
+  // The trailing comment belongs to the articles statement; a plain ADD COLUMN on the next line is legal.
+  expect(checkMigration('x.sql', trailingNext)).toEqual([]);
   const block = '/* squawk-ignore ban-drop-table */\nDROP TABLE IF EXISTS app.orders;\n';
   expect(checkMigration('x.sql', block).map((p) => p.message)).toEqual([
     expect.stringContaining('funds or attribution table orders'),
@@ -550,4 +549,45 @@ it('checkTimeouts: 0 with a unit and DEFAULT (both mean no timeout) do not count
       "SET LOCAL lock_timeout = '0h';\nSET LOCAL statement_timeout TO DEFAULT;\n",
     ),
   ).toHaveLength(2);
+});
+
+it("checkMigration: statements an ignore reaches through squawk's line rule are refused only when destructive on a funds table", () => {
+  // A plain ADD COLUMN on a funds table on the line after a trailing ignore stays legal.
+  expect(
+    checkMigration(
+      'x.sql',
+      'ALTER TABLE app.articles DROP COLUMN old_title; -- squawk-ignore ban-drop-column\nALTER TABLE app.orders ADD COLUMN extra_fen bigint;\n',
+    ),
+  ).toEqual([]);
+  // A funds-table DROP earlier on the same line as the trailing ignore is refused (squawk ignores the whole line).
+  expect(
+    checkMigration(
+      'x.sql',
+      'ALTER TABLE app.orders DROP COLUMN a; ALTER TABLE app.articles DROP COLUMN b; -- squawk-ignore ban-drop-column\n',
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      message: expect.stringContaining('funds or attribution table orders'),
+    }),
+  ]);
+  // A funds-table RENAME on the next line is refused.
+  expect(
+    checkMigration(
+      'x.sql',
+      'ALTER TABLE app.articles DROP COLUMN b; -- squawk-ignore ban-drop-column\nALTER TABLE app.ledger_entries RENAME COLUMN a TO b;\n',
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      message: expect.stringContaining('funds or attribution table ledger_entries'),
+    }),
+  ]);
+});
+
+it('checkMigration: a semicolon inside a quoted identifier does not split the statement', () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      'CREATE TABLE app.t (id uuid PRIMARY KEY, "note;tag" text, amount_fen integer);',
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('amount_fen must be bigint')]);
 });
