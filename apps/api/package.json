@@ -24,6 +24,7 @@
     "pg": "8.23.0",
     "pg-boss": "12.34.0",
     "pino": "10.3.1",
+    "qrcode": "1.5.4",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "zod": "4.6.5"
@@ -33,6 +34,7 @@
     "@nestjs/testing": "12.1.0",
     "@readme/openapi-parser": "9.0.0",
     "@types/pg": "8.23.1",
+    "@types/qrcode": "1.5.6",
     "openapi-types": "12.1.3"
   }
 }
