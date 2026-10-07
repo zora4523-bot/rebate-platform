@@ -1,0 +1,50 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 test-change (test/spec/frontend/build-smoke and tools/**; owner chose blocked B-11 option A on 2026-10-07). The build-smoke rule test only gains collection (no assertion changed, no case removed): vite:preloadError, unhandledrejection and the H5 route error page (RetryPage alert heading) go into the existing diagnostics attachment, read back before the screenshot (diagnostics-incomplete when unreadable); red-check and the strict reporter treat preload-error / unhandled-rejection / route-error / diagnostics-incomplete as invalid red / failed green run (skeleton NotImplemented excepted in red only). README blind-spot paragraph turned into the current behaviour. tester none (test-change); implementation by Opus 5.5 in one run; the orchestrator renamed a local helper describe -> describeValue (test-guard read it as a describe block). Container --browser exit 0 (smoke 4 shots, strict reporter quiet); local full verify interrupted only by unrelated api load timeouts; full verification is the required CI checks. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "one S2: any NotImplemented in the same attachment exempts route-error (needs a crafted mixed failure), follow-up"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (second reviewer): pass; S2 route error heading hard-coded in the test (should come from contracts/texts.default.json h5.load_failed)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "test-change, tester none; both reviewers read the test diff"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "F1-01m",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "e7ae7d7378beda35e280af63c03ae9ca75ea792d",
+  "runs": [],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "8a8603b2b6971e1f9c615095fce25b28d401b894",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
