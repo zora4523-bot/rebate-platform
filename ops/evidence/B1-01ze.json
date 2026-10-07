@@ -1,0 +1,51 @@
+{
+  "task": "B1-01ze",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "8671cdadbd21bc231391fd4c0cca457c73c4c267",
+  "red_tests": [],
+  "risk_note": "RV2 (apps/api/package.json and pnpm-lock.yaml are not on the risk-map whitelist; the lockfile is a class-2 protected path, owner approval label per ops/approvals.yaml 24). Deps task: adds qrcode 1.5.4 (2024-08-05, MIT; runtime deps dijkstrajs, pngjs, yargs, all MIT, with six ISC transitive packages of yargs; no install scripts; lockfile integrity equals npm dist.integrity for all 19 added packages) and @types/qrcode 1.5.6 (devDependency, MIT); no code. Ledger tester: none. Written by hand. The PR also marks the merged CT-06a (#250) and this task done in the ledger.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "independent read-only Claude subagent, money review: pass, no findings; 19 added lockfile packages checked against npm dist.integrity, release ages, licenses (MIT and ISC), no install scripts; ledger edits match the B1-02i (#255) practice"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings (an earlier call exited before running because brief.md was missing; that pre-counted round was reused)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "deps task, ledger tester: none"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "eb86f89d75da0bfd4be79aa3abe9b5fcc1617517",
+    "specs": "0100f2ee7f7133fd83e159c2e144148e7a4b59d4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
