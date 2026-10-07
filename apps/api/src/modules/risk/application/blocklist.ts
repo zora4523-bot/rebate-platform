@@ -11,8 +11,16 @@
 // Every hit writes risk_hits rows (ref_type blocked_request) in an independent short transaction
 // of its own (db.transaction(), never the caller's transaction): whatever the blocked request
 // rolls back, the hit record stays (orchestrator ruling B1-03d §9.3). Before the rows, the rule
-// codes are registered with INSERT … ON CONFLICT (app_id, rule_id) DO NOTHING, so the foreign key
-// risk_hits → risk_rules never fails on a first hit. One blocked request has one UUIDv7 ref_id
+// codes are registered with INSERT … ON CONFLICT (app_id, rule_id) DO NOTHING (created_at and
+// updated_at from the same Clock instant as the hits), so the foreign key risk_hits → risk_rules
+// never fails on a first hit.
+//
+// Inside a caller's transaction nothing here borrows a second pooled connection on the
+// production path: matchRegistration only reads through trx and returns the hits, and the caller
+// records them with recordHits after its transaction rolled back and released its connection (a
+// hit written while the caller still holds a connection would let concurrent blocked first logins
+// hold the whole pool and wait for each other). checkRegistration (match, then record at once) is
+// for callers that hold no other pooled connection while it records. One blocked request has one UUIDv7 ref_id
 // (the 拦截请求编号) shared by all its rows. The related phone is stored only as its users.phone
 // blind index and its masked form 138****5678 (BR-ID-33); the answer carries only the message
 // code blocklist.<violation_type> (04 §7), never the registration reason.
@@ -77,10 +85,21 @@ export interface BlocklistHit {
   readonly ref_id: string;
 }
 
-export interface RecordBlockedHit extends BlockedRequest {
+/** One hit row of a blocked request: the dimension, its value digest and the rule code. */
+export interface BlockedHitTarget {
   readonly dimension: string;
   readonly value_hmac: string;
   readonly rule_id: string;
+}
+
+export interface RecordBlockedHit extends BlockedRequest, BlockedHitTarget {}
+
+/** A registration refusal decided but not recorded yet (matchRegistration). */
+export interface RegistrationBlock {
+  readonly code: 44001;
+  readonly data: { readonly risk_msg_code: string };
+  /** The hit rows to record with recordHits once the caller's transaction has ended. */
+  readonly hits: readonly BlockedHitTarget[];
 }
 
 export interface BlockedRegistrationInput {
@@ -103,14 +122,26 @@ export interface BlocklistService {
   /** Check account dimensions without consulting users; persist hits in an independent transaction. */
   check(input: BlocklistInput): Promise<BlocklistHit | null>;
   /** Check both phone and optional device before registration; all hits share one ref_id.
-   * Audit writes use an independent transaction even when the caller rolls back trx.
+   * Audit writes use an independent transaction even when the caller rolls back trx, so this
+   * borrows a second pooled connection while trx is open: callers holding a transaction on the
+   * request path use matchRegistration and record after their rollback instead.
    */
   checkRegistration(
     trx: Transaction<DB>,
     input: RegistrationBlocklistInput,
   ): Promise<BlocklistHit | null>;
+  /** The decision of checkRegistration read through trx only; writes nothing, borrows nothing. */
+  matchRegistration(
+    trx: Transaction<DB>,
+    input: RegistrationBlocklistInput,
+  ): Promise<RegistrationBlock | null>;
   /** For prefix/device-limit decisions already made by identity. */
   recordHit(input: RecordBlockedHit): Promise<{ readonly ref_id: string }>;
+  /** All hit rows of one blocked request, one shared ref_id, in a short transaction of its own. */
+  recordHits(
+    request: BlockedRequest,
+    hits: readonly BlockedHitTarget[],
+  ): Promise<{ readonly ref_id: string }>;
   /** No backend-issued release record means false; this port does not create release records. */
   allowBlockedRegistration(trx: Transaction<DB>, input: BlockedRegistrationInput): Promise<boolean>;
 }
@@ -130,12 +161,6 @@ function blocklistRule(dimension: BlocklistDimension): string {
 /** BR-ID-33 default mask: the first 3 and the last 4 characters, e.g. 138****5678. */
 function maskPhone(phone: string): string {
   return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
-}
-
-interface HitRow {
-  readonly dimension: string;
-  readonly value_hmac: string;
-  readonly rule_id: string;
 }
 
 export function createBlocklistService(options: BlocklistOptions): BlocklistService {
@@ -173,8 +198,9 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
   /** The hit rows of one blocked request, in one short transaction of their own. */
   async function writeHits(
     request: BlockedRequest,
-    rows: readonly HitRow[],
+    rows: readonly BlockedHitTarget[],
   ): Promise<{ readonly ref_id: string }> {
+    if (rows.length === 0) throw new Error('risk: a blocked request needs at least one hit row');
     const now = clock.now();
     const refId = request.ref_id ?? newUuidV7(now);
     const register = request.request_type === 'register';
@@ -196,6 +222,8 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
             risk_action: 'block',
             status: 'active',
             version: 1,
+            created_at: now,
+            updated_at: now,
           })
           .onConflict((oc) => oc.columns(['app_id', 'rule_id']).doNothing())
           .execute();
@@ -240,6 +268,33 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
     return { code: 44001, data: { risk_msg_code: `blocklist.${violation}` }, ref_id: refId };
   }
 
+  /** Phone and optional device read through trx only; the first matched entry names the code. */
+  async function matchRegistrationIn(
+    trx: Transaction<DB>,
+    input: RegistrationBlocklistInput,
+  ): Promise<RegistrationBlock | null> {
+    const candidates: { dimension: BlocklistDimension; value_hmac: string }[] = [
+      { dimension: 'phone', value_hmac: input.phone_hmac },
+    ];
+    if (input.device_hash !== undefined) {
+      candidates.push({ dimension: 'device', value_hmac: input.device_hash });
+    }
+    const hits: BlockedHitTarget[] = [];
+    let violation: string | null = null;
+    for (const candidate of candidates) {
+      const matched = await matchOn(trx, input.app_id, candidate.dimension, candidate.value_hmac);
+      if (matched === null) continue;
+      violation ??= matched;
+      hits.push({ ...candidate, rule_id: blocklistRule(candidate.dimension) });
+    }
+    if (violation === null) return null;
+    return { code: 44001, data: { risk_msg_code: `blocklist.${violation}` }, hits };
+  }
+
+  function registerRequest(input: RegistrationBlocklistInput): BlockedRequest {
+    return { app_id: input.app_id, request_type: 'register', related_phone: input.related_phone };
+  }
+
   return Object.freeze({
     async check(input: BlocklistInput): Promise<BlocklistHit | null> {
       const valueHmac = digestOf(input);
@@ -260,33 +315,21 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
       input: RegistrationBlocklistInput,
     ): Promise<BlocklistHit | null> {
       // Read in the caller's transaction; the record goes through its own short transaction.
-      const candidates: { dimension: BlocklistDimension; value_hmac: string }[] = [
-        { dimension: 'phone', value_hmac: input.phone_hmac },
-      ];
-      if (input.device_hash !== undefined) {
-        candidates.push({ dimension: 'device', value_hmac: input.device_hash });
-      }
-      const rows: HitRow[] = [];
-      let violation: string | null = null;
-      for (const candidate of candidates) {
-        const matched = await matchOn(trx, input.app_id, candidate.dimension, candidate.value_hmac);
-        if (matched === null) continue;
-        violation ??= matched;
-        rows.push({ ...candidate, rule_id: blocklistRule(candidate.dimension) });
-      }
-      if (violation === null) return null;
-      const { ref_id: refId } = await writeHits(
-        { app_id: input.app_id, request_type: 'register', related_phone: input.related_phone },
-        rows,
-      );
-      return hitOf(violation, refId);
+      const block = await matchRegistrationIn(trx, input);
+      if (block === null) return null;
+      const { ref_id: refId } = await writeHits(registerRequest(input), block.hits);
+      return { code: 44001, data: block.data, ref_id: refId };
     },
+
+    matchRegistration: matchRegistrationIn,
 
     async recordHit(input: RecordBlockedHit): Promise<{ readonly ref_id: string }> {
       return writeHits(input, [
         { dimension: input.dimension, value_hmac: input.value_hmac, rule_id: input.rule_id },
       ]);
     },
+
+    recordHits: writeHits,
 
     async allowBlockedRegistration(
       trx: Transaction<DB>,

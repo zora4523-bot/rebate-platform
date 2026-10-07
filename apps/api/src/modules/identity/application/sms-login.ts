@@ -21,7 +21,9 @@
 //      - full, no account → the device row's device_hash, the blocklist port (B1-03d; 44001;
 //        registrationBlocklist with phone and device, else the older phoneBlocklist) →
 //        registration.register (B1-02i): 0 → is_new_user; 44001 / 50001 → that answer, all
-//        rolled back (a device-limit 44001 then has its risk hit recorded, recordDeviceLimit); phone_taken (a concurrent first login won) → log in the winner's account,
+//        rolled back (a blocklist or device-limit 44001 then has its risk hit recorded, after the
+//        rollback released the connection: registrationBlocklist's record, recordDeviceLimit);
+//        phone_taken (a concurrent first login won) → log in the winner's account,
 //        is_new_user=false, ignored_existing_user when a code was sent;
 //      - full, account → a normal login, ignored_existing_user when a code was sent;
 //   5. on success, in the same transaction: the user's consent lock (lockUserConsents), the two
@@ -153,6 +155,9 @@ export interface SmsLoginOptions {
   ) => Promise<{ readonly code: 44001; readonly data?: { readonly risk_msg_code: string } } | null>;
   /** Preferred before creating an account; fall back to phoneBlocklist only when absent.
    * Plaintext phone is passed to risk only for HMAC/masking, never storage or logging.
+   * A refusal may carry `record`: the hit's write, run after the login transaction rolled back
+   * and released its connection (never inside it), before the 44001 is answered; a failed
+   * record rejects the login (50001, BR-ID-36: every hit is recorded).
    */
   readonly registrationBlocklist?: (
     trx: Transaction<DB>,
@@ -162,7 +167,11 @@ export interface SmsLoginOptions {
       readonly phone_hmac: string;
       readonly device_hash?: string;
     },
-  ) => Promise<{ readonly code: 44001; readonly data?: { readonly risk_msg_code: string } } | null>;
+  ) => Promise<{
+    readonly code: 44001;
+    readonly data?: { readonly risk_msg_code: string };
+    readonly record?: () => Promise<void>;
+  } | null>;
   /**
    * B1-03d: records the risk hit of a same-device registration limit refusal (B1-02i), called
    * after the login transaction rolled back. Plaintext phone only for risk's HMAC / masking.
@@ -186,13 +195,13 @@ type SessionScope = 'full' | 'deletion_only';
 /** An answer that ends the transaction with a rollback (thrown out of the callback). */
 class LoginAbort extends Error {
   readonly result: SmsLoginResult | 'no_account';
-  /** The same-device limit refusal, whose risk hit is recorded after the rollback. */
-  readonly deviceLimit: DeviceLimitContext | undefined;
-  constructor(result: SmsLoginResult | 'no_account', deviceLimit?: DeviceLimitContext) {
+  /** The refusal's risk-hit write, run once the transaction rolled back and released. */
+  readonly afterRollback: (() => Promise<void>) | undefined;
+  constructor(result: SmsLoginResult | 'no_account', afterRollback?: () => Promise<void>) {
     super('identity: sms login rolled back');
     this.name = 'LoginAbort';
     this.result = result;
-    this.deviceLimit = deviceLimit;
+    this.afterRollback = afterRollback;
   }
 }
 
@@ -351,7 +360,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
         phone_hmac: phoneHmac,
         ...(deviceHash === undefined ? {} : { device_hash: deviceHash }),
       });
-      if (blocked !== null) throw new LoginAbort(refusal(blocked));
+      if (blocked !== null) throw new LoginAbort(refusal(blocked), blocked.record);
     } else if (blocklist !== undefined) {
       const blocked = await blocklist(trx, { app_id: appId, phone_hmac: phoneHmac });
       if (blocked !== null) throw new LoginAbort(blocked);
@@ -385,14 +394,18 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       };
     }
     if (registered.code === 44001) {
+      const recordDeviceLimit = options.recordDeviceLimit;
+      const limited: DeviceLimitContext = {
+        app_id: registered.app_id,
+        device_hash: registered.device_hash,
+        count: registered.count,
+        limit: registered.limit,
+      };
       throw new LoginAbort(
         { code: 44001 },
-        {
-          app_id: registered.app_id,
-          device_hash: registered.device_hash,
-          count: registered.count,
-          limit: registered.limit,
-        },
+        recordDeviceLimit === undefined
+          ? undefined
+          : () => recordDeviceLimit({ ...limited, phone }),
       );
     }
     if (registered.code !== 0) throw new LoginAbort({ code: 50001 });
@@ -449,12 +462,10 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       } catch (error) {
         if (!(error instanceof LoginAbort)) throw error;
         if (error.result !== 'no_account') {
-          // After the rollback, so the hit outlives it and no second pooled connection is held
-          // inside the transaction. A failed record rejects: every hit is recorded (BR-ID-36).
-          const limited = error.deviceLimit;
-          if (limited !== undefined && options.recordDeviceLimit !== undefined) {
-            await options.recordDeviceLimit({ ...limited, phone });
-          }
+          // After the rollback, so the hit outlives it and no second pooled connection is
+          // borrowed while the transaction holds one (blocklist and same-device limit alike). A
+          // failed record rejects: every hit is recorded (BR-ID-36).
+          if (error.afterRollback !== undefined) await error.afterRollback();
           logger.info({ app_id: appId, code: error.result.code }, 'sms_login_refused');
           return error.result;
         }

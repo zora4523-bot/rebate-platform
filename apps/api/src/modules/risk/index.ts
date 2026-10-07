@@ -28,6 +28,8 @@ export type {
   BlocklistHit,
   BlockedRequest,
   RecordBlockedHit,
+  BlockedHitTarget,
+  RegistrationBlock,
   BlockedRegistrationInput,
   RegistrationBlocklistInput,
   BlocklistOptions,
