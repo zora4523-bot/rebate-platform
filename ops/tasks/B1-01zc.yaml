@@ -12,12 +12,14 @@ type: impl
 # 规则测试（Codex 先写、先红）放 test/spec/infra/staging/**：静态核对 compose（五个服务、健康检查、env_file 路径、端口只绑内网或回环）、Dockerfile（非 root、无口令）、
 # deploy.sh（迁移在切换之前、健康检查失败回退、set -euo pipefail、不 echo 口令），以及仓库里不出现口令样式的值。
 # 不改应用代码；需要的环境变量以 .env.example 与 platform/config 为准，缺的写进 README 待补，不臆造第三方凭据。
+# 2026-10-07 加 packages/db/scripts/util.ts：Codex 代码评审第 1 轮 S0，迁移脚本出错时 console.error(error) 会把带口令的连接串打进部署输出。
 refs: []
 refs_hash: {}
 deps: []
 paths:
   - 'infra/staging/**'
   - '.dockerignore'
+  - 'packages/db/scripts/util.ts'
 test_paths:
   - 'test/spec/infra/staging/**'
 impl: claude
