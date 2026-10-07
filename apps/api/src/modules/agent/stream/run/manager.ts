@@ -12,6 +12,7 @@ import type {
   RunManager,
   RunManagerDeps,
   RunStart,
+  TerminalDraft,
   TerminalFrame,
 } from './types.ts';
 
@@ -57,7 +58,6 @@ async function run(
   let cardsDelivered = 0;
   let cardQueue = Promise.resolve();
   let factsQueue = Promise.resolve();
-  let factsConfirmed = false;
   let resolveEnd!: (end: End) => void;
   const ended = new Promise<End>((resolve) => {
     resolveEnd = resolve;
@@ -131,18 +131,20 @@ async function run(
     return !stopped;
   }
 
-  async function saveFacts(facts: RunFacts): Promise<void> {
-    factsConfirmed = false;
+  async function saveFacts(facts: RunFacts, draft?: TerminalDraft): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        await registry.recordFacts(runId, facts);
-        factsConfirmed = true;
+        await registry.recordFacts(runId, facts, draft);
         return;
       } catch {
         // Delivery already happened: keep the actual count and the chosen ending in memory.
         // A failed save must neither reject the queue nor turn revocation into server_error.
       }
     }
+    deps.logger?.error(
+      { run_id: runId, ending: facts.ending, cards_delivered: facts.cardsDelivered },
+      'agent.run_facts_unconfirmed',
+    );
   }
 
   const ctx: RunContext = {
@@ -225,16 +227,18 @@ async function run(
   async function checkGuard(): Promise<void> {
     const timeout = new AbortController();
     try {
-      // Race the read itself, not a callback that could interrupt on a stale, late answer.
-      const answer = await Promise.race([
-        deps.guard.check(),
+      // The timeout releases polling, not the observation of this query's result. A late
+      // revocation still interrupts a live run; choose() protects an already chosen ending.
+      await Promise.race([
+        deps.guard.check().then((answer) => {
+          if (answer !== null) interrupt(answer.code === 30501 ? 'disabled' : 'consent_withdrawn');
+        }),
         scheduler
           .sleep(GUARD_READ_TIMEOUT_MS, AbortSignal.any([waits.signal, timeout.signal]))
           .then(() => {
             throw new Error('Run guard read timed out');
           }),
       ]);
-      if (answer !== null) interrupt(answer.code === 30501 ? 'disabled' : 'consent_withdrawn');
     } finally {
       timeout.abort();
     }
@@ -286,21 +290,26 @@ async function run(
     // reservation or body. A late live fact cannot overwrite the final ending.
     await factsQueue;
     const outcome = { ending: end.ending, cardsDelivered };
+    const draft: TerminalDraft =
+      end.event === 'done'
+        ? { event: 'done', data: { finish_reason: end.finishReason } }
+        : { event: 'error', data: end.error };
     // Always save a fresh final snapshot, even after all live saves failed. Exhausted retries
-    // are reported to the caller, but must not prevent the admission gate releasing the lock.
-    await saveFacts(outcome);
+    // are logged, but must not prevent the admission gate releasing the lock. The draft keeps
+    // the complete chosen result recoverable if this process dies after settle, before finish.
+    await saveFacts(outcome, draft);
     const settled = await deps.admission.settle(ticket, outcome, start.limits);
     const terminal: TerminalFrame =
-      end.event === 'done'
+      draft.event === 'done'
         ? {
             event: 'done',
-            data: { finish_reason: end.finishReason, quota_left: settled.quotaLeft },
+            data: { ...draft.data, quota_left: settled.quotaLeft },
           }
-        : { event: 'error', data: end.error };
+        : draft;
     await registry.finish(runId, terminal);
     if (terminal.event === 'done') write('done', terminal.data);
     else write('error', terminal.data);
-    return { terminal, ...outcome, factsConfirmed };
+    return { terminal, ...outcome };
   } finally {
     stopped = true;
     waits.abort();

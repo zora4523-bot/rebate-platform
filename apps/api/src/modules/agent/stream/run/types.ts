@@ -1,4 +1,4 @@
-import type { Clock, RedisNamespace, Scheduler } from '../../../platform/index.ts';
+import type { Clock, RedisNamespace, RootLogger, Scheduler } from '../../../platform/index.ts';
 import type {
   CardInput,
   DoneData,
@@ -70,6 +70,11 @@ export type TerminalFrame =
   | { readonly event: 'done'; readonly data: DoneData }
   | { readonly event: 'error'; readonly data: ErrorData };
 
+/** Saved before settlement; quota_left is supplied only by the admission gate afterward. */
+export type TerminalDraft =
+  | { readonly event: 'done'; readonly data: Omit<DoneData, 'quota_left'> }
+  | { readonly event: 'error'; readonly data: ErrorData };
+
 export interface RunRegistration {
   readonly runId: string;
   readonly sessionId: string;
@@ -85,12 +90,18 @@ export interface RunFacts {
 
 export interface RunRegistry {
   register(run: RunRegistration): Promise<void>;
-  recordFacts(runId: string, facts: RunFacts): Promise<void>;
+  /** Saves the draft together with ending facts before resolving; live saves omit it. */
+  recordFacts(runId: string, facts: RunFacts, draft?: TerminalDraft): Promise<void>;
   facts(runId: string): Promise<RunFacts | null>;
   requestCancel(runId: string, ownerKey: string): Promise<'ok' | 'not_found'>;
   cancelRequested(runId: string): Promise<boolean>;
   finish(runId: string, terminal: TerminalFrame): Promise<void>;
   final(runId: string): Promise<TerminalFrame | null>;
+}
+
+/** Recovery reads the draft separately so RunFacts retains its existing public shape. */
+export interface RecoverableRunRegistry extends RunRegistry {
+  draft(runId: string): Promise<TerminalDraft | null>;
 }
 
 export interface RedisRunRegistryDeps {
@@ -116,8 +127,6 @@ export interface RunFinal {
   readonly terminal: TerminalFrame | null;
   readonly ending: RunEnding;
   readonly cardsDelivered: number;
-  /** False when the final facts could not be confirmed after retry; settlement still ran. */
-  readonly factsConfirmed?: boolean;
 }
 
 export interface RunManager {
@@ -135,6 +144,8 @@ export interface RunManagerDeps {
   readonly scheduler: Scheduler;
   readonly config: RunConfig;
   readonly validator?: FrameValidator;
+  /** Inject ROOT_LOGGER (or a child) when wiring the stream entry. */
+  readonly logger?: Pick<RootLogger, 'error'>;
 }
 
 export function runConfigDefaults(): RunConfig {

@@ -24,7 +24,8 @@
 //   2. While the run is live: pings (`: ping`, no seq) so that no gap between two writes (frame or
 //      ping) exceeds heartbeatMs; when idle, the ping comes exactly heartbeatMs after the last write
 //      (a fixed 15-second period also satisfies this); registry.cancelRequested polled every signalPollMs; guard.check() polled at
-//      least every guardPollMs (a throwing/timed-out check is ignored until the next round); the time
+//      least every guardPollMs (throws/timeouts allow the next round; a late revocation still
+//      terminates a live run); the time
 //      limit at ticket.acceptedAtMs + maxRunMs (epoch ms of the Clock: counted from acceptance, not
 //      from start); after the sink closes, an abort at close + disconnectGraceMs.
 //      All waiting goes through deps.scheduler (monotonic) and the current instant through
@@ -42,7 +43,7 @@
 //      ending server_error. A body result arriving after another ending is ignored; ctx calls after
 //      the abort write nothing.
 //   4. Tail (BR-AI-23 细则「受理记录与收尾」), each step awaited before the next starts:
-//      registry.recordFacts(runId, {ending, cardsDelivered}) (the run facts other instances read
+//      registry.recordFacts(runId, {ending, cardsDelivered}, draft) (the run facts other instances read
 //      when they complete a crashed run's tail), then admission.settle(ticket, {ending,
 //      cardsDelivered}, start.limits) exactly once, then registry.finish(runId, terminal) (every
 //      ending has a terminal), then the terminal frame when the sink is open (done.quota_left =
@@ -52,7 +53,9 @@
 //      before ctx.card resolves, recordFacts(runId, {ending: null, cardsDelivered}) is saved too.
 //      Fact saves retry once on rejection; exhausted retries mark facts unconfirmed and do not
 //      block later saves or settlement. The tail always tries the final snapshot again and exposes
-//      its confirmation in RunFinal.factsConfirmed. Registration failure also settles server_error.
+//      failed confirmation through the injected logger, never RunFinal. Registration failure also
+//      settles server_error. The draft contains complete error data or done.finish_reason; recovery
+//      reads registry.draft(runId) and adds quota_left only after settlement, before finish.
 //   ctx.card reserves numbers with cards.reserve(sessionId, used) and writes the numbered card; an
 //   invalid card rejects with StreamProtocolError('invalid_frame') and the run goes on.
 // cancel(runId, ownerKey) → registry.requestCancel (not owner, unknown or finished: 'not_found').
