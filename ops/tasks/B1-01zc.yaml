@@ -1,0 +1,29 @@
+id: B1-01zc
+repo: rebate-platform
+title: staging 部署底座：后端镜像（五个进程入口共用）、staging 的 Docker Compose 与部署脚本（先迁移后切换、健康检查、失败回退），口令只从节点上的文件读
+type: impl
+# 2026-10-07 入账（负责人：「把后端部署到 staging 上」；会话 b3-lane-handoff）。05 没有单列部署任务，按 02 §3.1「Docker Compose，蓝绿两套 compose 切换」、
+# ADR-0002 §5（应用直连 5433 / 5434，不经 6432）与负责人 2026-10-07 的部署精简（staging 应用与数据库同机）补这一项，归 B1-01 工程底座。
+# 节点：Pigsty 单节点（rebate-private/ops/pigsty/staging/README.md），节点连不上 GitHub：镜像在开发机按 linux/amd64 构建，经 ssh 传到节点 docker load。
+# 交付：infra/staging/Dockerfile（多阶段：pnpm 离线安装、只带运行所需，node 24，非 root 运行，入口参数选 api|stream|worker|admin|payout）；
+# .dockerignore；infra/staging/compose.yaml（五个服务同一镜像、restart、/healthz 健康检查、env_file 指向节点上 /etc/couli/staging.env，不在仓库放任何口令；
+# payout 单独 env_file，只有它能读打款相关变量）；infra/staging/deploy.sh（参数：镜像标签；步骤：载入镜像 → 用 couli_migrator 跑迁移 → 起新容器 → /healthz
+# 全过才保留，否则回退到上一标签；打印每步结果，不打印口令）；infra/staging/README.md（中文：首次准备、部署、回退、看日志）。
+# 规则测试（Codex 先写、先红）放 test/spec/infra/staging/**：静态核对 compose（五个服务、健康检查、env_file 路径、端口只绑内网或回环）、Dockerfile（非 root、无口令）、
+# deploy.sh（迁移在切换之前、健康检查失败回退、set -euo pipefail、不 echo 口令），以及仓库里不出现口令样式的值。
+# 不改应用代码；需要的环境变量以 .env.example 与 platform/config 为准，缺的写进 README 待补，不臆造第三方凭据。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'infra/staging/**'
+  - '.dockerignore'
+test_paths:
+  - 'test/spec/infra/staging/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/infra/staging/**'
+status: todo
+pr: null
