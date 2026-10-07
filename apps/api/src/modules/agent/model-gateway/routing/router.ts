@@ -10,7 +10,7 @@ import {
 } from '../openai-compat/index.ts';
 import type { ModelErrorKind } from '../openai-compat/index.ts';
 import type { DegradeReason } from '../degraded/index.ts';
-import { withinRun } from './attempt.ts';
+import { RunDeadlineError, withinRun } from './attempt.ts';
 import type {
   AttemptRecord,
   ModelOutcome,
@@ -131,6 +131,7 @@ export function createModelRouter(inputOptions: ModelRouterOptions): ModelRouter
             {
               kind: 'write',
               classify(error) {
+                if (error instanceof RunDeadlineError) return 'rejected';
                 const kind = failureKind(error);
                 return kind === 'aborted' ||
                   kind === 'content_refused' ||
