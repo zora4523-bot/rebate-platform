@@ -17,7 +17,7 @@ refs: [BR-PRICE-12, BR-PRICE-20]
 refs_hash:
   BR-PRICE-12: d34f9f17f4ae
   BR-PRICE-20: 7529667f1f23
-deps: [B1-06k, B1-06n]
+deps: [B1-06k, B1-06n, B1-06e]
 paths:
   - 'apps/api/src/modules/linking/**'
   - 'apps/api/src/modules/platform/idempotency/**'

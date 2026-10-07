@@ -7,6 +7,7 @@ type: impl
 # （淘宝 open 的指令只含快照用户的 relation_id 与该场景 active 推广位；他人 link、分享 link 换身份的用例覆盖淘宝），由编排者摘入任务书第 2 节。
 # 淘宝 Adapter 不调任何链接 API（05 B1-04 行）：复核价格只用详情（演示适配器）。指令字段按 CT-02e 合并后的 JumpStep.sdk；百川能否回跳以 CAP-TB-11 为准，不写成能力。
 # 我方推广链接列由 B1-06b 建；只有带当前用户 relation_id、用该场景推广位取得时才写（BR-ATTR-27 淘宝行），跨用户缓存的检索结果不带（B1-05g）。
+# 2026-10-08 补：BR-PRICE-13 新句（couli#80）的淘宝用例归本任务——复核失败后 no_rebate=true 再 open 可外跳，但站长授权失效时未绑定用户仍按 BR-ID-24 例外（B1-06p 只做京东、拼多多）。
 # 合并后 B1-06e 里「淘宝一律 50301」的临时处理撤掉。linking/** 串行。风险：linking RV2，整体 RV2（归属与用户授权）。
 refs: []
 refs_hash: {}

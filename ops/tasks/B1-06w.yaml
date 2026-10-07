@@ -8,6 +8,7 @@ type: impl
 # 规则测试：真实 AppModule 装配下（createHttpApp + inject，不监听端口；演示适配器、测试 Redis 与数据库只在 *.int.test.ts 里 import），open 京东 / 拼多多 link 返回 200 与外跳方案；
 # 不替换被测服务，只观察（先例 B1-05j governed.int.test.ts）。prod 装配演示适配器 / 演示报价器拒绝启动。风险：app.module.ts RV2、linking RV2，整体 RV2。
 # 装配前必须补的放行判断（B1-06e 资金评审 S2）：APP_ENV=prod 时只下发已验证的外跳路径（CAP-JD-11、CAP-PDD-11 未验证前不下发或按丢归因处理），拼多多 scheme 不写死、取自 apps.json 并经验证标记。
+# 「prod 拒绝演示件」B1-05j 已实现，不单列规则测试；「prod 只下发已验证路径」在 linking 入口注入环境（APP_ENV 与验证标记）测，不在真实 AppModule 下起 prod。
 # linking/** 串行：B1-06e → B1-06m → B1-06p → 本任务；app.module.ts 与 B1-07b 串行。
 refs: []
 refs_hash: {}

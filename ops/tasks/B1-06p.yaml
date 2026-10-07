@@ -8,9 +8,10 @@ type: impl
 # 规则测试（新增 test/spec/linking/open-norebate/**），京东、拼多多取价失败或熔断且无无返利缓存时 no_rebate=true 的 open：成功外跳；price_changed=false、new_final_price_fen=null、
 # requote_failed=true（编排决定：本次确未复核成功）；返利 0/0、no_rebate_cause=null（沿 B1-06e #23、#37）；jump 不含任何用户参数（京东无 subUnionId 用户段、拼多多无 custom_parameters.uid），
 # 用 pid_scene=self_buy 的 active 推广位；不新增报价快照 link；link_logs 记 no_rebate=true 与服务端判定的 no_rebate_reason；写 attempt 并返回 attempt_id；3 秒单飞窗口内、窗口外各一条（50303 后 3 秒内点次按钮）；
-# 转链也失败时下发 BR-PRICE-08 无推广参数商品页，京东 jd:i_ 类键拼不出商品页时 50303 并告警（沿 B1-06e 降级口径）。
+# 转链也失败时下发 BR-PRICE-08 无推广参数商品页，京东 jd:i_ 类键拼不出商品页时 50303 并告警（沿 B1-06e 降级口径；用例同时断言已尝试无返利转链且发了告警，才会先红）。
+# no_rebate_reason 沿 B1-06e 口径（取请求里的原因，不读身份模块）。
 # 「不变」项（他人打开分享 link 忽略 no_rebate、no_rebate=false 复核失败无缓存仍 50303）在现实现上是绿的，要并进必红用例里一起断言，不单列（先例 B1-06m）。
-# 契约说明同步：contracts/openapi.yaml openLink 说明里「without cache, 50303」改为与新口径一致（只改说明文字，不改形状）。@couli/db/testing 只在 *.int.test.ts 里 import。
+# 契约说明同步：openapi.yaml 的 openLink 说明「without cache, 50303」与 requote_failed 字段说明（现只说用缓存链接）改为与新口径一致，只改文字不改形状；改后跑 pnpm contracts:codegen 重生成 openapi.gen.ts（先例 B1-02e）。@couli/db/testing 只在 *.int.test.ts 里 import。
 # refs 留空：BR-PRICE-13 单条超 24KB，且新句晚于当前 SPEC_REF；依据由编排者摘入任务书第 2 节（先例 B1-06m）。风险：linking/** RV2、openapi.yaml RV1。
 refs: []
 refs_hash: {}
@@ -18,6 +19,7 @@ deps: [B1-06e, B1-06m, B1-06q]
 paths:
   - 'apps/api/src/modules/linking/**'
   - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
 test_paths:
   - 'test/spec/linking/open-norebate/**'
 impl: claude
