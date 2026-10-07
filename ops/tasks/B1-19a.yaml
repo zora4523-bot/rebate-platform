@@ -31,5 +31,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/union/**'
-status: todo
-pr: null
+status: done
+pr: 132

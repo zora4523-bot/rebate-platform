@@ -1,12 +1,14 @@
 id: B1-05g
 repo: rebate-platform
-title: catalog 搜索与详情缓存（Redis）：命中条件 now − fetched_at ≤ 300 秒、物理 TTL 3600 秒只作清理、缓存键规则（app_id 开头、不含用户与归因参数）、命中沿用原 quoted_at、联盟故障时只回 ≤300 秒缓存并标 stale
+title: catalog 搜索与详情缓存（Redis）与搜索会话加固（seen 原子更新、游标签名、物料兜底收窄）：命中条件 now − fetched_at ≤ 300 秒、物理 TTL 3600 秒只作清理、缓存键规则（app_id 开头、不含用户与归因参数）、命中沿用原 quoted_at、联盟故障时只回 ≤300 秒缓存并标 stale
 type: impl
 # 草稿 2026-10-05（W1 搜索转链线）。依据：BR-PROD-07（缓存口径、键规则、物理 TTL）、BR-PRICE-11（只存归一化价格与券字段、不缓存卡片、quoted_at 不改写、stale 与 age_sec；
 # search.cache_ttl_sec）、02 §14 搜索与 Redis 两行（Redis 不可用时直读联盟、限流收紧——收紧的幅度 08 没写，按 plan-draft 待决定第 6 条默认），由编排者摘入任务书第 2 节。
 # 淘宝检索结果里的推广链接不进跨用户共享缓存（BR-ATTR-27 淘宝行、05 B1-05 行）。
 # Redis 客户端由 B1-01y（platform/redis）提供，本任务只用它的封装（键必须带 TTL）。在本任务之前 B1-05d / e 没有缓存：联盟故障直接 50304 / 暂时查不到，行为符合「无缓存」一支。
-# 风险：catalog/** 为 RV1（task.ts show）。catalog/** 串行。
+# 2026-10-08 并入搜索 followups（couli-runs/followups/W1-search-linking.md，B1-05d / B1-05j 评审 S2）：① 搜索会话已下发键（seen）改 Redis 原子更新或跨进程锁，多实例并发同会话不丢键；
+# ② 游标签名（篡改即 20001）与 page_no 上限，防逐页回溯放大联盟调用；③ 物料兜底的 catch 收窄到联盟类 / 业务类错误，程序缺陷不记成联盟不可用；④ 熔断打开时 ≤ stale_max_age_s 的缓存带 stale 标记返回（BR-PROD-07）。
+# 风险：catalog/** 为 RV1（task.ts show）。catalog/** 串行（B1-05e → B1-05k → 本任务）。
 refs: []
 refs_hash: {}
 deps: [B1-05e, B1-01y]

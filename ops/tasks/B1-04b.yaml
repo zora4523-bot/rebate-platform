@@ -27,5 +27,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/union/skeleton/**'
-status: todo
-pr: null
+status: done
+pr: 150

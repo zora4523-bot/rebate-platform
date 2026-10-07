@@ -22,5 +22,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/catalog/price-state/**'
-status: todo
-pr: null
+status: done
+pr: 209

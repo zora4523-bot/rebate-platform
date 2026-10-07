@@ -23,5 +23,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/union/replay/**'
-status: todo
-pr: null
+status: done
+pr: 175

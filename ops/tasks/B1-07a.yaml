@@ -25,5 +25,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/parsing/core/**'
-status: todo
-pr: null
+status: done
+pr: 230

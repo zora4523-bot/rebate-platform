@@ -1,0 +1,25 @@
+id: B1-05k
+repo: rebate-platform
+title: catalog 导出进程级 item_ref 临时密钥提供者：local / test 未配字段密钥环时，搜索、详情、链接解析与 open 复核卡共用同一把进程内临时密钥（同一进程内任一入口签发的 item_ref 在其他入口可验）；staging / prod 无密钥环仍拒绝启动
+type: impl
+# 草稿 2026-10-08（W1 搜索转链线第五棒）。来源：B1-07b Claude 第 1 轮 S2、B1-06w 实现提示（followups/W1-search-linking.md）——现 app.module.ts 与 catalog.module.ts 各调一次
+# createProcessItemRefCipher()，parsing 经 localItemRefCipher 工厂再建一把，local / test 下共三把互不相通的临时密钥：搜索卡的 item_ref 拿去 parse / open 复核时验不过，只能退回 product_key（BR-PROD-11 兜底）。
+# 做法：catalog/index.ts 导出进程级提供者（同一进程只生成一次密钥，惰性），catalog.module、app.module 的 linking open 端口与 ParsingModule 的 localItemRefCipher 都从它取；
+# app.module 不再直引 catalog/infra/search-wiring.ts（经 index.ts）。有 FIELD_CRYPTO 时行为不变；staging / prod 无密钥环拒绝启动的检查不变。
+# 规则测试：真实 AppModule 装配（local / test、无 FIELD_CRYPTO）下，搜索签发的 item_ref 在 parse 与详情 / open 复核处可解；两次独立 createHttpApp 之间不要求互通（进程级即可，测进程内单例与 prod 拒绝）。
+# 风险：catalog RV1、app.module.ts RV2，整体 RV2。catalog/** 串行（排在 B1-05e 之后）；app.module.ts 与其他装配任务串行。
+refs: []
+refs_hash: {}
+deps: [B1-06w, B1-07b]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/catalog/item-ref-key/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/item-ref-key/**'
+status: todo
+pr: null
