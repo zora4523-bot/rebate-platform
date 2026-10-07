@@ -1,0 +1,29 @@
+id: B1-01zd
+repo: rebate-platform
+title: staging 允许本地文件主密钥（FIELD_KEY_PROVIDER=local），prod 仍只认 kms；加一个生成本地密钥环文件的命令
+type: impl
+# 2026-10-07 入账（负责人选「staging 先用文件密钥」，规划仓库 ADR-0003，couli#78）。原规则（B1-01k，keyring.ts §2、keyring-startup.ts §3a）
+# 在 APP_ENV=staging 拒绝 local，KMS 未接入，staging 五个进程都起不来（部署底座 B1-01zc 首次部署时发现）。
+# 改动：keyring.ts 的 APP_ENV 表把 staging 的 local 由 refused 改 allowed（staging 的 unset 仍 refused、kms 仍 allowed 但打开时 kms_unavailable）；
+# keyring-startup.ts §3a 只对 prod 拒绝 local（local_in_cloud 文案与 prod 一致）；prod 与 local / test 行为一字不变。
+# 新增 apps/api/scripts/keyring-init.ts：读一个已有的主密钥文件（格式同 keyring-startup.ts §1），生成一份新的 WrappedKeyring JSON（key_id local）
+# 写到指定路径（文件已存在则拒绝覆盖，权限 600），不打印任何密钥材料；用法写在文件头注释（node apps/api/scripts/keyring-init.ts <主密钥文件> <输出路径>）。
+# 冻结规则测试 test/spec/platform/crypto/** 中断言「staging 拒绝 local」的用例要按新规则改（保护路径第一类，需批准标签，approvals 第 24 条两家评审后由编排会话加），
+# 并新增：prod 仍拒绝 local、staging 用 local 能打开、keyring-init 生成的文件能被 openConfiguredFieldCrypto 打开、拒绝覆盖、不输出密钥。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: 01b25f773b29
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/config/keyring.ts'
+  - 'apps/api/src/modules/platform/config/keyring-startup.ts'
+  - 'apps/api/scripts/keyring-init.ts'
+test_paths:
+  - 'test/spec/platform/crypto/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/crypto/**'
+status: todo
+pr: null
