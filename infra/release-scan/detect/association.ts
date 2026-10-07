@@ -5,6 +5,7 @@ import { textViews } from './encoding.ts';
 import { moduleJsonText, parseResourcesIndex } from './harmony.ts';
 import type { HarmonyTable } from './harmony.ts';
 import { UNRESOLVED } from './lines.ts';
+import type { FileReader } from './lines.ts';
 import { parseResourcesPb, protoXmlText } from './proto.ts';
 import type { ProtoTable } from './proto.ts';
 import { NESTED } from './read.ts';
@@ -63,11 +64,60 @@ const join = (root: string, rel: string): string => (root ? `${root}/${rel}` : r
 const isAxml = (bytes: Uint8Array): boolean =>
   bytes.length >= 8 && bytes[0] === 3 && bytes[1] === 0 && bytes[2] === 8 && bytes[3] === 0;
 
-/** 文本 XML（.aar 等里的源清单）不按 proto 解析。 */
-const isTextXml = (bytes: Uint8Array): boolean =>
-  (bytes[0] === 0xff && bytes[1] === 0xfe) ||
-  (bytes[0] === 0xfe && bytes[1] === 0xff) ||
-  /^(?:\ufeff)?\s*<(?:\?xml|manifest)\b/.test(Buffer.from(bytes.subarray(0, 64)).toString('utf8'));
+/**
+ * 文本 XML（.aar 等里的源清单）不按 AXML / proto 解析：跳过前导 BOM、空白、注释与处理指令后，
+ * 根元素是 <manifest>（或开头是 XML 声明）即为文本清单。
+ */
+const isTextXml = (bytes: Uint8Array): boolean => {
+  if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff))
+    return true;
+  const head = Buffer.from(bytes.subarray(0, 64 * 1024)).toString('latin1');
+  return /^(?:\xef\xbb\xbf)?(?:\s|<!--(?:(?!-->)[^])*-->|<\?(?:(?!\?>)[^])*\?>|<!DOCTYPE\b[^>]*>)*<(?:\?xml|manifest)\b/.test(
+    head,
+  );
+};
+
+/** 文件资源内容按文本读取：去 BOM，合法 UTF-8 按 UTF-8，否则按 latin1。 */
+function fileText(content: Uint8Array): string {
+  let bytes = asBuffer(content);
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) bytes = bytes.subarray(3);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return bytes.toString('latin1');
+  }
+}
+
+/**
+ * 关联视图逐行是 JSON 键值行，取值里的引号、反斜杠、换行会被再次转义，
+ * 如字符串资源内容 {"shared_salt":"…"} 在视图里变成 {\"shared_salt\":…}，字段检测认不出。
+ * 这里把这类取值按解码后的原样取出，以 NUL 分隔（与二进制里的独立串同一口径）另作一个视图检测。
+ */
+function rawStrings(text: string): string | undefined {
+  const raw = new Set<string>();
+  const escaped = (value: string): boolean => JSON.stringify(value) !== `"${value}"`;
+  for (const line of text.split('\n')) {
+    if (!line.includes('\\')) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      try {
+        parsed = JSON.parse(`{${line}}`);
+      } catch {
+        continue;
+      }
+    }
+    const values =
+      typeof parsed === 'string'
+        ? [parsed]
+        : parsed && typeof parsed === 'object'
+          ? Object.entries(parsed).flat()
+          : [];
+    for (const value of values) if (typeof value === 'string' && escaped(value)) raw.add(value);
+  }
+  return raw.size > 0 ? `\0${[...raw].join('\0')}\0` : undefined;
+}
 
 function classify(entry: ArtifactEntry): Kind {
   const { rel } = locate(entry.path);
@@ -122,57 +172,92 @@ export function artifactTextViews(entries: readonly ArtifactEntry[]): ArtifactTe
     return loaded?.ok ? loaded.table : undefined;
   };
 
+  // 同一包内的文件资源；路径含 .. / 绝对路径或落进嵌套包的都算读不到。
+  const reader =
+    (root: string, candidates: (path: string) => string[]): FileReader =>
+    (path) => {
+      if (!path || path.startsWith('/') || path.split('/').some((s) => s === '..' || s === '.'))
+        return;
+      for (const rel of candidates(path)) {
+        if (!rel) continue;
+        const full = join(root, rel);
+        const entry = byPath.get(full);
+        if (entry && locate(full).root === root) return fileText(entry.content);
+      }
+      return;
+    };
+  // APK：res/… 相对包根；AAB：相对模块目录；HAP：值带模块名前缀（entry/resources/…），包内路径去掉首段。
+  const apkFiles = (root: string): FileReader => reader(root, (path) => [path]);
+  const aabFiles = (root: string, module: string): FileReader =>
+    reader(root, (path) => (module ? [`${module}/${path}`, path] : [path]));
+  const hapFiles = (root: string): FileReader =>
+    reader(root, (path) => [path, path.slice(path.indexOf('/') + 1)]);
+  const push = (path: string, text: string, resourceNames = false): void => {
+    views.push(resourceNames ? { path, text, resourceNames } : { path, text });
+    const raw = rawStrings(text);
+    if (raw !== undefined) views.push({ path, text: raw });
+  };
+
   for (const entry of entries) {
     const { root, rel } = locate(entry.path);
     try {
       const bytes = asBuffer(entry.content);
       switch (classify(entry)) {
-        case 'arsc':
-          views.push({
-            path: entry.path,
-            text: table<ArscTable>(entry.path, parseArsc).text,
-            resourceNames: true,
-          });
+        case 'arsc': {
+          const files = apkFiles(root);
+          push(entry.path, table<ArscTable>(entry.path, (b) => parseArsc(b, files)).text, true);
           break;
+        }
         case 'axml-manifest': {
-          const arsc = optionalTable<ArscTable>(join(root, 'resources.arsc'), parseArsc);
-          const text = axmlText(bytes, (id, kind) =>
-            arsc && kind === 'ref' ? arsc.resolve(id) : UNRESOLVED,
+          const files = apkFiles(root);
+          const arsc = optionalTable<ArscTable>(join(root, 'resources.arsc'), (b) =>
+            parseArsc(b, files),
           );
-          views.push({ path: entry.path, text });
+          const text = axmlText(
+            bytes,
+            (id, kind) => (arsc && kind === 'ref' ? arsc.resolve(id) : UNRESOLVED),
+            files,
+          );
+          push(entry.path, text);
           break;
         }
         case 'proto-manifest': {
           const module = rel.slice(0, rel.indexOf('/'));
-          const pb = optionalTable<ProtoTable>(
-            join(root, `${module}/resources.pb`),
-            parseResourcesPb,
+          const files = aabFiles(root, module);
+          const pb = optionalTable<ProtoTable>(join(root, `${module}/resources.pb`), (b) =>
+            parseResourcesPb(b, files),
           );
-          const text = protoXmlText(bytes, (ref) => (pb ? pb.resolve(ref) : UNRESOLVED));
-          views.push({ path: entry.path, text });
+          const text = protoXmlText(bytes, (ref) => (pb ? pb.resolve(ref) : UNRESOLVED), files);
+          push(entry.path, text);
           break;
         }
-        case 'proto-table':
-          views.push({
-            path: entry.path,
-            text: table<ProtoTable>(entry.path, parseResourcesPb).text,
-          });
+        case 'proto-table': {
+          const module = rel.includes('/') ? rel.slice(0, rel.indexOf('/')) : '';
+          const files = aabFiles(root, module);
+          push(entry.path, table<ProtoTable>(entry.path, (b) => parseResourcesPb(b, files)).text);
           break;
+        }
         case 'module-json': {
-          const index = optionalTable<HarmonyTable>(
-            join(root, 'resources.index'),
-            parseResourcesIndex,
+          const files = hapFiles(root);
+          const index = optionalTable<HarmonyTable>(join(root, 'resources.index'), (b) =>
+            parseResourcesIndex(b, files),
           );
-          const text = moduleJsonText(bytes, (ref) => (index ? index.resolve(ref) : UNRESOLVED));
-          views.push({ path: entry.path, text });
+          const text = moduleJsonText(
+            bytes,
+            (ref) => (index ? index.resolve(ref) : UNRESOLVED),
+            files,
+          );
+          push(entry.path, text);
           break;
         }
-        case 'resources-index':
-          views.push({
-            path: entry.path,
-            text: table<HarmonyTable>(entry.path, parseResourcesIndex).text,
-          });
+        case 'resources-index': {
+          const files = hapFiles(root);
+          push(
+            entry.path,
+            table<HarmonyTable>(entry.path, (b) => parseResourcesIndex(b, files)).text,
+          );
           break;
+        }
         default:
           for (const text of textViews(entry.content, entry.path, true)) {
             views.push({ path: entry.path, text });

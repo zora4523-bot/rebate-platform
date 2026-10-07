@@ -1,4 +1,5 @@
-import type { Resolution } from './lines.ts';
+import { emitFinal } from './lines.ts';
+import type { FileReader, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
 interface Chunk {
@@ -67,7 +68,7 @@ export function arscText(bytes: Buffer): string {
   return parseArsc(bytes).text;
 }
 
-export function parseArsc(bytes: Buffer): ArscTable {
+export function parseArsc(bytes: Buffer, readFile?: FileReader): ArscTable {
   const invalid = (): never => {
     throw new Error('Invalid or unsupported Android resource table');
   };
@@ -75,8 +76,11 @@ export function parseArsc(bytes: Buffer): ArscTable {
   let work = 0;
   let decodedSize = 0;
   let outputSize = 0;
+  // 工作预算随表大小线性给：每个串至少占 4 字节偏移，串池上限 100 万串时预算不会先于串数上限耗尽；
+  // 另加固定 200 万步给块遍历与引用解析。
+  const workLimit = 2_000_000 + 4 * bytes.length;
   const tick = (): void => {
-    if (++work > 1_000_000) invalid();
+    if (++work > workLimit) invalid();
   };
   const u16 = (at: number, end: number): number => {
     if (at < 0 || at + 2 > end || end > bytes.length) return invalid();
@@ -415,8 +419,8 @@ export function parseArsc(bytes: Buffer): ArscTable {
       // 签名材料字段的引用解析不了时不能当成没有取值放行（fail-closed）。
       if (!resolved.ok && !keyless && fieldRule(entry.key) === 'request-sign-material') invalid();
       for (const final of resolved.finals) {
-        if (final.file || keyless) emit(final.text);
-        else emit(final.text, entry.key);
+        if (keyless) emit(final.text);
+        else emitFinal(emit, final, entry.key, readFile, invalid);
       }
     }
   }

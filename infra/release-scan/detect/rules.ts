@@ -146,6 +146,25 @@ function standaloneValue(
   return value;
 }
 
+/** 下一行开头是新键：`键:`（冒号后空白或行尾）/ `键=` / 引号键后跟 `:` 或 `=`；YAML 列表项不算。 */
+const NEW_KEY =
+  /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\\n])*`)\s*[:=]|^[A-Za-z_$][\w$.-]*[ \t]*(?:=|:(?!\S))/;
+
+/** 算法参数后缀（位数、版本、轮数、长度等）：带这些词的数字取值是参数，不是材料。 */
+const PARAMETER_WORD =
+  /^(?:bits?|version|ver|v\d*|rounds?|length|len|size|count|iterations?|iter|cost|level|mode|type|alg|algorithm|index|idx|id|ttl|timeout|expires?|interval|enabled?)$/;
+
+/** JSON 数字取值按签名材料检测的条件：键名本身是签名材料名，且不带算法参数词。 */
+function numericMaterial(name: string): boolean {
+  if (fieldRule(name) !== 'request-sign-material') return false;
+  const words = name
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[._$-]+/);
+  return !words.some((word) => PARAMETER_WORD.test(word));
+}
+
 /** 每种布局都保留原始字符偏移；后续去重和行号不依赖重新序列化。 */
 function fields(
   file: string,
@@ -169,9 +188,7 @@ function fields(
   const add = (name: string, value: string, start: number): void => {
     found.push({ name, value, start });
   };
-  // 分隔符后只有紧跟引号的取值可以跨行；裸值不跨行（如 `shared_salt=` 空值后跟下一行的配置）。
-  const assignment =
-    /(?<![\w$.-])(["'`]?)([A-Za-z_$][\w$.-]*)["'`]?\s*([:=])(?:\s*(?=["'`])|[ \t]*)/g;
+  const assignment = /(?<![\w$.-])(["'`]?)([A-Za-z_$][\w$.-]*)["'`]?\s*([:=])[ \t]*/g;
   let m: RegExpExecArray | null;
   while ((m = assignment.exec(text))) {
     const quotedKey = m[1] !== '';
@@ -179,6 +196,18 @@ function fields(
     const separator = m[3]!;
     // 普通变量赋值不能吞掉内层对象字段，例如压缩后的 c={appSecret:"…"}。
     if (!fieldRule(name, resourceNames)) continue;
+    // 分隔符后换行时（跳过空行与 # 注释行），下一处内容若是新键（`键:` / `键=` / `"键":`，含缩进的嵌套映射）就不跨行取值，
+    // 如 `shared_salt=` 空值后跟 `app.name=foo`、`hmac:` 后跟缩进的 `algorithm: sha256`；
+    // 其余缩进更深的取值（YAML 换行写的 `sign_salt:\n  值`，含引号值）仍按该字段检测。
+    if (text[assignment.lastIndex] === '\n' || text[assignment.lastIndex] === '\r') {
+      const next = /^(?:\s|#[^\n]*)*/.exec(
+        text.slice(assignment.lastIndex, assignment.lastIndex + 4096),
+      )![0];
+      const nextAt = assignment.lastIndex + next.length;
+      if (nextAt < text.length && !NEW_KEY.test(text.slice(nextAt, nextAt + 4096))) {
+        assignment.lastIndex = nextAt;
+      }
+    }
     const valueAt = assignment.lastIndex;
     const raw = /^(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`)/.exec(
       text.slice(valueAt),
@@ -202,11 +231,13 @@ function fields(
       )?.[0];
     if (!bare) continue;
     // 引号键后的数字字面量（JSON 的 {"sign_salt": 20240101}）是取值本身，按字段口径检测。
+    // 只有键名本身是签名材料名时才检测；hmac_bits、signKeyVersion 这类算法参数不算。
     if (
       !config &&
       quotedKey &&
       separator === ':' &&
-      /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(bare)
+      /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(bare) &&
+      numericMaterial(name)
     ) {
       add(name, bare, valueAt);
       assignment.lastIndex += bare.length;

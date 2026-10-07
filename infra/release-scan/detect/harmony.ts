@@ -3,8 +3,8 @@
 // （SaveHeader / SaveLimitKeyConfigs / SaveIdSets / SaveRecordItem）与 resource_data.h 的 ResType。
 // 口径：结构损坏、越界一律抛错（fail-closed）；所有配置（语言、地区等）的候选值都参与检测与引用解析。
 
-import { LineSink, UNRESOLVED } from './lines.ts';
-import type { Final, Resolution } from './lines.ts';
+import { emitFinal, LineSink, UNRESOLVED } from './lines.ts';
+import type { FileReader, Final, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
 /** `$string:name`、`$string:16777216`（数字 ID）、`$ohos:string:x`（系统资源，制品内不可解析）。 */
@@ -62,7 +62,7 @@ interface Resolved extends Resolution {
 const stripNul = (bytes: Buffer): Buffer =>
   bytes.length > 0 && bytes[bytes.length - 1] === 0 ? bytes.subarray(0, -1) : bytes;
 
-export function parseResourcesIndex(bytes: Buffer): HarmonyTable {
+export function parseResourcesIndex(bytes: Buffer, readFile?: FileReader): HarmonyTable {
   const invalid = (): never => {
     throw new Error('Invalid or unsupported HarmonyOS resources.index');
   };
@@ -215,6 +215,7 @@ export function parseResourcesIndex(bytes: Buffer): HarmonyTable {
   };
 
   const sink = new LineSink(invalid);
+  const emit = (value: string, key?: string): void => sink.emit(value, key);
   for (const r of records) {
     for (const value of r.values) {
       const ref = harmonyRef(value);
@@ -227,10 +228,7 @@ export function parseResourcesIndex(bytes: Buffer): HarmonyTable {
       const resolved = resolve(ref);
       // 签名材料资源的引用解析不了（缺 ID、成环）时不能当成没有取值放行。
       if (!resolved.ok && fieldRule(r.name) === 'request-sign-material') invalid();
-      for (const final of resolved.finals) {
-        if (final.file) sink.emit(final.text);
-        else sink.emit(final.text, r.name);
-      }
+      for (const final of resolved.finals) emitFinal(emit, final, r.name, readFile, invalid);
     }
   }
   return {
@@ -249,6 +247,7 @@ export function parseResourcesIndex(bytes: Buffer): HarmonyTable {
 export function moduleJsonText(
   bytes: Buffer,
   resolve: (ref: HarmonyRef) => Resolution = () => UNRESOLVED,
+  readFile?: FileReader,
 ): string {
   const invalid = (): never => {
     throw new Error('Invalid HarmonyOS module.json');
@@ -263,6 +262,7 @@ export function moduleJsonText(
   }
   if (!root || typeof root !== 'object' || Array.isArray(root)) invalid();
   const sink = new LineSink(invalid);
+  const emit = (value: string, key?: string): void => sink.emit(value, key);
   let visits = 0;
   const scalar = (value: string, key: string | undefined, keys: readonly string[]): void => {
     const ref = harmonyRef(value);
@@ -280,10 +280,7 @@ export function moduleJsonText(
     }
     for (const k of keys) {
       if (!resolved.ok && fieldRule(k) === 'request-sign-material') invalid();
-      for (const final of resolved.finals) {
-        if (final.file) sink.emit(final.text);
-        else sink.emit(final.text, k);
-      }
+      for (const final of resolved.finals) emitFinal(emit, final, k, readFile, invalid);
     }
   };
   const walk = (value: unknown, key: string | undefined, depth: number): void => {

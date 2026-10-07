@@ -1,4 +1,5 @@
 // 字段视图的共用叶子：JSON 键值行输出与资源引用的解析结果类型。不得从 index.ts 反向导入。
+import { fieldRule } from './rules.ts';
 
 /** 资源引用解析出的一个最终取值。 */
 export interface Final {
@@ -11,6 +12,31 @@ export interface Final {
 export interface Resolution {
   finals: Final[];
   ok: boolean;
+}
+
+/** 读同一包内的文件资源（路径按资源表里的写法）；读不到或不在本包内返回 undefined。 */
+export type FileReader = (path: string) => string | undefined;
+
+/**
+ * 按引用方字段名输出一个解析结果。文件类取值只作孤立路径输出；
+ * 但签名材料字段引用文件资源时，读同包内该文件内容按「字段 = 内容」输出，读不到即 fail-closed。
+ */
+export function emitFinal(
+  emit: (value: string, key?: string) => void,
+  final: Final,
+  key: string,
+  readFile: FileReader | undefined,
+  fail: () => never,
+): void {
+  if (!final.file) {
+    emit(final.text, key);
+    return;
+  }
+  emit(final.text);
+  if (fieldRule(key) !== 'request-sign-material') return;
+  const content = readFile?.(final.text);
+  if (content === undefined) fail();
+  emit(content.trim(), key);
 }
 
 export const UNRESOLVED: Resolution = Object.freeze({ finals: [], ok: false }) as Resolution;

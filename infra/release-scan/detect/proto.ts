@@ -5,8 +5,8 @@
 // 原始文本（XmlAttribute.value）只作补充。
 
 import { FILE_TYPES, STRUCTURE_TYPES } from './arsc.ts';
-import { LineSink, UNRESOLVED, printableRuns } from './lines.ts';
-import type { Final, Resolution } from './lines.ts';
+import { emitFinal, LineSink, UNRESOLVED, printableRuns } from './lines.ts';
+import type { FileReader, Final, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
 interface Field {
@@ -335,7 +335,7 @@ interface Resolved extends Resolution {
 }
 
 /** ResourceTable { source_pool=1, package=2 { package_id=1, package_name=2, type=3 { type_id=1, name=2, entry=3 } } } */
-export function parseResourcesPb(bytes: Buffer): ProtoTable {
+export function parseResourcesPb(bytes: Buffer, readFile?: FileReader): ProtoTable {
   const ctx: Context = { work: 0, loose: [] };
   const entries: Entry[] = [];
   for (const f of decode(bytes, ctx, 0)) {
@@ -456,6 +456,7 @@ export function parseResourcesPb(bytes: Buffer): ProtoTable {
   };
 
   const sink = new LineSink(invalid);
+  const emit = (value: string, key?: string): void => sink.emit(value, key);
   for (const entry of entries) {
     const keylessType = FILE_TYPES.has(entry.type) || STRUCTURE_TYPES.has(entry.type);
     for (const config of entry.configs) {
@@ -471,8 +472,8 @@ export function parseResourcesPb(bytes: Buffer): ProtoTable {
         if (!resolved.ok && !keyless && fieldRule(entry.name) === 'request-sign-material')
           invalid();
         for (const final of resolved.finals) {
-          if (final.file || keyless) sink.emit(final.text);
-          else sink.emit(final.text, entry.name);
+          if (keyless) sink.emit(final.text);
+          else emitFinal(emit, final, entry.name, readFile, invalid);
         }
       }
     }
@@ -499,9 +500,14 @@ interface XmlAttr {
  * proto 清单（XmlNode）。name + value / resource 属性按 meta-data 的 name 关联；引用经同模块 resources.pb 解析，
  * 签名材料字段解析不了时抛错。也输出 debuggable 等普通属性的字段视图，供残留检测读取。
  */
-export function protoXmlText(bytes: Buffer, resolve?: (ref: ProtoRef) => Resolution): string {
+export function protoXmlText(
+  bytes: Buffer,
+  resolve?: (ref: ProtoRef) => Resolution,
+  readFile?: FileReader,
+): string {
   const ctx: Context = { work: 0, loose: [] };
   const sink = new LineSink(invalid);
+  const emit = (value: string, key?: string): void => sink.emit(value, key);
   let elements = 0;
   const attribute = (buf: Buffer, depth: number): XmlAttr => {
     let name = '';
@@ -557,7 +563,9 @@ export function protoXmlText(bytes: Buffer, resolve?: (ref: ProtoRef) => Resolut
       const associated = (attr.name === 'value' || attr.name === 'resource') && names.length > 0;
       const keys = associated ? names : [attr.name];
       for (const v of attr.values) for (const key of keys) sink.emit(v, key);
-      for (const file of attr.files) sink.emit(file);
+      for (const file of attr.files) {
+        for (const key of keys) emitFinal(emit, { text: file, file: true }, key, readFile, invalid);
+      }
       if (attr.rawRef !== undefined) sink.emit(attr.rawRef);
       if (!resolve || attr.refs.length === 0) continue;
       if (!associated && keys.every((key) => fieldRule(key) === undefined)) continue;
@@ -570,10 +578,7 @@ export function protoXmlText(bytes: Buffer, resolve?: (ref: ProtoRef) => Resolut
         }
         for (const key of keys) {
           if (!resolved.ok && fieldRule(key) === 'request-sign-material') invalid();
-          for (const final of resolved.finals) {
-            if (final.file) sink.emit(final.text);
-            else sink.emit(final.text, key);
-          }
+          for (const final of resolved.finals) emitFinal(emit, final, key, readFile, invalid);
         }
       }
     }

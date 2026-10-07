@@ -1,5 +1,5 @@
-import { UNRESOLVED } from './lines.ts';
-import type { Resolution } from './lines.ts';
+import { emitFinal, UNRESOLVED } from './lines.ts';
+import type { FileReader, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
 /** 资源引用解析：kind=attr 是主题属性引用（?attr/…），在制品内无法静态解析。 */
@@ -18,7 +18,7 @@ interface Attr {
  * 给出 resolve 时（同一 APK 的 resources.arsc），name + value / resource 属性的资源引用按引用方的字段名关联；
  * 签名材料字段的引用解析不了时抛错（fail-closed）。
  */
-export function axmlText(bytes: Buffer, resolve?: AxmlResolver): string {
+export function axmlText(bytes: Buffer, resolve?: AxmlResolver, readFile?: FileReader): string {
   const invalid = (): never => {
     throw new Error('Invalid binary Android XML');
   };
@@ -180,10 +180,7 @@ export function axmlText(bytes: Buffer, resolve?: AxmlResolver): string {
             }
             for (const key of keys) {
               if (!resolved.ok && fieldRule(key) === 'request-sign-material') invalid();
-              for (const final of resolved.finals) {
-                if (final.file) emit(final.text);
-                else emit(final.text, key);
-              }
+              for (const final of resolved.finals) emitFinal(emit, final, key, readFile, invalid);
             }
           }
         }
