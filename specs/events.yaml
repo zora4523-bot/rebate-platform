@@ -18,7 +18,7 @@
 #
 # TODO(规划/05 CT-13): app_launch、page_view、exposure、click、search、convert、h5_white_screen 与 funnel_first_order.*、
 #   agent_* 两族的事件字段 — blocked on 用到它们的任务（首页、搜索、Agent、漏斗）给出字段；现在只登记名字与出处。
-version: '1'
+version: '2'
 common_fields:
   event_id:
     type: string
@@ -97,6 +97,15 @@ events:
         required: true
         values: [launched, failed, sdk_init_failed, copied]
         note: launched 拉起了目标 App 或页面；copied 已复制口令；sdk_init_failed 百川初始化失败（与已初始化但拉起失败的 failed 分开，BR-ATTR-27 淘宝行）
+      sdk_open_by:
+        type: enum
+        required: false
+        values: [url, code]
+        note: step=sdk 且为淘宝百川打开指令时必带，取 open 响应 JumpStep.sdk.open_by 的原值（url 走我方推广链接，code 走商品 ID 由 SDK 转链）；其他步骤不带
+      sdk_error_code:
+        type: string
+        required: false
+        note: 百川回调返回的错误码原样记录（result=failed 或 sdk_init_failed 且 SDK 给出错误码时带），用来区分 SDK 报错与目标 App 未拉起；不带错误描述里的链接或参数
       duration_ms:
         type: integer
         required_when:

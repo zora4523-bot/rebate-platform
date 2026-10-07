@@ -5500,7 +5500,7 @@ components:
                 availability: ok
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     OpenLinkUnchanged:
-      summary: Price unchanged, jump directly
+      summary: Price unchanged, jump directly (Taobao, Baichuan openByCode with taoke params)
       value:
         code: 0
         msg: ''
@@ -5509,12 +5509,16 @@ components:
           jump:
             primary:
               type: sdk
-              value: https://s.click.example.test/t?e=abc
-            fallbacks:
-              - type: universal_link
-                value: https://s.click.example.test/t?e=abc
-              - type: copy_tpwd
-                value: ￥AbCdEf12￥
+              value: '9876543210abc'
+              sdk:
+                provider: baichuan
+                open_by: code
+                page: detail
+                item_id: '9876543210abc'
+                taoke:
+                  pid: mm_1_2_3
+                  relation_id: '1001'
+            fallbacks: []
             expire_at: '2026-10-02T09:45:00+08:00'
           price_changed: false
           old_final_price_fen: 2990
@@ -5552,7 +5556,7 @@ components:
           quoted_at: '2026-10-02T09:30:05+08:00'
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     OpenLinkPriceCompare:
-      summary: Price-compare pre-check says no rebate; the jump plan is still returned
+      summary: Price-compare says no rebate; jump plan still returned (Taobao openByUrl, own promotion link)
       value:
         code: 0
         msg: ''
@@ -5562,7 +5566,15 @@ components:
             primary:
               type: sdk
               value: https://s.click.example.test/t?e=def
-            fallbacks: []
+              sdk:
+                provider: baichuan
+                open_by: url
+                url: https://s.click.example.test/t?e=def
+            fallbacks:
+              - type: universal_link
+                value: https://s.click.example.test/t?e=def
+              - type: copy_tpwd
+                value: ￥AbCdEf12￥
             expire_at: '2026-10-02T09:45:00+08:00'
           price_changed: false
           old_final_price_fen: 2990
@@ -5759,6 +5771,11 @@ components:
         - unknown
     JumpStep:
       type: object
+      description: |
+        One step of a jump plan. `sdk` is present exactly for type=sdk; the oneOf branches declare
+        the properties they constrain (strict Ajv2020, ADR-0001 §4.2 #15). For a type=sdk step the
+        client acts on `sdk` only; `value` repeats `sdk.url` (open_by=url) or `sdk.item_id`
+        (open_by=code) for logs and compatibility.
       additionalProperties: false
       required:
         - type
@@ -5777,6 +5794,182 @@ components:
           type: string
           minLength: 1
           description: URL, scheme or token to execute; produced by the server only.
+        sdk:
+          $ref: '#/components/schemas/BaichuanOpen'
+      oneOf:
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - sdk
+            sdk:
+              $ref: '#/components/schemas/BaichuanOpen'
+          required:
+            - type
+            - sdk
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - scheme
+                - universal_link
+                - h5
+                - copy_tpwd
+          required:
+            - type
+          not:
+            type: object
+            additionalProperties: true
+            properties:
+              sdk:
+                $ref: '#/components/schemas/BaichuanOpen'
+            required:
+              - sdk
+    BaichuanOpen:
+      type: object
+      description: |
+        Taobao open instruction executed by the Baichuan SDK (docs/changes/20261003 §1; 03 §4.5).
+        The server builds it from the link snapshot; the client passes it to the SDK unchanged and
+        never rewrites, fills in or drops `taoke` (BR-ATTR-05). open_by=url opens our own promotion
+        link of this user and scene and carries no commission parameter at all (BR-ATTR-27 Taobao
+        row); open_by=code opens the item detail page and lets the SDK convert with `taoke`. A
+        code step carries no URL, so JumpPlan.expire_at does not limit it (04 §8.4). Whether the
+        SDK returns to the app afterwards is a platform capability (CAP-TB-11), not promised here.
+        The oneOf branches declare the properties they constrain (strict Ajv2020, ADR-0001 §4.2
+        #15).
+      additionalProperties: false
+      required:
+        - provider
+        - open_by
+      properties:
+        provider:
+          type: string
+          enum:
+            - baichuan
+        open_by:
+          type: string
+          description: url = openByUrl with our promotion link; code = openByCode with the item ID.
+          enum:
+            - url
+            - code
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Required for open_by=url; only our own promotion link of this user and scene.
+        page:
+          type: string
+          description: Required for open_by=code; the page openByCode opens.
+          enum:
+            - detail
+        item_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Required for open_by=code; the union item ID (new string form).
+        sku_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Optional SKU for open_by=code.
+        taoke:
+          $ref: '#/components/schemas/BaichuanTaoke'
+      oneOf:
+        - type: object
+          properties:
+            open_by:
+              type: string
+              enum:
+                - url
+            url:
+              type: string
+          required:
+            - open_by
+            - url
+          not:
+            type: object
+            additionalProperties: true
+            properties:
+              taoke:
+                $ref: '#/components/schemas/BaichuanTaoke'
+              page:
+                type: string
+              item_id:
+                type: string
+              sku_id:
+                type: string
+            anyOf:
+              - type: object
+                properties:
+                  taoke:
+                    $ref: '#/components/schemas/BaichuanTaoke'
+                required:
+                  - taoke
+              - type: object
+                properties:
+                  page:
+                    type: string
+                required:
+                  - page
+              - type: object
+                properties:
+                  item_id:
+                    type: string
+                required:
+                  - item_id
+              - type: object
+                properties:
+                  sku_id:
+                    type: string
+                required:
+                  - sku_id
+        - type: object
+          properties:
+            open_by:
+              type: string
+              enum:
+                - code
+            page:
+              type: string
+              enum:
+                - detail
+            item_id:
+              type: string
+            taoke:
+              $ref: '#/components/schemas/BaichuanTaoke'
+          required:
+            - open_by
+            - page
+            - item_id
+            - taoke
+          not:
+            type: object
+            additionalProperties: true
+            properties:
+              url:
+                type: string
+            required:
+              - url
+    BaichuanTaoke:
+      type: object
+      description: |
+        AlibcTaokeParams of an open_by=code instruction, built by linking from the snapshot
+        identity (BR-ATTR-05); the client must not change, fill in or drop any of it.
+      additionalProperties: false
+      required:
+        - pid
+      properties:
+        pid:
+          type: string
+          pattern: '^mm_\d+_\d+_\d+$'
+          maxLength: 64
+        relation_id:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Active binding of the snapshot user (the sharer on a share link).
     JumpPlan:
       type: object
       description: |
@@ -5799,7 +5992,8 @@ components:
           format: date-time
           description: |
             Until when the returned union URL can be used directly (BR-ATTR-05); it does not
-            limit opening the link_id again.
+            limit opening the link_id again. A Taobao sdk step with open_by=code carries no URL and
+            is not limited by it (04 §8.4).
     IdempotencyKey:
       type: string
       description: Value of the Idempotency-Key header (04 §5「幂等」).
@@ -9572,6 +9766,8 @@ components:
       description: |
         Either product_key (with the tapped card's item_ref) or url; neither, or both, is 20001.
         The oneOf branches declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).
+        A Taobao url is first resolved to an item_id and answered with a Baichuan open instruction
+        (JumpStep.sdk); the pasted link or token itself is never passed on (BR-PRICE-21).
       additionalProperties: false
       required:
         - platform
