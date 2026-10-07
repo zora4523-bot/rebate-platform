@@ -5,7 +5,8 @@
 // 失败分流：timeout / rate_limited / server / network / malformed → 下一个条目，全部失败 → degraded(models_failed)；
 // content_refused → refused，不换模型；auth / bad_request → onAlert 并 degraded(vendor_misconfigured)，不换模型；
 // 本 run 累计时限用尽 → degraded(model_timeout)；调用方 signal 中止 → aborted，不再尝试。
-// 协议错误（ModelProtocolError）带 usage 时由本段交给 meter 计量（成功调用由 VendorGateway 计量，不重复）；usage 为 null 不记。
+// 协议错误（ModelProtocolError）带 usage 时由本段交给 meter 计量（成功调用由 VendorGateway 计量，不重复）；usage 为 null 不记；
+// 非计费传输不记，评测端口已认领的错误不记（同一错误只记一次，见 billing.ts）。
 // 档位约束：主位只能是 Flash 档、备位只能是 Plus 档，否则剔除为 tier_mismatch（BR-AI-14 路由顺序）。
 // 时间只取注入的 Scheduler（单调毫秒）与 Clock（计量时刻）。规则测试在 test/spec/agent/model-routing/。
 // 不在本段：路由文件与同意厂商清单文件及其 CI 校验、done / error 帧（B3-03）、日预算记账（B3-09）。
@@ -124,6 +125,11 @@ export interface ModelRouterOptions {
   readonly meter: UsageSink;
   /** 计量时刻。 */
   readonly clock: Clock;
+  /**
+   * 与 gateway 的 transport.billable 一致；false 时不补记失败用量（回放、评测端口适配器 createPortTransport）。
+   * 省略时取 createMeteredVendorGateway 登记的值，未登记按计费处理；与登记值矛盾则构造即拒绝。
+   */
+  readonly billable?: boolean;
   readonly onAlert?: (alert: RouterAlert) => void;
 }
 
