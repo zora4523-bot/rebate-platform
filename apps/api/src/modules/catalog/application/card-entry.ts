@@ -9,6 +9,7 @@ import {
   createCardAssembler,
   type AssembleCardInput,
   type CardAssemblerOptions,
+  type PreparedCard,
   type ProductCard,
 } from './card-assembler.ts';
 
@@ -17,11 +18,21 @@ export type CatalogCardScene = 'retrieval' | 'active_query';
 
 export interface CatalogCardInput extends AssembleCardInput {
   readonly scene: CatalogCardScene;
+  /**
+   * True: return the priced card without registering its link (`kind: 'prepared'`); the caller
+   * commits only the cards it delivers (B1-05j: no links row for a candidate never shown).
+   */
+  readonly deferLink?: boolean;
 }
 
 /** Internal result, not a replacement for the wire ProductCard contract. */
 export type CatalogCardResult =
   | { readonly kind: 'card'; readonly card: ProductCard }
+  | {
+      readonly kind: 'prepared';
+      readonly card: PreparedCard['card'];
+      readonly commit: PreparedCard['commit'];
+    }
   | { readonly kind: 'skipped' }
   | { readonly kind: 'price_unavailable' };
 
@@ -63,6 +74,10 @@ export function createCatalogCardEntry(options: CatalogCardEntryOptions): Catalo
         'catalog: price anomaly, card not issued',
       );
       return scene === 'retrieval' ? { kind: 'skipped' } : { kind: 'price_unavailable' };
+    }
+    if (input.deferLink === true) {
+      const prepared = await assembler.prepare(input);
+      return { kind: 'prepared', card: prepared.card, commit: prepared.commit };
     }
     const card = await assembler.assemble(input);
     return { kind: 'card', card };

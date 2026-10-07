@@ -9,11 +9,12 @@
 //   ViewerContext     identity implements, wired by B1-02m; until then every viewer is a guest.
 //   CatalogConfigReader content's ContentReader (F1-02b), wired in CatalogModule; later catalog
 //                     tasks read configuration only through it, never by importing content.
-// LinkRegistrar, SourceLinkReader and RebateQuoter have no provider yet: services that need them
-// are registered once their implementations are wired (no placeholder implementation).
+// B1-05j: app.module.ts provides LinkRegistrar (linking's registration, search scene),
+// RebateQuoter (the demo quoter until B2-03) and GovernedUnion (union adapters wrapped once per
+// process by the governance layer) as global providers; catalog never imports linking.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import type { UnionItem } from '../union/index.ts';
+import type { RegisteredPlatform, UnionAdapter, UnionItem } from '../union/index.ts';
 import type { ProductRef } from './domain/types.ts';
 
 export interface Viewer {
@@ -85,4 +86,13 @@ export abstract class CatalogConfigReader {
     appId: string,
     key: string,
   ): Promise<{ readonly value: DB['config_items']['value']; readonly version: number } | null>;
+}
+
+/**
+ * The union adapters of this process, each wrapped once by union's governance layer
+ * (createGovernedAdapter), so breaker and quota state span requests (B1-05j). Assembled by
+ * app.module.ts from union's registry and endpoints.
+ */
+export abstract class GovernedUnion {
+  abstract adapter(platform: RegisteredPlatform): UnionAdapter;
 }

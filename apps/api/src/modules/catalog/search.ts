@@ -11,7 +11,7 @@ import {
   type UnionItem,
   type UnionPidService,
 } from '../union/index.ts';
-import type { ProductCard } from './application/card-assembler.ts';
+import type { ProductCard, UnlinkedCard } from './application/card-assembler.ts';
 import type { CatalogCardEntry } from './application/card-entry.ts';
 import { CatalogError } from './domain/rules.ts';
 import type { Catalog, ProductRef } from './domain/types.ts';
@@ -71,7 +71,14 @@ export interface SearchSession {
   readonly requester: string;
   readonly query: SearchProductsQuery;
   readonly touchedAtMs: number;
+  /** Issued product keys of the session, oldest first (BR-PROD-08 ②, at most 500). */
   readonly seen: readonly string[];
+  /**
+   * Parallel to `seen`: the cursor page (start page of the request) that first issued each key.
+   * A request for page N excludes only keys issued by earlier pages, so retrying the same cursor
+   * returns that page again instead of treating it as already seen (B1-05j followup ⑤).
+   */
+  readonly seenPages?: readonly number[];
   readonly dedupDisabled: boolean;
 }
 
@@ -130,8 +137,50 @@ function invalid(message: string): never {
   throw new CatalogError(20001, `search: ${message}`);
 }
 
-function unavailable(platform: Platform, message: string): never {
-  throw new CatalogError(50304, `search: ${message}`, { platform });
+function unavailable(platform: Platform, message: string, cause?: unknown): never {
+  throw new CatalogError(
+    50304,
+    `search: ${message}`,
+    { platform },
+    cause === undefined ? undefined : { cause },
+  );
+}
+
+/** Flat diagnostic fields of a swallowed error for the alert (no stack, no object dump). */
+function errorFields(error: unknown): Record<string, string> {
+  if (error instanceof Error) {
+    const code = (error as { code?: unknown }).code;
+    return {
+      error_name: error.name,
+      error_message: error.message,
+      ...(typeof code === 'string' || typeof code === 'number' ? { error_code: String(code) } : {}),
+    };
+  }
+  return { error_name: typeof error, error_message: String(error) };
+}
+
+/**
+ * In-process serialization of requests continuing the same search session, so two concurrent
+ * requests with one cursor cannot both read the old session and drop each other's issued keys
+ * (BR-PROD-08 ②, B1-05j followup ⑤). Entries are removed once their chain drains.
+ */
+const sessionLocks = new Map<string, Promise<void>>();
+
+async function withSessionLock<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const previous = sessionLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const chained = previous.then(() => current);
+  sessionLocks.set(key, chained);
+  await previous;
+  try {
+    return await run();
+  } finally {
+    release();
+    if (sessionLocks.get(key) === chained) sessionLocks.delete(key);
+  }
 }
 
 function priceBound(value: unknown, name: string): number | undefined {
@@ -221,7 +270,9 @@ function isUnionOutage(error: unknown): boolean {
 }
 
 interface Issued {
-  readonly card: ProductCard;
+  /** Priced card without a link; `commit` registers the link once the card is delivered. */
+  readonly card: UnlinkedCard;
+  readonly commit: () => Promise<ProductCard>;
   readonly item: UnionItem;
   /** resolveProductKey of the ref's key; null keys take no part in deduplication. */
   readonly key: string | null;
@@ -286,9 +337,9 @@ export async function searchProducts(
   query: SearchProductsQuery,
   options: SearchProductsOptions,
 ): Promise<SearchProductsData> {
-  const { clock, config, catalog, cards, upstream, sessions, cursors, logger } = options;
+  const { config, catalog, cursors } = options;
   const normalized = normalizeQuery(query);
-  const { platform, limit } = normalized;
+  const { platform } = normalized;
 
   const viewer = await options.viewerContext.current();
   const { appId } = viewer;
@@ -304,6 +355,43 @@ export async function searchProducts(
   }
 
   const claims = query.cursor === undefined ? null : parseCursor(cursors.decode(query.cursor));
+  const run = (): Promise<Continued> => searchPages(normalized, viewer, claims, options);
+  const continued =
+    claims === null
+      ? await run()
+      : await withSessionLock(JSON.stringify([appId, claims.search_session_id]), run);
+
+  const fallbackItems =
+    continued.firstPage && continued.items.length === 0
+      ? await fallback(platform, appId, continued.promotionSlot, options)
+      : [];
+
+  return {
+    items: continued.items,
+    next_cursor: continued.nextCursor,
+    has_more: continued.hasMore,
+    fallback_items: fallbackItems,
+  };
+}
+
+interface Continued {
+  readonly firstPage: boolean;
+  readonly items: ProductCard[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+  readonly promotionSlot: string;
+}
+
+/** Session read → upstream page(s) → cards → link registration of delivered cards → session write. */
+async function searchPages(
+  normalized: SessionQuery,
+  viewer: Viewer,
+  claims: SearchCursor | null,
+  options: SearchProductsOptions,
+): Promise<Continued> {
+  const { clock, catalog, cards, upstream, sessions, cursors, logger } = options;
+  const { platform, limit } = normalized;
+  const { appId } = viewer;
   const nowMs = clock.now().getTime();
   const requester = requesterOf(viewer);
 
@@ -327,8 +415,16 @@ export async function searchProducts(
   const firstPage = session === null;
   const startPage = session === null ? 1 : claims!.page_no;
   if (sessionId === null) sessionId = options.newSessionId();
-  const seen = new Set(session?.seen ?? []);
+  const seenList = [...(session?.seen ?? [])];
+  // Sessions written before seenPages existed count every key as issued by an earlier page.
+  const seenPages = seenList.map((_key, index) => session?.seenPages?.[index] ?? 0);
+  const seenAt = new Map<string, number>(seenList.map((key, index) => [key, seenPages[index]!]));
   let dedupDisabled = session?.dedupDisabled ?? false;
+  /** BR-PROD-08 ②: excluded only when an earlier page issued it (a retried page is not "later"). */
+  const excluded = (key: string): boolean => {
+    const page = seenAt.get(key);
+    return page !== undefined && page < startPage;
+  };
 
   // BR-PROD-07: fixed query-only promotion slot, no relation_id; missing → 50304 + alert.
   const pid = await options.pids.getActivePid({
@@ -383,18 +479,20 @@ export async function searchProducts(
       }
       if (normalized.has_coupon && item.coupon_fen <= 0n) continue;
       const key = ref.productKey === null ? null : await catalog.resolveProductKey(ref.productKey);
-      if (key !== null && !dedupDisabled && seen.has(key)) continue;
+      if (key !== null && !dedupDisabled && excluded(key)) continue;
+      // The link is registered only for delivered cards (B1-05j followup ⑥), after the slice.
       const result = await cards.assemble({
         item,
         ref,
         entrySource: 'search',
         stale: false,
         scene: 'retrieval',
+        deferLink: true,
       });
-      if (result.kind !== 'card') continue;
+      if (result.kind !== 'prepared') continue;
       // BR-PRICE-08: search never shows no_rebate cards.
       if (result.card.rebate_basis === 'no_rebate') continue;
-      issued.push({ card: result.card, item, key, order: position });
+      issued.push({ card: result.card, commit: result.commit, item, key, order: position });
     }
   };
 
@@ -402,8 +500,14 @@ export async function searchProducts(
   try {
     page = await upstream.search(request(startPage));
   } catch (error: unknown) {
-    if (isUnionOutage(error)) unavailable(platform, 'union search unavailable');
-    throw error;
+    if (!isUnionOutage(error)) throw error;
+    // Followup ①/③: whatever was swallowed (exhausted network retries, a timeout, an adapter
+    // defect) stays on the 50304 as its cause and reaches the alert with its message.
+    logger.warn(
+      { event: 'search_union_unavailable', platform, page_no: startPage, ...errorFields(error) },
+      'search: union search unavailable',
+    );
+    unavailable(platform, 'union search unavailable', error);
   }
   let lastPage = startPage;
   let hasMore = page.hasMore;
@@ -419,13 +523,19 @@ export async function searchProducts(
       // A refill outage must not pass for "no result": with nothing deliverable from the first
       // page this is the same 50304 { platform } as a first-page outage (no fallback feed);
       // otherwise degrade to the first page's cards and its upstream has_more, with an alert.
-      if (dedupeSamePage(issued).length === 0) {
-        unavailable(platform, 'union search unavailable on the refill page');
-      }
+      const empty = dedupeSamePage(issued).length === 0;
       logger.warn(
-        { event: 'search_refill_unavailable', platform },
-        'search: refill page unavailable, returning the first page only',
+        {
+          event: 'search_refill_unavailable',
+          platform,
+          page_no: startPage + 1,
+          ...errorFields(error),
+        },
+        empty
+          ? 'search: refill page unavailable and nothing deliverable'
+          : 'search: refill page unavailable, returning the first page only',
       );
+      if (empty) unavailable(platform, 'union search unavailable on the refill page', error);
     }
     if (refill !== null) {
       lastPage = startPage + 1;
@@ -436,17 +546,22 @@ export async function searchProducts(
 
   const delivered = sortPage(dedupeSamePage(issued), normalized.sort).slice(0, limit);
 
+  // Followup ⑥: only delivered cards register a link (in delivery order); candidates that passed
+  // the filters but lost a duplicate or fell beyond the limit write nothing.
+  const items: ProductCard[] = [];
+  for (const entry of delivered) items.push(await entry.commit());
+
   // BR-PROD-08 ②: only issued keys enter the seen set; beyond 500 the session stops deduping,
   // keeping the older keys and dropping the new ones.
-  const seenList = [...seen];
   for (const entry of delivered) {
-    if (entry.key === null || seen.has(entry.key)) continue;
+    if (entry.key === null || seenAt.has(entry.key)) continue;
     if (seenList.length >= SEARCH_SEEN_LIMIT) {
       dedupDisabled = true;
       continue;
     }
-    seen.add(entry.key);
+    seenAt.set(entry.key, startPage);
     seenList.push(entry.key);
+    seenPages.push(startPage);
   }
   await sessions.write(
     appId,
@@ -457,22 +572,20 @@ export async function searchProducts(
       query: normalized,
       touchedAtMs: nowMs,
       seen: seenList,
+      seenPages,
       dedupDisabled,
     },
     SEARCH_SESSION_TTL_SECONDS,
   );
 
-  const items = delivered.map((entry) => entry.card);
-  const fallbackItems =
-    firstPage && items.length === 0 ? await fallback(platform, appId, pid.pid, options) : [];
-
   return {
+    firstPage,
     items,
-    next_cursor: hasMore
+    nextCursor: hasMore
       ? cursors.encode({ search_session_id: sessionId, page_no: lastPage + 1 })
       : null,
-    has_more: hasMore,
-    fallback_items: fallbackItems,
+    hasMore,
+    promotionSlot: pid.pid,
   };
 }
 
@@ -501,10 +614,17 @@ async function fallback(
       promotionSlot,
     });
   } catch (error: unknown) {
-    if (!isUnionOutage(error)) throw error;
+    // Followup ②: the fallback is a courtesy list; an outage or a business refusal of the feed
+    // (rejected, item unavailable, invalid policy, unsupported) degrades to an empty list with an
+    // alert instead of failing the whole search.
     options.logger.warn(
-      { event: 'search_fallback_unavailable', platform },
-      'search: fallback feed unavailable',
+      {
+        event: isUnionOutage(error) ? 'search_fallback_unavailable' : 'search_fallback_rejected',
+        platform,
+        channel_id: channel.channel_id,
+        ...errorFields(error),
+      },
+      'search: fallback feed failed, returning no fallback items',
     );
     return [];
   }
@@ -523,10 +643,12 @@ async function fallback(
       entrySource: 'search',
       stale: false,
       scene: 'retrieval',
+      deferLink: true,
     });
-    if (result.kind !== 'card' || result.card.rebate_basis === 'no_rebate') continue;
+    if (result.kind !== 'prepared' || result.card.rebate_basis === 'no_rebate') continue;
     if (key !== null) keys.add(key);
-    cardsOut.push(result.card);
+    // Delivered: register its link now (a dropped no_rebate item registers nothing).
+    cardsOut.push(await result.commit());
   }
   return cardsOut;
 }

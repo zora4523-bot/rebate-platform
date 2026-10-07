@@ -10,7 +10,9 @@
 // skips a price anomaly, an active query fails closed with price_unavailable; PRICE_ANOMALY is
 // logged there), rule tests test/spec/catalog/price-state/**. Task B1-05d: searchProducts, the
 // single-platform search use case (BR-PROD-07/08/10, BR-PRICE-08/15), rule tests
-// test/spec/catalog/search/**; its HTTP route is still planned (ports not assembled yet).
+// test/spec/catalog/search/**. Task B1-05j: its HTTP route GET /v1/products/search (controller
+// in CatalogModule, ports from app.module's global providers), rule tests
+// test/spec/catalog/search-route/**.
 export { createCatalogCardEntry } from './application/card-entry.ts';
 export type {
   CatalogCardEntry,
@@ -19,6 +21,7 @@ export type {
   CatalogCardResult,
   CatalogCardScene,
 } from './application/card-entry.ts';
+export { CatalogSearchService } from './application/search-service.ts';
 export { createCatalog } from './application/catalog.ts';
 export { SEARCH_SEEN_LIMIT, SEARCH_SESSION_TTL_SECONDS, searchProducts } from './search.ts';
 export type {
@@ -44,7 +47,9 @@ export type {
   CardRebateQuoter,
   DemoQuoteRule,
   DemoRebateQuoterOptions,
+  PreparedCard,
   ProductCard,
+  UnlinkedCard,
 } from './application/card-assembler.ts';
 export { createItemRefService } from './application/item-ref.ts';
 export type {
@@ -71,6 +76,7 @@ export type {
 } from './domain/types.ts';
 export {
   CatalogConfigReader,
+  GovernedUnion,
   LinkRegistrar,
   RebateQuoter,
   SourceLinkReader,

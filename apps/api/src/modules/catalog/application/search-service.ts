@@ -1,9 +1,20 @@
-import type { SearchProductsData, SearchProductsQuery } from '../search.ts';
+import {
+  searchProducts,
+  type SearchProductsData,
+  type SearchProductsOptions,
+  type SearchProductsQuery,
+} from '../search.ts';
 
-/** Request-scoped HTTP use-case port; assembled with server-owned dependencies by the app. */
+/**
+ * Request-scoped HTTP use-case port of GET /v1/products/search: the contract-validated query
+ * plus the server-owned ports CatalogModule assembles (viewer, configuration, union upstream,
+ * sessions, card entry). Plain class, no decorators: rule tests import this file.
+ */
 export class CatalogSearchService {
-  search(query: SearchProductsQuery): Promise<SearchProductsData> {
-    void query;
-    throw new Error('NotImplemented: CatalogSearchService.search');
+  // The options stay in a closure: the instance type is exactly { search }.
+  readonly search: (query: SearchProductsQuery) => Promise<SearchProductsData>;
+
+  constructor(options: SearchProductsOptions) {
+    this.search = (query) => searchProducts(query, options);
   }
 }

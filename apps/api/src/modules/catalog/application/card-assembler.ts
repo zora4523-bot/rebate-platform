@@ -65,9 +65,26 @@ export interface CardAssemblerOptions {
   readonly itemRefs: Pick<ItemRefService, 'issue'>;
 }
 
+/** A priced card before its link registration: no link_id yet. */
+export type UnlinkedCard = Omit<ProductCard, 'link_id'>;
+
+/**
+ * A priced card whose link is not registered yet. `commit` registers the link with
+ * the quote snapshot and returns the deliverable card; an uncommitted card writes no links row.
+ */
+export interface PreparedCard {
+  readonly card: UnlinkedCard;
+  commit(): Promise<ProductCard>;
+}
+
 export interface CardAssembler {
   /** Only priced cards here; caller owns filtering, refill and cache eligibility. */
   assemble(input: AssembleCardInput): Promise<ProductCard>;
+  /**
+   * Same steps up to the link registration, which waits for `commit`: a caller that drops the
+   * candidate afterwards (filtered, over the page limit, a losing duplicate) registers nothing.
+   */
+  prepare(input: AssembleCardInput): Promise<PreparedCard>;
 }
 
 /** Contract ItemRef maxLength: a longer token is never issued, so no card goes out without one. */
@@ -132,7 +149,7 @@ export function createCardAssembler(options: CardAssemblerOptions): CardAssemble
     return sourceLinks.entrySource(viewer.appId, input.sourceLinkId);
   }
 
-  async function assemble(input: AssembleCardInput): Promise<ProductCard> {
+  async function prepare(input: AssembleCardInput): Promise<PreparedCard> {
     const { item, ref } = input;
     assertPriced(item);
     if (item.platform !== ref.platform) {
@@ -161,10 +178,8 @@ export function createCardAssembler(options: CardAssemblerOptions): CardAssemble
       throw new TypeError('card: item_ref exceeds the contract length; card not issued');
     }
 
-    const { linkId } = await registrar.register({ viewer, ref, item, quote, entrySource });
-
     const cardBasis = quote.rebateBasis as CardBasis;
-    return {
+    const card: UnlinkedCard = {
       product_key: ref.productKey,
       item_ref: itemRef,
       platform: item.platform,
@@ -180,7 +195,6 @@ export function createCardAssembler(options: CardAssemblerOptions): CardAssemble
       rebate_basis: cardBasis,
       benefit_tags: benefitTagsFor(item.coupon_fen),
       is_presale: false,
-      link_id: linkId,
       cta: { text_key: ctaKeyFor(cardBasis, item.coupon_fen) },
       quoted_at: toPlusEight(quotedAtMs),
       stale: input.stale,
@@ -190,9 +204,24 @@ export function createCardAssembler(options: CardAssemblerOptions): CardAssemble
       disclaimer_keys: disclaimerKeysFor(cardBasis, item.coupon_fen),
       availability: 'ok',
     };
+    let committed: Promise<ProductCard> | undefined;
+    const commit = (): Promise<ProductCard> => {
+      // Once per prepared card: a repeated commit never registers a second link.
+      committed ??= (async () => {
+        const { linkId } = await registrar.register({ viewer, ref, item, quote, entrySource });
+        // Response instant: read after the quote and registration (BR-PRICE-11).
+        return { ...card, link_id: linkId, age_sec: ageSeconds(quotedAtMs, clock.now().getTime()) };
+      })();
+      return committed;
+    };
+    return { card, commit };
   }
 
-  return { assemble };
+  async function assemble(input: AssembleCardInput): Promise<ProductCard> {
+    return (await prepare(input)).commit();
+  }
+
+  return { assemble, prepare };
 }
 
 /** Synthetic non-production rule schema; no defaults or production rule/level storage. */
