@@ -4,8 +4,8 @@
 // contracts/texts.default.json (规划/03 §9).
 //
 // The change-password step has no artboard: its lines (`password.*`) are 代理补全，待设计补稿
-// (F1-frontend/needs.md, design-diffs.md). `error.network` and `field.*` have no 08 key either
-// (agent default).
+// (F1-frontend/needs.md, design-diffs.md). `error.network`, `field.*` and `bind.secret_*` have no
+// 08 key or artboard either (agent default).
 export type LoginTexts = Readonly<Record<string, string>>;
 
 const texts = {
@@ -54,6 +54,8 @@ const texts = {
     '仅限公司网络访问。连续输错 5 次，账号锁定 30 分钟。忘记密码请联系超级管理员重置。',
   'field.username_required': '请输入账号',
   'field.password_required': '请输入密码',
+  // Beside a field the server named in 20001 data.fields (the alert line is error.20001).
+  'field.invalid': '这一项填写有误，请检查',
 
   // Change the initial password (no artboard: 代理补全，待设计补稿).
   'password.title': '设置新密码',
@@ -93,6 +95,9 @@ const texts = {
   'bind.secret_label': '密钥',
   'bind.copy': '复制密钥',
   'bind.copied': '密钥已复制',
+  // No artboard (agent default): the secret is still being fetched, or fetching it failed.
+  'bind.secret_loading': '正在生成密钥…',
+  'bind.secret_retry': '重新获取密钥',
   'bind.type': '类型：基于时间（TOTP），6 位，30 秒一换',
   'bind.step3': '输入验证器上显示的 6 位动态码',
   'bind.label': '动态码',

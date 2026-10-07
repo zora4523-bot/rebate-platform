@@ -29,6 +29,11 @@ export interface AuthOptions {
   /** Default: sessionStorage, with memory fallback. Never localStorage. */
   readonly storage?: AuthStorage;
   readonly clock?: AuthClock;
+  /**
+   * Timers wait for `start()` (React: called from an effect), so an instance built during a render
+   * that React discards never runs the idle timer. Default: timers run from creation.
+   */
+  readonly manualStart?: boolean;
 }
 
 export type LoginInput =
@@ -44,12 +49,18 @@ export interface LoginError {
   readonly traceId?: string;
   /** Server msg, only shown for codes the dictionary does not know. */
   readonly serverMessage?: string;
+  /** 20001: request fields the server rejected (`data.fields`), marked beside their inputs. */
+  readonly fields?: readonly string[];
 }
 
 export interface LoginSnapshot {
   readonly step: 'credentials' | 'change_password' | 'totp' | 'bind_totp' | 'done';
   readonly username: string;
   readonly secret?: Schema<'AdminTotpSecretData'>;
+  /** bind_totp only: the binding secret is being fetched (the step is already entered). */
+  readonly secretLoading?: boolean;
+  /** done only: the login finished by binding the authenticator (shows the binding-done page). */
+  readonly bound?: boolean;
   readonly error?: LoginError;
 }
 
@@ -58,7 +69,8 @@ export interface AdminAuthProvider extends AuthProvider {
   logout(params?: unknown): Promise<AuthActionResponse>;
   check(params?: unknown): Promise<CheckResponse>;
   onError(error: unknown): Promise<OnErrorResponse>;
-  getIdentity(): Promise<Schema<'AdminMe'> | null>;
+  /** `refresh: true` asks /me/permissions again instead of answering from the cache. */
+  getIdentity(params?: { readonly refresh?: boolean }): Promise<Schema<'AdminMe'> | null>;
   getSnapshot(): LoginSnapshot;
   subscribe(listener: () => void): () => void;
   getToken(): string | null;
@@ -66,6 +78,10 @@ export interface AdminAuthProvider extends AuthProvider {
   recordSuccessfulRequest(): void;
   /** Discard the pending login ticket and binding secret when leaving or switching account. */
   resetLogin(): void;
+  /** bind_totp: fetch the binding secret again with the same ticket (after a failed fetch). */
+  retryBindingSecret(): Promise<AuthActionResponse>;
+  /** Starts the session timers (see `manualStart`); the returned function stops them again. */
+  start(): () => void;
   dispose(): void;
 }
 
@@ -103,6 +119,14 @@ interface PendingLogin {
 function reasonOf(data: unknown): string | undefined {
   if (typeof data !== 'object' || data === null || !('reason' in data)) return undefined;
   return typeof data.reason === 'string' ? data.reason : undefined;
+}
+
+function fieldsOf(data: unknown): readonly string[] | undefined {
+  if (typeof data !== 'object' || data === null || !('fields' in data)) return undefined;
+  const fields: unknown = data.fields;
+  if (!Array.isArray(fields)) return undefined;
+  const names = fields.filter((field): field is string => typeof field === 'string');
+  return names.length === 0 ? undefined : names;
 }
 
 function lockedUntilOf(data: unknown): string | undefined {
@@ -210,8 +234,11 @@ function loginErrorOf(cause: unknown): LoginError {
             ? `error.${cause.code}.${reason}`
             : `error.${cause.code}`,
       };
+    case CODE_INVALID_FIELDS: {
+      const fields = fieldsOf(cause.data);
+      return { key: 'error.20001', ...(fields === undefined ? {} : { fields }) };
+    }
     case CODE_BAD_PASSWORD:
-    case CODE_INVALID_FIELDS:
       return { key: `error.${cause.code}` };
     default:
       if (cause.code >= 50000 && cause.code < 60000) return { key: 'error.5xxxx', ...withTrace };
@@ -243,7 +270,12 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
   let identity: AdminIdentity | null = null;
   // Bumped whenever the login flow or the session is abandoned; late responses compare it.
   let epoch = 0;
+  // Bumped whenever a session starts or ends; session calls compare it instead of the object
+  // (recording activity replaces the object without changing the session).
+  let generation = 0;
+  let logoutRequest: Promise<AuthActionResponse> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let started = options.manualStart !== true;
 
   function notify(): void {
     for (const listener of [...listeners]) listener();
@@ -265,7 +297,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
 
   function schedule(): void {
     clearTimer();
-    if (session === null) return;
+    if (session === null || !started) return;
     const deadline = Math.min(session.expiresAt, session.lastActive + session.idleMs);
     const delay = Math.min(Math.max(deadline - clock.now(), 0), MAX_TIMER_MS);
     timer = setTimeout(() => {
@@ -275,12 +307,24 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     }, delay);
   }
 
+  /**
+   * Drops the session. A login page still on the done step (e.g. the binding-done page left idle)
+   * goes back to the first step, so 「进入后台」 never leads to a dead session.
+   */
   function endSession(): void {
     clearTimer();
     const had = session !== null || identity !== null;
+    if (had) generation += 1;
     session = null;
     identity = null;
     storage.removeItem(STORAGE_KEY);
+    if (snapshot.step === 'done') {
+      epoch += 1;
+      pending = null;
+      snapshot = { step: 'credentials', username: '', error: { key: 'error.10001' } };
+      notify();
+      return;
+    }
     if (had) notify();
   }
 
@@ -294,6 +338,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
       lastActive: now,
     };
     identity = null;
+    generation += 1;
     storage.setItem(STORAGE_KEY, serialize(session));
     schedule();
   }
@@ -322,7 +367,9 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     ) {
       toCredentials(error);
     } else {
-      setSnapshot({ ...snapshot, username, error });
+      const { secretLoading: _loading, ...rest } = snapshot;
+      void _loading;
+      setSnapshot({ ...rest, username, error });
     }
     return failed(error);
   }
@@ -342,22 +389,45 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     username: string,
     mine: number,
   ): Promise<AuthActionResponse> {
-    if (data.next === 'bind_totp') {
-      let secret: AdminBindingSecret;
-      try {
-        secret = await post<AdminBindingSecret>('totp/secret', { login_ticket: data.login_ticket });
-      } catch (cause) {
-        if (mine !== epoch) return { success: false };
-        return stepFailure(cause, username);
-      }
-      if (mine !== epoch) return { success: false };
-      pending = { step: 'bind_totp', ticket: data.login_ticket };
-      setSnapshot({ step: 'bind_totp', username, secret });
-      return { success: true };
-    }
+    // The previous ticket is spent: keep the new one before anything else can fail.
     pending = { step: data.next, ticket: data.login_ticket };
+    if (data.next === 'bind_totp') {
+      setSnapshot({ step: 'bind_totp', username, secretLoading: true });
+      return fetchSecret(data.login_ticket, username, mine);
+    }
     setSnapshot({ step: data.next, username });
     return { success: true };
+  }
+
+  /** Fetches the binding secret; a failure stays on the binding step and offers a retry. */
+  async function fetchSecret(
+    ticket: string,
+    username: string,
+    mine: number,
+  ): Promise<AuthActionResponse> {
+    let secret: AdminBindingSecret;
+    try {
+      secret = await post<AdminBindingSecret>('totp/secret', { login_ticket: ticket });
+    } catch (cause) {
+      if (mine !== epoch) return { success: false };
+      return stepFailure(cause, username);
+    }
+    if (mine !== epoch) return { success: false };
+    setSnapshot({ step: 'bind_totp', username, secret });
+    return { success: true };
+  }
+
+  async function retryBindingSecret(): Promise<AuthActionResponse> {
+    const current = pending;
+    if (current === null || current.step !== 'bind_totp') {
+      const error: LoginError = { key: 'error.10001.login_ticket_expired' };
+      toCredentials(error);
+      return failed(error);
+    }
+    if (snapshot.secretLoading === true || snapshot.secret !== undefined) return { success: true };
+    const username = snapshot.username;
+    setSnapshot({ step: 'bind_totp', username, secretLoading: true });
+    return fetchSecret(current.ticket, username, epoch);
   }
 
   async function login(input: LoginInput): Promise<AuthActionResponse> {
@@ -418,7 +488,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     if (mine !== epoch) return { success: false };
     pending = null;
     startSession(data);
-    setSnapshot({ step: 'done', username });
+    setSnapshot({ step: 'done', username, ...(input.step === 'bind_totp' ? { bound: true } : {}) });
     return { success: true };
   }
 
@@ -467,37 +537,57 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     return {};
   }
 
-  async function getIdentity(): Promise<AdminIdentity | null> {
+  async function getIdentity(params?: {
+    readonly refresh?: boolean;
+  }): Promise<AdminIdentity | null> {
     if (!valid(session)) return null;
-    if (identity !== null) return identity;
-    const current = session;
+    if (identity !== null && params?.refresh !== true) return identity;
+    const mine = generation;
     let data: AdminIdentity;
     try {
       const response = await authed.custom({ url: '/admin/v1/me/permissions', method: 'get' });
       data = response.data as AdminIdentity;
     } catch (cause) {
-      if (session === current) await onError(cause);
+      if (generation === mine) await onError(cause);
       throw cause;
     }
-    if (session !== current) return null;
+    // Another session started or this one ended meanwhile: the answer belongs to neither.
+    if (generation !== mine || !valid(session)) return null;
     recordSuccessfulRequest();
     identity = data;
     return data;
   }
 
-  async function logout(): Promise<AuthActionResponse> {
+  /**
+   * Drops the local session at once, then revokes its token on the server. A second call while
+   * the first is under way joins it; the late answer never touches a session started afterwards.
+   */
+  function logout(): Promise<AuthActionResponse> {
+    if (logoutRequest !== null) return logoutRequest;
     epoch += 1;
     pending = null;
-    if (session !== null) {
-      try {
-        await authed.custom({ url: '/admin/v1/auth/logout', method: 'post' });
-      } catch {
-        // Already expired or unreachable: the local session is dropped either way.
-      }
-    }
-    endSession();
+    const token = session?.token ?? null;
     setSnapshot({ step: 'credentials', username: '' });
-    return { success: true, redirectTo: LOGIN_PATH };
+    endSession();
+    if (token === null) return Promise.resolve({ success: true, redirectTo: LOGIN_PATH });
+    const revoke = createDataProvider({
+      baseUrl: options.api.baseUrl,
+      fetch: options.api.fetch,
+      getToken: () => token,
+      onError: () => undefined,
+    });
+    const request = (async (): Promise<AuthActionResponse> => {
+      try {
+        await revoke.custom({ url: '/admin/v1/auth/logout', method: 'post' });
+      } catch {
+        // Already expired or unreachable: the local session is gone either way.
+      } finally {
+        logoutRequest = null;
+      }
+      return { success: true, redirectTo: LOGIN_PATH };
+    })();
+    logoutRequest = request;
+    return request;
   }
 
   if (session !== null) {
@@ -521,6 +611,18 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     getToken,
     recordSuccessfulRequest,
     resetLogin,
+    retryBindingSecret,
+    start() {
+      started = true;
+      if (session !== null) {
+        if (valid(session)) schedule();
+        else endSession();
+      }
+      return () => {
+        started = false;
+        clearTimer();
+      };
+    },
     dispose() {
       clearTimer();
       listeners.clear();

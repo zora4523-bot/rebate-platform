@@ -96,6 +96,7 @@ export interface AdminAppOptions extends AdminShellOptions {
 function defaultAuthProvider(): AdminAuthProvider {
   return createAuthProvider({
     api: { baseUrl: window.location.origin, fetch: (input, init) => globalThis.fetch(input, init) },
+    manualStart: true,
   });
 }
 
@@ -179,11 +180,14 @@ function ShellRouter({ kind, initialRoute, children }: ShellRouterProps) {
 
 function AdminApp({ options }: { readonly options: AdminAppOptions }) {
   const [theme] = useState(() => createAntdTheme());
+  // The own guard is built without timers; only the instance React keeps starts them (effect) and
+  // stops them on unmount, so a render React throws away (StrictMode) never clears the session.
   const [ownAuth] = useState(() =>
     options.authProvider === undefined && options.router === 'browser'
       ? defaultAuthProvider()
       : undefined,
   );
+  useEffect(() => ownAuth?.start(), [ownAuth]);
   const auth = options.authProvider ?? ownAuth;
   const [dataProvider] = useState(() => options.dataProvider ?? defaultDataProvider(auth));
   const [state, setState] = useState<PermissionState>({ status: 'loading' });
@@ -207,7 +211,8 @@ function AdminApp({ options }: { readonly options: AdminAppOptions }) {
   const permissionsProvider = useMemo<PermissionsProvider>(() => {
     if (ownAuth === undefined) return options.permissionsProvider;
     return async () => {
-      const me = await ownAuth.getIdentity();
+      // Every load (first render, 刷新权限) asks the server again, never the cached answer.
+      const me = await ownAuth.getIdentity({ refresh: true });
       if (me === null) throw new Error('admin session ended');
       setSignedInName(me.username);
       return permissionsFromMe(me);

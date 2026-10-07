@@ -11,6 +11,8 @@ import {
   type FormEvent,
   type ReactElement,
   type ReactNode,
+  type Ref,
+  type RefObject,
 } from 'react';
 import { OTP_LENGTH, OtpInput } from '../../components/otp-input/index.ts';
 import type { AdminAuthProvider, LoginError, LoginSnapshot } from '../../providers/auth/index.ts';
@@ -94,6 +96,26 @@ function CheckIcon() {
   );
 }
 
+/** Finished step in the step bar (AdmLoginTotp / AdmLoginTotpBind): a circled check. */
+function StepDoneIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="m8.5 12.2 2.4 2.4 4.6-5" />
+    </svg>
+  );
+}
+
 function InfoIcon() {
   return (
     <svg
@@ -135,8 +157,8 @@ function AlertIcon() {
 function UserIcon() {
   return (
     <svg
-      width="16"
-      height="16"
+      width="20"
+      height="20"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -146,7 +168,7 @@ function UserIcon() {
       aria-hidden="true"
     >
       <circle cx="12" cy="8.5" r="3.5" />
-      <path d="M5 19.5c1.2-3.3 3.8-5 7-5s5.8 1.7 7 5" />
+      <path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5" />
     </svg>
   );
 }
@@ -228,7 +250,7 @@ function Steps({ items }: { readonly items: readonly [StepItem, StepItem] }) {
         >
           {index === 1 ? <span className="login-step-line" aria-hidden="true" /> : null}
           <span className="login-step-dot" aria-hidden="true">
-            {item.state === 'done' ? <CheckIcon /> : index + 1}
+            {item.state === 'done' ? <StepDoneIcon /> : index + 1}
           </span>
           <span className="login-step-label">{item.label}</span>
         </li>
@@ -246,6 +268,7 @@ interface FieldProps {
   readonly required?: boolean;
   readonly error?: string | undefined;
   readonly toggle?: boolean;
+  readonly inputRef?: Ref<HTMLInputElement>;
 }
 
 function Field({
@@ -257,6 +280,7 @@ function Field({
   required,
   error,
   toggle,
+  inputRef,
 }: FieldProps) {
   const id = useId();
   const errorId = useId();
@@ -274,6 +298,7 @@ function Field({
       <div className="login-field-box" data-invalid={error === undefined ? undefined : ''}>
         <input
           id={id}
+          ref={inputRef}
           className="login-field-input"
           type={type === 'password' && shown ? 'text' : type}
           value={value}
@@ -329,6 +354,8 @@ function useCooldown(error: LoginError | undefined): boolean {
   return error?.retryAfterSeconds !== undefined && cooled !== error;
 }
 
+type FieldCheck = readonly [RefObject<HTMLInputElement | null>, boolean];
+
 function isCodeError(error: LoginError | undefined): boolean {
   return error?.key.startsWith('error.20002') === true;
 }
@@ -339,7 +366,6 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     authProvider.getSnapshot,
     authProvider.getSnapshot,
   );
-  const [boundDone, setBoundDone] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -355,6 +381,10 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
   const [copied, setCopied] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const newPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
   const cooling = useCooldown(snapshot.error);
   const code =
@@ -362,7 +392,16 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
   const setCode = (value: string): void =>
     setCodeState({ value, seenError: authProvider.getSnapshot().error });
 
-  const view: View = snapshot.step === 'done' ? (boundDone ? 'done' : 'totp') : snapshot.step;
+  // A dynamic-code login stays on its page until the shell takes over; a binding shows its done
+  // page. Both come from the same provider update, so no step flashes in between.
+  const view: View =
+    snapshot.step === 'done' ? (snapshot.bound === true ? 'done' : 'totp') : snapshot.step;
+
+  // 20001: the fields the server named (data.fields) are marked beside their inputs.
+  const serverFields = new Set(snapshot.error?.fields ?? []);
+  const fieldError = (local: string | undefined, ...names: string[]): string | undefined =>
+    local ??
+    (names.some((name) => serverFields.has(name)) ? loginText('field.invalid') : undefined);
 
   // Leaving the page (route change, unmount) voids the ticket and the binding secret.
   useEffect(() => {
@@ -402,6 +441,20 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     }
   }
 
+  /** Moves focus to the first field named by a local check or by the server (20001). */
+  function focusFirst(fields: readonly FieldCheck[]): void {
+    for (const [ref, invalid] of fields) {
+      if (invalid) {
+        ref.current?.focus();
+        return;
+      }
+    }
+  }
+
+  function rejectedFields(): Set<string> {
+    return new Set(authProvider.getSnapshot().error?.fields ?? []);
+  }
+
   async function submitCredentials(event: FormEvent): Promise<void> {
     event.preventDefault();
     if (submitting || cooling) return;
@@ -409,10 +462,22 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     if (username.trim() === '') errors['username'] = loginText('field.username_required');
     if (password === '') errors['password'] = loginText('field.password_required');
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) return;
-    await run(() =>
+    if (Object.keys(errors).length > 0) {
+      focusFirst([
+        [usernameRef, errors['username'] !== undefined],
+        [passwordRef, errors['password'] !== undefined],
+      ]);
+      return;
+    }
+    const ok = await run(() =>
       authProvider.login({ step: 'credentials', username: username.trim(), password }),
     );
+    if (ok || !mounted.current) return;
+    const rejected = rejectedFields();
+    focusFirst([
+      [usernameRef, rejected.has('username')],
+      [passwordRef, rejected.has('password')],
+    ]);
   }
 
   async function submitPassword(event: FormEvent): Promise<void> {
@@ -422,8 +487,16 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     if (newPassword === '') errors['newPassword'] = loginText('password.new_required');
     else if (confirmPassword !== newPassword) errors['confirm'] = loginText('password.mismatch');
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) return;
-    await run(() => authProvider.login({ step: 'change_password', newPassword }));
+    if (Object.keys(errors).length > 0) {
+      focusFirst([
+        [newPasswordRef, errors['newPassword'] !== undefined],
+        [confirmRef, errors['confirm'] !== undefined],
+      ]);
+      return;
+    }
+    const ok = await run(() => authProvider.login({ step: 'change_password', newPassword }));
+    if (ok || !mounted.current) return;
+    focusFirst([[newPasswordRef, rejectedFields().has('new_password')]]);
   }
 
   async function submitCode(step: 'totp' | 'bind_totp'): Promise<void> {
@@ -431,18 +504,23 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     const ok = await run(() => authProvider.login({ step, code }));
     if (!mounted.current) return;
     if (ok) {
-      if (step === 'bind_totp') setBoundDone(true);
-      else onComplete();
+      // A binding shows its done page first (「进入后台」); a dynamic code enters directly.
+      if (step === 'totp') onComplete();
       return;
     }
-    if (isCodeError(authProvider.getSnapshot().error)) codeRef.current?.focus();
+    const error = authProvider.getSnapshot().error;
+    if (isCodeError(error) || error?.fields?.includes('code') === true) codeRef.current?.focus();
+  }
+
+  function enter(): void {
+    // The session may have ended while the done page waited; the provider then shows step one.
+    if (authProvider.getToken() !== null) onComplete();
   }
 
   function backToStart(keepUsername: boolean): void {
     authProvider.resetLogin();
     if (!keepUsername) setUsername('');
     setPassword('');
-    setBoundDone(false);
   }
 
   async function copySecret(secret: string): Promise<void> {
@@ -456,6 +534,7 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
 
   const errorText = snapshot.error === undefined ? undefined : loginErrorText(snapshot.error);
   const blocked = submitting || cooling;
+  const codeInvalid = isCodeError(snapshot.error) || serverFields.has('code');
 
   let subtitle: ReactNode = null;
   let titleKey: LoginTextKey = 'credentials.title';
@@ -483,7 +562,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
               type="text"
               autoComplete="username"
               required
-              error={fieldErrors['username']}
+              inputRef={usernameRef}
+              error={fieldError(fieldErrors['username'], 'username')}
             />
             <Field
               label={loginText('credentials.password')}
@@ -493,7 +573,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
               autoComplete="current-password"
               required
               toggle
-              error={fieldErrors['password']}
+              inputRef={passwordRef}
+              error={fieldError(fieldErrors['password'], 'password')}
             />
           </div>
           {errorText === undefined ? null : <ErrorBanner text={errorText} />}
@@ -531,7 +612,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
               onChange={setNewPassword}
               type="password"
               autoComplete="new-password"
-              error={fieldErrors['newPassword']}
+              inputRef={newPasswordRef}
+              error={fieldError(fieldErrors['newPassword'], 'new_password')}
             />
             <Field
               label={loginText('password.confirm')}
@@ -539,6 +621,7 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
               onChange={setConfirmPassword}
               type="password"
               autoComplete="new-password"
+              inputRef={confirmRef}
               error={fieldErrors['confirm']}
             />
           </div>
@@ -566,21 +649,14 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
             void submitCode('totp');
           }}
         >
-          <div className="login-account-inline">
-            <span className="login-step-dot" data-state="done" aria-hidden="true">
-              <CheckIcon />
-            </span>
-            <span>{snapshot.username}</span>
-            <button type="button" className="login-link" onClick={() => backToStart(false)}>
-              {loginText('switch_account')}
-            </button>
-          </div>
+          <Steps items={[credentialsDone, { label: loginText('steps.totp'), state: 'current' }]} />
+          <AccountRow username={snapshot.username} onSwitch={() => backToStart(false)} />
           <OtpInput
             value={code}
             onChange={setCode}
             label={loginText('totp.label')}
             hint={loginText('totp.hint')}
-            invalid={isCodeError(snapshot.error)}
+            invalid={codeInvalid}
             error={errorText}
             inputRef={codeRef}
             onEnter={() => void submitCode('totp')}
@@ -607,6 +683,9 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
       titleKey = 'bind.title';
       const secret = snapshot.secret;
       const invalid = isCodeError(snapshot.error);
+      // The secret could not be fetched: the ticket is kept, only the secret is asked again.
+      const secretFailed =
+        secret === undefined && snapshot.secretLoading !== true && snapshot.error !== undefined;
       body = (
         <form
           className="login-form login-form-bind"
@@ -640,6 +719,7 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
               <div className="login-banner-body">{loginText('bind.intro')}</div>
             </div>
           )}
+          {secretFailed && errorText !== undefined ? <ErrorBanner text={errorText} /> : null}
           <div className="login-bind-step">
             <span className="login-bind-number" aria-hidden="true">
               1
@@ -671,20 +751,35 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
                 <div className="login-banner-stack">
                   <span className="login-caption">{loginText('bind.secret_label')}</span>
                   <span className="login-secret">
-                    {secret === undefined ? '' : groupSecret(secret.totp_secret)}
+                    {secret !== undefined
+                      ? groupSecret(secret.totp_secret)
+                      : snapshot.secretLoading === true
+                        ? loginText('bind.secret_loading')
+                        : ''}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  className="login-link"
-                  disabled={secret === undefined}
-                  onClick={() => {
-                    if (secret !== undefined) void copySecret(secret.totp_secret);
-                  }}
-                >
-                  <CopyIcon />
-                  {loginText('bind.copy')}
-                </button>
+                {secretFailed ? (
+                  <button
+                    type="button"
+                    className="login-link"
+                    disabled={blocked}
+                    onClick={() => void authProvider.retryBindingSecret()}
+                  >
+                    {loginText('bind.secret_retry')}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="login-link"
+                    disabled={secret === undefined}
+                    onClick={() => {
+                      if (secret !== undefined) void copySecret(secret.totp_secret);
+                    }}
+                  >
+                    <CopyIcon />
+                    {loginText('bind.copy')}
+                  </button>
+                )}
                 <span className="login-caption" role="status">
                   {copied ? loginText('bind.copied') : ''}
                 </span>
@@ -705,8 +800,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
                 onChange={setCode}
                 label={loginText('bind.label')}
                 hint={loginText('bind.hint')}
-                invalid={invalid}
-                error={errorText}
+                invalid={codeInvalid}
+                error={secretFailed ? undefined : errorText}
                 inputRef={codeRef}
                 onEnter={() => void submitCode('bind_totp')}
               />
@@ -775,7 +870,7 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
             <span>{loginText('done.landing_without')}</span>
           </div>
         </div>
-        <button type="button" className="login-button-primary" onClick={onComplete}>
+        <button type="button" className="login-button-primary" onClick={enter}>
           {loginText('done.enter')}
         </button>
         <div className="login-caption login-center">{loginText('done.lost')}</div>
