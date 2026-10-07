@@ -1,34 +1,43 @@
 // The registration point for request checks that must run before Fastify parses or validates a
-// request body (规划/08 BR-ID-01: ① request signature 10401/10402 → ② token → ③ app source and
-// token scope, all before ⑮ body validation; BR-ID-09). Fastify validates the route schema before
-// any Nest guard runs, so a guard would answer a malformed signature header with 20001 instead of
-// 10401: the checks run in Fastify's `preParsing` hook instead.
+// request body (规划/08 BR-ID-01: ① request signature 10401/10402 → ② token 10001/10002 → ③ app
+// source and token scope 10403, all before ⑮ body validation; BR-ID-09). Fastify validates the
+// route schema before any Nest guard runs, so a guard would answer a malformed signature header
+// with 20001 instead of 10401: the checks run in Fastify's `preParsing` hook instead.
 //
 // installRequestChecks(server, checks, bufferWhen?) — call once per Fastify instance, before
 // `ready()` (bootstrap calls it right after NestFactory.create, with the RequestCheckPlan the app
-// module provides under REQUEST_CHECKS). For every request that matched a route (never for a 404)
-// and that `bufferWhen(method, route template)` selects (every matched route when it is omitted;
-// any other route passes untouched: its body is not read here and no check runs):
-//   1. buffer the raw body, bounded by the route's effective bodyLimit: a declared Content-Length
-//      above it, or more bytes than it, rejects with Fastify's own 413 body error (the global
-//      filter answers 413 / 20001, fields=[body]) before any check runs, whatever the signature;
+// module provides under REQUEST_CHECKS). For every request that matched a route (never for a 404):
+//   1. when `bufferWhen(method, route template)` selects the route (every matched route when it is
+//      omitted), buffer the raw body, bounded by the route's effective bodyLimit: a declared
+//      Content-Length above it, or more bytes than it, rejects with Fastify's own 413 body error
+//      (the global filter answers 413 / 20001, fields=[body]) before any check runs, whatever the
+//      signature. A route it does not select is not read here at all: its checks see an empty
+//      `rawBody`, and Fastify's own parser reads (and limits) the body after the checks passed;
 //   2. run the checks in the given order on one RequestCheckInput, whose `url` is the origin-form
 //      request target (an absolute-form target loses its scheme and authority, see
-//      originFormTarget); the first check that throws ends the request with its error (the
-//      remaining checks are not called);
-//   3. copy `verifiedDevice` (set by stage ①) onto the Fastify request for the handler and later
-//      stages, and hand the identical bytes to Fastify's content-type parser.
+//      originFormTarget) and whose `headers` carry every value of a repeated Authorization header
+//      (see checkHeaders); the first check that throws ends the request with its error (the
+//      remaining checks are not called, the body of an unbuffered route is never read);
+//   3. copy `verifiedDevice` (set by stage ①) and `principal` (set by stage ②, read it with
+//      tokenPrincipal of ./token-context.ts) onto the Fastify request for the handler and later
+//      stages, and hand a buffered body's identical bytes to Fastify's content-type parser.
+// So `bufferWhen` decides only which bodies are read before the checks (orchestrator ruling
+// B1-02h §9.5 #10): a check that needs the body (the signature of BR-ID-09) must act only on
+// buffered routes — bootstrap refuses a contract x-signed route the plan does not buffer — while
+// header-only checks (the token stages ② ③) cover every matched route.
 // A check rejects a request with a contract code by throwing a RequestRejection (the global error
 // filter writes `{ code, msg, trace_id }` with its HTTP status); any other error is a 50001.
 //
 // refuseRoutes(server, refused, reason) keeps an entry from registering a route its checks do not
-// cover (bootstrap: a contract x-signed route on an entry without the signature check).
+// cover (bootstrap: a contract x-signed route on an entry without the signature check, a contract
+// route that takes a token on an entry without the token check).
 //
 // This file is also compiled by the `test` project: erasable syntax only (no parameter properties,
 // enums, namespaces or decorators), `import type` for type-only imports, relative imports with the
 // `.ts` extension, no NestJS, no `process.env`, no logging. Fastify is reached through the
 // structural types below: it is not a direct dependency of @couli/api.
 import { PassThrough, type Readable } from 'node:stream';
+import type { TokenPrincipal } from './token-context.ts';
 
 /** Verified by stage ①, before parsers, schema validation and later authentication stages. */
 export interface VerifiedDevice {
@@ -48,16 +57,24 @@ export interface RequestCheckInput {
   readonly url: string;
   /** Fastify's matched route template; absent for an unmatched route. */
   readonly routeTemplate?: string;
+  /**
+   * The request headers as Fastify parsed them, except that a repeated `authorization` is the
+   * array of all its values in the order sent (checkHeaders), where Node keeps only the first.
+   */
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
+  /** The buffered body; empty (nothing was read) on a route the plan's bufferWhen does not select. */
   readonly rawBody: Buffer;
   verifiedDevice?: VerifiedDevice;
+  /** Set by stage ② (identity's token check) after the token and its session were verified. */
+  principal?: TokenPrincipal;
 }
 
 export type RequestCheck = (request: RequestCheckInput) => Promise<void>;
 
-/** What a handler or a later stage reads from the Fastify request. */
+/** What a handler or a later stage reads from the Fastify request (principal: tokenPrincipal). */
 export interface CheckedRequest {
   verifiedDevice?: VerifiedDevice;
+  principal?: TokenPrincipal;
 }
 
 /** Selects matched routes by request method and Fastify route template (e.g. `/v1/links/:link_id/open`). */
@@ -65,9 +82,9 @@ export type RouteFilter = (method: string, routeTemplate: string) => boolean;
 
 /** What an HTTP entry installs at the registration point (app.module provides it, bootstrap installs it). */
 export interface RequestCheckPlan {
-  /** Run in this order (BR-ID-01: ① signature, then ② ③). */
+  /** Run in this order on every matched route (BR-ID-01: ① signature first, then ② ③). */
   readonly checks: readonly RequestCheck[];
-  /** The matched routes that are buffered and checked; omitted = every matched route. */
+  /** The matched routes whose body is buffered before the checks; omitted = every matched route. */
   readonly bufferWhen?: RouteFilter;
 }
 
@@ -115,7 +132,11 @@ interface HookRequest extends CheckedRequest {
   readonly id: string;
   readonly method: string;
   readonly url: string;
-  readonly raw: { readonly url?: string | undefined };
+  /** Node's IncomingMessage: the target as sent and the header lines as name / value pairs. */
+  readonly raw: {
+    readonly url?: string | undefined;
+    readonly rawHeaders?: readonly string[] | undefined;
+  };
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
   readonly routeOptions: { readonly url?: string | undefined; readonly bodyLimit: number };
 }
@@ -126,7 +147,7 @@ interface HookServer {
     name: 'preParsing',
     hook: (request: HookRequest, reply: unknown, payload: PayloadStream) => Promise<unknown>,
   ): unknown;
-  decorateRequest(name: 'verifiedDevice', value: undefined): unknown;
+  decorateRequest(name: 'verifiedDevice' | 'principal', value: undefined): unknown;
   hasRequestDecorator(name: string): boolean;
 }
 
@@ -154,7 +175,11 @@ interface RouteHookServer {
  * (`http(s)://authority/path?query`), which Fastify's router matches by its path (find-my-way
  * getPathFromAbsoluteUrl) while `request.raw.url` keeps the whole target. The scheme and authority
  * are dropped (no path → `/`); the path and query keep every byte (not decoded, not reordered).
- * Any other target is returned unchanged: an origin-form target, or one the router cannot match.
+ * Any other target is returned unchanged. That includes targets the router still matches: an
+ * asterisk-form-like `*v1/auth/sms-codes` reaches the route `/v1/auth/sms-codes` (find-my-way does
+ * not compare the first character of the path with the root `/`), and it stays `*v1/...` here, so
+ * the signing string carries the target exactly as sent: a client that signed `/v1/...` is
+ * refused with 10401 (fail closed), and the token stages still run on the matched route.
  */
 export function originFormTarget(target: string): string {
   if (target.startsWith('/')) return target;
@@ -165,12 +190,41 @@ export function originFormTarget(target: string): string {
 }
 
 /**
- * Register before init/ready. Run checks in supplied order before body parsing; stop on error.
- * Only matched routes that `bufferWhen` selects (all matched routes without it) are buffered and
- * checked; the others pass untouched. Bound raw-body buffering by the effective Fastify bodyLimit,
- * replay identical bytes to the parser, and copy verifiedDevice onto the request for subsequent
- * authentication stages. Overflow uses the existing 413/20001 body-error envelope, even for an
- * invalid signature.
+ * The headers handed to the checks. Node's HTTP parser keeps only the first value of a repeated
+ * `authorization` header (IncomingMessage discards the later lines of the headers it treats as
+ * single-valued), so `request.headers` of a real request carrying a valid token and then
+ * `Authorization: Bearer invalid` reads as the valid token alone — while a repeated Authorization
+ * is malformed and must be 10002 (orchestrator ruling B1-02h §9.5 #7). The lines are counted in
+ * `request.raw.rawHeaders` (name / value pairs, names in any case): with more than one
+ * `authorization`, the checks get a copy of the headers whose `authorization` is the array of
+ * every value in the order sent, which the token check refuses like any malformed header.
+ * `request.headers` itself is left as Node built it, and without rawHeaders (or with at most one
+ * Authorization line) it is handed over unchanged.
+ * Only `authorization`: of the headers Node deduplicates this way it is the one a check reads; a
+ * repeated custom header (`x-app-id`, `x-sign`, …) is joined by Node with `, ` and already fails
+ * its comparison.
+ */
+function checkHeaders(request: HookRequest): RequestCheckInput['headers'] {
+  const lines = request.raw.rawHeaders;
+  if (!Array.isArray(lines)) return request.headers;
+  const values: string[] = [];
+  for (let index = 0; index + 1 < lines.length; index += 2) {
+    const name: unknown = lines[index];
+    if (typeof name === 'string' && name.toLowerCase() === 'authorization') {
+      values.push(String(lines[index + 1]));
+    }
+  }
+  return values.length > 1 ? { ...request.headers, authorization: values } : request.headers;
+}
+
+/**
+ * Register before init/ready. Run checks in supplied order on every matched route before body
+ * parsing; stop on error. Only matched routes that `bufferWhen` selects (all matched routes
+ * without it) have their raw body buffered first, bounded by the effective Fastify bodyLimit, and
+ * replayed as identical bytes to the parser; the others are checked on their headers with an
+ * empty rawBody and keep Fastify's own body handling. Copy verifiedDevice and principal onto the
+ * request for subsequent authentication stages. Overflow of a buffered body uses the existing
+ * 413/20001 body-error envelope, even for an invalid signature.
  */
 export function installRequestChecks(
   server: object,
@@ -190,29 +244,33 @@ export function installRequestChecks(
     throw new Error('request checks are already installed on this server');
   }
   server.decorateRequest('verifiedDevice', undefined);
+  server.decorateRequest('principal', undefined);
   if (ordered.length === 0) return;
   server.addHook('preParsing', async (request, _reply, payload) => {
     const routeTemplate = request.routeOptions.url;
     // An unmatched route answers 404 untouched: nothing to check, nothing to buffer.
     if (routeTemplate === undefined) return undefined;
-    // A route outside the plan keeps Fastify's own body handling; no check runs.
-    if (bufferWhen !== undefined && !bufferWhen(request.method, routeTemplate)) return undefined;
-    const rawBody = await readRawBody(
-      payload,
-      request.routeOptions.bodyLimit,
-      Number(request.headers['content-length']),
-    );
+    // A route the plan does not buffer is checked on its headers; Fastify reads its body later.
+    const buffered = bufferWhen === undefined || bufferWhen(request.method, routeTemplate);
+    const rawBody = buffered
+      ? await readRawBody(
+          payload,
+          request.routeOptions.bodyLimit,
+          Number(request.headers['content-length']),
+        )
+      : Buffer.alloc(0);
     const input: RequestCheckInput = {
       id: request.id,
       method: request.method,
       url: originFormTarget(request.raw.url ?? request.url),
       routeTemplate,
-      headers: request.headers,
+      headers: checkHeaders(request),
       rawBody,
     };
     for (const check of ordered) await check(input);
     if (input.verifiedDevice !== undefined) request.verifiedDevice = input.verifiedDevice;
-    return replay(rawBody, payload);
+    if (input.principal !== undefined) request.principal = input.principal;
+    return buffered ? replay(rawBody, payload) : undefined;
   });
 }
 

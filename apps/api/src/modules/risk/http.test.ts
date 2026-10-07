@@ -249,6 +249,7 @@ function signed(target: NestFastifyApplication, device = DEVICE, payload = BODY)
     headers: {
       'content-type': 'application/json',
       'x-trace-id': TRACE,
+      'x-app-id': 'couli',
       'x-device-id': device,
       'x-timestamp': String(NOW),
       'x-nonce': NONCE,
@@ -323,6 +324,7 @@ it('[BR-ID-09] an absolute-form request target is verified on its origin form: p
         'content-type': 'application/json',
         'x-trace-id': TRACE,
         [ABSOLUTE_FORM]: '1',
+        'x-app-id': 'couli',
         'x-device-id': DEVICE,
         'x-timestamp': String(NOW),
         'x-nonce': nonce,
@@ -385,6 +387,7 @@ it('[BR-ID-09][B1-01za] a correct signature over the bytes received still answer
     headers: {
       'content-type': 'application/json',
       'content-length': String(Buffer.byteLength(BODY) + 5),
+      'x-app-id': 'couli',
       'x-trace-id': TRACE,
       'x-device-id': DEVICE,
       'x-timestamp': String(NOW),

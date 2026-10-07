@@ -85,3 +85,16 @@ export type {
   JobHandler,
   QueueRuntime,
 } from './queue/index.ts';
+// Stage ② context (BR-ID-01, BR-ID-07): identity's token check attaches it at the registration
+// point; handlers and later stages of any module read it with tokenPrincipal.
+export { tokenPrincipal, type TokenPrincipal } from './http/token-context.ts';
+// Generated x-auth table of every contract operation (BR-ID-01 ②; no openapi at run time).
+export {
+  contractAuthRoutes,
+  contractAuthOf,
+  type AuthRoute,
+  type ContractAuth,
+} from './http/auth-routes.ts';
+// Client version comparison of BR-ID-01 细则 (session scope B1-02h, version gate ④a B1-03c).
+export { compareClientVersions, isVersionGatedPlatform } from './client-version/index.ts';
+export type { JwtKeyConfig } from './config/jwt.ts';

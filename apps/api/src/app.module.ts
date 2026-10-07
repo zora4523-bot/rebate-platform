@@ -5,7 +5,11 @@ import { AdminModule } from './modules/admin/index.ts';
 import { CatalogModule } from './modules/catalog/index.ts';
 import { createContentReader } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
-import { IdentityModule, type SmsConfigReader } from './modules/identity/index.ts';
+import {
+  IdentityModule,
+  TOKEN_CHECK,
+  type IdentityConfigReader,
+} from './modules/identity/index.ts';
 import { LinkingModule } from './modules/linking/index.ts';
 import { ParsingModule } from './modules/parsing/index.ts';
 import {
@@ -25,18 +29,23 @@ import { UnionModule } from './modules/union/index.ts';
 
 /**
  * The request check plan bootstrap installs before Fastify parses a body (规划/08 BR-ID-01):
- * on the `api` entry, which serves every x-signed operation, ① the request signature, buffered and
- * run only on the contract x-signed routes (other routes keep Fastify's own body handling); the
- * token stages ② ③ (B1-02h) follow it in this list, and their route scope is settled with them.
- * The other HTTP entries have no check yet, so bootstrap refuses an x-signed route on them.
+ * on the `api` entry, which serves every x-signed operation, ① the request signature first
+ * (bootstrap refuses a plan where it is not), then identity's token stages ② ③. Both run on every
+ * matched route; only the contract x-signed routes have their body buffered before the checks
+ * (the signature covers it), so ② ③ answer an unsigned route from its headers alone, before its
+ * body is read or validated, and its body keeps Fastify's own handling. ① skips unsigned routes;
+ * ② ③ act by the route's contract x-auth and leave routes outside the contract alone.
+ * The factory stays synchronous (its async dependencies are providers of their own).
+ * The other HTTP entries have no check yet, so bootstrap refuses on them an x-signed route and a
+ * route that takes a token (contract x-auth other than none).
  */
 function requestChecks(options: PlatformOptions): Provider {
   return options.entry === 'api'
     ? {
         provide: REQUEST_CHECKS,
-        inject: [SIGNATURE_CHECK],
-        useFactory: (signature: RequestCheck): RequestCheckPlan => ({
-          checks: [signature],
+        inject: [SIGNATURE_CHECK, TOKEN_CHECK],
+        useFactory: (signature: RequestCheck, token: RequestCheck): RequestCheckPlan => ({
+          checks: [signature, token],
           bufferWhen: isContractSignedRoute,
         }),
       }
@@ -44,8 +53,9 @@ function requestChecks(options: PlatformOptions): Provider {
 }
 
 /**
- * The identity module of the `api` entry. Its configuration port (sms.blocked_prefixes, BR-ID-05)
- * is content's cached reader of config_items: content implements the port's shape without importing
+ * The identity module of the `api` entry. Its configuration port (sms.blocked_prefixes, BR-ID-05;
+ * the minimum supported version of the session scope, BR-ID-01 细则「受限会话」) is content's cached
+ * reader of config_items and app_versions: content implements the port's shape without importing
  * identity (same assembly as the risk ports, F1-02b). No database handle (isolated HTTP unit
  * tests): no reader, and the SMS code route answers 50001.
  */
@@ -53,7 +63,7 @@ function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
     config: {
       inject: [CLOCK, { token: DB, optional: true }],
-      useFactory: (clock: Clock, db?: Kysely<Database>): SmsConfigReader | null =>
+      useFactory: (clock: Clock, db?: Kysely<Database>): IdentityConfigReader | null =>
         db === undefined ? null : createContentReader({ db, clock }),
     },
   });
@@ -61,9 +71,9 @@ function identityModule(): DynamicModule {
 
 /**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
- * entry also serves the /v1 identity routes and the risk module's request signature check, whose
- * device port identity implements. The union module (adapter registry and endpoint configuration)
- * loads where union platforms are called: `api` (search, linking) and `worker` (order sync); the
+ * entry also serves the /v1 identity routes, the risk module's request signature check, whose
+ * device port identity implements, and identity's token check. The union module (adapter registry
+ * and endpoint configuration) loads where union platforms are called: `api` (search, linking) and `worker` (order sync); the
  * other worker entries load only the platform and admin modules.
  * The admin module provides the platform audit port on every entry (F1-06b).
  * The catalog module (platform dictionary, product_refs, aliases, category blocklist) loads on

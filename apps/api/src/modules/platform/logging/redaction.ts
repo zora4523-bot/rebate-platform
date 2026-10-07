@@ -45,6 +45,10 @@ export const SENSITIVE_KEYS = Object.freeze([
   // Human-verification token of POST /v1/auth/sms-codes and an SMS verification code (BR-ID-05).
   'captcha_token',
   'sms_code',
+  // The access-token signing key (BR-ID-07): JWT_PRIVATE_KEY_PEM and the parsed configuration's
+  // privateKeyPem (keys are compared after normalizedKey, so private_key_pem covers both cases).
+  'private_key_pem',
+  'jwt_private_key_pem',
 ] as const);
 
 function normalizedKey(key: string): string {

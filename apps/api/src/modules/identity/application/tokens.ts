@@ -8,3 +8,17 @@ export const IDENTITY_CONFIG = Symbol('IDENTITY_CONFIG');
 
 /** The SmsCodeService; null when the process has no Redis or no configuration reader. */
 export const SMS_CODES = Symbol('SMS_CODES');
+
+// Nest tokens of the session wiring (B1-02h, identity.module.ts).
+
+/** The TokenKeyProvider (access-tokens.ts): configured key, or an ephemeral one in local / test. */
+export const TOKEN_KEYS = Symbol('TOKEN_KEYS');
+
+/** The TokenService that issues and verifies access tokens and issues refresh tokens. */
+export const TOKEN_SERVICE = Symbol('TOKEN_SERVICE');
+
+/** The stage ② ③ RequestCheck (createTokenCheck); app.module lists it right after the signature check. */
+export const TOKEN_CHECK = Symbol('TOKEN_CHECK');
+
+/** The Logout use case (logout.ts). */
+export const LOGOUT = Symbol('LOGOUT');

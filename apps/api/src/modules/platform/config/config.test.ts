@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from './config.ts';
 
@@ -23,6 +24,7 @@ describe('loadConfig', () => {
       streamPort: 3101,
       adminPort: 3102,
       keyring: null,
+      jwt: null,
     });
   });
 
@@ -53,6 +55,7 @@ describe('loadConfig', () => {
       streamPort: 8081,
       adminPort: 8082,
       keyring: { provider: 'kms', keyringFile: '/srv/couli/keyring.json' },
+      jwt: null,
     });
   });
 
@@ -164,5 +167,32 @@ describe('loadConfig', () => {
 
   it('[AC-B1-01f] ignores credential-looking variables that are empty', () => {
     expect(loadConfig({ APP_ENV: 'local', UNION_SECRET: '' }).appEnv).toBe('local');
+  });
+
+  it('[BR-ID-07] JWT_* problems are merged only when a JWT variable is set, after the other problems', () => {
+    // Unset in prod: loadConfig keeps its own findings; identity's key provider refuses at startup.
+    expect(
+      problemsOf({ APP_ENV: 'prod', FIELD_KEY_PROVIDER: 'kms', FIELD_KEYRING_FILE: '/k.json' }),
+    ).toEqual([]);
+    const pem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+      .privateKey.export({ type: 'pkcs8', format: 'pem' })
+      .toString();
+    expect(problemsOf({ APP_ENV: 'test', LOG_LEVEL: 'loud', JWT_PRIVATE_KEY_PEM: pem })).toEqual([
+      expect.stringMatching(/^LOG_LEVEL: /),
+      'JWT_KEY_ID: must be set together with JWT_PRIVATE_KEY_PEM',
+    ]);
+    const sec1 = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+      .privateKey.export({ type: 'sec1', format: 'pem' })
+      .toString();
+    const problems = problemsOf({ APP_ENV: 'test', JWT_KEY_ID: 'k1', JWT_PRIVATE_KEY_PEM: sec1 });
+    expect(problems).toEqual([expect.stringMatching(/^JWT_PRIVATE_KEY_PEM: .*PKCS#8/)]);
+    expect(problems.join('\n')).not.toContain(sec1.trim().split('\n')[1]);
+    expect(
+      loadConfig({ APP_ENV: 'local', JWT_KEY_ID: 'k1', JWT_PRIVATE_KEY_PEM: pem }).jwt,
+    ).toEqual({
+      kid: 'k1',
+      privateKeyPem: pem,
+      verificationKeys: {},
+    });
   });
 });
