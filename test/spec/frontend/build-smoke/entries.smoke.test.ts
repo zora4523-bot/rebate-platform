@@ -31,6 +31,91 @@ async function visible(locator: Locator): Promise<void> {
   expect(await locator.isVisible()).toBe(true);
 }
 
+type Diagnostic = { kind: string; message: string };
+
+/**
+ * Heading of the H5 load-failure page React Router's errorElement shows when a route's lazy
+ * import or its render fails (apps/h5/src/components/retry/retry-page.tsx: role="alert" with an
+ * h1 of contracts/texts.default.json h5.load_failed; apps/h5/src/entries/app/routes.ts).
+ */
+const ROUTE_ERROR_HEADING = '页面加载失败，请重试';
+
+/**
+ * Collects, before any page script runs, what a page swallows without a console.error or a
+ * pageerror (F1-01m): Vite's `vite:preloadError` (its preload helper dispatches it with the
+ * rejected import as `payload` when a lazy chunk or one of its dependencies fails to load or to
+ * initialise, then rethrows unless prevented — never prevented here) and `unhandledrejection`.
+ * Runs in the page: it must not close over anything.
+ */
+function installSwallowedErrorCollector(): void {
+  const found: { kind: string; message: string }[] = [];
+  Object.defineProperty(window, '__couliSmokeDiag', { value: found, enumerable: false });
+  const describeValue = (value: unknown): string => {
+    try {
+      if (value instanceof Error) {
+        const rest = (value.stack ?? '').split('\n').slice(1).join('\n');
+        return rest === '' ? String(value) : `${String(value)}\n${rest}`;
+      }
+      return String(value);
+    } catch {
+      return '(unreadable value)';
+    }
+  };
+  window.addEventListener('vite:preloadError', (event) => {
+    found.push({
+      kind: 'preload-error',
+      message: describeValue((event as Event & { payload?: unknown }).payload),
+    });
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    found.push({ kind: 'unhandled-rejection', message: describeValue(event.reason) });
+  });
+}
+
+/**
+ * Reads back what installSwallowedErrorCollector gathered and whether the route error page is
+ * showing (`route-error`); never throws. When the page cannot be read (closed, hung) the
+ * diagnostics say so (`diagnostics-incomplete`): the page events are then not fully known.
+ */
+async function collectSwallowedErrors(page: Page, diagnostics: Diagnostic[]): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const read = page.evaluate((heading) => {
+      const own = (window as unknown as { __couliSmokeDiag?: unknown }).__couliSmokeDiag;
+      const collected = Array.isArray(own) ? (own as { kind: string; message: string }[]) : null;
+      const routeError = [...document.querySelectorAll('[role="alert"]')].some((alert) =>
+        [...alert.querySelectorAll('h1')].some((h1) => h1.textContent?.trim() === heading),
+      );
+      return { collected, routeError, path: location.pathname };
+    }, ROUTE_ERROR_HEADING);
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('reading the page timed out (5000ms)')), 5_000);
+    });
+    const { collected, routeError, path } = await Promise.race([read, timeout]);
+    if (collected === null) {
+      diagnostics.push({
+        kind: 'diagnostics-incomplete',
+        message: 'the swallowed-error collector was not installed in the page',
+      });
+    } else {
+      diagnostics.push(...collected);
+    }
+    if (routeError) {
+      diagnostics.push({
+        kind: 'route-error',
+        message: `the route error page (RetryPage "${ROUTE_ERROR_HEADING}") is showing at ${path}`,
+      });
+    }
+  } catch (error) {
+    diagnostics.push({
+      kind: 'diagnostics-incomplete',
+      message: `the page could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function firstScreen(
   name: EntryName,
   context: TestContext,
@@ -47,7 +132,8 @@ async function firstScreen(
       serviceWorkers: 'block',
     });
     const page = await browserContext.newPage();
-    const diagnostics: { kind: string; message: string }[] = [];
+    const diagnostics: Diagnostic[] = [];
+    await page.addInitScript(installSwallowedErrorCollector);
     page.on('pageerror', (error) => {
       diagnostics.push({ kind: 'pageerror', message: error.stack ?? error.message });
     });
@@ -89,6 +175,7 @@ async function firstScreen(
       await page.goto(target, { waitUntil: 'load', timeout: 15_000 });
       await check(page);
     } finally {
+      await collectSwallowedErrors(page, diagnostics);
       try {
         const directory = screenshotDirectory();
         mkdirSync(directory, { recursive: true });
