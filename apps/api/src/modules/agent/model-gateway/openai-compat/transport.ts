@@ -1,5 +1,5 @@
 import type { VendorResponse, VendorTransport } from '../vendors/index.ts';
-import { assembleChunks, usageOf } from './chunks.ts';
+import { assembleChunks, usageFromChunks, usageOf } from './chunks.ts';
 import {
   classifyFailure,
   errorCode,
@@ -218,11 +218,19 @@ export function createHttpTransport(input: HttpTransportOptions): VendorTranspor
         checkSignal(signal);
         if (!parser.finished) throw malformed();
         const events = assembleChunks(chunks);
-        if (options.quirks.includeUsage && !events.some((event) => event.t === 'usage'))
-          throw malformed();
         // JSON 转义不能成为凭据进入返回值/录制的旁路。
         if (containsSecret(chunks, key)) throw malformed();
         return { chunks, usage: usageOf(events) };
+      } catch (error) {
+        if (error instanceof ModelProtocolError) {
+          // 即使参数 JSON 无效或流被中止，已解析的用量也交给上层计量。
+          throw new ModelProtocolError(error.kind, error.message, {
+            status: error.status,
+            vendorCode: error.vendorCode,
+            usage: usageFromChunks(chunks),
+          });
+        }
+        throw error;
       } finally {
         if (!exhausted) close(iterator);
       }

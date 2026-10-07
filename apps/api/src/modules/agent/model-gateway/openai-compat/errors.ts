@@ -1,22 +1,30 @@
-import type { VendorId } from '../vendors/index.ts';
+import type { VendorId, VendorUsage } from '../vendors/index.ts';
 import type { ModelErrorKind, ModelFailure, VendorQuirks } from './types.ts';
 
 export class ModelProtocolError extends Error {
   readonly kind: ModelErrorKind;
   readonly status: number | null;
   readonly vendorCode: string | null;
+  /** 已收到的有效累计用量；null 表示未知，不能按零用量计费。 */
+  readonly usage: VendorUsage | null;
 
   /** message 和 detail 只能由本层构造，不得传入上游正文或原始异常。 */
   constructor(
     kind: ModelErrorKind,
     message: string,
-    detail?: { status?: number | null; vendorCode?: string | null },
+    detail?: { status?: number | null; vendorCode?: string | null; usage?: VendorUsage | null },
   ) {
     super(message);
     this.name = 'ModelProtocolError';
     this.kind = kind;
     this.status = detail?.status ?? null;
     this.vendorCode = detail?.vendorCode ?? null;
+    this.usage = detail?.usage
+      ? Object.freeze({
+          input_tokens: detail.usage.input_tokens,
+          output_tokens: detail.usage.output_tokens,
+        })
+      : null;
   }
 }
 

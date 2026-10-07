@@ -1,5 +1,5 @@
 import type { VendorUsage } from '../vendors/index.ts';
-import { isRecord, malformed, tokenCount } from './errors.ts';
+import { isRecord, malformed, ModelProtocolError, tokenCount } from './errors.ts';
 import type { AssembledToolCall, ModelEvent } from './types.ts';
 
 type FinishReason = Extract<ModelEvent, { t: 'done' }>['reason'];
@@ -26,20 +26,59 @@ function addTool(value: unknown, tools: Map<number, PendingTool>): void {
   if (value.type !== undefined && value.type !== 'function') throw malformed();
   const fn = value.function;
   const pending = tools.get(value.index) ?? { id: '', name: '', args: '' };
-  if (value.id !== undefined && value.id !== null) {
+  // 百炼后续片可以重复 type，并以空 id/name 表示未提供元数据。
+  if (value.id !== undefined && value.id !== null && value.id !== '') {
     if (typeof value.id !== 'string' || (pending.id !== '' && pending.id !== value.id))
       throw malformed();
     pending.id = value.id;
   }
-  if (fn.name !== undefined && fn.name !== null) {
-    if (typeof fn.name !== 'string') throw malformed();
-    pending.name += fn.name;
+  if (fn.name !== undefined && fn.name !== null && fn.name !== '') {
+    if (typeof fn.name !== 'string' || (pending.name !== '' && pending.name !== fn.name))
+      throw malformed();
+    pending.name = fn.name;
   }
   if (fn.arguments !== undefined && fn.arguments !== null) {
     if (typeof fn.arguments !== 'string') throw malformed();
     pending.args += fn.arguments;
   }
   tools.set(value.index, pending);
+}
+
+function usageEvent(chunk: Record<string, unknown>): Extract<ModelEvent, { t: 'usage' }> | null {
+  const usage = chunk.usage;
+  if (usage === undefined || usage === null) return null;
+  if (
+    !isRecord(usage) ||
+    !tokenCount(usage.prompt_tokens) ||
+    !tokenCount(usage.completion_tokens)
+  ) {
+    throw malformed();
+  }
+  let cached: number | null = null;
+  if (usage.prompt_tokens_details !== undefined && usage.prompt_tokens_details !== null) {
+    if (!isRecord(usage.prompt_tokens_details)) throw malformed();
+    const value = usage.prompt_tokens_details.cached_tokens;
+    if (value !== undefined && value !== null) {
+      if (!tokenCount(value) || value > usage.prompt_tokens) throw malformed();
+      cached = value;
+    }
+  }
+  return { t: 'usage', input: usage.prompt_tokens, output: usage.completion_tokens, cached };
+}
+
+/** 失败计量独立于工具拼装：结束片或其后的 usage 仍须保留，畸形计数不可覆盖有效值。 */
+export function usageFromChunks(chunks: readonly unknown[]): VendorUsage | null {
+  let usage: VendorUsage | null = null;
+  for (const chunk of chunks) {
+    if (!isRecord(chunk)) continue;
+    try {
+      const event = usageEvent(chunk);
+      if (event !== null) usage = { input_tokens: event.input, output_tokens: event.output };
+    } catch (error) {
+      if (!(error instanceof ModelProtocolError)) throw error;
+    }
+  }
+  return usage;
 }
 
 function completedTools(tools: Map<number, PendingTool>): ModelEvent[] {
@@ -100,31 +139,8 @@ export function assembleChunks(chunks: readonly unknown[]): ModelEvent[] {
         done = true;
       }
     }
-    if (chunk.usage !== undefined && chunk.usage !== null) {
-      const usage = chunk.usage;
-      if (
-        !isRecord(usage) ||
-        !tokenCount(usage.prompt_tokens) ||
-        !tokenCount(usage.completion_tokens)
-      ) {
-        throw malformed();
-      }
-      let cached: number | null = null;
-      if (usage.prompt_tokens_details !== undefined && usage.prompt_tokens_details !== null) {
-        if (!isRecord(usage.prompt_tokens_details)) throw malformed();
-        const value = usage.prompt_tokens_details.cached_tokens;
-        if (value !== undefined && value !== null) {
-          if (!tokenCount(value) || value > usage.prompt_tokens) throw malformed();
-          cached = value;
-        }
-      }
-      events.push({
-        t: 'usage',
-        input: usage.prompt_tokens,
-        output: usage.completion_tokens,
-        cached,
-      });
-    }
+    const usage = usageEvent(chunk);
+    if (usage !== null) events.push(usage);
   }
   if (!done) throw malformed();
   return events;
@@ -132,11 +148,12 @@ export function assembleChunks(chunks: readonly unknown[]): ModelEvent[] {
 
 /** usage 为累计值，取最后一片，不能把重复上报的计数相加。 */
 export function usageOf(events: readonly ModelEvent[]): VendorUsage {
-  let usage = { input_tokens: 0, output_tokens: 0 };
+  let usage: VendorUsage | null = null;
   for (const event of events) {
     if (event.t !== 'usage') continue;
     if (!tokenCount(event.input) || !tokenCount(event.output)) throw malformed();
     usage = { input_tokens: event.input, output_tokens: event.output };
   }
+  if (usage === null) throw new ModelProtocolError('malformed', 'Model usage missing');
   return usage;
 }
