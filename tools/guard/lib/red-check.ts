@@ -34,6 +34,31 @@
 // elements with expect.element in the test file, never with expect.poll. A browser that did not
 // start, an error thrown by the page, a module not found, a TypeError, a strict-mode violation
 // (several elements) and a bare element lookup outside a wait stay invalid.
+//
+// Build smoke tests (F1-01k; `test/spec/**/*.smoke.test.ts`, project build-smoke: Node tests that
+// open the entries the globalSetup built and serves, through the playwright library): red for an
+// assertion, or because the element a test waits for never came — Playwright's TimeoutError of
+// `locator.waitFor` ("locator.waitFor: Timeout <n>ms exceeded.") — is a valid red. Everything else
+// stays invalid: a globalSetup that failed (a build, a server, the health check: no test runs), a
+// browser that did not launch, a page.goto that failed or timed out, a `net::ERR_*`, any other
+// Playwright timeout (screenshot, click …). A page that throws while rendering does not fail the
+// test itself: Playwright only fires `pageerror`, the page stays blank and the wait runs out. The
+// rule tests collect page events into an annotation whose JSON attachment is
+// `{entry, url, diagnostics: [{kind, message}]}` (never asserted), and the red reporter keeps the
+// annotations of every test. Before an assertion or a wait that ran out counts, the diagnostics
+// are read: an error the page threw (`pageerror`; the skeleton's NotImplemented excepted), a
+// request to the entry's own origin that failed (`requestfailed`; requests the test itself
+// blocked excepted), a module of the page that did not load (`console.error` of a failed
+// dynamic import) or a script error the page only logged (`console.error` carrying React
+// Router's "caught the following error during render" — its errorElement catches a render error,
+// so no `pageerror` fires — or naming a TypeError, ReferenceError, SyntaxError, RangeError …;
+// the skeleton's NotImplemented excepted) make the red invalid. Only a page error whose first line starts with
+// `NotImplemented` or `Error: NotImplemented` is the skeleton's (a TypeError, ReferenceError …
+// mentioning it is not; those kinds are checked first, as on the Node side). A wait that ran out
+// in a test without such an annotation is invalid (the page events are unknown); any other red of
+// such a test is judged by its failure alone. Both are said in the result (`notes`). Smoke rule
+// tests that open a page must write the annotation. On a green run the build-smoke project's
+// strict reporter (tools/ops/build-smoke/strict-reporter.mjs) fails on the same page problems.
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import type { TaskFile } from '../../lib/task-file.ts';
@@ -69,6 +94,8 @@ type AssertionResult = {
   failureMessages?: unknown;
   /** Failures with their cause chains (red reporter only). */
   failures?: unknown;
+  /** The test's annotations, JSON attachments parsed (red reporter only, F1-01k). */
+  annotations?: unknown;
 };
 type FileResult = {
   name?: unknown;
@@ -83,7 +110,13 @@ type FileResult = {
 };
 
 export type RedProblem = { file: string; test: string | null; reason: string };
-export type RedResult = { ok: boolean; red: string[]; problems: RedProblem[] };
+export type RedResult = {
+  ok: boolean;
+  red: string[];
+  problems: RedProblem[];
+  /** How a valid red was judged when that is worth saying (a smoke test without diagnostics). */
+  notes: string[];
+};
 
 /** Failures that prove nothing about the rule; checked first, they win over any wrapper. */
 const WRONG_RED: [RegExp, string][] = [
@@ -179,6 +212,169 @@ export function wrongRedReason(message: string): string | null {
   return 'red for an unrecognised reason (not an assertion, a counterexample or NotImplemented)';
 }
 
+/** Build smoke rule-test files: the build-smoke project (red-projects.json, F1-01k). */
+export const SMOKE_TEST_FILE = /\.smoke\.test\.[cm]?[jt]sx?$/;
+
+/** Failures of a build smoke test that prove nothing about the page under test. */
+const SMOKE_WRONG_RED: [RegExp, string][] = [
+  [/\bnet::ERR_[A-Z_]+/, 'page did not load (net::ERR_*)'],
+  [/\bpage\.goto:/, 'page did not load (page.goto failed)'],
+  [/\bbrowserType\.launch\b|\bchromium\.launch\b/, 'browser not running'],
+];
+
+/** The message of the TimeoutError Playwright throws when locator.waitFor runs out. */
+const LOCATOR_WAIT_RAN_OUT = /^locator\.waitFor: Timeout \d+ms exceeded\./;
+
+/**
+ * Verdict of a failure of a build smoke rule test (see the header): an AssertionError, or the
+ * TimeoutError of a locator.waitFor whose element never came, is a valid red; a page that did not
+ * load, a browser that did not launch, and everything causeVerdict refuses are not.
+ */
+export function smokeCauseVerdict(causes: readonly Cause[]): string | null {
+  const all = causes.map((c) => `${c.name}: ${c.message}`).join('\n');
+  for (const [pattern, label] of SMOKE_WRONG_RED) {
+    if (pattern.test(all)) return `red for the wrong reason (${label})`;
+  }
+  const root = causes[causes.length - 1];
+  if (
+    root?.name === 'TimeoutError' &&
+    causes.length === 1 &&
+    LOCATOR_WAIT_RAN_OUT.test(root.message)
+  ) {
+    return null;
+  }
+  if (root?.name === 'TimeoutError') {
+    return `red for the wrong reason (a Playwright timeout outside locator.waitFor: ${root.message.split('\n')[0] ?? ''})`;
+  }
+  return causeVerdict(causes);
+}
+
+/** True when a failure of the test is the TimeoutError of a locator.waitFor (red reporter causes). */
+function waitedForAnElement(failures: unknown): boolean {
+  if (!Array.isArray(failures)) return false;
+  return (failures as Failure[]).some((f) => {
+    const causes = causesOf(f);
+    const root = causes[causes.length - 1];
+    return root?.name === 'TimeoutError' && LOCATOR_WAIT_RAN_OUT.test(root.message);
+  });
+}
+
+/** The page events a build smoke test collected for one entry (its diagnostics annotation). */
+export type SmokeDiagnostics = {
+  url: string;
+  diagnostics: { kind: string; message: string }[];
+};
+
+/**
+ * The diagnostics annotations of a test of the red report: every annotation whose JSON
+ * attachment has a `diagnostics` array (the build smoke rule tests write one per entry they open).
+ */
+export function smokeDiagnosticsOf(annotations: unknown): SmokeDiagnostics[] {
+  if (!Array.isArray(annotations)) return [];
+  const out: SmokeDiagnostics[] = [];
+  for (const a of annotations) {
+    if (typeof a !== 'object' || a === null) continue;
+    const json = (a as Record<string, unknown>)['json'];
+    if (typeof json !== 'object' || json === null) continue;
+    const list = (json as Record<string, unknown>)['diagnostics'];
+    if (!Array.isArray(list)) continue;
+    out.push({
+      url: text((json as Record<string, unknown>)['url']),
+      diagnostics: list.map((d) => {
+        const r = (typeof d === 'object' && d !== null ? d : {}) as Record<string, unknown>;
+        return { kind: text(r['kind']), message: text(r['message']) };
+      }),
+    });
+  }
+  return out;
+}
+
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** A failed dynamic import, as the browser logs it (Chromium and others). */
+const MODULE_DID_NOT_LOAD =
+  /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/;
+
+/**
+ * True when the first line of an error the page threw is the skeleton's NotImplemented: it starts
+ * with `NotImplemented` (the skeleton's own error class) or `Error: NotImplemented` (a plain Error
+ * with that message). A TypeError, ReferenceError … that merely mentions NotImplemented does not
+ * count: as on the Node side (causeVerdict), those kinds are checked first.
+ */
+export function skeletonPageError(first: string): boolean {
+  for (const [pattern] of WRONG_RED) {
+    if (pattern.test(first)) return false;
+  }
+  return /^(?:Error: )?NotImplemented\b/.test(first);
+}
+
+/**
+ * The prefix React Router (and its <Await>) logs before an error its error boundary caught while
+ * rendering: `console.error("React Router caught the following error during render", error)`,
+ * which Playwright reads as that text, a space, then the error's stack.
+ */
+const CAUGHT_DURING_RENDER = /^.*?caught the following error during render\s*/;
+/** Error kinds of a script fault, as a console.error of the page names them. */
+const SCRIPT_ERROR_KIND =
+  /\b(?:TypeError|ReferenceError|SyntaxError|RangeError|EvalError|URIError|InternalError|AggregateError)\b/;
+
+/**
+ * True when a `console.error` of the page reports a script fault (Codex review r3, S1 ②): an
+ * error an error boundary caught while rendering (React Router's errorElement swallows it, no
+ * `pageerror` fires, the page shows its error screen and the wait runs out), or any message
+ * naming a TypeError, ReferenceError, SyntaxError, RangeError …. With `skeleton` the skeleton's
+ * NotImplemented is excepted: the first line of the error itself (after React Router's prefix)
+ * starts with `NotImplemented` or `Error: NotImplemented` (skeletonPageError).
+ */
+export function scriptFaultConsoleError(message: string, skeleton: boolean): boolean {
+  const first = message.split('\n')[0] ?? '';
+  if (!CAUGHT_DURING_RENDER.test(first) && !SCRIPT_ERROR_KIND.test(message)) return false;
+  return !(skeleton && skeletonPageError(first.replace(CAUGHT_DURING_RENDER, '')));
+}
+
+/**
+ * Why the page events of one entry make a red invalid (see the header), or null when they do
+ * not: an error the page threw other than the skeleton's NotImplemented, a request to the entry's
+ * own origin that failed and that the test did not block itself (a `blocked-request` of the same
+ * URL), a dynamic import that failed, a script error the page only logged
+ * (scriptFaultConsoleError). A URL that cannot be read counts as the entry's own.
+ */
+export function smokeDiagnosticsVerdict(d: SmokeDiagnostics): string | null {
+  const own = originOf(d.url);
+  const blocked = new Set(
+    d.diagnostics.filter((x) => x.kind === 'blocked-request').map((x) => x.message),
+  );
+  for (const x of d.diagnostics) {
+    const first = x.message.split('\n')[0] ?? '';
+    if (x.kind === 'pageerror' && !skeletonPageError(first)) {
+      return `red for the wrong reason (the page threw: ${first})`;
+    }
+    if (x.kind === 'requestfailed') {
+      // "<url>: <errorText>" (the rule tests' format)
+      const at = x.message.lastIndexOf(': ');
+      const url = at < 0 ? x.message : x.message.slice(0, at);
+      if (blocked.has(url)) continue;
+      const origin = originOf(url);
+      if (own === null || origin === null || origin === own) {
+        return `red for the wrong reason (a request of the entry failed: ${first})`;
+      }
+    }
+    if (x.kind === 'console.error' && MODULE_DID_NOT_LOAD.test(x.message)) {
+      return `red for the wrong reason (a module of the page did not load: ${first})`;
+    }
+    if (x.kind === 'console.error' && scriptFaultConsoleError(x.message, true)) {
+      return `red for the wrong reason (the page logged a script error: ${first})`;
+    }
+  }
+  return null;
+}
+
 /** Browser rule-test files: the spec-browser project (tools/ops/verify-image/red-projects.json). */
 export const BROWSER_TEST_FILE = /\.browser\.test\.[cm]?[jt]sx?$/;
 
@@ -268,17 +464,24 @@ function causesOf(failure: Failure): Cause[] {
 type BrowserFile = { abs: string; pollFree: boolean } | null;
 
 /** Verdict of one failed test: structured causes when the report has them, else the messages. */
-function testVerdict(failures: unknown, messages: string[], browser: BrowserFile): string | null {
+function testVerdict(
+  failures: unknown,
+  messages: string[],
+  browser: BrowserFile,
+  smoke: boolean,
+): string | null {
   if (Array.isArray(failures)) {
     if (failures.length === 0)
       return 'red for an unknown reason (the report carries no failure detail)';
     for (const f of failures as Failure[]) {
       const why =
-        browser === null
-          ? causeVerdict(causesOf(f))
-          : browserCauseVerdict(causesOf(f), {
+        browser !== null
+          ? browserCauseVerdict(causesOf(f), {
               elementOnly: browser.pollFree && siteIsFile(f.site, browser.abs),
-            });
+            })
+          : smoke
+            ? smokeCauseVerdict(causesOf(f))
+            : causeVerdict(causesOf(f));
       if (why !== null) return why;
     }
     return null;
@@ -297,6 +500,7 @@ export function checkRedReports(
 ): RedResult {
   const problems: RedProblem[] = [];
   const red: string[] = [];
+  const notes: string[] = [];
   const prefix = root.endsWith('/') ? root : `${root}/`;
   const seen = new Map<string, FileResult>();
   for (const report of reports) {
@@ -344,6 +548,12 @@ export function checkRedReports(
       entry.browser === true && BROWSER_TEST_FILE.test(file)
         ? { abs: text(entry.name), pollFree: entry.poll_in_source === false }
         : null;
+    // Build smoke leniency (locator.waitFor) only for a build smoke rule-test file of the
+    // build-smoke project (test/spec/**/*.smoke.test.ts, red-projects.json) that ran in Node (not
+    // in a browser), and only from the red reporter's causes; the plain messages of Vitest's JSON
+    // report never get it.
+    const smoke =
+      entry.browser !== true && file.startsWith('test/spec/') && SMOKE_TEST_FILE.test(file);
     // File-level errors (an import that failed, a crashed beforeAll / afterAll) are never a valid
     // red: they taint every test of the file.
     const fileFailures = Array.isArray(entry.failures) ? (entry.failures as Failure[]) : [];
@@ -382,10 +592,32 @@ export function checkRedReports(
         continue;
       }
       const messages = Array.isArray(t.failureMessages) ? t.failureMessages.map(text) : [];
-      const why = fileWrong ?? testVerdict(t.failures, messages, browser);
+      let why = fileWrong ?? testVerdict(t.failures, messages, browser, smoke);
+      if (why === null && smoke) {
+        // The page events the test collected decide before its red counts (see the header).
+        const diagnostics = smokeDiagnosticsOf(t.annotations);
+        for (const d of diagnostics) {
+          why = smokeDiagnosticsVerdict(d);
+          if (why !== null) break;
+        }
+        if (why === null && diagnostics.length === 0) {
+          if (waitedForAnElement(t.failures)) {
+            // A wait that ran out says nothing without the page events: the page may have thrown.
+            why =
+              'red for an unproven reason (locator.waitFor ran out but the test wrote no browser diagnostics annotation)';
+            notes.push(
+              `${file} > ${name}: locator.waitFor timeout without browser diagnostics, judged invalid`,
+            );
+          } else {
+            notes.push(
+              `${file} > ${name}: no browser diagnostics in the report, judged by the failure alone`,
+            );
+          }
+        }
+      }
       if (why === null) red.push(`${file} > ${name}`);
       else problems.push({ file, test: name, reason: why });
     }
   }
-  return { ok: problems.length === 0, red, problems };
+  return { ok: problems.length === 0, red, problems, notes };
 }

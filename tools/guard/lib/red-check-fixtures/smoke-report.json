@@ -1,0 +1,386 @@
+{
+  "//": "Constructed in the shape of tools/ops/verify-image/red-reporter.mjs output for the build-smoke project (F1-01k round 2, before any real red run): Node file (browser false), Playwright 1.63 error texts (`<api>: <message>`, TimeoutError `Timeout <n>ms exceeded.`), and each opened entry's annotations as test/spec/frontend/build-smoke/entries.smoke.test.ts writes them (a screenshot `path`, and the diagnostics `{entry, url, diagnostics}` parsed into `json`). A page that throws while rendering shows only as a pageerror in the diagnostics: the test fails on the locator.waitFor timeout. A render error React Router's errorElement catches fires no pageerror: it shows only as the console.error `React Router caught the following error during render <error stack>` (react-router 7.18.4 componentDidCatch, the text as Playwright joins the arguments; round 4).Replace with a real red run of the candidate copy when one exists.",
+  "reporter": "couli-red-reporter",
+  "testResults": [
+    {
+      "name": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+      "browser": false,
+      "poll_in_source": false,
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[demo] element never came",
+          "title": "[demo] element never came",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "admin 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/admin-----3f0c1d2e.png"
+            },
+            {
+              "message": "admin 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "admin",
+                "url": "http://127.0.0.1:40123/",
+                "diagnostics": [
+                  {
+                    "kind": "blocked-request",
+                    "message": "http://127.0.0.1:40123/admin/v1/me/permissions"
+                  },
+                  {
+                    "kind": "requestfailed",
+                    "message": "http://127.0.0.1:40123/admin/v1/me/permissions: net::ERR_BLOCKED_BY_CLIENT"
+                  },
+                  {
+                    "kind": "console.error",
+                    "message": "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT"
+                  },
+                  {
+                    "kind": "blocked-request",
+                    "message": "https://fonts.example.invalid/a.woff2"
+                  },
+                  {
+                    "kind": "requestfailed",
+                    "message": "https://fonts.example.invalid/a.woff2: net::ERR_BLOCKED_BY_CLIENT"
+                  },
+                  {
+                    "kind": "pageerror",
+                    "message": "Error: NotImplemented: AdminShell\n    at http://127.0.0.1:40123/assets/index-B1x2.js:1:2345"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] assertion",
+          "title": "[demo] assertion",
+          "status": "failed",
+          "failureMessages": [
+            "AssertionError: landing: expected 70000 to be less than or equal to 61440"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "AssertionError",
+                  "message": "landing: 实测 70000 字节，预算 61440 字节: expected 70000 to be less than or equal to 61440"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": []
+        },
+        {
+          "fullName": "[demo] page threw",
+          "title": "[demo] page threw",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/app-----9a8b7c6d.png"
+            },
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40124/",
+                "diagnostics": [
+                  {
+                    "kind": "pageerror",
+                    "message": "TypeError: Cannot read properties of undefined (reading 'routes')\n    at http://127.0.0.1:40124/assets/index-C3d4.js:1:999"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] render error caught by errorElement",
+          "title": "[demo] render error caught by errorElement",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/app-----1b2c3d4e.png"
+            },
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40126/",
+                "diagnostics": [
+                  {
+                    "kind": "console.error",
+                    "message": "React Router caught the following error during render TypeError: Cannot read properties of undefined (reading 'map')\n    at Xe (http://127.0.0.1:40126/assets/index-E7f8.js:9:1234)\n    at Wi (http://127.0.0.1:40126/assets/index-E7f8.js:1:41020)"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] skeleton caught by errorElement",
+          "title": "[demo] skeleton caught by errorElement",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40127/",
+                "diagnostics": [
+                  {
+                    "kind": "console.error",
+                    "message": "React Router caught the following error during render Error: NotImplemented: AppShell\n    at Xe (http://127.0.0.1:40127/assets/index-E7f8.js:9:1234)"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] chunk did not load",
+          "title": "[demo] chunk did not load",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "landing 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "landing",
+                "url": "http://127.0.0.1:40125/",
+                "diagnostics": [
+                  {
+                    "kind": "requestfailed",
+                    "message": "http://127.0.0.1:40125/assets/page-D5e6.js: net::ERR_FAILED"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] goto timed out",
+          "title": "[demo] goto timed out",
+          "status": "failed",
+          "failureMessages": ["TimeoutError: page.goto: Timeout 15000ms exceeded."],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "page.goto: Timeout 15000ms exceeded.\nCall log:\n  - navigating to \"http://127.0.0.1:40123/\", waiting until \"load\"\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] connection refused",
+          "title": "[demo] connection refused",
+          "status": "failed",
+          "failureMessages": [
+            "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:40123/"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:40123/\nCall log:\n  - navigating to \"http://127.0.0.1:40123/\", waiting until \"load\"\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] no browser",
+          "title": "[demo] no browser",
+          "status": "failed",
+          "failureMessages": ["Error: browserType.launch: Executable doesn't exist"],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "Error",
+                  "message": "browserType.launch: Executable doesn't exist at /ms-playwright/chromium_headless_shell-1200/chrome-linux/headless_shell"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] screenshot timed out",
+          "title": "[demo] screenshot timed out",
+          "status": "failed",
+          "failureMessages": ["TimeoutError: page.screenshot: Timeout 10000ms exceeded."],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "page.screenshot: Timeout 10000ms exceeded.\nCall log:\n  - taking page screenshot\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] test code threw",
+          "title": "[demo] test code threw",
+          "status": "failed",
+          "failureMessages": ["TypeError: Cannot read properties of undefined (reading 'entries')"],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TypeError",
+                  "message": "Cannot read properties of undefined (reading 'entries')"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "unhandledErrors": []
+}

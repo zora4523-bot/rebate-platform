@@ -5,7 +5,7 @@
 //   node tools/ops/red-plan.ts --expected <file>   (one repository path per line)
 //
 // Prints one JSON document: { groups: [{ name, dir, config, database, browser, files }] } with
-// `files` relative to `dir`; `browser` marks a group that runs in a real Chromium (the verify image
+// `files` relative to `dir`; `browser` marks a group that needs a real Chromium (the verify image
 // must have Playwright's browser). Exit codes: 0 planned, 1 a file has no execution entry, 2 usage.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,7 +20,10 @@ export type RedProject = {
   include: string[];
   exclude: string[];
   database: boolean;
-  /** Runs in a real Chromium (Vitest browser mode, F1-01j). */
+  /**
+   * Needs the image's Chromium: Vitest browser mode (spec-browser, F1-01j) or the playwright
+   * library against the built entries (build-smoke, F1-01k).
+   */
   browser: boolean;
 };
 

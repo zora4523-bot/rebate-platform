@@ -1,12 +1,12 @@
 {
-  "//": "Where each rule-test file of the isolated red run executes (tools/ops/verify-container.sh --red; Codex review CR2-04). Mirrors the include rules of the Vitest configs named here; tools/ops/red-plan.test.ts fails when a config and this table disagree. A file no project takes has no execution entry and fails the red run. `browser`: the project runs in a real Chromium (Vitest browser mode), so the verify image must have been built with Playwright's browser (F1-01j); verify-container.sh --browser runs the one browser project. Trusted file (protected path, class 3).",
+  "//": "Where each rule-test file of the isolated red run executes (tools/ops/verify-container.sh --red; Codex review CR2-04). Mirrors the include rules of the Vitest configs named here; tools/ops/red-plan.test.ts fails when a config and this table disagree. A file no project takes has no execution entry and fails the red run. `browser`: the project needs the verify image's Chromium (Playwright's browser): spec-browser runs in it through Vitest browser mode (F1-01j), build-smoke drives it with the playwright library against the built entries (F1-01k); verify-container.sh --browser runs every browser project, in this order. Trusted file (protected path, class 3).",
   "projects": [
     {
       "name": "spec-unit",
       "dir": "test",
       "config": "vitest.config.ts",
       "include": ["properties/**/*.test.ts", "spec/**/*.test.ts"],
-      "exclude": ["**/*.int.test.ts", "spec/**/*.browser.test.{ts,tsx}"],
+      "exclude": ["**/*.int.test.ts", "spec/**/*.browser.test.{ts,tsx}", "spec/**/*.smoke.test.ts"],
       "database": false,
       "browser": false
     },
@@ -24,6 +24,15 @@
       "dir": "test",
       "config": "vitest.browser.config.ts",
       "include": ["spec/**/*.browser.test.{ts,tsx}"],
+      "exclude": [],
+      "database": false,
+      "browser": true
+    },
+    {
+      "name": "build-smoke",
+      "dir": "test",
+      "config": "vitest.build-smoke.config.ts",
+      "include": ["spec/**/*.smoke.test.ts"],
       "exclude": [],
       "database": false,
       "browser": true

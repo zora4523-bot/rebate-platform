@@ -9,6 +9,10 @@ import {
   checkRedReports,
   expectedRuleTests,
   redCheckRequired,
+  scriptFaultConsoleError,
+  smokeCauseVerdict,
+  smokeDiagnosticsOf,
+  smokeDiagnosticsVerdict,
   wrongRedReason,
 } from './red-check.ts';
 
@@ -112,6 +116,7 @@ it('[CR-10] every expected file must have run and be red; a partial report fails
     ok: true,
     red: [`${a} > splits [AC-1]`, `${b} > sums`],
     problems: [],
+    notes: [],
   });
 
   // B never ran: the run picked A only.
@@ -379,6 +384,7 @@ it('[F1-01j] real browser red runs: a missing element and an assertion are red, 
       `${DEMO} > [demo] plain assertion fails`,
     ],
     problems: [],
+    notes: [],
   });
   const typeError = checkRedReports([fixture('browser-red-2.json')], [DEMO], ROOT);
   expect(typeError.ok).toBe(false);
@@ -432,4 +438,278 @@ it('[F1-01j] the poll timeout of the real run counts only with the test file as 
     expect(result.red).not.toContain(missing);
     expect(result.problems.map((p) => p.reason)).toEqual([POLL_REFUSED]);
   }
+});
+
+const SMOKE = 'test/spec/frontend/build-smoke/entries.smoke.test.ts';
+
+it('[F1-01k] build smoke rule tests: an assertion, or a locator.waitFor that ran out, is a valid red', () => {
+  const result = checkRedReports([fixture('smoke-report.json')], [SMOKE], ROOT);
+  expect(result.ok).toBe(false);
+  // The wait counts: the page's only error is the skeleton's NotImplemented, and its failed
+  // requests are the ones the test blocked itself (the admin permission endpoint, another host).
+  // The skeleton's NotImplemented caught by React Router's errorElement (a console.error only)
+  // still counts (orchestrator's ruling on S1 ①).
+  expect(result.red).toEqual([
+    `${SMOKE} > [demo] element never came`,
+    `${SMOKE} > [demo] assertion`,
+    `${SMOKE} > [demo] skeleton caught by errorElement`,
+  ]);
+  expect(result.problems.map((p) => [p.test, p.reason])).toEqual([
+    [
+      '[demo] page threw',
+      "red for the wrong reason (the page threw: TypeError: Cannot read properties of undefined (reading 'routes'))",
+    ],
+    // A render error React Router's errorElement caught fires no pageerror (Codex r3, S1 ②).
+    [
+      '[demo] render error caught by errorElement',
+      "red for the wrong reason (the page logged a script error: React Router caught the following error during render TypeError: Cannot read properties of undefined (reading 'map'))",
+    ],
+    [
+      '[demo] chunk did not load',
+      'red for the wrong reason (a request of the entry failed: http://127.0.0.1:40125/assets/page-D5e6.js: net::ERR_FAILED)',
+    ],
+    ['[demo] goto timed out', 'red for the wrong reason (page did not load (page.goto failed))'],
+    ['[demo] connection refused', 'red for the wrong reason (page did not load (net::ERR_*))'],
+    ['[demo] no browser', 'red for the wrong reason (browser not running)'],
+    [
+      '[demo] screenshot timed out',
+      'red for the wrong reason (a Playwright timeout outside locator.waitFor: page.screenshot: Timeout 10000ms exceeded.)',
+    ],
+    ['[demo] test code threw', 'red for the wrong reason (TypeError)'],
+  ]);
+  // The size budget opens no page: no diagnostics, judged by the assertion alone, and said so.
+  expect(result.notes).toEqual([
+    `${SMOKE} > [demo] assertion: no browser diagnostics in the report, judged by the failure alone`,
+  ]);
+});
+
+it('[F1-01k] smokeDiagnosticsVerdict: page errors, own failed requests and failed imports refuse a red', () => {
+  const url = 'http://127.0.0.1:40123/';
+  const v = (diagnostics: { kind: string; message: string }[]): string | null =>
+    smokeDiagnosticsVerdict({ url, diagnostics });
+  expect(v([])).toBeNull();
+  expect(v([{ kind: 'pageerror', message: 'Error: NotImplemented: page\n    at x' }])).toBeNull();
+  expect(v([{ kind: 'pageerror', message: 'ReferenceError: x is not defined' }])).toMatch(
+    /the page threw: ReferenceError/,
+  );
+  // NotImplemented further down a stack does not excuse another error.
+  expect(
+    v([{ kind: 'pageerror', message: 'TypeError: boom\n    at NotImplemented (x.js:1:1)' }]),
+  ).toMatch(/the page threw: TypeError: boom/);
+  // Another host's failure is not the entry's; the entry's own is, unless the test blocked it.
+  expect(v([{ kind: 'requestfailed', message: 'https://cdn.invalid/a.js: net::ERR_FAILED' }])).toBe(
+    null,
+  );
+  expect(
+    v([{ kind: 'requestfailed', message: 'http://127.0.0.1:40123/assets/a.js: net::ERR_FAILED' }]),
+  ).toMatch(/a request of the entry failed/);
+  expect(
+    v([
+      { kind: 'blocked-request', message: 'http://127.0.0.1:40123/v1/config' },
+      {
+        kind: 'requestfailed',
+        message: 'http://127.0.0.1:40123/v1/config: net::ERR_BLOCKED_BY_CLIENT',
+      },
+    ]),
+  ).toBeNull();
+  // A URL that cannot be read counts as the entry's own (fail closed).
+  expect(v([{ kind: 'requestfailed', message: 'not a url' }])).toMatch(/request of the entry/);
+  expect(
+    smokeDiagnosticsVerdict({
+      url: '',
+      diagnostics: [
+        { kind: 'requestfailed', message: 'https://cdn.invalid/a.js: net::ERR_FAILED' },
+      ],
+    }),
+  ).toMatch(/request of the entry/);
+  expect(
+    v([
+      {
+        kind: 'console.error',
+        message:
+          'TypeError: Failed to fetch dynamically imported module: http://127.0.0.1:40123/assets/p.js',
+      },
+    ]),
+  ).toMatch(/a module of the page did not load/);
+  // Only a first line that starts with NotImplemented (or Error: NotImplemented) is the
+  // skeleton's; other kinds mentioning it are checked first and refused (Claude review r2, S2).
+  expect(v([{ kind: 'pageerror', message: 'NotImplemented: AdminShell\n    at x' }])).toBeNull();
+  for (const message of [
+    'TypeError: NotImplemented is not a constructor',
+    'ReferenceError: NotImplemented is not defined',
+    'Error: x failed (NotImplemented)',
+    'Uncaught NotImplemented',
+    'Error: NotImplementedYet TypeError: y',
+  ]) {
+    expect(v([{ kind: 'pageerror', message }]), message).toMatch(/the page threw/);
+  }
+  // Other console errors stay attachments.
+  expect(v([{ kind: 'console.error', message: 'Warning: something' }])).toBeNull();
+  expect(
+    v([{ kind: 'console.error', message: 'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT' }]),
+  ).toBeNull();
+  expect(v([{ kind: 'blocked-websocket', message: 'ws://127.0.0.1:40123/' }])).toBeNull();
+});
+
+it('[F1-01k] a script error the page only logged refuses a red; the skeleton NotImplemented does not (Codex r3, S1 ②)', () => {
+  const url = 'http://127.0.0.1:40123/';
+  const v = (message: string): string | null =>
+    smokeDiagnosticsVerdict({ url, diagnostics: [{ kind: 'console.error', message }] });
+  const stack = '\n    at Xe (http://127.0.0.1:40123/assets/index-E7f8.js:9:1234)';
+  const RR = 'React Router caught the following error during render ';
+  // React Router's errorElement: whatever it caught, unless it is the skeleton's NotImplemented.
+  for (const error of [
+    "TypeError: Cannot read properties of undefined (reading 'map')",
+    'ReferenceError: t is not defined',
+    'RangeError: Invalid time value',
+    'Error: boom',
+    'Invariant failed',
+  ]) {
+    expect(v(`${RR}${error}${stack}`), error).toBe(
+      `red for the wrong reason (the page logged a script error: ${RR}${error})`,
+    );
+  }
+  // <Await>'s boundary logs the same way.
+  expect(v(`<Await> caught the following error during render TypeError: x${stack}`)).toMatch(
+    /logged a script error: <Await> caught/,
+  );
+  // Error kinds of a script fault, also without React Router (React's own caught-error log).
+  for (const message of [
+    `TypeError: Cannot read properties of null (reading 'x')${stack}`,
+    'Uncaught SyntaxError: Unexpected identifier',
+    'RangeError: Maximum call stack size exceeded',
+    'URIError: URI malformed',
+    'EvalError: x',
+    `Error: wrapped${stack}\nCaused by: ReferenceError: y is not defined`,
+  ]) {
+    expect(v(message), message).toMatch(/the page logged a script error/);
+  }
+  // The skeleton's NotImplemented (first line of the error) stays a valid red, caught or not.
+  for (const message of [
+    `${RR}Error: NotImplemented: AppShell${stack}`,
+    `${RR}NotImplemented: AppShell${stack}`,
+    `Error: NotImplemented: AppShell${stack}`,
+  ]) {
+    expect(v(message), message).toBeNull();
+  }
+  // … but not another kind that mentions it.
+  for (const message of [
+    `${RR}TypeError: NotImplemented is not a constructor${stack}`,
+    `${RR}ReferenceError: NotImplemented is not defined`,
+    `${RR}Error: failed (NotImplemented)`,
+  ]) {
+    expect(v(message), message).toMatch(/the page logged a script error/);
+  }
+  expect(scriptFaultConsoleError(`${RR}Error: NotImplemented: x`, true)).toBe(false);
+  expect(scriptFaultConsoleError(`${RR}Error: NotImplemented: x`, false)).toBe(true);
+  expect(scriptFaultConsoleError('Warning: something', false)).toBe(false);
+});
+
+it('[F1-01k] a locator.waitFor timeout without browser diagnostics is not a valid red', () => {
+  type Entry = { assertionResults: { fullName: string; annotations?: unknown[] }[] };
+  const report = fixture('smoke-report.json') as { testResults: Entry[] };
+  const waited = report.testResults[0]!.assertionResults.find(
+    (t) => t.fullName === '[demo] element never came',
+  )!;
+  // Only the screenshot is left: the page events are unknown, the page may have thrown.
+  waited.annotations = waited.annotations!.slice(0, 1);
+  const result = checkRedReports([report], [SMOKE], ROOT);
+  expect(result.red).toEqual([
+    `${SMOKE} > [demo] assertion`,
+    `${SMOKE} > [demo] skeleton caught by errorElement`,
+  ]);
+  expect(result.problems[0]).toEqual({
+    file: SMOKE,
+    test: '[demo] element never came',
+    reason:
+      'red for an unproven reason (locator.waitFor ran out but the test wrote no browser diagnostics annotation)',
+  });
+  expect(result.notes).toEqual([
+    `${SMOKE} > [demo] element never came: locator.waitFor timeout without browser diagnostics, judged invalid`,
+    `${SMOKE} > [demo] assertion: no browser diagnostics in the report, judged by the failure alone`,
+  ]);
+});
+
+it('[F1-01k] smokeDiagnosticsOf reads only diagnostics attachments of the red reporter', () => {
+  expect(smokeDiagnosticsOf(undefined)).toEqual([]);
+  expect(
+    smokeDiagnosticsOf([
+      { message: 'x 首屏截图', type: 'notice', path: '/a.png' },
+      { message: 'other', type: 'notice', json: { hello: 1 } },
+      null,
+      {
+        message: 'x 浏览器诊断（不作为断言）',
+        type: 'notice',
+        json: { entry: 'x', url: 'http://127.0.0.1:1/', diagnostics: [{ kind: 'pageerror' }, 3] },
+      },
+    ]),
+  ).toEqual([
+    {
+      url: 'http://127.0.0.1:1/',
+      diagnostics: [
+        { kind: 'pageerror', message: '' },
+        { kind: '', message: '' },
+      ],
+    },
+  ]);
+});
+
+it('[F1-01k] the locator.waitFor reading applies only to smoke files run in Node, from the red reporter', () => {
+  type Entry = { name: string; browser: boolean; assertionResults: { failures?: unknown }[] };
+  const load = (): { testResults: Entry[] } =>
+    fixture('smoke-report.json') as { testResults: Entry[] };
+  const waited = (r: ReturnType<typeof checkRedReports>): boolean =>
+    r.red.some((x) => x.endsWith('[demo] element never came'));
+  // The same file name outside the smoke pattern: an ordinary unit test, the timeout is refused.
+  const renamed = load();
+  const other = 'test/spec/frontend/build-smoke/entries.test.ts';
+  renamed.testResults[0]!.name = `${ROOT}/${other}`;
+  expect(waited(checkRedReports([renamed], [other], ROOT))).toBe(false);
+  // A smoke-named file outside test/spec/ is not a rule test of the build-smoke project.
+  for (const elsewhere of [
+    'packages/testing/src/entries.smoke.test.ts',
+    'test/acceptance/entries.smoke.test.ts',
+  ]) {
+    const moved = load();
+    moved.testResults[0]!.name = `${ROOT}/${elsewhere}`;
+    expect(waited(checkRedReports([moved], [elsewhere], ROOT))).toBe(false);
+  }
+  // A smoke-named file that ran in a browser is not a build smoke test.
+  const inBrowser = load();
+  inBrowser.testResults[0]!.browser = true;
+  expect(waited(checkRedReports([inBrowser], [SMOKE], ROOT))).toBe(false);
+  // Vitest's own JSON report (messages only, no causes): refused.
+  const plain = load();
+  for (const t of plain.testResults[0]!.assertionResults) delete t.failures;
+  expect(waited(checkRedReports([plain], [SMOKE], ROOT))).toBe(false);
+  // A globalSetup that failed runs no test: the file is not in the report.
+  expect(checkRedReports([{ testResults: [] }], [SMOKE], ROOT).problems).toEqual([
+    { file: SMOKE, test: null, reason: 'not in the report: this rule-test file did not run' },
+  ]);
+});
+
+it('[F1-01k] smokeCauseVerdict: only the bare locator.waitFor TimeoutError and assertions count', () => {
+  const wait = 'locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for x';
+  expect(smokeCauseVerdict([{ name: 'TimeoutError', message: wait }])).toBeNull();
+  expect(smokeCauseVerdict([{ name: 'AssertionError', message: 'expected 1 to be 2' }])).toBeNull();
+  // Wrapped, or named otherwise, it is not the wait of the test.
+  expect(
+    smokeCauseVerdict([
+      { name: 'Error', message: 'wrapper' },
+      { name: 'TimeoutError', message: wait },
+    ]),
+  ).not.toBeNull();
+  expect(smokeCauseVerdict([{ name: 'Error', message: wait }])).not.toBeNull();
+  expect(
+    smokeCauseVerdict([
+      { name: 'TimeoutError', message: 'locator.click: Timeout 5000ms exceeded.' },
+    ]),
+  ).toMatch(/outside locator\.waitFor/);
+  // A failed globalSetup reported as an error outside the tests.
+  expect(
+    smokeCauseVerdict([
+      { name: 'Error', message: 'build smoke: the admin build (vite build) exited 1' },
+    ]),
+  ).toMatch(/unrecognised/);
+  expect(smokeCauseVerdict([])).toMatch(/unknown reason/);
 });

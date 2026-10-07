@@ -6,6 +6,15 @@ export type FrameSite = { file: string; line: number | null; column: number | nu
 export function frameFile(raw: unknown): string;
 export function userSite(error: unknown): FrameSite | null;
 export function pollInCode(source: string): boolean;
+export function attachmentText(attachment: unknown): string | null;
+export type AnnotationRecord = {
+  message: string;
+  type: string;
+  content_type?: string;
+  path?: string;
+  json?: unknown;
+};
+export function annotationRecord(annotation: unknown): AnnotationRecord;
 
 declare class RedReporter {
   files: unknown[];

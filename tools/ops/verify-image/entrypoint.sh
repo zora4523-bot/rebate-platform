@@ -13,12 +13,16 @@
 #                                    /out/<project>.json. The tests are expected to fail (red):
 #                                    their exit code is recorded in /out/<project>.exit, not
 #                                    returned; tools/guard/red-check.ts judges.
-#   couli-verify-entrypoint browser  offline; copies /src, installs, then runs the browser project
-#                                    (BROWSER_DIR, BROWSER_CONFIG: from the trusted
-#                                    red-projects.json) in a real Chromium under a time limit.
-#                                    Screenshots go to /out/screenshots, Vitest's JSON report to
-#                                    /out/vitest-report.json; the exit code is Vitest's. Needs an
-#                                    image built with Playwright's browser (PLAYWRIGHT_VERSION).
+#   couli-verify-entrypoint browser  offline; copies /src, installs, then runs every browser
+#                                    project (BROWSER_PROJECTS: "<name>:<dir>:<config>" words,
+#                                    from the trusted red-projects.json) in order, under one time
+#                                    limit for all; spec-browser in Vitest browser mode, build-smoke
+#                                    with the playwright library against its own builds. Both use
+#                                    the image's Chromium. Screenshots go to /out/screenshots
+#                                    (COULI_BROWSER_SCREENSHOT_DIR), each project's Vitest JSON
+#                                    report to /out/<name>.vitest-report.json; every project runs,
+#                                    the exit code is the first failing one's. Needs an image built
+#                                    with Playwright's browser (PLAYWRIGHT_VERSION).
 set -euo pipefail
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
@@ -101,12 +105,15 @@ case "${1:-}" in
     ;;
   browser)
     limit="${VERIFY_TIMEOUT_SECS:?VERIFY_TIMEOUT_SECS is required}"
-    dir="${BROWSER_DIR:-}"
-    config="${BROWSER_CONFIG:-}"
-    if ! plain_path "$dir" || ! plain_path "$config"; then
-      echo "[browser] BROWSER_DIR and BROWSER_CONFIG must be plain relative paths" >&2
-      exit 2
-    fi
+    projects="${BROWSER_PROJECTS:-}"
+    [ -n "$projects" ] || { echo "[browser] BROWSER_PROJECTS is not set" >&2; exit 2; }
+    for entry in $projects; do
+      IFS=: read -r name dir config extra <<<"$entry"
+      if [ -n "${extra:-}" ] || ! plain_path "$name" || ! plain_path "$dir" || ! plain_path "$config"; then
+        echo "[browser] BROWSER_PROJECTS entries must be <name>:<dir>:<config> plain relative paths" >&2
+        exit 2
+      fi
+    done
     [ -d /out ] && [ -w /out ] || { echo "[browser] /out is not mounted writable" >&2; exit 2; }
     [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d "$PLAYWRIGHT_BROWSERS_PATH" ] || {
       echo "[browser] this image has no Playwright browser (built with PLAYWRIGHT_VERSION=none)" >&2
@@ -114,15 +121,35 @@ case "${1:-}" in
     }
     prepare_repo browser
     mkdir -p /out/screenshots
-    echo "[browser] vitest run --config ${config} in ${dir} (limit ${limit}s)"
     started=$(date +%s)
     rc=0
-    (cd "/work/repo/$dir" && COULI_BROWSER_SCREENSHOT_DIR=/out/screenshots timeout --signal=TERM \
-      --kill-after=10 "$limit" pnpm exec vitest run --config "$config" \
-      --reporter=default --reporter=json --outputFile.json=/out/vitest-report.json) || rc=$?
-    elapsed=$(( $(date +%s) - started ))
-    if [ "$rc" -eq 137 ] && [ "$elapsed" -ge "$limit" ]; then rc=124; fi
-    echo "[browser] vitest exited ${rc} after ${elapsed}s"
+    for entry in $projects; do
+      IFS=: read -r name dir config <<<"$entry"
+      left=$(( limit - ($(date +%s) - started) ))
+      if [ "$left" -le 0 ]; then
+        echo "[browser] ${name}: no time left (limit ${limit}s)"
+        [ "$rc" -ne 0 ] || rc=124
+        continue
+      fi
+      echo "[browser] ${name}: vitest run --config ${config} in ${dir} (${left}s left)"
+      p_started=$(date +%s)
+      p_rc=0
+      # The command-line reporters replace the config's: build-smoke keeps its strict reporter
+      # (page errors and failed own requests in the diagnostics fail the run).
+      strict=()
+      if [ "$name" = build-smoke ]; then
+        strict=(--reporter=/work/repo/tools/ops/build-smoke/strict-reporter.mjs)
+      fi
+      (cd "/work/repo/$dir" && COULI_BROWSER_SCREENSHOT_DIR=/out/screenshots timeout --signal=TERM \
+        --kill-after=10 "$left" pnpm exec vitest run --config "$config" \
+        --reporter=default --reporter=json "${strict[@]}" \
+        --outputFile.json="/out/${name}.vitest-report.json") || p_rc=$?
+      p_elapsed=$(( $(date +%s) - p_started ))
+      if [ "$p_rc" -eq 137 ] && [ "$p_elapsed" -ge "$left" ]; then p_rc=124; fi
+      echo "[browser] ${name}: vitest exited ${p_rc} after ${p_elapsed}s"
+      [ "$rc" -ne 0 ] || rc="$p_rc"
+    done
+    echo "[browser] exited ${rc} after $(( $(date +%s) - started ))s"
     exit "$rc"
     ;;
   *)
