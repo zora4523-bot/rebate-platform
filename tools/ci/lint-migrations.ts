@@ -70,7 +70,7 @@ const IGNORE_ANY = /squawk-ignore\b(?!-file)/g;
 const IDENT = String.raw`"?[\w]+"?(?:\s*\.\s*"?[\w]+"?)?`;
 /** Table names in a DDL statement: after TABLE / ON / TRUNCATE, past IF [NOT] EXISTS and ONLY, including a comma list (`DROP TABLE a, b`). */
 const TABLE_REF = new RegExp(
-  String.raw`\b(?:TABLE|ON|TRUNCATE)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:ONLY\s+)?(${IDENT}(?:\s*,\s*${IDENT})*)`,
+  String.raw`\b(?:TABLE|ON|TRUNCATE(?:\s+TABLE)?)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:ONLY\s+)?(${IDENT}(?:\s*,\s*${IDENT})*)`,
   'gi',
 );
 

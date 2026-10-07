@@ -446,3 +446,14 @@ it('checkTimeouts: the two settings must come before the first statement that is
     ),
   ).toEqual([]);
 });
+
+it('checkMigration: TRUNCATE TABLE with an ignore is refused on a funds table (TABLE is a keyword there, not the name)', () => {
+  for (const sql of [
+    '-- squawk-ignore ban-truncate-cascade\nTRUNCATE TABLE app.ledger_entries, app.accounts CASCADE;\n',
+    '-- squawk-ignore ban-truncate-cascade\nTRUNCATE app.articles, app.orders CASCADE;\n',
+  ]) {
+    expect(checkMigration('x.sql', sql)).toEqual([
+      expect.objectContaining({ message: expect.stringContaining('funds or attribution table') }),
+    ]);
+  }
+});
