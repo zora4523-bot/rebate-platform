@@ -17,7 +17,7 @@ assume_in_transaction = true
 excluded_rules = ["prefer-bigint-over-int", "require-concurrent-index-creation"]
 
 # Which files are linted is decided by tools/ci/lint-migrations.ts: merged migrations never change
-# (db/AGENTS.md rule 2), so the files that predate this gate (0001–0018, the baseline in that script)
+# (db/AGENTS.md rule 2), so the files that predate this gate (0001–0018, the baseline in that script, plus its FROZEN_AFTER_BASELINE list)
 # are not linted. A legitimate exception in a new migration is a `-- squawk-ignore <rule>` comment on
 # the line right before the statement, with the reason on the lines above it (db/AGENTS.md rule 11).
 # The wrapper refuses `squawk-ignore-file` and any `squawk-ignore` before a statement on a funds or

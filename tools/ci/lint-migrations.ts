@@ -9,7 +9,7 @@
 // migration file name is not NNNN_kebab-name.sql, 2 usage or internal error (squawk missing).
 //
 // Why a wrapper and not `squawk db/migrations/*.sql`: merged migrations never change (db/AGENTS.md
-// rule 2), so the files that predate the gate (0001–0018) are not linted, and squawk exits 1 with
+// rule 2), so the files that predate the gate (0001–0018 and FROZEN_AFTER_BASELINE) are not linted, and squawk exits 1 with
 // "Failed to find files" when every path it is given is excluded. The selection is therefore made
 // here, and an empty selection passes with a message. The own checks (Codex ledger review of
 // rebate-platform#248): a money column typed anything but bigint; a file-level `squawk-ignore-file`;
@@ -25,6 +25,13 @@ export const MIGRATIONS_DIR = 'db/migrations';
 export const CONFIG_FILE = '.squawk.toml';
 /** Highest migration number merged before the gate. Everything above it is linted. Never raise it. */
 export const GATE_BASELINE = 18;
+/**
+ * Migrations above the baseline that were merged before the gate itself (db/AGENTS.md rule 2: merged
+ * migrations never change), by exact file name. Only ever extended by the PR that lands the gate.
+ */
+export const FROZEN_AFTER_BASELINE: readonly string[] = [
+  '0019_device-registrations-created-at-insert.sql', // B1-02n (#233), merged while CT-06a was in review
+];
 /** db/AGENTS.md rule 1: four-digit sequence, a dash-separated lowercase name, `.sql`. */
 const MIGRATION_FILE = /^(\d{4})_[a-z0-9][a-z0-9-]*\.sql$/;
 
@@ -93,7 +100,7 @@ export function selectMigrations(names: readonly string[], baseline = GATE_BASEL
       badNames.push(name);
       continue;
     }
-    if (Number(match[1]) > baseline) lint.push(name);
+    if (Number(match[1]) > baseline && !FROZEN_AFTER_BASELINE.includes(name)) lint.push(name);
   }
   lint.sort();
   badNames.sort();
@@ -453,7 +460,7 @@ function main(argv: readonly string[]): number {
   if (lint.length === 0) {
     if (badNames.length > 0) return 1;
     console.log(
-      `lint-migrations: no migration after ${String(GATE_BASELINE).padStart(4, '0')}, nothing to lint`,
+      `lint-migrations: no migration after ${String(GATE_BASELINE).padStart(4, '0')} outside the frozen list, nothing to lint`,
     );
     return 0;
   }

@@ -577,3 +577,14 @@ it("checkMigration: a comment inside a funds-table statement on a line with an e
     checkMigration('x.sql', 'CREATE TABLE app.t (amount_fen int8.fen);').map((p) => p.message),
   ).toEqual([expect.stringContaining('amount_fen must be bigint')]);
 });
+
+it('selectMigrations: a migration merged before the gate is frozen by its exact name, not by its number', () => {
+  expect(
+    selectMigrations([
+      '0018_linking-bindings.sql',
+      '0019_device-registrations-created-at-insert.sql',
+      '0019_other.sql',
+      '0020_next.sql',
+    ]).lint,
+  ).toEqual(['0019_other.sql', '0020_next.sql']);
+});
