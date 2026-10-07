@@ -527,3 +527,27 @@ it('checkTimeouts: a timeout of 0 (no timeout at all) does not count', () => {
     ),
   ).toEqual([]);
 });
+
+it("checkMigration: a statement after a blank line is out of a trailing ignore's reach", () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      "ALTER TABLE app.articles ADD CONSTRAINT articles_title_nonempty CHECK (title <> ''); -- squawk-ignore constraint-missing-not-valid\n\nALTER TABLE app.orders ADD COLUMN note text;\n",
+    ),
+  ).toEqual([]);
+  expect(
+    checkMigration(
+      'x.sql',
+      '-- squawk-ignore ban-drop-column\nALTER TABLE app.articles DROP COLUMN a;\n\nALTER TABLE app.orders DROP COLUMN c;\n',
+    ),
+  ).toEqual([]);
+});
+
+it('checkTimeouts: 0 with a unit and DEFAULT (both mean no timeout) do not count', () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      "SET LOCAL lock_timeout = '0h';\nSET LOCAL statement_timeout TO DEFAULT;\n",
+    ),
+  ).toHaveLength(2);
+});

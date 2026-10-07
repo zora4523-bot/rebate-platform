@@ -128,7 +128,9 @@ export function checkTimeouts(file: string, sql: string): string[] {
     const raw = sql.slice(start, start + part.length).trim();
     start += part.length + 1;
     if (text === '') continue;
-    const zero = /(?:=|\bTO)\s*'?\s*0+\s*(?:ms|s|min)?\s*'?$/i.test(raw);
+    const zero = /(?:=|\bTO)\s*(?:DEFAULT|'?\s*0+(?:\.0*)?\s*(?:us|ms|s|min|h|d)?\s*'?)$/i.test(
+      raw,
+    );
     if (LOCK_TIMEOUT.test(text)) lock = !zero;
     else if (STATEMENT_TIMEOUT.test(text)) statement = !zero;
     else if (!/^SET\b/i.test(text)) break;
@@ -346,7 +348,14 @@ export function checkMigration(file: string, sql: string): Problem[] {
     // Statements reached only through the next-line rule: checked when they alter or drop a table,
     // so a GRANT or an index on a funds table right after an ignored line stays legal.
     const reached = trailing ? code.slice(prev + 1, end) : code.slice(own + 1, end);
-    statements.push(...reached.split(';').filter((part) => ALTERING.test(part)));
+    // Only statements that start on the comment's line or the line after it: a statement after a
+    // blank line is out of the ignore's reach.
+    let offset = trailing ? prev + 1 : own + 1;
+    for (const part of reached.split(';')) {
+      const begins = offset + part.length - part.trimStart().length;
+      if (begins < windowEnd && ALTERING.test(part)) statements.push(part);
+      offset += part.length + 1;
+    }
     const statement = statements.join(';');
     const names = [...statement.matchAll(TABLE_REF)].flatMap((ref) => (ref[1] ?? '').split(','));
     for (const raw of names) {
