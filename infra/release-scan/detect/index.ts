@@ -80,7 +80,9 @@ export async function scanArtifact(input: ScanInput): Promise<ScanResult> {
   if (options)
     for (const entry of entries) {
       try {
-        hits.push(...detectSecrets(entry.path, entry.content, options));
+        for (const text of textViews(entry.content, entry.path, true)) {
+          hits.push(...detectText(entry.path, text, options));
+        }
       } catch {
         errors.push(`Artifact content unreadable: ${entry.path}`);
       }

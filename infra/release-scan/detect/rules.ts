@@ -49,17 +49,50 @@ const PRIORITY: readonly DetectRuleId[] = [
 ];
 
 function fieldRule(name: string): DetectRuleId | undefined {
+  const words = name
+    .replace(/^(?:(?:this|window|globalThis|global|self)\.)+/, '')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[._$-]+/);
+  const has = (word: string): boolean => words.includes(word);
+  const salt = words.some(
+    (word, i) =>
+      word === 'salt' &&
+      !/^(?:rounds|length|len|size|bits|count|iterations|cost)$/.test(words[i + 1] ?? ''),
+  );
+  if (
+    salt ||
+    has('hmac') ||
+    (has('install') && has('secret')) ||
+    words.some((word) =>
+      /^(?:installsecret|sign(?:ing)?(?:key|secret|salt)|hmac(?:key|secret)|sharedsalt)$/.test(
+        word,
+      ),
+    ) ||
+    ((has('sign') || has('signing')) && (has('key') || has('secret')))
+  )
+    return 'request-sign-material';
+  // 服务端密钥和其他凭据沿用原有格式覆盖；本轮只修签名材料的子串误判。
   const key = name.replace(/[._-]/g, '').toLowerCase();
-  if (/salt(?:rounds|length|len|size|bits|count|iterations|cost)$/.test(key)) return;
-  if (/installsecret|sign.*(?:key|secret)|hmac|salt/.test(key)) return 'request-sign-material';
   if (/secret|password|passwd|privatekey|apiv3/.test(key)) return 'server-secret';
   if (/key|token|credential/.test(key)) return 'keyed-credential';
   return;
 }
 
 /** 每种布局都保留原始字符偏移；后续去重和行号不依赖重新序列化。 */
-function fields(text: string): Array<{ name: string; value: string; start: number }> {
+function fields(file: string, text: string): Array<{ name: string; value: string; start: number }> {
   const found: Array<{ name: string; value: string; start: number }> = [];
+  const configFile =
+    /(?:\.(?:properties|ini|cfg|conf|env|yaml|yml)|(?:^|\/)\.env(?:\.[^/]*)?)$/i.test(file);
+  // 未知格式只认整份纯配置文本；对象路径和代码语句不能靠行首的 '=' 冒充配置。
+  const plainConfig = text
+    .split(/\r?\n/)
+    .every(
+      (line) =>
+        /^\s*(?:(?:#|\/\/).*|[A-Za-z_$][\w$-]*\s*=\s*[^\s"'`]+)?\s*$/.test(line) &&
+        !/[,;)}]\s*[A-Za-z_$][\w$.-]*\s*=/.test(line),
+    );
   const add = (name: string, value: string, start: number): void => {
     found.push({ name, value, start });
   };
@@ -77,19 +110,17 @@ function fields(text: string): Array<{ name: string; value: string; start: numbe
       assignment.lastIndex += raw[0].length;
       continue;
     }
-    // 行首配置赋值允许标点（冻结属性测试涵盖逗号、括号等盐值）。
-    // 内联代码的裸值则在语法分隔符处截止，不能吞掉后面的字段。
+    // 只有配置文件或整份纯 key=value 文本保留裸值中的标点。
     let before = m.index - 1;
     while (before >= 0 && (text[before] === ' ' || text[before] === '\t')) before--;
-    const config = before < 0 || text[before] === '\n' || text[before] === '\r';
-    const bare = (
-      config && m[2] === '=' ? /^[^\s<\x00-\x1f"'`]+/ : /^[^\s<\x00-\x1f"'`,{}();\u005b\u005d]+/
-    ).exec(text.slice(valueAt));
+    const lineStart = before < 0 || text[before] === '\n' || text[before] === '\r';
+    const config = lineStart && (configFile || (plainConfig && m[2] === '='));
+    const bare = (config ? /^[^\s<\x00-\x1f"'`]+/ : /^[^\s<\x00-\x1f"'`,{}();\u005b\u005d]+/).exec(
+      text.slice(valueAt),
+    );
     if (!bare) continue;
-    // 冒号在配置行中表示取值；代码里的标识符、调用和表达式不是字面材料。
-    const codeTail = /^[ \t]*[,});]/.test(text.slice(valueAt + bare[0].length));
-    if (m[2] === ':' && (!config || codeTail) && !/^(?:[+-]?\d+(?:\.\d+)?)$/.test(bare[0]))
-      continue;
+    // JS 的裸标识符、null、数字和表达式均不算材料字面值；也不推进游标吞下后续赋值。
+    if (!config || /^(?:%[sdif]|%\d+\$[sdif])$/.test(bare[0])) continue;
     add(m[1]!, bare[0], valueAt);
     assignment.lastIndex += bare[0].length;
   }
@@ -111,7 +142,7 @@ function fields(text: string): Array<{ name: string; value: string; start: numbe
   return found;
 }
 
-/** DER 私钥外层是 SEQUENCE + version INTEGER + RSA INTEGER / PKCS#8 SEQUENCE。
+/** DER 私钥外层是 SEQUENCE + version INTEGER + RSA INTEGER / PKCS#8 SEQUENCE / SEC1 OCTET STRING。
  * SPKI 公钥从算法 SEQUENCE 开始，不含 version，因此不会升级为不可豁免。
  */
 function privateDerPrefix(value: string): boolean {
@@ -125,7 +156,7 @@ function privateDerPrefix(value: string): boolean {
     bytes[at] === 2 &&
     bytes[at + 1] === 1 &&
     (bytes[at + 2] === 0 || bytes[at + 2] === 1) &&
-    (bytes[at + 3] === 2 || bytes[at + 3] === 0x30)
+    (bytes[at + 3] === 2 || bytes[at + 3] === 0x30 || (bytes[at + 2] === 1 && bytes[at + 3] === 4))
   );
 }
 
@@ -157,7 +188,7 @@ export function detectText(file: string, text: string, options: DetectOptions): 
     else if (hasHigh(text.slice(m.index, m.index + length))) add('high-entropy', m.index, length);
   }
 
-  for (const { name, value, start } of fields(text)) {
+  for (const { name, value, start } of fields(file, text)) {
     const rule = fieldRule(name);
     if (!rule || value.length === 0) continue;
     if (rule === 'request-sign-material') add(rule, start, value.length);

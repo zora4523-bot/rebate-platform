@@ -1,10 +1,21 @@
 import { plistText } from './plist.ts';
 import { axmlText } from './axml.ts';
+import { arscText } from './arsc.ts';
 
 /** BOM 文本只扫描解码视图；普通二进制扫描 latin1 以及无 BOM 的 UTF-16LE 串。 */
-export function textViews(content: string | Uint8Array, file: string): string[] {
+export function textViews(
+  content: string | Uint8Array,
+  file: string,
+  completeArtifact = false,
+): string[] {
   if (typeof content === 'string') return [content];
   const bytes = Buffer.from(content);
+  // 内容检测也接受普通二进制片段；完整制品中的资源表则连损坏的类型头也必须拒绝。
+  if (
+    /(?:^|\/)resources\.arsc$/i.test(file) &&
+    (completeArtifact || (bytes.length >= 2 && bytes.readUInt16LE(0) === 2))
+  )
+    return [arscText(bytes)];
   // arsc 等二进制可含同样的短字节前缀；完整 XML 容器或 XML 文件才走 AXML。
   if (
     bytes.length >= 2 &&
