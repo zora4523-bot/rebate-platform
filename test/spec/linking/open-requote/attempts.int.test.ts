@@ -154,7 +154,16 @@ it('[AC-B1-06k#24] 同键重放跨服务实例、超出单飞窗口：保持首�
   expect(await db.selectFrom('links').select('link_id').execute()).toEqual(before);
   expect(await openLogs(db, first.new_link_id!)).toHaveLength(1);
   expect(await attempts(db, first.new_link_id!)).toHaveLength(1);
-  expect(f.execute).toHaveBeenCalledTimes(2);
+  // Each request stores its idempotency key exactly once, via execute or executeInTransaction.
+  const stores = [...f.execute.mock.calls, ...f.executeInTransaction.mock.calls].map(
+    ([value]) => value,
+  );
+  expect(stores).toHaveLength(2);
+  for (const traceId of ['synthetic-trace', 'synthetic-second-trace']) {
+    expect(
+      stores.filter((value) => value.key === request.idempotencyKey && value.traceId === traceId),
+    ).toHaveLength(1);
+  }
   const storedKey = await db
     .selectFrom('idempotency_keys')
     .selectAll()
