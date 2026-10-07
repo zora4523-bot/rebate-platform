@@ -11,7 +11,7 @@ import {
 import type { ModelErrorKind } from '../openai-compat/index.ts';
 import type { DegradeReason } from '../degraded/index.ts';
 import { RunDeadlineError, withinRun } from './attempt.ts';
-import { claimFailureUsage, gatewayBilling } from './billing.ts';
+import { gatewayBilling } from './billing.ts';
 import type {
   AttemptRecord,
   ModelOutcome,
@@ -31,12 +31,9 @@ function failureKind(error: unknown): ModelErrorKind | 'circuit_open' {
   return 'network';
 }
 
-/**
- * 网关只为正常返回计量；只在 invoke 拒绝的边界补记错误中的有效用量。
- * 只有计费传输才补记；评测端口已认领（已记离线或归离线）的错误不再记线上（第 29 条）。
- */
+/** 成功和协议失败的用量均由网关计量；路由器只负责组装结果。 */
 async function invoke(
-  options: ModelRouterOptions & { readonly billable: boolean },
+  options: ModelRouterOptions,
   entry: RouteEntry,
   input: RouterChatInput,
   signal: AbortSignal,
@@ -45,26 +42,10 @@ async function invoke(
   const request = toVendorRequest(
     buildModelRequest({ ...input, vendor, model: entry.model }, quirksFor(vendor)),
   );
-  const response = await options.gateway
-    .invoke({ ...request, vendor, purpose: 'online', dataClass: 'user_input' }, signal)
-    .catch((error: unknown) => {
-      if (
-        options.billable &&
-        error instanceof ModelProtocolError &&
-        error.usage !== null &&
-        claimFailureUsage(error)
-      ) {
-        options.meter.record({
-          vendor,
-          purpose: 'online',
-          use: null,
-          model: entry.model,
-          ...error.usage,
-          recorded_at: options.clock.now(),
-        });
-      }
-      throw error;
-    });
+  const response = await options.gateway.invoke(
+    { ...request, vendor, purpose: 'online', dataClass: 'user_input' },
+    signal,
+  );
   // 组装失败或内容拒绝时，response 已由网关计量，不得在此重复计量。
   const events = assembleChunks(response.chunks);
   if (events.some((event) => event.t === 'done' && event.reason === 'content_filter')) {
@@ -73,7 +54,7 @@ async function invoke(
   return { events, usage: response.usage };
 }
 
-function resolveBillable(options: ModelRouterOptions): boolean {
+function validateBillable(options: ModelRouterOptions): void {
   const registered = gatewayBilling(options.gateway)?.billable;
   const declared: unknown = options.billable;
   if (declared !== undefined && typeof declared !== 'boolean') {
@@ -82,14 +63,12 @@ function resolveBillable(options: ModelRouterOptions): boolean {
   if (declared !== undefined && registered !== undefined && declared !== registered) {
     throw new ModelProtocolError('bad_request', 'Router billable flag contradicts its gateway');
   }
-  // 未登记、未声明的网关按计费处理：宁可补记，不漏记付费调用；评测端口认领的错误仍不会记线上。
-  return declared ?? registered ?? true;
 }
 
 export function createModelRouter(inputOptions: ModelRouterOptions): ModelRouter {
+  validateBillable(inputOptions);
   const options = {
     ...inputOptions,
-    billable: resolveBillable(inputOptions),
     config: {
       ...inputOptions.config,
       breaker: { ...inputOptions.config.breaker },

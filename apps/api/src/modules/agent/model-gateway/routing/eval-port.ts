@@ -11,7 +11,7 @@ import type {
 import { VendorError } from '../vendors/index.ts';
 import type { ModelRequestShape } from '../openai-compat/index.ts';
 import { ModelProtocolError, toVendorRequest } from '../openai-compat/index.ts';
-import { claimFailureUsage, gatewayBilling } from './billing.ts';
+import { gatewayBilling } from './billing.ts';
 
 /** 来源由可信评测加载器附加；旧合成题可省略，不得取自模型输出、正文或用户请求。 */
 export interface EvalModelRequest extends ModelRequestShape {
@@ -31,9 +31,8 @@ export interface EvalModelPortOptions {
   readonly accessPath: AccessPath;
   readonly workspace: string;
   /**
-   * 失败用量补记，须与 gateway 的 transport.billable、offlineMeter、Clock 一致（与登记的 billable 矛盾则构造即拒绝）。
-   * 省略时取 createMeteredVendorGateway 登记的值；付费评测的网关应以它创建，否则须显式注入。
-   * 成功用量始终由 gateway 计量。
+   * 兼容旧接线，仍校验配置形状与登记的 billable 是否一致。
+   * 成功和失败用量均由 gateway 按自身 transport、计量去处与 Clock 记录。
    */
   readonly metering?: EvalFailureMetering;
 }
@@ -77,11 +76,8 @@ function invalidMetering(): ModelProtocolError {
   return new ModelProtocolError('bad_request', 'Invalid evaluation metering configuration');
 }
 
-/**
- * 失败计量：显式注入优先，须与网关登记的 billable 一致；省略时取 createMeteredVendorGateway 登记的
- * offlineMeter、Clock 与 transport.billable（第 29 条）。两者都没有时返回 undefined（计费属性未知）。
- */
-function resolveMetering(options: EvalModelPortOptions): EvalFailureMetering | undefined {
+/** 保留旧接线的构造校验，端口不再补记或认领失败用量。 */
+function validateMetering(options: EvalModelPortOptions): void {
   const registered = gatewayBilling(options.gateway);
   const declared = options.metering;
   if (declared !== undefined) {
@@ -95,14 +91,7 @@ function resolveMetering(options: EvalModelPortOptions): EvalFailureMetering | u
     ) {
       throw invalidMetering();
     }
-    return declared.billable
-      ? { billable: true, offlineMeter: declared.offlineMeter, clock: declared.clock }
-      : { billable: false };
   }
-  if (registered === undefined) return undefined;
-  return registered.billable
-    ? { billable: true, offlineMeter: registered.offlineMeter, clock: registered.clock }
-    : { billable: false };
 }
 
 export function createEvalModelPort(
@@ -110,43 +99,22 @@ export function createEvalModelPort(
 ): (req: EvalModelRequest) => Promise<VendorResponse> {
   const config = { ...options };
   // 构造即校验，配置错误不等到第一次调用。
-  const metering = resolveMetering(options);
+  validateMetering(options);
   return async (req) => {
     if (req.vendor !== config.vendor || req.model !== config.model) {
       throw new ModelProtocolError('bad_request', 'Evaluation request does not match its port');
     }
     const dataClass = evaluationDataClass(req);
     const request = toVendorRequest(req);
-    try {
-      return await config.gateway.invoke({
-        ...request,
-        vendor: config.vendor,
-        model: config.model,
-        purpose: 'offline',
-        use: config.use,
-        accessPath: config.accessPath,
-        workspace: config.workspace,
-        dataClass,
-      });
-    } catch (error) {
-      // VendorGateway 只记录成功响应；这里只补记付费失败的已知用量，同一错误只记一次。
-      // 无论记没记，带用量的错误都由本端口认领为离线调用：经 createPortTransport 传回路由器时不再记线上。
-      if (
-        error instanceof ModelProtocolError &&
-        error.usage !== null &&
-        claimFailureUsage(error) &&
-        metering?.billable === true
-      ) {
-        metering.offlineMeter.record({
-          vendor: config.vendor,
-          model: config.model,
-          purpose: 'offline',
-          use: config.use,
-          ...error.usage,
-          recorded_at: metering.clock.now(),
-        });
-      }
-      throw error;
-    }
+    return config.gateway.invoke({
+      ...request,
+      vendor: config.vendor,
+      model: config.model,
+      purpose: 'offline',
+      use: config.use,
+      accessPath: config.accessPath,
+      workspace: config.workspace,
+      dataClass,
+    });
   };
 }

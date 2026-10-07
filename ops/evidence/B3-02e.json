@@ -1,0 +1,104 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/model-gateway/vendors/** and routing/** are RV1). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit, 3 attempts), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl (attempt 1; one earlier call hit model capacity and was not counted). No real model call and no key; vendors does not import openai-compat (decision 36). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist: pass, 0 S0/S1; 1 S2 (a non-billable gateway does not mark the error as handled, so a billable outer relay could count it again - unreachable with the only relay adapter createPortTransport, which is non-billable) to follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh read-only Codex session, not the implementing one: round 1 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rounds 1 and 2 by fresh Codex sessions (2 S1 + 1 S2: four offline purposes, equal-content distinct errors, large tokens; then 1 S1: the eval port metering branch never enabled), fixed by the test author; a fresh Claude subagent closed it (pass, 1 S2)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B3-02e",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "77d2fdab0ac94928e89499220af4dac450ed4e06",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "77d2fdab0ac94928e89499220af4dac450ed4e06",
+      "tree": "286d1108065f1b6151faa7e6aeeec0646c1ea07b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T18:04:14Z",
+      "finished_at": "2026-10-07T18:04:21Z",
+      "red_tests": [
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16][BR-AI-14 计量] 线上链路（路由器与网关共用线上计量去处）：主模型带 usage 失败、备用成功——两条都由网关按网关时刻记一次，路由器不补记",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16][BR-AI-14 计量] 线上链路（路由器另有计量去处）：主模型带 usage 失败、备用成功——两条都由网关按网关时刻记一次，路由器不补记",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 计量] 路由器下的网关是 billable=false 传输（未声明 billable、未登记）：带 usage 的失败一条也不记",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16 只记一次] 同一个错误对象穿过两层计费网关（外层传输转调内层网关）再到路由器：合计只记一条，记在直接持有传输的内层网关",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量] B 模式评测（普通 createVendorGateway、评测端口不传 metering，经路由器）：付费失败的用量按离线记一条，线上一条不记",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量] B 模式评测（普通 createVendorGateway、评测端口不传 metering，直接调评测端口）：付费失败的用量按离线记一条，线上一条不记",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16 只记一次] 同一网关上两次独立的付费评测（经路由器），各抛出内容完全相同（厂商、型号、kind、usage）但引用不同的错误：离线恰记两条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16 只记一次] 同一网关上两次独立的付费评测（直接调评测端口），各抛出内容完全相同（厂商、型号、kind、usage）但引用不同的错误：离线恰记两条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量][回归] B 模式评测先成功后失败：两条都只记在内层离线计量，外层非计费网关与路由器不记",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16][02 §9.2 取消] 线上链路调用方取消：路由器新建的中断错误不带用量、不记；传输中断后才报出的已收用量由网关记一次",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16][02 §9.2 取消] 线上链路单次时限到：路由器新建的中断错误不带用量、不记；传输中断后才报出的已收用量由网关记一次",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16][02 §9.2 取消] B 模式评测中途取消：取消新建的错误不带用量、不记；内层上游随后带用量失败，只按离线记一次",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16 只记一次] 付费评测（a 普通网关+端口 metering，经路由器）：64/9 失败经端口传回，所有计量去处合计恰好一条；同一网关直调失败由网关再记一条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16 只记一次] 付费评测（a 普通网关+端口 metering，直接调评测端口）：64/9 失败经端口传回，所有计量去处合计恰好一条；同一网关直调失败由网关再记一条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16 只记一次] 付费评测（b 登记网关、端口不传 metering，经路由器）：64/9 失败经端口传回，所有计量去处合计恰好一条；同一网关直调失败由网关再记一条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16 只记一次] 付费评测（b 登记网关、端口不传 metering，直接调评测端口）：64/9 失败经端口传回，所有计量去处合计恰好一条；同一网关直调失败由网关再记一条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16 只记一次] 付费评测（b 登记网关+端口 metering，经路由器）：64/9 失败经端口传回，所有计量去处合计恰好一条；同一网关直调失败由网关再记一条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16 只记一次] 付费评测（b 登记网关+端口 metering，直接调评测端口）：64/9 失败经端口传回，所有计量去处合计恰好一条；同一网关直调失败由网关再记一条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16 完成时刻] 线上调用（直接调网关）跨过上海时间午夜后才以带用量的协议错误结束：网关按完成时刻记一条",
+        "test/spec/agent/model-metering/chains.test.ts > [BR-AI-16 完成时刻] 线上调用（经路由器）跨过上海时间午夜后才以带用量的协议错误结束：网关按完成时刻记一条",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16] 计费传输以 server 拒绝且错误带 usage（online）：网关按用途记恰好一条、另一侧不记，错误对象原样抛出",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16] 计费传输以 malformed 拒绝且错误带 usage（offline-qwen）：网关按用途记恰好一条、另一侧不记，错误对象原样抛出",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16] 计费传输以 timeout 拒绝且错误带 usage（offline-glm）：网关按用途记恰好一条、另一侧不记，错误对象原样抛出",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16] 离线 offline-qwen-review 带已知用量 64 / 9 以 malformed 失败：离线恰记一条（use 与 token 逐字段精确），线上不记",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16] 离线 offline-glm-gen 带已知用量 64 / 9 以 server 失败：离线恰记一条（use 与 token 逐字段精确），线上不记",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16] 离线 offline-qwen-review 带已知用量 2147483649 / 1 以 network 失败：离线恰记一条（use 与 token 逐字段精确），线上不记",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16] 离线 offline-glm-gen 带已知用量 0 / 9007199254740991 以 rate_limited 失败：离线恰记一条（use 与 token 逐字段精确），线上不记",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量] billable=false 的传输（录制回放类）错误带 usage 不记；同一组计量去处上的计费网关照记（online）",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量] billable=false 的传输（录制回放类）错误带 usage 不记；同一组计量去处上的计费网关照记（offline-qwen）",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-16 只记一次] 同一网关两次独立调用（online）各抛出内容相同但引用不同的协议错误：恰记两条，不按内容去重",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-16 只记一次] 同一网关两次独立调用（offline-glm-gen）各抛出内容相同但引用不同的协议错误：恰记两条，不按内容去重",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-16] usage 为 null 的协议错误不记（不按零用量记）；随后一次带 usage 的失败只记它自己那一条",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-16][回归] 成功调用的计量不变：成功一条、随后失败一条，按发生顺序各记一次",
+        "test/spec/agent/model-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][BR-AI-16] 任意用途 / 计费属性 / 用量 / 错误种类 / 计量时刻：计费且 usage 非 null 时按用途恰记一条（值与时刻对得上），否则两侧都不记"
+      ],
+      "expected": [
+        "test/spec/agent/model-metering/chains.test.ts",
+        "test/spec/agent/model-metering/gateway.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "88d66cfe9d87ba374c9fb01454950ae15c63226a5ef38a44f639ad059c2e6388"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "dc701fe064219cd2824e598c4546d9647caa5c4b",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
