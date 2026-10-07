@@ -1,0 +1,133 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/stream/run/** is RV1). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl (3 attempts). Refs BR-AI-12, BR-AI-13, BR-AI-14, BR-AI-23; the brief with their one-hop text passes 24 KB, so the orchestrator wrote it with brief.ts minus the one-hop text plus a pointer to the full BR text. No real model call, no real key. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "fresh read-only Claude subagents with the money checklist: round 1 fail (facts queue poisoned by one Redis failure), round 2 fail (RunFinal gained a field the frozen tests compare with toEqual), round 3 pass, 0 S0/S1; 4 S2 to follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "fresh read-only Codex sessions, not the implementing one: round 1 fail (2 S1), round 2 fail (3 S1; one lowered to S2 under approvals id 18, decision 23), round 3 originally fail with 1 S1 (final facts and terminal draft both unsaved, settle proceeds, process exits before finish: another instance cannot replay the original ending). It needs a sustained Redis failure plus a process exit, and the Agent quota is not a money rule, so under approvals id 18 and the B3-03c option-B precedent the orchestrator lowered it to S2 and handed it to B3-03e (the sweeper must not refund twice; decision 25 in couli-runs/CODEX-IMPL/decision-orchestrator.md)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rounds 1 and 2 by fresh Codex sessions (4 and 4 S1: facts before settle, ordering barriers, guard termination after cards, independent oracles; first-frame failure, save barriers, terminal kept after disconnect, lost updates), fixed by the test author; a fresh Claude subagent closed it (pass, 3 S2)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B3-03b",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "fa8ea109d9c8375383ab1f95782ee62289fead0e",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fa8ea109d9c8375383ab1f95782ee62289fead0e",
+      "tree": "49f23e3560ce083f4b6c355ccdd4c7ba7eee46cd",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T07:42:04Z",
+      "finished_at": "2026-10-07T07:42:17Z",
+      "red_tests": [
+        "test/spec/agent/stream-run/cancel.test.ts > [02 §9.2] Redis run 登记 ttlSeconds=3600：两个实例共用一个命名空间，A 登记、B 取消，A 看得到取消；每次 set 都带 ttlSeconds",
+        "test/spec/agent/stream-run/cancel.test.ts > [02 §9.2] Redis run 登记 ttlSeconds=120：两个实例共用一个命名空间，A 登记、B 取消，A 看得到取消；每次 set 都带 ttlSeconds",
+        "test/spec/agent/stream-run/cancel.test.ts > [02 §9.2][BR-AI-23] Redis run 登记 ttlSeconds=3600：不存在的 run 取消为 not_found；finish 后取消为 not_found，另一实例 final 取回同一终止帧",
+        "test/spec/agent/stream-run/cancel.test.ts > [02 §9.2][BR-AI-23] Redis run 登记 ttlSeconds=120：不存在的 run 取消为 not_found；finish 后取消为 not_found，另一实例 final 取回同一终止帧",
+        "test/spec/agent/stream-run/cancel.test.ts > [02 §9.2][BR-AI-15] 取消 signalPollMs=500：另一实例的 RunManager 取消，signalPollMs 内 signal 中止（reason cancelled），写 done cancelled，结局 cancelled",
+        "test/spec/agent/stream-run/cancel.test.ts > [02 §9.2][BR-AI-15] 取消 signalPollMs=2000：另一实例的 RunManager 取消，signalPollMs 内 signal 中止（reason cancelled），写 done cancelled，结局 cancelled",
+        "test/spec/agent/stream-run/cancel.test.ts > [02 §9.2][BR-AI-15] 取消 signalPollMs=500：本实例取消同样在 signalPollMs 内结束，结束后再取消为 not_found",
+        "test/spec/agent/stream-run/cancel.test.ts > [02 §9.2][BR-AI-15] 取消 signalPollMs=2000：本实例取消同样在 signalPollMs 内结束，结束后再取消为 not_found",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23 细则「受理记录与收尾」] Redis run 登记 ttlSeconds=3600：运行事实（终止原因、出卡数）由一个实例记下，新建的另一实例读得到，每次 set 都带 ttlSeconds",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23 细则「受理记录与收尾」] Redis run 登记 ttlSeconds=120：运行事实（终止原因、出卡数）由一个实例记下，新建的另一实例读得到，每次 set 都带 ttlSeconds",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23 细则「受理记录与收尾」][BR-AI-13][BR-AI-12] 守卫 10004（已出卡 false）后收尾阻塞在 settle 时，另一实例已能读到终止原因与实际出卡数，终止帧尚未写出",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23 细则「受理记录与收尾」][BR-AI-13][BR-AI-12] 守卫 30501（已出卡 true）后收尾阻塞在 settle 时，另一实例已能读到终止原因与实际出卡数，终止帧尚未写出",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23 细则「受理记录与收尾」] Redis 保存未完成（set 被挡）时不进入 settle，另一实例读不到终止原因；放行后才结算、才读得到",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23][02 §9.2] 两实例交错读改写（cancel 读后被挡，facts 先完成）：取消信号、已出卡事实与终态都不被旧快照覆盖",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23][02 §9.2] 两实例交错读改写（facts 读后被挡，cancel 先完成）：取消信号、已出卡事实与终态都不被旧快照覆盖",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23][02 §9.2] 两实例交错读改写（cancel 读后被挡，finish 先完成）：取消信号、已出卡事实与终态都不被旧快照覆盖",
+        "test/spec/agent/stream-run/cancel.test.ts > [BR-AI-23][02 §9.2] 两实例交错读改写（finish 读后被挡，cancel 先完成）：取消信号、已出卡事实与终态都不被旧快照覆盖",
+        "test/spec/agent/stream-run/cards.test.ts > [04 §8.2] numberCard：起号 1 时与 normal 样例的 c1（items c2、c3）、c4 卡（product c5 用起号 4）逐字段一致",
+        "test/spec/agent/stream-run/cards.test.ts > [04 §8.2] numberCard：起号 5 → 帧 c5、items 依次 c6、c7；不改调用方的对象",
+        "test/spec/agent/stream-run/cards.test.ts > [04 §8.2] numberCard：空 items 用 1 个号；其他类型（含未知类型带 items）只给帧取号、不动内嵌数据",
+        "test/spec/agent/stream-run/cards.test.ts > [04 §8.2][BR-AI-05] RunManager 用 CardSequence 返回的首号（另一实例可能已用过中间的号），按本卡用号数 reserve",
+        "test/spec/agent/stream-run/cards.test.ts > [BR-AI-23 细则「受理记录与收尾」] 卡片写入失败（发送结果不确定）不计已下发；settle 仍恰好一次",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.1–8.2][BR-AI-23] 正常：先登记、先写 meta 再调 body，输出与 normal 样例逐帧一致，收尾 settle → finish → done",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.1][02 §9.2][BR-AI-14][BR-AI-12][BR-AI-13] 默认值：心跳 15 秒、单轮时限 20 秒、断线宽限 60 秒、守卫轮询 ≤10 秒",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.1] 心跳 heartbeatMs=15000：空闲满 heartbeatMs 写一次 `: ping`（不占 seq），终止帧后不再发",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.1] 心跳 heartbeatMs=4000：空闲满 heartbeatMs 写一次 `: ping`（不占 seq），终止帧后不再发",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.1] 心跳 heartbeatMs=15000：一直有帧写入时任意两次写入的间隔都不超过 heartbeatMs，帧序与 seq 不受心跳影响",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.1] 心跳 heartbeatMs=4000：一直有帧写入时任意两次写入的间隔都不超过 heartbeatMs，帧序与 seq 不受心跳影响",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-14 细则「单轮时限」] maxRunMs=20000、受理早于 start 5000 ms：从受理时刻起算到点中止（reason timeout），已下发卡片保留，写 agent.timeout 与 done timeout，之后 ctx 调用丢弃",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-14 细则「单轮时限」] maxRunMs=9000、受理早于 start 2000 ms：从受理时刻起算到点中止（reason timeout），已下发卡片保留，写 agent.timeout 与 done timeout，之后 ctx 调用丢弃",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-12][BR-AI-13] 守卫返回 30501、guardPollMs=10000：一个轮询间隔内中止并写 error（retryable=false、fallback=null），结局 disabled，之后不再轮询",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-12][BR-AI-13] 守卫返回 30501、guardPollMs=2500：一个轮询间隔内中止并写 error（retryable=false、fallback=null），结局 disabled，之后不再轮询",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-12][BR-AI-13] 守卫返回 10004、guardPollMs=10000：一个轮询间隔内中止并写 error（retryable=false、fallback=null），结局 consent_withdrawn，之后不再轮询",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-12][BR-AI-13] 守卫返回 10004、guardPollMs=2500：一个轮询间隔内中止并写 error（retryable=false、fallback=null），结局 consent_withdrawn，之后不再轮询",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-12] 守卫本身抛错时继续运行，下一轮再查：抛错期间 run 照常结束",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-13] 守卫抛错之后恢复并返回 10004：在恢复后一个 guardPollMs 内终止",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [02 §9.2 取消与断线] disconnectGraceMs=3000：sink 关闭后满宽限中止（reason disconnected），之后不向连接写任何东西，结局 disconnected；settle 完成后仍经 registry.finish 保存一个合法终止帧（不发送）",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [02 §9.2 取消与断线] disconnectGraceMs=8000：sink 关闭后满宽限中止（reason disconnected），之后不向连接写任何东西，结局 disconnected；settle 完成后仍经 registry.finish 保存一个合法终止帧（不发送）",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [02 §9.2] 宽限期内 run 正常结束：照常结算，写入失败静默，signal 不中止",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [02 §9.2][BR-AI-14] 默认值下断线宽限（60 秒）到不了：先以单轮时限 timeout 结束",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-23][BR-AI-15] body 抛出未预期异常：写 error 50001（retryable=true），结局 server_error",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-14][BR-AI-15] body 返回 error 50302：原样写出，结局 server_error",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-15] body 返回 done safety 且 ending=input_review_timeout：写 done safety，结算结局用覆盖值",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2] 不合法的卡片：ctx.card 以 StreamProtocolError(invalid_frame) 拒绝，run 继续，终止帧只有一个",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=stop 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=limit 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=budget 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=error 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=auth_required 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=safety 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=fallback 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=cancelled 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [04 §8.2][B3-03a 范围外条目] finish_reason=timeout 能经 RunManager 写出 done 并通过契约校验",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [02 §9.2][BR-AI-23] 晚到：已因取消结束后 body 才返回 done stop，结果被忽略",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-23 细则「受理记录与收尾」] 收尾逐步完成：运行事实已记下才 settle，settle 未完成不开始 finish，finish 未完成不写终止帧、start 不完成",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-12][BR-AI-13] 已成功下发一张卡后守卫返回 30501：恰好一个 error 30501 终止帧，结算与 RunFinal 都是 {disabled, 1}",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-12][BR-AI-13] 已成功下发一张卡后守卫返回 10004：恰好一个 error 10004 终止帧，结算与 RunFinal 都是 {consent_withdrawn, 1}",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-23 细则「受理记录与收尾」] 首帧 meta 写入即失败（受理后客户端已断开）：不写出任何帧，仍登记结局、恰好一次 settle，并保存合法终态",
+        "test/spec/agent/stream-run/lifecycle.test.ts > [BR-AI-23 细则「受理记录与收尾」] 事实保存未完成：ctx.card 不完成；终止事实未保存完不进入 settle，放行后才读得到",
+        "test/spec/agent/stream-run/run.prop.test.ts > [04 §8.1][BR-AI-23] 任意交错下：终止帧至多一个且在最后（连接健康时恰好一个），settle 恰好一次且卡数等于测试桩接受的卡片帧数，signal 只中止一次",
+        "test/spec/agent/stream-run/run.prop.test.ts > [BR-AI-12][BR-AI-13][02 §9.2][BR-AI-14] 单一触发、连接健康：结局与终止帧等于按场景独立推算的值，卡数等于接受的卡片帧数"
+      ],
+      "expected": [
+        "test/spec/agent/stream-run/cancel.test.ts",
+        "test/spec/agent/stream-run/cards.test.ts",
+        "test/spec/agent/stream-run/lifecycle.test.ts",
+        "test/spec/agent/stream-run/run.prop.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "9a42f7c3b6bf4f4131e909fb726f75cc1596066302d8e7ca0e9abb766f7cc6e7"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "a462d90919f4812a2c49707da67b0b785b6b1ad0",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
