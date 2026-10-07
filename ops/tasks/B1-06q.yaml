@@ -19,5 +19,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/open-requote/**'
-status: todo
-pr: null
+status: done
+pr: 259
