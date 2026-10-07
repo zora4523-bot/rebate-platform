@@ -36,6 +36,9 @@
 // not turned into a cached jump by a later open; a shared conversion past its jump.expire_at is
 // converted again. The idempotent request body is the whole contract body (installed, no_rebate,
 // no_rebate_reason, spm).
+// The transaction never takes a second pooled connection: settings, active pids and attr_codes
+// are read before it (link-open-reads.ts); the log of a rolled-back result is wholly the opened
+// link's as committed (its identity, pid and expiry), the opener in opener_user_id.
 // Not here: authorization (30101/30102/30111), taobao (B1-06f).
 import type { components, Scene } from '@couli/contracts-ts';
 import { scene as SCENES } from '@couli/contracts-ts';
@@ -56,7 +59,9 @@ import {
   REQUOTE_AFTER_SEC,
   SINGLE_FLIGHT_MS,
   couponGone,
+  pidSceneOf,
   couponIdsOf,
+  decideOpenOwner,
   intSetting,
   isSwitchOn,
   priceChanged,
@@ -64,16 +69,27 @@ import {
 } from '../domain/rules.ts';
 import type { Caller } from '../ports.ts';
 import {
+  attrCodeOf,
   insertPendingOpenLink,
   openRegistrationScope,
+  type IdentitySnapshot,
   type OpenRegistrationScope,
   type PendingOpenLink,
 } from './link-registration.ts';
 import {
   createLinkOpenOwner,
+  readSnapshot,
   type LinkOpenOwnerOptions,
   type LinkOpenOwnerResult,
 } from './link-open-owner.ts';
+import {
+  openScopedAttrCodes,
+  openScopedConfig,
+  openScopedPids,
+  withOpenReads,
+  type LinkOpenReadIdentity,
+  type LinkOpenReadPlan,
+} from './link-open-reads.ts';
 
 export type LinkOpenJump = components['schemas']['JumpPlan'];
 
@@ -120,6 +136,11 @@ export interface LinkOpenConversionPort {
   convert(input: LinkOpenConversionInput): Promise<LinkOpenJump>;
   admit?(owner: LinkOpenOwnerResult): Promise<void>;
   variant?(input: Pick<LinkOpenConversionInput, 'client' | 'installed'>): string;
+  /**
+   * B1-06m: pre-reads what admit and convert may read, before the open's transaction (no read
+   * inside it may take a second pooled connection; link-open-reads.ts).
+   */
+  prepare?(plan: LinkOpenReadPlan): Promise<void>;
 }
 
 export interface LinkOpenRequoteOptions extends LinkOpenOwnerOptions {
@@ -132,6 +153,8 @@ export interface LinkOpenRequoteOptions extends LinkOpenOwnerOptions {
   };
   readonly idempotency: Pick<Idempotency, 'executeInTransaction'>;
   // TODO(规划/11 §4.5): 拼多多比价预判开关打开的分支 — blocked on CAP-PDD-04。
+  // B1-06m: catalog, prices, conversion and cache are called while the open holds its transaction
+  // connection; their implementations must not take another pooled database connection then.
 }
 
 export interface LinkOpenRequoteInput {
@@ -326,9 +349,17 @@ function openerKey(caller: Caller): string {
 }
 
 export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpenRequoteService {
-  const { db, clock, callerContext, config, catalog, prices, conversion, cache, idempotency } =
-    options;
-  const owners = createLinkOpenOwner(options);
+  const { db, clock, callerContext, catalog, prices, conversion, cache, idempotency } = options;
+  // B1-06m: inside the open's transaction these readers answer only from the pre-reads.
+  const config = openScopedConfig(options.config);
+  const pids = openScopedPids(options.pids);
+  const attrCodes = openScopedAttrCodes(options.attrCodes);
+  const owners = createLinkOpenOwner({
+    ...options,
+    config,
+    pids,
+    ...(attrCodes === undefined ? {} : { attrCodes }),
+  });
   const flights = new Map<string, Flight>();
 
   async function setting(appId: string, key: string, fallback: number): Promise<number> {
@@ -754,14 +785,14 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
   async function record(
     executor: Kysely<DB>,
     caller: Caller,
-    owner: LinkOpenOwnerResult,
+    subject: { readonly link: LinkRow; readonly identitySnapshot: IdentitySnapshot },
     input: LinkOpenRequoteInput,
     settled: Settled,
     startMs: number,
     logLinkId: string,
   ): Promise<string | null> {
     const now = clock.now();
-    const { link, identitySnapshot } = owner;
+    const { link, identitySnapshot } = subject;
     const attemptId = settled.code === 0 ? newUuidV7(now) : null;
     const card = settled.code === 0 ? settled.card : undefined;
     if (card?.pending != null) await insertPendingOpenLink(executor, card.pending);
@@ -814,6 +845,128 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     return code === 0 || (code >= 30000 && code <= 39999);
   }
 
+  /** The log of a result not stored: after the rollback, outside any transaction. */
+  async function logOpened(
+    caller: Caller,
+    input: LinkOpenRequoteInput,
+    settled: Settled,
+    start: number,
+  ): Promise<void> {
+    const opened = await db
+      .selectFrom('links')
+      .selectAll()
+      .where('app_id', '=', caller.appId)
+      .where('link_id', '=', input.linkId)
+      .executeTakeFirst();
+    if (opened === undefined) return;
+    const subject = { link: opened, identitySnapshot: readSnapshot(opened) };
+    const failed: Settled = {
+      code: settled.code,
+      linkId: opened.link_id,
+      quotedPriceFen: opened.quoted_final_price_fen,
+      cacheHit: settled.cacheHit,
+      data: null,
+    };
+    await record(db, caller, subject, input, failed, start, opened.link_id);
+  }
+
+  /**
+   * Every identity the owner stage can settle on for this link (a lost guest claim included),
+   * with the no_rebate the open would then use.
+   */
+  function readIdentities(
+    caller: Caller,
+    link: LinkRow,
+    snapshot: IdentitySnapshot,
+    requestedNoRebate: boolean | undefined,
+  ): {
+    readonly identities: LinkOpenReadIdentity[];
+    readonly registers: string[];
+    /** The owner stage reads the caller's attr_code (a claim or a new link). */
+    readonly callerAttr: boolean;
+  } {
+    const scene = storedSceneOf(link);
+    const identities: LinkOpenReadIdentity[] = [];
+    const registers: string[] = [];
+    const add = (userId: string | null, pidScene: string) => {
+      const sharedByOther = pidScene === 'share' && userId !== caller.userId;
+      identities.push({ userId, pidScene, noRebate: requestedNoRebate === true && !sharedByOther });
+    };
+    const decide = (rowUserId: string | null, snapshotUserId: string | null) =>
+      decideOpenOwner({
+        pidScene: link.pid_scene,
+        scene,
+        snapshotUserId,
+        rowUserId,
+        callerUserId: caller.userId,
+      });
+    const first = decide(link.user_id, snapshot.user_id);
+    const outcomes = [first];
+    // A claim lost to another opener decides again as another user's link.
+    const other = 'claimed-by-another-opener';
+    if (first.kind === 'claim') outcomes.push(decide(other, other));
+    for (const decision of outcomes) {
+      if (decision.kind === 'use') add(snapshot.user_id, snapshot.pid_scene);
+      if (decision.kind === 'claim') add(caller.userId, snapshot.pid_scene);
+      if (decision.kind === 'register') {
+        const pidScene = pidSceneOf(decision.scene);
+        registers.push(pidScene);
+        add(caller.userId, pidScene);
+      }
+    }
+    return { identities, registers, callerAttr: first.kind === 'claim' || registers.length > 0 };
+  }
+
+  /**
+   * B1-06m: before the transaction, every setting, active pid and attr_code the open may read —
+   * the owner stage's (claim or new link), the re-check's and the conversion's.
+   */
+  async function prepareReads(caller: Caller, input: LinkOpenRequoteInput): Promise<void> {
+    const appId = caller.appId;
+    const reads: Promise<unknown>[] = [
+      REQUOTE_AFTER_SEC,
+      PRICE_CHANGE_MIN_FEN,
+      PRICE_CHANGE_RATIO_BP,
+      CONVERT_CACHE_TTL_SEC,
+      PDD_PRECHECK_SWITCH,
+    ].map((key) => config.configValue(appId, key));
+    const link = await db
+      .selectFrom('links')
+      .selectAll()
+      .where('app_id', '=', appId)
+      .where('link_id', '=', input.linkId)
+      .executeTakeFirst();
+    let plan: ReturnType<typeof readIdentities> | null = null;
+    if (link !== undefined) {
+      try {
+        plan = readIdentities(caller, link, readSnapshot(link), input.noRebate);
+      } catch {
+        plan = null; // a malformed link fails in the owner stage, which reads nothing more
+      }
+    }
+    if (link !== undefined && plan !== null) {
+      const { platform } = link;
+      if (plan.callerAttr) {
+        reads.push(attrCodeOf(attrCodes, appId, caller.userId));
+      }
+      for (const pidScene of plan.registers) {
+        reads.push(
+          pids.getActivePid({
+            appId,
+            platform: platform as Parameters<typeof pids.getActivePid>[0]['platform'],
+            pidScene: pidScene as Parameters<typeof pids.getActivePid>[0]['pidScene'],
+            purpose: 'convert',
+          }),
+        );
+      }
+      if (conversion.prepare !== undefined) {
+        reads.push(conversion.prepare({ appId, platform, identities: plan.identities }));
+      }
+    }
+    // A read that failed fails again where the open uses it, as it did when read in place.
+    await Promise.allSettled(reads);
+  }
+
   async function handle(
     caller: Caller,
     request: LinkOpenRequoteInput,
@@ -846,9 +999,11 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     };
     const settled = await settle(caller, owner, input, start);
     if (!stored(settled.code)) {
-      // The transaction rolls back (a claim or a registered link with it), so the log names the
-      // opened link and is written once the rollback is done (BR-ATTR-14: failures are logged).
-      afterRollback.log = () => record(db, caller, owner, input, settled, start, request.linkId);
+      // The transaction rolls back (a claim or a registered link with it), so the log is written
+      // once the rollback is done (BR-ATTR-14: failures are logged), wholly for the opened link
+      // as committed — its identity, pid and expiry, never those of a rolled-back new link — with
+      // the opener as opener_user_id.
+      afterRollback.log = () => logOpened(caller, input, settled, start);
       return envelope(settled.code);
     }
     const attemptId = await record(trx, caller, owner, input, settled, start, settled.linkId);
@@ -865,20 +1020,25 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     }
     const caller = await callerContext.current();
     const afterRollback: { log?: () => Promise<unknown> } = {};
-    const response = await idempotency.executeInTransaction(
-      {
-        appId: caller.appId,
-        actor: { userId: caller.userId, deviceId: caller.deviceId, phoneHmac: null },
-        method: 'POST',
-        path: `/v1/links/${input.linkId}/open`,
-        key: input.idempotencyKey,
-        body: openRequestBody(input),
-        traceId: input.traceId,
-      },
-      (trx) => {
-        delete afterRollback.log;
-        return handle(caller, input, trx, afterRollback);
-      },
+    // B1-06m: the reads first, then one transaction that takes no second pooled connection.
+    const response = await withOpenReads(
+      () => prepareReads(caller, input),
+      () =>
+        idempotency.executeInTransaction(
+          {
+            appId: caller.appId,
+            actor: { userId: caller.userId, deviceId: caller.deviceId, phoneHmac: null },
+            method: 'POST',
+            path: `/v1/links/${input.linkId}/open`,
+            key: input.idempotencyKey,
+            body: openRequestBody(input),
+            traceId: input.traceId,
+          },
+          (trx) => {
+            delete afterRollback.log;
+            return handle(caller, input, trx, afterRollback);
+          },
+        ),
     );
     // Handler and replay alike: the stored body is the result, so a replay equals the first.
     const parsed = JSON.parse(response.body) as { code: number; data?: unknown };

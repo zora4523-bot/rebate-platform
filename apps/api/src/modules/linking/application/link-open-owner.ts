@@ -75,7 +75,7 @@ function stringOrNull(value: unknown, field: string): string | null {
 }
 
 /** The stored identity snapshot; a link without a well-formed one fails closed. */
-function readSnapshot(link: LinkRow): IdentitySnapshot {
+export function readSnapshot(link: LinkRow): IdentitySnapshot {
   const raw = link.identity_snapshot;
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new TypeError('linking: link has no identity snapshot');
