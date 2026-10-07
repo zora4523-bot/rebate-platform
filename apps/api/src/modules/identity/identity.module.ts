@@ -35,11 +35,18 @@ import {
   type SmsSender,
 } from './application/sms-codes.ts';
 import { createLogout, type Logout } from './application/logout.ts';
+import {
+  createDefaultInviteCodeFilter,
+  createRegistrationService,
+  type SensitiveWords,
+} from './application/registration.ts';
+import { createSmsLoginService, type SmsLoginService } from './application/sms-login.ts';
 import type { MinimumVersionReader } from './application/session-scope.ts';
 import {
   IDENTITY_CONFIG,
   LOGOUT,
   SMS_CODES,
+  SMS_LOGIN,
   TOKEN_CHECK,
   TOKEN_KEYS,
   TOKEN_SERVICE,
@@ -47,6 +54,7 @@ import {
 import { DevicesController } from './http/public/devices.controller.ts';
 import { LogoutController } from './http/public/logout.controller.ts';
 import { SmsCodesController } from './http/public/sms-codes.controller.ts';
+import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
 import { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
 import { loadInvalidDeviceHashSeeds } from './infra/invalid-device-hashes.ts';
@@ -70,7 +78,7 @@ export interface IdentityModuleOptions {
 }
 
 /**
- * Identity (规划/02 §4.1): devices, SMS codes, session tokens and logout today; SMS login and
+ * Identity (规划/02 §4.1): devices, SMS codes, SMS login (B1-02j), session tokens and logout today;
  * consent records follow. Served by the `api` entry (/v1). The database handle, the field cipher
  * and Redis are optional at construction so that entries built without them (isolated HTTP unit
  * tests) still register the routes; a request that needs them fails at request time instead
@@ -86,12 +94,15 @@ export interface IdentityModuleOptions {
  * FIELD_CRYPTO (injected only for that), so a keyring that fails to open is the startup error an
  * entry reports, not the missing JWT key of the same environment.
  */
+/** The invite-code sensitive-word filter of the registration core (createDefaultInviteCodeFilter). */
+const INVITE_CODE_WORDS = Symbol('INVITE_CODE_WORDS');
+
 @Module({})
 export class IdentityModule {
   static forRoot(options: IdentityModuleOptions): DynamicModule {
     return {
       module: IdentityModule,
-      controllers: [DevicesController, SmsCodesController, LogoutController],
+      controllers: [DevicesController, SmsCodesController, SmsLoginController, LogoutController],
       providers: [
         // Read once while the entry starts; a missing or malformed list stops the entry.
         { provide: INVALID_DEVICE_HASHES, useFactory: () => loadInvalidDeviceHashSeeds() },
@@ -156,6 +167,50 @@ export class IdentityModule {
           inject: [TOKEN_SERVICE, { token: DB, optional: true }],
           useFactory: (tokens: TokenService, db?: Kysely<Database>): RequestCheck =>
             createTokenCheck({ tokens, sessions: createSessionLookup(db) }),
+        },
+        // Read once while the entry starts (the invite-code seed list of the registration core).
+        { provide: INVITE_CODE_WORDS, useFactory: () => createDefaultInviteCodeFilter() },
+        {
+          provide: SMS_LOGIN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            IDENTITY_CONFIG,
+            SMS_CODES,
+            TOKEN_SERVICE,
+            INVITE_CODE_WORDS,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            reader: IdentityConfigReader | null,
+            sms: SmsCodeService | null,
+            tokens: TokenService,
+            sensitiveWords: SensitiveWords,
+            db?: Kysely<Database>,
+            fieldCrypto?: FieldCrypto,
+          ): SmsLoginService | null =>
+            db === undefined || fieldCrypto === undefined || reader === null || sms === null
+              ? null
+              : createSmsLoginService({
+                  db,
+                  clock,
+                  crypto: fieldCrypto,
+                  logger,
+                  versions: reader,
+                  sms,
+                  // TODO(规划/11 §2.3): invite binding (bindInvite), B1-03d / B1-03g ports — blocked on B1-11, B1-03d, B1-03g
+                  registration: createRegistrationService({
+                    clock,
+                    config: reader,
+                    crypto: fieldCrypto,
+                    logger,
+                    sensitiveWords,
+                  }),
+                  tokens,
+                }),
         },
         {
           provide: LOGOUT,

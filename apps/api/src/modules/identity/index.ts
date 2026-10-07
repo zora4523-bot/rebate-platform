@@ -32,7 +32,7 @@ export type {
   InviteBindResult,
   SensitiveWords,
 } from './application/registration.ts';
-export { createSmsLoginService } from './application/sms-login.ts';
+export { createSmsLoginService, LOGIN_LOGS_DEVICE_ID_CONTEXT } from './application/sms-login.ts';
 export type {
   FirstAppLoginReview,
   SmsLoginCommand,
