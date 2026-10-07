@@ -36,11 +36,10 @@ export function domainOccurrences(text: string): Array<{ offset: number; host: s
     )?.[1];
     if (!host) return;
     const tld = host.replace(/\.$/, '').split('.').at(-1)!;
-    // 裸主机需有形似顶级域的末段；Material 的 Test.Theme.* 等 PascalCase
+    // 裸主机需有形似顶级域的末段；Material 的 ShapeAppearance.*.Test 等 PascalCase
     // 资源名不作域名。保留全大写域名、环境保留名与 IPv4 的原有检测。
     if (
       !/^(?:[a-z][A-Za-z]{1,62}|[A-Z]{2,63})$/.test(tld) &&
-      !['staging', 'test', 'local', 'localhost'].includes(tld.toLowerCase()) &&
       !/^\d+(?:\.\d+){3}$/.test(host)
     )
       return;

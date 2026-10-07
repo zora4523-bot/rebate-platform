@@ -116,15 +116,28 @@ function conformanceEntry(
   if (/^_?(?:\$[sS]|_T)/.test(identifier) || /^_*swift_/i.test(identifier)) return false;
   if (!sequence.includes('conformance')) return false;
   if (
-    ['test', 'page', 'entry', 'screen', 'runner', 'route'].some(
+    [
+      'test',
+      'page',
+      'entry',
+      'screen',
+      'runner',
+      'route',
+      'activity',
+      'fragment',
+      'view',
+      'viewcontroller',
+      'controller',
+      'suite',
+    ].some(
       (word) =>
         contains(sequence, ['conformance', word]) || contains(sequence, [word, 'conformance']),
     )
   )
     return true;
-  // 单独的 conformance 只在页面文件名或路由路径段里认作入口。
+  // conformance 与 bridge-conformance 只在页面文件名或路由路径段里认作入口。
   return (
-    identifier.toLowerCase() === 'conformance' &&
+    ['conformance', 'bridge-conformance'].includes(identifier.toLowerCase()) &&
     (/^\.html?(?=$|[^A-Za-z0-9_$-])/i.test(after) ||
       (before === '/' && /^(?:$|[/?#"'`\s\x00-\x1f])/.test(after)))
   );
