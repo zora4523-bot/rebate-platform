@@ -13,7 +13,7 @@ import {
 
 const ROOT = new URL('../../../../', import.meta.url);
 export const PATH = '/v1/inputs/parse';
-export const TRACE = 'synthetic-parse-http';
+export const TRACE = '0000000000000000000000000000b07b';
 export const HEADERS = {
   'content-type': 'application/json',
   'x-app-id': 'couli',

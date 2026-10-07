@@ -16,6 +16,7 @@ import {
   URL_C,
   URL_D,
 } from '../core/kit.ts';
+import { ManualScheduler } from '../../platform/http/kit.ts';
 import { buildApp, contract, HEADERS, PATH, TRACE, validResponse, type HttpApp } from './kit.ts';
 
 // Keep HTTP registration, validation, response assembly, parsing and catalog card logic real.
@@ -109,6 +110,9 @@ afterEach(async () => {
   app = undefined;
   state.current = undefined;
 });
+
+// Taken once at load: a spy left by an earlier case must never wrap itself.
+const originalSleep = ManualScheduler.prototype.sleep;
 
 function post(payload: unknown, headers: Record<string, string> = {}) {
   return app!.inject({
@@ -253,10 +257,27 @@ it.each([
     if (ref.platform === 'jd') throw new UnionError(code, 'synthetic failure', 'jd');
     return item(ref);
   });
-  const results = validResponse(
-    await post({ text: `${URL_A} ${URL_B} ${URL_C}`, scene: 'search' }),
-    schemas,
-  );
+  // The frozen core fixture governs union reads with a ManualScheduler: a retried read
+  // (upstream_unavailable) waits until its backoff is advanced, so the request is driven by
+  // advancing the fixture's scheduler until it settles (orchestrator fixture fix, B1-07b).
+  const schedulers = new Set<ManualScheduler>();
+  vi.spyOn(ManualScheduler.prototype, 'sleep').mockImplementation(function (
+    this: ManualScheduler,
+    ms: number,
+    signal?: AbortSignal,
+  ) {
+    schedulers.add(this);
+    return originalSleep.call(this, ms, signal);
+  });
+  let settled = false;
+  const request = post({ text: `${URL_A} ${URL_B} ${URL_C}`, scene: 'search' }).finally(() => {
+    settled = true;
+  });
+  for (let step = 0; step < 200 && !settled; step += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const scheduler of schedulers) await scheduler.advance(1000);
+  }
+  const results = validResponse(await request, schemas);
   expect(results.map((result) => result.hit.raw)).toEqual([URL_A, URL_B, URL_C]);
   expect(results.map((result) => result.card?.['product_key'] ?? result.error_code)).toEqual([
     'tb:a',
