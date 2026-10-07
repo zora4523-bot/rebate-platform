@@ -1,0 +1,23 @@
+-- Up Migration
+-- device_registrations.created_at written from the application Clock (规划/04 §3.2 row
+-- device_registrations; BR-ID-05 细则「同设备注册上限的计数」; ADR-0001 §4.2 #10, #21).
+-- Compatibility: additive (one column-level INSERT grant). Recovery:
+--   REVOKE INSERT (created_at) ON app.device_registrations FROM couli_app;
+--
+-- Why: identity account creation (B1-02i) counts same-device registrations against the
+-- injected Clock (sliding 30×24h window). In staging, CLOCK_NOW moves that clock ahead,
+-- so rows stamped by the database default now() fall outside the window and the limit
+-- stops applying. The writer must therefore store the same Clock instant it counts with,
+-- as booked_at already does (ADR-0001 §4.2 #21).
+--
+-- This supersedes the 0005 header note that device_registrations.created_at uses only the
+-- database default and that couli_app cannot insert or update it: couli_app may now set
+-- created_at explicitly on INSERT, and still cannot UPDATE it (column grant absent, and the
+-- device_registrations_no_rewrite trigger keeps it immutable). Omitting the column still
+-- takes DEFAULT now(); type, NOT NULL and default are unchanged. Backdating is prevented by
+-- application code and review, not by a trigger: comparing with SQL now() would break
+-- db/AGENTS.md rule 6, and an INSERT-rejecting trigger is outside rule 8.
+-- No other privilege changes: no INSERT (merged_into_user_id), no UPDATE (created_at), and
+-- couli_readonly, couli_payout, couli_maint keep their existing rights.
+
+GRANT INSERT (created_at) ON app.device_registrations TO couli_app;

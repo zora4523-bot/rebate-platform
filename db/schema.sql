@@ -4801,6 +4801,13 @@ GRANT INSERT(register_method) ON TABLE app.device_registrations TO couli_app;
 
 
 --
+-- Name: COLUMN device_registrations.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(created_at) ON TABLE app.device_registrations TO couli_app;
+
+
+--
 -- Name: COLUMN device_registrations.merged_into_user_id; Type: ACL; Schema: app; Owner: -
 --
 

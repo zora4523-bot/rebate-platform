@@ -1,0 +1,76 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (db migration 0019, identity device_registrations). One column-level grant: couli_app may INSERT created_at so account creation (B1-02i) stores the same injected Clock instant it counts the same-device limit with (BR-ID-05, ADR-0001 §4.2 #10/#21). Default now(), NOT NULL, the no-rewrite trigger and the other roles are unchanged; no UPDATE (created_at), no INSERT (merged_into_user_id). db/schema.sql snapshot by the orchestrator (pnpm db:snapshot), db.gen.ts unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass, no findings; one out-of-scope S2 (after the grant the database no longer blocks backdating; the writer in B1-02i must store only the injected Clock.now()) recorded as a B1-02i follow-up"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "pass with no findings; checklist complete (rounding/sign/partial_refund/concurrency na, idempotency/clock/app_id ok); output accepted by the orchestrator after a position-assertion exit 12 caused by the orchestrator's own ledger commit during the run (reviewed content b97877a unchanged)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 round) reviewed by a fresh Claude subagent: pass with three S3 adopted by the orchestrator in the same test commit (register_method 'sms', window without an upper bound as B1-02i, unchanged-shape checks before the first insert)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-02n",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "c711b6ba0cc228764a6fc5dac3997611cbcb2cef",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c711b6ba0cc228764a6fc5dac3997611cbcb2cef",
+      "tree": "3be048920174f2a573950ad8b89dba2ed76b9c6c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T16:51:14Z",
+      "finished_at": "2026-10-07T16:51:26Z",
+      "red_tests": [
+        "test/spec/db/identity/registration-clock/registration-clock.int.test.ts > [AC-B1-02n#1] accepts a timestamp 29 days in the past without losing microseconds",
+        "test/spec/db/identity/registration-clock/registration-clock.int.test.ts > [AC-B1-02n#2] accepts a staging Clock 40 days ahead without clamping or losing microseconds",
+        "test/spec/db/identity/registration-clock/registration-clock.int.test.ts > [AC-B1-02n#3] explicit Clock writes coexist with the unchanged NOT NULL timestamptz default now()",
+        "test/spec/db/identity/registration-clock/registration-clock.int.test.ts > [AC-B1-02n#4] Clock-stamped rows remain immutable and permit only a one-time merge annotation",
+        "test/spec/db/identity/registration-clock/registration-clock.int.test.ts > [AC-B1-02n#5] grants only the additional INSERT column; all role privilege boundaries remain",
+        "test/spec/db/identity/registration-clock/registration-clock.int.test.ts > [AC-B1-02n#6] counts application Clock rows newer than T - 30×24h, excluding database-default old rows"
+      ],
+      "expected": ["test/spec/db/identity/registration-clock/registration-clock.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "5f6dbe8a26ea7b37406609a4e15e1b5ee6ae3afe0b4c1b37db349f02df616e6c"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "054d33c7f1aee30f874d73585a9f54eee25e0634",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
