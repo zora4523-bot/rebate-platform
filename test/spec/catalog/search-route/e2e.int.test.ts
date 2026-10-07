@@ -23,7 +23,7 @@ import { assertContract, headers, type HttpApp } from './http-kit.ts';
 const root = new URL('../../../../', import.meta.url);
 const clock = new FixedClock('2026-10-07T12:00:00+08:00');
 // Every run owns its app scope, including keys on a shared test Redis; never flush Redis.
-const appId = `synthetic-search-${randomUUID()}`;
+const appId = `synthetic_search_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
 const logger = createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' });
 let database: TestDatabase | undefined;
 let redis: TestRedis | undefined;

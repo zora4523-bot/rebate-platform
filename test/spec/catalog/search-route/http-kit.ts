@@ -20,7 +20,7 @@ import { fixture } from '../search/kit.ts';
 
 const root = new URL('../../../../', import.meta.url);
 export const headers = {
-  'x-app-id': 'synthetic-app',
+  'x-app-id': 'synthetic_app',
   'x-platform': 'ios',
   'x-app-version': '1.2.3',
 };

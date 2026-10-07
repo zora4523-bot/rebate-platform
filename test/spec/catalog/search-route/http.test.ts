@@ -25,10 +25,10 @@ it('[AC-B1-05j#1] 游客经真实 HTTP 搜索出卡，响应符合契约且只�
   expect(body.data.items).toEqual([
     expect.objectContaining({ title: 'synthetic-guest', link_id: expect.any(String) }),
   ]);
-  expect(f.viewers).toEqual([{ appId: 'synthetic-app', userId: null, deviceId: null }]);
+  expect(f.viewers).toEqual([{ appId: 'synthetic_app', userId: null, deviceId: null }]);
   expect(f.register).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
-      viewer: { appId: 'synthetic-app', userId: null, deviceId: null },
+      viewer: { appId: 'synthetic_app', userId: null, deviceId: null },
       entrySource: 'search',
       quote: expect.objectContaining({ rebateMaxFen: 20n }),
     }),
