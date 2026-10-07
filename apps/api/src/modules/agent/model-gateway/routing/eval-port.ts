@@ -12,7 +12,7 @@ import { VendorError } from '../vendors/index.ts';
 import type { ModelRequestShape } from '../openai-compat/index.ts';
 import { ModelProtocolError, toVendorRequest } from '../openai-compat/index.ts';
 
-/** 来源由可信评测加载器附加，不得取自模型输出、消息正文或用户请求。 */
+/** 来源由可信评测加载器附加；旧合成题可省略，不得取自模型输出、正文或用户请求。 */
 export interface EvalModelRequest extends ModelRequestShape {
   readonly provenance?: string;
   readonly dataClass?: OfflineDataClass;
@@ -29,7 +29,10 @@ export interface EvalModelPortOptions {
   readonly use: OfflineUse;
   readonly accessPath: AccessPath;
   readonly workspace: string;
-  /** 与 gateway 的 transport.billable、offlineMeter、Clock 一致；缺失时拒绝调用。 */
+  /**
+   * 付费评测须注入失败用量补记，与 gateway 的 transport.billable、offlineMeter、Clock 一致。
+   * 可省略以兼容旧评测端口；成功用量始终由 gateway 计量。
+   */
   readonly metering?: EvalFailureMetering;
 }
 
@@ -49,6 +52,8 @@ function provenanceClass(provenance: string): OfflineDataClass {
 }
 
 function evaluationDataClass(req: EvalModelRequest): OfflineDataClass {
+  // 兼容未附来源的合成评测；任何显式来源仍须通过识别、冲突检查和网关许可闸。
+  if (req.provenance === undefined && req.dataClass === undefined) return 'synthetic';
   const fromProvenance = req.provenance === undefined ? undefined : provenanceClass(req.provenance);
   const dataClass = req.dataClass === undefined ? fromProvenance : req.dataClass;
   if (
@@ -58,7 +63,10 @@ function evaluationDataClass(req: EvalModelRequest): OfflineDataClass {
     ) ||
     (fromProvenance !== undefined && fromProvenance !== dataClass)
   ) {
-    throw new VendorError('data_class_not_allowed', 'Missing or conflicting evaluation data class');
+    throw new VendorError(
+      'data_class_not_allowed',
+      'Unsupported or conflicting evaluation data class',
+    );
   }
   return dataClass;
 }
@@ -74,13 +82,13 @@ export function createEvalModelPort(
     }
     const dataClass = evaluationDataClass(req);
     if (
-      metering === undefined ||
-      typeof metering.billable !== 'boolean' ||
-      (metering.billable &&
-        (typeof metering.offlineMeter?.record !== 'function' ||
-          typeof metering.clock?.now !== 'function'))
+      metering !== undefined &&
+      (typeof metering.billable !== 'boolean' ||
+        (metering.billable &&
+          (typeof metering.offlineMeter?.record !== 'function' ||
+            typeof metering.clock?.now !== 'function')))
     ) {
-      throw new ModelProtocolError('bad_request', 'Evaluation metering must be configured');
+      throw new ModelProtocolError('bad_request', 'Invalid evaluation metering configuration');
     }
     const request = toVendorRequest(req);
     try {
@@ -97,7 +105,7 @@ export function createEvalModelPort(
     } catch (error) {
       // VendorGateway 只记录成功响应；这里只补记付费失败的已知用量。
       // 不包裹线上路由，也不组装响应，避免和路由补记或成功计量重叠。
-      if (metering.billable && error instanceof ModelProtocolError && error.usage !== null) {
+      if (metering?.billable && error instanceof ModelProtocolError && error.usage !== null) {
         metering.offlineMeter.record({
           vendor: config.vendor,
           model: config.model,
