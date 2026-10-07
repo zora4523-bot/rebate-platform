@@ -1,8 +1,10 @@
 // Pure registration rules of linking (B1-06c): scene validation and the pid_scene it implies
 // (BR-ATTR-08), the URL lifetime behind expire_at (BR-ATTR-05), which registrations are logged
 // (BR-ATTR-14) and how a boolean switch reads; B1-06d adds whom an open serves (BR-ATTR-05
-// ①～⑤, BR-ATTR-11). No Nest, no data access.
+// ①～⑤, BR-ATTR-11); B1-06k adds the open re-check rules (BR-PRICE-12/13/14/20, D33). No Nest,
+// no data access.
 import { scene as SCENES, type PidScene, type Scene } from '@couli/contracts-ts';
+import { mulDivCeil, subFen } from '@couli/money';
 
 /**
  * The contract errors linking fails with (contracts/error-codes.yaml): 20001 invalid scene,
@@ -122,4 +124,89 @@ export function decideOpenOwner(input: {
   return scene === 'taolijin'
     ? { kind: 'register', scene: SELF_BUY_SCENE, message: TLJ_OWNER_ONLY_MESSAGE }
     : { kind: 'register', scene, message: null };
+}
+
+// ---- B1-06k: open re-check (BR-PRICE-13, BR-PRICE-14, BR-PRICE-20, D33) ----
+
+/** Configuration keys read by the open re-check; absent values take the 08 defaults below. */
+export const REQUOTE_AFTER_SEC = 'link.open.requote_after_sec';
+export const PRICE_CHANGE_MIN_FEN = 'link.price_change.min_fen';
+export const PRICE_CHANGE_RATIO_BP = 'link.price_change.ratio_bp';
+export const CONVERT_CACHE_TTL_SEC = 'link.convert_cache_ttl_sec';
+export const PDD_PRECHECK_SWITCH = 'rebate.pdd.compare_precheck.enabled';
+export const DEFAULT_REQUOTE_AFTER_SEC = 0;
+export const DEFAULT_PRICE_CHANGE_MIN_FEN = 100;
+export const DEFAULT_PRICE_CHANGE_RATIO_BP = 500;
+/** BR-PRICE-13: the conversion cache never lives longer than 900 seconds. */
+export const MAX_CONVERT_CACHE_TTL_SEC = 900;
+/** BR-PRICE-13: opens of one link within 3000 ms (inclusive) of the first share one re-check. */
+export const SINGLE_FLIGHT_MS = 3000;
+
+/** A non-negative safe integer setting, or the fallback for anything else (absent too). */
+export function intSetting(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+}
+
+/**
+ * BR-PRICE-13: changed = diff ≥ min_fen or diff × 10000 ≥ ratio_bp × old, both directions, integer
+ * only. diff × 10000 ≥ ratio × old ⇔ diff ≥ ceil(old × ratio / 10000), because diff is an integer.
+ */
+export function priceChanged(
+  oldFen: bigint,
+  newFen: bigint,
+  minFen: bigint,
+  ratioBp: bigint,
+): boolean {
+  const diff = newFen >= oldFen ? subFen(newFen, oldFen) : subFen(oldFen, newFen);
+  if (diff >= minFen) return true;
+  // A non-positive snapshot is never a valid quote; any difference is reported (never missed).
+  if (oldFen <= 0n) return diff > 0n;
+  return diff >= mulDivCeil(oldFen, ratioBp, 10000n);
+}
+
+/** Coupon IDs as stored on links.quoted_coupon_id: empty is null (B1-06c registration). */
+export function couponIdsOf(value: string | null | undefined): string | null {
+  return value === undefined || value === null || value === '' ? null : value;
+}
+
+function idSet(value: string | null): Set<string> {
+  return new Set((value ?? '').split(',').filter((id) => id !== ''));
+}
+
+/**
+ * BR-PRICE-14 / D33: the snapshot had a coupon (quoted_coupon_fen > 0) and the original coupon is
+ * gone — any snapshot coupon ID missing from the re-check's IDs (even when the final price is the
+ * same); without snapshot IDs, the face value differs (of 面额、门槛、结束时间 the normalized item
+ * carries only the face value).
+ */
+export function couponGone(
+  snapshot: { readonly couponFen: bigint | null; readonly couponIds: string | null },
+  current: { readonly couponFen: bigint; readonly couponIds: string | null },
+): boolean {
+  if (snapshot.couponFen === null || snapshot.couponFen <= 0n) return false;
+  const original = idSet(snapshot.couponIds);
+  if (original.size === 0) return current.couponFen !== snapshot.couponFen;
+  const now = idSet(current.couponIds);
+  for (const id of original) if (!now.has(id)) return true;
+  return false;
+}
+
+/** BR-PRICE-12 / D33: final price, coupon amount or coupon ID string differ → a new snapshot. */
+export function quoteSnapshotChanged(
+  snapshot: {
+    readonly finalFen: bigint;
+    readonly couponFen: bigint | null;
+    readonly couponIds: string | null;
+  },
+  current: {
+    readonly finalFen: bigint;
+    readonly couponFen: bigint;
+    readonly couponIds: string | null;
+  },
+): boolean {
+  return (
+    snapshot.finalFen !== current.finalFen ||
+    (snapshot.couponFen ?? 0n) !== current.couponFen ||
+    couponIdsOf(snapshot.couponIds) !== couponIdsOf(current.couponIds)
+  );
 }
