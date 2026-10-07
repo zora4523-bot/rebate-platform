@@ -7,6 +7,8 @@ type: test-change
 # 诊断为空，等元素超时被判为有效红（Codex money r4 S1）。做法：冻结规则测试 entries.smoke.test.ts 在 page 上注入采集脚本
 # （addInitScript 监听 vite:preloadError、unhandledrejection），并读取路由错误界面的标记，统一写进现有诊断附件（kind 新增 preload-error /
 # route-error）；red-check 的 smokeDiagnosticsVerdict 与 strict-reporter 认这两种 kind（骨架 NotImplemented 规则不变）。
+# 2026-10-07 补 test_paths：path-guard-author 只把 test_paths 内的规则测试资产当作规则测试提交里可改的内容（tools/guard/lib/checks.ts authorPathsCheck），
+# 证据 spec_commit 取改测试的提交（evidence-check 要求），二者配合；tester 仍为 none。
 # 改既有规则测试属保护路径第一类，tools/** 属第三类，合并要负责人标签。
 refs: []
 refs_hash: {}
@@ -17,6 +19,8 @@ paths:
   - 'tools/ops/build-smoke/**'
   - 'tools/ops/README.md'
   - 'tools/agent/README.md'
+test_paths:
+  - 'test/spec/frontend/build-smoke/**'
 impl: claude
 tester: none
 accept:
