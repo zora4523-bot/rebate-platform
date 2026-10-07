@@ -52,7 +52,14 @@
 // dynamic import) or a script error the page only logged (`console.error` carrying React
 // Router's "caught the following error during render" — its errorElement catches a render error,
 // so no `pageerror` fires — or naming a TypeError, ReferenceError, SyntaxError, RangeError …;
-// the skeleton's NotImplemented excepted) make the red invalid. Only a page error whose first line starts with
+// the skeleton's NotImplemented excepted) make the red invalid. So do the errors a page swallows
+// without either (F1-01m; the rule tests install a collector before any page script runs): a
+// `preload-error` (Vite's `vite:preloadError`: a lazy chunk or a dependency that did not load or
+// threw while initialising, e.g. a chunk served 200 whose module throws a TypeError), an
+// `unhandled-rejection` (both with the skeleton's NotImplemented excepted), a `route-error` (the
+// H5 route error page React Router's errorElement shows; excepted only when the same diagnostics
+// carry the skeleton's NotImplemented that explains it) and a `diagnostics-incomplete` (the test
+// could not read the page back: its events are not fully known). Only a page error whose first line starts with
 // `NotImplemented` or `Error: NotImplemented` is the skeleton's (a TypeError, ReferenceError …
 // mentioning it is not; those kinds are checked first, as on the Node side). A wait that ran out
 // in a test without such an annotation is invalid (the page events are unknown); any other red of
@@ -339,11 +346,34 @@ export function scriptFaultConsoleError(message: string, skeleton: boolean): boo
 }
 
 /**
+ * True when the diagnostics of one entry carry the skeleton's NotImplemented (an error the page
+ * threw, an error an error boundary caught while rendering, a failed lazy module or an unhandled
+ * rejection whose first line is the skeleton's): the one thing that excuses a `route-error`.
+ */
+function skeletonExplains(diagnostics: SmokeDiagnostics['diagnostics']): boolean {
+  return diagnostics.some((x) => {
+    const first = x.message.split('\n')[0] ?? '';
+    if (['pageerror', 'preload-error', 'unhandled-rejection'].includes(x.kind)) {
+      return skeletonPageError(first);
+    }
+    return (
+      x.kind === 'console.error' &&
+      CAUGHT_DURING_RENDER.test(first) &&
+      !scriptFaultConsoleError(x.message, true)
+    );
+  });
+}
+
+/**
  * Why the page events of one entry make a red invalid (see the header), or null when they do
  * not: an error the page threw other than the skeleton's NotImplemented, a request to the entry's
  * own origin that failed and that the test did not block itself (a `blocked-request` of the same
  * URL), a dynamic import that failed, a script error the page only logged
- * (scriptFaultConsoleError). A URL that cannot be read counts as the entry's own.
+ * (scriptFaultConsoleError), and what the page swallowed (F1-01m): a lazy module that failed
+ * (`preload-error`) or an unhandled rejection, both other than the skeleton's NotImplemented, the
+ * route error page unless the skeleton's NotImplemented explains it (skeletonExplains), and
+ * diagnostics the test could not read back (`diagnostics-incomplete`). A URL that cannot be read
+ * counts as the entry's own.
  */
 export function smokeDiagnosticsVerdict(d: SmokeDiagnostics): string | null {
   const own = originOf(d.url);
@@ -354,6 +384,18 @@ export function smokeDiagnosticsVerdict(d: SmokeDiagnostics): string | null {
     const first = x.message.split('\n')[0] ?? '';
     if (x.kind === 'pageerror' && !skeletonPageError(first)) {
       return `red for the wrong reason (the page threw: ${first})`;
+    }
+    if (x.kind === 'preload-error' && !skeletonPageError(first)) {
+      return `red for the wrong reason (a lazy module of the page failed: ${first})`;
+    }
+    if (x.kind === 'unhandled-rejection' && !skeletonPageError(first)) {
+      return `red for the wrong reason (the page left a rejection unhandled: ${first})`;
+    }
+    if (x.kind === 'route-error' && !skeletonExplains(d.diagnostics)) {
+      return `red for the wrong reason (the page showed its route error page: ${first})`;
+    }
+    if (x.kind === 'diagnostics-incomplete') {
+      return `red for an unproven reason (the page events are not fully known: ${first})`;
     }
     if (x.kind === 'requestfailed') {
       // "<url>: <errorText>" (the rule tests' format)
