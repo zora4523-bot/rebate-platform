@@ -1,0 +1,34 @@
+# 邀请码敏感词种子词表（规划/08 BR-INV-01，场景 invite_code）
+# 代理默认的最小种子词表（常见不雅、辱骂缩写），待 BR-INV-01 敏感词库任务替换。
+# Agent-chosen minimal seed list (common vulgar and abusive abbreviations); to be replaced by the
+# BR-INV-01 sensitive-word bank task. Not the marketing banned-word list (specs/banned-words.yaml).
+#
+# 格式：每行一个词；首尾空白忽略；空行忽略；# 开头为注释。
+# 用法：候选邀请码按不区分大小写的子串匹配，命中即弃用该候选（计 1 次，BR-INV-01）。
+# 只收由邀请码字符集 23456789ABCDEFGHJKLMNPQRSTUVWXYZ 组成的词：含 0、O、1、I 的词不会出现在邀请码里。
+# 读取方：apps/api/src/modules/identity/infra/invite-code-sensitive-words.ts（列表为空则拒绝启动）。
+
+# 英文不雅、辱骂缩写
+FUCK
+FUK
+FCK
+WTF
+STFU
+CUNT
+PUSSY
+ASS
+FAG
+KKK
+
+# 拼音不雅、辱骂缩写
+SB
+2B
+JB
+CNM
+NMB
+NMSL
+MLGB
+TMD
+NND
+QNMD
+RNM

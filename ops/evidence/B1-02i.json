@@ -1,0 +1,133 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (identity registration core, BR-ID-04/05, BR-INV-14). Users row with phone cipher and blind index, default nickname/avatar/level, invite and attr codes with bounded retries in savepoints, same-device limit counted against the injected Clock under a per-device transaction advisory lock with the merge-tombstone pair rule, device_registrations.created_at written from the same Clock instant (column grant by migration 0019, B1-02n), phone already held before the limit (phone_taken), read-committed isolation guard, release / level-log / invite-bind / B1-03g ports, structured error fields without message/detail. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents: round 1 pass with nine S3 (isolation guard, phone held before the limit, RELEASE SAVEPOINT failure handling, structured SQLSTATE fields, comments, unit tests, device_hash on app register methods; S3-9 recorded as follow-up) — S3-1..7 adopted in round 2, S3-8 as a warning because the frozen rule test requires app methods without device_hash to succeed; round 2 pass with no findings (S1 fix, S3 fixes and the anchorAfterRecords kit assumption verified)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail (S1: device_registrations.created_at from the database clock while the limit counts against the injected Clock → migration 0019 / B1-02n and round 2), round 2 fail (the only S1: migration 0019 not yet merged into the worktree), round 3 pass after the rebase onto main with 0019; one out-of-scope S2 (app register methods without device_hash only warn) recorded as follow-up; checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 rounds) reviewed by fresh Claude subagents: round 1 fail, round 2 fail (one S2: phone test data not normalize_phone output), orchestrator-approved exception round after Codex round 3 pass; the orchestrator then made the kit import @couli/db/testing at run time and Prettier-formatted the device-limit test without changing assertions (new spec commit, red run repeated)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-02i",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "9c5097b017700a2c59e09c669d13d245c41a2a19",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "9c5097b017700a2c59e09c669d13d245c41a2a19",
+      "tree": "284934ea8468758ca97a5376cfc05d740b27219a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T18:04:43Z",
+      "finished_at": "2026-10-07T18:04:53Z",
+      "red_tests": [
+        "test/spec/identity/registration/account.int.test.ts > [BR-ID-04][BR-INV-14][04 §3.2] 手机建号写密文/盲索引、默认资料与注册来源",
+        "test/spec/identity/registration/account.int.test.ts > [BR-ID-04][BR-INV-14] 六种建号方式保留来源，第三方可无手机号、渠道未给为 NULL，等级取配置",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01][BR-ATTR-06] 默认随机源连续建号，邀请码及归属码格式正确且不重复",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01] 敏感命中、唯一冲突各算一次，第 3 候选写入且事务可继续提交",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01] 第 5 个候选仍可成功，敏感词和冲突共享 5 次预算",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01] sensitive 耗尽五次返回 50001、告警、不取第六次，调用方提交后无建号残留",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01] collision 耗尽五次返回 50001、告警、不取第六次，调用方提交后无建号残留",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01] mixed 耗尽五次返回 50001、告警、不取第六次，调用方提交后无建号残留",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01] 注销账号邀请码不回收；不同 App 可以各自持有同码",
+        "test/spec/identity/registration/account.int.test.ts > [BR-ATTR-06] 归属码本 App 唯一冲突后重试成功",
+        "test/spec/identity/registration/account.int.test.ts > [BR-ATTR-06] 归属码持续冲突有界失败并告警，不留下账号或注册来源",
+        "test/spec/identity/registration/account.int.test.ts > [04 §3.2] 手机盲索引唯一冲突返回独立 phone_taken，调用方前后写入可提交",
+        "test/spec/identity/registration/account.int.test.ts > [04 §3.2] 同一新手机号在不同设备并发建号：一个成功、另一个 phone_taken，无部分写入",
+        "test/spec/identity/registration/account.int.test.ts > [04 §3.2][BR-ID-04] 注销后可重新用同手机号建号，旧号及其来源不复用、不删除",
+        "test/spec/identity/registration/account.int.test.ts > [BR-ID-04] 同一设备手机号与第三方首次登录分别创建账号，不自动合并",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01] 50001 回滚范围只含建号，调用方先前写入和后续 SQL 均保留",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01][BR-ATTR-06] invite 持续唯一冲突返回 50001，调用方前后 SQL 写入均可提交",
+        "test/spec/identity/registration/account.int.test.ts > [BR-INV-01][BR-ATTR-06] attr 持续唯一冲突返回 50001，调用方前后 SQL 写入均可提交",
+        "test/spec/identity/registration/account.int.test.ts > [04 §3.2] 调用方回滚同时撤销 users 与 device_registrations",
+        "test/spec/identity/registration/count.test.ts > [BR-ID-05] 滑动 30×24 小时只计算本 App、本设备窗口内记录，前后各留一分钟",
+        "test/spec/identity/registration/count.test.ts > [AC-S1-59 ⑥] A/U9 成对只算一条，X/Y 依次占名额，关闭去重后恢复原条数",
+        "test/spec/identity/registration/count.test.ts > [AC-S1-59 ⑦] 跨设备三个并号墓碑全部计入，两台设备都不退名额",
+        "test/spec/identity/registration/count.test.ts > [BR-ID-05] 多个源号并入同一在窗口内的目标号，整体只计一个",
+        "test/spec/identity/registration/count.test.ts > [BR-ID-05] 目标滑出窗口或不在本 App/设备，源号照常计数且不互相配对",
+        "test/spec/identity/registration/count.test.ts > [BR-ID-05] 已滑出窗口的源号不参与配对，未配对墓碑不因存在 merged_into 而消失",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 同设备三个账号后第四次微信建号返回 44001，携带风控所需字段且不写入",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 已注销、封禁和并号墓碑仍占额度，不按当前可用账号数计数",
+        "test/spec/identity/registration/device-limit.int.test.ts > [AC-S1-59 ⑥][BR-ID-05] 家人注册：去重默认 on时逐个判定 X/Y/Z",
+        "test/spec/identity/registration/device-limit.int.test.ts > [AC-S1-59 ⑥][BR-ID-05] 家人注册：去重off时逐个判定 X/Y/Z",
+        "test/spec/identity/registration/device-limit.int.test.ts > [AC-S1-59 ⑦] 三个跨设备并号不返还任一设备名额，来源记录保留",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 窗口内多个源号并入同设备同一个目标时只占一个名额",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] App 分隔计数、配置上限 2 生效，device_id 改变不重置额度",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 注入时钟移动到窗口前后一分钟：旧记录仍在但滑出后释放名额",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 落地页无设备，不调用设备放行端口、不判额度、不写设备来源",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 同一新设备同时建五个号，恰好三成功、两拦截",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 已有两条：A 成功未提交时 B 等待，A 提交后 B 读到三条并拒绝",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 同 App 不同设备：A 建号未提交时 B 能独立完成并提交",
+        "test/spec/identity/registration/device-limit.int.test.ts > [BR-ID-05] 44001 后调用方仍可提交原有写入，服务不增加来源",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] 未携带或规范化后空邀请码不调用端口，结果无 invite_bind",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] 携带邀请码但端口未接时返回 failed/50001，账号仍提交",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] 绑定业务失败 30401 原样返回，回滚端口写入且保留账号",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] 绑定业务失败 30403 原样返回，回滚端口写入且保留账号",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] 绑定业务失败 30408 原样返回，回滚端口写入且保留账号",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] 绑定业务失败 42901 原样返回，回滚端口写入且保留账号",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] 绑定先写库再抛错，只回滚绑定并告警",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] 绑定先写库再执行失败 SQL，只回滚绑定并告警",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-06] bound 保留端口写入，并传入新号、规范化邀请码、设备及客户端信息",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-ID-05] 申诉插入点在拦截返回前调用，允许时越过本次上限且仍写来源",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-ID-05] 第三方建号放行端口收到原身份摘要，无手机号时 phone_hmac 为空",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-ID-05] 申诉端口不允许则仍返回 44001，判定所需计数及上限传给端口",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-14] 注册等级 L1 写入点同事务调用一次，source=register；B1-03g 成功调用点也在提交前",
+        "test/spec/identity/registration/hooks.int.test.ts > [BR-INV-14] 注册等级 L3 写入点同事务调用一次，source=register；B1-03g 成功调用点也在提交前",
+        "test/spec/identity/registration/sensitive-words.test.ts > [BR-INV-01] 默认过滤器使用非空种子词表，按 invite_code 场景不分大小写子串命中"
+      ],
+      "expected": [
+        "test/spec/identity/registration/account.int.test.ts",
+        "test/spec/identity/registration/count.test.ts",
+        "test/spec/identity/registration/device-limit.int.test.ts",
+        "test/spec/identity/registration/hooks.int.test.ts",
+        "test/spec/identity/registration/sensitive-words.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "f648ddb21948182acd9e47775a7ed4a8634be12cfb399ac2032aec0ebb4a6b74"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f764e7a87fe03af777bff5f737180f8b5410a9500ec34bbccebaca37063f9671"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "fcebbf79fe476fa3a72b39b6d59ea0e065056a73",
+    "specs": "0100f2ee7f7133fd83e159c2e144148e7a4b59d4"
+  }
+}

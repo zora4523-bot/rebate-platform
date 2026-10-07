@@ -30,5 +30,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/registration/**'
-status: todo
-pr: null
+status: done
+pr: 255
