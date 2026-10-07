@@ -238,32 +238,123 @@ it('sms: a 20003 for the current code expires it and enables resend at once', as
   expect(resendButton().disabled).toBe(false);
 });
 
+/** Injected monotonic clock that also follows the fake timers; `jump` moves it without timers. */
+function manualClock(): { clock: () => number; jump(ms: number): void } {
+  let offset = 0;
+  return { clock: () => performance.now() + offset, jump: (ms) => (offset += ms) };
+}
+
 it('recomputes the resend countdown from its deadline after the machine sleeps', async () => {
-  render(<StepUpModal {...smsProps()} />);
+  const time = manualClock();
+  render(<StepUpModal {...smsProps({ clock: time.clock })} />);
   await advance(10);
   expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(50));
-  // Wall clock jumps 30 s while no timer fires (sleep / throttled tab).
-  vi.setSystemTime(Date.now() + 30_000);
+  // Monotonic time moves 30 s while no timer fires (sleep / throttled tab).
+  time.jump(30_000);
   await advance(1);
   expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(19));
-  vi.setSystemTime(Date.now() + 60_000);
+  time.jump(60_000);
   await advance(1);
   expect(resendButton().disabled).toBe(false);
 });
 
 it('recomputes the 42901 submit lock from its deadline after the machine sleeps', async () => {
+  const time = manualClock();
   const onSubmit = vi.fn(async (): Promise<StepUpResult> => ({
     ok: false,
     code: 42901,
     retryAfterSeconds: 30,
   }));
-  render(<StepUpModal {...props({ onSubmit })} />);
+  render(<StepUpModal {...props({ onSubmit, clock: time.clock })} />);
   fireEvent.change(input(), { target: { value: '123456' } });
   await act(async () => {
     fireEvent.click(submit());
   });
   expect(submit().disabled).toBe(true);
-  vi.setSystemTime(Date.now() + 29_500);
+  time.jump(29_500);
   await advance(1);
   expect(submit().disabled).toBe(false);
+});
+
+it('a forward wall-clock adjustment unlocks neither the resend countdown nor the submit lock', async () => {
+  const onSubmit = vi.fn(async (): Promise<StepUpResult> => ({
+    ok: false,
+    code: 42901,
+    retryAfterSeconds: 30,
+  }));
+  render(<StepUpModal {...smsProps({ onSubmit })} />);
+  await advance(40);
+  fireEvent.change(input(), { target: { value: '123456' } });
+  await act(async () => {
+    fireEvent.click(submit());
+  });
+  expect(submit().disabled).toBe(true);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(30));
+  // System time is corrected forward by an hour; performance.now() is unaffected.
+  vi.setSystemTime(Date.now() + 3_600_000);
+  await advance(1);
+  expect(submit().disabled).toBe(true);
+  expect(resendButton().disabled).toBe(true);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(29));
+  await advance(29);
+  expect(submit().disabled).toBe(false);
+  expect(resendButton().disabled).toBe(false);
+});
+
+it('sms: a late 20003 does not shorten a 42901 resend throttle that started meanwhile', async () => {
+  const pending = deferred();
+  const onResend = vi.fn(async (): Promise<StepUpResult> => ({
+    ok: false,
+    code: 42901,
+    retryAfterSeconds: 30,
+  }));
+  render(<StepUpModal {...smsProps({ onSubmit: () => pending.promise, onResend })} />);
+  await advance(60);
+  fireEvent.change(input(), { target: { value: '123456' } });
+  await act(async () => {
+    fireEvent.click(submit());
+  });
+  await act(async () => {
+    fireEvent.click(resendButton());
+  });
+  expect(onResend).toHaveBeenCalledTimes(1);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(30));
+  await advance(5);
+  await act(async () => {
+    pending.resolve({ ok: false, code: 20003 });
+  });
+  expect(screen.getByRole('alert').textContent).toContain(stepUpTexts.errors.expired);
+  expect(resendButton().disabled).toBe(true);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(25));
+  await advance(24);
+  expect(resendButton().disabled).toBe(true);
+  await advance(1);
+  expect(resendButton().disabled).toBe(false);
+});
+
+it('sms: a late 42901 with a shorter Retry-After does not shorten an active resend throttle', async () => {
+  const pending = deferred();
+  const onResend = vi.fn(async (): Promise<StepUpResult> => ({
+    ok: false,
+    code: 42901,
+    retryAfterSeconds: 30,
+  }));
+  render(<StepUpModal {...smsProps({ onSubmit: () => pending.promise, onResend })} />);
+  await advance(60);
+  fireEvent.change(input(), { target: { value: '123456' } });
+  await act(async () => {
+    fireEvent.click(submit());
+  });
+  await act(async () => {
+    fireEvent.click(resendButton());
+  });
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(30));
+  await act(async () => {
+    pending.resolve({ ok: false, code: 42901, retryAfterSeconds: 3 });
+  });
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(30));
+  await advance(3);
+  expect(submit().disabled).toBe(false);
+  expect(resendButton().disabled).toBe(true);
+  expect(resendButton().textContent).toBe(stepUpTexts.resendCountdown(27));
 });

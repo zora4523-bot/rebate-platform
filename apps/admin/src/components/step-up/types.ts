@@ -21,6 +21,11 @@ export interface StepUpModalProps {
   onVerified(token: string): void;
   /** Made `inert` and `aria-hidden` while open; defaults to `#root`. */
   applicationRoot?: HTMLElement;
+  /**
+   * Monotonic clock in milliseconds for the countdowns and the submit lock; defaults to
+   * `performance.now()` so a wall-clock adjustment cannot unlock early. Injectable for tests.
+   */
+  clock?: () => number;
 }
 
 export interface StepUpGateProps {

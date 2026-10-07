@@ -70,7 +70,12 @@ function restoreFocus(panel: HTMLElement, previous: HTMLElement | null): void {
   });
 }
 
-/** Whole seconds left until `deadline` (epoch ms) at `now`; 0 once it has passed. */
+/** Default monotonic clock: a wall-clock adjustment must not shorten a lock. */
+function monotonicNow(): number {
+  return performance.now();
+}
+
+/** Whole seconds left until `deadline` (clock ms) at `now`; 0 once it has passed. */
 function secondsLeft(deadline: number, now: number): number {
   return deadline > now ? Math.ceil((deadline - now) / 1000) : 0;
 }
@@ -148,6 +153,7 @@ export function StepUpModal(props: StepUpModalProps): ReactElement | null {
 
 function StepUpDialog(props: StepUpModalProps): ReactElement {
   const { tier, operation, details, maskedPhone, onSubmit, onResend, onClose, onVerified } = props;
+  const clock = props.clock ?? monotonicNow;
   const copy = stepUpTexts[tier];
   const titleId = useId();
   const descriptionId = useId();
@@ -167,26 +173,36 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   const [invalid, setInvalid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
-  // Countdowns are kept as deadlines (epoch ms) and recomputed from the clock on every tick, so
-  // a throttled or sleeping machine does not stretch them.
-  const [now, setNow] = useState(() => Date.now());
+  // Countdowns are kept as deadlines on a monotonic clock (ms) and recomputed on every tick, so
+  // a throttled or sleeping machine does not stretch them and a wall-clock jump cannot cut them.
+  const [now, setNow] = useState(clock);
+  // Resend interval after a successful send (60 s): 20003 lifts it, 42901 replaces it.
   const [resendAt, setResendAt] = useState(() =>
     tier === 'sms' ? now + RESEND_INTERVAL_SECONDS * 1000 : 0,
   );
+  // Server throttle from 42901 (Retry-After). Only ever extended: no later response shortens it.
+  const [throttleAt, setThrottleAt] = useState(0);
   const [unlockAt, setUnlockAt] = useState(0);
-  const countdown = secondsLeft(resendAt, now);
+  const countdown = secondsLeft(Math.max(resendAt, throttleAt), now);
   const submitLock = secondsLeft(unlockAt, now);
 
-  function startCountdown(seconds: number): void {
-    const start = Date.now();
+  function startInterval(seconds: number): void {
+    const start = clock();
     setNow(start);
     setResendAt(seconds > 0 ? start + seconds * 1000 : 0);
   }
 
-  function lockSubmit(seconds: number): void {
-    const start = Date.now();
+  function throttleResend(seconds: number): void {
+    const start = clock();
     setNow(start);
-    setUnlockAt(start + seconds * 1000);
+    setResendAt(0);
+    setThrottleAt((current) => Math.max(current, start + seconds * 1000));
+  }
+
+  function lockSubmit(seconds: number): void {
+    const start = clock();
+    setNow(start);
+    setUnlockAt((current) => Math.max(current, start + seconds * 1000));
   }
 
   function dismiss(): void {
@@ -234,13 +250,14 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   }, [applicationRoot]);
 
   useEffect(() => {
-    const delays = [untilNextSecond(resendAt, now), untilNextSecond(unlockAt, now)].filter(
-      (delay): delay is number => delay !== undefined,
-    );
+    const delays = [
+      untilNextSecond(Math.max(resendAt, throttleAt), now),
+      untilNextSecond(unlockAt, now),
+    ].filter((delay): delay is number => delay !== undefined);
     if (delays.length === 0) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(...delays));
+    const timer = setTimeout(() => setNow(clock()), Math.min(...delays));
     return () => clearTimeout(timer);
-  }, [resendAt, unlockAt, now]);
+  }, [resendAt, throttleAt, unlockAt, now, clock]);
 
   const complete = code.length === OTP_LENGTH;
   const canSubmit = complete && submitLock <= 0;
@@ -270,7 +287,8 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
         return;
       }
       setError(stepUpTexts.errors.expired);
-      startCountdown(0);
+      // Lift the 60-second interval only; an active 42901 throttle stays in force.
+      startInterval(0);
       return;
     }
     if (result.code === ERROR_TOO_FREQUENT) {
@@ -279,7 +297,7 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
       const seconds = retryAfter(result.retryAfterSeconds, RETRY_AFTER_DEFAULT_SECONDS);
       setError(stepUpTexts.errors.frequent);
       if (source === 'submit') lockSubmit(seconds);
-      if (tier === 'sms') startCountdown(seconds);
+      if (tier === 'sms') throttleResend(seconds);
       return;
     }
     setError(stepUpTexts.errors.generic);
@@ -326,7 +344,7 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
     setResending(false);
     if (result.ok) {
       sendRoundRef.current += 1;
-      startCountdown(RESEND_INTERVAL_SECONDS);
+      startInterval(RESEND_INTERVAL_SECONDS);
     } else applyFailure(result, 'resend', sendRoundRef.current);
   }
 
