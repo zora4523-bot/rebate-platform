@@ -52,10 +52,16 @@ export const FUNDS_TABLE_PREFIXES: readonly string[] = [
 ];
 export const FUNDS_TABLE_NAMES: readonly string[] = ['links'];
 
-/** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint). */
+/** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint); anything else is refused. */
 const MONEY_TYPES_OK = new Set(['bigint', 'int8']);
-const COLUMN_TYPE =
-  /"?\b([a-z0-9_]+_fen)\b"?\s+(?:(?:SET\s+DATA\s+)?TYPE\s+)?(?:"?pg_catalog"?\.)?"?(bigint|int8|int2|int4|integer|int|smallint|serial|smallserial|bigserial|numeric|decimal|real|double\s+precision|float\d*|money|text|varchar|character(?:\s+varying)?|char|json|jsonb|boolean|bool|uuid|date|timestamptz|timestamp|bytea)\b"?(\s*\[|\s+ARRAY\b)?/gi;
+/** A `*_fen` column name at the start of a column definition or ALTER TABLE subcommand, and the text after it. */
+const MONEY_COLUMN_DEF = /^\s*"?([a-z0-9_]+_fen)"?\s+([\s\S]*)$/i;
+const MONEY_COLUMN_ADD =
+  /^\s*ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"?([a-z0-9_]+_fen)"?\s+([\s\S]*)$/i;
+const MONEY_COLUMN_ALTER =
+  /^\s*ALTER\s+(?:COLUMN\s+)?"?([a-z0-9_]+_fen)"?\s+(?:SET\s+DATA\s+)?TYPE\s+([\s\S]*)$/i;
+/** The type name at the start of a column type: optional pg_catalog qualifier, quoted or bare first word, and what follows. */
+const TYPE_HEAD = /^(?:"?pg_catalog"?\s*\.\s*)?(?:"([^"]+)"|([a-z_][a-z0-9_]*))([\s\S]*)$/i;
 const LOCK_TIMEOUT = /\bSET\s+(?:LOCAL\s+)?lock_timeout\b/i;
 const STATEMENT_TIMEOUT = /\bSET\s+(?:LOCAL\s+)?statement_timeout\b/i;
 /** Statements an ignore reaches only through squawk's next-line rule are checked when they change a table. */
@@ -113,14 +119,18 @@ export function isFundsTable(reference: string): boolean {
  */
 export function checkTimeouts(file: string, sql: string): string[] {
   // Both settings must come before the first statement that is not a SET: a timeout set after the
-  // DDL does not protect it.
+  // DDL does not protect it. A value of 0 means no timeout and does not count.
   let lock = false;
   let statement = false;
+  let start = 0;
   for (const part of withoutComments(sql).split(';')) {
     const text = part.trim();
+    const raw = sql.slice(start, start + part.length).trim();
+    start += part.length + 1;
     if (text === '') continue;
-    if (LOCK_TIMEOUT.test(text)) lock = true;
-    else if (STATEMENT_TIMEOUT.test(text)) statement = true;
+    const zero = /(?:=|\bTO)\s*'?\s*0+\s*(?:ms|s|min)?\s*'?$/i.test(raw);
+    if (LOCK_TIMEOUT.test(text)) lock = !zero;
+    else if (STATEMENT_TIMEOUT.test(text)) statement = !zero;
     else if (!/^SET\b/i.test(text)) break;
     if (lock && statement) break;
   }
@@ -138,10 +148,133 @@ export function checkTimeouts(file: string, sql: string): string[] {
   return lines;
 }
 
-/** SQL with line comments and block comments blanked to spaces: same length, same line breaks. */
+/**
+ * SQL with comments and the contents of string literals ('…', E'…', $tag$…$tag$) blanked to spaces:
+ * same length, same line breaks, quotes and quoted identifiers kept. So a `;`, `--` or `(` inside a
+ * string neither ends a statement nor starts a comment, and comment text is never read as SQL.
+ */
 function withoutComments(sql: string): string {
   const blank = (m: string): string => m.replace(/[^\n]/g, ' ');
-  return sql.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/--[^\n]*/g, blank);
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const c = sql[i];
+    if (sql.startsWith('--', i)) {
+      const j = sql.indexOf('\n', i);
+      const end = j === -1 ? sql.length : j;
+      out += blank(sql.slice(i, end));
+      i = end;
+    } else if (sql.startsWith('/*', i)) {
+      // Block comments nest in PostgreSQL.
+      let depth = 0;
+      let j = i;
+      while (j < sql.length) {
+        if (sql.startsWith('/*', j)) {
+          depth++;
+          j += 2;
+        } else if (sql.startsWith('*/', j)) {
+          depth--;
+          j += 2;
+          if (depth === 0) break;
+        } else j++;
+      }
+      out += blank(sql.slice(i, j));
+      i = j;
+    } else if (c === "'") {
+      const escapes = /e/i.test(sql[i - 1] ?? '') && !/\w/.test(sql[i - 2] ?? '');
+      let j = i + 1;
+      while (j < sql.length) {
+        if (escapes && sql[j] === '\\') j += 2;
+        else if (sql[j] === "'" && sql[j + 1] === "'") j += 2;
+        else if (sql[j] === "'") break;
+        else j++;
+      }
+      const closed = j < sql.length;
+      out += `'${blank(sql.slice(i + 1, Math.min(j, sql.length)))}${closed ? "'" : ''}`;
+      i = closed ? j + 1 : sql.length;
+    } else if (c === '"') {
+      const j = sql.indexOf('"', i + 1);
+      const end = j === -1 ? sql.length : j + 1;
+      out += sql.slice(i, end);
+      i = end;
+    } else if (c === '$' && !/[\w$]/.test(sql[i - 1] ?? '')) {
+      const tag = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i))?.[0];
+      if (tag === undefined) {
+        out += c;
+        i++;
+        continue;
+      }
+      const j = sql.indexOf(tag, i + tag.length);
+      const end = j === -1 ? sql.length : j + tag.length;
+      out +=
+        tag + blank(sql.slice(i + tag.length, j === -1 ? sql.length : j)) + (j === -1 ? '' : tag);
+      i = end;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/** Splits `text` at the commas outside parentheses, from `from` up to `to` (stops early when the depth goes below 0). */
+function topLevelParts(text: string, from: number, to: number): { start: number; text: string }[] {
+  const parts: { start: number; text: string }[] = [];
+  let depth = 0;
+  let start = from;
+  let i = from;
+  for (; i < to; i++) {
+    const c = text[i];
+    if (c === '(') depth++;
+    else if (c === ')') {
+      if (depth === 0) break;
+      depth--;
+    } else if (c === ',' && depth === 0) {
+      parts.push({ start, text: text.slice(start, i) });
+      start = i + 1;
+    }
+  }
+  parts.push({ start, text: text.slice(start, i) });
+  return parts;
+}
+
+/** The money-column definitions of one statement: name, the text after it, and their offset in the statement. */
+function moneyColumns(statement: string): { name: string; rest: string; at: number }[] {
+  const found: { name: string; rest: string; at: number }[] = [];
+  const at = (part: { start: number; text: string }): number =>
+    part.start + part.text.length - part.text.trimStart().length;
+  if (
+    /^\s*CREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP(?:ORARY)?\s+|UNLOGGED\s+)?TABLE\b/i.test(
+      statement,
+    )
+  ) {
+    const open = statement.indexOf('(');
+    if (open === -1) return found;
+    for (const part of topLevelParts(statement, open + 1, statement.length)) {
+      const m = MONEY_COLUMN_DEF.exec(part.text);
+      if (m !== null) found.push({ name: m[1] ?? '', rest: m[2] ?? '', at: at(part) });
+    }
+    return found;
+  }
+  const alter = new RegExp(
+    String.raw`^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${IDENT}\s*\*?`,
+    'i',
+  ).exec(statement);
+  if (alter === null) return found;
+  for (const part of topLevelParts(statement, alter[0].length, statement.length)) {
+    const m = MONEY_COLUMN_ADD.exec(part.text) ?? MONEY_COLUMN_ALTER.exec(part.text);
+    if (m !== null) found.push({ name: m[1] ?? '', rest: m[2] ?? '', at: at(part) });
+  }
+  return found;
+}
+
+/** The declared type of a money column when it is not bigint / int8 (arrays included), else null. */
+function badMoneyType(rest: string): string | null {
+  const m = TYPE_HEAD.exec(rest.trimStart());
+  if (m === null) return rest.trim().split(/\s+/)[0] ?? '?';
+  const name = (m[1] ?? m[2] ?? '').toLowerCase();
+  const array = /^\s*(?:\[|ARRAY\b)/i.test(m[3] ?? '');
+  return MONEY_TYPES_OK.has(name) && !array ? null : `${name}${array ? '[]' : ''}`;
 }
 
 function lineOf(text: string, index: number): number {
@@ -154,16 +287,21 @@ function lineOf(text: string, index: number): number {
 export function checkMigration(file: string, sql: string): Problem[] {
   const problems: Problem[] = [];
   const code = withoutComments(sql);
-  for (const match of code.matchAll(COLUMN_TYPE)) {
-    const type =
-      (match[2] ?? '').toLowerCase().replace(/\s+/g, ' ') + (match[3] === undefined ? '' : '[]');
-    if (!MONEY_TYPES_OK.has(type)) {
-      problems.push({
-        file,
-        line: lineOf(code, match.index ?? 0),
-        message: `money column ${match[1]} must be bigint (ADR-0001 §4), found ${type}`,
-      });
+  // Money columns: every `*_fen` column defined in CREATE TABLE or added / retyped in ALTER TABLE
+  // must be bigint / int8; any other type (numeric, DEC, a domain, an array…) is refused.
+  let start = 0;
+  for (const statement of code.split(';')) {
+    for (const column of moneyColumns(statement)) {
+      const type = badMoneyType(column.rest);
+      if (type !== null) {
+        problems.push({
+          file,
+          line: lineOf(code, start + column.at),
+          message: `money column ${column.name} must be bigint (ADR-0001 §4), found ${type}`,
+        });
+      }
     }
+    start += statement.length + 1;
   }
   const ignoreFile = IGNORE_FILE.exec(sql);
   if (ignoreFile !== null) {

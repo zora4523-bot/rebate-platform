@@ -457,3 +457,73 @@ it('checkMigration: TRUNCATE TABLE with an ignore is refused on a funds table (T
     ]);
   }
 });
+
+it('checkMigration: money columns are an allowlist — only bigint / int8 pass, whatever else is declared', () => {
+  for (const [sql, type] of [
+    ['CREATE TABLE app.order_totals (app_id text NOT NULL, amount_fen DEC(12,2));', 'dec'],
+    ['CREATE TABLE app.t (amount_fen app.money_domain NOT NULL);', 'app'],
+    ['CREATE TABLE app.t (amount_fen citext);', 'citext'],
+    ['CREATE TABLE app.t (amount_fen int8range);', 'int8range'],
+    [
+      'ALTER TABLE app.t ADD COLUMN note text, ADD COLUMN IF NOT EXISTS fee_fen numeric(12, 2);',
+      'numeric',
+    ],
+    ['ALTER TABLE ONLY app.t ALTER fee_fen TYPE double precision;', 'double'],
+  ] as const) {
+    expect(checkMigration('x.sql', sql).map((p) => p.message)).toEqual([
+      expect.stringContaining(`found ${type}`),
+    ]);
+  }
+  for (const sql of [
+    'CREATE TABLE IF NOT EXISTS app.t (id uuid PRIMARY KEY, "amount_fen" BIGINT NOT NULL DEFAULT 0 CHECK (amount_fen >= 0), note text DEFAULT \'a, b (c\');',
+    'ALTER TABLE app.t ALTER COLUMN amount_fen SET NOT NULL, ALTER COLUMN amount_fen SET DEFAULT 0;',
+    'CREATE INDEX t_amount_idx ON app.t (amount_fen DESC);',
+    'ALTER TABLE app.t ADD CONSTRAINT t_amount_fen_ck CHECK (amount_fen > 0);',
+    'INSERT INTO app.t (amount_fen) VALUES (1);',
+  ]) {
+    expect(checkMigration('x.sql', sql)).toEqual([]);
+  }
+});
+
+it('checkMigration: semicolons and comment markers inside string literals do not split statements or start comments', () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      "ALTER TABLE app.orders ADD COLUMN note text DEFAULT ';', DROP COLUMN c; -- squawk-ignore ban-drop-column\n",
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      message: expect.stringContaining('funds or attribution table orders'),
+    }),
+  ]);
+  expect(
+    checkMigration(
+      'x.sql',
+      "-- squawk-ignore ban-drop-column\nALTER TABLE app.orders ADD COLUMN note text DEFAULT '--', DROP COLUMN c;\n",
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      message: expect.stringContaining('funds or attribution table orders'),
+    }),
+  ]);
+  expect(
+    checkMigration('x.sql', "CREATE TABLE app.t (note text DEFAULT '--', amount_fen integer);").map(
+      (p) => p.message,
+    ),
+  ).toEqual([expect.stringContaining('amount_fen must be bigint')]);
+});
+
+it('checkTimeouts: a timeout of 0 (no timeout at all) does not count', () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      "SET LOCAL lock_timeout = 0;\nSET LOCAL statement_timeout = '0';\nCREATE TABLE app.t (id uuid);\n",
+    ),
+  ).toHaveLength(2);
+  expect(
+    checkTimeouts(
+      'x.sql',
+      "SET LOCAL lock_timeout TO '10s';\nSET LOCAL statement_timeout = 600000;\n",
+    ),
+  ).toEqual([]);
+});
