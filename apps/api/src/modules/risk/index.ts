@@ -7,6 +7,18 @@
 // ../platform/index.ts). The ports are plain interfaces, so identity implements them without Nest
 // types.
 export { RiskModule } from './risk.module.ts';
+export {
+  createMinimumVersionCheck,
+  createMinimumVersionGuard,
+  contractMinimumVersionRoutes,
+} from './application/minimum-version.ts';
+export type {
+  MinimumVersionReader,
+  MinimumVersionRequest,
+  MinimumVersionCheck,
+  MinimumVersionRoute,
+  MinimumVersionGuard,
+} from './application/minimum-version.ts';
 export type { RiskModuleOptions } from './risk.module.ts';
 export {
   DEVICE_SIGNING_KEYS,
