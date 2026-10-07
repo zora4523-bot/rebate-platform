@@ -12,8 +12,11 @@
 //   catalog's); link.open.requote_after_sec > 0 lets a snapshot younger than N seconds (by its
 //   original quoted_at) stand as new, without rebate amounts (no fresh quote exists then).
 // - a changed snapshot (final price, coupon amount or coupon IDs, D33) answers with the card's
-//   link, registered by catalog through B1-06c; logs and the attempt use that link_id. An
-//   unchanged snapshot leaves the card's link unused (catalog's single entry always registers).
+//   link. Inside the re-check catalog's registrar (B1-06c) only reserves it with the opened
+//   link's identity snapshot and scene (a share link keeps the sharer, BR-PRICE-12 2026-10-07);
+//   the row is written in the open's transaction with the log and attempt, and never when the
+//   snapshot is unchanged or the conversion fails. A share link opened by anyone but the sharer
+//   shows no rebate (BR-ATTR-10).
 // - off-shelf 30141 > coupon_gone > price_changed; taolijin claimed out 30602; anomalies,
 //   price_unavailable, fetch or assembly failures → the requote-failed branch: the identity's
 //   conversion cache (≤ link.convert_cache_ttl_sec, at most 900 s) with requote_failed, else 50303.
@@ -21,7 +24,8 @@
 // - conversion and its cache are ports; the cache key is the frozen identity's owner (never the
 //   opener or links.user_id), app, platform, product, pid, pid_scene and no_rebate.
 // Not here: authorization (30101/30102/30111), platform jump plans, routes (B1-06e/f, later).
-import type { components } from '@couli/contracts-ts';
+import type { components, Scene } from '@couli/contracts-ts';
+import { scene as SCENES } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Selectable } from 'kysely';
 import type { AssembleCardInput, CatalogCardEntry } from '../../catalog/index.ts';
@@ -46,6 +50,12 @@ import {
   quoteSnapshotChanged,
 } from '../domain/rules.ts';
 import type { Caller } from '../ports.ts';
+import {
+  insertPendingOpenLink,
+  openRegistrationScope,
+  type OpenRegistrationScope,
+  type PendingOpenLink,
+} from './link-registration.ts';
 import {
   createLinkOpenOwner,
   type LinkOpenOwnerOptions,
@@ -145,6 +155,10 @@ type CardConclusion =
       readonly rebateMinFen: string | null;
       readonly rebateMaxFen: string | null;
       readonly linkId: string;
+      /** The renewed snapshot's link, held until an open commits it (null: already written). */
+      readonly pending: PendingOpenLink | null;
+      /** Serializes the commits of the opens sharing this card, so the link is written once. */
+      tail: Promise<void>;
       readonly quotedAt: string;
     };
 
@@ -162,6 +176,8 @@ interface Settled {
   readonly code: number;
   /** The link the log and attempt are written for. */
   readonly linkId: string;
+  /** Present when linkId is a renewed snapshot not yet written; it commits with the log. */
+  readonly card?: Extract<CardConclusion, { kind: 'card' }>;
   readonly quotedPriceFen: bigint | null;
   readonly cacheHit: boolean;
   readonly data: Omit<LinkOpenRequoteResult, 'attempt_id'> | null;
@@ -196,6 +212,30 @@ function instantOf(value: string): string {
     throw new TypeError('linking: re-check quoted_at is not an instant');
   }
   return value;
+}
+
+/** The stored scene of the opened link (B1-06d already checked it against the enum). */
+function storedSceneOf(link: LinkRow): Scene {
+  if (!(SCENES as readonly string[]).includes(link.scene)) {
+    throw new TypeError('linking: stored link scene is outside the contract enum');
+  }
+  return link.scene as Scene;
+}
+
+/**
+ * BR-ATTR-05 ① / BR-ATTR-10: a share link opened by anyone but the sharer converts with the
+ * sharer's identity and the buyer earns nothing from it, so the opener's quote is not shown.
+ */
+function rebatesShown(
+  caller: Caller,
+  owner: LinkOpenOwnerResult,
+  min: string | null,
+  max: string | null,
+): { readonly min: string | null; readonly max: string | null } {
+  const { identitySnapshot } = owner;
+  const sharedByOther =
+    identitySnapshot.pid_scene === 'share' && identitySnapshot.user_id !== caller.userId;
+  return sharedByOther ? { min: '0', max: '0' } : { min, max };
 }
 
 function openerKey(caller: Caller): string {
@@ -293,17 +333,29 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       const precheck = await config.configValue(owner.link.app_id, PDD_PRECHECK_SWITCH);
       void isSwitchOn(precheck?.value);
     }
+    const { link, identitySnapshot } = owner;
+    const scope: OpenRegistrationScope = {
+      owner: { appId: link.app_id, userId: identitySnapshot.user_id, deviceId: link.device_id },
+      snapshot: identitySnapshot,
+      scene: storedSceneOf(link),
+      subScene: link.sub_scene,
+      agentCardId: link.agent_card_id,
+      pending: null,
+    };
     let result;
     try {
-      result = await catalog.assemble({
-        ...input,
-        entrySource: owner.link.entry_source,
-        scene: 'active_query',
-      });
+      result = await openRegistrationScope.run(scope, () =>
+        catalog.assemble({
+          ...input,
+          entrySource: link.entry_source,
+          scene: 'active_query',
+        }),
+      );
     } catch {
       return { kind: 'failed' };
     }
     if (result.kind !== 'card') return { kind: 'failed' };
+    const pending = scope.pending?.linkId === result.card.link_id ? scope.pending : null;
     const { item } = input;
     return {
       kind: 'card',
@@ -313,6 +365,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       rebateMinFen: fenString(result.card.rebate_min_fen),
       rebateMaxFen: fenString(result.card.rebate_max_fen),
       linkId: result.card.link_id,
+      pending,
+      tail: Promise.resolve(),
       quotedAt: instantOf(item.quoted_at),
     };
   }
@@ -458,11 +512,18 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         break;
     }
 
-    const opener = openerKey(caller);
-    let pendingCard = flight.cards.get(opener);
+    // Rebates follow the opener's quote; the renewed link follows the opened link's identity.
+    const cardKey = JSON.stringify([
+      openerKey(caller),
+      owner.identitySnapshot,
+      link.scene,
+      link.sub_scene,
+      link.agent_card_id,
+    ]);
+    let pendingCard = flight.cards.get(cardKey);
     if (pendingCard === undefined) {
       pendingCard = concludeCard(owner, price.input);
-      flight.cards.set(opener, pendingCard);
+      flight.cards.set(cardKey, pendingCard);
     }
     const card = await pendingCard;
     if (card.kind === 'failed') return requoteFailed(owner, input);
@@ -489,9 +550,11 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     const converted = await sharedConversion(flight, owner, input);
     if (converted === null) return failure(50303, owner);
     const effective = renewed ? card.linkId : link.link_id;
+    const rebates = rebatesShown(caller, owner, card.rebateMinFen, card.rebateMaxFen);
     return {
       code: 0,
       linkId: effective,
+      ...(renewed && card.pending !== null ? { card } : {}),
       quotedPriceFen: renewed ? card.finalFen : link.quoted_final_price_fen,
       cacheHit: converted.cacheHit,
       data: {
@@ -501,8 +564,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         new_final_price_fen: card.finalFen.toString(),
         new_link_id: renewed ? card.linkId : owner.new_link_id,
         requote_failed: false,
-        new_rebate_min_fen: card.rebateMinFen,
-        new_rebate_max_fen: card.rebateMaxFen,
+        new_rebate_min_fen: rebates.min,
+        new_rebate_max_fen: rebates.max,
         no_rebate_cause: null,
         availability,
         quoted_at: card.quotedAt,
@@ -521,47 +584,60 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     const now = clock.now();
     const { link, identitySnapshot } = owner;
     const attemptId = settled.code === 0 ? newUuidV7(now) : null;
-    await db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto('link_logs')
-        .values({
-          app_id: link.app_id,
-          link_id: settled.linkId,
-          event: 'open',
-          user_id: identitySnapshot.user_id,
-          opener_user_id: caller.userId,
-          platform: link.platform,
-          product_key: link.product_key,
-          raw_item_id: link.raw_item_id,
-          scene: link.scene,
-          pid_scene: identitySnapshot.pid_scene,
-          pid: identitySnapshot.pid,
-          client: input.client,
-          cache_hit: settled.cacheHit,
-          expired: startMs > link.expire_at.getTime(),
-          quoted_price_fen: settled.quotedPriceFen,
-          no_rebate: input.noRebate === true,
-          agent_session_id: identitySnapshot.agent_session_id,
-          result_code: settled.code,
-          latency_ms: Math.max(0, now.getTime() - startMs),
-          created_at: now,
-        })
-        .execute();
-      if (attemptId !== null) {
+    const card = settled.code === 0 ? settled.card : undefined;
+    const commit = () =>
+      db.transaction().execute(async (trx) => {
+        if (card?.pending != null) await insertPendingOpenLink(trx, card.pending);
         await trx
-          .insertInto('link_open_attempts')
+          .insertInto('link_logs')
           .values({
-            attempt_id: attemptId,
             app_id: link.app_id,
             link_id: settled.linkId,
-            user_id: caller.userId,
-            opened_at: now,
+            event: 'open',
+            user_id: identitySnapshot.user_id,
+            opener_user_id: caller.userId,
+            platform: link.platform,
+            product_key: link.product_key,
+            raw_item_id: link.raw_item_id,
+            scene: link.scene,
+            pid_scene: identitySnapshot.pid_scene,
+            pid: identitySnapshot.pid,
+            client: input.client,
+            cache_hit: settled.cacheHit,
+            expired: startMs > link.expire_at.getTime(),
+            quoted_price_fen: settled.quotedPriceFen,
+            no_rebate: input.noRebate === true,
+            agent_session_id: identitySnapshot.agent_session_id,
+            result_code: settled.code,
+            latency_ms: Math.max(0, now.getTime() - startMs),
             created_at: now,
-            updated_at: now,
           })
           .execute();
-      }
-    });
+        if (attemptId !== null) {
+          await trx
+            .insertInto('link_open_attempts')
+            .values({
+              attempt_id: attemptId,
+              app_id: link.app_id,
+              link_id: settled.linkId,
+              user_id: caller.userId,
+              opened_at: now,
+              created_at: now,
+              updated_at: now,
+            })
+            .execute();
+        }
+      });
+    if (card === undefined) {
+      await commit();
+    } else {
+      const run = card.tail.then(commit);
+      card.tail = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      await run;
+    }
     return attemptId;
   }
 

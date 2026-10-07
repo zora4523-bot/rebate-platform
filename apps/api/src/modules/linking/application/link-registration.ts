@@ -7,6 +7,7 @@
 // reuses across scenes; links has no index for a reuse lookup.
 // links rows are only inserted here (row_version 0); the 0006 guards freeze the snapshot and later
 // writers (open, B1-06d/k) update with CAS.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { DB } from '@couli/db';
 import type { PidScene, Scene } from '@couli/contracts-ts';
 import { sql, type Kysely, type RawBuilder, type Selectable } from 'kysely';
@@ -98,6 +99,9 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
   const sourceLinks = createSourceLinkReader(db);
 
   async function register(input: RegisterLinkInput): Promise<{ readonly linkId: string }> {
+    // B1-06k: inside an open re-check the card's link is the opened link's renewed snapshot.
+    const openScope = openRegistrationScope.getStore();
+    if (openScope !== undefined) return deferForOpen(openScope, input);
     const scene = parseScene(context.scene);
     const pidScene = pidSceneOf(scene);
     // Server-side identity only; input.viewer and any other identity field are ignored.
@@ -181,7 +185,130 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
     return { linkId };
   }
 
+  /**
+   * B1-06k (BR-PRICE-12, BR-ATTR-05): a changed snapshot at open is registered with the identity
+   * and scene of the opened link (a share link keeps the sharer's snapshot), never with this
+   * registration's fixed context or the current caller. Nothing is written here: the row is held
+   * until the open decides the snapshot changed and commits it with its log and attempt.
+   */
+  function deferForOpen(
+    scope: OpenRegistrationScope,
+    input: RegisterLinkInput,
+  ): Promise<{ readonly linkId: string }> {
+    const { ref, item } = input;
+    if (ref.appId !== scope.owner.appId) {
+      throw new TypeError('linking: product ref belongs to another app scope');
+    }
+    const platform: unknown = ref.platform;
+    if (
+      !isPlatform(platform) ||
+      item.platform !== platform ||
+      scope.snapshot.platform !== platform
+    ) {
+      throw new TypeError(
+        'linking: union item, product ref and opened link name different platforms',
+      );
+    }
+    if (isPriceAnomaly(item)) {
+      throw new TypeError('linking: price anomaly; link not registered');
+    }
+    const quotedAt = instant(item.quoted_at, 'quoted_at');
+    const rawFetchedAt = instant(ref.rawFetchedAt, 'raw_fetched_at');
+    const now = clock.now();
+    const pending: PendingOpenLink = {
+      now,
+      caller: scope.owner,
+      linkId: newUuidV7(now),
+      snapshot: scope.snapshot,
+      shopId: ref.shopId,
+      values: {
+        platform,
+        productKey: ref.productKey,
+        rawItemId: ref.rawItemId,
+        rawFetchedAt,
+        scene: scope.scene,
+        subScene: scope.subScene,
+        entrySource: input.entrySource,
+        quotedFinalPriceFen: item.final_price_fen,
+        quotedCouponFen: item.coupon_fen,
+        quotedCouponId:
+          item.coupon_ids === undefined || item.coupon_ids === '' ? null : item.coupon_ids,
+        quotedAt,
+        agentCardId: scope.agentCardId,
+      },
+    };
+    scope.pending = pending;
+    return Promise.resolve({ linkId: pending.linkId });
+  }
+
   return { register, entrySource: (appId, linkId) => sourceLinks.entrySource(appId, linkId) };
+}
+
+/** B1-06k: the identity and scene an open's renewed snapshot inherits from the opened link. */
+export interface OpenRegistrationScope {
+  /** The identity's owner as a caller: app, snapshot user_id, the opened link's device. */
+  readonly owner: Caller;
+  readonly snapshot: IdentitySnapshot;
+  readonly scene: Scene;
+  readonly subScene: string | null;
+  readonly agentCardId: string | null;
+  /** Set by the registrar when the card registers; written only if the open commits it. */
+  pending: PendingOpenLink | null;
+}
+
+/** A link registered for an open's renewed snapshot, not yet written. */
+export interface PendingOpenLink {
+  readonly now: Date;
+  readonly caller: Caller;
+  readonly linkId: string;
+  readonly snapshot: IdentitySnapshot;
+  readonly shopId: string | null;
+  readonly values: LinkRowValues;
+}
+
+/** Set by the open re-check around catalog's card entry (B1-06k); internal to linking. */
+export const openRegistrationScope = new AsyncLocalStorage<OpenRegistrationScope>();
+
+/**
+ * Writes a pending open link through the module's single links insert, with the register log of
+ * the scenes that log registration, inside the open's transaction. Idempotent per link_id: a
+ * link already written by an earlier open of the same flight is left as it is.
+ */
+export async function insertPendingOpenLink(
+  executor: Kysely<DB>,
+  pending: PendingOpenLink,
+): Promise<void> {
+  const existing = await executor
+    .selectFrom('links')
+    .select('link_id')
+    .where('app_id', '=', pending.caller.appId)
+    .where('link_id', '=', pending.linkId)
+    .executeTakeFirst();
+  if (existing !== undefined) return;
+  const { now, caller, linkId, snapshot, values } = pending;
+  await insertLinkRow(executor, { now, caller, linkId, snapshot, values });
+  if (logsRegistration(values.scene, pidSceneOf(values.scene))) {
+    await executor
+      .insertInto('link_logs')
+      .values({
+        app_id: caller.appId,
+        link_id: linkId,
+        event: 'register',
+        user_id: snapshot.user_id,
+        platform: values.platform,
+        product_key: values.productKey,
+        raw_item_id: values.rawItemId,
+        shop_id: pending.shopId,
+        scene: values.scene,
+        pid_scene: snapshot.pid_scene,
+        pid: snapshot.pid,
+        quoted_price_fen: values.quotedFinalPriceFen,
+        agent_session_id: snapshot.agent_session_id,
+        result_code: 0,
+        created_at: now,
+      })
+      .execute();
+  }
 }
 
 /** The card fields a links row is registered with; identity is never among them. */
