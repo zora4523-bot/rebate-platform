@@ -1,0 +1,26 @@
+id: F1-01m
+repo: rebate-platform
+title: 构建产物冒烟的诊断采集补懒加载与路由错误：冒烟规则测试把 vite:preloadError 与 React Router 接住的 import / loader 错误写进诊断附件，red-check 与严格报告器据此判无效红、判绿跑失败
+type: test-change
+# 2026-10-07 入账（f1-frontend-3）。负责人就 blocked B-11 选 A（F1-01k 按现状合并，README 写明盲区，另立本任务；B-11 原写 F1-01k2，台账编号规则只许字母后缀，改为 F1-01m）。
+# 盲区：懒加载分块返回 200 但模块初始化抛 TypeError，React Router 接住 import() 的拒绝显示重试页，既不写 console.error 也不发 pageerror，
+# 诊断为空，等元素超时被判为有效红（Codex money r4 S1）。做法：冻结规则测试 entries.smoke.test.ts 在 page 上注入采集脚本
+# （addInitScript 监听 vite:preloadError、unhandledrejection），并读取路由错误界面的标记，统一写进现有诊断附件（kind 新增 preload-error /
+# route-error）；red-check 的 smokeDiagnosticsVerdict 与 strict-reporter 认这两种 kind（骨架 NotImplemented 规则不变）。
+# 改既有规则测试属保护路径第一类，tools/** 属第三类，合并要负责人标签。
+refs: []
+refs_hash: {}
+deps: [F1-01k]
+paths:
+  - 'test/spec/frontend/build-smoke/**'
+  - 'tools/guard/lib/red-check{*,-fixtures/**}'
+  - 'tools/ops/build-smoke/**'
+  - 'tools/ops/README.md'
+  - 'tools/agent/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/build-smoke/**'
+status: todo
+pr: null
