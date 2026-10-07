@@ -1,5 +1,24 @@
-/** Android ResXMLTree：只恢复字符串及属性关系，不执行资源或解析外部引用。 */
-export function axmlText(bytes: Buffer): string {
+import { associationNames, emitFinal, UNRESOLVED } from './lines.ts';
+import type { FileReader, Resolution } from './lines.ts';
+import { fieldRule } from './rules.ts';
+
+/** 资源引用解析：kind=attr 是主题属性引用（?attr/…），在制品内无法静态解析。 */
+export type AxmlResolver = (id: number, kind: 'ref' | 'attr') => Resolution;
+
+interface Attr {
+  name: string;
+  values: string[];
+  refs: Array<{ id: number; kind: 'ref' | 'attr' }>;
+  /** 引用型属性保留的原始文本（如 @string/x）：只作孤立字符串，不配字段名。 */
+  rawRef?: string;
+}
+
+/**
+ * Android ResXMLTree：恢复字符串及属性关系，不执行资源。
+ * 给出 resolve 时（同一 APK 的 resources.arsc），name + value / resource 属性的资源引用按引用方的字段名关联；
+ * 签名材料字段的引用解析不了时抛错（fail-closed）。
+ */
+export function axmlText(bytes: Buffer, resolve?: AxmlResolver, readFile?: FileReader): string {
   const invalid = (): never => {
     throw new Error('Invalid binary Android XML');
   };
@@ -111,7 +130,7 @@ export function axmlText(bytes: Buffer): string {
         for (const offset of [14, 16, 18]) {
           if (u16(ext + offset, end) > count) invalid();
         }
-        const attrs: Array<{ name: string; values: string[] }> = [];
+        const attrs: Attr[] = [];
         for (let i = 0; i < count; i++) {
           const attr = ext + attrStart + i * attrSize;
           optional(u32(attr, end));
@@ -121,17 +140,51 @@ export function axmlText(bytes: Buffer): string {
           const dataType = bytes[attr + 15]!;
           const data = u32(attr + 16, end);
           const values = new Set<string>();
-          if (raw !== NONE) values.add(str(raw));
+          const refs: Attr['refs'] = [];
+          // TYPE_REFERENCE=1 / TYPE_DYNAMIC_REFERENCE=7（0 是 @null）；TYPE_ATTRIBUTE=2 / TYPE_DYNAMIC_ATTRIBUTE=8。
+          const reference = dataType === 1 || dataType === 7 || dataType === 2 || dataType === 8;
+          if (reference && data !== 0)
+            refs.push({ id: data, kind: dataType === 2 || dataType === 8 ? 'attr' : 'ref' });
+          let rawRef: string | undefined;
+          if (raw !== NONE) {
+            if (reference) rawRef = str(raw);
+            else values.add(str(raw));
+          }
           if (dataType === 3) values.add(str(data));
+          // TYPE_INT_BOOLEAN：给 QA-09c 等读取方 true / false，而不是 0xffffffff。
+          else if (dataType === 0x12) values.add(data === 0 ? 'false' : 'true');
           else if (dataType >= 0x10 && dataType <= 0x1f) values.add(String(data));
-          attrs.push({ name: key, values: [...values] });
+          attrs.push({
+            name: key,
+            values: [...values],
+            refs,
+            ...(rawRef === undefined ? {} : { rawRef }),
+          });
         }
-        const names = attrs.filter((attr) => attr.name === 'name').flatMap((attr) => attr.values);
+        // name 编译成资源引用时先解析出名字再关联；无解析器（encoding 旧口径）只用文字取值。
+        const names = resolve
+          ? associationNames(attrs, (ref) => resolve(ref.id, ref.kind), invalid)
+          : attrs.filter((attr) => attr.name === 'name').flatMap((attr) => attr.values);
         for (const attr of attrs) {
-          for (const value of attr.values) {
-            if (attr.name === 'value' && names.length > 0) {
-              for (const key of names) emit(value, key);
-            } else emit(value, attr.name);
+          const associated =
+            (attr.name === 'value' || attr.name === 'resource') && names.length > 0;
+          const keys = associated ? names : [attr.name];
+          for (const value of attr.values) for (const key of keys) emit(value, key);
+          if (attr.rawRef !== undefined) emit(attr.rawRef);
+          if (!resolve || attr.refs.length === 0) continue;
+          // 只有 name + value / resource 关联或字段名本身像凭据时才解析引用，普通主题、图标引用不展开。
+          if (!associated && keys.every((key) => fieldRule(key) === undefined)) continue;
+          for (const ref of attr.refs) {
+            let resolved: Resolution;
+            try {
+              resolved = resolve(ref.id, ref.kind);
+            } catch {
+              resolved = UNRESOLVED;
+            }
+            for (const key of keys) {
+              if (!resolved.ok && fieldRule(key) === 'request-sign-material') invalid();
+              for (const final of resolved.finals) emitFinal(emit, final, key, readFile, invalid);
+            }
           }
         }
         stack.push([ns, name]);

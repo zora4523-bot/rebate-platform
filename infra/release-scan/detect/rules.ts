@@ -48,7 +48,15 @@ const PRIORITY: readonly DetectRuleId[] = [
   'high-entropy',
 ];
 
-export function fieldRule(name: string): DetectRuleId | undefined {
+/** 资源表键名里凭据词的连写前缀（apikey、accesstoken 等）；monkey、hockey、tokenizer 不算。 */
+const CREDENTIAL_WORD =
+  /^(?:(?:api|app|access|auth|client|refresh|session|bearer|id|sdk|master|license|licence|map|push|oauth|consumer|upload|device|user|secret|private|public|encrypt|encryption|aes|des|rsa|jwt|csrf|xsrf|ak|sk|service|server)?(?:key|token|credential)s?)$/;
+
+/**
+ * 字段名对应的规则。resourceNames=true 用于资源表（arsc）键值视图：资源名是任意标识符，
+ * keyed-credential 只认整词或已知连写的 key / token / credential，不按子串命中；签名材料与服务端密钥口径不变。
+ */
+export function fieldRule(name: string, resourceNames = false): DetectRuleId | undefined {
   const words = name
     .replace(/^(?:(?:this|window|globalThis|global|self)\.)+/, '')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
@@ -76,6 +84,8 @@ export function fieldRule(name: string): DetectRuleId | undefined {
   // 服务端密钥和其他凭据沿用原有格式覆盖；本轮只修签名材料的子串误判。
   const key = name.replace(/[._-]/g, '').toLowerCase();
   if (/secret|password|passwd|privatekey|apiv3/.test(key)) return 'server-secret';
+  if (resourceNames)
+    return words.some((word) => CREDENTIAL_WORD.test(word)) ? 'keyed-credential' : undefined;
   if (/key|token|credential/.test(key)) return 'keyed-credential';
   return;
 }
@@ -136,13 +146,68 @@ function standaloneValue(
   return value;
 }
 
+/** 下一行开头是新键：`键:`（冒号后空白或行尾）/ `键=` / 引号键后跟 `:` 或 `=`；YAML 列表项不算。 */
+const NEW_KEY =
+  /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\\n])*`)\s*[:=]|^[A-Za-z_$][\w$.-]*[ \t]*(?:=|:(?!\S))/;
+
+/** YAML 里只有 `键:` / `"键":`（冒号后空白或行尾）是新键；`=` 在 YAML 标量里只是取值的一部分。 */
+const YAML_NEW_KEY =
+  /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')[ \t]*:(?!\S)|^[A-Za-z_$][\w$.-]*[ \t]*:(?!\S)/;
+
+/** 整行是带填充等号的 Base64 / Base64url 串（如 `c2FsdA==`）：这是换行书写的取值，不是 `键=`。 */
+const PADDED_BASE64_LINE = /^[A-Za-z0-9+/_-]+={1,2}[ \t]*(?:\r?\n|$)/;
+
+function newKeyAt(rest: string, yaml: boolean): boolean {
+  if (PADDED_BASE64_LINE.test(rest)) return false;
+  return (yaml ? YAML_NEW_KEY : NEW_KEY).test(rest);
+}
+
+/** 算法参数后缀（位数、版本、轮数、长度、时效等）：带这些词的数字取值是参数，不是材料。 */
+const PARAMETER_WORD =
+  /^(?:bits?|version|ver|v\d*|rounds?|length|len|size|count|iterations?|iter|cost|level|mode|type|alg|algorithm|index|idx|id|ttl|timeout|expir(?:y|e[sd]?|ation)|interval|enabled?|disabled?|on|off|flag|switch|duration|period|age|seconds?|secs?|ms|millis|minutes?|hours?|days?)$/;
+
+/** 布尔前缀：useHmac / enableSign / isSalted / hasSecret 的数字是开关。 */
+const SWITCH_PREFIX = /^(?:use|enable|disable|is|has|should|can|need|allow|with|no|skip)$/;
+
+/** 材料本体词（含 sharedsalt、hmackey、signingsecret 连写）；hmac、sign、signature 这类纯算法名不算。 */
+const MATERIAL_WORD = /(?:salt|secret|key)$/;
+
+/**
+ * JSON 数字取值按签名材料检测的条件：键名本身是签名材料名、含材料本体词（salt / secret / *_key），
+ * 不以开关前缀开头，最后一个材料本体词之后不带算法参数或时效词。不设位数门槛：任何数字（短数字、负数、小数、科学计数法）都检测；
+ * 开关与参数（useHmac:1、hmac:0、hmacKeyExpiry:3600、saltRounds:10）只按键名语义排除。
+ */
+function numericMaterial(name: string): boolean {
+  if (fieldRule(name) !== 'request-sign-material') return false;
+  const words = name
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[._$-]+/)
+    .filter((word) => word !== '');
+  if (words.length === 0 || SWITCH_PREFIX.test(words[0]!)) return false;
+  // 参数 / 时效词只在最后一个材料本体词之后（saltRounds、signKeyVersion、hmacKeyExpiry）才说明取值是参数；
+  // 材料词之前的版本或前缀（v1_sign_salt、legacySignSalt）仍是材料。
+  const last = words.findLastIndex((word) => MATERIAL_WORD.test(word));
+  if (last < 0) return false;
+  return !words.slice(last + 1).some((word) => PARAMETER_WORD.test(word));
+}
+
 /** 每种布局都保留原始字符偏移；后续去重和行号不依赖重新序列化。 */
-function fields(file: string, text: string): Array<{ name: string; value: string; start: number }> {
+function fields(
+  file: string,
+  text: string,
+  resourceNames: boolean,
+  rawStrings: boolean,
+): Array<{ name: string; value: string; start: number }> {
   const found: Array<{ name: string; value: string; start: number }> = [];
   const configFile =
     /(?:\.(?:properties|ini|cfg|conf|env|yaml|yml)|(?:^|\/)\.env(?:\.[^/]*)?)$/i.test(file);
+  const yamlFile = /\.ya?ml$/i.test(file);
   // 前端代码与 JSON 的 latin1 视图里，UTF-8 多字节也是 0x80 以上的字节，不能当作二进制串边界。
+  // 资源字符串原值视图（NUL 分隔的独立串）不是代码文本，即使引用方是 module.json 也按独立串判定。
   const codeFile =
+    !rawStrings &&
     /\.(?:[cm]?js|jsx|tsx?|html?|css|json|map|vue|svelte|jsbundle|bundle|wxml|wxss)$/i.test(file);
   // 未知格式只认整份纯配置文本；对象路径和代码语句不能靠行首的 '=' 冒充配置。
   const plainConfig = text
@@ -155,17 +220,32 @@ function fields(file: string, text: string): Array<{ name: string; value: string
   const add = (name: string, value: string, start: number): void => {
     found.push({ name, value, start });
   };
-  const assignment = /(?<![\w$.-])["'`]?([A-Za-z_$][\w$.-]*)["'`]?\s*([:=])\s*/g;
+  const assignment = /(?<![\w$.-])(["'`]?)([A-Za-z_$][\w$.-]*)["'`]?\s*([:=])[ \t]*/g;
   let m: RegExpExecArray | null;
   while ((m = assignment.exec(text))) {
+    const quotedKey = m[1] !== '';
+    const name = m[2]!;
+    const separator = m[3]!;
     // 普通变量赋值不能吞掉内层对象字段，例如压缩后的 c={appSecret:"…"}。
-    if (!fieldRule(m[1]!)) continue;
+    if (!fieldRule(name, resourceNames)) continue;
+    // 分隔符后换行时（跳过空行与 # 注释行），下一处内容若是新键（`键:` / `键=` / `"键":`，含缩进的嵌套映射）就不跨行取值，
+    // 如 `shared_salt=` 空值后跟 `app.name=foo`、`hmac:` 后跟缩进的 `algorithm: sha256`；
+    // 其余缩进更深的取值（YAML 换行写的 `sign_salt:\n  值`，含引号值）仍按该字段检测。
+    if (text[assignment.lastIndex] === '\n' || text[assignment.lastIndex] === '\r') {
+      const next = /^(?:\s|#[^\n]*)*/.exec(
+        text.slice(assignment.lastIndex, assignment.lastIndex + 4096),
+      )![0];
+      const nextAt = assignment.lastIndex + next.length;
+      if (nextAt < text.length && !newKeyAt(text.slice(nextAt, nextAt + 4096), yamlFile)) {
+        assignment.lastIndex = nextAt;
+      }
+    }
     const valueAt = assignment.lastIndex;
     const raw = /^(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`)/.exec(
       text.slice(valueAt),
     );
     if (raw) {
-      add(m[1]!, raw[1] ?? raw[2] ?? raw[3] ?? '', valueAt + 1);
+      add(name, raw[1] ?? raw[2] ?? raw[3] ?? '', valueAt + 1);
       assignment.lastIndex += raw[0].length;
       continue;
     }
@@ -173,17 +253,31 @@ function fields(file: string, text: string): Array<{ name: string; value: string
     let before = m.index - 1;
     while (before >= 0 && (text[before] === ' ' || text[before] === '\t')) before--;
     const lineStart = before < 0 || text[before] === '\n' || text[before] === '\r';
-    const standalone = codeFile ? undefined : standaloneValue(text, m.index, valueAt, m[2]!);
-    const config = (lineStart && (configFile || (plainConfig && m[2] === '='))) || !!standalone;
+    const standalone = codeFile ? undefined : standaloneValue(text, m.index, valueAt, separator);
+    const config =
+      (lineStart && (configFile || (plainConfig && separator === '='))) || !!standalone;
     const bare =
       standalone ??
       (config ? /^[^\s<\x00-\x1f"'`]+/ : /^[^\s<\x00-\x1f"'`,{}();\u005b\u005d]+/).exec(
         text.slice(valueAt),
       )?.[0];
     if (!bare) continue;
+    // 引号键后的数字字面量（JSON 的 {"sign_salt": 20240101}）是取值本身，按字段口径检测。
+    // 只有键名本身是签名材料名时才检测；hmac_bits、signKeyVersion 这类算法参数不算。
+    if (
+      !config &&
+      quotedKey &&
+      separator === ':' &&
+      /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(bare) &&
+      numericMaterial(name)
+    ) {
+      add(name, bare, valueAt);
+      assignment.lastIndex += bare.length;
+      continue;
+    }
     // JS 的裸标识符、null、数字和表达式均不算材料字面值；也不推进游标吞下后续赋值。
     if (!config || /^(?:%[sdif]|%\d+\$[sdif])$/.test(bare)) continue;
-    add(m[1]!, bare, valueAt);
+    add(name, bare, valueAt);
     assignment.lastIndex += bare.length;
   }
   const resource = /<string\b[^>]*\bname\s*=\s*(["'])([^"']+)\1[^>]*>([^<]*)/gi;
@@ -222,7 +316,13 @@ function privateDerPrefix(value: string): boolean {
   );
 }
 
-export function detectText(file: string, text: string, options: DetectOptions): ScanHit[] {
+export function detectText(
+  file: string,
+  text: string,
+  options: DetectOptions,
+  resourceNames = false,
+  rawStrings = false,
+): ScanHit[] {
   const candidates: Candidate[] = [];
   const add = (rule: DetectRuleId, start: number, length: number): void => {
     if (length > 0) candidates.push({ rule, start, end: start + length });
@@ -253,8 +353,8 @@ export function detectText(file: string, text: string, options: DetectOptions): 
     } else if (hasHigh(text.slice(m.index, m.index + length))) add('high-entropy', m.index, length);
   }
 
-  for (const { name, value, start } of fields(file, text)) {
-    const rule = fieldRule(name);
+  for (const { name, value, start } of fields(file, text, resourceNames, rawStrings)) {
+    const rule = fieldRule(name, resourceNames);
     if (!rule || value.length === 0) continue;
     if (rule === 'request-sign-material') add(rule, start, value.length);
     else {

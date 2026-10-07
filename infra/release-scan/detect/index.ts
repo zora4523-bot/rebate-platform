@@ -30,9 +30,12 @@ import { compareHits } from '../compare/index.ts';
 import type { DetectOptions, ScanHit, ScanInput, ScanResult } from './types.ts';
 import { textViews } from './encoding.ts';
 import { artifactPlatform, readArtifact } from './read.ts';
+import { artifactTextViews } from './association.ts';
 import { detectText, resolveOptions } from './rules.ts';
 
 export { readArtifact } from './read.ts';
+export { artifactTextViews } from './association.ts';
+export type { ArtifactTextView, ArtifactTextViews } from './association.ts';
 export { defaultDetectOptions, shannonEntropy } from './rules.ts';
 
 export type {
@@ -77,16 +80,31 @@ export async function scanArtifact(input: ScanInput): Promise<ScanResult> {
   } catch {
     errors.push('Invalid detection thresholds');
   }
-  if (options)
-    for (const entry of entries) {
-      try {
-        for (const text of textViews(entry.content, entry.path, true)) {
-          hits.push(...detectText(entry.path, text, options));
-        }
-      } catch {
-        errors.push(`Artifact content unreadable: ${entry.path}`);
+  if (options) {
+    // 与 artifactTextViews 同一关联语义：清单引用经同一包的资源表解析，签名字段引用解析不了记读取错误。
+    const associated = artifactTextViews(entries);
+    errors.push(...associated.errors);
+    // 原值视图紧跟它的来源视图；去重键为（规则、取值）：同一条目已按同一规则报过的同一取值，
+    // 原值视图里的 high-entropy 重复不再另报。keyed-credential 与其他规则在原值视图里一律保留。
+    const reported = new Map<string, Set<string>>();
+    for (const view of associated.views) {
+      const found = detectText(
+        view.path,
+        view.text,
+        options,
+        view.resourceNames === true,
+        view.rawStrings === true,
+      );
+      let seen = reported.get(view.path);
+      if (!seen) reported.set(view.path, (seen = new Set()));
+      for (const hit of found) {
+        const key = `${hit.rule}\u0000${hit.match}`;
+        if (view.rawStrings === true && hit.rule === 'high-entropy' && seen.has(key)) continue;
+        seen.add(key);
+        hits.push(hit);
       }
     }
+  }
   const report = compareHits({
     manifestYaml: input.manifestYaml,
     approvals: input.approvals,

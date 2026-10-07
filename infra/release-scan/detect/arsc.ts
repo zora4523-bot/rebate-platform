@@ -1,3 +1,5 @@
+import { emitFinal } from './lines.ts';
+import type { FileReader, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
 interface Chunk {
@@ -32,7 +34,7 @@ interface Resolved {
 const MAX_REFERENCE_DEPTH = 8;
 
 /** 这些资源类型的字符串取值是包内文件路径，键名是文件名（如 avd_hide_password），不是字段。 */
-const FILE_TYPES = new Set([
+export const FILE_TYPES = new Set([
   'anim',
   'animator',
   'color',
@@ -49,14 +51,24 @@ const FILE_TYPES = new Set([
 ]);
 
 /** 样式与属性定义：条目项是主题属性到资源的映射，不是「字段 = 取值」。 */
-const STRUCTURE_TYPES = new Set(['attr', 'style']);
+export const STRUCTURE_TYPES = new Set(['attr', 'style']);
 
 function fileValue(entry: Entry, value: Value): boolean {
   return value.kind === 'text' && FILE_TYPES.has(entry.type) && value.text.startsWith('res/');
 }
 
+/** 解析后的资源表：键值视图与按资源 ID 的引用解析（供同一 APK 的二进制清单关联）。 */
+export interface ArscTable {
+  text: string;
+  resolve(id: number): Resolution;
+}
+
 /** ResTable 格式依据 Android ResourceTypes.h；只读内存，不加载 Android 资源运行时。 */
 export function arscText(bytes: Buffer): string {
+  return parseArsc(bytes).text;
+}
+
+export function parseArsc(bytes: Buffer, readFile?: FileReader): ArscTable {
   const invalid = (): never => {
     throw new Error('Invalid or unsupported Android resource table');
   };
@@ -64,8 +76,11 @@ export function arscText(bytes: Buffer): string {
   let work = 0;
   let decodedSize = 0;
   let outputSize = 0;
+  // 工作预算随表大小线性给：每个串至少占 4 字节偏移，串池上限 100 万串时预算不会先于串数上限耗尽；
+  // 另加固定 200 万步给块遍历与引用解析。
+  const workLimit = 2_000_000 + 4 * bytes.length;
   const tick = (): void => {
-    if (++work > 1_000_000) invalid();
+    if (++work > workLimit) invalid();
   };
   const u16 = (at: number, end: number): number => {
     if (at < 0 || at + 2 > end || end > bytes.length) return invalid();
@@ -104,7 +119,7 @@ export function arscText(bytes: Buffer): string {
     if (emitted.has(line)) return;
     emitted.add(line);
     outputSize += line.length + 1;
-    if (outputSize > 256 * 1024 * 1024 || lines.length >= 200_000) invalid();
+    if (outputSize > 256 * 1024 * 1024 || lines.length >= 2_000_000) invalid();
     if (key !== undefined) used.add(key);
     used.add(value);
     lines.push(line);
@@ -123,7 +138,7 @@ export function arscText(bytes: Buffer): string {
     if (count === 0 && styles === 0 && start === at && styleOffset === 0 && end === at + header)
       return [];
     if (
-      count > 100_000 ||
+      count > 1_000_000 ||
       styles > count ||
       start < at + header + (count + styles) * 4 ||
       start > stop ||
@@ -180,7 +195,10 @@ export function arscText(bytes: Buffer): string {
         get(strings, u32(pos, end));
         const first = u32(pos + 4, end);
         const last = u32(pos + 8, end);
-        if (first > last || last >= get(strings, i).length) invalid();
+        const length = get(strings, i).length;
+        // 空 span 按 first = last + 1 表示（如 first=len、last=len-1），仍不得越出字符串边界。
+        const empty = first === last + 1 && first <= length;
+        if (!empty && (first > last || last >= length)) invalid();
         pos += 12;
       }
     }
@@ -278,12 +296,13 @@ export function arscText(bytes: Buffer): string {
       const limit = i + 1 < ordered.length ? start + ordered[i + 1]! : end;
       const entryFlags = u16(base + 2, limit);
       let entry: Entry;
+      // 0x10 = FLAG_USES_FEATURE_FLAGS（较新的 aapt2），不改变条目布局。
       if (entryFlags & 8) {
-        if ((entryFlags & 0xff & ~0x0e) !== 0) invalid();
+        if ((entryFlags & 0xff & ~0x1e) !== 0) invalid();
         entry = { key: get(keys, u16(base, limit)), type: typeName, values: [] };
         typed(entryFlags >>> 8, u32(base + 4, limit), entry);
       } else {
-        if ((entryFlags & ~7) !== 0) invalid();
+        if ((entryFlags & ~0x17) !== 0) invalid();
         const size = u16(base, limit);
         if (size < 8 || size % 4 || base + size > limit) invalid();
         entry = { key: get(keys, u32(base + 4, limit)), type: typeName, values: [] };
@@ -400,12 +419,20 @@ export function arscText(bytes: Buffer): string {
       // 签名材料字段的引用解析不了时不能当成没有取值放行（fail-closed）。
       if (!resolved.ok && !keyless && fieldRule(entry.key) === 'request-sign-material') invalid();
       for (const final of resolved.finals) {
-        if (final.file || keyless) emit(final.text);
-        else emit(final.text, entry.key);
+        if (keyless) emit(final.text);
+        else emitFinal(emit, final, entry.key, readFile, invalid);
       }
     }
   }
   // 没被字段引用的字符串也检测，引用过的值避免重复产生降级命中。
   for (const strings of allPools) for (const value of strings) if (!used.has(value)) emit(value);
-  return lines.join('\n');
+  return {
+    text: lines.join('\n'),
+    resolve: (id: number): Resolution => {
+      // TYPE_REFERENCE 0 是 @null：没有取值，也不算解析失败。
+      if (id === 0) return { finals: [], ok: true };
+      const { finals, ok } = resolve(id >>> 0);
+      return { finals: [...finals], ok };
+    },
+  };
 }
