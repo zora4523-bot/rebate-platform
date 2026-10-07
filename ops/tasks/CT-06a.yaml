@@ -1,6 +1,6 @@
 id: CT-06a
 repo: rebate-platform
-title: CI 门禁：squawk 检查迁移 SQL（02 §16.3「资金表禁止 DROP、改类型、RENAME」，ADR-0001 §2 边界与规范行）——根 devDependency squawk-cli 2.66.0、.squawk.toml、根脚本 lint:migrations 并入 verify:fast；只检查本门禁之后新增的迁移
+title: CI 门禁：squawk 检查迁移 SQL（02 §16.3「资金表禁止 DROP、改类型、RENAME」，ADR-0001 §2 边界与规范行）——根 devDependency squawk-cli 2.66.0、.squawk.toml、tools/ci/lint-migrations.ts 包装（只把 0018 之后的迁移交给 squawk，没有新迁移时通过）、根脚本 lint:migrations 并入 verify:fast
 type: guard-change
 # 2026-10-07 入账（负责人同日决定「先把 squawk 和二维码接进去」；依据 couli docs/research/20261007-基础设施自写与开源对照.md §4）。
 # 版本 2.66.0（2026-09-23 发布，满足 minimumReleaseAge 7 天；2.67.0 为 10-04，未满）；Apache-2.0 OR MIT；无安装脚本；
@@ -8,9 +8,10 @@ type: guard-change
 # prefer-bigint-over-int（比例 _bp 与计数列按 ADR-0001 §4 用 int）、require-lock-timeout / require-statement-timeout
 # （迁移由 packages/db/scripts/migrate.ts 单事务执行，超时应设在运行器，记后续）、require-concurrent-index-creation
 # （单事务内不可能 CONCURRENTLY）；pg_version 18、assume_in_transaction。
-# 已合并的迁移永不改（db/AGENTS.md 第 2 条），0001–0018 冻结不检查；新迁移里对非资金表的合法 DROP / 改类型 / RENAME
+# 已合并的迁移永不改（db/AGENTS.md 第 2 条），0001–0018 冻结不检查（基线写在包装脚本里：squawk 在全部文件被排除时
+# 会报「找不到文件」退出 1，所以不能只靠 excluded_paths）；新迁移里对非资金表的合法 DROP / 改类型 / RENAME
 # 逐条写 `-- squawk-ignore <规则>` 并注明原因，资金表不得忽略（评审核对）。
-# 碰 package.json#scripts 与 pnpm-lock.yaml（保护路径第二类）、db/AGENTS.md（第三类），合并前要批准标签（approvals 第 24 条）。
+# 碰 package.json#scripts 与 pnpm-lock.yaml（保护路径第二类）、tools/ci 与 db/AGENTS.md（第三类），合并前要批准标签（approvals 第 24 条）。
 # 不改 .github：CI 的 verify-fast 跑 verify:fast 即覆盖；验证容器同理。
 refs: []
 refs_hash: {}
@@ -19,6 +20,8 @@ paths:
   - 'package.json'
   - 'pnpm-lock.yaml'
   - '.squawk.toml'
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
   - 'db/AGENTS.md'
 impl: claude
 tester: none
