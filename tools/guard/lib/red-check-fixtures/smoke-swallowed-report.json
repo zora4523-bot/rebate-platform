@@ -1,0 +1,304 @@
+{
+  "//": "Constructed in the shape of tools/ops/verify-image/red-reporter.mjs output for the build-smoke project (F1-01m, before any real red run): what a page swallows without a console.error or a pageerror, as the collector of test/spec/frontend/build-smoke/entries.smoke.test.ts writes it — `preload-error` (Vite's vite:preloadError payload: String(error) then the rest of its stack), `unhandled-rejection`, `route-error` (the H5 RetryPage React Router's errorElement shows, by its heading and path) and `diagnostics-incomplete`. The lazy chunk served 200 whose module throws while initialising is the case of Codex money review r4 S1 on F1-01k. Replace with a real red run of the candidate copy when one exists.",
+  "reporter": "couli-red-reporter",
+  "testResults": [
+    {
+      "name": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+      "browser": false,
+      "poll_in_source": false,
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[demo] lazy module threw while initialising",
+          "title": "[demo] lazy module threw while initialising",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/app-----5a1b2c3d.png"
+            },
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40131/",
+                "diagnostics": [
+                  {
+                    "kind": "preload-error",
+                    "message": "TypeError: Cannot read properties of undefined (reading 'x')\n    at http://127.0.0.1:40131/assets/page-pending-D5e6.js:1:88"
+                  },
+                  {
+                    "kind": "route-error",
+                    "message": "the route error page (RetryPage \"页面加载失败，请重试\") is showing at /rules"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] route error page only",
+          "title": "[demo] route error page only",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/app-----5a1b2c3d.png"
+            },
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40131/",
+                "diagnostics": [
+                  {
+                    "kind": "route-error",
+                    "message": "the route error page (RetryPage \"页面加载失败，请重试\") is showing at /rules"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] unhandled rejection",
+          "title": "[demo] unhandled rejection",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "landing 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/landing-----5a1b2c3d.png"
+            },
+            {
+              "message": "landing 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "landing",
+                "url": "http://127.0.0.1:40131/",
+                "diagnostics": [
+                  {
+                    "kind": "unhandled-rejection",
+                    "message": "Error: boom\n    at http://127.0.0.1:40131/assets/index-A1b2.js:3:14"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] page could not be read",
+          "title": "[demo] page could not be read",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "conformance 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/conformance-----5a1b2c3d.png"
+            },
+            {
+              "message": "conformance 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "conformance",
+                "url": "http://127.0.0.1:40131/",
+                "diagnostics": [
+                  {
+                    "kind": "diagnostics-incomplete",
+                    "message": "the page could not be read: reading the page timed out (5000ms)"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] skeleton lazy module",
+          "title": "[demo] skeleton lazy module",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/app-----5a1b2c3d.png"
+            },
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40131/",
+                "diagnostics": [
+                  {
+                    "kind": "preload-error",
+                    "message": "Error: NotImplemented: RulesPage\n    at http://127.0.0.1:40131/assets/page-pending-D5e6.js:1:88"
+                  },
+                  {
+                    "kind": "route-error",
+                    "message": "the route error page (RetryPage \"页面加载失败，请重试\") is showing at /rules"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] skeleton render caught by errorElement",
+          "title": "[demo] skeleton render caught by errorElement",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main').getByText('页面暂未开放', { exact: true }) to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/app-----5a1b2c3d.png"
+            },
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40131/",
+                "diagnostics": [
+                  {
+                    "kind": "console.error",
+                    "message": "React Router caught the following error during render Error: NotImplemented: AppShell\n    at Xe (http://127.0.0.1:40131/assets/index-E7f8.js:9:1234)"
+                  },
+                  {
+                    "kind": "route-error",
+                    "message": "the route error page (RetryPage \"页面加载失败，请重试\") is showing at /rules"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

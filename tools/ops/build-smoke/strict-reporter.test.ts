@@ -201,3 +201,58 @@ it('[F1-01k] a script error the page only logged fails the run, NotImplemented i
     `[AC-F1-01k-SMOKE#1] app 应用壳与截图 — app: the page logged a script error: ${RR}TypeError: x is not a function`,
   );
 });
+
+// What the rule tests' collector writes (test/spec/frontend/build-smoke/entries.smoke.test.ts):
+// `String(error)` then the rest of its stack; the route error page by its heading and path.
+const LAZY_THREW = `TypeError: Cannot read properties of undefined (reading 'x')\n    at ${URL_}assets/page-pending-D5e6.js:1:88`;
+const ROUTE_ERROR = 'the route error page (RetryPage "页面加载失败，请重试") is showing at /rules';
+
+it('[F1-01m] what the page swallowed fails the run: a failed lazy module, an unhandled rejection, the route error page', () => {
+  const f = (diagnostics: Diagnostic[]): string[] =>
+    smokeDiagnosticsFindings({ url: URL_, diagnostics });
+  // A chunk served 200 whose module throws while initialising: React Router shows its retry
+  // page, no console.error and no pageerror; only the collector sees it.
+  expect(
+    f([
+      { kind: 'preload-error', message: LAZY_THREW },
+      { kind: 'route-error', message: ROUTE_ERROR },
+    ]),
+  ).toEqual([
+    "a lazy module of the page failed: TypeError: Cannot read properties of undefined (reading 'x')",
+    `the page showed its route error page: ${ROUTE_ERROR}`,
+  ]);
+  expect(f([{ kind: 'unhandled-rejection', message: 'Error: boom\n    at a.js:1:1' }])).toEqual([
+    'the page left a rejection unhandled: Error: boom',
+  ]);
+  // Green means green: the skeleton's NotImplemented is not excused here either.
+  expect(
+    f([
+      { kind: 'preload-error', message: 'Error: NotImplemented: RulesPage' },
+      { kind: 'unhandled-rejection', message: 'NotImplemented: load' },
+    ]),
+  ).toEqual([
+    'a lazy module of the page failed: Error: NotImplemented: RulesPage',
+    'the page left a rejection unhandled: NotImplemented: load',
+  ]);
+  // A test that could not read the page back fails closed.
+  expect(
+    f([{ kind: 'diagnostics-incomplete', message: 'the page could not be read: Target closed' }]),
+  ).toEqual(['the page events are not fully known: the page could not be read: Target closed']);
+  const result = run([
+    {
+      fullName: '[AC-F1-01k-SMOKE#1] app 应用壳与截图',
+      annotations: [
+        diagnosticsAnnotation('app', [
+          ...BLOCKED_ONLY,
+          { kind: 'preload-error', message: LAZY_THREW },
+          { kind: 'route-error', message: ROUTE_ERROR },
+        ]),
+      ],
+    },
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain('[build-smoke strict] 2 page problem(s)');
+  expect(result.stderr).toContain(
+    `[AC-F1-01k-SMOKE#1] app 应用壳与截图 — app: the page showed its route error page: ${ROUTE_ERROR}`,
+  );
+});
