@@ -5772,10 +5772,12 @@ components:
     JumpStep:
       type: object
       description: |
-        One step of a jump plan. `sdk` is present exactly for type=sdk; the oneOf branches declare
-        the properties they constrain (strict Ajv2020, ADR-0001 §4.2 #15). For a type=sdk step the
-        client acts on `sdk` only; `value` repeats `sdk.url` (open_by=url) or `sdk.item_id`
-        (open_by=code) for logs and compatibility.
+        One step of a jump plan. `sdk` is required on every type=sdk step and never present on any
+        other type; the schema keeps it optional so the already-served shape stays compatible, and
+        the server that builds the plan (linking) guarantees the pairing, checked against the
+        examples by the contracts-ts consistency test. For a type=sdk step the client acts on
+        `sdk` only; `value` repeats `sdk.url` (open_by=url) or `sdk.item_id` (open_by=code) for
+        logs and compatibility.
       additionalProperties: false
       required:
         - type
@@ -5796,37 +5798,6 @@ components:
           description: URL, scheme or token to execute; produced by the server only.
         sdk:
           $ref: '#/components/schemas/BaichuanOpen'
-      oneOf:
-        - type: object
-          properties:
-            type:
-              type: string
-              enum:
-                - sdk
-            sdk:
-              $ref: '#/components/schemas/BaichuanOpen'
-          required:
-            - type
-            - sdk
-        - type: object
-          properties:
-            type:
-              type: string
-              enum:
-                - scheme
-                - universal_link
-                - h5
-                - copy_tpwd
-          required:
-            - type
-          not:
-            type: object
-            additionalProperties: true
-            properties:
-              sdk:
-                $ref: '#/components/schemas/BaichuanOpen'
-            required:
-              - sdk
     BaichuanOpen:
       type: object
       description: |

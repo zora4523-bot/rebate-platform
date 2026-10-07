@@ -104,14 +104,58 @@ it('CT-02e: open_by=url with taoke or code parameters, or without url, is refuse
   expect(validateStep(withSdk(byUrl, { url: 'not a url' }))).toBe(false);
 });
 
-it('CT-02e: sdk is required exactly for type=sdk', () => {
-  expect(validateStep({ type: 'sdk', value: 'https://s.click.example.test/t?e=abc' })).toBe(false);
-  for (const type of ['scheme', 'universal_link', 'h5', 'copy_tpwd']) {
-    expect(validateStep({ ...byUrl, type }), type).toBe(false);
-  }
+it('CT-02e: a Baichuan instruction with an unknown provider, open_by or property is refused', () => {
   expect(validateStep(withSdk(byUrl, { provider: 'kepler' }))).toBe(false);
   expect(validateStep(withSdk(byUrl, { open_by: 'scheme' }))).toBe(false);
   expect(validateStep(withSdk(byUrl, { extra: true }))).toBe(false);
+  expect(validateStep({ ...byUrl, sdk: without(byUrl.sdk, 'provider') })).toBe(false);
+});
+
+// The schema keeps JumpStep.sdk optional (round 2: a top-level oneOf on the already-served open
+// response was breaking for oasdiff), so "sdk exactly for type=sdk" is a server-side guarantee
+// (linking, B1-06f). These two cases document that the schema alone does not enforce it, and the
+// contract's own examples and this file's fixtures are held to the pairing instead.
+it('CT-02e: the schema alone does not pair sdk with type=sdk (server-side guarantee)', () => {
+  expect(validateStep({ type: 'sdk', value: 'https://s.click.example.test/t?e=abc' })).toBe(true);
+  expect(validateStep({ ...byUrl, type: 'universal_link' })).toBe(true);
+});
+
+// Walks the dereferenced contract (shared and possibly circular objects, hence `seen`).
+function jumpSteps(
+  node: unknown,
+  found: Record<string, unknown>[] = [],
+  seen = new WeakSet<object>(),
+): Record<string, unknown>[] {
+  if (node === null || typeof node !== 'object' || seen.has(node)) return found;
+  seen.add(node);
+  if (Array.isArray(node)) {
+    for (const item of node) jumpSteps(item, found, seen);
+  } else {
+    for (const [key, child] of Object.entries(node)) {
+      const steps = key === 'primary' ? [child] : key === 'fallbacks' ? child : [];
+      for (const step of Array.isArray(steps) ? steps : []) {
+        if (
+          step !== null &&
+          typeof step === 'object' &&
+          (enums.jump_type as readonly unknown[]).includes((step as { type?: unknown }).type) &&
+          typeof (step as { value?: unknown }).value === 'string'
+        ) {
+          found.push(step as Record<string, unknown>);
+        }
+      }
+      jumpSteps(child, found, seen);
+    }
+  }
+  return found;
+}
+
+it('CT-02e: every jump step in the contract examples and these fixtures pairs sdk with type=sdk', () => {
+  const steps = [...jumpSteps(contract), byCode, byUrl];
+  expect(steps.filter((step) => step['type'] === 'sdk').length).toBeGreaterThanOrEqual(4);
+  for (const step of steps) {
+    expect('sdk' in step, JSON.stringify(step)).toBe(step['type'] === 'sdk');
+    expect(validateStep(step), JSON.stringify(step)).toBe(true);
+  }
 });
 
 it('CT-02e: the Taobao open examples carry one open_by=code and one open_by=url step', () => {
@@ -132,9 +176,13 @@ it('CT-02e: the Taobao open examples carry one open_by=code and one open_by=url 
   expect(compare.data.jump.primary).not.toHaveProperty('sdk.taoke');
 });
 
-it('CT-02e: the generated type requires sdk on a type=sdk step and jump_type still lists sdk', () => {
-  // @ts-expect-error a type=sdk step without the open instruction
-  const missing: Schema<'JumpStep'> = { type: 'sdk', value: 'x' };
+it('CT-02e: the generated type requires taoke on open_by=code and jump_type still lists sdk', () => {
+  const missing: Schema<'JumpStep'> = {
+    type: 'sdk',
+    value: '9876543210abc',
+    // @ts-expect-error an open_by=code instruction without taoke
+    sdk: { provider: 'baichuan', open_by: 'code', page: 'detail', item_id: '9876543210abc' },
+  };
   const code: Schema<'JumpStep'> = {
     type: 'sdk',
     value: '9876543210abc',

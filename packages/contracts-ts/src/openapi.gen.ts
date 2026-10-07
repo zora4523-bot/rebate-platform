@@ -1860,10 +1860,12 @@ export interface components {
          */
         InstalledState: "true" | "false" | "unknown";
         /**
-         * @description One step of a jump plan. `sdk` is present exactly for type=sdk; the oneOf branches declare
-         *     the properties they constrain (strict Ajv2020, ADR-0001 §4.2 #15). For a type=sdk step the
-         *     client acts on `sdk` only; `value` repeats `sdk.url` (open_by=url) or `sdk.item_id`
-         *     (open_by=code) for logs and compatibility.
+         * @description One step of a jump plan. `sdk` is required on every type=sdk step and never present on any
+         *     other type; the schema keeps it optional so the already-served shape stays compatible, and
+         *     the server that builds the plan (linking) guarantees the pairing, checked against the
+         *     examples by the contracts-ts consistency test. For a type=sdk step the client acts on
+         *     `sdk` only; `value` repeats `sdk.url` (open_by=url) or `sdk.item_id` (open_by=code) for
+         *     logs and compatibility.
          */
         JumpStep: {
             /**
@@ -1874,14 +1876,7 @@ export interface components {
             /** @description URL, scheme or token to execute; produced by the server only. */
             value: string;
             sdk?: components["schemas"]["BaichuanOpen"];
-        } & ({
-            /** @enum {string} */
-            type: "sdk";
-            sdk: components["schemas"]["BaichuanOpen"];
-        } | {
-            /** @enum {string} */
-            type: "scheme" | "universal_link" | "h5" | "copy_tpwd";
-        });
+        };
         /**
          * @description Taobao open instruction executed by the Baichuan SDK (docs/changes/20261003 §1; 03 §4.5).
          *     The server builds it from the link snapshot; the client passes it to the SDK unchanged and

@@ -58,8 +58,8 @@ it('posts open with the path id, signature and idempotency headers', async () =>
     body: { installed: 'unknown', no_rebate: false },
   });
 
-  // branded: deep structural equality; openapi-fetch maps the JumpStep intersection (oneOf
-  // branches) into an equivalent but not identical type.
+  // branded: deep structural equality; openapi-fetch maps the BaichuanOpen intersection (oneOf
+  // branches) inside JumpStep.sdk into an equivalent but not identical type.
   expectTypeOf(data).branded.toEqualTypeOf<OpenLinkResponse | undefined>();
   // Amounts are integers (null on amount_unknown); rebate_basis is the closed 04 §8.3 set.
   expectTypeOf<Schema<'ProductCard'>['final_price_fen']>().toEqualTypeOf<number | null>();
