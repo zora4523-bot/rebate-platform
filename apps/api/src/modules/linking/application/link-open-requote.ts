@@ -28,11 +28,19 @@
 // cache, and fails with 50301 (paused) or 50303 (with the unpromoted page used only by an explicit
 // no_rebate purchase). A cached jump past its jump.expire_at is never reused. A share link opened
 // by anyone but the sharer ignores no_rebate (BR-ATTR-05 ①); no_rebate never renews the snapshot.
+// B1-06m: one database transaction per open (platform idempotency executeInTransaction): the
+// owner stage's claim or new link, the renewed link, the open log and the attempt commit with the
+// key's completed record, or not at all. A result the key does not store (not 0 and not 3xxxx,
+// e.g. 50303) rolls that transaction back and its open log is written after it, on its own. In a
+// flight window the requote-failed branch looks the identity's cache up once, so a first 50303 is
+// not turned into a cached jump by a later open; a shared conversion past its jump.expire_at is
+// converted again. The idempotent request body is the whole contract body (installed, no_rebate,
+// no_rebate_reason, spm).
 // Not here: authorization (30101/30102/30111), taobao (B1-06f).
 import type { components, Scene } from '@couli/contracts-ts';
 import { scene as SCENES } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import type { Selectable } from 'kysely';
+import type { Kysely, Selectable, Transaction } from 'kysely';
 import type { AssembleCardInput, CatalogCardEntry } from '../../catalog/index.ts';
 import { newUuidV7, type Idempotency, type HandlerResult } from '../../platform/index.ts';
 import {
@@ -122,7 +130,7 @@ export interface LinkOpenRequoteOptions extends LinkOpenOwnerOptions {
     get(key: LinkOpenCacheKey): Promise<LinkOpenCachedJump | null>;
     put(key: LinkOpenCacheKey, value: LinkOpenCachedJump): Promise<void>;
   };
-  readonly idempotency: Pick<Idempotency, 'execute'>;
+  readonly idempotency: Pick<Idempotency, 'executeInTransaction'>;
   // TODO(规划/11 §4.5): 拼多多比价预判开关打开的分支 — blocked on CAP-PDD-04。
 }
 
@@ -136,6 +144,27 @@ export interface LinkOpenRequoteInput {
   readonly noRebate?: boolean;
   /** BR-ID-18: only meaningful with no_rebate=true; default auth_declined. */
   readonly noRebateReason?: components['schemas']['OpenLinkRequest']['no_rebate_reason'];
+  /** The tapped button's page.module.slot (03 §4.7); only part of the idempotent request body. */
+  readonly spm?: string;
+}
+
+/**
+ * The idempotent request body of an open: every contract field of the request, defaults applied,
+ * so the same key with any other body answers 20901.
+ */
+export function openRequestBody(input: LinkOpenRequoteInput): Record<string, string | boolean> {
+  return {
+    installed: input.installed ?? 'unknown',
+    no_rebate: input.noRebate === true,
+    ...(input.noRebateReason === undefined ? {} : { no_rebate_reason: input.noRebateReason }),
+    ...(input.spm === undefined ? {} : { spm: input.spm }),
+  };
+}
+
+/** A conversion result is reusable only before its jump.expire_at (BR-ATTR-05 ②). */
+export function jumpUsable(jump: LinkOpenJump, nowMs: number): boolean {
+  const expireMs = Date.parse(jump.expire_at);
+  return Number.isFinite(expireMs) && nowMs < expireMs;
 }
 
 export type LinkOpenRequoteResult = Omit<
@@ -178,10 +207,11 @@ type CardConclusion =
       readonly rebateMinFen: string | null;
       readonly rebateMaxFen: string | null;
       readonly linkId: string;
-      /** The renewed snapshot's link, held until an open commits it (null: already written). */
+      /**
+       * The renewed snapshot's link. Every open answering with it writes it in its own transaction
+       * if absent, so no open refers to a link another open rolled back.
+       */
       readonly pending: PendingOpenLink | null;
-      /** Serializes the commits of the opens sharing this card, so the link is written once. */
-      tail: Promise<void>;
       readonly quotedAt: string;
     };
 
@@ -206,6 +236,8 @@ interface Flight {
   price: Promise<PriceConclusion> | null;
   readonly cards: Map<string, Promise<CardConclusion>>;
   readonly conversions: Map<string, Promise<Converted>>;
+  /** The requote-failed branch's cache lookup per identity key: one answer per window. */
+  readonly fallbacks: Map<string, Promise<LinkOpenJump | null>>;
 }
 
 interface Settled {
@@ -441,7 +473,6 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       rebateMaxFen: fenString(result.card.rebate_max_fen),
       linkId: result.card.link_id,
       pending,
-      tail: Promise.resolve(),
       quotedAt: instantOf(item.quoted_at),
     };
   }
@@ -458,24 +489,31 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       price: null,
       cards: new Map(),
       conversions: new Map(),
+      fallbacks: new Map(),
     };
     flights.set(key, flight);
     return flight;
   }
 
-  function sharedConversion(
+  async function sharedConversion(
     flight: Flight,
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
     item?: AssembleCardInput['item'],
   ): Promise<Converted> {
     const key = JSON.stringify(cacheKeyOf(owner, input));
-    let pending = flight.conversions.get(key);
-    if (pending === undefined) {
-      pending = convertFor(owner, input, item);
-      flight.conversions.set(key, pending);
+    const pending = flight.conversions.get(key);
+    if (pending !== undefined) {
+      const shared = await pending;
+      // A jump that expired since the flight converted it is never reused: convert again (the
+      // flight's price conclusion stays).
+      if (shared.kind !== 'ok' || jumpUsable(shared.jump, clock.now().getTime())) return shared;
+      if (flight.conversions.get(key) !== pending)
+        return sharedConversion(flight, owner, input, item);
     }
-    return pending;
+    const fresh = convertFor(owner, input, item);
+    flight.conversions.set(key, fresh);
+    return fresh;
   }
 
   function failure(code: number, owner: LinkOpenOwnerResult): Settled {
@@ -522,10 +560,21 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
 
   /** BR-PRICE-13 failure branch: this identity's fresh cache with requote_failed, else 50303. */
   async function requoteFailed(
+    flight: Flight,
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
   ): Promise<Settled> {
-    const jump = await cached(owner.link.app_id, cacheKeyOf(owner, input));
+    // One lookup per identity key and window: a first 50303 is not turned into a cached jump by
+    // a conversion another open stored meanwhile; a reused jump still has to be usable now.
+    const key = cacheKeyOf(owner, input);
+    const name = JSON.stringify(key);
+    let lookup = flight.fallbacks.get(name);
+    if (lookup === undefined) {
+      lookup = cached(owner.link.app_id, key);
+      flight.fallbacks.set(name, lookup);
+    }
+    const found = await lookup;
+    const jump = found !== null && jumpUsable(found, clock.now().getTime()) ? found : null;
     if (jump === null) return failure(50303, owner);
     return {
       code: 0,
@@ -600,7 +649,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       case 'tlj_empty':
         return failure(30602, owner);
       case 'failed':
-        return requoteFailed(owner, input);
+        return requoteFailed(flight, owner, input);
       case 'fresh': {
         // BR-PRICE-20: the snapshot stands as new; conversion is still real time.
         const converted = await sharedConversion(flight, owner, input);
@@ -645,7 +694,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       flight.cards.set(cardKey, pendingCard);
     }
     const card = await pendingCard;
-    if (card.kind === 'failed') return requoteFailed(owner, input);
+    if (card.kind === 'failed') return requoteFailed(flight, owner, input);
 
     const snapshot = {
       finalFen: oldFen,
@@ -698,77 +747,79 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     };
   }
 
-  /** BR-ATTR-14 open log, and on success the attempt, in one transaction. */
+  /**
+   * BR-ATTR-14 open log, and on success the renewed link and the attempt, through `executor`:
+   * the open's transaction for a stored result, the db handle for the log of one that is not.
+   */
   async function record(
+    executor: Kysely<DB>,
     caller: Caller,
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
     settled: Settled,
     startMs: number,
+    logLinkId: string,
   ): Promise<string | null> {
     const now = clock.now();
     const { link, identitySnapshot } = owner;
     const attemptId = settled.code === 0 ? newUuidV7(now) : null;
     const card = settled.code === 0 ? settled.card : undefined;
-    const commit = () =>
-      db.transaction().execute(async (trx) => {
-        if (card?.pending != null) await insertPendingOpenLink(trx, card.pending);
-        await trx
-          .insertInto('link_logs')
-          .values({
-            app_id: link.app_id,
-            link_id: settled.linkId,
-            event: 'open',
-            user_id: identitySnapshot.user_id,
-            opener_user_id: caller.userId,
-            platform: link.platform,
-            product_key: link.product_key,
-            raw_item_id: link.raw_item_id,
-            scene: link.scene,
-            pid_scene: identitySnapshot.pid_scene,
-            pid: identitySnapshot.pid,
-            client: input.client,
-            cache_hit: settled.cacheHit,
-            expired: startMs > link.expire_at.getTime(),
-            quoted_price_fen: settled.quotedPriceFen,
-            no_rebate: input.noRebate === true,
-            no_rebate_reason:
-              input.noRebate === true ? (input.noRebateReason ?? 'auth_declined') : null,
-            agent_session_id: identitySnapshot.agent_session_id,
-            result_code: settled.code,
-            latency_ms: Math.max(0, now.getTime() - startMs),
-            created_at: now,
-          })
-          .execute();
-        if (attemptId !== null) {
-          await trx
-            .insertInto('link_open_attempts')
-            .values({
-              attempt_id: attemptId,
-              app_id: link.app_id,
-              link_id: settled.linkId,
-              user_id: caller.userId,
-              opened_at: now,
-              created_at: now,
-              updated_at: now,
-            })
-            .execute();
-        }
-      });
-    if (card === undefined) {
-      await commit();
-    } else {
-      const run = card.tail.then(commit);
-      card.tail = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      await run;
+    if (card?.pending != null) await insertPendingOpenLink(executor, card.pending);
+    await executor
+      .insertInto('link_logs')
+      .values({
+        app_id: link.app_id,
+        link_id: logLinkId,
+        event: 'open',
+        user_id: identitySnapshot.user_id,
+        opener_user_id: caller.userId,
+        platform: link.platform,
+        product_key: link.product_key,
+        raw_item_id: link.raw_item_id,
+        scene: link.scene,
+        pid_scene: identitySnapshot.pid_scene,
+        pid: identitySnapshot.pid,
+        client: input.client,
+        cache_hit: settled.cacheHit,
+        expired: startMs > link.expire_at.getTime(),
+        quoted_price_fen: settled.quotedPriceFen,
+        no_rebate: input.noRebate === true,
+        no_rebate_reason:
+          input.noRebate === true ? (input.noRebateReason ?? 'auth_declined') : null,
+        agent_session_id: identitySnapshot.agent_session_id,
+        result_code: settled.code,
+        latency_ms: Math.max(0, now.getTime() - startMs),
+        created_at: now,
+      })
+      .execute();
+    if (attemptId !== null) {
+      await executor
+        .insertInto('link_open_attempts')
+        .values({
+          attempt_id: attemptId,
+          app_id: link.app_id,
+          link_id: settled.linkId,
+          user_id: caller.userId,
+          opened_at: now,
+          created_at: now,
+          updated_at: now,
+        })
+        .execute();
     }
     return attemptId;
   }
 
-  async function handle(caller: Caller, request: LinkOpenRequoteInput): Promise<HandlerResult> {
+  /** The codes platform idempotency stores (0 and 3xxxx); any other rolls the open back. */
+  function stored(code: number): boolean {
+    return code === 0 || (code >= 30000 && code <= 39999);
+  }
+
+  async function handle(
+    caller: Caller,
+    request: LinkOpenRequoteInput,
+    trx: Transaction<DB>,
+    afterRollback: { log?: () => Promise<unknown> },
+  ): Promise<HandlerResult> {
     const start = clock.now().getTime();
     const envelope = (code: number, data: unknown = null): HandlerResult => ({
       status: STATUS[code] ?? 500,
@@ -776,7 +827,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     });
     let owner: LinkOpenOwnerResult;
     try {
-      owner = await owners.open({ linkId: request.linkId });
+      owner = await owners.open({ linkId: request.linkId }, trx);
     } catch (error) {
       if (error instanceof LinkingError) return envelope(error.code);
       throw error;
@@ -794,7 +845,13 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         : {}),
     };
     const settled = await settle(caller, owner, input, start);
-    const attemptId = await record(caller, owner, input, settled, start);
+    if (!stored(settled.code)) {
+      // The transaction rolls back (a claim or a registered link with it), so the log names the
+      // opened link and is written once the rollback is done (BR-ATTR-14: failures are logged).
+      afterRollback.log = () => record(db, caller, owner, input, settled, start, request.linkId);
+      return envelope(settled.code);
+    }
+    const attemptId = await record(trx, caller, owner, input, settled, start, settled.linkId);
     if (settled.code !== 0 || settled.data === null || attemptId === null) {
       return envelope(settled.code);
     }
@@ -807,20 +864,27 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       return { code: 30144, data: null };
     }
     const caller = await callerContext.current();
-    const response = await idempotency.execute(
+    const afterRollback: { log?: () => Promise<unknown> } = {};
+    const response = await idempotency.executeInTransaction(
       {
         appId: caller.appId,
         actor: { userId: caller.userId, deviceId: caller.deviceId, phoneHmac: null },
         method: 'POST',
         path: `/v1/links/${input.linkId}/open`,
         key: input.idempotencyKey,
-        body: { installed: input.installed ?? 'unknown', no_rebate: input.noRebate === true },
+        body: openRequestBody(input),
         traceId: input.traceId,
       },
-      () => handle(caller, input),
+      (trx) => {
+        delete afterRollback.log;
+        return handle(caller, input, trx, afterRollback);
+      },
     );
     // Handler and replay alike: the stored body is the result, so a replay equals the first.
     const parsed = JSON.parse(response.body) as { code: number; data?: unknown };
+    if (response.source === 'handler' && !stored(parsed.code) && afterRollback.log !== undefined) {
+      await afterRollback.log();
+    }
     if (parsed.code === 0 && parsed.data !== null && parsed.data !== undefined) {
       return { code: 0, data: parsed.data as LinkOpenRequoteResult };
     }

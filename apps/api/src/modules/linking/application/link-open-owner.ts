@@ -17,7 +17,7 @@
 import type { components, Scene } from '@couli/contracts-ts';
 import { scene as SCENES } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import { sql, type Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable } from 'kysely';
 import { newUuidV7 } from '../../platform/index.ts';
 import { isPlatform } from '../../union/index.ts';
 import { LinkingError, decideOpenOwner, type OpenOwnerDecision } from '../domain/rules.ts';
@@ -52,8 +52,12 @@ export interface LinkOpenOwnerResult {
 }
 
 export interface LinkOpenOwnerService {
-  /** CallerContext is the only identity source; unknown/foreign links fail with code 30144. */
-  open(input: { readonly linkId: string }): Promise<LinkOpenOwnerResult>;
+  /**
+   * CallerContext is the only identity source; unknown/foreign links fail with code 30144.
+   * `trx` (B1-06m): the open's transaction, so a claim or a registered link commits or rolls back
+   * with the rest of the open; without it the stage writes through the module's db handle.
+   */
+  open(input: { readonly linkId: string }, trx?: Kysely<DB>): Promise<LinkOpenOwnerResult>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -102,8 +106,12 @@ function storedScene(link: LinkRow): Scene {
 export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwnerService {
   const { db, clock, callerContext, attrCodes, pids } = options;
 
-  async function load(caller: Caller, linkId: string): Promise<LinkRow | undefined> {
-    return db
+  async function load(
+    executor: Kysely<DB>,
+    caller: Caller,
+    linkId: string,
+  ): Promise<LinkRow | undefined> {
+    return executor
       .selectFrom('links')
       .selectAll()
       .where('app_id', '=', caller.appId)
@@ -113,6 +121,7 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
 
   /** ②: claim a guest link once; undefined when another opener claimed it first. */
   async function claim(
+    executor: Kysely<DB>,
     caller: Caller & { readonly userId: string },
     link: LinkRow,
     snapshot: IdentitySnapshot,
@@ -122,7 +131,7 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
       user_id: caller.userId,
       attr_code: await attrCodeOf(attrCodes, caller.appId, caller.userId),
     };
-    const row = await db
+    const row = await executor
       .updateTable('links')
       .set({
         user_id: caller.userId,
@@ -140,6 +149,7 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
 
   /** ③ and BR-ATTR-11: a new link for the caller, the opened card's quote as its baseline. */
   async function registerFor(
+    executor: Kysely<DB>,
     caller: Caller,
     original: LinkRow,
     scene: Scene,
@@ -158,7 +168,7 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
       agentSessionId: null,
     });
     const now = clock.now();
-    const row = await insertLinkRow(db, {
+    const row = await insertLinkRow(executor, {
       now,
       caller,
       linkId: newUuidV7(now),
@@ -181,12 +191,16 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
     return { link: row, snapshot };
   }
 
-  async function open(input: { readonly linkId: string }): Promise<LinkOpenOwnerResult> {
+  async function open(
+    input: { readonly linkId: string },
+    trx?: Kysely<DB>,
+  ): Promise<LinkOpenOwnerResult> {
+    const executor = trx ?? db;
     // Server-side identity only: app, user and device come from CallerContext, never the input.
     const caller = await callerContext.current();
     const linkId: unknown = input.linkId;
     if (typeof linkId !== 'string' || !UUID.test(linkId)) throw notFound();
-    let link = await load(caller, linkId);
+    let link = await load(executor, caller, linkId);
     if (link === undefined) throw notFound();
     // The baseline is the opened card's quote, whatever link the caller ends up with (G-08).
     const quoted = link.quoted_final_price_fen;
@@ -214,7 +228,7 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
         case 'login':
           throw new LinkingError(10001, 'login_required', []);
         case 'register': {
-          const fresh = await registerFor(caller, link, decision.scene);
+          const fresh = await registerFor(executor, caller, link, decision.scene);
           return {
             link: fresh.link,
             identitySnapshot: fresh.snapshot,
@@ -225,7 +239,12 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
         }
         case 'claim': {
           if (pass > 0 || caller.userId === null) break;
-          const claimed = await claim({ ...caller, userId: caller.userId }, link, snapshot);
+          const claimed = await claim(
+            executor,
+            { ...caller, userId: caller.userId },
+            link,
+            snapshot,
+          );
           if (claimed !== undefined) {
             return {
               link: claimed.link,
@@ -235,7 +254,7 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
               message: null,
             };
           }
-          const reread = await load(caller, linkId);
+          const reread = await load(executor, caller, linkId);
           if (reread === undefined) throw notFound();
           link = reread;
           continue;
