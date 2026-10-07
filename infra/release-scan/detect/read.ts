@@ -11,7 +11,17 @@ const PLATFORMS: Readonly<Record<string, ClientPlatform>> = {
   '.hap': 'harmony',
   '.app': 'harmony',
 };
-const NESTED = new Set(['.ipa', '.app', '.hap', '.hsp', '.apk', '.aab', '.jar', '.aar', '.zip']);
+export const NESTED = new Set([
+  '.ipa',
+  '.app',
+  '.hap',
+  '.hsp',
+  '.apk',
+  '.aab',
+  '.jar',
+  '.aar',
+  '.zip',
+]);
 // 超限按读取失败返回，绝不把未扫描内容当成通过。解包只在内存里进行。
 const MAX_FILE = 256 * 1024 * 1024;
 const MAX_TOTAL = 1024 * 1024 * 1024;

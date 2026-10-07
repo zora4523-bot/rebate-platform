@@ -30,9 +30,12 @@ import { compareHits } from '../compare/index.ts';
 import type { DetectOptions, ScanHit, ScanInput, ScanResult } from './types.ts';
 import { textViews } from './encoding.ts';
 import { artifactPlatform, readArtifact } from './read.ts';
+import { artifactTextViews } from './association.ts';
 import { detectText, resolveOptions } from './rules.ts';
 
 export { readArtifact } from './read.ts';
+export { artifactTextViews } from './association.ts';
+export type { ArtifactTextView, ArtifactTextViews } from './association.ts';
 export { defaultDetectOptions, shannonEntropy } from './rules.ts';
 
 export type {
@@ -77,16 +80,14 @@ export async function scanArtifact(input: ScanInput): Promise<ScanResult> {
   } catch {
     errors.push('Invalid detection thresholds');
   }
-  if (options)
-    for (const entry of entries) {
-      try {
-        for (const text of textViews(entry.content, entry.path, true)) {
-          hits.push(...detectText(entry.path, text, options));
-        }
-      } catch {
-        errors.push(`Artifact content unreadable: ${entry.path}`);
-      }
+  if (options) {
+    // 与 artifactTextViews 同一关联语义：清单引用经同一包的资源表解析，签名字段引用解析不了记读取错误。
+    const associated = artifactTextViews(entries);
+    errors.push(...associated.errors);
+    for (const view of associated.views) {
+      hits.push(...detectText(view.path, view.text, options, view.resourceNames === true));
     }
+  }
   const report = compareHits({
     manifestYaml: input.manifestYaml,
     approvals: input.approvals,

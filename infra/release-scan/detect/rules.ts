@@ -48,7 +48,15 @@ const PRIORITY: readonly DetectRuleId[] = [
   'high-entropy',
 ];
 
-export function fieldRule(name: string): DetectRuleId | undefined {
+/** 资源表键名里凭据词的连写前缀（apikey、accesstoken 等）；monkey、hockey、tokenizer 不算。 */
+const CREDENTIAL_WORD =
+  /^(?:(?:api|app|access|auth|client|refresh|session|bearer|id|sdk|master|license|licence|map|push|oauth|consumer|upload|device|user|secret|private|public|encrypt|encryption|aes|des|rsa|jwt|csrf|xsrf|ak|sk|service|server)?(?:key|token|credential)s?)$/;
+
+/**
+ * 字段名对应的规则。resourceNames=true 用于资源表（arsc）键值视图：资源名是任意标识符，
+ * keyed-credential 只认整词或已知连写的 key / token / credential，不按子串命中；签名材料与服务端密钥口径不变。
+ */
+export function fieldRule(name: string, resourceNames = false): DetectRuleId | undefined {
   const words = name
     .replace(/^(?:(?:this|window|globalThis|global|self)\.)+/, '')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
@@ -76,6 +84,8 @@ export function fieldRule(name: string): DetectRuleId | undefined {
   // 服务端密钥和其他凭据沿用原有格式覆盖；本轮只修签名材料的子串误判。
   const key = name.replace(/[._-]/g, '').toLowerCase();
   if (/secret|password|passwd|privatekey|apiv3/.test(key)) return 'server-secret';
+  if (resourceNames)
+    return words.some((word) => CREDENTIAL_WORD.test(word)) ? 'keyed-credential' : undefined;
   if (/key|token|credential/.test(key)) return 'keyed-credential';
   return;
 }
@@ -137,7 +147,11 @@ function standaloneValue(
 }
 
 /** 每种布局都保留原始字符偏移；后续去重和行号不依赖重新序列化。 */
-function fields(file: string, text: string): Array<{ name: string; value: string; start: number }> {
+function fields(
+  file: string,
+  text: string,
+  resourceNames: boolean,
+): Array<{ name: string; value: string; start: number }> {
   const found: Array<{ name: string; value: string; start: number }> = [];
   const configFile =
     /(?:\.(?:properties|ini|cfg|conf|env|yaml|yml)|(?:^|\/)\.env(?:\.[^/]*)?)$/i.test(file);
@@ -155,17 +169,22 @@ function fields(file: string, text: string): Array<{ name: string; value: string
   const add = (name: string, value: string, start: number): void => {
     found.push({ name, value, start });
   };
-  const assignment = /(?<![\w$.-])["'`]?([A-Za-z_$][\w$.-]*)["'`]?\s*([:=])\s*/g;
+  // 分隔符后只有紧跟引号的取值可以跨行；裸值不跨行（如 `shared_salt=` 空值后跟下一行的配置）。
+  const assignment =
+    /(?<![\w$.-])(["'`]?)([A-Za-z_$][\w$.-]*)["'`]?\s*([:=])(?:\s*(?=["'`])|[ \t]*)/g;
   let m: RegExpExecArray | null;
   while ((m = assignment.exec(text))) {
+    const quotedKey = m[1] !== '';
+    const name = m[2]!;
+    const separator = m[3]!;
     // 普通变量赋值不能吞掉内层对象字段，例如压缩后的 c={appSecret:"…"}。
-    if (!fieldRule(m[1]!)) continue;
+    if (!fieldRule(name, resourceNames)) continue;
     const valueAt = assignment.lastIndex;
     const raw = /^(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`)/.exec(
       text.slice(valueAt),
     );
     if (raw) {
-      add(m[1]!, raw[1] ?? raw[2] ?? raw[3] ?? '', valueAt + 1);
+      add(name, raw[1] ?? raw[2] ?? raw[3] ?? '', valueAt + 1);
       assignment.lastIndex += raw[0].length;
       continue;
     }
@@ -173,17 +192,29 @@ function fields(file: string, text: string): Array<{ name: string; value: string
     let before = m.index - 1;
     while (before >= 0 && (text[before] === ' ' || text[before] === '\t')) before--;
     const lineStart = before < 0 || text[before] === '\n' || text[before] === '\r';
-    const standalone = codeFile ? undefined : standaloneValue(text, m.index, valueAt, m[2]!);
-    const config = (lineStart && (configFile || (plainConfig && m[2] === '='))) || !!standalone;
+    const standalone = codeFile ? undefined : standaloneValue(text, m.index, valueAt, separator);
+    const config =
+      (lineStart && (configFile || (plainConfig && separator === '='))) || !!standalone;
     const bare =
       standalone ??
       (config ? /^[^\s<\x00-\x1f"'`]+/ : /^[^\s<\x00-\x1f"'`,{}();\u005b\u005d]+/).exec(
         text.slice(valueAt),
       )?.[0];
     if (!bare) continue;
+    // 引号键后的数字字面量（JSON 的 {"sign_salt": 20240101}）是取值本身，按字段口径检测。
+    if (
+      !config &&
+      quotedKey &&
+      separator === ':' &&
+      /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(bare)
+    ) {
+      add(name, bare, valueAt);
+      assignment.lastIndex += bare.length;
+      continue;
+    }
     // JS 的裸标识符、null、数字和表达式均不算材料字面值；也不推进游标吞下后续赋值。
     if (!config || /^(?:%[sdif]|%\d+\$[sdif])$/.test(bare)) continue;
-    add(m[1]!, bare, valueAt);
+    add(name, bare, valueAt);
     assignment.lastIndex += bare.length;
   }
   const resource = /<string\b[^>]*\bname\s*=\s*(["'])([^"']+)\1[^>]*>([^<]*)/gi;
@@ -222,7 +253,12 @@ function privateDerPrefix(value: string): boolean {
   );
 }
 
-export function detectText(file: string, text: string, options: DetectOptions): ScanHit[] {
+export function detectText(
+  file: string,
+  text: string,
+  options: DetectOptions,
+  resourceNames = false,
+): ScanHit[] {
   const candidates: Candidate[] = [];
   const add = (rule: DetectRuleId, start: number, length: number): void => {
     if (length > 0) candidates.push({ rule, start, end: start + length });
@@ -253,8 +289,8 @@ export function detectText(file: string, text: string, options: DetectOptions): 
     } else if (hasHigh(text.slice(m.index, m.index + length))) add('high-entropy', m.index, length);
   }
 
-  for (const { name, value, start } of fields(file, text)) {
-    const rule = fieldRule(name);
+  for (const { name, value, start } of fields(file, text, resourceNames)) {
+    const rule = fieldRule(name, resourceNames);
     if (!rule || value.length === 0) continue;
     if (rule === 'request-sign-material') add(rule, start, value.length);
     else {
