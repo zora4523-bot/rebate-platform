@@ -1,0 +1,120 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/model-gateway/openai-compat/** is RV1). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl. Refs BR-AI-14; the brief with its one-hop text passes 24 KB, so the orchestrator wrote it with brief.ts minus the one-hop text plus a pointer to the full BR text. No real model call, no real key: synthetic recordings and fake transports only. Written by hand. B3-02b: rule tests closed by a fresh Claude subagent; its one S1 (exposedText missed nested fields) was fixed by the orchestrator in the spec commit.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "fresh read-only Claude subagents with the money checklist: round 1 fail (1 S1: empty id in later tool-call deltas), round 2 pass, 0 S0/S1; 3 S2 to follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "fresh read-only Codex sessions, not the implementing one: round 1 fail (3 S1: empty id deltas, usage lost on protocol errors, missing usage recorded as zero), fixed by Codex implementation attempt 2; round 2 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rounds 1 and 2 by fresh Codex sessions (5 and 3 S1: property assertions and propParams, independent oracles, GLM / Plus requests, 503, 429 fallback, GLM usage position, abort assertion order), fixed by the test author; a fresh Claude subagent closed it (one S1 fixed by the orchestrator)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B3-02b",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "de8edcaa38251ac6d8546cff82680ff8dbeb8ad1",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "de8edcaa38251ac6d8546cff82680ff8dbeb8ad1",
+      "tree": "ccbdbc04da4de20c61d3be90857795137f7ea6c4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T06:04:28Z",
+      "finished_at": "2026-10-07T06:04:41Z",
+      "red_tests": [
+        "test/spec/agent/model-openai-compat/assemble.test.ts > [09 CAP-X-07 流式#1] 文本增量按顺序拼接，finish_reason=stop 产生一个 done，usage 片产生 usage 事件",
+        "test/spec/agent/model-openai-compat/assemble.test.ts > [09 CAP-X-07 流式#2] 同一 index 的工具参数分多片到达，拼成一条可 JSON.parse 的完整参数；id 与 name 只在首片",
+        "test/spec/agent/model-openai-compat/assemble.test.ts > [09 CAP-X-07 流式#3] index 0 与 1 交错到达时各自拼对",
+        "test/spec/agent/model-openai-compat/assemble.test.ts > [09 CAP-X-07 流式#4] 工具参数在任意位置切成任意片数都拼回原文（属性测试）",
+        "test/spec/agent/model-openai-compat/assemble.test.ts > [09 CAP-X-07 流式#5] finish_reason 为 length / content_filter 时 done 带相同原因",
+        "test/spec/agent/model-openai-compat/assemble.test.ts > [09 CAP-X-07 流式#6] 畸形输入：非 JSON 分片、结束时参数仍不是合法 JSON、整段没有 finish_reason，都抛 malformed",
+        "test/spec/agent/model-openai-compat/assemble.test.ts > [09 CAP-X-19 通过标准②] GLM 合成流（带思考内容、usage 随结束片到达）用同一适配器拼装，结果同形；思考内容不进文本",
+        "test/spec/agent/model-openai-compat/classify.test.ts > [BR-AI-14 无模型降级触发#1] 401、403 归 auth；400 归 bad_request；5xx 归 server（含非 JSON 正文）",
+        "test/spec/agent/model-openai-compat/classify.test.ts > [09 CAP-X-07 限流] 千问 429 带百炼三种限流文案都归 rate_limited",
+        "test/spec/agent/model-openai-compat/classify.test.ts > [09 CAP-X-19 429 区分] GLM 429 带业务码 1113 或 1308 归 quota_exhausted；其他业务码的 429 归 rate_limited",
+        "test/spec/agent/model-openai-compat/classify.test.ts > [BR-AI-14 无模型降级触发 429 兜底] 429 本身就是限流：千问未知文案、空正文、非 JSON 正文、null 都归 rate_limited；GLM 无 1113/1308 码的 429 同样",
+        "test/spec/agent/model-openai-compat/classify.test.ts > [BR-AI-14 无模型降级触发 4xx 兜底] 401/403 与 400 在空正文、非 JSON 正文时仍按状态码归类",
+        "test/spec/agent/model-openai-compat/classify.test.ts > [BR-AI-14 无模型降级触发#2] 超时、网络、中止分别归 timeout、network、aborted",
+        "test/spec/agent/model-openai-compat/classify.test.ts > [09 CAP-X-07 未实测] 内容拦截码默认为空：任何状态码都不归 content_refused；登记后该码归 content_refused",
+        "test/spec/agent/model-openai-compat/eval-align.test.ts > [05 B3-02 录制回放#1] 固定合成输入的 evals modelKey 等于夹具录制的 key",
+        "test/spec/agent/model-openai-compat/eval-align.test.ts > [05 B3-02 录制回放#2] evals RecordingStore 经 createPortTransport 取回的 VendorResponse 与录制逐字段相等",
+        "test/spec/agent/model-openai-compat/request.test.ts > [02 §9.2 前缀缓存#1] system 在第一条、历史按原顺序；工具映射成 function 定义并按 name 排序；不改动输入",
+        "test/spec/agent/model-openai-compat/request.test.ts > [02 §9.2 前缀缓存#2] 三个工具任意排列，产物都等于独立写出的完整期望请求，canonicalJson 逐字相同（属性测试）",
+        "test/spec/agent/model-openai-compat/request.test.ts > [BR-AI-14 多厂商接入#1] GLM 合成模型的完整请求：vendor、model、messages、tools、params 与转换后请求体",
+        "test/spec/agent/model-openai-compat/request.test.ts > [BR-AI-14 路由顺序 Plus 备用快照] 千问 Plus 日期快照的完整请求：vendor、model、messages、tools、params 与转换后请求体",
+        "test/spec/agent/model-openai-compat/request.test.ts > [02 §9.2 前缀缓存#3] params 的键只来自允许集合，tool_choice 恒为 auto，不发 parallel_tool_calls",
+        "test/spec/agent/model-openai-compat/request.test.ts > [02 §9.2 前缀缓存#4] 同一输入在不同时刻、不同随机数下产物逐字相同（无时间戳、请求编号）",
+        "test/spec/agent/model-openai-compat/request.test.ts > [02 §9.2 前缀缓存#5] sampling 不填就不发；填了按给的值发，换值跟着变",
+        "test/spec/agent/model-openai-compat/request.test.ts > [02 §9.2 前缀缓存#6] includeUsage 开时 stream_options.include_usage=true，关时不发 stream_options",
+        "test/spec/agent/model-openai-compat/request.test.ts > [BR-AI-14 路由顺序「关闭思考」/ 09 CAP-X-19] 千问默认 enable_thinking=false；GLM 默认不发该键；换值后跟着变",
+        "test/spec/agent/model-openai-compat/request.test.ts > [09 CAP-X-07 显式缓存] explicitCache 关时整个请求没有 cache_control；开时只在 system 段出现一处",
+        "test/spec/agent/model-openai-compat/request.test.ts > [05 B3-02 快照锁定] 主线 ID、latest 与空串一律 model_not_pinned；带日期的快照通过",
+        "test/spec/agent/model-openai-compat/request.test.ts > [05 B3-02 录制回放] toVendorRequest 的 body = { model, messages, tools, ...params }",
+        "test/spec/agent/model-openai-compat/request.test.ts > [05 B3-02 录制回放] fromVendorRequest(toVendorRequest(x)) 与 x 相同（属性测试）",
+        "test/spec/agent/model-openai-compat/sse.test.ts > [09 CAP-X-07 SSE#1] 整段喂入：得到 [DONE] 之前的全部分片，注释与空行忽略，之后的内容不再解析",
+        "test/spec/agent/model-openai-compat/sse.test.ts > [09 CAP-X-07 SSE#2] 还没遇到 [DONE] 时 finished 为 false",
+        "test/spec/agent/model-openai-compat/sse.test.ts > [09 CAP-X-07 SSE#3] 同一段文本在任意位置切开喂入，结果相同（属性测试，LF 与 CRLF）",
+        "test/spec/agent/model-openai-compat/sse.test.ts > [09 CAP-X-07 SSE#4] 逐字符喂入 CRLF 文本（\\r 与 \\n 落在不同次 push）结果仍相同",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [02 §9.2 模型路由 传输#1] POST {baseUrl}/chat/completions，带 Bearer apiKey，body 是厂商请求的 JSON；分片经 SSE 解析，usage 取最后的 usage 片",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [02 §9.2 模型路由 传输#2] baseUrl 末尾带斜杠时地址不重复斜杠",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [BR-AI-14 多厂商接入 离线计量 传输#2b] GLM 合成响应：usage 在 choices 非空的结束片上，send 仍取到 input_tokens=90、output_tokens=25",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [02 §12.6 密钥 传输#3] apiKey 在每次请求时读取：换值后下一次请求用新值",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [02 §12.6 密钥 传输#4] baseUrl 不是 https、带用户名或查询串时构造即失败",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [02 §9.2 取消与断线 传输#5] 已中止的 signal 不发请求，以 aborted 失败",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [02 §9.2 取消与断线 传输#6] 请求途中中止：假 fetch 收到同一个 signal 且已中止；普通中止归 aborted，TimeoutError 归 timeout",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [BR-AI-14 无模型降级触发 传输#7] 网络失败归 network；非 2xx 按错误归类，带 status 与厂商码",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [BR-AI-14 无模型降级触发 传输#7b] 503 加非 JSON 正文：send 抛 server，status=503",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [BR-AI-14 无模型降级触发 429 兜底 传输#7c] 千问 429 的未知文案、空正文、非 JSON 正文：send 都抛 rate_limited，status=429",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [02 §12.6 密钥 传输#8] 厂商在错误正文里回显 apiKey 时，抛出的错误各处都不含 apiKey 的值",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [05 B3-02 录制回放 端口#1] 端口收到 fromVendorRequest 的结果；返回值原样作为响应；billable=false",
+        "test/spec/agent/model-openai-compat/transport.test.ts > [05 B3-02 录制回放 端口#2] 端口返回值不符合 VendorResponse 形状时报 malformed；已中止的 signal 不调端口"
+      ],
+      "expected": [
+        "test/spec/agent/model-openai-compat/assemble.test.ts",
+        "test/spec/agent/model-openai-compat/classify.test.ts",
+        "test/spec/agent/model-openai-compat/eval-align.test.ts",
+        "test/spec/agent/model-openai-compat/request.test.ts",
+        "test/spec/agent/model-openai-compat/sse.test.ts",
+        "test/spec/agent/model-openai-compat/transport.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f0c8360c4268d4f13ae70581d4b338f1c7d5c5a081c993730e1f7fad97ea5991"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "c6083d066131bd1941404e9625691547458eef56",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
