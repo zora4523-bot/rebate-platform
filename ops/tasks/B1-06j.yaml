@@ -6,11 +6,16 @@ type: impl
 # BR-PRICE-06（子集不含返利金额），由编排者摘入任务书第 2 节。购买仍只经 open。x-auth optional：未接身份时 viewer_is_sharer 一律 false。
 # 实现路由时去掉 x-implementation: planned。linking/** 与 openapi.yaml 串行（与 B1-06e～i 任一相交，按看板顺序排）。风险：linking RV2，整体 RV2。
 # 第 1 轮台账评审后改（S1-1）：去掉 planned 后重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入，与 B1-02e / f / g、B1-03i 串行）。
+# 2026-10-08 改（W1 第五棒，资金评审 r1 S1）：落地卡须有商品名 / 图片 / 店铺（BR-ATTR-05 细则「App 内打开链接的入口」：打开者看到商品、券与券后价；01 §4.2 按 link_id 出商品卡），
+# links 快照没有这些字段。由 catalog/index.ts 导出只读商品读取端口（先按 app_id + product_key 读 product_refs；搜索不落 product_refs，没有时经受治理联盟上游取一次详情，只读、不登记、不转链；联盟故障时这几项为 null，价格仍取快照），app.module 装配给 linking 落地页。
+# 故 paths 加 catalog/**、app.module.ts，deps 加 B1-05e（catalog/** 串行：B1-05e → 本任务 → B1-05k）。
 refs: []
 refs_hash: {}
-deps: [B1-06c, B1-02c]
+deps: [B1-06c, B1-02c, B1-05e]
 paths:
   - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/app.module.ts'
   - 'contracts/openapi.yaml'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
 test_paths:
