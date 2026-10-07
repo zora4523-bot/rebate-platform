@@ -23,7 +23,12 @@
 //   A failed conversion after a good price is 50303 too.
 // - conversion and its cache are ports; the cache key is the frozen identity's owner (never the
 //   opener or links.user_id), app, platform, product, pid, pid_scene and no_rebate.
-// Not here: authorization (30101/30102/30111), platform jump plans, routes (B1-06e/f, later).
+// B1-06e: the conversion port may admit first (convert.enabled.<platform> → 50301 before any
+// cache or price work), names the jump-plan variant (client × installed) that keys and guards the
+// cache, and fails with 50301 (paused) or 50303 (with the unpromoted page used only by an explicit
+// no_rebate purchase). A cached jump past its jump.expire_at is never reused. A share link opened
+// by anyone but the sharer ignores no_rebate (BR-ATTR-05 ①); no_rebate never renews the snapshot.
+// Not here: authorization (30101/30102/30111), taobao (B1-06f).
 import type { components, Scene } from '@couli/contracts-ts';
 import { scene as SCENES } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
@@ -80,23 +85,37 @@ export interface LinkOpenCacheKey {
   readonly pid: string | null;
   readonly pidScene: string;
   readonly noRebate: boolean;
+  /** The jump-plan variant (client × installed) when the conversion port names one. */
+  readonly variant?: string;
 }
 
 export interface LinkOpenCachedJump {
   readonly jump: LinkOpenJump;
   readonly fetchedAt: string;
+  /** The jump-plan variant the jump was built for; a mismatch is a miss. */
+  readonly variant?: string;
 }
 
 export interface LinkOpenConversionInput {
   readonly owner: LinkOpenOwnerResult;
   readonly noRebate: boolean;
   readonly installed: components['schemas']['OpenLinkRequest']['installed'];
+  readonly client: LinkOpenRequoteInput['client'];
+  readonly idempotencyKey: string;
+  readonly traceId: string;
+}
+
+/** The conversion port: convert, plus the optional admission and plan variant (B1-06e). */
+export interface LinkOpenConversionPort {
+  convert(input: LinkOpenConversionInput): Promise<LinkOpenJump>;
+  admit?(owner: LinkOpenOwnerResult): Promise<void>;
+  variant?(input: Pick<LinkOpenConversionInput, 'client' | 'installed'>): string;
 }
 
 export interface LinkOpenRequoteOptions extends LinkOpenOwnerOptions {
   readonly catalog: CatalogCardEntry;
   readonly prices: { fetch(owner: LinkOpenOwnerResult): Promise<LinkOpenPrice> };
-  readonly conversion: { convert(input: LinkOpenConversionInput): Promise<LinkOpenJump> };
+  readonly conversion: LinkOpenConversionPort;
   readonly cache: {
     get(key: LinkOpenCacheKey): Promise<LinkOpenCachedJump | null>;
     put(key: LinkOpenCacheKey, value: LinkOpenCachedJump): Promise<void>;
@@ -113,6 +132,8 @@ export interface LinkOpenRequoteInput {
   readonly client: 'ios' | 'android' | 'harmony' | 'h5' | 'web';
   readonly installed?: components['schemas']['OpenLinkRequest']['installed'];
   readonly noRebate?: boolean;
+  /** BR-ID-18: only meaningful with no_rebate=true; default auth_declined. */
+  readonly noRebateReason?: components['schemas']['OpenLinkRequest']['no_rebate_reason'];
 }
 
 export type LinkOpenRequoteResult = Omit<
@@ -162,7 +183,20 @@ type CardConclusion =
       readonly quotedAt: string;
     };
 
-type Converted = { readonly jump: LinkOpenJump; readonly cacheHit: boolean } | null;
+type Converted =
+  | { readonly kind: 'ok'; readonly jump: LinkOpenJump; readonly cacheHit: boolean }
+  | { readonly kind: 'failed'; readonly code: number; readonly noRebateUrl: string | null };
+
+/** A failed conversion's code: 50301 when the port paused it, otherwise 50303. */
+function conversionFailure(error: unknown): Extract<Converted, { kind: 'failed' }> {
+  const code = (error as { code?: unknown } | null)?.code;
+  const url = (error as { noRebateUrl?: unknown } | null)?.noRebateUrl;
+  return {
+    kind: 'failed',
+    code: code === 50301 ? 50301 : 50303,
+    noRebateUrl: code === 50303 && typeof url === 'string' && url !== '' ? url : null,
+  };
+}
 
 interface Flight {
   readonly arrivedAtMs: number;
@@ -187,6 +221,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const MESSAGES: Readonly<Record<number, string>> = {
   0: 'ok',
+  50301: 'convert_paused',
   30141: 'off_shelf',
   30602: 'tlj_claimed_out',
   50303: 'requote_failed',
@@ -199,6 +234,7 @@ const STATUS: Readonly<Record<number, number>> = {
   30141: 422,
   30144: 404,
   30602: 422,
+  50301: 503,
   50303: 503,
 };
 
@@ -238,6 +274,14 @@ function rebatesShown(
   return sharedByOther ? { min: '0', max: '0' } : { min, max };
 }
 
+/** BR-ATTR-05 ①: a share link opened by anyone but the sharer keeps the sharer's attribution. */
+function effectiveNoRebate(caller: Caller, owner: LinkOpenOwnerResult, requested?: boolean) {
+  const { identitySnapshot } = owner;
+  const sharedByOther =
+    identitySnapshot.pid_scene === 'share' && identitySnapshot.user_id !== caller.userId;
+  return requested === true && !sharedByOther;
+}
+
 function openerKey(caller: Caller): string {
   return caller.userId !== null ? `u:${caller.userId}` : `d:${caller.deviceId ?? ''}`;
 }
@@ -253,8 +297,14 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     return intSetting(value?.value, fallback);
   }
 
-  function cacheKeyOf(owner: LinkOpenOwnerResult, noRebate: boolean): LinkOpenCacheKey {
+  function variantOf(input: LinkOpenRequoteInput): string | undefined {
+    return conversion.variant?.({ client: input.client, installed: input.installed ?? 'unknown' });
+  }
+
+  function cacheKeyOf(owner: LinkOpenOwnerResult, input: LinkOpenRequoteInput): LinkOpenCacheKey {
     const { link, identitySnapshot } = owner;
+    const noRebate = input.noRebate === true;
+    const variant = variantOf(input);
     return {
       appId: link.app_id,
       userId: identitySnapshot.user_id,
@@ -264,10 +314,14 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       pid: identitySnapshot.pid,
       pidScene: identitySnapshot.pid_scene,
       noRebate,
+      ...(variant === undefined ? {} : { variant }),
     };
   }
 
-  /** A cached jump of exactly this identity, no older than the configured TTL (≤ 900 s). */
+  /**
+   * A cached jump of exactly this identity and plan variant, no older than the configured TTL
+   * (≤ 900 s) and still before its jump.expire_at (BR-ATTR-05 ②: the URL's usable period).
+   */
   async function cached(appId: string, key: LinkOpenCacheKey): Promise<LinkOpenJump | null> {
     const ttlSec = Math.min(
       await setting(appId, CONVERT_CACHE_TTL_SEC, MAX_CONVERT_CACHE_TTL_SEC),
@@ -277,7 +331,11 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     if (entry === null) return null;
     const fetchedMs = Date.parse(entry.fetchedAt);
     if (!Number.isFinite(fetchedMs)) return null;
-    const age = clock.now().getTime() - fetchedMs;
+    if ((entry.variant ?? undefined) !== key.variant) return null;
+    const nowMs = clock.now().getTime();
+    const expireMs = Date.parse(entry.jump.expire_at);
+    if (!Number.isFinite(expireMs) || nowMs >= expireMs) return null;
+    const age = nowMs - fetchedMs;
     return age >= 0 && age <= ttlSec * 1000 ? entry.jump : null;
   }
 
@@ -287,21 +345,29 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     input: LinkOpenRequoteInput,
   ): Promise<Converted> {
     const noRebate = input.noRebate === true;
-    const key = cacheKeyOf(owner, noRebate);
+    const key = cacheKeyOf(owner, input);
     const hit = await cached(owner.link.app_id, key);
-    if (hit !== null) return { jump: hit, cacheHit: true };
+    if (hit !== null) return { kind: 'ok', jump: hit, cacheHit: true };
     let jump: LinkOpenJump;
     try {
       jump = await conversion.convert({
         owner,
         noRebate,
         installed: input.installed ?? 'unknown',
+        client: input.client,
+        idempotencyKey: input.idempotencyKey,
+        traceId: input.traceId,
       });
-    } catch {
-      return null;
+    } catch (error) {
+      return conversionFailure(error);
     }
-    await cache.put(key, { jump, fetchedAt: clock.now().toISOString() });
-    return { jump, cacheHit: false };
+    const variant = key.variant;
+    await cache.put(key, {
+      jump,
+      fetchedAt: clock.now().toISOString(),
+      ...(variant === undefined ? {} : { variant }),
+    });
+    return { kind: 'ok', jump, cacheHit: false };
   }
 
   /** BR-PRICE-20 and the fetch: one conclusion per flight, failures folded into 'failed'. */
@@ -393,7 +459,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
   ): Promise<Converted> {
-    const key = JSON.stringify(cacheKeyOf(owner, input.noRebate === true));
+    const key = JSON.stringify(cacheKeyOf(owner, input));
     let pending = flight.conversions.get(key);
     if (pending === undefined) {
       pending = convertFor(owner, input);
@@ -412,12 +478,31 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     };
   }
 
+  /**
+   * A failed conversion: 50301 / 50303 for the open, except an explicit no_rebate purchase whose
+   * conversion failed, which jumps to the unpromoted product page (BR-PRICE-08) — never cached.
+   */
+  function conversionFallback(
+    converted: Extract<Converted, { kind: 'failed' }>,
+    owner: LinkOpenOwnerResult,
+    input: LinkOpenRequoteInput,
+  ): LinkOpenJump | null {
+    if (converted.code !== 50303 || input.noRebate !== true || converted.noRebateUrl === null) {
+      return null;
+    }
+    return {
+      primary: { type: 'h5', value: converted.noRebateUrl },
+      fallbacks: [],
+      expire_at: owner.link.expire_at.toISOString(),
+    };
+  }
+
   /** BR-PRICE-13 failure branch: this identity's fresh cache with requote_failed, else 50303. */
   async function requoteFailed(
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
   ): Promise<Settled> {
-    const jump = await cached(owner.link.app_id, cacheKeyOf(owner, input.noRebate === true));
+    const jump = await cached(owner.link.app_id, cacheKeyOf(owner, input));
     if (jump === null) return failure(50303, owner);
     return {
       code: 0,
@@ -449,10 +534,19 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     const flight = flightFor(owner, input.linkId, nowMs);
     const link: LinkRow = owner.link;
 
+    // BR-PROD-10: a paused platform answers 50301 before any cache or price work.
+    if (conversion.admit !== undefined) {
+      try {
+        await conversion.admit(owner);
+      } catch (error) {
+        return failure(conversionFailure(error).code === 50301 ? 50301 : 50303, owner);
+      }
+    }
+
     // BR-PRICE-13: amount_unknown has no snapshot; it only converts.
     if (owner.old_final_price_fen === null) {
       const converted = await sharedConversion(flight, owner, input);
-      if (converted === null) return failure(50303, owner);
+      if (converted.kind === 'failed') return failure(converted.code, owner);
       return {
         code: 0,
         linkId: link.link_id,
@@ -487,21 +581,23 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       case 'fresh': {
         // BR-PRICE-20: the snapshot stands as new; conversion is still real time.
         const converted = await sharedConversion(flight, owner, input);
-        if (converted === null) return failure(50303, owner);
+        const fallback =
+          converted.kind === 'failed' ? conversionFallback(converted, owner, input) : null;
+        if (converted.kind === 'failed' && fallback === null) return failure(converted.code, owner);
         return {
           code: 0,
           linkId: link.link_id,
           quotedPriceFen: link.quoted_final_price_fen,
-          cacheHit: converted.cacheHit,
+          cacheHit: converted.kind === 'ok' && converted.cacheHit,
           data: {
-            jump: converted.jump,
+            jump: converted.kind === 'ok' ? converted.jump : fallback!,
             price_changed: false,
             old_final_price_fen: owner.old_final_price_fen,
             new_final_price_fen: owner.old_final_price_fen,
             new_link_id: owner.new_link_id,
             requote_failed: false,
-            new_rebate_min_fen: null,
-            new_rebate_max_fen: null,
+            new_rebate_min_fen: input.noRebate === true ? '0' : null,
+            new_rebate_max_fen: input.noRebate === true ? '0' : null,
             no_rebate_cause: null,
             availability: 'ok',
             quoted_at: link.quoted_at === null ? null : link.quoted_at.toISOString(),
@@ -545,20 +641,26 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     );
     const changed = priceChanged(oldFen, card.finalFen, BigInt(minFen), BigInt(ratioBp));
     const availability: Availability = couponGone(snapshot, current) ? 'coupon_gone' : 'ok';
-    const renewed = quoteSnapshotChanged(snapshot, current);
+    // BR-PRICE-08: a no_rebate purchase never writes a quote snapshot, so it never renews.
+    const renewed = input.noRebate !== true && quoteSnapshotChanged(snapshot, current);
 
     const converted = await sharedConversion(flight, owner, input);
-    if (converted === null) return failure(50303, owner);
+    const fallback =
+      converted.kind === 'failed' ? conversionFallback(converted, owner, input) : null;
+    if (converted.kind === 'failed' && fallback === null) return failure(converted.code, owner);
     const effective = renewed ? card.linkId : link.link_id;
-    const rebates = rebatesShown(caller, owner, card.rebateMinFen, card.rebateMaxFen);
+    const rebates =
+      input.noRebate === true
+        ? { min: '0', max: '0' }
+        : rebatesShown(caller, owner, card.rebateMinFen, card.rebateMaxFen);
     return {
       code: 0,
       linkId: effective,
       ...(renewed && card.pending !== null ? { card } : {}),
       quotedPriceFen: renewed ? card.finalFen : link.quoted_final_price_fen,
-      cacheHit: converted.cacheHit,
+      cacheHit: converted.kind === 'ok' && converted.cacheHit,
       data: {
-        jump: converted.jump,
+        jump: converted.kind === 'ok' ? converted.jump : fallback!,
         price_changed: changed,
         old_final_price_fen: owner.old_final_price_fen,
         new_final_price_fen: card.finalFen.toString(),
@@ -607,6 +709,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
             expired: startMs > link.expire_at.getTime(),
             quoted_price_fen: settled.quotedPriceFen,
             no_rebate: input.noRebate === true,
+            no_rebate_reason:
+              input.noRebate === true ? (input.noRebateReason ?? 'auth_declined') : null,
             agent_session_id: identitySnapshot.agent_session_id,
             result_code: settled.code,
             latency_ms: Math.max(0, now.getTime() - startMs),
@@ -641,19 +745,31 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     return attemptId;
   }
 
-  async function handle(caller: Caller, input: LinkOpenRequoteInput): Promise<HandlerResult> {
+  async function handle(caller: Caller, request: LinkOpenRequoteInput): Promise<HandlerResult> {
     const start = clock.now().getTime();
     const envelope = (code: number, data: unknown = null): HandlerResult => ({
       status: STATUS[code] ?? 500,
-      envelope: { code, msg: MESSAGES[code] ?? 'error', data, trace_id: input.traceId },
+      envelope: { code, msg: MESSAGES[code] ?? 'error', data, trace_id: request.traceId },
     });
     let owner: LinkOpenOwnerResult;
     try {
-      owner = await owners.open({ linkId: input.linkId });
+      owner = await owners.open({ linkId: request.linkId });
     } catch (error) {
       if (error instanceof LinkingError) return envelope(error.code);
       throw error;
     }
+    // BR-ATTR-05 ①: the request's no_rebate is ignored on another user's share link.
+    const noRebate = effectiveNoRebate(caller, owner, request.noRebate);
+    const { noRebate: _requested, noRebateReason: _reason, ...rest } = request;
+    void _requested;
+    void _reason;
+    const input: LinkOpenRequoteInput = {
+      ...rest,
+      noRebate,
+      ...(noRebate && request.noRebateReason !== undefined
+        ? { noRebateReason: request.noRebateReason }
+        : {}),
+    };
     const settled = await settle(caller, owner, input, start);
     const attemptId = await record(caller, owner, input, settled, start);
     if (settled.code !== 0 || settled.data === null || attemptId === null) {

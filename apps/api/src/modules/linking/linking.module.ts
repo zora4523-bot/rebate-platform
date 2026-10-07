@@ -3,14 +3,16 @@ import { type DynamicModule, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { Kysely } from 'kysely';
 import { SourceLinkReader } from '../catalog/index.ts';
-import { CLOCK, DB, type Clock } from '../platform/index.ts';
+import { CLOCK, DB, type Clock, type HandlerResult } from '../platform/index.ts';
 import { createUnionPidService, type UnionPidService } from '../union/index.ts';
+import { LinkOpenService, type LinkOpenInput } from './application/link-open.ts';
 import {
   createLinkRegistration,
   createSourceLinkReader,
   type LinkRegistration,
   type RegistrationContext,
 } from './application/link-registration.ts';
+import { LinkOpenController } from './http/public/open.controller.ts';
 import {
   AttrCodeReader,
   CallerContext,
@@ -74,6 +76,24 @@ function pidReader(db: Kysely<Database>, clock: Clock): PidReader {
 }
 
 /**
+ * The open use case until its ports are composed in this process: every open fails closed with
+ * 50301 (conversion paused) — no cache, no conversion, no link written.
+ */
+// TODO(规划/11 §4.5): open 用例装配（复核取价端口、转链缓存、union 注册表与 catalog 卡片入口） — blocked on app.module.ts 组合根接线。
+class PausedLinkOpen extends LinkOpenService {
+  override open(input: LinkOpenInput): Promise<HandlerResult> {
+    return Promise.resolve({
+      status: 503,
+      envelope: {
+        code: 50301,
+        msg: '该平台暂时无法购买，请稍后再试',
+        trace_id: input.traceId,
+      },
+    });
+  }
+}
+
+/**
  * Linking (规划/02 §4.1), B1-06c: card-time link registration (catalog's LinkRegistrar) and the
  * read-only entry_source of a link (catalog's SourceLinkReader). Ports:
  * - CallerContext: a guest of the request's app (X-App-Id), device unknown, until identity
@@ -86,7 +106,9 @@ export class LinkingModule {
   static forRoot(configReader: LinkingConfigReaderFactory): DynamicModule {
     return {
       module: LinkingModule,
+      controllers: [LinkOpenController],
       providers: [
+        { provide: LinkOpenService, useFactory: (): LinkOpenService => new PausedLinkOpen() },
         {
           provide: LinkingConfigReader,
           inject: [{ token: DB, optional: true }, CLOCK],
