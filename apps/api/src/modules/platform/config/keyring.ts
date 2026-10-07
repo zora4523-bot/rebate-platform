@@ -29,7 +29,7 @@
 //      APP_ENV        FIELD_KEY_PROVIDER unset             local                   kms
 //      local, test    allowed: `keyring` is null, the     allowed                 refused
 //                     process has no FIELD_CRYPTO
-//      staging        refused                              refused                 allowed (opening
+//      staging        refused                              allowed                 allowed (opening
 //                                                                                  refuses, §4)
 //      prod           refused                              refused                 allowed (opening
 //                                                                                  refuses, §4)
@@ -39,10 +39,10 @@
 //    APP_ENV=test and no keyring variables; once `pnpm dev:stack` creates a local keyring it can
 //    become required everywhere. (e) kms is refused in local / test: those environments never
 //    load real keys (规划/11 §8).
-//    staging refuses the local provider like prod (rule-test review round 1, 2026-10-04): ADR-0001
-//    §2 says 本地用文件密钥实现，云上用 KMS 实现 and staging runs in the cloud (ECS, ADR-0002); the
-//    technical baseline is the ADR. Until the KMS provider lands, staging therefore cannot start —
-//    this is expected, not a defect.
+//    staging may use the local provider (规划仓库 docs/adr/0003-staging字段加密主密钥用文件.md,
+//    负责人 2026-10-07; B1-01zd): its master key is a file on the staging node, created once with
+//    apps/api/scripts/keyring-init.ts. prod still refuses it — prod keys come only from KMS
+//    (ADR-0001 §2 云上用 KMS 实现; 规划/02 §12.6).
 //
 // 3. Problems (`ConfigError.problems` of loadConfig). They never contain a value of any variable.
 //    The keyring problems come after every other problem of loadConfig, in the order
@@ -52,7 +52,7 @@
 //      FIELD_KEY_PROVIDER
 //        unset, APP_ENV staging / prod  `FIELD_KEY_PROVIDER: must be set when APP_ENV=<appEnv>`
 //        not exactly `local` or `kms`   `FIELD_KEY_PROVIDER: must be local or kms`
-//        local, APP_ENV staging / prod  `FIELD_KEY_PROVIDER: local must not be used when
+//        local, APP_ENV prod            `FIELD_KEY_PROVIDER: local must not be used when
 //                                        APP_ENV=<appEnv> (cloud keys come from KMS)`
 //        kms, APP_ENV local / test      `FIELD_KEY_PROVIDER: kms must not be used when
 //                                        APP_ENV=<appEnv> (local and test never load real keys)`
@@ -151,7 +151,7 @@ export function readKeyringConfig(
   if (!parsedProvider.success) {
     return { keyring: null, problems: ['FIELD_KEY_PROVIDER: must be local or kms'] };
   }
-  if (provider === 'local' && cloud) {
+  if (provider === 'local' && appEnv === 'prod') {
     problems.push(
       `FIELD_KEY_PROVIDER: local must not be used when APP_ENV=${appEnv} (cloud keys come from KMS)`,
     );
