@@ -340,3 +340,109 @@ it('checkTimeouts: both SET LOCAL timeouts are required, reported under the squa
   expect(missing[0]).toMatch(/^x\.sql:1:0: warning: require-lock-timeout /);
   expect(missing[1]).toMatch(/^x\.sql:1:0: warning: require-statement-timeout /);
 });
+
+it('checkMigration: a directive on its own line inside a block comment still counts (squawk strips the newlines)', () => {
+  const drop = 'ALTER TABLE app.orders DROP COLUMN c;\n';
+  for (const comment of ['/*\nsquawk-ignore-file\n*/\n', '/*\r\n  squawk-ignore-file\r\n*/\r\n']) {
+    expect(checkMigration('x.sql', comment + drop).map((p) => p.message)).toEqual([
+      expect.stringContaining('squawk-ignore-file is not accepted'),
+    ]);
+  }
+  for (const comment of [
+    '/*\n  squawk-ignore ban-drop-column\n*/\n',
+    '/*\r\n  squawk-ignore ban-drop-column\r\n*/\r\n',
+  ]) {
+    expect(checkMigration('x.sql', comment + drop)).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining('funds or attribution table orders'),
+      }),
+    ]);
+  }
+});
+
+it('checkMigration: an ignore covers every statement on the line after it, as squawk applies it', () => {
+  const sql =
+    '-- squawk-ignore ban-drop-column\nALTER TABLE app.articles DROP COLUMN a; ALTER TABLE app.orders DROP COLUMN c;\n';
+  expect(checkMigration('x.sql', sql)).toEqual([
+    expect.objectContaining({
+      message: expect.stringContaining('funds or attribution table orders'),
+    }),
+  ]);
+  // A statement two lines below is out of the ignore's reach and is not blamed on it.
+  expect(
+    checkMigration(
+      'x.sql',
+      '-- squawk-ignore ban-drop-column\nALTER TABLE app.articles DROP COLUMN a;\nALTER TABLE app.orders ADD COLUMN n bigint;\n',
+    ),
+  ).toEqual([]);
+});
+
+it('checkMigration: spaces around the schema dot and quoted type names do not hide a funds table or a money column', () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      '-- squawk-ignore ban-drop-column\nALTER TABLE app . orders DROP COLUMN c;\n',
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      message: expect.stringContaining('funds or attribution table orders'),
+    }),
+  ]);
+  expect(
+    checkMigration('x.sql', 'CREATE TABLE app.t (amount_fen "int4");').map((p) => p.message),
+  ).toEqual([expect.stringContaining('amount_fen must be bigint')]);
+  expect(checkMigration('x.sql', 'CREATE TABLE app.t (amount_fen "pg_catalog"."int8");')).toEqual(
+    [],
+  );
+});
+
+it('checkMigration: a trailing ignore after a non-funds statement does not blame a GRANT on a funds table on the next line', () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      'ALTER TABLE app.articles DROP COLUMN c; -- squawk-ignore ban-drop-column\nGRANT SELECT ON app.orders TO couli_readonly;\n',
+    ),
+  ).toEqual([]);
+  expect(
+    checkMigration(
+      'x.sql',
+      'ALTER TABLE app.articles DROP COLUMN c; -- squawk-ignore ban-drop-column\nALTER TABLE app.orders DROP COLUMN d;\n',
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      message: expect.stringContaining('funds or attribution table orders'),
+    }),
+  ]);
+});
+
+it('checkMigration: a money column declared as an array of bigint is refused', () => {
+  for (const sql of [
+    'CREATE TABLE app.t (amount_fen bigint[]);',
+    'CREATE TABLE app.t (amount_fen int8 ARRAY);',
+  ]) {
+    expect(checkMigration('x.sql', sql).map((p) => p.message)).toEqual([
+      expect.stringContaining('amount_fen must be bigint'),
+    ]);
+  }
+});
+
+it('checkTimeouts: the two settings must come before the first statement that is not a SET', () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      "CREATE TABLE app.t (id uuid PRIMARY KEY);\nSET LOCAL lock_timeout = '5s';\nSET LOCAL statement_timeout = '1min';\n",
+    ),
+  ).toHaveLength(2);
+  expect(
+    checkTimeouts(
+      'x.sql',
+      "SET LOCAL lock_timeout = '5s';\nCREATE TABLE app.t (id uuid PRIMARY KEY);\nSET LOCAL statement_timeout = '1min';\n",
+    ),
+  ).toEqual([expect.stringMatching(/warning: require-statement-timeout /)]);
+  expect(
+    checkTimeouts(
+      'x.sql',
+      "-- Up Migration\nSET LOCAL search_path = app;\nSET LOCAL statement_timeout = '1min';\nSET LOCAL lock_timeout = '5s';\nCREATE TABLE t (id uuid);\n",
+    ),
+  ).toEqual([]);
+});

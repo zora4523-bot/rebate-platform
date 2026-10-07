@@ -55,14 +55,19 @@ export const FUNDS_TABLE_NAMES: readonly string[] = ['links'];
 /** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint). */
 const MONEY_TYPES_OK = new Set(['bigint', 'int8']);
 const COLUMN_TYPE =
-  /"?\b([a-z0-9_]+_fen)\b"?\s+(?:(?:SET\s+DATA\s+)?TYPE\s+)?(?:pg_catalog\.)?(bigint|int8|int2|int4|integer|int|smallint|serial|smallserial|bigserial|numeric|decimal|real|double\s+precision|float\d*|money|text|varchar|character(?:\s+varying)?|char|json|jsonb|boolean|bool|uuid|date|timestamptz|timestamp|bytea)\b/gi;
+  /"?\b([a-z0-9_]+_fen)\b"?\s+(?:(?:SET\s+DATA\s+)?TYPE\s+)?(?:"?pg_catalog"?\.)?"?(bigint|int8|int2|int4|integer|int|smallint|serial|smallserial|bigserial|numeric|decimal|real|double\s+precision|float\d*|money|text|varchar|character(?:\s+varying)?|char|json|jsonb|boolean|bool|uuid|date|timestamptz|timestamp|bytea)\b"?(\s*\[|\s+ARRAY\b)?/gi;
 const LOCK_TIMEOUT = /\bSET\s+(?:LOCAL\s+)?lock_timeout\b/i;
 const STATEMENT_TIMEOUT = /\bSET\s+(?:LOCAL\s+)?statement_timeout\b/i;
-const IGNORE_FILE = /(?:--|\/\*)[ \t]*squawk-ignore-file\b/;
-// `-- squawk-ignore …` as a line comment or inside a block comment: squawk honours both forms.
-const IGNORE_ANY = /(?:--|\/\*)[ \t]*squawk-ignore\b(?!-file)/g;
+/** Statements an ignore reaches only through squawk's next-line rule are checked when they change a table. */
+const ALTERING = /^\s*(?:ALTER|DROP|TRUNCATE)\b/i;
+// Matched anywhere in the file, not only right after `--` or the comment opener: squawk strips the
+// whitespace (newlines included) inside a block comment before it reads the directive, so a
+// directive on its own line inside a block comment counts. Erring towards refusal is fine here.
+const IGNORE_FILE = /squawk-ignore-file\b/;
+// `squawk-ignore …` as a line comment or inside a block comment: squawk honours both forms.
+const IGNORE_ANY = /squawk-ignore\b(?!-file)/g;
 /** Identifiers that name a table in a DDL statement: after TABLE, ON (indexes, triggers) and TRUNCATE. */
-const IDENT = String.raw`"?[\w]+"?(?:\."?[\w]+"?)?`;
+const IDENT = String.raw`"?[\w]+"?(?:\s*\.\s*"?[\w]+"?)?`;
 /** Table names in a DDL statement: after TABLE / ON / TRUNCATE, past IF [NOT] EXISTS and ONLY, including a comma list (`DROP TABLE a, b`). */
 const TABLE_REF = new RegExp(
   String.raw`\b(?:TABLE|ON|TRUNCATE)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:ONLY\s+)?(${IDENT}(?:\s*,\s*${IDENT})*)`,
@@ -92,7 +97,7 @@ export function selectMigrations(names: readonly string[], baseline = GATE_BASEL
 
 /** The table name without schema and quotes, lower-cased. */
 export function bareTableName(reference: string): string {
-  return reference.replace(/"/g, '').split('.').pop()?.toLowerCase() ?? '';
+  return reference.replace(/"/g, '').split('.').pop()?.trim().toLowerCase() ?? '';
 }
 
 export function isFundsTable(reference: string): boolean {
@@ -107,14 +112,25 @@ export function isFundsTable(reference: string): boolean {
  * gate requires the two statements regardless. Reported in squawk's gcc format under the rule names.
  */
 export function checkTimeouts(file: string, sql: string): string[] {
-  const code = withoutComments(sql);
+  // Both settings must come before the first statement that is not a SET: a timeout set after the
+  // DDL does not protect it.
+  let lock = false;
+  let statement = false;
+  for (const part of withoutComments(sql).split(';')) {
+    const text = part.trim();
+    if (text === '') continue;
+    if (LOCK_TIMEOUT.test(text)) lock = true;
+    else if (STATEMENT_TIMEOUT.test(text)) statement = true;
+    else if (!/^SET\b/i.test(text)) break;
+    if (lock && statement) break;
+  }
   const lines: string[] = [];
-  if (!LOCK_TIMEOUT.test(code)) {
+  if (!lock) {
     lines.push(
       `${file}:1:0: warning: require-lock-timeout Missing \`SET LOCAL lock_timeout\` at the top of the migration (db/AGENTS.md rule 11)`,
     );
   }
-  if (!STATEMENT_TIMEOUT.test(code)) {
+  if (!statement) {
     lines.push(
       `${file}:1:0: warning: require-statement-timeout Missing \`SET LOCAL statement_timeout\` at the top of the migration (db/AGENTS.md rule 11)`,
     );
@@ -139,7 +155,8 @@ export function checkMigration(file: string, sql: string): Problem[] {
   const problems: Problem[] = [];
   const code = withoutComments(sql);
   for (const match of code.matchAll(COLUMN_TYPE)) {
-    const type = (match[2] ?? '').toLowerCase().replace(/\s+/g, ' ');
+    const type =
+      (match[2] ?? '').toLowerCase().replace(/\s+/g, ' ') + (match[3] === undefined ? '' : '[]');
     if (!MONEY_TYPES_OK.has(type)) {
       problems.push({
         file,
@@ -162,12 +179,37 @@ export function checkMigration(file: string, sql: string): Problem[] {
     const at = ignore.index ?? 0;
     const prev = code.lastIndexOf(';', at);
     const stop = code.indexOf(';', at);
-    let statement = code.slice(prev + 1, stop === -1 ? code.length : stop);
-    // A trailing comment on the same line as the `;` belongs to the statement that just ended
-    // (squawk honours `… DROP COLUMN c; -- squawk-ignore ban-drop-column`), so that one is checked too.
-    if (prev !== -1 && !code.slice(prev + 1, at).includes('\n')) {
-      statement = `${code.slice(code.lastIndexOf(';', prev - 1) + 1, prev)}\n${statement}`;
+    // squawk applies an ignore to the line the comment ends on and the line after it, so every
+    // statement touching those two lines is covered as well (`… ; ALTER TABLE app.orders …` there).
+    const inBlock = sql.lastIndexOf('/*', at) > sql.lastIndexOf('*/', at);
+    const commentEnd = inBlock ? Math.max(at, sql.indexOf('*/', at)) : at;
+    const lineEnd = (i: number): number => {
+      const n = code.indexOf('\n', i);
+      return n === -1 ? code.length : n;
+    };
+    const windowEnd = lineEnd(lineEnd(commentEnd) + 1);
+    const own = stop === -1 ? code.length : stop;
+    let end = own;
+    if (windowEnd > end) {
+      const next = code.indexOf(';', windowEnd);
+      end = code.slice(0, windowEnd).trimEnd().endsWith(';')
+        ? windowEnd
+        : next === -1
+          ? code.length
+          : next;
     }
+    // The statement the ignore belongs to. A trailing comment on the same line as a `;` belongs to
+    // the statement that just ended (squawk honours `… DROP COLUMN c; -- squawk-ignore ban-drop-column`),
+    // not to the one after it.
+    const trailing = prev !== -1 && !code.slice(prev + 1, at).includes('\n');
+    const statements = trailing
+      ? [code.slice(code.lastIndexOf(';', prev - 1) + 1, prev)]
+      : [code.slice(prev + 1, own)];
+    // Statements reached only through the next-line rule: checked when they alter or drop a table,
+    // so a GRANT or an index on a funds table right after an ignored line stays legal.
+    const reached = trailing ? code.slice(prev + 1, end) : code.slice(own + 1, end);
+    statements.push(...reached.split(';').filter((part) => ALTERING.test(part)));
+    const statement = statements.join(';');
     const names = [...statement.matchAll(TABLE_REF)].flatMap((ref) => (ref[1] ?? '').split(','));
     for (const raw of names) {
       const name = raw.trim();
