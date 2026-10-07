@@ -22,3 +22,8 @@ export const TOKEN_CHECK = Symbol('TOKEN_CHECK');
 
 /** The Logout use case (logout.ts). */
 export const LOGOUT = Symbol('LOGOUT');
+
+// Nest token of the SMS login wiring (B1-02j, identity.module.ts).
+
+/** The SmsLoginService; null when the process has no database, Redis or field cipher. */
+export const SMS_LOGIN = Symbol('SMS_LOGIN');

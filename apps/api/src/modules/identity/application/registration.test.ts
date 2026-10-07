@@ -25,6 +25,8 @@ import {
   checkCommand,
   createRegistrationService,
   errorFields,
+  REGISTRATION_CONFIG_KEYS,
+  snapshotRegistrationConfig,
   type RegistrationCommand,
   type RegistrationOptions,
 } from './registration.ts';
@@ -431,6 +433,7 @@ it('[S3-6] checkCommand 拒绝调用方错误', () => {
     { ...VALID, invite_code: 5 },
     { ...VALID, third_party_digest: 7 },
     { ...VALID, client_ip: undefined },
+    { ...VALID, config: {} },
   ];
   for (const command of bad) {
     expect(() => checkCommand(command as RegistrationCommand)).toThrow(TypeError);
@@ -460,4 +463,51 @@ it('[S3-6][BR-INV-06] bindResultOf 只接受契约形状的绑定结果', () => 
     { result: 'unknown', code: null },
   ];
   for (const value of invalid) expect(bindResultOf(value)).toBeNull();
+});
+
+it('[S1][BR-ID-05] 按调用传入的配置快照优先于 options.config：快照上限 1 时同设备第 2 次建号 44001，默认读取器零调用', async () => {
+  const fallback = vi.fn(async () => ({ value: 3, version: 1 }));
+  const ctx = setup({ ports: { config: { configValue: fallback } } });
+  const source = vi.fn(async (_app: string, key: string) =>
+    key === 'risk.device_register_limit' ? { value: 1, version: 7 } : null,
+  );
+  const config = await snapshotRegistrationConfig({ configValue: source }, 'couli');
+  expect(source.mock.calls.map(([, key]) => key)).toEqual([...REGISTRATION_CONFIG_KEYS]);
+  expect(await ctx.register({ config })).toMatchObject({ code: 0 });
+  expect(await ctx.register({ phone: '13912345670', config })).toMatchObject({
+    code: 44001,
+    count: 1,
+    limit: 1,
+  });
+  expect(source).toHaveBeenCalledTimes(REGISTRATION_CONFIG_KEYS.length);
+  expect(fallback).not.toHaveBeenCalled();
+});
+
+it('[S1] 配置快照只读一次：之后的读取不再调用来源；别的 app 或快照外的键直接报错', async () => {
+  const source = vi.fn(async (_app: string, key: string) => ({ value: key, version: 2 }));
+  const snapshot = await snapshotRegistrationConfig({ configValue: source }, 'couli');
+  expect(source).toHaveBeenCalledTimes(3);
+  expect(REGISTRATION_CONFIG_KEYS).toEqual([
+    'level.default',
+    'risk.merge_tombstone_dedupe',
+    'risk.device_register_limit',
+  ]);
+  expect(await snapshot.configValue('couli', 'level.default')).toEqual({
+    value: 'level.default',
+    version: 2,
+  });
+  await expect(snapshot.configValue('other', 'level.default')).rejects.toThrow(/snapshot/);
+  await expect(snapshot.configValue('couli', 'risk.other')).rejects.toThrow(/snapshot/);
+  expect(source).toHaveBeenCalledTimes(3);
+});
+
+it('[S1] 按调用传入的 config 不转给绑定端口与 B1-03g 端口', async () => {
+  const afterRegistered = vi.fn<NonNullable<RegistrationOptions['afterRegistered']>>(
+    async () => undefined,
+  );
+  const ctx = setup({ ports: { afterRegistered } });
+  const config = await snapshotRegistrationConfig({ configValue: async () => null }, 'couli');
+  expect(await ctx.register({ config })).toMatchObject({ code: 0 });
+  expect(afterRegistered).toHaveBeenCalledTimes(1);
+  expect(afterRegistered.mock.calls[0]![1]).not.toHaveProperty('config');
 });

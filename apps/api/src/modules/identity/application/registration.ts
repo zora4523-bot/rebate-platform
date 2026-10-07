@@ -10,7 +10,10 @@
 //      caller's own writes before and after stay intact and it may commit or roll back safely;
 //   3. configuration through the identity configuration port, the 08 default when a key is missing
 //      or malformed (malformed also logs a warning): level.default (L1) and, on a device,
-//      risk.merge_tombstone_dedupe (on) and risk.device_register_limit (3);
+//      risk.merge_tombstone_dedupe (on) and risk.device_register_limit (3). The port is
+//      command.config when the caller gives one (a snapshot read before its transaction with
+//      snapshotRegistrationConfig, so nothing inside the transaction borrows a second pooled
+//      connection), otherwise options.config;
 //   4. on a device (device_hash given; the landing page has none and skips 4–5): the caller's
 //      transaction must be READ COMMITTED (a snapshot level throws, answered 50001); a transaction
 //      lock on (app_id, device_hash); a phone already held by an account not deleted answers
@@ -118,6 +121,12 @@ export interface RegistrationCommand {
   /** Normalised by the caller (BR-INV-02); empty after normalisation means none was sent. */
   readonly invite_code?: string;
   readonly client_ip: string;
+  /**
+   * Per-call configuration port, in place of options.config: a caller that opens its own
+   * transaction reads the keys beforehand (snapshotRegistrationConfig) and passes the snapshot,
+   * so register() never borrows a second connection from the pool. Not passed on to the ports.
+   */
+  readonly config?: SmsConfigReader;
 }
 export interface DeviceLimitContext {
   readonly app_id: string;
@@ -284,6 +293,37 @@ function optionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
 }
 
+/** Every configuration key register() reads (step 3); a snapshot must cover all of them. */
+export const REGISTRATION_CONFIG_KEYS: readonly string[] = Object.freeze([
+  DEFAULT_LEVEL_KEY,
+  MERGE_TOMBSTONE_DEDUPE_KEY,
+  DEVICE_REGISTER_LIMIT_KEY,
+]);
+
+/**
+ * Reads REGISTRATION_CONFIG_KEYS of one app through `reader` now and answers a port that only
+ * returns those values, never reading again. Another app or key is a caller bug and throws (a
+ * key added to register() without the snapshot would otherwise silently read its default).
+ */
+export async function snapshotRegistrationConfig(
+  reader: SmsConfigReader,
+  appId: string,
+): Promise<SmsConfigReader> {
+  const values = new Map<string, Awaited<ReturnType<SmsConfigReader['configValue']>>>();
+  for (const key of REGISTRATION_CONFIG_KEYS) {
+    values.set(key, await reader.configValue(appId, key));
+  }
+  return Object.freeze({
+    configValue(app: string, key: string) {
+      const entry = values.get(key);
+      if (app !== appId || entry === undefined) {
+        return Promise.reject(new Error('registration: configuration read outside the snapshot'));
+      }
+      return Promise.resolve(entry);
+    },
+  });
+}
+
 /** Caller bugs, refused before any write. The phone must already be normalize_phone output. */
 export function checkCommand(command: RegistrationCommand): void {
   if (typeof command.app_id !== 'string' || command.app_id.length === 0) {
@@ -312,7 +352,8 @@ export function checkCommand(command: RegistrationCommand): void {
     !optionalString(command.device_id) ||
     !optionalString(command.invite_code) ||
     (digest !== undefined && digest !== null && typeof digest !== 'string') ||
-    typeof command.client_ip !== 'string'
+    typeof command.client_ip !== 'string' ||
+    (command.config !== undefined && typeof command.config.configValue !== 'function')
   ) {
     throw new TypeError('registration: malformed optional field');
   }
@@ -329,6 +370,7 @@ export function createRegistrationService(options: RegistrationOptions): Registr
   const attrCandidate = options.attrCandidate ?? newAttrCode;
 
   async function configured<T>(
+    config: SmsConfigReader,
     appId: string,
     key: string,
     parse: (value: unknown) => T | null,
@@ -459,26 +501,35 @@ export function createRegistrationService(options: RegistrationOptions): Registr
     }
   }
 
-  /** Steps 3–10; runs after the registration savepoint. */
+  /** Steps 3–10; runs after the registration savepoint. `command` carries no config. */
   async function create(
     trx: Transaction<DB>,
     command: RegistrationCommand,
+    reader: SmsConfigReader,
   ): Promise<RegistrationResult> {
     const { app_id: appId, register_method: registerMethod } = command;
     const deviceHash = command.device_hash;
-    const level = await configured(appId, DEFAULT_LEVEL_KEY, parseDefaultLevel, DEFAULT_USER_LEVEL);
+    const level = await configured(
+      reader,
+      appId,
+      DEFAULT_LEVEL_KEY,
+      parseDefaultLevel,
+      DEFAULT_USER_LEVEL,
+    );
     const phone = command.phone;
     const phoneHmac = phone === null ? null : crypto.blindIndex(phone, PHONE_BLIND_INDEX_CONTEXT);
     const now = clock.now();
 
     if (deviceHash !== undefined) {
       const dedupe = await configured(
+        reader,
         appId,
         MERGE_TOMBSTONE_DEDUPE_KEY,
         parseMergeTombstoneDedupe,
         DEFAULT_MERGE_TOMBSTONE_DEDUPE,
       );
       const limit = await configured(
+        reader,
         appId,
         DEVICE_REGISTER_LIMIT_KEY,
         parseDeviceRegisterLimit,
@@ -631,7 +682,8 @@ export function createRegistrationService(options: RegistrationOptions): Registr
       await savepoint(trx, 'identity_registration');
       let result: RegistrationResult;
       try {
-        result = await create(trx, command);
+        const { config: perCall, ...plain } = command;
+        result = await create(trx, plain, perCall ?? config);
       } catch (error) {
         await undo(trx, 'identity_registration', error);
         logger.error(

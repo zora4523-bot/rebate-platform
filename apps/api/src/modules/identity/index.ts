@@ -16,6 +16,8 @@ export {
   createDefaultInviteCodeFilter,
   countDeviceRegistrations,
   registrationConstants,
+  snapshotRegistrationConfig,
+  REGISTRATION_CONFIG_KEYS,
   DEFAULT_AVATAR,
   PHONE_BLIND_INDEX_CONTEXT,
   PHONE_CIPHER_CONTEXT,
@@ -32,3 +34,11 @@ export type {
   InviteBindResult,
   SensitiveWords,
 } from './application/registration.ts';
+export { createSmsLoginService, LOGIN_LOGS_DEVICE_ID_CONTEXT } from './application/sms-login.ts';
+export type {
+  FirstAppLoginReview,
+  SmsLoginCommand,
+  SmsLoginOptions,
+  SmsLoginResult,
+  SmsLoginService,
+} from './application/sms-login.ts';

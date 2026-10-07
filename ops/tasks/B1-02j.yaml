@@ -29,5 +29,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/sms-login/**'
-status: todo
-pr: null
+status: done
+pr: 265

@@ -22,6 +22,7 @@
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import { randomBytes } from 'node:crypto';
 import type { DB } from '@couli/db';
+import { decodeJwt } from 'jose';
 import type { Transaction } from 'kysely';
 import { newUuidV7, type Clock, type TokenPrincipal } from '../../platform/index.ts';
 import type { TokenService } from './access-tokens.ts';
@@ -31,11 +32,30 @@ export interface IssuedSession {
   readonly access_token: string;
   readonly refresh_token: string;
   readonly session_scope: TokenPrincipal['scp'];
+  /** The `exp` of the issued access token (whole seconds), read back from the token itself. */
+  readonly access_expires_at: Date;
+  /** The expiry stored in refresh_tokens.expire_at for this refresh token. */
+  readonly refresh_expires_at: Date;
 }
 
 /** An opaque session id: 128 random bits, base64url (04 §3.2 keeps sid opaque text). */
 function newSid(): string {
   return randomBytes(16).toString('base64url');
+}
+
+/**
+ * The instant of the access token's own `exp` claim (the token was just signed here, so it is
+ * decoded, not verified), so an answer never drifts from the JWT when the Clock crosses a second
+ * between reads. Built from `like` (a Clock instant), never from the wall clock.
+ */
+function accessExpiry(token: string, like: Date): Date {
+  const { exp } = decodeJwt(token);
+  if (typeof exp !== 'number' || !Number.isSafeInteger(exp)) {
+    throw new Error('identity: the issued access token has no exp');
+  }
+  const result = structuredClone(like);
+  result.setTime(exp * 1000);
+  return result;
 }
 
 /** Caller owns the transaction. Lock device first, insert session and hashed refresh, CAS device.
@@ -100,11 +120,14 @@ export async function createSession(
   if (bound.numUpdatedRows !== 1n) {
     throw new Error('identity: the locked device row changed before last_login_sid was written');
   }
+  const accessToken = await tokens.issueAccess({ ...principal, sid });
   const session: IssuedSession = Object.freeze({
     sid,
-    access_token: await tokens.issueAccess({ ...principal, sid }),
+    access_token: accessToken,
     refresh_token: refresh.token,
     session_scope: principal.scp,
+    access_expires_at: accessExpiry(accessToken, now),
+    refresh_expires_at: refresh.expireAt,
   });
   if (afterCreated !== undefined) await afterCreated(transaction, session);
   return session;

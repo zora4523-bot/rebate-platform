@@ -197,6 +197,134 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "loginBySms": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phone",
+        "code",
+        "legal_versions",
+        "consent_at"
+      ],
+      "properties": {
+        "phone": {
+          "type": "string",
+          "description": "Phone number as typed or pasted; it may carry spaces, hyphens and +86 / 0086 / 86. The\nserver normalises it (BR-ID-05 细则「手机号规范化」); a result that is not a mainland mobile\nnumber is 20001 with `data.fields=[phone]` and `data.reason=phone_invalid` (an empty\nstring included). No length bound in the schema: any spacing of a valid number must reach\nthe normaliser, and adding a bound to a request property is a breaking change (oasdiff).\n"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[0-9]{6}$"
+        },
+        "legal_versions": {
+          "type": "object",
+          "description": "Versions of the privacy policy and user agreement the user agreed to (BR-ID-04).",
+          "additionalProperties": false,
+          "required": [
+            "privacy",
+            "agreement"
+          ],
+          "properties": {
+            "privacy": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            },
+            "agreement": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            }
+          }
+        },
+        "consent_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the box was ticked or the confirm dialog accepted (client clock)."
+        },
+        "invite_code": {
+          "type": "string",
+          "description": "Optional invite code; ignored for an existing account (BR-INV-06).",
+          "maxLength": 32
+        }
+      }
+    }
+  },
   "logout": {
     "headers": {
       "type": "object",
