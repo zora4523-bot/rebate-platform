@@ -7,16 +7,21 @@ import type {
   RunBody,
   RunBodyResult,
   RunContext,
+  RunFacts,
   RunFinal,
   RunManager,
   RunManagerDeps,
   RunStart,
   TerminalFrame,
-} from './index.ts';
+} from './types.ts';
 
 type End = { ending: RunEnding } & (
   { event: 'done'; finishReason: FinishReason } | { event: 'error'; error: ErrorData }
 );
+
+// BR-AI-12/13: leave room within the revocation deadline for reads and the ordered tail.
+const MAX_GUARD_POLL_MS = 5_000;
+const GUARD_READ_TIMEOUT_MS = 2_000;
 
 export function createRunManager(deps: RunManagerDeps): RunManager {
   for (const [name, ms] of Object.entries(deps.config)) {
@@ -52,6 +57,7 @@ async function run(
   let cardsDelivered = 0;
   let cardQueue = Promise.resolve();
   let factsQueue = Promise.resolve();
+  let factsConfirmed = false;
   let resolveEnd!: (end: End) => void;
   const ended = new Promise<End>((resolve) => {
     resolveEnd = resolve;
@@ -125,6 +131,20 @@ async function run(
     return !stopped;
   }
 
+  async function saveFacts(facts: RunFacts): Promise<void> {
+    factsConfirmed = false;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await registry.recordFacts(runId, facts);
+        factsConfirmed = true;
+        return;
+      } catch {
+        // Delivery already happened: keep the actual count and the chosen ending in memory.
+        // A failed save must neither reject the queue nor turn revocation into server_error.
+      }
+    }
+  }
+
   const ctx: RunContext = {
     runId,
     sessionId,
@@ -154,7 +174,7 @@ async function run(
         if (!write('card', numbered.card)) return;
         cardsDelivered += 1;
         const facts = { ending: null, cardsDelivered };
-        factsQueue = factsQueue.then(() => registry.recordFacts(runId, facts));
+        factsQueue = factsQueue.then(() => saveFacts(facts));
         await factsQueue;
       });
       // Rejected invalid cards do not poison subsequent calls. The caller still sees rejection.
@@ -202,9 +222,32 @@ async function run(
     }
   }
 
+  async function checkGuard(): Promise<void> {
+    const timeout = new AbortController();
+    try {
+      // Race the read itself, not a callback that could interrupt on a stale, late answer.
+      const answer = await Promise.race([
+        deps.guard.check(),
+        scheduler
+          .sleep(GUARD_READ_TIMEOUT_MS, AbortSignal.any([waits.signal, timeout.signal]))
+          .then(() => {
+            throw new Error('Run guard read timed out');
+          }),
+      ]);
+      if (answer !== null) interrupt(answer.code === 30501 ? 'disabled' : 'consent_withdrawn');
+    } finally {
+      timeout.abort();
+    }
+  }
+
   sink.onClose(disconnected);
   try {
-    await registry.register({ runId, sessionId, ownerKey: start.ownerKey });
+    try {
+      await registry.register({ runId, sessionId, ownerKey: start.ownerKey });
+    } catch {
+      // Admission has already charged the run; registration failure also needs settlement.
+      choose(errorEnd(50001, 'server_error', true));
+    }
     const metaWritten = write('meta', { ...start.meta, session_id: sessionId, run_id: runId });
     if (!metaWritten) {
       interrupt('disconnected');
@@ -232,12 +275,7 @@ async function run(
           if (await registry.cancelRequested(runId)) interrupt('cancelled');
         }),
       );
-      background(() =>
-        poll(config.guardPollMs, async () => {
-          const answer = await deps.guard.check();
-          if (answer !== null) interrupt(answer.code === 30501 ? 'disabled' : 'consent_withdrawn');
-        }),
-      );
+      background(() => poll(Math.min(config.guardPollMs, MAX_GUARD_POLL_MS), checkGuard));
       // A body ignoring its signal never blocks the tail. Both fulfillment and rejection of
       // a late body are observed, with choose() preventing any second ending.
       background(async () => bodyEnded(await body(ctx)));
@@ -248,7 +286,9 @@ async function run(
     // reservation or body. A late live fact cannot overwrite the final ending.
     await factsQueue;
     const outcome = { ending: end.ending, cardsDelivered };
-    await registry.recordFacts(runId, outcome);
+    // Always save a fresh final snapshot, even after all live saves failed. Exhausted retries
+    // are reported to the caller, but must not prevent the admission gate releasing the lock.
+    await saveFacts(outcome);
     const settled = await deps.admission.settle(ticket, outcome, start.limits);
     const terminal: TerminalFrame =
       end.event === 'done'
@@ -260,7 +300,7 @@ async function run(
     await registry.finish(runId, terminal);
     if (terminal.event === 'done') write('done', terminal.data);
     else write('error', terminal.data);
-    return { terminal, ...outcome };
+    return { terminal, ...outcome, factsConfirmed };
   } finally {
     stopped = true;
     waits.abort();

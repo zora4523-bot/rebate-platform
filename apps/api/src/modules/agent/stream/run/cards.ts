@@ -1,5 +1,5 @@
 import { StreamProtocolError } from '../writer/index.ts';
-import type { NumberedCard, UnnumberedCard } from './index.ts';
+import type { NumberedCard, UnnumberedCard } from './types.ts';
 
 function object(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {

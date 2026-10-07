@@ -5,7 +5,7 @@ import type {
   RunRegistration,
   RunRegistry,
   TerminalFrame,
-} from './index.ts';
+} from './types.ts';
 
 export function createRedisRunRegistry(deps: RedisRunRegistryDeps): RunRegistry {
   if (!Number.isSafeInteger(deps.ttlSeconds) || deps.ttlSeconds < 1) {
