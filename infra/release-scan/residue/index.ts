@@ -11,6 +11,19 @@ export function artifactTextViews(file: string, content: Uint8Array): string[] {
   return textViews(content, file, true);
 }
 
+// Apple XML plist 的文档类型声明是固定常量（Info.plist、embedded.mobileprovision 里的 plist 都带），
+// 其中的公开 DTD 地址会被 QA-09b 的 high-entropy 规则当成高熵串。只认紧跟 <plist 的这一整句原文，
+// 换成等长空格（行号、偏移不变）；声明外的任何内容、包括 plist 里的键值，照常检测。
+const APPLE_PLIST_DOCTYPE =
+  /<!DOCTYPE plist PUBLIC "-\/\/Apple\/\/DTD PLIST 1\.0\/\/EN" "http:\/\/www\.apple\.com\/DTDs\/PropertyList-1\.0\.dtd">(?=[ \t\r\n]*<plist[\s>])/g;
+
+/** 密钥检测用的文本视图：同 artifactTextViews，只把 Apple plist 文档类型声明换成等长空格。 */
+export function secretTextViews(file: string, content: Uint8Array): string[] {
+  return artifactTextViews(file, content).map((view) =>
+    view.replace(APPLE_PLIST_DOCTYPE, (declaration) => ' '.repeat(declaration.length)),
+  );
+}
+
 /** 残留规则编号（03 §3.6 逐项）。 */
 export type ResidueRuleId =
   | 'test-domain'

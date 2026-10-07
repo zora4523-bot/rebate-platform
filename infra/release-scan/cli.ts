@@ -16,11 +16,11 @@ import { compareHits } from './compare/index.ts';
 import { detectSecrets, readArtifact } from './detect/index.ts';
 import type { ScanHit } from './detect/index.ts';
 import {
-  artifactTextViews,
   debugOnlyRoutes,
   detectResidue,
   readApprovals,
   readArguments,
+  secretTextViews,
 } from './residue/index.ts';
 
 /** 报告里的一条命中（不含命中原文）。 */
@@ -87,7 +87,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     const hits: ScanHit[] = [];
     for (const entry of artifact.entries) {
       try {
-        for (const view of artifactTextViews(entry.path, entry.content)) {
+        for (const view of secretTextViews(entry.path, entry.content)) {
           hits.push(...detectSecrets(entry.path, view, args.thresholds));
         }
       } catch {
