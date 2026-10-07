@@ -310,7 +310,9 @@ it('[AC-B1-01zd#13][BR-ID-33] staging 的 loadConfig 结果可直接打开本地
   if (!('value' in config)) return;
   expect(config.value.keyring?.provider).toBe('local');
   if (config.value.keyring === null) return;
-  const outcome = await settle(openConfiguredFieldCrypto(config.value.appEnv, config.value.keyring));
+  const outcome = await settle(
+    openConfiguredFieldCrypto(config.value.appEnv, config.value.keyring),
+  );
   expect('value' in outcome ? openedProblems(outcome.value) : ['rejected']).toEqual([]);
   if (!('value' in outcome)) return;
   const ciphertext = outcome.value.encrypt(SAMPLES.phone, 'users.phone');

@@ -6,7 +6,13 @@
 // the comparisons are exact. Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import { loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
-import { APP_ENV_NAMES, PROBLEMS, configProblems, settleSync, type AppEnvName } from './wiring-kit.ts';
+import {
+  APP_ENV_NAMES,
+  PROBLEMS,
+  configProblems,
+  settleSync,
+  type AppEnvName,
+} from './wiring-kit.ts';
 
 const KEYRING = '/srv/couli/keys/keyring.json';
 const MASTER = '/srv/couli/keys/master.hex';
