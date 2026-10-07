@@ -21,8 +21,9 @@
 //        rolled back; phone_taken (a concurrent first login won) → log in the winner's account,
 //        is_new_user=false, ignored_existing_user when a code was sent;
 //      - full, account → a normal login, ignored_existing_user when a code was sent;
-//   5. on success, in the same transaction: the two login-page consent records (privacy,
-//      agreement; version from the request, client_at = consent_at, server_at = Clock), then
+//   5. on success, in the same transaction: the user's consent lock (lockUserConsents), the two
+//      login-page consent records (privacy, agreement; version from the request, client_at =
+//      consent_at, server_at = created_at = one Clock instant), then
 //      login_merge of this installation's device-level current states, one login_logs row
 //      (method sms, the HMAC of the device id), the first-App-login review port (BR-INV-09: App
 //      platforms, landing-bound user, no login_logs before this one), then createSession.
@@ -57,16 +58,13 @@ import { PHONE_BLIND_INDEX_CONTEXT } from '../domain/registration.ts';
 import {
   deviceConsentRecords,
   insertConsentRecords,
+  lockUserConsents,
   userConsentRecords,
   type NewConsentRecord,
 } from '../infra/consent-records.ts';
 import { deviceHashOf, findAccountByPhone, type LoginAccount } from '../infra/login-accounts.ts';
 import { hasLoginLog, insertLoginLog } from '../infra/login-logs.ts';
-import {
-  ACCESS_TOKEN_TTL_SECONDS,
-  REFRESH_TOKEN_TTL_MS,
-  type TokenService,
-} from './access-tokens.ts';
+import type { TokenService } from './access-tokens.ts';
 import type { InviteBindResult, RegistrationService } from './registration.ts';
 import { sessionScope, type MinimumVersionReader } from './session-scope.ts';
 import { createSession } from './sessions.ts';
@@ -189,6 +187,8 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
   ): Promise<Schema<'TokenPair'>> {
     const { app_id: appId, device_id: deviceId, body } = command;
     const userId = account.id;
+    // BR-ID-12: one user's logins on several devices merge one after another (lockUserConsents).
+    await lockUserConsents(trx, appId, userId);
     const now = clock.now();
     // consent_at is a contract date-time (client clock), stored as reported.
     const clientAt = instantAt(now, Date.parse(body.consent_at));
@@ -206,6 +206,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
         accepted: true,
         client_at: clientAt,
         server_at: now,
+        created_at: now,
       })),
     );
     // BR-ID-12 login_merge: this installation's device-level current states.
@@ -226,6 +227,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
         accepted: record.accepted,
         client_at: record.client_at,
         server_at: now,
+        created_at: now,
       })),
     );
     const deviceIdHash = crypto.blindIndex(deviceId, LOGIN_LOGS_DEVICE_ID_CONTEXT);
@@ -254,16 +256,13 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       { uid: userId, app_id: appId, device_id: deviceId, scp: scope },
       { clock, tokens },
     );
-    const issuedSeconds = Math.floor(now.getTime() / 1000);
+    // The expiries the session primitive actually issued (JWT exp, refresh_tokens.expire_at).
     return {
       session_scope: session.session_scope,
       access_token: session.access_token,
-      access_expires_at: instantAt(
-        now,
-        (issuedSeconds + ACCESS_TOKEN_TTL_SECONDS) * 1000,
-      ).toISOString(),
+      access_expires_at: session.access_expires_at.toISOString(),
       refresh_token: session.refresh_token,
-      refresh_expires_at: instantAt(now, now.getTime() + REFRESH_TOKEN_TTL_MS).toISOString(),
+      refresh_expires_at: session.refresh_expires_at.toISOString(),
     };
   }
 
