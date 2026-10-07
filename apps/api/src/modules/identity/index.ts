@@ -32,3 +32,11 @@ export type {
   InviteBindResult,
   SensitiveWords,
 } from './application/registration.ts';
+export { createSmsLoginService } from './application/sms-login.ts';
+export type {
+  FirstAppLoginReview,
+  SmsLoginCommand,
+  SmsLoginOptions,
+  SmsLoginResult,
+  SmsLoginService,
+} from './application/sms-login.ts';
