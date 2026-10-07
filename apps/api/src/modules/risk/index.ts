@@ -21,3 +21,17 @@ export type {
   SignatureDependencies,
   SignatureRequest,
 } from './application/signature-check.ts';
+export { createBlocklistService, blocklistHmacContexts } from './application/blocklist.ts';
+export type {
+  BlocklistDimension,
+  BlocklistInput,
+  BlocklistHit,
+  BlockedRequest,
+  RecordBlockedHit,
+  BlockedHitTarget,
+  RegistrationBlock,
+  BlockedRegistrationInput,
+  RegistrationBlocklistInput,
+  BlocklistOptions,
+  BlocklistService,
+} from './application/blocklist.ts';

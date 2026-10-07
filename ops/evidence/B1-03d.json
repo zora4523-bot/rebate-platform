@@ -1,0 +1,116 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (risk blocklist hit service + identity wiring, BR-ID-31 / 36 / 05 / 33). HMAC lookup per dimension on active, unexpired (injected Clock) entries; hits recorded in the service's own transaction after the blocked request's transaction has rolled back (no second pool connection while a transaction is held), rule rows auto-registered with Clock timestamps, shared UUIDv7 ref_id, phone HMAC + masked number, request_type by purpose; wired to the SMS send hook (blocked prefix recorded, account-deletion step-up exempt), the SMS login registrationBlocklist port (phone + device dimensions, old port shape kept for the frozen B1-02j tests) and the registration allowance port (deny until the appeal store exists). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents: round 1 fail (S1 second pool connection while the login transaction is held; S2 account-deletion step-up SMS blocked) — both fixed in round 2 (decide inside the transaction, record after rollback; deletion step-up exempt); round 2 pass with no findings, one out-of-scope S2 (B1-02e prefix check still blocks deletion SMS, planning sync item)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 second pool connection while the login transaction is held; S1 risk_rules registration left created_at / updated_at to the database default) fixed in round 2; round 2 pass, checklist complete, one S2 on the test-only checkRegistration entry recorded as follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 rounds) reviewed by fresh Claude subagents: round 1 fail (S1 device dimension not exercised at registration), round 2 fail (S1 port shape conflicting with the frozen B1-02j#7 test, S2 allowance read via trx not pinned), orchestrator-approved exception round pass with no findings; the three Codex rounds were squashed by the orchestrator into one test commit"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-03d",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "11d03631ce7642f5b54d26a58bd0b45fd85c9d2c",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "11d03631ce7642f5b54d26a58bd0b45fd85c9d2c",
+      "tree": "a40db7721539fb2d9e46e91f076b84cb58a24fad",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T21:20:44Z",
+      "finished_at": "2026-10-07T21:20:55Z",
+      "red_tests": [
+        "test/spec/risk/blocklist/http.int.test.ts > [AC-B1-03d#17][BR-ID-05/31/36][04 §7] 真签名发码接入黑名单，44001 过 4XX schema、没有额度与发送副作用",
+        "test/spec/risk/blocklist/http.int.test.ts > [AC-B1-03d#18][BR-ID-05/36] 号段判定照旧，真实 HTTP 44001 必须补 phone_prefix 命中",
+        "test/spec/risk/blocklist/http.int.test.ts > [AC-B1-03d#19][BR-ID-31/36][04 §7] 发码后登记黑名单，真签名登录 44001 无用户/同意/日志/会话写入，命中留存",
+        "test/spec/risk/blocklist/http.int.test.ts > [AC-B1-03d#20][BR-ID-05/36] 设备满额登录默认拒绝，savepoint 与登录回滚后保留 device 命中",
+        "test/spec/risk/blocklist/http.int.test.ts > [AC-B1-03d#22][BR-ID-31/36][04 §7] 设备黑名单上的新设备用干净号码发码成功，真签名注册被拦且无业务写入",
+        "test/spec/risk/blocklist/http.int.test.ts > [AC-B1-03d#23][BR-ID-36] 无登录态的 bind 发码命中仍留记录，请求类型和 user_id 为空",
+        "test/spec/risk/blocklist/identity.int.test.ts > [AC-B1-03d#14][BR-ID-05/36] 发码手机号端口返回 phone_blocklist，未发短信、不占额度且早于后续钩子",
+        "test/spec/risk/blocklist/identity.int.test.ts > [AC-B1-03d#15][BR-ID-31/36] 验证码登录的建号前端口拦截，业务事务回滚但 risk_hits 留存",
+        "test/spec/risk/blocklist/identity.int.test.ts > [AC-B1-03d#16][BR-ID-05/36] 满设备调用一次性放行读取端口；无记录默认拒绝、不创建新号",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#1][BR-ID-31/36] phone 按预计算 HMAC 命中且补登记规则",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#1][BR-ID-31/36] id_no 按预计算 HMAC 命中且补登记规则",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#1][BR-ID-31/36] alipay 按预计算 HMAC 命中且补登记规则",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#1][BR-ID-31/36] bank_card 按预计算 HMAC 命中且补登记规则",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#1][BR-ID-31/36] wechat_openid 按预计算 HMAC 命中且补登记规则",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#1][BR-ID-31/36] device 按预计算 HMAC 命中且补登记规则",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#1][BR-ID-31/36] relation_id 按预计算 HMAC 命中且补登记规则",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#2][BR-ID-31/33] 明文入口经 blindIndex，手机号沿用 users.phone，其他维度上下文稳定且分离",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#3][BR-ID-31] 设备哈希直接匹配，不再次 HMAC",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#4][BR-ID-31] inactive / 到期偏移 1 毫秒严格使用 Clock",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#4][BR-ID-31] active / 到期偏移 -1 毫秒严格使用 Clock",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#4][BR-ID-31] active / 到期偏移 0 毫秒严格使用 Clock",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#4][BR-ID-31] active / 到期偏移 1 毫秒严格使用 Clock",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#5][BR-ID-31] 同值有失效条目也检查有效条目，同规则只记一次",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#6][BR-ID-31] app_id、维度和值必须全部匹配，未命中不留 risk_hits",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#7][BR-ID-31] users 为 absent 仍然拦截注册且 user_id 为空",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#7][BR-ID-31] users 为 deleted 仍然拦截注册且 user_id 为空",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#8][BR-ID-31][04 §7] malicious_rights 仅返回提示编码，不泄露登记原因与明文",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#8][BR-ID-31][04 §7] fraud_invite 仅返回提示编码，不泄露登记原因与明文",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#8][BR-ID-31][04 §7] other 仅返回提示编码，不泄露登记原因与明文",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#9][BR-ID-36] 同请求多维度共用 UUIDv7，不同请求独立编号",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#10][BR-ID-36] 外层事务回滚，独立短事务写入的命中和规则仍存在",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#11][BR-ID-36] 并发首次命中补登记规则不冲突，每次请求留下独立记录",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#12][BR-ID-36] 公共服务保存 withdraw 请求类型、用户、手机号及整数分金额",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#12][BR-ID-36] 公共服务保存 phone_change 请求类型、用户、手机号及整数分金额",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#12][BR-ID-36] 公共服务保存 payout_account 请求类型、用户、手机号及整数分金额",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#13][BR-ID-05/36] recordHit 记录已有的 SMS_BLOCKED_PREFIX 判定，不重新查黑名单",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#13][BR-ID-05/36] recordHit 记录已有的 DEVICE_REGISTER_LIMIT 判定，不重新查黑名单",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#21][BR-ID-31/36] 建号前端口 仅手机号 命中：检查两维度、同请求共用编号、回滚后留存",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#21][BR-ID-31/36] 建号前端口 仅设备 命中：检查两维度、同请求共用编号、回滚后留存",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#21][BR-ID-31/36] 建号前端口 手机号与设备同时 命中：检查两维度、同请求共用编号、回滚后留存",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#21][BR-ID-31/36] 建号前端口 均未 命中：检查两维度、同请求共用编号、回滚后留存",
+        "test/spec/risk/blocklist/service.int.test.ts > [AC-B1-03d#21][BR-ID-31/36] 建号前端口 无设备时手机号 命中：检查两维度、同请求共用编号、回滚后留存"
+      ],
+      "expected": [
+        "test/spec/risk/blocklist/http.int.test.ts",
+        "test/spec/risk/blocklist/identity.int.test.ts",
+        "test/spec/risk/blocklist/service.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "75d71f8cdb3f2ff5353033a6c4e6d841acffdc57ace19ba352b3b6cd2e6b322d"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "57a67db8deaf96c2b419c13b23cdcff6be3c77b9",
+    "specs": "0100f2ee7f7133fd83e159c2e144148e7a4b59d4"
+  }
+}

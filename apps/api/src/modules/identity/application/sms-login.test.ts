@@ -6,7 +6,9 @@
 //     refresh_tokens.expire_at), also when the Clock crosses a second between reads;
 //   - the user-level consent lock taken before any user-level consent record is written or read;
 //   - (round 3) the registration configuration read before the transaction opens, register() given
-//     only that snapshot: no configuration read once the transaction has begun.
+//     only that snapshot: no configuration read once the transaction has begun;
+//   - (B1-03d round 2) a blocklist refusal's risk hit written only after the login transaction
+//     rolled back and released its connection: no second pooled connection while it is open.
 // The SQL itself runs against PostgreSQL in the rule tests (test/spec/identity/sms-login).
 import type { DB } from '@couli/db';
 import { decodeJwt } from 'jose';
@@ -22,10 +24,12 @@ import {
 } from 'kysely';
 import { expect, it } from 'vitest';
 import { createRootLogger, type Clock, type FieldCrypto } from '../../platform/index.ts';
+import { createBlocklistService } from '../../risk/index.ts';
 import { createTokenKeyProvider, createTokenService } from './access-tokens.ts';
 import type { RegistrationService } from './registration.ts';
 import type { SmsConfigReader } from './sms-codes.ts';
-import { createSmsLoginService, type SmsLoginCommand } from './sms-login.ts';
+import { identityRiskPorts } from './risk-ports.ts';
+import { createSmsLoginService, type SmsLoginCommand, type SmsLoginOptions } from './sms-login.ts';
 
 const USER_ID = '01920000-0000-7000-8000-000000000001';
 const DEVICE_ID = '01920000-0000-7000-8000-000000000002';
@@ -63,8 +67,11 @@ function insertedRows(statement: Statement): Record<string, unknown>[] {
   return rows;
 }
 
-function answer(statement: Statement, newUser: boolean): QueryResult<unknown> {
+function answer(statement: Statement, newUser: boolean, blocked: boolean): QueryResult<unknown> {
   const text = statement.sql;
+  if (text.startsWith('select') && text.includes('"blocklist"')) {
+    return { rows: blocked ? [{ violation_type: 'fraud_invite' }] : [] };
+  }
   if (text.startsWith('select') && text.includes('from "users"')) {
     return { rows: newUser ? [] : [{ id: USER_ID, parent_bind_source: null }] };
   }
@@ -101,6 +108,12 @@ async function setup(
     registration?: RegistrationService;
     /** begin / commit / rollback of the driver, in order with what the test pushes. */
     events?: string[];
+    /** Also push acquire / release of pooled connections and each statement's verb to events. */
+    pool?: boolean;
+    /** The blocklist answers a hit (fraud_invite) on any lookup. */
+    blocked?: boolean;
+    /** Risk ports onto the same database (built with it), merged into the login options. */
+    risk?: (db: Kysely<DB>, clock: Clock, crypto: FieldCrypto) => Partial<SmsLoginOptions>;
   } = {},
 ) {
   const statements: Statement[] = [];
@@ -109,7 +122,10 @@ async function setup(
     executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
       const statement = { sql: compiled.sql, parameters: compiled.parameters };
       statements.push(statement);
-      return Promise.resolve(answer(statement, overrides.newUser === true) as QueryResult<R>);
+      if (overrides.pool === true) events.push(`sql:${compiled.sql.split(' ')[0] ?? ''}`);
+      return Promise.resolve(
+        answer(statement, overrides.newUser === true, overrides.blocked === true) as QueryResult<R>,
+      );
     },
     async *streamQuery() {
       throw new Error('not used');
@@ -117,11 +133,16 @@ async function setup(
   };
   const driver: Driver = {
     init: async () => undefined,
-    acquireConnection: async () => connection,
+    acquireConnection: async () => {
+      if (overrides.pool === true) events.push('acquire');
+      return connection;
+    },
     beginTransaction: async () => void events.push('begin'),
     commitTransaction: async () => void events.push('commit'),
     rollbackTransaction: async () => void events.push('rollback'),
-    releaseConnection: async () => undefined,
+    releaseConnection: async () => {
+      if (overrides.pool === true) events.push('release');
+    },
     destroy: async () => undefined,
   };
   const db = new Kysely<DB>({
@@ -147,6 +168,7 @@ async function setup(
     registration: overrides.registration ?? ({} as RegistrationService),
     ...(overrides.config === undefined ? {} : { config: overrides.config }),
     tokens,
+    ...(overrides.risk === undefined ? {} : overrides.risk(db, clock, crypto)),
   });
   const command: SmsLoginCommand = {
     body: {
@@ -288,4 +310,80 @@ it('[S1] 已有账号登录也只在事务前读配置；未注入读取器时 r
   const plain = await setup({ newUser: true, registration });
   expect((await plain.login()).code).toBe(0);
   expect(received).toBeUndefined();
+});
+
+/** Events from the first `begin` up to its rollback: what ran while the login transaction was open. */
+function whileOpen(events: readonly string[]): readonly string[] {
+  const begin = events.indexOf('begin');
+  const end = events.indexOf('rollback');
+  expect(begin).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(begin);
+  return events.slice(begin, end);
+}
+
+it('[AC-B1-03d#15][BR-ID-31/36] 建号前黑名单命中：登录事务内只判定，回滚并释放连接后才写命中，再回 44001', async () => {
+  const events: string[] = [];
+  const { login } = await setup({
+    newUser: true,
+    events,
+    pool: true,
+    blocked: true,
+    registration: {
+      register: async () => {
+        throw new Error('no account is created for a blocked phone');
+      },
+    },
+    risk: (db, clock, crypto) => {
+      const ports = identityRiskPorts(
+        createBlocklistService({
+          db,
+          clock,
+          crypto,
+          logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
+        }),
+        crypto,
+      );
+      return ports.login;
+    },
+  });
+  expect(await login()).toEqual({ code: 44001, data: { risk_msg_code: 'blocklist.fraud_invite' } });
+  const open = whileOpen(events);
+  // One pooled connection for the login transaction, no other checkout and no write while open.
+  expect(open.filter((event) => event === 'acquire')).toEqual([]);
+  expect(open.filter((event) => event === 'begin')).toHaveLength(1);
+  expect(open.filter((event) => event.startsWith('sql:insert'))).toEqual([]);
+  // After the rollback released it: the hit's own short transaction, then the answer.
+  const after = events.slice(events.indexOf('rollback'));
+  expect(after.slice(0, 4)).toEqual(['rollback', 'release', 'acquire', 'begin']);
+  // Two rule registrations (phone and device hit) and one multi-row risk_hits insert.
+  expect(after.filter((event) => event === 'sql:insert')).toHaveLength(3);
+  expect(after.at(-2)).toBe('commit');
+  expect(after.at(-1)).toBe('release');
+});
+
+it('[AC-B1-03d#15][BR-ID-36] 命中写在回滚之后；写失败则登录失败（由异常过滤器回 50001），不回 44001', async () => {
+  const events: string[] = [];
+  const blockedPort = (record: () => Promise<void>) => () => ({
+    registrationBlocklist: async () => ({
+      code: 44001 as const,
+      data: { risk_msg_code: 'blocklist.other' },
+      record,
+    }),
+  });
+  const ok = await setup({
+    newUser: true,
+    events,
+    risk: blockedPort(async () => void events.push('record')),
+  });
+  expect(await ok.login()).toEqual({ code: 44001, data: { risk_msg_code: 'blocklist.other' } });
+  expect(events).toEqual(['begin', 'rollback', 'record']);
+
+  const failure = new Error('risk_hits write failed');
+  const failing = await setup({
+    newUser: true,
+    risk: blockedPort(async () => {
+      throw failure;
+    }),
+  });
+  await expect(failing.login()).rejects.toBe(failure);
 });
