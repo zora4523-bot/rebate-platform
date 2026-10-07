@@ -45,6 +45,12 @@ XML 文件的二进制 XML 类型标识用于识别截断容器，其他二进�
 `resources.arsc` 解析全局值字符串池、各包的键名池以及 type 条目的字符串引用，
 恢复字段后检测，避免短盐因键值分离而漏报。支持 UTF-8 / UTF-16 池、普通 / 稀疏 /
 16 位偏移索引、紧凑条目及复合条目的字符串值；未引用的池字符串也检测。
+文件类资源（drawable、layout、mipmap、anim、xml、raw、font、menu、color 文件等）
+的 `res/…` 路径取值只按孤立字符串检测，不配资源键名（如 `avd_hide_password`
+不当作口令字段）。`TYPE_REFERENCE` / `TYPE_DYNAMIC_REFERENCE` 按资源 ID 解析引用链
+（各配置都算，最多 8 跳，防环），以引用方的字段名检测最终取值；签名材料字段的引用
+指向本表之外、成环或超过深度时按读取失败阻断。样式（style）与属性定义（attr）的条目项
+引用常指向框架资源，解析结果只按孤立字符串检测、不配键名，也不因解析不了而阻断。
 块边界、池长度、索引、条目长度和遍历预算不合法时，或遇到不支持的块及缺少本包
 字符串池的继承包时，按读取失败阻断。格式依据
 [Android ResourceTypes.h](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/libs/androidfw/include/androidfw/ResourceTypes.h)。
@@ -61,6 +67,10 @@ XML 文件的二进制 XML 类型标识用于识别截断容器，其他二进�
 或表达式不当作材料值，读取裸值不会跨过逗号、分号等边界吞掉后续字段。
 已知配置文件及整份纯 `key=value` 文本保留值里的标点，包括 YAML 盐值中的逗号，
 与冻结属性测试的配置口径一致；格式串中的 `%s` 等占位符不算取值。
+二进制（原生库、dex 等，前端代码与 JSON 除外）中提取出的独立可打印串，所在文本块
+至少一端是 NUL 或其他不可打印字节时，按配置逐行判定：整行只有一个 `key=value` 时
+取值到行尾；整行是 `k=v,k=v` / `k=v&k=v` 键值列表时取值在分隔符处截止；
+其余代码表达式仍按上面的 JavaScript 口径处理，不吞后续字段。
 无 PEM 头的 base64 私钥通过 DER 私钥版本字段及后继结构识别（含 SEC1 EC），
 SPKI 公钥不按私钥升级。规则只描述形状，不保存任何真实密钥值。
 公钥块及 URL 的高熵正文合并成整块命中，交给 QA-09a 比对。

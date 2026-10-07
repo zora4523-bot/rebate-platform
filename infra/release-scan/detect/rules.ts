@@ -48,7 +48,7 @@ const PRIORITY: readonly DetectRuleId[] = [
   'high-entropy',
 ];
 
-function fieldRule(name: string): DetectRuleId | undefined {
+export function fieldRule(name: string): DetectRuleId | undefined {
   const words = name
     .replace(/^(?:(?:this|window|globalThis|global|self)\.)+/, '')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
@@ -80,11 +80,70 @@ function fieldRule(name: string): DetectRuleId | undefined {
   return;
 }
 
+/** NUL、其他控制码（制表与换行除外）和 0x7F 以上的单字节视为二进制串的边界。 */
+function binaryByte(char: string | undefined): boolean {
+  return char !== undefined && /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]/.test(char);
+}
+
+const STANDALONE_SCAN = 16_384;
+const PAIR_LIST =
+  /^[ \t]*[A-Za-z_$][\w$.-]*=[^\s,;&"'`<]+(?:[ \t]*[,;&][ \t]*[A-Za-z_$][\w$.-]*=[^\s,;&"'`<]+)+[ \t]*$/;
+
+/**
+ * 二进制里提取出的独立可打印串（所在文本块至少一端是 NUL / 不可打印字节），
+ * 如原生库中 NUL 分隔的 `shared_salt=prod-v1`，按配置逐行处理：
+ * - 整串是 `k=v,k=v` / `k=v&k=v` 这类键值列表时，每个取值在 , ; & 处截止；
+ * - 否则整串必须只有这一个 `key=value`，取值一直到串尾（可含标点）。
+ * 其余情况（如 `window.apiKey=null,window.shared_salt="…";` 这类代码表达式）不算，交回代码规则处理，
+ * 不推进游标，后面的字段照常检查。
+ */
+function standaloneValue(
+  text: string,
+  keyAt: number,
+  valueAt: number,
+  separator: string,
+): string | undefined {
+  if (separator !== '=') return;
+  const printable = (char: string | undefined): boolean =>
+    char !== undefined && (char === '\t' || (char >= ' ' && char <= '~'));
+  let start = keyAt;
+  while (start > 0 && printable(text[start - 1])) {
+    if (keyAt - --start > STANDALONE_SCAN) return;
+  }
+  let end = valueAt;
+  while (end < text.length && printable(text[end])) {
+    if (++end - valueAt > STANDALONE_SCAN) return;
+  }
+  // 多行文本块嵌在二进制里时，块的两端是二进制字节，块内每行各自判定。
+  const inBlock = (char: string | undefined): boolean =>
+    printable(char) || char === '\n' || char === '\r';
+  if (!binaryByte(text[start - 1]) && !binaryByte(text[end])) {
+    let blockStart = start;
+    while (blockStart > 0 && inBlock(text[blockStart - 1])) {
+      if (start - --blockStart > STANDALONE_SCAN) return;
+    }
+    let blockEnd = end;
+    while (blockEnd < text.length && inBlock(text[blockEnd])) {
+      if (++blockEnd - end > STANDALONE_SCAN) return;
+    }
+    if (!binaryByte(text[blockStart - 1]) && !binaryByte(text[blockEnd])) return;
+  }
+  const run = text.slice(start, end);
+  if (PAIR_LIST.test(run)) return /^[^\s,;&"'`<]+/.exec(text.slice(valueAt, end))?.[0];
+  if (text.slice(start, keyAt).trim() !== '') return;
+  const value = /^[^\s<"'`]+/.exec(text.slice(valueAt, end))?.[0];
+  if (!value || text.slice(valueAt + value.length, end).trim() !== '') return;
+  return value;
+}
+
 /** 每种布局都保留原始字符偏移；后续去重和行号不依赖重新序列化。 */
 function fields(file: string, text: string): Array<{ name: string; value: string; start: number }> {
   const found: Array<{ name: string; value: string; start: number }> = [];
   const configFile =
     /(?:\.(?:properties|ini|cfg|conf|env|yaml|yml)|(?:^|\/)\.env(?:\.[^/]*)?)$/i.test(file);
+  // 前端代码与 JSON 的 latin1 视图里，UTF-8 多字节也是 0x80 以上的字节，不能当作二进制串边界。
+  const codeFile =
+    /\.(?:[cm]?js|jsx|tsx?|html?|css|json|map|vue|svelte|jsbundle|bundle|wxml|wxss)$/i.test(file);
   // 未知格式只认整份纯配置文本；对象路径和代码语句不能靠行首的 '=' 冒充配置。
   const plainConfig = text
     .split(/\r?\n/)
@@ -114,15 +173,18 @@ function fields(file: string, text: string): Array<{ name: string; value: string
     let before = m.index - 1;
     while (before >= 0 && (text[before] === ' ' || text[before] === '\t')) before--;
     const lineStart = before < 0 || text[before] === '\n' || text[before] === '\r';
-    const config = lineStart && (configFile || (plainConfig && m[2] === '='));
-    const bare = (config ? /^[^\s<\x00-\x1f"'`]+/ : /^[^\s<\x00-\x1f"'`,{}();\u005b\u005d]+/).exec(
-      text.slice(valueAt),
-    );
+    const standalone = codeFile ? undefined : standaloneValue(text, m.index, valueAt, m[2]!);
+    const config = (lineStart && (configFile || (plainConfig && m[2] === '='))) || !!standalone;
+    const bare =
+      standalone ??
+      (config ? /^[^\s<\x00-\x1f"'`]+/ : /^[^\s<\x00-\x1f"'`,{}();\u005b\u005d]+/).exec(
+        text.slice(valueAt),
+      )?.[0];
     if (!bare) continue;
     // JS 的裸标识符、null、数字和表达式均不算材料字面值；也不推进游标吞下后续赋值。
-    if (!config || /^(?:%[sdif]|%\d+\$[sdif])$/.test(bare[0])) continue;
-    add(m[1]!, bare[0], valueAt);
-    assignment.lastIndex += bare[0].length;
+    if (!config || /^(?:%[sdif]|%\d+\$[sdif])$/.test(bare)) continue;
+    add(m[1]!, bare, valueAt);
+    assignment.lastIndex += bare.length;
   }
   const resource = /<string\b[^>]*\bname\s*=\s*(["'])([^"']+)\1[^>]*>([^<]*)/gi;
   for (const m of text.matchAll(resource)) {
