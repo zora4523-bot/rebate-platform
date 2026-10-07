@@ -25,7 +25,15 @@
 // - 高熵候选串是最长连续的 [A-Za-z0-9+/=_-]（'-'、'_' 不切段）。
 // - 高熵串：长度 ≥ minLength、同时含字母与数字、香农熵（bit / 字符）≥ minEntropy；两个阈值可配置。
 
+import { lstat } from 'node:fs/promises';
+import { compareHits } from '../compare/index.ts';
 import type { ApprovalRecord, ClientPlatform, CompareReport, ScanHit } from '../compare/index.ts';
+import { textViews } from './encoding.ts';
+import { artifactPlatform, readArtifact } from './read.ts';
+import { detectText, resolveOptions } from './rules.ts';
+
+export { readArtifact } from './read.ts';
+export { defaultDetectOptions, shannonEntropy } from './rules.ts';
 
 export type { ApprovalRecord, ClientPlatform, CompareReport, ScanHit } from '../compare/index.ts';
 
@@ -85,37 +93,49 @@ export interface ScanResult {
   passed: boolean;
 }
 
-/** 高熵规则的默认阈值。 */
-export function defaultDetectOptions(): DetectOptions {
-  throw new Error('NotImplemented: defaultDetectOptions');
-}
-
-/** 香农熵（bit / 字符）；空串为 0。 */
-export function shannonEntropy(value: string): number {
-  void value;
-  throw new Error('NotImplemented: shannonEntropy');
-}
-
 /** 对一个文件的内容跑全部检测规则；file 原样写进命中的 file。 */
 export function detectSecrets(
   file: string,
   content: string | Uint8Array,
   options?: Partial<DetectOptions>,
 ): ScanHit[] {
-  void file;
-  void content;
-  void options;
-  throw new Error('NotImplemented: detectSecrets');
-}
-
-/** 读取制品文件（按扩展名解包）或遍历构建产物目录。 */
-export async function readArtifact(path: string): Promise<ReadResult> {
-  void path;
-  throw new Error('NotImplemented: readArtifact');
+  const thresholds = resolveOptions(options);
+  return textViews(content).flatMap((text) => detectText(file, text, thresholds));
 }
 
 /** 读取 + 检测 + 与公开标识清单比对（QA-09a compareHits）。 */
 export async function scanArtifact(input: ScanInput): Promise<ScanResult> {
-  void input;
-  throw new Error('NotImplemented: scanArtifact');
+  const { entries, errors } = await readArtifact(input.path);
+  const hits: ScanHit[] = [];
+  try {
+    const stat = await lstat(input.path);
+    const matches = stat.isDirectory()
+      ? input.platform === 'h5' || input.platform === 'admin'
+      : artifactPlatform(input.path) === input.platform;
+    if (!matches) errors.push('Artifact does not match requested platform');
+  } catch {
+    // readArtifact 已记录读取失败，仍比对已读到的部分。
+  }
+  let options: DetectOptions | undefined;
+  try {
+    options = resolveOptions(input.options);
+  } catch {
+    errors.push('Invalid detection thresholds');
+  }
+  if (options)
+    for (const entry of entries) {
+      try {
+        hits.push(...detectSecrets(entry.path, entry.content, options));
+      } catch {
+        errors.push(`Artifact content unreadable: ${entry.path}`);
+      }
+    }
+  const report = compareHits({
+    manifestYaml: input.manifestYaml,
+    approvals: input.approvals,
+    platform: input.platform,
+    hits,
+  });
+  const exit_code = errors.length > 0 ? 2 : report.exit_code;
+  return { platform: input.platform, hits, report, errors, exit_code, passed: exit_code === 0 };
 }
