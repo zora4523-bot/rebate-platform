@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createSentenceBuffer } from './buffer.ts';
 import { filterSegment } from './filter.ts';
+import { createOutputGuard } from './output-guard.ts';
 
 describe('[BR-AI-06] amount hits cover the whole number (code review round 2)', () => {
   it.each([
@@ -94,5 +95,40 @@ describe('[BR-AI-06] an amount inside a link or passcode is deleted with it (cod
     const segments = [...buffer.push(`${prose} ${code} 后文`), ...buffer.end()];
     expect(segments.some((segment) => segment.includes(code))).toBe(true);
     expect(segments.map((segment) => filterSegment(segment).text).join('')).not.toContain('见卡片');
+  });
+});
+
+async function guardText(deltas: readonly string[]): Promise<string> {
+  const guard = createOutputGuard({ review: { review: () => Promise.resolve('pass') } });
+  const emits = [];
+  for (const delta of deltas) emits.push(...(await guard.push(delta)));
+  emits.push(...(await guard.end()));
+  return emits.map((emit) => (emit.kind === 'text' ? emit.text : `[${emit.key}]`)).join('');
+}
+
+describe('[BR-AI-06] 复制…打开X is not split by the forced flush (code review r2 S1, case 5)', () => {
+  const pad = '好'.repeat(70);
+  it.each([
+    [`复制${pad}AbCd1234Ef打开淘宝。`, ''],
+    [`复制，${pad}AbCd1234Ef打开拼多多看看`, '看看'],
+    [`前言。复制${pad}AbCd1234Ef打开京东。`, '前言。'],
+  ])('deletes %s whole, pushed whole or one character at a time', async (input, output) => {
+    expect(await guardText([input])).toBe(output);
+    expect(await guardText([...input])).toBe(output);
+  });
+
+  it.each([['复制链接功能在右上角。'], [`复制${pad}在右上角`], [`复制${pad}在右上角。第二句。`]])(
+    'delivers %s unchanged when no 打开X follows 复制',
+    async (input) => {
+      expect(await guardText([input])).toBe(input);
+      expect(await guardText([...input])).toBe(input);
+    },
+  );
+
+  it('holds at most 2000 code points before the forced flush applies again', () => {
+    const buffer = createSentenceBuffer();
+    const out = buffer.push(`复制${'好'.repeat(2100)}`);
+    expect(out.length).toBeGreaterThan(0);
+    expect(Array.from(out[0] ?? '').length).toBe(2000);
   });
 });

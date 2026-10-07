@@ -11,6 +11,12 @@ export interface SentenceBuffer {
 
 const SENTENCE_ENDS = new Set(['。', '！', '？', '；', '!', '?', '\n', '\r']);
 const FORCE_AT = 60;
+// BR-AI-06「复制…打开(淘宝|京东|拼多多)」: once 复制 is in the open sentence and its 打开X has not
+// arrived, the forced flush at FORCE_AT waits, so a passcode between them is not delivered before
+// the whole match can be deleted. The wait is bounded (memory): from COPY_HOLD_LIMIT code points
+// on, the usual forced-flush rule applies again.
+const COPY_HOLD_LIMIT = 2000;
+const COPY_OPEN_ENDS = ['打开淘宝', '打开京东', '打开拼多多'];
 const DIGIT = /^\p{Nd}$/u;
 const SPACE = /^\s$/u;
 // A forced cut keeps a tail that may still grow into a hit (O-G4 and cross-segment links,
@@ -136,6 +142,8 @@ export function createSentenceBuffer(): SentenceBuffer {
   // exactly 0 (nothing can be cut), so a long unbroken run is not rescanned per code point.
   let allToken = true;
   let allAmount = true;
+  // 复制 is in the buffer and no 打开X has followed it yet.
+  let copyOpen = false;
 
   const flush = (out: string[]): void => {
     if (buffer !== '') out.push(buffer);
@@ -143,6 +151,7 @@ export function createSentenceBuffer(): SentenceBuffer {
     size = 0;
     allToken = true;
     allAmount = true;
+    copyOpen = false;
   };
 
   const rescan = (): void => {
@@ -171,7 +180,10 @@ export function createSentenceBuffer(): SentenceBuffer {
       pendingDot = true;
     }
     previous = ch;
-    if (size >= FORCE_AT && !allToken && !allAmount) {
+    if (buffer.endsWith('复制')) copyOpen = true;
+    else if (copyOpen && COPY_OPEN_ENDS.some((end) => buffer.endsWith(end))) copyOpen = false;
+    const holding = copyOpen && size < COPY_HOLD_LIMIT;
+    if (size >= FORCE_AT && !allToken && !allAmount && !holding) {
       const keep = retainFrom(buffer);
       if (keep > 0) {
         out.push(buffer.slice(0, keep));
