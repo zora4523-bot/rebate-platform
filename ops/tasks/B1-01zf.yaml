@@ -1,0 +1,26 @@
+id: B1-01zf
+repo: rebate-platform
+title: platform/qrcode 出图原语：renderQrCodeSvg / renderQrCodePng（qrcode 库；纠错等级、尺寸、边距、输入上限、确定性输出），供海报出图（F-SHARE-01，02 §11 poster 队列）与首页草稿预览二维码（04 §3.2 page_preview_tokens、§11 content.page）
+type: impl
+# 2026-10-07 入账（从 B1-01ze 拆出运行时代码，台账评审 Codex P1）。只做编码与渲染，不含业务：深链内容、海报模板、缓存键、OSS 上传
+# 归海报与预览任务；不读时钟、不写日志、不连库、不读 process.env。契约（规则测试按此写；出口 apps/api/src/modules/platform/index.ts）：
+# renderQrCodeSvg(text, options?) → Promise<string>：完整 `<svg …>` 标记，根元素 width / height 属性等于 size，viewBox 单位为模块；
+# renderQrCodePng(text, options?) → Promise<Buffer>：PNG（8 字节签名），宽高等于 size。options：errorCorrection 'L'|'M'|'Q'|'H'（默认 'M'），
+# size 像素（整数，默认 512，范围 64–2048），margin 模块数（整数，默认 2，范围 0–8）；同一输入与选项输出字节相同；text 原样编码（不 trim）。
+# 错误：抛 QrCodeError（含 code）：empty_text（空或全空白）、text_too_long（UTF-8 超 1024 字节）、invalid_option（范围或类型不对）、
+# encode_failed（库报错，带 cause）；不吞错。无 BR，refs 空；规则测试标题写 AC-B1-01zf#n。
+refs: []
+refs_hash: {}
+deps: [B1-01ze]
+paths:
+  - 'apps/api/src/modules/platform/qrcode/**'
+  - 'apps/api/src/modules/platform/index.ts'
+test_paths:
+  - 'test/spec/platform/qrcode/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/qrcode/**'
+status: todo
+pr: null

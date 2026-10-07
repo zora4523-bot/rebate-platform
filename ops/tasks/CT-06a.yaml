@@ -1,0 +1,40 @@
+id: CT-06a
+repo: rebate-platform
+title: CI 门禁：squawk 检查迁移 SQL（02 §16.3「资金表禁止 DROP、改类型、RENAME」，ADR-0001 §2 边界与规范行）——根 devDependency squawk-cli 2.66.0、.squawk.toml（保护路径第二类）、tools/ci/lint-migrations.ts 包装（选文件 + 三项自检）、根脚本 lint:migrations 并入 verify:fast
+type: guard-change
+# 2026-10-07 入账（负责人同日决定「先把 squawk 和二维码接进去」；依据 couli docs/research/20261007-基础设施自写与开源对照.md §4）。台账评审（Codex，PR #248）
+# 两轮五条 P1 已采纳：Codex 先写规则测试；.squawk.toml 登记第二类；超时规则不排除；金额列 int 由包装拦；资金表的 ignore 注释由包装拒。
+# 版本 2.66.0（2026-09-23 发布，满足 7 天；2.67.0 为 10-04 未满；Apache-2.0 OR MIT；无安装脚本；二进制在 7 个可选平台包里）。
+# 包装契约（规则测试按此写）：`node tools/ci/lint-migrations.ts [--root <仓库>] [--list]`。① 只把 db/migrations 里序号 > 0018 的 `NNNN_kebab-name.sql` 交给 squawk
+# （`-c .squawk.toml`，gcc 报告到 stdout）；无可查文件打印「nothing to lint」退出 0；文件名不合规退出 1（stderr）；squawk 或配置缺失退出 2；`--list` 只打印将查路径。
+# ② 自检（squawk 之前；命中即退出 1 并写 stderr）：`*_fen` 列不是 bigint（int / integer / int2 / int4 / smallint / serial / numeric / decimal / real / double /
+# float / money）；文件里出现 `squawk-ignore-file`；含 `squawk-ignore` 注释的整条语句（注释在语句前或语句内部都算）作用于资金与归属表（order*、ledger*、account*、
+# withdraw*、payout*、settle*、commission*、reconcil*、adjust*、voucher*、entries、balance*、union_*、links、link_*；清单在脚本里并有测试对照 db/schema.sql 现有表；扩清单走 guard-change）。
+# squawk 规则：默认集，保留 require-lock-timeout / require-statement-timeout（新迁移开头写 `SET LOCAL lock_timeout` 与 `SET LOCAL statement_timeout`，值按迁移
+# 自定并注释）；排除 prefer-bigint-over-int（_bp 与计数列按 ADR-0001 §4 用 int，金额由自检 ② 保证）与 require-concurrent-index-creation（迁移由
+# packages/db/scripts/migrate.ts 单事务执行，CONCURRENTLY 不可能）；pg_version 18、assume_in_transaction。非资金表的合法 DROP / 改类型 / RENAME 在语句上一行写 `-- squawk-ignore <规则>`、原因写在它上面；0001–0018 永不改（db/AGENTS.md 第 2 条）、不检查（基线在脚本里）。
+# 碰 package.json#scripts、pnpm-lock.yaml、protected-paths.json（第二类）与 tools、.github、AGENTS.md（第三类），合并前要批准标签（approvals 第 24 条）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'package.json'
+  - 'pnpm-lock.yaml'
+  - '.squawk.toml'
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'tools/guard/protected-paths.json'
+  - 'tools/guard/lib/protected.test.ts'
+  - '.github/workflows/protected-paths.yml'
+  - 'AGENTS.md'
+  - 'db/AGENTS.md'
+test_paths:
+  - 'test/spec/db/lint-migrations/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm run lint:migrations'
+  - 'test/spec/db/lint-migrations/**'
+status: todo
+pr: null
