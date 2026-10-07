@@ -1,16 +1,21 @@
 id: B1-06m
 repo: rebate-platform
-title: linking open 幂等加固：业务写入（新 link、open 日志、attempt）与幂等响应同一事务（或业务写入按幂等键可重入），崩溃恢复后同键重试返回首次 new_link_id 与 attempt_id；复核失败用缓存外跳前检查 jump.expire_at；单飞窗口内首次 50303 结论不被缓存改判
+title: linking open 业务写入与幂等记录同一事务（归属阶段新建 link、复核新 link、open 日志、attempt 与幂等键记录一起提交，故障时全不留、同键重试只一套、重放返回这一套）；单飞窗口内首次 50303 结论不被缓存改判
 type: impl
-# 草稿 2026-10-07（W1 搜索转链线），由 B1-06k 拆出（couli-runs/B1-06k/decision-orchestrator.md 末节：Codex 两轮 S1「业务写入与幂等响应不同事务」降为 S2，正确修法要改冻结夹具）。
-# 依据：BR-PRICE-13（幂等重放返回首次结果、3000 毫秒单飞返回相同结果、复核失败用 ≤900 秒缓存）、04 §3.2 link_open_attempts（同一 Idempotency-Key 的重放返回原值、不新插）、TRADE-22，由编排者摘入任务书第 2 节。
-# 幂等走 platform 的 idempotency（B1-01i）：若其 execute 不支持把业务写入放进同一事务，本任务在 platform 侧补「事务内执行」入口（paths 含 platform/idempotency/**，与同路径任务串行），或让 open 的业务写入按幂等键可重入（不改表结构为前提；需要改表另立迁移任务）。
-# 规则测试要覆盖：进程在业务提交后、幂等响应保存前退出（用可控故障注入），租约到期后同键重试只有一条新 link 与一条 attempt、返回首次编号；jump.expire_at 已过的缓存不用于复核失败外跳；单飞窗口内首次 50303 后，同 link 新幂等键 open 仍为 50303。
-# B1-06k 的夹具（test/spec/linking/open-requote/kit.ts）已冻结；新规则测试放 test/spec/linking/open-idempotency/**，需要的夹具在新目录另建（@couli/db/testing 只在 *.int.test.ts 里 import）。
-# 风险：linking/** RV2，platform/idempotency RV2。
-refs: []
-refs_hash: {}
-deps: [B1-06k]
+# 2026-10-07（W1 搜索转链线），由 B1-06k（#226）拆出：Codex 两轮 S1「业务写入与幂等响应分两次提交」降为 S2（couli-runs/B1-06k/decision-orchestrator.md 末节）；PR #231 台账评审后按编排裁定改写。
+# 方案（定）：open 改用 platform 已有的 executeInTransaction，业务写入全在其 trx 内；不做「按幂等键可重入」（无幂等键列，需改表另立迁移）。旧夹具由 B1-06n 放宽（deps）。
+# 验收：故障发生在业务写入之后、幂等记录完成之前时，该次 link、open 日志、attempt、幂等键记录全不留；同键重试只产生一套写入；之后同键重放返回这一套编号且不再取价、转链。
+# 故障注入：新 kit 用真实 createIdempotency 包一层 executeInTransaction（handler 之后抛错）。单飞：窗口内首次 50303 后同 link 新键 open 仍 50303（B1-06k Codex 范围外 S1）。
+# 实现要点：① 不存储结果（非 0 且不在 3xxxx，如 50303）的 open 日志在幂等事务外另写，attempt 不写（冻结用例 AC#14/#15/#37/#40 要日志）；
+# ② link-open-owner 新建 link 与认领改为可选接收 trx（冻结 kit 调 open({ linkId }) 不变）；③ 单飞跨请求共享的新 link：共享结论只在提交后发布（或各自事务内 ON CONFLICT 插入），
+# 发起方回滚时其他请求不得引用不存在的 link（规则测试覆盖）；④ 外部调用（取价、转链）期间占事务连接，本任务接受并在 linking 注释写明，platform 新入口另议。
+# jump.expire_at 检查归 B1-06e。依据 BR-PRICE-12、BR-PRICE-13、BR-PRICE-20、BR-ATTR-05 由编排者摘入任务书第 2 节（refs 只留放得下 24KB 上限的 BR-PRICE-12、20；BR-PRICE-13 含细则单条 43KB、BR-ATTR-05 也超限，评审提示须写明单飞 50303 在本任务范围内）。
+# 新规则测试放 test/spec/linking/open-idempotency/**，@couli/db/testing 只在 *.int.test.ts 里 import。风险：linking/** RV2，platform/idempotency RV2（预计不改）。
+refs: [BR-PRICE-12, BR-PRICE-20]
+refs_hash:
+  BR-PRICE-12: d34f9f17f4ae
+  BR-PRICE-20: 7529667f1f23
+deps: [B1-06k, B1-06n]
 paths:
   - 'apps/api/src/modules/linking/**'
   - 'apps/api/src/modules/platform/idempotency/**'
