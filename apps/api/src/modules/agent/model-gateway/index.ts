@@ -11,6 +11,7 @@ import type {
   VendorResponse,
 } from './vendors/index.ts';
 import type { ModelRequestShape } from './openai-compat/index.ts';
+import { ModelProtocolError, toVendorRequest } from './openai-compat/index.ts';
 
 export * from './vendors/index.ts';
 export * from './openai-compat/index.ts';
@@ -30,6 +31,21 @@ export interface EvalModelPortOptions {
 export function createEvalModelPort(
   options: EvalModelPortOptions,
 ): (req: ModelRequestShape) => Promise<VendorResponse> {
-  void options;
-  throw new Error('NotImplemented: createEvalModelPort');
+  const config = { ...options };
+  return async (req) => {
+    if (req.vendor !== config.vendor || req.model !== config.model) {
+      throw new ModelProtocolError('bad_request', 'Evaluation request does not match its port');
+    }
+    const request = toVendorRequest(req);
+    return config.gateway.invoke({
+      ...request,
+      vendor: config.vendor,
+      model: config.model,
+      purpose: 'offline',
+      use: config.use,
+      accessPath: config.accessPath,
+      workspace: config.workspace,
+      dataClass: 'synthetic',
+    });
+  };
 }
