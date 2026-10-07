@@ -144,7 +144,22 @@ export interface SmsLoginOptions {
   /** B1-03d, only before creating an account; absent means no block. No plaintext phone. */
   readonly phoneBlocklist?: (
     trx: Transaction<DB>,
-    input: { readonly app_id: string; readonly phone_hmac: string },
+    input: {
+      readonly app_id: string;
+      readonly phone_hmac: string;
+    },
+  ) => Promise<{ readonly code: 44001; readonly data?: { readonly risk_msg_code: string } } | null>;
+  /** Preferred before creating an account; fall back to phoneBlocklist only when absent.
+   * Plaintext phone is passed to risk only for HMAC/masking, never storage or logging.
+   */
+  readonly registrationBlocklist?: (
+    trx: Transaction<DB>,
+    input: {
+      readonly app_id: string;
+      readonly phone: string;
+      readonly phone_hmac: string;
+      readonly device_hash?: string;
+    },
   ) => Promise<{ readonly code: 44001; readonly data?: { readonly risk_msg_code: string } } | null>;
 }
 
