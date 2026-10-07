@@ -22,5 +22,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/build-smoke/**'
-status: todo
-pr: null
+status: done
+pr: 242

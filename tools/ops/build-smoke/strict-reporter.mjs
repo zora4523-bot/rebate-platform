@@ -14,6 +14,12 @@
 //     React Router's "caught the following error during render" (its errorElement catches a
 //     render error, so no `pageerror` fires) or naming a TypeError, ReferenceError, SyntaxError,
 //     RangeError …; as for page errors, not even NotImplemented is excused on a green run;
+//   - what the page swallowed without a console.error or a pageerror (F1-01m; the rule tests
+//     install a collector before any page script runs): a `preload-error` (Vite's
+//     `vite:preloadError`: a lazy chunk or a dependency that did not load or threw while
+//     initialising), an `unhandled-rejection`, a `route-error` (the H5 route error page React
+//     Router's errorElement shows) — none excused, not even NotImplemented — and a
+//     `diagnostics-incomplete` (the test could not read the page back);
 //   - a diagnostics annotation without a readable `diagnostics` list (fail closed).
 // Cross-origin requests are all blocked by the tests and other console output stays evidence
 // only. Used by the build-smoke project alone (its config; `verify-container.sh --browser` adds it
@@ -84,6 +90,14 @@ export function smokeDiagnosticsFindings(json) {
       (CAUGHT_DURING_RENDER.test(first) || SCRIPT_ERROR_KIND.test(d.message))
     ) {
       findings.push(`the page logged a script error: ${first}`);
+    } else if (d.kind === 'preload-error') {
+      findings.push(`a lazy module of the page failed: ${first}`);
+    } else if (d.kind === 'unhandled-rejection') {
+      findings.push(`the page left a rejection unhandled: ${first}`);
+    } else if (d.kind === 'route-error') {
+      findings.push(`the page showed its route error page: ${first}`);
+    } else if (d.kind === 'diagnostics-incomplete') {
+      findings.push(`the page events are not fully known: ${first}`);
     }
   }
   return findings;

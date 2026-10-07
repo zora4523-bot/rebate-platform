@@ -713,3 +713,88 @@ it('[F1-01k] smokeCauseVerdict: only the bare locator.waitFor TimeoutError and a
   ).toMatch(/unrecognised/);
   expect(smokeCauseVerdict([])).toMatch(/unknown reason/);
 });
+
+const ROUTE_ERROR = 'the route error page (RetryPage "页面加载失败，请重试") is showing at /rules';
+
+it('[F1-01m] what the page swallowed refuses a wait that ran out; the skeleton NotImplemented does not', () => {
+  const result = checkRedReports([fixture('smoke-swallowed-report.json')], [SMOKE], ROOT);
+  expect(result.ok).toBe(false);
+  // The skeleton's NotImplemented explains the route error page: the wait still counts.
+  expect(result.red).toEqual([
+    `${SMOKE} > [demo] skeleton lazy module`,
+    `${SMOKE} > [demo] skeleton render caught by errorElement`,
+  ]);
+  expect(result.problems.map((p) => [p.test, p.reason])).toEqual([
+    // A lazy chunk served 200 whose module throws while initialising (Codex money r4 S1 on
+    // F1-01k): no console.error, no pageerror, only vite:preloadError and the retry page.
+    [
+      '[demo] lazy module threw while initialising',
+      "red for the wrong reason (a lazy module of the page failed: TypeError: Cannot read properties of undefined (reading 'x'))",
+    ],
+    [
+      '[demo] route error page only',
+      `red for the wrong reason (the page showed its route error page: ${ROUTE_ERROR})`,
+    ],
+    [
+      '[demo] unhandled rejection',
+      'red for the wrong reason (the page left a rejection unhandled: Error: boom)',
+    ],
+    [
+      '[demo] page could not be read',
+      'red for an unproven reason (the page events are not fully known: the page could not be read: reading the page timed out (5000ms))',
+    ],
+  ]);
+  expect(result.notes).toEqual([]);
+});
+
+it('[F1-01m] smokeDiagnosticsVerdict: preload errors, unhandled rejections, the route error page, unreadable pages', () => {
+  const url = 'http://127.0.0.1:40123/';
+  const v = (diagnostics: { kind: string; message: string }[]): string | null =>
+    smokeDiagnosticsVerdict({ url, diagnostics });
+  const stack = `\n    at ${url}assets/page-D5e6.js:1:88`;
+  for (const kind of ['preload-error', 'unhandled-rejection']) {
+    // Only a first line that starts with NotImplemented (or Error: NotImplemented) is excused.
+    expect(v([{ kind, message: `Error: NotImplemented: RulesPage${stack}` }]), kind).toBeNull();
+    expect(v([{ kind, message: `NotImplemented: RulesPage${stack}` }]), kind).toBeNull();
+    for (const message of [
+      `TypeError: Failed to fetch dynamically imported module: ${url}assets/page-D5e6.js`,
+      `TypeError: NotImplemented is not a constructor${stack}`,
+      'Error: Unable to preload CSS for /assets/page-D5e6.css',
+      'undefined',
+    ]) {
+      expect(v([{ kind, message }]), `${kind}: ${message}`).toMatch(/^red for the wrong reason/);
+    }
+  }
+  // The route error page alone, or beside a NotImplemented that is not the skeleton's.
+  expect(v([{ kind: 'route-error', message: ROUTE_ERROR }])).toBe(
+    `red for the wrong reason (the page showed its route error page: ${ROUTE_ERROR})`,
+  );
+  expect(
+    v([
+      { kind: 'pageerror', message: 'Error: x failed (NotImplemented)' },
+      { kind: 'route-error', message: ROUTE_ERROR },
+    ]),
+  ).toMatch(/the page threw/);
+  expect(
+    v([
+      { kind: 'console.error', message: 'Warning: NotImplemented: x' },
+      { kind: 'route-error', message: ROUTE_ERROR },
+    ]),
+  ).toMatch(/route error page/);
+  // … excused by the skeleton's NotImplemented in any of the kinds that carry an error.
+  for (const skeleton of [
+    { kind: 'pageerror', message: 'Error: NotImplemented: AppShell' },
+    { kind: 'preload-error', message: 'NotImplemented: RulesPage' },
+    { kind: 'unhandled-rejection', message: 'Error: NotImplemented: load' },
+    {
+      kind: 'console.error',
+      message: `React Router caught the following error during render Error: NotImplemented: AppShell${stack}`,
+    },
+  ]) {
+    expect(v([skeleton, { kind: 'route-error', message: ROUTE_ERROR }]), skeleton.kind).toBeNull();
+  }
+  // Unreadable page events: never a proven red.
+  expect(v([{ kind: 'diagnostics-incomplete', message: 'the page could not be read: x' }])).toBe(
+    'red for an unproven reason (the page events are not fully known: the page could not be read: x)',
+  );
+});
