@@ -278,15 +278,15 @@ export async function insertPendingOpenLink(
   executor: Kysely<DB>,
   pending: PendingOpenLink,
 ): Promise<void> {
-  const existing = await executor
-    .selectFrom('links')
-    .select('link_id')
-    .where('app_id', '=', pending.caller.appId)
-    .where('link_id', '=', pending.linkId)
-    .executeTakeFirst();
-  if (existing !== undefined) return;
   const { now, caller, linkId, snapshot, values } = pending;
-  await insertLinkRow(executor, { now, caller, linkId, snapshot, values });
+  // B1-06m: opens sharing the card run in their own transactions. A row another open has written
+  // but not yet committed makes this insert wait for that transaction: committed → nothing to do;
+  // rolled back → this open writes the link (and its register log) itself.
+  const inserted = await linkInsert(executor, { now, caller, linkId, snapshot, values })
+    .onConflict((oc) => oc.column('link_id').doNothing())
+    .returning('link_id')
+    .executeTakeFirst();
+  if (inserted === undefined) return;
   if (logsRegistration(values.scene, pidSceneOf(values.scene))) {
     await executor
       .insertInto('link_logs')
@@ -375,16 +375,23 @@ export async function resolveSnapshot(args: {
  * link through it too): row_version 0, expire_at from the pid_scene's URL lifetime; the inserted
  * row is returned as stored.
  */
+interface LinkRowArgs {
+  readonly now: Date;
+  readonly caller: Caller;
+  readonly linkId: string;
+  readonly snapshot: IdentitySnapshot;
+  readonly values: LinkRowValues;
+}
+
 export async function insertLinkRow(
   executor: Kysely<DB>,
-  args: {
-    readonly now: Date;
-    readonly caller: Caller;
-    readonly linkId: string;
-    readonly snapshot: IdentitySnapshot;
-    readonly values: LinkRowValues;
-  },
+  args: LinkRowArgs,
 ): Promise<Selectable<DB['links']>> {
+  return linkInsert(executor, args).returningAll().executeTakeFirstOrThrow();
+}
+
+/** The module's single links insert statement (not yet executed). */
+function linkInsert(executor: Kysely<DB>, args: LinkRowArgs) {
   const { now, caller, linkId, snapshot, values } = args;
   const pidScene = pidSceneOf(values.scene);
   if (
@@ -394,36 +401,32 @@ export async function insertLinkRow(
   ) {
     throw new TypeError('linking: identity snapshot does not match the row being registered');
   }
-  return executor
-    .insertInto('links')
-    .values({
-      link_id: linkId,
-      app_id: caller.appId,
-      user_id: caller.userId,
-      device_id: caller.deviceId,
-      platform: values.platform,
-      product_key: values.productKey,
-      raw_item_id: values.rawItemId,
-      raw_fetched_at: values.rawFetchedAt,
-      scene: values.scene,
-      sub_scene: values.subScene,
-      pid_scene: pidScene,
-      pid: snapshot.pid,
-      entry_source: values.entrySource,
-      identity_snapshot: snapshotJson(snapshot),
-      quoted_final_price_fen: values.quotedFinalPriceFen,
-      quoted_coupon_fen: values.quotedCouponFen,
-      quoted_coupon_id: values.quotedCouponId,
-      quoted_at: values.quotedAt,
-      expire_at: sql<Date>`${now.toISOString()}::timestamptz + ${urlLifetimeMs(pidScene)} * interval '1 millisecond'`,
-      agent_session_id: snapshot.agent_session_id,
-      agent_card_id: values.agentCardId,
-      row_version: 0,
-      created_at: now,
-      updated_at: now,
-    })
-    .returningAll()
-    .executeTakeFirstOrThrow();
+  return executor.insertInto('links').values({
+    link_id: linkId,
+    app_id: caller.appId,
+    user_id: caller.userId,
+    device_id: caller.deviceId,
+    platform: values.platform,
+    product_key: values.productKey,
+    raw_item_id: values.rawItemId,
+    raw_fetched_at: values.rawFetchedAt,
+    scene: values.scene,
+    sub_scene: values.subScene,
+    pid_scene: pidScene,
+    pid: snapshot.pid,
+    entry_source: values.entrySource,
+    identity_snapshot: snapshotJson(snapshot),
+    quoted_final_price_fen: values.quotedFinalPriceFen,
+    quoted_coupon_fen: values.quotedCouponFen,
+    quoted_coupon_id: values.quotedCouponId,
+    quoted_at: values.quotedAt,
+    expire_at: sql<Date>`${now.toISOString()}::timestamptz + ${urlLifetimeMs(pidScene)} * interval '1 millisecond'`,
+    agent_session_id: snapshot.agent_session_id,
+    agent_card_id: values.agentCardId,
+    row_version: 0,
+    created_at: now,
+    updated_at: now,
+  });
 }
 
 /** BR-ATTR-06: attr_code only from the port; unavailable or empty stays null, never the user_id. */

@@ -1,0 +1,100 @@
+{
+  "task": "B1-06m",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "55b07a2ada7157a4adc42059e54ecbc7cc35995c",
+  "red_tests": [
+    "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#1] 本人链接涨价：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+    "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#2] 他人链接归属与涨价：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+    "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#3] 他人链接只改归属：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+    "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#4] 游客认领与涨价：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+    "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#5] 游客认领且价格不变：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+    "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#6] 单飞跨不同键：A 已写业务但提交前回滚，B 成功的响应与 attempt 必须引用已提交的新 link",
+    "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#7] 50303 不存幂等结果：0ms 后同键重发仍执行，每次只留一条事务外日志、不写 attempt",
+    "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#7] 50303 不存幂等结果：3001ms 后同键重发仍执行，每次只留一条事务外日志、不写 attempt",
+    "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#8] 可存储业务失败 30141：日志与幂等同回滚，同键重试后重放不再写",
+    "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#9] 可存储业务失败 30602：日志与幂等同回滚，同键重试后重放不再写",
+    "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#10] price 首次50303后缓存变为可用，窗口内 0 ms 新键仍50303，3001ms重新判定",
+    "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#11] price 首次50303后缓存变为可用，窗口内 3000 ms 新键仍50303，3001ms重新判定",
+    "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#12] catalog 首次50303后缓存变为可用，窗口内 0 ms 新键仍50303，3001ms重新判定",
+    "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#13] catalog 首次50303后缓存变为可用，窗口内 3000 ms 新键仍50303，3001ms重新判定"
+  ],
+  "risk_note": "RV2 (linking/**; attribution and money). linking open writes and its idempotency record in one transaction through platform executeInTransaction: owner-stage link and claim, requote link, open log and attempt commit with the idempotent response or roll back together; a non-stored result (e.g. 50303) logs once after the rollback with every field from the requested link, no attempt; single-flight shared links inserted per transaction with ON CONFLICT so a rolled-back initiator leaves no dangling link; the first 50303 in the window kept per identity key; config, pids and attr codes read before the transaction so no second pool connection is taken while it holds one; a reused single-flight conversion re-checked against jump.expire_at; the idempotency hash covers the whole validated body. External ports (catalog, price fetch, conversion adapter, conversion cache) still run inside the transaction: their production implementations must not borrow api pool connections, guaranteed by the B1-06w wiring (followups). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "55b07a2ada7157a4adc42059e54ecbc7cc35995c",
+      "tree": "149fa644d0e46ccda183ab08d2794c1126fb99b1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T19:15:28Z",
+      "finished_at": "2026-10-07T19:15:38Z",
+      "red_tests": [
+        "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#1] 本人链接涨价：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+        "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#2] 他人链接归属与涨价：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+        "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#3] 他人链接只改归属：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+        "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#4] 游客认领与涨价：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+        "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#5] 游客认领且价格不变：故障全回滚，同键重试只一套，跨实例重放仍返回原编号",
+        "test/spec/linking/open-idempotency/atomicity.int.test.ts > [AC-B1-06m#6] 单飞跨不同键：A 已写业务但提交前回滚，B 成功的响应与 attempt 必须引用已提交的新 link",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#7] 50303 不存幂等结果：0ms 后同键重发仍执行，每次只留一条事务外日志、不写 attempt",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#7] 50303 不存幂等结果：3001ms 后同键重发仍执行，每次只留一条事务外日志、不写 attempt",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#8] 可存储业务失败 30141：日志与幂等同回滚，同键重试后重放不再写",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#9] 可存储业务失败 30602：日志与幂等同回滚，同键重试后重放不再写",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#10] price 首次50303后缓存变为可用，窗口内 0 ms 新键仍50303，3001ms重新判定",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#11] price 首次50303后缓存变为可用，窗口内 3000 ms 新键仍50303，3001ms重新判定",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#12] catalog 首次50303后缓存变为可用，窗口内 0 ms 新键仍50303，3001ms重新判定",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts > [AC-B1-06m#13] catalog 首次50303后缓存变为可用，窗口内 3000 ms 新键仍50303，3001ms重新判定"
+      ],
+      "expected": [
+        "test/spec/linking/open-idempotency/atomicity.int.test.ts",
+        "test/spec/linking/open-idempotency/failure-singleflight.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "23c8987b8e63d1caf00aaf5c0c0a3a181696fff43a15f7841071faab4ae46ede"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents with the money checklist: round 1 fail (S1 a second pool connection borrowed inside the open transaction, pool exhaustion under concurrent opens; S2 50303 log fields mixed from the rolled-back link) -> fixed; round 2 pass with two mutation probes showing the new connection-count test catches a regression"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass with no findings; round 2 pass with one S2 (a pre-read config promise rejecting before the links read is awaited has no handler yet; needs a database connection failure), recorded in followups for B1-06p, which edits the same function"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: pass with one S2 (the 50303 log written after the idempotent transaction rolls back, stricter than the brief; implemented that way). Rebased onto main after B1-06e merged; red re-run on the rebased spec commit. After review the orchestrator fixed the unmerged spec fixture (the open-idempotency kit's quoter now answers with the rebate basis the card entry asks for, as the open-requote kit does; the fixed 'normal' failed BR-PRICE-07's taobao search basis check so carding cases closed as 50303); fixture value only, no assertion changed; red re-run on it and verify-int green on the implementation"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "d27defc892d5428cc5931bd674c3d44098b0b9fc",
+    "specs": "0100f2ee7f7133fd83e159c2e144148e7a4b59d4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

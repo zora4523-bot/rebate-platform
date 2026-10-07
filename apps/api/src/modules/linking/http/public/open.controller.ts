@@ -48,6 +48,7 @@ export class LinkOpenController {
       installed: body.installed ?? 'unknown',
       noRebate: body.no_rebate ?? false,
       ...(body.no_rebate_reason === undefined ? {} : { noRebateReason: body.no_rebate_reason }),
+      ...(body.spm === undefined ? {} : { spm: body.spm }),
     });
     if (result.status === 200 && result.envelope.code === 0) {
       return result.envelope as unknown as OpenLinkResponse;

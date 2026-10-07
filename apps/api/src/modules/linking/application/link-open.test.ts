@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { noRebateProductUrl } from './link-open-conversion.ts';
 import { openHttpResult } from './link-open.ts';
+import { jumpUsable, openRequestBody, type LinkOpenJump } from './link-open-requote.ts';
 
 describe('linking open HTTP result', () => {
   it.each([
@@ -43,5 +44,60 @@ describe('linking no-rebate product page', () => {
     expect(noRebateProductUrl('jd:12345', { platform: 'jd', skuId: '999' })).toBe(
       'https://item.jd.com/12345.html',
     );
+  });
+});
+
+describe('linking open single-flight conversion reuse (B1-06m)', () => {
+  const jump: LinkOpenJump = {
+    primary: { type: 'h5', value: 'https://example.test/synthetic-rebate' },
+    fallbacks: [],
+    expire_at: '2031-05-06T07:23:09.000Z',
+  };
+  const expireMs = Date.parse(jump.expire_at);
+
+  it('[AC-B1-06m] a shared jump opened before its expire_at is reused, at or after it is not', () => {
+    expect(jumpUsable(jump, expireMs - 1)).toBe(true);
+    expect(jumpUsable(jump, expireMs)).toBe(false);
+    expect(jumpUsable(jump, expireMs + 1)).toBe(false);
+  });
+
+  it('[AC-B1-06m] a jump without a valid expire_at is never reused', () => {
+    expect(jumpUsable({ ...jump, expire_at: 'not-an-instant' }, 0)).toBe(false);
+  });
+});
+
+describe('linking open idempotent request body (B1-06m)', () => {
+  const base = {
+    linkId: '0199a3b4-5c6d-7000-8000-000000000088',
+    idempotencyKey: 'synthetic-open-1',
+    traceId: 'synthetic-trace',
+    client: 'ios' as const,
+  };
+
+  it('[AC-B1-06m] defaults are explicit, so an omitted and a default field are one body', () => {
+    expect(openRequestBody(base)).toEqual({ installed: 'unknown', no_rebate: false });
+    expect(openRequestBody({ ...base, installed: 'unknown', noRebate: false })).toEqual(
+      openRequestBody(base),
+    );
+  });
+
+  it.each([
+    [{ noRebate: true, noRebateReason: 'auth_failed' as const }],
+    [{ spm: 'detail.buy.1' }],
+    [{ installed: 'true' as const }],
+  ])('[AC-B1-06m] a changed contract field %o changes the body (same key → 20901)', (change) => {
+    const first = { ...base, noRebate: true, noRebateReason: 'auth_declined' as const };
+    expect(openRequestBody({ ...first, ...change })).not.toEqual(openRequestBody(first));
+  });
+
+  it('[AC-B1-06m] no_rebate_reason and spm are part of the body', () => {
+    expect(
+      openRequestBody({ ...base, noRebate: true, noRebateReason: 'auth_failed', spm: 'a.b.c' }),
+    ).toEqual({
+      installed: 'unknown',
+      no_rebate: true,
+      no_rebate_reason: 'auth_failed',
+      spm: 'a.b.c',
+    });
   });
 });

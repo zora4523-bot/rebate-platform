@@ -27,6 +27,12 @@ import {
 import type { AttrCodeReader, Caller, CallerContext, LinkingConfigReader } from '../ports.ts';
 import { attrCodeOf } from './link-registration.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
+import {
+  openScopedAttrCodes,
+  openScopedConfig,
+  openScopedPids,
+  type LinkOpenReadPlan,
+} from './link-open-reads.ts';
 import type {
   LinkOpenConversionInput,
   LinkOpenJump,
@@ -64,6 +70,11 @@ export interface LinkConversion {
   admit(owner: LinkOpenOwnerResult): Promise<void>;
   /** The jump-plan dimensions a cached jump belongs to (client and installed). */
   variant(input: Pick<JdPddConversionInput, 'client' | 'installed'>): string;
+  /**
+   * B1-06m: pre-reads, before the open's transaction, every setting, active pid and attr_code
+   * admit and convert may read for the plan's identities (link-open-reads.ts).
+   */
+  prepare(plan: LinkOpenReadPlan): Promise<void>;
 }
 
 /** Internal failure payload for the explicit no-rebate action, not a new HTTP error field. */
@@ -154,7 +165,36 @@ function pathsOf(platform: 'jd' | 'pdd', url: string): LinkJumpPaths {
 
 // TODO(规划/11 §4.5): 真实转链 — blocked on 推广位 / siteId。
 export function createLinkOpenConversion(options: LinkConversionOptions): LinkConversion {
-  const { clock, callerContext, attrCodes, config, pids, registry, logger } = options;
+  const { clock, callerContext, registry, logger } = options;
+  const config = openScopedConfig(options.config);
+  const pids = openScopedPids(options.pids);
+  const attrCodes = openScopedAttrCodes(options.attrCodes);
+
+  /** Every read of admit and convert for these identities; failures surface when used. */
+  async function prepare(plan: LinkOpenReadPlan): Promise<void> {
+    const { appId, platform } = plan;
+    const reads: Promise<unknown>[] = [
+      config.configValue(appId, CONVERT_CACHE_TTL_SEC),
+      config.configValue(appId, `convert.enabled.${platform}`),
+    ];
+    if (platform === 'jd' || platform === 'pdd') {
+      reads.push(config.configValue(appId, JD_USER_KEY_MODE));
+      reads.push(config.configValue(appId, CLICK_CODE[platform]));
+      for (const identity of plan.identities) {
+        const pidScene = identity.noRebate ? 'self_buy' : identity.pidScene;
+        reads.push(
+          pids.getActivePid({
+            appId,
+            platform,
+            pidScene: pidScene as Parameters<typeof pids.getActivePid>[0]['pidScene'],
+            purpose: 'convert',
+          }),
+        );
+        if (!identity.noRebate) reads.push(attrCodeOf(attrCodes, appId, identity.userId));
+      }
+    }
+    await Promise.allSettled(reads);
+  }
 
   /**
    * This conversion's jump expiry: now + link.convert_cache_ttl_sec (default and ceiling 900 s;
@@ -328,7 +368,7 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
     });
   }
 
-  return { convert, admit, variant };
+  return { convert, admit, variant, prepare };
 }
 
 /** Normalized adapter paths, not vendor response payloads. */
