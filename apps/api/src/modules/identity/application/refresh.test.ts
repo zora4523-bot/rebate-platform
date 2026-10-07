@@ -55,7 +55,11 @@ function parentConflict(): Error {
   });
 }
 
-async function setup(init: Partial<State> = {}, redisFails: { get?: boolean; set?: boolean } = {}) {
+async function setup(
+  init: Partial<State> = {},
+  redisFails: { get?: boolean; set?: boolean } = {},
+  minimum: () => Promise<string | null> = async () => null,
+) {
   const clock = new FixedClock('2026-10-08T04:00:00.000Z');
   const state: State = {
     rotatedAt: null,
@@ -161,7 +165,13 @@ async function setup(init: Partial<State> = {}, redisFails: { get?: boolean; set
     tokens: createTokenService({ clock, keys: await createTokenKeyProvider('test', null) }),
     crypto,
     redis,
-    versions: { minSupportedVersion: async () => null },
+    // Every read is recorded among the driver events, so its position against begin is visible.
+    versions: {
+      minSupportedVersion: async () => {
+        events.push('versions');
+        return minimum();
+      },
+    },
     logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
     afterRevoked: async (_trx, revoked) => void sids.push(revoked),
   });
@@ -243,5 +253,49 @@ it('[BR-ID-07] an expired token is 10404 without any write or revocation', async
   f.state.expireAt = f.clock.now();
   expect(await f.refresh()).toEqual({ code: 10404 });
   expect(f.events.filter((event) => event === 'update' || event === 'insert')).toEqual([]);
+  expect(f.sids).toEqual([]);
+});
+
+const outsideTransactions = (events: readonly string[]) => {
+  let open = false;
+  for (const event of events) {
+    if (event === 'begin') open = true;
+    else if (event === 'commit' || event === 'rollback') open = false;
+    else if (event === 'versions' && open) return false;
+  }
+  return true;
+};
+
+it('[BR-ID-07] the scope is read once before the transaction and never inside it', async () => {
+  const f = await setup({}, {}, async () => '3.0.0');
+  const result = await f.refresh();
+  expect(result.code).toBe(0);
+  if (result.code !== 0) throw new Error('unreachable');
+  expect(result.data.session_scope).toBe('deletion_only');
+  expect(f.events.filter((event) => event === 'versions')).toHaveLength(1);
+  expect(f.events.indexOf('versions')).toBeLessThan(f.events.indexOf('begin'));
+  expect(f.events.slice(f.events.indexOf('begin'))).not.toContain('versions');
+});
+
+it('[BR-ID-07] a retried attempt after a 23505 reuses the scope: zero reads after the first begin', async () => {
+  const f = await setup({ insertErrors: [parentConflict()] });
+  f.store.set(
+    createHash('sha256').update('presented-refresh').digest('hex'),
+    `identity.refresh_grace|${JSON.stringify(STORED)}`,
+  );
+  expect(await f.refresh()).toEqual({ code: 0, data: STORED });
+  expect(transactions(f.events)).toEqual(['begin', 'rollback', 'begin', 'commit']);
+  expect(f.events.filter((event) => event === 'versions')).toHaveLength(1);
+  expect(f.events.slice(f.events.indexOf('begin'))).not.toContain('versions');
+  expect(outsideTransactions(f.events)).toBe(true);
+});
+
+it('[BR-ID-07] a failed scope read answers 50001 without opening a transaction', async () => {
+  const f = await setup({}, {}, async () => {
+    throw new Error('unit configuration unavailable');
+  });
+  expect(await f.refresh()).toEqual({ code: 50001 });
+  expect(f.events).toEqual(['versions']);
+  expect(f.store.size).toBe(0);
   expect(f.sids).toEqual([]);
 });

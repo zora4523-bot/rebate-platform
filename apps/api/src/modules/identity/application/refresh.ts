@@ -14,7 +14,8 @@
 //      nothing is issued.
 //   3. not rotated yet → rotate: rotated_at = now on the old row (`rotated_at IS NULL`; 0 rows →
 //      step 4), a new row with parent_hash = the old hash and expire_at = now + 30 days, the scope
-//      judged again from this request (sessionScope), the same sid, an access token; then the new
+//      judged again from this request (computed before the transaction, see below), the same sid,
+//      an access token; then the new
 //      pair, encrypted under the context 'identity.refresh_grace', is written to Redis
 //      `refresh_grace:<old hash>` for 30 seconds BEFORE the transaction commits, so a failed Redis
 //      write rolls the whole rotation back (50001; the old token still rotates next time).
@@ -28,8 +29,12 @@
 //      reads the committed rotated_at and goes to step 4; the (app_id, parent_hash) unique
 //      constraint is the second guard — a 23505 on it rolls the attempt back and the request is
 //      tried once more, where it sees the token rotated.
-// Every other failure (Redis, the hook, the configuration reader, the database) rolls back and is
-// answered 50001. devices.last_login_sid is never touched. Log lines carry the app and at most the
+// The scope (sessionScope over the minimum-version reader) is judged once per request BEFORE the
+// first transaction opens and handed in: the reader runs on its own database handle, so a call
+// inside the transaction would borrow a second connection from the same pool while this one is
+// held (pool exhaustion under concurrent refreshes). Inside the transaction only `trx`, the token
+// service, FieldCrypto and Redis are used. A failed read is 50001 with no transaction opened.
+// Every other failure (Redis, the hook, the database) rolls back and is answered 50001. devices.last_login_sid is never touched. Log lines carry the app and at most the
 // first 8 characters of a hash, never a token.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
@@ -43,6 +48,7 @@ import {
   type FieldCrypto,
   type RedisHandle,
   type RootLogger,
+  type TokenPrincipal,
 } from '../../platform/index.ts';
 import type { TokenService } from './access-tokens.ts';
 import { sessionScope, type MinimumVersionReader } from './session-scope.ts';
@@ -156,6 +162,7 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
     session: { sid: string; user_id: string; device_id: string },
     tokenHash: string,
     now: Date,
+    scp: TokenPrincipal['scp'],
   ): Promise<RefreshPair | null> {
     const appId = command.verifiedDevice.appId;
     const marked = await trx
@@ -166,15 +173,6 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
       .where('rotated_at', 'is', null)
       .executeTakeFirst();
     if (marked.numUpdatedRows === 0n) return null;
-    const scp = await sessionScope(
-      {
-        appId,
-        platform: command.platform,
-        ...(command.channel === undefined ? {} : { channel: command.channel }),
-        ...(command.version === undefined ? {} : { version: command.version }),
-      },
-      versions,
-    );
     const issued = tokens.issueRefresh();
     await trx
       .insertInto('refresh_tokens')
@@ -241,7 +239,11 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
     return { code: 0, data: pair };
   }
 
-  async function attempt(command: RefreshCommand, tokenHash: string): Promise<Answer> {
+  async function attempt(
+    command: RefreshCommand,
+    tokenHash: string,
+    scp: TokenPrincipal['scp'],
+  ): Promise<Answer> {
     const appId = command.verifiedDevice.appId;
     return db.transaction().execute(async (trx): Promise<Answer> => {
       const token = await trx
@@ -271,7 +273,7 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
       }
       let rotatedAt = token.rotated_at;
       if (rotatedAt === null) {
-        const pair = await rotate(trx, command, session, tokenHash, now);
+        const pair = await rotate(trx, command, session, tokenHash, now, scp);
         if (pair !== null) {
           logger.info(
             { app_id: appId, token_hash_prefix: tokenHash.slice(0, 8), scp: pair.session_scope },
@@ -296,17 +298,18 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
   async function settle(
     command: RefreshCommand,
     tokenHash: string,
+    scp: TokenPrincipal['scp'],
     retried: boolean,
   ): Promise<Answer> {
     try {
-      return await attempt(command, tokenHash);
+      return await attempt(command, tokenHash, scp);
     } catch (error) {
       if (!retried && isParentConflict(error)) {
         logger.info(
           { app_id: command.verifiedDevice.appId, token_hash_prefix: tokenHash.slice(0, 8) },
           'refresh_concurrent_rotation',
         );
-        return settle(command, tokenHash, true);
+        return settle(command, tokenHash, scp, true);
       }
       logger.error(
         {
@@ -323,7 +326,31 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
   return {
     async refresh(command) {
       const tokenHash = createHash('sha256').update(command.refresh_token).digest('hex');
-      return settle(command, tokenHash, false);
+      // Judged before any transaction: the reader must never wait for a pool connection while
+      // this request already holds one.
+      let scp: TokenPrincipal['scp'];
+      try {
+        scp = await sessionScope(
+          {
+            appId: command.verifiedDevice.appId,
+            platform: command.platform,
+            ...(command.channel === undefined ? {} : { channel: command.channel }),
+            ...(command.version === undefined ? {} : { version: command.version }),
+          },
+          versions,
+        );
+      } catch (error) {
+        logger.error(
+          {
+            app_id: command.verifiedDevice.appId,
+            token_hash_prefix: tokenHash.slice(0, 8),
+            ...errorFields(error),
+          },
+          'refresh_scope_failed',
+        );
+        return { code: 50001 };
+      }
+      return settle(command, tokenHash, scp, false);
     },
   };
 }
