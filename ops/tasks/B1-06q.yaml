@@ -1,0 +1,23 @@
+id: B1-06q
+repo: rebate-platform
+title: 受保护测试为「复核失败后无返利购买可外跳」放宽（改前改后都绿）：[AC-B1-06k#30] 去掉只认 50303 的旧期望，改为等强的「要么 50303、要么以无返利身份新转链」，保留「无返利请求取不到正常归因缓存」
+type: test-change
+# 草稿 2026-10-08（W1 搜索转链线）。规划口径：BR-PRICE-13 新句（规划 couli#80；变更记录 couli docs/changes/20261008-复核失败后无返利购买.md，状态行「代理经 Jev 判定，负责人 2026-10-08 在对话中同意交 Jev 判断，可随时推翻」）；
+# AC-S1-14 ② 已补「复核失败时点次按钮也须外跳，不得再回 50303」。no_rebate=true 再次 open 不以复核成功为前提，按 BR-ID-18 用 self_buy 位、不带用户参数转链。
+# 冲突点：B1-06k 已合并的 test/spec/linking/open-requote/singleflight.int.test.ts [AC-B1-06k#30] 断言第二次 open 恰为 { code: 50303, data: null }。按规划/11 §4.4 先立测试变更任务（先例 B1-06n、B1-04s）。
+# 改法（不带条件的等强断言）：第二次 open 的结果只能是 { code: 50303, data: null }，或成功且 jump 等于本次无返利转链的结果、不等于正常归因缓存里的外跳；成功时再断言最后一次转链入参 noRebate: true；
+# 保留「cache.get 最后一次带 noRebate: true」。不改其他用例、不改夹具语义、不改实现代码；改前（现实现 50303）改后（B1-06p 成功外跳）都绿。新行为的正向规则测试由 B1-06p 新增。
+# 不属削弱资金测试：被删的是被 08 新口径推翻的期望（引用上面变更记录状态行与 AC-S1-14 ②），核心保护「无返利请求不复用正常归因缓存」保留并加强；PR 说明照此写，两家评审时写明。
+# refs 留空（BR-PRICE-13 单条超 24KB，且新句晚于当前 SPEC_REF）。保护路径第一类、改已有文件；test/** RV2，两家评审 pass 后按 approvals #24 加标签合并。按教训 16 走非 task/ 分支（test-change/B1-06q）。
+refs: []
+refs_hash: {}
+deps: [B1-06k]
+paths:
+  - 'test/spec/linking/open-requote/singleflight.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-requote/**'
+status: todo
+pr: null

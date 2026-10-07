@@ -10,13 +10,14 @@ type: impl
 # 实现要点：① 不存储结果（非 0 且不在 3xxxx，如 50303）的 open 日志在幂等事务外另写，attempt 不写（冻结用例 AC#14/#15/#37/#40 要日志）；
 # ② link-open-owner 新建 link 与认领改为可选接收 trx（冻结 kit 调 open({ linkId }) 不变）；③ 单飞跨请求共享的新 link：共享结论只在提交后发布（或各自事务内 ON CONFLICT 插入），
 # 发起方回滚时其他请求不得引用不存在的 link（规则测试覆盖）；④ 外部调用（取价、转链）期间占事务连接，本任务接受并在 linking 注释写明，platform 新入口另议。
-# jump.expire_at 检查归 B1-06e。依据 BR-PRICE-12、BR-PRICE-13、BR-PRICE-20、BR-ATTR-05 由编排者摘入任务书第 2 节（refs 只留放得下 24KB 上限的 BR-PRICE-12、20；BR-PRICE-13 含细则单条 43KB、BR-ATTR-05 也超限，评审提示须写明单飞 50303 在本任务范围内）。
+# jump.expire_at 检查归 B1-06e；2026-10-08 并入（B1-06e Codex 第 2 轮 S1 降级）：单飞窗口内复用已完成的转链结果前按注入时钟复检 jump.expire_at，过期则重转（可复用复核结果）；
+# 幂等请求哈希改为契约校验后的完整请求体（含 no_rebate_reason），同键改体回 20901。两项由实现者在 linking/** 内补单元测试（规则测试已冻结）。依据 BR-PRICE-12、BR-PRICE-13、BR-PRICE-20、BR-ATTR-05 由编排者摘入任务书第 2 节（refs 只留放得下 24KB 上限的 BR-PRICE-12、20；BR-PRICE-13 含细则单条 43KB、BR-ATTR-05 也超限，评审提示须写明单飞 50303 在本任务范围内）。
 # 新规则测试放 test/spec/linking/open-idempotency/**，@couli/db/testing 只在 *.int.test.ts 里 import。风险：linking/** RV2，platform/idempotency RV2（预计不改）。
 refs: [BR-PRICE-12, BR-PRICE-20]
 refs_hash:
   BR-PRICE-12: d34f9f17f4ae
   BR-PRICE-20: 7529667f1f23
-deps: [B1-06k, B1-06n]
+deps: [B1-06k, B1-06n, B1-06e]
 paths:
   - 'apps/api/src/modules/linking/**'
   - 'apps/api/src/modules/platform/idempotency/**'

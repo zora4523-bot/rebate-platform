@@ -1,0 +1,27 @@
+id: B1-06w
+repo: rebate-platform
+title: linking 生产装配：在 app.module 接 open 所需的取价端口、转链缓存（Redis）、受治理联盟上游与注册表；真实应用 POST /v1/links/{link_id}/open 对京东、拼多多 link 能出外跳方案（演示适配器、非 prod），prod 只下发已验证外跳路径
+type: impl
+# 草稿 2026-10-07、2026-10-08 改（W1 搜索转链线）。B1-06e（open 路由与京东拼多多转链）所需端口要在 app.module.ts 装配，超出其 paths，现由兜底服务占位（open 恒 503/50301）。
+# parsing 的装配归 B1-07b（2026-10-08 改：B1-07b paths 加 app.module.ts），本任务只做 linking；编排决定见 couli-runs/B1-06e、B1-07b 的 decision-orchestrator.md。
+# 沿用 B1-05j 在 app.module 建好的全局提供者（受治理联盟上游每进程建一次、跨请求复用；LinkRegistrar、演示报价器、Redis）。
+# 规则测试：真实 AppModule 装配下（createHttpApp + inject，不监听端口；演示适配器、测试 Redis 与数据库只在 *.int.test.ts 里 import），open 京东 / 拼多多 link 返回 200 与外跳方案；
+# 不替换被测服务，只观察（先例 B1-05j governed.int.test.ts）。prod 装配演示适配器 / 演示报价器拒绝启动。风险：app.module.ts RV2、linking RV2，整体 RV2。
+# 装配前必须补的放行判断（B1-06e 资金评审 S2）：APP_ENV=prod 时只下发已验证的外跳路径（CAP-JD-11、CAP-PDD-11 未验证前不下发或按丢归因处理），拼多多 scheme 不写死、取自 apps.json 并经验证标记。
+# 「prod 拒绝演示件」B1-05j 已实现，不单列规则测试；「prod 只下发已验证路径」在 linking 入口注入环境（APP_ENV 与验证标记）测，不在真实 AppModule 下起 prod。
+# linking/** 串行：B1-06e → B1-06m → B1-06p → 本任务；app.module.ts 与 B1-07b 串行。
+refs: []
+refs_hash: {}
+deps: [B1-05j, B1-06e, B1-06m, B1-06p, B1-07b]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/wiring/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/wiring/**'
+status: todo
+pr: null
