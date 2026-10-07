@@ -30,5 +30,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/output-guard/**'
-status: todo
-pr: null
+status: done
+pr: 204
