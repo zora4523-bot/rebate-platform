@@ -6,7 +6,7 @@
 // the comparisons are exact. Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import { loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
-import { APP_ENV_NAMES, PROBLEMS, configProblems, type AppEnvName } from './wiring-kit.ts';
+import { APP_ENV_NAMES, PROBLEMS, configProblems, settleSync, type AppEnvName } from './wiring-kit.ts';
 
 const KEYRING = '/srv/couli/keys/keyring.json';
 const MASTER = '/srv/couli/keys/master.hex';
@@ -80,8 +80,8 @@ it('[ADR-0001 §2] local / test 用 local 提供者时 keyring 原样保存两�
   }
 });
 
-it('[ADR-0001 §2][规划/02 §12.6] APP_ENV 为 staging 或 prod（云上）选 local 提供者拒绝启动；文件变量照常检查', () => {
-  for (const appEnv of ['staging', 'prod'] as const) {
+it('[AC-B1-01zd#7][ADR-0001 §2][规划/02 §12.6] APP_ENV 为 prod 选 local 提供者拒绝启动；文件变量照常检查', () => {
+  for (const appEnv of ['prod'] as const) {
     expect(
       configProblems(() =>
         loadConfig({
@@ -106,6 +106,45 @@ it('[ADR-0001 §2][规划/02 §12.6] APP_ENV 为 staging 或 prod（云上）选
       ),
     ).toEqual([PROBLEMS.localInCloud(appEnv), PROBLEMS.keyringRelative, PROBLEMS.masterRelative]);
   }
+});
+
+it('[AC-B1-01zd#8][BR-ID-33] staging 选 local 且提供两个文件变量时 loadConfig 通过并保存本地提供者', () => {
+  const outcome = settleSync(() =>
+    loadConfig({
+      APP_ENV: 'staging',
+      FIELD_KEY_PROVIDER: 'local',
+      FIELD_KEYRING_FILE: KEYRING,
+      FIELD_MASTER_KEY_FILE: MASTER,
+    }),
+  );
+  expect('value' in outcome ? outcome.value.keyring : 'rejected').toStrictEqual({
+    provider: 'local',
+    keyringFile: KEYRING,
+    masterKeyFile: MASTER,
+  });
+});
+
+it('[AC-B1-01zd#9][BR-ID-33] staging 选 local 仍校验两个文件变量：必填且必须为绝对路径', () => {
+  const base = { APP_ENV: 'staging', FIELD_KEY_PROVIDER: 'local' };
+  expect(configProblems(() => loadConfig(base))).toEqual([
+    PROBLEMS.keyringUnset,
+    PROBLEMS.masterUnset,
+  ]);
+  expect(configProblems(() => loadConfig({ ...base, FIELD_KEYRING_FILE: KEYRING }))).toEqual([
+    PROBLEMS.masterUnset,
+  ]);
+  expect(configProblems(() => loadConfig({ ...base, FIELD_MASTER_KEY_FILE: MASTER }))).toEqual([
+    PROBLEMS.keyringUnset,
+  ]);
+  expect(
+    configProblems(() =>
+      loadConfig({
+        ...base,
+        FIELD_KEYRING_FILE: 'keyring.json',
+        FIELD_MASTER_KEY_FILE: 'master.hex',
+      }),
+    ),
+  ).toEqual([PROBLEMS.keyringRelative, PROBLEMS.masterRelative]);
 });
 
 it('[规划/11 §8] local 与 test 选 kms 拒绝启动（本地栈不加载真实密钥）', () => {
@@ -312,11 +351,11 @@ it('[规划/02 §12.6][BR-ID-33] 问题文案与 AppConfig 都不带变量的值
   }
 });
 
-it('[ADR-0001 §2] 只读 env 参数：同一份 env 在不同 APP_ENV 下的取舍符合 §2 的表', () => {
+it('[AC-B1-01zd#10][ADR-0001 §2] 只读 env 参数：staging 允许 local，其他环境的取舍不变', () => {
   const table: Record<AppEnvName, Record<'unset' | 'local' | 'kms', string>> = {
     local: { unset: 'null', local: 'local', kms: 'refused' },
     test: { unset: 'null', local: 'local', kms: 'refused' },
-    staging: { unset: 'refused', local: 'refused', kms: 'kms' },
+    staging: { unset: 'refused', local: 'local', kms: 'kms' },
     prod: { unset: 'refused', local: 'refused', kms: 'kms' },
   };
   const seen: Record<string, Record<string, string>> = {};
