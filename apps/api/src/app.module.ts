@@ -7,6 +7,7 @@ import { createContentReader } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import { IdentityModule, type SmsConfigReader } from './modules/identity/index.ts';
 import { LinkingModule } from './modules/linking/index.ts';
+import { ParsingModule } from './modules/parsing/index.ts';
 import {
   CLOCK,
   DB,
@@ -70,6 +71,8 @@ function identityModule(): DynamicModule {
  * assembled here so catalog never imports content (B1-05c).
  * The linking module (card-time link registration, B1-06c) loads on `api` beside catalog; its
  * configuration port is content's reader too, assembled here so linking never imports content.
+ * The parsing module (parse_input core, B1-07a) loads on `api` as well; its configuration port
+ * (parse.tpwd.enabled, product_key.jd.mode) is content's reader, so parsing never imports content.
  * Business modules are added to the entries that own them by their tasks (规划/02 §4.1).
  */
 @Module({})
@@ -90,6 +93,7 @@ export class AppModule {
           ? [
               CatalogModule.forRoot((db, clock) => createContentReader({ db, clock })),
               LinkingModule.forRoot((db, clock) => createContentReader({ db, clock })),
+              ParsingModule.forRoot((db, clock) => createContentReader({ db, clock })),
             ]
           : []),
       ],
