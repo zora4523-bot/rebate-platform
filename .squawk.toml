@@ -1,0 +1,24 @@
+# squawk lints the migration SQL (ADR-0001 §2 "边界与规范" row; 规划/02 §16.3 "迁移" row): root
+# script `pnpm run lint:migrations`, part of verify:fast, so of CI verify-fast and of the verify
+# container. Added by CT-06a (2026-10-07). Rule reference: https://squawkhq.com/docs/rules
+#
+# The migrations run in ONE transaction (packages/db/scripts/migrate.ts) on PostgreSQL 18.
+pg_version = "18.0"
+assume_in_transaction = true
+
+# Excluded after a trial run over 0001–0018 (CT-06a):
+# - prefer-bigint-over-int: ratios (_bp) and counters are `integer` by ADR-0001 §4. Money columns
+#   (`*_fen`) must still be bigint: tools/ci/lint-migrations.ts rejects any other type itself.
+# - require-concurrent-index-creation: impossible inside the transaction the runner opens
+#   (packages/db/scripts/migrate.ts); an index on a large existing table needs its own
+#   out-of-transaction step (not supported yet).
+# Kept on purpose: require-lock-timeout and require-statement-timeout — every new migration starts
+# with `SET LOCAL lock_timeout = '…'; SET LOCAL statement_timeout = '…';` (db/AGENTS.md rule 11).
+excluded_rules = ["prefer-bigint-over-int", "require-concurrent-index-creation"]
+
+# Which files are linted is decided by tools/ci/lint-migrations.ts: merged migrations never change
+# (db/AGENTS.md rule 2), so the files that predate this gate (0001–0018, the baseline in that script)
+# are not linted. A legitimate exception in a new migration is a `-- squawk-ignore <rule>` comment on
+# the line right before the statement, with the reason on the lines above it (db/AGENTS.md rule 11).
+# The wrapper refuses `squawk-ignore-file` and any `squawk-ignore` before a statement on a funds or
+# attribution table (规划/02 §16.3; table list in the wrapper), so those get no exceptions at all.

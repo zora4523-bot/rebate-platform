@@ -43,6 +43,7 @@ const EXPECTED: ProtectedConfig = {
     '.editorconfig',
     'contracts/redocly.yaml',
     'contracts/.redocly.lint-ignore.yaml',
+    '.squawk.toml',
   ],
   class3_gates: [
     'tools/**',

@@ -14,6 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "depcruise": "depcruise --config .dependency-cruiser.cjs apps packages test tools",
+    "lint:migrations": "node tools/ci/lint-migrations.ts",
     "test": "turbo run test --env-mode=loose",
     "test:int": "turbo run test:int --env-mode=loose",
     "test:longrun": "pnpm --filter @couli/spec-tests run test:longrun",
@@ -37,7 +38,7 @@
     "ops:task:check": "node tools/ops/task.ts check",
     "ops:handoff": "node tools/ops/handoff.ts",
     "ops:usage": "node tools/ops/usage.ts",
-    "verify:fast": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run depcruise && pnpm run test && pnpm --filter @couli/api run smoke:entries && pnpm run contracts:check && pnpm run guard:static",
+    "verify:fast": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run depcruise && pnpm run lint:migrations && pnpm run test && pnpm --filter @couli/api run smoke:entries && pnpm run contracts:check && pnpm run guard:static",
     "verify": "pnpm run verify:fast && pnpm run test:int && pnpm --filter @couli/spec-tests run test:browser && pnpm --filter @couli/spec-tests run test:smoke && pnpm run db:check"
   },
   "devDependencies": {
@@ -46,6 +47,7 @@
     "eslint": "10.11.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "prettier": "3.9.9",
+    "squawk-cli": "2.66.0",
     "turbo": "2.11.3",
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.1",
