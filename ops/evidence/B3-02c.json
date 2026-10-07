@@ -1,0 +1,143 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/model-gateway/routing/** and index.ts are RV1). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl (3 attempts), then one Opus handover (规划/11 §2.5). Refs BR-AI-14 (BR-AI-16 and BR-AI-21 sentences quoted in the brief); the brief with the one-hop text passes 24 KB, so the orchestrator wrote it with brief.ts minus the one-hop text plus a pointer to the full BR text. No real model call, no real key. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "fresh read-only Claude subagents with the money checklist: round 1 pass, round 2 pass, round 3 (after the Opus handover) pass, 0 S0/S1; S2 and out-of-scope items to follow-ups (B3-02e ledger for gateway-level metering; eval wiring must pass provenance)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "fresh read-only Codex sessions, not the implementing one: round 1 fail (2 S1), round 2 fail (3 S1), fixed by Codex attempts 2-3 and the Opus handover; round 3 originally fail with 2 S1, both known residues outside this task's paths: the eval runner sends no provenance (missing provenance is synthetic per the frozen tests; the B3 lane was told B-mode wiring must pass it) and a plain unregistered gateway without metering does not record failed paid usage (root cause vendors/gateway.ts, fixed by B3-02e). Neither has a caller until B-mode paid evaluation is wired, so the orchestrator lowered them to S2 (decisions 28-30 in couli-runs/CODEX-IMPL/decision-orchestrator.md)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rounds 1 and 2 by fresh Codex sessions (2 and 1 S1 + 1 S2: tier order, shared run clock across primary and backup, failure time charged to the run clock, same entry in both slots), fixed by the test author; a fresh Claude subagent closed it (pass, 1 S2)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B3-02c",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "acc601e14036fdc3509d18446c60e691c4c8007b",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "acc601e14036fdc3509d18446c60e691c4c8007b",
+      "tree": "c6fe91e156269b941331ae08dea12c4ab7f0d3e7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T08:54:45Z",
+      "finished_at": "2026-10-07T08:55:04Z",
+      "red_tests": [
+        "test/spec/agent/model-routing/breaker.test.ts > [02 §14 千问行 熔断] minRequests=1 openMs=5000：主条目失败到阈值后打开，之后记 circuit_open 直接走备用；过 openMs 后恢复尝试主条目",
+        "test/spec/agent/model-routing/breaker.test.ts > [02 §14 千问行 熔断] minRequests=3 openMs=9000：主条目失败到阈值后打开，之后记 circuit_open 直接走备用；过 openMs 后恢复尝试主条目",
+        "test/spec/agent/model-routing/breaker.test.ts > [02 §14 千问行 熔断] 主、备都熔断打开：不调用任何传输，degraded(models_failed)，两条都记 circuit_open",
+        "test/spec/agent/model-routing/facade.test.ts > [BR-AI-14 线上调用] 经 gateway.invoke 发出 purpose=online、vendor=qwen、dataClass=user_input；报文带锁定快照并关闭思考",
+        "test/spec/agent/model-routing/facade.test.ts > [BR-AI-14 多厂商接入] GLM 到不了线上调用：resolveRoute 剔除 GLM 备用，主模型失败后不以 glm 调用网关",
+        "test/spec/agent/model-routing/facade.test.ts > [05 B3-02 评测端口] createEvalModelPort：以离线用途 eval_compare、数据类别 synthetic 调网关，结果原样返回，只记离线计量；门面再导出各段公开名",
+        "test/spec/agent/model-routing/facade.test.ts > [06 Q-C31 离线额度] GLM 没有离线额度：评测端口得到 VendorError(offline_budget_unset)，传输不被调用",
+        "test/spec/agent/model-routing/metering.test.ts > [BR-AI-16 计量] 主模型成功：线上计量恰好一条（网关已记，路由器不重复记），outcome.usage 原样透出",
+        "test/spec/agent/model-routing/metering.test.ts > [BR-AI-16 计量] 主模型已出部分输出后 network 失败（错误带 usage）：该用量记入线上计量，备用成功的用量另记一条",
+        "test/spec/agent/model-routing/metering.test.ts > [BR-AI-16 计量] 主模型已出部分输出后 server 失败（错误带 usage）：该用量记入线上计量，备用成功的用量另记一条",
+        "test/spec/agent/model-routing/metering.test.ts > [BR-AI-16 计量] 主、备都返回协议错误（malformed）但带 usage：两条用量都记入，outcome 为 models_failed",
+        "test/spec/agent/model-routing/metering.test.ts > [BR-AI-16 计量] 错误的 usage 为 null：不记任何计量条目（不按零用量记）",
+        "test/spec/agent/model-routing/metering.test.ts > [BR-AI-16 计量] 内容拒绝时错误带 usage：该用量同样记入线上计量，且不调备用",
+        "test/spec/agent/model-routing/resolve.prop.test.ts > [BR-AI-14 厂商 ⊆ 同意清单] 任意路由表、选择与同意清单：attempts 只含同意的、锁定快照的、已签字评测的千问条目",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 路由顺序] 两个条目都合格：attempts 依次为主（Flash）、备（Plus），没有剔除",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 路由顺序] 档位颠倒的选择（primary=plus、backup=flash）被拒绝：两条都剔除为 tier_mismatch，不尝试任何条目",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 路由顺序] 两个 Flash 条目分别作主、备：备用位不是 Plus 档，剔除为 tier_mismatch，只尝试主",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-21 后台切换] 在同档位的已评测快照之间切换：主位换成另一个已签字的 Flash 快照，attempts=[新 Flash, Plus]",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 路由顺序] backup 为 null：只尝试主（Flash）",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 路由顺序] 主备选成同一个 Flash 条目：Flash 只作主尝试一次，不再作为备用",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 同意清单] 千问不在同意清单：两个条目都剔除为 vendo…",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 多厂商接入] GLM 条目即使同意清单含 glm 也剔除为…",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 快照锁定] 型号带 latest：剔除为 model_no…",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 快照锁定] 型号没有日期快照：剔除为 model_not_…",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-21] 没有评测报告：剔除为 not_evaluated",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-21] 评测报告未签字：剔除为 not_evaluated",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-21] 选择指向不存在的条目：记 unknown_entry",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-14 跨厂商兜底关闭] crossVendor 槽位里的条目即使…",
+        "test/spec/agent/model-routing/resolve.test.ts > [BR-AI-21 切无模型] 选择为 no_model：mode 为 no_model，不尝试任何条目",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 路由顺序] 主模型成功：返回 Flash 的结果与用量，备用从未被调用，attempts 只有一条 ok",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 无模型降级 触发] 主模型 timeout：切到 Plus 备用，返回备用的结果与用量",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 无模型降级 触发] 主模型 rate_limited：切到 Plus 备用，返回备用的结果与用量",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 无模型降级 触发] 主模型 server：切到 Plus 备用，返回备用的结果与用量",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 无模型降级 触发] 主模型 network：切到 Plus 备用，返回备用的结果与用量",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 无模型降级 触发] 主模型 malformed：切到 Plus 备用，返回备用的结果与用量",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 跨厂商兜底关闭] 主、备都 timeout：degraded(models_failed)，传输恰好被调两次，全是千问",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 跨厂商兜底关闭] 主、备都 rate_limited：degraded(models_failed)，传输恰好被调两次，全是千问",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 跨厂商兜底关闭] 主、备都 server：degraded(models_failed)，传输恰好被调两次，全是千问",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 跨厂商兜底关闭] 主、备都 network：degraded(models_failed)，传输恰好被调两次，全是千问",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 跨厂商兜底关闭] 主、备都 malformed：degraded(models_failed)，传输恰好被调两次，全是千问",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 跨厂商兜底关闭] 路由里已剔除的跨厂商条目不被启用：主备失败后不调用任何其他厂商或条目",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-14 无模型降级 触发] 没有备用（backup 为 null）时主模型失败直接 degraded(models_failed)，传输只调一次",
+        "test/spec/agent/model-routing/router.test.ts > [方案 §4.3.2 内容拒绝不换模型] 主模型 content_refused：返回 refused，不调备用",
+        "test/spec/agent/model-routing/router.test.ts > [K8 代理默认] 主模型 auth：告警一次并 degraded(vendor_misconfigured)，不调备用",
+        "test/spec/agent/model-routing/router.test.ts > [K8 代理默认] 主模型 bad_request：告警一次并 degraded(vendor_misconfigured)，不调备用",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-16 预算用完] budgetExhausted 为 true：degraded(budget)，不发生任何网关或传输调用",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-16 预算用完] 预算信号每次 complete 读一次：先未用完照常调用，之后用完即降级",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-21 切无模型] 路由为 no_model：degraded(route_no_model)，不调用传输",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-21] 所有条目都被剔除：degraded(route_unavailable)，不调用传输",
+        "test/spec/agent/model-routing/router.test.ts > [BR-AI-21 后台切换] route() 每次 complete 读一次：切到无模型后下一次即降级，切到另一个已评测的 Flash 快照后用新快照",
+        "test/spec/agent/model-routing/timing.test.ts > [02 §14 千问行 超时切备用] attemptTimeoutMs=3000：主模型挂起，到时限时传输收到的 signal 已中止，随即调备用并返回备用结果",
+        "test/spec/agent/model-routing/timing.test.ts > [02 §14 千问行 超时切备用] attemptTimeoutMs=1200：主模型挂起，到时限时传输收到的 signal 已中止，随即调备用并返回备用结果",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 总量 8000 已用 7000：单次时限取 min(3000, 剩余)；剩余耗尽后不再调备用，degraded(model_timeout)",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 总量 5000 已用 4500：单次时限取 min(1000, 剩余)；剩余耗尽后不再调备用，degraded(model_timeout)",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 主备共享同一个 RunModelClock：总量 5000、单次 3000，Flash 在 3000ms 中止，Plus 在累计 5000ms 中止并返回 model_timeout，余额为零；耗尽后再 complete 不发起调用",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 主模型等 2000ms 后 server 失败：失败耗时也记账，备用只得到剩余 2000ms（总量 8000、已用 4000、单次 3000），到点 model_timeout、余额 0",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 主模型等 2000ms 后 rate_limited 失败：失败耗时也记账，备用只得到剩余 2000ms（总量 8000、已用 4000、单次 3000），到点 model_timeout、余额 0",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 主模型等 2000ms 后 network 失败：失败耗时也记账，备用只得到剩余 2000ms（总量 8000、已用 4000、单次 3000），到点 model_timeout、余额 0",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 主备都等 1000ms 后 server 失败：两次失败耗时都记到本 run 的累计时限上，degraded(models_failed)",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 主备都等 1000ms 后 rate_limited 失败：两次失败耗时都记到本 run 的累计时限上，degraded(models_failed)",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 主备都等 1000ms 后 network 失败：两次失败耗时都记到本 run 的累计时限上，degraded(models_failed)",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 剩余为 0：直接 degraded(model_timeout)，网关与传输都不被调用",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 剩余为 -250：直接 degraded(model_timeout)，网关与传输都不被调用",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] 成功尝试的等待时间（1500ms）记到本 run 的累计时限上（按 Scheduler 计）",
+        "test/spec/agent/model-routing/timing.test.ts > [02 §9.2 取消与断线] 调用方 signal 在尝试中途中止：传输的 signal 随之中止，返回 aborted，不再尝试备用",
+        "test/spec/agent/model-routing/timing.test.ts > [02 §9.2 取消与断线] 调用前 signal 已中止：返回 aborted，不发起任何调用",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] createRunModelClock(8000)：剩余 = 总量 − 已记账，可累加，耗尽后 ≤0",
+        "test/spec/agent/model-routing/timing.test.ts > [BR-AI-14 累计时限] createRunModelClock(5000)：剩余 = 总量 − 已记账，可累加，耗尽后 ≤0"
+      ],
+      "expected": [
+        "test/spec/agent/model-routing/breaker.test.ts",
+        "test/spec/agent/model-routing/facade.test.ts",
+        "test/spec/agent/model-routing/metering.test.ts",
+        "test/spec/agent/model-routing/resolve.prop.test.ts",
+        "test/spec/agent/model-routing/resolve.test.ts",
+        "test/spec/agent/model-routing/router.test.ts",
+        "test/spec/agent/model-routing/timing.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4d5cd5c09bf930a28b0c21d3041ce962acae0feffdba871c90a0f69ca86acc2b"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "2f6f0cf3aace988f2c97f7f8a7601008b177c06f",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
