@@ -11,7 +11,7 @@ type: impl
 # 风险：catalog RV1、app.module.ts RV2，整体 RV2。catalog/** 串行（排在 B1-05e 之后）；app.module.ts 与其他装配任务串行。
 refs: []
 refs_hash: {}
-deps: [B1-06w, B1-07b, B1-05e]
+deps: [B1-06w, B1-07b, B1-05e, B1-06j]
 paths:
   - 'apps/api/src/modules/catalog/**'
   - 'apps/api/src/app.module.ts'
