@@ -10,6 +10,7 @@ import { CatalogSearchService } from '../../../../apps/api/src/modules/catalog/a
 import {
   searchProducts,
   type SearchProductsQuery,
+  type SearchUpstreamPage,
 } from '../../../../apps/api/src/modules/catalog/search.ts';
 import { createRootLogger, loadConfig } from '../../../../apps/api/src/modules/platform/index.ts';
 import {
@@ -23,6 +24,7 @@ export const headers = {
   'x-app-id': 'synthetic_app',
   'x-platform': 'ios',
   'x-app-version': '1.2.3',
+  'x-device-id': '01920000-0000-7000-8000-00000000d001',
 };
 
 export interface Response {
@@ -87,7 +89,27 @@ export async function httpFixture() {
               const viewer = await viewerContext.current();
               viewers.push(viewer);
               f.setViewer(viewer);
-              return searchProducts(query, { ...f.options, viewerContext });
+              // The frozen search kit scopes its candidates to its own fixture app id; over HTTP
+              // the app id comes from the contract-valid X-App-Id, so candidates are re-scoped to
+              // the request's app (fixture data only; the spied upstream still records each call).
+              const scoped = async (
+                page: Promise<SearchUpstreamPage>,
+              ): Promise<SearchUpstreamPage> => {
+                const value = await page;
+                return {
+                  ...value,
+                  items: value.items.map((c) => ({ ...c, ref: { ...c.ref, appId: viewer.appId } })),
+                };
+              };
+              const upstream = f.options.upstream;
+              return searchProducts(query, {
+                ...f.options,
+                viewerContext,
+                upstream: {
+                  search: (input) => scoped(upstream.search(input)),
+                  materialFeed: (input) => scoped(upstream.materialFeed(input)),
+                },
+              });
             },
           }),
         },

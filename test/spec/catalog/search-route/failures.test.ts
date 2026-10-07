@@ -101,7 +101,7 @@ it.each([
     value: { items: [], has_more: false, next_cursor: null, fallback_items: [] },
   });
   expect(f.materialFeed).toHaveBeenCalledExactlyOnceWith({
-    appId: 'synthetic_app',
+    appId: 'synthetic-app',
     platform: 'taobao',
     channelId: 'synthetic-feed',
     limit: 10,
