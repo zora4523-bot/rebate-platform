@@ -91,7 +91,7 @@ export function readApprovals(yaml: string): ApprovalRecord[] {
     if (
       typeof id !== 'number' ||
       !Number.isSafeInteger(id) ||
-      id <= 0 ||
+      id < 0 ||
       seen.has(id) ||
       typeof granted !== 'boolean'
     )

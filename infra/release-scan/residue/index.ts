@@ -104,8 +104,31 @@ const WORD_RULES: ReadonlyArray<[ResidueRuleId, readonly string[][]]> = [
       [word, 'menu'],
     ]),
   ],
-  ['conformance-entry', [['conformance']]],
 ];
+
+function conformanceEntry(
+  identifier: string,
+  sequence: readonly string[],
+  after: string,
+  before: string,
+): boolean {
+  // Swift 运行时与 mangled 符号中的 protocol conformance 不是测试页入口。
+  if (/^_?(?:\$[sS]|_T)/.test(identifier) || /^_*swift_/i.test(identifier)) return false;
+  if (!sequence.includes('conformance')) return false;
+  if (
+    ['test', 'page', 'entry', 'screen', 'runner', 'route'].some(
+      (word) =>
+        contains(sequence, ['conformance', word]) || contains(sequence, [word, 'conformance']),
+    )
+  )
+    return true;
+  // 单独的 conformance 只在页面文件名或路由路径段里认作入口。
+  return (
+    identifier.toLowerCase() === 'conformance' &&
+    (/^\.html?(?=$|[^A-Za-z0-9_$-])/i.test(after) ||
+      (before === '/' && /^(?:$|[/?#"'`\s\x00-\x1f])/.test(after)))
+  );
+}
 
 function detectText(
   file: string,
@@ -135,7 +158,16 @@ function detectText(
     for (const [rule, patterns] of WORD_RULES) {
       if (patterns.some((pattern) => contains(sequence, pattern))) add(rule, match.index, match[0]);
     }
-    if (match[0] === '__RESULT__') add('conformance-entry', match.index, match[0]);
+    if (
+      match[0] === '__RESULT__' ||
+      conformanceEntry(
+        match[0],
+        sequence,
+        text.slice(match.index + match[0].length),
+        text[match.index - 1] ?? '',
+      )
+    )
+      add('conformance-entry', match.index, match[0]);
     if (routes.some((route) => contains(sequence, route)))
       add('debug-route', match.index, match[0]);
   }

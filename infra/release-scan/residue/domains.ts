@@ -19,13 +19,32 @@ export function domainOccurrences(text: string): Array<{ offset: number; host: s
     const authority = match[1]!;
     const hostPort = authority.slice(authority.lastIndexOf('@') + 1);
     const host = /^([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.?)(?::[0-9]+)?$/.exec(hostPort)?.[1];
+    // React Router 用无端口、无业务路径的 localhost URL 作为解析基址。
+    // 只排除该形态；带端口、业务路径、查询参数或凭据的 URL 仍参与检测。
+    const suffix = /^[^\s<>"'`\\\x00-\x1f]*/.exec(text.slice(match.index + match[0].length))![0];
+    if (
+      host?.toLowerCase() === 'localhost' &&
+      authority === host &&
+      (suffix === '' || suffix === '/')
+    )
+      continue;
     if (host) add(host, match.index + match[0].length - hostPort.length);
   }
   const bare = (value: string, offset: number): void => {
     const host = /^([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\.?)(?::[0-9]+)?(?:\/[^\s]*)?$/.exec(
       value,
     )?.[1];
-    if (host) add(host, offset);
+    if (!host) return;
+    const tld = host.replace(/\.$/, '').split('.').at(-1)!;
+    // 裸主机需有形似顶级域的末段；Material 的 Test.Theme.* 等 PascalCase
+    // 资源名不作域名。保留全大写域名、环境保留名与 IPv4 的原有检测。
+    if (
+      !/^(?:[a-z][A-Za-z]{1,62}|[A-Z]{2,63})$/.test(tld) &&
+      !['staging', 'test', 'local', 'localhost'].includes(tld.toLowerCase()) &&
+      !/^\d+(?:\.\d+){3}$/.test(host)
+    )
+      return;
+    add(host, offset);
   };
   for (const match of text.matchAll(/(["'`])([^"'`\r\n]*)\1/g)) bare(match[2]!, match.index + 1);
   for (const match of text.matchAll(/>([^<\r\n]*)</g)) bare(match[1]!, match.index + 1);
