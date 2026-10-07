@@ -209,6 +209,8 @@ export class IdentityModule {
                     logger,
                     sensitiveWords,
                   }),
+                  // Registration keys are snapshotted before the login transaction opens.
+                  config: reader,
                   tokens,
                 }),
         },

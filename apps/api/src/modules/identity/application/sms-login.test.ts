@@ -4,7 +4,9 @@
 //     same Clock instant as server_at, never the column's DEFAULT now();
 //   - the expiries in the answer taken from what was actually issued (the JWT's exp claim and
 //     refresh_tokens.expire_at), also when the Clock crosses a second between reads;
-//   - the user-level consent lock taken before any user-level consent record is written or read.
+//   - the user-level consent lock taken before any user-level consent record is written or read;
+//   - (round 3) the registration configuration read before the transaction opens, register() given
+//     only that snapshot: no configuration read once the transaction has begun.
 // The SQL itself runs against PostgreSQL in the rule tests (test/spec/identity/sms-login).
 import type { DB } from '@couli/db';
 import { decodeJwt } from 'jose';
@@ -22,11 +24,13 @@ import { expect, it } from 'vitest';
 import { createRootLogger, type Clock, type FieldCrypto } from '../../platform/index.ts';
 import { createTokenKeyProvider, createTokenService } from './access-tokens.ts';
 import type { RegistrationService } from './registration.ts';
+import type { SmsConfigReader } from './sms-codes.ts';
 import { createSmsLoginService, type SmsLoginCommand } from './sms-login.ts';
 
 const USER_ID = '01920000-0000-7000-8000-000000000001';
 const DEVICE_ID = '01920000-0000-7000-8000-000000000002';
 const START_MS = Date.parse('2026-10-08T03:59:59.400Z');
+const DEVICE_HASH = 'a'.repeat(64);
 
 interface Statement {
   readonly sql: string;
@@ -59,10 +63,10 @@ function insertedRows(statement: Statement): Record<string, unknown>[] {
   return rows;
 }
 
-function answer(statement: Statement): QueryResult<unknown> {
+function answer(statement: Statement, newUser: boolean): QueryResult<unknown> {
   const text = statement.sql;
   if (text.startsWith('select') && text.includes('from "users"')) {
-    return { rows: [{ id: USER_ID, parent_bind_source: null }] };
+    return { rows: newUser ? [] : [{ id: USER_ID, parent_bind_source: null }] };
   }
   if (
     text.startsWith('select') &&
@@ -83,19 +87,29 @@ function answer(statement: Statement): QueryResult<unknown> {
     };
   }
   if (text.startsWith('select') && text.includes('from "devices"')) {
-    return { rows: [{ row_version: 3 }] };
+    return { rows: [{ row_version: 3, device_hash: DEVICE_HASH }] };
   }
   if (text.startsWith('update "devices"')) return { rows: [], numAffectedRows: 1n };
   return { rows: [] };
 }
 
-async function setup() {
+async function setup(
+  overrides: {
+    /** No account for the phone: the first-login branch calls registration.register. */
+    newUser?: boolean;
+    config?: SmsConfigReader;
+    registration?: RegistrationService;
+    /** begin / commit / rollback of the driver, in order with what the test pushes. */
+    events?: string[];
+  } = {},
+) {
   const statements: Statement[] = [];
+  const events = overrides.events ?? [];
   const connection: DatabaseConnection = {
     executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
       const statement = { sql: compiled.sql, parameters: compiled.parameters };
       statements.push(statement);
-      return Promise.resolve(answer(statement) as QueryResult<R>);
+      return Promise.resolve(answer(statement, overrides.newUser === true) as QueryResult<R>);
     },
     async *streamQuery() {
       throw new Error('not used');
@@ -104,9 +118,9 @@ async function setup() {
   const driver: Driver = {
     init: async () => undefined,
     acquireConnection: async () => connection,
-    beginTransaction: async () => undefined,
-    commitTransaction: async () => undefined,
-    rollbackTransaction: async () => undefined,
+    beginTransaction: async () => void events.push('begin'),
+    commitTransaction: async () => void events.push('commit'),
+    rollbackTransaction: async () => void events.push('rollback'),
     releaseConnection: async () => undefined,
     destroy: async () => undefined,
   };
@@ -130,7 +144,8 @@ async function setup() {
     logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
     versions: { minSupportedVersion: async () => null },
     sms: { verifyAndConsume: async () => ({ code: 0 }) },
-    registration: {} as RegistrationService,
+    registration: overrides.registration ?? ({} as RegistrationService),
+    ...(overrides.config === undefined ? {} : { config: overrides.config }),
     tokens,
   });
   const command: SmsLoginCommand = {
@@ -209,4 +224,68 @@ it('[S1][BR-ID-12] login_merge 前取用户级事务锁：锁在任何用户级�
   expect(
     statements.filter((statement) => statement.sql.includes('pg_advisory_xact_lock')),
   ).toHaveLength(1);
+});
+
+it('[S1][BR-ID-05] 首次登录：注册配置在事务开始前一次读齐，事务开始后读取器零调用，register 只拿到快照', async () => {
+  const events: string[] = [];
+  const config: SmsConfigReader = {
+    configValue: async (appId, key) => {
+      events.push(`config:${appId}:${key}`);
+      return key === 'risk.device_register_limit' ? { value: 1, version: 4 } : null;
+    },
+  };
+  const seen: unknown[] = [];
+  const registration: RegistrationService = {
+    async register(_trx, command) {
+      events.push('register');
+      expect(command.device_hash).toBe(DEVICE_HASH);
+      for (const key of [
+        'level.default',
+        'risk.merge_tombstone_dedupe',
+        'risk.device_register_limit',
+      ]) {
+        seen.push(await command.config?.configValue(command.app_id, key));
+      }
+      return { code: 0, user_id: USER_ID, invite_code: 'ABCDEF', attr_code: 'abcdefgh' };
+    },
+  };
+  const { login } = await setup({ newUser: true, config, registration, events });
+  const result = await login();
+  expect(result.code).toBe(0);
+  if (result.code === 0) expect(result.data.is_new_user).toBe(true);
+  const begin = events.indexOf('begin');
+  expect(begin).toBeGreaterThan(0);
+  expect(events.slice(0, begin)).toEqual([
+    'config:couli:level.default',
+    'config:couli:risk.merge_tombstone_dedupe',
+    'config:couli:risk.device_register_limit',
+  ]);
+  expect(events.slice(begin).filter((event) => event.startsWith('config:'))).toEqual([]);
+  expect(events.slice(begin)).toEqual(['begin', 'register', 'commit']);
+  expect(seen).toEqual([null, null, { value: 1, version: 4 }]);
+});
+
+it('[S1] 已有账号登录也只在事务前读配置；未注入读取器时 register 不收到 config（沿用注册服务默认）', async () => {
+  const events: string[] = [];
+  const config: SmsConfigReader = {
+    configValue: async (_appId, key) => {
+      events.push(`config:${key}`);
+      return null;
+    },
+  };
+  const existing = await setup({ config, events });
+  expect((await existing.login()).code).toBe(0);
+  const begin = events.indexOf('begin');
+  expect(events.slice(begin).filter((event) => event.startsWith('config:'))).toEqual([]);
+
+  let received: unknown = 'not called';
+  const registration: RegistrationService = {
+    async register(_trx, command) {
+      received = command.config;
+      return { code: 0, user_id: USER_ID, invite_code: 'ABCDEF', attr_code: 'abcdefgh' };
+    },
+  };
+  const plain = await setup({ newUser: true, registration });
+  expect((await plain.login()).code).toBe(0);
+  expect(received).toBeUndefined();
 });

@@ -16,6 +16,8 @@ export {
   createDefaultInviteCodeFilter,
   countDeviceRegistrations,
   registrationConstants,
+  snapshotRegistrationConfig,
+  REGISTRATION_CONFIG_KEYS,
   DEFAULT_AVATAR,
   PHONE_BLIND_INDEX_CONTEXT,
   PHONE_CIPHER_CONTEXT,

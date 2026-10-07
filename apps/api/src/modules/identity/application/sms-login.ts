@@ -9,7 +9,9 @@
 //   2. normalize_phone → 20001 phone_invalid (no code consumed);
 //   3. verifyAndConsume (login purpose) → 20002 / 20003. The code is consumed here, outside and
 //      before the PG transaction: a later rollback (10405, 44001, 50001, a thrown error) does not
-//      bring it back;
+//      bring it back; then, on a full session with a configuration port, the registration keys are
+//      read once (snapshotRegistrationConfig): nothing inside the transaction reads configuration
+//      or borrows another pooled connection;
 //   4. one READ COMMITTED transaction: the account by phone blind index (status <> deleted;
 //      cooling-off counts as existing), then
 //      - restricted, no account → 10405 no_account, nothing written, no token; the minimum in the
@@ -65,10 +67,14 @@ import {
 import { deviceHashOf, findAccountByPhone, type LoginAccount } from '../infra/login-accounts.ts';
 import { hasLoginLog, insertLoginLog } from '../infra/login-logs.ts';
 import type { TokenService } from './access-tokens.ts';
-import type { InviteBindResult, RegistrationService } from './registration.ts';
+import {
+  snapshotRegistrationConfig,
+  type InviteBindResult,
+  type RegistrationService,
+} from './registration.ts';
 import { sessionScope, type MinimumVersionReader } from './session-scope.ts';
 import { createSession } from './sessions.ts';
-import type { SmsCodeService } from './sms-codes.ts';
+import type { SmsCodeService, SmsConfigReader } from './sms-codes.ts';
 
 export { LOGIN_LOGS_DEVICE_ID_CONTEXT } from '../domain/login.ts';
 
@@ -126,6 +132,13 @@ export interface SmsLoginOptions {
   readonly versions: MinimumVersionReader;
   readonly sms: Pick<SmsCodeService, 'verifyAndConsume'>;
   readonly registration: RegistrationService;
+  /**
+   * The identity configuration port. Given, the registration keys are read through it before the
+   * transaction opens and register() gets only that snapshot, so the transaction never waits on a
+   * second pooled connection (10 concurrent first logins would otherwise hold a 10-connection pool
+   * and wait for each other forever). Absent, register() reads through its own options.config.
+   */
+  readonly config?: SmsConfigReader;
   readonly tokens: TokenService;
   readonly firstAppLoginReview?: FirstAppLoginReview;
   /** B1-03d, only before creating an account; absent means no block. No plaintext phone. */
@@ -274,6 +287,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
     phoneHmac: string,
     inviteCode: string | undefined,
     scope: SessionScope,
+    config: SmsConfigReader | undefined,
   ): Promise<Signed> {
     const appId = command.app_id;
     const existing = await findAccountByPhone(trx, appId, phoneHmac);
@@ -306,6 +320,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       device_id: command.device_id,
       ...(inviteCode === undefined ? {} : { invite_code: inviteCode }),
       client_ip: command.client_ip,
+      ...(config === undefined ? {} : { config }),
     });
     if ('outcome' in registered) {
       // BR-ID-04 细则「并发的首次登录」: the earlier request created the account; log it in.
@@ -358,12 +373,21 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       if (verified.code !== 0) return { code: verified.code };
       const phoneHmac = crypto.blindIndex(phone, PHONE_BLIND_INDEX_CONTEXT);
       const inviteCode = normalizeInviteCode(command.body.invite_code);
+      // Before the transaction: no configuration read inside it (a deletion-only login never
+      // registers).
+      const reader = options.config;
+      const config =
+        reader === undefined || scope === 'deletion_only'
+          ? undefined
+          : await snapshotRegistrationConfig(reader, appId);
       let signed: Signed;
       try {
         signed = await db
           .transaction()
           .setIsolationLevel('read committed')
-          .execute((trx) => inTransaction(trx, command, phone, phoneHmac, inviteCode, scope));
+          .execute((trx) =>
+            inTransaction(trx, command, phone, phoneHmac, inviteCode, scope, config),
+          );
       } catch (error) {
         if (!(error instanceof LoginAbort)) throw error;
         if (error.result !== 'no_account') {
