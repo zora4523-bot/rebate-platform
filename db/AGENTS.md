@@ -24,6 +24,7 @@
 8. 触发器只允许「禁止 UPDATE / DELETE」这一类；不用存储过程写业务逻辑。
 9. 扩展由超级用户在 `bootstrap/extensions.sql` 里建，迁移里不写 `CREATE EXTENSION`。
 10. `0002_pgboss-schema-v42.sql` 是生成物（`pnpm --filter @couli/db run gen:pgboss`）。升级 pg-boss 的 `deps` 任务必须同时带一个取自 `getMigrationPlans` 的新迁移（ADR-0001 §4.2 第 14 项）。
+11. 迁移 SQL 过 squawk（CT-06a）：`pnpm run lint:migrations`（在 `verify:fast` 里），规则与排除项见根目录 `.squawk.toml`；0001–0018 与门禁合并前已合并的 0019_device-registrations-created-at-insert.sql 早于门禁，冻结不检查（基线与冻结清单写在 `tools/ci/lint-migrations.ts`）。新迁移开头先写 `SET LOCAL lock_timeout` 与 `SET LOCAL statement_timeout`（值按本迁移的操作定并注释）。资金与归属表（订单、账本、账户、提现、打款、结算、分佣、对账、调账、联盟绑定与推广位、转链等，清单在该脚本里）不得 DROP、改类型、RENAME，也不接受任何 `squawk-ignore`（规划/02 §16.3）；其他表确需这样做时，在该语句的上一行写 `-- squawk-ignore <规则名>`，原因写在它上面的注释里（忽略注释与语句之间不能隔别的行）。金额列 `*_fen` 只能是 bigint，脚本自己检查；文件级 `squawk-ignore-file` 一律拒绝。
 
 ## 生成物不手改
 
