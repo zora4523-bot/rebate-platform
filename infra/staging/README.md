@@ -6,6 +6,7 @@
 | --- | --- |
 | `Dockerfile` | 多阶段镜像：Node 24，按 `pnpm-lock.yaml` 离线安装，构建 `@couli/api`；运行阶段用非 root 用户 `node` |
 | `compose.yaml` | 五个服务，同一个镜像，`command` 选入口；只用 `image:`，不构建、不拉取 |
+| `boot.mjs` | 五个进程启动时先加载（`node --import`）：记录容器启动次数供健康检查用；api 从挂载文件读签名私钥 |
 | `deploy.sh` | 部署与回退脚本，参数是镜像标签 |
 | `../../.dockerignore` | 构建上下文排除环境文件、证书与密钥文件、SSH 私钥、`.git`、`node_modules`、构建产物 |
 
@@ -19,7 +20,9 @@
 | `/etc/couli/staging-payout.env` | 只给 payout | payout 自己的 DATABASE_URL，以及同样的三个 FIELD_* 变量（payout 不连 Redis，ADR-0001 §4.2 第 20 项） |
 | `/etc/couli/staging-migrator.env` | 只给迁移步骤 | MIGRATOR_DATABASE_URL |
 
-`APP_ENV` 不放在环境文件里：`compose.yaml` 给五个服务都直接写死 `APP_ENV: staging`（它不是口令）。
+`APP_ENV` 不放在环境文件里：`compose.yaml` 给五个服务都直接写死 `APP_ENV: staging`（它不是口令）。三个环境文件里都**不要**写 JWT_ 开头的变量：签名私钥与 kid 只给 api，经 1.4 的挂载文件注入（stream / worker / admin 共用 `staging.env`，只有 kid 没有私钥会被拒绝启动）。
+
+`deploy.sh` 在迁移之前检查下面这些节点文件都存在（只看是否存在，不读内容），缺任何一个直接报错退出，不迁移、不碰正在运行的进程：三个环境文件、`/etc/pki/ca.crt`、`/etc/couli-keys/master.key` 与 `keyring.json`、`/etc/couli-jwt/es256.pem` 与 `key-id`。
 
 注意事项：
 
@@ -50,19 +53,46 @@
 | FIELD_KEYRING_FILE | `/run/couli-keys/keyring.json` |
 | FIELD_MASTER_KEY_FILE | `/run/couli-keys/master.key` |
 
-首次生成（节点上以 root 执行一次；`keyring-init.ts` 由任务 B1-01zd 提供，参数与文件格式以它为准）：
+首次生成（节点上以 root 执行一次；`keyring-init.ts` 由任务 B1-01zd 提供，文件格式以它为准）：
 
 ```sh
 install -d -m 700 /etc/couli-keys
-openssl rand -hex 32 > /etc/couli-keys/master.key
-docker run --rm --pull never --user 0 --volume /etc/couli-keys:/keys couli-api:<标签> \
-  node apps/api/scripts/keyring-init.ts "$(cat /etc/couli-keys/master.key)" /keys/keyring.json
+(umask 077 && openssl rand -hex 32 > /etc/couli-keys/master.key)
+docker run --rm --pull never --network none --user 0 \
+  --volume /etc/couli-keys:/keys couli-api:<标签> \
+  node apps/api/scripts/keyring-init.ts /keys/master.key /keys/keyring.json
 chown -R 1000:1000 /etc/couli-keys
 chmod 400 /etc/couli-keys/master.key /etc/couli-keys/keyring.json
 chmod 500 /etc/couli-keys
 ```
 
+`keyring-init.ts` 的两个参数都是**文件路径**（主密钥文件、输出的密钥环文件），由程序自己读主密钥文件。任何地方都不要用命令替换把主密钥内容放进命令行参数或环境变量：那样它会出现在进程列表和 `docker inspect` 里，文件权限挡不住。若 B1-01zd 的接口只收主密钥内容，要先让它改为收文件路径再做这一步。
+
 容器以 `node` 用户（uid 1000）运行，所以目录和文件属主是 1000，目录 500、文件 400。主密钥丢失后已加密的字段无法解开，生成后另行离线备份。
+
+### 1.4 访问令牌签名私钥（api 专用）
+
+api 在 staging 必须有 ES256 签名私钥（P-256，PKCS#8 PEM）和 kid，否则启动即退出。私钥不放环境文件（`format: raw` 的环境文件放不了多行值，规则测试也只允许每个服务一个环境文件），而是放在节点目录 `/etc/couli-jwt`，只读挂给 api（容器内 `/run/couli-jwt`）。api 启动时由 `boot.mjs` 把两个文件读进本进程的环境变量 JWT_PRIVATE_KEY_PEM 与 JWT_KEY_ID：私钥不进命令行、不进 `docker inspect`、不打印；读不到就报错（只报路径与错误码）并退出。
+
+| 文件 | 内容 |
+| --- | --- |
+| `/etc/couli-jwt/es256.pem` | PKCS#8 格式（首行标签是 `BEGIN PRIVATE KEY`，不带 `EC`）的 P-256 私钥；`openssl ecparam` 默认写出的 SEC1 格式（`EC PRIVATE KEY`）会被拒绝 |
+| `/etc/couli-jwt/key-id` | kid，一行，只能用字母、数字和 `.` `_` `~` `-`，1 到 64 个字符；用环境加年月，例如 `staging-2026-10`，换私钥时换新的 kid |
+
+由节点上已有的 `/etc/couli/jwt/es256.pem` 生成（以 root 执行一次；输出直接写文件，私钥不经过终端）：
+
+```sh
+install -d -m 700 /etc/couli-jwt
+(umask 077 && openssl pkcs8 -topk8 -nocrypt -in /etc/couli/jwt/es256.pem -out /etc/couli-jwt/es256.pem)
+printf '%s\n' staging-2026-10 > /etc/couli-jwt/key-id
+chown -R 1000:1000 /etc/couli-jwt
+chmod 400 /etc/couli-jwt/es256.pem /etc/couli-jwt/key-id
+chmod 500 /etc/couli-jwt
+```
+
+`openssl pkcs8 -topk8` 对 SEC1 与 PKCS#8 输入都输出 PKCS#8。核对曲线用 `openssl pkey -in /etc/couli-jwt/es256.pem -noout -text_pub`（只打印公钥，应看到 `prime256v1` 或 `P-256`），不要用会打印私钥的 `-text`。
+
+### 1.5 B1-01zd 之前
 
 **B1-01zd 合并之前**，应用在 `APP_ENV=staging` 下仍拒绝 `FIELD_KEY_PROVIDER=local`，五个进程都会启动失败，部署会走失败分支。
 
@@ -89,15 +119,15 @@ scp infra/staging/compose.yaml infra/staging/deploy.sh <staging 节点>:/opt/cou
 
 脚本依次打印每一步结果：
 
-1. 检查镜像已经 `docker load` 到节点；
+1. 检查镜像已经 `docker load` 到节点，检查第 1 节列出的节点文件都存在；
 2. 用新镜像一次性运行迁移（`node packages/db/scripts/migrate.ts`，只读 `staging-migrator.env`，挂载数据库 CA），迁移失败直接停下，正在运行的进程不受影响；迁移脚本出错时只打印错误类型和去掉口令的消息；
-3. `docker compose up -d --force-recreate --wait` 重建全部五个进程并等五个健康检查都通过（上限 240 秒）：api / stream / admin 要求本进程 `/healthz` 返回 2xx，五个进程都要求容器已连续运行 30 秒。容器一旦重启，运行时长和健康状态都会清零，所以启动后崩溃、反复重启的进程（包括 worker 与 payout）会让这一步失败；
+3. `docker compose up -d --force-recreate --wait` 重建全部五个进程并等五个健康检查都通过（上限 240 秒）：api / stream / admin 要求本进程 `/healthz` 返回 2xx，五个进程都要求容器已连续运行 30 秒，并且在第一次健康之前**只启动过一次**。`boot.mjs` 每次进程启动往容器内 `/tmp/couli-starts` 追加一行：这个文件在容器的可写层里，自动重启后还在，重建容器后清空。所以本次部署中任何一个进程（包括没有端口的 worker 与 payout）哪怕只崩溃、重启过一次，健康检查就一直不通过，这一步失败并回退。第一次健康后写 `/tmp/couli-settled`，以后节点重启等情况下的自动重启只需重新等 30 秒，不会一直不健康；
 4. 成功后把新标签写入 `/var/lib/couli/staging-api.tag`；
 5. 删除更早的 `couli-api` 镜像，只保留本次和上一次成功的标签（回退要用），避免写满与数据库共用的 20G 系统盘。
 
 脚本不打印任何环境文件的内容，也不开启命令跟踪。
 
-健康判定的边界：worker 与 payout 没有端口，健康检查只能看到「进程连续活了 30 秒」，看不到队列是否已经开始消费；进程如果卡在等数据库连接而没有退出，这一步也会通过，部署后要看日志确认。
+健康判定的边界：worker 与 payout 没有端口，健康检查只能看到「进程只启动过一次、连续活了 30 秒」，看不到队列是否已经开始消费；进程如果卡在等数据库连接而没有退出，这一步也会通过，部署后要看日志确认。`up --wait` 返回之后（已判定成功）才发生的崩溃不会触发本次回退，要靠看状态发现。
 
 ## 4. 回退
 

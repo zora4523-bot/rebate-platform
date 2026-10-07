@@ -7,8 +7,11 @@
 #   /etc/couli/staging.env         api / stream / worker / admin
 #   /etc/couli/staging-payout.env  payout only (its own database role; payout never uses Redis)
 # Every service mounts read-only: the database CA (/etc/pki/ca.crt) and the field-encryption
-# key ring directory (/etc/couli-keys -> /run/couli-keys). All five health checks also require
-# 30s of uptime, so `up --wait` only succeeds once every process has stayed up that long.
+# key ring directory (/etc/couli-keys -> /run/couli-keys); api also mounts its access-token
+# signing key directory (/etc/couli-jwt -> /run/couli-jwt), loaded by infra/staging/boot.mjs.
+# Every process starts through boot.mjs (node --import), which also counts container starts.
+# All five health checks require 30s of uptime and a single start before the first success,
+# so `up --wait` fails when any process crashed or restarted during the deployment.
 # HTTP ports are published on 127.0.0.1 only; worker and payout publish nothing.
 name: couli-staging
 
@@ -19,6 +22,8 @@ services:
     pull_policy: never
     command:
       - node
+      - '--import'
+      - ./infra/staging/boot.mjs
       - apps/api/dist/main.api.js
     env_file:
       # raw: values are taken literally, Compose does not expand $ inside them
@@ -29,6 +34,9 @@ services:
       APP_ENV: staging
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
+      # boot.mjs reads the access-token signing key (es256.pem, key-id) from this mounted
+      # directory into the process environment; api is the only entry that signs tokens.
+      COULI_JWT_DIR: /run/couli-jwt
     ports:
       - host_ip: 127.0.0.1
         target: '${API_PORT:-3100}'
@@ -44,14 +52,23 @@ services:
         source: /etc/couli-keys
         target: /run/couli-keys
         read_only: true
+      # access-token signing key (PKCS#8 P-256 es256.pem + key-id): owned by uid 1000,
+      # directory 500, files 400; mounted on api only
+      - type: bind
+        source: /etc/couli-jwt
+        target: /run/couli-jwt
+        read_only: true
     healthcheck:
       # Healthy only when this process own /healthz on API_PORT answers 2xx AND the
-      # container has run for 30s without a restart (a restart resets the uptime).
+      # container has run for 30s AND (before its first healthy check) started only once:
+      # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
+      # The first healthy check writes /tmp/couli-settled; later restarts (node reboot) only
+      # wait out the 30s again.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; fetch('http://127.0.0.1:' + (process.env.API_PORT || '3100') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok && age >= 30 ? 0 : 1), () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.API_PORT || '3100') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -75,6 +92,8 @@ services:
     pull_policy: never
     command:
       - node
+      - '--import'
+      - ./infra/staging/boot.mjs
       - apps/api/dist/main.stream.js
     env_file:
       # raw: values are taken literally, Compose does not expand $ inside them
@@ -102,12 +121,15 @@ services:
         read_only: true
     healthcheck:
       # Healthy only when this process own /healthz on STREAM_PORT answers 2xx AND the
-      # container has run for 30s without a restart (a restart resets the uptime).
+      # container has run for 30s AND (before its first healthy check) started only once:
+      # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
+      # The first healthy check writes /tmp/couli-settled; later restarts (node reboot) only
+      # wait out the 30s again.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; fetch('http://127.0.0.1:' + (process.env.STREAM_PORT || '3101') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok && age >= 30 ? 0 : 1), () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.STREAM_PORT || '3101') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -131,6 +153,8 @@ services:
     pull_policy: never
     command:
       - node
+      - '--import'
+      - ./infra/staging/boot.mjs
       - apps/api/dist/main.worker.js
     env_file:
       # raw: values are taken literally, Compose does not expand $ inside them
@@ -151,14 +175,15 @@ services:
         target: /run/couli-keys
         read_only: true
     healthcheck:
-      # No port: healthy once the process has run for 30s without a restart. A restart
-      # resets the container uptime and health, so a crash loop never reports healthy
-      # and deploy.sh rolls back.
+      # No port: healthy once the process has run for 30s AND (before its first healthy check)
+      # started only once (/tmp/couli-starts, written by boot.mjs; kept across a restart,
+      # emptied by a recreate). One early crash is enough to keep it unhealthy, so
+      # `up --wait` fails and deploy.sh rolls back. /tmp/couli-settled marks the first success.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; process.exit(age >= 30 ? 0 : 1)"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); const ok = age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1);"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -182,6 +207,8 @@ services:
     pull_policy: never
     command:
       - node
+      - '--import'
+      - ./infra/staging/boot.mjs
       - apps/api/dist/main.admin.js
     env_file:
       # raw: values are taken literally, Compose does not expand $ inside them
@@ -209,12 +236,15 @@ services:
         read_only: true
     healthcheck:
       # Healthy only when this process own /healthz on ADMIN_PORT answers 2xx AND the
-      # container has run for 30s without a restart (a restart resets the uptime).
+      # container has run for 30s AND (before its first healthy check) started only once:
+      # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
+      # The first healthy check writes /tmp/couli-settled; later restarts (node reboot) only
+      # wait out the 30s again.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; fetch('http://127.0.0.1:' + (process.env.ADMIN_PORT || '3102') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok && age >= 30 ? 0 : 1), () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.ADMIN_PORT || '3102') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -238,6 +268,8 @@ services:
     pull_policy: never
     command:
       - node
+      - '--import'
+      - ./infra/staging/boot.mjs
       - apps/api/dist/main.payout.js
     env_file:
       # raw: values are taken literally, Compose does not expand $ inside them
@@ -258,14 +290,15 @@ services:
         target: /run/couli-keys
         read_only: true
     healthcheck:
-      # No port: healthy once the process has run for 30s without a restart. A restart
-      # resets the container uptime and health, so a crash loop never reports healthy
-      # and deploy.sh rolls back.
+      # No port: healthy once the process has run for 30s AND (before its first healthy check)
+      # started only once (/tmp/couli-starts, written by boot.mjs; kept across a restart,
+      # emptied by a recreate). One early crash is enough to keep it unhealthy, so
+      # `up --wait` fails and deploy.sh rolls back. /tmp/couli-settled marks the first success.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; process.exit(age >= 30 ? 0 : 1)"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); const ok = age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1);"
       interval: 10s
       timeout: 5s
       retries: 3

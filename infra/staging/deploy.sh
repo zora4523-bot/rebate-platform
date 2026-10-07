@@ -4,8 +4,9 @@ set -Eeuo pipefail
 # Staging deployment (B1-01zc). Run as root on the staging node:
 #   ./deploy.sh <image-tag>
 # The image couli-api:<image-tag> must already be loaded on the node (docker load).
-# Order: take the deployment lock -> migrate with the new image -> switch all five processes
-# and wait until every health check passes (each includes 30s of uptime without a restart)
+# Order: take the deployment lock -> check the node files exist -> migrate with the new image ->
+# switch all five processes and wait until every health check passes (each requires 30s of
+# uptime and a single container start, see compose.yaml)
 # -> on success record the tag and remove older images; on failure switch back to the last
 # successful tag and exit 1.
 # Node credential files are only referenced by path; their contents are never printed.
@@ -42,6 +43,27 @@ if [[ ! -f "$COMPOSE_FILE" ]]; then
   exit 2
 fi
 
+# Everything compose and the migration mount or read must already be on the node. A missing bind
+# source would only surface while the running processes are being replaced (and the rollback
+# would fail the same way), so stop here, before the migration. Paths only; nothing is read.
+if [[ ! -f /etc/couli/staging.env || ! -f /etc/couli/staging-payout.env || ! -f /etc/couli/staging-migrator.env ]]; then
+  fail "node env file missing: /etc/couli/staging.env, staging-payout.env and staging-migrator.env are all required (README 1)"
+  exit 2
+fi
+if [[ ! -f /etc/pki/ca.crt ]]; then
+  fail "database CA /etc/pki/ca.crt is missing (README 1.1)"
+  exit 2
+fi
+if [[ ! -f /etc/couli-keys/master.key || ! -f /etc/couli-keys/keyring.json ]]; then
+  fail "field-encryption key files missing in /etc/couli-keys (master.key, keyring.json; README 1.3)"
+  exit 2
+fi
+if [[ ! -f /etc/couli-jwt/es256.pem || ! -f /etc/couli-jwt/key-id ]]; then
+  fail "signing key files missing in /etc/couli-jwt (es256.pem, key-id; README 1.4)"
+  exit 2
+fi
+log "node files present (env files, database CA, key ring, signing key)"
+
 # First deployment: no recorded tag yet, so there is nothing to roll back to.
 mkdir -p "$STATE_DIR"
 touch "$STATE_FILE"
@@ -55,11 +77,12 @@ docker run --rm --pull never --env-file /etc/couli/staging-migrator.env --volume
 log "step 1/4: migration finished"
 
 # Step 2: recreate all five processes on the new image and wait until every health check
-# passes. The health checks only pass after 30s of uptime, and a restart resets that, so a
-# process that crashes or restarts (worker and payout included) fails this step.
+# passes. A check passes only after 30s of uptime and only if the container has started
+# once (boot.mjs counts starts; the counter survives a restart and is emptied by the recreate),
+# so a process that crashes or restarts even once (worker and payout included) fails this step.
 log "step 2/4: switching api, stream, worker, admin and payout"
 if docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env up -d --force-recreate --remove-orphans --wait --wait-timeout 240; then
-  log "step 2/4: all five processes healthy and up for 30s without a restart"
+  log "step 2/4: all five processes healthy, up for 30s, started once"
   # Step 3: record the tag only after health success; the next deployment rolls back to it.
   printf '%s\n' "$COULI_API_TAG" > "$STATE_FILE"
   log "step 3/4: recorded couli-api:$COULI_API_TAG as last successful"

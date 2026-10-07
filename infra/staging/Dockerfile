@@ -29,5 +29,6 @@ WORKDIR /app
 COPY --from=build /app /app
 # Files stay owned by root, so the process user can read but not modify them.
 USER node
-# Default entry; compose overrides it per service (node apps/api/dist/main.<entry>.js).
-CMD ["node", "apps/api/dist/main.api.js"]
+# Default entry; compose overrides it per service
+# (node --import ./infra/staging/boot.mjs apps/api/dist/main.<entry>.js).
+CMD ["node", "--import", "./infra/staging/boot.mjs", "apps/api/dist/main.api.js"]

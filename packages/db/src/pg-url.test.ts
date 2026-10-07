@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { parsePgUrl, pgUrl, redactPgUrl } from './pg-url.ts';
+import { describeError, parsePgUrl, pgUrl, redactCredentials, redactPgUrl } from './pg-url.ts';
 
 const BASE = 'postgres://postgres:secret@127.0.0.1:54329/postgres';
 
@@ -46,4 +46,59 @@ it('rejects URLs that are not PostgreSQL URLs', () => {
 it('redactPgUrl hides the password only', () => {
   expect(redactPgUrl(BASE)).toBe('postgres://postgres:***@127.0.0.1:54329/postgres');
   expect(redactPgUrl('postgres://127.0.0.1/postgres')).toBe('postgres://127.0.0.1/postgres');
+});
+
+it('redactPgUrl also masks every password query parameter, in any case or encoding', () => {
+  expect(redactPgUrl('postgres://couli_migrator@db/couli?password=ExampleOnly123')).toBe(
+    'postgres://couli_migrator@db/couli?password=***',
+  );
+  const masked = redactPgUrl(
+    'postgresql://u:pw1@db:5433/couli?sslmode=verify-ca&PASSWORD=pw2&sslrootcert=/etc/pki/ca.crt&Password=pw3&pass%77ord=pw4&password',
+  );
+  expect(masked).toBe(
+    'postgresql://u:***@db:5433/couli?sslmode=verify-ca&PASSWORD=***&sslrootcert=/etc/pki/ca.crt&Password=***&pass%77ord=***&password=***',
+  );
+  for (const secret of ['pw1', 'pw2', 'pw3', 'pw4']) expect(masked).not.toContain(secret);
+  expect(redactPgUrl('postgres://u@db/couli?sslmode=require&passwords=kept')).toBe(
+    'postgres://u@db/couli?sslmode=require&passwords=kept',
+  );
+});
+
+it('redactCredentials masks URL passwords and password parameters inside any text', () => {
+  const text =
+    '连接失败 postgres://a:pw1@h:5433/db?password=pw2&PassWord=pw3 与 redis://:pw4@10.0.0.1:6379 ' +
+    "以及 host=db user=u password='pw 5' dbname=couli；password = pw6;sslmode=require";
+  const masked = redactCredentials(text);
+  for (const secret of ['pw1', 'pw2', 'pw3', 'pw4', 'pw 5', 'pw6']) {
+    expect(masked).not.toContain(secret);
+  }
+  expect(masked).toContain('postgres://a:***@h:5433/db?password=***&PassWord=***');
+  expect(masked).toContain('redis://:***@10.0.0.1:6379');
+  expect(masked).toContain('sslmode=require');
+  expect(redactCredentials('plain text, no secret')).toBe('plain text, no secret');
+});
+
+it('describeError prints the name, a short code and the masked message, never the input', () => {
+  let invalid: unknown;
+  try {
+    new URL('postgres://u:SuperSecret1@h:5433x/db');
+  } catch (error) {
+    invalid = error;
+  }
+  const described = describeError(invalid);
+  expect(described).toMatch(/^TypeError \[ERR_INVALID_URL\]: /);
+  expect(described).not.toContain('SuperSecret1');
+  expect(
+    describeError(
+      new Error('connect postgres://u:SuperSecret2@h/db?password=SuperSecret3', {
+        cause: new Error('postgres://u:SuperSecret4@h/db'),
+      }),
+    ),
+  ).toBe('Error: connect postgres://u:***@h/db?password=***');
+  expect(
+    describeError(new AggregateError([new Error('postgres://u:SuperSecret5@h/db')], 'x')),
+  ).toBe('AggregateError: x');
+  const odd = Object.assign(new Error('boom'), { code: 'postgres://u:SuperSecret6@h/db' });
+  expect(describeError(odd)).toBe('Error: boom');
+  expect(describeError('postgres://u:SuperSecret7@h/db')).toBe('非 Error 异常（string）');
 });
