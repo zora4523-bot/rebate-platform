@@ -225,13 +225,13 @@ it('[AC-F1-01k-SMOKE#3] conformance 用例列表与截图', { timeout: 45_000 },
   });
 });
 
-it('[AC-F1-01k-SMOKE#4] 后台权限失败、重试与截图', { timeout: 45_000 }, async (context) => {
+it('[AC-F1-01k-SMOKE#4] 后台登录第一步与截图', { timeout: 45_000 }, async (context) => {
   await firstScreen('admin', context, async (page) => {
-    const alert = page.getByRole('alert');
-    await visible(alert);
-    // apps/admin/src/texts/shell.ts: loadFailedTitle / retry.
-    await visible(alert.getByRole('heading', { name: '权限加载失败', exact: true }));
-    await visible(alert.getByRole('button', { name: '重试', exact: true }));
+    // AdmLogin copy for apps/admin/src/texts/login.ts (currently a NotImplemented skeleton).
+    await visible(page.getByRole('heading', { name: '请使用后台账号登录', exact: true }));
+    await visible(page.getByLabel(/^账号\s*\*?$/));
+    await visible(page.getByLabel(/^密码\s*\*?$/));
+    await visible(page.getByRole('button', { name: '下一步', exact: true }));
   });
 });
 
