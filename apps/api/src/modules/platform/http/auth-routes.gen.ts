@@ -275,5 +275,60 @@ export const CONTRACT_AUTH_ROUTES = [
     "method": "POST",
     "path": "/v1/share-pages/:link_id/tpwd",
     "auth": "none"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/login",
+    "auth": "none"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/password",
+    "auth": "none"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/totp/secret",
+    "auth": "none"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/totp/bind",
+    "auth": "none"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/totp",
+    "auth": "none"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/logout",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/step-up/sms-codes",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/auth/step-up",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/me/permissions",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/admins",
+    "auth": "super"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/admins/:admin_id",
+    "auth": "super"
   }
 ] as const;

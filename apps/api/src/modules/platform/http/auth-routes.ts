@@ -5,13 +5,16 @@
 // contract. Identity's token stages ② ③ look the matched Fastify route up here (through the
 // platform index): login / phone / realname need a token, optional reads one when sent, none
 // never reads Authorization, and a route outside the contract (undefined) is left alone.
+// admin / super are the admin console levels (contract info.description, admin_auth_level; an
+// admin_token, not an app token). They belong to an admin token check, which does not exist yet:
+// the app's stages ② ③ refuse them always (10001), and bootstrap refuses to register them.
 //
 // This file is also compiled by the `test` project: erasable syntax only (no parameter properties,
 // enums, namespaces or decorators), `import type` for type-only imports, relative imports with the
 // `.ts` extension, no NestJS, no package import, no `process.env`.
 import { CONTRACT_AUTH_ROUTES } from './auth-routes.gen.ts';
 
-export type ContractAuth = 'none' | 'optional' | 'login' | 'phone' | 'realname';
+export type ContractAuth = 'none' | 'optional' | 'login' | 'phone' | 'realname' | 'admin' | 'super';
 
 export interface AuthRoute {
   readonly method: string;

@@ -29,6 +29,9 @@
 //     audience, expired, claims missing, or
 //     a session that does not exist or is revoked → 10002. The session (sessions, by app_id and
 //     sid) is read on every request, so a revocation applies to the next one (§9.3 #2).
+//   - admin / super (admin console levels, admin_auth_level; an admin_token, never an app token):
+//     fail closed with 10001 whether or not Authorization is sent; nothing is read (no header, no
+//     session, no ③). No app token can satisfy them and the admin token check does not exist yet.
 //   ③ with a token: X-App-Id must equal the token's app_id; without one, on a contract x-signed
 //   route: X-App-Id must equal the app_id of the device stage ① verified. Missing, repeated or
 //   different → 10403 (§9.5 #8). Unsigned anonymous requests have no ③ here (§9.5 #2).
@@ -322,6 +325,9 @@ export function createTokenCheck(deps: {
     const auth = template === undefined ? undefined : contractAuthOf(request.method, template);
     // Outside the contract: no Authorization is read and no stage applies.
     if (auth === undefined) return;
+    // Admin levels: an app token never satisfies them and there is no admin token check yet, so
+    // fail closed before reading Authorization or any session (bootstrap also refuses the routes).
+    if (auth === 'admin' || auth === 'super') throw new TokenRejection(10001);
     if (auth !== 'none') {
       const authorization = request.headers['authorization'];
       if (authorization !== undefined) {

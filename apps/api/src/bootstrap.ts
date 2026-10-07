@@ -73,9 +73,9 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
  * The request check plan of REQUEST_CHECKS is installed (before body parsing) on every HTTP entry;
  * a plan whose signature check is not its first check, or whose token check comes before its
  * signature check, is refused (the entry does not start); a contract x-signed route that the
- * plan's signature check does not cover, and a contract route that needs a token (x-auth other
- * than none) on an entry whose plan has no token check, cannot be registered (the entry does not
- * start).
+ * plan's signature check does not cover, a contract route that needs a token (x-auth other
+ * than none) on an entry whose plan has no token check, and a contract route at an admin level
+ * (x-auth admin / super) on any entry, cannot be registered (the entry does not start).
  */
 export async function createHttpApp(
   entry: HttpEntry,
@@ -135,6 +135,17 @@ export async function createHttpApp(
         isContractSignedRoute(method, template) &&
         !(signs && (buffered === undefined || buffered(method, template))),
       `the ${entry} entry does not run the request signature check (BR-ID-09 ①) on this contract x-signed route`,
+    );
+    // A contract route at an admin level (x-auth admin / super, admin_auth_level) needs the admin
+    // token check, which no entry runs yet: refused at registration on every entry (registered
+    // before the refusal below, so this is the reason given). They are all planned today.
+    refuseRoutes(
+      server,
+      (method, template) => {
+        const auth = contractAuthOf(method, template);
+        return auth === 'admin' || auth === 'super';
+      },
+      `no entry runs the admin token check (admin_auth_level) yet; the ${entry} entry refuses this contract admin route`,
     );
     // Every contract route that takes a token (x-auth optional / login / phone / realname) must
     // reach stages ② ③ (BR-ID-01): refused at registration when the plan has no token check

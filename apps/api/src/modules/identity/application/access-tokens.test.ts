@@ -182,3 +182,29 @@ it('[BR-ID-01] optional with a valid token compares X-App-Id with the token, not
   request.verifiedDevice = { deviceId: PRINCIPAL.device_id, appId: 'other' };
   await expect(check(request)).rejects.toMatchObject({ code: 10403, statusCode: 403 });
 });
+
+it('[BR-ID-01] admin / super routes fail closed with 10001, with or without Authorization, reading nothing', async () => {
+  const tokens = service();
+  const verifyAccess = vi.spyOn(tokens, 'verifyAccess');
+  const find = vi.fn(async () => ({ revoked_at: null }));
+  const check = createTokenCheck({ tokens, sessions: { find } });
+  const valid = `Bearer ${await tokens.issueAccess(PRINCIPAL)}`;
+  for (const level of ['admin', 'super']) {
+    const adminRoute = route((auth) => auth === level);
+    for (const sent of [{}, { 'x-app-id': 'couli', authorization: valid }]) {
+      const read: string[] = [];
+      const headers = new Proxy(sent as RequestCheckInput['headers'], {
+        get(target, name, receiver) {
+          read.push(String(name));
+          return Reflect.get(target, name, receiver) as unknown;
+        },
+      });
+      const request = input(adminRoute, headers);
+      await expect(check(request)).rejects.toMatchObject({ code: 10001 });
+      expect(read).toEqual([]);
+      expect(request.principal).toBeUndefined();
+    }
+  }
+  expect(verifyAccess).not.toHaveBeenCalled();
+  expect(find).not.toHaveBeenCalled();
+});

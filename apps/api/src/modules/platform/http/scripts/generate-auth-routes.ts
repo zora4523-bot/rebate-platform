@@ -4,8 +4,10 @@
 // operation, planned ones included (the token stages ② ③ of identity, 规划/08 BR-ID-01; 04 §5
 // 鉴权级别). Read from the same dereferenced contracts/openapi.yaml as the route schema and
 // signing table generators (platform/validation/scripts), so no openapi is parsed at run time.
-// Every operation must declare x-auth as one of none / optional / login / phone / realname; any
-// other value, or none at all, stops the generation (a missing level would leave a route open).
+// Every operation must declare x-auth as one of the five app levels none / optional / login /
+// phone / realname (04 §5) or the two admin levels admin / super (enum admin_auth_level in the
+// contract's info.description; /admin/v1 operations, whose none is the same value); any other
+// value, or none at all, stops the generation (a missing level would leave a route open).
 // Rerun after changing the contract; auth-routes.test.ts fails until the generated file matches.
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -16,7 +18,17 @@ import type { OpenAPIV3_1 } from 'openapi-types';
 export const authRoutesFile = new URL('../auth-routes.gen.ts', import.meta.url);
 
 const METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
-const LEVELS: readonly unknown[] = ['none', 'optional', 'login', 'phone', 'realname'];
+const LEVELS: readonly unknown[] = [
+  // App levels (04 §5).
+  'none',
+  'optional',
+  'login',
+  'phone',
+  'realname',
+  // Admin levels (contract info.description, admin_auth_level: none | admin | super).
+  'admin',
+  'super',
+];
 
 export async function authRoutesSource(): Promise<string> {
   const document = await dereference<OpenAPIV3_1.Document>(

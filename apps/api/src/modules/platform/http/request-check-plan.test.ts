@@ -2,8 +2,9 @@
 // plan has no request signature check (stream and admin today) refuses to register a contract
 // x-signed route, so it cannot start serving one unchecked (BR-ID-09 ①); an entry whose plan has
 // no token check refuses a contract route that takes a token (BR-ID-01 ②), and a token check placed
-// before the signature check keeps the entry from starting; and an error while the plan is
-// installed closes the application it already created.
+// before the signature check keeps the entry from starting; every entry refuses a contract route
+// at an admin level (x-auth admin / super) until an admin token check exists; and an error while
+// the plan is installed closes the application it already created.
 import { Controller, Post } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -94,6 +95,27 @@ it('[BR-ID-01] a Nest controller on a login template keeps the stream entry from
     'the stream entry does not run the token check (BR-ID-01 ②) on this contract route that takes a token: POST /v1/auth/logout',
   );
 });
+
+for (const entry of ['api', 'stream', 'admin'] as const) {
+  it(`[BR-ID-01] the ${entry} entry refuses a contract admin / super route at registration`, async () => {
+    const admin = contractAuthRoutes().filter(
+      (route) => route.auth === 'admin' || route.auth === 'super',
+    );
+    expect(admin.some((route) => route.auth === 'admin')).toBe(true);
+    expect(admin.some((route) => route.auth === 'super')).toBe(true);
+    app = await createHttpApp(entry, overrides(entry));
+    const server = app.getHttpAdapter().getInstance();
+    for (const route of admin) {
+      expect(() =>
+        server.route({ method: route.method, url: route.path, handler: () => ({}) }),
+      ).toThrow(
+        `no entry runs the admin token check (admin_auth_level) yet; the ${entry} entry refuses this contract admin route: ${route.method} ${route.path}`,
+      );
+    }
+    await app.init();
+    expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
+  });
+}
 
 it('[BR-ID-01] an api plan running the token check before the signature check keeps the entry from starting', async () => {
   const original = AppModule.forEntry;
