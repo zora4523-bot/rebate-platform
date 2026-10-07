@@ -1,0 +1,25 @@
+id: QA-09d
+repo: rebate-platform
+title: 制品扫描字段关联补全：.hap（module.json metadata、resources.index 字符串资源）、.aab（protobuf resources.pb 与 proto 清单）、APK 清单 meta-data 的 value / resource 资源引用关联 resources.arsc；签名字段引用解析不了时阻断；arsc 键值视图上 keyed-credential 子串误报收窄
+type: impl
+# 2026-10-07 草稿（会话 codex-impl-six）：QA-09b #229 降级转来（couli-runs/CODEX-IMPL/decision-orchestrator.md 第 24、26 条；评审 QA-09b/review-*-r3～r5）。
+# 须在 QA-09c 接入任何发布流水线前合并。依据：02 §12.6「发布制品密钥扫描」（.ipa / .apk / .aab / .hap 必扫）、08 BR-ID-09（不内置签名材料与共享盐）。
+# 不属 approvals 第 23 条白名单（codex-impl-tasks.json 只列 QA-09a/b/c），按第 19 条分工：Opus 实现、Codex 写规则测试与评审。
+# 只用 Node 内置模块、不加依赖；扫描只加严，不改 gitleaks 与仓库密钥扫描配置；损坏或越界的资源表 / 清单 fail-closed（退出码 2），合法正例必须放行。
+# 回归样本（只看误报与读取错误，不入库）：couli/_vendor-sdk/youquanhui 下的 apk / ipa、百川三端 SDK 包；鸿蒙与 aab 样本由测试现场合成。
+# 另收 QA-09b 评审 S2：配置空值跨行取值、JSON 不加引号的数字盐、SEC1 / 无头私钥前缀、AOSP 新 entry flag 与空 span 被判损坏、大资源表上限（couli-runs/CODEX-IMPL/followups.md）。
+refs: [BR-ID-09]
+refs_hash:
+  BR-ID-09: f8c29aeda825
+deps: [QA-09b]
+paths:
+  - 'infra/release-scan/detect/**'
+test_paths:
+  - 'test/spec/release-scan/detect-assoc/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/release-scan/detect-assoc/**'
+status: todo
+pr: null
