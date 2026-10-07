@@ -1,0 +1,120 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; infra/release-scan/** is RV2). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl (3 attempts), then one Opus handover (规划/11 §2.5). Refs BR-ID-09; the brief with its one-hop text passes 24 KB, so the orchestrator wrote it with brief.ts minus the one-hop text plus a pointer to the full BR text. The scanner only tightens: no change to gitleaks or the repository secret scanning; fake secrets in tests are built at run time; Node built-ins only. Written by hand. Exception round (decision 27): an Opus minimal fix of two false blocks on iOS builds after round 4; both families reviewed once more.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 5,
+      "scope": "fresh read-only Claude subagents with the money checklist: rounds 1-4 fail (false blocks on minified antd / react-dom code, dotted keys, binary plist data, AXML, resources.arsc, binary key=value, arsc file resources; round 4: empty private-key header/footer pair and ObjC format-string URLs on iOS builds); round 5 (exception round, decision 27) pass, 0 S0/S1, re-checked on real APK / ipa / SDK samples without copying any value; 4 S2 to follow-ups. .hap / .aab field association lowered and deferred (decisions 24 and 26)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 5,
+      "note": "fresh read-only Codex sessions, not the implementing one: rounds 1-3 fail, fixed by Codex attempts 2-3 and the Opus handover; rounds 4 and 5 originally fail with 2 S1 each, all in one family (field association across files and non-APK formats: .aab resources.pb; AXML meta-data value / resource references not joined to resources.arsc). Not regressions, the scanner is not wired into any pipeline, so the orchestrator lowered them to S2 and deferred them to the follow-up task that must merge before QA-09c (decisions 24 and 26). Round 5 was an exception round counted by hand (couli-runs/QA-09b/exception-round-5.md)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "rounds 1 and 2 by fresh Codex sessions (2 and 3 S1: short and letter-only signing material, UTF-16, base64url with separators, binary plist), fixed by the test author; a fresh Claude subagent closed it with one S1 (binary plist without secrets must pass), fixed in an exception round (decision 21)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "QA-09b",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "456ef615d87a059206699a82950c910ec4961ca6",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "456ef615d87a059206699a82950c910ec4961ca6",
+      "tree": "ca3f66ada0753cf57227a448bad1711d744f9649",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-07T08:40:44Z",
+      "finished_at": "2026-10-07T08:41:06Z",
+      "red_tests": [
+        "test/spec/release-scan/detect/entropy.test.ts > [02 §12.6 高熵#1] 默认阈值为 minLength 20、minEntropy 3.5",
+        "test/spec/release-scan/detect/entropy.test.ts > [02 §12.6 高熵#2] 香农熵按 bit / 字符计算",
+        "test/spec/release-scan/detect/entropy.test.ts > [02 §12.6 高熵#3] 默认阈值：熵 3.585 报、3.459 不报；长度 20 报、19 不报",
+        "test/spec/release-scan/detect/entropy.test.ts > [02 §12.6 高熵#4] 换熵阈值后按新值判定（3.0、3.95），长度仍取默认",
+        "test/spec/release-scan/detect/entropy.test.ts > [02 §12.6 高熵#5] 换长度阈值后按新值判定（32、12），熵仍取默认",
+        "test/spec/release-scan/detect/entropy.test.ts > [02 §12.6 高熵#6] 只有字母或只有数字的串不按高熵报；同长度的字母数字混合串报",
+        "test/spec/release-scan/detect/entropy.test.ts > [BR-ID-09][02 §12.6 高熵#9] 无字段名的 43 位 base64url 签名密钥按整段检出（不按 - _ 切段）",
+        "test/spec/release-scan/detect/entropy.test.ts > [BR-ID-09][02 §12.6 高熵#10] 扫描制品：无字段名的 base64url 签名密钥使制品被阻断（不是公开标识）",
+        "test/spec/release-scan/detect/entropy.test.ts > [02 §12.6 高熵#11] 二进制里无 BOM 的 UTF-16LE 串（如编译后资源的字符串池）也按高熵检出",
+        "test/spec/release-scan/detect/entropy.test.ts > [02 §12.6 高熵#7] 属性：任意阈值与 base64url 字符串（含 - _），报与不报和参照判定一致",
+        "test/spec/release-scan/detect/read.test.ts > [02 §12.6 制品#2] stored、deflate、数据描述符三种条目都按原字节读出，目录条目不列出",
+        "test/spec/release-scan/detect/read.test.ts > [02 §12.6 制品#3] 五种扩展名都按 zip 解包",
+        "test/spec/release-scan/detect/read.test.ts > [02 §12.6 制品#4] 鸿蒙 .app 里的 .hap、iOS 包里的 .zip、Android 包里的 .jar 继续解包，内层制品本身不列出",
+        "test/spec/release-scan/detect/read.test.ts > [02 §12.6 制品#5] 构建产物目录递归读取，含点开头的文件，路径相对根目录并用 / 分隔",
+        "test/spec/release-scan/detect/read.test.ts > [02 §12.6 制品#6] 读不了的一律报错：不支持的压缩方式、加密条目、截断的 zip、不认识的扩展名、路径不存在",
+        "test/spec/release-scan/detect/read.test.ts > [02 §12.6 制品#7] 构建产物目录里有符号链接时报错、不跟随",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 私钥头#1] 各类 PEM 私钥块各报一条 private-key（不可豁免），命中从头一行起，正文不另报",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 私钥头#2] 私钥头嵌在压缩 JS 的字符串里（\\n 转义）、小写、缺 footer、在二进制里都要命中",
+        "test/spec/release-scan/detect/rules.test.ts > [BR-ID-09][02 §12.6 格式特征#1] 签名材料、服务端密钥与带 key/token 的字段：低熵 32/40 位十六进制也按规则命中，只取值",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 格式特征#2] Android 资源、meta-data、plist、properties、JSON 写法都识别字段名",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 格式特征#3] 不足 16 位、没有数字的取值和普通代码不报（关键词规则不放大误报）",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 格式特征#4] 阿里云短信 AccessKey ID 形状单独出现或在 key 字段里都按 aliyun-access-key 报（不可豁免）",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 格式特征#5] URL 里带口令（数据库、Redis、旧式 DSN）整段按 credential-url 报；只有用户名不报",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 去重#1] 同一段只报一次：不可豁免规则优先于 key 字段与高熵",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 公开标识#1] 高熵串在 URL 里时整段 URL 作命中原文（交比对段按 DSN / 服务地址判定）",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 公开标识#2] PEM 公钥块里的高熵正文并为一条，命中原文为整个公钥块",
+        "test/spec/release-scan/detect/rules.test.ts > [02 §12.6 制品#1] 二进制内容按字节检测，行号按 0x0A 计",
+        "test/spec/release-scan/detect/rules.test.ts > [BR-ID-09][02 §12.6 格式特征#6] 属性：任意字段名、写法、前置行数与取值，关键词规则恰好报一条且标记正确",
+        "test/spec/release-scan/detect/scan.test.ts > [02 §12.6 扫描#1] ipa 里的服务端密钥阻断（不可豁免），崩溃上报 DSN 按公开标识放行",
+        "test/spec/release-scan/detect/scan.test.ts > [02 §12.6 扫描#2] 只有公开标识的制品通过，退出码 0",
+        "test/spec/release-scan/detect/scan.test.ts > [02 §12.6 扫描#3] 扩展名与端对应时照常扫描；对不上的端一律退出码 2",
+        "test/spec/release-scan/detect/scan.test.ts > [02 §12.6 扫描#4] 构建产物目录只属 h5 / admin；三端扫目录退出码 2",
+        "test/spec/release-scan/detect/scan.test.ts > [BR-ID-09][02 §12.6 不可豁免#1] 签名材料与服务端密钥即使登记了误报与已批准的例外也阻断",
+        "test/spec/release-scan/detect/scan.test.ts > [02 §12.6 扫描#5] 鸿蒙 .app 内层 .hap 的密钥与 Android .so 里的私钥头都能扫到",
+        "test/spec/release-scan/detect/scan.test.ts > [02 §12.6 扫描#6] 读取出错时退出码 2，即使已读到的命中全部放行；已读到的命中照常列出",
+        "test/spec/release-scan/detect/scan.test.ts > [02 §12.6 扫描#7] 清单无法解析时退出码 2",
+        "test/spec/release-scan/detect/scan.test.ts > [02 §12.6 高熵#8] 扫描函数把阈值传给检测：调高后不报、调低长度后新报",
+        "test/spec/release-scan/detect/sign-material.test.ts > [BR-ID-09 签名材料#1] 短共享盐、纯字母签名密钥、含标点与正好 8 位的签名材料都按 request-sign-material 报",
+        "test/spec/release-scan/detect/sign-material.test.ts > [BR-ID-09 签名材料#4] 盐的算法参数字段（轮数、长度、迭代次数）按字段语义不算签名材料",
+        "test/spec/release-scan/detect/sign-material.test.ts > [BR-ID-09 编码#1] 带 BOM 的 UTF-16LE / UTF-16BE 配置里的签名材料照样命中，行号按解码后计",
+        "test/spec/release-scan/detect/sign-material.test.ts > [BR-ID-09 签名材料#2] 扫描制品：短盐、纯字母、含标点的签名材料都使制品被阻断",
+        "test/spec/release-scan/detect/sign-material.test.ts > [BR-ID-09 签名材料#5] 扫描制品：1～7 位的短盐也使制品被阻断（退出码 1）",
+        "test/spec/release-scan/detect/sign-material.test.ts > [BR-ID-09 编码#3] ipa 里二进制 plist 中的共享盐必须解析检出并阻断（不接受整条判为不可扫描）",
+        "test/spec/release-scan/detect/sign-material.test.ts > [02 §12.6 制品#8] 不含密钥的二进制 plist（真实 ipa 的 Info.plist 默认格式）能读通，制品通过",
+        "test/spec/release-scan/detect/sign-material.test.ts > [02 §12.6 制品#9] apk 里不含密钥的二进制 AndroidManifest 与 dex 不导致误阻断",
+        "test/spec/release-scan/detect/sign-material.test.ts > [BR-ID-09 编码#2] 扫描制品：ipa 里 UTF-16LE 的 plist、apk 里 UTF-16BE 的 XML 带签名材料都被阻断",
+        "test/spec/release-scan/detect/sign-material.test.ts > [BR-ID-09 签名材料#3] 属性：签名材料字段配任意 1–48 位取值（可无数字、可含标点、可低熵），UTF-8 与 UTF-16 都恰好报一条"
+      ],
+      "expected": [
+        "test/spec/release-scan/detect/entropy.test.ts",
+        "test/spec/release-scan/detect/read.test.ts",
+        "test/spec/release-scan/detect/rules.test.ts",
+        "test/spec/release-scan/detect/scan.test.ts",
+        "test/spec/release-scan/detect/sign-material.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "cd02938b3a2543e04b034188f2a9b79aba4b0fd7bad7516636956046a66964aa"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "760eae62b3e119ee24301322a344aabf79fc9eaf",
+    "specs": "cd8f65b5a25387d38e1dc9b6e8b0e741b81eeb7a"
+  }
+}
