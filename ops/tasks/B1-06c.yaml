@@ -26,5 +26,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/register/**'
-status: todo
-pr: null
+status: done
+pr: 210
