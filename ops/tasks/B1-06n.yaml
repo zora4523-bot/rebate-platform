@@ -4,8 +4,8 @@ title: 受保护测试为 open 幂等同事务放宽（改前改后都绿）：o
 type: test-change
 # 2026-10-07 入账（W1 搜索转链线），PR #231 台账评审 S1-1：B1-06m 要把 open 的业务写入与幂等响应放进同一事务（platform 已有 executeInTransaction），
 # 而 B1-06k 冻结夹具 test/spec/linking/open-requote/kit.ts 只注入 idempotency.execute，[AC-B1-06k#24]（attempts.int.test.ts）断言 execute 调用 2 次，改用事务入口后 typecheck 与运行都会红。
-# 按规划/11 §4.4 先立独立的测试变更任务（先例 B1-04s、B1-01w）。改法：kit 注入真实 createIdempotency 的 execute 与 executeInTransaction（各包 vi.fn），或注入整个对象；
-# AC#24 改为「每个请求恰好一次幂等存储（两个入口调用次数之和）」，其余断言一字不改；结构性改写，不删断言、不降低期望；改前（现实现走 execute）改后（B1-06m 走事务入口）都绿，不改实现代码。
+# 按规划/11 §4.4 先立独立的测试变更任务（先例 B1-04s、B1-01w）。改法：kit 把真实 createIdempotency 对象存成变量，用 vi.spyOn 包 execute 与 executeInTransaction 后整体注入（不用对象字面量同写两个方法）；
+# AC#24 改为按每个请求的幂等键逐个断言「恰好一次幂等存储（经任一入口）」，其余断言一字不改；结构性改写，不删断言、不降低期望；改前（现实现走 execute）改后（B1-06m 走事务入口）都绿，不改实现代码。
 # 保护路径第一类、改已有文件；路径在 test/** 属 RV2，Claude、Codex 两家评审都 pass 后按 approvals #24 由编排会话加标签合并。
 # 按教训 16：tester none 的 test-change 走非 task/ 分支（test-change/B1-06n），不碰资金实现路径时不要求证据文件。
 refs: []
