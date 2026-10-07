@@ -10,11 +10,26 @@
 // Registration is per instance (./index.ts keys the lists by instance in a WeakMap);
 // request-specific HTTP context is the registering module's business (risk carries it in its
 // own AsyncLocalStorage), so nothing here is shared between simultaneous requests.
+// registerIdempotencyEntryObserver adds a synchronous observer called first on every entry to
+// either execute mode (before validation, lookup or any hook): risk records with it that the
+// idempotency module disposed of the request (ran the post-miss check, replayed, answered 40901 /
+// 20901 / 20903 / 20001), so a route marked idempotent that never reached this instance fails
+// closed instead of skipping stage ④a.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
-import { postMissChecksOf, type Idempotency, type IdempotentRequest } from './index.ts';
+import { idempotencyHooksOf, type Idempotency, type IdempotentRequest } from './index.ts';
 
 export type IdempotencyPostMissCheck = (request: IdempotentRequest) => Promise<void>;
+export type IdempotencyEntryObserver = (request: IdempotentRequest) => void;
+
+function hooksOf(idempotency: Idempotency, name: string, hook: unknown) {
+  const hooks = idempotencyHooksOf(idempotency);
+  if (hooks === undefined) {
+    throw new TypeError(`${name} needs an instance of createIdempotency`);
+  }
+  if (typeof hook !== 'function') throw new TypeError(`${name} needs a function`);
+  return hooks;
+}
 
 /**
  * Register on this instance, for both execute modes. Invoke only after an absent-key lookup,
@@ -27,10 +42,17 @@ export function registerIdempotencyPostMissCheck(
   idempotency: Idempotency,
   check: IdempotencyPostMissCheck,
 ): void {
-  const checks = postMissChecksOf(idempotency);
-  if (checks === undefined) {
-    throw new TypeError('registerIdempotencyPostMissCheck needs an instance of createIdempotency');
-  }
-  if (typeof check !== 'function') throw new TypeError('a post-miss check must be a function');
-  checks.push(check);
+  hooksOf(idempotency, 'registerIdempotencyPostMissCheck', check).postMiss.push(check);
+}
+
+/**
+ * Register on this instance an observer called synchronously, in registration order, first on
+ * every entry to execute / executeInTransaction. It sees every request the instance handles,
+ * replays and refusals included; a throw propagates to the caller of execute.
+ */
+export function registerIdempotencyEntryObserver(
+  idempotency: Idempotency,
+  observer: IdempotencyEntryObserver,
+): void {
+  hooksOf(idempotency, 'registerIdempotencyEntryObserver', observer).entry.push(observer);
 }

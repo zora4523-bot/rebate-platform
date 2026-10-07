@@ -78,10 +78,13 @@ it('[BR-ID-01] the post-miss hook judges the HTTP request of its own async conte
   expect(seen).toEqual([]);
   await Promise.all(
     ['a', 'b'].map((id) =>
-      MINIMUM_VERSION_SCOPE.run(request({ id }), async () => {
-        await Promise.resolve();
-        await hook(idempotent);
-      }),
+      MINIMUM_VERSION_SCOPE.run(
+        { request: request({ id }), idempotencyEntered: false },
+        async () => {
+          await Promise.resolve();
+          await hook(idempotent);
+        },
+      ),
     ),
   );
   expect(seen.sort()).toEqual(['a', 'b']);

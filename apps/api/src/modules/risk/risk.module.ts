@@ -18,10 +18,12 @@ import {
   Module,
 } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { map } from 'rxjs';
 import {
   CLOCK,
   IDEMPOTENCY,
   REDIS,
+  registerIdempotencyEntryObserver,
   registerIdempotencyPostMissCheck,
   type Clock,
   type Idempotency,
@@ -29,9 +31,12 @@ import {
 } from '../platform/index.ts';
 import {
   MINIMUM_VERSION_SCOPE,
+  MinimumVersionUnjudgedError,
   createMinimumVersionCheck,
+  createMinimumVersionEntryObserver,
   createMinimumVersionGuard,
   createMinimumVersionPostMissCheck,
+  isIdempotentMinimumVersionRoute,
   type MinimumVersionCheck,
   type MinimumVersionReader,
   type MinimumVersionRequest,
@@ -67,13 +72,29 @@ const UNAVAILABLE_READER: MinimumVersionReader = {
     Promise.reject(new Error('minimum supported version reader unavailable')),
 };
 
-/** Opens MINIMUM_VERSION_SCOPE around the route handler for the idempotency post-miss hook. */
-const MINIMUM_VERSION_INTERCEPTOR: NestInterceptor = {
+/**
+ * Opens MINIMUM_VERSION_SCOPE around the route handler for the idempotency post-miss hook, and
+ * fails closed (MinimumVersionUnjudgedError → 50001) when an idempotent operation's handler
+ * succeeds although the IDEMPOTENCY instance never received the request. A replay, 40901 or
+ * other refusal of the idempotency module counts as received (its entry observer ran).
+ */
+export const MINIMUM_VERSION_INTERCEPTOR: NestInterceptor = {
   intercept(context: ExecutionContext, next: CallHandler) {
     if (context.getType() !== 'http') return next.handle();
     const request = context.switchToHttp().getRequest<MinimumVersionRequest>();
+    const scope = { request, idempotencyEntered: false };
+    const idempotent = isIdempotentMinimumVersionRoute(request);
     // Nest binds the handler to the async context in which handle() is called.
-    return MINIMUM_VERSION_SCOPE.run(request, () => next.handle());
+    return MINIMUM_VERSION_SCOPE.run(scope, () =>
+      next.handle().pipe(
+        map((value: unknown) => {
+          if (idempotent && !scope.idempotencyEntered) {
+            throw new MinimumVersionUnjudgedError(request.method, request.routeOptions.url);
+          }
+          return value;
+        }),
+      ),
+    );
   },
 };
 
@@ -124,6 +145,7 @@ export class RiskModule {
                 idempotency,
                 createMinimumVersionPostMissCheck(check),
               );
+              registerIdempotencyEntryObserver(idempotency, createMinimumVersionEntryObserver());
             }
             return true;
           },

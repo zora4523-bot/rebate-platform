@@ -26,6 +26,14 @@
 // (platform/idempotency/post-miss.ts), so a completed key still replays and a processing one still
 // answers 40901, and a 10405 writes no idempotency record. The hook gets the HTTP request through
 // MINIMUM_VERSION_SCOPE, an AsyncLocalStorage that the risk interceptor opens around the handler.
+// Fail closed: the scope also records whether the IDEMPOTENCY instance received the request
+// (entry observer: it then either ran the hook or replayed / refused it); a route marked
+// idempotent whose handler succeeds without that (a private instance, a path that skipped
+// execute) answers 50001 instead of a response stage ④a never judged.
+//
+// x-auth none operations (e.g. POST /v1/auth/sms-codes) never read Authorization, so they have
+// no principal and the restricted-session check does not apply to them (a planning
+// inconsistency under spec sync, B1-03c §11.3; not resolved here by parsing tokens).
 //
 // Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
 // for type-only imports, relative imports with `.ts`.
@@ -36,6 +44,7 @@ import {
   compareClientVersions,
   isVersionGatedPlatform,
   tokenPrincipal,
+  type IdempotencyEntryObserver,
   type IdempotencyPostMissCheck,
   type TokenPrincipal,
 } from '../../platform/index.ts';
@@ -207,7 +216,39 @@ export function createMinimumVersionGuard(check: MinimumVersionCheck): MinimumVe
  * IdempotentRequest). Opened by the risk interceptor around the route handler; one store per
  * request, so simultaneous requests never see each other's.
  */
-export const MINIMUM_VERSION_SCOPE = new AsyncLocalStorage<MinimumVersionRequest>();
+export const MINIMUM_VERSION_SCOPE = new AsyncLocalStorage<MinimumVersionScope>();
+
+/** One HTTP request in MINIMUM_VERSION_SCOPE. */
+export interface MinimumVersionScope {
+  readonly request: MinimumVersionRequest;
+  /** Set by the entry observer when the IDEMPOTENCY instance received this request. */
+  idempotencyEntered: boolean;
+}
+
+/** Whether the contract marks the request's operation x-idempotent (judged by the hook). */
+export function isIdempotentMinimumVersionRoute(request: MinimumVersionRequest): boolean {
+  return routeOf(request)?.idempotent === true;
+}
+
+/**
+ * Raised (→ 50001 with an `error` log line by the global filter) when an idempotent operation's
+ * handler finished without the IDEMPOTENCY instance ever receiving the request, i.e. without
+ * stage ④a: fail closed rather than let an unjudged response out.
+ */
+export class MinimumVersionUnjudgedError extends Error {
+  constructor(method: string, path: string | undefined) {
+    super(`idempotent operation ${method} ${path ?? '?'} finished without stage 4a`);
+    this.name = 'MinimumVersionUnjudgedError';
+  }
+}
+
+/** Entry observer of the IDEMPOTENCY instance: marks the current HTTP request as received. */
+export function createMinimumVersionEntryObserver(): IdempotencyEntryObserver {
+  return () => {
+    const scope = MINIMUM_VERSION_SCOPE.getStore();
+    if (scope !== undefined) scope.idempotencyEntered = true;
+  };
+}
 
 /**
  * The post-miss hook of stage ④a: judges the HTTP request in MINIMUM_VERSION_SCOPE. Outside an
@@ -217,7 +258,7 @@ export function createMinimumVersionPostMissCheck(
   check: MinimumVersionCheck,
 ): IdempotencyPostMissCheck {
   return async () => {
-    const request = MINIMUM_VERSION_SCOPE.getStore();
-    if (request !== undefined) await check(request);
+    const scope = MINIMUM_VERSION_SCOPE.getStore();
+    if (scope !== undefined) await check(scope.request);
   };
 }

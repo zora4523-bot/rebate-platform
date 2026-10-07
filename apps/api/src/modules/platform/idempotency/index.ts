@@ -205,7 +205,9 @@
 //     executeInTransaction (the transactional handler needs `trx`), after signature and token
 //     checks (BR-ID-01 ①–③) and before everything else. The abandon route is B1-02.
 //     Stage ④a (B1-03c): every instance carries the post-miss check list of ./post-miss.ts,
-//     awaited in both modes after a miss or before an expired-lease takeover, before any write.
+//     awaited in both modes after a miss or before an expired-lease takeover, before any write,
+//     and an entry observer list called first in both modes (risk uses it to tell "the
+//     idempotency module disposed of this request" from "the route never reached it").
 //
 // 12. Rules for the implementation: this file is compiled by the `test` project too
 //     (erasableSyntaxOnly, no decorators): erasable syntax only (no parameter properties, enum,
@@ -412,8 +414,14 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
     throw new IdempotencyError('invalid_option');
   }
   const { db, clock, logger } = options;
-  // Stage ④a registration point (./post-miss.ts registers into it), read per request.
-  const postMissChecks: ((request: IdempotentRequest) => Promise<void>)[] = [];
+  // Stage ④a registration points (./post-miss.ts registers into them), read per request.
+  const hooks: IdempotencyHooks = { postMiss: [], entry: [] };
+  const postMissChecks = hooks.postMiss;
+
+  /** First thing of either execute mode, before any validation, lookup or write. */
+  function entered(request: IdempotentRequest) {
+    for (const observer of [...hooks.entry]) observer(request);
+  }
 
   /** After a miss (or an expired lease about to be taken over), before any write or handler. */
   async function afterMiss(request: IdempotentRequest) {
@@ -441,6 +449,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
 
   const instance: Idempotency = {
     async execute(request, handler) {
+      entered(request);
       const prepared = prepare(request);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       if (sensitiveOperation(request)) throw new IdempotencyError('transactional_required');
@@ -504,6 +513,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
     },
 
     async executeInTransaction(request, handler) {
+      entered(request);
       const prepared = prepare(request);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       return transaction(db, request.traceId, async (trx) => {
@@ -602,23 +612,26 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       return Number(result.numDeletedRows);
     },
   };
-  POST_MISS_CHECKS.set(instance, postMissChecks);
+  HOOKS.set(instance, hooks);
   return instance;
 }
 
-const POST_MISS_CHECKS = new WeakMap<
-  Idempotency,
-  ((request: IdempotentRequest) => Promise<void>)[]
->();
+/** The live stage ④a hook lists of one instance (./post-miss.ts registers into them). */
+export interface IdempotencyHooks {
+  /** Awaited after a miss or before an expired-lease takeover, before any write or handler. */
+  readonly postMiss: ((request: IdempotentRequest) => Promise<void>)[];
+  /** Called synchronously on entry to execute / executeInTransaction, whatever follows. */
+  readonly entry: ((request: IdempotentRequest) => void)[];
+}
+
+const HOOKS = new WeakMap<Idempotency, IdempotencyHooks>();
 
 /**
- * For ./post-miss.ts only (registerIdempotencyPostMissCheck is the API): the live post-miss check
- * list of an instance built by createIdempotency, undefined for any other object.
+ * For ./post-miss.ts only (the register functions there are the API): the live hook lists of an
+ * instance built by createIdempotency, undefined for any other object.
  */
-export function postMissChecksOf(
-  idempotency: Idempotency,
-): ((request: IdempotentRequest) => Promise<void>)[] | undefined {
-  return POST_MISS_CHECKS.get(idempotency);
+export function idempotencyHooksOf(idempotency: Idempotency): IdempotencyHooks | undefined {
+  return HOOKS.get(idempotency);
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
