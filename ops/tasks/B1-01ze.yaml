@@ -1,12 +1,11 @@
 id: B1-01ze
 repo: rebate-platform
-title: 依赖：apps/api 加二维码库 qrcode 1.5.4（@types/qrcode 1.5.6 为 devDependency）并提供 platform/qrcode 出图原语（SVG 与 PNG），供海报出图（F-SHARE-01，02 §11 poster 队列）与首页草稿预览二维码（04 §3.2 page_preview_tokens、§11 content.page）
+title: 依赖：apps/api 加二维码库 qrcode 1.5.4（@types/qrcode 1.5.6 为 devDependency），供 B1-01zf 的 platform/qrcode 出图原语（海报出图 F-SHARE-01、首页草稿预览二维码 04 §3.2 page_preview_tokens）
 type: deps
 # 2026-10-07 入账（负责人同日决定「先把 squawk 和二维码接进去」；依据 couli docs/research/20261007-基础设施自写与开源对照.md §4）。
+# 台账评审（Codex，PR #248）P1 已采纳：运行时代码拆到 B1-01zf，本任务只改 package.json 与锁文件。
 # qrcode 1.5.4（2024-08-05 发布，MIT；运行时依赖 dijkstrajs、pngjs、yargs 三个 MIT 包，yargs 只给它的命令行用；无安装脚本）；
 # @types/qrcode 1.5.6（2025-10-24，MIT，devDependency）。基线外依赖：按 approvals 第 3 条须另一家评审通过。
-# 出图原语只做编码与渲染（纠错等级、边距、尺寸、输入长度上限），不含业务：深链内容、海报模板、缓存键、OSS 上传
-# 归海报与预览任务；不读时钟、不写日志、不连库。单元测试由实现者写（AGENTS.md 第 10 条）。
 # 会改 apps/api/package.json 与 pnpm-lock.yaml（保护路径第二类，合并前要批准标签）；deps 任务全局串行，排在 CT-06a 之后（都改锁文件）。
 refs: []
 refs_hash: {}
@@ -14,12 +13,9 @@ deps: [CT-06a]
 paths:
   - 'apps/api/package.json'
   - 'pnpm-lock.yaml'
-  - 'apps/api/src/modules/platform/qrcode/**'
-  - 'apps/api/src/modules/platform/index.ts'
 impl: claude
 tester: none
 accept:
   - 'pnpm verify'
-  - 'apps/api/src/modules/platform/qrcode/*.test.ts'
 status: todo
 pr: null
