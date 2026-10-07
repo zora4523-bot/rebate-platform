@@ -1,0 +1,48 @@
+{
+  "task": "CT-02e",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "7329fafc0844a6dbf9a38b1a1124f76be5f8c271",
+  "red_tests": [],
+  "risk_note": "RV2 by path (contracts). Taobao Baichuan open instruction: JumpStep keeps {type, value} and gains an optional sdk object (BaichuanOpen: provider baichuan; open_by url with only our promotion URL and no taoke / page / item_id / sku_id; open_by code with page detail, item_id, optional sku_id and taoke {pid mm_x_x_x, relation_id}); the rule that a type=sdk step carries sdk and other types do not is stated in the description (a top-level oneOf was reported breaking by oasdiff on the live open response) and checked over every example and fixture; jump_type.sdk note; link_jump gains optional sdk_open_by and sdk_error_code (events version 2); ConvertLinkRequest description only. CAP-TB-11 (return to the app) is not promised. tester none: tests by the implementer in packages/contracts-ts. Implementation by Opus 5.5 (two runs). Written by hand.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 pass (S2 generated BaichuanOpen type accepts taoke on the url branch); round 2 one S1 that the schema no longer rejects a type=sdk step without sdk or sdk on another type, downgraded by the orchestrator to S2 under approvals #18 (forced by the oasdiff gate; no code produces sdk steps yet) and made a hard requirement of B1-06f's rule tests"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents (contract): round 1 fail (S1 oasdiff breaking from the top-level oneOf) -> fixed; round 2 pass with one S2 (sdk holds only Baichuan; a future pdd SDK open needs a new provider)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "tester none (contract task)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "74cd905e9dbb56eb4be8c94a017238c78da9ae3a",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
