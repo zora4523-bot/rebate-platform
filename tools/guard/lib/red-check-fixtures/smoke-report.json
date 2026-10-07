@@ -1,5 +1,5 @@
 {
-  "//": "Constructed in the shape of tools/ops/verify-image/red-reporter.mjs output for the build-smoke project (F1-01k round 2, before any real red run): Node file (browser false), Playwright 1.63 error texts (`<api>: <message>`, TimeoutError `Timeout <n>ms exceeded.`), and each opened entry's annotations as test/spec/frontend/build-smoke/entries.smoke.test.ts writes them (a screenshot `path`, and the diagnostics `{entry, url, diagnostics}` parsed into `json`). A page that throws while rendering shows only as a pageerror in the diagnostics: the test fails on the locator.waitFor timeout. Replace with a real red run of the candidate copy when one exists.",
+  "//": "Constructed in the shape of tools/ops/verify-image/red-reporter.mjs output for the build-smoke project (F1-01k round 2, before any real red run): Node file (browser false), Playwright 1.63 error texts (`<api>: <message>`, TimeoutError `Timeout <n>ms exceeded.`), and each opened entry's annotations as test/spec/frontend/build-smoke/entries.smoke.test.ts writes them (a screenshot `path`, and the diagnostics `{entry, url, diagnostics}` parsed into `json`). A page that throws while rendering shows only as a pageerror in the diagnostics: the test fails on the locator.waitFor timeout. A render error React Router's errorElement catches fires no pageerror: it shows only as the console.error `React Router caught the following error during render <error stack>` (react-router 7.18.4 componentDidCatch, the text as Playwright joins the arguments; round 4).Replace with a real red run of the candidate copy when one exists.",
   "reporter": "couli-red-reporter",
   "testResults": [
     {
@@ -140,6 +140,92 @@
                   {
                     "kind": "pageerror",
                     "message": "TypeError: Cannot read properties of undefined (reading 'routes')\n    at http://127.0.0.1:40124/assets/index-C3d4.js:1:999"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] render error caught by errorElement",
+          "title": "[demo] render error caught by errorElement",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 首屏截图",
+              "type": "notice",
+              "content_type": "image/png",
+              "path": "/work/repo/test/.vitest/attachments/app-----1b2c3d4e.png"
+            },
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40126/",
+                "diagnostics": [
+                  {
+                    "kind": "console.error",
+                    "message": "React Router caught the following error during render TypeError: Cannot read properties of undefined (reading 'map')\n    at Xe (http://127.0.0.1:40126/assets/index-E7f8.js:9:1234)\n    at Wi (http://127.0.0.1:40126/assets/index-E7f8.js:1:41020)"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "fullName": "[demo] skeleton caught by errorElement",
+          "title": "[demo] skeleton caught by errorElement",
+          "status": "failed",
+          "failureMessages": [
+            "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "TimeoutError",
+                  "message": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByRole('main') to be visible\n"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/frontend/build-smoke/entries.smoke.test.ts",
+                "line": 30,
+                "column": 17
+              }
+            }
+          ],
+          "annotations": [
+            {
+              "message": "app 浏览器诊断（不作为断言）",
+              "type": "notice",
+              "content_type": "application/json",
+              "json": {
+                "entry": "app",
+                "url": "http://127.0.0.1:40127/",
+                "diagnostics": [
+                  {
+                    "kind": "console.error",
+                    "message": "React Router caught the following error during render Error: NotImplemented: AppShell\n    at Xe (http://127.0.0.1:40127/assets/index-E7f8.js:9:1234)"
                   }
                 ]
               }

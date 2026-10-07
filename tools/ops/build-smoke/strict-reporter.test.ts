@@ -160,3 +160,44 @@ it('[F1-01k] a failed own request or lazy chunk fails the run; other hosts and p
   ).toEqual(['landing: the page threw: Error: boom']);
   expect(testCaseFindings(undefined)).toEqual([]);
 });
+
+it('[F1-01k] a script error the page only logged fails the run, NotImplemented included (Codex r3, S1 ②)', () => {
+  const f = (message: string): string[] =>
+    smokeDiagnosticsFindings({ url: URL_, diagnostics: [{ kind: 'console.error', message }] });
+  const stack = `\n    at Xe (${URL_}assets/index-E7f8.js:9:1234)`;
+  const RR = 'React Router caught the following error during render ';
+  // React Router's errorElement catches a render error: no pageerror, only this console.error.
+  expect(f(`${RR}TypeError: Cannot read properties of undefined (reading 'map')${stack}`)).toEqual([
+    `the page logged a script error: ${RR}TypeError: Cannot read properties of undefined (reading 'map')`,
+  ]);
+  // Green means green: the skeleton's NotImplemented is not excused here either.
+  expect(f(`${RR}Error: NotImplemented: AppShell${stack}`)).toEqual([
+    `the page logged a script error: ${RR}Error: NotImplemented: AppShell`,
+  ]);
+  for (const message of [
+    'ReferenceError: t is not defined',
+    'Uncaught SyntaxError: Unexpected identifier',
+    'RangeError: Invalid time value',
+    `Error: wrapped${stack}\nCaused by: TypeError: x`,
+  ]) {
+    expect(f(message), message).toHaveLength(1);
+  }
+  // Blocked loads and warnings stay evidence only.
+  expect(f('Failed to load resource: net::ERR_BLOCKED_BY_CLIENT')).toEqual([]);
+  expect(f('Warning: something')).toEqual([]);
+  const result = run([
+    {
+      fullName: '[AC-F1-01k-SMOKE#1] app 应用壳与截图',
+      annotations: [
+        diagnosticsAnnotation('app', [
+          ...BLOCKED_ONLY,
+          { kind: 'console.error', message: `${RR}TypeError: x is not a function${stack}` },
+        ]),
+      ],
+    },
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain(
+    `[AC-F1-01k-SMOKE#1] app 应用壳与截图 — app: the page logged a script error: ${RR}TypeError: x is not a function`,
+  );
+});

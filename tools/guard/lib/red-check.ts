@@ -48,8 +48,11 @@
 // annotations of every test. Before an assertion or a wait that ran out counts, the diagnostics
 // are read: an error the page threw (`pageerror`; the skeleton's NotImplemented excepted), a
 // request to the entry's own origin that failed (`requestfailed`; requests the test itself
-// blocked excepted) or a module of the page that did not load (`console.error` of a failed
-// dynamic import) make the red invalid. Only a page error whose first line starts with
+// blocked excepted), a module of the page that did not load (`console.error` of a failed
+// dynamic import) or a script error the page only logged (`console.error` carrying React
+// Router's "caught the following error during render" — its errorElement catches a render error,
+// so no `pageerror` fires — or naming a TypeError, ReferenceError, SyntaxError, RangeError …;
+// the skeleton's NotImplemented excepted) make the red invalid. Only a page error whose first line starts with
 // `NotImplemented` or `Error: NotImplemented` is the skeleton's (a TypeError, ReferenceError …
 // mentioning it is not; those kinds are checked first, as on the Node side). A wait that ran out
 // in a test without such an annotation is invalid (the page events are unknown); any other red of
@@ -312,10 +315,35 @@ export function skeletonPageError(first: string): boolean {
 }
 
 /**
+ * The prefix React Router (and its <Await>) logs before an error its error boundary caught while
+ * rendering: `console.error("React Router caught the following error during render", error)`,
+ * which Playwright reads as that text, a space, then the error's stack.
+ */
+const CAUGHT_DURING_RENDER = /^.*?caught the following error during render\s*/;
+/** Error kinds of a script fault, as a console.error of the page names them. */
+const SCRIPT_ERROR_KIND =
+  /\b(?:TypeError|ReferenceError|SyntaxError|RangeError|EvalError|URIError|InternalError|AggregateError)\b/;
+
+/**
+ * True when a `console.error` of the page reports a script fault (Codex review r3, S1 ②): an
+ * error an error boundary caught while rendering (React Router's errorElement swallows it, no
+ * `pageerror` fires, the page shows its error screen and the wait runs out), or any message
+ * naming a TypeError, ReferenceError, SyntaxError, RangeError …. With `skeleton` the skeleton's
+ * NotImplemented is excepted: the first line of the error itself (after React Router's prefix)
+ * starts with `NotImplemented` or `Error: NotImplemented` (skeletonPageError).
+ */
+export function scriptFaultConsoleError(message: string, skeleton: boolean): boolean {
+  const first = message.split('\n')[0] ?? '';
+  if (!CAUGHT_DURING_RENDER.test(first) && !SCRIPT_ERROR_KIND.test(message)) return false;
+  return !(skeleton && skeletonPageError(first.replace(CAUGHT_DURING_RENDER, '')));
+}
+
+/**
  * Why the page events of one entry make a red invalid (see the header), or null when they do
  * not: an error the page threw other than the skeleton's NotImplemented, a request to the entry's
  * own origin that failed and that the test did not block itself (a `blocked-request` of the same
- * URL), a dynamic import that failed. A URL that cannot be read counts as the entry's own.
+ * URL), a dynamic import that failed, a script error the page only logged
+ * (scriptFaultConsoleError). A URL that cannot be read counts as the entry's own.
  */
 export function smokeDiagnosticsVerdict(d: SmokeDiagnostics): string | null {
   const own = originOf(d.url);
@@ -339,6 +367,9 @@ export function smokeDiagnosticsVerdict(d: SmokeDiagnostics): string | null {
     }
     if (x.kind === 'console.error' && MODULE_DID_NOT_LOAD.test(x.message)) {
       return `red for the wrong reason (a module of the page did not load: ${first})`;
+    }
+    if (x.kind === 'console.error' && scriptFaultConsoleError(x.message, true)) {
+      return `red for the wrong reason (the page logged a script error: ${first})`;
     }
   }
   return null;

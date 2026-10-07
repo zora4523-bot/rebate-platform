@@ -10,6 +10,10 @@
 //   - a `requestfailed` of the entry's own origin, unless the test blocked that request itself (a
 //     `blocked-request` of the same URL: /v1/**, /admin/v1/**, non-GET);
 //   - a module of the page that did not load (`console.error` of a failed dynamic import);
+//   - a script error the page only logged (Codex review r3, S1 ②): a `console.error` carrying
+//     React Router's "caught the following error during render" (its errorElement catches a
+//     render error, so no `pageerror` fires) or naming a TypeError, ReferenceError, SyntaxError,
+//     RangeError …; as for page errors, not even NotImplemented is excused on a green run;
 //   - a diagnostics annotation without a readable `diagnostics` list (fail closed).
 // Cross-origin requests are all blocked by the tests and other console output stays evidence
 // only. Used by the build-smoke project alone (its config; `verify-container.sh --browser` adds it
@@ -25,6 +29,12 @@ export const DIAGNOSTICS_ANNOTATION = /浏览器诊断（不作为断言）$/;
 /** A failed dynamic import, as the browser logs it (Chromium and others). */
 const MODULE_DID_NOT_LOAD =
   /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/;
+
+/** React Router's (and <Await>'s) console.error before an error its boundary caught in render. */
+const CAUGHT_DURING_RENDER = /caught the following error during render/;
+/** Error kinds of a script fault, as a console.error of the page names them. */
+const SCRIPT_ERROR_KIND =
+  /\b(?:TypeError|ReferenceError|SyntaxError|RangeError|EvalError|URIError|InternalError|AggregateError)\b/;
 
 function originOf(url) {
   try {
@@ -69,6 +79,11 @@ export function smokeDiagnosticsFindings(json) {
       }
     } else if (d.kind === 'console.error' && MODULE_DID_NOT_LOAD.test(d.message)) {
       findings.push(`a module of the page did not load: ${first}`);
+    } else if (
+      d.kind === 'console.error' &&
+      (CAUGHT_DURING_RENDER.test(first) || SCRIPT_ERROR_KIND.test(d.message))
+    ) {
+      findings.push(`the page logged a script error: ${first}`);
     }
   }
   return findings;
