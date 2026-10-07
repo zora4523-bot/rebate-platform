@@ -17,8 +17,9 @@
 // timeouts at the top of the file. When an own check fails, squawk is not run (the report would only
 // repeat what the gate already refused) and the exit code is 1.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 
 export const MIGRATIONS_DIR = 'db/migrations';
 export const CONFIG_FILE = '.squawk.toml';
@@ -64,13 +65,6 @@ const MONEY_COLUMN_ALTER =
 const TYPE_HEAD = /^(?:"?pg_catalog"?\s*\.\s*)?(?:"([^"]+)"|([a-z_][a-z0-9_]*))([\s\S]*)$/i;
 const LOCK_TIMEOUT = /\bSET\s+(?:LOCAL\s+)?lock_timeout\b/i;
 const STATEMENT_TIMEOUT = /\bSET\s+(?:LOCAL\s+)?statement_timeout\b/i;
-/**
- * Statements an ignore reaches only through squawk's line rule (other statements on the comment's
- * line, or on the line after it) are checked when they drop, rename, retype or truncate: an ADD COLUMN,
- * a GRANT or an index on a funds table next to an ignored line stays legal.
- */
-const ALTERING = /^\s*(?:ALTER|DROP|TRUNCATE)\b/i;
-const DESTRUCTIVE = /\b(?:DROP|RENAME|TYPE|TRUNCATE)\b/i;
 // Matched anywhere in the file, not only right after `--` or the comment opener: squawk strips the
 // whitespace (newlines included) inside a block comment before it reads the directive, so a
 // directive on its own line inside a block comment counts. Erring towards refusal is fine here.
@@ -282,6 +276,8 @@ function badMoneyType(rest: string): string | null {
   if (m === null) return rest.trim().split(/\s+/)[0] ?? '?';
   const name = (m[1] ?? m[2] ?? '').toLowerCase();
   const array = /^\s*(?:\[|ARRAY\b)/i.test(m[3] ?? '');
+  // `int8.fen` is a type `fen` in a schema named int8, not int8.
+  if (/^\s*\./.test(m[3] ?? '')) return `${name}${(m[3] ?? '').trim().split(/[\s(]/)[0] ?? ''}`;
   return MONEY_TYPES_OK.has(name) && !array ? null : `${name}${array ? '[]' : ''}`;
 }
 
@@ -320,49 +316,18 @@ export function checkMigration(file: string, sql: string): Problem[] {
     });
   }
   for (const ignore of sql.matchAll(IGNORE_ANY)) {
-    // The statement the ignore belongs to, whether the comment precedes it or sits inside it:
-    // from the `;` before the comment to the `;` after it (comments blanked, positions kept).
+    // The statement the ignore belongs to: the one the comment precedes or sits inside (from the `;`
+    // before the comment to the `;` after it; comments blanked, positions kept), or, for a comment
+    // that follows a `;` on the same line with nothing in between, the statement that just ended
+    // (squawk honours `… DROP COLUMN c; -- squawk-ignore ban-drop-column`). What else squawk's line
+    // rule lets the comment cover is checked by running squawk without the ignores (see main).
     const at = ignore.index ?? 0;
     const prev = code.lastIndexOf(';', at);
     const stop = code.indexOf(';', at);
-    // squawk applies an ignore to the line the comment ends on and the line after it, so every
-    // statement touching those two lines is covered as well (`… ; ALTER TABLE app.orders …` there).
-    const inBlock = sql.lastIndexOf('/*', at) > sql.lastIndexOf('*/', at);
-    const commentEnd = inBlock ? Math.max(at, sql.indexOf('*/', at)) : at;
-    const lineEnd = (i: number): number => {
-      const n = code.indexOf('\n', i);
-      return n === -1 ? code.length : n;
-    };
-    const windowEnd = lineEnd(lineEnd(commentEnd) + 1);
-    const own = stop === -1 ? code.length : stop;
-    let end = own;
-    if (windowEnd > end) {
-      const next = code.indexOf(';', windowEnd);
-      end = code.slice(0, windowEnd).trimEnd().endsWith(';')
-        ? windowEnd
-        : next === -1
-          ? code.length
-          : next;
-    }
-    // The statement the ignore belongs to. A trailing comment on the same line as a `;` belongs to
-    // the statement that just ended (squawk honours `… DROP COLUMN c; -- squawk-ignore ban-drop-column`),
-    // not to the one after it.
-    const trailing = prev !== -1 && !code.slice(prev + 1, at).includes('\n');
-    const statements = trailing
-      ? [code.slice(code.lastIndexOf(';', prev - 1) + 1, prev)]
-      : [code.slice(prev + 1, own)];
-    // Statements reached only through squawk's line rule: every statement touching the comment's line
-    // or starting on the line after it (a statement after a blank line is out of reach), checked when
-    // it is destructive (see DESTRUCTIVE).
-    const lineStart = code.lastIndexOf('\n', commentEnd) + 1;
-    let offset = code.lastIndexOf(';', lineStart - 1) + 1;
-    for (const part of code.slice(offset, end).split(';')) {
-      const begins = offset + part.length - part.trimStart().length;
-      if (begins < windowEnd && ALTERING.test(part) && DESTRUCTIVE.test(part))
-        statements.push(part);
-      offset += part.length + 1;
-    }
-    const statement = statements.join(';');
+    const trailing = prev !== -1 && /^[ \t]*$/.test(code.slice(prev + 1, at));
+    const statement = trailing
+      ? code.slice(code.lastIndexOf(';', prev - 1) + 1, prev)
+      : code.slice(prev + 1, stop === -1 ? code.length : stop);
     const names = [...statement.matchAll(TABLE_REF)].flatMap((ref) => (ref[1] ?? '').split(','));
     for (const raw of names) {
       const name = raw.trim();
@@ -377,6 +342,79 @@ export function checkMigration(file: string, sql: string): Problem[] {
     }
   }
   return problems;
+}
+
+/** The SQL with every squawk-ignore directive blanked (same offsets): what squawk reports without the exceptions. */
+export function withoutIgnores(sql: string): string {
+  return sql.replace(/squawk-ignore(?:-file)?/g, (m) => ' '.repeat(m.length));
+}
+
+/**
+ * The funds or attribution table named by the statement that holds a squawk finding, or null.
+ * `line` and `column` are squawk's gcc report positions, both counted from 0.
+ */
+export function fundsTableAt(sql: string, line: number, column: number): string | null {
+  const code = withoutComments(sql);
+  let offset = 0;
+  for (let l = 0; l < line; l++) {
+    const n = code.indexOf('\n', offset);
+    if (n === -1) return null;
+    offset = n + 1;
+  }
+  const at = offset + column;
+  const stop = code.indexOf(';', at);
+  const statement = code.slice(code.lastIndexOf(';', at - 1) + 1, stop === -1 ? code.length : stop);
+  for (const ref of statement.matchAll(TABLE_REF)) {
+    for (const raw of (ref[1] ?? '').split(',')) {
+      const name = raw.trim();
+      if (name !== '' && isFundsTable(name)) return name;
+    }
+  }
+  return null;
+}
+
+/**
+ * squawk's line rule lets an ignore comment cover more than the statement it belongs to (every
+ * statement on the comment's line and the line after it). So for the files that carry an ignore,
+ * squawk runs once more over copies with the ignores blanked: any finding on a funds or attribution
+ * table statement is refused, whichever comment would have hidden it. Returns the refusals, or null
+ * when squawk could not run.
+ */
+function ignoredFundsFindings(
+  binary: string,
+  config: string,
+  files: readonly { file: string; sql: string }[],
+): string[] | null {
+  const scratch = mkdtempSync(join(tmpdir(), 'lint-migrations-'));
+  try {
+    const bare = new Map<string, { file: string; sql: string }>();
+    for (const entry of files) {
+      const name = basename(entry.file);
+      const copy = withoutIgnores(entry.sql);
+      writeFileSync(join(scratch, name), copy);
+      bare.set(name, { file: entry.file, sql: copy });
+    }
+    const res = spawnSync(binary, ['-c', config, '--reporter', 'gcc', ...bare.keys()], {
+      cwd: scratch,
+      encoding: 'utf8',
+    });
+    if (res.error !== undefined || res.status === null) return null;
+    const refusals: string[] = [];
+    for (const line of res.stdout.split('\n')) {
+      const m = /^(.+?):(\d+):(\d+): warning: (\S+)/.exec(line);
+      const entry = m === null ? undefined : bare.get(basename(m[1] ?? ''));
+      if (m === null || entry === undefined) continue;
+      const table = fundsTableAt(entry.sql, Number(m[2]), Number(m[3]));
+      if (table !== null) {
+        refusals.push(
+          `${entry.file}:${Number(m[2]) + 1}: ${m[4]} on a statement of funds or attribution table ${bareTableName(table)} (${table}) while the file carries squawk-ignore: no exceptions there (规划/02 §16.3)`,
+        );
+      }
+    }
+    return refusals;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 function usage(): never {
@@ -421,8 +459,10 @@ function main(argv: readonly string[]): number {
   }
   const files = lint.map((name) => `${MIGRATIONS_DIR}/${name}`);
   let failed = badNames.length > 0;
+  const withIgnores: { file: string; sql: string }[] = [];
   for (const file of files) {
     const sql = readFileSync(join(root, file), 'utf8');
+    if (/squawk-ignore/.test(sql)) withIgnores.push({ file, sql });
     for (const problem of checkMigration(file, sql)) {
       console.error(`lint-migrations: ${problem.file}:${problem.line}: ${problem.message}`);
       failed = true;
@@ -448,6 +488,18 @@ function main(argv: readonly string[]): number {
   if (!existsSync(config)) {
     console.error(`lint-migrations: ${config} not found`);
     return 2;
+  }
+  if (withIgnores.length > 0) {
+    const refusals = ignoredFundsFindings(binary, config, withIgnores);
+    if (refusals === null) {
+      console.error('lint-migrations: cannot run squawk over the migrations without their ignores');
+      return 2;
+    }
+    for (const refusal of refusals) console.error(`lint-migrations: ${refusal}`);
+    if (refusals.length > 0) {
+      console.error('lint-migrations: the gate refused the migrations above; squawk was not run');
+      return 1;
+    }
   }
   console.log(`lint-migrations: squawk over ${files.join(' ')}`);
   const res = spawnSync(binary, ['-c', config, '--reporter', 'gcc', ...files], {

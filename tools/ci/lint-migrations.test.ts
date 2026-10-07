@@ -359,23 +359,6 @@ it('checkMigration: a directive on its own line inside a block comment still cou
   }
 });
 
-it('checkMigration: an ignore covers every statement on the line after it, as squawk applies it', () => {
-  const sql =
-    '-- squawk-ignore ban-drop-column\nALTER TABLE app.articles DROP COLUMN a; ALTER TABLE app.orders DROP COLUMN c;\n';
-  expect(checkMigration('x.sql', sql)).toEqual([
-    expect.objectContaining({
-      message: expect.stringContaining('funds or attribution table orders'),
-    }),
-  ]);
-  // A statement two lines below is out of the ignore's reach and is not blamed on it.
-  expect(
-    checkMigration(
-      'x.sql',
-      '-- squawk-ignore ban-drop-column\nALTER TABLE app.articles DROP COLUMN a;\nALTER TABLE app.orders ADD COLUMN n bigint;\n',
-    ),
-  ).toEqual([]);
-});
-
 it('checkMigration: spaces around the schema dot and quoted type names do not hide a funds table or a money column', () => {
   expect(
     checkMigration(
@@ -393,25 +376,6 @@ it('checkMigration: spaces around the schema dot and quoted type names do not hi
   expect(checkMigration('x.sql', 'CREATE TABLE app.t (amount_fen "pg_catalog"."int8");')).toEqual(
     [],
   );
-});
-
-it('checkMigration: a trailing ignore after a non-funds statement does not blame a GRANT on a funds table on the next line', () => {
-  expect(
-    checkMigration(
-      'x.sql',
-      'ALTER TABLE app.articles DROP COLUMN c; -- squawk-ignore ban-drop-column\nGRANT SELECT ON app.orders TO couli_readonly;\n',
-    ),
-  ).toEqual([]);
-  expect(
-    checkMigration(
-      'x.sql',
-      'ALTER TABLE app.articles DROP COLUMN c; -- squawk-ignore ban-drop-column\nALTER TABLE app.orders DROP COLUMN d;\n',
-    ),
-  ).toEqual([
-    expect.objectContaining({
-      message: expect.stringContaining('funds or attribution table orders'),
-    }),
-  ]);
 });
 
 it('checkMigration: a money column declared as an array of bigint is refused', () => {
@@ -551,43 +515,65 @@ it('checkTimeouts: 0 with a unit and DEFAULT (both mean no timeout) do not count
   ).toHaveLength(2);
 });
 
-it("checkMigration: statements an ignore reaches through squawk's line rule are refused only when destructive on a funds table", () => {
-  // A plain ADD COLUMN on a funds table on the line after a trailing ignore stays legal.
-  expect(
-    checkMigration(
-      'x.sql',
-      'ALTER TABLE app.articles DROP COLUMN old_title; -- squawk-ignore ban-drop-column\nALTER TABLE app.orders ADD COLUMN extra_fen bigint;\n',
-    ),
-  ).toEqual([]);
-  // A funds-table DROP earlier on the same line as the trailing ignore is refused (squawk ignores the whole line).
-  expect(
-    checkMigration(
-      'x.sql',
-      'ALTER TABLE app.orders DROP COLUMN a; ALTER TABLE app.articles DROP COLUMN b; -- squawk-ignore ban-drop-column\n',
-    ),
-  ).toEqual([
-    expect.objectContaining({
-      message: expect.stringContaining('funds or attribution table orders'),
-    }),
-  ]);
-  // A funds-table RENAME on the next line is refused.
-  expect(
-    checkMigration(
-      'x.sql',
-      'ALTER TABLE app.articles DROP COLUMN b; -- squawk-ignore ban-drop-column\nALTER TABLE app.ledger_entries RENAME COLUMN a TO b;\n',
-    ),
-  ).toEqual([
-    expect.objectContaining({
-      message: expect.stringContaining('funds or attribution table ledger_entries'),
-    }),
-  ]);
-});
-
 it('checkMigration: a semicolon inside a quoted identifier does not split the statement', () => {
   expect(
     checkMigration(
       'x.sql',
       'CREATE TABLE app.t (id uuid PRIMARY KEY, "note;tag" text, amount_fen integer);',
     ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('amount_fen must be bigint')]);
+});
+
+it('squawk without the ignores: what an ignore would hide on a funds-table statement is refused, whichever comment it is', () => {
+  const refused = run(
+    fixture({
+      // the next line after a trailing ignore (squawk's line rule)
+      '0019_next.sql': `${TIMEOUTS}ALTER TABLE app.articles DROP COLUMN a; -- squawk-ignore ban-drop-column\nALTER TABLE app.orders DROP COLUMN c;\n`,
+      // earlier on the ignored line
+      '0020_same.sql': `${TIMEOUTS}ALTER TABLE app.orders DROP COLUMN a; ALTER TABLE app.articles DROP COLUMN b; -- squawk-ignore ban-drop-column\n`,
+      // a non-destructive rule on a funds table next to an ignored line
+      '0021_required.sql': `${TIMEOUTS}ALTER TABLE app.articles ADD COLUMN r int NOT NULL; -- squawk-ignore adding-required-field\nALTER TABLE app.orders ADD COLUMN r int NOT NULL;\n`,
+    }),
+  );
+  expect(refused.status).toBe(1);
+  expect(refused.stderr).toContain(
+    '0019_next.sql:5: ban-drop-column on a statement of funds or attribution table orders',
+  );
+  expect(refused.stderr).toContain(
+    '0020_same.sql:4: ban-drop-column on a statement of funds or attribution table orders',
+  );
+  expect(refused.stderr).toContain(
+    '0021_required.sql:5: adding-required-field on a statement of funds or attribution table orders',
+  );
+  expect(refused.stdout).not.toMatch(/warning:/);
+});
+
+it('squawk without the ignores: legal statements on a funds table next to an ignored line pass', () => {
+  const res = run(
+    fixture({
+      '0019_legal.sql':
+        `${TIMEOUTS}ALTER TABLE app.articles DROP COLUMN old_title; -- squawk-ignore ban-drop-column\n` +
+        'ALTER TABLE app.orders ADD COLUMN extra_fen bigint;\n' +
+        'GRANT SELECT ON app.orders TO couli_readonly;\n' +
+        'ALTER TABLE app.order_rights ALTER COLUMN type SET STATISTICS 100;\n',
+    }),
+  );
+  expect(res.stderr).toBe('');
+  expect(res.status).toBe(0);
+});
+
+it("checkMigration: a comment inside a funds-table statement on a line with an earlier statement is that statement's", () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      'ALTER TABLE app.articles DROP COLUMN a; ALTER TABLE app.orders -- squawk-ignore ban-drop-column\n  DROP COLUMN c;\n',
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      message: expect.stringContaining('funds or attribution table orders'),
+    }),
+  ]);
+  expect(
+    checkMigration('x.sql', 'CREATE TABLE app.t (amount_fen int8.fen);').map((p) => p.message),
   ).toEqual([expect.stringContaining('amount_fen must be bigint')]);
 });
