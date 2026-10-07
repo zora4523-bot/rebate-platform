@@ -20,6 +20,11 @@ export interface ArtifactTextView {
    * 不按 key / token 子串命中（monkey、tokenizer 不是凭据字段）。
    */
   resourceNames?: boolean;
+  /**
+   * 资源字符串原值视图：结构化视图里解码后的字符串按 NUL 分隔，逐个按二进制里的独立串检测
+   * （与 main 的原始字节扫描同一口径），路径仍是引用方条目。
+   */
+  rawStrings?: boolean;
 }
 
 export interface ArtifactTextViews {
@@ -89,32 +94,39 @@ function fileText(content: Uint8Array): string {
 }
 
 /**
- * 关联视图逐行是 JSON 键值行，取值里的引号、反斜杠、换行会被再次转义，
- * 如字符串资源内容 {"shared_salt":"…"} 在视图里变成 {\"shared_salt\":…}，字段检测认不出。
- * 这里把这类取值按解码后的原样取出，以 NUL 分隔（与二进制里的独立串同一口径）另作一个视图检测。
+ * 关联视图逐行是 JSON 键值行：取值两端是引号而不是二进制字节，单行 `shared_salt=demo-v1` 这类
+ * 字符串资源不会被当作独立配置串；含引号、反斜杠、换行的取值还会被再次转义（{\"shared_salt\":…}）。
+ * 这里把视图里解码后的全部字符串（键与取值）按原样取出，以 NUL 分隔另作一个视图检测，
+ * 与二进制里的独立串（main 的原始字节扫描）同一口径。
  */
 function rawStrings(text: string): string | undefined {
   const raw = new Set<string>();
-  const escaped = (value: string): boolean => JSON.stringify(value) !== `"${value}"`;
+  const take = (value: unknown): void => {
+    if (typeof value === 'string' && value !== '') raw.add(value);
+  };
   for (const line of text.split('\n')) {
-    if (!line.includes('\\')) continue;
+    if (line === '') continue;
     let parsed: unknown;
     try {
-      parsed = JSON.parse(line);
+      // 关联行 `"键":"值"`；孤立行 `"值"` 不是合法对象体，回退按 JSON 串解析。
+      parsed = line.startsWith('"') && !line.endsWith('"') ? undefined : JSON.parse(line);
     } catch {
+      parsed = undefined;
+    }
+    if (parsed === undefined) {
       try {
         parsed = JSON.parse(`{${line}}`);
       } catch {
         continue;
       }
     }
-    const values =
-      typeof parsed === 'string'
-        ? [parsed]
-        : parsed && typeof parsed === 'object'
-          ? Object.entries(parsed).flat()
-          : [];
-    for (const value of values) if (typeof value === 'string' && escaped(value)) raw.add(value);
+    if (typeof parsed === 'string') take(parsed);
+    else if (parsed && typeof parsed === 'object') {
+      for (const [key, value] of Object.entries(parsed)) {
+        take(key);
+        take(value);
+      }
+    }
   }
   return raw.size > 0 ? `\0${[...raw].join('\0')}\0` : undefined;
 }
@@ -195,7 +207,7 @@ export function artifactTextViews(entries: readonly ArtifactEntry[]): ArtifactTe
   const push = (path: string, text: string, resourceNames = false): void => {
     views.push(resourceNames ? { path, text, resourceNames } : { path, text });
     const raw = rawStrings(text);
-    if (raw !== undefined) views.push({ path, text: raw });
+    if (raw !== undefined) views.push({ path, text: raw, rawStrings: true });
   };
 
   for (const entry of entries) {

@@ -5,7 +5,7 @@
 // 原始文本（XmlAttribute.value）只作补充。
 
 import { FILE_TYPES, STRUCTURE_TYPES } from './arsc.ts';
-import { emitFinal, LineSink, UNRESOLVED, printableRuns } from './lines.ts';
+import { associationNames, emitFinal, LineSink, UNRESOLVED, printableRuns } from './lines.ts';
 import type { FileReader, Final, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
@@ -558,7 +558,7 @@ export function protoXmlText(
       else if (f.num === 5) children.push(want(f, 2).bytes);
       else unknown(f, ctx);
     }
-    const names = attrs.filter((a) => a.name === 'name').flatMap((a) => a.values);
+    const names = associationNames(attrs, resolve, invalid);
     for (const attr of attrs) {
       const associated = (attr.name === 'value' || attr.name === 'resource') && names.length > 0;
       const keys = associated ? names : [attr.name];

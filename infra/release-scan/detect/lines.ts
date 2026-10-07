@@ -41,6 +41,52 @@ export function emitFinal(
 
 export const UNRESOLVED: Resolution = Object.freeze({ finals: [], ok: false }) as Resolution;
 
+/**
+ * name 属性给出的关联名：文字取值，加上编译成资源引用（@string/…）时解析出的字符串。
+ * name 引用解析不了（缺表、缺 ID、只得到文件路径）而元素又有 value / resource 取值时，
+ * 无法判断取值是不是签名材料，按签名字段 fail-closed。
+ */
+export function associationNames<R>(
+  attrs: ReadonlyArray<{
+    name: string;
+    values: readonly string[];
+    refs: readonly R[];
+    files?: readonly string[];
+  }>,
+  resolve: ((ref: R) => Resolution) | undefined,
+  fail: () => never,
+): string[] {
+  const names = new Set<string>();
+  let unresolved = false;
+  for (const attr of attrs) {
+    if (attr.name !== 'name') continue;
+    for (const value of attr.values) names.add(value);
+    if (attr.refs.length > 0 && !resolve) unresolved = true;
+    if (!resolve) continue;
+    for (const ref of attr.refs) {
+      let resolved: Resolution;
+      try {
+        resolved = resolve(ref);
+      } catch {
+        resolved = UNRESOLVED;
+      }
+      const texts = resolved.finals.filter((final) => !final.file).map((final) => final.text);
+      if (!resolved.ok || texts.length === 0) unresolved = true;
+      for (const text of texts) names.add(text);
+    }
+  }
+  if (
+    unresolved &&
+    attrs.some(
+      (attr) =>
+        (attr.name === 'value' || attr.name === 'resource') &&
+        (attr.values.length > 0 || attr.refs.length > 0 || (attr.files?.length ?? 0) > 0),
+    )
+  )
+    fail();
+  return [...names];
+}
+
 const MAX_LINES = 2_000_000;
 const MAX_OUTPUT = 256 * 1024 * 1024;
 

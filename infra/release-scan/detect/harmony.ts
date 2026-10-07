@@ -3,7 +3,7 @@
 // （SaveHeader / SaveLimitKeyConfigs / SaveIdSets / SaveRecordItem）与 resource_data.h 的 ResType。
 // 口径：结构损坏、越界一律抛错（fail-closed）；所有配置（语言、地区等）的候选值都参与检测与引用解析。
 
-import { emitFinal, LineSink, UNRESOLVED } from './lines.ts';
+import { associationNames, emitFinal, LineSink, UNRESOLVED } from './lines.ts';
 import type { FileReader, Final, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
@@ -291,7 +291,23 @@ export function moduleJsonText(
     }
     if (value && typeof value === 'object') {
       const object = value as { [name: string]: unknown };
-      const names = typeof object.name === 'string' && object.name !== '' ? [object.name] : [];
+      // name 写成 `$string:…` 引用时先解析出名字再关联 value / resource；解析不了且有取值即 fail-closed。
+      const nameRef = typeof object.name === 'string' ? harmonyRef(object.name) : undefined;
+      const names =
+        typeof object.name !== 'string' || object.name === ''
+          ? []
+          : nameRef
+            ? associationNames(
+                [
+                  { name: 'name', values: [], refs: [nameRef] },
+                  ...(['value', 'resource'] as const)
+                    .filter((k) => object[k] !== undefined && object[k] !== null)
+                    .map((k) => ({ name: k, values: [String(object[k])], refs: [] })),
+                ],
+                resolve,
+                invalid,
+              )
+            : [object.name];
       for (const [k, child] of Object.entries(object)) {
         if (child !== null && typeof child === 'object') {
           walk(child, k, depth + 1);

@@ -84,8 +84,29 @@ export async function scanArtifact(input: ScanInput): Promise<ScanResult> {
     // 与 artifactTextViews 同一关联语义：清单引用经同一包的资源表解析，签名字段引用解析不了记读取错误。
     const associated = artifactTextViews(entries);
     errors.push(...associated.errors);
+    // 原值视图紧跟它的来源视图；同一条目已按任一规则报过的同一取值，原值视图里的可豁免重复
+    // （high-entropy / keyed-credential）不再另报，不可豁免的命中照报。
+    const reported = new Map<string, Set<string>>();
     for (const view of associated.views) {
-      hits.push(...detectText(view.path, view.text, options, view.resourceNames === true));
+      const found = detectText(
+        view.path,
+        view.text,
+        options,
+        view.resourceNames === true,
+        view.rawStrings === true,
+      );
+      let seen = reported.get(view.path);
+      if (!seen) reported.set(view.path, (seen = new Set()));
+      for (const hit of found) {
+        if (
+          view.rawStrings === true &&
+          (hit.rule === 'high-entropy' || hit.rule === 'keyed-credential') &&
+          seen.has(hit.match)
+        )
+          continue;
+        if (view.rawStrings !== true) seen.add(hit.match);
+        hits.push(hit);
+      }
     }
   }
   const report = compareHits({

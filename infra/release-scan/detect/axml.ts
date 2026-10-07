@@ -1,4 +1,4 @@
-import { emitFinal, UNRESOLVED } from './lines.ts';
+import { associationNames, emitFinal, UNRESOLVED } from './lines.ts';
 import type { FileReader, Resolution } from './lines.ts';
 import { fieldRule } from './rules.ts';
 
@@ -161,7 +161,10 @@ export function axmlText(bytes: Buffer, resolve?: AxmlResolver, readFile?: FileR
             ...(rawRef === undefined ? {} : { rawRef }),
           });
         }
-        const names = attrs.filter((attr) => attr.name === 'name').flatMap((attr) => attr.values);
+        // name 编译成资源引用时先解析出名字再关联；无解析器（encoding 旧口径）只用文字取值。
+        const names = resolve
+          ? associationNames(attrs, (ref) => resolve(ref.id, ref.kind), invalid)
+          : attrs.filter((attr) => attr.name === 'name').flatMap((attr) => attr.values);
         for (const attr of attrs) {
           const associated =
             (attr.name === 'value' || attr.name === 'resource') && names.length > 0;

@@ -150,18 +150,35 @@ function standaloneValue(
 const NEW_KEY =
   /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\\n])*`)\s*[:=]|^[A-Za-z_$][\w$.-]*[ \t]*(?:=|:(?!\S))/;
 
-/** 算法参数后缀（位数、版本、轮数、长度等）：带这些词的数字取值是参数，不是材料。 */
+/** 算法参数后缀（位数、版本、轮数、长度、时效等）：带这些词的数字取值是参数，不是材料。 */
 const PARAMETER_WORD =
-  /^(?:bits?|version|ver|v\d*|rounds?|length|len|size|count|iterations?|iter|cost|level|mode|type|alg|algorithm|index|idx|id|ttl|timeout|expires?|interval|enabled?)$/;
+  /^(?:bits?|version|ver|v\d*|rounds?|length|len|size|count|iterations?|iter|cost|level|mode|type|alg|algorithm|index|idx|id|ttl|timeout|expir(?:y|e[sd]?|ation)|interval|enabled?|disabled?|on|off|flag|switch|duration|period|age|seconds?|secs?|ms|millis|minutes?|hours?|days?)$/;
 
-/** JSON 数字取值按签名材料检测的条件：键名本身是签名材料名，且不带算法参数词。 */
-function numericMaterial(name: string): boolean {
+/** 布尔前缀：useHmac / enableSign / isSalted / hasSecret 的数字是开关。 */
+const SWITCH_PREFIX = /^(?:use|enable|disable|is|has|should|can|need|allow|with|no|skip)$/;
+
+/** 材料本体词（含 sharedsalt、hmackey、signingsecret 连写）；hmac、sign、signature 这类纯算法名不算。 */
+const MATERIAL_WORD = /(?:salt|secret|key)$/;
+
+/** JSON 数字盐的最短位数：0 / 1 这类开关值、3600 这类时长都不是盐（冻结用例 20240101 为 8 位）。 */
+const NUMERIC_MATERIAL_DIGITS = 6;
+
+/**
+ * JSON 数字取值按签名材料检测的条件：键名本身是签名材料名、含材料本体词（salt / secret / *_key），
+ * 不以开关前缀开头，不带算法参数或时效词，且数字至少 6 位。
+ */
+function numericMaterial(name: string, value: string): boolean {
   if (fieldRule(name) !== 'request-sign-material') return false;
+  if (value.replace(/^-/, '').replace(/[.eE].*$/, '').length < NUMERIC_MATERIAL_DIGITS)
+    return false;
   const words = name
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .toLowerCase()
-    .split(/[._$-]+/);
+    .split(/[._$-]+/)
+    .filter((word) => word !== '');
+  if (words.length === 0 || SWITCH_PREFIX.test(words[0]!)) return false;
+  if (!words.some((word) => MATERIAL_WORD.test(word))) return false;
   return !words.some((word) => PARAMETER_WORD.test(word));
 }
 
@@ -170,12 +187,15 @@ function fields(
   file: string,
   text: string,
   resourceNames: boolean,
+  rawStrings: boolean,
 ): Array<{ name: string; value: string; start: number }> {
   const found: Array<{ name: string; value: string; start: number }> = [];
   const configFile =
     /(?:\.(?:properties|ini|cfg|conf|env|yaml|yml)|(?:^|\/)\.env(?:\.[^/]*)?)$/i.test(file);
   // 前端代码与 JSON 的 latin1 视图里，UTF-8 多字节也是 0x80 以上的字节，不能当作二进制串边界。
+  // 资源字符串原值视图（NUL 分隔的独立串）不是代码文本，即使引用方是 module.json 也按独立串判定。
   const codeFile =
+    !rawStrings &&
     /\.(?:[cm]?js|jsx|tsx?|html?|css|json|map|vue|svelte|jsbundle|bundle|wxml|wxss)$/i.test(file);
   // 未知格式只认整份纯配置文本；对象路径和代码语句不能靠行首的 '=' 冒充配置。
   const plainConfig = text
@@ -237,7 +257,7 @@ function fields(
       quotedKey &&
       separator === ':' &&
       /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(bare) &&
-      numericMaterial(name)
+      numericMaterial(name, bare)
     ) {
       add(name, bare, valueAt);
       assignment.lastIndex += bare.length;
@@ -289,6 +309,7 @@ export function detectText(
   text: string,
   options: DetectOptions,
   resourceNames = false,
+  rawStrings = false,
 ): ScanHit[] {
   const candidates: Candidate[] = [];
   const add = (rule: DetectRuleId, start: number, length: number): void => {
@@ -320,7 +341,7 @@ export function detectText(
     } else if (hasHigh(text.slice(m.index, m.index + length))) add('high-entropy', m.index, length);
   }
 
-  for (const { name, value, start } of fields(file, text, resourceNames)) {
+  for (const { name, value, start } of fields(file, text, resourceNames, rawStrings)) {
     const rule = fieldRule(name, resourceNames);
     if (!rule || value.length === 0) continue;
     if (rule === 'request-sign-material') add(rule, start, value.length);
