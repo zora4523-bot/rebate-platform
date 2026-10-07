@@ -22,6 +22,7 @@ import {
   type Idempotency,
   type RedisHandle,
   type RootLogger,
+  type VerifiedDevice,
 } from '../platform/index.ts';
 import {
   createUnionPidService,
@@ -124,6 +125,8 @@ class UnscopedCallerContext extends CallerContext {
 
 interface ScopedRequest {
   readonly headers?: Readonly<Record<string, string | string[] | undefined>>;
+  /** Set by the signature check (request-checks stage ①) once the device's signature verified. */
+  readonly verifiedDevice?: VerifiedDevice;
 }
 
 /**
@@ -163,8 +166,8 @@ class PausedLinkOpen extends LinkOpenService {
 /**
  * Linking (规划/02 §4.1), B1-06c: card-time link registration (catalog's LinkRegistrar) and the
  * read-only entry_source of a link (catalog's SourceLinkReader). Ports:
- * - CallerContext: a guest of the request's app (X-App-Id), device unknown, until identity
- *   replaces it (B1-02m);
+ * - CallerContext: a guest of the request's app (X-App-Id) and of the device its signature
+ *   verified (none when unsigned), until identity replaces it (B1-02m);
  * - AttrCodeReader: unavailable until identity replaces it (B1-02m); never a user_id fallback;
  * - LinkingConfigReader: built once per process by the factory app.module.ts passes (content).
  * B1-06w: POST /v1/links/{link_id}/open is served by the wired open (link-open-wiring.ts), built
@@ -297,9 +300,13 @@ export class LinkingModule {
           inject: [REQUEST],
           useFactory: (request: ScopedRequest): CallerContext => {
             const appId = request.headers?.['x-app-id'];
-            return typeof appId === 'string' && appId !== ''
-              ? createGuestCallerContext({ appId, deviceId: null })
-              : new UnscopedCallerContext();
+            if (typeof appId !== 'string' || appId === '') return new UnscopedCallerContext();
+            // B1-06w: the guest's device is the one the signature check verified for this app
+            // (the open's idempotency subject); an unverified X-Device-Id is never trusted.
+            const device = request.verifiedDevice;
+            const deviceId =
+              device !== undefined && device.appId === appId ? device.deviceId : null;
+            return createGuestCallerContext({ appId, deviceId });
           },
         },
         {

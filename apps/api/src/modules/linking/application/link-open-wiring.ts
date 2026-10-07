@@ -4,7 +4,8 @@
 // - non-prod: the BR-ATTR-27 default matrix as built (demo adapters only);
 // - prod: a step is handed out only when its path is verified for that platform and client
 //   (CAP-JD-11 / CAP-PDD-11); a scheme step also needs the apps.json entry verified and its value
-//   under that entry's scheme. Fresh conversions, cached jumps and the unpromoted no-rebate page
+//   under that entry's scheme. A platform × client with no admissible path at all answers 50301
+//   at admit, before any price or conversion call. Fresh conversions, cached jumps and the unpromoted no-rebate page
 //   are admitted alike; nothing admitted → 50301 (the open fails closed before its commit, so no
 //   attempt is recorded for a jump that is never handed out).
 // The cache plan variant is the client itself (web is not folded into h5 here), so a cached jump
@@ -19,6 +20,7 @@ import {
   type LinkOpenApps,
 } from './link-open-conversion.ts';
 import { linkOpenOf, type LinkOpenService } from './link-open.ts';
+import type { LinkOpenOwnerResult } from './link-open-owner.ts';
 import {
   createLinkOpenRequote,
   type LinkOpenCacheKey,
@@ -90,6 +92,22 @@ export function createJumpAdmission(environment: LinkOpenEnvironment) {
 
   return {
     production,
+    /**
+     * Whether any path of this platform and client could be admitted at all, checked before the
+     * open prices or converts (B1-06w review S2: prod spends no union call on a jump it cannot
+     * hand out). Always true outside prod.
+     */
+    possible(platform: string, client: Client): boolean {
+      if (!production) return true;
+      if (platform !== 'jd' && platform !== 'pdd') return false;
+      const verified = environment.verifiedPaths[platform]?.[client] ?? [];
+      return verified.some(
+        (type) =>
+          type !== 'scheme' ||
+          (environment.apps.apps[platform].status === 'verified' &&
+            appSchemeOf(environment.apps, platform) !== null),
+      );
+    },
     /** The admitted steps in their order; null when none is admitted. */
     jump(platform: string, client: Client, jump: LinkOpenJump): LinkOpenJump | null {
       if (!production) return jump;
@@ -117,7 +135,12 @@ export function createWiredLinkOpen(options: WiredLinkOpenOptions): LinkOpenServ
   const base = createLinkOpenConversion({ ...options, apps: environment.apps });
 
   const conversion = {
-    admit: base.admit,
+    async admit(owner: LinkOpenOwnerResult, client: Client): Promise<void> {
+      await base.admit(owner);
+      if (!admission.possible(owner.link.platform, client)) {
+        throw paused('linking: no verified jump path for this client');
+      }
+    },
     variant: variantOf,
     async prepare(plan: LinkOpenReadPlan): Promise<void> {
       await Promise.allSettled([
