@@ -150,6 +150,18 @@ function standaloneValue(
 const NEW_KEY =
   /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\\n])*`)\s*[:=]|^[A-Za-z_$][\w$.-]*[ \t]*(?:=|:(?!\S))/;
 
+/** YAML 里只有 `键:` / `"键":`（冒号后空白或行尾）是新键；`=` 在 YAML 标量里只是取值的一部分。 */
+const YAML_NEW_KEY =
+  /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')[ \t]*:(?!\S)|^[A-Za-z_$][\w$.-]*[ \t]*:(?!\S)/;
+
+/** 整行是带填充等号的 Base64 / Base64url 串（如 `c2FsdA==`）：这是换行书写的取值，不是 `键=`。 */
+const PADDED_BASE64_LINE = /^[A-Za-z0-9+/_-]+={1,2}[ \t]*(?:\r?\n|$)/;
+
+function newKeyAt(rest: string, yaml: boolean): boolean {
+  if (PADDED_BASE64_LINE.test(rest)) return false;
+  return (yaml ? YAML_NEW_KEY : NEW_KEY).test(rest);
+}
+
 /** 算法参数后缀（位数、版本、轮数、长度、时效等）：带这些词的数字取值是参数，不是材料。 */
 const PARAMETER_WORD =
   /^(?:bits?|version|ver|v\d*|rounds?|length|len|size|count|iterations?|iter|cost|level|mode|type|alg|algorithm|index|idx|id|ttl|timeout|expir(?:y|e[sd]?|ation)|interval|enabled?|disabled?|on|off|flag|switch|duration|period|age|seconds?|secs?|ms|millis|minutes?|hours?|days?)$/;
@@ -162,7 +174,7 @@ const MATERIAL_WORD = /(?:salt|secret|key)$/;
 
 /**
  * JSON 数字取值按签名材料检测的条件：键名本身是签名材料名、含材料本体词（salt / secret / *_key），
- * 不以开关前缀开头，不带算法参数或时效词。不设位数门槛：任何数字（短数字、负数、小数、科学计数法）都检测；
+ * 不以开关前缀开头，最后一个材料本体词之后不带算法参数或时效词。不设位数门槛：任何数字（短数字、负数、小数、科学计数法）都检测；
  * 开关与参数（useHmac:1、hmac:0、hmacKeyExpiry:3600、saltRounds:10）只按键名语义排除。
  */
 function numericMaterial(name: string): boolean {
@@ -174,8 +186,11 @@ function numericMaterial(name: string): boolean {
     .split(/[._$-]+/)
     .filter((word) => word !== '');
   if (words.length === 0 || SWITCH_PREFIX.test(words[0]!)) return false;
-  if (!words.some((word) => MATERIAL_WORD.test(word))) return false;
-  return !words.some((word) => PARAMETER_WORD.test(word));
+  // 参数 / 时效词只在最后一个材料本体词之后（saltRounds、signKeyVersion、hmacKeyExpiry）才说明取值是参数；
+  // 材料词之前的版本或前缀（v1_sign_salt、legacySignSalt）仍是材料。
+  const last = words.findLastIndex((word) => MATERIAL_WORD.test(word));
+  if (last < 0) return false;
+  return !words.slice(last + 1).some((word) => PARAMETER_WORD.test(word));
 }
 
 /** 每种布局都保留原始字符偏移；后续去重和行号不依赖重新序列化。 */
@@ -188,6 +203,7 @@ function fields(
   const found: Array<{ name: string; value: string; start: number }> = [];
   const configFile =
     /(?:\.(?:properties|ini|cfg|conf|env|yaml|yml)|(?:^|\/)\.env(?:\.[^/]*)?)$/i.test(file);
+  const yamlFile = /\.ya?ml$/i.test(file);
   // 前端代码与 JSON 的 latin1 视图里，UTF-8 多字节也是 0x80 以上的字节，不能当作二进制串边界。
   // 资源字符串原值视图（NUL 分隔的独立串）不是代码文本，即使引用方是 module.json 也按独立串判定。
   const codeFile =
@@ -220,7 +236,7 @@ function fields(
         text.slice(assignment.lastIndex, assignment.lastIndex + 4096),
       )![0];
       const nextAt = assignment.lastIndex + next.length;
-      if (nextAt < text.length && !NEW_KEY.test(text.slice(nextAt, nextAt + 4096))) {
+      if (nextAt < text.length && !newKeyAt(text.slice(nextAt, nextAt + 4096), yamlFile)) {
         assignment.lastIndex = nextAt;
       }
     }
