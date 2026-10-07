@@ -1,0 +1,24 @@
+id: B3-02e
+repo: rebate-platform
+title: ModelGateway 第五段：VendorGateway 统一补记协议错误携带的用量（ModelProtocolError.usage 非 null 时按用途记线上 / 离线计量，只记一次），去掉 B3-02c 路由器与评测端口两层补记
+type: impl
+# 2026-10-07 草稿（会话 codex-impl-six）：B3-02c #234 评审转来（Claude r2 范围外 S1、Codex r1/r2；couli-runs/CODEX-IMPL/decision-orchestrator.md 第 29 条）。属 B3-02 整行（approvals 第 23 条整行放行）。
+# 依据：BR-AI-14「离线调用费用按厂商独立计量」、BR-AI-16（成本按调用完成时记账）；根因在 vendors/gateway.ts 只为成功调用计量。
+# 做法：网关掌握 transport.billable 与 purpose，在 invoke 抛出带 usage 的 ModelProtocolError 时记一次；同一错误对象不得被上层再记（B3-02c 的 createMeteredVendorGateway 认领标记一并收拢）。
+# refs 保留 BR-AI-14；连一跳引用任务书超 24KB，编排者手工生成任务书（manual-impl），不经 dispatch.sh。
+refs: [BR-AI-14]
+refs_hash:
+  BR-AI-14: 94c980b637dc
+deps: [B3-02c]
+paths:
+  - 'apps/api/src/modules/agent/model-gateway/vendors/**'
+  - 'apps/api/src/modules/agent/model-gateway/routing/**'
+test_paths:
+  - 'test/spec/agent/model-metering/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/model-metering/**'
+status: todo
+pr: null
