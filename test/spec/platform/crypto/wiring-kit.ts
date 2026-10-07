@@ -45,7 +45,7 @@ export type AppEnvName = (typeof APP_ENV_NAMES)[number];
 
 /** The fixed message of every startup error code, copied from the contract (not imported). */
 export const STARTUP_MESSAGES: Readonly<Record<KeyringStartupErrorCode, string>> = {
-  local_in_cloud: 'the local key provider must not be used when APP_ENV is staging or prod',
+  local_in_cloud: 'the local key provider must not be used when APP_ENV is prod',
   kms_unavailable: 'the KMS key provider is not available',
   master_key_unreadable: 'the master key file cannot be read',
   master_key_invalid: 'the master key file must hold exactly 64 lowercase hex characters',

@@ -10,6 +10,7 @@
 // All tests that load Nest are in this one file so that Nest is loaded once (a Vitest file is an
 // isolated module graph); the entries that open the three test keyrings successfully are started
 // once in beforeAll and shared by the tests that only read them. Top-level it() only.
+import { generateKeyPairSync } from 'node:crypto';
 import { realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -77,6 +78,16 @@ function fresh(label: string, contents: Parameters<typeof writeFiles>[1] = {}): 
   const dir = makeDir(label);
   dirs.push(dir);
   return writeFiles(dir, contents);
+}
+
+/** Synthetic signing key: staging startup must reach the field-crypto assertions. */
+function stagingJwtEnv(): Record<string, string> {
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  return {
+    JWT_PRIVATE_KEY_PEM: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    JWT_KEY_ID: 'b1-01zd-staging-test',
+    JWT_VERIFY_KEYS_JSON: '{}',
+  };
 }
 
 /** What the entry runner gives createDbHandles; nothing connects until a query runs. */
@@ -308,10 +319,6 @@ function failureCases(entry: Entry): {
       ...local(files),
       appEnv: 'prod',
     })),
-    make('hand-built staging config with the local provider', {}, 'local_in_cloud', (files) => ({
-      ...local(files),
-      appEnv: 'staging',
-    })),
     make('kms', {}, 'kms_unavailable', (files) => ({
       appEnv: 'staging',
       keyring: { provider: 'kms', keyringFile: files.keyringFile },
@@ -365,11 +372,11 @@ it.each(ENTRIES)(
 );
 
 it.each(ENTRIES)(
-  '[ADR-0001 §2][规划/02 §12.6] %s 入口在 staging 与 prod 选 local 提供者拒绝启动；local 允许并注入可用的 FieldCrypto（经 loadConfig(process.env)）',
+  '[AC-B1-01zd#15][BR-ID-33] %s 入口在 prod 选 local 拒绝启动；local 与 staging 允许并注入可用的 FieldCrypto（经 loadConfig(process.env)）',
   async (entry) => {
     const files = fresh(`env-local-${entry}`);
     const refused: Record<string, unknown> = {};
-    for (const appEnv of ['staging', 'prod'] as const) {
+    for (const appEnv of ['prod'] as const) {
       stubProcessEnv(localEnv(appEnv, files));
       const outcome = await startAndClose(entry, { logger: memoryLogger(entry, appEnv).logger });
       refused[appEnv] =
@@ -381,21 +388,53 @@ it.each(ENTRIES)(
       vi.unstubAllEnvs();
     }
     expect(refused).toEqual({
-      staging: [PROBLEMS.localInCloud('staging')],
       prod: [PROBLEMS.localInCloud('prod')],
     });
 
-    stubProcessEnv(localEnv('local', files));
-    const { logger, lines } = memoryLogger(entry, 'local');
-    const local = await settle(startEntry(entry, { logger }));
-    const token = await fieldCryptoToken();
-    expect('value' in local ? 'started' : local.error).toBe('started');
-    if (!('value' in local)) return;
-    const injected = settleSync(() => local.value.get(token));
-    await local.value.close();
-    expect(
-      'value' in injected ? injectedProblems(injected.value) : [String(injected.error)],
-    ).toEqual([]);
+    for (const appEnv of ['local', 'staging'] as const) {
+      stubProcessEnv({
+        ...localEnv(appEnv, files),
+        ...(appEnv === 'staging' ? stagingJwtEnv() : {}),
+      });
+      const { logger, lines } = memoryLogger(entry, appEnv);
+      const local = await settle(startEntry(entry, { logger }));
+      const token = await fieldCryptoToken();
+      expect('value' in local ? 'started' : local.error).toBe('started');
+      if (!('value' in local)) return;
+      const injected = settleSync(() => local.value.get(token));
+      await local.value.close();
+      expect(
+        'value' in injected ? injectedProblems(injected.value) : [String(injected.error)],
+      ).toEqual([]);
+      expect(logLeaks(lines, secretsOf(files))).toEqual([]);
+      vi.unstubAllEnvs();
+    }
+  },
+  NEST_TIMEOUT_MS,
+);
+
+it.each(ENTRIES)(
+  '[AC-B1-01zd#16][BR-ID-33] %s 入口接受手工 staging local 配置并注入可加解密的 FieldCrypto',
+  async (entry) => {
+    const files = fresh(`staging-direct-${entry}`);
+    const config = {
+      ...loadConfig({ ...localEnv('test', files), ...stagingJwtEnv() }),
+      appEnv: 'staging',
+    };
+    misleadingProcessEnv(files);
+    const { logger, lines } = memoryLogger(entry, 'staging');
+    const outcome = await settle(startEntry(entry, { config, logger }));
+    expect('value' in outcome, 'staging local entry must start').toBe(true);
+    if (!('value' in outcome)) return;
+    try {
+      const token = await fieldCryptoToken();
+      const injected = settleSync(() => outcome.value.get(token));
+      expect(
+        'value' in injected ? injectedProblems(injected.value) : ['token unavailable'],
+      ).toEqual([]);
+    } finally {
+      await outcome.value.close();
+    }
     expect(logLeaks(lines, secretsOf(files))).toEqual([]);
   },
   NEST_TIMEOUT_MS,
