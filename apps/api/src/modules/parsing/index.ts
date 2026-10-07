@@ -1,80 +1,27 @@
-import type { components } from '@couli/contracts-ts';
-import type {
-  Catalog,
-  CatalogCardEntry,
-  CatalogConfigReader,
-  ProductCard,
-  ProductRef,
-} from '../catalog/index.ts';
-import type { Clock, LinkPatternsSpec } from '../platform/index.ts';
-import type { CallCtx, RegisteredPlatform, UnionAdapter, UnionItemDetail } from '../union/index.ts';
-
-/** ContentReader implements this port; production wiring belongs to the implementation phase. */
-export type ParsingConfigReader = Pick<CatalogConfigReader, 'configValue'>;
-
-export interface ParsingOptions {
-  readonly config: ParsingConfigReader;
-  readonly catalog: Pick<Catalog, 'listPlatforms' | 'resolveProductKey'>;
-  readonly cards: CatalogCardEntry;
-  readonly clock: Clock;
-  /** Supplied adapters must already pass through union governance. */
-  readonly getGovernedAdapter: (
-    platform: RegisteredPlatform,
-  ) => Pick<UnionAdapter, 'resolveLink' | 'getItem'>;
-  /** Omission uses platform.getLinkPatterns(); overrides are synthetic test fixtures. */
-  readonly linkPatterns?: LinkPatternsSpec;
-}
-
-export interface ParsingUrlMatch {
-  readonly platform: string;
-  readonly category: 'product' | 'promo' | 'union_host';
-}
-
-export type ParsingHit = components['schemas']['InputHit'];
-
-/** Internal D33 result; price_unavailable is deliberately not a fabricated wire card. */
-export type ParsingResult =
-  | { readonly kind: 'card'; readonly hit: ParsingHit; readonly card: ProductCard }
-  | { readonly kind: 'error'; readonly hit: ParsingHit | null; readonly error_code: number }
-  | {
-      readonly kind: 'price_unavailable';
-      readonly hit: ParsingHit;
-      readonly productKey: string;
-    };
-
-export interface ParsingService {
-  parseInput(text: string, context: CallCtx): Promise<readonly ParsingResult[]>;
-}
-
-export interface ParsedUrlProduct {
-  readonly item: UnionItemDetail;
-  readonly ref: ProductRef;
-}
-
-/** Host/path classification only; specific product/promo rules take precedence over union_host. */
-export function classifyParsingUrl(
-  url: string,
-  patterns: LinkPatternsSpec,
-): ParsingUrlMatch | null {
-  void url;
-  void patterns;
-  throw new Error('NotImplemented: classifyParsingUrl');
-}
-
-/** B1-06i port: resolves and derives a product without registering a card or converting a link. */
-export function parseUrl(
-  options: ParsingOptions,
-  url: string,
-  context: CallCtx,
-): Promise<ParsedUrlProduct> {
-  void options;
-  void url;
-  void context;
-  throw new Error('NotImplemented: parseUrl');
-}
-
-/** Shared pure-code use case for the later HTTP and Agent entry points. */
-export function createParsing(options: ParsingOptions): ParsingService {
-  void options;
-  throw new Error('NotImplemented: createParsing');
-}
+// Public surface of the parsing module (规划/02 §4.1: parsing → union, catalog; never linking).
+// Other modules import only from this file. Task B1-07a: parse_input core (createParsing), the
+// link pattern classification (classifyParsingUrl) and the by-URL port for B1-06i (parseUrl).
+// Rule tests: test/spec/parsing/core/**. The POST /v1/inputs/parse route is B1-07b.
+export {
+  createParsing,
+  OFF_SHELF,
+  ParsingError,
+  parseUrl,
+  UNRECOGNIZED,
+  UNSUPPORTED,
+} from './application/parsing.ts';
+export type {
+  ParsedUrlProduct,
+  ParsingErrorCode,
+  ParsingHit,
+  ParsingOptions,
+  ParsingResult,
+  ParsingService,
+} from './application/parsing.ts';
+export { classifyParsingUrl } from './domain/link-patterns.ts';
+export type { LinkPatternCategory, ParsingUrlMatch } from './domain/link-patterns.ts';
+export { extractCandidates, MAX_CANDIDATES } from './domain/candidates.ts';
+export type { Candidate } from './domain/candidates.ts';
+export { ParsingConfigReader } from './ports.ts';
+export { ParsingModule } from './parsing.module.ts';
+export type { ParsingConfigReaderFactory } from './parsing.module.ts';
