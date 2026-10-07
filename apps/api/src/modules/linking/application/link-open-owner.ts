@@ -14,13 +14,23 @@
 //   same scene (taolijin falls back to detail/self_buy with the owner-only notice), the original
 //   quote snapshot copied as the baseline (amount_unknown stays null, never zero).
 // - a guest opening a non-share link (④): 10001; unknown or foreign-app link (⑤): 30144.
+// - B1-06p: an effective no_rebate open (BR-ID-18; not another user's share link, BR-ATTR-05 ①)
+//   never registers: BR-PRICE-08 writes no quote snapshot for it. Where ③ / BR-ATTR-11 would
+//   register, the open keeps the opened link (new_link_id null) with an identity of the caller on
+//   the would-be pid_scene, no pid and no attr_code — the no-rebate conversion uses neither, and
+//   the open log and attempt name the opened link.
 import type { components, Scene } from '@couli/contracts-ts';
 import { scene as SCENES } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { sql, type Kysely, type Selectable } from 'kysely';
 import { newUuidV7 } from '../../platform/index.ts';
 import { isPlatform } from '../../union/index.ts';
-import { LinkingError, decideOpenOwner, type OpenOwnerDecision } from '../domain/rules.ts';
+import {
+  LinkingError,
+  decideOpenOwner,
+  pidSceneOf,
+  type OpenOwnerDecision,
+} from '../domain/rules.ts';
 import type { Caller } from '../ports.ts';
 import {
   attrCodeOf,
@@ -57,7 +67,26 @@ export interface LinkOpenOwnerService {
    * `trx` (B1-06m): the open's transaction, so a claim or a registered link commits or rolls back
    * with the rest of the open; without it the stage writes through the module's db handle.
    */
-  open(input: { readonly linkId: string }, trx?: Kysely<DB>): Promise<LinkOpenOwnerResult>;
+  open(input: LinkOpenOwnerInput, trx?: Kysely<DB>): Promise<LinkOpenOwnerResult>;
+}
+
+export interface LinkOpenOwnerInput {
+  readonly linkId: string;
+  /** B1-06p: the request's no_rebate; ignored on another user's share link (BR-ATTR-05 ①). */
+  readonly noRebate?: boolean;
+}
+
+/**
+ * BR-ID-18 / BR-ATTR-05 ①: whether the requested no_rebate applies to the link with this identity
+ * snapshot — never on a share link opened by anyone but the sharer.
+ */
+export function noRebateApplies(
+  callerUserId: string | null,
+  snapshot: Pick<IdentitySnapshot, 'pid_scene' | 'user_id'>,
+  requested: boolean | undefined,
+): boolean {
+  const sharedByOther = snapshot.pid_scene === 'share' && snapshot.user_id !== callerUserId;
+  return requested === true && !sharedByOther;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -191,10 +220,7 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
     return { link: row, snapshot };
   }
 
-  async function open(
-    input: { readonly linkId: string },
-    trx?: Kysely<DB>,
-  ): Promise<LinkOpenOwnerResult> {
+  async function open(input: LinkOpenOwnerInput, trx?: Kysely<DB>): Promise<LinkOpenOwnerResult> {
     const executor = trx ?? db;
     // Server-side identity only: app, user and device come from CallerContext, never the input.
     const caller = await callerContext.current();
@@ -228,6 +254,23 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
         case 'login':
           throw new LinkingError(10001, 'login_required', []);
         case 'register': {
+          if (noRebateApplies(caller.userId, snapshot, input.noRebate)) {
+            // BR-PRICE-08: no registration, no copied quote snapshot; the opened link is used.
+            return {
+              link,
+              identitySnapshot: {
+                user_id: caller.userId,
+                platform: snapshot.platform,
+                pid: null,
+                pid_scene: pidSceneOf(decision.scene),
+                attr_code: null,
+                agent_session_id: null,
+              },
+              new_link_id: null,
+              old_final_price_fen: baseline,
+              message: decision.message,
+            };
+          }
           const fresh = await registerFor(executor, caller, link, decision.scene);
           return {
             link: fresh.link,

@@ -335,14 +335,18 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
     } catch {
       noRebateUrl = '';
     }
-    if (noRebateUrl === '') {
-      logger.warn(
-        { event: 'linking.open.no_rebate_page_unavailable', app_id: link.app_id, platform },
-        'linking: no unpromoted product page for the no-rebate purchase',
-      );
-    }
+    // Alerted only when the conversion fails and no unpromoted page can stand in for it.
+    const failedConversion = (message: string) => {
+      if (noRebate && noRebateUrl === '') {
+        logger.warn(
+          { event: 'linking.open.no_rebate_page_unavailable', app_id: link.app_id, platform },
+          'linking: no unpromoted product page for the no-rebate purchase',
+        );
+      }
+      return failed(message, noRebateUrl);
+    };
     if (link.raw_item_id === null || link.raw_item_id === '') {
-      throw failed('linking: link has no raw item id to convert', noRebateUrl);
+      throw failedConversion('linking: link has no raw item id to convert');
     }
     let url: string;
     try {
@@ -357,7 +361,7 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
       url = result.url;
     } catch {
       // No retry here: one adapter call per conversion (governance owns retries and circuits).
-      throw failed('linking: conversion failed', noRebateUrl);
+      throw failedConversion('linking: conversion failed');
     }
     return buildDefaultLinkJump({
       platform,

@@ -340,6 +340,57 @@ describe('linking open connection use (B1-06m)', () => {
     });
   });
 
+  it("[AC-B1-06p] a no_rebate open of another user's link after a failed requote registers no link", async () => {
+    const f = fixture(() => Promise.reject(new Error('synthetic price failure')));
+    const outcome = await f.service.open({ ...f.request, noRebate: true });
+    expect(outcome.code).toBe(0);
+    expect(outcome.data).toMatchObject({
+      new_link_id: null,
+      requote_failed: true,
+      new_rebate_min_fen: '0',
+      new_rebate_max_fen: '0',
+      quoted_at: null,
+    });
+    expect(f.driver.secondDuringTransaction).toEqual([]);
+    // BR-PRICE-08: no quote snapshot is written; the log and attempt name the opened link.
+    expect(f.driver.seen.filter((q) => q.sql.startsWith('insert into "links"'))).toEqual([]);
+    expect(lastInsert(f.driver.seen, 'link_logs')).toMatchObject({
+      inTransaction: true,
+      link_id: LINK_A,
+      user_id: USER_B,
+      opener_user_id: USER_B,
+      no_rebate: true,
+      result_code: 0,
+    });
+    expect(lastInsert(f.driver.seen, 'link_open_attempts')).toMatchObject({
+      inTransaction: true,
+      link_id: LINK_A,
+      user_id: USER_B,
+    });
+    expect(f.driver.held).toBe(0);
+  });
+
+  it("[AC-B1-06p] a no_rebate open of another user's link with a good price registers no link either", async () => {
+    const f = fixture(async () => ({
+      kind: 'available',
+      input: {
+        item: {
+          platform: 'jd',
+          final_price_fen: 2990n,
+          coupon_fen: 0n,
+          coupon_ids: '',
+          quoted_at: NOW,
+        },
+        stale: false,
+      } as unknown as Extract<LinkOpenPrice, { kind: 'available' }>['input'],
+    }));
+    const outcome = await f.service.open({ ...f.request, noRebate: true });
+    expect(outcome.code).toBe(0);
+    expect(outcome.data).toMatchObject({ new_link_id: null, requote_failed: false });
+    expect(f.driver.secondDuringTransaction).toEqual([]);
+    expect(f.driver.seen.filter((q) => q.sql.startsWith('insert into "links"'))).toEqual([]);
+  });
+
   it('[AC-B1-06m] a setting read that fails while the link is still read is never unhandled', async () => {
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => {

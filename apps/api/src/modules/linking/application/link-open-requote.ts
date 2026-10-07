@@ -23,7 +23,8 @@
 //   A failed conversion after a good price is 50303 too.
 // B1-06p: an explicit no_rebate open (BR-PRICE-13 2026-10-08) does not need the re-check: on its
 //   failure it still converts without attribution (or jumps to the unpromoted page), with
-//   requote_failed=true, no rebate and no snapshot; 50303 only when no page can be built.
+//   requote_failed=true, no rebate and no snapshot; 50303 only when no page can be built. The
+//   owner stage registers no link for such an open (link-open-owner.ts), so it commits none.
 // - conversion and its cache are ports; the cache key is the frozen identity's owner (never the
 //   opener or links.user_id), app, platform, product, pid, pid_scene and no_rebate.
 // B1-06e: the conversion port may admit first (convert.enabled.<platform> → 50301 before any
@@ -81,6 +82,7 @@ import {
 } from './link-registration.ts';
 import {
   createLinkOpenOwner,
+  noRebateApplies,
   readSnapshot,
   type LinkOpenOwnerOptions,
   type LinkOpenOwnerResult,
@@ -939,6 +941,13 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       const sharedByOther = pidScene === 'share' && userId !== caller.userId;
       identities.push({ userId, pidScene, noRebate: requestedNoRebate === true && !sharedByOther });
     };
+    // B1-06p: the owner stage registers nothing for an applicable no_rebate (link-open-owner.ts).
+    const registersFor = (snapshotUserId: string | null) =>
+      !noRebateApplies(
+        caller.userId,
+        { pid_scene: snapshot.pid_scene, user_id: snapshotUserId },
+        requestedNoRebate,
+      );
     const decide = (rowUserId: string | null, snapshotUserId: string | null) =>
       decideOpenOwner({
         pidScene: link.pid_scene,
@@ -948,16 +957,19 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         callerUserId: caller.userId,
       });
     const first = decide(link.user_id, snapshot.user_id);
-    const outcomes = [first];
+    const outcomes: { decision: ReturnType<typeof decide>; snapshotUserId: string | null }[] = [
+      { decision: first, snapshotUserId: snapshot.user_id },
+    ];
     // A claim lost to another opener decides again as another user's link.
     const other = 'claimed-by-another-opener';
-    if (first.kind === 'claim') outcomes.push(decide(other, other));
-    for (const decision of outcomes) {
+    if (first.kind === 'claim')
+      outcomes.push({ decision: decide(other, other), snapshotUserId: other });
+    for (const { decision, snapshotUserId } of outcomes) {
       if (decision.kind === 'use') add(snapshot.user_id, snapshot.pid_scene);
       if (decision.kind === 'claim') add(caller.userId, snapshot.pid_scene);
       if (decision.kind === 'register') {
         const pidScene = pidSceneOf(decision.scene);
-        registers.push(pidScene);
+        if (registersFor(snapshotUserId)) registers.push(pidScene);
         add(caller.userId, pidScene);
       }
     }
@@ -1033,7 +1045,10 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     });
     let owner: LinkOpenOwnerResult;
     try {
-      owner = await owners.open({ linkId: request.linkId }, trx);
+      owner = await owners.open(
+        { linkId: request.linkId, noRebate: request.noRebate === true },
+        trx,
+      );
     } catch (error) {
       if (error instanceof LinkingError) return envelope(error.code);
       throw error;
