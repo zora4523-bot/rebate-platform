@@ -1294,7 +1294,7 @@ export type NoRebateReason = (typeof no_rebate_reason)[number];
  * Source: 规划/03 §4.5；BR-ATTR-27 (contracts/enums/trade.yaml).
  */
 export const jump_type = [
-  "sdk", // 联盟 SDK
+  "sdk", // 联盟 SDK；淘宝为百川打开指令，参数见 contracts/openapi.yaml JumpStep.sdk
   "scheme", // 自定义 scheme
   "universal_link", // Universal Link / App Link / App Linking
   "h5", // H5 页面

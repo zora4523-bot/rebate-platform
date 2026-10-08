@@ -1859,6 +1859,14 @@ export interface components {
          * @enum {string}
          */
         InstalledState: "true" | "false" | "unknown";
+        /**
+         * @description One step of a jump plan. `sdk` is required on every type=sdk step and never present on any
+         *     other type; the schema keeps it optional so the already-served shape stays compatible, and
+         *     the server that builds the plan (linking) guarantees the pairing, checked against the
+         *     examples by the contracts-ts consistency test. For a type=sdk step the client acts on
+         *     `sdk` only; `value` repeats `sdk.url` (open_by=url) or `sdk.item_id` (open_by=code) for
+         *     logs and compatibility.
+         */
         JumpStep: {
             /**
              * @description contracts/enums/trade.yaml jump_type.
@@ -1867,6 +1875,62 @@ export interface components {
             type: "sdk" | "scheme" | "universal_link" | "h5" | "copy_tpwd";
             /** @description URL, scheme or token to execute; produced by the server only. */
             value: string;
+            sdk?: components["schemas"]["BaichuanOpen"];
+        };
+        /**
+         * @description Taobao open instruction executed by the Baichuan SDK (docs/changes/20261003 §1; 03 §4.5).
+         *     The server builds it from the link snapshot; the client passes it to the SDK unchanged and
+         *     never rewrites, fills in or drops `taoke` (BR-ATTR-05). open_by=url opens our own promotion
+         *     link of this user and scene and carries no commission parameter at all (BR-ATTR-27 Taobao
+         *     row); open_by=code opens the item detail page and lets the SDK convert with `taoke`. A
+         *     code step carries no URL, so JumpPlan.expire_at does not limit it (04 §8.4). Whether the
+         *     SDK returns to the app afterwards is a platform capability (CAP-TB-11), not promised here.
+         *     The oneOf branches declare the properties they constrain (strict Ajv2020, ADR-0001 §4.2
+         *     #15).
+         */
+        BaichuanOpen: {
+            /** @enum {string} */
+            provider: "baichuan";
+            /**
+             * @description url = openByUrl with our promotion link; code = openByCode with the item ID.
+             * @enum {string}
+             */
+            open_by: "url" | "code";
+            /**
+             * Format: uri
+             * @description Required for open_by=url; only our own promotion link of this user and scene.
+             */
+            url?: string;
+            /**
+             * @description Required for open_by=code; the page openByCode opens.
+             * @enum {string}
+             */
+            page?: "detail";
+            /** @description Required for open_by=code; the union item ID (new string form). */
+            item_id?: string;
+            /** @description Optional SKU for open_by=code. */
+            sku_id?: string;
+            taoke?: components["schemas"]["BaichuanTaoke"];
+        } & ({
+            /** @enum {string} */
+            open_by: "url";
+            url: string;
+        } | {
+            /** @enum {string} */
+            open_by: "code";
+            /** @enum {string} */
+            page: "detail";
+            item_id: string;
+            taoke: components["schemas"]["BaichuanTaoke"];
+        });
+        /**
+         * @description AlibcTaokeParams of an open_by=code instruction, built by linking from the snapshot
+         *     identity (BR-ATTR-05); the client must not change, fill in or drop any of it.
+         */
+        BaichuanTaoke: {
+            pid: string;
+            /** @description Active binding of the snapshot user (the sharer on a share link). */
+            relation_id?: string;
         };
         /**
          * @description Executed strictly in order; clients never build schemes or add fallbacks themselves
@@ -1878,7 +1942,8 @@ export interface components {
             /**
              * Format: date-time
              * @description Until when the returned union URL can be used directly (BR-ATTR-05); it does not
-             *     limit opening the link_id again.
+             *     limit opening the link_id again. A Taobao sdk step with open_by=code carries no URL and
+             *     is not limited by it (04 §8.4).
              */
             expire_at: string;
         };
@@ -3505,6 +3570,8 @@ export interface components {
         /**
          * @description Either product_key (with the tapped card's item_ref) or url; neither, or both, is 20001.
          *     The oneOf branches declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).
+         *     A Taobao url is first resolved to an item_id and answered with a Baichuan open instruction
+         *     (JumpStep.sdk); the pasted link or token itself is never passed on (BR-PRICE-21).
          */
         ConvertLinkRequest: {
             platform: components["schemas"]["PlatformCode"];

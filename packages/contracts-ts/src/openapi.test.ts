@@ -12,7 +12,11 @@ const opened: OpenLinkResponse = {
   data: {
     attempt_id: 'attempt-1',
     jump: {
-      primary: { type: 'sdk', value: 'https://s.click.example.test/t?e=abc' },
+      primary: {
+        type: 'sdk',
+        value: 'https://s.click.example.test/t?e=abc',
+        sdk: { provider: 'baichuan', open_by: 'url', url: 'https://s.click.example.test/t?e=abc' },
+      },
       fallbacks: [],
       expire_at: '2026-10-02T09:45:00+08:00',
     },
@@ -54,7 +58,9 @@ it('posts open with the path id, signature and idempotency headers', async () =>
     body: { installed: 'unknown', no_rebate: false },
   });
 
-  expectTypeOf(data).toEqualTypeOf<OpenLinkResponse | undefined>();
+  // branded: deep structural equality; openapi-fetch maps the BaichuanOpen intersection (oneOf
+  // branches) inside JumpStep.sdk into an equivalent but not identical type.
+  expectTypeOf(data).branded.toEqualTypeOf<OpenLinkResponse | undefined>();
   // Amounts are integers (null on amount_unknown); rebate_basis is the closed 04 §8.3 set.
   expectTypeOf<Schema<'ProductCard'>['final_price_fen']>().toEqualTypeOf<number | null>();
   expectTypeOf<Schema<'ProductCard'>['rebate_basis']>().toEqualTypeOf<
