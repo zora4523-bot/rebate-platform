@@ -12,7 +12,7 @@ type: impl
 # 本任务给两个 forRoot 加可选的端口覆盖参数（只加参数、默认行为不变），所以 paths 加 catalog.module.ts 与 linking.module.ts 两个文件。
 refs: []
 refs_hash: {}
-deps: [B1-02h, B1-06c, B1-05c]
+deps: [B1-02h, B1-06c, B1-05c, B1-02p]
 paths:
   - 'apps/api/src/modules/identity/ports/**'
   - 'apps/api/src/modules/identity/index.ts'
