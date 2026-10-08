@@ -1,5 +1,5 @@
 import { useLayoutEffect } from 'react';
-import { LAYER } from './styles.ts';
+import { TOAST_LAYER } from './styles.ts';
 
 export interface ToastProps {
   message: string;
@@ -27,13 +27,14 @@ function acquireRegion(container: HTMLElement): HTMLElement {
   return region;
 }
 
-const STATUS_CLASS = `${LAYER} pointer-events-none inset-x-couli-4 mx-auto w-fit max-w-full rounded-couli-button bg-couli-text-primary px-couli-4 py-couli-2 text-center text-couli-footnote leading-couli-footnote text-couli-text-inverse [box-shadow:var(--shadow-floating)]`;
+const STATUS_CLASS = `${TOAST_LAYER} pointer-events-none inset-x-couli-4 mx-auto w-fit max-w-full rounded-couli-button bg-couli-text-primary px-couli-4 py-couli-2 text-center text-couli-footnote leading-couli-footnote text-couli-text-inverse [box-shadow:var(--shadow-floating)]`;
 const STATUS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + var(--space-16))';
 
 /**
  * Light notice at the bottom centre. It renders nothing where it is used: the notice goes into a
  * persistent polite live region in `container` (default `document.body`), so sheets, dialogs and
- * inert application containers never cover or silence it. It never takes focus and removes its
+ * inert application containers never silence it; its layer (`TOAST_LAYER`) sits above sheets and
+ * dialogs, so they never cover it either. It never takes focus and removes its
  * text after `durationMs`; the region itself stays, empty.
  *
  * A new `message` replaces the text and restarts the timer. To announce the same text again,
@@ -42,8 +43,9 @@ const STATUS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + var(--space-16))'
  */
 export function Toast({ message, durationMs = DEFAULT_DURATION_MS, container }: ToastProps): null {
   useLayoutEffect(() => {
-    // The region was inserted empty when it was first acquired; the notice is added after it,
-    // empty, and only then receives its text.
+    // From the second notice on, the region is already in the page, empty, before any text is
+    // written. The very first notice creates the region in this same task, because its text must
+    // be visible as soon as render returns; that first announcement may be missed.
     const region = acquireRegion(container ?? document.body);
     const status = region.ownerDocument.createElement('div');
     status.setAttribute('role', 'status');
