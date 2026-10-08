@@ -147,3 +147,23 @@ it('redactCredentials masks a URL password with unencoded @ / ? # as a whole', (
   expect(redactPgUrl('postgres://u:Sec@ret16@h/db')).toBe('postgres://u:***@h/db');
   expect(redactCredentials('postgres://u@h/db and x@y')).toBe('postgres://u@h/db and x@y');
 });
+
+it('redactCredentials masks libpq values with backslash escapes as a whole', () => {
+  const quoted = ['ExampleLeft', 'ExampleRight tail'].join("\\'");
+  expect(redactCredentials(`host=db password='${quoted}' dbname=couli`)).toBe(
+    'host=db password=*** dbname=couli',
+  );
+  // Unquoted: `\ ` is an escaped space, so the password is "ExampleOne ExampleTwo".
+  const unquoted = 'host=db password=ExampleOne\\ ExampleTwo dbname=couli';
+  const masked = redactCredentials(unquoted);
+  expect(masked).toBe('host=db password=*** dbname=couli');
+  for (const part of ['ExampleOne', 'ExampleTwo']) expect(masked).not.toContain(part);
+  expect(redactCredentials('sslpassword=ExampleA\\ B\\\\ host=db')).toBe('sslpassword=*** host=db');
+  // A trailing lone backslash or an unterminated quote masks to the end, never less.
+  expect(redactCredentials('host=db password=ExampleEnd\\')).toBe('host=db password=***');
+  expect(redactCredentials("host=db password='ExampleOpen\\' rest")).toBe('host=db password=***');
+  // Values without backslashes behave as before.
+  expect(redactCredentials('host=db password=ExamplePlain dbname=couli')).toBe(
+    'host=db password=*** dbname=couli',
+  );
+});

@@ -101,8 +101,33 @@ const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]*):\S*@/gi;
 // A parameter name (letters or percent escapes) not glued to a preceding name character, then `=`:
 // query parameters of an embedded URL and libpq keyword/value strings (`host=… password=…`).
 const PARAMETER = /(?<![A-Za-z0-9_%])((?:[A-Za-z]|%[0-9A-Fa-f]{2})+)\s*=\s*/g;
-// An unquoted value ends at whitespace, `&`, `#` or `;`; everything up to there is masked.
+// An unquoted value ends at an unescaped whitespace, `&`, `#` or `;`; everything up to there is
+// masked.
 const VALUE_END = /[\s&#;]/;
+
+/**
+ * Index just past the parameter value that starts at `start`, following libpq's keyword/value
+ * rules: a backslash escapes the next character both inside a quoted value (`'a\'b c'`) and in
+ * an unquoted one (`a\ b`), so an escaped quote or space never ends the value. An unterminated
+ * quote runs to the end of the text.
+ */
+function valueEnd(text: string, start: number): number {
+  const quote = text[start];
+  const quoted = quote === "'" || quote === '"';
+  let index = quoted ? start + 1 : start;
+  while (index < text.length) {
+    const char = text[index] ?? '';
+    if (char === '\\') {
+      index += 2;
+      continue;
+    }
+    if (quoted ? char === quote : VALUE_END.test(char)) {
+      return quoted ? index + 1 : index;
+    }
+    index++;
+  }
+  return text.length;
+}
 
 /** `text` with the value of every `password=` / `sslpassword=` parameter replaced by `***`. */
 function maskPasswordParameters(text: string): string {
@@ -113,18 +138,8 @@ function maskPasswordParameters(text: string): string {
       continue;
     }
     const start = match.index + match[0].length;
-    let end = start;
-    const quote = text[start];
-    if (quote === "'" || quote === '"') {
-      const close = text.indexOf(quote, start + 1);
-      end = close < 0 ? text.length : close + 1;
-    } else {
-      while (end < text.length && !VALUE_END.test(text[end] ?? '')) {
-        end++;
-      }
-    }
     result += text.slice(done, start) + MASK;
-    done = end;
+    done = valueEnd(text, start);
   }
   return result + text.slice(done);
 }
@@ -132,8 +147,8 @@ function maskPasswordParameters(text: string): string {
 /**
  * `text` with every connection password masked: the password of each embedded
  * `scheme://user:password@host` URL, and the value of every `password=` and `sslpassword=`
- * parameter (query string or keyword form; any case, percent-encoded name, repeated). For log
- * lines and error messages.
+ * parameter (query string or keyword form; any case, percent-encoded name, repeated; quoted
+ * and backslash-escaped values masked whole). For log lines and error messages.
  */
 export function redactCredentials(text: string): string {
   return maskPasswordParameters(text.replace(URL_CREDENTIALS, `$1:${MASK}@`));

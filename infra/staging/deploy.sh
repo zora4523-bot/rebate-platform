@@ -7,9 +7,12 @@ set -Eeuo pipefail
 # Order: take the deployment lock -> check the node files exist -> migrate with the new image ->
 # switch all five processes and wait until every health check passes (each requires 30s of
 # uptime and a single container start, see compose.yaml) -> confirm RestartCount 0 for all five
-# -> on success mark the containers settled, record the tag with a copy of this compose file and
-# remove older images; on failure switch back to the last successful tag (with the compose file
-# saved for it) and exit 1.
+# -> on success mark the containers settled, record the tag with a copy of the compose file used
+# and remove older images; on a failed health check switch back to the last successful tag (with
+# the compose file saved for it) and exit 1. A RestartCount other than 0 records nothing and exits
+# 1 with the manual rollback command (no automatic rollback there).
+# Manual rollback is `./deploy.sh <older tag>`: it uses the compose file saved with that tag when
+# there is one, otherwise the compose.yaml next to this script.
 # Node credential files are only referenced by path; their contents are never printed.
 
 log() { printf '[deploy] %s\n' "$*"; }
@@ -42,6 +45,15 @@ fi
 if [[ ! -f "$COMPOSE_FILE" ]]; then
   fail "compose file not found next to deploy.sh"
   exit 2
+fi
+
+# A tag deployed successfully before has its own compose file saved; an older image may not fit
+# the current compose.yaml, so a manual rollback (`deploy.sh <older tag>`) uses the saved one.
+if [[ -f "$STATE_DIR/compose.$COULI_API_TAG.yaml" ]]; then
+  COMPOSE_FILE="$STATE_DIR/compose.$COULI_API_TAG.yaml"
+  log "using the compose file saved with couli-api:$COULI_API_TAG"
+else
+  log "no compose file saved with couli-api:$COULI_API_TAG; using the current compose.yaml next to deploy.sh"
 fi
 
 # Everything compose and the migration mount or read must already be on the node. A missing bind
@@ -95,10 +107,11 @@ log "step 1/4: migration finished"
 log "step 2/4: switching api, stream, worker, admin and payout"
 if docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env up -d --force-recreate --remove-orphans --wait --wait-timeout 240; then
   log "step 2/4: all five processes healthy, up for 30s, started once"
-  # Step 3: Docker's own restart counters must all be 0 before anything is recorded. The health
-  # checks already refuse a restarted container until it is settled, so this catches only a crash
-  # in the moment after `up --wait` returned; the rollback must then be run by hand (the switch
-  # above is the script's only automatic rollback point).
+  # Step 3: Docker's own restart counters must all be 0 before anything is recorded. `up --wait`
+  # need not look again at a service it has already seen healthy, so a crash anywhere from the
+  # first service becoming healthy until `up --wait` returns can slip past step 2; this catches
+  # it. The rollback must then be run by hand (the switch above is the script's only automatic
+  # rollback point); it uses the compose file saved with the previous tag.
   RESTART_COUNTS="$(docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env ps --all --quiet | xargs -r docker inspect --format '{{.RestartCount}}' | tr '\n' ' ')"
   if [[ "$RESTART_COUNTS" != "0 0 0 0 0 " ]]; then
     fail "expected five containers with RestartCount 0, got: ${RESTART_COUNTS:-none}; nothing recorded"
@@ -115,7 +128,11 @@ if docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env up -d --f
   # Record the tag only after health success; the next deployment rolls back to it, using the
   # compose file saved with it (an older image may not fit a newer compose file).
   printf '%s\n' "$COULI_API_TAG" > "$STATE_FILE"
-  cp "$COMPOSE_FILE" "$STATE_DIR/compose.$COULI_API_TAG.yaml"
+  # A redeployment of a tag with a saved compose file used that very file: copying it onto itself
+  # would fail and, under set -e, report a healthy deployment as failed.
+  if [[ ! "$COMPOSE_FILE" -ef "$STATE_DIR/compose.$COULI_API_TAG.yaml" ]]; then
+    cp "$COMPOSE_FILE" "$STATE_DIR/compose.$COULI_API_TAG.yaml"
+  fi
   log "step 3/4: recorded couli-api:$COULI_API_TAG as last successful (compose file saved with it)"
   # Step 4: keep only the current and the previous successful image (the rollback target);
   # older couli-api images would fill the 20G system disk shared with the database. A repeated
