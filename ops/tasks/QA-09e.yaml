@@ -21,5 +21,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/release-scan/cli-wiring/**'
-status: todo
-pr: null
+status: done
+pr: 333
