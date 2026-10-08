@@ -208,13 +208,20 @@
 //     awaited in both modes after a miss or before an expired-lease takeover, before any write,
 //     and an entry observer list called first in both modes (risk uses it to tell "the
 //     idempotency module disposed of this request" from "the route never reached it").
+//     While a post-miss check runs, idempotencyPostMissTransaction() returns the
+//     transaction of the claim that holds the advisory lock, so a check that reads the database
+//     reads on that connection instead of borrowing a second one from the pool (a pool full of
+//     claims would otherwise wait on itself). It is passed through an AsyncLocalStorage, not as a
+//     second argument, so the checks keep the one-argument call the rule tests pin.
 //
 // 12. Rules for the implementation: this file is compiled by the `test` project too
 //     (erasableSyntaxOnly, no decorators): erasable syntax only (no parameter properties, enum,
 //     namespace, decorators), no NestJS, `import type` for type-only imports, relative imports
-//     with `.ts`. Runtime imports only: `node:crypto`, `kysely`, and files of this directory;
+//     with `.ts`. Runtime imports only: `node:crypto`, `node:async_hooks`, `kysely`, and files of
+//     this directory;
 //     `@couli/db` and `../clock/index.ts` type-only. No process.env.
 import type { DB } from '@couli/db';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { Clock } from '../clock/index.ts';
@@ -423,9 +430,14 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
     for (const observer of [...hooks.entry]) observer(request);
   }
 
-  /** After a miss (or an expired lease about to be taken over), before any write or handler. */
-  async function afterMiss(request: IdempotentRequest) {
-    for (const check of [...postMissChecks]) await check(request);
+  /**
+   * After a miss (or an expired lease about to be taken over), before any write or handler. The
+   * checks see the claim's transaction through idempotencyPostMissTransaction().
+   */
+  async function afterMiss(request: IdempotentRequest, trx: Transaction<DB>) {
+    await POST_MISS_CONTEXT.run({ trx }, async () => {
+      for (const check of [...postMissChecks]) await check(request);
+    });
   }
 
   async function finish(row: Row, request: IdempotentRequest, response?: IdempotentResponse) {
@@ -466,7 +478,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
               }
               // An expired lease is taken over like a missing key: ④a runs before the takeover.
               if (!checked) {
-                await afterMiss(request);
+                await afterMiss(request, trx);
                 checked = true;
                 now = clock.now();
               }
@@ -482,7 +494,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
               if (taken !== undefined) return taken;
             } else {
               if (!checked) {
-                await afterMiss(request);
+                await afterMiss(request, trx);
                 checked = true;
                 now = clock.now();
               }
@@ -524,7 +536,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
             const row = await findRow(trx, prepared.scope);
             if (row !== undefined) return existingResponse(row, prepared.hash, request.traceId);
             if (!checked) {
-              await afterMiss(request);
+              await afterMiss(request, trx);
               checked = true;
             }
             const inserted = await insertRow(
@@ -625,6 +637,24 @@ export interface IdempotencyHooks {
 }
 
 const HOOKS = new WeakMap<Idempotency, IdempotencyHooks>();
+
+/** What a post-miss check may use of the claim it runs in. */
+export interface IdempotencyPostMissContext {
+  /** The claim's transaction (holding the key's advisory lock), schema app like the db handle. */
+  readonly trx: Transaction<DB>;
+}
+
+/** Set only while the post-miss checks of one claim run; never shared between claims. */
+const POST_MISS_CONTEXT = new AsyncLocalStorage<IdempotencyPostMissContext>();
+
+/**
+ * Inside a post-miss check (./post-miss.ts): the claim's transaction, to read on the connection
+ * that already holds the key's lock instead of borrowing another one from the pool. Undefined
+ * anywhere else (the store is scoped to the checks of one claim).
+ */
+export function idempotencyPostMissTransaction(): Transaction<DB> | undefined {
+  return POST_MISS_CONTEXT.getStore()?.trx;
+}
 
 /**
  * For ./post-miss.ts only (the register functions there are the API): the live hook lists of an

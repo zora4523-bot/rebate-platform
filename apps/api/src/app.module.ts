@@ -74,7 +74,7 @@ import {
   RiskModule,
   SIGNATURE_CHECK,
   createBlocklistService,
-  type MinimumVersionReader,
+  type MinimumVersionReaders,
   type BlocklistService,
 } from './modules/risk/index.ts';
 import {
@@ -396,8 +396,9 @@ function parsingPorts(): DynamicModule {
 
 /**
  * The risk module of the `api` entry: stage ① (device signing keys from identity) and stage ④a,
- * whose minimum supported version port is content's cached reader of app_versions (same assembly
- * as identityModule(); risk never imports content, B1-03c). No database handle: no reader, and a
+ * whose minimum supported version port is content's reader of app_versions (same assembly as
+ * identityModule(); risk never imports content, B1-03c): cached on the pool for the guard, and
+ * built over the idempotency claim's transaction for the post-miss hook. No database handle: no reader, and a
  * request that needs the minimum answers 50001.
  */
 function riskModule(identity: DynamicModule): DynamicModule {
@@ -405,8 +406,15 @@ function riskModule(identity: DynamicModule): DynamicModule {
     imports: [identity],
     minimumVersions: {
       inject: [CLOCK, { token: DB, optional: true }],
-      useFactory: (clock: Clock, db?: Kysely<Database>): MinimumVersionReader | null =>
-        db === undefined ? null : createContentReader({ db, clock }),
+      // pooled: the guard's cached reader; on: a fresh reader over the idempotency claim's
+      // transaction for the post-miss hook (no second pooled connection while holding one).
+      useFactory: (clock: Clock, db?: Kysely<Database>): MinimumVersionReaders | null =>
+        db === undefined
+          ? null
+          : {
+              pooled: createContentReader({ db, clock }),
+              on: (handle) => createContentReader({ db: handle, clock }),
+            },
     },
   });
 }

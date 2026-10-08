@@ -10,6 +10,10 @@
 // Registration is per instance (./index.ts keys the lists by instance in a WeakMap);
 // request-specific HTTP context is the registering module's business (risk carries it in its
 // own AsyncLocalStorage), so nothing here is shared between simultaneous requests.
+// A check that reads the database reads on the claim's transaction, which
+// idempotencyPostMissTransaction() (./index.ts) returns while the checks run: the claim already
+// holds a pooled connection and the key's lock, and a second connection from the same pool could
+// wait forever once every connection is held by a claim. Checks keep the one-argument call.
 // registerIdempotencyEntryObserver adds a synchronous observer called first on every entry to
 // either execute mode (before validation, lookup or any hook): risk records with it that the
 // idempotency module disposed of the request (ran the post-miss check, replayed, answered 40901 /

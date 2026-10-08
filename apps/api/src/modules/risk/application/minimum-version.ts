@@ -26,6 +26,12 @@
 // (platform/idempotency/post-miss.ts), so a completed key still replays and a processing one still
 // answers 40901, and a 10405 writes no idempotency record. The hook gets the HTTP request through
 // MINIMUM_VERSION_SCOPE, an AsyncLocalStorage that the risk interceptor opens around the handler.
+// Connections: the hook runs inside the idempotency claim's transaction, which holds a pooled
+// connection and the key's advisory lock. It must not borrow a second connection (a pool full of
+// claims would wait on itself, the pool having no acquire timeout), so it reads the minimum with
+// a reader built on that transaction (platform idempotencyPostMissTransaction(), the
+// MinimumVersionReaderOn factory: uncached, one read on the claim's connection). The guard runs
+// outside any transaction and keeps the cached pooled reader.
 // Fail closed: the scope also records whether the IDEMPOTENCY instance received the request
 // (entry observer: it then either ran the hook or replayed / refused it); a route marked
 // idempotent whose handler succeeds without that (a private instance, a path that skipped
@@ -40,8 +46,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { HttpException } from '@nestjs/common';
 import type { ClientPlatform } from '@couli/contracts-ts';
+import type { DB } from '@couli/db';
+import type { Kysely } from 'kysely';
 import {
   compareClientVersions,
+  idempotencyPostMissTransaction,
   isVersionGatedPlatform,
   tokenPrincipal,
   type IdempotencyEntryObserver,
@@ -59,6 +68,12 @@ export interface MinimumVersionReader {
   ): Promise<string | null>;
 }
 
+/**
+ * A MinimumVersionReader reading through the given handle (a transaction included: a
+ * Transaction<DB> is a Kysely<DB>). Used by the post-miss hook with the claim's transaction.
+ */
+export type MinimumVersionReaderOn = (db: Kysely<DB>) => MinimumVersionReader;
+
 /** Parsed HTTP request after stages ①–③; principal is read through tokenPrincipal. */
 export interface MinimumVersionRequest {
   readonly id: string;
@@ -69,7 +84,14 @@ export interface MinimumVersionRequest {
   readonly principal?: TokenPrincipal;
 }
 
-export type MinimumVersionCheck = (request: MinimumVersionRequest) => Promise<void>;
+/**
+ * Stage ④a for one request. `versions`, when given, replaces the check's own reader for this
+ * request (the post-miss hook passes a reader on the claim's transaction).
+ */
+export type MinimumVersionCheck = (
+  request: MinimumVersionRequest,
+  versions?: MinimumVersionReader,
+) => Promise<void>;
 
 /** Build-time contract projection; paths use Fastify :parameter templates, GET gate is null. */
 export interface MinimumVersionRoute {
@@ -159,17 +181,21 @@ function refusal(request: MinimumVersionRequest, minimum: string | null): HttpEx
  */
 export function createMinimumVersionCheck(versions: MinimumVersionReader): MinimumVersionCheck {
   /** The configured minimum of this request's (app, platform, channel); null when not judged. */
-  async function minimumOf(request: MinimumVersionRequest): Promise<string | null> {
+  async function minimumOf(
+    request: MinimumVersionRequest,
+    reader: MinimumVersionReader,
+  ): Promise<string | null> {
     const platform = header(request, 'x-platform');
     const channel = header(request, 'x-channel');
     const appId = tokenPrincipal(request)?.app_id ?? header(request, 'x-app-id');
     if (platform === undefined || !isVersionGatedPlatform(platform)) return null;
     // A missing X-Channel or app reads as "no configured row", like identity's session scope.
     if (channel === undefined || appId === undefined) return null;
-    return versions.minSupportedVersion(appId, platform as ClientPlatform, channel);
+    return reader.minSupportedVersion(appId, platform as ClientPlatform, channel);
   }
 
-  return async (request) => {
+  return async (request, override) => {
+    const reader = override ?? versions;
     const route = routeOf(request);
     const bodyExempt = route !== undefined && exempt(route, request.body);
     if (tokenPrincipal(request)?.scp === 'deletion_only') {
@@ -177,12 +203,12 @@ export function createMinimumVersionCheck(versions: MinimumVersionReader): Minim
         route !== undefined &&
         route.sessionScopes.includes('deletion_only') &&
         (route.gate !== 'conditional' || bodyExempt);
-      if (!allowed) throw refusal(request, await minimumOf(request));
+      if (!allowed) throw refusal(request, await minimumOf(request, reader));
     }
     if (route === undefined) return;
     const gated = route.gate === true || (route.gate === 'conditional' && !bodyExempt);
     if (!gated) return;
-    const minimum = await minimumOf(request);
+    const minimum = await minimumOf(request, reader);
     if (minimum === null) return;
     const order = compareClientVersions(header(request, 'x-app-version'), minimum);
     if (order === null || order < 0) throw refusal(request, minimum);
@@ -253,12 +279,21 @@ export function createMinimumVersionEntryObserver(): IdempotencyEntryObserver {
 /**
  * The post-miss hook of stage ④a: judges the HTTP request in MINIMUM_VERSION_SCOPE. Outside an
  * HTTP request (no store: not an app request, e.g. a job) there is nothing to judge.
+ * With `readerOn`, the minimum is read on the claim's transaction (a fresh, uncached reader per
+ * judgement), never through a second pooled connection; without it (no database: the check's
+ * own reader fails closed) the check's reader is used.
  */
 export function createMinimumVersionPostMissCheck(
   check: MinimumVersionCheck,
+  readerOn?: MinimumVersionReaderOn,
 ): IdempotencyPostMissCheck {
   return async () => {
     const scope = MINIMUM_VERSION_SCOPE.getStore();
-    if (scope !== undefined) await check(scope.request);
+    if (scope === undefined) return;
+    const trx = idempotencyPostMissTransaction();
+    await check(
+      scope.request,
+      readerOn === undefined || trx === undefined ? undefined : readerOn(trx),
+    );
   };
 }

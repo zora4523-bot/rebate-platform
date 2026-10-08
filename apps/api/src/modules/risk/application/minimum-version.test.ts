@@ -1,5 +1,14 @@
 import { readFile } from 'node:fs/promises';
+import type { DB } from '@couli/db';
+import { Kysely, PostgresDialect, type PostgresPool } from 'kysely';
 import { expect, it, vi } from 'vitest';
+import {
+  FixedClock,
+  createIdempotency,
+  idempotencyPostMissTransaction,
+  registerIdempotencyPostMissCheck,
+  type IdempotentRequest,
+} from '../../platform/index.ts';
 import {
   CONDITIONAL_EXEMPTIONS,
   MINIMUM_VERSION_SCOPE,
@@ -88,4 +97,103 @@ it('[BR-ID-01] the post-miss hook judges the HTTP request of its own async conte
     ),
   );
   expect(seen.sort()).toEqual(['a', 'b']);
+});
+
+/** A scripted pool: counts connection checkouts and logs which client ran which statement. */
+function scriptedPool() {
+  const log: string[] = [];
+  let checkouts = 0;
+  const pool = {
+    async connect() {
+      checkouts += 1;
+      const client = checkouts;
+      return {
+        release: () => undefined,
+        async query(text: string) {
+          log.push(`${client}:${text}`);
+          let rows: unknown[] = [];
+          if (text.includes('pg_try_advisory_xact_lock')) rows = [{ acquired: true }];
+          else if (text.includes('current_setting')) rows = [{ value: '0' }];
+          else if (text.includes('app_versions'))
+            rows = [{ channel: 'huawei', min_supported_version: '2.0.0' }];
+          return { command: 'SELECT', rowCount: rows.length, rows };
+        },
+      };
+    },
+    end: async () => undefined,
+    options: {},
+  };
+  const db = new Kysely<DB>({
+    dialect: new PostgresDialect({ pool: pool as unknown as PostgresPool }),
+  }).withSchema('app');
+  return { db, log, checkouts: () => checkouts };
+}
+
+for (const mode of ['execute', 'executeInTransaction'] as const) {
+  it(`[BR-ID-01] ${mode}: the post-miss hook reads the minimum on the claim's transaction, never on a second pooled connection`, async () => {
+    const { db, log, checkouts } = scriptedPool();
+    const idempotency = createIdempotency({
+      db,
+      clock: new FixedClock('2031-01-01T00:00:00Z'),
+      logger: { warn: () => undefined },
+    });
+    const pooled = vi.fn(async () => '2.0.0');
+    const handles: Kysely<DB>[] = [];
+    const readerOn = (handle: Kysely<DB>) => {
+      handles.push(handle);
+      return {
+        async minSupportedVersion() {
+          const rows = await handle
+            .selectFrom('app_versions')
+            .select(['channel', 'min_supported_version'])
+            .execute();
+          return rows[0]?.min_supported_version ?? null;
+        },
+      };
+    };
+    registerIdempotencyPostMissCheck(
+      idempotency,
+      createMinimumVersionPostMissCheck(
+        createMinimumVersionCheck({ minSupportedVersion: pooled }),
+        readerOn,
+      ),
+    );
+    const input: IdempotentRequest = {
+      appId: 'couli',
+      actor: { userId: '019a0000-0000-7000-8000-000000000010', deviceId: null, phoneHmac: null },
+      method: 'POST',
+      path: mode === 'execute' ? '/v1/links/l/open' : '/v1/withdrawals',
+      key: '019a0000-0000-7000-8000-0000000000aa',
+      body: {},
+      traceId: 'trace-1',
+    };
+    const handler = vi.fn(async () => ({
+      status: 200,
+      envelope: { code: 0, msg: '', trace_id: 'trace-1' },
+    }));
+    await MINIMUM_VERSION_SCOPE.run({ request: request(), idempotencyEntered: true }, async () => {
+      await expect(
+        mode === 'execute'
+          ? idempotency.execute(input, handler)
+          : idempotency.executeInTransaction(input, handler),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: { code: 10405, data: { min_supported_version: '2.0.0' } },
+      });
+    });
+    expect(checkouts()).toBe(1);
+    expect(pooled).not.toHaveBeenCalled();
+    expect(handles).toHaveLength(1);
+    expect(handles[0]).not.toBe(db);
+    const read = log.findIndex((line) => line.includes('app_versions'));
+    expect(read).toBeGreaterThan(log.findIndex((line) => line.includes('idempotency_keys')));
+    expect(log[read]!.startsWith('1:')).toBe(true);
+    expect(log.some((line) => /^1:insert/i.test(line))).toBe(false);
+    expect(handler).not.toHaveBeenCalled();
+    await db.destroy();
+  });
+}
+
+it('[BR-ID-01] outside a post-miss check there is no claim transaction to read on', () => {
+  expect(idempotencyPostMissTransaction()).toBeUndefined();
 });

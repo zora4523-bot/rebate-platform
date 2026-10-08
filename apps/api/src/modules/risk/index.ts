@@ -14,12 +14,13 @@ export {
 } from './application/minimum-version.ts';
 export type {
   MinimumVersionReader,
+  MinimumVersionReaderOn,
   MinimumVersionRequest,
   MinimumVersionCheck,
   MinimumVersionRoute,
   MinimumVersionGuard,
 } from './application/minimum-version.ts';
-export type { RiskModuleOptions } from './risk.module.ts';
+export type { MinimumVersionReaders, RiskModuleOptions } from './risk.module.ts';
 export {
   DEVICE_SIGNING_KEYS,
   SIGNATURE_CHECK,

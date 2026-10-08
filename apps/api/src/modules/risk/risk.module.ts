@@ -4,7 +4,8 @@
 // keys come through the DeviceSigningKeys port, which identity implements and app.module hands in
 // as `imports` (orchestrator ruling B1-03b §9.3 #2); the minimum versions come through the
 // MinimumVersionReader port, which content's reader implements and app.module supplies as a
-// factory (task B1-03c §9.3).
+// factory: a cached reader on the pool for the guard, and a reader factory over a handle for the
+// idempotency post-miss hook, which reads on the claim's transaction (task B1-03c §9.3, §12).
 //
 // Also compiled by the `test` project (through ./index.ts): a class decorator only (no parameter
 // decorators or parameter properties; dependencies are injected through a factory), as in
@@ -39,6 +40,7 @@ import {
   isIdempotentMinimumVersionRoute,
   type MinimumVersionCheck,
   type MinimumVersionReader,
+  type MinimumVersionReaderOn,
   type MinimumVersionRequest,
 } from './application/minimum-version.ts';
 import {
@@ -53,6 +55,17 @@ export const MINIMUM_VERSION_CHECK = Symbol('MINIMUM_VERSION_CHECK');
 const MINIMUM_VERSION_READER = Symbol('MINIMUM_VERSION_READER');
 const MINIMUM_VERSION_HOOK = Symbol('MINIMUM_VERSION_HOOK');
 
+/** The minimum supported version port as app.module supplies it (content's reader). */
+export interface MinimumVersionReaders {
+  /** Cached reader on the pool: the guard (non-idempotent operations, outside any transaction). */
+  readonly pooled: MinimumVersionReader;
+  /**
+   * A reader over a given handle: the post-miss hook builds one on the idempotency claim's
+   * transaction per judgement, so it never borrows a second pooled connection while holding one.
+   */
+  readonly on: MinimumVersionReaderOn;
+}
+
 export interface RiskModuleOptions {
   /** Modules that together export DEVICE_SIGNING_KEYS (the identity module). */
   readonly imports: NonNullable<DynamicModule['imports']>;
@@ -61,7 +74,7 @@ export interface RiskModuleOptions {
    * returns null (no database handle) or no factory at all: every judged read fails closed (50001).
    */
   readonly minimumVersions?: Pick<
-    FactoryProvider<MinimumVersionReader | null>,
+    FactoryProvider<MinimumVersionReaders | null>,
     'inject' | 'useFactory'
   >;
 }
@@ -109,7 +122,7 @@ export class RiskModule {
    * on the IDEMPOTENCY instance (when there is a database) judging the idempotent ones.
    */
   static forRoot(options: RiskModuleOptions): DynamicModule {
-    const reader: FactoryProvider<MinimumVersionReader | null> =
+    const reader: FactoryProvider<MinimumVersionReaders | null> =
       options.minimumVersions === undefined
         ? { provide: MINIMUM_VERSION_READER, useFactory: () => null }
         : { provide: MINIMUM_VERSION_READER, ...options.minimumVersions };
@@ -127,8 +140,8 @@ export class RiskModule {
         {
           provide: MINIMUM_VERSION_CHECK,
           inject: [MINIMUM_VERSION_READER],
-          useFactory: (versions: MinimumVersionReader | null) =>
-            createMinimumVersionCheck(versions ?? UNAVAILABLE_READER),
+          useFactory: (versions: MinimumVersionReaders | null) =>
+            createMinimumVersionCheck(versions?.pooled ?? UNAVAILABLE_READER),
         },
         {
           provide: APP_GUARD,
@@ -138,12 +151,20 @@ export class RiskModule {
         { provide: APP_INTERCEPTOR, useValue: MINIMUM_VERSION_INTERCEPTOR },
         {
           provide: MINIMUM_VERSION_HOOK,
-          inject: [MINIMUM_VERSION_CHECK, { token: IDEMPOTENCY, optional: true }],
-          useFactory: (check: MinimumVersionCheck, idempotency?: Idempotency) => {
+          inject: [
+            MINIMUM_VERSION_CHECK,
+            MINIMUM_VERSION_READER,
+            { token: IDEMPOTENCY, optional: true },
+          ],
+          useFactory: (
+            check: MinimumVersionCheck,
+            versions: MinimumVersionReaders | null,
+            idempotency?: Idempotency,
+          ) => {
             if (idempotency !== undefined) {
               registerIdempotencyPostMissCheck(
                 idempotency,
-                createMinimumVersionPostMissCheck(check),
+                createMinimumVersionPostMissCheck(check, versions?.on),
               );
               registerIdempotencyEntryObserver(idempotency, createMinimumVersionEntryObserver());
             }
