@@ -13,7 +13,7 @@ type: migration
 # 规则测试覆盖：淘宝行必须带 auth_methods 与等键 auth_app_refs、拼多多行两者为空、client 取值、非法方式 / 重复 / 空数组被拒、新列改写被触发器拒、couli_app 不能 UPDATE 新列。
 refs: []
 refs_hash: {}
-deps: [B1-06b]
+deps: [B1-06b, B1-06s]
 paths:
   - 'db/migrations/**'
   - 'db/schema.sql'

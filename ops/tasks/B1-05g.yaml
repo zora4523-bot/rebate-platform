@@ -10,12 +10,14 @@ type: impl
 # ② 游标签名（篡改即 20001）与 page_no 上限，防逐页回溯放大联盟调用；③ 物料兜底的 catch 收窄到联盟类 / 业务类错误，程序缺陷不记成联盟不可用；④ 熔断打开时 ≤ stale_max_age_s 的缓存带 stale 标记返回（BR-PROD-07）。
 # 并入项细则（台账评审 #269）：游标签名密钥——staging / prod 用字段密钥环或各实例共用的密钥（不得按模块实例生成，换实例翻页、同进程重启 app 后旧游标仍可验），local / test 用 B1-05k 的进程级提供者；
 # 物料兜底收窄后，联盟下架 / 业务拒绝、治理层策略无效、CatalogError 30131 仍返回空列表（受保护测试 AC-B1-05j#13），只有程序缺陷不再吞掉；并入项的规则测试放 test/spec/catalog/search-hardening/**。
+# 2026-10-08 补（第六棒）：落地页标题经详情缓存取用，生产装配在 app.module.ts（LINK_LANDING_PORTS 的 createDbCatalogProductReader 需注入 Redis 与 Clock），故 paths 加 app.module.ts，只改该处装配。
 # 风险：catalog/** 为 RV1（task.ts show）。catalog/** 串行（B1-05e → B1-05k → 本任务）。
 refs: []
 refs_hash: {}
 deps: [B1-05e, B1-05k, B1-01y]
 paths:
   - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/catalog/cache/**'
   - 'test/spec/catalog/search-hardening/**'
