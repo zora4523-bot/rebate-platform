@@ -128,6 +128,12 @@ export const DELETION_ONLY_SCOPE: Readonly<Record<string, 'always' | 'conditiona
   'GET /v1/wallet/summary': 'always',
 };
 
+/**
+ * Operations whose 200 is a text/event-stream (frames in contracts/agent-stream.schema.json, 04 §8);
+ * no other operation may answer text/event-stream.
+ */
+export const STREAM_OPERATIONS: readonly string[] = ['POST /v1/agent/sessions/{id}/messages'];
+
 /** Logins that answer a client below the minimum version with a restricted login (10405 no_account). */
 const RESTRICTED_LOGINS = [
   'POST /v1/auth/login/sms',
@@ -431,6 +437,30 @@ function checkAdminOperation(
   }
 }
 
+/**
+ * Only STREAM_OPERATIONS answer text/event-stream, on any response of any path (/healthz and
+ * /admin/v1 included), and their 200 must be text/event-stream.
+ */
+function checkStream(op: Obj, where: string, problems: string[]): void {
+  const stream = STREAM_OPERATIONS.includes(where);
+  const responses = op['responses'];
+  if (isObj(responses)) {
+    for (const [status, response] of Object.entries(responses)) {
+      const content = isObj(response) ? response['content'] : undefined;
+      const sse = isObj(content) && content['text/event-stream'] !== undefined;
+      if (sse && !(stream && status === '200')) {
+        problems.push(
+          `${where}: only the 200 of STREAM_OPERATIONS may answer text/event-stream (${status})`,
+        );
+      }
+    }
+  }
+  const media = at(op, 'responses/200/content');
+  if (stream && !(isObj(media) && media['text/event-stream'] !== undefined)) {
+    problems.push(`${where}: a STREAM_OPERATIONS 200 answers text/event-stream`);
+  }
+}
+
 export function checkConformance(
   enums: readonly EnumDef[],
   codes: readonly ErrorCodeDef[],
@@ -520,6 +550,7 @@ export function checkConformance(
         problems.push(`${where}: x-implementation may only be "planned"`);
       }
       checkStepUp(op, where, stepUpActions, stepUpByOperation.get(where), problems);
+      checkStream(op, where, problems);
       if (admin) {
         checkAdminOperation(op, where, live, problems);
         continue;
@@ -558,7 +589,8 @@ export function checkConformance(
         }
       }
       const media = at(op, 'responses/200/content');
-      const json = isObj(media) ? media['application/json'] : undefined;
+      const type = STREAM_OPERATIONS.includes(where) ? 'text/event-stream' : 'application/json';
+      const json = isObj(media) ? media[type] : undefined;
       if (!isObj(json) || (json['example'] === undefined && !isObj(json['examples']))) {
         problems.push(`${where}: the 200 response needs at least one example`);
       }

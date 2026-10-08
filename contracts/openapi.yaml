@@ -71,6 +71,8 @@ tags:
     description: Admin console login (password, first password change, authenticator binding and code), step-up in two tiers and the signed-in account's permission points (04 §6.6 auth, BR-ID-34).
   - name: admin-accounts
     description: Admin accounts, read-only for now; super admin only (04 §6.6 admins, §11).
+  - name: agent
+    description: Agent sessions, history, the reply stream, stop, feedback and report (04 §6.5, §8).
 paths:
   /healthz:
     get:
@@ -4827,6 +4829,303 @@ paths:
                   $ref: '#/components/examples/AdminIpNotAllowed'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/agent/sessions:
+    post:
+      operationId: createAgentSession
+      tags:
+        - agent
+      summary: Start a new conversation
+      description: |
+        Owner per BR-AI-20: with an access token the user (any device); without one this device
+        (X-Device-Id), guest sessions only. Returns the owner's newest unexpired session while it
+        has no turn yet, otherwise creates one, so repeating the call never piles up empty sessions
+        (no Idempotency-Key, 04 §5 幂等). After BR-ID-01 ①–⑦ the checks of BR-AI-23 ①–③ apply:
+        30501 (agent.enabled / whitelist, BR-AI-12) → 10001 or 10005 (the switches of BR-ID-03) →
+        10004 with consent_type=ai_third_party (BR-AI-13; nothing is created). x-auth is optional
+        although 04 §6.5 lists none, for the same reason as search and consents.
+        Version gate: applied.
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 30501
+        - 10001
+        - 10005
+        - 10004
+        - 10405
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: The new session, or the owner's newest empty one.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  session_id: 019a0000-0000-7000-8000-000000000021
+                  started_at: '2026-10-06T10:00:00+08:00'
+                  last_active_at: '2026-10-06T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/sessions/current:
+    get:
+      operationId: getCurrentAgentSession
+      tags:
+        - agent
+      summary: The current conversation
+      description: |
+        The owner's most recently active unexpired session, or session=null (BR-AI-20; owner as in
+        createAgentSession, a token never falls back to the device's guest sessions). The app opens
+        it on start; there is no session list (拍板第二批 AI-23). Checks BR-AI-23 ①–③: 30501 →
+        10001 / 10005 → 10004.
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30501
+        - 10001
+        - 10005
+        - 10004
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: The current session or null.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentCurrentSessionResponse'
+              examples:
+                found:
+                  summary: An unexpired session
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      session:
+                        session_id: 019a0000-0000-7000-8000-000000000021
+                        started_at: '2026-10-06T10:00:00+08:00'
+                        last_active_at: '2026-10-06T10:05:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                none:
+                  summary: No unexpired session
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      session: null
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/sessions/{id}/messages:
+    post:
+      operationId: sendAgentMessage
+      tags:
+        - agent
+      summary: Send a message; the reply is an SSE stream
+      description: |
+        After BR-ID-01 ①–⑦, BR-AI-23 decides in this order and returns the first failure as the JSON
+        error envelope (Content-Type application/json, HTTP status per contracts/error-codes.yaml):
+        ① 30501 (agent.enabled / whitelist, BR-AI-12) → ② 10001 / 10005 (BR-ID-03) → ③ 10004
+        consent_type=ai_third_party (BR-AI-13) → ④ 30504 without data (session missing, not the
+        caller's, or expired; BR-AI-20) → ⑤ 20001 data.fields=[text] when text is too long
+        (BR-AI-23 ⑤, counted in Unicode code points; checked here, not by the schema) → ⑥ repeated
+        client_msg_id: the two-frame stream below, nothing else is checked → ⑦ 30506 (a run of this
+        session is in progress) → ⑧ 42901 with Retry-After → ⑨ 30504 data.reason=round_limit →
+        ⑩ 30502 data.reset_at, data.next (BR-AI-15). Only a request passing ⑩ is counted.
+        A malformed body (types, client_msg_id format, unknown fields) is 20001 before ①.
+        Accepted: 200 text/event-stream; each event is one frame of
+        contracts/agent-stream.schema.json (`event:` / `id:` / `data:` lines, a `: ping` comment
+        every 15 s); meta first, exactly one terminal frame (done or error) last. Failures after
+        acceptance are error frames (30501 when the switch goes off, 10004 when the consent is
+        withdrawn, 50302 with fallback_q, 50001, 50401). No resume (02 §9): after a disconnect the
+        client reloads GET .../messages (03 §7.2). The client tells the two kinds of answer apart by
+        Content-Type.
+        Repeated client_msg_id (⑥, 04 §8.1 重复消息; the body is not compared): 200
+        text/event-stream with exactly two frames, ids from 1: meta (the original run's ids,
+        duplicate=true) and the original terminal frame replayed, or error 30506 (retryable,
+        fallback and fallback_q null) while the original run is still running.
+        context comes from the entry points of 01 §4 (商品详情、剪贴板提示条、订单详情) and is
+        handled like tool input (an order_id that is not the caller's is not found, BR-AI-07).
+        Version gate: applied.
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 30501
+        - 10001
+        - 10005
+        - 10004
+        - 30504
+        - 20001
+        - 30506
+        - 30502
+        - 50302
+        - 10405
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/AgentSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentMessageRequest'
+            example:
+              client_msg_id: msg-20261006-0001
+              text: 提现记录在哪看
+      responses:
+        '200':
+          description: The reply stream (frames per contracts/agent-stream.schema.json).
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoCache'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-sent events; one event is one AgentStreamFrame of contracts/agent-stream.schema.json.
+              examples:
+                accepted:
+                  summary: An accepted message answered with one page guide card
+                  value: |
+                    event: meta
+                    id: 1
+                    data: {"session_id":"019a0000-0000-7000-8000-000000000021","run_id":"019a0000-0000-7000-8000-000000000121","message_id":"019a0000-0000-7000-8000-000000000221","prompt_version":"demo-prompt-v1","model_label":"演示模型","ai_label":"内容由 AI 生成，仅供参考","duplicate":false}
+
+                    : ping
+
+                    event: card
+                    id: 2
+                    data: {"seq":2,"card_id":"c1","type":"page_guide","schema_version":1,"data":{"route":"WithdrawRecords","text_key":"agent.guide.WithdrawRecords"},"fallback_text":"提现进度在提现记录里查看。"}
+
+                    event: done
+                    id: 3
+                    data: {"finish_reason":"stop","quota_left":24}
+                duplicateEnded:
+                  summary: A repeated client_msg_id whose run has ended
+                  value: |
+                    event: meta
+                    id: 1
+                    data: {"session_id":"019a0000-0000-7000-8000-000000000021","run_id":"019a0000-0000-7000-8000-000000000121","message_id":"019a0000-0000-7000-8000-000000000221","prompt_version":"demo-prompt-v1","model_label":"演示模型","ai_label":"内容由 AI 生成，仅供参考","duplicate":true}
+
+                    event: done
+                    id: 2
+                    data: {"finish_reason":"stop","quota_left":24}
+                duplicateInProgress:
+                  summary: A repeated client_msg_id whose run is still running
+                  value: |
+                    event: meta
+                    id: 1
+                    data: {"session_id":"019a0000-0000-7000-8000-000000000021","run_id":"019a0000-0000-7000-8000-000000000123","message_id":"019a0000-0000-7000-8000-000000000223","prompt_version":"demo-prompt-v1","model_label":"演示模型","ai_label":"内容由 AI 生成，仅供参考","duplicate":true}
+
+                    event: error
+                    id: 2
+                    data: {"code":30506,"msg":"上一条还在回复中","retryable":true,"fallback":null,"fallback_q":null}
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/runs/{run_id}/cancel:
+    post:
+      operationId: cancelAgentRun
+      tags:
+        - agent
+      summary: Stop generating
+      description: |
+        Stops a running reply. Checks BR-AI-23 ①–③, then 30505 when the run does not exist, is not
+        in a session of the caller (never told apart) or is not running (ended or interrupted).
+        Otherwise 200 at once; that run's stream ends with done finish_reason=cancelled, which is
+        counted (BR-AI-15). Repeating the call while it runs is harmless. Version gate: applied.
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 30501
+        - 10001
+        - 10005
+        - 10004
+        - 30505
+        - 10405
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/AgentRunId'
+      responses:
+        '200':
+          description: The run is being stopped.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              example:
+                code: 0
+                msg: ''
+                data: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
 components:
   securitySchemes:
     bearerAuth:
@@ -5040,6 +5339,20 @@ components:
       in: path
       required: true
       description: Id of an admin account; unknown → 20001 with data.fields=[admin_id].
+      schema:
+        $ref: '#/components/schemas/Id'
+    AgentSessionId:
+      name: id
+      in: path
+      required: true
+      description: session_id. A session that does not exist or is not the caller's is 30504 either way (BR-AI-20).
+      schema:
+        $ref: '#/components/schemas/Id'
+    AgentRunId:
+      name: run_id
+      in: path
+      required: true
+      description: run_id from meta.run_id or a history turn.
       schema:
         $ref: '#/components/schemas/Id'
   responses:
@@ -5269,6 +5582,13 @@ components:
         type: string
         enum:
           - no-store
+    NoCache:
+      required: true
+      description: Always no-cache; the stream is neither cached nor buffered.
+      schema:
+        type: string
+        enum:
+          - no-cache
   examples:
     AdminWrongPassword:
       summary: 10008 account or password wrong (no data)
@@ -10641,3 +10961,119 @@ components:
           $ref: '#/components/schemas/AdminAccountPage'
         trace_id:
           $ref: '#/components/schemas/TraceId'
+    AgentSession:
+      type: object
+      description: An Agent conversation (agent_sessions; owner and expiry per BR-AI-20).
+      additionalProperties: false
+      required:
+        - session_id
+        - started_at
+        - last_active_at
+      properties:
+        session_id:
+          $ref: '#/components/schemas/Id'
+        started_at:
+          type: string
+          format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+          description: Time of the last accepted message; expiry counts from it (BR-AI-20).
+    AgentSessionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AgentSession'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AgentCurrentSessionData:
+      type: object
+      additionalProperties: false
+      required:
+        - session
+      properties:
+        session:
+          anyOf:
+            - $ref: '#/components/schemas/AgentSession'
+            - type: 'null'
+    AgentCurrentSessionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AgentCurrentSessionData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AgentMessageRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - client_msg_id
+        - text
+      properties:
+        client_msg_id:
+          type: string
+          description: Generated by the client, unique in the session; a repeat returns the original run (BR-AI-23 ⑥).
+          minLength: 8
+          maxLength: 64
+          pattern: '^[A-Za-z0-9_-]+$'
+        text:
+          type: string
+          minLength: 1
+          description: |
+            The message. Its length limit is step ⑤ of BR-AI-23 (20001, data.fields=[text]), checked
+            after ①–④, so the schema sets no maxLength.
+        context:
+          $ref: '#/components/schemas/AgentMessageContext'
+    AgentMessageContext:
+      description: Entry context of 01 §4 情境入口, exactly one of product_key, order_id or text.
+      oneOf:
+        - $ref: '#/components/schemas/AgentContextProduct'
+        - $ref: '#/components/schemas/AgentContextOrder'
+        - $ref: '#/components/schemas/AgentContextText'
+    AgentContextProduct:
+      type: object
+      additionalProperties: false
+      required:
+        - product_key
+      properties:
+        product_key:
+          $ref: '#/components/schemas/ProductKey'
+    AgentContextOrder:
+      type: object
+      additionalProperties: false
+      required:
+        - order_id
+      properties:
+        order_id:
+          $ref: '#/components/schemas/Id'
+    AgentContextText:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Clipboard text, untrusted (BR-AI-05).
+          minLength: 1
+          maxLength: 2000

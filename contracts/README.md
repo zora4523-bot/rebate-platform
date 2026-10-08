@@ -6,7 +6,7 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `openapi.yaml` | OAS 3.1，v0.9：`GET /healthz` 加「登录 → 搜索 → 转链跳转」11 个接口（CT-02a）、幂等键作废接口与 `x-step-up` 扩展（CT-16a）、设备与第三方登录（CT-15b）、`x-min-version-gate` 与 `x-session-scopes`（CT-17a）；其余接口随功能补 |
+| `openapi.yaml` | OAS 3.1，v0.9：`GET /healthz` 加「登录 → 搜索 → 转链跳转」11 个接口（CT-02a）、幂等键作废接口与 `x-step-up` 扩展（CT-16a）、设备与第三方登录（CT-15b）、`x-min-version-gate` 与 `x-session-scopes`（CT-17a）、Agent 会话与消息流 4 个接口（新建会话、当前会话、发送消息的 SSE 与重复消息两帧、停止生成，CT-08d）；其余接口随功能补 |
 | `redocly.yaml` | lint 规则：`recommended-strict`（推荐规则集，警告一律按错误）；关掉的规则逐条写了原因 |
 | `.redocly.lint-ignore.yaml` | 精确到位置的例外，逐条写原因；手工维护，不用 `--generate-ignore-file` 重新生成 |
 | `error-codes.yaml` | 错误码：码值、HTTP 状态（个别码另在 `http_also` 列出额外状态，如 20001 的 413 / 415）、含义、客户端动作、可重试、`data` 字段形状、来源条目（CT-01；码值只按 08 §13.11） |
@@ -62,8 +62,9 @@ TODO(规划/11 §4.1): Prism mock（prism-cli 要 Node ≥24.18，ADR-0001 §7�
 
 14. 每个 `/v1` 写接口（POST、PUT、PATCH、DELETE）标 `x-min-version-gate`：`true`（受最低支持版本约束）、`false`、`conditional`（按请求体字段豁免，条件写在 operation 说明里）；GET 不标。取值只照规划/08 BR-ID-01 细则「最低支持版本的接口层拦截」的接口表，`conformance.ts` 的 `GATE_EXCEPTIONS` 是它的副本（不一致以 08 为准、改副本）；表里「不判定」的接口写 `false` 并在说明写「不判定：非三端请求」。`true` 与 `conditional` 的接口 `x-error-codes` 含 10405。
 15. BR-ID-01 细则「受限会话」表里的接口标 `x-session-scopes: [full, deletion_only]`（`conformance.ts` 的 `DELETION_ONLY_SCOPE` 是副本），只对部分请求体接受的在说明里写条件；其余接口不标（等于 `[full]`）。带令牌调用不接受其作用域的接口返回 10405，作为公共码写在 `info.description`，不逐接口列；受限登录（四个登录接口）另列 10405（`data.reason=no_account`）。以后声明的接口都按这两条标注。
+16. 流式接口（CT-08d）：200 为 `text/event-stream` 的接口登记在 `conformance.ts` 的 `STREAM_OPERATIONS`（现在只有 `POST /v1/agent/sessions/{id}/messages`）；其他接口的任何响应都不能声明 `text/event-stream`。它的 200 只声明 `text/event-stream`（schema `type: string`，必填 `Cache-Control: no-cache`），每个事件是 `agent-stream.schema.json` 的一帧，例子用 `|` 字面块写整段帧流（第 1 条的「至少一个 example」对它按 `text/event-stream` 判）；受理前的拒绝仍是 `application/json` 的错误外壳。
 
-第 10、11、13、14、15 条与金额字段为 int64 由 `pnpm contracts:check` 里的一致性检查（`conformance.ts`）执行。
+第 10、11、13、14、15、16 条与金额字段为 int64 由 `pnpm contracts:check` 里的一致性检查（`conformance.ts`）执行。
 
 ## 枚举与错误码的写法
 

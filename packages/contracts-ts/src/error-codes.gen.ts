@@ -967,7 +967,7 @@ export const errorCodes = {
     retry: "次日",
     retry_kind: "later",
     retry_kind_by_reason: {},
-    data: {},
+    data: {"reset_at":null,"next":["login","bind_phone","none"]},
     headers: [],
     sources: ["BR-AI-15","BR-AI-23","BR-ID-03"],
     phase: null,
@@ -1018,7 +1018,7 @@ export const errorCodes = {
   30506: {
     http: 409,
     http_also: [],
-    meaning: "本会话有进行中的 run（run_in_progress）",
+    meaning: "本会话有进行中的 run（run_in_progress）；也用于重复的 client_msg_id 对应的原 run 仍在进行（BR-AI-23 ⑥）",
     action: "发送按钮保持禁用，当前 run 结束后可再发",
     retry: "run 结束后",
     retry_kind: "later",
