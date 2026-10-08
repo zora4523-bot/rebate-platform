@@ -1,7 +1,7 @@
 // The migration gate (tools/ci/lint-migrations.ts): selection by the gate baseline, the wrapper's own
 // checks, and squawk itself against fixture migrations (a scratch root with the real .squawk.toml).
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
 import {
@@ -661,4 +661,173 @@ it('CT-06c: dropping a funds-table constraint or index is fine only when the mig
       'ALTER TABLE app.t ADD CONSTRAINT t_fk FOREIGN KEY (a) REFERENCES app.u (id) ON DELETE CASCADE;',
     ),
   ).toEqual([]);
+});
+
+it('CT-06d: a funds-table guard recreated with only a string literal changed is a different definition', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "CREATE UNIQUE INDEX payout_attempts_inflight_key ON app.payout_attempts (app_id, user_id) WHERE status IN ('reserved', 'unknown');",
+    ],
+    approved: false,
+  };
+  const drop = 'DROP INDEX app.payout_attempts_inflight_key;\n';
+  const same =
+    "CREATE UNIQUE INDEX payout_attempts_inflight_key ON app.payout_attempts (app_id, user_id) WHERE status IN ('reserved', 'unknown');";
+  expect(checkMigration('x.sql', drop + same, ctx)).toEqual([]);
+  expect(
+    checkMigration('x.sql', drop + same.replace("'reserved'", "'matched'"), ctx).map(
+      (p) => p.message,
+    ),
+  ).toEqual([expect.stringContaining('recreated with a different definition')]);
+});
+
+it('CT-06d: tight quotes and EXECUTE PROCEDURE do not make an identical trigger look different', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      'CREATE TRIGGER order_keys_append_only BEFORE UPDATE OR DELETE ON app.order_keys FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();',
+    ],
+    approved: false,
+  };
+  const drop = 'DROP TRIGGER order_keys_append_only ON app.order_keys;\n';
+  for (const create of [
+    'CREATE TRIGGER"order_keys_append_only" BEFORE DELETE OR UPDATE ON"app"."order_keys" FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();',
+    'CREATE TRIGGER order_keys_append_only BEFORE DELETE OR UPDATE ON app.order_keys FOR EACH ROW EXECUTE PROCEDURE app.reject_update_delete();',
+  ]) {
+    expect(checkMigration('x.sql', drop + create, ctx), create).toEqual([]);
+  }
+  // A later CREATE OR REPLACE weakening it is still caught after the identical recreation.
+  expect(
+    checkMigration(
+      'x.sql',
+      `${drop}CREATE TRIGGER order_keys_append_only BEFORE UPDATE OR DELETE ON app.order_keys FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();\nCREATE OR REPLACE TRIGGER order_keys_append_only BEFORE UPDATE ON app.order_keys FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();`,
+      ctx,
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('recreated with a different definition')]);
+});
+
+it('CT-06d: a set_config commented out inside a DO block does not count as switching a timeout off', () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}DO $$ BEGIN\n-- PERFORM set_config('lock_timeout', '0', true);\nNULL; END $$;\n`,
+    ),
+  ).toEqual([]);
+});
+
+it('CT-06d: a constraint recreated as NOT VALID, or with a literal of different case, is a different definition', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "ALTER TABLE app.payout_accounts ADD CONSTRAINT payout_accounts_method_check CHECK (payout_method IN ('alipay', 'bank_card'));",
+    ],
+    approved: false,
+  };
+  const drop = 'ALTER TABLE app.payout_accounts DROP CONSTRAINT payout_accounts_method_check;\n';
+  const add =
+    "ALTER TABLE app.payout_accounts ADD CONSTRAINT payout_accounts_method_check CHECK (payout_method IN ('alipay', 'bank_card'))";
+  expect(checkMigration('x.sql', `${drop}${add};`, ctx)).toEqual([]);
+  for (const changed of [`${add} NOT VALID;`, `${add.replace("'alipay'", "'ALIPAY'")};`]) {
+    expect(
+      checkMigration('x.sql', drop + changed, ctx).map((p) => p.message),
+      changed,
+    ).toEqual([expect.stringContaining('recreated with a different definition')]);
+  }
+});
+
+it('CT-06d: CTAS running set_config still switches a timeout off; a DO body with ALTER COLUMN"x" TYPE is destructive', () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}CREATE TEMP TABLE s AS SELECT set_config('lock_timeout', '0', true) AS v;\n`,
+    ),
+  ).toEqual([expect.stringContaining('require-lock-timeout')]);
+  expect(
+    checkMigration(
+      'x.sql',
+      'DO $$ BEGIN ALTER TABLE app.t ALTER COLUMN"pay_amount_fen" TYPE numeric; END $$;',
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('destructive DDL inside a DO block')]);
+});
+
+it('CT-06d: a column constraint added by an earlier migration (0020) is compared when recreated, not taken for new', () => {
+  const dir = join(REPO, 'db/migrations');
+  const migrationsSql = readdirSync(dir)
+    .filter((n) => n.endsWith('.sql'))
+    .sort()
+    .map((n) => readFileSync(join(dir, n), 'utf8'));
+  const ctx = {
+    schemaSql: readFileSync(join(REPO, 'db/schema.sql'), 'utf8'),
+    migrationsSql,
+    approved: false,
+  };
+  const sql =
+    "ALTER TABLE app.union_auth_sessions DROP CONSTRAINT union_auth_sessions_client_check;\nALTER TABLE app.union_auth_sessions ADD CONSTRAINT union_auth_sessions_client_check CHECK (client IN ('ios', 'android', 'harmony', 'web')) NOT VALID;";
+  expect(checkMigration('0099_x.sql', sql, ctx).map((p) => p.message)).toEqual([
+    expect.stringContaining(
+      'constraint union_auth_sessions_client_check on funds or attribution table union_auth_sessions recreated with a different definition',
+    ),
+  ]);
+});
+
+it('CT-06d: string literals are compared as written, and EXECUTE of a zero timeout inside DO counts', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "CREATE UNIQUE INDEX payout_attempts_inflight_key ON app.payout_attempts (app_id) WHERE status IN ('reserved', 'unknown');",
+    ],
+    approved: false,
+  };
+  expect(
+    checkMigration(
+      'x.sql',
+      "DROP INDEX app.payout_attempts_inflight_key;\nCREATE UNIQUE INDEX payout_attempts_inflight_key ON app.payout_attempts (app_id) WHERE status IN ('reserved', 'payout.unknown');",
+      ctx,
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('recreated with a different definition')]);
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}DO $$ BEGIN EXECUTE 'SET LOCAL lock_timeout = 0'; END $$;\n`,
+    ),
+  ).toEqual([expect.stringContaining('require-lock-timeout')]);
+});
+
+it('CT-06d: every constraint on a column is registered from history, each with its own definition', () => {
+  const dir = join(REPO, 'db/migrations');
+  const migrationsSql = readdirSync(dir)
+    .filter((n) => n.endsWith('.sql'))
+    .sort()
+    .map((n) => readFileSync(join(dir, n), 'utf8'));
+  const migration0020 = readFileSync(join(dir, '0020_union-auth-sessions-issuance.sql'), 'utf8');
+  const second =
+    /CONSTRAINT (union_auth_sessions_auth_methods_check)\s+(CHECK \([\s\S]*?\)\)?)\s*(?:,|CONSTRAINT|\n\s*ADD)/.exec(
+      migration0020,
+    );
+  expect(second?.[1]).toBe('union_auth_sessions_auth_methods_check');
+  // Whatever the regenerated snapshot says, history decides: a weakened recreation is refused.
+  const ctx = { schemaSql: '', migrationsSql, approved: false };
+  const sql =
+    'ALTER TABLE app.union_auth_sessions DROP CONSTRAINT union_auth_sessions_auth_methods_check;\nALTER TABLE app.union_auth_sessions ADD CONSTRAINT union_auth_sessions_auth_methods_check CHECK (true) NOT VALID;';
+  expect(checkMigration('0099_x.sql', sql, ctx).map((p) => p.message)).toEqual([
+    expect.stringContaining(
+      'union_auth_sessions_auth_methods_check on funds or attribution table union_auth_sessions recreated with a different definition',
+    ),
+  ]);
+});
+
+it("CT-06d: EXECUTE '…''0ms''…' inside DO and a quoted TABLESPACE in CTAS are caught", () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}DO $$ BEGIN EXECUTE 'SET LOCAL lock_timeout = ''0ms'';'; END $$;\n`,
+    ),
+  ).toEqual([expect.stringContaining('require-lock-timeout')]);
+  expect(
+    checkMigration(
+      'x.sql',
+      'CREATE TEMP TABLE t ON COMMIT DROP TABLESPACE "pg_default" AS SELECT 1.5 AS amount_fen;',
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('must be declared as bigint')]);
 });

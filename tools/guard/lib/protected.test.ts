@@ -22,6 +22,7 @@ const EXPECTED: ProtectedConfig = {
     'test/replay/**',
     'packages/testing/**',
     'db/invariants/**',
+    'db/migrations/**',
     'specs/commission-examples.csv',
     'test-manifest.json',
   ],

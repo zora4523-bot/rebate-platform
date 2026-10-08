@@ -98,7 +98,7 @@
 
 唯一清单是 `tools/guard/protected-paths.json`（CI 的 `protected-paths` 检查内嵌同一份）；下面是它的摘要。
 
-- 第一类，只能新增、不能改删：`test/spec/**`、`test/acceptance/**`、`test/properties/**`、`test/replay/**`、`packages/testing/**`、`db/invariants/**`、`specs/commission-examples.csv`、`test-manifest.json`。
+- 第一类，只能新增、不能改删：`test/spec/**`、`test/acceptance/**`、`test/properties/**`、`test/replay/**`、`packages/testing/**`、`db/invariants/**`、`db/migrations/**`（已合并的迁移永不改，新迁移照常新增，CT-06d）、`specs/commission-examples.csv`、`test-manifest.json`。
 - 第二类，验证配置，不能碰：`**/vitest*.config.*`、`vitest.shared.ts`、`**/stryker.config.*`、`**/eslint.config.*`、`.dependency-cruiser.cjs`、`turbo.json`、`.npmrc`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`（只有 `deps` 任务可改）、各 `package.json` 的 `scripts`、`.squawk.toml`（迁移门禁的规则，CT-06a）。
 - 第三类，门禁与规则，不能碰：`tools/**`、`.github/**`、各级 `AGENTS.md` 与 `CLAUDE.md`、`.claude/**`、`.codex/**`、`ops/risk-map.yaml`、`ops/approvals.yaml`、`ops/branch-protection.json`、`.githooks/**`、`.gitleaks.toml`。
 - 确实要改：在输出里说明原因，由编排者另开任务；第二、三类合并前一律先问负责人（规划/11 §3.2、§4.4）。
