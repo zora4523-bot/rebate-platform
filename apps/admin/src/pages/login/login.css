@@ -447,7 +447,11 @@
   gap: var(--space-4);
 }
 
+/* 148×148 frame (artboard position and size). Before the secret arrives it stays the artboard's
+   dashed muted box; once drawn it turns into a solid light frame whose padding is the code's
+   quiet zone, and the SVG code (fill: currentColor) scales to fit inside it. */
 .login-qr {
+  box-sizing: border-box;
   width: 148px;
   height: 148px;
   flex: none;
@@ -455,14 +459,26 @@
   border-radius: var(--radius-small);
   background-color: var(--color-background-muted);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1);
-  color: var(--color-text-secondary);
-  text-align: center;
-  font-size: var(--font-size-caption);
-  line-height: 18px;
+}
+
+.login-qr[data-drawn] {
+  padding: var(--space-3);
+  border-style: solid;
+  border-color: var(--color-border-subtle);
+  background-color: var(--color-background-surface);
+  color: var(--color-text-primary);
+}
+
+.login-qr .login-qr-code {
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.login-qr .login-qr-code > svg {
+  display: block;
 }
 
 .login-bind-manual {

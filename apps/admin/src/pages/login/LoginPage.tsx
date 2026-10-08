@@ -14,6 +14,7 @@ import {
   type Ref,
   type RefObject,
 } from 'react';
+import { QRCode } from 'antd';
 import { OTP_LENGTH, OtpInput } from '../../components/otp-input/index.ts';
 import type { AdminAuthProvider, LoginError, LoginSnapshot } from '../../providers/auth/index.ts';
 import type { AdminEnvironment } from '../../shell-options.ts';
@@ -73,6 +74,9 @@ export function loginErrorText(error: LoginError, now = Date.now()): string {
   }
   return loginText('error.unknown');
 }
+
+/** Drawing size; CSS scales the SVG to the 148×148 frame minus its quiet-zone padding. */
+const QR_SIZE = 120;
 
 function groupSecret(secret: string): string {
   return (secret.match(/.{1,4}/g) ?? []).join(' ');
@@ -386,6 +390,9 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
   const newPasswordRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
+  // Bumped by each submit and by leaving the account (换账号 / 返回上一步): an abandoned request
+  // no longer holds the buttons disabled or moves focus on the new attempt.
+  const runId = useRef(0);
   const cooling = useCooldown(snapshot.error);
   const code =
     codeState.seenError !== snapshot.error && isCodeError(snapshot.error) ? '' : codeState.value;
@@ -431,14 +438,20 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     }
   }
 
-  async function run(work: () => ReturnType<AdminAuthProvider['login']>): Promise<boolean> {
+  /** The request's outcome, or undefined when it was abandoned meanwhile (or the page left). */
+  async function run(
+    work: () => ReturnType<AdminAuthProvider['login']>,
+  ): Promise<boolean | undefined> {
+    runId.current += 1;
+    const mine = runId.current;
     setSubmitting(true);
+    let success = false;
     try {
-      const result = await work();
-      return result.success;
+      success = (await work()).success;
     } finally {
-      if (mounted.current) setSubmitting(false);
+      if (mounted.current && runId.current === mine) setSubmitting(false);
     }
+    return mounted.current && runId.current === mine ? success : undefined;
   }
 
   /** Moves focus to the first field named by a local check or by the server (20001). */
@@ -472,7 +485,7 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     const ok = await run(() =>
       authProvider.login({ step: 'credentials', username: username.trim(), password }),
     );
-    if (ok || !mounted.current) return;
+    if (ok !== false) return;
     const rejected = rejectedFields();
     focusFirst([
       [usernameRef, rejected.has('username')],
@@ -495,14 +508,14 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
       return;
     }
     const ok = await run(() => authProvider.login({ step: 'change_password', newPassword }));
-    if (ok || !mounted.current) return;
+    if (ok !== false) return;
     focusFirst([[newPasswordRef, rejectedFields().has('new_password')]]);
   }
 
   async function submitCode(step: 'totp' | 'bind_totp'): Promise<void> {
     if (submitting || cooling || code.length !== OTP_LENGTH) return;
     const ok = await run(() => authProvider.login({ step, code }));
-    if (!mounted.current) return;
+    if (ok === undefined) return;
     if (ok) {
       // A binding shows its done page first (「进入后台」); a dynamic code enters directly.
       if (step === 'totp') onComplete();
@@ -518,6 +531,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
   }
 
   function backToStart(keepUsername: boolean): void {
+    runId.current += 1;
+    setSubmitting(false);
     authProvider.resetLogin();
     if (!keepUsername) setUsername('');
     setPassword('');
@@ -737,10 +752,27 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
               <span className="login-strong">{loginText('bind.step2')}</span>
             </div>
             <div className="login-bind-detail login-bind-qr-row">
-              <div className="login-qr" role="img" aria-label={loginText('bind.qr_label')}>
-                <span>{loginText('bind.qr_line1')}</span>
-                <span>{loginText('bind.qr_line2')}</span>
-                <span>{loginText('bind.qr_line3')}</span>
+              <div
+                className="login-qr"
+                role="img"
+                aria-label={loginText('bind.qr_label')}
+                data-drawn={secret === undefined ? undefined : ''}
+              >
+                {/* Drawn only from this account's current URI; nothing before the secret arrives. */}
+                {secret === undefined ? null : (
+                  <QRCode
+                    value={secret.otpauth_uri}
+                    type="svg"
+                    errorLevel="M"
+                    bordered={false}
+                    color="currentColor"
+                    bgColor="transparent"
+                    size={QR_SIZE}
+                    className="login-qr-code"
+                    style={{ width: '100%', height: '100%' }}
+                    aria-hidden="true"
+                  />
+                )}
               </div>
               <div className="login-bind-manual">
                 <div className="login-caption">{loginText('bind.manual')}</div>

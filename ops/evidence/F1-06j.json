@@ -1,0 +1,102 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-auth-qr/logout.test.ts > [AC-F1-06j-LOGOUT#1] 退出成功：在途按钮禁用并忽略重复点击，结束后回登录页",
+    "test/spec/frontend/admin-auth-qr/logout.test.ts > [AC-F1-06j-LOGOUT#1] 退出失败：在途按钮禁用并忽略重复点击，结束后回登录页",
+    "test/spec/frontend/admin-auth-qr/logout.test.ts > [AC-F1-06j-LOGOUT#1] 退出超时：在途按钮禁用并忽略重复点击，结束后回登录页",
+    "test/spec/frontend/admin-auth-qr/permissions.test.ts > [AC-F1-06j-PERMISSION#1] 首次权限加载失败可重试，成功后按菜单顺序进入首个页面，零权限进入暂无权限",
+    "test/spec/frontend/admin-auth-qr/qr.test.ts > [AC-F1-06j-QR#1] 加载和失败时不画码，重新获取成功才展示可访问 SVG 真码，卸载丢弃密钥",
+    "test/spec/frontend/admin-auth-qr/qr.test.ts > [AC-F1-06j-QR#2] 同 URI 的码图稳定；密钥相同但 URI 不同也必须改变码图",
+    "test/spec/frontend/admin-auth-qr/qr.test.ts > [AC-F1-06j-QR#3] 删除三行占位文案键，二维码可访问说明不再宣称占位",
+    "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#1] 换账号后立即可重新登录，旧密钥success晚于新账号密钥到达也不能覆盖新状态",
+    "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#1] 换账号后立即可重新登录，旧密钥expired晚于新账号密钥到达也不能覆盖新状态",
+    "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#1] 返回上一步后立即可重新登录，旧密钥success晚于新账号密钥到达也不能覆盖新状态",
+    "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#1] 返回上一步后立即可重新登录，旧密钥expired晚于新账号密钥到达也不能覆盖新状态",
+    "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#2] 首次获取在 10 秒内超时，允许重试且丢弃超时请求的迟到回包",
+    "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#2] 失败后重新获取在 10 秒内超时，允许重试且丢弃超时请求的迟到回包"
+  ],
+  "risk_note": "RV2 by path (admin login pages and auth provider; the PR carries rule tests). Admin TOTP binding renders the real QR code from the contract otpauth_uri with antd's built-in QRCode (SVG, level M, no new dependency), replacing the F1-06h placeholder; the secret fetch is aborted on every login-generation change and times out after 10 s via setTimeout + abort, late replies dropped; a first /me/permissions failure followed by a successful retry lands on the first permitted menu (or the no-permission page); the top-bar logout is disabled while the request is in flight and re-enabled afterwards. Rule tests by Codex (second call after a timeout-only first call, red first in the container: red/2, 13 tests), spec-test review by a fresh Claude subagent (pass, S2 only, four of them turned into implementation constraints), implementation by Opus 5.5 in one round. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1: no findings"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (second reviewer, general): pass, no findings; secret-fetch generation/abort/timeout races, permission retry landing, logout disable/re-enable, QR value source and no secret leakage checked"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent per tools/agent/README.md §11; six S2 (load-sensitive 5 s timeouts, aria-label binding, logout re-enable, AbortSignal.timeout vs fake timers, 148 frame fit, QR follows new account), four written into the implementation brief as constraints"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "F1-06j",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "4ef99b0ce5d2bfb785aeeeb702150c242023c51a",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4ef99b0ce5d2bfb785aeeeb702150c242023c51a",
+      "tree": "952573b40c282338fe2988380d742d9db261ae2e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T13:15:35Z",
+      "finished_at": "2026-10-08T13:16:06Z",
+      "red_tests": [
+        "test/spec/frontend/admin-auth-qr/logout.test.ts > [AC-F1-06j-LOGOUT#1] 退出成功：在途按钮禁用并忽略重复点击，结束后回登录页",
+        "test/spec/frontend/admin-auth-qr/logout.test.ts > [AC-F1-06j-LOGOUT#1] 退出失败：在途按钮禁用并忽略重复点击，结束后回登录页",
+        "test/spec/frontend/admin-auth-qr/logout.test.ts > [AC-F1-06j-LOGOUT#1] 退出超时：在途按钮禁用并忽略重复点击，结束后回登录页",
+        "test/spec/frontend/admin-auth-qr/permissions.test.ts > [AC-F1-06j-PERMISSION#1] 首次权限加载失败可重试，成功后按菜单顺序进入首个页面，零权限进入暂无权限",
+        "test/spec/frontend/admin-auth-qr/qr.test.ts > [AC-F1-06j-QR#1] 加载和失败时不画码，重新获取成功才展示可访问 SVG 真码，卸载丢弃密钥",
+        "test/spec/frontend/admin-auth-qr/qr.test.ts > [AC-F1-06j-QR#2] 同 URI 的码图稳定；密钥相同但 URI 不同也必须改变码图",
+        "test/spec/frontend/admin-auth-qr/qr.test.ts > [AC-F1-06j-QR#3] 删除三行占位文案键，二维码可访问说明不再宣称占位",
+        "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#1] 换账号后立即可重新登录，旧密钥success晚于新账号密钥到达也不能覆盖新状态",
+        "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#1] 换账号后立即可重新登录，旧密钥expired晚于新账号密钥到达也不能覆盖新状态",
+        "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#1] 返回上一步后立即可重新登录，旧密钥success晚于新账号密钥到达也不能覆盖新状态",
+        "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#1] 返回上一步后立即可重新登录，旧密钥expired晚于新账号密钥到达也不能覆盖新状态",
+        "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#2] 首次获取在 10 秒内超时，允许重试且丢弃超时请求的迟到回包",
+        "test/spec/frontend/admin-auth-qr/secret-races.test.ts > [AC-F1-06j-SECRET#2] 失败后重新获取在 10 秒内超时，允许重试且丢弃超时请求的迟到回包"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-auth-qr/logout.test.ts",
+        "test/spec/frontend/admin-auth-qr/permissions.test.ts",
+        "test/spec/frontend/admin-auth-qr/qr.test.ts",
+        "test/spec/frontend/admin-auth-qr/secret-races.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "5aadc940c528d1d9c47a34c33bddfee1d834b9e231864b141c33e874e417dc0a"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "9efb5a0b8884bfbe5974cf4b4a5df1983a7fcef9",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}

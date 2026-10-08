@@ -253,10 +253,12 @@ function AdminApp({ options }: { readonly options: AdminAppOptions }) {
     else latestRequest.current += 1;
   }, [signedIn, loadPermissions]);
 
-  const onLogout = useCallback(() => {
-    if (ownAuth !== undefined) void ownAuth.logout({});
-    else void options.onLogout();
-  }, [ownAuth, options]);
+  // Returns the request so 【退出】 stays disabled while it is under way.
+  const onLogout = useCallback(
+    (): void | Promise<unknown> =>
+      ownAuth !== undefined ? ownAuth.logout({}) : options.onLogout(),
+    [ownAuth, options],
+  );
 
   const access = useMemo(
     () => (state.status === 'ready' ? createAccessControl(state.snapshot) : undefined),
@@ -320,7 +322,7 @@ interface ShellFrameProps {
   readonly landing: boolean;
   readonly onLanded: () => void;
   readonly onRefresh: () => void;
-  readonly onLogout: () => void;
+  readonly onLogout: () => void | Promise<unknown>;
 }
 
 function ShellFrame({
@@ -339,6 +341,8 @@ function ShellFrame({
 
   // The router may apply the navigation in a transition: landing ends only once the address is the
   // landing page, so the old address (/login) never renders and redirects home in the meantime.
+  // A failed first load leaves the address at home and keeps landing pending: once 重试 succeeds,
+  // the same rule as a first success picks the landing page.
   useEffect(() => {
     if (!landing || state.status === 'loading') return;
     let target = '/';
@@ -352,7 +356,7 @@ function ShellFrame({
       void navigate(target, { replace: true });
       return;
     }
-    onLanded();
+    if (state.status === 'ready') onLanded();
   }, [landing, state, groups, navigate, onLanded, location.pathname]);
 
   const menuId = location.pathname.replace(/^\/+/, '');
@@ -368,10 +372,10 @@ function ShellFrame({
       {shellTexts.loading}
     </p>
   );
-  if (landing) {
-    // Keep the loading line until the landing page is chosen (no flash of the old address).
-  } else if (state.status === 'failed') {
+  if (state.status === 'failed') {
     content = <LoadFailedPage onRetry={onRefresh} />;
+  } else if (landing) {
+    // Keep the loading line until the landing page is chosen (no flash of the old address).
   } else if (state.status === 'ready' && access !== undefined) {
     const { snapshot } = state;
     if (match !== undefined && options.renderPage !== undefined) {

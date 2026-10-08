@@ -85,10 +85,8 @@ const texts = {
   'bind.step1': '在手机上打开身份验证器 App',
   'bind.step1_hint': '支持「基于时间的一次性密码（TOTP）」的验证器都可以使用',
   'bind.step2': '扫描二维码，添加本账号',
-  'bind.qr_label': '二维码（由系统生成，此处为占位）',
-  'bind.qr_line1': '二维码',
-  'bind.qr_line2': '（由系统生成，',
-  'bind.qr_line3': '此处为占位）',
+  // Agent wording (no artboard text for the drawn code): the accessible name of the QR region.
+  'bind.qr_label': '二维码：用身份验证器扫描，添加本账号',
   'bind.manual': '扫不了码时，在验证器里选「手动输入密钥」',
   'bind.account_label': '账户名',
   'bind.account_value': '凑狸管理后台（{username}）',
