@@ -676,10 +676,12 @@ CREATE FUNCTION app.reject_union_auth_session_rewrite() RETURNS trigger
     AS $$
 BEGIN
   IF ROW(NEW.state, NEW.app_id, NEW.user_id, NEW.device_id, NEW.platform, NEW.mode,
-         NEW.link_id, NEW.expire_at, NEW.created_at)
+         NEW.link_id, NEW.expire_at, NEW.created_at, NEW.client, NEW.auth_methods,
+         NEW.auth_app_refs)
       IS DISTINCT FROM
       ROW(OLD.state, OLD.app_id, OLD.user_id, OLD.device_id, OLD.platform, OLD.mode,
-          OLD.link_id, OLD.expire_at, OLD.created_at)
+          OLD.link_id, OLD.expire_at, OLD.created_at, OLD.client, OLD.auth_methods,
+          OLD.auth_app_refs)
     OR (OLD.used_at IS NOT NULL AND NEW.used_at IS DISTINCT FROM OLD.used_at)
   THEN
     RAISE EXCEPTION 'union_auth_sessions are immutable and used_at is write-once'
@@ -2119,6 +2121,22 @@ CREATE TABLE app.union_auth_sessions (
     expire_at timestamp with time zone NOT NULL,
     used_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    client text NOT NULL,
+    auth_methods text[],
+    auth_app_refs jsonb,
+    CONSTRAINT union_auth_sessions_auth_app_refs_check CHECK (((auth_app_refs IS NULL) OR
+CASE
+    WHEN ((auth_methods IS NOT NULL) AND (jsonb_typeof(auth_app_refs) = 'object'::text)) THEN ((auth_app_refs ?& auth_methods) AND ((auth_app_refs - auth_methods) = '{}'::jsonb) AND ((NOT (auth_app_refs ? 'web_code'::text)) OR ((jsonb_typeof((auth_app_refs -> 'web_code'::text)) = 'string'::text) AND ((auth_app_refs ->> 'web_code'::text) <> ''::text))) AND ((NOT (auth_app_refs ? 'sdk_token'::text)) OR ((jsonb_typeof((auth_app_refs -> 'sdk_token'::text)) = 'string'::text) AND ((auth_app_refs ->> 'sdk_token'::text) <> ''::text))))
+    ELSE false
+END)),
+    CONSTRAINT union_auth_sessions_auth_app_refs_presence_check CHECK (((auth_app_refs IS NULL) = (auth_methods IS NULL))),
+    CONSTRAINT union_auth_sessions_auth_methods_check CHECK (((auth_methods IS NULL) OR
+CASE
+    WHEN ((array_ndims(auth_methods) = 1) AND (array_lower(auth_methods, 1) = 1) AND (array_position(auth_methods, NULL::text) IS NULL) AND (auth_methods <@ ARRAY['web_code'::text, 'sdk_token'::text])) THEN ((cardinality(auth_methods) = 1) OR ((cardinality(auth_methods) = 2) AND (auth_methods[1] <> auth_methods[2])))
+    ELSE false
+END)),
+    CONSTRAINT union_auth_sessions_auth_methods_platform_check CHECK (((platform = 'taobao'::text) = (auth_methods IS NOT NULL))),
+    CONSTRAINT union_auth_sessions_client_check CHECK ((client = ANY (ARRAY['ios'::text, 'android'::text, 'harmony'::text]))),
     CONSTRAINT union_auth_sessions_mode_check CHECK ((mode = 'bind'::text))
 );
 

@@ -624,6 +624,9 @@ export interface UnionAccounts {
 
 export interface UnionAuthSessions {
   app_id: string;
+  auth_app_refs: Json | null;
+  auth_methods: string[] | null;
+  client: string;
   created_at: Generated<Timestamp>;
   device_id: string;
   expire_at: Timestamp;
