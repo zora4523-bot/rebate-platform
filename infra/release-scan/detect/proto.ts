@@ -362,7 +362,8 @@ export function parseResourcesPb(bytes: Buffer, readFile?: FileReader): ProtoTab
     if (f.num === 1) {
       // source_pool：StringPool { data=1 }，里面是来源文件路径，只作孤立字符串。
       for (const g of decode(want(f, 2).bytes, ctx, 1)) {
-        if (g.num === 1) ctx.loose.push(...printableRuns(want(g, 2).bytes));
+        // 超大路径池（十几万条）不能展开传参（会超出调用栈参数上限），逐条追加。
+        if (g.num === 1) for (const run of printableRuns(want(g, 2).bytes)) ctx.loose.push(run);
         else unknown(g, ctx);
       }
       continue;

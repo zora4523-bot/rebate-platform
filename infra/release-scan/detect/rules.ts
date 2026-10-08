@@ -1,3 +1,4 @@
+import { maskPlistDoctype } from './plist-doctype.ts';
 import type { DetectOptions, DetectRuleId, ScanHit } from './types.ts';
 
 export function defaultDetectOptions(): DetectOptions {
@@ -154,12 +155,14 @@ const NEW_KEY =
 const YAML_NEW_KEY =
   /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')[ \t]*:(?!\S)|^[A-Za-z_$][\w$.-]*[ \t]*:(?!\S)/;
 
-/** 整行是带填充等号的 Base64 / Base64url 串（如 `c2FsdA==`）：这是换行书写的取值，不是 `键=`。 */
+/** 整行是带填充等号的 Base64 / Base64url 串（如 `c2FsdA==`）：YAML 里这是换行书写的取值，不是 `键=`。 */
 const PADDED_BASE64_LINE = /^[A-Za-z0-9+/_-]+={1,2}[ \t]*(?:\r?\n|$)/;
 
 function newKeyAt(rest: string, yaml: boolean): boolean {
-  if (PADDED_BASE64_LINE.test(rest)) return false;
-  return (yaml ? YAML_NEW_KEY : NEW_KEY).test(rest);
+  // 只有 YAML 允许换行缩进书写标量，Base64 填充行才是续行取值；.properties 等格式里 `mode=` 这类空值键
+  // 恰好也是「字母数字加等号」的形状，必须按新键处理，不能当作上一行空值的续行。
+  if (yaml) return !PADDED_BASE64_LINE.test(rest) && YAML_NEW_KEY.test(rest);
+  return NEW_KEY.test(rest);
 }
 
 /** 算法参数后缀（位数、版本、轮数、长度、时效等）：带这些词的数字取值是参数，不是材料。 */
@@ -318,11 +321,13 @@ function privateDerPrefix(value: string): boolean {
 
 export function detectText(
   file: string,
-  text: string,
+  source: string,
   options: DetectOptions,
   resourceNames = false,
   rawStrings = false,
 ): ScanHit[] {
+  // XML plist 的完整标准 DOCTYPE 按结构识别后等长置空（行号、偏移不变），其余内容照常检测。
+  const text = maskPlistDoctype(source);
   const candidates: Candidate[] = [];
   const add = (rule: DetectRuleId, start: number, length: number): void => {
     if (length > 0) candidates.push({ rule, start, end: start + length });
