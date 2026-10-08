@@ -1,0 +1,20 @@
+id: CT-06e
+repo: rebate-platform
+title: 迁移门禁受保护测试 CT-06c [AC-CT-06c#18] 去掉「未登记但仍抛错的保护函数替换放行」一条断言（为 CT-06d 的「定义变化须登记审批」铺路）
+type: test-change
+# 2026-10-09 入账（CT-06d 落地时 evidence-check 拒绝在规则测试提交之后改受保护测试；按规划/11 §4.4 先立独立的测试变更任务，先例 B1-04n、B1-06n）。
+# CT-06c 的 #18 断言「CLI 下替换资金表保护函数、新函数体仍 RAISE EXCEPTION → 放行」；CT-06d（台账评审 Codex P1）改为未登记 APPROVED_GUARD_CHANGES 一律拒，
+# 两者矛盾。本任务只删这一条断言（同用例的维护函数放行与空替换拒绝保留），改前（CT-06c 实现）改后（CT-06d 实现）都绿；
+# 拒绝行为由 CT-06d 自己的规则测试（guard-approvals.test.ts #4 等）覆盖。不改任何实现代码。保护路径第一类，合并要批准标签（approvals 第 24 条；只删一条「放行」断言，不削弱拒绝）。
+refs: []
+refs_hash: {}
+deps: [CT-06c]
+paths:
+  - 'test/spec/db/lint-migrations/funds-objects.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/lint-migrations/**'
+status: done
+pr: 303
