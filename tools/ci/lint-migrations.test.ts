@@ -793,3 +793,41 @@ it('CT-06d: string literals are compared as written, and EXECUTE of a zero timeo
     ),
   ).toEqual([expect.stringContaining('require-lock-timeout')]);
 });
+
+it('CT-06d: every constraint on a column is registered from history, each with its own definition', () => {
+  const dir = join(REPO, 'db/migrations');
+  const migrationsSql = readdirSync(dir)
+    .filter((n) => n.endsWith('.sql'))
+    .sort()
+    .map((n) => readFileSync(join(dir, n), 'utf8'));
+  const migration0020 = readFileSync(join(dir, '0020_union-auth-sessions-issuance.sql'), 'utf8');
+  const second =
+    /CONSTRAINT (union_auth_sessions_auth_methods_check)\s+(CHECK \([\s\S]*?\)\)?)\s*(?:,|CONSTRAINT|\n\s*ADD)/.exec(
+      migration0020,
+    );
+  expect(second?.[1]).toBe('union_auth_sessions_auth_methods_check');
+  // Whatever the regenerated snapshot says, history decides: a weakened recreation is refused.
+  const ctx = { schemaSql: '', migrationsSql, approved: false };
+  const sql =
+    'ALTER TABLE app.union_auth_sessions DROP CONSTRAINT union_auth_sessions_auth_methods_check;\nALTER TABLE app.union_auth_sessions ADD CONSTRAINT union_auth_sessions_auth_methods_check CHECK (true) NOT VALID;';
+  expect(checkMigration('0099_x.sql', sql, ctx).map((p) => p.message)).toEqual([
+    expect.stringContaining(
+      'union_auth_sessions_auth_methods_check on funds or attribution table union_auth_sessions recreated with a different definition',
+    ),
+  ]);
+});
+
+it("CT-06d: EXECUTE '…''0ms''…' inside DO and a quoted TABLESPACE in CTAS are caught", () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}DO $$ BEGIN EXECUTE 'SET LOCAL lock_timeout = ''0ms'';'; END $$;\n`,
+    ),
+  ).toEqual([expect.stringContaining('require-lock-timeout')]);
+  expect(
+    checkMigration(
+      'x.sql',
+      'CREATE TEMP TABLE t ON COMMIT DROP TABLESPACE "pg_default" AS SELECT 1.5 AS amount_fen;',
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('must be declared as bigint')]);
+});

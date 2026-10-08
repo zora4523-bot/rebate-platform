@@ -186,7 +186,7 @@ const ALTER_TABLE = new RegExp(
 );
 /** `CREATE [GLOBAL|LOCAL] [TEMP|UNLOGGED] TABLE [IF NOT EXISTS] <t> [(cols)] [WITH (…)] [TABLESPACE x] AS …`. */
 const CREATE_TABLE_AS = new RegExp(
-  String.raw`^\s*CREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP(?:ORARY)?\s+|UNLOGGED\s+)?TABLE${GAP}(?:IF\s+NOT\s+EXISTS${GAP})?${IDENT}\s*(?:\([^()]*\)\s*)?(?:USING\s+\w+\s*)?(?:WITH\s*\([^()]*\)\s*|WITHOUT\s+OIDS\s*)?(?:ON\s+COMMIT\s+(?:DROP|DELETE\s+ROWS|PRESERVE\s+ROWS)\s*)?(?:TABLESPACE\s+\w+\s*)?AS\b`,
+  String.raw`^\s*CREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP(?:ORARY)?\s+|UNLOGGED\s+)?TABLE${GAP}(?:IF\s+NOT\s+EXISTS${GAP})?${IDENT}\s*(?:\([^()]*\)\s*)?(?:USING\s+\w+\s*)?(?:WITH\s*\([^()]*\)\s*|WITHOUT\s+OIDS\s*)?(?:ON\s+COMMIT\s+(?:DROP|DELETE\s+ROWS|PRESERVE\s+ROWS)\s*)?(?:TABLESPACE${GAP}${IDENT}\s*)?AS\b`,
   'i',
 );
 const TABLE_REF = new RegExp(
@@ -306,7 +306,12 @@ export function checkTimeouts(file: string, sql: string): string[] {
     }
   }
   // Inside DO blocks: SET / RESET of a timeout to 0, DEFAULT or its default count too.
-  for (const { body } of doBodies(code, valued)) {
+  for (const { body: raw } of doBodies(code, valued)) {
+    // EXECUTE 'SET LOCAL lock_timeout = ''0ms'';' runs the decoded string: check that instead.
+    const body = raw.replace(
+      /\bEXECUTE\s+(?:E)?'((?:[^']|'')*)'/gi,
+      (_m, inner: string) => `EXECUTE ${inner.replace(/''/g, "'")};`,
+    );
     const blanked = withoutComments(body);
     const kept = withoutComments(body, true);
     let offset = 0;
@@ -764,6 +769,24 @@ function dropFree(sql: string): string {
     .join(';');
 }
 
+/**
+ * Every named constraint in one column definition or table element (`col type CONSTRAINT a CHECK (…)
+ * CONSTRAINT b CHECK (…)`), each cut off where the next one starts. `blanked` locates the keywords,
+ * `kept` (same offsets, literals kept) supplies the definitions.
+ */
+function namedConstraints(blanked: string, kept: string): { name: string; definition: string }[] {
+  const found = [
+    ...blanked.matchAll(new RegExp(String.raw`(?:^|\s)CONSTRAINT${GAP}(${IDENT})`, 'gi')),
+  ].map((m) => ({
+    name: bareName(m[1] ?? ''),
+    at: (m.index ?? 0) + (m[0].length - m[0].trimStart().length),
+  }));
+  return found.map((c, i) => ({
+    name: c.name,
+    definition: normaliseDefinition(kept.slice(c.at, found[i + 1]?.at ?? kept.length).trim()),
+  }));
+}
+
 /** Definitions of triggers (table/name), constraints (table/name) and indexes (name), last one wins. */
 function guardDefinitions(sources: readonly string[]): {
   triggers: Map<string, string>;
@@ -807,18 +830,11 @@ function guardDefinitions(sources: readonly string[]): {
               ),
             );
           }
-          // ADD COLUMN … CONSTRAINT x CHECK (…): a column constraint added with its column (0020).
+          // ADD COLUMN … CONSTRAINT x CHECK (…) [CONSTRAINT y …]: column constraints added with
+          // their column (0020 has two on one column).
           if (c === null && /^\s*ADD\b/i.test(part.text)) {
-            const col = new RegExp(String.raw`\sCONSTRAINT${GAP}(${IDENT})`, 'i').exec(part.text);
-            if (col !== null) {
-              constraints.set(
-                `${bareName(alter[1] ?? '')}/${bareName(col[1] ?? '')}`,
-                normaliseDefinition(
-                  partOf(part)
-                    .slice((col.index ?? 0) + 1)
-                    .trim(),
-                ),
-              );
+            for (const { name, definition } of namedConstraints(part.text, partOf(part))) {
+              constraints.set(`${bareName(alter[1] ?? '')}/${name}`, definition);
             }
           }
         }
@@ -830,13 +846,8 @@ function guardDefinitions(sources: readonly string[]): {
       if (create !== null) {
         for (const part of topLevelParts(text, create[0].length, text.length)) {
           // Table constraints and column constraints (`col type … CONSTRAINT x CHECK (…)`) alike.
-          const c = new RegExp(String.raw`(?:^|\s)CONSTRAINT${GAP}(${IDENT})`, 'i').exec(part.text);
-          if (c !== null) {
-            const from = (c.index ?? 0) + (c[0].length - c[0].trimStart().length);
-            constraints.set(
-              `${bareName(create[1] ?? '')}/${bareName(c[1] ?? '')}`,
-              normaliseDefinition(partOf(part).slice(from).trim()),
-            );
+          for (const { name, definition } of namedConstraints(part.text, partOf(part))) {
+            constraints.set(`${bareName(create[1] ?? '')}/${name}`, definition);
           }
         }
       }
