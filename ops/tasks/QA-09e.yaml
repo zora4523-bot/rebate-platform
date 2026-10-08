@@ -1,0 +1,25 @@
+id: QA-09e
+repo: rebate-platform
+title: 制品扫描接线补全：命令行入口用 QA-09d 的关联视图（.aab / .hap 字段关联、签名字段引用解析不了时阻断经 cli 生效），残留规则的可调试标志读 .aab proto 清单视图，测试主机末段大小写不敏感
+type: impl
+# 2026-10-08 草稿（会话 codex-impl-six-2，负责人同意把遗留问题立成任务）。来源：couli-runs/CODEX-IMPL/followups.md 2026-10-08 条（QA-09d r1 范围外、AAB#5 视图、QA-09c r3 S2）；decision 33。
+# 须在扫描器接入任何发布流水线前合并（接流水线属另立任务，本段不改 .github/ 与任何流水线）。
+# 不属 approvals 第 23 条白名单（codex-impl-tasks.json 只列 QA-09a/b/c），按第 19 条分工：Opus 实现、Codex 写规则测试与评审。
+# 依据：02 §12.6「发布制品密钥扫描」与 Release 配置检查、03 §3.6、10 AC-S1-86、08 BR-ID-09。扫描只加严：真实样本按规则对比 main，任何规则命中不得少于 main；不改 detect/**、不改 gitleaks 与仓库密钥扫描配置。
+# 第三方 SDK 切环境 / 测试主机照拦、不设豁免（负责人 2026-10-08）。
+refs: [BR-ID-09]
+refs_hash:
+  BR-ID-09: f8c29aeda825
+deps: [QA-09c, QA-09d]
+paths:
+  - 'infra/release-scan/residue/**'
+  - 'infra/release-scan/cli.ts'
+test_paths:
+  - 'test/spec/release-scan/cli-wiring/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/release-scan/cli-wiring/**'
+status: todo
+pr: null
