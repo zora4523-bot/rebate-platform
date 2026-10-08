@@ -680,5 +680,45 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
       "full"
     ],
     "idempotent": false
+  },
+  {
+    "operationId": "createAgentSession",
+    "method": "POST",
+    "path": "/v1/agent/sessions",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getCurrentAgentSession",
+    "method": "GET",
+    "path": "/v1/agent/sessions/current",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "sendAgentMessage",
+    "method": "POST",
+    "path": "/v1/agent/sessions/:id/messages",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "cancelAgentRun",
+    "method": "POST",
+    "path": "/v1/agent/runs/:run_id/cancel",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
   }
 ] as const;
