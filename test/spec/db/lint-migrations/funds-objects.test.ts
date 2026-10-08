@@ -420,7 +420,7 @@ it(
 );
 
 it(
-  '[AC-CT-06c#18] CLI 从真实 schema 读取触发器函数，保留抛错的替换及维护函数放行，空替换拒绝',
+  '[AC-CT-06c#18] CLI 从真实 schema 读取触发器函数，维护函数放行，空替换拒绝',
   () => {
     withFixture(
       { [FILE]: `${TIMEOUTS}DROP FUNCTION app.drop_expired_link_logs_partitions() RESTRICT;` },
@@ -428,13 +428,8 @@ it(
         copySchema(root);
         const result = run(['--root', root]);
         expect(result.status, result.stderr + result.stdout).toBe(0);
-        writeFileSync(
-          join(root, 'db/migrations', FILE),
-          `${TIMEOUTS}CREATE OR REPLACE FUNCTION app.reject_order_rewrite() RETURNS trigger LANGUAGE plpgsql AS $guard$ BEGIN IF NEW IS DISTINCT FROM OLD THEN raise exception 'immutable'; END IF; RETURN NEW; END; $guard$;`,
-        );
-        const replacement = run(['--root', root]);
-        expect(replacement.status, replacement.stderr + replacement.stdout).toBe(0);
-        expect(replacement.stdout).toContain('squawk over');
+        // CT-06e: whether a guard replacement that still raises passes is decided by CT-06d (it needs
+        // APPROVED_GUARD_CHANGES); this case keeps only what holds before and after CT-06d.
         writeFileSync(
           join(root, 'db/migrations', FILE),
           `${TIMEOUTS}CREATE OR REPLACE FUNCTION app.reject_order_rewrite() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;`,
