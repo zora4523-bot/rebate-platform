@@ -33,25 +33,60 @@ function portOf(entry: HttpEntry, config: AppConfig): number {
   return config.adminPort;
 }
 
-/** Closes the process cleanly on the first SIGTERM / SIGINT. */
-function closeOnSignal(logger: RootLogger, close: () => Promise<void>): void {
-  let closing = false;
-  const onSignal = (signal: NodeJS.Signals): void => {
-    if (closing) return;
-    closing = true;
-    logger.info({ signal }, 'stopping');
-    close().then(
-      () => {
-        logger.info('stopped');
-      },
-      (error: unknown) => {
-        logger.error({ err: error }, 'shutdown_failed');
-        process.exitCode = 1;
-      },
-    );
+interface StartupSignals {
+  /** True once the first SIGTERM / SIGINT arrived (also during startup). */
+  stopping(): boolean;
+  /** Startup finished after a signal: close now and log `stopped` (or `shutdown_failed`). */
+  stop(close: () => Promise<void>): Promise<void>;
+  /** Startup finished: log `started` and close on the first signal, or close now if one came. */
+  serve(close: () => Promise<void>, started: Record<string, unknown>): Promise<void>;
+  /** Startup failed: remove the handlers so the failure path logs no extra `stopping`. */
+  detach(): void;
+}
+
+/**
+ * Installs the SIGTERM / SIGINT handlers before startup begins (not with COULI_EXIT_AFTER_INIT).
+ * A signal during startup logs `stopping` once; startup owns cleanup until it finishes, so
+ * nothing still starting is closed underneath it. Repeated signals are absorbed.
+ */
+function watchSignals(logger: RootLogger, attach: boolean): StartupSignals {
+  let stopping = false;
+  let close: (() => Promise<void>) | undefined;
+  const shutdown = async (run: () => Promise<void>): Promise<void> => {
+    try {
+      await run();
+      logger.info('stopped');
+    } catch (error) {
+      logger.error({ err: error }, 'shutdown_failed');
+      process.exitCode = 1;
+    }
   };
-  process.on('SIGTERM', onSignal);
-  process.on('SIGINT', onSignal);
+  const onSignal = (signal: NodeJS.Signals): void => {
+    if (stopping) return;
+    stopping = true;
+    logger.info({ signal }, 'stopping');
+    if (close !== undefined) void shutdown(close);
+  };
+  if (attach) {
+    process.on('SIGTERM', onSignal);
+    process.on('SIGINT', onSignal);
+  }
+  return {
+    stopping: () => stopping,
+    stop: shutdown,
+    async serve(run, started) {
+      if (stopping) {
+        await shutdown(run);
+        return;
+      }
+      close = run;
+      logger.info(started, 'started');
+    },
+    detach() {
+      process.off('SIGTERM', onSignal);
+      process.off('SIGINT', onSignal);
+    },
+  };
 }
 
 async function start(
@@ -63,21 +98,40 @@ async function start(
   redisUrl: ConnectionConfig['redisUrl'],
 ): Promise<void> {
   if (isHttpEntry(entry)) {
-    const app = await createHttpApp(entry, { config, logger, dbHandles, redisUrl });
+    const signals = watchSignals(logger, !config.exitAfterInit);
     try {
-      await app.init();
-      if (config.exitAfterInit) {
-        logger.info({ listening: false }, 'started');
+      const app = await createHttpApp(entry, { config, logger, dbHandles, redisUrl });
+      const close = (): Promise<void> => app.close();
+      try {
+        if (signals.stopping()) {
+          await signals.stop(close);
+          return;
+        }
+        await app.init();
+        if (config.exitAfterInit) {
+          logger.info({ listening: false }, 'started');
+          await app.close();
+          return;
+        }
+        if (signals.stopping()) {
+          await signals.stop(close);
+          return;
+        }
+        await app.get<QueueRuntime>(JOB_QUEUE).start();
+        // A signal during queue start: never open the port, just close.
+        if (signals.stopping()) {
+          await signals.stop(close);
+          return;
+        }
+        const port = portOf(entry, config);
+        await app.listen(port, config.apiHost);
+        await signals.serve(close, { listening: true, host: config.apiHost, port });
+      } catch (error) {
         await app.close();
-        return;
+        throw error;
       }
-      await app.get<QueueRuntime>(JOB_QUEUE).start();
-      const port = portOf(entry, config);
-      await app.listen(port, config.apiHost);
-      logger.info({ listening: true, host: config.apiHost, port }, 'started');
-      closeOnSignal(logger, () => app.close());
     } catch (error) {
-      await app.close();
+      signals.detach();
       throw error;
     }
     return;
@@ -161,31 +215,43 @@ async function start(
   }
 
   // payout: redisUrl is null (it never reads Redis, ADR-0001 §4.2 #20), so no REDIS provider.
-  const context = await createWorkerContext(entry, { config, logger, dbHandles, redisUrl });
-  const queue = context.get<QueueRuntime>(JOB_QUEUE);
-  if (config.exitAfterInit) {
-    logger.info({ listening: false }, 'started');
-    await context.close();
-    return;
-  }
+  const signals = watchSignals(logger, !config.exitAfterInit);
   try {
-    await queue.start();
-  } catch (error) {
-    await queue.stop();
-    await context.close();
-    throw error;
-  }
-  // Keep entries alive even while no business module has registered a handler.
-  const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
-  closeOnSignal(logger, async () => {
+    const context = await createWorkerContext(entry, { config, logger, dbHandles, redisUrl });
+    const queue = context.get<QueueRuntime>(JOB_QUEUE);
+    if (config.exitAfterInit) {
+      logger.info({ listening: false }, 'started');
+      await context.close();
+      return;
+    }
+    if (signals.stopping()) {
+      await signals.stop(() => context.close());
+      return;
+    }
     try {
+      await queue.start();
+    } catch (error) {
       await queue.stop();
       await context.close();
-    } finally {
-      clearInterval(keepAlive);
+      throw error;
     }
-  });
-  logger.info({ listening: false }, 'started');
+    // Keep entries alive even while no business module has registered a handler.
+    const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
+    await signals.serve(
+      async () => {
+        try {
+          await queue.stop();
+          await context.close();
+        } finally {
+          clearInterval(keepAlive);
+        }
+      },
+      { listening: false },
+    );
+  } catch (error) {
+    signals.detach();
+    throw error;
+  }
 }
 
 /**
