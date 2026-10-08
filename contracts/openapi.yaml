@@ -3406,6 +3406,11 @@ paths:
                         article_id: example-article-one
                   claim:
                     window_days: 30
+                  platform_icons:
+                    alipay:
+                      url: https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg
+                      sha256: 88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da
+                      version: 1
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -9477,9 +9482,10 @@ components:
       type: object
       description: |
         Top-level keys of /v1/config (04 §10.1, excerpt). Keys added after v0.9 (external_page,
-        link_patterns, external_hosts, app_update, help_links, claim) are optional, so a client
-        keeps reading an older last-good configuration (04 §5「兼容」); the server always sends
-        them. jump_tip, clipboard, bridge_origins, auth_tips, compliance and display are not
+        link_patterns, external_hosts, app_update, help_links, claim, platform_icons) are
+        optional, so a client keeps reading an older last-good configuration (04 §5「兼容」); the
+        server always sends them, except that platform_icons lists only the marks with a published
+        replacement image (BR-TEXT-24). jump_tip, clipboard, bridge_origins, auth_tips, compliance and display are not
         shaped by 04 yet and stay free-form; the task that consumes each one types it
         (bridge_origins with CT-03, clipboard with B1-07).
       additionalProperties: false
@@ -9566,6 +9572,66 @@ components:
             $ref: '#/components/schemas/HelpLinkTarget'
         claim:
           $ref: '#/components/schemas/ConfigClaim'
+        platform_icons:
+          $ref: '#/components/schemas/ConfigPlatformIcons'
+    ConfigPlatformIcon:
+      type: object
+      description: |
+        A replacement image published in the admin console for one platform mark (BR-TEXT-24).
+        Stored in the OSS media bucket under its content SHA-256 and cached long; each platform is
+        versioned on its own and a publish takes effect at once.
+      additionalProperties: false
+      required:
+        - url
+        - sha256
+        - version
+      properties:
+        url:
+          type: string
+          format: uri
+          pattern: '^https://'
+          maxLength: 2048
+          description: |
+            Image address on the media domain (set by deployment, not fixed by the contract); the
+            file name is the content SHA-256.
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: Lowercase hex SHA-256 of the image content, the same digest as the file name.
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Version of this platform's replacement image, counted per platform.
+    ConfigPlatformIcons:
+      type: object
+      description: |
+        Platform mark replacement images (04 §10.1, BR-TEXT-24 细则): mark key → replacement
+        image. Lists only the keys for which the admin console has published a replacement; a
+        missing key (never replaced, or 「恢复内置」) means the client shows the image bundled in
+        the package, and the object may be empty. Native clients download the image and check its
+        SHA-256 before use, falling back to the bundled image on a mismatch; H5 loads it with
+        `<img src=url>` and falls back to the bundled image on error. The accessible name is always
+        the platform's Chinese name and never follows the image. New platforms add a key the same
+        way.
+      additionalProperties: false
+      properties:
+        taobao:
+          $ref: '#/components/schemas/ConfigPlatformIcon'
+        tmall:
+          $ref: '#/components/schemas/ConfigPlatformIcon'
+        jd:
+          $ref: '#/components/schemas/ConfigPlatformIcon'
+        pdd:
+          $ref: '#/components/schemas/ConfigPlatformIcon'
+        wechat:
+          $ref: '#/components/schemas/ConfigPlatformIcon'
+        wechat_pay:
+          $ref: '#/components/schemas/ConfigPlatformIcon'
+        alipay:
+          $ref: '#/components/schemas/ConfigPlatformIcon'
+        wecom:
+          $ref: '#/components/schemas/ConfigPlatformIcon'
     ConfigResponse:
       type: object
       additionalProperties: false

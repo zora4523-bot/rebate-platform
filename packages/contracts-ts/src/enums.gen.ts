@@ -21,6 +21,7 @@ export const admin_permission = [
   "content.poster", // 海报背景图上传、审核
   "content.app_version", // 版本管理（按端与渠道）：最新版本、推荐版本、更新文案、商店登记与默认商店、最低支持版本；只有提高最低支持版本时要二次验证（step-up）
   "content.fund_terms", // 修改资金术语键与资金类消息模板（清单见 BR-TEXT-12 细则「资金术语键」与 specs/fund-term-keys.yaml）（step-up）
+  "content.platform_icon", // 平台标识上传、发布、回滚、恢复内置（BR-TEXT-24）
   "config.general", // 普通配置（不含 BR-TEXT-14 表 D 的隐私与权限文案键与 BR-TEXT-12 细则所列的资金术语键）
   "config.risk", // 风控规则与阈值（step-up）
   "config.business", // 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
