@@ -1,0 +1,29 @@
+id: B1-06r
+repo: rebate-platform
+title: 迁移：union_auth_sessions 加签发时设备端 client（所有平台必填）、本次下发的授权方式 auth_methods（淘宝必填、拼多多为空）与每种方式所用的应用配置标识 auth_app_refs（只存标识不存密钥），随行写入后不可改；供 B1-06g 签发时记下、B1-06h 先校验后消费时核对（BR-ID-17 细则「授权方式」）
+type: migration
+# 草稿 2026-10-08（W1 第五棒），台账评审 #275 后改。B1-06b followup：BR-ID-17 细则「授权方式」要求 state 记下端、本次下发的 auth_methods 以及每种方式所用的应用配置（用哪个应用的标识去换取或使用凭证，只取服务端配置），
+# 04 §3.2 union_auth_sessions 行与 0018 都没有这些列（0018 头注释「has no column yet」由本迁移取代），B1-06g 无处记、B1-06h 无法核对 method_not_allowed、也无法按记录的应用配置换凭证。
+# 列与约束：client text NOT NULL，CHECK 取 contracts client_platform（ios / android / harmony）；auth_methods text[] 可空，CHECK ((platform = 'taobao') = (auth_methods IS NOT NULL))，
+# 非空时 cardinality ≥ 1、元素 ⊆ contracts auth_method（web_code、sdk_token）且不重复（拼多多 auth-url 只带 auth_jump，见 openapi UnionAuthUrlData）；
+# auth_app_refs jsonb 可空：方式 → 应用标识 / 配置版本，只存标识、不存任何密钥，CHECK 键集合等于 auth_methods 的元素，拼多多行为 NULL。
+# 三列加进 app.reject_union_auth_session_rewrite() 的 ROW 比较（随行插入、之后不可改）；couli_app 的列级 UPDATE 仍只授 used_at。
+# 存量行：现无任何写者（B1-06g 未实现），表应为空；有行时迁移失败即停、不回填（头注释写明）。合并后请规划会话回写 04 §3.2 union_auth_sessions 行（04 管形状指针，schema.sql 为准）。
+# 迁移编号以落地时 db/migrations 最新号 +1 为准；与 B3-09a 等迁移任务全局串行、不并行派工。分工与两段式同 B1-06b。
+# 规则测试覆盖：淘宝行必须带 auth_methods 与等键 auth_app_refs、拼多多行两者为空、client 取值、非法方式 / 重复 / 空数组被拒、新列改写被触发器拒、couli_app 不能 UPDATE 新列。
+refs: []
+refs_hash: {}
+deps: [B1-06b]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/linking-auth-methods/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/linking-auth-methods/**'
+status: todo
+pr: null
