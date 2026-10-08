@@ -1,0 +1,24 @@
+id: B3-03h
+repo: rebate-platform
+title: 流式输出：sweeper 挂到 worker——进程内循环 + 会话级 advisory lock（固定连接取放、有界等待、失锁停派），无人重试的遗留 run 定时收尾
+type: impl
+# 设计 couli-runs/B3-03g/design.md（定稿，Codex 三轮完整对抗评审加两次修改点核对）；负责人 2026-10-08 决定：受理与额度改用 PG、终止原因以落库为准（规划 docs/changes/20261008-Agent受理与额度改用PG.md，couli#88）。
+# 做法见设计 §5.3（不新增队列，不改受保护的 test/spec/platform/queue/contract.test.ts）；验收含真 HTTP + 真 PG + worker 集成（崩溃后无人重试由扫描收尾、两 worker 并发只退一次、取消 200 后杀实例收尾为 cancelled）。
+# 与 B3-03f 都改 app.module.ts、agent.module.ts：二者无在途占用、先到先做；派发前重新评审本台账。风险级 RV2（app.module.ts 不在 risk-map），两家评审。属 B3-03 整行（approvals 第 23 条）。
+refs: [BR-AI-23]
+refs_hash:
+  BR-AI-23: 5ebdbaff580d
+deps: [B3-03d, B3-03e]
+paths:
+  - 'apps/api/src/modules/agent/stream/sweeper/loop.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/agent/agent.module.ts'
+test_paths:
+  - 'test/spec/agent/stream-recovery/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-recovery/**'
+status: todo
+pr: null

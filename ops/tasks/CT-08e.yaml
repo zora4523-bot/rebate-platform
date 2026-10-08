@@ -15,7 +15,7 @@ type: contract
 # 契约槽全局 1 个（11 §3.4），排在 CT-08d 之后；分工按规划/11 §1.1：Codex 先写规则测试（test/spec/contracts/agent-history/**，先红），Claude 新子代理过审，Opus 5.5 实现。
 refs: [BR-AI-23, BR-AI-20]
 refs_hash:
-  BR-AI-23: e4d4c7173f74
+  BR-AI-23: 5ebdbaff580d
   BR-AI-20: ed15f04bab16
 contract_sections: ['6.5', '8.1', '8.2']
 deps: [CT-08d]

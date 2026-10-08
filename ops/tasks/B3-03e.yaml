@@ -10,11 +10,13 @@ type: impl
 #   同时覆盖 B3-03c 第 3 轮 Claude S2「补偿先于迟到的 admit 到达」留下的受理记录（Redis 有受理、PG 无 run）。B3-03c 现状合并时此情况额度暂不退还，由本任务兜底。
 # 开工条件：B3-03b、B3-03c 合并；B3-09a 迁移（agent_runs 收尾列）合并。worker 入口挂载若碰到在途占用的文件，派发前重新评审本台账。
 # refs 含 BR-AI-23、BR-AI-15；连一跳引用的任务书超 24KB 时编排者手工生成任务书（brief.ts 去掉一跳引用后补 BR 全文指针），不经 dispatch.sh；评审范围由 refs 与 paths 决定。
+# 2026-10-08 改为复用 B3-03g 的 finalizeRun（受理与额度改用 PG，couli#88；设计 §5.3、§8）：本任务只做发现与 sweepOnce(cursor)，游标 (run_lock_expires_at, id)，不含调度（调度归 B3-03h）；
+#   上面关于 Redis 受理记录、补偿 eval、按 runId 退还的条目随 B3-03c Redis 实现被替换而作废。
 refs: [BR-AI-23, BR-AI-15]
 refs_hash:
-  BR-AI-23: e4d4c7173f74
-  BR-AI-15: fce0a36758e3
-deps: [B3-03b, B3-03c, B3-09a]
+  BR-AI-23: 5ebdbaff580d
+  BR-AI-15: 205067c74dda
+deps: [B3-03b, B3-03c, B3-09a, B3-03g]
 paths:
   - 'apps/api/src/modules/agent/stream/sweeper/**'
 test_paths:

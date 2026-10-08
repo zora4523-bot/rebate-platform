@@ -16,7 +16,7 @@ type: migration
 # refs 连一跳引用超 24KB，编排者手工生成任务书（B3-03c 先例），并补 04 六行原文与 plan.md §1.4 表。
 refs: [BR-AI-23, BR-AI-19]
 refs_hash:
-  BR-AI-23: e4d4c7173f74
+  BR-AI-23: 5ebdbaff580d
   BR-AI-19: f2aa4c7770c8
 deps: []
 paths:

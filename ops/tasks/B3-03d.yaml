@@ -10,11 +10,13 @@ type: impl
 # PG 写入口径（B3-09a 评审提醒）：agent_runs.user_text 只能在 INSERT 时写（之后只能清空），受理插入 run 行时就带脱敏文本；回复行（assistant）与用户行在受理时同步写；
 #   收尾列从 NULL 写一次（同值重写放行，并发后到者 23001）。不挂 AgentModule 到 app.module / main.stream.ts（B3-03f）。
 # 风险：apps/api/src/modules/agent/** 为 RV1（risk-map）；PR 带规则测试，两家评审。属 B3-03 整行（approvals 第 23 条）。
+# 2026-10-08 再收窄（负责人决定受理与额度改用 PG、终止以落库为准，couli#88；设计 couli-runs/B3-03g/design.md §8）：受理、重复、会话锁、收尾、取消写入全部调 B3-03g 的 PG 端口；
+#   agent/store/** 只剩会话建、查、归属与历史读；调用前脱敏（BR-AI-19 脱敏函数归 B3-05，经端口注入）。测试与过审轮次按负责人决定重新计（couli-runs/B3-03d/decision-recovery-redesign.md）。
 refs: [BR-AI-23, BR-AI-20]
 refs_hash:
-  BR-AI-23: e4d4c7173f74
+  BR-AI-23: 5ebdbaff580d
   BR-AI-20: ed15f04bab16
-deps: [B3-03b, B3-03c, CT-08d, B3-09a]
+deps: [B3-03b, B3-03c, CT-08d, B3-09a, B3-03g, CT-08f]
 paths:
   - 'apps/api/src/modules/agent/http/**'
   - 'apps/api/src/modules/agent/store/**'
