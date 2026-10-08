@@ -38,7 +38,9 @@ import {
   createOrStub,
   done,
   line,
+  MONTH_ENSURED,
   memoryLogger,
+  monthNames,
   monthRange,
   names,
   reduceLine,
@@ -156,6 +158,14 @@ async function insertEvent(app: Kysely<DB>, eventId: string): Promise<void> {
   `.execute(app);
 }
 
+/** The months a run at NOW ensures (2026-11 … 2027-02). */
+const FOUR_MONTHS = monthRange('2026-11', '2027-02');
+
+/** `all` without the partitions in `skipped`, order kept. */
+function except(all: readonly string[], skipped: readonly string[]): string[] {
+  return all.filter((name) => !skipped.includes(name));
+}
+
 it('[ADR-0001 §4.2 #4; contract C.3 lock_timeout] 读事务持有 event_log 的 ACCESS SHARE 锁、2027-01 分区尚不存在时跑一轮：event_log 预建在 4–12 秒内以 55P03 失败一次（跳过该表其余月份）、orders 照常建满；期间向当月分区的插入 9 秒内写成；读事务结束后下一轮建成', async () => {
   await withWorld(async ({ database, maint, app }) => {
     await ensure(maint, 'event_log', ['2026-11', '2026-12']);
@@ -186,10 +196,7 @@ it('[ADR-0001 §4.2 #4; contract C.3 lock_timeout] 读事务持有 event_log 的
         queued: true,
         runWithinBound: true,
         report: {
-          ensured: [
-            ...names('event_log', ['2026-11', '2026-12']),
-            ...names('orders', monthRange('2026-11', '2027-02')),
-          ],
+          ensured: except(monthNames(FOUR_MONTHS), names('event_log', ['2027-01', '2027-02'])),
           dropped: [],
           defaultRows: [],
           failed: 1,
@@ -201,15 +208,12 @@ it('[ADR-0001 §4.2 #4; contract C.3 lock_timeout] 读事务持有 event_log 的
             month: '2027-01-01',
             sqlstate: '55P03',
           }),
-          done(6, 0, 1),
+          done(MONTH_ENSURED - 2, 0, 1),
         ],
       });
       const next = await within(maintenance.runOnce(), 20_000);
       expect(plain(next.value as MaintenanceReport | string)).toEqual({
-        ensured: [
-          ...names('event_log', monthRange('2026-11', '2027-02')),
-          ...names('orders', monthRange('2026-11', '2027-02')),
-        ],
+        ensured: monthNames(FOUR_MONTHS),
         dropped: [],
         defaultRows: [],
         failed: 0,
@@ -252,10 +256,10 @@ it('[ADR-0001 §4.2 #4; contract C.3 lock_timeout] 读事务同时持有 event_l
       }).toEqual({
         runWithinBound: true,
         report: {
-          ensured: [
-            ...names('event_log', ['2026-11', '2026-12']),
-            ...names('orders', ['2026-11', '2026-12']),
-          ],
+          ensured: except(monthNames(FOUR_MONTHS), [
+            ...names('event_log', ['2027-01', '2027-02']),
+            ...names('orders', ['2027-01', '2027-02']),
+          ]),
           dropped: [],
           defaultRows: [],
           failed: 2,
@@ -271,7 +275,7 @@ it('[ADR-0001 §4.2 #4; contract C.3 lock_timeout] 读事务同时持有 event_l
             month: '2027-01-01',
             sqlstate: '55P03',
           }),
-          done(4, 0, 2),
+          done(MONTH_ENSURED - 4, 0, 2),
         ],
       });
       const next = await within(maintenance.runOnce(), 20_000);
@@ -315,10 +319,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 有数据即告警; contract C.5 lock_timeout] �
       }).toEqual({
         runWithinBound: true,
         report: {
-          ensured: [
-            ...names('event_log', ['2026-11', '2026-12']),
-            ...names('orders', monthRange('2026-11', '2027-02')),
-          ],
+          ensured: except(monthNames(FOUR_MONTHS), names('event_log', ['2027-01', '2027-02'])),
           dropped: [],
           defaultRows: [],
           failed: 2,
@@ -330,15 +331,12 @@ it('[ADR-0001 §4.2 #4 DEFAULT 有数据即告警; contract C.5 lock_timeout] �
             sqlstate: '55P03',
           }),
           line('error', 'partition_default_check_failed', { sqlstate: '55P03' }),
-          done(6, 0, 2),
+          done(MONTH_ENSURED - 2, 0, 2),
         ],
       });
       const next = await within(maintenance.runOnce(), 20_000);
       expect(plain(next.value as MaintenanceReport | string)).toEqual({
-        ensured: [
-          ...names('event_log', monthRange('2026-11', '2027-02')),
-          ...names('orders', monthRange('2026-11', '2027-02')),
-        ],
+        ensured: monthNames(FOUR_MONTHS),
         dropped: [],
         defaultRows: [],
         failed: 0,

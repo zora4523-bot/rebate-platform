@@ -1,8 +1,14 @@
 // Shared helpers of the platform/maintenance rule tests (B1-01j; contract in
 // apps/api/src/modules/platform/maintenance/index.ts). Expected values are written out by hand from
-// the contract, never taken from the implementation. Nothing here imports the test-database base
-// (`@couli/db/testing`): only *.int.test.ts may.
+// the contract, never taken from the implementation — except which tables are partitioned and how
+// far ahead (B1-04n): those come from the partition lists, whose values contract.test.ts and
+// day-contract.test.ts pin. Nothing here imports the test-database base (`@couli/db/testing`): only
+// *.int.test.ts may.
+import { MONTH_PARTITIONED_TABLES, MONTHS_AHEAD } from '@couli/db';
+
 import {
+  DAY_PARTITIONED_TABLES,
+  DAYS_AHEAD,
   MaintenanceError,
   createPartitionMaintenance,
   type MaintenanceErrorCode,
@@ -183,6 +189,27 @@ export function monthRange(first: string, last: string): string[] {
 export function names(table: string, months: readonly string[]): string[] {
   return months.map((m) => `${table}_p${m.slice(0, 4)}${m.slice(5, 7)}`);
 }
+
+/**
+ * Every month-partitioned table, in the order the run ensures them (contract C.3): the allow-list
+ * of app.ensure_month_partition as mirrored by `@couli/db`. Scenarios that mean "every month table"
+ * derive from it; scenarios about one named table keep that table's name.
+ */
+export const MONTH_TABLES: readonly string[] = MONTH_PARTITIONED_TABLES;
+
+/** Month-partition names of every month table for `months`: table by table, months ascending. */
+export function monthNames(months: readonly string[]): string[] {
+  return MONTH_TABLES.flatMap((table) => names(table, months));
+}
+
+/** Month partitions one run ensures: every month table × (the month of now + MONTHS_AHEAD). */
+export const MONTH_ENSURED = MONTH_TABLES.length * (MONTHS_AHEAD + 1);
+
+/** Day partitions one run with day partitions ensures: every day table × (today + DAYS_AHEAD). */
+export const DAY_ENSURED = DAY_PARTITIONED_TABLES.length * (DAYS_AHEAD + 1);
+
+/** Partitions one run with day partitions ensures in all. */
+export const ALL_ENSURED = MONTH_ENSURED + DAY_ENSURED;
 
 /**
  * createPartitionMaintenance(options), or — when creating throws — a stand-in whose three methods

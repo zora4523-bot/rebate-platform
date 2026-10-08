@@ -59,7 +59,7 @@ import { createTestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { expect, it } from 'vitest';
 import { leaksIn } from '../db/kit.ts';
-import { gate, sleep, waitFor } from './kit.ts';
+import { ALL_ENSURED, gate, sleep, waitFor } from './kit.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../../../..');
@@ -393,7 +393,7 @@ const DONE_LINE: LogRecord = {
   level: 30,
   entry: 'worker',
   env: 'test',
-  ensured: 23,
+  ensured: ALL_ENSURED,
   dropped: 0,
   failed: 0,
   msg: 'partition_maintenance_done',

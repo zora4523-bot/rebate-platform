@@ -20,6 +20,7 @@ import {
   rejectionProblems,
   sleep,
   waitFor,
+  MONTH_ENSURED,
 } from './kit.ts';
 
 async function withDatabase(scenario: (database: TestDatabase) => Promise<void>): Promise<void> {
@@ -67,7 +68,7 @@ it('[ADR-0001 §4.2 #4 worker 定时任务; contract D] start() 先跑完第一�
       };
       expect(afterStart).toEqual({
         started: 'resolved',
-        lines: [done(8, 0, 0)],
+        lines: [done(MONTH_ENSURED, 0, 0)],
         partitions: [
           'event_log_default',
           'event_log_p202611',
@@ -85,7 +86,7 @@ it('[ADR-0001 §4.2 #4 worker 定时任务; contract D] start() 先跑完第一�
         lines: atStop,
         calls: callsAtStop,
       });
-      expect(lines.map(reduceLine)).toEqual(Array(atStop).fill(done(8, 0, 0)));
+      expect(lines.map(reduceLine)).toEqual(Array(atStop).fill(done(MONTH_ENSURED, 0, 0)));
       expect(await maintenance.stop()).toBeUndefined();
       expect(await rejectionProblems(maintenance.start(), 'already_started')).toEqual([]);
     } finally {
@@ -174,7 +175,11 @@ it('[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4、D] 定时运�
       );
       expect(started).toBe('resolved');
       expect(await waitFor(() => lines.length >= 3, 10_000)).toBe(true);
-      expect(reduced().slice(0, 3)).toEqual([done(8, 0, 0), done(8, 0, 0), done(8, 0, 0)]);
+      expect(reduced().slice(0, 3)).toEqual([
+        done(MONTH_ENSURED, 0, 0),
+        done(MONTH_ENSURED, 0, 0),
+        done(MONTH_ENSURED, 0, 0),
+      ]);
       expect(await eventLogNames(app)).toContain('event_log_p202602');
       clock.set('2026-10-08T20:00:00.000Z');
       expect(
@@ -191,13 +196,15 @@ it('[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4、D] 定时运�
       const all = reduced();
       const firstDrop = all.findIndex((l) => (l as { msg?: unknown }).msg === 'partition_dropped');
       expect(
-        all.slice(0, firstDrop).every((l) => JSON.stringify(l) === JSON.stringify(done(8, 0, 0))),
+        all
+          .slice(0, firstDrop)
+          .every((l) => JSON.stringify(l) === JSON.stringify(done(MONTH_ENSURED, 0, 0))),
       ).toBe(true);
       expect(all.slice(firstDrop)).toEqual([
         line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202602' }),
         line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202603' }),
-        done(8, 2, 0),
-        ...Array(all.length - firstDrop - 3).fill(done(8, 0, 0)),
+        done(MONTH_ENSURED, 2, 0),
+        ...Array(all.length - firstDrop - 3).fill(done(MONTH_ENSURED, 0, 0)),
       ]);
       expect(await eventLogNames(app)).toEqual([
         'event_log_default',
@@ -273,7 +280,7 @@ it('[contract D stop 等进行中的一轮] 第一轮卡在 event_log_p202611 �
         blocked: { waiting: true, start: 'pending', stop: 'pending', lines: 0 },
         start: 'resolved',
         linesWhenStopped: 1,
-        lines: [done(8, 0, 0)],
+        lines: [done(MONTH_ENSURED, 0, 0)],
       });
     } finally {
       barrier.open();
