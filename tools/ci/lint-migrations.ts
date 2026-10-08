@@ -614,8 +614,25 @@ export function decodeLiteral(token: string): string | null {
   if (e !== null) {
     const body = e[1] ?? '';
     let out = '';
+    // Octal and hex escapes are bytes, read together as UTF-8 the way the database does (CT-06f).
+    let bytes: number[] = [];
+    const flush = (): boolean => {
+      if (bytes.length === 0) return true;
+      try {
+        out += new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes));
+      } catch {
+        return false;
+      }
+      bytes = [];
+      return true;
+    };
     for (let i = 0; i < body.length; i++) {
       const c = body[i] ?? '';
+      const next = body[i + 1] ?? '';
+      const isByte =
+        c === '\\' &&
+        (/[0-7]/.test(next) || (next === 'x' && /[0-9a-fA-F]/.test(body[i + 2] ?? '')));
+      if (!isByte && !flush()) return null;
       if (c === "'" && body[i + 1] === "'") {
         out += "'";
         i++;
@@ -640,12 +657,18 @@ export function decodeLiteral(token: string): string | null {
         i++;
       } else if (/[0-7]/.test(n)) {
         const m = /^[0-7]{1,3}/.exec(body.slice(i + 1))?.[0] ?? n;
-        out += String.fromCharCode(parseInt(m, 8));
+        const b = parseInt(m, 8);
+        if (b === 0 || b > 0xff) return null;
+        bytes.push(b);
         i += m.length;
+        continue;
       } else if (n === 'x' && /[0-9a-fA-F]/.test(body[i + 2] ?? '')) {
         const m = /^[0-9a-fA-F]{1,2}/.exec(body.slice(i + 2))?.[0] ?? '';
-        out += String.fromCharCode(parseInt(m, 16));
+        const b = parseInt(m, 16);
+        if (b === 0) return null;
+        bytes.push(b);
         i += 1 + m.length;
+        continue;
       } else if (n === 'u' && /^[0-9a-fA-F]{4}$/.test(body.slice(i + 2, i + 6))) {
         {
           const c = codePoint(parseInt(body.slice(i + 2, i + 6), 16));
@@ -662,7 +685,7 @@ export function decodeLiteral(token: string): string | null {
         i += 9;
       } else return null;
     }
-    return out;
+    return flush() ? out : null;
   }
   const plain = /^'((?:[^']|'')*)'$/.exec(t);
   if (plain !== null) return (plain[1] ?? '').replace(/''/g, "'");
@@ -675,7 +698,8 @@ function decodeExecutes(body: string): string {
     new RegExp(String.raw`\bEXECUTE\s+(${LITERAL_SRC})`, 'gi'),
     (m, lit: string) => {
       const v = decodeLiteral(lit);
-      return v === null ? m : `EXECUTE ${v};`;
+      // A newline ends a line comment inside the string before the DO body goes on (CT-06f).
+      return v === null ? m : `EXECUTE ${v}\n;`;
     },
   );
 }
@@ -1107,6 +1131,15 @@ function guardDefinitions(sources: readonly string[]): {
               ),
             );
           }
+          // VALIDATE CONSTRAINT: the constraint is validated from here on (CT-06f).
+          const v = new RegExp(String.raw`^\s*VALIDATE\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(
+            part.text,
+          );
+          if (v !== null) {
+            const key = `${bareName(alter[1] ?? '')}/${bareName(v[1] ?? '')}`;
+            const d = constraints.get(key);
+            if (d !== undefined) constraints.set(key, d.replace(/\s*not\s+valid\b/i, ''));
+          }
           // ADD COLUMN … CONSTRAINT x CHECK (…) [CONSTRAINT y …]: column constraints added with
           // their column (0020 has two on one column).
           if (c === null && /^\s*ADD\b/i.test(part.text)) {
@@ -1281,15 +1314,36 @@ function fundsObjectProblems(
             const before = original().constraints.get(`${table}/${name}`);
             // NOT VALID followed in this file by VALIDATE CONSTRAINT on the same table and name ends
             // validated: compare it as such (CT-06f).
-            const validated = statements.slice(k).some(({ text: t }) => {
+            // Only a VALIDATE after the ADD counts: parts after it in its statement, then later ones.
+            const partsOf = (j: number) => {
+              const t = statements[j]?.text ?? '';
               const a = ALTER_TABLE.exec(t);
-              if (a === null || bareName(a[1] ?? '') !== table) return false;
-              return [
-                ...t.matchAll(
-                  new RegExp(String.raw`\bVALIDATE\s+CONSTRAINT${GAP}(${IDENT})`, 'gi'),
-                ),
-              ].some((v) => bareName(v[1] ?? '') === name);
-            });
+              if (a === null || bareName(a[1] ?? '') !== table) return [];
+              return topLevelParts(t, a[0].length, t.length).map((q) => q.text);
+            };
+            const isAdd = (q: string) =>
+              bareName(
+                new RegExp(String.raw`^\s*ADD\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(q)?.[1] ??
+                  '',
+              ) === name;
+            const isValidate = (q: string) =>
+              bareName(
+                new RegExp(String.raw`^\s*VALIDATE\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(
+                  q,
+                )?.[1] ?? '',
+              ) === name;
+            const addAt = [k, ...statements.slice(k + 1).map((_st, d) => k + 1 + d)].find((j) =>
+              partsOf(j)
+                .slice(j === k ? i + 1 : 0)
+                .some(isAdd),
+            );
+            const validated =
+              addAt !== undefined &&
+              statements.slice(addAt).some((_st, d) => {
+                const parts = partsOf(addAt + d);
+                const from = d === 0 ? parts.findLastIndex(isAdd) + 1 : 0;
+                return parts.slice(from).some(isValidate);
+              });
             let now = clause.trim().replace(/^add\s+/i, '');
             if (validated) now = now.replace(/\s+NOT\s+VALID\b/i, '');
             const was = validated ? before?.replace(/\s*not\s+valid\b/i, '') : before;

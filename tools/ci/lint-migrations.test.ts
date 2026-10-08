@@ -908,3 +908,56 @@ it('CT-06f review round 1: NOT VALID then VALIDATE recreated twice compares equa
   };
   expect(checkMigration('x.sql', TIMEOUTS + rebuild, ctx)).toEqual([]);
 });
+
+it('CT-06f review round 2: a validated history stays validated, so a rebuild without VALIDATE is a change', () => {
+  const add =
+    "ALTER TABLE app.order_rights DROP CONSTRAINT order_rights_status_check, ADD CONSTRAINT order_rights_status_check CHECK (status IN ('a', 'b')) NOT VALID;\n";
+  const validate = 'ALTER TABLE app.order_rights VALIDATE CONSTRAINT order_rights_status_check;\n';
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "CREATE TABLE app.order_rights (id bigint CONSTRAINT order_rights_pkey PRIMARY KEY, status text NOT NULL, CONSTRAINT order_rights_status_check CHECK (status IN ('a', 'b')));",
+      TIMEOUTS + add + validate,
+    ],
+    approved: false,
+  };
+  expect(checkMigration('x.sql', TIMEOUTS + add, ctx).map((p) => p.message)).toEqual([
+    expect.stringContaining('recreated with a different definition'),
+  ]);
+  // VALIDATE before the ADD does not validate the new constraint.
+  expect(checkMigration('x.sql', TIMEOUTS + validate + add, ctx).map((p) => p.message)).toEqual([
+    expect.stringContaining('recreated with a different definition'),
+  ]);
+  expect(checkMigration('x.sql', TIMEOUTS + add + validate, ctx)).toEqual([]);
+});
+
+it('CT-06f review round 2: a line comment inside an EXECUTE string does not hide what follows it', () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      `${TIMEOUTS}DO $$ BEGIN EXECUTE 'SELECT 1 -- ping'; ALTER TABLE app.order_keys DISABLE TRIGGER order_keys_append_only; END $$;\n`,
+      { schemaSql: '', migrationsSql: [], approved: false },
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('guard change inside a DO block')]);
+});
+
+it('CT-06f review round 2: octal and hex escapes are UTF-8 bytes when definitions are compared', () => {
+  const index = (value: string) =>
+    `CREATE INDEX order_rights_src_idx ON app.order_rights (app_id) WHERE source = ${value};`;
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [index(String.raw`E'\303\251'`)],
+    approved: false,
+  };
+  const rebuild = (value: string) =>
+    checkMigration(
+      'x.sql',
+      `${TIMEOUTS}DROP INDEX app.order_rights_src_idx;\n${index(value)}\n`,
+      ctx,
+    );
+  expect(rebuild("'é'")).toEqual([]);
+  expect(rebuild(String.raw`E'\xc3\xa9'`)).toEqual([]);
+  expect(rebuild("'Ã©'").map((p) => p.message)).toEqual([
+    expect.stringContaining('recreated with a different definition'),
+  ]);
+});
