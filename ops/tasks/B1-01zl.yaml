@@ -1,0 +1,25 @@
+id: B1-01zl
+repo: rebate-platform
+title: api、stream、admin、payout 入口启动期间收到 SIGTERM / SIGINT 也优雅停止：信号处理在启动前挂上，等启动结束再关闭
+type: impl
+# 2026-10-09 入账（会话 b1-followups-3，followups/INDEX.md F-05，P2；B1-01t 只做了 worker）。现状：apps/api/src/entry.ts 的 HTTP 入口
+# 在 app.listen 成功、started 之后才 closeOnSignal；启动中（init、队列启动、listen）收到信号时进程被直接终止，连接池与队列不收尾。
+# 改法照 B1-01t（worker）：启动前挂信号处理；启动中收到信号 → 记一行 stopping，等启动结束（成功或失败）后按 app.close() 收尾、记 stopped，
+# 不再 listen 新端口之后继续服务；同一信号连发只处理一次；启动失败分支摘掉处理器（避免 F-26 的多记一行 stopping）。exitAfterInit 行为不变。
+# payout 有独立分支（entry.ts 约 164–180 行：建 context、queue.start() 后才挂信号），同样改为启动前挂上、启动中收到信号等启动结束后
+# 依次 queue.stop()、context.close()；worker 已由 B1-01t 覆盖，不改其行为。
+# 规则测试（Codex 先写、先红，新文件）：子进程在 init / listen 之前被信号打断时最终 exit 0、日志 stopping 后 stopped、端口未被占用；
+# payout 在 queue.start() 期间收到信号同样收尾；连发两次信号只收尾一次；未收到信号时 started 后不自行退出。
+refs: []
+refs_hash: {}
+deps: [B1-01t]
+paths:
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/platform/entry/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/entry/**'
+status: todo

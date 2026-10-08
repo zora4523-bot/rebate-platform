@@ -1,0 +1,33 @@
+id: B1-01zk
+repo: rebate-platform
+title: 维护：link_open_attempts 按 BR-ID-30 ② 与 link_logs 同期按行删除；event_log 旧分区删除前的锁内复查不再全表扫描
+type: migration
+# 2026-10-09 入账（会话 b1-followups-3，followups/INDEX.md F-04、F-07，P2；来源 B1-01s 作者回报、followups/B1-01g-queue-test-gaps.md B1-01j 节第 1 条）。
+# ① BR-ID-30 ②：打开尝试记录（link_open_attempts）与 link_logs 同期；非分区表，按行删除（截止口径照 BR-ID-30 正文「运行当日 00:00（+08:00）− 留存天数」
+# 与 08 原文定的时刻列，规则测试作者按 08 原文写）。表上有拒绝改删的触发器、couli_maint 无 DELETE 权限：新迁移加 SECURITY DEFINER 删除函数
+# （分批、有界锁等待，同 B1-01j / B1-01s 的写法），maintenance 模块在 link_logs 日分区删除的同一轮调用它，worker 接线随之开启。
+# ② event_log 删除旧分区前的锁内复查（no row created_at ≥ cutoff）现对整个分区全表扫描、期间挡住 event_log 写入：
+# 改为走索引（新迁移给 event_log 加 (created_at) 分区索引，表现在很小，可在迁移内建）或先锁外预查、锁内只做有界检查；BR-ID-30 的 created_at 口径不变。
+# 两段式：先只写迁移（全局串行；0022 = B3-09b 在途，本任务取其后的下一个空号，落地前核对），编排者在沙箱外 db:snapshot 并提交生成物，再派模块实现。
+# refs 为空，理由同 B1-01j / B1-01s（BR-ID-30 整条渲染后任务书超 24KB），编排者在任务书摘录 BR-ID-30 正文的通用删除截止口径、② 与 ⑯（event_log 190 天）原文。
+refs: []
+refs_hash: {}
+deps: [B1-01s, B1-01w]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.test.ts'
+  - 'apps/api/src/modules/platform/maintenance/worker.ts'
+  - 'apps/api/src/modules/platform/maintenance/entry.test.ts'
+test_paths:
+  - 'test/spec/platform/maintenance/open-attempts-*'
+  - 'test/spec/platform/maintenance/recheck-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/maintenance/**'
+  - 'test/spec/db/**'
+status: todo

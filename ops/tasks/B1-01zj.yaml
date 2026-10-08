@@ -1,0 +1,29 @@
+id: B1-01zj
+repo: rebate-platform
+title: staging 部署回退收口：重启计数不为 0 时自动回退到上一成功标签；手动回退按标签用保存的 compose 副本；README 窗口说明更正；libpq 转义单引号里的口令也打码
+type: impl
+# 2026-10-09 入账（会话 b1-followups-3，followups/staging-b1-01zc-zd.md 第 1–3 条，B1-01zc 两家第 4 轮评审 S2；第 1、2 条 P2，第 3 条 P3 顺带）。
+# ① deploy.sh 第 3 步 RestartCount≠0 现只非零退出、提示手动回退；改为与健康失败分支同样自动回退到上一成功标签（用它保存的 compose 副本），
+# 冻结规则测试 test/spec/infra/staging/deploy.test.ts（DEPLOY#2 等）不许的写法就只改提示与文档，并在 PR 描述说明；
+# 窗口是「任一服务首次健康后到 up --wait 返回」整段，README（第 126、132 行附近）按实更正。
+# ② 手动 `deploy.sh <旧标签>` 回退时，若 /var/lib/couli/compose.<标签>.yaml 存在就用它（与自动回退一致），否则用当前 compose 并打印一行说明。
+# ③ packages/db/src/pg-url.ts（约第 119 行）：libpq 关键字值 password='…' 里带反斜杠转义的单引号时，口令后缀未打码；按 libpq 转义规则整段打码。
+# 规则测试（Codex 先写、先红，新文件，不改已冻结的 test/spec/infra/staging/*.test.ts）：静态核对 ①② 的分支与 compose 路径选择、
+# 不打印口令；③ 的转义用例。不改应用代码。
+refs: []
+refs_hash: {}
+deps: [B1-01zc]
+paths:
+  - 'infra/staging/deploy.sh'
+  - 'infra/staging/README.md'
+  - 'packages/db/src/pg-url.ts'
+  - 'packages/db/src/pg-url.test.ts'
+test_paths:
+  - 'test/spec/infra/staging/rollback-*'
+  - 'test/spec/db/pg-url-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/infra/staging/**'
+status: todo

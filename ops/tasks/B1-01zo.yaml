@@ -1,0 +1,26 @@
+id: B1-01zo
+repo: rebate-platform
+title: 过时文档与示例配置修正：验收与规则测试 README 的接入说明、packages/db 的 global-setup 用法与「已知限制」、.env.example 与本地栈说明补 DATABASE_READ_URL
+type: test-change
+# 2026-10-09 入账（会话 b1-followups-3，followups/INDEX.md F-08、F-09，P2；来源 followups/B1-01e-followups.md、B1-01f-followups.md）。
+# ① test/acceptance/README.md「不在任何 include 里」与对应 TODO、test/spec/README.md「接入方式随 B1-01 底座任务加入」：B1-01e 后已过时，按
+# test/vitest.integration.config.ts 现状改写（保护路径第一类、改已有文件，合并要批准标签；登记 CT-plan/need-label.md）。
+# ② packages/db/README.md 第 39 行附近与 src/testing/index.ts（头注释、找不到上下文时的报错文案）：别再让别的包把 @couli/db/testing/global-setup
+# 写进 globalSetup（vitest 不认 couli-src 条件会加载 dist），改为 B1-01e 的源码相对路径写法；「已知限制」里 pool 错误监听、维护任务两行按 B1-01f / B1-01n 现状更新。
+# ③ .env.example 补 DATABASE_READ_URL（couli_readonly，本地栈口令同其他角色；admin 入口必填），packages/db/scripts/dev-stack.ts 打印的说明同步。
+# 只改文档、注释、报错文案与示例配置，不改任何断言、不改行为。分工：Claude 子代理改，Codex 新只读会话对抗评审（test/** RV2，再加 Claude 新子代理评审）。
+refs: []
+refs_hash: {}
+deps: [B1-01e, B1-01f]
+paths:
+  - 'test/acceptance/README.md'
+  - 'test/spec/README.md'
+  - 'packages/db/README.md'
+  - 'packages/db/src/testing/index.ts'
+  - 'packages/db/scripts/dev-stack.ts'
+  - '.env.example'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
