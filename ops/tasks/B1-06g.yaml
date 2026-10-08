@@ -10,7 +10,7 @@ type: impl
 # 第 1 轮台账评审后改（S1-1）：去掉 planned 后重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入，与 B1-02e / f / g、B1-03i 串行）；x-signed 路由对外放量须在 B1-03b 合并后（S2-9）。
 refs: []
 refs_hash: {}
-deps: [B1-06e, B1-06b, B1-02c]
+deps: [B1-06e, B1-06b, B1-02c, B1-06r]
 paths:
   - 'apps/api/src/modules/linking/**'
   - 'contracts/openapi.yaml'

@@ -1,0 +1,24 @@
+id: B1-06r
+repo: rebate-platform
+title: 迁移：union_auth_sessions 加「本次下发的授权方式」列（auth_methods，text[] 非空、只写一次）与签发时设备端（client），供 B1-06h 先校验后消费 state 时核对下发过的方式（BR-ID-17 细则「授权方式」）
+type: migration
+# 草稿 2026-10-08（W1 第五棒）。B1-06b followup：BR-ID-17「本次下发的授权方式」在 04 §3.2 union_auth_sessions 行没有列，B1-06g 签发 state 时无处记、B1-06h 无法核对「下发过的授权方式」（method_not_allowed）。
+# 列名与是否另存端由本迁移定并写头注释，合并后编排者请规划会话回写 04 §3.2 union_auth_sessions 行（04 管形状指针，schema.sql 为准）。
+# 照 0018 的不可变触发器：新列随行插入、之后不可改（union_auth_sessions 已是除 used_at 外不可变）。取值以 contracts 的 auth_methods 枚举为准。
+# 迁移全局串行：0020 留给 B3-09a，本任务取其后的编号；分工与两段式同 B1-06b。
+refs: []
+refs_hash: {}
+deps: [B1-06b]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/linking-auth-methods/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/linking-auth-methods/**'
+status: todo
+pr: null

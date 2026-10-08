@@ -8,6 +8,7 @@ type: impl
 # 淘宝 Adapter 不调任何链接 API（05 B1-04 行）：复核价格只用详情（演示适配器）。指令字段按 CT-02e 合并后的 JumpStep.sdk；百川能否回跳以 CAP-TB-11 为准，不写成能力。
 # 我方推广链接列由 B1-06b 建；只有带当前用户 relation_id、用该场景推广位取得时才写（BR-ATTR-27 淘宝行），跨用户缓存的检索结果不带（B1-05g）。
 # 2026-10-08 补：BR-PRICE-13 新句（couli#80）的淘宝用例归本任务——复核失败后 no_rebate=true 再 open 可外跳，但站长授权失效时未绑定用户仍按 BR-ID-24 例外（B1-06p 只做京东、拼多多）。
+# 2026-10-08 补（CT-02e #273 Codex 契约评审 S1→S2 的承接）：JumpStep 的「type=sdk 必带合法 sdk、其他 type 不带 sdk」schema 不强制（顶层 oneOf 会被 oasdiff 判 breaking），本任务规则测试必须断言 open 下发的每个 type=sdk 步骤都带合法 sdk（BaichuanOpen 两分支）、其他 type 不带。
 # 合并后 B1-06e 里「淘宝一律 50301」的临时处理撤掉。linking/** 串行。风险：linking RV2，整体 RV2（归属与用户授权）。
 refs: []
 refs_hash: {}
