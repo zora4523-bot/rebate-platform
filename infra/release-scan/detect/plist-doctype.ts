@@ -23,7 +23,7 @@ export function maskPlistDoctype(text: string): string {
   let from = 0;
   while (at >= 0) {
     const end = at + PLIST_DOCTYPE.length;
-    const atStart = at <= WINDOW && /^﻿?\s*$/.test(text.slice(0, at));
+    const atStart = at <= WINDOW && /^\uFEFF?\s*$/.test(text.slice(0, at));
     const afterDeclaration = XML_DECLARATION_BEFORE.test(text.slice(Math.max(0, at - WINDOW), at));
     if ((atStart || afterDeclaration) && PLIST_ROOT_AFTER.test(text.slice(end, end + WINDOW))) {
       out += text.slice(from, at) + ' '.repeat(PLIST_DOCTYPE.length);
