@@ -157,8 +157,8 @@ it('[AC-CT-01c#1] removes the cancelled ticket enums (04 §2.5)', () => {
   expect.soft(enums).not.toHaveProperty('ticket_status');
 });
 
-it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 53 since CT-21a)', () => {
-  expect.soft(enums.admin_permission).toHaveLength(53);
+it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 54 since CT-17f)', () => {
+  expect.soft(enums.admin_permission).toHaveLength(54);
   expect.soft(enums.admin_permission).not.toContain('ticket.handle');
   expect.soft(enums.admin_permission).not.toContain('ticket.data_export');
   for (const permission of [
@@ -245,6 +245,14 @@ it('[CT-21a] switch.pay and switch.payout do not cover each other (04 §11.2)', 
   expect(permissionNotes['switch.pay']).toContain('pay.enabled');
   expect(permissionNotes['switch.pay']).not.toContain('payout.');
   expect(permissionNotes['switch.payout']).not.toMatch(/(?:^|、|：)pay\./);
+});
+
+// CT-17f: platform mark replacement images (04 §11.2, BR-TEXT-24).
+it('[CT-17f] adds content.platform_icon without step-up (04 §11.2, BR-TEXT-24)', () => {
+  expect(enums.admin_permission).toContain('content.platform_icon');
+  expect(permissionNotes['content.platform_icon']).toBeTypeOf('string');
+  expect(permissionNotes['content.platform_icon']).toContain('BR-TEXT-24');
+  expect(permissionNotes['content.platform_icon']).not.toContain('step-up');
 });
 
 it('[AC-CT-01c#5] content.app_version limits step-up to raising the minimum version (04 §11.2)', () => {

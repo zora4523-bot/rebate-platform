@@ -1,0 +1,50 @@
+{
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/enums/admin.yaml, contracts/openapi.yaml and the generated packages/contracts-ts files): admin_permission gains content.platform_icon (04 §11.2, no step-up); Config gains the optional platform_icons (eight BR-TEXT-24 icon keys -> {url, sha256, version}, 04 §10.1). tester none: tests written by the implementer in packages/contracts-ts (same as CT-21a). Implementation by an Opus 5.5 subagent in two runs (round 2 only added run-time assertions to a type-only test that failed CI's assertion requirement); Codex contract review and Claude contract review passed in rounds 1 and 2. Full verification is the required CI checks (ops/approvals.yaml id 21). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 2 (after adding run-time assertions to the type-only test): permission value, optional platform_icons schema, examples and generated files checked against SPEC_REF; no findings"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent (second reviewer, contract), round 2: pass, no findings; round-2 fix adds meaningful run-time assertions; eight icon keys match BR-TEXT-24, optional key keeps compatibility, generated files match yaml"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "tester none (contract task)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "CT-17f",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "a986aa54bb1a84fe363c72efe1def4bb72929d70",
+  "runs": [],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "a5e36d8c033a0268da9c46fae2d72700bb17313e",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
