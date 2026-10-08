@@ -5,7 +5,9 @@ import { openConfiguredFieldCrypto } from './config/keyring-startup.ts';
 import type { ConnectionConfig, DbHandles } from './db/index.ts';
 import type { EntryName } from './entries.ts';
 import { createEventBus } from './events/index.ts';
+import { AbandonController } from './http/public/abandon.controller.ts';
 import { createIdempotency } from './idempotency/index.ts';
+import { IDEMPOTENCY } from './idempotency/token.ts';
 import type { RootLogger } from './logging/index.ts';
 import { createQueueRuntime, type JobQueue } from './queue/index.ts';
 import { createRedisHandle } from './redis/index.ts';
@@ -16,7 +18,7 @@ export const APP_ENTRY = Symbol('APP_ENTRY');
 export const ROOT_LOGGER = Symbol('ROOT_LOGGER');
 export const DB = Symbol('DB');
 export const DB_READ = Symbol('DB_READ');
-export const IDEMPOTENCY = Symbol('IDEMPOTENCY');
+export { IDEMPOTENCY };
 export const FIELD_CRYPTO = Symbol('FIELD_CRYPTO');
 export const JOB_QUEUE = Symbol('JOB_QUEUE');
 export const EVENT_BUS = Symbol('EVENT_BUS');
@@ -123,6 +125,10 @@ export class PlatformModule {
     return {
       module: PlatformModule,
       global: true,
+      // POST /v1/idempotency-keys/abandon (B1-02g) is an api route only. Without a database the
+      // route stays registered (contract.test.ts: every implemented operation has exactly one api
+      // route) and fails closed with 50001; the other entries never mount it.
+      controllers: options.entry === 'api' ? [AbandonController] : [],
       providers: [
         { provide: APP_CONFIG, useValue: options.config },
         { provide: APP_ENTRY, useValue: options.entry },
