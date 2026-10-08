@@ -8,7 +8,7 @@ type: impl
 # attr_code 只经 B1-06c 定义的查询端口（identity 实现，B1-02m 装配）。未接线时：游客按契约 10001；登录用户（接线后才会出现）取不到 attr_code 一律 50301（不带 reason，按 maintenance）并告警，
 # 不得以 user_id 代替、不得转出不带用户键的链接（失败即关）。no_rebate 购买按 BR-ATTR-08 不带用户参数，不受影响。
 # 真实转链做不了：京东、拼多多真实适配器留接口，TODO(规划/11 §4.5): 真实转链 — blocked on 推广位 / siteId；本任务只接演示适配器。
-# 拼多多未备案 30111 的判定放到 B1-06f；本任务对拼多多先按「已备案」路径并在 PR 列为未完成。amount_unknown 直链（pdd.direct_convert.enabled 默认关）不做。
+# 拼多多未备案 30111 的判定放到 B1-06f（2026-10-08 拆到 B1-06v）；本任务对拼多多先按「已备案」路径并在 PR 列为未完成。amount_unknown 直链（pdd.direct_convert.enabled 默认关）不做。
 # 淘宝 open 在 B1-06f 之前一律按 50301 处理，不出半成品。无 active 推广位：plan-draft 待决定第 2 条默认（50301 并告警），默认值待负责人确认，做成可替换。
 # 实现路由时去掉 openLink 的 x-implementation: planned 并重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入）。
 # x-signed：签名由 risk 线全局守卫（B1-03b），本任务不实现；对外放量须在 B1-03b 合并后。风险：linking RV2，整体 RV2。
