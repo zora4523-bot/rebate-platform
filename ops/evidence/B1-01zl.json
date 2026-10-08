@@ -1,0 +1,88 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (apps/api/src/entry.ts). api, stream, admin and payout entries register SIGTERM / SIGINT handlers before startup; a signal during startup logs stopping once, lets the current step finish, never listens or keeps serving, closes in order (HTTP: app.close(); payout: queue.stop() then context.close() once the queue started) and logs stopped with exit 0; repeated signals are handled once; a failed startup removes the handlers before rethrowing; exitAfterInit and the worker (B1-01t) unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: round 1 pass, no findings (signal between startup steps, payout before / after queue.start, close once, failure path, exitAfterInit and worker untouched)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 attempts) reviewed by fresh Claude subagents: round 1 fail (3 S1: admin without DATABASE_READ_URL always red, no interruption before init, started-and-stays-up too weak), round 2 fail (1 S1: probe job name rejected by the job-name check), orchestrator-approved exception round (couli-runs/B1-01zl/exception-round.md) pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zl",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "31e64d5207e3ea5a26891d9bf4094b54d3bc3680",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "31e64d5207e3ea5a26891d9bf4094b54d3bc3680",
+      "tree": "033a19afc290cd071fba5156e4e49eb6408a5faa",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T18:52:22Z",
+      "finished_at": "2026-10-08T18:55:06Z",
+      "red_tests": [
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#1] api: 启动中两次 SIGTERM 等队列启动结束后只收尾一次；正常启动与 exitAfterInit 不退化",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#2] api: 启动中两次 SIGINT 等队列启动结束后只收尾一次；正常启动与 exitAfterInit 不退化",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#1] stream: 启动中两次 SIGTERM 等队列启动结束后只收尾一次；正常启动与 exitAfterInit 不退化",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#2] stream: 启动中两次 SIGINT 等队列启动结束后只收尾一次；正常启动与 exitAfterInit 不退化",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#1] admin: 启动中两次 SIGTERM 等队列启动结束后只收尾一次；正常启动与 exitAfterInit 不退化",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#2] admin: 启动中两次 SIGINT 等队列启动结束后只收尾一次；正常启动与 exitAfterInit 不退化",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#1] payout: 启动中两次 SIGTERM 等队列启动结束后只收尾一次；正常启动与 exitAfterInit 不退化",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#2] payout: 启动中两次 SIGINT 等队列启动结束后只收尾一次；正常启动与 exitAfterInit 不退化",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#4] api: 应用/context 创建完成之前收到两次 SIGTERM，等待创建完成后只收尾一次",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#5] api: 应用/context 创建完成之前收到两次 SIGINT，等待创建完成后只收尾一次",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#4] stream: 应用/context 创建完成之前收到两次 SIGTERM，等待创建完成后只收尾一次",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#5] stream: 应用/context 创建完成之前收到两次 SIGINT，等待创建完成后只收尾一次",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#4] admin: 应用/context 创建完成之前收到两次 SIGTERM，等待创建完成后只收尾一次",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#5] admin: 应用/context 创建完成之前收到两次 SIGINT，等待创建完成后只收尾一次",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#4] payout: 应用/context 创建完成之前收到两次 SIGTERM，等待创建完成后只收尾一次",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#5] payout: 应用/context 创建完成之前收到两次 SIGINT，等待创建完成后只收尾一次",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#3] api: 启动中收到 SIGTERM 后队列启动失败仍关闭资源并自然退出 1",
+        "test/spec/platform/entry/startup-signals.int.test.ts > [AC-B1-01zl#3] payout: 启动中收到 SIGTERM 后队列启动失败仍关闭资源并自然退出 1"
+      ],
+      "expected": ["test/spec/platform/entry/startup-signals.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "5a94dd216ffe0cce1c2fd13ed7acdec71420c1e32b68a8a9ef7eee09f0f0575a"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "6f0782e405efb0d57186e395e6699e011e356a21",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
