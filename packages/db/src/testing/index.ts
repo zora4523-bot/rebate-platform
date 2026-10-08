@@ -1,5 +1,8 @@
 // Test database helper (`@couli/db/testing`), ADR-0001 §4.2 #9.
-// Requires the globalSetup `@couli/db/testing/global-setup` in the vitest config.
+// Requires the globalSetup in the vitest config, given as the relative path of the source file
+// packages/db/src/testing/global-setup.ts (e.g. '../packages/db/src/testing/global-setup.ts' in
+// test/vitest.integration.config.ts), never as the package specifier: Vitest resolves globalSetup
+// without the `couli-src` condition, so the specifier would load packages/db/dist.
 import pg from 'pg';
 import { inject } from 'vitest';
 
@@ -28,8 +31,9 @@ function context(): TestDbContext {
   // `inject` returns undefined at runtime when the globalSetup did not run.
   if ((value as TestDbContext | undefined) === undefined) {
     throw new Error(
-      'No test database context: add "@couli/db/testing/global-setup" to globalSetup ' +
-        '(integrationConfig in vitest.shared.ts).',
+      'No test database context: add the source file packages/db/src/testing/global-setup.ts ' +
+        'to globalSetup as a relative path (integrationConfig in vitest.shared.ts; see ' +
+        'test/vitest.integration.config.ts), not the package specifier.',
     );
   }
   return value;

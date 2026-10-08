@@ -123,6 +123,8 @@ function up(): void {
       `  PostgreSQL ${String(major)}（server_version_num=${versionNum}）  ${LOCAL_PG_HOST}:${String(LOCAL_PG_PORT)}，库 ${APP_DATABASE}`,
       `  Redis  ${LOCAL_PG_HOST}:${String(LOCAL_REDIS_PORT)}，maxmemory-policy=${policy}，maxmemory=${maxmemory} 字节`,
       `  DATABASE_URL=postgres://couli_app:<COULI_DB_LOCAL_PASSWORD>@${LOCAL_PG_HOST}:${String(LOCAL_PG_PORT)}/${APP_DATABASE}`,
+      `  DATABASE_READ_URL=postgres://couli_readonly:<COULI_DB_LOCAL_PASSWORD>@${LOCAL_PG_HOST}:${String(LOCAL_PG_PORT)}/${APP_DATABASE}（admin 入口必填）`,
+      `  DATABASE_MAINT_URL=postgres://couli_maint:<COULI_DB_LOCAL_PASSWORD>@${LOCAL_PG_HOST}:${String(LOCAL_PG_PORT)}/${APP_DATABASE}（worker 入口读取）`,
       `  REDIS_URL=redis://${LOCAL_PG_HOST}:${String(LOCAL_REDIS_PORT)}`,
       '  停止：pnpm dev:stack:down（保留数据）',
     ].join('\n'),
