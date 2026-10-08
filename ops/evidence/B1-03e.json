@@ -1,0 +1,111 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (risk three-dimension rate limiting, stage ⑬; BR-ID-01 判定顺序, 02 §12.2 限流, 06 Q-B4 defaults, 04 §7 42901). User / device / IP token buckets in Redis (one Lua call judges every dimension and rule first and spends only when all can pay; integer token units; keys carry TTL ≥ window and no plain identifiers), thresholds per interface group from content config (rate_limit.<group>, rate_limit.ops) with code defaults, 42901 + Retry-After, store outage refuses with alert logs, wired after ④a on the guard chain and in the idempotency post-miss hook, disabled without Redis. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents: round 1 fail (S1 the post-miss hook read thresholds through the pooled content reader inside the idempotency claim transaction; S2 IP bucket keyed by an unverified X-App-Id; S2 unkeyed sha256 identity digest), round 2 pass (thresholds read on the claim's own transaction via { pooled, on }, keyed blind-index HMAC for key identities, no regressions); S2 recorded: a config read that fails inside the claim transaction is swallowed although the transaction is already aborted (DDL window only); out-of-scope: IP bucket app_id, trustProxy"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 pooled threshold read inside the idempotency transaction — pool self-deadlock) fixed in round 2 (transaction-bound reader); round 2 pass, checklist complete, three S2 recorded in followups (config read 55P03 aborts the claim, anonymous X-App-Id rotation gives a fresh IP bucket, trustProxy not configured — deployment)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 rounds: round 2 changed nothing because the brief forbade touching the fixture file, round 3 made the idempotent probe answer code 0 so replay cases exercise a stored result) reviewed by fresh Claude subagents: round 1 pass with four S2 (rejected requests must not spend other buckets, TTL not shorter than the window, #17 device header not really exercised, boundary cases need integer tokens — carried into the implementation brief), round 2 pass; the orchestrator fixed the x-channel literal to the contract enum and squashed the Codex rounds into one test commit"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-03e",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "039b060d8196b029dfbc4d27d8bdec870e4a0797",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "039b060d8196b029dfbc4d27d8bdec870e4a0797",
+      "tree": "5a24fa8ece3a228163eab20b8d0ed8b32e93243c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T18:48:32Z",
+      "finished_at": "2026-10-08T18:48:52Z",
+      "red_tests": [
+        "test/spec/risk/rate-limit/buckets.int.test.ts > [AC-B1-03e#1] 两个进程句柄并发只放行 N 次，第 N+1 次限流，键有 app/group/dim 与 TTL",
+        "test/spec/risk/rate-limit/buckets.int.test.ts > [AC-B1-03e#2] 按注入时钟连续补充而非整分钟清零；不足一枚时 Retry-After 向上取整",
+        "test/spec/risk/rate-limit/buckets.int.test.ts > [AC-B1-03e#3] 同组分钟与每日规则各自保存余额，分钟已补满仍被每日桶拒绝",
+        "test/spec/risk/rate-limit/buckets.int.test.ts > [AC-B1-03e#4] user 独立成桶：其他维度全换仍拒绝，只换本维度才能放行",
+        "test/spec/risk/rate-limit/buckets.int.test.ts > [AC-B1-03e#4] device 独立成桶：其他维度全换仍拒绝，只换本维度才能放行",
+        "test/spec/risk/rate-limit/buckets.int.test.ts > [AC-B1-03e#4] ip 独立成桶：其他维度全换仍拒绝，只换本维度才能放行",
+        "test/spec/risk/rate-limit/buckets.int.test.ts > [AC-B1-03e#5] 三维同时启用，任一维度耗尽就拒绝；匿名无设备仅计 IP",
+        "test/spec/risk/rate-limit/buckets.int.test.ts > [AC-B1-03e#6] 设备取 principal 优先，无令牌时取 verifiedDevice；app 和 group 隔离",
+        "test/spec/risk/rate-limit/http.int.test.ts > [AC-B1-03e#13] AppModule 经 content 读取 ops 和阈值，HTTP 42901/Retry-After 符合契约，不写 risk_hits",
+        "test/spec/risk/rate-limit/http.int.test.ts > [AC-B1-03e#14] 真签名非幂等接口：①②③失败不扣令牌，④a低版本优先于已耗尽的⑬",
+        "test/spec/risk/rate-limit/http.int.test.ts > [AC-B1-03e#15] 真签名幂等 execute：回放不扣桶，未命中在④a之后，429不占键",
+        "test/spec/risk/rate-limit/http.int.test.ts > [AC-B1-03e#15] 真签名幂等 executeInTransaction：回放不扣桶，未命中在④a之后，429不占键",
+        "test/spec/risk/rate-limit/http.int.test.ts > [AC-B1-03e#16] 匿名签名取 verifiedDevice；没有用户也不能绕过设备桶",
+        "test/spec/risk/rate-limit/http.int.test.ts > [AC-B1-03e#17] 实际 searchProducts 用客户端 IP；匿名不读未验证设备头，换 IP 才获得新桶",
+        "test/spec/risk/rate-limit/http.int.test.ts > [AC-B1-03e#18] 关闭 Redis 的无签名受限接口拒绝 42901 + Retry-After:1，并发仅首次 error",
+        "test/spec/risk/rate-limit/http.int.test.ts > [AC-B1-03e#19] 未分组接口多次请求仍不限流，默认接口不会因此漏装 guard",
+        "test/spec/risk/rate-limit/outage.int.test.ts > [AC-B1-03e#12] Redis connect_failed 拒绝并告警，配置读取失败与存储失败不混淆",
+        "test/spec/risk/rate-limit/outage.int.test.ts > [AC-B1-03e#12] Redis command_timeout 拒绝并告警，配置读取失败与存储失败不混淆",
+        "test/spec/risk/rate-limit/outage.int.test.ts > [AC-B1-03e#12] Redis command_failed 拒绝并告警，配置读取失败与存储失败不混淆",
+        "test/spec/risk/rate-limit/policies.int.test.ts > [AC-B1-03e#7] missing 配置退回转链默认每用户 30/分钟，两种 operation 共用桶",
+        "test/spec/risk/rate-limit/policies.int.test.ts > [AC-B1-03e#7] malformed 配置退回转链默认每用户 30/分钟，两种 operation 共用桶",
+        "test/spec/risk/rate-limit/policies.int.test.ts > [AC-B1-03e#7] unreadable 配置退回转链默认每用户 30/分钟，两种 operation 共用桶",
+        "test/spec/risk/rate-limit/policies.int.test.ts > [AC-B1-03e#8] 转链默认每日容量 500 确实生效，分钟桶补满不能绕过每日桶",
+        "test/spec/risk/rate-limit/policies.int.test.ts > [AC-B1-03e#9] 搜索默认每用户 60/分钟、每 IP 120/分钟；换用户不重置 IP 桶",
+        "test/spec/risk/rate-limit/policies.int.test.ts > [AC-B1-03e#10] 配置覆盖默认，ops 映射原不限流接口；无分组接口无 Redis 键",
+        "test/spec/risk/rate-limit/policies.int.test.ts > [AC-B1-03e#11] 默认不分组 Agent、发码、设备注册与 admin 入口",
+        "test/spec/risk/rate-limit/policies.test.ts > [AC-B1-03e#20] 默认映射及阈值精确来自 06 Q-B4，其他维度没有臆造默认值",
+        "test/spec/risk/rate-limit/policies.test.ts > [AC-B1-03e#21] missing 的 ops/阈值读取回落默认，未知接口仍不分组",
+        "test/spec/risk/rate-limit/policies.test.ts > [AC-B1-03e#21] invalid-json 的 ops/阈值读取回落默认，未知接口仍不分组",
+        "test/spec/risk/rate-limit/policies.test.ts > [AC-B1-03e#21] read-failed 的 ops/阈值读取回落默认，未知接口仍不分组",
+        "test/spec/risk/rate-limit/policies.test.ts > [AC-B1-03e#22] 配置按 app 隔离并覆盖接口映射；规则列表三维分别读取"
+      ],
+      "expected": [
+        "test/spec/risk/rate-limit/buckets.int.test.ts",
+        "test/spec/risk/rate-limit/http.int.test.ts",
+        "test/spec/risk/rate-limit/outage.int.test.ts",
+        "test/spec/risk/rate-limit/policies.int.test.ts",
+        "test/spec/risk/rate-limit/policies.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "353563af6388439a2658a7da0b74ffe425be39a322955ac47c10f96e9a02e668"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b8dc485dbb1ffaa2c62964f62bece81dd25a214fefa28a5d4440a932f9644752"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "a83033f013d1c83b407d891fed77a21ccd9c2ef0",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
