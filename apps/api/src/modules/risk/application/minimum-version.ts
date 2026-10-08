@@ -247,8 +247,18 @@ export const MINIMUM_VERSION_SCOPE = new AsyncLocalStorage<MinimumVersionScope>(
 /** One HTTP request in MINIMUM_VERSION_SCOPE. */
 export interface MinimumVersionScope {
   readonly request: MinimumVersionRequest;
+  /**
+   * The Fastify reply of the request, where later stages judged in the post-miss hook set
+   * response headers (stage ⑬: Retry-After). Absent outside the risk interceptor.
+   */
+  readonly reply?: { header(name: string, value: string): unknown } | undefined;
   /** Set by the entry observer when the IDEMPOTENCY instance received this request. */
   idempotencyEntered: boolean;
+}
+
+/** The contract operation of the request's route (method + Fastify template); undefined outside it. */
+export function contractRouteOf(request: MinimumVersionRequest): MinimumVersionRoute | undefined {
+  return routeOf(request);
 }
 
 /** Whether the contract marks the request's operation x-idempotent (judged by the hook). */
