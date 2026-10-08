@@ -154,6 +154,28 @@ describe('createUnionAuthUrl site authorization of the account in use', () => {
     });
     expect(inserts).toEqual([]);
   });
+
+  it('[AC-B1-06t#4] pdd: the bound account expired → 50301 maintenance (HTTP 503) even while another account is valid', async () => {
+    const { auth, inserts, getActivePid } = setup({
+      client: 'android',
+      accounts: [
+        { id: VALID_ACCOUNT, platform: 'pdd', auth_status: 'active' },
+        { id: EXPIRED_ACCOUNT, platform: 'pdd', auth_status: 'expired' },
+      ],
+      bindings: [{ status: 'invalid', union_account_id: EXPIRED_ACCOUNT }],
+      pidAccount: VALID_ACCOUNT,
+    });
+    const result = await auth.get({ platform: 'pdd', reportedClient: 'android', traceId: TRACE });
+    expect(result.status).toBe(503);
+    expect(result.envelope).toEqual({
+      code: 50301,
+      msg: expect.any(String),
+      data: { reason: 'maintenance' },
+      trace_id: TRACE,
+    });
+    expect(getActivePid).not.toHaveBeenCalled();
+    expect(inserts).toEqual([]);
+  });
 });
 
 /** A synthetic apps.json declaring a pdd scheme, so the matrix has a scheme step to order. */
