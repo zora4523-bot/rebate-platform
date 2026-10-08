@@ -72,6 +72,7 @@ export type {
   UnlinkedCard,
 } from './application/card-assembler.ts';
 export { createItemRefService } from './application/item-ref.ts';
+export { processItemRefCipher } from './infra/process-item-ref-cipher.ts';
 export type {
   ItemRefClaims,
   ItemRefOptions,
