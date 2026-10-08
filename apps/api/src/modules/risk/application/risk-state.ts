@@ -15,7 +15,10 @@
 // this service invalidates its key at once and marks it pending until a read sees the written
 // row_version (i.e. the writer committed): until then reads go to the database and are not
 // cached, so a concurrent read of the old value cannot leave a stale entry behind, and a rolled
-// back write never leaks into the cache. A cache entry keeps the row_version it holds as the key's
+// back write never leaks into the cache. Time is no evidence of a rollback (a slow reply of the
+// old value may arrive long after the commit), so a pending mark has no timeout: a write that is
+// never seen (rolled back, or its writer died) leaves its key reading the database, uncached,
+// until a read sees that version or a later change of the key replaces the mark. A cache entry keeps the row_version it holds as the key's
 // high-water mark (row_version only grows), so a late read of an older version never replaces a
 // newer entry, and reads in flight when a write becomes visible lose the right to fill the cache.
 // Before any write the change is checked against the transition table
@@ -212,7 +215,6 @@ interface CacheEntry {
 interface Pending {
   /** row_version the uncommitted (or rolled back) write produced. */
   readonly version: number;
-  readonly at: number;
 }
 
 function keyOf(subject: RiskSubject): string {
@@ -299,9 +301,10 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     const after = nowMs();
     const write = pending.get(key);
     if (write !== undefined) {
+      // Only the written row_version being visible clears the mark; elapsed time never does (a
+      // slow reply of the value from before the commit is not a rollback): no cache fill here.
       const committed = loaded.version !== null && loaded.version >= write.version;
-      // A write still invisible after the TTL was rolled back (or is a very long transaction).
-      if (!committed && within(write.at, after)) return loaded.snapshot;
+      if (!committed) return loaded.snapshot;
       pending.delete(key);
       // Reads still in flight may hold the value from before the write: they lose the right to
       // fill the cache (this read's own snapshot is at least the written version).
@@ -371,7 +374,14 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     const key = keyOf(subject);
     generation += 1;
     cache.delete(key);
-    pending.set(key, { version: written, at: nowMs() });
+    pending.delete(key);
+    if (pending.size >= CACHE_MAX_ENTRIES) {
+      // Bounded like the cache. Dropping the oldest mark re-allows caching of its key, so reads
+      // in flight lose the right to fill the cache (they may hold the value before that write).
+      const oldest = pending.keys().next();
+      if (oldest.done !== true) pending.delete(oldest.value);
+    }
+    pending.set(key, { version: written });
     await events.publish(trx, {
       appId: subject.app_id,
       name: 'risk.state_changed',

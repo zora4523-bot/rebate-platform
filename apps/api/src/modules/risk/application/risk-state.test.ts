@@ -160,16 +160,50 @@ it('[B1-03h §10] after a change the cache is bypassed until the written version
   }
 });
 
-it('[B1-03h §10] a write never seen (rolled back) stops bypassing the cache after 60 seconds', async () => {
+it('[B1-03h §12] a write never seen (rolled back) keeps its key reading the database after 60 seconds, uncached', async () => {
   const f = scripted();
   try {
     await f.db.transaction().execute((trx) => f.service.setRiskState(trx, BAN));
     await f.service.readRiskState(SUBJECT);
     const n = f.reads().length;
     f.clock.advanceMs(60_001);
-    await f.service.readRiskState(SUBJECT);
-    await f.service.readRiskState(SUBJECT);
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('normal');
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('normal');
+    expect(f.reads()).toHaveLength(n + 2);
+    // The written version shows up at last: the mark clears and the key is cached again.
+    f.state.row = { state: 'banned', reason_category: 'other', frozen_until: null, row_version: 0 };
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('banned');
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('banned');
+    expect(f.reads()).toHaveLength(n + 3);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[B1-03h §12] a read of the old value that returns more than 60 seconds after the write does not refill the cache', async () => {
+  const f = scripted();
+  try {
+    f.state.row = { state: 'normal', reason_category: null, frozen_until: null, row_version: 4 };
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('normal');
+    // Written banned/v5, not committed yet: the slow read A takes normal/v4.
+    await f.db.transaction().execute((trx) => f.service.setRiskState(trx, BAN));
+    const slow = gate();
+    f.state.hold = slow.hold;
+    const before = f.reads().length;
+    const a = f.service.readRiskState(SUBJECT);
+    await vi.waitFor(() => expect(f.reads()).toHaveLength(before + 1));
+    // Committed; A replies only after the pending mark is older than 60 seconds.
+    f.state.row = { state: 'banned', reason_category: 'other', frozen_until: null, row_version: 5 };
+    f.clock.advanceMs(60_001);
+    slow.open();
+    expect((await a).state).toBe('normal');
+    // Nothing stale was cached: the next request reads the database and sees banned.
+    const n = f.reads().length;
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('banned');
     expect(f.reads()).toHaveLength(n + 1);
+    await expect(f.service.checkRequest(request('/v1/products/search'))).rejects.toBeInstanceOf(
+      RiskStateBannedException,
+    );
   } finally {
     await f.db.destroy();
   }
