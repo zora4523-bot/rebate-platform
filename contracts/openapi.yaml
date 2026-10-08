@@ -3526,7 +3526,6 @@ paths:
       x-auth: optional
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 30141
         - 30143
