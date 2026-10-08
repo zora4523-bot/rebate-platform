@@ -8,7 +8,8 @@ type: impl
 # 改法（编排者裁定，记 couli-runs/B1-01zh/decision-orchestrator.md）：completed 写入遇连接或数据库错误时有界重试（总时长有上限，
 # 不阻塞关停）；仍失败则不删行、不改行，抛 IdempotencyError('outcome_unknown')（HTTP 层已有：断开连接、不回包，同事务模式），
 # 并记一行不含请求体与键值的 error 日志。处理函数抛错 / 结果不存储时删行的现有行为不变；行已被接管时 idempotency_record_lost 不变。
-# 租约到期后的接管规则不在本任务改（业务唯一约束仍是最后一道，规划/02 §18）；文件头注释写明「按次计费的外部调用应走 executeInTransaction」。
+# 租约到期后的接管规则不在本任务改（业务唯一约束仍是最后一道，规划/02 §18）。本任务只让结果诚实（不谎报失败），不保证外部调用只执行一次：
+# 事务模式只原子保护同库写入，外部计费调用仍需各自的幂等与恢复（文件头如实写明，不写「改用事务模式即可」）。
 # 规则测试（Codex 先写、先红，新文件）：completed 写入失败一次后成功 → 原响应、行 completed；一直失败 → outcome_unknown、
 # 行仍 processing、处理函数只调一次、日志无请求体与键值；事务模式不受影响。
 refs: []

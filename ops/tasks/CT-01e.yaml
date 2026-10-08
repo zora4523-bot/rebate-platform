@@ -6,7 +6,8 @@ type: contract
 # followups/staging-b1-01zc-zd.md 第 6–8 条（CT-08d 两家评审 S2）。
 # ① openapi.yaml：components/headers 加 X-Trace-Id（值同响应体 trace_id，格式同 TraceId），每个响应引用它（或按 contracts/README 的写法统一声明）；
 # 规划只要求「响应头 X-Trace-Id 回传客户端」（02 日志一行），没有跨域设计，不加 Access-Control-Expose-Headers（编排者裁定，记 decision-orchestrator.md）。
-# ② 三个 SSE 例子用 `|+` 或补空行，使最后一帧以空行结束；新规则测试按原样解析、不 trim（已冻结的 agent-http/stream.test.ts 不改，仍应通过）。
+# ② 三个 SSE 例子的最后一帧要以空行结束：契约读取器 parseYamlLite 拒绝 `|+`、`|` 块又会裁掉尾部空行，所以改用带显式 \n 的双引号字符串
+# （README 规则 16 的例子写法同步）；新规则测试按原样解析、不 trim（已冻结的 agent-http/stream.test.ts 不改，仍应通过）；不改 tools/。
 # ③ packages/contracts-ts/scripts/conformance.ts 读响应 content 前解引用 $ref（共享响应加 SSE 也能查到）。
 # ④ README 规则 16 写的「200 只有 text/event-stream」与 Cache-Control 必填：conformance 补这两项检查（不改文字），已有契约须照样通过。
 # ⑤ bridge.schema.json signedRequest 的 path 正则不再放行空段（/v1//x、/v1/、尾部 /），重新生成 contracts-ts。

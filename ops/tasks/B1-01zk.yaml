@@ -9,7 +9,7 @@ type: migration
 # ② event_log 删除旧分区前的锁内复查（no row created_at ≥ cutoff）现对整个分区全表扫描、期间挡住 event_log 写入：
 # 改为走索引（新迁移给 event_log 加 (created_at) 分区索引，表现在很小，可在迁移内建）或先锁外预查、锁内只做有界检查；BR-ID-30 的 created_at 口径不变。
 # 两段式：先只写迁移（全局串行；0022 = B3-09b 在途，本任务取其后的下一个空号，落地前核对），编排者在沙箱外 db:snapshot 并提交生成物，再派模块实现。
-# refs 为空，理由同 B1-01j / B1-01s（BR-ID-30 整条渲染后任务书超 24KB），编排者在任务书摘录 BR-ID-30 ② 与 ⑱ 前后原文。
+# refs 为空，理由同 B1-01j / B1-01s（BR-ID-30 整条渲染后任务书超 24KB），编排者在任务书摘录 BR-ID-30 正文的通用删除截止口径、② 与 ⑯（event_log 190 天）原文。
 refs: []
 refs_hash: {}
 deps: [B1-01s, B1-01w]
