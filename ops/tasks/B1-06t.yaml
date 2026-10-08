@@ -6,8 +6,8 @@ type: impl
 # 拼多多站长授权失效、生成备案链接的接口依赖该授权时，GET /v1/unions/pdd/auth-url 返回 50301（data.reason=maintenance），不套用淘宝特例；本批演示适配器下拼多多授权链接按依赖该授权处理。
 # 现状：B1-06g（#296）对两个平台都回 30101 / 30102 auth_unavailable；已冻结的 [AC-B1-06g#6] 只断言淘宝，不需要 test-change；源码旁单测 union-auth-url.test.ts 若含拼多多旧码随实现改。
 # 不变：淘宝站长授权不可用仍 30101 / 30102 auth_unavailable；绑定 blocked 且用户未封禁仍先回 30153（两平台）；「本次所用账号」判定沿 B1-06g（绑定的账号，否则 active self_buy 推广位的账号）。
-# 规则测试（新增 test/spec/linking/auth-url-pdd/**，连库 HTTP，夹具照 auth-url/kit.ts 写法、不改冻结 kit）：拼多多所用账号 expired，用户绑定 absent / unbound / pending_auth / released / invalid 各一例 → 50301、data.reason=maintenance、ErrorEnvelope 合法、
-# 无 auth_url / state / auth_jump、union_auth_sessions 不写行；同一夹具下淘宝仍为 30101 / 30102 auth_unavailable（防误改淘宝）；拼多多 blocked 且用户 normal 仍 30153；另一拼多多账号有效不掩盖所用账号失效。
+# 规则测试（新增 test/spec/linking/auth-url-pdd/**，连库 HTTP，夹具照 auth-url/kit.ts 写法、不改冻结 kit）：拼多多所用账号 expired，用户绑定 absent / unbound / pending_auth / released / invalid / active 各一例 → HTTP 503、50301、data.reason=maintenance、ErrorEnvelope 合法、
+# 无 auth_url / state / auth_jump、union_auth_sessions 不写行；同一夹具下淘宝仍为 30101 / 30102 auth_unavailable、HTTP 状态不变（防误改淘宝）；拼多多 blocked 且用户 normal 仍 30153；另一拼多多账号有效不掩盖所用账号失效。
 # 契约同步：openapi.yaml getUnionAuthUrl 的 x-error-codes 加 50301、说明补拼多多一句（只改文字与列表，不改形状），pnpm contracts:codegen 重生成 openapi.gen.ts（先例 B1-06p）。
 # refs 留空：新句晚于当前 SPEC_REF，依据由编排者摘入任务书第 2 节。linking/** 串行（排在 B1-06h 实现之前）。风险：linking RV2（用户授权边界）、openapi.yaml RV1。
 refs: []
