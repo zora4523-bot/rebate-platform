@@ -1,0 +1,25 @@
+id: B3-02f
+repo: rebate-platform
+title: ModelGateway 非计费错误转调去重：回放层先认领失败用量，计费外层原样转交不重复记账
+type: impl
+# 2026-10-08 Codex 独立并行领取；承接 B3-02e Claude r1 S2，非计费内层错误穿过计费外层时误记用量。
+# 属 B3-02 整行例外（approvals 第 23 条）；Claude 先写规则测试、先红，Codex 实现，Claude 新会话对抗评审，RV2 补独立 Codex 评审。
+# 只处理同一 Error 对象携带合法 usage 的失败归属；回放层不记账，真实计费层仍按调用完成时刻计量一次。
+# 保留原错误身份；不改成功响应计量、厂商授权、预算口径、Agent 受理协议或共享契约。
+# B3-02e 已于 PR #256 合并（远端 main 可查），旧台账 todo 不代表未完成。
+refs: [BR-AI-14]
+refs_hash:
+  BR-AI-14: 94c980b637dc
+deps: [B3-02e]
+paths:
+  - 'apps/api/src/modules/agent/model-gateway/vendors/gateway.ts'
+  - 'apps/api/src/modules/agent/model-gateway/vendors/billing.ts'
+test_paths:
+  - 'test/spec/agent/model-relay-metering/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/model-relay-metering/**'
+status: todo
+pr: null
