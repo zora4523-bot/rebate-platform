@@ -1,22 +1,24 @@
 id: CT-06c
 repo: rebate-platform
-title: 迁移门禁扩范围——资金与归属表清单补 processed_events、idempotency_keys、appeals；资金表上的触发器、约束、索引不得删除或停用（同一迁移按同名重建的除外）
+title: 迁移门禁扩范围——资金表清单补 processed_events、idempotency_keys；资金表上的触发器、约束、索引不得删除或停用（同一迁移按同名重建的除外），DROP … CASCADE 一律拒，资金表触发器所用函数不得替换或删除
 type: guard-change
 # 2026-10-08 入账（负责人同日「把迁移门禁的后续缺口开成任务继续做」；couli docs/changes/20261007-基础设施开源接入规划.md §7 的两条范围外项）。
 # 依据：02 §16.3「资金表禁止 DROP、改类型、RENAME」——账本只追加触发器、幂等唯一约束、去重唯一索引是资金表的一部分，删掉或停用等于绕过只追加与幂等；
-# 04 §3.2：processed_events 是消费去重（与副作用同事务）、idempotency_keys 是写接口幂等（含提现，BR-WDR-07）、appeals 含订单申诉（归属）。只收紧，不放宽。
+# 04 §3.2：processed_events 是消费去重（与副作用同事务）、idempotency_keys 是写接口幂等（含提现，BR-WDR-07）。只收紧迁移门禁，不改 08 任何 BR、不改金额与订单归属规则
+# （台账评审 Codex P1：approvals 第 24 条把归属规则改动排除在常设授权外——本任务不碰归属规则；appeals 是否算归属表涉及归属口径，不在本任务，留作候选）。
 # 包装契约（规则测试按此写；CT-06a、CT-06b 的规则测试保持不改、继续通过，本任务只新增 test/spec/db/lint-migrations/ 下的文件）：
-# ① FUNDS_TABLE_NAMES 增加 processed_events、idempotency_keys、appeals（整名匹配），isFundsTable 对三者为真；清单测试对照 db/schema.sql 现有表。
-# ② checkMigration 新增自检（命中即 stderr、退出 1、不跑 squawk；无论有无 squawk-ignore）：
-#    - `DROP TRIGGER [IF EXISTS] <名> ON <资金表>` 报 `trigger <名> on funds or attribution table <裸表名>`，除非同一文件之后有
-#      `CREATE [OR REPLACE] [CONSTRAINT] TRIGGER <同名> … ON <同一表>`；
-#    - `ALTER TABLE <资金表> DISABLE TRIGGER …`（含 ALL / USER）一律报 `trigger … on funds or attribution table <裸表名>`；
-#    - `ALTER TABLE <资金表> DROP CONSTRAINT [IF EXISTS] <名>` 报 `constraint <名> on funds or attribution table <裸表名>`，除非同一文件之后对同一表
+# ① FUNDS_TABLE_NAMES 增加 processed_events、idempotency_keys（整名匹配），isFundsTable 对两者为真、对 appeals 仍为假；清单测试对照 db/schema.sql 现有表。
+# ② checkMigration 新增自检（命中即 stderr、退出 1、不跑 squawk；无论有无 squawk-ignore）： - `DROP TRIGGER [IF EXISTS] <名> ON <资金表>` 报 `trigger <名> on funds or attribution table <裸表名>`，除非同一文件之后有`CREATE [OR REPLACE] [CONSTRAINT] TRIGGER <同名> … ON <同一表>`；- `ALTER TABLE <资金表> DISABLE TRIGGER …`（含 ALL / USER）一律报 `trigger … on funds or attribution table <裸表名>`；- `ALTER TABLE <资金表> DROP CONSTRAINT [IF EXISTS] <名>` 报 `constraint <名> on funds or attribution table <裸表名>`，除非同一文件之后对同一表
 #      `ADD CONSTRAINT <同名>`；
 #    - `DROP INDEX [CONCURRENTLY] [IF EXISTS] <名>[, …]`：索引所属表按 db/schema.sql 与已有迁移里的 `CREATE [UNIQUE] INDEX … <名> ON <表>` 与约束推出
 #      （导出 indexOwners(schemaSql, migrationsSql[]) → Map<索引名, 表名>；查不到时按索引名前缀套资金表规则），属资金表的报
 #      `index <名> on funds or attribution table <裸表名>`，除非同一文件之后 `CREATE [UNIQUE] INDEX <同名> ON <同一表>`。
-# ③ db/AGENTS.md 第 11 条同步一句：资金与归属表上的触发器、约束、索引只能在同一迁移里按同名重建，不得只删或停用。
+#    - 任何 `DROP … CASCADE`（表、函数、类型、约束、索引、模式等）一律报 `DROP … CASCADE is not accepted`：级联会连带删掉资金表上依赖它的触发器、外键与
+#      约束（台账评审 Codex P1：`DROP FUNCTION app.reject_update_delete() CASCADE` 会删掉 order_keys 等表的只追加触发器）；依赖须显式逐个处理。
+#    - 资金表触发器所执行的函数（由 db/schema.sql 与已有迁移的 `CREATE TRIGGER … ON <资金表> … EXECUTE FUNCTION|PROCEDURE <函数>` 推出；导出
+#      fundsTriggerFunctions(schemaSql, migrationsSql[]) → Set<函数名>，去 schema 与引号后比较）不得 `DROP FUNCTION`、`CREATE OR REPLACE FUNCTION`、
+#      `ALTER FUNCTION … RENAME / OWNER / SET SCHEMA`，报 `function <名> guards funds or attribution table <裸表名>`。
+# ③ db/AGENTS.md 第 11 条同步一句：资金表上的触发器、约束、索引只能在同一迁移里按同名重建，不得只删或停用；不接受 DROP … CASCADE；资金表触发器函数不得替换或删除（要改走 guard-change）。
 # 碰 tools/**、db/AGENTS.md（第三类保护路径），合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
 refs: []
 refs_hash: {}
