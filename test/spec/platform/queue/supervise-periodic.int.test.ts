@@ -12,6 +12,11 @@
 // must be at least 60 s old (pgboss.queue.monitor_claim_on, else monitor_on); the tests move those
 // stamps back by the same 60 s plus margin, the database half of the same elapsed time. Job expiry
 // itself is real: started_on lies an hour in the past, expireInSeconds of the test catalog is 60.
+// Because shouldAdvanceTime keeps the fake clock moving with wall time, #1 judges recovery inside a
+// window only: it measures wall time from just before start() (the fake clock can be no further
+// ahead of start() than that wall time plus ELAPSED_MS) and stops looking once a pass on a longer
+// period (NEXT_PERIOD_MS) could have fired. A runtime whose period exceeds 60 s plus the margin
+// is therefore red, not merely slower.
 import { randomUUID } from 'node:crypto';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
@@ -22,6 +27,25 @@ import { closeObserver, observerOn, setupOn, stateOf, teardown, type Setup } fro
 
 /** 60 s supervise interval plus margin. */
 const ELAPSED_MS = 65_000;
+
+/** The shortest wrong period #1 must tell apart from 60 s. */
+const NEXT_PERIOD_MS = 90_000;
+
+/** Wall time after start() during which no NEXT_PERIOD_MS pass can fire (5 s margin). */
+const WINDOW_MS = NEXT_PERIOD_MS - ELAPSED_MS - 5_000;
+
+/**
+ * Polls `ready` every 50 ms while performance.now() is before `deadline` (real wall time: only
+ * setTimeout / clearTimeout are faked); whether it got true in time. A check that starts after the
+ * deadline does not count.
+ */
+async function trueBefore(ready: () => Promise<boolean>, deadline: number): Promise<boolean> {
+  while (performance.now() < deadline) {
+    if ((await ready()) && performance.now() < deadline) return true;
+    await sleep(50);
+  }
+  return false;
+}
 
 async function withDatabase<T>(run: (database: TestDatabase) => Promise<T>): Promise<T> {
   const database = await createTestDatabase();
@@ -63,6 +87,8 @@ it('[AC-B1-01zm#1] worker 启动之后（启动时那一轮监管已过）才出
         // No handler is registered, so nothing fetches: a job leaves `active` only by supervision.
         const worker = setupOn(database, 'worker');
         setups.push(worker);
+        // Taken before start() arms pg-boss's timer: the fake clock then is at most this far along.
+        const deadline = performance.now() + WINDOW_MS;
         await worker.runtime.start();
         const send = async (queue: string, key?: string): Promise<string> =>
           (await worker.runtime.send(
@@ -85,11 +111,11 @@ it('[AC-B1-01zm#1] worker 启动之后（启动时那一轮监管已过）才出
           live: await stateOf(observer, 't-wide', live),
         };
         await vi.advanceTimersByTimeAsync(ELAPSED_MS);
-        const recovered = await waitFor(
+        const recovered = await trueBefore(
           async () =>
             (await stateOf(observer, 't-std', ids.std)) !== 'active' &&
             (await stateOf(observer, 't-pay', ids.pay)) !== 'active',
-          30_000,
+          deadline,
         );
         return {
           before,

@@ -5,6 +5,9 @@
 // runEntry runs in this process (it opens the api port on the loopback); the only seam is a spy on
 // bootstrap's createHttpApp that calls the real one and keeps the app it returns, so the test can
 // reach JOB_QUEUE and close the app afterwards. Top-level it() only (规划/11 §4.3).
+// API_PORT must be 1–65535 (port 0 is rejected by the config), so the port is probed free first;
+// another test may take it before the api binds, so a start whose listen failed with EADDRINUSE
+// is retried on a fresh port, a bounded number of times. Any other failure is not retried.
 import { createServer } from 'node:net';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { expect, it, vi } from 'vitest';
@@ -15,6 +18,7 @@ import { closeObserver, jobRows, observerOn } from './int-kit.ts';
 // Computed imports keep Nest decorators outside the spec project's erasable-only typecheck.
 interface App {
   get(token: unknown): unknown;
+  listen(...args: unknown[]): Promise<unknown>;
   close(): Promise<void>;
 }
 interface Bootstrap {
@@ -22,6 +26,9 @@ interface Bootstrap {
 }
 const href = (file: string): string =>
   new URL(`../../../../apps/api/src/${file}`, import.meta.url).href;
+
+/** Starts of runEntry that may be lost to a port taken between probe and bind. */
+const MAX_STARTS = 5;
 
 async function withDatabase<T>(run: (database: TestDatabase) => Promise<T>): Promise<T> {
   const database = await createTestDatabase();
@@ -61,7 +68,6 @@ it('[AC-B1-01zm#3] 真实 api 入口（runEntry）连库启动后：经 JOB_QUEU
           LOG_LEVEL: 'silent',
           COULI_EXIT_AFTER_INIT: '0',
           API_HOST: '127.0.0.1',
-          API_PORT: String(await freePort()),
           DATABASE_URL: database.urlFor('couli_app'),
           REDIS_URL: 'redis://127.0.0.1:1/0',
         })) {
@@ -79,12 +85,22 @@ it('[AC-B1-01zm#3] 真实 api 入口（runEntry）连库启动后：经 JOB_QUEU
         ]) {
           vi.stubEnv(key, undefined);
         }
-        process.exitCode = undefined;
         const boot = (await import(href('bootstrap.ts'))) as Bootstrap;
         const create = boot.createHttpApp.bind(boot);
+        // The listen error of the current start, recorded (and rethrown) to tell a lost port apart.
+        let listenError: unknown;
         vi.spyOn(boot, 'createHttpApp').mockImplementation(async (...args: unknown[]) => {
           const app = await create(...args);
           apps.push(app);
+          const listen = app.listen.bind(app);
+          app.listen = async (...listenArgs: unknown[]) => {
+            try {
+              return await listen(...listenArgs);
+            } catch (error) {
+              listenError = error;
+              throw error;
+            }
+          };
           return app;
         });
         const platform = (await import(href('modules/platform/index.ts'))) as Record<
@@ -94,7 +110,19 @@ it('[AC-B1-01zm#3] 真实 api 入口（runEntry）连库启动后：经 JOB_QUEU
         const runner = (await import(href('entry.ts'))) as {
           runEntry(entry: 'api'): Promise<void>;
         };
-        await runner.runEntry('api');
+        let started = 0;
+        for (;;) {
+          started += 1;
+          listenError = undefined;
+          apps.length = 0;
+          process.exitCode = undefined;
+          vi.stubEnv('API_PORT', String(await freePort()));
+          await runner.runEntry('api');
+          const lostPort =
+            process.exitCode === 1 &&
+            (listenError as { code?: unknown } | undefined)?.code === 'EADDRINUSE';
+          if (!lostPort || started >= MAX_STARTS) break;
+        }
         const exitCode = process.exitCode;
         const queue = apps[0]?.get(platform['JOB_QUEUE']) as JobQueue | undefined;
         const id =
