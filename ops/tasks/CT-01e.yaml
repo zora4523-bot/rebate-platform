@@ -1,0 +1,31 @@
+id: CT-01e
+repo: rebate-platform
+title: 契约小修：声明响应头 X-Trace-Id；SSE 例子保留结尾空行；conformance 解引用 $ref 响应；README 规则 16 与实际检查对齐；bridge signedRequest 路径不许空段
+type: contract
+# 2026-10-09 入账（会话 b1-followups-3）。来源：followups/INDEX.md F-03（P2，B1-01r 只做了实现）、F-10（P2，CT-03 后续）；
+# followups/staging-b1-01zc-zd.md 第 6–8 条（CT-08d 两家评审 S2）。
+# ① openapi.yaml：components/headers 加 X-Trace-Id（值同响应体 trace_id，格式同 TraceId），每个响应引用它（或按 contracts/README 的写法统一声明）；
+# 规划只要求「响应头 X-Trace-Id 回传客户端」（02 日志一行），没有跨域设计，不加 Access-Control-Expose-Headers（编排者裁定，记 decision-orchestrator.md）。
+# ② 三个 SSE 例子用 `|+` 或补空行，使最后一帧以空行结束；新规则测试按原样解析、不 trim（已冻结的 agent-http/stream.test.ts 不改，仍应通过）。
+# ③ packages/contracts-ts/scripts/conformance.ts 读响应 content 前解引用 $ref（共享响应加 SSE 也能查到）。
+# ④ README 规则 16 写的「200 只有 text/event-stream」与 Cache-Control 必填：conformance 补这两项检查（不改文字），已有契约须照样通过。
+# ⑤ bridge.schema.json signedRequest 的 path 正则不再放行空段（/v1//x、/v1/、尾部 /），重新生成 contracts-ts。
+# 合并后编排者回写规划 04 §6.5（鉴权列 optional）、§7（30502 data）（CT-08d/plan.md §7）与本条 ①⑤。契约槽全局 1 个。
+refs: []
+refs_hash: {}
+contract_sections: ['5', '9']
+deps: [CT-08d, CT-03]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/bridge.schema.json'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+test_paths:
+  - 'test/spec/contracts/hygiene/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/hygiene/**'
+status: todo

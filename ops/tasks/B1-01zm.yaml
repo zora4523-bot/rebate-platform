@@ -1,0 +1,20 @@
+id: B1-01zm
+repo: rebate-platform
+title: 队列规则测试补缺（只新增文件）：60 秒监管回收运行中过期任务、只起 payout 时不回收别的队列、真实 api 入口连库后经 JOB_QUEUE 能 send、started 后未收到信号不自行退出
+type: test-change
+# 2026-10-09 入账（会话 b1-followups-3，followups/INDEX.md F-06，P2；来源 followups/B1-01g-queue-test-gaps.md B1-01g 节第 1–4 条）。
+# 现有行为已实现（B1-01g、B1-01n），缺的是规则测试；只新增 test/spec/platform/queue/ 下文件，不改已有测试与实现，不需要批准标签。
+# 新测试对现有实现应为绿（不走先红：先红只用于先写测试后实现）；写测试时若发现实现与 B1-01g 契约不符，停下报告、另立实现任务，不在本任务改实现。
+# 分工：测试即交付物，Claude 子代理编写，Codex 新只读会话对抗评审（test/** RV2，再加 Claude 新子代理评审）。
+refs: []
+refs_hash: {}
+deps: [B1-01g, B1-01n]
+paths:
+  - 'test/spec/platform/queue/supervise-*'
+  - 'test/spec/platform/queue/entry-send-*'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/queue/**'
+status: todo

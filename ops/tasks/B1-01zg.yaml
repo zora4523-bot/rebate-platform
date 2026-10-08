@@ -1,0 +1,26 @@
+id: B1-01zg
+repo: rebate-platform
+title: 队列执行通道取到任务就立即再取，取空才等一个轮询间隔（积压时吞吐不再被固定间隔卡在每通道每间隔 1 个）
+type: impl
+# 2026-10-09 入账（会话 b1-followups-3，couli-runs/followups/INDEX.md F-02，P1；来源 followups/B1-01g-queue-test-gaps.md
+# B1-01g 节第 5 条，B1-01v 定位）。现状：platform/queue/executor.ts 的 runExecutor 每轮 fetch 之后不论取没取到都
+# 等 pollingIntervalSeconds；积压时每通道每间隔最多处理 1 个（payout 0.5 个/秒）。改为：本轮取到任务且执行完、未收到停止
+# → 立即进入下一轮 fetch；本轮取空或 fetch 出错 → 等一个间隔（出错仍记 reportQueueError，不忙等）；停止信号照旧随时打断等待。
+# 并发上限、单任务租约、恰好一次结算、停止时等处理函数退出等 B1-01g 既有契约一字不变。
+# 规则测试（Codex 先写、先红，新文件）：积压 N 个任务时在远小于 N×间隔的时间内处理完；取空时两次 fetch 间隔不小于轮询间隔；
+# fetch 连续出错时不忙等；停止信号在立即再取的循环里仍能及时结束。
+refs: []
+refs_hash: {}
+deps: [B1-01g]
+paths:
+  - 'apps/api/src/modules/platform/queue/executor.ts'
+  - 'apps/api/src/modules/platform/queue/runtime.test.ts'
+  - 'apps/api/src/modules/platform/queue/attempt.test.ts'
+test_paths:
+  - 'test/spec/platform/queue/throughput*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/queue/**'
+status: todo

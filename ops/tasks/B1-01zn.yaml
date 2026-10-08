@@ -1,0 +1,20 @@
+id: B1-01zn
+repo: rebate-platform
+title: 加密模块规则测试补缺（只新增文件）：密钥字节不落在 Node 共享 Buffer 池；provider.keyId getter 抛错、provider 为 null 时三个入口的错误确切
+type: test-change
+# 2026-10-09 入账（会话 b1-followups-3，followups/INDEX.md F-12，P2；来源 followups/B1-01ac-code-review-channels-rule-tests.md B1-01a 部分）。
+# 行为已由 B1-01a 实现，缺规则测试；只新增 test/spec/platform/crypto/ 下文件，不改已有测试与实现，不需要批准标签。
+# 新测试对现有实现应为绿；若发现实现不符，停下报告、另立实现任务。分工同 B1-01zm（Claude 编写，Codex 对抗评审 + Claude 新子代理评审）。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: 01b25f773b29
+deps: [B1-01a]
+paths:
+  - 'test/spec/platform/crypto/buffer-pool*'
+  - 'test/spec/platform/crypto/provider-errors*'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/crypto/**'
+status: todo

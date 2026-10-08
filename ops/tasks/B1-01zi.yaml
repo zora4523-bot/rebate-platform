@@ -1,0 +1,25 @@
+id: B1-01zi
+repo: rebate-platform
+title: keyring-init：文件头示例重跑不再覆盖已有主密钥；输出改为同目录临时文件写完 fsync 后以「不覆盖」方式就位，被强杀不留半截 keyring.json
+type: impl
+# 2026-10-09 入账（会话 b1-followups-3，followups/staging-b1-01zc-zd.md 第 4、5 条，B1-01zd 两家评审 S2；第 4 条定 P1：
+# 照文件头示例重跑一次 `openssl rand -hex 32 > master.hex` 就把 staging 的主密钥换掉，已加密数据再也解不开）。
+# ① 文件头用法示例改为不会覆盖已有文件的写法（如 `set -o noclobber` 或先判断存在、已存在即停），并写明主密钥丢失的后果。
+# ② initLocalKeyring：先在输出目录建独占临时文件（0600）写完并 fsync，再以不覆盖已有路径的方式就位（如 link 后删临时文件，
+# 已存在即拒绝），任何失败都删临时文件；输出已存在仍拒绝、不改动它；不打印任何密钥材料、路径或文件内容（B1-01zd 规则不变）。
+# 规则测试（Codex 先写、先红，新文件；不改 B1-01zd 已冻结的 keyring-init.test.ts）：示例命令在主密钥已存在时不改它；
+# 写入中途失败后输出路径不存在、目录里不留临时文件；输出已存在时拒绝且字节不变；生成文件权限 0600 并能被 openConfiguredFieldCrypto 打开。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: 01b25f773b29
+deps: [B1-01zd]
+paths:
+  - 'apps/api/scripts/keyring-init.ts'
+test_paths:
+  - 'test/spec/platform/crypto/keyring-init-atomic*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/crypto/**'
+status: todo

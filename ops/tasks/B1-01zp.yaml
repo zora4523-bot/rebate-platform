@@ -1,0 +1,19 @@
+id: B1-01zp
+repo: rebate-platform
+title: 依赖方向规则：只有后台报表类模块能引用只读库句柄 DB_READ（.dependency-cruiser.cjs 加一条 forbidden 规则）
+type: guard-change
+# 2026-10-09 入账（会话 b1-followups-3，followups/INDEX.md F-13，P3；来源 followups/B1-01f-followups.md）。B1-01f 加了只读句柄 DB_READ
+# （couli_readonly，admin 入口），现无规则阻止别的模块引用它。加一条 depcruise 规则：apps/api/src/modules/** 中只有 admin 模块的报表目录
+# （以实际目录为准，实现时核对并写进规则注释）与 platform/db 自身可以 import 导出 DB_READ 的文件；现有代码须照样通过（不得为过检查改业务代码）。
+# 附一个反例夹具或单元测试证明规则生效（放 .tmp 生成，不入库则在 PR 描述写手动验证步骤）。
+# .dependency-cruiser.cjs 是保护路径第二类，合并要批准标签（approvals 第 24 条，两家评审 pass 后编排会话加）；登记 CT-plan/need-label.md。
+refs: []
+refs_hash: {}
+deps: [B1-01f]
+paths:
+  - '.dependency-cruiser.cjs'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
