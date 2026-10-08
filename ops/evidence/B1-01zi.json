@@ -1,0 +1,75 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (apps/api/scripts/keyring-init.ts, BR-ID-33). The usage example generates the master key with umask 077 and noclobber so a rerun never replaces an existing master key; initLocalKeyring writes the key ring to an exclusive random-suffix temp file (0600) in the output directory, fsyncs and closes it, then links it into place (EEXIST refuses an existing output, never overwritten), always removes the temp file and fsyncs the directory best-effort; nothing printed contains key material, a path or file content. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: round 1 pass, no findings (example under an existing key, link placement, every failure path, concurrent runs, output wording)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (an output name close to the 255-byte limit makes the temp name too long) needs a crafted CLI argument, recorded as a follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (test/spec/platform/crypto/keyring-init-atomic.test.ts) reviewed by a fresh Claude subagent: round 1 pass with three S2 test-sensitivity notes, turned into implementation guidance"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zi",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "4ab83c4e9a705b02369aeb02b62531a4b1922a38",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4ab83c4e9a705b02369aeb02b62531a4b1922a38",
+      "tree": "ac23b1f70cd55651f3585b04e723f08a341b5573",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T19:43:32Z",
+      "finished_at": "2026-10-08T19:43:41Z",
+      "red_tests": [
+        "test/spec/platform/crypto/keyring-init-atomic.test.ts > [AC-B1-01zi#1][BR-ID-33] 头注释的主密钥命令首次可用，重跑保留字节和 mtime 并拒绝或明确跳过",
+        "test/spec/platform/crypto/keyring-init-atomic.test.ts > [AC-B1-01zi#2][BR-ID-33] 内容写完并 fsync 前最终路径不可见；就位后权限 600、可打开，重跑拒绝且输出脱敏",
+        "test/spec/platform/crypto/keyring-init-atomic.test.ts > [AC-B1-01zi#3][BR-ID-33] partial-write 失败时半成品从未出现在最终路径，删除临时文件且不泄密",
+        "test/spec/platform/crypto/keyring-init-atomic.test.ts > [AC-B1-01zi#3][BR-ID-33] fsync 失败时半成品从未出现在最终路径，删除临时文件且不泄密",
+        "test/spec/platform/crypto/keyring-init-atomic.test.ts > [AC-B1-01zi#4][BR-ID-33] fsync 后其他进程抢先占用最终路径时拒绝就位，保留对方文件并清理临时文件"
+      ],
+      "expected": ["test/spec/platform/crypto/keyring-init-atomic.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "1ffbe8a71349fc45026fd548fe8584a0258ef2aea3a15278b5985fb3bfc310c2"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "a06c1235cadf15990cafd6075a78851e46813da8",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
