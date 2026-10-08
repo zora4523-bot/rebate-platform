@@ -185,6 +185,32 @@ it.each(['lock_timeout', 'statement_timeout'] as const)(
   },
 );
 
+it.each(['pg_catalog.set_config', '"set_config"', '"pg_catalog"."set_config"'])(
+  '[AC-CT-06d#28] %s 的 schema 前缀和函数名引号不能绕过关闭超时检测',
+  async (fn) => {
+    const check = await timeoutChecker();
+    for (const setting of ['lock_timeout', 'statement_timeout']) {
+      const rule = `require-${setting.replace('_', '-')}`;
+      const other =
+        setting === 'lock_timeout' ? 'require-statement-timeout' : 'require-lock-timeout';
+      expect(check(FILE, TIMEOUTS + `SELECT ${fn}('${setting}', '1ms', true);`)).toEqual([]);
+      expect(
+        check(FILE, TIMEOUTS + `-- SELECT ${fn}('${setting}', '0', true);\nSELECT 1;`),
+      ).toEqual([]);
+      for (const local of ['true', 'false']) {
+        for (const value of ['0', '0ms', '']) {
+          const disable = `SELECT ${fn}('${setting}', '${value}', ${local});`;
+          for (const sql of [TIMEOUTS + disable, TIMEOUTS + disable + TIMEOUTS]) {
+            const result = check(FILE, sql).join('\n');
+            expect(result, sql).toContain(rule);
+            expect(result, sql).not.toContain(other);
+          }
+        }
+      }
+    }
+  },
+);
+
 it.each(['lock_timeout', 'statement_timeout'] as const)(
   '[AC-CT-06d#16] DO 内 SET、RESET、set_config 关闭 %s，普通和美元引号正文都检查',
   async (setting) => {

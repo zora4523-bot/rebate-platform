@@ -6,6 +6,8 @@ import { gate, ROOT, run, TIMEOUTS, withFixture } from './kit.ts';
 
 // CT-06d §9.2①：比对既有定义；出现 RAISE EXCEPTION 不代表保护仍然有效。
 // 测试只在编排者的隔离容器运行；每组都有 CT-06c 尚未实现的断言。
+// CT-06c #18 的 CLI 函数替换预期随实现收紧为退出 1，并包含
+// function reject_order_rewrite guards funds or attribution table orders；本轮不改旧文件。
 const FILE = '0021_guard-approval.sql';
 const APPROVED_FILE = '0020_union-auth-sessions-issuance.sql';
 const CLI_TIMEOUT_MS = 60_000;
@@ -21,7 +23,11 @@ async function checker(): Promise<Check> {
 }
 
 function schemaContext(): Context {
-  return { schemaSql: readFileSync(join(ROOT, 'db/schema.sql'), 'utf8'), migrationsSql: [] };
+  return {
+    schemaSql: readFileSync(join(ROOT, 'db/schema.sql'), 'utf8'),
+    migrationsSql: [],
+    approved: false,
+  };
 }
 
 function refused(check: Check, sql: string, context: Context, message: string): void {
@@ -163,13 +169,16 @@ it.each(['FUNCTION', 'PROCEDURE'])(
   CLI_TIMEOUT_MS,
 );
 
-it('[AC-CT-06d#4] checkMigration 的审批默认关闭，显式审批放行函数替换且保留旧禁止项', async () => {
+it('[AC-CT-06d#4] 显式未审批拒绝函数替换，省略审批保持兼容，审批不豁免旧禁止项', async () => {
   const check = await checker();
   const context = schemaContext();
   const approved = { ...context, approved: true };
   const sql =
     "CREATE OR REPLACE FUNCTION app.reject_order_rewrite() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'immutable'; END; $$;";
   expect(check(FILE, sql, approved)).toEqual([]);
+  expect(
+    check(FILE, sql, { schemaSql: context.schemaSql, migrationsSql: context.migrationsSql }),
+  ).toEqual([]);
   expect(check(FILE, sql.replace('reject_order_rewrite', 'ordinary_fn'), context)).toEqual([]);
   for (const mutation of [
     'DROP FUNCTION app.reject_order_rewrite();',
@@ -177,13 +186,12 @@ it('[AC-CT-06d#4] checkMigration 的审批默认关闭，显式审批放行函�
     'ALTER TABLE app.orders DISABLE TRIGGER ALL;',
   ])
     expect(check(FILE, mutation, approved).length, mutation).toBeGreaterThan(0);
-  for (const unapproved of [context, { ...context, approved: false }])
-    refused(
-      check,
-      sql,
-      unapproved,
-      'function reject_order_rewrite guards funds or attribution table orders',
-    );
+  refused(
+    check,
+    sql,
+    context,
+    'function reject_order_rewrite guards funds or attribution table orders',
+  );
 });
 
 it.each(OBJECTS)(
@@ -265,4 +273,70 @@ it(
     });
   },
   CLI_TIMEOUT_MS,
+);
+
+it('[AC-CT-06d#26] 不先 DROP 的直接替换也比较 schema 触发器定义，审批与无上下文兼容', async () => {
+  const check = await checker();
+  const context = schemaContext();
+  const trigger = OBJECTS[0];
+  const changed = trigger.changed.replace('CREATE TRIGGER', 'CREATE OR REPLACE TRIGGER');
+  for (const equivalent of [
+    trigger.equivalent,
+    trigger.equivalent.toLowerCase().replaceAll(' ', '\n  '),
+  ])
+    expect(check(FILE, equivalent, context), equivalent).toEqual([]);
+  expect(check(FILE, changed, { ...context, approved: true })).toEqual([]);
+  expect(check(FILE, changed)).toEqual([]);
+  refused(
+    check,
+    changed,
+    context,
+    'trigger order_keys_append_only on funds or attribution table order_keys recreated with a different definition',
+  );
+});
+
+it(
+  '[AC-CT-06d#27] CLI 从真实 schema 检查直接替换触发器：同定义放行，减少 DELETE 拒绝',
+  () => {
+    const trigger = OBJECTS[0];
+    withFixture({ [FILE]: TIMEOUTS + trigger.equivalent }, (root) => {
+      copyFileSync(join(ROOT, 'db/schema.sql'), join(root, 'db/schema.sql'));
+      const result = run(['--root', root]);
+      expect(result.status, result.stderr + result.stdout).toBe(0);
+      writeFileSync(
+        join(root, 'db/migrations', FILE),
+        TIMEOUTS + trigger.changed.replace('CREATE TRIGGER', 'CREATE OR REPLACE TRIGGER'),
+      );
+      cliRefused(
+        root,
+        'trigger order_keys_append_only on funds or attribution table order_keys recreated with a different definition',
+      );
+    });
+  },
+  CLI_TIMEOUT_MS,
+);
+
+it.each(['ALTER INDEX app.neutral_guard_idx', 'ALTER INDEX IF EXISTS "app"."neutral_guard_idx"'])(
+  '[AC-CT-06d#29] %s 改名须从先前迁移识别资金表归属，不能只看索引名前缀',
+  async (head) => {
+    const check = await checker();
+    // 真实 schema 的资金索引均带表名前缀；以先前迁移提供中性名称的索引。
+    const definition = 'CREATE INDEX neutral_guard_idx ON app.orders (order_id);';
+    const sql = `${head} RENAME TO renamed_guard_idx;`;
+    expect(check(FILE, sql)).toEqual([]);
+    expect(
+      check(FILE, sql, {
+        schemaSql: '',
+        migrationsSql: [definition.replace('app.orders', 'app.articles')],
+        approved: false,
+      }),
+    ).toEqual([]);
+    for (const approved of [false, true])
+      refused(
+        check,
+        sql,
+        { schemaSql: '', migrationsSql: [definition], approved },
+        'index neutral_guard_idx on funds or attribution table orders',
+      );
+  },
 );
