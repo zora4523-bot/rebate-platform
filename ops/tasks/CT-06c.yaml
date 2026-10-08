@@ -16,7 +16,7 @@ type: guard-change
 #    - 任何 `DROP … CASCADE`（表、函数、类型、约束、索引、模式等）一律报 `DROP … CASCADE is not accepted`：级联会连带删掉资金表上依赖它的触发器、外键与
 #      约束（台账评审 Codex P1：`DROP FUNCTION app.reject_update_delete() CASCADE` 会删掉 order_keys 等表的只追加触发器）；依赖须显式逐个处理。
 #    - 资金表触发器所执行的函数（由 db/schema.sql 与已有迁移的 `CREATE TRIGGER … ON <资金表> … EXECUTE FUNCTION|PROCEDURE <函数>` 推出；导出
-#      fundsTriggerFunctions(schemaSql, migrationsSql[]) → Set<函数名>，去 schema 与引号后比较）不得 `DROP FUNCTION`、`CREATE OR REPLACE FUNCTION`、
+#      fundsTriggerFunctions(schemaSql, migrationsSql[]) → Map<函数名, 所保护的资金表>，去 schema 与引号后比较）不得 `DROP FUNCTION`、新函数体不再 `RAISE EXCEPTION` 的 `CREATE OR REPLACE FUNCTION`（任务书 §10 口径修正：主干 0020 用它扩展防改写函数，属常规迁移）、
 #      `ALTER FUNCTION … RENAME / OWNER / SET SCHEMA`，报 `function <名> guards funds or attribution table <裸表名>`。
 # ③ db/AGENTS.md 第 11 条同步一句：资金表上的触发器、约束、索引只能在同一迁移里按同名重建，不得只删或停用；不接受 DROP … CASCADE；资金表触发器函数不得替换或删除（要改走 guard-change）。
 # 碰 tools/**、db/AGENTS.md（第三类保护路径），合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
@@ -35,5 +35,5 @@ accept:
   - 'pnpm verify'
   - 'pnpm run lint:migrations'
   - 'test/spec/db/lint-migrations/**'
-status: todo
+status: done
 pr: null
