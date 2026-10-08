@@ -35,10 +35,22 @@ export function domainOccurrences(text: string): Array<{ offset: number; host: s
       value,
     )?.[1];
     if (!host) return;
-    const tld = host.replace(/\.$/, '').split('.').at(-1)!;
+    const labels = host.replace(/\.$/, '').split('.');
+    const tld = labels.at(-1)!;
     // 裸主机需有形似顶级域的末段；Material 的 ShapeAppearance.*.Test 等 PascalCase
     // 资源名不作域名。保留全大写域名、环境保留名与 IPv4 的原有检测。
-    if (!/^(?:[a-z][A-Za-z]{1,62}|[A-Z]{2,63})$/.test(tld) && !/^\d+(?:\.\d+){3}$/.test(host))
+    // QA-09e：末段大小写混写（example.Com / CoM）只在主机名语境放宽——其余各段同为小写
+    // （或同为大写）时才认；PascalCase 资源名的前段带大小写混写，仍不作域名。
+    const hostLike = (label: string): boolean => /^[a-z0-9-]+$/.test(label);
+    const upperLike = (label: string): boolean => /^[A-Z0-9-]+$/.test(label);
+    const rest = labels.slice(0, -1);
+    const mixedTld =
+      /^[A-Za-z]{2,63}$/.test(tld) && (rest.every(hostLike) || rest.every(upperLike));
+    if (
+      !/^(?:[a-z][A-Za-z]{1,62}|[A-Z]{2,63})$/.test(tld) &&
+      !mixedTld &&
+      !/^\d+(?:\.\d+){3}$/.test(host)
+    )
       return;
     add(host, offset);
   };

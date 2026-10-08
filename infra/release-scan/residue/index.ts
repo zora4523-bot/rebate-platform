@@ -2,6 +2,8 @@
 // 05 QA-09 后半句；10 AC-S1-86 ①②）。任何一项命中即阻断发布；残留命中不经公开标识清单比对，不设豁免。
 // 口径由规则测试 test/spec/release-scan/residue/** 逐条约束（规则表见 detect.test.ts 文件头）。
 import { textViews } from '../detect/encoding.ts';
+import { protoXmlText } from '../detect/proto.ts';
+import { NESTED } from '../detect/read.ts';
 import { domainOccurrences } from './domains.ts';
 
 export { readApprovals, readArguments } from './config.ts';
@@ -19,9 +21,12 @@ const APPLE_PLIST_DOCTYPE =
 
 /** 密钥检测用的文本视图：同 artifactTextViews，只把 Apple plist 文档类型声明换成等长空格。 */
 export function secretTextViews(file: string, content: Uint8Array): string[] {
-  return artifactTextViews(file, content).map((view) =>
-    view.replace(APPLE_PLIST_DOCTYPE, (declaration) => ' '.repeat(declaration.length)),
-  );
+  return artifactTextViews(file, content).map(stripApplePlistDoctype);
+}
+
+/** 只把紧跟 <plist 的 Apple plist 文档类型声明换成等长空格（cli 对 QA-09d 关联视图同样处理）。 */
+export function stripApplePlistDoctype(view: string): string {
+  return view.replace(APPLE_PLIST_DOCTYPE, (declaration) => ' '.repeat(declaration.length));
 }
 
 /** 残留规则编号（03 §3.6 逐项）。 */
@@ -49,6 +54,42 @@ export interface ResidueHit {
 export interface ResidueOptions {
   /** contracts/routes.json 中 debug_only 为 true 的路由名（由 debugOnlyRoutes 读出）。 */
   debugRoutes: readonly string[];
+  /**
+   * QA-09e：本条目的 QA-09d 关联字段视图（detect 的 artifactTextViews 给出的、非原值视图的 text）。
+   * .aab 模块的 proto 清单按此视图读可调试标志；缺省时残留检测自行解析 proto 清单（不解析资源引用）。
+   */
+  views?: readonly string[];
+}
+
+/**
+ * 是否 .aab 模块的 proto 清单（<模块>/manifest/AndroidManifest.xml，嵌套包内按包内路径判断），
+ * 且内容不是 AXML、也不是文本 XML（与 QA-09d 关联视图的判定一致）。
+ */
+export function isProtoManifest(file: string, content: Uint8Array): boolean {
+  const parts = file.split('/');
+  let rel = file;
+  for (let i = parts.length - 2; i >= 0; i--) {
+    const dot = parts[i]!.lastIndexOf('.');
+    if (dot > 0 && NESTED.has(parts[i]!.slice(dot).toLowerCase())) {
+      rel = parts.slice(i + 1).join('/');
+      break;
+    }
+  }
+  if (!/^[^/]+\/manifest\/AndroidManifest\.xml$/.test(rel)) return false;
+  if (
+    content.length >= 4 &&
+    content[0] === 3 &&
+    content[1] === 0 &&
+    content[2] === 8 &&
+    content[3] === 0
+  )
+    return false;
+  if ((content[0] === 0xff && content[1] === 0xfe) || (content[0] === 0xfe && content[1] === 0xff))
+    return false;
+  const head = Buffer.from(content.subarray(0, 64 * 1024)).toString('latin1');
+  return !/^(?:\xef\xbb\xbf)?(?:\s|<!--(?:(?!-->)[^])*-->|<\?(?:(?!\?>)[^])*\?>|<!DOCTYPE\b[^>]*>)*<(?:\?xml|manifest)\b/.test(
+    head,
+  );
 }
 
 /**
@@ -160,7 +201,7 @@ function detectText(
   file: string,
   text: string,
   routes: readonly string[][],
-  binary: 'axml' | 'plist' | undefined,
+  binary: 'axml' | 'plist' | 'proto' | undefined,
 ): ResidueHit[] {
   const found: Array<ResidueHit & { offset: number }> = [];
   const lineStarts = [0];
@@ -203,7 +244,7 @@ function detectText(
   scan('conformance-entry', /一致性测试/g);
   scan('debuggable', /\bandroid:debuggable\s*=\s*(["'])true\1/g);
   scan('debuggable', /<key>get-task-allow<\/key>\s*<true\s*\/>/g);
-  if (binary === 'axml') {
+  if (binary === 'axml' || binary === 'proto') {
     for (const match of text.matchAll(/^"debuggable":"(true|[0-9]+)"$/gm)) {
       if (match[1] === 'true' || Number(match[1]) !== 0) add('debuggable', match.index, match[0]);
     }
@@ -245,5 +286,11 @@ export function detectResidue(
         : undefined;
   // QA-09b 的普通字节视图是 latin1；改用 UTF-8 保留中文标识，ASCII 与换行不变。
   if (views[0] === bytes.toString('latin1')) views[0] = bytes.toString('utf8');
-  return views.flatMap((view) => detectText(file, view, routes, binary));
+  const hits = views.flatMap((view) => detectText(file, view, routes, binary));
+  // QA-09e：.aab proto 清单另按关联字段视图检测（可调试标志等），原有字节视图照常检测，只加不减。
+  if (isProtoManifest(file, bytes)) {
+    const protoViews = options.views ?? [protoXmlText(bytes)];
+    for (const view of protoViews) hits.push(...detectText(file, view, routes, 'proto'));
+  }
+  return hits;
 }

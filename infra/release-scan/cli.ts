@@ -8,19 +8,24 @@
 // - 阈值只能调严（不高于 QA-09b 默认值），调松或不是数值即用法错误。
 // - 退出码：0 通过；1 有阻断命中；2 用法错误或读取 / 解析失败（fail-closed）。
 // - 标准输出写一份 JSON 报告；命中的密钥原文不得出现在标准输出与标准错误里（脱敏）。
+// - QA-09e：密钥检测走 QA-09d 的关联视图（detect/association.ts：.apk resources.arsc / AXML、
+//   .aab resources.pb / proto 清单、.hap module.json / resources.index），视图的 resourceNames、
+//   rawStrings 标志原样交给检测；签名字段引用解析不了、结构损坏即读取失败（退出码 2）。
+//   --release 的残留检测对 .aab proto 清单另读同一关联视图（可调试标志）。
 // - 只经 process.stdout.write / process.stderr.write 输出，不用 console；main 不调用 process.exit。
 import { lstat, readFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compareHits } from './compare/index.ts';
-import { detectSecrets, readArtifact } from './detect/index.ts';
+import { artifactTextViews, readArtifact } from './detect/index.ts';
 import type { ScanHit } from './detect/index.ts';
+import { detectText } from './detect/rules.ts';
 import {
   debugOnlyRoutes,
   detectResidue,
   readApprovals,
   readArguments,
-  secretTextViews,
+  stripApplePlistDoctype,
 } from './residue/index.ts';
 
 /** 报告里的一条命中（不含命中原文）。 */
@@ -85,17 +90,48 @@ export async function main(argv: readonly string[]): Promise<number> {
     const artifact = await readArtifact(args.path);
     if (artifact.errors.length > 0) report.errors.push('Artifact could not be read completely');
     const hits: ScanHit[] = [];
-    for (const entry of artifact.entries) {
+    // 同一关联语义（与 scanArtifact 一致）：清单引用经同一包的资源表解析；读不了的条目记读取错误，
+    // 其他条目照常检测。错误原文含条目路径，不转发，只报固定文案。
+    const associated = artifactTextViews(artifact.entries);
+    if (associated.errors.length > 0)
+      report.errors.push('Artifact content unreadable or signing reference unresolved');
+    const fieldViews = new Map<string, string[]>();
+    // 原值视图紧跟来源视图；同一条目已按同一规则报过的同一取值，原值视图里的 high-entropy 不重复报。
+    const reported = new Map<string, Set<string>>();
+    for (const view of associated.views) {
+      if (view.rawStrings !== true) {
+        const list = fieldViews.get(view.path);
+        if (list) list.push(view.text);
+        else fieldViews.set(view.path, [view.text]);
+      }
+      let seen = reported.get(view.path);
+      if (!seen) reported.set(view.path, (seen = new Set()));
       try {
-        for (const view of secretTextViews(entry.path, entry.content)) {
-          hits.push(...detectSecrets(entry.path, view, args.thresholds));
+        const found = detectText(
+          view.path,
+          stripApplePlistDoctype(view.text),
+          args.thresholds,
+          view.resourceNames === true,
+          view.rawStrings === true,
+        );
+        for (const hit of found) {
+          const key = `${hit.rule}\u0000${hit.match}`;
+          if (view.rawStrings === true && hit.rule === 'high-entropy' && seen.has(key)) continue;
+          seen.add(key);
+          hits.push(hit);
         }
       } catch {
         report.errors.push('Cannot parse artifact content for secret scanning');
       }
+    }
+    for (const entry of artifact.entries) {
       if (debugRoutes !== undefined) {
         try {
-          for (const hit of detectResidue(entry.path, entry.content, { debugRoutes })) {
+          const views = fieldViews.get(entry.path);
+          for (const hit of detectResidue(entry.path, entry.content, {
+            debugRoutes,
+            ...(views ? { views } : {}),
+          })) {
             report.findings.push({
               kind: 'residue',
               rule: hit.rule,
