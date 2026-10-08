@@ -290,7 +290,9 @@ export function checkTimeouts(file: string, sql: string): string[] {
     } else if (!/^SET\b/i.test(text)) {
       header = false;
     }
-    // set_config(…) in any statement (a SELECT, a DO block) switches a timeout off just as well.
+    // set_config(…) in a top-level statement switches a timeout off just as well. DO blocks are
+    // scanned below with their own comments removed; function bodies do not run at migration time.
+    if (/^\s*(?:DO|CREATE)\b/i.test(text)) continue;
     for (const m of value.matchAll(TIMEOUT_SET_CONFIG)) {
       if (timeoutMilliseconds(m[2] ?? '') > 0) continue;
       if ((m[1] ?? '').toLowerCase() === 'lock_timeout') lockLost = true;
@@ -551,7 +553,7 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
       body
         .split(';')
         .some((part) =>
-          /\bALTER\s+TABLE\b[\s\S]*\bALTER\s+(?:COLUMN\s+)?(?!COLUMN\b)(?:"[^"]+"|\w+)\s+(?:SET\s+DATA\s+)?TYPE\s+(?!SET\b|DROP\b)["\w]/i.test(
+          /\bALTER\s+TABLE\b[\s\S]*\bALTER\s+(?:COLUMN\s+)?(?!COLUMN\b)(?:"[^"]+"|%[IsL]|\w+)\s+(?:SET\s+DATA\s+)?TYPE\s+(?!SET\b|DROP\b)["\w%]/i.test(
             part,
           ),
         );
@@ -702,13 +704,15 @@ export function fundsTriggerFunctions(
 export function normaliseDefinition(text: string): string {
   let t = text
     .toLowerCase()
-    .replace(/"/g, '')
+    .replace(/"/g, ' ')
     .replace(/\b[a-z_][a-z0-9_]*\s*\.\s*(?=[a-z_])/g, '')
     .replace(/\bor\s+replace\b/g, ' ')
     .replace(/\bif\s+(?:not\s+)?exists\b/g, ' ')
     .replace(/\bconcurrently\b/g, ' ')
     .replace(/\bonly\b/g, ' ')
     .replace(/\busing\s+btree\b/g, ' ')
+    .replace(/\bexecute\s+procedure\b/g, 'execute function')
+    .replace(/\bnot\s+valid\b/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\s*([(),=])\s*/g, '$1')
     .replace(/;\s*$/, '')
@@ -730,17 +734,22 @@ function guardDefinitions(sources: readonly string[]): {
   const constraints = new Map<string, string>();
   const indexes = new Map<string, string>();
   for (const sql of sources) {
-    for (const { text } of statementsOf(withoutComments(sql))) {
+    // Matched on the copy with strings blanked, compared on the copy that keeps them (a changed
+    // literal in WHERE status IN (…) is a changed definition).
+    const kept = withoutComments(sql, true);
+    for (const { text, start, end } of statementsOf(withoutComments(sql))) {
+      const vt = kept.slice(start, end);
+      const partOf = (part: { start: number; text: string }): string =>
+        vt.slice(part.start, part.start + part.text.length);
       const trigger = CREATE_TRIGGER.exec(text);
       if (trigger !== null) {
         triggers.set(
           `${bareName(trigger[2] ?? '')}/${bareName(trigger[1] ?? '')}`,
-          normaliseDefinition(text),
+          normaliseDefinition(vt),
         );
       }
       for (const m of text.matchAll(CREATE_INDEX)) {
-        if (/^\s*CREATE\b/i.test(text))
-          indexes.set(bareName(m[1] ?? ''), normaliseDefinition(text));
+        if (/^\s*CREATE\b/i.test(text)) indexes.set(bareName(m[1] ?? ''), normaliseDefinition(vt));
       }
       const alter = ALTER_TABLE.exec(text);
       if (alter !== null) {
@@ -751,7 +760,11 @@ function guardDefinitions(sources: readonly string[]): {
           if (c !== null) {
             constraints.set(
               `${bareName(alter[1] ?? '')}/${bareName(c[1] ?? '')}`,
-              normaliseDefinition(part.text.trim().replace(/^add\s+/i, '')),
+              normaliseDefinition(
+                partOf(part)
+                  .trim()
+                  .replace(/^add\s+/i, ''),
+              ),
             );
           }
         }
@@ -766,7 +779,7 @@ function guardDefinitions(sources: readonly string[]): {
           if (c !== null) {
             constraints.set(
               `${bareName(create[1] ?? '')}/${bareName(c[1] ?? '')}`,
-              normaliseDefinition(part.text.trim()),
+              normaliseDefinition(partOf(part).trim()),
             );
           }
         }
@@ -795,7 +808,13 @@ function fundsObjectProblems(
   const refuse = (at: number, message: string): void => {
     problems.push({ file, line: lineOf(code, at), message: `${message} (规划/02 §16.3)` });
   };
-  const later = (k: number): string[] => statements.slice(k + 1).map((s) => s.text);
+  // The statement with its string literals kept, for definition comparisons (CT-06d).
+  const keptOf = (j: number): string =>
+    valued.slice(statements[j]?.start ?? 0, statements[j]?.end ?? 0);
+  const laterIndex = (k: number, pick: (t: string) => boolean): number => {
+    const i = statements.slice(k + 1).findIndex((st) => pick(st.text));
+    return i === -1 ? -1 : k + 1 + i;
+  };
   const funds = (ref: string): boolean => isFundsTable(ref);
   // CT-06d: the CLI says whether the migration is approved; a pure call without it keeps CT-06c.
   // approved: false (the CLI for a migration not in APPROVED_GUARD_CHANGES) is strict; true lets
@@ -824,15 +843,15 @@ function fundsObjectProblems(
     if (dropTrigger !== null && funds(dropTrigger[2] ?? '')) {
       const name = bareName(dropTrigger[1] ?? '');
       const table = bareName(dropTrigger[2] ?? '');
-      const recreation = later(k).find((t) => {
+      const recreation = laterIndex(k, (t) => {
         const m = CREATE_TRIGGER.exec(t);
         return m !== null && bareName(m[1] ?? '') === name && bareName(m[2] ?? '') === table;
       });
-      if (recreation === undefined)
+      if (recreation === -1)
         refuse(at, `trigger ${name} on funds or attribution table ${table} may not be dropped`);
       else if (strict) {
         const before = original().triggers.get(`${table}/${name}`);
-        if (before !== undefined && before !== normaliseDefinition(recreation)) {
+        if (before !== undefined && before !== normaliseDefinition(keptOf(recreation))) {
           refuse(at, different('trigger', name, table));
         }
       }
@@ -874,21 +893,26 @@ function fundsObjectProblems(
         if (dropConstraint !== null) {
           const name = bareName(dropConstraint[1] ?? '');
           // The ADD CONSTRAINT <same name> clause that recreates it, in this statement or a later one.
-          const sameClause = (t: string, from: number): string | undefined => {
+          // The ADD CONSTRAINT clause recreating it, returned with its string literals kept.
+          const sameClause = (j: number, from: number): string | undefined => {
+            const t = statements[j]?.text ?? '';
             const a = ALTER_TABLE.exec(t);
             if (a === null || bareName(a[1] ?? '') !== table) return undefined;
-            return topLevelParts(t, a[0].length, t.length)
+            const p = topLevelParts(t, a[0].length, t.length)
               .slice(from)
-              .map((p) => p.text)
-              .find((p) => {
-                const c = new RegExp(String.raw`^\s*ADD\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(p);
+              .find((q) => {
+                const c = new RegExp(String.raw`^\s*ADD\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(
+                  q.text,
+                );
                 return c !== null && bareName(c[1] ?? '') === name;
               });
+            return p === undefined ? undefined : keptOf(j).slice(p.start, p.start + p.text.length);
           };
           const clause =
-            sameClause(text, i + 1) ??
-            later(k)
-              .map((t) => sameClause(t, 0))
+            sameClause(k, i + 1) ??
+            statements
+              .slice(k + 1)
+              .map((_st, d) => sameClause(k + 1 + d, 0))
               .find((c) => c !== undefined);
           if (clause === undefined)
             refuse(
@@ -914,15 +938,9 @@ function fundsObjectProblems(
       if (m !== null && funds(m[2] ?? '')) {
         const name = bareName(m[1] ?? '');
         const table = bareName(m[2] ?? '');
-        const droppedEarlier = statements.slice(0, k).some((st) => {
-          const d = new RegExp(
-            String.raw`^\s*DROP\s+TRIGGER${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})(?:\s+|(?<=")\s*)ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
-            'i',
-          ).exec(st.text);
-          return d !== null && bareName(d[1] ?? '') === name && bareName(d[2] ?? '') === table;
-        });
         const before = original().triggers.get(`${table}/${name}`);
-        if (!droppedEarlier && before !== undefined && before !== normaliseDefinition(text)) {
+        // Compared even after a DROP of the same name: the last word on the trigger is what stays.
+        if (before !== undefined && before !== normaliseDefinition(keptOf(k))) {
           refuse(at, different('trigger', name, table));
         }
       }
@@ -969,7 +987,7 @@ function fundsObjectProblems(
         if (table === undefined || !funds(table)) continue;
         // Recreated on the same table; with the owner unknown, on a funds table whose name the index
         // name starts with (orders_created_at_idx on orders), never on another table (CT-06d).
-        const recreation = later(k).find((t) =>
+        const recreation = laterIndex(k, (t) =>
           [...t.matchAll(CREATE_INDEX)].some((m) => {
             const on = bareName(m[2] ?? '');
             return (
@@ -978,11 +996,11 @@ function fundsObjectProblems(
             );
           }),
         );
-        if (recreation === undefined)
+        if (recreation === -1)
           refuse(at, `index ${name} on funds or attribution table ${table} may not be dropped`);
         else if (strict) {
           const before = original().indexes.get(name);
-          if (before !== undefined && before !== normaliseDefinition(recreation)) {
+          if (before !== undefined && before !== normaliseDefinition(keptOf(recreation))) {
             refuse(at, different('index', name, table));
           }
         }
@@ -1018,9 +1036,32 @@ function fundsObjectProblems(
         ...context.migrationsSql,
         code.slice(0, at),
       ]);
+      // A guard this migration introduces (no earlier migration defines the function, and a trigger in
+      // this file executes it) is new, even when the regenerated db/schema.sql already lists it.
+      const definedBefore = (name: string): boolean =>
+        context.migrationsSql.some((m) =>
+          new RegExp(
+            String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)${GAP}(?:"?\w+"?\s*\.\s*)?"?${name}"?\s*\(`,
+            'i',
+          ).test(withoutComments(m)),
+        );
+      const triggeredHere = (name: string): boolean =>
+        statements.some(({ text: t }) => {
+          const m = CREATE_TRIGGER.exec(t);
+          return m?.[3] !== undefined && bareName(m[3]) === name;
+        });
+      const isReplace = replace?.[1] !== undefined && fn === replace[1];
       for (const raw of fn.replace(/\([^)]*\)/g, '').split(',')) {
         const name = bareName(raw.trim());
         const table = guards.get(name);
+        // Only for the CLI (approval known, regenerated schema in play); pure calls keep CT-06c.
+        if (
+          context.approved !== undefined &&
+          isReplace &&
+          !definedBefore(name) &&
+          triggeredHere(name)
+        )
+          continue;
         if (table !== undefined) {
           refuse(
             at,

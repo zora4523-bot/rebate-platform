@@ -662,3 +662,56 @@ it('CT-06c: dropping a funds-table constraint or index is fine only when the mig
     ),
   ).toEqual([]);
 });
+
+it('CT-06d: a funds-table guard recreated with only a string literal changed is a different definition', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "CREATE UNIQUE INDEX payout_attempts_inflight_key ON app.payout_attempts (app_id, user_id) WHERE status IN ('reserved', 'unknown');",
+    ],
+    approved: false,
+  };
+  const drop = 'DROP INDEX app.payout_attempts_inflight_key;\n';
+  const same =
+    "CREATE UNIQUE INDEX payout_attempts_inflight_key ON app.payout_attempts (app_id, user_id) WHERE status IN ('reserved', 'unknown');";
+  expect(checkMigration('x.sql', drop + same, ctx)).toEqual([]);
+  expect(
+    checkMigration('x.sql', drop + same.replace("'reserved'", "'matched'"), ctx).map(
+      (p) => p.message,
+    ),
+  ).toEqual([expect.stringContaining('recreated with a different definition')]);
+});
+
+it('CT-06d: tight quotes and EXECUTE PROCEDURE do not make an identical trigger look different', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      'CREATE TRIGGER order_keys_append_only BEFORE UPDATE OR DELETE ON app.order_keys FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();',
+    ],
+    approved: false,
+  };
+  const drop = 'DROP TRIGGER order_keys_append_only ON app.order_keys;\n';
+  for (const create of [
+    'CREATE TRIGGER"order_keys_append_only" BEFORE DELETE OR UPDATE ON"app"."order_keys" FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();',
+    'CREATE TRIGGER order_keys_append_only BEFORE DELETE OR UPDATE ON app.order_keys FOR EACH ROW EXECUTE PROCEDURE app.reject_update_delete();',
+  ]) {
+    expect(checkMigration('x.sql', drop + create, ctx), create).toEqual([]);
+  }
+  // A later CREATE OR REPLACE weakening it is still caught after the identical recreation.
+  expect(
+    checkMigration(
+      'x.sql',
+      `${drop}CREATE TRIGGER order_keys_append_only BEFORE UPDATE OR DELETE ON app.order_keys FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();\nCREATE OR REPLACE TRIGGER order_keys_append_only BEFORE UPDATE ON app.order_keys FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();`,
+      ctx,
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('recreated with a different definition')]);
+});
+
+it('CT-06d: a set_config commented out inside a DO block does not count as switching a timeout off', () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}DO $$ BEGIN\n-- PERFORM set_config('lock_timeout', '0', true);\nNULL; END $$;\n`,
+    ),
+  ).toEqual([]);
+});
