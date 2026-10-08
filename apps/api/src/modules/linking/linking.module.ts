@@ -27,7 +27,6 @@ import {
   type VerifiedDevice,
 } from '../platform/index.ts';
 import {
-  createUnionPidService,
   type RegisteredPlatform,
   type UnionAdapter,
   type UnionPidService,
@@ -65,6 +64,7 @@ import { LinkOpenController } from './http/public/open.controller.ts';
 import { UNION_AUTH_URL, UnionAuthUrlController } from './http/public/auth-url.controller.ts';
 import { createUnionAuthUrl, type UnionAuthUrlService } from './application/union-auth-url.ts';
 import { createDemoUnionAuthApps, type UnionAuthApps } from './infra/auth-apps.ts';
+import { createLinkingPidReader } from './infra/pid-reader.ts';
 import {
   AttrCodeReader,
   CallerContext,
@@ -194,22 +194,6 @@ const UNAVAILABLE_ATTR_CODES: FactoryProvider<AttrCodeReader> = {
   provide: AttrCodeReader,
   useFactory: createUnavailableAttrCodeReader,
 };
-
-/**
- * The read-only active-pid query of union (B1-19b). linking only reads, so the union service is
- * built with a verifier and an audit writer that refuse: no admin write can run through it.
- */
-function pidReader(db: Kysely<Database>, clock: Clock): PidReader {
-  const service = createUnionPidService({
-    db,
-    clock,
-    superVerifier: { verify: () => Promise.resolve(null) },
-    auditWriter: () => ({
-      append: () => Promise.reject(new Error('linking: union pid writes are not served here')),
-    }),
-  });
-  return { getActivePid: (input) => service.getActivePid(input) };
-}
 
 /**
  * The open use case of a process without its ports (no database, idempotency or LINK_OPEN_PORTS:
@@ -394,20 +378,24 @@ export class LinkingModule {
           inject: [
             { token: DB, optional: true },
             { token: LINKING_AUTH_APPS, optional: true },
+            { token: LINK_OPEN_PORTS, optional: true },
             APP_CONFIG,
             CLOCK,
             ROOT_LOGGER,
             CallerContext,
             LinkingConfigReader,
+            LINKING_PIDS,
           ],
           useFactory: (
             db: Kysely<Database> | undefined,
             authApps: UnionAuthApps | undefined,
+            ports: LinkOpenPorts | undefined,
             appConfig: AppConfig,
             clock: Clock,
             logger: RootLogger,
             callerContext: CallerContext,
             config: LinkingConfigReader,
+            pids: PidReader,
           ): UnionAuthUrlService =>
             db === undefined
               ? { get: unavailable }
@@ -418,6 +406,17 @@ export class LinkingModule {
                   config,
                   appEnv: appConfig.appEnv,
                   authApps: authApps ?? createDemoUnionAuthApps(),
+                  pids,
+                  // The pdd auth_jump uses the open's jump environment (apps.json, verified paths).
+                  ...(ports === undefined
+                    ? {}
+                    : {
+                        jumpEnvironment: {
+                          appEnv: appConfig.appEnv,
+                          apps: ports.apps,
+                          verifiedPaths: ports.verifiedPaths,
+                        },
+                      }),
                   logger,
                 }),
         },
@@ -432,7 +431,7 @@ export class LinkingModule {
           provide: LINKING_PIDS,
           inject: [{ token: DB, optional: true }, CLOCK],
           useFactory: (db: Kysely<Database> | undefined, clock: Clock): PidReader =>
-            db === undefined ? UNAVAILABLE_PIDS : pidReader(db, clock),
+            db === undefined ? UNAVAILABLE_PIDS : createLinkingPidReader(db, clock),
         },
         {
           provide: SourceLinkReader,

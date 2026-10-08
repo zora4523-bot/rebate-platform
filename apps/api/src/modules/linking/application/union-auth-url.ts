@@ -7,14 +7,21 @@
 // BR-ID-24 ④); the site's own union authorization expired → 30101 / 30102 with
 // data.reason=auth_unavailable (BR-ID-24 ④). Both are judged for the requested platform only.
 //
-// Cross-module reads (devices, user_risk_state, union_accounts) are read-only selects scoped by
-// app_id; this module writes only union_auth_sessions.
+// Cross-module reads (devices, user_risk_state, union_bindings, union_accounts) are read-only
+// selects scoped by app_id, plus union's read-only active-pid port; this module writes only
+// union_auth_sessions. The site authorization judged is that of the union account this
+// authorization actually uses (the unreleased binding's, else the platform's active self_buy pid's,
+// else the platform's first account in the pid service's order), never "any account still valid".
 import { randomBytes } from 'node:crypto';
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import type { AppEnv, Clock, HandlerResult, RootLogger } from '../../platform/index.ts';
+import type { UnionPidService } from '../../union/index.ts';
 import type { CallerContext, LinkingConfigReader } from '../ports.ts';
+import { appSchemeOf, buildDefaultLinkJump, pathsOf } from './link-open-conversion.ts';
+import { createJumpAdmission, type LinkOpenEnvironment } from './link-open-wiring.ts';
+import { createLinkingPidReader } from '../infra/pid-reader.ts';
 
 export type AuthClient = 'ios' | 'android' | 'harmony';
 export type UnionAuthMethod = components['schemas']['AuthMethod'];
@@ -41,6 +48,17 @@ export interface UnionAuthUrlOptions {
       method: UnionAuthMethod,
     ): Promise<{ readonly ref: string }>;
   };
+  /**
+   * union's read-only active-pid query (the account channel registration uses); absent → the same
+   * read-only reader built on this db.
+   */
+  readonly pids?: Pick<UnionPidService, 'getActivePid'>;
+  /**
+   * The open's jump environment (apps.json, verified paths per platform × client): the Pinduoduo
+   * auth_jump is built and admitted exactly as the open's (BR-ATTR-27). Absent (no
+   * LINK_OPEN_PORTS) → the bridge's apps.json outside prod; prod fails closed.
+   */
+  readonly jumpEnvironment?: LinkOpenEnvironment;
   /** Risk log of a declared X-Platform that disagrees with the device record (optional). */
   readonly logger?: Pick<RootLogger, 'warn'>;
 }
@@ -129,46 +147,46 @@ function syntheticAuthUrl(platform: 'taobao' | 'pdd', state: string): string {
   return `https://${host}/${platform}/authorize?state=${encodeURIComponent(state)}`;
 }
 
-/**
- * Pinduoduo authorization jump (BR-ID-22 细则; 04 §7 30111): a missing installed is unknown.
- * Installed or unknown → the universal link first, the system-browser page as fallback;
- * not installed → the page only.
- */
-function pddJump(
-  authUrl: string,
-  installed: UnionAuthUrlInput['installed'],
-  expireAt: Date,
-): AuthJumpPlan {
-  const h5: AuthJumpStep = { type: 'h5', value: authUrl };
-  const link: AuthJumpStep = { type: 'universal_link', value: authUrl };
-  const notInstalled = installed === 'false';
-  return {
-    primary: notInstalled ? h5 : link,
-    fallbacks: notInstalled ? [] : [h5],
-    expire_at: expireAt.toISOString(),
-  };
+const AUTH_STEP_TYPES: ReadonlySet<string> = new Set<AuthJumpStep['type']>([
+  'scheme',
+  'universal_link',
+  'h5',
+]);
+
+function authStep(step: { readonly type: string; readonly value: string }): AuthJumpStep {
+  if (!AUTH_STEP_TYPES.has(step.type)) {
+    throw new AuthConfigError('linking: the auth jump has a step an auth plan cannot carry');
+  }
+  return { type: step.type as AuthJumpStep['type'], value: step.value };
 }
 
 export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlService {
-  const { db, clock, callerContext, config, appEnv, authApps, logger } = options;
+  const { db, clock, callerContext, config, appEnv, authApps, jumpEnvironment, logger } = options;
+  const pids = options.pids ?? createLinkingPidReader(db, clock);
 
-  async function bindingStatus(
+  async function binding(
     appId: string,
     userId: string,
     platform: 'taobao' | 'pdd',
-  ): Promise<string> {
+  ): Promise<{ readonly status: string; readonly accountId: string | null }> {
     const rows = await db
       .selectFrom('union_bindings')
-      .select('status')
+      .select(['status', 'union_account_id'])
       .where('app_id', '=', appId)
       .where('user_id', '=', userId)
       .where('platform', '=', platform)
       .execute();
     // The projection of the authorization page (BR-ID-17 细则「授权管理页」): the unreleased
-    // binding when there is one, else released when a released row exists, else unbound.
+    // binding when there is one (its account is the one this authorization uses), else released
+    // when a released row exists, else unbound.
     const unreleased = rows.find((row) => (UNRELEASED as readonly string[]).includes(row.status));
-    if (unreleased !== undefined) return unreleased.status;
-    return rows.some((row) => row.status === 'released') ? 'released' : 'unbound';
+    if (unreleased !== undefined) {
+      return { status: unreleased.status, accountId: unreleased.union_account_id };
+    }
+    return {
+      status: rows.some((row) => row.status === 'released') ? 'released' : 'unbound',
+      accountId: null,
+    };
   }
 
   async function userBanned(appId: string, userId: string): Promise<boolean> {
@@ -181,16 +199,92 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     return row?.state === 'banned';
   }
 
-  /** BR-ID-24 ④: the site's authorization of this platform is usable (not expired). */
-  async function siteAuthAvailable(appId: string, platform: 'taobao' | 'pdd'): Promise<boolean> {
-    const row = await db
+  /**
+   * The union account this authorization uses: the unreleased binding's; otherwise the account of
+   * the platform's active self_buy pid (union's own selection of the current pid, purpose convert);
+   * otherwise the platform's first account in that same order. null: no account at all.
+   */
+  async function authAccountId(
+    appId: string,
+    platform: 'taobao' | 'pdd',
+    bound: string | null,
+  ): Promise<string | null> {
+    if (bound !== null) return bound;
+    const pid = await pids.getActivePid({
+      appId,
+      platform,
+      pidScene: 'self_buy',
+      purpose: 'convert',
+    });
+    if (pid !== null && pid.app_id === appId && pid.platform === platform) {
+      return pid.union_account_id;
+    }
+    const first = await db
       .selectFrom('union_accounts')
       .select('id')
       .where('app_id', '=', appId)
       .where('platform', '=', platform)
-      .where('auth_status', '<>', 'expired')
+      .orderBy('updated_at', 'asc')
+      .orderBy('created_at', 'asc')
+      .orderBy('id', 'asc')
+      .limit(1)
       .executeTakeFirst();
-    return row !== undefined;
+    return first?.id ?? null;
+  }
+
+  /**
+   * BR-ID-24 ④: the site's authorization of exactly the account this authorization uses is
+   * usable (not expired); another account of the platform being valid never masks it.
+   */
+  async function siteAuthAvailable(
+    appId: string,
+    platform: 'taobao' | 'pdd',
+    accountId: string | null,
+  ): Promise<boolean> {
+    if (accountId === null) return false;
+    const row = await db
+      .selectFrom('union_accounts')
+      .select('auth_status')
+      .where('app_id', '=', appId)
+      .where('platform', '=', platform)
+      .where('id', '=', accountId)
+      .executeTakeFirst();
+    return row !== undefined && row.auth_status !== 'expired';
+  }
+
+  /**
+   * Pinduoduo authorization jump (BR-ID-22 细则; 04 §7 30111): the open's own BR-ATTR-27 matrix by
+   * the device record's client and installed (missing → unknown), over the authorization page's
+   * paths; in prod only the paths the open admits (none admitted → a server fault, no state).
+   */
+  function pddJump(
+    authUrl: string,
+    client: AuthClient,
+    installed: UnionAuthUrlInput['installed'],
+    expireAt: Date,
+  ): AuthJumpPlan {
+    if (appEnv === 'prod' && jumpEnvironment === undefined) {
+      throw new AuthConfigError('linking: no jump environment for the pdd auth jump in prod');
+    }
+    const jump = buildDefaultLinkJump({
+      platform: 'pdd',
+      client,
+      installed: installed ?? 'unknown',
+      paths: pathsOf('pdd', authUrl, appSchemeOf(jumpEnvironment?.apps, 'pdd')),
+      expireAt: expireAt.toISOString(),
+    });
+    const admitted =
+      jumpEnvironment === undefined
+        ? jump
+        : createJumpAdmission({ ...jumpEnvironment, appEnv }).jump('pdd', client, jump);
+    if (admitted === null) {
+      throw new AuthConfigError('linking: no verified pdd jump path for this client');
+    }
+    return {
+      primary: authStep(admitted.primary),
+      fallbacks: admitted.fallbacks.map(authStep),
+      expire_at: admitted.expire_at,
+    };
   }
 
   async function configuredMethods(appId: string, client: AuthClient) {
@@ -254,27 +348,31 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     }
 
     const platform = input.platform;
-    const status = await bindingStatus(appId, userId, platform);
+    const { status, accountId: bound } = await binding(appId, userId, platform);
     // A blocked binding answers 30153 before anything else (BR-ID-24 ④ keeps it for blocked).
     if (status === 'blocked') {
       // A banned user has no session (BR-ID-31); one still reaching here gets no state either.
       if (await userBanned(appId, userId)) return fail(10001, input.traceId);
       return fail(30153, input.traceId);
     }
-    if (!(await siteAuthAvailable(appId, platform))) {
+    const accountId = await authAccountId(appId, platform, bound);
+    if (!(await siteAuthAvailable(appId, platform, accountId))) {
       return fail(status === 'invalid' ? 30102 : 30101, input.traceId, {
         reason: 'auth_unavailable',
       });
     }
 
     const methods = platform === 'taobao' ? await configuredMethods(appId, client) : null;
-    const refs = methods === null ? null : await appRefs(appId, client, methods);
-
+    // Built before the insert: a pdd jump that cannot be issued leaves no state behind.
     const now = clock.now();
     // A second reading of the injected clock, moved by the TTL (no `new Date` outside the clock).
     const expireAt = clock.now();
     expireAt.setTime(now.getTime() + STATE_TTL_MS);
     const state = newState();
+    const authUrl = syntheticAuthUrl(platform, state);
+    const authJump = methods === null ? pddJump(authUrl, client, input.installed, expireAt) : null;
+    const refs = methods === null ? null : await appRefs(appId, client, methods);
+
     await db
       .insertInto('union_auth_sessions')
       .values({
@@ -297,10 +395,9 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
       })
       .execute();
 
-    const authUrl = syntheticAuthUrl(platform, state);
     const data =
       methods === null
-        ? { auth_url: authUrl, state, auth_jump: pddJump(authUrl, input.installed, expireAt) }
+        ? { auth_url: authUrl, state, auth_jump: authJump }
         : { auth_url: authUrl, state, auth_methods: [...methods] };
     return {
       status: 200,

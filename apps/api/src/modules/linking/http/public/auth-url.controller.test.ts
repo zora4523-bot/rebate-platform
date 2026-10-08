@@ -80,6 +80,7 @@ describe('createUnionAuthUrl without a signed-in user', () => {
       callerContext: { current: async () => ({ appId: 'a1', userId: null, deviceId: 'd' }) },
       config: { configValue: async () => null },
       authApps: { resolve },
+      pids: { getActivePid: resolve },
     });
     const result = await auth.get({ platform: 'taobao', reportedClient: 'ios', traceId: TRACE });
     expect(result).toEqual({

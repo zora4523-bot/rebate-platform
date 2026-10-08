@@ -187,8 +187,9 @@ export function appSchemeOf(apps: LinkOpenApps | undefined, platform: 'jd' | 'pd
  * Launch paths derived from the converted URL. The app scheme comes from contracts/apps.json
  * (candidates, unverified: CAP-JD-11 / CAP-PDD-11); production admission of each path is separate.
  * TODO(规划/11 §4.5): 拼多多以转链返回的 schema_url 为准 — blocked on CAP-PDD-11 实测。
+ * Also the Pinduoduo auth-url's paths of its authorization page (B1-06g).
  */
-function pathsOf(platform: 'jd' | 'pdd', url: string, scheme: string | null): LinkJumpPaths {
+export function pathsOf(platform: 'jd' | 'pdd', url: string, scheme: string | null): LinkJumpPaths {
   const encoded = encodeURIComponent(url);
   return {
     scheme:
