@@ -1,0 +1,50 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (test/** test-change). New rule tests only, test/spec/platform/queue/supervise-periodic.int.test.ts, entry-send-api.int.test.ts, entry-send-keepalive.int.test.ts (followups INDEX F-06): the 60 s periodic supervision recovers jobs that expire while running (virtual clock frozen after a single 65 s advance, so a longer period fails); a payout-only process does not recover other queues; the real api entry sends through JOB_QUEUE after connecting (EADDRINUSE retried on another port); worker and payout stay up 20 s after started without a signal and stop on SIGTERM (child output parsed after close). No implementation or existing test changed. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "scope": "independent read-only Claude subagents: rounds 1–3 pass with no findings; orchestrator-approved exception round (couli-runs/B1-01zm/exception-round.md, targeted at the stdout-after-close fix) pass"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 4,
+      "note": "round 1 pass (S2: 90 s period not caught; port race) fixed; round 2 pass (S2: 75 s period not caught; 20 s real-time window flaky under load) fixed by freezing the virtual clock; round 3 pass (S2: stdout parsed on exit before the last data) fixed in an orchestrator-approved exception round, targeted review pass; one out-of-scope note (merged entries.int.test.ts:84 has the same exit-then-read pattern) recorded as a follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "ledger tester: none (test-change / docs written by the implementer, reviewed by both families)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zm",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "234460b9d3ebdef71a0f63112d7d424dea6e1dd0",
+  "runs": [],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "09db5c2e8c13fd40a671489a7e78b1db1a93c338",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
