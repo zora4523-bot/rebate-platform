@@ -22,5 +22,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/maintenance/**'
-status: todo
-pr: null
+status: done
+pr: 293
