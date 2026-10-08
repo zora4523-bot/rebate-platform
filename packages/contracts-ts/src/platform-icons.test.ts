@@ -112,4 +112,11 @@ it('[CT-17f] the generated Config type keeps platform_icons optional', () => {
     sha256: string;
     version: number;
   }>();
+  // expectTypeOf is compile-time only; pin the same shape in the contract at run time.
+  expect(contract.components.schemas['Config']!.required).not.toContain('platform_icons');
+  expect([...(contract.components.schemas['ConfigPlatformIcon']!.required ?? [])].sort()).toEqual([
+    'sha256',
+    'url',
+    'version',
+  ]);
 });
