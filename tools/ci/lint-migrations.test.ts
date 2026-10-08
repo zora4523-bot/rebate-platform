@@ -831,3 +831,133 @@ it("CT-06d: EXECUTE '…''0ms''…' inside DO and a quoted TABLESPACE in CTAS ar
     ).map((p) => p.message),
   ).toEqual([expect.stringContaining('must be declared as bigint')]);
 });
+
+it('CT-06f review round 1: lower-case and nested dollar-quoted EXECUTE, out-of-range code points', () => {
+  for (const body of [
+    "execute 'SET LOCAL lock_timeout = ''0ms'';'",
+    'Execute $sql$SET LOCAL lock_timeout = $$0ms$$$sql$',
+  ]) {
+    expect(checkTimeouts('x.sql', `${TIMEOUTS}DO $body$ BEGIN ${body}; END $body$;\n`)).toEqual([
+      expect.stringContaining('require-lock-timeout'),
+    ]);
+  }
+  for (const value of [String.raw`E'\U00110000'`, String.raw`U&'\+110000'`]) {
+    expect(
+      checkTimeouts('x.sql', `${TIMEOUTS}SELECT set_config('lock_timeout', ${value}, true);\n`),
+    ).toEqual([expect.stringContaining('require-lock-timeout')]);
+  }
+});
+
+it('CT-06f review round 1: a constraint name binds to the next constraint only, NOT NULL included', () => {
+  const messages = (sql: string) =>
+    checkMigration('x.sql', TIMEOUTS + sql, {
+      schemaSql: '',
+      migrationsSql: [],
+      approved: false,
+    }).map((p) => p.message);
+  expect(
+    messages(
+      'CREATE TABLE app.order_flags (id bigint CONSTRAINT order_flags_id_nn NOT NULL UNIQUE);',
+    ),
+  ).toEqual([
+    expect.stringContaining('unnamed constraint on funds or attribution table order_flags'),
+  ]);
+  expect(
+    messages(
+      'CREATE TABLE app.order_flags (id bigint CONSTRAINT order_flags_id_nn NOT NULL CONSTRAINT order_flags_id_key UNIQUE);',
+    ),
+  ).toEqual([]);
+});
+
+it('CT-06f review round 1: unnamed funds-table indexes inside DO, and undecodable DO strings, are refused', () => {
+  const messages = (sql: string) =>
+    checkMigration('x.sql', TIMEOUTS + sql, {
+      schemaSql: '',
+      migrationsSql: [],
+      approved: false,
+    }).map((p) => p.message);
+  for (const body of [
+    'CREATE INDEX ON app.orders (app_id);',
+    "EXECUTE 'CREATE INDEX ON app.orders (app_id)';",
+  ]) {
+    expect(messages(`DO $$ BEGIN ${body} END $$;`)).toEqual([
+      expect.stringContaining('unnamed index on funds or attribution table orders'),
+    ]);
+  }
+  expect(
+    messages('DO $$ BEGIN CREATE INDEX orders_app_idx ON app.orders (app_id); END $$;'),
+  ).toEqual([]);
+  for (const sql of [
+    String.raw`DO E'BEGIN \q PERFORM 1; END';`,
+    String.raw`DO $$ BEGIN EXECUTE E'\x44ROP TRIGGER guard ON app.orders \q'; END $$;`,
+  ]) {
+    expect(messages(sql)).toEqual([expect.stringContaining('escape the gate cannot read')]);
+  }
+});
+
+it('CT-06f review round 1: NOT VALID then VALIDATE recreated twice compares equal both times', () => {
+  const rebuild =
+    "ALTER TABLE app.orders DROP CONSTRAINT orders_state_check, ADD CONSTRAINT orders_state_check CHECK (state IN ('a', 'b')) NOT VALID;\nALTER TABLE app.orders VALIDATE CONSTRAINT orders_state_check;\n";
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "CREATE TABLE app.orders (id bigint CONSTRAINT orders_pkey PRIMARY KEY, state text NOT NULL, CONSTRAINT orders_state_check CHECK (state IN ('a', 'b')));",
+      TIMEOUTS + rebuild,
+    ],
+    approved: false,
+  };
+  expect(checkMigration('x.sql', TIMEOUTS + rebuild, ctx)).toEqual([]);
+});
+
+it('CT-06f review round 2: a validated history stays validated, so a rebuild without VALIDATE is a change', () => {
+  const add =
+    "ALTER TABLE app.order_rights DROP CONSTRAINT order_rights_status_check, ADD CONSTRAINT order_rights_status_check CHECK (status IN ('a', 'b')) NOT VALID;\n";
+  const validate = 'ALTER TABLE app.order_rights VALIDATE CONSTRAINT order_rights_status_check;\n';
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "CREATE TABLE app.order_rights (id bigint CONSTRAINT order_rights_pkey PRIMARY KEY, status text NOT NULL, CONSTRAINT order_rights_status_check CHECK (status IN ('a', 'b')));",
+      TIMEOUTS + add + validate,
+    ],
+    approved: false,
+  };
+  expect(checkMigration('x.sql', TIMEOUTS + add, ctx).map((p) => p.message)).toEqual([
+    expect.stringContaining('recreated with a different definition'),
+  ]);
+  // VALIDATE before the ADD does not validate the new constraint.
+  expect(checkMigration('x.sql', TIMEOUTS + validate + add, ctx).map((p) => p.message)).toEqual([
+    expect.stringContaining('recreated with a different definition'),
+  ]);
+  expect(checkMigration('x.sql', TIMEOUTS + add + validate, ctx)).toEqual([]);
+});
+
+it('CT-06f review round 2: a line comment inside an EXECUTE string does not hide what follows it', () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      `${TIMEOUTS}DO $$ BEGIN EXECUTE 'SELECT 1 -- ping'; ALTER TABLE app.order_keys DISABLE TRIGGER order_keys_append_only; END $$;\n`,
+      { schemaSql: '', migrationsSql: [], approved: false },
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('guard change inside a DO block')]);
+});
+
+it('CT-06f review round 2: octal and hex escapes are UTF-8 bytes when definitions are compared', () => {
+  const index = (value: string) =>
+    `CREATE INDEX order_rights_src_idx ON app.order_rights (app_id) WHERE source = ${value};`;
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [index(String.raw`E'\303\251'`)],
+    approved: false,
+  };
+  const rebuild = (value: string) =>
+    checkMigration(
+      'x.sql',
+      `${TIMEOUTS}DROP INDEX app.order_rights_src_idx;\n${index(value)}\n`,
+      ctx,
+    );
+  expect(rebuild("'é'")).toEqual([]);
+  expect(rebuild(String.raw`E'\xc3\xa9'`)).toEqual([]);
+  expect(rebuild("'Ã©'").map((p) => p.message)).toEqual([
+    expect.stringContaining('recreated with a different definition'),
+  ]);
+});

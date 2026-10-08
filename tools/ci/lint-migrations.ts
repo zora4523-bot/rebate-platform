@@ -31,6 +31,10 @@
 // funds-table objects are not renamed and triggers not set to REPLICA; the remaining ways to switch a
 // timeout off, DO blocks with a string body, the narrower ALTER … TYPE inside DO, SELECT … INTO by the
 // statement head, CTAS clauses before AS, more script extensions.
+// CT-06f: funds-table constraints and indexes must be named; NOT VALID followed by VALIDATE on the
+// same table compares as validated; literals are decoded as PostgreSQL reads them (E'…', U&'…',
+// dollar quotes; unknown escapes count as switching a timeout off); guard changes inside DO blocks are
+// refused; set_config anywhere in a statement.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -158,7 +162,7 @@ const TIMEOUT_SET_IN =
 const TIMEOUT_RESET_IN = /\bRESET\s+"?(lock_timeout|statement_timeout|ALL)"?(?![\w"])/i;
 /** `set_config('lock_timeout' | 'statement_timeout', <value>, …)` anywhere in a statement. */
 const TIMEOUT_SET_CONFIG =
-  /(?<![\w"])(?:"?pg_catalog"?\s*\.\s*)?"?set_config"?\s*\(\s*(?:E|U&)?'"?(lock_timeout|statement_timeout)"?'\s*,\s*((?:E|U&)?'(?:[^']|'')*'|[^,)]*)/gi;
+  /(?<![\w"])(?:"?pg_catalog"?\s*\.\s*)?"?set_config"?\s*\(\s*(?:E|U&)?'"?(lock_timeout|statement_timeout)"?'\s*,\s*([Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*'|(?<dq>\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)[\s\S]*?\k<dq>|[^,)]*)/gi;
 /** Milliseconds per unit of a timeout value (no unit means milliseconds). */
 const TIMEOUT_UNITS: Readonly<Record<string, number>> = {
   us: 0.001,
@@ -308,10 +312,7 @@ export function checkTimeouts(file: string, sql: string): string[] {
   // Inside DO blocks: SET / RESET of a timeout to 0, DEFAULT or its default count too.
   for (const { body: raw } of doBodies(code, valued)) {
     // EXECUTE 'SET LOCAL lock_timeout = ''0ms'';' runs the decoded string: check that instead.
-    const body = raw.replace(
-      /\bEXECUTE\s+(?:E)?'((?:[^']|'')*)'/gi,
-      (_m, inner: string) => `EXECUTE ${inner.replace(/''/g, "'")};`,
-    );
+    const body = decodeExecutes(raw);
     const blanked = withoutComments(body);
     const kept = withoutComments(body, true);
     let offset = 0;
@@ -360,10 +361,11 @@ export function checkTimeouts(file: string, sql: string): string[] {
  * database will judge it).
  */
 function timeoutMilliseconds(raw: string): number {
-  const text = raw
-    .trim()
-    .replace(/^(?:E|U&)?'([\s\S]*)'$/i, '$1')
-    .trim();
+  const literal = raw.trim();
+  // A literal is read as PostgreSQL reads it; an escape this gate does not know counts as off (CT-06f).
+  const decoded = /^(?:[EeUu]&?'|'|\$)/.test(literal) ? decodeLiteral(literal) : literal;
+  if (decoded === null) return 0;
+  const text = decoded.trim();
   if (/^DEFAULT$/i.test(text) || text === '') return 0;
   const m = /^(\d*\.?\d+)\s*(us|ms|s|min|h|d)?$/i.exec(text);
   if (m === null) return Number.POSITIVE_INFINITY;
@@ -383,22 +385,35 @@ function roundHalfEven(x: number): number {
  * plain string bodies (`DO '…'`, `DO E'…'`, doubled quotes undone), each optionally with LANGUAGE.
  * `code` has comments and string contents blanked, `valued` only the comments, at the same offsets.
  */
-function doBodies(code: string, valued: string): { at: number; body: string }[] {
-  const out: { at: number; body: string }[] = [];
+function doBodies(
+  code: string,
+  valued: string,
+): { at: number; body: string; unreadable?: boolean }[] {
+  const out: { at: number; body: string; unreadable?: boolean }[] = [];
   const dollar = /\bDO\s+(?:LANGUAGE\s+\w+\s+)?(\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)/gi;
   for (const m of code.matchAll(dollar)) {
     const tag = m[1] ?? '$$';
     const open = (m.index ?? 0) + m[0].length;
     const close = code.indexOf(tag, open);
-    out.push({ at: m.index ?? 0, body: valued.slice(open, close === -1 ? code.length : close) });
+    out.push({
+      at: m.index ?? 0,
+      body: valued.slice(open, close === -1 ? code.length : close),
+    });
   }
-  const quoted = /\bDO\s+(?:LANGUAGE\s+\w+\s+)?(?:E|U&)?'/gi;
+  const quoted = /\bDO\s+(?:LANGUAGE\s+\w+\s+)?(E|U&)?'/gi;
   for (const m of code.matchAll(quoted)) {
     const open = (m.index ?? 0) + m[0].length;
     const close = code.indexOf("'", open);
+    const raw = valued.slice(open, close === -1 ? code.length : close);
+    // The body is read as PostgreSQL reads the literal (E'…' and U&'…' escapes, CT-06f); a body with
+    // an escape this gate does not know is kept undecoded.
+    const uescape =
+      close === -1 ? '' : (/^\s*UESCAPE\s*'[^']'/i.exec(valued.slice(close + 1))?.[0] ?? '');
+    const decoded = decodeLiteral(`${m[1] ?? ''}'${raw}'${uescape}`);
     out.push({
       at: m.index ?? 0,
-      body: valued.slice(open, close === -1 ? code.length : close).replace(/''/g, "'"),
+      body: decoded ?? raw.replace(/''/g, "'"),
+      ...(decoded === null ? { unreadable: true } : {}),
     });
   }
   return out;
@@ -511,7 +526,12 @@ function moneyColumns(statement: string): { name: string; rest: string; at: numb
     if (open === -1) return found;
     for (const part of topLevelParts(statement, open + 1, statement.length)) {
       const m = MONEY_COLUMN_DEF.exec(part.text);
-      if (m !== null) found.push({ name: m[1] ?? m[2] ?? '', rest: m[3] ?? '', at: at(part) });
+      if (m !== null)
+        found.push({
+          name: m[1] ?? m[2] ?? '',
+          rest: m[3] ?? '',
+          at: at(part),
+        });
     }
     return found;
   }
@@ -541,6 +561,238 @@ function lineOf(text: string, index: number): number {
   return line;
 }
 
+/** One SQL string literal token: E'…' (backslash escapes), U&'…' [UESCAPE 'c'], '…' or $tag$…$tag$. */
+const LITERAL_SRC = String.raw`[Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*'|(?<dq>\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)[\s\S]*?\k<dq>`;
+
+/** The character of a code point, or null outside Unicode (PostgreSQL rejects it). */
+function codePoint(n: number): string | null {
+  return n > 0x10ffff ? null : String.fromCodePoint(n);
+}
+
+/**
+ * The value of a SQL string literal as PostgreSQL reads it (CT-06f): plain '…', E'…' with every
+ * backslash escape PostgreSQL knows (\' \\ \b \f \n \r \t, \ooo, \xhh, \uXXXX, \UXXXXXXXX), U&'…' with
+ * \XXXX and \+XXXXXX (or the UESCAPE character), and $tag$…$tag$. null when the literal holds an escape
+ * this gate does not know — callers treat that conservatively. Text that is not a literal is returned as is.
+ */
+export function decodeLiteral(token: string): string | null {
+  const t = token.trim();
+  const dollar = /^(\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)([\s\S]*)\1$/.exec(t);
+  if (dollar !== null) return dollar[2] ?? '';
+  const uni = /^[Uu]&'((?:[^']|'')*)'(?:\s*UESCAPE\s*'([^'])')?$/i.exec(t);
+  if (uni !== null) {
+    const esc = uni[2] ?? '\\';
+    const body = (uni[1] ?? '').replace(/''/g, "'");
+    let out = '';
+    for (let i = 0; i < body.length; i++) {
+      if (body[i] !== esc) {
+        out += body[i];
+        continue;
+      }
+      if (body[i + 1] === esc) {
+        out += esc;
+        i++;
+      } else if (body[i + 1] === '+' && /^[0-9a-fA-F]{6}$/.test(body.slice(i + 2, i + 8))) {
+        {
+          const c = codePoint(parseInt(body.slice(i + 2, i + 8), 16));
+          if (c === null) return null;
+          out += c;
+        }
+        i += 7;
+      } else if (/^[0-9a-fA-F]{4}$/.test(body.slice(i + 1, i + 5))) {
+        {
+          const c = codePoint(parseInt(body.slice(i + 1, i + 5), 16));
+          if (c === null) return null;
+          out += c;
+        }
+        i += 4;
+      } else return null;
+    }
+    return out;
+  }
+  const e = /^[Ee]'((?:[^'\\]|''|\\[\s\S])*)'$/.exec(t);
+  if (e !== null) {
+    const body = e[1] ?? '';
+    let out = '';
+    // Octal and hex escapes are bytes, read together as UTF-8 the way the database does (CT-06f).
+    let bytes: number[] = [];
+    const flush = (): boolean => {
+      if (bytes.length === 0) return true;
+      try {
+        out += new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes));
+      } catch {
+        return false;
+      }
+      bytes = [];
+      return true;
+    };
+    for (let i = 0; i < body.length; i++) {
+      const c = body[i] ?? '';
+      const next = body[i + 1] ?? '';
+      const isByte =
+        c === '\\' &&
+        (/[0-7]/.test(next) || (next === 'x' && /[0-9a-fA-F]/.test(body[i + 2] ?? '')));
+      if (!isByte && !flush()) return null;
+      if (c === "'" && body[i + 1] === "'") {
+        out += "'";
+        i++;
+        continue;
+      }
+      if (c !== '\\') {
+        out += c;
+        continue;
+      }
+      const n = body[i + 1] ?? '';
+      const simple: Record<string, string> = {
+        "'": "'",
+        '\\': '\\',
+        b: '\b',
+        f: '\f',
+        n: '\n',
+        r: '\r',
+        t: '\t',
+      };
+      if (simple[n] !== undefined) {
+        out += simple[n];
+        i++;
+      } else if (/[0-7]/.test(n)) {
+        const m = /^[0-7]{1,3}/.exec(body.slice(i + 1))?.[0] ?? n;
+        const b = parseInt(m, 8);
+        if (b === 0 || b > 0xff) return null;
+        bytes.push(b);
+        i += m.length;
+        continue;
+      } else if (n === 'x' && /[0-9a-fA-F]/.test(body[i + 2] ?? '')) {
+        const m = /^[0-9a-fA-F]{1,2}/.exec(body.slice(i + 2))?.[0] ?? '';
+        const b = parseInt(m, 16);
+        if (b === 0) return null;
+        bytes.push(b);
+        i += 1 + m.length;
+        continue;
+      } else if (n === 'u' && /^[0-9a-fA-F]{4}$/.test(body.slice(i + 2, i + 6))) {
+        {
+          const c = codePoint(parseInt(body.slice(i + 2, i + 6), 16));
+          if (c === null) return null;
+          out += c;
+        }
+        i += 5;
+      } else if (n === 'U' && /^[0-9a-fA-F]{8}$/.test(body.slice(i + 2, i + 10))) {
+        {
+          const c = codePoint(parseInt(body.slice(i + 2, i + 10), 16));
+          if (c === null) return null;
+          out += c;
+        }
+        i += 9;
+      } else return null;
+    }
+    return flush() ? out : null;
+  }
+  const plain = /^'((?:[^']|'')*)'$/.exec(t);
+  if (plain !== null) return (plain[1] ?? '').replace(/''/g, "'");
+  return t;
+}
+
+/** EXECUTE <literal> inside a DO body replaced by the SQL it runs (undecodable literals left as is). */
+function decodeExecutes(body: string): string {
+  return body.replace(
+    new RegExp(String.raw`\bEXECUTE\s+(${LITERAL_SRC})`, 'gi'),
+    (m, lit: string) => {
+      const v = decodeLiteral(lit);
+      // A newline ends a line comment inside the string before the DO body goes on (CT-06f).
+      return v === null ? m : `EXECUTE ${v}\n;`;
+    },
+  );
+}
+
+/** Text with every parenthesised group blanked (same length): what is left is the top level. */
+function flattenParens(text: string): string {
+  let t = text;
+  while (/\([^()]*\)/.test(t)) t = t.replace(/\([^()]*\)/g, (m) => ' '.repeat(m.length));
+  return t;
+}
+
+/**
+ * Constraints of one column definition (after the column name and type) that carry no
+ * `CONSTRAINT <name>` (CT-06f): PostgreSQL names them itself, so no migration holds their definition.
+ */
+function hasUnnamedColumnConstraint(text: string): boolean {
+  const flat = flattenParens(text);
+  let named = false;
+  for (const m of flat.matchAll(
+    /\bCONSTRAINT\s+(?:"[^"]+"|\w+)|\b(?:PRIMARY\s+KEY|UNIQUE|CHECK|REFERENCES|EXCLUDE)\b|\b(?:NOT\s+NULL|NULL|DEFAULT|GENERATED)\b/gi,
+  )) {
+    if (/^CONSTRAINT\b/i.test(m[0])) {
+      named = true;
+      continue;
+    }
+    // A name before NOT NULL, NULL, DEFAULT or GENERATED is used by it, not by the next constraint.
+    if (/^(?:NOT\s+NULL|NULL|DEFAULT|GENERATED)$/i.test(m[0])) {
+      named = false;
+      continue;
+    }
+    if (!named) return true;
+    named = false;
+  }
+  return false;
+}
+
+/**
+ * CT-06f ①: constraints and indexes of a funds or attribution table must be named. An unnamed one gets
+ * a PostgreSQL-chosen name no migration records, so later definition comparisons would only see the
+ * regenerated snapshot.
+ */
+function unnamedProblems(file: string, code: string): Problem[] {
+  const problems: Problem[] = [];
+  const refuse = (at: number, kind: string, table: string): void => {
+    problems.push({
+      file,
+      line: lineOf(code, at),
+      message: `unnamed ${kind} on funds or attribution table ${bareTableName(table)}: name it (CONSTRAINT <name> / CREATE INDEX <name>) so later migrations can be compared with it`,
+    });
+  };
+  let start = 0;
+  for (const text of code.split(';')) {
+    const at = start + text.length - text.trimStart().length;
+    start += text.length + 1;
+    const index = new RegExp(
+      String.raw`^\s*CREATE\s+(?:UNIQUE\s+)?INDEX(?:\s+CONCURRENTLY)?(?:\s+IF\s+NOT\s+EXISTS)?\s+ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
+      'i',
+    ).exec(text);
+    if (index !== null && isFundsTable(index[1] ?? '')) refuse(at, 'index', index[1] ?? '');
+    const create = new RegExp(
+      String.raw`^\s*CREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP(?:ORARY)?\s+|UNLOGGED\s+)?TABLE${GAP}(?:IF\s+NOT\s+EXISTS${GAP})?(${IDENT})\s*\(`,
+      'i',
+    ).exec(text);
+    if (create !== null && isFundsTable(create[1] ?? '')) {
+      const table = create[1] ?? '';
+      const unnamed = topLevelParts(text, create[0].length, text.length).some((part) => {
+        const p = flattenParens(part.text);
+        if (/^\s*(?:PRIMARY\s+KEY|UNIQUE|CHECK|FOREIGN\s+KEY|EXCLUDE)\b/i.test(p)) return true;
+        if (/^\s*(?:CONSTRAINT|LIKE)\b/i.test(p)) return false;
+        return hasUnnamedColumnConstraint(part.text.replace(/^\s*(?:"[^"]+"|\w+)/, ''));
+      });
+      if (unnamed) refuse(at, 'constraint', table);
+    }
+    const alter = ALTER_TABLE.exec(text);
+    if (alter !== null && isFundsTable(alter[1] ?? '')) {
+      const table = alter[1] ?? '';
+      const unnamed = topLevelParts(text, alter[0].length, text.length).some((part) => {
+        const p = flattenParens(part.text);
+        if (!/^\s*ADD\b/i.test(p) || /^\s*ADD\s+CONSTRAINT\b/i.test(p)) return false;
+        if (/^\s*ADD\s+(?:PRIMARY\s+KEY|UNIQUE|CHECK|FOREIGN\s+KEY|EXCLUDE)\b/i.test(p))
+          return true;
+        const column = part.text.replace(
+          /^\s*ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?:"[^"]+"|\w+)/i,
+          '',
+        );
+        return hasUnnamedColumnConstraint(column);
+      });
+      if (unnamed) refuse(at, 'constraint', table);
+    }
+  }
+  return problems;
+}
+
 /**
  * CT-06b: destructive DDL inside a DO block (squawk does not look into it), SET SCHEMA on a funds
  * table, a column renamed into a money column, and money columns made by CREATE TABLE … AS or
@@ -554,7 +806,22 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
   // RAISE statements are messages, not SQL: their text does not count (CT-06d). ALTER … TYPE means a
   // column type change (ALTER TABLE … ALTER [COLUMN] x [SET DATA] TYPE), not a column named type or
   // ALTER TYPE … ADD VALUE.
-  for (const { at, body: raw } of doBodies(code, valued)) {
+  for (const { at, body: original, unreadable } of doBodies(code, valued)) {
+    // A body or EXECUTE string with an escape this gate cannot read could hide anything (CT-06f).
+    const undecodable = [
+      ...original.matchAll(new RegExp(String.raw`\bEXECUTE\s+(${LITERAL_SRC})`, 'gi')),
+    ].some((m) => decodeLiteral(m[1] ?? '') === null);
+    if (unreadable === true || undecodable) {
+      problems.push({
+        file,
+        line: lineOf(code, at),
+        message:
+          'DO block with an escape the gate cannot read (E or U& string): write the SQL as plain SQL',
+      });
+      continue;
+    }
+    // EXECUTE strings are read as the SQL they run (CT-06f).
+    const raw = decodeExecutes(original);
     const blankedBody = withoutComments(raw);
     let body = withoutComments(raw, true);
     for (const m of blankedBody.matchAll(/\bRAISE\b[^;]*/gi)) {
@@ -570,14 +837,40 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
             part,
           ),
         );
-    if (destructive) {
+    // Guard changes the definition comparison cannot see inside a DO block (CT-06f).
+    const guardChange =
+      /\bCREATE\s+OR\s+REPLACE\s+(?:CONSTRAINT\s+)?TRIGGER\b|\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE)\b|\bDROP\s+(?:TRIGGER|FUNCTION|PROCEDURE|INDEX)\b/i.test(
+        body,
+      ) ||
+      body
+        .split(';')
+        .some((part) =>
+          /\bALTER\s+TABLE\b[\s\S]*\b(?:DROP\s+CONSTRAINT|DISABLE\s+TRIGGER|ENABLE\s+REPLICA\s+TRIGGER)\b/i.test(
+            part,
+          ),
+        );
+    if (destructive || guardChange) {
+      const parts: string[] = [];
+      if (destructive) {
+        parts.push(
+          'destructive DDL inside a DO block (DROP, RENAME, TRUNCATE or ALTER … TYPE): squawk does not check it',
+        );
+      }
+      if (guardChange) parts.push('guard change inside a DO block');
       problems.push({
         file,
         line: lineOf(code, at),
-        message:
-          'destructive DDL inside a DO block (DROP, RENAME, TRUNCATE or ALTER … TYPE): squawk does not check it; write it as plain SQL',
+        message: `${parts.join('; ')}: write it as plain SQL`,
       });
     }
+    // Unnamed funds-table indexes and constraints inside a DO block count too (CT-06f).
+    // PL/pgSQL keywords before a statement are cut like statement ends, so the statement head is read.
+    const statementsOnly = withoutComments(body).replace(
+      /\b(?:BEGIN|THEN|ELSE|LOOP|EXECUTE)\b/gi,
+      (m) => `;${' '.repeat(m.length - 1)}`,
+    );
+    for (const problem of unnamedProblems(file, statementsOnly))
+      problems.push({ ...problem, line: lineOf(code, at) });
   }
   let start = 0;
   for (const statement of code.split(';')) {
@@ -731,9 +1024,17 @@ export function normaliseDefinition(text: string): string {
       .replace(/\bexecute\s+procedure\b/g, 'execute function')
       .replace(/\s+/g, ' ')
       .replace(/\s*([(),=])\s*/g, '$1');
+  // Literals (E'…', U&'…', '…') are decoded and rewritten in one canonical form, so E'a\'b' equals
+  // 'a''b' and a backslash escape cannot shift where literals start and end (CT-06f).
   let t = text
-    .split(/('(?:[^']|'')*')/)
-    .map((p, i) => (i % 2 === 1 ? p : sqlPart(p)))
+    .split(
+      /([Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*')/,
+    )
+    .map((p, i) => {
+      if (i % 2 === 0) return sqlPart(p);
+      const v = decodeLiteral(p);
+      return v === null ? p : `'${v.replace(/'/g, "''")}'`;
+    })
     .join('')
     .replace(/;\s*$/, '')
     .trim();
@@ -830,6 +1131,15 @@ function guardDefinitions(sources: readonly string[]): {
               ),
             );
           }
+          // VALIDATE CONSTRAINT: the constraint is validated from here on (CT-06f).
+          const v = new RegExp(String.raw`^\s*VALIDATE\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(
+            part.text,
+          );
+          if (v !== null) {
+            const key = `${bareName(alter[1] ?? '')}/${bareName(v[1] ?? '')}`;
+            const d = constraints.get(key);
+            if (d !== undefined) constraints.set(key, d.replace(/\s*not\s+valid\b/i, ''));
+          }
           // ADD COLUMN … CONSTRAINT x CHECK (…) [CONSTRAINT y …]: column constraints added with
           // their column (0020 has two on one column).
           if (c === null && /^\s*ADD\b/i.test(part.text)) {
@@ -873,7 +1183,11 @@ function fundsObjectProblems(
   const problems: Problem[] = [];
   const statements = statementsOf(code);
   const refuse = (at: number, message: string): void => {
-    problems.push({ file, line: lineOf(code, at), message: `${message} (规划/02 §16.3)` });
+    problems.push({
+      file,
+      line: lineOf(code, at),
+      message: `${message} (规划/02 §16.3)`,
+    });
   };
   // The statement with its string literals kept, for definition comparisons (CT-06d).
   const keptOf = (j: number): string =>
@@ -998,10 +1312,42 @@ function fundsObjectProblems(
             );
           else if (strict) {
             const before = original().constraints.get(`${table}/${name}`);
-            if (
-              before !== undefined &&
-              before !== normaliseDefinition(clause.trim().replace(/^add\s+/i, ''))
-            ) {
+            // NOT VALID followed in this file by VALIDATE CONSTRAINT on the same table and name ends
+            // validated: compare it as such (CT-06f).
+            // Only a VALIDATE after the ADD counts: parts after it in its statement, then later ones.
+            const partsOf = (j: number) => {
+              const t = statements[j]?.text ?? '';
+              const a = ALTER_TABLE.exec(t);
+              if (a === null || bareName(a[1] ?? '') !== table) return [];
+              return topLevelParts(t, a[0].length, t.length).map((q) => q.text);
+            };
+            const isAdd = (q: string) =>
+              bareName(
+                new RegExp(String.raw`^\s*ADD\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(q)?.[1] ??
+                  '',
+              ) === name;
+            const isValidate = (q: string) =>
+              bareName(
+                new RegExp(String.raw`^\s*VALIDATE\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(
+                  q,
+                )?.[1] ?? '',
+              ) === name;
+            const addAt = [k, ...statements.slice(k + 1).map((_st, d) => k + 1 + d)].find((j) =>
+              partsOf(j)
+                .slice(j === k ? i + 1 : 0)
+                .some(isAdd),
+            );
+            const validated =
+              addAt !== undefined &&
+              statements.slice(addAt).some((_st, d) => {
+                const parts = partsOf(addAt + d);
+                const from = d === 0 ? parts.findLastIndex(isAdd) + 1 : 0;
+                return parts.slice(from).some(isValidate);
+              });
+            let now = clause.trim().replace(/^add\s+/i, '');
+            if (validated) now = now.replace(/\s+NOT\s+VALID\b/i, '');
+            const was = validated ? before?.replace(/\s*not\s+valid\b/i, '') : before;
+            if (was !== undefined && was !== normaliseDefinition(now)) {
               refuse(at, different('constraint', name, table));
             }
           }
@@ -1177,6 +1523,7 @@ export function checkMigration(
     start += statement.length + 1;
   }
   problems.push(...structureProblems(file, sql, code));
+  problems.push(...unnamedProblems(file, code));
   problems.push(...fundsObjectProblems(file, sql, code, context));
   const ignoreFile = IGNORE_FILE.exec(sql);
   if (ignoreFile !== null) {
