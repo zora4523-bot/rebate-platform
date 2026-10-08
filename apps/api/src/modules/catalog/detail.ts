@@ -38,6 +38,13 @@ export interface ProductDetailRequest {
   readonly jdMode?: string;
   /** Absent means re-resolve the product key, never fabricate an upstream raw ID. */
   readonly rawItemId?: string;
+  /**
+   * The detail use case's resolved raw ID (item_ref or product_refs) must be the one the union is
+   * asked with: a detail cache entry fetched under another raw ID of the same product_key counts
+   * as a miss and is overwritten (AC-B1-05k#5/#7). Display reads leave it unset and share the
+   * entry by product_key alone (BR-PROD-07).
+   */
+  readonly requireRawMatch?: boolean;
 }
 
 /**
@@ -220,7 +227,7 @@ export async function getProduct(
       productKey,
       platform,
       ...(platform === 'jd' ? { jdMode } : {}),
-      ...(rawItemId === undefined ? {} : { rawItemId }),
+      ...(rawItemId === undefined ? {} : { rawItemId, requireRawMatch: true }),
     });
   } catch (error: unknown) {
     throw upstreamFailure(error);

@@ -167,6 +167,22 @@ function loadItem(value: unknown): UnionItemDetail {
   return out as unknown as UnionItemDetail;
 }
 
+/** The raw ID the detail entry was fetched with (not a union field; never part of the key). */
+const DETAIL_RAW_FIELD = 'requested_raw_item_id';
+
+interface CachedDetail {
+  readonly item: UnionItemDetail;
+  readonly rawItemId: string | null;
+}
+
+function loadDetail(value: unknown): CachedDetail {
+  const item = loadItem(value);
+  const raw = (value as Json)[DETAIL_RAW_FIELD];
+  // Entries written before this field existed read as fetched without a raw ID.
+  if (raw !== undefined && raw !== null && typeof raw !== 'string') throw new Unreadable();
+  return { item, rawItemId: typeof raw === 'string' ? raw : null };
+}
+
 function storeRef(ref: ProductRef): Json {
   const source = ref as unknown as Json;
   const out: Json = {};
@@ -370,8 +386,17 @@ export function cacheDetailUpstream(
       const windows = await windowsOf(config, request.appId);
       // BR-PROD-07 detail key: `<app_id>:product:<product_key>`, never the raw ID.
       const key = `${request.appId}:product:${request.productKey}`;
-      const entry = await cache.read(key, loadItem);
-      const usable = entry !== null && entry.value.platform === request.platform ? entry : null;
+      const entry = await cache.read(key, loadDetail);
+      // AC-B1-05k#5/#7: when the caller requires its raw ID, an entry fetched under another raw
+      // ID of the same product_key is a miss (no hit, no stale answer) and is overwritten below.
+      const rawMismatch =
+        entry !== null &&
+        request.requireRawMatch === true &&
+        entry.value.rawItemId !== (request.rawItemId ?? null);
+      const usable =
+        entry !== null && !rawMismatch && entry.value.item.platform === request.platform
+          ? { fetchedAtMs: entry.fetchedAtMs, value: entry.value.item }
+          : null;
       if (usable !== null && clock.now().getTime() - usable.fetchedAtMs <= windows.hitMs) {
         return usable.value;
       }
@@ -390,7 +415,12 @@ export function cacheDetailUpstream(
       }
       const fetchedAtMs = clock.now().getTime();
       // Only an answer for this key's platform is shared; the use case validates the rest.
-      if (item.platform === request.platform) await cache.write(key, fetchedAtMs, storeItem(item));
+      if (item.platform === request.platform) {
+        await cache.write(key, fetchedAtMs, {
+          ...storeItem(item),
+          [DETAIL_RAW_FIELD]: request.rawItemId ?? null,
+        });
+      }
       return item;
     },
   };

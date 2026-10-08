@@ -64,7 +64,8 @@ export interface SearchUpstreamPage {
   readonly stale?: boolean;
   /**
    * True when the union continuation cursor of this page could not be remembered because Redis
-   * was unavailable (02 §14, D6-8): the page is still delivered, but without a next cursor.
+   * was unavailable (02 §14, D6-8): the page is still delivered, but without a next cursor
+   * (has_more keeps the union's value).
    */
   readonly cursorUnsaved?: boolean;
 }
@@ -554,12 +555,17 @@ async function searchPages(
   }
   let lastPage = startPage;
   let hasMore = page.hasMore;
-  // D6-8: a page whose union cursor could not be remembered ends the list for this response.
+  // D6-8: a page whose union cursor could not be remembered gets no next_cursor in this response.
   let cursorLost = page.cursorUnsaved === true;
   await take(page.items, page.stale === true);
 
-  // BR-PRICE-08: at most one refill page; has_more follows the last upstream page.
-  if (dedupeSamePage(issued).length < limit && page.hasMore) {
+  // BR-PRICE-08: at most one refill page; has_more follows the last upstream page. The refill
+  // never asks the union for a page beyond SEARCH_MAX_PAGE_NO (checked before the request).
+  if (
+    dedupeSamePage(issued).length < limit &&
+    page.hasMore &&
+    startPage + 1 <= SEARCH_MAX_PAGE_NO
+  ) {
     let refill: SearchUpstreamPage | null = null;
     try {
       refill = await upstream.search(request(startPage + 1));
@@ -643,7 +649,9 @@ async function searchPages(
     );
     continuable = false;
   }
-  // The page cap: no cursor is issued beyond SEARCH_MAX_PAGE_NO, so the list ends there.
+  // The page cap and D6-8 only withhold next_cursor: no cursor is issued beyond
+  // SEARCH_MAX_PAGE_NO or without a stored session / cursor ledger. has_more stays as the union
+  // reported it (SearchProductsData.has_more, BR-PRICE-08), never rewritten by our own limits.
   const more = continuable && hasMore && lastPage + 1 <= SEARCH_MAX_PAGE_NO;
   return {
     firstPage,
@@ -651,7 +659,7 @@ async function searchPages(
     nextCursor: more
       ? cursors.encode({ search_session_id: sessionId, page_no: lastPage + 1 })
       : null,
-    hasMore: more,
+    hasMore,
     promotionSlot: pid.pid,
   };
 }

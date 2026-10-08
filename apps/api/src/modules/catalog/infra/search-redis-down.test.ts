@@ -7,7 +7,14 @@ import type { UnionAdapter, UnionItem, UnionPidRow } from '../../union/index.ts'
 import { createCatalogCardEntry } from '../application/card-entry.ts';
 import type { CardQuoteContext } from '../application/card-assembler.ts';
 import type { RebateQuote, Viewer } from '../ports.ts';
-import { searchProducts, type SearchCursor, type SearchProductsOptions } from '../search.ts';
+import {
+  searchProducts,
+  type SearchCandidate,
+  type SearchCursor,
+  type SearchProductsOptions,
+  type SearchSession,
+  type SearchUpstreamRequest,
+} from '../search.ts';
 import { cacheSearchUpstream } from './product-cache.ts';
 import { createRedisSearchSessionStore, createUnionSearchUpstream } from './search-wiring.ts';
 
@@ -175,7 +182,7 @@ function wired() {
   return { f, redis, searchItems, options };
 }
 
-it('[AC-B1-05g] Redis 不可用：首页搜索照常直读联盟出结果，next_cursor 为 null、has_more=false', async () => {
+it('[AC-B1-05g] Redis 不可用：首页搜索照常直读联盟出结果，next_cursor 为 null、has_more 保持联盟报告值', async () => {
   const { f, redis, searchItems, options } = wired();
   const result = await searchProducts(
     { platform: 'taobao', q: 'synthetic milk', limit: 1 },
@@ -185,7 +192,8 @@ it('[AC-B1-05g] Redis 不可用：首页搜索照常直读联盟出结果，next
   expect(result.items).toHaveLength(1);
   expect(result.items[0]).toMatchObject({ stale: false });
   expect(result.next_cursor).toBeNull();
-  expect(result.has_more).toBe(false);
+  // has_more is what the union reported (it returned a next cursor), not rewritten by D6-8.
+  expect(result.has_more).toBe(true);
   expect(f.register).toHaveBeenCalledTimes(1);
   // The session write was attempted (and failed) instead of being skipped.
   expect(redis.get).toHaveBeenCalled();
@@ -220,4 +228,75 @@ it('[AC-B1-05g] Redis 的其他错误照旧上抛，不按不可用降级', asyn
     searchProducts({ platform: 'taobao', q: 'synthetic milk', limit: 1 }, { ...options, sessions }),
   );
   expect(outcome).toMatchObject({ kind: 'rejected', error: failure });
+});
+
+it('[AC-B1-05g] 第 100 页：补页不向联盟请求第 101 页，next_cursor 为 null、has_more 保持联盟报告值', async () => {
+  const f = fixture();
+  const candidate = (name: string): SearchCandidate => ({
+    item: {
+      platform: 'taobao',
+      item_id: name,
+      title: name,
+      price_fen: 1000n,
+      coupon_fen: 0n,
+      final_price_fen: 1000n,
+      commission_rate_bp: 1000n,
+      quoted_at: NOW,
+    },
+    ref: {
+      appId: 'synthetic-app',
+      platform: 'taobao',
+      productKey: `tb:${name}`,
+      rawItemId: name,
+      rawFetchedAt: NOW,
+      receivedAt: NOW,
+      canonicalUrl: null,
+      title: name,
+      shopId: null,
+      shopType: null,
+      source: 'search',
+    },
+  });
+  // Page 1 delivers one card; page 100 comes back empty but the union still says has_more.
+  const search = vi.fn(async (input: SearchUpstreamRequest) => ({
+    items: input.pageNo === 1 ? [candidate('synthetic-cap001')] : [],
+    hasMore: true,
+  }));
+  const rows = new Map<string, SearchSession>();
+  const options: SearchProductsOptions = {
+    ...f.options,
+    config: {
+      configValue: async (_appId: string, key: string) =>
+        key.startsWith('search.enabled.') ? { value: true, version: 1 } : null,
+    },
+    upstream: {
+      search,
+      materialFeed: async () => ({ items: [], hasMore: false }),
+    },
+    sessions: {
+      read: async (appId, sessionId) => rows.get(`${appId}:${sessionId}`) ?? null,
+      write: async (appId, sessionId, session) => {
+        rows.set(`${appId}:${sessionId}`, session);
+      },
+    },
+  };
+  const query = { platform: 'taobao' as const, q: 'synthetic cap', limit: 1 };
+  const first = await searchProducts(query, options);
+  expect(first.next_cursor).not.toBeNull();
+
+  search.mockClear();
+  const last = await observed(() =>
+    searchProducts(
+      {
+        ...query,
+        cursor: f.cursors.encode({ search_session_id: 'synthetic-session-1', page_no: 100 }),
+      },
+      options,
+    ),
+  );
+  expect(last).toMatchObject({
+    kind: 'returned',
+    value: { items: [], next_cursor: null, has_more: true },
+  });
+  expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ pageNo: 100 }));
 });
