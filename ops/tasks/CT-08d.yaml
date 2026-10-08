@@ -34,5 +34,5 @@ accept:
   - 'pnpm verify'
   - 'pnpm contracts:check'
   - 'test/spec/contracts/agent-http/**'
-status: todo
-pr: null
+status: done
+pr: 290
