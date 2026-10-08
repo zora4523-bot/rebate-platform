@@ -15,7 +15,7 @@ type: impl
 # 新规则测试放 test/spec/linking/open-idempotency/**，@couli/db/testing 只在 *.int.test.ts 里 import。风险：linking/** RV2，platform/idempotency RV2（预计不改）。
 refs: [BR-PRICE-12, BR-PRICE-20]
 refs_hash:
-  BR-PRICE-12: d34f9f17f4ae
+  BR-PRICE-12: 6aa98fc3ce46
   BR-PRICE-20: 7529667f1f23
 deps: [B1-06k, B1-06n, B1-06e]
 paths:
