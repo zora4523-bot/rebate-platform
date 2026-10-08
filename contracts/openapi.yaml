@@ -1123,7 +1123,6 @@ paths:
       x-auth: login
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 30101
         - 30102

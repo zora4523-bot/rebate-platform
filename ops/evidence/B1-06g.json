@@ -1,0 +1,115 @@
+{
+  "task": "B1-06g",
+  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+  "spec_commit": "384041dca533a62082fec702cda71d980c5afad0",
+  "red_tests": [
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#1] 淘宝 ios 未配置时默认 web_code，签发完整的未使用 state 快照",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#1] 淘宝 android 未配置时默认 web_code，签发完整的未使用 state 快照",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#1] 淘宝 harmony 未配置时默认 web_code，签发完整的未使用 state 快照",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#2] 设备记录 android、请求声明 ios：按记录端配置保序下发并持久化",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#2] 设备记录 ios、请求声明 android：按记录端配置保序下发并持久化",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#2] 设备记录 harmony、请求声明 android：按记录端配置保序下发并持久化",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#3] 同一身份重复调用产生不同 state、两行记录，后一次不覆盖前一次或提前消费",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#4] 拼多多 ios 的 installed 缺省等同 unknown；只有 auth_jump，快照授权方式两列为空",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#4] 拼多多 android 的 installed 缺省等同 unknown；只有 auth_jump，快照授权方式两列为空",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#4] 拼多多 harmony 的 installed 缺省等同 unknown；只有 auth_jump，快照授权方式两列为空",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#5] taobao 绑定 blocked 且用户 normal：30153，不签发 state",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#5] pdd 绑定 blocked 且用户 normal：30153，不签发 state",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 absent：30101 auth_unavailable，不下发授权入口或写行",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 unbound：30101 auth_unavailable，不下发授权入口或写行",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 pending_auth：30101 auth_unavailable，不下发授权入口或写行",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 released：30101 auth_unavailable，不下发授权入口或写行",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 invalid：30102 auth_unavailable，不下发授权入口或写行",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#7] 只有游客设备、无登录令牌：10001，不写授权会话",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#8] 不支持授权的平台 synthetic_unknown 返回 20001，不能误签发淘宝授权会话",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#8] 不支持授权的平台 jd 返回 20001，不能误签发淘宝授权会话",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#11] HTTP 请求夹带应用、身份及换绑参数不能改变服务端签发快照",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#9] 应用快照来自签发环境的服务端配置，忽略请求伪造的身份与应用字段，不保存或返回密钥",
+    "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#10] prod 配置混入 sdk_token 时只下发 web_code，state 不保存实验方式或跨环境应用引用"
+  ],
+  "risk_note": "RV2 (linking/**, user authorization boundary; contracts/openapi.yaml only loses the x-implementation: planned line of getUnionAuthUrl, route-schemas.gen.ts regenerated). GET /v1/unions/{platform}/auth-url issues a 600 s single-use state (secure random, no identity in clear, link_id empty, mode bind) for the logged-in user and writes client from the device record, the Taobao auth_methods in configured order (prod filters sdk_token) and server-side auth_app_refs; Pinduoduo gets auth_jump through the open jump matrix (device-record client, installed defaults to unknown) and no auth_methods. A blocked binding of a non-banned user is 30153 first; the site's union authorization of the account actually used (binding's account, else the active self_buy pid's account) being expired gives 30101 / 30102 auth_unavailable without issuing a state. Reads devices / user_risk_state / union_accounts / pids read-only, writes only union_auth_sessions. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "384041dca533a62082fec702cda71d980c5afad0",
+      "tree": "95a8d33e79a4dc49534f510e67cee92ed4a38f3b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T07:44:57Z",
+      "finished_at": "2026-10-08T07:47:22Z",
+      "red_tests": [
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#1] 淘宝 ios 未配置时默认 web_code，签发完整的未使用 state 快照",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#1] 淘宝 android 未配置时默认 web_code，签发完整的未使用 state 快照",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#1] 淘宝 harmony 未配置时默认 web_code，签发完整的未使用 state 快照",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#2] 设备记录 android、请求声明 ios：按记录端配置保序下发并持久化",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#2] 设备记录 ios、请求声明 android：按记录端配置保序下发并持久化",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#2] 设备记录 harmony、请求声明 android：按记录端配置保序下发并持久化",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#3] 同一身份重复调用产生不同 state、两行记录，后一次不覆盖前一次或提前消费",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#4] 拼多多 ios 的 installed 缺省等同 unknown；只有 auth_jump，快照授权方式两列为空",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#4] 拼多多 android 的 installed 缺省等同 unknown；只有 auth_jump，快照授权方式两列为空",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#4] 拼多多 harmony 的 installed 缺省等同 unknown；只有 auth_jump，快照授权方式两列为空",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#5] taobao 绑定 blocked 且用户 normal：30153，不签发 state",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#5] pdd 绑定 blocked 且用户 normal：30153，不签发 state",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 absent：30101 auth_unavailable，不下发授权入口或写行",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 unbound：30101 auth_unavailable，不下发授权入口或写行",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 pending_auth：30101 auth_unavailable，不下发授权入口或写行",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 released：30101 auth_unavailable，不下发授权入口或写行",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#6] 站长授权 expired、用户绑定 invalid：30102 auth_unavailable，不下发授权入口或写行",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#7] 只有游客设备、无登录令牌：10001，不写授权会话",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#8] 不支持授权的平台 synthetic_unknown 返回 20001，不能误签发淘宝授权会话",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#8] 不支持授权的平台 jd 返回 20001，不能误签发淘宝授权会话",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#11] HTTP 请求夹带应用、身份及换绑参数不能改变服务端签发快照",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#9] 应用快照来自签发环境的服务端配置，忽略请求伪造的身份与应用字段，不保存或返回密钥",
+        "test/spec/linking/auth-url/issuance.int.test.ts > [AC-B1-06g#10] prod 配置混入 sdk_token 时只下发 web_code，state 不保存实验方式或跨环境应用引用"
+      ],
+      "expected": ["test/spec/linking/auth-url/issuance.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "0a064b2da0d374123db36e4e6b39bc2035d197d4dd6489f4e2aa40171e971c98"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents with the money checklist: round 1 pass (3 S2), round 2 pass (1 S2: fallback account order when several accounts and no active pid)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 S1 (any unexpired account of the platform masked the used account's expiry) and the out-of-scope Pinduoduo jump matrix item fixed in round 2; round 2 pass with one out-of-scope S2"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, 23 tests). The orchestrator fixed one fixture defect (config_items.value written as a JS array) and, after the round 1 S1 (auth_methods order only tested in alphabetical order), added one non-alphabetical configuration case; three S2 were passed to the implementer."
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "c2e8810d7c0c4bad610cd5590c7c4fd3c71cdecd",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
