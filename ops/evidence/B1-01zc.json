@@ -1,0 +1,139 @@
+{
+  "task": "B1-01zc",
+  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+  "spec_commit": "796b0b592eb7522ad8f8b34cbc57cb862b15ccb8",
+  "red_tests": [
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#1] 五个常驻服务共用同一个可切换的镜像，不在节点构建或拉取",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] api 选择对应的后端进程入口",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] stream 选择对应的后端进程入口",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] worker 选择对应的后端进程入口",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] admin 选择对应的后端进程入口",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] payout 选择对应的后端进程入口",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] api 只读自己的节点环境文件",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] stream 只读自己的节点环境文件",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] worker 只读自己的节点环境文件",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] admin 只读自己的节点环境文件",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] payout 只读自己的节点环境文件",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-HEALTH#1] api 探测本进程 /healthz，失败返回非零",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-HEALTH#1] stream 探测本进程 /healthz，失败返回非零",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-HEALTH#1] admin 探测本进程 /healthz，失败返回非零",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#3] 所有部署交付文件（含 README）不含内联口令",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] api 端口不发布或仅绑定 127.0.0.1",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] stream 端口不发布或仅绑定 127.0.0.1",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] worker 端口不发布或仅绑定 127.0.0.1",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] admin 端口不发布或仅绑定 127.0.0.1",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] payout 端口不发布或仅绑定 127.0.0.1",
+    "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#2] compose 没有内联口令、构建指令或迁移凭据",
+    "test/spec/infra/staging/deploy.test.ts > [AC-B1-01zc-DEPLOY#1] 接受新镜像参数，迁移成功之后才切换并等待健康",
+    "test/spec/infra/staging/deploy.test.ts > [AC-B1-01zc-DEPLOY#2] 健康失败分支把 compose 的镜像变量恢复为切换前的值并重新启动",
+    "test/spec/infra/staging/deploy.test.ts > [AC-B1-01zc-DEPLOY#3] 正向与回退都操作同一份 compose，覆盖全部五个进程",
+    "test/spec/infra/staging/deploy.test.ts > [AC-B1-01zc-DEPLOY#4] 脚本只引用节点凭据文件，不打印内容或打开命令跟踪",
+    "test/spec/infra/staging/dockerignore.test.ts > [AC-B1-01zc-CONTEXT#1] 构建上下文排除 .env，且没有重新纳入规则",
+    "test/spec/infra/staging/dockerignore.test.ts > [AC-B1-01zc-CONTEXT#1] 构建上下文排除 .git，且没有重新纳入规则",
+    "test/spec/infra/staging/dockerignore.test.ts > [AC-B1-01zc-CONTEXT#1] 构建上下文排除 node_modules，且没有重新纳入规则",
+    "test/spec/infra/staging/dockerignore.test.ts > [AC-B1-01zc-CONTEXT#1] 构建上下文排除 couli-runs，且没有重新纳入规则",
+    "test/spec/infra/staging/image.test.ts > [AC-B1-01zc-IMAGE#1] 多阶段镜像基于 Node 24，最终阶段以非 root 用户运行",
+    "test/spec/infra/staging/image.test.ts > [AC-B1-01zc-IMAGE#2] 构建使用锁文件和离线依赖，并构建后端产物",
+    "test/spec/infra/staging/image.test.ts > [AC-B1-01zc-IMAGE#3] 镜像不复制环境文件、不内联凭据"
+  ],
+  "risk_note": "RV2 task (staging deployment base: infra/staging Dockerfile, compose, deploy.sh, boot.mjs, README; .dockerignore; migration log redaction in packages/db pg-url.ts / scripts/util.ts). No money or attribution code. Codex wrote the frozen rule tests test/spec/infra/staging/** (2 attempts, spec-test review round 2 pass). Opus implemented 4 runs: rounds 1-3 per 规划/11 §2.5, then the owner granted one extra implementation and review round on 2026-10-08 after round 3 was blocked on a Codex S0 (sslpassword not masked) (couli-runs/B1-01zc/blocked.md, owner-extra-round.md). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "796b0b592eb7522ad8f8b34cbc57cb862b15ccb8",
+      "tree": "81eceb8a4f1cd82c391513900148911102968e70",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T03:08:49Z",
+      "finished_at": "2026-10-08T03:08:53Z",
+      "red_tests": [
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#1] 五个常驻服务共用同一个可切换的镜像，不在节点构建或拉取",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] api 选择对应的后端进程入口",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] stream 选择对应的后端进程入口",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] worker 选择对应的后端进程入口",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] admin 选择对应的后端进程入口",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-COMPOSE#2] payout 选择对应的后端进程入口",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] api 只读自己的节点环境文件",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] stream 只读自己的节点环境文件",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] worker 只读自己的节点环境文件",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] admin 只读自己的节点环境文件",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#1] payout 只读自己的节点环境文件",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-HEALTH#1] api 探测本进程 /healthz，失败返回非零",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-HEALTH#1] stream 探测本进程 /healthz，失败返回非零",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-HEALTH#1] admin 探测本进程 /healthz，失败返回非零",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#3] 所有部署交付文件（含 README）不含内联口令",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] api 端口不发布或仅绑定 127.0.0.1",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] stream 端口不发布或仅绑定 127.0.0.1",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] worker 端口不发布或仅绑定 127.0.0.1",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] admin 端口不发布或仅绑定 127.0.0.1",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-NET#1] payout 端口不发布或仅绑定 127.0.0.1",
+        "test/spec/infra/staging/compose.test.ts > [AC-B1-01zc-ENV#2] compose 没有内联口令、构建指令或迁移凭据",
+        "test/spec/infra/staging/deploy.test.ts > [AC-B1-01zc-DEPLOY#1] 接受新镜像参数，迁移成功之后才切换并等待健康",
+        "test/spec/infra/staging/deploy.test.ts > [AC-B1-01zc-DEPLOY#2] 健康失败分支把 compose 的镜像变量恢复为切换前的值并重新启动",
+        "test/spec/infra/staging/deploy.test.ts > [AC-B1-01zc-DEPLOY#3] 正向与回退都操作同一份 compose，覆盖全部五个进程",
+        "test/spec/infra/staging/deploy.test.ts > [AC-B1-01zc-DEPLOY#4] 脚本只引用节点凭据文件，不打印内容或打开命令跟踪",
+        "test/spec/infra/staging/dockerignore.test.ts > [AC-B1-01zc-CONTEXT#1] 构建上下文排除 .env，且没有重新纳入规则",
+        "test/spec/infra/staging/dockerignore.test.ts > [AC-B1-01zc-CONTEXT#1] 构建上下文排除 .git，且没有重新纳入规则",
+        "test/spec/infra/staging/dockerignore.test.ts > [AC-B1-01zc-CONTEXT#1] 构建上下文排除 node_modules，且没有重新纳入规则",
+        "test/spec/infra/staging/dockerignore.test.ts > [AC-B1-01zc-CONTEXT#1] 构建上下文排除 couli-runs，且没有重新纳入规则",
+        "test/spec/infra/staging/image.test.ts > [AC-B1-01zc-IMAGE#1] 多阶段镜像基于 Node 24，最终阶段以非 root 用户运行",
+        "test/spec/infra/staging/image.test.ts > [AC-B1-01zc-IMAGE#2] 构建使用锁文件和离线依赖，并构建后端产物",
+        "test/spec/infra/staging/image.test.ts > [AC-B1-01zc-IMAGE#3] 镜像不复制环境文件、不内联凭据"
+      ],
+      "expected": [
+        "test/spec/infra/staging/compose.test.ts",
+        "test/spec/infra/staging/deploy.test.ts",
+        "test/spec/infra/staging/dockerignore.test.ts",
+        "test/spec/infra/staging/image.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "1fd7f74c611cffd31769366a6e7f8b2d21941c68eb29d40039b244aee8099e40"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "rounds 1-3 fail (S0 migration error printed the connection string; S0 master key on argv and ?password= unmasked; S0 sslpassword unmasked), round 4 on f865f48 (couli-runs/B1-01zc/review-codex-r1..r4.json)"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagent each round: 1 fail (payout missing APP_ENV), 2 pass, 3 pass, 4 on f865f48 (couli-runs/B1-01zc/review-claude-r1..r4.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "spec-test review round 1 fail, round 2 pass (couli-runs/B1-01zc/review-claude-spec-test*.json)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "d4e513b2eedbaeffcbedd2c197a571b0d2cd7560"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (fcc1221, the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
