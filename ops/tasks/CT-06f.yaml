@@ -7,9 +7,10 @@ type: guard-change
 # ① 资金表对象必须显式命名（未命名的会由 PostgreSQL 自动取名，迁移史里查不到原定义，定义比对只能退回已更新的 schema 快照）：资金表上 `CREATE [UNIQUE] INDEX ON …`
 #    （无索引名）、CREATE TABLE / ALTER TABLE ADD [COLUMN] 里不带 `CONSTRAINT <名>` 的 PRIMARY KEY / UNIQUE / CHECK / REFERENCES / EXCLUDE，报
 #    `unnamed <index|constraint> on funds or attribution table <裸表名>`；非资金表不管；NOT NULL / DEFAULT 不算约束。
-# ② 同一迁移里 `ADD CONSTRAINT <名> … NOT VALID` 之后有 `VALIDATE CONSTRAINT <名>` 的，按已验证定义比对（规范化时去掉 NOT VALID）；只有 NOT VALID 没有 VALIDATE 的仍算定义不同。
-# ③ 字面量：`E'…'` 里的反斜杠转义（\' \\）正确切分与解码——定义比对、EXECUTE 解码、超时取值都适用；`set_config(…, $$0$$ | $tag$0$tag$, …)` 的美元引号取值按 0 处理。
-# ④ DO 块正文里出现 `CREATE OR REPLACE TRIGGER`、`CREATE OR REPLACE FUNCTION | PROCEDURE`、`DROP TRIGGER | FUNCTION | PROCEDURE | INDEX`、`ALTER TABLE … DROP CONSTRAINT | DISABLE TRIGGER | ENABLE REPLICA TRIGGER`
+# ② 同一迁移里 `ALTER TABLE <表> ADD CONSTRAINT <名> … NOT VALID` 之后有对**同一表**（规范化表名）`VALIDATE CONSTRAINT <同名>` 的，按已验证定义比对；别的表上同名约束的 VALIDATE 不算（台账评审 P1）。
+# ③ 字面量：`E'…'` 按 PostgreSQL 完整解码（\' \\ \b \f \n \r \t、\ooo、\xhh、\uXXXX、\UXXXXXXXX），`U&'…'` 的 \XXXX 与 \+XXXXXX 也解码，未知转义一律按「关掉」处理；美元引号（$$…$$、$tag$…$tag$）正文
+#    交给同一个超时取值解析器（$$0ms$$ 为 0）；定义比对与 EXECUTE 解码同样按解码后的字面量（台账评审 P1）。
+# ④ DO 块正文里出现 `CREATE OR REPLACE [CONSTRAINT] TRIGGER`、`CREATE OR REPLACE FUNCTION | PROCEDURE`、`DROP TRIGGER | FUNCTION | PROCEDURE | INDEX`、`ALTER TABLE … DROP CONSTRAINT | DISABLE TRIGGER | ENABLE REPLICA TRIGGER`
 #    （含 EXECUTE 字符串里的）一律报 `guard change inside a DO block: write it as plain SQL`，不论对象是否资金表（门禁看不到 DO 里的对象定义）。
 # ⑤ set_config 出现在语句任意位置（`SELECT 1 FROM set_config(…)`、子查询里）都按关超时检查，补规则测试（实现现已如此）。
 # 已知不处理（记录在案）：纯函数只给部分迁移史时的比对（CLI 总给完整史）；pg-boss 升级生成器输出须按门禁改写（db/AGENTS.md 已写明）。
