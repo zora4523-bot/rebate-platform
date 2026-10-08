@@ -1,0 +1,121 @@
+{
+  "task": "CT-08d",
+  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+  "spec_commit": "5c4354bfc7b6ef1e282c76fd41b02b7d1e29179b",
+  "red_tests": [
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/sessions（createAgentSession）的共同标注、请求头和错误外壳",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] get /v1/agent/sessions/current（getCurrentAgentSession）的共同标注、请求头和错误外壳",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/sessions/{id}/messages（sendAgentMessage）的共同标注、请求头和错误外壳",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/runs/{run_id}/cancel（cancelAgentRun）的共同标注、请求头和错误外壳",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#2] post /v1/agent/sessions（createAgentSession）声明所需且仍有效的错误码",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#2] get /v1/agent/sessions/current（getCurrentAgentSession）声明所需且仍有效的错误码",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#2] post /v1/agent/sessions/{id}/messages（sendAgentMessage）声明所需且仍有效的错误码",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#2] post /v1/agent/runs/{run_id}/cancel（cancelAgentRun）声明所需且仍有效的错误码",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#3] 新建会话无请求体，返回封闭且必填的会话数据及合法示例",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#4] 当前会话 data 只有必填 session，接受会话或 null 并提供空态示例",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#5] 消息必填、封闭，client_msg_id 仅接受 8–64 位字母数字下划线短横线",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#5] text 非空必填但 schema 不设 maxLength，600 字留给业务顺序校验",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#5] context 可省略或仅含 product_key、order_id、text 之一，文本上限 2000 字",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#7] 停止生成无请求体，200 复用 EmptyResponse 且 data 为空对象",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#8] 30501–30506 有效，30502 登记 reset_at 与准确的 next 取值",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#8] 30506 含义包括重复 client_msg_id 的原 run 仍在进行",
+    "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#6] 发送消息 200 只声明 SSE 字符串、必填 no-cache，并引用流协议与拒绝规则",
+    "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#6] 每个 SSE 例子的帧通过流 schema，序号连续且只在末尾终止，并有正常受理例子",
+    "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#6] 重复已结束例子仅有 meta duplicate=true 与原终止事件，不含 30506",
+    "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#6] 重复进行中例子仅两帧，30506 可重试且 fallback、fallback_q 都为 null",
+    "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#9] STREAM_OPERATIONS 只登记发送消息，所有接口响应中也只有它使用 SSE",
+    "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#9] 给未登记的 get /healthz 的 200 添加 SSE，conformance 必须报错",
+    "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#9] 给未登记的 post /v1/devices 的 200 添加 SSE，conformance 必须报错",
+    "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#9] 删除发送消息的 SSE 示例，conformance 必须指出该接口的示例问题"
+  ],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml: four agent session and message-stream operations, all planned; error-codes 30502 data and 30506 meaning; conformance.ts STREAM_OPERATIONS; regenerated contracts-ts, signing-routes and auth-routes tables); the PR also carries rule-test files, so two reviewers. Codex wrote test/spec/contracts/agent-http/** (attempt 1, container red 24 tests), Claude spec-test review round 1 pass; Opus implemented once. After both reviews the orchestrator rebased onto main (B1-02g #287) and regenerated auth-routes.gen.ts (added by #203 after the ledger was written; ledger path added by #292), a generated file checked for drift by auth-routes.test.ts. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "5c4354bfc7b6ef1e282c76fd41b02b7d1e29179b",
+      "tree": "31a5f0e1ac9280f7d4e82bed0f8c79de2db4b542",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T05:06:12Z",
+      "finished_at": "2026-10-08T05:06:24Z",
+      "red_tests": [
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/sessions（createAgentSession）的共同标注、请求头和错误外壳",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] get /v1/agent/sessions/current（getCurrentAgentSession）的共同标注、请求头和错误外壳",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/sessions/{id}/messages（sendAgentMessage）的共同标注、请求头和错误外壳",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/runs/{run_id}/cancel（cancelAgentRun）的共同标注、请求头和错误外壳",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#2] post /v1/agent/sessions（createAgentSession）声明所需且仍有效的错误码",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#2] get /v1/agent/sessions/current（getCurrentAgentSession）声明所需且仍有效的错误码",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#2] post /v1/agent/sessions/{id}/messages（sendAgentMessage）声明所需且仍有效的错误码",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#2] post /v1/agent/runs/{run_id}/cancel（cancelAgentRun）声明所需且仍有效的错误码",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#3] 新建会话无请求体，返回封闭且必填的会话数据及合法示例",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#4] 当前会话 data 只有必填 session，接受会话或 null 并提供空态示例",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#5] 消息必填、封闭，client_msg_id 仅接受 8–64 位字母数字下划线短横线",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#5] text 非空必填但 schema 不设 maxLength，600 字留给业务顺序校验",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#5] context 可省略或仅含 product_key、order_id、text 之一，文本上限 2000 字",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#7] 停止生成无请求体，200 复用 EmptyResponse 且 data 为空对象",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#8] 30501–30506 有效，30502 登记 reset_at 与准确的 next 取值",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#8] 30506 含义包括重复 client_msg_id 的原 run 仍在进行",
+        "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#6] 发送消息 200 只声明 SSE 字符串、必填 no-cache，并引用流协议与拒绝规则",
+        "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#6] 每个 SSE 例子的帧通过流 schema，序号连续且只在末尾终止，并有正常受理例子",
+        "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#6] 重复已结束例子仅有 meta duplicate=true 与原终止事件，不含 30506",
+        "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#6] 重复进行中例子仅两帧，30506 可重试且 fallback、fallback_q 都为 null",
+        "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#9] STREAM_OPERATIONS 只登记发送消息，所有接口响应中也只有它使用 SSE",
+        "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#9] 给未登记的 get /healthz 的 200 添加 SSE，conformance 必须报错",
+        "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#9] 给未登记的 post /v1/devices 的 200 添加 SSE，conformance 必须报错",
+        "test/spec/contracts/agent-http/stream.test.ts > [AC-CT-08d#9] 删除发送消息的 SSE 示例，conformance 必须指出该接口的示例问题"
+      ],
+      "expected": [
+        "test/spec/contracts/agent-http/http.test.ts",
+        "test/spec/contracts/agent-http/stream.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "240859dd3dff1dca69220a6ca2fc435eacfe7b8d5085796ec0de76f9053d382c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "contract",
+      "checklist_complete": true,
+      "note": "round 1 pass; two S2 (SSE examples lack the final blank line after the last frame; conformance reads a $ref response without resolving it) recorded as follow-ups (couli-runs/CT-08d/review-codex-r1.json)"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "contract",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagent, round 1 pass, agent-http 24/24 and contracts tests 276/276 run on a temp copy; one S2 (README rule 16 says conformance enforces the single SSE content type and Cache-Control, it does not) and one out-of-scope (04 §6.5 / §7 write-back after merge) (couli-runs/CT-08d/review-claude-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with no findings; four out-of-scope entries (BR-AI-23 / BR-AI-20 runtime order for B3-03, data.seq equals frame id, admin operation in the SSE mutation) in couli-runs/CT-08d/out-of-scope.md (couli-runs/CT-08d/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "a57653e6bcb8cd2f3f2a626438da1b8a180ae0b4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (fcc1221, the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

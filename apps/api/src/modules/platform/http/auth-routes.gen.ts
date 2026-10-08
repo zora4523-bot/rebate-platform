@@ -330,5 +330,25 @@ export const CONTRACT_AUTH_ROUTES = [
     "method": "GET",
     "path": "/admin/v1/admins/:admin_id",
     "auth": "super"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/agent/sessions",
+    "auth": "optional"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/agent/sessions/current",
+    "auth": "optional"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/agent/sessions/:id/messages",
+    "auth": "optional"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/agent/runs/:run_id/cancel",
+    "auth": "optional"
   }
 ] as const;
