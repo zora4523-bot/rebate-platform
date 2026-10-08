@@ -1,0 +1,92 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (identity wires the request-identity ports other modules define: catalog's ViewerContext, linking's CallerContext and AttrCodeReader; BR-ATTR-05 / BR-ATTR-06 / BR-AI-03, 02 §4.1). Identity is resolved on every call from what the request checks verified: the token principal first (app_id, uid, device_id), else the signature-verified device as that app's guest, else an X-App-Id guest; bodies, query strings and raw X-Device-Id / X-User-Id are never read. attr_code is read from users on every call (app_id + id, status <> 'deleted'); missing, deleted, empty or non-uuid gives null, never the user_id; database failures propagate unchanged. CatalogModule.forRoot / LinkingModule.forRoot take optional port overrides (defaults byte-identical to before); app.module passes identity's implementations on the api entry only. Frozen landing test [AC-B1-06j#5] lost its pre-identity row through test-change B1-02p (#286) first. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass with no findings (identity from the token principal / verified device only; attr_code query scoped by app_id and excluding deleted users, never the user_id, no cache, errors propagate; forRoot defaults identical to the removed code, request scope kept; api-entry-only wiring; identity imports neither catalog nor linking; merged catalog / linking rule tests that spy forRoot still hold)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings, checklist complete (rounding, sign, idempotency, concurrency, partial refund, clock not applicable: no amounts or ledger writes; app_id scoped on every attr_code read and taken from the token principal only)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 round) reviewed by a fresh Claude subagent: pass with one S2 (connection-failure assertion pins the unwrapped error object; recorded in the implementation brief and satisfied); out-of-scope: ledger paths lacked the two module files, added by ledger PR #279 before implementation"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-02m",
+  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+  "spec_commit": "e8bc786fd221552f85865c31397aaf5fb505772a",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e8bc786fd221552f85865c31397aaf5fb505772a",
+      "tree": "268c1a188fce05b5189be0de431be4480b2eda15",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T04:12:52Z",
+      "finished_at": "2026-10-08T04:13:11Z",
+      "red_tests": [
+        "test/spec/identity/request-context/app.int.test.ts > [AC-B1-02m#10] 真实 AppModule：登录与游客端口隔离，联盟归因读 attr_code，他 App 令牌在端口调用前被拒绝",
+        "test/spec/identity/request-context/attr-code.int.test.ts > [AC-B1-02m#5] 按 app_id 和用户 id 读取真实 attr_code；跨 App 和不存在的用户均不可用",
+        "test/spec/identity/request-context/attr-code.int.test.ts > [AC-B1-02m#6] 已注销用户即使仍有 attr_code 也不可用于联盟归因",
+        "test/spec/identity/request-context/attr-code.int.test.ts > [AC-B1-02m#7] 空 attr_code 返回不可用，绝不回退成 user_id",
+        "test/spec/identity/request-context/attr-code.int.test.ts > [AC-B1-02m#8] 同一 reader 在注销之后重新读取时不得沿用原归因码",
+        "test/spec/identity/request-context/attr-code.int.test.ts > [AC-B1-02m#9] 连接获取失败必须抛错，不能吞错返回 null 或 user_id",
+        "test/spec/identity/request-context/context.test.ts > [AC-B1-02m#1] ViewerContext 只认已验证令牌的三个身份字段",
+        "test/spec/identity/request-context/context.test.ts > [AC-B1-02m#2] ViewerContext 匿名签名请求只取已验证设备",
+        "test/spec/identity/request-context/context.test.ts > [AC-B1-02m#3] ViewerContext 无凭证时保留 App 游客回退，不信任裸设备头或身份参数",
+        "test/spec/identity/request-context/context.test.ts > [AC-B1-02m#4] ViewerContext 交错读取不同用户和游客时不会串用上一个请求的身份",
+        "test/spec/identity/request-context/context.test.ts > [AC-B1-02m#1] CallerContext 只认已验证令牌的三个身份字段",
+        "test/spec/identity/request-context/context.test.ts > [AC-B1-02m#2] CallerContext 匿名签名请求只取已验证设备",
+        "test/spec/identity/request-context/context.test.ts > [AC-B1-02m#3] CallerContext 无凭证时保留 App 游客回退，不信任裸设备头或身份参数",
+        "test/spec/identity/request-context/context.test.ts > [AC-B1-02m#4] CallerContext 交错读取不同用户和游客时不会串用上一个请求的身份"
+      ],
+      "expected": [
+        "test/spec/identity/request-context/app.int.test.ts",
+        "test/spec/identity/request-context/attr-code.int.test.ts",
+        "test/spec/identity/request-context/context.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "d4a289b52adf39ccc9328490145b5ae4b6b9f45d3afdd5da7dab4c28bfbdc378"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "41f22f623a083e8bfb27a6dcb06cd2a248eed365da2ad3ee6125a57c29aa442e"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "ee11f17cd3b6d94e9fd3dba2fde3dee7d4319e08",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
