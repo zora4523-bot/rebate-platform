@@ -51,7 +51,7 @@ const OPERATIONS = [
   ['get', `${BASE}/{key}/versions`, [10001, 10403, 20001]],
   ['post', `${BASE}/{key}/uploads`, [10001, 10403, 20001]],
   ['post', `${BASE}/{key}/versions`, [10001, 10403, 20001]],
-  ['patch', `${BASE}/{key}/versions/{version}`, [10001, 10403, 20001]],
+  ['patch', `${BASE}/{key}/versions/{version}`, [10001, 10403, 20001, 20902]],
   ['post', `${BASE}/{key}/publish`, [10001, 10403, 20001, 20902]],
   ['post', `${BASE}/{key}/restore-builtin`, [10001, 10403, 20001, 20902]],
 ] as const;
@@ -159,9 +159,13 @@ describe('platform mark operations (04 §6.6, §11.2)', () => {
     expect(reasons).toEqual(
       expect.arrayContaining(['icon_format_invalid', 'icon_too_large', 'icon_svg_unconvertible']),
     );
-    for (const path of [`${BASE}/{key}/publish`, `${BASE}/{key}/restore-builtin`]) {
+    for (const [method, path] of [
+      ['post', `${BASE}/{key}/publish`],
+      ['post', `${BASE}/{key}/restore-builtin`],
+      ['patch', `${BASE}/{key}/versions/{version}`],
+    ] as const) {
       const conflicts = examplesOf(
-        operation('post', path).responses['4XX']!.content!['application/json']!,
+        operation(method, path).responses['4XX']!.content!['application/json']!,
       ).filter(([, v]) => (v as { code: number }).code === 20902);
       expect(
         conflicts.map(([, v]) => v),
@@ -249,25 +253,80 @@ describe('upload, save, register, publish and restore bodies', () => {
     expect(validate({ upload_id: UPLOAD_ID, publish: true })).toBe(false);
   });
 
-  it('[CT-17g] registration patches at least one of source_url and downloaded_on', () => {
+  it('[CT-17g] registration carries the version revision (CAS) and at least one of source_url and downloaded_on', () => {
     const validate = compile('AdminPlatformIconSourceRequest');
-    expect(validate({ source_url: 'https://example.test/brand/jd' })).toBe(true);
-    expect(validate({ downloaded_on: '2026-10-09' })).toBe(true);
+    expect(validate({ expected_revision: 1, source_url: 'https://example.test/brand/jd' })).toBe(
+      true,
+    );
+    expect(validate({ expected_revision: 2, downloaded_on: '2026-10-09' })).toBe(true);
+    // Without the revision two tabs could silently overwrite each other's registration.
+    expect(validate({ source_url: 'https://example.test/brand/jd' })).toBe(false);
+    expect(validate({ expected_revision: 1 })).toBe(false);
+    expect(validate({ expected_revision: 0, downloaded_on: '2026-10-09' })).toBe(false);
     expect(validate({})).toBe(false);
-    expect(validate({ version: 2 })).toBe(false);
+    expect(validate({ expected_revision: 1, version: 2 })).toBe(false);
+    const patch = operation('patch', `${BASE}/{key}/versions/{version}`);
+    expect(patch.description).toContain('`expected_revision`');
+    expect(patch.description).toContain('20902');
   });
 
-  it('[CT-17g] publish and restore carry the CAS value, null meaning the built-in image', () => {
+  it('[CT-17g] publish and restore carry the mark revision, never the version number, as CAS', () => {
     const publish = compile('AdminPlatformIconPublishRequest');
-    expect(publish({ version: 1, expected_current_version: null })).toBe(true);
-    expect(publish({ version: 2, expected_current_version: 3 })).toBe(true);
+    expect(publish({ version: 1, expected_revision: 0 })).toBe(true);
+    expect(publish({ version: 2, expected_revision: 3 })).toBe(true);
     expect(publish({ version: 2 })).toBe(false);
-    expect(publish({ version: 0, expected_current_version: null })).toBe(false);
-    expect(publish({ version: 2, expected_current_version: 3, gray_percent: 10 })).toBe(false);
+    expect(publish({ version: 2, expected_current_version: 1 })).toBe(false);
+    expect(publish({ version: 2, expected_revision: null })).toBe(false);
+    expect(publish({ version: 2, expected_revision: -1 })).toBe(false);
+    expect(publish({ version: 0, expected_revision: 0 })).toBe(false);
+    expect(publish({ version: 2, expected_revision: 3, gray_percent: 10 })).toBe(false);
     const restore = compile('AdminPlatformIconRestoreRequest');
-    expect(restore({ expected_current_version: 2 })).toBe(true);
-    expect(restore({ expected_current_version: null })).toBe(true);
+    expect(restore({ expected_revision: 3 })).toBe(true);
+    expect(restore({ expected_revision: 0 })).toBe(true);
+    expect(restore({ expected_current_version: 2 })).toBe(false);
     expect(restore({})).toBe(false);
+  });
+
+  it('[CT-17g] a retried publish cannot undo a later rollback (revision only grows)', () => {
+    const description = operation('post', `${BASE}/{key}/publish`).description;
+    expect(description).toContain('`expected_revision`');
+    expect(description).toContain('never matches again');
+    const revision = contract.components.schemas['AdminPlatformIcon']!.properties!['revision'] as {
+      type: string;
+      minimum: number;
+    };
+    expect(revision).toMatchObject({ type: 'integer', minimum: 0 });
+    // Example walk-through: publish 2 with revision 2 → revision 3; restore with 3 → revision 4.
+    const ok = (path: string) =>
+      (
+        operation('post', path).responses['200']!.content!['application/json']!.example as {
+          data: { revision: number };
+        }
+      ).data.revision;
+    expect(ok(`${BASE}/{key}/publish`)).toBe(3);
+    expect(ok(`${BASE}/{key}/restore-builtin`)).toBe(4);
+  });
+
+  it('[CT-17g] saving the same upload again returns the existing version (retry-safe)', () => {
+    const save = operation('post', `${BASE}/{key}/versions`);
+    expect(save.description).toContain('already saved as a version');
+    expect(save.description).toContain('returns 200 with that existing version');
+    const invalid = examplesOf(save.responses['4XX']!.content!['application/json']!).find(
+      ([name]) => name === 'uploadInvalid',
+    );
+    expect(invalid?.[1]).toMatchObject({ code: 20001, data: { fields: ['upload_id'] } });
+  });
+
+  it('[CT-17g] publishing a draft lists every missing registration', () => {
+    const publish = operation('post', `${BASE}/{key}/publish`);
+    const missing = examplesOf(publish.responses['4XX']!.content!['application/json']!).find(
+      ([name]) => name === 'sourceMissing',
+    );
+    expect(missing?.[1]).toMatchObject({
+      code: 20001,
+      data: { fields: ['source_url', 'downloaded_on'] },
+    });
+    expect(publish.description).toContain('listing every missing');
   });
 
   it('[CT-17g] a version is publishable only as a field the server derives; the row may be built-in', () => {
@@ -275,6 +334,7 @@ describe('upload, save, register, publish and restore bodies', () => {
     const builtin = {
       key: 'alipay',
       current_version: null,
+      revision: 0,
       current: null,
       latest_version: null,
       updated_by: null,
@@ -283,11 +343,23 @@ describe('upload, save, register, publish and restore bodies', () => {
     expect(row(builtin)).toBe(true);
     expect(row({ ...builtin, key: 'douyin' })).toBe(false);
     expect(row({ ...builtin, current_version: 0 })).toBe(false);
+    expect(row({ ...builtin, revision: -1 })).toBe(false);
+    const withoutRevision: Record<string, unknown> = { ...builtin };
+    delete withoutRevision['revision'];
+    expect(row(withoutRevision)).toBe(false);
+    expectTypeOf<Schema<'AdminPlatformIcon'>['revision']>().toEqualTypeOf<number>();
+    expectTypeOf<Schema<'AdminPlatformIconVersion'>['revision']>().toEqualTypeOf<number>();
     expectTypeOf<Schema<'AdminPlatformIcon'>['current_version']>().toEqualTypeOf<number | null>();
     expectTypeOf<Schema<'AdminPlatformIconVersion'>['publishable']>().toEqualTypeOf<boolean>();
     // expectTypeOf is compile-time only; pin the same shape in the contract at run time.
     expect(contract.components.schemas['AdminPlatformIconVersion']!.required).toEqual(
-      expect.arrayContaining(['publishable', 'ever_published', 'source_url', 'downloaded_on']),
+      expect.arrayContaining([
+        'publishable',
+        'ever_published',
+        'revision',
+        'source_url',
+        'downloaded_on',
+      ]),
     );
   });
 });

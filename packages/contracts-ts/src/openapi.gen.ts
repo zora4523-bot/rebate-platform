@@ -1780,7 +1780,8 @@ export interface paths {
          *     mark key (enum platform_icon_key, the same keys as /v1/config `platform_icons`), always
          *     all of them in enum order, no paging: the published version (`current_version` null = the
          *     client shows the image bundled in the package), its details, the newest saved version and
-         *     who changed the mark last and when (BR-TEXT-24 细则「发布与回滚」). The console previews
+         *     who changed the mark last and when (BR-TEXT-24 细则「发布与回滚」), and the mark's
+         *     `revision`, the CAS value of publish and restore-builtin. The console previews
          *     `current.url` and every version url only as an image (`<img>`), never inlined into the
          *     page.
          */
@@ -1821,11 +1822,13 @@ export interface paths {
          *     otherwise 20001 with `data.fields=[sanitized_confirmed]` (BR-TEXT-24 细则「已清除不安全内容」).
          *     `source_url` (the official brand or asset download page) and `downloaded_on` may be left
          *     out: such a version is a draft (`publishable=false`) until both are registered with PATCH
-         *     /admin/v1/platform-icons/{key}/versions/{version} (BR-TEXT-24 细则「必填登记」). An
-         *     upload_id that does not exist, has expired, was already saved or belongs to another key is
-         *     20001 with `data.fields=[upload_id]`. Saving the same upload twice never creates two
-         *     versions (the second call is that 20001). No Idempotency-Key: admin writes rely on
-         *     these checks and on CAS where state is replaced (04 §6.6).
+         *     /admin/v1/platform-icons/{key}/versions/{version} (BR-TEXT-24 细则「必填登记」). Saving
+         *     is naturally idempotent: an upload_id this mark has already saved as a version (a retry
+         *     after a lost response) returns 200 with that existing version as it is now, creates no
+         *     second version and applies nothing else from the retried body. An upload_id that does not
+         *     exist, has expired or belongs to another key is 20001 with `data.fields=[upload_id]`. No
+         *     Idempotency-Key: admin writes rely on these checks and on CAS where state is replaced
+         *     (04 §6.6).
          */
         post: operations["adminCreatePlatformIconVersion"];
         delete?: never;
@@ -1890,8 +1893,11 @@ export interface paths {
          * @description Permission point `content.platform_icon`. Fills in or corrects `source_url` and
          *     `downloaded_on` of a version that has never been published (BR-TEXT-24 细则「必填登记」);
          *     a field left out is unchanged, at least one is required. With both registered the version
-         *     becomes `publishable`. A version that has ever been published keeps its registration as
-         *     published and is 20001 with `data.fields=[version]`, like an unknown version.
+         *     becomes `publishable`. CAS: `expected_revision` is the version's `revision` the console
+         *     showed; every registration change adds 1 to it, and a mismatch (someone else registered in
+         *     between) → 20902 with `data.resource=platform_icon`, refresh and retry (04 §6.6). A
+         *     version that has ever been published keeps its registration as published and is 20001
+         *     with `data.fields=[version]`, like an unknown version.
          */
         patch: operations["adminUpdatePlatformIconVersion"];
         trace?: never;
@@ -1912,12 +1918,14 @@ export interface paths {
          *     lists it in `platform_icons` with the version's cleaned file url, its SHA-256 and the
          *     version number (ConfigPlatformIcon). Publishing a version older than the current one is a
          *     rollback; both are written to the audit log (action publish or rollback). CAS:
-         *     `expected_current_version` is the `current_version` the console showed (null = built-in);
-         *     when it no longer matches → 20902 with `data.resource=platform_icon`, refresh and retry
-         *     (04 §6.6). Publishing the version that is already current succeeds without change or
-         *     audit. A version without both source registrations is 20001 with `data.fields` naming the
-         *     missing one (`[source_url]` or `[downloaded_on]`); an unknown version is 20001 with
-         *     `data.fields=[version]`.
+         *     `expected_revision` is the mark's `revision` the console showed. The revision only ever
+         *     grows (every publish, rollback and restore-builtin adds 1), so a stale request, including
+         *     a retry of one that already took effect, never matches again: a mismatch → 20902 with
+         *     `data.resource=platform_icon`, refresh and retry (04 §6.6). Publishing the version that is
+         *     already current with a matching revision succeeds without change, revision bump or audit.
+         *     A version missing source registrations is 20001 with `data.fields` listing every missing
+         *     one (`[source_url]`, `[downloaded_on]`, or `[source_url, downloaded_on]` when both are
+         *     missing); an unknown version is 20001 with `data.fields=[version]`.
          */
         post: operations["adminPublishPlatformIcon"];
         delete?: never;
@@ -1941,9 +1949,10 @@ export interface paths {
          *     mark has no published version any more, the next GET /v1/config leaves its key out of
          *     `platform_icons` and clients show the bundled image; saved versions are kept and can be
          *     published again. Written to the audit log (action restore_builtin). CAS as in publish:
-         *     `expected_current_version` no longer matching → 20902 with
-         *     `data.resource=platform_icon`. Restoring a mark that already shows the built-in image
-         *     (`expected_current_version` null and still null) succeeds without change or audit.
+         *     `expected_revision` is the mark's `revision` the console showed, the restore adds 1 to it,
+         *     and a mismatch → 20902 with `data.resource=platform_icon`. Restoring a mark that already
+         *     shows the built-in image (with a matching revision) succeeds without change, revision
+         *     bump or audit.
          */
         post: operations["adminRestoreBuiltinPlatformIcon"];
         delete?: never;
@@ -4370,6 +4379,12 @@ export interface components {
             publishable: boolean;
             /** @description true = published at least once; its registration can no longer be changed. */
             ever_published: boolean;
+            /**
+             * Format: int32
+             * @description 1 when saved, plus 1 on every registration change (PATCH .../versions/{version}); the
+             *     CAS value of that PATCH.
+             */
+            revision: number;
             /** @description Username of the admin who saved the version. */
             created_by: string;
             /** Format: date-time */
@@ -4380,9 +4395,16 @@ export interface components {
             key: components["schemas"]["PlatformIconKey"];
             /**
              * Format: int32
-             * @description Published version; null = the client shows the bundled image. The CAS value of publish and restore-builtin.
+             * @description Published version; null = the client shows the bundled image.
              */
             current_version: number | null;
+            /**
+             * Format: int32
+             * @description 0 until the first publish; plus 1 on every publish, rollback and restore-builtin, never
+             *     going back (saving or registering a version does not change it). The CAS value of
+             *     publish and restore-builtin, so a retried old request cannot undo a later change.
+             */
+            revision: number;
             current: components["schemas"]["AdminPlatformIconVersion"] | null;
             /**
              * Format: int32
@@ -4476,8 +4498,13 @@ export interface components {
             /** Format: date */
             downloaded_on?: string;
         };
-        /** @description At least one of the two registrations. */
+        /** @description The version's revision as shown plus at least one of the two registrations. */
         AdminPlatformIconSourceRequest: {
+            /**
+             * Format: int32
+             * @description The version's `revision` as the console showed it; a mismatch is 20902.
+             */
+            expected_revision: number;
             source_url?: components["schemas"]["AdminPlatformIconSourceUrl"];
             /** Format: date */
             downloaded_on?: string;
@@ -4490,16 +4517,16 @@ export interface components {
             version: number;
             /**
              * Format: int32
-             * @description current_version as the console showed it (null = built-in); a mismatch is 20902.
+             * @description The mark's `revision` as the console showed it; a mismatch is 20902.
              */
-            expected_current_version: number | null;
+            expected_revision: number;
         };
         AdminPlatformIconRestoreRequest: {
             /**
              * Format: int32
-             * @description current_version as the console showed it (null = built-in); a mismatch is 20902.
+             * @description The mark's `revision` as the console showed it; a mismatch is 20902.
              */
-            expected_current_version: number | null;
+            expected_revision: number;
         };
         /** @description An Agent conversation (agent_sessions; owner and expiry per BR-AI-20). */
         AgentSession: {
@@ -8975,6 +9002,7 @@ export interface operations {
                      *           {
                      *             "key": "taobao",
                      *             "current_version": null,
+                     *             "revision": 0,
                      *             "current": null,
                      *             "latest_version": null,
                      *             "updated_by": null,
@@ -8983,6 +9011,7 @@ export interface operations {
                      *           {
                      *             "key": "tmall",
                      *             "current_version": null,
+                     *             "revision": 0,
                      *             "current": null,
                      *             "latest_version": null,
                      *             "updated_by": null,
@@ -8991,6 +9020,7 @@ export interface operations {
                      *           {
                      *             "key": "jd",
                      *             "current_version": null,
+                     *             "revision": 0,
                      *             "current": null,
                      *             "latest_version": null,
                      *             "updated_by": null,
@@ -8999,6 +9029,7 @@ export interface operations {
                      *           {
                      *             "key": "pdd",
                      *             "current_version": null,
+                     *             "revision": 0,
                      *             "current": null,
                      *             "latest_version": null,
                      *             "updated_by": null,
@@ -9007,6 +9038,7 @@ export interface operations {
                      *           {
                      *             "key": "wechat",
                      *             "current_version": null,
+                     *             "revision": 0,
                      *             "current": null,
                      *             "latest_version": null,
                      *             "updated_by": null,
@@ -9015,6 +9047,7 @@ export interface operations {
                      *           {
                      *             "key": "wechat_pay",
                      *             "current_version": null,
+                     *             "revision": 0,
                      *             "current": null,
                      *             "latest_version": null,
                      *             "updated_by": null,
@@ -9023,6 +9056,7 @@ export interface operations {
                      *           {
                      *             "key": "alipay",
                      *             "current_version": 2,
+                     *             "revision": 3,
                      *             "current": {
                      *               "version": 2,
                      *               "url": "https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg",
@@ -9034,6 +9068,7 @@ export interface operations {
                      *               "downloaded_on": "2026-10-08",
                      *               "publishable": true,
                      *               "ever_published": true,
+                     *               "revision": 1,
                      *               "created_by": "ops-yi",
                      *               "created_at": "2026-10-08T15:00:00+08:00"
                      *             },
@@ -9044,6 +9079,7 @@ export interface operations {
                      *           {
                      *             "key": "wecom",
                      *             "current_version": null,
+                     *             "revision": 0,
                      *             "current": null,
                      *             "latest_version": 1,
                      *             "updated_by": "ops-yi",
@@ -9113,6 +9149,7 @@ export interface operations {
                      *             "downloaded_on": null,
                      *             "publishable": false,
                      *             "ever_published": false,
+                     *             "revision": 1,
                      *             "created_by": "ops-yi",
                      *             "created_at": "2026-10-09T10:00:00+08:00"
                      *           },
@@ -9127,6 +9164,7 @@ export interface operations {
                      *             "downloaded_on": "2026-10-08",
                      *             "publishable": true,
                      *             "ever_published": true,
+                     *             "revision": 1,
                      *             "created_by": "ops-yi",
                      *             "created_at": "2026-10-08T15:00:00+08:00"
                      *           }
@@ -9173,7 +9211,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The new version. */
+            /** @description The new version, or the version this upload_id was already saved as. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -9276,6 +9314,7 @@ export interface operations {
             content: {
                 /**
                  * @example {
+                 *       "expected_revision": 1,
                  *       "source_url": "https://example.test/brand/alipay",
                  *       "downloaded_on": "2026-10-08"
                  *     }
@@ -9305,6 +9344,7 @@ export interface operations {
                      *         "downloaded_on": "2026-10-08",
                      *         "publishable": true,
                      *         "ever_published": false,
+                     *         "revision": 2,
                      *         "created_by": "ops-yi",
                      *         "created_at": "2026-10-09T10:00:00+08:00"
                      *       },
@@ -9359,6 +9399,7 @@ export interface operations {
                      *       "data": {
                      *         "key": "alipay",
                      *         "current_version": 2,
+                     *         "revision": 3,
                      *         "current": {
                      *           "version": 2,
                      *           "url": "https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg",
@@ -9370,6 +9411,7 @@ export interface operations {
                      *           "downloaded_on": "2026-10-08",
                      *           "publishable": true,
                      *           "ever_published": true,
+                     *           "revision": 1,
                      *           "created_by": "ops-yi",
                      *           "created_at": "2026-10-08T15:00:00+08:00"
                      *         },
@@ -9413,7 +9455,7 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "expected_current_version": 2
+                 *       "expected_revision": 3
                  *     }
                  */
                 "application/json": components["schemas"]["AdminPlatformIconRestoreRequest"];
@@ -9433,6 +9475,7 @@ export interface operations {
                      *       "data": {
                      *         "key": "alipay",
                      *         "current_version": null,
+                     *         "revision": 4,
                      *         "current": null,
                      *         "latest_version": 3,
                      *         "updated_by": "ops-yi",

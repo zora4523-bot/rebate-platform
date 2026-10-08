@@ -332,6 +332,41 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "super"
   },
   {
+    "method": "GET",
+    "path": "/admin/v1/platform-icons",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/platform-icons/:key/versions",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/versions",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/uploads",
+    "auth": "admin"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/platform-icons/:key/versions/:version",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/publish",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/restore-builtin",
+    "auth": "admin"
+  },
+  {
     "method": "POST",
     "path": "/v1/agent/sessions",
     "auth": "optional"
