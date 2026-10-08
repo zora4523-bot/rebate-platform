@@ -6,6 +6,8 @@ import {
   SourceLinkReader,
   createCatalogCardEntry,
   type CardRebateQuoter,
+  type CatalogProductReader,
+  type CatalogProductSummary,
   type ItemRefService,
   type ViewerContext,
 } from '../catalog/index.ts';
@@ -85,6 +87,8 @@ export const LINK_REGISTRATIONS = Symbol('LINK_REGISTRATIONS');
 export const LINKING_PIDS = Symbol('LINKING_PIDS');
 /** The open's ports outside linking, provided by app.module.ts (B1-06w). */
 export const LINK_OPEN_PORTS = Symbol('LINK_OPEN_PORTS');
+/** The landing card's ports outside linking, provided by app.module.ts (B1-06j). */
+export const LINK_LANDING_PORTS = Symbol('LINK_LANDING_PORTS');
 /** Process-wide open state: the shared single-flight windows and the Redis jump cache. */
 const LINK_OPEN_PROCESS = Symbol('LINK_OPEN_PROCESS');
 
@@ -106,6 +110,21 @@ export interface LinkOpenPorts {
   /** Jump paths verified per platform and client (CAP-JD-11 / CAP-PDD-11). */
   readonly verifiedPaths: LinkOpenEnvironment['verifiedPaths'];
 }
+
+/** B1-06j: what the landing card reads from other modules (catalog's read-only product port). */
+export interface LinkLandingPorts {
+  readonly products: Pick<CatalogProductReader, 'read'>;
+}
+
+const NO_PRODUCT: CatalogProductSummary = Object.freeze({
+  title: null,
+  image: null,
+  shopName: null,
+  shopType: null,
+});
+
+/** Without LINK_LANDING_PORTS (isolated HTTP unit tests) the product fields are null, never guessed. */
+const NO_PRODUCTS: LinkLandingPorts['products'] = { read: () => Promise.resolve(NO_PRODUCT) };
 
 interface LinkOpenProcess {
   readonly flights: LinkOpenFlights;
@@ -286,19 +305,22 @@ export class LinkingModule {
         },
         {
           // B1-06j: the landing card, per request like its CallerContext. Read-only: the links
-          // row in the caller's app scope and a card from its quote snapshot (item_ref issuer of
-          // LINK_OPEN_PORTS; no union call, no registration, no link_log).
+          // row in the caller's app scope and a card priced from its quote snapshot (item_ref
+          // issuer of LINK_OPEN_PORTS; product fields from catalog's read-only product port of
+          // LINK_LANDING_PORTS; no conversion, no registration, no link_log).
           provide: LinkLandingService,
           scope: Scope.REQUEST,
           inject: [
             { token: DB, optional: true },
             { token: LINK_OPEN_PORTS, optional: true },
+            { token: LINK_LANDING_PORTS, optional: true },
             CLOCK,
             CallerContext,
           ],
           useFactory: (
             db: Kysely<Database> | undefined,
             ports: LinkOpenPorts | undefined,
+            landingPorts: LinkLandingPorts | undefined,
             clock: Clock,
             callerContext: CallerContext,
           ): LinkLandingService =>
@@ -308,7 +330,11 @@ export class LinkingModule {
               cards:
                 ports === undefined
                   ? { read: unavailable }
-                  : createSnapshotCardReader({ clock, itemRefs: ports.itemRefs }),
+                  : createSnapshotCardReader({
+                      clock,
+                      itemRefs: ports.itemRefs,
+                      products: landingPorts?.products ?? NO_PRODUCTS,
+                    }),
             }),
         },
         {

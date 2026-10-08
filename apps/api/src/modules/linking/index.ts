@@ -28,8 +28,14 @@ export {
   createUnavailableAttrCodeReader,
 } from './ports.ts';
 export type { Caller } from './ports.ts';
-export { LINK_OPEN_PORTS, LINK_REGISTRATIONS, LinkingModule } from './linking.module.ts';
+export {
+  LINK_LANDING_PORTS,
+  LINK_OPEN_PORTS,
+  LINK_REGISTRATIONS,
+  LinkingModule,
+} from './linking.module.ts';
 export type {
+  LinkLandingPorts,
   LinkOpenPorts,
   LinkRegistrations,
   LinkingConfigReaderFactory,

@@ -1,12 +1,14 @@
 // B1-06j: GET /v1/links/{link_id}, the card of the in-app link landing page (route LinkLanding,
 // BR-ATTR-05 细则「App 内打开链接的入口」). Read-only: it registers no link, writes no link_log,
-// converts nothing and calls no union endpoint; buying still goes only through the open. The card
+// converts nothing (product fields read through catalog's read-only port, at most one union
+// detail); buying still goes only through the open. The card
 // is the shared subset of the share page (no rebate_*, no est_net_price_fen, BR-PRICE-06,
 // BR-ATTR-10); viewer_is_sharer is only a hint (BR-ATTR-11), the open decides the identity.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
+import { addFen, fenToJsonNumber } from '@couli/money';
 import type { Kysely, Selectable } from 'kysely';
-import type { ItemRefClaims, ItemRefService } from '../../catalog/index.ts';
+import type { CatalogProductReader, ItemRefClaims, ItemRefService } from '../../catalog/index.ts';
 import type { Clock, HandlerResult } from '../../platform/index.ts';
 import type { CallerContext } from '../ports.ts';
 
@@ -26,6 +28,9 @@ export interface LinkLandingOptions {
     read(link: LandingLink): Promise<SharedProductCard>;
   };
 }
+
+/** links.link_id is a uuid column: any other value is an unknown link, never a query. */
+const LINK_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface LinkLandingInput {
   readonly linkId: string;
@@ -92,6 +97,10 @@ export class LinkLandingService {
 
   async get(input: LinkLandingInput): Promise<HandlerResult> {
     const { callerContext, links, cards } = this.#options;
+    // A malformed link_id answers like an unknown one, without reaching the database (30144).
+    if (typeof input.linkId !== 'string' || !LINK_ID.test(input.linkId)) {
+      return notFound(input.traceId);
+    }
     const caller = await callerContext.current();
     const link = await links.find(caller.appId, input.linkId);
     if (link === null || link.app_id !== caller.appId || link.link_id !== input.linkId) {
@@ -140,35 +149,45 @@ function isUnionPlatform(platform: string): platform is keyof typeof UNION_SOURC
   return Object.hasOwn(UNION_SOURCES, platform);
 }
 
+/** A snapshot price leaves only as a non-negative JSON integer (@couli/money, BR-CALC-01). */
 function fenNumber(fen: bigint): number {
-  if (fen > BigInt(Number.MAX_SAFE_INTEGER) || fen < 0n) {
-    throw new RangeError('linking: fen amount outside the safe JSON integer range');
-  }
-  return Number(fen);
+  if (fen < 0n) throw new RangeError('linking: negative price in the link snapshot');
+  return fenToJsonNumber(fen);
 }
 
 export interface SnapshotCardOptions {
   readonly clock: Clock;
   readonly itemRefs: Pick<ItemRefService, 'issue'>;
+  /** catalog's read-only product port: title and shop type (product_refs, else one union detail). */
+  readonly products: Pick<CatalogProductReader, 'read'>;
 }
 
 /**
- * The landing card from the link's own quote snapshot: no union call, no quote, no registration.
+ * The landing card priced from the link's own quote snapshot: no conversion, no quote, no
+ * registration.
  * Prices are the frozen quoted_final_price_fen / quoted_coupon_fen (price = final + coupon); the
  * card is marked stale because it is not re-checked here (the open re-checks, BR-PRICE-13), and
- * age_sec counts from the snapshot's quoted_at (BR-PRICE-11). Title and image are not part of the
- * snapshot and stay null. A link without amounts is an amount_unknown card (availability unknown).
+ * age_sec counts from the snapshot's quoted_at (BR-PRICE-11). Title, image, shop name and shop
+ * type come from catalog's read-only product port (product_refs, else at most one governed union
+ * detail; null when unreadable). A link without amounts is an amount_unknown card (availability
+ * unknown).
  */
 export function createSnapshotCardReader(
   options: SnapshotCardOptions,
 ): LinkLandingOptions['cards'] {
-  const { clock, itemRefs } = options;
+  const { clock, itemRefs, products } = options;
   return {
-    read(link: LandingLink): Promise<SharedProductCard> {
+    async read(link: LandingLink): Promise<SharedProductCard> {
       const platform = link.platform;
       if (!isUnionPlatform(platform)) {
-        return Promise.reject(new TypeError('linking: no union price source for this platform'));
+        throw new TypeError('linking: no union price source for this platform');
       }
+      const product = await products.read({
+        appId: link.app_id,
+        platform,
+        productKey: link.product_key,
+        rawItemId: link.raw_item_id,
+      });
       const final = link.quoted_final_price_fen;
       const coupon = link.quoted_coupon_fen;
       const priced = final !== null && coupon !== null;
@@ -188,15 +207,15 @@ export function createSnapshotCardReader(
       const quotedAtMs = link.quoted_at === null ? null : link.quoted_at.getTime();
       const nowMs = clock.now().getTime();
       const hasCoupon = coupon !== null && coupon > 0n;
-      return Promise.resolve({
+      return {
         product_key: link.product_key,
         item_ref: itemRef,
         platform,
-        shop_type: null,
-        title: null,
-        image: null,
-        shop_name: null,
-        price_fen: priced ? fenNumber(final + coupon) : null,
+        shop_type: product.shopType,
+        title: product.title,
+        image: product.image,
+        shop_name: product.shopName,
+        price_fen: priced ? fenNumber(addFen(final, coupon)) : null,
         coupon_fen: priced ? fenNumber(coupon) : null,
         final_price_fen: priced ? fenNumber(final) : null,
         benefit_tags: hasCoupon ? ['有券'] : [],
@@ -208,7 +227,7 @@ export function createSnapshotCardReader(
         // Only the price basis: no rebate key is shown to the opener (BR-PRICE-06, BR-PRICE-17).
         disclaimer_keys: [hasCoupon ? 'price_basis' : 'price_basis.general'],
         availability: priced ? 'ok' : 'unknown',
-      });
+      };
     },
   };
 }
