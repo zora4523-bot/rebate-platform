@@ -49,7 +49,8 @@
       "diff_base": "00ce6c3068536888a74f5598538fedcbc65a8d60",
       "diff_sha256": "eda9a05db2ccc207b36cdef1cddf8f64f01235d381a066987b00105c2b17698c",
       "note": "Fresh read-only session; reviewed the implementation diff before commit. The committed diff hash was verified identical. Ledger-only main rebase preserved this diff exactly.",
-      "original_reviewed_head": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7"
+      "original_implementation_commit": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7",
+      "review_workspace_head": "ea42f2c583452aa32319e8dd6c316ce669e6818e"
     },
     {
       "reviewer": "codex",
@@ -63,7 +64,8 @@
       "diff_base": "00ce6c3068536888a74f5598538fedcbc65a8d60",
       "diff_sha256": "eda9a05db2ccc207b36cdef1cddf8f64f01235d381a066987b00105c2b17698c",
       "note": "Fresh read-only session; reviewed the implementation diff before commit. The committed diff hash was verified identical. Ledger-only main rebase preserved this diff exactly.",
-      "original_reviewed_head": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7"
+      "original_implementation_commit": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7",
+      "review_workspace_head": "ea42f2c583452aa32319e8dd6c316ce669e6818e"
     }
   ],
   "spec_test_review": {
