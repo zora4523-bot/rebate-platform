@@ -1,0 +1,109 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; infra/release-scan/** is RV2). Default split (ops/approvals.yaml id 19): rule tests by Codex (1 attempt; cli.ts turned into a NotImplemented skeleton by the skeleton rule, restored from main 69d3855 by the implementation, decision 41), implementation by a Claude Opus subagent (1 attempt). Wires QA-09d's association views (.aab resources.pb / proto manifest, .hap module.json / resources.index) into the release-scan CLI with unresolved signing references failing closed, reads the .aab proto manifest debuggable flag in the residue rules, and flags mixed-case test host TLDs. Re-checked on real youquanhui apk / ipa with and without --release: no (category, rule, file) hits fewer than main's CLI. The scanner only tightens; no change to detect/**, gitleaks, repository secret scanning or thresholds; third-party SDK residue stays non-waivable (owner 2026-10-08). Local container verify:fast could not start (host load ~150); full verification by the required CI checks (approvals id 21). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist (all n/a with reasons): compared with main's cli.ts (arguments, stricter-only thresholds, redaction, exit codes, DOCTYPE handling unchanged), both spec-review S2 requirements met, real samples re-scanned; 2 S2 and 1 out-of-scope S2 to follow-ups (decision 42)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh read-only Codex session, not the implementer: pass with 1 S2 (duplicate JSON keys in a crafted module.json) and 1 out-of-scope S2 (mixed-case labels), to follow-ups (decision 42)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 pass (0 S1; 2 S2 turned into implementation requirements and checked by both code reviews)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "QA-09e",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "6436fa0ce41086ed176dd007e788b66054e6b863",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6436fa0ce41086ed176dd007e788b66054e6b863",
+      "tree": "4073444bf857ba65089a6479767492aaeb5b139e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T18:30:41Z",
+      "finished_at": "2026-10-08T18:30:53Z",
+      "red_tests": [
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#1] AAB resources.pb 的签名字段经 CLI 阻断（release=false）",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#1] AAB resources.pb 的签名字段经 CLI 阻断（release=true）",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#2] AAB proto meta-data.value 关联普通资源名后以引用方签名字段阻断",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#2] AAB proto meta-data.resource 关联普通资源名后以引用方签名字段阻断",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#3] AAB feature 模块的 proto 清单也经 CLI 关联扫描",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#4] HAP module metadata name/value 的短共享盐经 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#4] HAP ability metadata name/value 的短共享盐经 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#4] HAP extension metadata name/value 的短共享盐经 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#5] HAP resources.index 的签名字段经 CLI 阻断（release=false）",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#5] HAP resources.index 的签名字段经 CLI 阻断（release=true）",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#6] HAP metadata.resource 关联普通资源名后以引用方签名字段阻断",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#7] AAB 签名字段引用 missing-table 经 CLI 退出 2 并报告读取失败",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#7] AAB 签名字段引用 missing-id 经 CLI 退出 2 并报告读取失败",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#7] AAB 签名字段引用 cycle 经 CLI 退出 2 并报告读取失败",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#7] AAB 签名字段引用 partial-config 经 CLI 退出 2 并报告读取失败",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#8] HAP 签名字段引用 missing-table 经 CLI 退出 2 并报告读取失败",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#8] HAP 签名字段引用 missing-name 经 CLI 退出 2 并报告读取失败",
+        "test/spec/release-scan/cli-wiring/association.test.ts > [AC-QA-09e-ASSOC#9] AAB resources.pb 自身的签名字段悬空引用也经 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/clean.test.ts > [AC-QA-09e-CLEAN#1] 干净的 aab Release 制品退出 0，报告无错误、无命中",
+        "test/spec/release-scan/cli-wiring/clean.test.ts > [AC-QA-09e-CLEAN#1] 干净的 hap Release 制品退出 0，报告无错误、无命中",
+        "test/spec/release-scan/cli-wiring/clean.test.ts > [AC-QA-09e-CLEAN#1] 干净的 apk Release 制品退出 0，报告无错误、无命中",
+        "test/spec/release-scan/cli-wiring/clean.test.ts > [AC-QA-09e-CLEAN#1] 干净的 ipa Release 制品退出 0，报告无错误、无命中",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#1] --release 阻断 base 模块 proto 清单 compiled debuggable=true",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#1] --release 阻断 feature 模块 proto 清单 compiled debuggable=true",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#2] --release 放行 proto 清单 debuggable=false 的 AAB",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#2] --release 放行 proto 清单 debuggable=absent 的 AAB",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#3] 不带 --release 时 proto 调试标志不升级为密钥命中",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] 双引号 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] 单引号 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] 反引号 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] XML 文本 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] 配置行 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] 全大写 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] 小写基准 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] 端口与路径 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#4] URL 中测试主机末段大小写不影响 CLI 阻断",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#5] 第三方 SDK 的 test-domain 残留不接受误报清单或已批准例外豁免",
+        "test/spec/release-scan/cli-wiring/release.test.ts > [AC-QA-09e-RELEASE#5] 第三方 SDK 的 env-switch 残留不接受误报清单或已批准例外豁免"
+      ],
+      "expected": [
+        "test/spec/release-scan/cli-wiring/association.test.ts",
+        "test/spec/release-scan/cli-wiring/clean.test.ts",
+        "test/spec/release-scan/cli-wiring/release.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8c512471da2ea8f5385197e6d8a97b844ed9dcee904945166f42dd417bad8552"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "30b8dab81f81f1daabf4bc733463ea44e08b4708",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
