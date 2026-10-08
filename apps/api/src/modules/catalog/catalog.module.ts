@@ -28,6 +28,12 @@ import { SearchController } from './http/public/search.controller.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
 import { processItemRefCipher } from './infra/process-item-ref-cipher.ts';
 import {
+  PRODUCT_CACHE_NAMESPACE,
+  cacheDetailUpstream,
+  cacheSearchUpstream,
+} from './infra/product-cache.ts';
+import { keyringSearchCursorKey, processSearchCursorKey } from './infra/search-cursor.ts';
+import {
   SEARCH_REDIS_NAMESPACE,
   UNAVAILABLE_SEARCH_SESSIONS,
   createRedisSearchSessionStore,
@@ -143,6 +149,9 @@ const GUEST_VIEWER: FactoryProvider<ViewerContext> = {
  * B1-05e: GET /v1/products/{product_key} (ProductController → CatalogDetailService → getProduct),
  * request scoped on the same ports and the same item_ref issuer; the union side is one getItem on
  * the governed adapter (infra/detail-wiring.ts).
+ * B1-05g: both union upstreams sit behind the Redis search / detail cache (infra/product-cache.ts;
+ * without REDIS they read the union directly); search sessions are written by compare-and-swap and
+ * cursors are signed with the deployment key.
  */
 @Module({})
 export class CatalogModule {
@@ -208,7 +217,31 @@ export class CatalogModule {
               ? UNAVAILABLE_SEARCH_SESSIONS
               : createRedisSearchSessionStore(redis.namespace(SEARCH_REDIS_NAMESPACE)),
         },
-        { provide: SEARCH_CURSORS, useFactory: createSearchCursorCodec },
+        {
+          // B1-05g ②: one signing key per deployment, never per module instance or process in
+          // staging / prod: derived from the field keyring when there is one; local / test without
+          // a keyring use the process-wide key; staging / prod without a keyring refuse to start.
+          provide: SEARCH_CURSORS,
+          inject: [APP_CONFIG, { token: FIELD_CRYPTO, optional: true }],
+          useFactory: (config: AppConfig, crypto?: FieldCrypto): SearchCursorCodec => {
+            if (crypto !== undefined) {
+              // Derived on first use, not at startup: only search touches the keyring for it.
+              let codec: SearchCursorCodec | undefined;
+              const signed = (): SearchCursorCodec =>
+                (codec ??= createSearchCursorCodec(keyringSearchCursorKey(crypto)));
+              return {
+                encode: (value) => signed().encode(value),
+                decode: (value) => signed().decode(value),
+              };
+            }
+            if (config.appEnv !== 'local' && config.appEnv !== 'test') {
+              throw new Error(
+                'catalog: search cursors need the field keyring outside local / test',
+              );
+            }
+            return createSearchCursorCodec(processSearchCursorKey());
+          },
+        },
         {
           provide: CatalogSearchService,
           scope: Scope.REQUEST,
@@ -259,13 +292,20 @@ export class CatalogModule {
                 itemRefs,
                 logger,
               }),
-              upstream: createUnionSearchUpstream({
-                union,
-                catalog,
-                config,
-                clock,
-                ledger: redis === undefined ? null : redis.namespace(SEARCH_REDIS_NAMESPACE),
-              }),
+              upstream: cacheSearchUpstream(
+                createUnionSearchUpstream({
+                  union,
+                  catalog,
+                  config,
+                  clock,
+                  ledger: redis === undefined ? null : redis.namespace(SEARCH_REDIS_NAMESPACE),
+                }),
+                {
+                  redis: redis === undefined ? null : redis.namespace(PRODUCT_CACHE_NAMESPACE),
+                  clock,
+                  config,
+                },
+              ),
               sessions,
               cursors,
               newSessionId: randomUUID,
@@ -286,6 +326,7 @@ export class CatalogModule {
             SourceLinkReader,
             GovernedUnion,
             ITEM_REFS,
+            { token: REDIS, optional: true },
           ],
           useFactory: (
             viewerContext: ViewerContext,
@@ -298,6 +339,7 @@ export class CatalogModule {
             sourceLinks: SourceLinkReader,
             union: GovernedUnion,
             itemRefs: ItemRefService,
+            redis?: RedisHandle,
           ): CatalogDetailService =>
             new CatalogDetailService({
               clock,
@@ -314,7 +356,11 @@ export class CatalogModule {
                 itemRefs,
                 logger,
               }),
-              upstream: createUnionDetailUpstream({ union }),
+              upstream: cacheDetailUpstream(createUnionDetailUpstream({ union }), {
+                redis: redis === undefined ? null : redis.namespace(PRODUCT_CACHE_NAMESPACE),
+                clock,
+                config,
+              }),
             }),
         },
       ],

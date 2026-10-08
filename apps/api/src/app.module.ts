@@ -6,6 +6,7 @@ import { AdminModule } from './modules/admin/index.ts';
 import {
   CatalogModule,
   GovernedUnion,
+  PRODUCT_CACHE_NAMESPACE,
   LinkRegistrar,
   RebateQuoter,
   createDbCatalogProductReader,
@@ -52,6 +53,7 @@ import {
   DB,
   FIELD_CRYPTO,
   PlatformModule,
+  REDIS,
   ROOT_LOGGER,
   createMemoryQuotaLimiter,
   quotaShares,
@@ -60,6 +62,7 @@ import {
   type Clock,
   type FieldCrypto,
   type PlatformOptions,
+  type RedisHandle,
   type RootLogger,
   REQUEST_CHECKS,
   type RequestCheck,
@@ -319,11 +322,17 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
       },
       {
         provide: LINK_LANDING_PORTS,
-        inject: [GovernedUnion, CLOCK, { token: DB, optional: true }],
+        inject: [
+          GovernedUnion,
+          CLOCK,
+          { token: DB, optional: true },
+          { token: REDIS, optional: true },
+        ],
         useFactory: (
           union: GovernedUnion,
           clock: Clock,
           db?: Kysely<Database>,
+          redis?: RedisHandle,
         ): LinkLandingPorts =>
           db === undefined
             ? {
@@ -334,10 +343,13 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
                 },
               }
             : {
+                // B1-05g: the union fallback reads through the shared detail cache.
                 products: createDbCatalogProductReader({
                   db,
                   union,
                   config: createContentReader({ db, clock }),
+                  clock,
+                  cache: redis === undefined ? null : redis.namespace(PRODUCT_CACHE_NAMESPACE),
                 }),
               },
       },
