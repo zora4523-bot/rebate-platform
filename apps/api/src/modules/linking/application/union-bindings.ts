@@ -3,8 +3,8 @@
 //
 // Submission, in this order (orchestrator ruling D7-3 ②): login (10001) → platform (only taobao
 // takes a state and a credential; pdd's body is not in the contract yet, jd has no user
-// authorization: 20001 data.fields=[platform]) → platform idempotency (standard mode) → blocked
-// binding of a user who is not banned (30153) → the site authorization of the account this
+// authorization: 20001 data.fields=[platform]) → platform idempotency (transactional mode) →
+// blocked binding of a user who is not banned (30153) → the site authorization of the account this
 // authorization uses (30101 / 30102 data.reason=auth_unavailable, same judgement as auth-url) →
 // state check ① (exists, this app, taobao, bind, unused, unexpired, uid and device_id match →
 // else 30104 without reason) → ②③ (device record's client = state.client, method issued in the
@@ -22,6 +22,24 @@
 //   (release instants cleared, bound_at kept); otherwise a new active row (bound_at = now).
 // The two partial unique indexes stay the arbiter of concurrent writes: a unique violation
 // re-reads and decides again (30151 or success), never a 500 and never an application lock.
+// A status change of an existing row (invalid → active, the user's cooling released row → active)
+// is a compare-and-set on the row_version read with it; losing it re-reads and decides again.
+// TODO(规划/11 §9.2): 状态改动改经生成的 union_bindings transition() — blocked on 状态机生成器
+// （尚无 union_binding_status 的生成入口）。
+//
+// Atomicity with the key (Codex money review r1): the submission runs in platform idempotency's
+// transactional mode. Everything after the key is claimed reads on that transaction except the
+// state consumption, which is one UPDATE on the pool handle committed on its own before the
+// exchange (the consumption must be visible before the upstream is called). The binding write and
+// the key's completed response then commit together: a binding never takes effect without the
+// stored answer, and a stored answer never claims a binding that did not commit. A process that
+// dies after the consumption leaves no key record and no binding; the same key then runs again,
+// finds its state used and answers 30104 (the state is burnt: the upstream is never called twice
+// and the consumption is never rolled back). While the first submission's transaction is open the
+// same key gets 40901, as for every transactional operation.
+// Each submission holds its transaction's connection while it takes a second one for the
+// consumption and the shared reads; BIND_CONCURRENCY keeps those holders below the pool size so
+// they can never wait on each other for the last connection.
 //
 // The credential (code / access_token) lives only in this process: never stored, logged or
 // echoed. Responses carry only {platform, status}: no account name, relation id or other user.
@@ -29,7 +47,7 @@
 // writes union_auth_sessions (used_at only) and union_bindings.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import type { Kysely, Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import {
   newUuidV7,
   type Clock,
@@ -76,7 +94,7 @@ export interface UnionBindingsOptions {
   readonly clock: Clock;
   readonly callerContext: CallerContext;
   readonly reads: UnionAuthReads;
-  readonly idempotency: Pick<Idempotency, 'execute'>;
+  readonly idempotency: Pick<Idempotency, 'executeInTransaction'>;
   readonly exchanger: Pick<UnionBindingExchanger, 'exchange'>;
   readonly logger: Pick<RootLogger, 'warn'>;
 }
@@ -93,6 +111,30 @@ const OCCUPYING: readonly string[] = Object.freeze([
 ]);
 /** Unique-violation retries before giving up (each one re-reads and decides again). */
 const DECIDE_ATTEMPTS = 4;
+/**
+ * Submissions of one process that may hold their transaction's connection at once (the api pool
+ * has 10, POOL_SIZES.api.db). Each one needs a second connection for the consumption and the
+ * shared reads, so this stays well below the pool size; the others wait without a connection.
+ */
+const BIND_CONCURRENCY = 4;
+let bindsRunning = 0;
+const bindWaiters: (() => void)[] = [];
+
+async function withBindSlot<T>(run: () => Promise<T>): Promise<T> {
+  if (bindsRunning >= BIND_CONCURRENCY) {
+    await new Promise<void>((resolve) => bindWaiters.push(resolve));
+  } else {
+    bindsRunning += 1;
+  }
+  try {
+    return await run();
+  } finally {
+    // The slot passes straight to the next waiter; the count drops only when nobody waits.
+    const next = bindWaiters.shift();
+    if (next === undefined) bindsRunning -= 1;
+    else next();
+  }
+}
 
 const STATUS: Readonly<Record<number, number>> = {
   0: 200,
@@ -157,6 +199,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
 
   /** BR-ID-19 on relation id R of account A, read once; writes are conditional. */
   async function decide(
+    trx: Transaction<DB>,
     appId: string,
     userId: string,
     accountId: string,
@@ -164,7 +207,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
   ): Promise<Decision> {
     const now = clock.now();
     const platform = 'taobao';
-    const others = await db
+    const others = await trx
       .selectFrom('union_bindings')
       .select(['status', 'cooldown_until'])
       .where('app_id', '=', appId)
@@ -182,7 +225,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
     );
     if (occupied) return { kind: 'conflict' };
 
-    const mine: BindingRow[] = await db
+    const mine: BindingRow[] = await trx
       .selectFrom('union_bindings')
       .selectAll()
       .where('app_id', '=', appId)
@@ -197,7 +240,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       if (unreleased.status === 'active') return { kind: 'ok' };
       if (unreleased.status === 'blocked') return { kind: 'blocked' };
       // invalid (or a legacy pending_auth) → active; bound_at is written once and kept.
-      const updated = await db
+      const updated = await trx
         .updateTable('union_bindings')
         .set((eb) => ({
           status: 'active',
@@ -207,6 +250,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
         }))
         .where('id', '=', unreleased.id)
         .where('status', '=', unreleased.status)
+        .where('row_version', '=', unreleased.row_version)
         .executeTakeFirst();
       return updated.numUpdatedRows === 1n ? { kind: 'ok' } : { kind: 'retry' };
     }
@@ -223,7 +267,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       )
       .sort((a, b) => (b.released_at?.getTime() ?? 0) - (a.released_at?.getTime() ?? 0))[0];
     if (cooling !== undefined) {
-      const restored = await db
+      const restored = await trx
         .updateTable('union_bindings')
         .set((eb) => ({
           status: 'active',
@@ -235,12 +279,13 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
         }))
         .where('id', '=', cooling.id)
         .where('status', '=', 'released')
+        .where('row_version', '=', cooling.row_version)
         .executeTakeFirst();
       return restored.numUpdatedRows === 1n ? { kind: 'ok' } : { kind: 'retry' };
     }
 
     // pending_auth is never produced (BR-ID-17 细则): the row is written active directly.
-    await db
+    await trx
       .insertInto('union_bindings')
       .values({
         id: newUuidV7(now),
@@ -262,6 +307,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
   }
 
   async function settle(
+    trx: Transaction<DB>,
     appId: string,
     userId: string,
     accountId: string,
@@ -269,9 +315,14 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
   ): Promise<Decision> {
     for (let attempt = 1; ; attempt += 1) {
       let decision: Decision;
+      // A failed statement aborts the transaction: each attempt runs under its own savepoint, so
+      // a lost unique race undoes only that attempt and the next one can read what won.
+      await sql`SAVEPOINT union_binding_decide`.execute(trx);
       try {
-        decision = await decide(appId, userId, accountId, relationId);
+        decision = await decide(trx, appId, userId, accountId, relationId);
+        await sql`RELEASE SAVEPOINT union_binding_decide`.execute(trx);
       } catch (error) {
+        await sql`ROLLBACK TO SAVEPOINT union_binding_decide`.execute(trx);
         // A concurrent writer won the partial unique index: read again and decide on what won.
         if (!uniqueViolation(error) || attempt >= DECIDE_ATTEMPTS) throw error;
         continue;
@@ -281,6 +332,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
   }
 
   async function handle(
+    trx: Transaction<DB>,
     appId: string,
     userId: string,
     deviceId: string,
@@ -305,7 +357,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
 
     const now = clock.now();
     // ① the state itself: any mismatch is 30104 without reason and leaves it as it is.
-    const session = await db
+    const session = await trx
       .selectFrom('union_auth_sessions')
       .selectAll()
       .where('state', '=', body.state)
@@ -338,7 +390,8 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       throw new AuthConfigError('linking: the state recorded no application for the method');
     }
 
-    // Consume: one conditional update, committed before the upstream is called.
+    // Consume: one conditional update on the pool handle, so it commits on its own before the
+    // upstream is called (not on trx, which commits only with the key's response).
     const consumed = await db
       .updateTable('union_auth_sessions')
       .set({ used_at: now })
@@ -366,7 +419,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       throw new AuthConfigError('linking: the credential exchange returned no relation id');
     }
 
-    const decision = await settle(appId, userId, accountId, exchanged.relationId);
+    const decision = await settle(trx, appId, userId, accountId, exchanged.relationId);
     if (decision.kind === 'conflict') {
       // No conflict log table yet (D7-3 ⑥): a structured warn without R or the other user.
       logger.warn(
@@ -426,17 +479,22 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       if (!CLIENTS.has(device.platform)) return result(50001, traceId);
       const client = device.platform as AuthClient;
 
-      const response = await idempotency.execute(
-        {
-          appId,
-          actor: { userId, deviceId, phoneHmac: null },
-          method: 'POST',
-          path: `/v1/unions/${input.platform}/bindings`,
-          key: input.idempotencyKey,
-          body: input.body,
-          traceId,
-        },
-        () => guarded(traceId, () => handle(appId, userId, deviceId, client, input.body, traceId)),
+      const response = await withBindSlot(() =>
+        idempotency.executeInTransaction(
+          {
+            appId,
+            actor: { userId, deviceId, phoneHmac: null },
+            method: 'POST',
+            path: `/v1/unions/${input.platform}/bindings`,
+            key: input.idempotencyKey,
+            body: input.body,
+            traceId,
+          },
+          (trx) =>
+            guarded(traceId, () =>
+              handle(trx, appId, userId, deviceId, client, input.body, traceId),
+            ),
+        ),
       );
       // Handler and replay alike: the stored body is the answer, so a replay equals the first.
       return {
