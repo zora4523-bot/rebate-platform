@@ -27,5 +27,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/catalog/cache/**'
   - 'test/spec/catalog/search-hardening/**'
-status: todo
-pr: null
+status: done
+pr: 285

@@ -17,5 +17,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/db/linking-bindings/**'
-status: todo
-pr: null
+status: done
+pr: 280
