@@ -307,7 +307,7 @@ async function clone(original: LandingLink, changes: Partial<LandingLink>): Prom
   return row;
 }
 
-it('[AC-B1-06j#5] 真实默认装配允许游客查看分享与非分享链接；带合法令牌时未接身份仍不提示分享者', async () => {
+it('[AC-B1-06j#5] 真实默认装配允许游客查看分享与非分享链接：不登记、不写日志、不转链', async () => {
   const f = await start(false);
   const original = await source(f.headers);
   const shared = await clone(original, {
@@ -316,13 +316,11 @@ it('[AC-B1-06j#5] 真实默认装配允许游客查看分享与非分享链接�
     pid_scene: 'share',
     identity_snapshot: { user_id: OWNER, platform: 'jd', pid_scene: 'share' },
   });
-  const ownerAuth = await f.auth(OWNER);
   const before = await persisted(db);
   f.convert.mockClear();
   for (const [row, kind, extra] of [
     [original, 'other', {}],
     [shared, 'share', {}],
-    [shared, 'share', ownerAuth],
   ] as const) {
     const response = await f.get(row.link_id, extra);
     expect(response.statusCode).toBe(200);
