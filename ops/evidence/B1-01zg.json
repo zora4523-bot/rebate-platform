@@ -1,0 +1,74 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (platform/queue). runExecutor fetches again at once after a fetch that returned and executed jobs (no stop signal); it waits pollingIntervalSeconds only after an empty fetch or a fetch / settlement error (still reported); the stop signal still interrupts the wait and is checked before every fetch. Concurrency, lease and exactly-once settlement (B1-01g) unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: round 1 pass, no findings (stop signal, errors, settlement, no busy loop: handler failures retry no sooner than retryDelaySeconds >= 1 s)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (test/spec/platform/queue/throughput.test.ts, 4 virtual-time cases) reviewed by a fresh Claude subagent: round 1 pass, no findings"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zg",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "b1eaf3f2167ee5f4954038f15f6703a9cbc058de",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b1eaf3f2167ee5f4954038f15f6703a9cbc058de",
+      "tree": "1ee7b9f40c7ff8503cf8e225d7112826a4eb2618",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T18:32:09Z",
+      "finished_at": "2026-10-08T18:32:15Z",
+      "red_tests": [
+        "test/spec/platform/queue/throughput.test.ts > [AC-B1-01zg#1] 单通道连续处理六个积压任务，总耗时小于两个轮询间隔",
+        "test/spec/platform/queue/throughput.test.ts > [AC-B1-01zg#2] 连续取空各等一个间隔，再有积压时立即连续处理，排空后恢复等待",
+        "test/spec/platform/queue/throughput.test.ts > [AC-B1-01zg#3] 连续领取失败每次报告 queue_error 并等待，恢复后立即处理积压",
+        "test/spec/platform/queue/throughput.test.ts > [AC-B1-01zg#4] 连续再取期间外部停止信号及时结束通道，停止后不再领取"
+      ],
+      "expected": ["test/spec/platform/queue/throughput.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b002b48e359368490fa66b947fad5b2842dc829ab5ef1468fa0b68c9055f4ea5"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "634d8c8e996aca136f9a7e109fbef25001d91970",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}

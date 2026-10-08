@@ -96,17 +96,28 @@ async function execute(options: ExecutorOptions, job: ClaimedJob): Promise<void>
   }
 }
 
-/** One lane owns its execution slot BEFORE fetching and keeps it through actual handler exit. */
+/**
+ * One lane owns its execution slot BEFORE fetching and keeps it through actual handler exit.
+ * A round that executed a fetched job fetches again at once, so a backlog drains at handler
+ * speed; only an empty or failed fetch waits one polling interval (no busy loop). The stop
+ * signal is checked before every fetch and interrupts the wait.
+ */
 export async function runExecutor(options: ExecutorOptions): Promise<void> {
   const { db, boss, work, shutdown, logger } = options;
   while (!shutdown.aborted) {
+    let executed = false;
     try {
       const jobs = await fetchAttempt(db, boss, work.queue);
-      for (const job of jobs) await execute(options, job);
+      for (const job of jobs) {
+        await execute(options, job);
+        executed = true;
+      }
     } catch (error) {
       reportQueueError(logger, error);
+      // Settlement errors after a job are still failures: back off rather than spin.
+      executed = false;
     }
-    if (!shutdown.aborted) {
+    if (!executed && !shutdown.aborted) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await untilAborted(
