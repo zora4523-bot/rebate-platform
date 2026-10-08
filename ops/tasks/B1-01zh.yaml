@@ -25,4 +25,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/idempotency/**'
-status: todo
+status: done
+pr: 339
