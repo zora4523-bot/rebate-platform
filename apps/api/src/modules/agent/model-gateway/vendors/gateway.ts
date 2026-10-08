@@ -136,10 +136,8 @@ export function createVendorGateway(input: VendorGatewayOptions): VendorGateway 
           signal,
         );
       } catch (error) {
-        if (billable) {
-          const usage = claimFailureUsage(error);
-          if (usage !== null) recordUsage(usage);
-        }
+        const usage = claimFailureUsage(error);
+        if (billable && usage !== null) recordUsage(usage);
         throw error;
       }
       if (billable) recordUsage(response.usage);
