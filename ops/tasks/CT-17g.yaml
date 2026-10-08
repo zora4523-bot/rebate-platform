@@ -1,0 +1,32 @@
+id: CT-17g
+repo: rebate-platform
+title: 契约：后台平台标识接口（/admin/v1/platform-icons：列表、版本历史、上传清洗预览、存为版本、补登来源、发布 / 回滚、恢复内置；权限点 content.platform_icon，BR-TEXT-24）
+type: contract
+# 2026-10-09 入账（前端线 f1-frontend-5）。承 CT-17f（#311）余下部分：04 §6.6 只写「后台内容接口（路径与字段由契约线定，台账入账时补）」，路径、字段、错误码由本任务按 BR-TEXT-24 细则补全（代理补全的默认，00 §8 第 ① 类；规划回写草稿 couli-runs/F1-frontend/spec-sync-ct17g.md 交编排会话）。
+# 范围（全部 x-auth admin、x-implementation: planned、无 step-up（04 §11.2 该权限点 step-up 列为「–」）、不带 Idempotency-Key（后台写接口用 CAS），权限点 content.platform_icon 写进各操作 description（按 contracts/README 现有写法，有现成扩展就用扩展）：
+#  ① GET /admin/v1/platform-icons：8 个标识键（BR-TEXT-24 标识键表，与 Config.platform_icons 的键同一份，必要时抽枚举 platform_icon_key，二者一致）各一行：当前发布版本（null = 内置图）、当前版本详情、最新版本号、更新人与时间。
+#  ② GET /admin/v1/platform-icons/{key}/versions：版本历史，新的在前，page / page_size ≤ 200。
+#  ③ POST /admin/v1/platform-icons/{key}/uploads（multipart/form-data，字段 file）：服务端先保真转换、再白名单清洗（BR-TEXT-24 细则），返回 upload_id、清洗后文件的 url（media 域名由部署配置，<img> 预览用）、sha256、format（svg | png）、bytes、sanitized（清洗后与原件不同 = 前端显示「已清除不安全内容」、要操作人确认）、expires_at；
+#     拒收走 20001 data.fields=[file]，data.reason 新增后台专用三值（只出现在后台、不进用户侧字典，照 invalid_device_hash 先例）：icon_format_invalid（非 SVG / PNG、不能解析、PNG 边长 < 512 或非透明底）、icon_too_large（超过配置 content.platform_icon.max_bytes）、icon_svg_unconvertible（样式表 / 复杂选择器 / @ 规则 / 外部 url(...) / 引用循环或外部引用 / 展开上限，提示「请换一份不含样式表或外部引用的官方 SVG，或改传 PNG」）；请求体超全局上限仍是 413 data.fields=[body]。
+#  ④ POST /admin/v1/platform-icons/{key}/versions：{upload_id, sanitized_confirmed（sanitized=true 时必须为 true）, source_url?, downloaded_on?（日期）} 存为新版本；来源页地址或下载日期缺任一项的版本只能存草稿（publishable=false）。upload_id 不存在、过期、属于别的键 → 20001 data.fields=[upload_id]。
+#  ⑤ PATCH /admin/v1/platform-icons/{key}/versions/{version}：补登 source_url、downloaded_on（只限从未发布过的版本）。
+#  ⑥ POST /admin/v1/platform-icons/{key}/publish：{version, expected_current_version（整数或 null）}；发布即生效、不分灰度；发布更早的版本即回滚（审计动作区分 publish / rollback）；版本缺来源登记 → 20001 data.fields=[source_url] 或 [downloaded_on]；当前版本已被别人改 → 20902 data.resource=platform_icon（新增 resource 值）。
+#  ⑦ POST /admin/v1/platform-icons/{key}/restore-builtin：{expected_current_version}；下发里去掉该键、客户端回内置图；冲突同 20902。
+#  发布、回滚、恢复内置都写审计（description 写明）；成功后下一次 GET /v1/config 的 platform_icons 随之变化（url 即该版本清洗后文件、sha256 同文件名摘要、version 同版本号，与 ConfigPlatformIcon 一致）。
+#  示例覆盖：列表（一键有替换图、其余内置）、上传带 sanitized=true、存草稿、发布、三类 20001 拒收与 20902。error-codes.yaml 只改 20001 的 meaning / data.reason 与 20902 的 data.resource，不新增码值。
+# 不在本任务：后端实现（F1-02 一部分）、后台「平台标识」页（F1-10，画板待设计会话补）。实现者按 SPEC_REF 读 04 §6.6、§10.1、§11.2 与 08 BR-TEXT-24 细则原文（§11.2 整节约 26KB，不点 contract_sections）。
+refs: []
+refs_hash: {}
+deps: [CT-17f]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/*.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
