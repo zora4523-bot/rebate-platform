@@ -15,14 +15,20 @@
 // this service invalidates its key at once and marks it pending until a read sees the written
 // row_version (i.e. the writer committed): until then reads go to the database and are not
 // cached, so a concurrent read of the old value cannot leave a stale entry behind, and a rolled
-// back write never leaks into the cache. Other instances learn of a change through the
+// back write never leaks into the cache. A cache entry keeps the row_version it holds as the key's
+// high-water mark (row_version only grows), so a late read of an older version never replaces a
+// newer entry, and reads in flight when a write becomes visible lose the right to fill the cache.
+// Before any write the change is checked against the transition table
+// (../domain/risk-state-transitions.ts; not listed → RiskStateTransitionError, nothing written,
+// nothing published). Other instances learn of a change through the
 // risk.state_changed event (a cache consumer is not wired yet: their entries age out within 60 s).
 // A read failure rejects unchanged (50001 through the global filter), never reads as normal.
 //
 // Stage ⑤ (checkRequest): only a request with a verified principal (stage ②) is judged; the
 // anonymous / x-auth none operations (the four logins among them) are not. state banned, or
-// appealing while the user's processing account appeal has prev_risk_state banned (an appealing
-// user without a processing account appeal is judged as banned: fail closed), refuses every
+// appealing while the user's processing account appeal has prev_risk_state banned (a cached
+// appealing without a processing account appeal is re-read from the database first; still
+// appealing without one is judged as banned: fail closed), refuses every
 // operation outside the BR-ID-31 whitelist with 10006 (HTTP 403, no data). frozen is not judged
 // here (30303 belongs to withdrawal acceptance). The sensitive operations of BR-ID-01 (the four
 // x-step-up operations, x-auth realname, /v1/me/deletion*) read the database on every request.
@@ -42,6 +48,7 @@ import {
   type EventBus,
   type TokenPrincipal,
 } from '../../platform/index.ts';
+import { canTransitionRiskState } from '../domain/risk-state-transitions.ts';
 
 export type RiskReasonCategory =
   'malicious_rights' | 'fraud_invite' | 'abnormal_trade' | 'account_security' | 'other';
@@ -112,6 +119,14 @@ export class RiskStateConflictError extends Error {
   }
 }
 
+/** The requested change is not in the transition table (../domain/risk-state-transitions.ts). */
+export class RiskStateTransitionError extends Error {
+  constructor(from: string | null, to: string) {
+    super(`user_risk_state cannot change from ${from ?? '(no row)'} to ${to}`);
+    this.name = 'RiskStateTransitionError';
+  }
+}
+
 /** 10006: HTTP 403 with the contract envelope { code, msg, trace_id } and no data. */
 export class RiskStateBannedException extends HttpException {
   constructor(traceId: string) {
@@ -148,6 +163,7 @@ const WHITELIST: ReadonlyMap<string, WhitelistEntry> = new Map<string, Whitelist
   ['POST /v1/me/deletion/cancel', true],
   ['POST /v1/idempotency-keys/abandon', true],
   ['POST /v1/me/appeals', true],
+  ['GET /v1/me/appeals', true],
 ]);
 
 /** The four contract x-step-up operations (withdraw, phone change, payout account, deletion). */
@@ -188,6 +204,8 @@ interface Loaded {
 
 interface CacheEntry {
   readonly snapshot: RiskStateSnapshot;
+  /** row_version of the cached snapshot (-1: no row); the key's high-water mark. */
+  readonly version: number;
   readonly at: number;
 }
 
@@ -252,13 +270,17 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     return age >= 0 && age <= CACHE_TTL_MS;
   }
 
-  function remember(key: string, snapshot: RiskStateSnapshot, now: number): void {
+  function remember(key: string, loaded: Loaded, now: number): void {
+    const version = loaded.version ?? -1;
+    // row_version only grows: a snapshot older than one already seen is a late read, dropped.
+    const seen = cache.get(key);
+    if (seen !== undefined && seen.version > version) return;
     cache.delete(key);
     if (cache.size >= CACHE_MAX_ENTRIES) {
       const oldest = cache.keys().next();
       if (oldest.done !== true) cache.delete(oldest.value);
     }
-    cache.set(key, { snapshot, at: now });
+    cache.set(key, { snapshot: loaded.snapshot, version, at: now });
   }
 
   async function readRiskState(
@@ -270,7 +292,7 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     const hit = cache.get(key);
     if (hit !== undefined) {
       if (within(hit.at, nowMs())) return hit.snapshot;
-      cache.delete(key);
+      // Kept as the key's high-water mark; remember() replaces it.
     }
     const started = generation;
     const loaded = await load(db, subject);
@@ -281,8 +303,13 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
       // A write still invisible after the TTL was rolled back (or is a very long transaction).
       if (!committed && within(write.at, after)) return loaded.snapshot;
       pending.delete(key);
+      // Reads still in flight may hold the value from before the write: they lose the right to
+      // fill the cache (this read's own snapshot is at least the written version).
+      generation += 1;
+      remember(key, loaded, after);
+      return loaded.snapshot;
     }
-    if (started === generation) remember(key, loaded.snapshot, after);
+    if (started === generation) remember(key, loaded, after);
     return loaded.snapshot;
   }
 
@@ -296,6 +323,10 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
       .where('app_id', '=', subject.app_id)
       .where('user_id', '=', subject.user_id)
       .executeTakeFirst();
+    const from = current === undefined ? null : current.state;
+    if (!canTransitionRiskState(from, command.state)) {
+      throw new RiskStateTransitionError(from, command.state);
+    }
     let written: number;
     if (current === undefined) {
       // A row of the same user_id under another app_id fails here (primary key), never updated.
@@ -360,15 +391,26 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     const subject = { app_id: principal.app_id, user_id: principal.uid };
     const method = String(request.method).toUpperCase();
     const template = request.routeOptions.url;
-    const snapshot =
+    const fresh = trx !== undefined || sensitive(method, template);
+    let snapshot =
       trx === undefined
-        ? await readRiskState(subject, { fresh: sensitive(method, template) })
+        ? await readRiskState(subject, { fresh })
         : (await load(trx, subject)).snapshot;
     if (snapshot.state !== 'banned' && snapshot.state !== 'appealing') return;
     if (whitelisted(method, template, request.body)) return;
     if (snapshot.state === 'appealing') {
-      const previous = await appealPrevious(trx ?? db, subject);
-      if (previous !== null && previous !== 'banned') return;
+      let previous = await appealPrevious(trx ?? db, subject);
+      if (previous === null && !fresh) {
+        // A cached appealing without a processing account appeal may be stale (the appeal was
+        // closed in another process): drop the entry and judge the database's state instead.
+        generation += 1;
+        cache.delete(keyOf(subject));
+        snapshot = await readRiskState(subject, { fresh: true });
+        if (snapshot.state !== 'banned' && snapshot.state !== 'appealing') return;
+        if (snapshot.state === 'appealing') previous = await appealPrevious(db, subject);
+      }
+      // Still appealing without a processing account appeal: fail closed, judged as banned.
+      if (snapshot.state === 'appealing' && previous !== null && previous !== 'banned') return;
     }
     throw new RiskStateBannedException(request.id);
   }

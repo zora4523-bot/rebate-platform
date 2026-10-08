@@ -8,6 +8,7 @@ import { FixedClock, type EventBus } from '../../platform/index.ts';
 import {
   RiskStateBannedException,
   RiskStateConflictError,
+  RiskStateTransitionError,
   createRiskStateService,
   riskStateServiceToken,
   type RiskStateRequest,
@@ -30,6 +31,8 @@ function scripted() {
     appeal: string | null;
     updated: number;
     failure?: Error;
+    /** Awaited after a user_risk_state select has taken its rows: a slow reply of that value. */
+    hold?: Promise<void> | undefined;
   } = { row: null, appeal: null, updated: 1 };
   const client = {
     release() {},
@@ -40,6 +43,9 @@ function scripted() {
       if (/^select\b/i.test(text) && text.includes('user_risk_state')) {
         if (state.failure !== undefined) throw state.failure;
         const rows = state.row === null ? [] : [{ ...SUBJECT, ...state.row }];
+        const hold = state.hold;
+        state.hold = undefined;
+        if (hold !== undefined) await hold;
         return { command: 'SELECT', rowCount: rows.length, rows };
       }
       if (/^select\b/i.test(text) && text.includes('appeals')) {
@@ -214,6 +220,124 @@ it('[B1-03h §10] the realname operation GET /v1/me/payout-account reads the dat
     await f.service.checkRequest(request('/v1/products/search'));
     await f.service.checkRequest(request('/v1/products/search'));
     expect(f.reads()).toHaveLength(3);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+function gate() {
+  let open!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { hold, open };
+}
+
+it('[B1-03h §11#5] a read of the old value that returns after the commit was seen does not refill the cache', async () => {
+  const f = scripted();
+  try {
+    // Written, not committed: the slow read A takes the old value (no row).
+    await f.db.transaction().execute((trx) => f.service.setRiskState(trx, BAN));
+    const slow = gate();
+    f.state.hold = slow.hold;
+    const before = f.reads().length;
+    const a = f.service.readRiskState(SUBJECT);
+    await vi.waitFor(() => expect(f.reads()).toHaveLength(before + 1));
+    // Committed; read B sees the written version and caches banned.
+    f.state.row = { state: 'banned', reason_category: 'other', frozen_until: null, row_version: 0 };
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('banned');
+    slow.open();
+    expect((await a).state).toBe('normal');
+    const n = f.reads().length;
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('banned');
+    expect(f.reads()).toHaveLength(n);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[B1-03h §11#5] a late snapshot of a lower row_version never replaces a newer cache entry', async () => {
+  const f = scripted();
+  try {
+    // Changed by another instance: no pending write here, only the versions tell the order.
+    f.state.row = { state: 'normal', reason_category: null, frozen_until: null, row_version: 4 };
+    const slow = gate();
+    f.state.hold = slow.hold;
+    const before = f.reads().length;
+    const a = f.service.readRiskState(SUBJECT);
+    await vi.waitFor(() => expect(f.reads()).toHaveLength(before + 1));
+    f.state.row = { state: 'banned', reason_category: 'other', frozen_until: null, row_version: 5 };
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('banned');
+    slow.open();
+    expect((await a).state).toBe('normal');
+    const n = f.reads().length;
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('banned');
+    expect(f.reads()).toHaveLength(n);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[B1-03h §11#2] a cached appealing without a processing appeal is re-read; normal or frozen passes', async () => {
+  const f = scripted();
+  try {
+    f.state.row = {
+      state: 'appealing',
+      reason_category: 'other',
+      frozen_until: null,
+      row_version: 1,
+    };
+    f.state.appeal = 'frozen';
+    const r = request('/v1/products/search');
+    await expect(f.service.checkRequest(r)).resolves.toBeUndefined();
+    // The appeal was closed elsewhere: the database says frozen again, the cache still appealing.
+    f.state.appeal = null;
+    f.state.row = { state: 'frozen', reason_category: 'other', frozen_until: null, row_version: 2 };
+    await expect(f.service.checkRequest(r)).resolves.toBeUndefined();
+    f.state.row = { state: 'normal', reason_category: null, frozen_until: null, row_version: 3 };
+    await expect(f.service.checkRequest(r)).resolves.toBeUndefined();
+    // The stale entry was dropped: the next read refills from the database.
+    expect((await f.service.readRiskState(SUBJECT)).state).toBe('normal');
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[B1-03h §11#1] GET /v1/me/appeals is on the 10006 whitelist', async () => {
+  const f = scripted();
+  try {
+    f.state.row = { state: 'banned', reason_category: 'other', frozen_until: null, row_version: 0 };
+    await expect(f.service.checkRequest(request('/v1/me/appeals'))).resolves.toBeUndefined();
+    await expect(
+      f.service.checkRequest(request('/v1/me/appeals', 'POST')),
+    ).resolves.toBeUndefined();
+    await expect(f.service.checkRequest(request('/v1/me/orders'))).rejects.toBeInstanceOf(
+      RiskStateBannedException,
+    );
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[B1-03h §11#4] a change outside the transition table writes and publishes nothing', async () => {
+  const f = scripted();
+  try {
+    f.state.row = { state: 'banned', reason_category: 'other', frozen_until: null, row_version: 2 };
+    await expect(
+      f.db
+        .transaction()
+        .execute((trx) =>
+          f.service.setRiskState(trx, { ...BAN, state: 'frozen', frozen_until: null }),
+        ),
+    ).rejects.toBeInstanceOf(RiskStateTransitionError);
+    expect(f.statements.some((s) => /^(update|insert)\b/i.test(s))).toBe(false);
+    expect(f.publish).not.toHaveBeenCalled();
+    await f.db
+      .transaction()
+      .execute((trx) =>
+        f.service.setRiskState(trx, { ...BAN, state: 'normal', reason_category: null }),
+      );
+    expect(f.publish).toHaveBeenCalledTimes(1);
   } finally {
     await f.db.destroy();
   }
