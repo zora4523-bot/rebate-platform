@@ -64,6 +64,10 @@ import { LinkOpenController } from './http/public/open.controller.ts';
 import { UNION_AUTH_URL, UnionAuthUrlController } from './http/public/auth-url.controller.ts';
 import { createUnionAuthUrl, type UnionAuthUrlService } from './application/union-auth-url.ts';
 import { createDemoUnionAuthApps, type UnionAuthApps } from './infra/auth-apps.ts';
+import { UNION_BINDINGS, UnionBindingsController } from './http/public/bindings.controller.ts';
+import { createUnionBindings, type UnionBindingsService } from './application/union-bindings.ts';
+import { createUnionAuthReads } from './application/union-auth-reads.ts';
+import { UnionBindingExchanger } from './application/union-binding-exchanger.ts';
 import { createLinkingPidReader } from './infra/pid-reader.ts';
 import {
   AttrCodeReader,
@@ -240,7 +244,12 @@ export class LinkingModule {
         : { ...ports.attrCodeReader, provide: AttrCodeReader };
     return {
       module: LinkingModule,
-      controllers: [LinkOpenController, LinkLandingController, UnionAuthUrlController],
+      controllers: [
+        LinkOpenController,
+        LinkLandingController,
+        UnionAuthUrlController,
+        UnionBindingsController,
+      ],
       providers: [
         {
           provide: LINK_OPEN_PROCESS,
@@ -417,6 +426,60 @@ export class LinkingModule {
                           verifiedPaths: ports.verifiedPaths,
                         },
                       }),
+                  logger,
+                }),
+        },
+        {
+          // B1-06h: the credential exchange, by default the governed Taobao adapter's channel
+          // filing (the demo adapter outside prod); without LINK_OPEN_PORTS every exchange
+          // rejects (50001). Replaceable by a later provider of the same class token.
+          provide: UnionBindingExchanger,
+          inject: [{ token: LINK_OPEN_PORTS, optional: true }],
+          useFactory: (ports: LinkOpenPorts | undefined): UnionBindingExchanger =>
+            new UnionBindingExchanger(() => {
+              if (ports === undefined) return null;
+              const adapter = ports.union.adapter('taobao');
+              const bind = adapter.bindPublisher;
+              return bind === undefined ? null : (req, ctx) => bind.call(adapter, req, ctx);
+            }),
+        },
+        {
+          // B1-06h: POST /v1/unions/{platform}/bindings and GET /v1/unions/bindings, per request
+          // like its CallerContext. Without a database or idempotency handle every call fails
+          // closed.
+          provide: UNION_BINDINGS,
+          scope: Scope.REQUEST,
+          inject: [
+            { token: DB, optional: true },
+            { token: IDEMPOTENCY, optional: true },
+            APP_CONFIG,
+            CLOCK,
+            ROOT_LOGGER,
+            CallerContext,
+            LinkingConfigReader,
+            LINKING_PIDS,
+            UnionBindingExchanger,
+          ],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            idempotency: Idempotency | undefined,
+            appConfig: AppConfig,
+            clock: Clock,
+            logger: RootLogger,
+            callerContext: CallerContext,
+            config: LinkingConfigReader,
+            pids: PidReader,
+            exchanger: UnionBindingExchanger,
+          ): UnionBindingsService =>
+            db === undefined || idempotency === undefined
+              ? { bind: unavailable, list: unavailable }
+              : createUnionBindings({
+                  db,
+                  clock,
+                  callerContext,
+                  reads: createUnionAuthReads({ db, config, appEnv: appConfig.appEnv, pids }),
+                  idempotency,
+                  exchanger,
                   logger,
                 }),
         },

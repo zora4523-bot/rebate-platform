@@ -24,9 +24,14 @@ import type { CallerContext, LinkingConfigReader } from '../ports.ts';
 import { appSchemeOf, buildDefaultLinkJump, pathsOf } from './link-open-conversion.ts';
 import { createJumpAdmission, type LinkOpenEnvironment } from './link-open-wiring.ts';
 import { createLinkingPidReader } from '../infra/pid-reader.ts';
+import {
+  AuthConfigError,
+  createUnionAuthReads,
+  type AuthClient,
+  type UnionAuthMethod,
+} from './union-auth-reads.ts';
 
-export type AuthClient = 'ios' | 'android' | 'harmony';
-export type UnionAuthMethod = components['schemas']['AuthMethod'];
+export type { AuthClient, UnionAuthMethod } from './union-auth-reads.ts';
 
 export interface UnionAuthUrlInput {
   readonly platform: 'taobao' | 'pdd';
@@ -74,13 +79,7 @@ type AuthJumpStep = components['schemas']['AuthJumpStep'];
 
 /** BR-ID-17: a state lives 10 minutes. */
 const STATE_TTL_MS = 600_000;
-/** BR-ID-17 细则「授权方式」: the default when union.taobao.auth_methods.<client> is not set. */
-const DEFAULT_METHODS: readonly UnionAuthMethod[] = Object.freeze(['web_code']);
-const METHODS: ReadonlySet<string> = new Set<UnionAuthMethod>(['web_code', 'sdk_token']);
 const CLIENTS: ReadonlySet<string> = new Set<AuthClient>(['ios', 'android', 'harmony']);
-/** BR-ID-19: at most one unreleased binding per user and platform. */
-const UNRELEASED = ['pending_auth', 'active', 'invalid', 'blocked'] as const;
-
 const STATUS: Readonly<Record<number, number>> = {
   0: 200,
   10001: 401,
@@ -112,26 +111,6 @@ function fail(code: number, traceId: string, data?: Record<string, unknown>): Ha
       trace_id: traceId,
     },
   };
-}
-
-/** A configuration fault is a server fault: never guessed, never re-ordered or intersected. */
-class AuthConfigError extends Error {}
-
-/**
- * union.taobao.auth_methods.<client>: an ordered list of one or two distinct known methods, kept
- * exactly in its configured order. Absent → the default. Anything else is a configuration fault.
- */
-function parseMethods(value: unknown): readonly UnionAuthMethod[] {
-  if (
-    !Array.isArray(value) ||
-    value.length < 1 ||
-    value.length > 2 ||
-    !value.every((m) => typeof m === 'string' && METHODS.has(m)) ||
-    new Set(value).size !== value.length
-  ) {
-    throw new AuthConfigError('linking: union.taobao.auth_methods is not an ordered method list');
-  }
-  return value as UnionAuthMethod[];
 }
 
 /**
@@ -167,94 +146,8 @@ function authStep(step: { readonly type: string; readonly value: string }): Auth
 export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlService {
   const { db, clock, callerContext, config, appEnv, authApps, jumpEnvironment, logger } = options;
   const pids = options.pids ?? createLinkingPidReader(db, clock);
-
-  async function binding(
-    appId: string,
-    userId: string,
-    platform: 'taobao' | 'pdd',
-  ): Promise<{ readonly status: string; readonly accountId: string | null }> {
-    const rows = await db
-      .selectFrom('union_bindings')
-      .select(['status', 'union_account_id'])
-      .where('app_id', '=', appId)
-      .where('user_id', '=', userId)
-      .where('platform', '=', platform)
-      .execute();
-    // The projection of the authorization page (BR-ID-17 细则「授权管理页」): the unreleased
-    // binding when there is one (its account is the one this authorization uses), else released
-    // when a released row exists, else unbound.
-    const unreleased = rows.find((row) => (UNRELEASED as readonly string[]).includes(row.status));
-    if (unreleased !== undefined) {
-      return { status: unreleased.status, accountId: unreleased.union_account_id };
-    }
-    return {
-      status: rows.some((row) => row.status === 'released') ? 'released' : 'unbound',
-      accountId: null,
-    };
-  }
-
-  async function userBanned(appId: string, userId: string): Promise<boolean> {
-    const row = await db
-      .selectFrom('user_risk_state')
-      .select('state')
-      .where('app_id', '=', appId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-    return row?.state === 'banned';
-  }
-
-  /**
-   * The union account this authorization uses: the unreleased binding's; otherwise the account of
-   * the platform's active self_buy pid (union's own selection of the current pid, purpose convert);
-   * otherwise the platform's first account in that same order. null: no account at all.
-   */
-  async function authAccountId(
-    appId: string,
-    platform: 'taobao' | 'pdd',
-    bound: string | null,
-  ): Promise<string | null> {
-    if (bound !== null) return bound;
-    const pid = await pids.getActivePid({
-      appId,
-      platform,
-      pidScene: 'self_buy',
-      purpose: 'convert',
-    });
-    if (pid !== null && pid.app_id === appId && pid.platform === platform) {
-      return pid.union_account_id;
-    }
-    const first = await db
-      .selectFrom('union_accounts')
-      .select('id')
-      .where('app_id', '=', appId)
-      .where('platform', '=', platform)
-      .orderBy('updated_at', 'asc')
-      .orderBy('created_at', 'asc')
-      .orderBy('id', 'asc')
-      .limit(1)
-      .executeTakeFirst();
-    return first?.id ?? null;
-  }
-
-  /**
-   * BR-ID-24 ④: the site's authorization of exactly the account this authorization uses is
-   * usable (not expired); another account of the platform being valid never masks it.
-   */
-  async function siteAuthAvailable(
-    appId: string,
-    platform: 'taobao' | 'pdd',
-    accountId: string | null,
-  ): Promise<boolean> {
-    if (accountId === null) return false;
-    const row = await db
-      .selectFrom('union_accounts')
-      .select('auth_status')
-      .where('app_id', '=', appId)
-      .where('platform', '=', platform)
-      .where('id', '=', accountId)
-      .executeTakeFirst();
-    return row !== undefined && row.auth_status !== 'expired';
-  }
+  // The same judgements the bindings submission makes (union-auth-reads.ts).
+  const reads = createUnionAuthReads({ db, config, appEnv, pids });
 
   /**
    * Pinduoduo authorization jump (BR-ID-22 细则; 04 §7 30111): the open's own BR-ATTR-27 matrix by
@@ -289,18 +182,6 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
       fallbacks: admitted.fallbacks.map(authStep),
       expire_at: admitted.expire_at,
     };
-  }
-
-  async function configuredMethods(appId: string, client: AuthClient) {
-    const item = await config.configValue(appId, `union.taobao.auth_methods.${client}`);
-    let methods = item === null ? DEFAULT_METHODS : parseMethods(item.value);
-    // sdk_token waits for CAP-TB-05 (f) and the owner's confirmation: in prod it is filtered out,
-    // never issued nor recorded (B1-04k 口径). Nothing left → the default.
-    if (appEnv === 'prod') {
-      methods = methods.filter((method) => method !== 'sdk_token');
-      if (methods.length === 0) methods = DEFAULT_METHODS;
-    }
-    return methods;
   }
 
   async function appRefs(
@@ -352,15 +233,15 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     }
 
     const platform = input.platform;
-    const { status, accountId: bound } = await binding(appId, userId, platform);
+    const { status, accountId: bound } = await reads.binding(appId, userId, platform);
     // A blocked binding answers 30153 before anything else (BR-ID-24 ④ keeps it for blocked).
     if (status === 'blocked') {
       // A banned user has no session (BR-ID-31); one still reaching here gets no state either.
-      if (await userBanned(appId, userId)) return fail(10001, input.traceId);
+      if (await reads.userBanned(appId, userId)) return fail(10001, input.traceId);
       return fail(30153, input.traceId);
     }
-    const accountId = await authAccountId(appId, platform, bound);
-    if (!(await siteAuthAvailable(appId, platform, accountId))) {
+    const accountId = await reads.authAccountId(appId, platform, bound);
+    if (!(await reads.siteAuthAvailable(appId, platform, accountId))) {
       // BR-ID-24 ④ (2026-10-08): Pinduoduo's authorization link depends on the site's
       // authorization → 50301 maintenance; the 30101 / 30102 special case is Taobao's only.
       if (platform === 'pdd') return fail(50301, input.traceId, { reason: 'maintenance' });
@@ -369,7 +250,7 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
       });
     }
 
-    const methods = platform === 'taobao' ? await configuredMethods(appId, client) : null;
+    const methods = platform === 'taobao' ? await reads.configuredMethods(appId, client) : null;
     // Built before the insert: a pdd jump that cannot be issued leaves no state behind.
     const now = clock.now();
     // A second reading of the injected clock, moved by the TTL (no `new Date` outside the clock).
