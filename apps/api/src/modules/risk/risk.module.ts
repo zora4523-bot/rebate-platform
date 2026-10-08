@@ -24,11 +24,13 @@ import {
   CLOCK,
   IDEMPOTENCY,
   REDIS,
+  ROOT_LOGGER,
   registerIdempotencyEntryObserver,
   registerIdempotencyPostMissCheck,
   type Clock,
   type Idempotency,
   type RedisHandle,
+  type RootLogger,
 } from '../platform/index.ts';
 import {
   MINIMUM_VERSION_SCOPE,
@@ -54,6 +56,8 @@ import {
 export const MINIMUM_VERSION_CHECK = Symbol('MINIMUM_VERSION_CHECK');
 const MINIMUM_VERSION_READER = Symbol('MINIMUM_VERSION_READER');
 const MINIMUM_VERSION_HOOK = Symbol('MINIMUM_VERSION_HOOK');
+/** Whether stage ④a is in force on this entry: true exactly when a reader is wired. */
+const MINIMUM_VERSION_GATE = Symbol('MINIMUM_VERSION_GATE');
 
 /** The minimum supported version port as app.module supplies it (content's reader). */
 export interface MinimumVersionReaders {
@@ -71,7 +75,10 @@ export interface RiskModuleOptions {
   readonly imports: NonNullable<DynamicModule['imports']>;
   /**
    * The minimum supported version port (content's reader), built by app.module. A factory that
-   * returns null (no database handle) or no factory at all: every judged read fails closed (50001).
+   * returns null (no database handle; only tests and the contract smoke start the api entry that
+   * way) or no factory at all: stage ④a is not installed on the entry (no guard, interceptor or
+   * idempotency hook) and one info line `minimum_version_gate_disabled` is logged at startup
+   * (orchestrator ruling B1-03c §13). A reader that is wired but fails still fails closed (50001).
    */
   readonly minimumVersions?: Pick<
     FactoryProvider<MinimumVersionReaders | null>,
@@ -83,6 +90,14 @@ export interface RiskModuleOptions {
 const UNAVAILABLE_READER: MinimumVersionReader = {
   minSupportedVersion: () =>
     Promise.reject(new Error('minimum supported version reader unavailable')),
+};
+
+/** Stage ④a not installed (no reader): the global guard slot lets every request through. */
+const GATE_DISABLED_GUARD = { canActivate: () => true };
+
+/** Stage ④a not installed (no reader): the global interceptor slot hands the handler through. */
+const GATE_DISABLED_INTERCEPTOR: NestInterceptor = {
+  intercept: (_context: ExecutionContext, next: CallHandler) => next.handle(),
 };
 
 /**
@@ -117,9 +132,11 @@ export class RiskModule {
    * Provides SIGNATURE_CHECK, the stage ① request check that app.module places first in
    * REQUEST_CHECKS. Without a REDIS provider the check still refuses an invalid request with
    * 10401 / 10402, and fails a valid one closed (50001).
-   * Installs stage ④a: a global guard judging the non-idempotent operations after ① ② ③, an
-   * interceptor carrying the HTTP request to the handler's async context, and the post-miss check
-   * on the IDEMPOTENCY instance (when there is a database) judging the idempotent ones.
+   * Installs stage ④a when a minimum version reader is wired: a global guard judging the
+   * non-idempotent operations after ① ② ③, an interceptor carrying the HTTP request to the
+   * handler's async context, and the post-miss check on the IDEMPOTENCY instance judging the
+   * idempotent ones. Without a reader the guard and interceptor slots pass through, no hook is
+   * registered, and an info line is logged once (B1-03c §13).
    */
   static forRoot(options: RiskModuleOptions): DynamicModule {
     const reader: FactoryProvider<MinimumVersionReaders | null> =
@@ -144,24 +161,42 @@ export class RiskModule {
             createMinimumVersionCheck(versions?.pooled ?? UNAVAILABLE_READER),
         },
         {
-          provide: APP_GUARD,
-          inject: [MINIMUM_VERSION_CHECK],
-          useFactory: (check: MinimumVersionCheck) => createMinimumVersionGuard(check),
+          provide: MINIMUM_VERSION_GATE,
+          inject: [MINIMUM_VERSION_READER, ROOT_LOGGER],
+          useFactory: (versions: MinimumVersionReaders | null, logger: RootLogger) => {
+            if (versions !== null) return true;
+            // The root logger binds `entry` to every line.
+            logger.info({ stage: '4a' }, 'minimum_version_gate_disabled');
+            return false;
+          },
         },
-        { provide: APP_INTERCEPTOR, useValue: MINIMUM_VERSION_INTERCEPTOR },
+        {
+          provide: APP_GUARD,
+          inject: [MINIMUM_VERSION_CHECK, MINIMUM_VERSION_GATE],
+          useFactory: (check: MinimumVersionCheck, enabled: boolean) =>
+            enabled ? createMinimumVersionGuard(check) : GATE_DISABLED_GUARD,
+        },
+        {
+          provide: APP_INTERCEPTOR,
+          inject: [MINIMUM_VERSION_GATE],
+          useFactory: (enabled: boolean) =>
+            enabled ? MINIMUM_VERSION_INTERCEPTOR : GATE_DISABLED_INTERCEPTOR,
+        },
         {
           provide: MINIMUM_VERSION_HOOK,
           inject: [
             MINIMUM_VERSION_CHECK,
             MINIMUM_VERSION_READER,
+            MINIMUM_VERSION_GATE,
             { token: IDEMPOTENCY, optional: true },
           ],
           useFactory: (
             check: MinimumVersionCheck,
             versions: MinimumVersionReaders | null,
+            enabled: boolean,
             idempotency?: Idempotency,
           ) => {
-            if (idempotency !== undefined) {
+            if (enabled && idempotency !== undefined) {
               registerIdempotencyPostMissCheck(
                 idempotency,
                 createMinimumVersionPostMissCheck(check, versions?.on),
