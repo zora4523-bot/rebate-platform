@@ -26,6 +26,11 @@
 // indexes of a funds table may not be dropped or disabled unless the same migration recreates the same
 // name; DROP … CASCADE is refused; the functions that funds-table triggers execute may not be dropped,
 // replaced, renamed, re-owned or moved.
+// CT-06d: a change to the definition of a funds-table guard (a replaced guard function, a trigger,
+// constraint or index recreated differently) needs the migration listed in APPROVED_GUARD_CHANGES;
+// funds-table objects are not renamed and triggers not set to REPLICA; the remaining ways to switch a
+// timeout off, DO blocks with a string body, the narrower ALTER … TYPE inside DO, SELECT … INTO by the
+// statement head, CTAS clauses before AS, more script extensions.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -77,8 +82,19 @@ export const FROZEN_MIGRATIONS: Readonly<Record<string, string>> = {
   '0019_device-registrations-created-at-insert.sql':
     '93bac397c2fe2d47b23b414bfaa1b5c8bb5aaa1764090f0e2d3a867e73ebd0d0',
 };
+/**
+ * Migrations allowed to change the definition of a funds-table guard (CT-06d): file name → sha256 of
+ * the content. A guard function replaced with CREATE OR REPLACE, or a funds-table trigger, constraint
+ * or index recreated with a different definition, is refused unless its migration is listed here.
+ * This file is a class-3 protected path: adding an entry takes the two reviews and the approval label.
+ */
+export const APPROVED_GUARD_CHANGES: Readonly<Record<string, string>> = {
+  // B1-06r (#260 era): extends the union_auth_sessions guard to the new issuance columns.
+  '0020_union-auth-sessions-issuance.sql':
+    'f976192657be50f146f3dfdc6d4c50d58e9646e9c18319c43a185d14c675ca15',
+};
 /** Extensions node-pg-migrate would run from db/migrations besides SQL. */
-const SCRIPT_MIGRATION = /\.(?:js|cjs|mjs|ts)$/;
+const SCRIPT_MIGRATION = /\.(?:js|cjs|mjs|ts|cts|mts|jsx|tsx)$/;
 /** db/AGENTS.md rule 1: four-digit sequence, a dash-separated lowercase name, `.sql`. */
 const MIGRATION_FILE = /^(\d{4})_[a-z0-9][a-z0-9-]*\.sql$/;
 
@@ -134,8 +150,15 @@ const MONEY_COLUMN_ALTER = new RegExp(
 const TYPE_HEAD = /^(?:"?pg_catalog"?\s*\.\s*)?(?:"([^"]+)"|([a-z_][a-z0-9_]*))([\s\S]*)$/i;
 /** `SET [LOCAL | SESSION] lock_timeout | statement_timeout = | TO <value>`. */
 const TIMEOUT_SET =
-  /^SET\s+(?:LOCAL\s+|SESSION\s+)?(lock_timeout|statement_timeout)\s*(?:=|\bTO\b)\s*([\s\S]*)$/i;
-const TIMEOUT_RESET = /^RESET\s+(lock_timeout|statement_timeout|ALL)\s*$/i;
+  /^SET\s+(?:LOCAL\s+|SESSION\s+)?"?(lock_timeout|statement_timeout)"?\s*(?:=|\bTO\b)\s*([\s\S]*)$/i;
+const TIMEOUT_RESET = /^RESET\s+"?(lock_timeout|statement_timeout|ALL)"?\s*$/i;
+/** The same inside a DO body, where the statement follows BEGIN, THEN and the like. */
+const TIMEOUT_SET_IN =
+  /\bSET\s+(?:LOCAL\s+|SESSION\s+)?"?(lock_timeout|statement_timeout)"?\s*(?:=|\bTO\b)\s*([^;]*?)\s*$/i;
+const TIMEOUT_RESET_IN = /\bRESET\s+"?(lock_timeout|statement_timeout|ALL)"?(?![\w"])/i;
+/** `set_config('lock_timeout' | 'statement_timeout', <value>, …)` anywhere in a statement. */
+const TIMEOUT_SET_CONFIG =
+  /(?<![\w"])(?:"?pg_catalog"?\s*\.\s*)?"?set_config"?\s*\(\s*(?:E|U&)?'"?(lock_timeout|statement_timeout)"?'\s*,\s*((?:E|U&)?'(?:[^']|'')*'|[^,)]*)/gi;
 /** Milliseconds per unit of a timeout value (no unit means milliseconds). */
 const TIMEOUT_UNITS: Readonly<Record<string, number>> = {
   us: 0.001,
@@ -163,7 +186,7 @@ const ALTER_TABLE = new RegExp(
 );
 /** `CREATE [GLOBAL|LOCAL] [TEMP|UNLOGGED] TABLE [IF NOT EXISTS] <t> [(cols)] [WITH (…)] [TABLESPACE x] AS …`. */
 const CREATE_TABLE_AS = new RegExp(
-  String.raw`^\s*CREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP(?:ORARY)?\s+|UNLOGGED\s+)?TABLE${GAP}(?:IF\s+NOT\s+EXISTS${GAP})?${IDENT}\s*(?:\([^()]*\)\s*)?(?:WITH\s*\([^()]*\)\s*)?(?:TABLESPACE\s+\w+\s*)?AS\b`,
+  String.raw`^\s*CREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP(?:ORARY)?\s+|UNLOGGED\s+)?TABLE${GAP}(?:IF\s+NOT\s+EXISTS${GAP})?${IDENT}\s*(?:\([^()]*\)\s*)?(?:USING\s+\w+\s*)?(?:WITH\s*\([^()]*\)\s*|WITHOUT\s+OIDS\s*)?(?:ON\s+COMMIT\s+(?:DROP|DELETE\s+ROWS|PRESERVE\s+ROWS)\s*)?(?:TABLESPACE\s+\w+\s*)?AS\b`,
   'i',
 );
 const TABLE_REF = new RegExp(
@@ -174,7 +197,15 @@ const TABLE_REF = new RegExp(
 export type Selection = { lint: string[]; badNames: string[] };
 export type Problem = { file: string; line: number; message: string };
 /** What a migration is checked against: db/schema.sql and the SQL of the migrations before it. */
-export type MigrationContext = { schemaSql: string; migrationsSql: readonly string[] };
+export type MigrationContext = {
+  schemaSql: string;
+  migrationsSql: readonly string[];
+  /**
+   * Whether the migration is listed in APPROVED_GUARD_CHANGES. The CLI always sets it; false applies
+   * the strict rules, true lets guard changes through, left out keeps the CT-06c rules.
+   */
+  approved?: boolean;
+};
 const NO_CONTEXT: MigrationContext = { schemaSql: '', migrationsSql: [] };
 
 /** Splits the `.sql` entries of db/migrations into the files to lint and the misnamed ones. */
@@ -198,6 +229,16 @@ export function selectMigrations(names: readonly string[], baseline = GATE_BASEL
 /** The table name without schema and quotes, lower-cased. */
 export function bareTableName(reference: string): string {
   return reference.replace(/"/g, '').split('.').pop()?.trim().toLowerCase() ?? '';
+}
+
+/**
+ * The funds table an index name points to when its owner is unknown (CT-06d): a funds table name it
+ * starts with followed by `_` (idempotency_keys_wrap_idx → idempotency_keys), or a funds prefix.
+ */
+function fundsTableOfIndexName(name: string): string | undefined {
+  const exact = FUNDS_TABLE_NAMES.find((t) => name.startsWith(`${t}_`));
+  if (exact !== undefined) return exact;
+  return isFundsTable(name) ? name : undefined;
 }
 
 export function isFundsTable(reference: string): boolean {
@@ -249,6 +290,38 @@ export function checkTimeouts(file: string, sql: string): string[] {
     } else if (!/^SET\b/i.test(text)) {
       header = false;
     }
+    // set_config(…) in any statement (a SELECT, a DO block) switches a timeout off just as well.
+    for (const m of value.matchAll(TIMEOUT_SET_CONFIG)) {
+      if (timeoutMilliseconds(m[2] ?? '') > 0) continue;
+      if ((m[1] ?? '').toLowerCase() === 'lock_timeout') lockLost = true;
+      else statementLost = true;
+    }
+  }
+  // Inside DO blocks: SET / RESET of a timeout to 0, DEFAULT or its default count too.
+  for (const { body } of doBodies(code, valued)) {
+    const blanked = withoutComments(body);
+    const kept = withoutComments(body, true);
+    let offset = 0;
+    for (const part of blanked.split(';')) {
+      const raw = kept.slice(offset, offset + part.length).trim();
+      offset += part.length + 1;
+      // Statements inside a body follow BEGIN, IF … THEN and the like: search, do not anchor.
+      const set = TIMEOUT_SET_IN.exec(raw);
+      const reset = TIMEOUT_RESET_IN.exec(raw);
+      if (set !== null && timeoutMilliseconds(set[2] ?? '') <= 0) {
+        if ((set[1] ?? '').toLowerCase() === 'lock_timeout') lockLost = true;
+        else statementLost = true;
+      } else if (reset !== null) {
+        const what = (reset[1] ?? '').toLowerCase();
+        if (what !== 'statement_timeout') lockLost = true;
+        if (what !== 'lock_timeout') statementLost = true;
+      }
+    }
+    for (const m of withoutComments(body, true).matchAll(TIMEOUT_SET_CONFIG)) {
+      if (timeoutMilliseconds(m[2] ?? '') > 0) continue;
+      if ((m[1] ?? '').toLowerCase() === 'lock_timeout') lockLost = true;
+      else statementLost = true;
+    }
   }
   if (lockLost) lock = false;
   if (statementLost) statement = false;
@@ -274,12 +347,46 @@ export function checkTimeouts(file: string, sql: string): string[] {
 function timeoutMilliseconds(raw: string): number {
   const text = raw
     .trim()
-    .replace(/^'([\s\S]*)'$/, '$1')
+    .replace(/^(?:E|U&)?'([\s\S]*)'$/i, '$1')
     .trim();
-  if (/^DEFAULT$/i.test(text)) return 0;
+  if (/^DEFAULT$/i.test(text) || text === '') return 0;
   const m = /^(\d*\.?\d+)\s*(us|ms|s|min|h|d)?$/i.exec(text);
   if (m === null) return Number.POSITIVE_INFINITY;
-  return Math.round(Number(m[1]) * (TIMEOUT_UNITS[(m[2] ?? 'ms').toLowerCase()] ?? 1));
+  return roundHalfEven(Number(m[1]) * (TIMEOUT_UNITS[(m[2] ?? 'ms').toLowerCase()] ?? 1));
+}
+
+/** PostgreSQL rounds a fractional integer setting with rint(): halves go to the even neighbour (0.5 → 0). */
+function roundHalfEven(x: number): number {
+  const floor = Math.floor(x);
+  const diff = x - floor;
+  if (Math.abs(diff - 0.5) < 1e-9) return floor % 2 === 0 ? floor : floor + 1;
+  return Math.round(x);
+}
+
+/**
+ * The bodies of the DO blocks of a file, with their offsets: dollar-quoted (`DO $tag$ … $tag$`) and
+ * plain string bodies (`DO '…'`, `DO E'…'`, doubled quotes undone), each optionally with LANGUAGE.
+ * `code` has comments and string contents blanked, `valued` only the comments, at the same offsets.
+ */
+function doBodies(code: string, valued: string): { at: number; body: string }[] {
+  const out: { at: number; body: string }[] = [];
+  const dollar = /\bDO\s+(?:LANGUAGE\s+\w+\s+)?(\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)/gi;
+  for (const m of code.matchAll(dollar)) {
+    const tag = m[1] ?? '$$';
+    const open = (m.index ?? 0) + m[0].length;
+    const close = code.indexOf(tag, open);
+    out.push({ at: m.index ?? 0, body: valued.slice(open, close === -1 ? code.length : close) });
+  }
+  const quoted = /\bDO\s+(?:LANGUAGE\s+\w+\s+)?(?:E|U&)?'/gi;
+  for (const m of code.matchAll(quoted)) {
+    const open = (m.index ?? 0) + m[0].length;
+    const close = code.indexOf("'", open);
+    out.push({
+      at: m.index ?? 0,
+      body: valued.slice(open, close === -1 ? code.length : close).replace(/''/g, "'"),
+    });
+  }
+  return out;
 }
 
 /**
@@ -429,19 +536,29 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
   const valued = withoutComments(sql, true);
   // DO blocks: the body is a dollar-quoted string, blanked in `code`; read it from `valued` and drop
   // its own comments (the strings stay: EXECUTE 'DROP …' is exactly what is looked for).
-  const doBlock = /\bDO\s+(?:LANGUAGE\s+\w+\s+)?(\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)/gi;
-  for (const m of code.matchAll(doBlock)) {
-    const tag = m[1] ?? '$$';
-    const open = (m.index ?? 0) + m[0].length;
-    const close = code.indexOf(tag, open);
-    const body = withoutComments(valued.slice(open, close === -1 ? code.length : close), true);
+  // RAISE statements are messages, not SQL: their text does not count (CT-06d). ALTER … TYPE means a
+  // column type change (ALTER TABLE … ALTER [COLUMN] x [SET DATA] TYPE), not a column named type or
+  // ALTER TYPE … ADD VALUE.
+  for (const { at, body: raw } of doBodies(code, valued)) {
+    const blankedBody = withoutComments(raw);
+    let body = withoutComments(raw, true);
+    for (const m of blankedBody.matchAll(/\bRAISE\b[^;]*/gi)) {
+      const from = m.index ?? 0;
+      body = body.slice(0, from) + ' '.repeat(m[0].length) + body.slice(from + m[0].length);
+    }
     const destructive =
       /\b(?:DROP|RENAME|TRUNCATE)\b/i.test(body) ||
-      body.split(';').some((part) => /\bALTER\b[\s\S]*\bTYPE\b/i.test(part));
+      body
+        .split(';')
+        .some((part) =>
+          /\bALTER\s+TABLE\b[\s\S]*\bALTER\s+(?:COLUMN\s+)?(?!COLUMN\b)(?:"[^"]+"|\w+)\s+(?:SET\s+DATA\s+)?TYPE\s+(?!SET\b|DROP\b)["\w]/i.test(
+            part,
+          ),
+        );
     if (destructive) {
       problems.push({
         file,
-        line: lineOf(code, m.index ?? 0),
+        line: lineOf(code, at),
         message:
           'destructive DDL inside a DO block (DROP, RENAME, TRUNCATE or ALTER … TYPE): squawk does not check it; write it as plain SQL',
       });
@@ -472,10 +589,18 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
         });
       }
     }
-    // SELECT … INTO creates a table; WITH … INSERT INTO … SELECT does not.
+    // SELECT … INTO creates a table; decided by the head of the statement once parenthesised parts
+    // (CTE bodies, subqueries) and quoted identifiers are set aside, so `"update"` or FOR UPDATE do
+    // not matter and WITH … INSERT INTO … SELECT is not one.
+    let flat = statement.replace(/"[^"]*"/g, ' ');
+    while (/\([^()]*\)/.test(flat)) flat = flat.replace(/\([^()]*\)/g, ' ');
+    const head = /\b(SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|VALUES|TABLE)\b/i.exec(
+      flat,
+    )?.[1];
     const selectInto =
-      /^\s*(?:WITH\b[\s\S]*?)?\bSELECT\b[\s\S]*?\bINTO\b/i.test(statement) &&
-      !/\b(?:INSERT|UPDATE|DELETE|MERGE)\b/i.test(statement);
+      /^\s*(?:WITH\b|SELECT\b)/i.test(flat) &&
+      head?.toUpperCase() === 'SELECT' &&
+      /\bINTO\b/i.test(flat);
     if (CREATE_TABLE_AS.test(statement) || selectInto) {
       const money = /"?\b([a-z0-9_]+_fen)\b"?/i.exec(statement);
       if (money !== null) {
@@ -496,7 +621,7 @@ function bareName(reference: string): string {
 }
 
 const CREATE_INDEX = new RegExp(
-  String.raw`\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(${IDENT})\s+ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
+  String.raw`\bCREATE\s+(?:UNIQUE\s+)?INDEX${GAP}(?:CONCURRENTLY${GAP})?(?:IF\s+NOT\s+EXISTS${GAP})?(${IDENT})(?:\s+|(?<=")\s*)ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
   'gi',
 );
 const ADD_INDEX_CONSTRAINT = new RegExp(
@@ -570,6 +695,88 @@ export function fundsTriggerFunctions(
 }
 
 /**
+ * A DDL definition normalised for comparison (CT-06d): lower-case, single spaces, no quotes or schema
+ * qualifiers, without OR REPLACE / IF [NOT] EXISTS / CONCURRENTLY / ONLY / USING btree, trigger events
+ * in a fixed order (pg_dump writes `DELETE OR UPDATE` for a hand-written `UPDATE OR DELETE`).
+ */
+export function normaliseDefinition(text: string): string {
+  let t = text
+    .toLowerCase()
+    .replace(/"/g, '')
+    .replace(/\b[a-z_][a-z0-9_]*\s*\.\s*(?=[a-z_])/g, '')
+    .replace(/\bor\s+replace\b/g, ' ')
+    .replace(/\bif\s+(?:not\s+)?exists\b/g, ' ')
+    .replace(/\bconcurrently\b/g, ' ')
+    .replace(/\bonly\b/g, ' ')
+    .replace(/\busing\s+btree\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([(),=])\s*/g, '$1')
+    .replace(/;\s*$/, '')
+    .trim();
+  t = t.replace(
+    /\b(before|after|instead of) ((?:insert|update(?: of [a-z0-9_, ]+?)?|delete|truncate)(?: or (?:insert|update(?: of [a-z0-9_, ]+?)?|delete|truncate))*) on\b/,
+    (_m, when: string, events: string) => `${when} ${events.split(' or ').sort().join(' or ')} on`,
+  );
+  return t;
+}
+
+/** Definitions of triggers (table/name), constraints (table/name) and indexes (name), last one wins. */
+function guardDefinitions(sources: readonly string[]): {
+  triggers: Map<string, string>;
+  constraints: Map<string, string>;
+  indexes: Map<string, string>;
+} {
+  const triggers = new Map<string, string>();
+  const constraints = new Map<string, string>();
+  const indexes = new Map<string, string>();
+  for (const sql of sources) {
+    for (const { text } of statementsOf(withoutComments(sql))) {
+      const trigger = CREATE_TRIGGER.exec(text);
+      if (trigger !== null) {
+        triggers.set(
+          `${bareName(trigger[2] ?? '')}/${bareName(trigger[1] ?? '')}`,
+          normaliseDefinition(text),
+        );
+      }
+      for (const m of text.matchAll(CREATE_INDEX)) {
+        if (/^\s*CREATE\b/i.test(text))
+          indexes.set(bareName(m[1] ?? ''), normaliseDefinition(text));
+      }
+      const alter = ALTER_TABLE.exec(text);
+      if (alter !== null) {
+        for (const part of topLevelParts(text, alter[0].length, text.length)) {
+          const c = new RegExp(String.raw`^\s*ADD\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(
+            part.text,
+          );
+          if (c !== null) {
+            constraints.set(
+              `${bareName(alter[1] ?? '')}/${bareName(c[1] ?? '')}`,
+              normaliseDefinition(part.text.trim().replace(/^add\s+/i, '')),
+            );
+          }
+        }
+      }
+      const create = new RegExp(
+        String.raw`^\s*CREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP(?:ORARY)?\s+|UNLOGGED\s+)?TABLE${GAP}(?:IF\s+NOT\s+EXISTS${GAP})?(${IDENT})\s*\(`,
+        'i',
+      ).exec(text);
+      if (create !== null) {
+        for (const part of topLevelParts(text, create[0].length, text.length)) {
+          const c = new RegExp(String.raw`^\s*CONSTRAINT${GAP}(${IDENT})`, 'i').exec(part.text);
+          if (c !== null) {
+            constraints.set(
+              `${bareName(create[1] ?? '')}/${bareName(c[1] ?? '')}`,
+              normaliseDefinition(part.text.trim()),
+            );
+          }
+        }
+      }
+    }
+  }
+  return { triggers, constraints, indexes };
+}
+
+/**
  * CT-06c (规划/02 §16.3): the triggers, constraints and indexes of a funds or attribution table are
  * part of it. Dropping one is refused unless a later statement of the same migration recreates the
  * same name on the same table; disabling a trigger is refused; DROP … CASCADE is refused (it silently
@@ -590,21 +797,45 @@ function fundsObjectProblems(
   };
   const later = (k: number): string[] => statements.slice(k + 1).map((s) => s.text);
   const funds = (ref: string): boolean => isFundsTable(ref);
+  // CT-06d: the CLI says whether the migration is approved; a pure call without it keeps CT-06c.
+  // approved: false (the CLI for a migration not in APPROVED_GUARD_CHANGES) is strict; true lets
+  // guard changes through; left out (a pure call) the CT-06c rules apply.
+  const strict = context.approved === false;
+  // Original definitions: earlier migrations first (db/schema.sql already shows the migration under
+  // review once its PR updates it), the schema only for objects no migration defines.
+  const fromSchema = guardDefinitions([context.schemaSql]);
+  // Objects created in this file are not compared (CT-06c rules for them).
+  const original = (): ReturnType<typeof guardDefinitions> => {
+    const fromMigrations = guardDefinitions(context.migrationsSql);
+    for (const key of ['triggers', 'constraints', 'indexes'] as const) {
+      for (const [k, v] of fromSchema[key])
+        if (!fromMigrations[key].has(k)) fromMigrations[key].set(k, v);
+    }
+    return fromMigrations;
+  };
+  const different = (kind: string, name: string, table: string): string =>
+    `${kind} ${name} on funds or attribution table ${table} recreated with a different definition: list the migration in APPROVED_GUARD_CHANGES (two reviews and the approval label)`;
   statements.forEach(({ text, at, start, end }, k) => {
     // DROP TRIGGER <name> ON <funds table>, unless recreated later in the file.
     const dropTrigger = new RegExp(
-      String.raw`^\s*DROP\s+TRIGGER\s+(?:IF\s+EXISTS${GAP})?(${IDENT})\s+ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
+      String.raw`^\s*DROP\s+TRIGGER${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})(?:\s+|(?<=")\s*)ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
       'i',
     ).exec(text);
     if (dropTrigger !== null && funds(dropTrigger[2] ?? '')) {
       const name = bareName(dropTrigger[1] ?? '');
       const table = bareName(dropTrigger[2] ?? '');
-      const recreated = later(k).some((t) => {
+      const recreation = later(k).find((t) => {
         const m = CREATE_TRIGGER.exec(t);
         return m !== null && bareName(m[1] ?? '') === name && bareName(m[2] ?? '') === table;
       });
-      if (!recreated)
+      if (recreation === undefined)
         refuse(at, `trigger ${name} on funds or attribution table ${table} may not be dropped`);
+      else if (strict) {
+        const before = original().triggers.get(`${table}/${name}`);
+        if (before !== undefined && before !== normaliseDefinition(recreation)) {
+          refuse(at, different('trigger', name, table));
+        }
+      }
     }
     const alter = ALTER_TABLE.exec(text);
     if (alter !== null) {
@@ -617,36 +848,108 @@ function fundsObjectProblems(
           refuse(at, `DROP … CASCADE is not accepted: drop dependent objects explicitly`);
         }
         if (!funds(tableRef)) return;
-        const disable = /^\s*DISABLE\s+TRIGGER\s+("[^"]+"|\w+)/i.exec(part.text);
+        // ENABLE REPLICA TRIGGER switches the trigger off for ordinary sessions, like DISABLE.
+        const disable =
+          /^\s*(?:DISABLE|ENABLE\s+REPLICA)\s+TRIGGER(?:\s+|(?="))("[^"]+"|\w+)/i.exec(part.text);
         if (disable !== null) {
           refuse(
             at,
             `trigger ${bareName(disable[1] ?? '')} on funds or attribution table ${table} may not be disabled`,
           );
         }
+        const renameConstraint = new RegExp(
+          String.raw`^\s*RENAME\s+CONSTRAINT${GAP}(${IDENT})`,
+          'i',
+        ).exec(part.text);
+        if (renameConstraint !== null) {
+          refuse(
+            at,
+            `constraint ${bareName(renameConstraint[1] ?? '')} on funds or attribution table ${table} may not be renamed`,
+          );
+        }
         const dropConstraint = new RegExp(
-          String.raw`^\s*DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS${GAP})?(${IDENT})`,
+          String.raw`^\s*DROP\s+CONSTRAINT${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})`,
           'i',
         ).exec(part.text);
         if (dropConstraint !== null) {
           const name = bareName(dropConstraint[1] ?? '');
-          const addsSame = (t: string): boolean =>
-            [...t.matchAll(new RegExp(String.raw`\bADD\s+CONSTRAINT${GAP}(${IDENT})`, 'gi'))].some(
-              (m) => bareName(m[1] ?? '') === name,
-            );
-          const recreated =
-            parts.slice(i + 1).some((p) => addsSame(p.text)) ||
-            later(k).some((t) => {
-              const a = ALTER_TABLE.exec(t);
-              return a !== null && bareName(a[1] ?? '') === table && addsSame(t);
-            });
-          if (!recreated)
+          // The ADD CONSTRAINT <same name> clause that recreates it, in this statement or a later one.
+          const sameClause = (t: string, from: number): string | undefined => {
+            const a = ALTER_TABLE.exec(t);
+            if (a === null || bareName(a[1] ?? '') !== table) return undefined;
+            return topLevelParts(t, a[0].length, t.length)
+              .slice(from)
+              .map((p) => p.text)
+              .find((p) => {
+                const c = new RegExp(String.raw`^\s*ADD\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(p);
+                return c !== null && bareName(c[1] ?? '') === name;
+              });
+          };
+          const clause =
+            sameClause(text, i + 1) ??
+            later(k)
+              .map((t) => sameClause(t, 0))
+              .find((c) => c !== undefined);
+          if (clause === undefined)
             refuse(
               at,
               `constraint ${name} on funds or attribution table ${table} may not be dropped`,
             );
+          else if (strict) {
+            const before = original().constraints.get(`${table}/${name}`);
+            if (
+              before !== undefined &&
+              before !== normaliseDefinition(clause.trim().replace(/^add\s+/i, ''))
+            ) {
+              refuse(at, different('constraint', name, table));
+            }
+          }
         }
       });
+    }
+    // CREATE OR REPLACE TRIGGER over an existing funds-table trigger changes it in place, no DROP needed
+    // (CT-06d): the new definition must equal the original unless the migration is approved.
+    if (strict && /^\s*CREATE\s+OR\s+REPLACE\s+(?:CONSTRAINT\s+)?TRIGGER\b/i.test(text)) {
+      const m = CREATE_TRIGGER.exec(text);
+      if (m !== null && funds(m[2] ?? '')) {
+        const name = bareName(m[1] ?? '');
+        const table = bareName(m[2] ?? '');
+        const droppedEarlier = statements.slice(0, k).some((st) => {
+          const d = new RegExp(
+            String.raw`^\s*DROP\s+TRIGGER${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})(?:\s+|(?<=")\s*)ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
+            'i',
+          ).exec(st.text);
+          return d !== null && bareName(d[1] ?? '') === name && bareName(d[2] ?? '') === table;
+        });
+        const before = original().triggers.get(`${table}/${name}`);
+        if (!droppedEarlier && before !== undefined && before !== normaliseDefinition(text)) {
+          refuse(at, different('trigger', name, table));
+        }
+      }
+    }
+    // Renaming a funds-table index or trigger (CT-06d): the protection would no longer carry its name.
+    const renameIndex = new RegExp(
+      String.raw`^\s*ALTER\s+INDEX${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})(?:\s+|(?<=")\s*)RENAME\b`,
+      'i',
+    ).exec(text);
+    if (renameIndex !== null) {
+      const name = bareName(renameIndex[1] ?? '');
+      const owner =
+        indexOwners(context.schemaSql, [...context.migrationsSql, code.slice(0, at)]).get(name) ??
+        fundsTableOfIndexName(name);
+      if (owner !== undefined && funds(owner)) {
+        refuse(at, `index ${name} on funds or attribution table ${owner} may not be renamed`);
+      }
+    }
+    const renameTrigger = new RegExp(
+      String.raw`^\s*ALTER\s+TRIGGER${GAP}(${IDENT})(?:\s+|(?<=")\s*)ON${GAP}(?:ONLY${GAP})?(${IDENT})(?:\s+|(?<=")\s*)RENAME\b`,
+      'i',
+    ).exec(text);
+    if (renameTrigger !== null && funds(renameTrigger[2] ?? '')) {
+      refuse(
+        at,
+        `trigger ${bareName(renameTrigger[1] ?? '')} on funds or attribution table ${bareName(renameTrigger[2] ?? '')} may not be renamed`,
+      );
     }
     // DROP <anything> … CASCADE.
     if (/^\s*DROP\b[\s\S]*\bCASCADE\s*$/i.test(text)) {
@@ -654,7 +957,7 @@ function fundsObjectProblems(
     }
     // DROP INDEX <name>[, …] of a funds table, unless recreated later in the file.
     const dropIndex = new RegExp(
-      String.raw`^\s*DROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS${GAP})?(${IDENT}(?:\s*,\s*${IDENT})*)`,
+      String.raw`^\s*DROP\s+INDEX${GAP}(?:CONCURRENTLY${GAP})?(?:IF\s+EXISTS${GAP})?(${IDENT}(?:\s*,\s*${IDENT})*)`,
       'i',
     ).exec(text);
     if (dropIndex !== null) {
@@ -662,17 +965,27 @@ function fundsObjectProblems(
       for (const raw of (dropIndex[1] ?? '').split(',')) {
         const name = bareName(raw.trim());
         const owner = owners.get(name);
-        const table = owner ?? (funds(name) ? name : undefined);
+        const table = owner ?? fundsTableOfIndexName(name);
         if (table === undefined || !funds(table)) continue;
-        const recreated = later(k).some((t) =>
-          [...t.matchAll(CREATE_INDEX)].some(
-            (m) =>
+        // Recreated on the same table; with the owner unknown, on a funds table whose name the index
+        // name starts with (orders_created_at_idx on orders), never on another table (CT-06d).
+        const recreation = later(k).find((t) =>
+          [...t.matchAll(CREATE_INDEX)].some((m) => {
+            const on = bareName(m[2] ?? '');
+            return (
               bareName(m[1] ?? '') === name &&
-              (owner === undefined || bareName(m[2] ?? '') === owner),
-          ),
+              (owner !== undefined ? on === owner : funds(on) && name.startsWith(`${on}_`))
+            );
+          }),
         );
-        if (!recreated)
+        if (recreation === undefined)
           refuse(at, `index ${name} on funds or attribution table ${table} may not be dropped`);
+        else if (strict) {
+          const before = original().indexes.get(name);
+          if (before !== undefined && before !== normaliseDefinition(recreation)) {
+            refuse(at, different('index', name, table));
+          }
+        }
       }
     }
     // The functions funds-table triggers execute: from the schema, earlier migrations and the triggers
@@ -683,14 +996,19 @@ function fundsObjectProblems(
       String.raw`^\s*CREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE)${GAP}(${IDENT})\s*\(`,
       'i',
     ).exec(text);
+    // Strict (CLI, migration not in APPROVED_GUARD_CHANGES): any replacement of a guard is refused —
+    // whether a new body still protects cannot be read off its text (CT-06d). Without the approval
+    // flag (pure call) the CT-06c rule stays: a body that still raises passes.
     const replaceRaises =
-      replace !== null && /\bRAISE\s+EXCEPTION\b/i.test(valued.slice(start, end));
+      context.approved === undefined &&
+      replace !== null &&
+      /\bRAISE\s+EXCEPTION\b/i.test(valued.slice(start, end));
     const fn =
       new RegExp(
         String.raw`^\s*DROP\s+(?:FUNCTION|PROCEDURE)\s+(?:IF\s+EXISTS${GAP})?(${IDENT}(?:\s*\([^)]*\))?(?:\s*,\s*${IDENT}(?:\s*\([^)]*\))?)*)`,
         'i',
       ).exec(text)?.[1] ??
-      (replaceRaises ? undefined : replace?.[1]) ??
+      (context.approved === true || replaceRaises ? undefined : replace?.[1]) ??
       new RegExp(
         String.raw`^\s*ALTER\s+(?:FUNCTION|PROCEDURE)${GAP}(${IDENT})(?:\s*\([^)]*\))?\s+(?:RENAME\s+TO|OWNER\s+TO|SET\s+SCHEMA)\b`,
         'i',
@@ -973,6 +1291,8 @@ function main(argv: readonly string[]): number {
     const sql = readFileSync(join(root, file), 'utf8');
     if (/squawk-ignore/.test(sql)) withIgnores.push({ file, sql });
     const context: MigrationContext = {
+      approved:
+        APPROVED_GUARD_CHANGES[basename(file)] === createHash('sha256').update(sql).digest('hex'),
       schemaSql,
       migrationsSql: allSql.filter((m) => m.name < basename(file)).map((m) => m.sql),
     };
