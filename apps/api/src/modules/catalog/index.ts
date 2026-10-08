@@ -32,6 +32,16 @@ export type {
   ProductDetailRequest,
   ProductDetailUpstream,
 } from './detail.ts';
+// Task B1-06j: the read-only product port of the link landing card (product_refs first, then one
+// governed union detail by the snapshot's raw ID; no registration, no write, no conversion).
+export { CatalogProductReader, createCatalogProductReader } from './application/product-reader.ts';
+export type {
+  CatalogProductQuery,
+  CatalogProductReaderOptions,
+  CatalogProductRefs,
+  CatalogProductSummary,
+} from './application/product-reader.ts';
+export { createDbCatalogProductReader } from './infra/product-reader-wiring.ts';
 export { createCatalog } from './application/catalog.ts';
 export { SEARCH_SEEN_LIMIT, SEARCH_SESSION_TTL_SECONDS, searchProducts } from './search.ts';
 export type {

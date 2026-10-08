@@ -7,6 +7,7 @@ import {
   GovernedUnion,
   LinkRegistrar,
   RebateQuoter,
+  createDbCatalogProductReader,
   createDemoRebateQuoter,
   createItemRefService,
   type CatalogConfigReader,
@@ -20,11 +21,13 @@ import {
   type IdentityConfigReader,
 } from './modules/identity/index.ts';
 import {
+  LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
   LINK_REGISTRATIONS,
   LinkingModule,
   loadLinkOpenApps,
   openScopedConfig,
+  type LinkLandingPorts,
   type LinkOpenPorts,
   type LinkRegistrations,
 } from './modules/linking/index.ts';
@@ -225,6 +228,8 @@ class CatalogPortsModule {}
  *   TODO(规划/11 §4.5): 真实报价器 — blocked on B2-03（佣金规则与用户等级）
  * - LINK_OPEN_PORTS: linking's open (B1-06w) — the same governed adapters and quoter, an
  *   item_ref issuer, contracts/apps.json and the prod-verified jump paths;
+ * - LINK_LANDING_PORTS: linking's landing card (B1-06j) — catalog's read-only product port
+ *   (product_refs, else one detail on the same governed adapters; never a write or conversion);
  * - the linking module itself is re-exported, so its SourceLinkReader is visible to catalog.
  */
 function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModule {
@@ -306,8 +311,39 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
           };
         },
       },
+      {
+        provide: LINK_LANDING_PORTS,
+        inject: [GovernedUnion, CLOCK, { token: DB, optional: true }],
+        useFactory: (
+          union: GovernedUnion,
+          clock: Clock,
+          db?: Kysely<Database>,
+        ): LinkLandingPorts =>
+          db === undefined
+            ? {
+                // No database handle: no product_refs and no jd mode, so no product fields.
+                products: {
+                  read: () =>
+                    Promise.resolve({ title: null, image: null, shopName: null, shopType: null }),
+                },
+              }
+            : {
+                products: createDbCatalogProductReader({
+                  db,
+                  union,
+                  config: createContentReader({ db, clock }),
+                }),
+              },
+      },
     ],
-    exports: [GovernedUnion, LinkRegistrar, RebateQuoter, LINK_OPEN_PORTS, linking],
+    exports: [
+      GovernedUnion,
+      LinkRegistrar,
+      RebateQuoter,
+      LINK_OPEN_PORTS,
+      LINK_LANDING_PORTS,
+      linking,
+    ],
   };
 }
 

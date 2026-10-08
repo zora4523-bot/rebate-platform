@@ -1,0 +1,104 @@
+{
+  "task": "B1-06j",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "f1c5871a8ba0b0ffde5494187c12af0a999edbfa",
+  "red_tests": [
+    "test/spec/linking/landing/http.int.test.ts > [AC-B1-06j#5] 真实默认装配允许游客查看分享与非分享链接；带合法令牌时未接身份仍不提示分享者",
+    "test/spec/linking/landing/http.int.test.ts > [AC-B1-06j#6] 真实令牌经过身份端口：只对分享者本人显示提示，连续查看不登记、不写日志、不转链",
+    "test/spec/linking/landing/http.int.test.ts > [AC-B1-06j#7] 真实路由对不存在和其他 App 链接返回相同 30144 响应，不泄露存在性",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] share/share，查看者 null：分类 share、分享者提示 false；查看不执行 open 归属规则",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] share/share，查看者 0199a3b4-5c6d-7000-8000-000000000001：分类 share、分享者提示 true；查看不执行 open 归属规则",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] share/share，查看者 0199a3b4-5c6d-7000-8000-000000000002：分类 share、分享者提示 false；查看不执行 open 归属规则",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] search/self_buy，查看者 0199a3b4-5c6d-7000-8000-000000000001：分类 other、分享者提示 false；查看不执行 open 归属规则",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] detail/self_buy，查看者 0199a3b4-5c6d-7000-8000-000000000002：分类 other、分享者提示 false；查看不执行 open 归属规则",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] agent/agent，查看者 0199a3b4-5c6d-7000-8000-000000000001：分类 other、分享者提示 false；查看不执行 open 归属规则",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] taolijin/taolijin，查看者 0199a3b4-5c6d-7000-8000-000000000001：分类 other、分享者提示 false；查看不执行 open 归属规则",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] clipboard/self_buy，查看者 null：分类 other、分享者提示 false；查看不执行 open 归属规则",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#2] 卡片严格采用共享子集，保留商品信息，不泄露返利、返后价或 Agent 字段",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#3] 未知报价的游客 link 可查看，quoted_at 保留 null 且不认领 link",
+    "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#4] 不存在与跨 App link 都为相同的 30144，且不读取商品卡片"
+  ],
+  "risk_note": "RV2 (linking/**, catalog/** RV1, app.module.ts, openapi.yaml and route-schemas.gen.ts). GET /v1/links/{link_id}: read-only landing card for the in-app link page; registers no link, writes no link_log, converts nothing; link_kind share / other; the shared card subset without rebate_* and est_net_price_fen built from the link's quote snapshot (original price via @couli/money addFen), quoted_at from the snapshot, viewer_is_sharer only when the caller is the sharer; unknown, malformed or other-app link_id answers the same 404 30144. The product title comes from a new read-only catalog CatalogProductReader (product_refs first, else one governed union detail call; writes nothing; null on failure), wired in app.module as LINK_LANDING_PORTS. Removes x-implementation: planned of getLink only. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f1c5871a8ba0b0ffde5494187c12af0a999edbfa",
+      "tree": "80e554f6de9ec3fe25f3267d99a5e615f4af99c7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T00:32:30Z",
+      "finished_at": "2026-10-08T00:32:40Z",
+      "red_tests": [
+        "test/spec/linking/landing/http.int.test.ts > [AC-B1-06j#5] 真实默认装配允许游客查看分享与非分享链接；带合法令牌时未接身份仍不提示分享者",
+        "test/spec/linking/landing/http.int.test.ts > [AC-B1-06j#6] 真实令牌经过身份端口：只对分享者本人显示提示，连续查看不登记、不写日志、不转链",
+        "test/spec/linking/landing/http.int.test.ts > [AC-B1-06j#7] 真实路由对不存在和其他 App 链接返回相同 30144 响应，不泄露存在性",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] share/share，查看者 null：分类 share、分享者提示 false；查看不执行 open 归属规则",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] share/share，查看者 0199a3b4-5c6d-7000-8000-000000000001：分类 share、分享者提示 true；查看不执行 open 归属规则",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] share/share，查看者 0199a3b4-5c6d-7000-8000-000000000002：分类 share、分享者提示 false；查看不执行 open 归属规则",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] search/self_buy，查看者 0199a3b4-5c6d-7000-8000-000000000001：分类 other、分享者提示 false；查看不执行 open 归属规则",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] detail/self_buy，查看者 0199a3b4-5c6d-7000-8000-000000000002：分类 other、分享者提示 false；查看不执行 open 归属规则",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] agent/agent，查看者 0199a3b4-5c6d-7000-8000-000000000001：分类 other、分享者提示 false；查看不执行 open 归属规则",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] taolijin/taolijin，查看者 0199a3b4-5c6d-7000-8000-000000000001：分类 other、分享者提示 false；查看不执行 open 归属规则",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#1] clipboard/self_buy，查看者 null：分类 other、分享者提示 false；查看不执行 open 归属规则",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#2] 卡片严格采用共享子集，保留商品信息，不泄露返利、返后价或 Agent 字段",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#3] 未知报价的游客 link 可查看，quoted_at 保留 null 且不认领 link",
+        "test/spec/linking/landing/usecase.test.ts > [AC-B1-06j#4] 不存在与跨 App link 都为相同的 30144，且不读取商品卡片"
+      ],
+      "expected": [
+        "test/spec/linking/landing/http.int.test.ts",
+        "test/spec/linking/landing/usecase.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "1723d7508e446d6914c9c1b65239d2c9f2b6f80f68d963de187f21c6e6134a67"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "fecf94ba830279f2df916dd56f9acb6bf3e1d667a15bca687a375267f4fa3cc8"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagents with the money checklist: round 1 fail (S1 the landing card had no product title in every request) -> ledger #274 added catalog/** and app.module.ts, fixed with a read-only product reader; round 2 pass with one S2 (repeated union detail calls for popular share links without product_refs, followups)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 price addition outside @couli/money; S2 a non-UUID link_id reached the database and answered 500) -> both fixed; round 2 pass with one S2 (upper-case UUID compares unequal, followups)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run); the fresh Claude reviewer's only S1 (the HTTP fixture started the app without Redis so the search precondition always failed) was fixed by the orchestrator in the fixture only, assertions unchanged, red run 14 tests on the route"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "53ab1807617b65bbb3506b4ec9f8e38f99de344a",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

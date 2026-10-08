@@ -28,8 +28,14 @@ export {
   createUnavailableAttrCodeReader,
 } from './ports.ts';
 export type { Caller } from './ports.ts';
-export { LINK_OPEN_PORTS, LINK_REGISTRATIONS, LinkingModule } from './linking.module.ts';
+export {
+  LINK_LANDING_PORTS,
+  LINK_OPEN_PORTS,
+  LINK_REGISTRATIONS,
+  LinkingModule,
+} from './linking.module.ts';
 export type {
+  LinkLandingPorts,
   LinkOpenPorts,
   LinkRegistrations,
   LinkingConfigReaderFactory,
@@ -58,3 +64,18 @@ export type {
   LinkOpenRequoteResult,
   LinkOpenRequoteService,
 } from './application/link-open-requote.ts';
+// Task B1-06j: GET /v1/links/{link_id}, the read-only card of the in-app link landing page
+// (BR-ATTR-05 细则「App 内打开链接的入口」, BR-ATTR-10/11, BR-PRICE-06). Rule tests:
+// test/spec/linking/landing/**.
+export {
+  LinkLandingService,
+  createLandingLinks,
+  createLinkLanding,
+  createSnapshotCardReader,
+} from './application/link-landing.ts';
+export type {
+  LandingLink,
+  LinkLandingInput,
+  LinkLandingOptions,
+  SnapshotCardOptions,
+} from './application/link-landing.ts';
