@@ -20,4 +20,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/h5-platform-badge/**'
-status: todo
+status: done
+pr: 320

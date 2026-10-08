@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" width="12" height="12">
+  <!-- Neutral placeholder until the owner supplies the official icon (BR-TEXT-24). -->
+  <rect x="0.5" y="0.5" width="11" height="11" rx="3" fill="none" stroke="currentColor" stroke-opacity="0.6"/>
+  <text x="6" y="8.6" text-anchor="middle" font-size="7.5" font-family="sans-serif" fill="currentColor" fill-opacity="0.75">拼</text>
+</svg>
