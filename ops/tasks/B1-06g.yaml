@@ -23,5 +23,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/auth-url/**'
-status: todo
-pr: null
+status: done
+pr: 296
