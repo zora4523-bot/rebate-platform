@@ -46,11 +46,14 @@ export function displayedImage(container: HTMLElement): HTMLImageElement {
       const style = getComputedStyle(element);
       if (
         element.hidden ||
-        element.classList.contains('hidden') ||
-        element.classList.contains('invisible') ||
+        [...element.classList].some((name) =>
+          ['hidden', 'invisible', 'opacity-0', 'sr-only', 'size-0', 'w-0', 'h-0'].includes(name),
+        ) ||
         style.display === 'none' ||
         style.visibility === 'hidden' ||
-        style.opacity === '0'
+        style.opacity === '0' ||
+        style.width === '0px' ||
+        style.height === '0px'
       )
         return false;
       element = element.parentElement;

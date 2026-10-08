@@ -87,7 +87,7 @@ for (const { key, name, file } of platforms) {
 }
 
 it('[AC-F1-01n-ERROR#1] error 后一直兜底，同 URL 重渲染、改元数据、移除再传入均不重试且无提示', async () => {
-  const remote = remoteIcon();
+  const remote = remoteIcon('https://media.example.test/error-1.svg');
   const view = render(badge({ platform: 'taobao', remote }));
   expectBuiltin(view.container, 'taobao');
   fireEvent.error(images.loader(remote.url));
@@ -108,7 +108,7 @@ it('[AC-F1-01n-ERROR#1] error 后一直兜底，同 URL 重渲染、改元数据
 });
 
 it('[AC-F1-01n-ERROR#2] 替换图已显示后再 error，也回内置图并停止请求', () => {
-  const remote = remoteIcon();
+  const remote = remoteIcon('https://media.example.test/error-2.svg');
   const view = render(badge({ platform: 'pdd', remote }));
   fireEvent.load(images.loader(remote.url));
   const displayed = displayedImage(view.container);
@@ -122,9 +122,9 @@ it('[AC-F1-01n-ERROR#2] 替换图已显示后再 error，也回内置图并停�
   expect(images.forUrl(remote.url)).toHaveLength(count);
 });
 
-it('[AC-F1-01n-ERROR#3] A 失败后 B 可尝试，B 失败再回 A 仍不请求，失败集合按实例隔离', () => {
-  const a = remoteIcon();
-  const b = remoteIcon('https://media.example.test/platform/b.svg');
+it('[AC-F1-01n-ERROR#3] A 失败后 B 可尝试，B 失败再回 A 及卸载后新实例均不重试', () => {
+  const a = remoteIcon('https://media.example.test/error-3-a.svg');
+  const b = remoteIcon('https://media.example.test/error-3-b.svg');
   const view = render(badge({ platform: 'jd', remote: a }));
   fireEvent.error(images.loader(a.url));
   view.rerender(badge({ platform: 'jd', remote: b }));
@@ -137,16 +137,30 @@ it('[AC-F1-01n-ERROR#3] A 失败后 B 可尝试，B 失败再回 A 仍不请求�
   view.unmount();
   const fresh = render(badge({ platform: 'jd', remote: a }));
   expectBuiltin(fresh.container, 'jd');
-  expect(images.forUrl(a.url)).toHaveLength(2);
-  fireEvent.load(images.forUrl(a.url)[1]!.image);
-  expect(displayedImage(fresh.container).getAttribute('src')).toBe(a.url);
+  expect(images.forUrl(a.url)).toHaveLength(1);
   expectName(fresh.container, '京东');
+});
+
+it('[AC-F1-01n-ERROR#4] 同屏首个实例加载失败后，另一实例收到相同 URL 直接兜底且不请求', () => {
+  const remote = remoteIcon('https://media.example.test/error-4.svg');
+  const first = render(badge({ platform: 'taobao', remote }));
+  const second = render(badge({ platform: 'tmall' }));
+  expectBuiltin(first.container, 'taobao');
+  expectBuiltin(second.container, 'tmall');
+  expect(images.forUrl(remote.url)).toHaveLength(1);
+  fireEvent.error(images.loader(remote.url));
+  second.rerender(badge({ platform: 'tmall', remote }));
+  expectBuiltin(first.container, 'taobao');
+  expectBuiltin(second.container, 'tmall');
+  expectName(first.container, '淘宝');
+  expectName(second.container, '天猫');
+  expect(images.forUrl(remote.url)).toHaveLength(1);
 });
 
 for (const event of ['load', 'error'] as const) {
   it(`[AC-F1-01n-RACE#1] 切换 URL 后旧请求的 ${event} 不覆盖当前图片`, () => {
-    const a = remoteIcon();
-    const b = remoteIcon('https://media.example.test/platform/b.svg');
+    const a = remoteIcon(`https://media.example.test/race-1-${event}-a.svg`);
+    const b = remoteIcon(`https://media.example.test/race-1-${event}-b.svg`);
     const view = render(badge({ platform: 'wechat', remote: a }));
     const oldLoader = images.loader(a.url);
     view.rerender(badge({ platform: 'wechat', remote: b }));
@@ -165,8 +179,8 @@ for (const event of ['load', 'error'] as const) {
 }
 
 it('[AC-F1-01n-RACE#2] 换平台与移除 remote 立即回当前平台内置图，迟到 load 无效', () => {
-  const a = remoteIcon();
-  const b = remoteIcon('https://media.example.test/platform/b.svg');
+  const a = remoteIcon('https://media.example.test/race-2-a.svg');
+  const b = remoteIcon('https://media.example.test/race-2-b.svg');
   const view = render(badge({ platform: 'taobao', remote: a }));
   fireEvent.load(images.loader(a.url));
   expect(displayedImage(view.container).getAttribute('src')).toBe(a.url);

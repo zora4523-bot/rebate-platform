@@ -98,7 +98,7 @@ it('[AC-F1-01n-VISUAL#1] h5-platform-badge', async () => {
   // Assert computed appearance on the outer span; label markup may contain a nested span.
   const probe = document.createElement('span');
   probe.style.cssText =
-    'color:var(--color-text-secondary);background:var(--color-background-surface);border:var(--component-control-border-width) solid var(--color-border-control);border-radius:var(--radius-pill)';
+    'color:var(--color-text-secondary);background:var(--color-background-surface);border:var(--component-control-border-width) solid var(--color-border-control)';
   container.append(probe);
   const tokens = getComputedStyle(probe);
   const sourceBorderProbe = document.createElement('span');
@@ -119,7 +119,6 @@ it('[AC-F1-01n-VISUAL#1] h5-platform-badge', async () => {
       borderBottomWidth: '1px',
       borderLeftWidth: '1px',
       borderTopStyle: 'solid',
-      borderRadius: tokens.borderRadius,
       // The brief permits control-border-like tokens; the board uses source-border.
       borderTopColor:
         getComputedStyle(badge).borderTopColor === tokens.borderTopColor
@@ -130,6 +129,27 @@ it('[AC-F1-01n-VISUAL#1] h5-platform-badge', async () => {
       fontSize: '12px',
       lineHeight: '18px',
     });
+    const computed = getComputedStyle(badge);
+    const { width, height } = badge.getBoundingClientRect();
+    const corners = [
+      computed.borderTopLeftRadius,
+      computed.borderTopRightRadius,
+      computed.borderBottomLeftRadius,
+      computed.borderBottomRightRadius,
+    ];
+    // Check the capsule shape, accepting token radii and rounded-full alike.
+    appearance.dataset.pillShape = String(
+      corners.every((corner) => {
+        const [horizontal = '', vertical = horizontal] = corner.split(/\s+/);
+        return [horizontal, vertical].every((radius, axis) => {
+          const pixels = radius.endsWith('%')
+            ? (Number.parseFloat(radius) / 100) * (axis === 0 ? width : height)
+            : Number.parseFloat(radius);
+          return pixels >= height / 2;
+        });
+      }),
+    );
+    await expect.element(appearance).toHaveAttribute('data-pill-shape', 'true');
     appearance.remove();
     const image = badge.querySelector('img');
     await expect.element(image).toBeVisible();
