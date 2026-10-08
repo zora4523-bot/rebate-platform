@@ -159,11 +159,13 @@ const YAML_NEW_KEY =
 const PADDED_BASE64_LINE = /^[A-Za-z0-9+/_-]+={1,2}[ \t]*(?:\r?\n|$)/;
 
 /**
- * 不允许换行续写取值的格式：.properties（只有行尾反斜杠才续行）与 .env。这里空值键后的下一行一律按
- * 行首形状判新键，`mode=`、`channel=` 这类空值键不能当作上一行空值的 Base64 续行。
- * YAML、ini / cfg / conf 与其他内容允许缩进续行，Base64 填充行仍按续行取值（与 main 同口径）。
+ * 不允许换行续写取值的格式，只认文件名以 `.properties` 或 `.env` 结尾（含全名 `.env` 与 `prod.env`）：
+ * .properties 只有行尾反斜杠才续行，.env 不续行。这里空值键后的下一行一律按行首形状判新键，
+ * `mode=`、`channel=` 这类空值键不能当作上一行空值的 Base64 续行。
+ * `.env.<后缀>`（.env.production、.env.yaml、.env.ini …）、YAML、ini / cfg / conf 与其他内容一律与 main 同口径：
+ * Base64 填充行仍按续行取值。
  */
-const NO_CONTINUATION = /(?:\.(?:properties|env)|(?:^|\/)\.env(?:\.[^/]*)?)$/i;
+const NO_CONTINUATION = /\.(?:properties|env)$/i;
 
 function newKeyAt(rest: string, yaml: boolean, noContinuation: boolean): boolean {
   if (noContinuation) return NEW_KEY.test(rest);
