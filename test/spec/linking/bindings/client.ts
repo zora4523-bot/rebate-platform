@@ -22,14 +22,14 @@ export async function client(
     deviceClient?: 'ios' | 'android' | 'harmony';
   } = {},
 ) {
-  const appId = options.appId ?? `binding_${randomUUID().replaceAll('-', '')}`;
+  const appId = options.appId ?? `binding_${randomUUID().replaceAll('-', '').slice(0, 24)}`;
   const deviceClient = options.deviceClient ?? 'ios';
   const headers = {
     'content-type': 'application/json',
     'x-app-id': appId,
     'x-platform': deviceClient,
     'x-app-version': '2.0.0',
-    'x-channel': 'synthetic',
+    'x-channel': 'official',
   };
   const registered = await f.app.inject({
     method: 'POST',
