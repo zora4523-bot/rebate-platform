@@ -8,7 +8,7 @@
 | --- | --- |
 | `src/index.ts` | `createDb()`（连接池，int8 解析成 BigInt，默认 schema `app`）、`destroyDb()`、类型 `DB`、分区名与月份的纯函数 |
 | `src/db.gen.ts` | kysely-codegen 生成的表类型（生成物） |
-| `src/testing/` | 测试库：`@couli/db/testing` 的 `createTestDatabase()` 和 `@couli/db/testing/global-setup` |
+| `src/testing/` | 测试库：`@couli/db/testing` 的 `createTestDatabase()` 和 globalSetup 源文件 `src/testing/global-setup.ts` |
 | `scripts/` | 建角色、迁移、分区、种子、快照、本地栈脚本 |
 | `../../db/` | 迁移、角色与扩展、快照、种子、不变量 SQL（规则见 `db/AGENTS.md`） |
 | `../../infra/local/` | 本地栈的 compose 文件 |
@@ -36,7 +36,7 @@
 4. 测试只拿到一个只能建库的角色和四个业务角色的密码，**拿不到超级用户连接串**；用例以 `couli_app` 等身份连接，权限和触发器都被真实检验。
 5. 脚本会拒绝含有 `couli` 库的集群，避免误连本地栈或真实环境。
 
-写集成测试：文件名 `*.int.test.ts`，在 `beforeAll` 里 `createTestDatabase()`，用 `createDb({ connectionString: db.urlFor('couli_app') })` 连接。别的包要用时，把 `@couli/db/testing/global-setup` 写进自己的 `vitest.integration.config.ts`。
+写集成测试：文件名 `*.int.test.ts`，在 `beforeAll` 里 `createTestDatabase()`，用 `createDb({ connectionString: db.urlFor('couli_app') })` 连接。别的包要用时，在自己的 `vitest.integration.config.ts` 里把 globalSetup 写成这个源文件的相对路径（如 `test/vitest.integration.config.ts` 的 `'../packages/db/src/testing/global-setup.ts'`、`apps/api/vitest.integration.config.ts` 的 `'../../packages/db/src/testing/global-setup.ts'`），不要写包名 `@couli/db/testing/global-setup`：Vitest 解析 globalSetup 不认 `couli-src` 条件，包名会加载 `dist`（全新检出时不存在，改了源码不重建就跑旧的）。
 
 ## 改表结构的步骤
 
@@ -46,6 +46,6 @@
 
 ## 已知限制
 
-- `createDb()` 没有给连接池挂错误监听；接入应用时由 platform 模块统一处理（B1-01）。
-- `db:partitions` 以 `couli_migrator`（函数属主）执行，用在发布时；运行期由 worker 的定时任务以 `couli_maint` 调同一个函数，该任务还没写。
+- `createDb()` 只传 `connectionString` 时自建的连接池不挂错误监听，只适合脚本和测试。应用进程的连接池由 platform 模块（`apps/api/src/modules/platform/db/`）经 `poolFactory` 提供：挂错误监听（记 `db_pool_error`）、有界关闭，admin 另有以 `couli_readonly` 连接的只读句柄 `dbRead`（`DATABASE_READ_URL`，会话默认只读事务）。
+- `db:partitions` 以 `couli_migrator`（函数属主）执行，用在发布时；运行期由 worker 的分区维护定时任务（`apps/api/src/modules/platform/maintenance/`）以 `couli_maint` 调同一个函数，连接读 `DATABASE_MAINT_URL`（worker 必填；只有 `APP_ENV=test` 时可以不设，此时不做分区维护，记 `partition_maintenance_disabled`）。
 - CHECK 约束和 `GENERATED ALWAYS` 在生成的类型里看不出（ADR-0001 §7），要靠集成测试。

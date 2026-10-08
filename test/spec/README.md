@@ -6,8 +6,8 @@
 
 - 文件名 `*.test.ts`；资金规则测试写顶层 `it`，不套 `describe`（规划/11 §4.3）。
 - 不 mock `@couli/money` 和 ledger；不写 `.skip`、`.only`、`retry`；每个测试有断言。
-- 这里的测试由 `pnpm --filter @couli/spec-tests test` 运行，属于 `verify:fast`：不连库、不监听端口、不联网。要连真实 PG 的规则测试用 `*.int.test.ts`，接入方式随 B1-01 的测试库底座任务加入。
+- 这里的测试由 `pnpm --filter @couli/spec-tests test` 运行，属于 `verify:fast`：不连库、不监听端口、不联网。要连真实 PG 的规则测试用 `*.int.test.ts`：单元配置不收它们，由 `test/vitest.integration.config.ts`（`spec/**/*.int.test.ts`）收进，经 `test:int`（`pnpm test:int`，或 `pnpm --filter @couli/spec-tests run test:int`）在沙箱外运行。数据库入口读 `TEST_PG_ADMIN_URL`（没设就用 Testcontainers），只在 globalSetup 里读：globalSetup 是 packages/db 的源码文件 `packages/db/src/testing/global-setup.ts`；测试文件经 `@couli/db/testing` 的 `createTestDatabase()` 克隆自己的库，只以业务角色连接（用法见 `packages/db/README.md`）。
 
 保护规则（规划/11 §4.4 第一类）：本目录**只能新增，不能改删**。确实要改须单独开 `test-change` 任务，由另一家评审，只接受两种理由：BR 已变更（附变更记录），或测试与 08 不符（附行号）。
 
-现在还没有规则测试：第一批随 10-04 的 `packages/money` 试跑加入（规划/11 §9.2）。
+现状：规则测试已按模块分目录（如 `money/`、`platform/`、`db/`、`contracts/`），第一批随 10-04 的 `packages/money` 试跑加入（规划/11 §9.2），之后由各任务的规则测试作者陆续新增。
