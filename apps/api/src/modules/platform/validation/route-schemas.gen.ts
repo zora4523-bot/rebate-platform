@@ -325,6 +325,438 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "createOauthAttempt": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "description": "`action` is required exactly for purpose=step_up. purpose=payout_bind is for WeChat only\nand carries no `action`. The oneOf branches declare the properties they constrain (strict\nAjv2020, ADR-0001 §4.2 #15).\n",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "purpose"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Third-party identity provider (enum login_provider, BR-ID-04).",
+          "enum": [
+            "wechat",
+            "apple",
+            "huawei"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "description": "What a third-party authorization attempt is for (enum oauth_attempt_purpose).",
+          "enum": [
+            "login",
+            "step_up",
+            "payout_bind"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "description": "Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).",
+          "enum": [
+            "withdraw",
+            "payout_account_change",
+            "phone_change",
+            "account_deletion"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "type": "string",
+              "enum": [
+                "login"
+              ]
+            }
+          },
+          "required": [
+            "purpose"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "type": "string",
+              "enum": [
+                "step_up"
+              ]
+            },
+            "action": {
+              "type": "string",
+              "description": "Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).",
+              "enum": [
+                "withdraw",
+                "payout_account_change",
+                "phone_change",
+                "account_deletion"
+              ]
+            }
+          },
+          "required": [
+            "purpose",
+            "action"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "type": "string",
+              "enum": [
+                "payout_bind"
+              ]
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "wechat"
+              ]
+            }
+          },
+          "required": [
+            "purpose",
+            "provider"
+          ],
+          "not": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "action": {
+                "type": "string",
+                "description": "Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).",
+                "enum": [
+                  "withdraw",
+                  "payout_account_change",
+                  "phone_change",
+                  "account_deletion"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "stepUp": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "description": "Exactly one way of second verification: an SMS code, or a new authorization with one\nprovider carrying that provider's login credential fields (BR-ID-08). Each branch is a\nclosed object, so a body mixing two ways matches none.\n",
+      "unevaluatedProperties": false,
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "code"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).",
+              "enum": [
+                "withdraw",
+                "payout_account_change",
+                "phone_change",
+                "account_deletion"
+              ]
+            },
+            "code": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "provider",
+            "attempt_id",
+            "code"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).",
+              "enum": [
+                "withdraw",
+                "payout_account_change",
+                "phone_change",
+                "account_deletion"
+              ]
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "wechat"
+              ]
+            },
+            "attempt_id": {
+              "type": "string",
+              "description": "Entity id, a UUIDv7 string (04 §5).",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "code": {
+              "type": "string",
+              "description": "An authorization credential from the provider SDK; never stored or logged.",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "provider",
+            "attempt_id",
+            "identity_token",
+            "authorization_code"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).",
+              "enum": [
+                "withdraw",
+                "payout_account_change",
+                "phone_change",
+                "account_deletion"
+              ]
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "apple"
+              ]
+            },
+            "attempt_id": {
+              "type": "string",
+              "description": "Entity id, a UUIDv7 string (04 §5).",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "identity_token": {
+              "type": "string",
+              "description": "An authorization credential from the provider SDK; never stored or logged.",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "authorization_code": {
+              "type": "string",
+              "description": "An authorization credential from the provider SDK; never stored or logged.",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "provider",
+            "attempt_id",
+            "authorization_code"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).",
+              "enum": [
+                "withdraw",
+                "payout_account_change",
+                "phone_change",
+                "account_deletion"
+              ]
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "huawei"
+              ]
+            },
+            "attempt_id": {
+              "type": "string",
+              "description": "Entity id, a UUIDv7 string (04 §5).",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "authorization_code": {
+              "type": "string",
+              "description": "An authorization credential from the provider SDK; never stored or logged.",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        }
+      ]
+    }
+  },
   "refreshToken": {
     "headers": {
       "type": "object",
@@ -475,6 +907,194 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         "x-app-version",
         "x-device-id"
       ]
+    }
+  },
+  "recordConsent": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "version",
+        "accepted",
+        "channel",
+        "client_at"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "consent_type without labor_agreement (BR-ID-12, BR-WDR-31).",
+          "enum": [
+            "privacy",
+            "agreement",
+            "ai_third_party",
+            "id_verification",
+            "personalization"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "The version of the text the user saw (legal.privacy.version and the like)."
+        },
+        "accepted": {
+          "type": "boolean",
+          "description": "true = agreed; false = withdrawn."
+        },
+        "channel": {
+          "type": "string",
+          "description": "consent_channel without the server-written login_merge, h5_landing and withdraw_flow.",
+          "enum": [
+            "first_launch",
+            "login_page",
+            "agent_sheet",
+            "realname_sheet",
+            "privacy_center"
+          ]
+        },
+        "client_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the user tapped (device clock)."
+        }
+      }
+    }
+  },
+  "issueH5Token": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "description": "Filled by the native app from its force-update state; H5 cannot choose it. The value\nused when it is absent is set in BR-ID-32 细则「只读作用域」.\n",
+          "type": "string",
+          "enum": [
+            "standard",
+            "read_only"
+          ]
+        }
+      }
     }
   },
   "getUnionAuthUrl": {
