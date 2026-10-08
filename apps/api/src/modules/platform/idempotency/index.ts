@@ -99,8 +99,19 @@
 //        (COMPLETION_ATTEMPTS, waits COMPLETION_RETRY_DELAYS_MS, well under a second in all),
 //        each attempt with the same ownership condition (a takeover in between →
 //        idempotency_record_lost as above, the taker's row is never overwritten). An attempt that
-//        succeeds returns the handler's response. If every attempt fails, the row is left as it
-//        is (processing, not deleted, not changed), exactly one line is logged —
+//        succeeds returns the handler's response. The whole of it (every attempt, connection
+//        acquisition included, and the waits) has a client-side deadline,
+//        COMPLETION_DEADLINE_MS, measured with a timer only (no clock read): a write that hangs
+//        (network gone, TCP not yet reporting it; the pool has no acquire or query timeout) is
+//        no longer awaited when it passes, no further attempt starts, and the request is
+//        treated as "every attempt failed" below, so neither the request nor shutdown (HTTP
+//        close waits for requests in flight) waits on the database. The abandoned write is left
+//        to settle on its own: its rejection is swallowed, and it logs and changes nothing more.
+//        If it later succeeds it is an ordinary `completed` write under the same ownership
+//        condition (the stored response is the handler's own; a later retry of the key replays
+//        it), which is acceptable; if it finds the row taken over it writes nothing. If every
+//        attempt fails, the row is left as it is (processing, not deleted, not changed), exactly
+//        one line is logged —
 //        `options.logger.error({ method, path, attempts }, 'idempotency_completion_unknown')`
 //        (warn when the logger has no error; never the driver error, whose message or detail
 //        may carry parameters) — and the call rejects with IdempotencyError('outcome_unknown'),
@@ -282,6 +293,9 @@ export const COMPLETION_ATTEMPTS = 3;
 
 /** Section 4: the wait before each retry of the `completed` write (400 ms in all). */
 export const COMPLETION_RETRY_DELAYS_MS: readonly number[] = Object.freeze([100, 300]);
+
+/** Section 4: client-side deadline for the whole `completed` write (attempts and waits). */
+export const COMPLETION_DEADLINE_MS = 2_000;
 
 export interface IdempotencyActor {
   readonly userId: string | null;
@@ -483,24 +497,43 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
           .where(owned)
           .returning('id')
           .execute();
+      // Attempts run until one settles the write or the deadline passes, whichever is first.
+      // The loop never rejects (a late rejection of an abandoned attempt is swallowed here), and
+      // once abandoned it starts no attempt and its result is ignored (no log, no further write).
       let attempt = 0;
-      for (;;) {
-        attempt += 1;
-        try {
-          changed = await complete();
-          break;
-        } catch {
-          // The handler has had its effect: never surface the driver error (a "failure").
-          if (attempt >= COMPLETION_ATTEMPTS) {
-            const fields = { method: request.method, path: request.path, attempts: attempt };
-            if (typeof logger.error === 'function')
-              logger.error(fields, 'idempotency_completion_unknown');
-            else logger.warn(fields, 'idempotency_completion_unknown');
-            throw new IdempotencyError('outcome_unknown');
+      let abandoned = false;
+      const attempts = (async (): Promise<{ id: unknown }[] | undefined> => {
+        for (;;) {
+          attempt += 1;
+          try {
+            return await complete();
+          } catch {
+            // The handler has had its effect: never surface the driver error (a "failure").
+            if (abandoned || attempt >= COMPLETION_ATTEMPTS) return undefined;
+            await wait(COMPLETION_RETRY_DELAYS_MS[attempt - 1] ?? 0);
+            if (abandoned) return undefined;
           }
-          await wait(COMPLETION_RETRY_DELAYS_MS[attempt - 1] ?? 0);
         }
+      })().catch(() => undefined);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), COMPLETION_DEADLINE_MS);
+      });
+      let settled: { id: unknown }[] | undefined;
+      try {
+        settled = await Promise.race([attempts, deadline]);
+      } finally {
+        abandoned = true;
+        clearTimeout(timer);
       }
+      if (settled === undefined) {
+        const fields = { method: request.method, path: request.path, attempts: attempt };
+        if (typeof logger.error === 'function')
+          logger.error(fields, 'idempotency_completion_unknown');
+        else logger.warn(fields, 'idempotency_completion_unknown');
+        throw new IdempotencyError('outcome_unknown');
+      }
+      changed = settled;
     }
     if (changed.length === 0)
       logger.warn({ method: request.method, path: request.path }, 'idempotency_record_lost');
@@ -890,7 +923,7 @@ function errorResponse(code: 20001 | 20901 | 20903 | 40901, traceId: string): Id
   );
 }
 
-/** A bounded pause between completion attempts (no clock read: only the count bounds it). */
+/** A pause between completion attempts (a timer, no clock read). */
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);

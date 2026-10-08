@@ -2,7 +2,12 @@ import type { DB } from '@couli/db';
 import { Kysely, PostgresDialect, type PostgresPool } from 'kysely';
 import { expect, it, vi } from 'vitest';
 import { FixedClock } from '../clock/index.ts';
-import { COMPLETION_ATTEMPTS, createIdempotency, type IdempotentRequest } from './index.ts';
+import {
+  COMPLETION_ATTEMPTS,
+  COMPLETION_DEADLINE_MS,
+  createIdempotency,
+  type IdempotentRequest,
+} from './index.ts';
 
 const request: IdempotentRequest = {
   appId: 'couli',
@@ -100,16 +105,23 @@ function standardFixture(options: {
   updateFailures: number;
   updateRows?: () => unknown[];
   warnOnly?: boolean;
+  /** Every `completed` write hangs until the test settles it through `hung`. */
+  hang?: boolean;
 }) {
   const error = Object.assign(new Error('driver failure std-secret-key'), { code: '08006' });
   const statements: string[] = [];
   let failures = options.updateFailures;
+  const hung: { resolve: (rows: unknown[]) => void; reject: (error: unknown) => void }[] = [];
   const client = {
     release: vi.fn(),
     async query(text: string) {
       statements.push(text);
       let rows: unknown[] = [];
-      if (text.startsWith('update')) {
+      if (text.startsWith('update') && options.hang === true) {
+        rows = await new Promise<unknown[]>((resolve, reject) => {
+          hung.push({ resolve, reject });
+        });
+      } else if (text.startsWith('update')) {
         if (failures > 0) {
           failures -= 1;
           throw error;
@@ -135,7 +147,7 @@ function standardFixture(options: {
   });
   const updates = () => statements.filter((text) => text.startsWith('update')).length;
   const deletes = () => statements.filter((text) => text.startsWith('delete')).length;
-  return { db, idem, logger, updates, deletes };
+  return { db, idem, logger, updates, deletes, hung, statements };
 }
 
 const standardRequest: IdempotentRequest = {
@@ -249,4 +261,74 @@ it('[AC-B1-01zh#3] a thrown or unstored handler still deletes the row without an
   } finally {
     await f.db.destroy();
   }
+});
+
+// A write that never answers (network gone, TCP silent): the deadline ends the request.
+async function hangingCompletion(
+  settle: (pending: {
+    resolve: (rows: unknown[]) => void;
+    reject: (error: unknown) => void;
+  }) => void,
+) {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on('unhandledRejection', onUnhandled);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const f = standardFixture({ updateFailures: 0, hang: true });
+  const handler = vi.fn(async () => stored);
+  try {
+    let outcome: unknown = 'pending';
+    const call = f.idem.execute(standardRequest, handler).then(
+      (value) => {
+        outcome = value;
+      },
+      (error: unknown) => {
+        outcome = error;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(COMPLETION_DEADLINE_MS - 1);
+    expect(outcome).toBe('pending');
+    expect(f.updates()).toBe(1);
+    expect(f.hung).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await call;
+    expect(outcome).toMatchObject({ name: 'IdempotencyError', code: 'outcome_unknown' });
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(f.logger.error).toHaveBeenCalledTimes(1);
+    expect(f.logger.error).toHaveBeenCalledWith(
+      { method: 'POST', path: '/v1/links/std-link/open', attempts: 1 },
+      'idempotency_completion_unknown',
+    );
+    // The abandoned write settles later: nothing more is written, logged or left unhandled.
+    const before = f.statements.length;
+    settle(f.hung[0]!);
+    await vi.advanceTimersByTimeAsync(COMPLETION_DEADLINE_MS);
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    expect(f.statements.length).toBe(before);
+    expect(f.updates()).toBe(1);
+    expect(f.deletes()).toBe(0);
+    expect(f.logger.error).toHaveBeenCalledTimes(1);
+    expect(f.logger.warn).not.toHaveBeenCalled();
+    expect(unhandled).toStrictEqual([]);
+  } finally {
+    vi.useRealTimers();
+    process.off('unhandledRejection', onUnhandled);
+    await f.db.destroy();
+  }
+}
+
+it('[AC-B1-01zh#2] a completed write that never answers ends in outcome_unknown at the deadline; its late rejection is swallowed', async () => {
+  await hangingCompletion((pending) => {
+    pending.reject(Object.assign(new Error('driver failure std-secret-key'), { code: '08006' }));
+  });
+});
+
+it('[AC-B1-01zh#2] an abandoned completed write that succeeds late logs nothing more and starts no retry', async () => {
+  await hangingCompletion((pending) => {
+    pending.resolve([]);
+  });
 });
