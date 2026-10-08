@@ -19,5 +19,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/landing/**'
-status: todo
-pr: null
+status: done
+pr: 286
