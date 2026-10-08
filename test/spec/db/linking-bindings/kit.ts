@@ -119,8 +119,26 @@ export async function newAuth(values: Record<string, unknown> = {}) {
     expire_at: EXPIRES,
     used_at: null,
     created_at: RELEASED,
+    ...(await issuanceDefaults(String(values['platform'] ?? 'taobao'))),
     ...values,
   });
+}
+
+/**
+ * B1-06s: synthetic issuance metadata for the columns B1-06r adds to union_auth_sessions
+ * (client; Taobao auth_methods with matching auth_app_refs; other platforms leave both NULL).
+ * Only columns that exist are filled, so rows are identical to the pre-B1-06r shape before
+ * that migration; callers' values still override every default.
+ */
+async function issuanceDefaults(platform: string): Promise<Record<string, unknown>> {
+  const present = new Set((await columns('union_auth_sessions')).map((c) => c.name));
+  const out: Record<string, unknown> = {};
+  if (present.has('client')) out['client'] = 'ios';
+  if (platform === 'taobao' && present.has('auth_methods')) out['auth_methods'] = ['web_code'];
+  if (platform === 'taobao' && present.has('auth_app_refs')) {
+    out['auth_app_refs'] = JSON.stringify({ web_code: 'fixture-app-ref' });
+  }
+  return out;
 }
 
 export async function uniqueKeys(table: string): Promise<string[][]> {
