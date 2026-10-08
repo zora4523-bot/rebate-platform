@@ -15,8 +15,7 @@ type: guard-change
 # ⑤ SELECT … INTO / CTAS：按顶层语句类型判断（列别名 "update"、FOR UPDATE 不影响）；CTAS 在 AS 之前可有 ON COMMIT、WITH (…)、TABLESPACE 等子句。
 # ⑥ db/migrations 里除 `NNNN_kebab-name.sql` 与 README.md 外的文件（含 .cts / .mts 等任何 node-pg-migrate 会执行的脚本）一律拒。
 # ⑦ 已合并迁移只增不改：`db/migrations/**` 登记为保护路径第一类（只增），guard-git 的 test-guard 对修改、删除、改名已有迁移报错（与 test/spec 同规则，需批准标签）；protected-paths.json、工作流内嵌副本、tools/guard/lib/protected.test.ts、AGENTS.md §5 四处同步（同 CT-06a 登记 .squawk.toml 的做法）。
-# 将来 pg-boss 升级迁移若照抄 0002 生成器结尾（lock_timeout 恢复 DEFAULT、DO 块删分区）会被门禁拒：本任务在 db/AGENTS.md 第 11 条写明生成器输出须按门禁改写，不改生成器。
-# 碰 tools/**、protected-paths（第二、三类）、.github、AGENTS.md，合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
+# 将来 pg-boss 升级迁移若照抄 0002 生成器结尾（lock_timeout 恢复 DEFAULT、DO 块删分区）会被门禁拒：本任务在 db/AGENTS.md 第 11 条写明生成器输出须按门禁改写，不改生成器。 碰 tools/**、protected-paths（第二、三类）、.github、AGENTS.md，合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
 refs: []
 refs_hash: {}
 deps: [CT-06c]
@@ -28,6 +27,7 @@ paths:
   - '.github/workflows/protected-paths.yml'
   - 'AGENTS.md'
   - 'db/AGENTS.md'
+  - 'tools/agent/validate-output.test.ts'
 test_paths:
   - 'test/spec/db/lint-migrations/**'
 impl: claude
