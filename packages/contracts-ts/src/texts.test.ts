@@ -218,4 +218,7 @@ it('covers the keys of contract ledger rows b1-40 … b5-28', () => {
   // Not in the user-side dictionary (ledger notes).
   expect(texts['pending_confirm.expired']).toBeUndefined();
   expect(texts['error.20001.invalid_device_hash']).toBeUndefined();
+  for (const reason of ['icon_format_invalid', 'icon_too_large', 'icon_svg_unconvertible']) {
+    expect(texts[`error.20001.${reason}`], reason).toBeUndefined();
+  }
 });

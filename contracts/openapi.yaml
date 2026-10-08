@@ -46,7 +46,10 @@ info:
     They are not app requests: no X-App-Id / X-Platform / X-Device-Id, no request signature, no
     version gate, no session scopes; lists page with `page` and `page_size` ≤ 200. Common codes
     of every admin operation: 10403 (data.reason=admin_ip_not_allowed), 20001, 42901, 50001;
-    with admin or super also 10001 and 10403 (data.reason=admin_permission_denied).
+    with admin or super also 10001 and 10403 (data.reason=admin_permission_denied). An operation
+    guarded by a permission point (enum admin_permission) names it in its description
+    (「Permission point `<key>`」); console writes use CAS where state is replaced (20902 with
+    data.resource) and carry no Idempotency-Key (04 §6.6).
 servers:
   - url: http://127.0.0.1:3100
     description: Local `api` entry (API_HOST / API_PORT defaults).
@@ -71,6 +74,8 @@ tags:
     description: Admin console login (password, first password change, authenticator binding and code), step-up in two tiers and the signed-in account's permission points (04 §6.6 auth, BR-ID-34).
   - name: admin-accounts
     description: Admin accounts, read-only for now; super admin only (04 §6.6 admins, §11).
+  - name: admin-content
+    description: Admin content operations; platform mark replacement images (permission point content.platform_icon, BR-TEXT-24).
   - name: agent
     description: Agent sessions, history, the reply stream, stop, feedback and report (04 §6.5, §8).
 paths:
@@ -4831,6 +4836,667 @@ paths:
                   $ref: '#/components/examples/AdminIpNotAllowed'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/platform-icons:
+    get:
+      operationId: adminListPlatformIcons
+      tags:
+        - admin-content
+      summary: Platform marks and their published replacement images
+      description: |
+        Permission point `content.platform_icon` (04 §11.2; step-up 「–」). One row per platform
+        mark key (enum platform_icon_key, the same keys as /v1/config `platform_icons`), always
+        all of them in enum order, no paging: the published version (`current_version` null = the
+        client shows the image bundled in the package), its details, the newest saved version and
+        who changed the mark last and when (BR-TEXT-24 细则「发布与回滚」), and the mark's
+        `revision`, the CAS value of publish and restore-builtin. The console previews
+        `current.url` and every version url only as an image (`<img>`), never inlined into the
+        page.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: Every platform mark with its published version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformIconListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - key: taobao
+                      current_version: null
+                      revision: 0
+                      current: null
+                      latest_version: null
+                      updated_by: null
+                      updated_at: null
+                    - key: tmall
+                      current_version: null
+                      revision: 0
+                      current: null
+                      latest_version: null
+                      updated_by: null
+                      updated_at: null
+                    - key: jd
+                      current_version: null
+                      revision: 0
+                      current: null
+                      latest_version: null
+                      updated_by: null
+                      updated_at: null
+                    - key: pdd
+                      current_version: null
+                      revision: 0
+                      current: null
+                      latest_version: null
+                      updated_by: null
+                      updated_at: null
+                    - key: wechat
+                      current_version: null
+                      revision: 0
+                      current: null
+                      latest_version: null
+                      updated_by: null
+                      updated_at: null
+                    - key: wechat_pay
+                      current_version: null
+                      revision: 0
+                      current: null
+                      latest_version: null
+                      updated_by: null
+                      updated_at: null
+                    - key: alipay
+                      current_version: 2
+                      revision: 3
+                      current:
+                        version: 2
+                        url: https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg
+                        sha256: 88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da
+                        format: svg
+                        bytes: 4096
+                        sanitized: true
+                        source_url: https://example.test/brand/alipay
+                        downloaded_on: '2026-10-08'
+                        publishable: true
+                        ever_published: true
+                        revision: 1
+                        created_by: ops-yi
+                        created_at: '2026-10-08T15:00:00+08:00'
+                      latest_version: 3
+                      updated_by: ops-yi
+                      updated_at: '2026-10-09T10:00:00+08:00'
+                    - key: wecom
+                      current_version: null
+                      revision: 0
+                      current: null
+                      latest_version: 1
+                      updated_by: ops-yi
+                      updated_at: '2026-10-09T09:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/platform-icons/{key}/versions:
+    get:
+      operationId: adminListPlatformIconVersions
+      tags:
+        - admin-content
+      summary: Version history of one platform mark
+      description: |
+        Permission point `content.platform_icon`. Every saved version of the mark, newest first,
+        page by page (`page`, `page_size` ≤ 200), drafts included; a version is `publishable` only
+        with both the source page address and the download date registered (BR-TEXT-24 细则
+        「必填登记」). Any version can be published again, which rolls the mark back to it (POST
+        /admin/v1/platform-icons/{key}/publish). A key outside enum platform_icon_key is 20001 with
+        `data.fields=[key]`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PlatformIconKeyPath'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of versions, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformIconVersionPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - version: 3
+                      url: https://media.example.test/3f0c1b5e2d4a69788f1e2d3c4b5a69788f1e2d3c4b5a69788f1e2d3c4b5a6978.png
+                      sha256: 3f0c1b5e2d4a69788f1e2d3c4b5a69788f1e2d3c4b5a69788f1e2d3c4b5a6978
+                      format: png
+                      bytes: 51200
+                      sanitized: false
+                      source_url: null
+                      downloaded_on: null
+                      publishable: false
+                      ever_published: false
+                      revision: 1
+                      created_by: ops-yi
+                      created_at: '2026-10-09T10:00:00+08:00'
+                    - version: 2
+                      url: https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg
+                      sha256: 88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da
+                      format: svg
+                      bytes: 4096
+                      sanitized: true
+                      source_url: https://example.test/brand/alipay
+                      downloaded_on: '2026-10-08'
+                      publishable: true
+                      ever_published: true
+                      revision: 1
+                      created_by: ops-yi
+                      created_at: '2026-10-08T15:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 3
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownKey:
+                  $ref: '#/components/examples/AdminPlatformIconUnknownKey'
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: adminCreatePlatformIconVersion
+      tags:
+        - admin-content
+      summary: Save an upload as a new version of one platform mark
+      description: |
+        Permission point `content.platform_icon`. Saves the cleaned file of an upload (POST
+        /admin/v1/platform-icons/{key}/uploads) as the next version of the mark (versions are
+        counted per mark from 1). Nothing is published: the version takes effect only through
+        POST /admin/v1/platform-icons/{key}/publish. When the upload has `sanitized=true` the
+        operator must have looked at the cleaned preview and `sanitized_confirmed` must be true,
+        otherwise 20001 with `data.fields=[sanitized_confirmed]` (BR-TEXT-24 细则「已清除不安全内容」).
+        `source_url` (the official brand or asset download page) and `downloaded_on` may be left
+        out: such a version is a draft (`publishable=false`) until both are registered with PATCH
+        /admin/v1/platform-icons/{key}/versions/{version} (BR-TEXT-24 细则「必填登记」). Saving
+        is naturally idempotent: an upload_id this mark has already saved as a version (a retry
+        after a lost response) returns 200 with that existing version as it is now, creates no
+        second version and applies nothing else from the retried body. An upload_id that does not
+        exist, has expired or belongs to another key is 20001 with `data.fields=[upload_id]`. No
+        Idempotency-Key: admin writes rely on these checks and on CAS where state is replaced
+        (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PlatformIconKeyPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPlatformIconVersionCreateRequest'
+            examples:
+              draft:
+                summary: Cleaned SVG confirmed, no source registered yet (saved as a draft)
+                value:
+                  upload_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                  sanitized_confirmed: true
+              complete:
+                summary: PNG with source page and download date (publishable)
+                value:
+                  upload_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                  source_url: https://example.test/brand/wecom
+                  downloaded_on: '2026-10-09'
+      responses:
+        '200':
+          description: The new version, or the version this upload_id was already saved as.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformIconVersionResponse'
+              examples:
+                draft:
+                  summary: Saved as a draft (source not registered)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      version: 3
+                      url: https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg
+                      sha256: 88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da
+                      format: svg
+                      bytes: 4096
+                      sanitized: true
+                      source_url: null
+                      downloaded_on: null
+                      publishable: false
+                      ever_published: false
+                      revision: 1
+                      created_by: ops-yi
+                      created_at: '2026-10-09T10:00:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not saved (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                uploadInvalid:
+                  $ref: '#/components/examples/AdminPlatformIconUploadInvalid'
+                sanitizedNotConfirmed:
+                  $ref: '#/components/examples/AdminPlatformIconSanitizedUnconfirmed'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/platform-icons/{key}/uploads:
+    post:
+      operationId: adminUploadPlatformIcon
+      tags:
+        - admin-content
+      summary: Upload a platform mark image and get its cleaned preview
+      description: |
+        Permission point `content.platform_icon`. `multipart/form-data` with one part `file`: an
+        SVG, or a PNG with a transparent background and sides of at least 512 px, at most
+        `content.platform_icon.max_bytes` bytes (default 204800; BR-TEXT-24 细则「上传与发布」).
+        The server first converts an SVG faithfully (in-document `use` expanded, simple style
+        declarations rewritten as presentation attributes), then cleans it against the whitelist;
+        the result is stored in the OSS media bucket under its content SHA-256 and returned as
+        `url` for an `<img>` preview on light and dark backgrounds at 16, 24 and 32 px. Nothing is
+        saved as a version yet (POST /admin/v1/platform-icons/{key}/versions takes the
+        `upload_id` until `expires_at`). `sanitized=true` means the cleaned file differs from the
+        original: the console shows 「已清除不安全内容」 and the operator confirms the preview
+        before saving. Rejections are 20001 with `data.fields=[file]` and an admin-only
+        `data.reason` (shown next to the field with admin text, not in the user dictionary):
+        `icon_format_invalid` (not SVG or PNG, cannot be parsed, PNG side below 512 px or not
+        transparent), `icon_too_large` (above the configured limit) and `icon_svg_unconvertible`
+        (style sheet with complex selectors, `@` rules or declarations outside the list, a
+        `url(...)` outside the document, a reference cycle or external reference, or a conversion
+        limit hit: more than 5000 elements, nesting deeper than 8, output above four times the
+        limit, longer than 2 seconds; the console says 「请换一份不含样式表或外部引用的官方 SVG，
+        或改传 PNG」). A request body above the global limit stays 413 with `data.fields=[body]`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PlatformIconKeyPath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminPlatformIconUploadRequest'
+      responses:
+        '200':
+          description: The cleaned file, ready to be previewed and saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformIconUploadResponse'
+              examples:
+                sanitized:
+                  summary: SVG whose cleaned file differs from the original (operator must confirm)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      upload_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                      url: https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg
+                      sha256: 88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da
+                      format: svg
+                      bytes: 4096
+                      sanitized: true
+                      expires_at: '2026-10-10T10:00:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '413':
+          description: Request body above the global limit (20001 with data.fields=[body]).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                code: 20001
+                msg: 参数错误
+                data:
+                  fields:
+                    - body
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Rejected (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                formatInvalid:
+                  $ref: '#/components/examples/AdminPlatformIconFormatInvalid'
+                tooLarge:
+                  $ref: '#/components/examples/AdminPlatformIconTooLarge'
+                svgUnconvertible:
+                  $ref: '#/components/examples/AdminPlatformIconSvgUnconvertible'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/platform-icons/{key}/versions/{version}:
+    patch:
+      operationId: adminUpdatePlatformIconVersion
+      tags:
+        - admin-content
+      summary: Register the source of a platform mark version
+      description: |
+        Permission point `content.platform_icon`. Fills in or corrects `source_url` and
+        `downloaded_on` of a version that has never been published (BR-TEXT-24 细则「必填登记」);
+        a field left out is unchanged, at least one is required. With both registered the version
+        becomes `publishable`. CAS: `expected_revision` is the version's `revision` the console
+        showed; every registration change adds 1 to it, and a mismatch (someone else registered in
+        between) → 20902 with `data.resource=platform_icon`, refresh and retry (04 §6.6). A
+        version that has ever been published keeps its registration as published and is 20001
+        with `data.fields=[version]`, like an unknown version.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PlatformIconKeyPath'
+        - $ref: '#/components/parameters/PlatformIconVersionPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPlatformIconSourceRequest'
+            example:
+              expected_revision: 1
+              source_url: https://example.test/brand/alipay
+              downloaded_on: '2026-10-08'
+      responses:
+        '200':
+          description: The version with its registration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformIconVersionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  version: 3
+                  url: https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg
+                  sha256: 88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da
+                  format: svg
+                  bytes: 4096
+                  sanitized: true
+                  source_url: https://example.test/brand/alipay
+                  downloaded_on: '2026-10-08'
+                  publishable: true
+                  ever_published: false
+                  revision: 2
+                  created_by: ops-yi
+                  created_at: '2026-10-09T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                versionNotEditable:
+                  $ref: '#/components/examples/AdminPlatformIconVersionInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminPlatformIconConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/platform-icons/{key}/publish:
+    post:
+      operationId: adminPublishPlatformIcon
+      tags:
+        - admin-content
+      summary: Publish a version of a platform mark (publish or roll back)
+      description: |
+        Permission point `content.platform_icon`. Makes `version` the published image of the mark
+        at once, with no gradual rollout (BR-TEXT-24 细则「发布与回滚」); the next GET /v1/config
+        lists it in `platform_icons` with the version's cleaned file url, its SHA-256 and the
+        version number (ConfigPlatformIcon). Publishing a version older than the current one is a
+        rollback; both are written to the audit log (action publish or rollback). CAS:
+        `expected_revision` is the mark's `revision` the console showed. The revision only ever
+        grows (every publish, rollback and restore-builtin adds 1), so a stale request, including
+        a retry of one that already took effect, never matches again: a mismatch → 20902 with
+        `data.resource=platform_icon`, refresh and retry (04 §6.6). Publishing the version that is
+        already current with a matching revision succeeds without change, revision bump or audit.
+        A version missing source registrations is 20001 with `data.fields` listing every missing
+        one (`[source_url]`, `[downloaded_on]`, or `[source_url, downloaded_on]` when both are
+        missing); an unknown version is 20001 with `data.fields=[version]`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PlatformIconKeyPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPlatformIconPublishRequest'
+            examples:
+              publish:
+                summary: First replacement image over the built-in one
+                value:
+                  version: 1
+                  expected_revision: 0
+              rollback:
+                summary: Back from version 3 to version 2
+                value:
+                  version: 2
+                  expected_revision: 2
+      responses:
+        '200':
+          description: The mark with its new published version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformIconResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  key: alipay
+                  current_version: 2
+                  revision: 3
+                  current:
+                    version: 2
+                    url: https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg
+                    sha256: 88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da
+                    format: svg
+                    bytes: 4096
+                    sanitized: true
+                    source_url: https://example.test/brand/alipay
+                    downloaded_on: '2026-10-08'
+                    publishable: true
+                    ever_published: true
+                    revision: 1
+                    created_by: ops-yi
+                    created_at: '2026-10-08T15:00:00+08:00'
+                  latest_version: 2
+                  updated_by: ops-yi
+                  updated_at: '2026-10-09T10:05:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not published (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                sourceMissing:
+                  $ref: '#/components/examples/AdminPlatformIconSourceMissing'
+                unknownVersion:
+                  $ref: '#/components/examples/AdminPlatformIconVersionInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminPlatformIconConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/platform-icons/{key}/restore-builtin:
+    post:
+      operationId: adminRestoreBuiltinPlatformIcon
+      tags:
+        - admin-content
+      summary: Restore the built-in image of a platform mark
+      description: |
+        Permission point `content.platform_icon`. 「恢复内置」 (BR-TEXT-24 细则「发布与回滚」): the
+        mark has no published version any more, the next GET /v1/config leaves its key out of
+        `platform_icons` and clients show the bundled image; saved versions are kept and can be
+        published again. Written to the audit log (action restore_builtin). CAS as in publish:
+        `expected_revision` is the mark's `revision` the console showed, the restore adds 1 to it,
+        and a mismatch → 20902 with `data.resource=platform_icon`. Restoring a mark that already
+        shows the built-in image (with a matching revision) succeeds without change, revision
+        bump or audit.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PlatformIconKeyPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPlatformIconRestoreRequest'
+            example:
+              expected_revision: 3
+      responses:
+        '200':
+          description: The mark, now on its built-in image.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlatformIconResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  key: alipay
+                  current_version: null
+                  revision: 4
+                  current: null
+                  latest_version: 3
+                  updated_by: ops-yi
+                  updated_at: '2026-10-09T11:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not restored (codes in contracts/error-codes.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                conflict:
+                  $ref: '#/components/examples/AdminPlatformIconConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/agent/sessions:
     post:
       operationId: createAgentSession
@@ -5343,6 +6009,22 @@ components:
       description: Id of an admin account; unknown → 20001 with data.fields=[admin_id].
       schema:
         $ref: '#/components/schemas/Id'
+    PlatformIconKeyPath:
+      name: key
+      in: path
+      required: true
+      description: Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key].
+      schema:
+        $ref: '#/components/schemas/PlatformIconKey'
+    PlatformIconVersionPath:
+      name: version
+      in: path
+      required: true
+      description: Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version].
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
     AgentSessionId:
       name: id
       in: path
@@ -5699,6 +6381,90 @@ components:
         data:
           fields:
             - admin_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconUnknownKey:
+      summary: 20001 platform mark key outside enum platform_icon_key
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - key
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconFormatInvalid:
+      summary: 20001 not SVG or PNG, unparsable, PNG under 512 px or not transparent
+      value:
+        code: 20001
+        msg: 请上传 SVG，或边长不小于 512px 的透明底 PNG
+        data:
+          fields:
+            - file
+          reason: icon_format_invalid
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconTooLarge:
+      summary: 20001 file above content.platform_icon.max_bytes
+      value:
+        code: 20001
+        msg: 文件超过大小上限
+        data:
+          fields:
+            - file
+          reason: icon_too_large
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconSvgUnconvertible:
+      summary: 20001 SVG with a style sheet or external reference that cannot be converted faithfully
+      value:
+        code: 20001
+        msg: 请换一份不含样式表或外部引用的官方 SVG，或改传 PNG
+        data:
+          fields:
+            - file
+          reason: icon_svg_unconvertible
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconUploadInvalid:
+      summary: 20001 upload_id unknown, expired or for another key
+      value:
+        code: 20001
+        msg: 上传已失效，请重新上传
+        data:
+          fields:
+            - upload_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconSanitizedUnconfirmed:
+      summary: 20001 cleaned file differs from the original and the preview was not confirmed
+      value:
+        code: 20001
+        msg: 已清除不安全内容，请确认预览后再保存
+        data:
+          fields:
+            - sanitized_confirmed
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconVersionInvalid:
+      summary: 20001 unknown version, or (registration) a version already published
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - version
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconSourceMissing:
+      summary: 20001 draft version without its source registrations (every missing one listed)
+      value:
+        code: 20001
+        msg: 请先登记来源页地址与下载日期
+        data:
+          fields:
+            - source_url
+            - downloaded_on
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPlatformIconConflict:
+      summary: 20902 the mark or the version was changed by someone else (revision moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: platform_icon
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     SearchProductsOk:
       summary: One page of taobao results
@@ -9612,8 +10378,9 @@ components:
         the package, and the object may be empty. Native clients download the image and check its
         SHA-256 before use, falling back to the bundled image on a mismatch; H5 loads it with
         `<img src=url>` and falls back to the bundled image on error. The accessible name is always
-        the platform's Chinese name and never follows the image. New platforms add a key the same
-        way.
+        the platform's Chinese name and never follows the image. The keys are enum
+        platform_icon_key (PlatformIconKey, also the {key} of /admin/v1/platform-icons); new
+        platforms add a key to both the same way.
       additionalProperties: false
       properties:
         taobao:
@@ -11024,6 +11791,399 @@ components:
           $ref: '#/components/schemas/AdminAccountPage'
         trace_id:
           $ref: '#/components/schemas/TraceId'
+    PlatformIconKey:
+      type: string
+      description: |
+        Platform mark key (enum platform_icon_key, BR-TEXT-24 细则标识键表); the keys of /v1/config
+        `platform_icons` (ConfigPlatformIcons) are the same list.
+      enum:
+        - taobao
+        - tmall
+        - jd
+        - pdd
+        - wechat
+        - wechat_pay
+        - alipay
+        - wecom
+    AdminPlatformIconFormat:
+      type: string
+      description: Format of a cleaned platform mark file.
+      enum:
+        - svg
+        - png
+    AdminPlatformIconSha256:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+      description: Lowercase hex SHA-256 of the cleaned file, the same digest as its file name.
+    AdminPlatformIconUrl:
+      type: string
+      format: uri
+      pattern: '^https://'
+      maxLength: 2048
+      description: |
+        Cleaned file on the media domain (set by deployment), named by its SHA-256; shown only as
+        an image (`<img>`), never inlined into the page.
+    AdminPlatformIconSourceUrl:
+      type: string
+      format: uri
+      pattern: '^https?://'
+      maxLength: 2048
+      description: Official brand or asset download page the file was taken from (BR-TEXT-24 细则「必填登记」).
+    AdminPlatformIconVersion:
+      type: object
+      description: One saved version of a platform mark (BR-TEXT-24).
+      additionalProperties: false
+      required:
+        - version
+        - url
+        - sha256
+        - format
+        - bytes
+        - sanitized
+        - source_url
+        - downloaded_on
+        - publishable
+        - ever_published
+        - revision
+        - created_by
+        - created_at
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Counted per mark from 1; the same number /v1/config sends once published.
+        url:
+          $ref: '#/components/schemas/AdminPlatformIconUrl'
+        sha256:
+          $ref: '#/components/schemas/AdminPlatformIconSha256'
+        format:
+          $ref: '#/components/schemas/AdminPlatformIconFormat'
+        bytes:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Size of the cleaned file.
+        sanitized:
+          type: boolean
+          description: true = the cleaned file differs from the uploaded original.
+        source_url:
+          anyOf:
+            - $ref: '#/components/schemas/AdminPlatformIconSourceUrl'
+            - type: 'null'
+        downloaded_on:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: Date the file was downloaded from the source page; null = not registered.
+        publishable:
+          type: boolean
+          description: true = both source_url and downloaded_on are registered; false = draft.
+        ever_published:
+          type: boolean
+          description: true = published at least once; its registration can no longer be changed.
+        revision:
+          type: integer
+          format: int32
+          minimum: 1
+          description: |
+            1 when saved, plus 1 on every registration change (PATCH .../versions/{version}); the
+            CAS value of that PATCH.
+        created_by:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Username of the admin who saved the version.
+        created_at:
+          type: string
+          format: date-time
+    AdminPlatformIcon:
+      type: object
+      description: A platform mark and its published version (null = built-in image).
+      additionalProperties: false
+      required:
+        - key
+        - current_version
+        - revision
+        - current
+        - latest_version
+        - updated_by
+        - updated_at
+      properties:
+        key:
+          $ref: '#/components/schemas/PlatformIconKey'
+        current_version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Published version; null = the client shows the bundled image.
+        revision:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |
+            0 until the first publish; plus 1 on every publish, rollback and restore-builtin, never
+            going back (saving or registering a version does not change it). The CAS value of
+            publish and restore-builtin, so a retried old request cannot undo a later change.
+        current:
+          anyOf:
+            - $ref: '#/components/schemas/AdminPlatformIconVersion'
+            - type: 'null'
+        latest_version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Newest saved version, drafts included; null = nothing saved yet.
+        updated_by:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Username of the admin who last saved, published, rolled back or restored; null = never changed.
+        updated_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    AdminPlatformIconList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          description: Every key of enum platform_icon_key once, in enum order.
+          items:
+            $ref: '#/components/schemas/AdminPlatformIcon'
+    AdminPlatformIconListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPlatformIconList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPlatformIconResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPlatformIcon'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPlatformIconVersionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPlatformIconVersion'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPlatformIconVersionPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Newest version first.
+          items:
+            $ref: '#/components/schemas/AdminPlatformIconVersion'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminPlatformIconVersionPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPlatformIconVersionPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPlatformIconUploadRequest:
+      type: object
+      description: multipart/form-data body of a platform mark upload; one part `file`.
+      additionalProperties: false
+      required:
+        - file
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          description: The SVG or PNG file as uploaded (BR-TEXT-24 细则「上传与发布」).
+    AdminPlatformIconUpload:
+      type: object
+      description: |
+        The cleaned file of an upload, not yet a version. Saved with POST
+        /admin/v1/platform-icons/{key}/versions until `expires_at`.
+      additionalProperties: false
+      required:
+        - upload_id
+        - url
+        - sha256
+        - format
+        - bytes
+        - sanitized
+        - expires_at
+      properties:
+        upload_id:
+          $ref: '#/components/schemas/Id'
+        url:
+          $ref: '#/components/schemas/AdminPlatformIconUrl'
+        sha256:
+          $ref: '#/components/schemas/AdminPlatformIconSha256'
+        format:
+          $ref: '#/components/schemas/AdminPlatformIconFormat'
+        bytes:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Size of the cleaned file.
+        sanitized:
+          type: boolean
+          description: |
+            true = the cleaned file differs from the original: the console shows 「已清除不安全内容」
+            and saving needs sanitized_confirmed=true.
+        expires_at:
+          type: string
+          format: date-time
+    AdminPlatformIconUploadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPlatformIconUpload'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPlatformIconVersionCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - upload_id
+      properties:
+        upload_id:
+          $ref: '#/components/schemas/Id'
+        sanitized_confirmed:
+          type: boolean
+          description: |
+            The operator confirmed the cleaned preview; absent means false. Must be true when the
+            upload has sanitized=true.
+        source_url:
+          $ref: '#/components/schemas/AdminPlatformIconSourceUrl'
+        downloaded_on:
+          type: string
+          format: date
+    AdminPlatformIconSourceRequest:
+      type: object
+      description: The version's revision as shown plus at least one of the two registrations.
+      additionalProperties: false
+      required:
+        - expected_revision
+      minProperties: 2
+      properties:
+        expected_revision:
+          type: integer
+          format: int32
+          minimum: 1
+          description: The version's `revision` as the console showed it; a mismatch is 20902.
+        source_url:
+          $ref: '#/components/schemas/AdminPlatformIconSourceUrl'
+        downloaded_on:
+          type: string
+          format: date
+    AdminPlatformIconPublishRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - expected_revision
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Version to publish; older than the current one = rollback.
+        expected_revision:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The mark's `revision` as the console showed it; a mismatch is 20902.
+    AdminPlatformIconRestoreRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_revision
+      properties:
+        expected_revision:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The mark's `revision` as the console showed it; a mismatch is 20902.
     AgentSession:
       type: object
       description: An Agent conversation (agent_sessions; owner and expiry per BR-AI-20).

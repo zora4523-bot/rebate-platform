@@ -682,6 +682,76 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListPlatformIcons",
+    "method": "GET",
+    "path": "/admin/v1/platform-icons",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListPlatformIconVersions",
+    "method": "GET",
+    "path": "/admin/v1/platform-icons/:key/versions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreatePlatformIconVersion",
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/versions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUploadPlatformIcon",
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/uploads",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdatePlatformIconVersion",
+    "method": "PATCH",
+    "path": "/admin/v1/platform-icons/:key/versions/:version",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminPublishPlatformIcon",
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/publish",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRestoreBuiltinPlatformIcon",
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/restore-builtin",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "createAgentSession",
     "method": "POST",
     "path": "/v1/agent/sessions",

@@ -58,6 +58,7 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminStepUpTier: 'admin_step_up_tier',
   AdminLoginStep: 'admin_login_step',
   AdminAccountStatus: 'admin_account_status',
+  PlatformIconKey: 'platform_icon_key',
 };
 
 /**
@@ -380,6 +381,21 @@ function checkGateAndScopes(
   }
 }
 
+/**
+ * /v1/config platform_icons (ConfigPlatformIcons) lists exactly the keys of enum
+ * platform_icon_key, the same list as the {key} of /admin/v1/platform-icons (BR-TEXT-24).
+ */
+function checkPlatformIconKeys(schemas: Obj, keys: readonly string[], problems: string[]): void {
+  const properties = at(schemas, 'ConfigPlatformIcons/properties');
+  const actual = isObj(properties) ? Object.keys(properties) : [];
+  if (keys.length === 0 || !sameSet(actual, keys)) {
+    problems.push(
+      `components/schemas/ConfigPlatformIcons: keys differ from contracts/enums platform_icon_key ` +
+        `(${JSON.stringify(actual)} vs ${JSON.stringify(keys)})`,
+    );
+  }
+}
+
 /** Admin console operations (04 §6.6); x-auth takes enum admin_auth_level there. */
 export const ADMIN_PREFIX = '/admin/v1/';
 
@@ -598,5 +614,6 @@ export function checkConformance(
   }
   checkAmounts(schemas, problems);
   checkHelpLinkTarget(schemas, problems);
+  checkPlatformIconKeys(schemas, enumValues.get('platform_icon_key') ?? [], problems);
   return problems;
 }
