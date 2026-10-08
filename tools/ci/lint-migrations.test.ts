@@ -715,3 +715,38 @@ it('CT-06d: a set_config commented out inside a DO block does not count as switc
     ),
   ).toEqual([]);
 });
+
+it('CT-06d: a constraint recreated as NOT VALID, or with a literal of different case, is a different definition', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "ALTER TABLE app.payout_accounts ADD CONSTRAINT payout_accounts_method_check CHECK (payout_method IN ('alipay', 'bank_card'));",
+    ],
+    approved: false,
+  };
+  const drop = 'ALTER TABLE app.payout_accounts DROP CONSTRAINT payout_accounts_method_check;\n';
+  const add =
+    "ALTER TABLE app.payout_accounts ADD CONSTRAINT payout_accounts_method_check CHECK (payout_method IN ('alipay', 'bank_card'))";
+  expect(checkMigration('x.sql', `${drop}${add};`, ctx)).toEqual([]);
+  for (const changed of [`${add} NOT VALID;`, `${add.replace("'alipay'", "'ALIPAY'")};`]) {
+    expect(
+      checkMigration('x.sql', drop + changed, ctx).map((p) => p.message),
+      changed,
+    ).toEqual([expect.stringContaining('recreated with a different definition')]);
+  }
+});
+
+it('CT-06d: CTAS running set_config still switches a timeout off; a DO body with ALTER COLUMN"x" TYPE is destructive', () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}CREATE TEMP TABLE s AS SELECT set_config('lock_timeout', '0', true) AS v;\n`,
+    ),
+  ).toEqual([expect.stringContaining('require-lock-timeout')]);
+  expect(
+    checkMigration(
+      'x.sql',
+      'DO $$ BEGIN ALTER TABLE app.t ALTER COLUMN"pay_amount_fen" TYPE numeric; END $$;',
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('destructive DDL inside a DO block')]);
+});

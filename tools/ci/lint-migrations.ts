@@ -292,7 +292,13 @@ export function checkTimeouts(file: string, sql: string): string[] {
     }
     // set_config(…) in a top-level statement switches a timeout off just as well. DO blocks are
     // scanned below with their own comments removed; function bodies do not run at migration time.
-    if (/^\s*(?:DO|CREATE)\b/i.test(text)) continue;
+    if (
+      /^\s*DO\b/i.test(text) ||
+      /^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE|(?:CONSTRAINT\s+)?TRIGGER)\b/i.test(
+        text,
+      )
+    )
+      continue;
     for (const m of value.matchAll(TIMEOUT_SET_CONFIG)) {
       if (timeoutMilliseconds(m[2] ?? '') > 0) continue;
       if ((m[1] ?? '').toLowerCase() === 'lock_timeout') lockLost = true;
@@ -553,7 +559,7 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
       body
         .split(';')
         .some((part) =>
-          /\bALTER\s+TABLE\b[\s\S]*\bALTER\s+(?:COLUMN\s+)?(?!COLUMN\b)(?:"[^"]+"|%[IsL]|\w+)\s+(?:SET\s+DATA\s+)?TYPE\s+(?!SET\b|DROP\b)["\w%]/i.test(
+          /\bALTER\s+TABLE\b[\s\S]*\bALTER\s+(?:COLUMN(?:\s+|(?=")))?(?!COLUMN\b)(?:"[^"]+"\s*|(?:%[IsL]|\w+)\s+)(?:SET\s+DATA\s+)?TYPE(?:\s+|(?="))(?!SET\b|DROP\b)["\w%]/i.test(
             part,
           ),
         );
@@ -702,17 +708,20 @@ export function fundsTriggerFunctions(
  * in a fixed order (pg_dump writes `DELETE OR UPDATE` for a hand-written `UPDATE OR DELETE`).
  */
 export function normaliseDefinition(text: string): string {
+  // Case folded outside string literals only ('BLOCKED' and 'blocked' differ); NEW. and OLD. in
+  // trigger WHEN conditions are row references, not schema qualifiers.
   let t = text
-    .toLowerCase()
+    .replace(/('(?:[^']|'')*')|([^']+)/g, (_m, q: string | undefined, o: string | undefined) =>
+      q !== undefined ? q : (o ?? '').toLowerCase(),
+    )
     .replace(/"/g, ' ')
-    .replace(/\b[a-z_][a-z0-9_]*\s*\.\s*(?=[a-z_])/g, '')
+    .replace(/\b(?!(?:new|old)\s*\.)[a-z_][a-z0-9_]*\s*\.\s*(?=[a-z_])/g, '')
     .replace(/\bor\s+replace\b/g, ' ')
     .replace(/\bif\s+(?:not\s+)?exists\b/g, ' ')
     .replace(/\bconcurrently\b/g, ' ')
     .replace(/\bonly\b/g, ' ')
     .replace(/\busing\s+btree\b/g, ' ')
     .replace(/\bexecute\s+procedure\b/g, 'execute function')
-    .replace(/\bnot\s+valid\b/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\s*([(),=])\s*/g, '$1')
     .replace(/;\s*$/, '')
@@ -829,6 +838,15 @@ function fundsObjectProblems(
     for (const key of ['triggers', 'constraints', 'indexes'] as const) {
       for (const [k, v] of fromSchema[key])
         if (!fromMigrations[key].has(k)) fromMigrations[key].set(k, v);
+    }
+    // With the migration history at hand (the CLI), an object no earlier migration defines is new in
+    // this file: the regenerated schema already shows it, so it is not compared.
+    if (context.migrationsSql.length > 0) {
+      const here = guardDefinitions([sql]);
+      const earlier = guardDefinitions(context.migrationsSql);
+      for (const key of ['triggers', 'constraints', 'indexes'] as const) {
+        for (const k of here[key].keys()) if (!earlier[key].has(k)) fromMigrations[key].delete(k);
+      }
     }
     return fromMigrations;
   };
@@ -1057,6 +1075,7 @@ function fundsObjectProblems(
         // Only for the CLI (approval known, regenerated schema in play); pure calls keep CT-06c.
         if (
           context.approved !== undefined &&
+          context.migrationsSql.length > 0 &&
           isReplace &&
           !definedBefore(name) &&
           triggeredHere(name)
