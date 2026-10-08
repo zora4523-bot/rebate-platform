@@ -8,6 +8,7 @@
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
+import { loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
 import type { KeyringConfig } from '../../../../apps/api/src/modules/platform/config/keyring.ts';
 import { openConfiguredFieldCrypto } from '../../../../apps/api/src/modules/platform/config/keyring-startup.ts';
 import type { FieldCrypto } from '../../../../apps/api/src/modules/platform/crypto/index.ts';
@@ -27,6 +28,7 @@ import {
   CURRENT_VERSION,
   OTHER_MASTER_LABEL,
   keyringDoc,
+  localEnv,
   makeDir,
   masterText,
   notUtf8,
@@ -34,6 +36,7 @@ import {
   removeDir,
   secretsOf,
   settle,
+  settleSync,
   startupErrorProblems,
   writeFiles,
   type AppEnvName,
@@ -280,17 +283,64 @@ it('[BR-ID-33][ADR-0001 §2] 主密钥不对或包裹密钥被改时 unwrap_fail
   }
 });
 
-it('[ADR-0001 §2][规划/02 §12.6] 打开时再断言一次：APP_ENV 为 staging 或 prod 用 local 提供者 local_in_cloud，不读任何文件', async () => {
+it('[AC-B1-01zd#11][ADR-0001 §2][规划/02 §12.6] 打开时再断言一次：APP_ENV 为 prod 用 local 提供者 local_in_cloud，不读任何文件', async () => {
   const files = fresh('prod');
   expect(await refusal('prod', local(files), 'local_in_cloud', secretsOf(files))).toEqual([]);
-  expect(await refusal('staging', local(files), 'local_in_cloud', secretsOf(files))).toEqual([]);
   const missing = {
     provider: 'local',
     keyringFile: join(files.dir, 'none.json'),
     masterKeyFile: join(files.dir, 'none.hex'),
   } as const;
   expect(await refusal('prod', missing, 'local_in_cloud', secretsOf(files))).toEqual([]);
-  expect(await refusal('staging', missing, 'local_in_cloud', secretsOf(files))).toEqual([]);
+});
+
+it('[AC-B1-01zd#12][BR-ID-33] staging 用 local 提供者打开合法文件，全部版本、加解密与盲索引可用', async () => {
+  const files = fresh('staging-local');
+  const outcome = await settle(openConfiguredFieldCrypto('staging', local(files)));
+  expect('value' in outcome ? openedProblems(outcome.value) : ['rejected']).toEqual([]);
+  if (!('value' in outcome)) return;
+  const ciphertext = outcome.value.encrypt(SAMPLES.phone, 'users.phone');
+  expect(outcome.value.decrypt(ciphertext, 'users.phone') === SAMPLES.phone).toBe(true);
+});
+
+it('[AC-B1-01zd#13][BR-ID-33] staging 的 loadConfig 结果可直接打开本地密钥环并加解密', async () => {
+  const files = fresh('staging-configured');
+  const config = settleSync(() => loadConfig(localEnv('staging', files)));
+  expect('value' in config, 'staging local config must be accepted').toBe(true);
+  if (!('value' in config)) return;
+  expect(config.value.keyring?.provider).toBe('local');
+  if (config.value.keyring === null) return;
+  const outcome = await settle(
+    openConfiguredFieldCrypto(config.value.appEnv, config.value.keyring),
+  );
+  expect('value' in outcome ? openedProblems(outcome.value) : ['rejected']).toEqual([]);
+  if (!('value' in outcome)) return;
+  const ciphertext = outcome.value.encrypt(SAMPLES.phone, 'users.phone');
+  expect(outcome.value.decrypt(ciphertext, 'users.phone') === SAMPLES.phone).toBe(true);
+});
+
+it('[AC-B1-01zd#14][BR-ID-33] staging 选 local 后文件仍须可读，缺文件按主密钥优先的顺序拒绝', async () => {
+  const files = fresh('staging-missing');
+  expect(
+    await refusal(
+      'staging',
+      {
+        provider: 'local',
+        masterKeyFile: join(files.dir, 'none.hex'),
+        keyringFile: join(files.dir, 'none.json'),
+      },
+      'master_key_unreadable',
+      secretsOf(files),
+    ),
+  ).toEqual([]);
+  expect(
+    await refusal(
+      'staging',
+      { ...local(files), keyringFile: join(files.dir, 'none.json') },
+      'keyring_unreadable',
+      secretsOf(files),
+    ),
+  ).toEqual([]);
 });
 
 it('[ADR-0001 §2] kms 提供者在本任务一律 kms_unavailable，不读文件、不伪造云端调用（各 APP_ENV）', async () => {

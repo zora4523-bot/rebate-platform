@@ -25,12 +25,11 @@
 //      properties the document does not use are ignored, as `openFieldCrypto` ignores them.
 //
 // 3. `openConfiguredFieldCrypto(appEnv, keyring)`, in this order; the first failing step decides:
-//      a. appEnv `staging` or `prod` and provider `local`
-//                                                 → reject `local_in_cloud` (no file is read: a
+//      a. appEnv `prod` and provider `local`      → reject `local_in_cloud` (no file is read: a
 //                                                    hand-built AppConfig that skipped loadConfig
-//                                                    still cannot start the cloud on a local key;
-//                                                    ./keyring.ts §2: staging cannot start until
-//                                                    the KMS provider lands, as expected)
+//                                                    still cannot start prod on a local key).
+//                                                    staging opens the local provider like local /
+//                                                    test (规划仓库 docs/adr/0003, 负责人 2026-10-07)
 //      b. provider `kms`                          → reject `kms_unavailable` (no file is read, no
 //                                                    cloud call is made or faked: the KMS provider
 //                                                    arrives with a later task)
@@ -142,7 +141,7 @@ export type KeyringStartupErrorCode =
 /** The one message of each code (the rule tests keep their own copy of this table). */
 export const KEYRING_STARTUP_MESSAGES: Readonly<Record<KeyringStartupErrorCode, string>> =
   Object.freeze({
-    local_in_cloud: 'the local key provider must not be used when APP_ENV is staging or prod',
+    local_in_cloud: 'the local key provider must not be used when APP_ENV is prod',
     kms_unavailable: 'the KMS key provider is not available',
     master_key_unreadable: 'the master key file cannot be read',
     master_key_invalid: 'the master key file must hold exactly 64 lowercase hex characters',
@@ -175,13 +174,41 @@ export async function openConfiguredFieldCrypto(
   appEnv: AppEnv,
   keyring: KeyringConfig,
 ): Promise<FieldCrypto> {
-  if ((appEnv === 'staging' || appEnv === 'prod') && keyring.provider === 'local') {
+  if (appEnv === 'prod' && keyring.provider === 'local') {
     throw new KeyringStartupError('local_in_cloud');
   }
   if (keyring.provider === 'kms') throw new KeyringStartupError('kms_unavailable');
 
+  const provider = await readLocalKeyProvider(keyring.masterKeyFile);
+  const keyringBytes = await readBoundedFile(
+    keyring.keyringFile,
+    KEYRING_FILE_MAX_BYTES,
+    'keyring_unreadable',
+    'keyring_invalid',
+  );
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(keyringBytes);
+    const document = JSON.parse(text) as WrappedKeyring;
+    return await openFieldCrypto(document, provider);
+  } catch (error) {
+    throw new KeyringStartupError(
+      error instanceof FieldCryptoError && error.code === 'key_provider_failed'
+        ? 'unwrap_failed'
+        : 'keyring_invalid',
+    );
+  } finally {
+    keyringBytes.fill(0);
+  }
+}
+
+/**
+ * Step c of §3: reads the master key file (§1) and builds the LocalKeyProvider with key id
+ * `local`. Rejects with `master_key_unreadable` / `master_key_invalid` only. Also used by
+ * apps/api/scripts/keyring-init.ts, so both accept exactly the same master key files.
+ */
+export async function readLocalKeyProvider(masterKeyFile: string): Promise<LocalKeyProvider> {
   const bytes = await readBoundedFile(
-    keyring.masterKeyFile,
+    masterKeyFile,
     65,
     'master_key_unreadable',
     'master_key_invalid',
@@ -205,26 +232,7 @@ export async function openConfiguredFieldCrypto(
     masterKey.fill(0);
     bytes.fill(0);
   }
-
-  const keyringBytes = await readBoundedFile(
-    keyring.keyringFile,
-    KEYRING_FILE_MAX_BYTES,
-    'keyring_unreadable',
-    'keyring_invalid',
-  );
-  try {
-    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(keyringBytes);
-    const document = JSON.parse(text) as WrappedKeyring;
-    return await openFieldCrypto(document, provider);
-  } catch (error) {
-    throw new KeyringStartupError(
-      error instanceof FieldCryptoError && error.code === 'key_provider_failed'
-        ? 'unwrap_failed'
-        : 'keyring_invalid',
-    );
-  } finally {
-    keyringBytes.fill(0);
-  }
+  return provider;
 }
 
 /** Check and read the same descriptor; nonblocking open also rejects FIFOs without waiting. */
