@@ -4,8 +4,10 @@
 // ordered auth_methods of union.taobao.auth_methods.<client> plus each method's server-side
 // application reference (BR-ID-17 细则「授权方式」). Pinduoduo gets an auth_jump plan instead
 // (BR-ID-22 细则). Refusals: a blocked binding of a user who is not banned → 30153 (checked first,
-// BR-ID-24 ④); the site's own union authorization expired → 30101 / 30102 with
-// data.reason=auth_unavailable (BR-ID-24 ④). Both are judged for the requested platform only.
+// BR-ID-24 ④); the site's own union authorization expired → for Taobao 30101 / 30102 with
+// data.reason=auth_unavailable, for Pinduoduo 50301 with data.reason=maintenance (BR-ID-24 ④,
+// 2026-10-08: the Pinduoduo authorization link depends on that authorization, so it is not the
+// Taobao special case). Both are judged for the requested platform only, after 30153.
 //
 // Cross-module reads (devices, user_risk_state, union_bindings, union_accounts) are read-only
 // selects scoped by app_id, plus union's read-only active-pid port; this module writes only
@@ -86,6 +88,7 @@ const STATUS: Readonly<Record<number, number>> = {
   30102: 422,
   30153: 422,
   50001: 500,
+  50301: 503,
 };
 
 /** Fallback texts only; clients show the dictionary text error.<code> (BR-TEXT-14). */
@@ -96,6 +99,7 @@ const MESSAGES: Readonly<Record<number, string>> = {
   30102: '淘宝暂时无法下单，请稍后再试',
   30153: '该平台返利已被停用，请联系客服',
   50001: '服务端错误',
+  50301: '该平台暂时无法购买，请稍后再试',
 };
 
 function fail(code: number, traceId: string, data?: Record<string, unknown>): HandlerResult {
@@ -357,6 +361,9 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     }
     const accountId = await authAccountId(appId, platform, bound);
     if (!(await siteAuthAvailable(appId, platform, accountId))) {
+      // BR-ID-24 ④ (2026-10-08): Pinduoduo's authorization link depends on the site's
+      // authorization → 50301 maintenance; the 30101 / 30102 special case is Taobao's only.
+      if (platform === 'pdd') return fail(50301, input.traceId, { reason: 'maintenance' });
       return fail(status === 'invalid' ? 30102 : 30101, input.traceId, {
         reason: 'auth_unavailable',
       });

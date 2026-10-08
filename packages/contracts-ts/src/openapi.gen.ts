@@ -452,10 +452,11 @@ export interface paths {
          *     For platform=pdd the response carries auth_jump instead of auth_methods (executed like a
          *     purchase jump plan, h5 steps in the system browser, no link_jump report). No self-service
          *     rebinding or unbinding. A blocked binding of a user who is not banned is 30153 and no
-         *     auth_url is issued (BR-ID-17 细则「授权管理页」). While the site's own union authorization
-         *     is unavailable the request gets the same code as a purchase would (30101 for unbound,
-         *     pending_auth or released, 30102 for invalid) with data.reason=auth_unavailable and no
-         *     auth_url; the client only shows the notice.
+         *     auth_url is issued (BR-ID-17 细则「授权管理页」). For platform=taobao, while the site's own
+         *     union authorization is unavailable the request gets the same code as a purchase would
+         *     (30101 for unbound, pending_auth or released, 30102 for invalid) with
+         *     data.reason=auth_unavailable and no auth_url; the client only shows the notice. Pinduoduo
+         *     answers 50301 with data.reason=maintenance and no auth_url (BR-ID-24 ④).
          */
         get: operations["getUnionAuthUrl"];
         put?: never;

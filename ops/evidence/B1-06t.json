@@ -1,0 +1,87 @@
+{
+  "task": "B1-06t",
+  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+  "spec_commit": "0f3a6ba56ac726c95022ba3bf05542be5bc56771",
+  "red_tests": [
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 absent、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 unbound、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 pending_auth、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 released、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 invalid、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 active、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#3] normal 用户的拼多多 blocked 优先于 expired 返回 30153；解除 blocked 后才返回 50301",
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#4] 两个拼多多账号一有效一过期：只按未释放绑定所用账号判断，拒绝时保留既有 state 且不新增",
+    "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#5] 拼多多站长授权 active 正常签发，随后 expired 拒绝签发且不改动原会话"
+  ],
+  "risk_note": "RV2 (linking/**, user authorization boundary; contracts/openapi.yaml only changes the getUnionAuthUrl description and adds 50301 to x-error-codes, openapi.gen.ts regenerated). GET /v1/unions/pdd/auth-url answers HTTP 503 / 50301 with data.reason=maintenance when the site union authorization of the account actually used is unavailable (BR-ID-24 ④ 2026-10-08), before issuing a state or writing union_auth_sessions; Taobao keeps 30101 / 30102 auth_unavailable and 30153 is still judged first. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0f3a6ba56ac726c95022ba3bf05542be5bc56771",
+      "tree": "574ceed40668278e84c6525383be9ff126d1b57c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T09:42:23Z",
+      "finished_at": "2026-10-08T09:42:45Z",
+      "red_tests": [
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 absent、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 unbound、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 pending_auth、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 released、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 invalid、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#1][AC-B1-06t#2] 拼多多绑定 active、所用账号 expired：50301 maintenance；同夹具淘宝仍为授权不可用",
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#3] normal 用户的拼多多 blocked 优先于 expired 返回 30153；解除 blocked 后才返回 50301",
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#4] 两个拼多多账号一有效一过期：只按未释放绑定所用账号判断，拒绝时保留既有 state 且不新增",
+        "test/spec/linking/auth-url-pdd/maintenance.int.test.ts > [AC-B1-06t#5] 拼多多站长授权 active 正常签发，随后 expired 拒绝签发且不改动原会话"
+      ],
+      "expected": ["test/spec/linking/auth-url-pdd/maintenance.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "afcd8cd4b4dfa8b2f8547376f88315cd6bada97715f4f8be41505dbc36c723dd"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: round 1 pass (0 findings; 2 out-of-scope S2 to followups)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 findings came from a stale base (branch on f132636 diffed against a newer origin/main, so main's B1-02f additions read as deletions); after rebasing, round 2 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, 9 cases in test/spec/linking/auth-url-pdd/); round 1 pass with no findings."
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "208135a4e747d4d00edfd35018d60d6ecba993f8",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
