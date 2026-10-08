@@ -1,0 +1,21 @@
+id: B1-06s
+repo: rebate-platform
+title: 受保护夹具为 B1-06r 新列兼容（改前改后都绿）：test/spec/db/linking-bindings/kit.ts 的 newAuth 在 union_auth_sessions 已有 client / auth_methods / auth_app_refs 列时补合成默认值（client=ios；淘宝 auth_methods=[web_code] 与等键 auth_app_refs；拼多多两者为空）
+type: test-change
+# 草稿 2026-10-08（W1 第六棒）。B1-06r（迁移）按台账给 union_auth_sessions 加 client NOT NULL、淘宝行 auth_methods NOT NULL 与等键 auth_app_refs；B1-06b 已合并的规则测试夹具 newAuth
+# 只插 0018 的列，迁移后 [AC-B1-06b] 里用 newAuth 的用例会因 NOT NULL / CHECK 失败（B1-06r Codex 写测试时报告）。按规划/11 §4.4 先立测试变更任务（先例 B1-06n、B1-06q）。
+# 改法：newAuth 先查目录视图，列存在时才在插入值里补合成默认值（调用方 values 仍可覆盖），列不存在时与现在完全相同——改前（无新列）改后（B1-06r 合并）都绿。
+# 不改任何断言、不改其他用例与夹具语义、不改实现代码；不属削弱资金测试（只给新必填列补合成值）。保护路径第一类、改已有文件；test/** RV2，两家评审 pass 后按 approvals #24 加标签合并。
+# 按教训 16 走非 task/ 分支（test-change/B1-06s）。须在 B1-06r 之前合并（B1-06r deps 含本任务）。
+refs: []
+refs_hash: {}
+deps: [B1-06b]
+paths:
+  - 'test/spec/db/linking-bindings/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/linking-bindings/**'
+status: todo
+pr: null
