@@ -1,4 +1,14 @@
 // Public surface of the identity module. Other modules import only from this file.
+export {
+  createIdentityViewerContext,
+  createIdentityCallerContext,
+  createIdentityAttrCodeReader,
+} from './ports/request-context.ts';
+export type {
+  IdentityRequest,
+  IdentityContext,
+  IdentityAttrCodeReader,
+} from './ports/request-context.ts';
 export { revokeSessionsByUser, revokeSessionsByDevice } from './application/revoke-sessions.ts';
 export type { AfterSessionsRevoked, SessionRevokeReason } from './application/revoke-sessions.ts';
 export { IdentityModule } from './identity.module.ts';
