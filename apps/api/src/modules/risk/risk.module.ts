@@ -11,6 +11,10 @@
 // thresholds come through the RateLimitThresholdReader port (content's configValue, assembled by
 // app.module); its buckets need REDIS, and without REDIS stage ⑬ is not installed (one info line
 // `rate_limit_disabled` at startup).
+// Stage ⑤ (risk state, 10006, B1-03h) sits between ④a and ⑬ on both paths: the chained guard
+// runs ④a, ⑤, ⑬, and ⑤'s post-miss hook is registered after ④a's and before ⑬'s. Its service
+// (riskStateServiceToken(), the single writer of user_risk_state) needs DB and EVENT_BUS; without
+// them stage ⑤ is not installed (one info line `risk_state_gate_disabled` at startup).
 //
 // Also compiled by the `test` project (through ./index.ts): a class decorator only (no parameter
 // decorators or parameter properties; dependencies are injected through a factory), as in
@@ -24,9 +28,13 @@ import {
   Module,
 } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import type { DB as Database } from '@couli/db';
+import type { Kysely } from 'kysely';
 import { map } from 'rxjs';
 import {
   CLOCK,
+  DB,
+  EVENT_BUS,
   FIELD_CRYPTO,
   IDEMPOTENCY,
   REDIS,
@@ -34,6 +42,7 @@ import {
   registerIdempotencyEntryObserver,
   registerIdempotencyPostMissCheck,
   type Clock,
+  type EventBus,
   type FieldCrypto,
   type Idempotency,
   type RedisHandle,
@@ -65,6 +74,15 @@ import {
   type RateLimitThresholdReaderOn,
 } from './application/rate-limit.ts';
 import {
+  createRiskStateGuard,
+  createRiskStatePostMissCheck,
+} from './application/risk-state-gate.ts';
+import {
+  createRiskStateService,
+  riskStateServiceToken,
+  type RiskStateService,
+} from './application/risk-state.ts';
+import {
   DEVICE_SIGNING_KEYS,
   SIGNATURE_CHECK,
   createSignatureCheck,
@@ -78,6 +96,8 @@ const MINIMUM_VERSION_HOOK = Symbol('MINIMUM_VERSION_HOOK');
 /** Whether stage ④a is in force on this entry: true exactly when a reader is wired. */
 const MINIMUM_VERSION_GATE = Symbol('MINIMUM_VERSION_GATE');
 const RATE_LIMIT_THRESHOLDS = Symbol('RATE_LIMIT_THRESHOLDS');
+/** Stage ⑤'s service, or null when it is not installed (no DB or EVENT_BUS on this entry). */
+const RISK_STATE_SERVICE = riskStateServiceToken();
 /** Stage ⑬'s service, or null when it is not installed (no REDIS on this entry). */
 const RATE_LIMIT_SERVICE = Symbol('RATE_LIMIT_SERVICE');
 
@@ -191,8 +211,8 @@ export const MINIMUM_VERSION_INTERCEPTOR: NestInterceptor = {
 };
 
 /**
- * Stage ⑬ without stage ④a (no minimum version reader): opens MINIMUM_VERSION_SCOPE for ⑬'s
- * post-miss hook only, without ④a's fail-closed rule.
+ * Stage ⑤ or ⑬ without stage ④a (no minimum version reader): opens MINIMUM_VERSION_SCOPE for
+ * their post-miss hooks only, without ④a's fail-closed rule.
  */
 const RATE_LIMIT_SCOPE_INTERCEPTOR: NestInterceptor = {
   intercept(context: ExecutionContext, next: CallHandler) {
@@ -208,13 +228,16 @@ interface StageGuard {
   canActivate(context: ExecutionContext): boolean | Promise<boolean>;
 }
 
-/** ④a then ⑬ in one global guard, so their order never depends on guard registration order. */
-function chainGuards(first: StageGuard, second: StageGuard | null): StageGuard {
-  if (second === null) return first;
+/** ④a, ⑤ then ⑬ in one global guard, so their order never depends on guard registration order. */
+function chainGuards(first: StageGuard, ...rest: readonly (StageGuard | null)[]): StageGuard {
+  const stages = [first, ...rest.filter((stage): stage is StageGuard => stage !== null)];
+  if (stages.length === 1) return first;
   return {
     async canActivate(context: ExecutionContext) {
-      if (!(await first.canActivate(context))) return false;
-      return second.canActivate(context);
+      for (const stage of stages) {
+        if (!(await stage.canActivate(context))) return false;
+      }
+      return true;
     },
   };
 }
@@ -299,35 +322,69 @@ export class RiskModule {
           },
         },
         {
+          // Stage ⑤'s service: the single writer of user_risk_state and its (cached) reader.
+          provide: RISK_STATE_SERVICE,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            events?: EventBus,
+          ): RiskStateService | null => {
+            if (db === undefined || events === undefined) {
+              logger.info({ stage: '5' }, 'risk_state_gate_disabled');
+              return null;
+            }
+            return createRiskStateService({ db, clock, events });
+          },
+        },
+        {
           provide: APP_GUARD,
-          inject: [MINIMUM_VERSION_CHECK, MINIMUM_VERSION_GATE, RATE_LIMIT_SERVICE],
+          inject: [
+            MINIMUM_VERSION_CHECK,
+            MINIMUM_VERSION_GATE,
+            RISK_STATE_SERVICE,
+            RATE_LIMIT_SERVICE,
+          ],
           useFactory: (
             check: MinimumVersionCheck,
             enabled: boolean,
+            riskState: RiskStateService | null,
             rateLimit: RateLimitService | null,
           ): StageGuard =>
             chainGuards(
               enabled ? createMinimumVersionGuard(check) : GATE_DISABLED_GUARD,
+              riskState === null ? null : createRiskStateGuard(riskState),
               rateLimit === null ? null : createRateLimitGuard(rateLimit),
             ),
         },
         {
           provide: APP_INTERCEPTOR,
-          inject: [MINIMUM_VERSION_GATE, RATE_LIMIT_SERVICE],
-          useFactory: (enabled: boolean, rateLimit: RateLimitService | null) =>
+          inject: [MINIMUM_VERSION_GATE, RISK_STATE_SERVICE, RATE_LIMIT_SERVICE],
+          useFactory: (
+            enabled: boolean,
+            riskState: RiskStateService | null,
+            rateLimit: RateLimitService | null,
+          ) =>
             enabled
               ? MINIMUM_VERSION_INTERCEPTOR
-              : rateLimit === null
+              : rateLimit === null && riskState === null
                 ? GATE_DISABLED_INTERCEPTOR
                 : RATE_LIMIT_SCOPE_INTERCEPTOR,
         },
         {
-          // ④a's hook first, then ⑬'s: registration order is the judgement order.
+          // ④a's hook first, then ⑤'s, then ⑬'s: registration order is the judgement order.
           provide: MINIMUM_VERSION_HOOK,
           inject: [
             MINIMUM_VERSION_CHECK,
             MINIMUM_VERSION_READER,
             MINIMUM_VERSION_GATE,
+            RISK_STATE_SERVICE,
             RATE_LIMIT_SERVICE,
             RATE_LIMIT_THRESHOLDS,
             { token: IDEMPOTENCY, optional: true },
@@ -336,6 +393,7 @@ export class RiskModule {
             check: MinimumVersionCheck,
             versions: MinimumVersionReaders | null,
             enabled: boolean,
+            riskState: RiskStateService | null,
             rateLimit: RateLimitService | null,
             limits: RateLimitThresholdReaders | null,
             idempotency?: Idempotency,
@@ -347,6 +405,12 @@ export class RiskModule {
               );
               registerIdempotencyEntryObserver(idempotency, createMinimumVersionEntryObserver());
             }
+            if (riskState !== null && idempotency !== undefined) {
+              registerIdempotencyPostMissCheck(
+                idempotency,
+                createRiskStatePostMissCheck(riskState),
+              );
+            }
             if (rateLimit !== null && idempotency !== undefined) {
               registerIdempotencyPostMissCheck(
                 idempotency,
@@ -357,7 +421,7 @@ export class RiskModule {
           },
         },
       ],
-      exports: [SIGNATURE_CHECK, MINIMUM_VERSION_CHECK],
+      exports: [SIGNATURE_CHECK, MINIMUM_VERSION_CHECK, RISK_STATE_SERVICE],
     };
   }
 }
