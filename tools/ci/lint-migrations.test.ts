@@ -163,6 +163,8 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'link_logs',
     'link_logs_default',
     'link_open_attempts',
+    'processed_events',
+    'idempotency_keys',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
@@ -619,4 +621,44 @@ it('CT-06b: the real repository passes the frozen-set check, and a script file w
     run(fixture({ '0019_new.sql': `${TIMEOUTS}CREATE TABLE app.t (id uuid);\n`, 'helper.ts': '' }))
       .stderr,
   ).toContain('helper.ts is not a SQL migration');
+});
+
+it('CT-06c: a guard function may be extended with CREATE OR REPLACE while it still raises, not emptied', () => {
+  const trigger =
+    'CREATE TRIGGER orders_guard BEFORE UPDATE ON app.orders FOR EACH ROW EXECUTE FUNCTION app.guard_fn();\n';
+  const raising =
+    "CREATE OR REPLACE FUNCTION app.guard_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.a IS DISTINCT FROM OLD.a THEN RAISE EXCEPTION 'immutable'; END IF; RETURN NEW; END $$;";
+  expect(checkMigration('x.sql', trigger + raising)).toEqual([]);
+  expect(
+    checkMigration('x.sql', trigger + raising.replace("RAISE EXCEPTION 'immutable';", 'NULL;')).map(
+      (p) => p.message,
+    ),
+  ).toEqual([
+    expect.stringContaining('function guard_fn guards funds or attribution table orders'),
+  ]);
+});
+
+it('CT-06c: dropping a funds-table constraint or index is fine only when the migration recreates it', () => {
+  expect(
+    checkMigration(
+      'x.sql',
+      'ALTER TABLE app.orders DROP CONSTRAINT orders_x_key, ADD CONSTRAINT orders_x_key UNIQUE (app_id, x);',
+    ),
+  ).toEqual([]);
+  expect(
+    checkMigration('x.sql', 'ALTER TABLE app.orders DROP CONSTRAINT orders_x_key;').map(
+      (p) => p.message,
+    ),
+  ).toEqual([
+    expect.stringContaining('constraint orders_x_key on funds or attribution table orders'),
+  ]);
+  expect(checkMigration('x.sql', 'DROP TABLE app.articles CASCADE;').map((p) => p.message)).toEqual(
+    [expect.stringContaining('DROP … CASCADE is not accepted')],
+  );
+  expect(
+    checkMigration(
+      'x.sql',
+      'ALTER TABLE app.t ADD CONSTRAINT t_fk FOREIGN KEY (a) REFERENCES app.u (id) ON DELETE CASCADE;',
+    ),
+  ).toEqual([]);
 });

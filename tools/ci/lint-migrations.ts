@@ -22,6 +22,10 @@
 // refused; destructive DDL inside a DO block, SET SCHEMA on a funds table, a column renamed into a
 // money column and money columns made by CREATE TABLE … AS / SELECT … INTO are refused; quoted
 // identifiers may touch the next token.
+// CT-06c: processed_events and idempotency_keys join the funds tables; triggers, constraints and
+// indexes of a funds table may not be dropped or disabled unless the same migration recreates the same
+// name; DROP … CASCADE is refused; the functions that funds-table triggers execute may not be dropped,
+// replaced, renamed, re-owned or moved.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -101,7 +105,13 @@ export const FUNDS_TABLE_PREFIXES: readonly string[] = [
   'union_',
   'link_',
 ];
-export const FUNDS_TABLE_NAMES: readonly string[] = ['links'];
+// processed_events (consumer dedupe) and idempotency_keys (write idempotency, withdrawals included):
+// 规划/04 §3.2; CT-06c.
+export const FUNDS_TABLE_NAMES: readonly string[] = [
+  'links',
+  'processed_events',
+  'idempotency_keys',
+];
 
 /** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint); anything else is refused. */
 const MONEY_TYPES_OK = new Set(['bigint', 'int8']);
@@ -163,6 +173,9 @@ const TABLE_REF = new RegExp(
 
 export type Selection = { lint: string[]; badNames: string[] };
 export type Problem = { file: string; line: number; message: string };
+/** What a migration is checked against: db/schema.sql and the SQL of the migrations before it. */
+export type MigrationContext = { schemaSql: string; migrationsSql: readonly string[] };
+const NO_CONTEXT: MigrationContext = { schemaSql: '', migrationsSql: [] };
 
 /** Splits the `.sql` entries of db/migrations into the files to lint and the misnamed ones. */
 export function selectMigrations(names: readonly string[], baseline = GATE_BASELINE): Selection {
@@ -477,8 +490,237 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
   return problems;
 }
 
+/** The bare name of a table, index, trigger or function reference (schema, quotes and arguments removed). */
+function bareName(reference: string): string {
+  return bareTableName(reference.replace(/\([\s\S]*$/, ''));
+}
+
+const CREATE_INDEX = new RegExp(
+  String.raw`\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(${IDENT})\s+ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
+  'gi',
+);
+const ADD_INDEX_CONSTRAINT = new RegExp(
+  String.raw`\bADD\s+CONSTRAINT${GAP}(${IDENT})\s*(?:PRIMARY\s+KEY|UNIQUE|EXCLUDE)\b`,
+  'gi',
+);
+const CREATE_TRIGGER = new RegExp(
+  String.raw`^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER${GAP}(${IDENT})[\s\S]*?\bON${GAP}(?:ONLY${GAP})?(${IDENT})(?:[\s\S]*?\bEXECUTE\s+(?:FUNCTION|PROCEDURE)${GAP}(${IDENT})\s*\()?`,
+  'i',
+);
+
+/** Statements of a SQL text (comments and string contents blanked), with their offsets. */
+function statementsOf(code: string): { text: string; at: number; start: number; end: number }[] {
+  const out: { text: string; at: number; start: number; end: number }[] = [];
+  let start = 0;
+  for (const text of code.split(';')) {
+    out.push({
+      text,
+      at: start + text.length - text.trimStart().length,
+      start,
+      end: start + text.length,
+    });
+    start += text.length + 1;
+  }
+  return out;
+}
+
+/**
+ * Index name → table, both bare and lower-cased, from CREATE [UNIQUE] INDEX and from the primary key,
+ * unique and exclusion constraints added with ALTER TABLE (their index has the constraint's name), in
+ * db/schema.sql and the given migrations.
+ */
+export function indexOwners(
+  schemaSql: string,
+  migrationsSql: readonly string[],
+): Map<string, string> {
+  const owners = new Map<string, string>();
+  for (const sql of [schemaSql, ...migrationsSql]) {
+    const code = withoutComments(sql);
+    for (const m of code.matchAll(CREATE_INDEX))
+      owners.set(bareName(m[1] ?? ''), bareName(m[2] ?? ''));
+    for (const { text } of statementsOf(code)) {
+      const alter = ALTER_TABLE.exec(text);
+      if (alter === null) continue;
+      for (const m of text.matchAll(ADD_INDEX_CONSTRAINT)) {
+        owners.set(bareName(m[1] ?? ''), bareName(alter[1] ?? ''));
+      }
+    }
+  }
+  return owners;
+}
+
+/**
+ * Function → one funds or attribution table it guards, both bare and lower-cased: the functions that
+ * triggers on funds tables execute, from db/schema.sql and the given migrations.
+ */
+export function fundsTriggerFunctions(
+  schemaSql: string,
+  migrationsSql: readonly string[],
+): Map<string, string> {
+  const guards = new Map<string, string>();
+  for (const sql of [schemaSql, ...migrationsSql]) {
+    for (const { text } of statementsOf(withoutComments(sql))) {
+      const m = CREATE_TRIGGER.exec(text);
+      if (m === null || m[3] === undefined || !isFundsTable(m[2] ?? '')) continue;
+      const fn = bareName(m[3]);
+      if (!guards.has(fn)) guards.set(fn, bareName(m[2] ?? ''));
+    }
+  }
+  return guards;
+}
+
+/**
+ * CT-06c (规划/02 §16.3): the triggers, constraints and indexes of a funds or attribution table are
+ * part of it. Dropping one is refused unless a later statement of the same migration recreates the
+ * same name on the same table; disabling a trigger is refused; DROP … CASCADE is refused (it silently
+ * takes dependent triggers, foreign keys and constraints with it); the functions funds-table triggers
+ * execute may not be dropped, replaced, renamed, re-owned or moved.
+ */
+function fundsObjectProblems(
+  file: string,
+  sql: string,
+  code: string,
+  context: MigrationContext,
+): Problem[] {
+  const valued = withoutComments(sql, true);
+  const problems: Problem[] = [];
+  const statements = statementsOf(code);
+  const refuse = (at: number, message: string): void => {
+    problems.push({ file, line: lineOf(code, at), message: `${message} (规划/02 §16.3)` });
+  };
+  const later = (k: number): string[] => statements.slice(k + 1).map((s) => s.text);
+  const funds = (ref: string): boolean => isFundsTable(ref);
+  statements.forEach(({ text, at, start, end }, k) => {
+    // DROP TRIGGER <name> ON <funds table>, unless recreated later in the file.
+    const dropTrigger = new RegExp(
+      String.raw`^\s*DROP\s+TRIGGER\s+(?:IF\s+EXISTS${GAP})?(${IDENT})\s+ON${GAP}(?:ONLY${GAP})?(${IDENT})`,
+      'i',
+    ).exec(text);
+    if (dropTrigger !== null && funds(dropTrigger[2] ?? '')) {
+      const name = bareName(dropTrigger[1] ?? '');
+      const table = bareName(dropTrigger[2] ?? '');
+      const recreated = later(k).some((t) => {
+        const m = CREATE_TRIGGER.exec(t);
+        return m !== null && bareName(m[1] ?? '') === name && bareName(m[2] ?? '') === table;
+      });
+      if (!recreated)
+        refuse(at, `trigger ${name} on funds or attribution table ${table} may not be dropped`);
+    }
+    const alter = ALTER_TABLE.exec(text);
+    if (alter !== null) {
+      const tableRef = alter[1] ?? '';
+      const table = bareName(tableRef);
+      const parts = topLevelParts(text, alter[0].length, text.length);
+      parts.forEach((part, i) => {
+        // ALTER TABLE … DROP COLUMN | CONSTRAINT … CASCADE (any table).
+        if (/^\s*DROP\b[\s\S]*\bCASCADE\s*$/i.test(part.text)) {
+          refuse(at, `DROP … CASCADE is not accepted: drop dependent objects explicitly`);
+        }
+        if (!funds(tableRef)) return;
+        const disable = /^\s*DISABLE\s+TRIGGER\s+("[^"]+"|\w+)/i.exec(part.text);
+        if (disable !== null) {
+          refuse(
+            at,
+            `trigger ${bareName(disable[1] ?? '')} on funds or attribution table ${table} may not be disabled`,
+          );
+        }
+        const dropConstraint = new RegExp(
+          String.raw`^\s*DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS${GAP})?(${IDENT})`,
+          'i',
+        ).exec(part.text);
+        if (dropConstraint !== null) {
+          const name = bareName(dropConstraint[1] ?? '');
+          const addsSame = (t: string): boolean =>
+            [...t.matchAll(new RegExp(String.raw`\bADD\s+CONSTRAINT${GAP}(${IDENT})`, 'gi'))].some(
+              (m) => bareName(m[1] ?? '') === name,
+            );
+          const recreated =
+            parts.slice(i + 1).some((p) => addsSame(p.text)) ||
+            later(k).some((t) => {
+              const a = ALTER_TABLE.exec(t);
+              return a !== null && bareName(a[1] ?? '') === table && addsSame(t);
+            });
+          if (!recreated)
+            refuse(
+              at,
+              `constraint ${name} on funds or attribution table ${table} may not be dropped`,
+            );
+        }
+      });
+    }
+    // DROP <anything> … CASCADE.
+    if (/^\s*DROP\b[\s\S]*\bCASCADE\s*$/i.test(text)) {
+      refuse(at, 'DROP … CASCADE is not accepted: drop dependent objects explicitly');
+    }
+    // DROP INDEX <name>[, …] of a funds table, unless recreated later in the file.
+    const dropIndex = new RegExp(
+      String.raw`^\s*DROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS${GAP})?(${IDENT}(?:\s*,\s*${IDENT})*)`,
+      'i',
+    ).exec(text);
+    if (dropIndex !== null) {
+      const owners = indexOwners(context.schemaSql, [...context.migrationsSql, code.slice(0, at)]);
+      for (const raw of (dropIndex[1] ?? '').split(',')) {
+        const name = bareName(raw.trim());
+        const owner = owners.get(name);
+        const table = owner ?? (funds(name) ? name : undefined);
+        if (table === undefined || !funds(table)) continue;
+        const recreated = later(k).some((t) =>
+          [...t.matchAll(CREATE_INDEX)].some(
+            (m) =>
+              bareName(m[1] ?? '') === name &&
+              (owner === undefined || bareName(m[2] ?? '') === owner),
+          ),
+        );
+        if (!recreated)
+          refuse(at, `index ${name} on funds or attribution table ${table} may not be dropped`);
+      }
+    }
+    // The functions funds-table triggers execute: from the schema, earlier migrations and the triggers
+    // created earlier in this file (a new function created before its trigger is fine).
+    // CREATE OR REPLACE is how a guard is extended (0020 does it for union_auth_sessions); only a
+    // replacement whose body no longer raises is a bypass.
+    const replace = new RegExp(
+      String.raw`^\s*CREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE)${GAP}(${IDENT})\s*\(`,
+      'i',
+    ).exec(text);
+    const replaceRaises =
+      replace !== null && /\bRAISE\s+EXCEPTION\b/i.test(valued.slice(start, end));
+    const fn =
+      new RegExp(
+        String.raw`^\s*DROP\s+(?:FUNCTION|PROCEDURE)\s+(?:IF\s+EXISTS${GAP})?(${IDENT}(?:\s*\([^)]*\))?(?:\s*,\s*${IDENT}(?:\s*\([^)]*\))?)*)`,
+        'i',
+      ).exec(text)?.[1] ??
+      (replaceRaises ? undefined : replace?.[1]) ??
+      new RegExp(
+        String.raw`^\s*ALTER\s+(?:FUNCTION|PROCEDURE)${GAP}(${IDENT})(?:\s*\([^)]*\))?\s+(?:RENAME\s+TO|OWNER\s+TO|SET\s+SCHEMA)\b`,
+        'i',
+      ).exec(text)?.[1];
+    if (fn !== undefined) {
+      const guards = fundsTriggerFunctions(context.schemaSql, [
+        ...context.migrationsSql,
+        code.slice(0, at),
+      ]);
+      for (const raw of fn.replace(/\([^)]*\)/g, '').split(',')) {
+        const name = bareName(raw.trim());
+        const table = guards.get(name);
+        if (table !== undefined) {
+          refuse(
+            at,
+            `function ${name} guards funds or attribution table ${table}: it may not be dropped, replaced, renamed, re-owned or moved`,
+          );
+        }
+      }
+    }
+  });
+  return problems;
+}
+
 /** The checks squawk cannot express, over one migration file. */
-export function checkMigration(file: string, sql: string): Problem[] {
+export function checkMigration(
+  file: string,
+  sql: string,
+  context: MigrationContext = NO_CONTEXT,
+): Problem[] {
   const problems: Problem[] = [];
   const code = withoutComments(sql);
   // Money columns: every `*_fen` column defined in CREATE TABLE or added / retyped in ALTER TABLE
@@ -498,6 +740,7 @@ export function checkMigration(file: string, sql: string): Problem[] {
     start += statement.length + 1;
   }
   problems.push(...structureProblems(file, sql, code));
+  problems.push(...fundsObjectProblems(file, sql, code, context));
   const ignoreFile = IGNORE_FILE.exec(sql);
   if (ignoreFile !== null) {
     problems.push({
@@ -717,11 +960,23 @@ function main(argv: readonly string[]): number {
   }
   const files = lint.map((name) => `${MIGRATIONS_DIR}/${name}`);
   let failed = refused;
+  // CT-06c context: db/schema.sql (absent in scratch roots) and the SQL of every migration before
+  // the one being checked.
+  const schemaPath = join(root, 'db/schema.sql');
+  const schemaSql = existsSync(schemaPath) ? readFileSync(schemaPath, 'utf8') : '';
+  const allSql = names
+    .filter((name) => name.endsWith('.sql'))
+    .sort()
+    .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') }));
   const withIgnores: { file: string; sql: string }[] = [];
   for (const file of files) {
     const sql = readFileSync(join(root, file), 'utf8');
     if (/squawk-ignore/.test(sql)) withIgnores.push({ file, sql });
-    for (const problem of checkMigration(file, sql)) {
+    const context: MigrationContext = {
+      schemaSql,
+      migrationsSql: allSql.filter((m) => m.name < basename(file)).map((m) => m.sql),
+    };
+    for (const problem of checkMigration(file, sql, context)) {
       console.error(`lint-migrations: ${problem.file}:${problem.line}: ${problem.message}`);
       failed = true;
     }
