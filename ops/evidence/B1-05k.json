@@ -1,0 +1,96 @@
+{
+  "task": "B1-05k",
+  "spec_ref": "ecacd641ceb748959b8f3b23da44d283b5c94e8d",
+  "spec_commit": "e24ae2c0fff1e6dfe7bbe8ae03a708be0b11e1e0",
+  "red_tests": [
+    "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#5] local 真实 AppModule 搜索卡与 open 复核签发器的引用都被详情采用",
+    "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#5] test 真实 AppModule 搜索卡与 open 复核签发器的引用都被详情采用",
+    "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#6] local 真实解析接口签发的引用可在详情验过并原样透传",
+    "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#6] test 真实解析接口签发的引用可在详情验过并原样透传",
+    "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#7] FIELD_CRYPTO 优先于临时提供者，两种密钥互相隔离",
+    "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#1] catalog 公开提供者反复调用返回同一个进程内实例",
+    "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#2] 分别取得的临时密钥可双向验证，后续调用不会换掉已签发令牌的密钥",
+    "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#3] 共用临时密钥仍验证 app_id、product_key 和密文完整性",
+    "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#4] local 可用进程临时密钥，staging 未配字段密钥环仍拒绝启动",
+    "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#4] test 可用进程临时密钥，prod 未配字段密钥环仍拒绝启动"
+  ],
+  "risk_note": "RV2 (catalog/** RV1, app.module.ts). One process-wide item_ref cipher for local / test processes started without a field keyring: processItemRefCipher() lazily creates the key once per process and catalog ITEM_REFS (search and detail), the linking open requote card issuer and the parsing localItemRefCipher all take it, so an item_ref issued by one entry verifies at the others; app.module imports it through catalog/index.ts only. With FIELD_CRYPTO nothing changes; staging / prod without a keyring still refuse to start. Tokens stay bound to app_id. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e24ae2c0fff1e6dfe7bbe8ae03a708be0b11e1e0",
+      "tree": "fcdfd81ee24cc6d08972965e4809c490fb0fe36e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T01:02:12Z",
+      "finished_at": "2026-10-08T01:02:24Z",
+      "red_tests": [
+        "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#5] local 真实 AppModule 搜索卡与 open 复核签发器的引用都被详情采用",
+        "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#5] test 真实 AppModule 搜索卡与 open 复核签发器的引用都被详情采用",
+        "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#6] local 真实解析接口签发的引用可在详情验过并原样透传",
+        "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#6] test 真实解析接口签发的引用可在详情验过并原样透传",
+        "test/spec/catalog/item-ref-key/app.int.test.ts > [AC-B1-05k#7] FIELD_CRYPTO 优先于临时提供者，两种密钥互相隔离",
+        "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#1] catalog 公开提供者反复调用返回同一个进程内实例",
+        "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#2] 分别取得的临时密钥可双向验证，后续调用不会换掉已签发令牌的密钥",
+        "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#3] 共用临时密钥仍验证 app_id、product_key 和密文完整性",
+        "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#4] local 可用进程临时密钥，staging 未配字段密钥环仍拒绝启动",
+        "test/spec/catalog/item-ref-key/provider.test.ts > [AC-B1-05k#4] test 可用进程临时密钥，prod 未配字段密钥环仍拒绝启动"
+      ],
+      "expected": [
+        "test/spec/catalog/item-ref-key/app.int.test.ts",
+        "test/spec/catalog/item-ref-key/provider.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "d400b70a233ab954bc1010245a38d3aaf1133f501ef005d95db9ec6843bc6cc7"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "aad81284351422dd3546f85066ee1da45fad828ac4dda7d75a9f272b4ce24fa7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: pass with no findings (keyring path unchanged, prod refusal unchanged, one key per process shared across apps is fine because tokens bind app_id)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, red run 10 tests) reviewed by a fresh Claude subagent: pass with one S2 (the staging / prod refusal guard has no rule test of its own); after CI verify-int showed the parse cases failing on a fixture gap (the signed device had no devices row, so the links device foreign key failed), the orchestrator added the devices row to the fixture only, assertions unchanged"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "5f704c66fd0a289d0609d3cff86624bc82dfc880",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

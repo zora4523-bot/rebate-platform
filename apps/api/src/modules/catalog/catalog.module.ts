@@ -26,10 +26,10 @@ import type { Catalog, CatalogWarning } from './domain/types.ts';
 import { ProductController } from './http/public/product.controller.ts';
 import { SearchController } from './http/public/search.controller.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
+import { processItemRefCipher } from './infra/process-item-ref-cipher.ts';
 import {
   SEARCH_REDIS_NAMESPACE,
   UNAVAILABLE_SEARCH_SESSIONS,
-  createProcessItemRefCipher,
   createRedisSearchSessionStore,
   createSearchCursorCodec,
   createUnionSearchUpstream,
@@ -174,7 +174,7 @@ export class CatalogModule {
             if (config.appEnv !== 'local' && config.appEnv !== 'test') {
               throw new Error('catalog: item_ref needs the field keyring outside local / test');
             }
-            return createItemRefService({ crypto: createProcessItemRefCipher() });
+            return createItemRefService({ crypto: processItemRefCipher() });
           },
         },
         {

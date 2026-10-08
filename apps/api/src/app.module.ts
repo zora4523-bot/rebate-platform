@@ -10,6 +10,7 @@ import {
   createDbCatalogProductReader,
   createDemoRebateQuoter,
   createItemRefService,
+  processItemRefCipher,
   type CatalogConfigReader,
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
@@ -31,9 +32,6 @@ import {
   type LinkOpenPorts,
   type LinkRegistrations,
 } from './modules/linking/index.ts';
-// The composition root may reach catalog's wiring helper: the process item_ref cipher of local /
-// test without a field keyring, shared with parsing's card entry (not a module-to-module import).
-import { createProcessItemRefCipher } from './modules/catalog/infra/search-wiring.ts';
 import {
   ParsingLinkRegistrars,
   ParsingModule,
@@ -298,7 +296,7 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
             union,
             quoter,
             // The re-checked card's item_ref is never sent by an open; it is issued as for any card.
-            itemRefs: createItemRefService({ crypto: crypto ?? createProcessItemRefCipher() }),
+            itemRefs: createItemRefService({ crypto: crypto ?? processItemRefCipher() }),
             quoteReads: {
               prepare: async (appId) => {
                 await Promise.allSettled(
@@ -425,7 +423,7 @@ export class AppModule {
               // through index.ts like any other caller.
               ParsingModule.forRoot((db, clock) => createContentReader({ db, clock }), {
                 createParsing,
-                localItemRefCipher: createProcessItemRefCipher,
+                localItemRefCipher: processItemRefCipher,
               }),
             ]
           : []),
