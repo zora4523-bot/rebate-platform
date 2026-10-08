@@ -1,0 +1,23 @@
+id: QA-09f
+repo: rebate-platform
+title: 制品扫描读取层误报修正：AXML 的 CDATA 节点不判损坏、Apple plist 标准 DOCTYPE 在检测层结构化处理（不判高熵）、.properties 空值键不当作上一行的 Base64 续行、超大 resources.pb 路径池不因展开传参抛错
+type: impl
+# 2026-10-08 草稿（会话 codex-impl-six-2，负责人同意把遗留问题立成任务）。来源：couli-runs/CODEX-IMPL/followups.md（QA-09c r1 降级②、QA-09c r3 S2 DOCTYPE、QA-09d r4 S2 source_pool、r5 S2 properties 空值键）；decision 33、35。
+# 不属 approvals 第 23 条白名单，按第 19 条分工：Opus 实现、Codex 写规则测试与评审。
+# 依据：02 §12.6、08 BR-ID-09。这是误报与读取错误修正，不是放宽：每处只收窄到所述结构（固定 DOCTYPE 常量、合法 CDATA、只在允许标量续行的 YAML 里认 Base64 续行），真实样本按规则对比 main，除所列误报外任何规则命中不得少于 main；实现说明须列出全部收窄点。cli.ts 的 DOCTYPE 替换留给 QA-09e 之后另议，本段不碰。
+# 回归样本（只看误报与读取错误，不入库）：couli/_vendor-sdk/youquanhui 下 youquanhui-android-1.0.9.apk（3 个 AXML 含 CDATA，现 exit 2）、youquanhui-ios-1.2.0.ipa。
+refs: [BR-ID-09]
+refs_hash:
+  BR-ID-09: f8c29aeda825
+deps: [QA-09d]
+paths:
+  - 'infra/release-scan/detect/**'
+test_paths:
+  - 'test/spec/release-scan/detect-read/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/release-scan/detect-read/**'
+status: todo
+pr: null
