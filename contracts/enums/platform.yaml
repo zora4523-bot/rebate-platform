@@ -60,3 +60,15 @@ enums:
       login: 需要登录
       phone: 需要已绑手机号
       realname: 需要已实名
+  platform_icon_key:
+    source: 规划/04 §10.1（platform_icons）；08 BR-TEXT-24 细则标识键表
+    description: 平台标识键，/v1/config.platform_icons 的键与后台「平台标识」接口的 {key} 同一份；新增平台按 BR-TEXT-24 同样规则补值
+    values:
+      taobao: 淘宝
+      tmall: 天猫
+      jd: 京东
+      pdd: 拼多多（内置文件名 pinduoduo）
+      wechat: 微信
+      wechat_pay: 微信支付（内置文件名 wechat-pay）
+      alipay: 支付宝
+      wecom: 企业微信

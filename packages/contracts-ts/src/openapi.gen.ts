@@ -1767,6 +1767,191 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/platform-icons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Platform marks and their published replacement images
+         * @description Permission point `content.platform_icon` (04 §11.2; step-up 「–」). One row per platform
+         *     mark key (enum platform_icon_key, the same keys as /v1/config `platform_icons`), always
+         *     all of them in enum order, no paging: the published version (`current_version` null = the
+         *     client shows the image bundled in the package), its details, the newest saved version and
+         *     who changed the mark last and when (BR-TEXT-24 细则「发布与回滚」). The console previews
+         *     `current.url` and every version url only as an image (`<img>`), never inlined into the
+         *     page.
+         */
+        get: operations["adminListPlatformIcons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/platform-icons/{key}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version history of one platform mark
+         * @description Permission point `content.platform_icon`. Every saved version of the mark, newest first,
+         *     page by page (`page`, `page_size` ≤ 200), drafts included; a version is `publishable` only
+         *     with both the source page address and the download date registered (BR-TEXT-24 细则
+         *     「必填登记」). Any version can be published again, which rolls the mark back to it (POST
+         *     /admin/v1/platform-icons/{key}/publish). A key outside enum platform_icon_key is 20001 with
+         *     `data.fields=[key]`.
+         */
+        get: operations["adminListPlatformIconVersions"];
+        put?: never;
+        /**
+         * Save an upload as a new version of one platform mark
+         * @description Permission point `content.platform_icon`. Saves the cleaned file of an upload (POST
+         *     /admin/v1/platform-icons/{key}/uploads) as the next version of the mark (versions are
+         *     counted per mark from 1). Nothing is published: the version takes effect only through
+         *     POST /admin/v1/platform-icons/{key}/publish. When the upload has `sanitized=true` the
+         *     operator must have looked at the cleaned preview and `sanitized_confirmed` must be true,
+         *     otherwise 20001 with `data.fields=[sanitized_confirmed]` (BR-TEXT-24 细则「已清除不安全内容」).
+         *     `source_url` (the official brand or asset download page) and `downloaded_on` may be left
+         *     out: such a version is a draft (`publishable=false`) until both are registered with PATCH
+         *     /admin/v1/platform-icons/{key}/versions/{version} (BR-TEXT-24 细则「必填登记」). An
+         *     upload_id that does not exist, has expired, was already saved or belongs to another key is
+         *     20001 with `data.fields=[upload_id]`. Saving the same upload twice never creates two
+         *     versions (the second call is that 20001). No Idempotency-Key: admin writes rely on
+         *     these checks and on CAS where state is replaced (04 §6.6).
+         */
+        post: operations["adminCreatePlatformIconVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/platform-icons/{key}/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a platform mark image and get its cleaned preview
+         * @description Permission point `content.platform_icon`. `multipart/form-data` with one part `file`: an
+         *     SVG, or a PNG with a transparent background and sides of at least 512 px, at most
+         *     `content.platform_icon.max_bytes` bytes (default 204800; BR-TEXT-24 细则「上传与发布」).
+         *     The server first converts an SVG faithfully (in-document `use` expanded, simple style
+         *     declarations rewritten as presentation attributes), then cleans it against the whitelist;
+         *     the result is stored in the OSS media bucket under its content SHA-256 and returned as
+         *     `url` for an `<img>` preview on light and dark backgrounds at 16, 24 and 32 px. Nothing is
+         *     saved as a version yet (POST /admin/v1/platform-icons/{key}/versions takes the
+         *     `upload_id` until `expires_at`). `sanitized=true` means the cleaned file differs from the
+         *     original: the console shows 「已清除不安全内容」 and the operator confirms the preview
+         *     before saving. Rejections are 20001 with `data.fields=[file]` and an admin-only
+         *     `data.reason` (shown next to the field with admin text, not in the user dictionary):
+         *     `icon_format_invalid` (not SVG or PNG, cannot be parsed, PNG side below 512 px or not
+         *     transparent), `icon_too_large` (above the configured limit) and `icon_svg_unconvertible`
+         *     (style sheet with complex selectors, `@` rules or declarations outside the list, a
+         *     `url(...)` outside the document, a reference cycle or external reference, or a conversion
+         *     limit hit: more than 5000 elements, nesting deeper than 8, output above four times the
+         *     limit, longer than 2 seconds; the console says 「请换一份不含样式表或外部引用的官方 SVG，
+         *     或改传 PNG」). A request body above the global limit stays 413 with `data.fields=[body]`.
+         */
+        post: operations["adminUploadPlatformIcon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/platform-icons/{key}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Register the source of a platform mark version
+         * @description Permission point `content.platform_icon`. Fills in or corrects `source_url` and
+         *     `downloaded_on` of a version that has never been published (BR-TEXT-24 细则「必填登记」);
+         *     a field left out is unchanged, at least one is required. With both registered the version
+         *     becomes `publishable`. A version that has ever been published keeps its registration as
+         *     published and is 20001 with `data.fields=[version]`, like an unknown version.
+         */
+        patch: operations["adminUpdatePlatformIconVersion"];
+        trace?: never;
+    };
+    "/admin/v1/platform-icons/{key}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a version of a platform mark (publish or roll back)
+         * @description Permission point `content.platform_icon`. Makes `version` the published image of the mark
+         *     at once, with no gradual rollout (BR-TEXT-24 细则「发布与回滚」); the next GET /v1/config
+         *     lists it in `platform_icons` with the version's cleaned file url, its SHA-256 and the
+         *     version number (ConfigPlatformIcon). Publishing a version older than the current one is a
+         *     rollback; both are written to the audit log (action publish or rollback). CAS:
+         *     `expected_current_version` is the `current_version` the console showed (null = built-in);
+         *     when it no longer matches → 20902 with `data.resource=platform_icon`, refresh and retry
+         *     (04 §6.6). Publishing the version that is already current succeeds without change or
+         *     audit. A version without both source registrations is 20001 with `data.fields` naming the
+         *     missing one (`[source_url]` or `[downloaded_on]`); an unknown version is 20001 with
+         *     `data.fields=[version]`.
+         */
+        post: operations["adminPublishPlatformIcon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/platform-icons/{key}/restore-builtin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore the built-in image of a platform mark
+         * @description Permission point `content.platform_icon`. 「恢复内置」 (BR-TEXT-24 细则「发布与回滚」): the
+         *     mark has no published version any more, the next GET /v1/config leaves its key out of
+         *     `platform_icons` and clients show the bundled image; saved versions are kept and can be
+         *     published again. Written to the audit log (action restore_builtin). CAS as in publish:
+         *     `expected_current_version` no longer matching → 20902 with
+         *     `data.resource=platform_icon`. Restoring a mark that already shows the built-in image
+         *     (`expected_current_version` null and still null) succeeds without change or audit.
+         */
+        post: operations["adminRestoreBuiltinPlatformIcon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agent/sessions": {
         parameters: {
             query?: never;
@@ -3485,8 +3670,9 @@ export interface components {
          *     the package, and the object may be empty. Native clients download the image and check its
          *     SHA-256 before use, falling back to the bundled image on a mismatch; H5 loads it with
          *     `<img src=url>` and falls back to the bundled image on error. The accessible name is always
-         *     the platform's Chinese name and never follows the image. New platforms add a key the same
-         *     way.
+         *     the platform's Chinese name and never follows the image. The keys are enum
+         *     platform_icon_key (PlatformIconKey, also the {key} of /admin/v1/platform-icons); new
+         *     platforms add a key to both the same way.
          */
         ConfigPlatformIcons: {
             taobao?: components["schemas"]["ConfigPlatformIcon"];
@@ -4133,6 +4319,188 @@ export interface components {
             data: components["schemas"]["AdminAccountPage"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Platform mark key (enum platform_icon_key, BR-TEXT-24 细则标识键表); the keys of /v1/config
+         *     `platform_icons` (ConfigPlatformIcons) are the same list.
+         * @enum {string}
+         */
+        PlatformIconKey: "taobao" | "tmall" | "jd" | "pdd" | "wechat" | "wechat_pay" | "alipay" | "wecom";
+        /**
+         * @description Format of a cleaned platform mark file.
+         * @enum {string}
+         */
+        AdminPlatformIconFormat: "svg" | "png";
+        /** @description Lowercase hex SHA-256 of the cleaned file, the same digest as its file name. */
+        AdminPlatformIconSha256: string;
+        /**
+         * Format: uri
+         * @description Cleaned file on the media domain (set by deployment), named by its SHA-256; shown only as
+         *     an image (`<img>`), never inlined into the page.
+         */
+        AdminPlatformIconUrl: string;
+        /**
+         * Format: uri
+         * @description Official brand or asset download page the file was taken from (BR-TEXT-24 细则「必填登记」).
+         */
+        AdminPlatformIconSourceUrl: string;
+        /** @description One saved version of a platform mark (BR-TEXT-24). */
+        AdminPlatformIconVersion: {
+            /**
+             * Format: int32
+             * @description Counted per mark from 1; the same number /v1/config sends once published.
+             */
+            version: number;
+            url: components["schemas"]["AdminPlatformIconUrl"];
+            sha256: components["schemas"]["AdminPlatformIconSha256"];
+            format: components["schemas"]["AdminPlatformIconFormat"];
+            /**
+             * Format: int32
+             * @description Size of the cleaned file.
+             */
+            bytes: number;
+            /** @description true = the cleaned file differs from the uploaded original. */
+            sanitized: boolean;
+            source_url: components["schemas"]["AdminPlatformIconSourceUrl"] | null;
+            /**
+             * Format: date
+             * @description Date the file was downloaded from the source page; null = not registered.
+             */
+            downloaded_on: string | null;
+            /** @description true = both source_url and downloaded_on are registered; false = draft. */
+            publishable: boolean;
+            /** @description true = published at least once; its registration can no longer be changed. */
+            ever_published: boolean;
+            /** @description Username of the admin who saved the version. */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description A platform mark and its published version (null = built-in image). */
+        AdminPlatformIcon: {
+            key: components["schemas"]["PlatformIconKey"];
+            /**
+             * Format: int32
+             * @description Published version; null = the client shows the bundled image. The CAS value of publish and restore-builtin.
+             */
+            current_version: number | null;
+            current: components["schemas"]["AdminPlatformIconVersion"] | null;
+            /**
+             * Format: int32
+             * @description Newest saved version, drafts included; null = nothing saved yet.
+             */
+            latest_version: number | null;
+            /** @description Username of the admin who last saved, published, rolled back or restored; null = never changed. */
+            updated_by: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        AdminPlatformIconList: {
+            /** @description Every key of enum platform_icon_key once, in enum order. */
+            items: components["schemas"]["AdminPlatformIcon"][];
+        };
+        AdminPlatformIconListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPlatformIconList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminPlatformIconResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPlatformIcon"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminPlatformIconVersionResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPlatformIconVersion"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminPlatformIconVersionPage: {
+            /** @description Newest version first. */
+            items: components["schemas"]["AdminPlatformIconVersion"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminPlatformIconVersionPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPlatformIconVersionPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description multipart/form-data body of a platform mark upload; one part `file`. */
+        AdminPlatformIconUploadRequest: {
+            /** @description The SVG or PNG file as uploaded (BR-TEXT-24 细则「上传与发布」). */
+            file: string;
+        };
+        /**
+         * @description The cleaned file of an upload, not yet a version. Saved with POST
+         *     /admin/v1/platform-icons/{key}/versions until `expires_at`.
+         */
+        AdminPlatformIconUpload: {
+            upload_id: components["schemas"]["Id"];
+            url: components["schemas"]["AdminPlatformIconUrl"];
+            sha256: components["schemas"]["AdminPlatformIconSha256"];
+            format: components["schemas"]["AdminPlatformIconFormat"];
+            /**
+             * Format: int32
+             * @description Size of the cleaned file.
+             */
+            bytes: number;
+            /**
+             * @description true = the cleaned file differs from the original: the console shows 「已清除不安全内容」
+             *     and saving needs sanitized_confirmed=true.
+             */
+            sanitized: boolean;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        AdminPlatformIconUploadResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPlatformIconUpload"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminPlatformIconVersionCreateRequest: {
+            upload_id: components["schemas"]["Id"];
+            /**
+             * @description The operator confirmed the cleaned preview; absent means false. Must be true when the
+             *     upload has sanitized=true.
+             */
+            sanitized_confirmed?: boolean;
+            source_url?: components["schemas"]["AdminPlatformIconSourceUrl"];
+            /** Format: date */
+            downloaded_on?: string;
+        };
+        /** @description At least one of the two registrations. */
+        AdminPlatformIconSourceRequest: {
+            source_url?: components["schemas"]["AdminPlatformIconSourceUrl"];
+            /** Format: date */
+            downloaded_on?: string;
+        };
+        AdminPlatformIconPublishRequest: {
+            /**
+             * Format: int32
+             * @description Version to publish; older than the current one = rollback.
+             */
+            version: number;
+            /**
+             * Format: int32
+             * @description current_version as the console showed it (null = built-in); a mismatch is 20902.
+             */
+            expected_current_version: number | null;
+        };
+        AdminPlatformIconRestoreRequest: {
+            /**
+             * Format: int32
+             * @description current_version as the console showed it (null = built-in); a mismatch is 20902.
+             */
+            expected_current_version: number | null;
+        };
         /** @description An Agent conversation (agent_sessions; owner and expiry per BR-AI-20). */
         AgentSession: {
             session_id: components["schemas"]["Id"];
@@ -4322,6 +4690,10 @@ export interface components {
         AdminPageSize: number;
         /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
         AdminIdPath: components["schemas"]["Id"];
+        /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
+        PlatformIconKeyPath: components["schemas"]["PlatformIconKey"];
+        /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
+        PlatformIconVersionPath: number;
         /** @description session_id. A session that does not exist or is not the caller's is 30504 either way (BR-AI-20). */
         AgentSessionId: components["schemas"]["Id"];
         /** @description run_id from meta.run_id or a history turn. */
@@ -8565,6 +8937,515 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListPlatformIcons: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every platform mark with its published version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "key": "taobao",
+                     *             "current_version": null,
+                     *             "current": null,
+                     *             "latest_version": null,
+                     *             "updated_by": null,
+                     *             "updated_at": null
+                     *           },
+                     *           {
+                     *             "key": "tmall",
+                     *             "current_version": null,
+                     *             "current": null,
+                     *             "latest_version": null,
+                     *             "updated_by": null,
+                     *             "updated_at": null
+                     *           },
+                     *           {
+                     *             "key": "jd",
+                     *             "current_version": null,
+                     *             "current": null,
+                     *             "latest_version": null,
+                     *             "updated_by": null,
+                     *             "updated_at": null
+                     *           },
+                     *           {
+                     *             "key": "pdd",
+                     *             "current_version": null,
+                     *             "current": null,
+                     *             "latest_version": null,
+                     *             "updated_by": null,
+                     *             "updated_at": null
+                     *           },
+                     *           {
+                     *             "key": "wechat",
+                     *             "current_version": null,
+                     *             "current": null,
+                     *             "latest_version": null,
+                     *             "updated_by": null,
+                     *             "updated_at": null
+                     *           },
+                     *           {
+                     *             "key": "wechat_pay",
+                     *             "current_version": null,
+                     *             "current": null,
+                     *             "latest_version": null,
+                     *             "updated_by": null,
+                     *             "updated_at": null
+                     *           },
+                     *           {
+                     *             "key": "alipay",
+                     *             "current_version": 2,
+                     *             "current": {
+                     *               "version": 2,
+                     *               "url": "https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg",
+                     *               "sha256": "88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da",
+                     *               "format": "svg",
+                     *               "bytes": 4096,
+                     *               "sanitized": true,
+                     *               "source_url": "https://example.test/brand/alipay",
+                     *               "downloaded_on": "2026-10-08",
+                     *               "publishable": true,
+                     *               "ever_published": true,
+                     *               "created_by": "ops-yi",
+                     *               "created_at": "2026-10-08T15:00:00+08:00"
+                     *             },
+                     *             "latest_version": 3,
+                     *             "updated_by": "ops-yi",
+                     *             "updated_at": "2026-10-09T10:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "key": "wecom",
+                     *             "current_version": null,
+                     *             "current": null,
+                     *             "latest_version": 1,
+                     *             "updated_by": "ops-yi",
+                     *             "updated_at": "2026-10-09T09:00:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPlatformIconListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListPlatformIconVersions: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
+                key: components["parameters"]["PlatformIconKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of versions, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "version": 3,
+                     *             "url": "https://media.example.test/3f0c1b5e2d4a69788f1e2d3c4b5a69788f1e2d3c4b5a69788f1e2d3c4b5a6978.png",
+                     *             "sha256": "3f0c1b5e2d4a69788f1e2d3c4b5a69788f1e2d3c4b5a69788f1e2d3c4b5a6978",
+                     *             "format": "png",
+                     *             "bytes": 51200,
+                     *             "sanitized": false,
+                     *             "source_url": null,
+                     *             "downloaded_on": null,
+                     *             "publishable": false,
+                     *             "ever_published": false,
+                     *             "created_by": "ops-yi",
+                     *             "created_at": "2026-10-09T10:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "version": 2,
+                     *             "url": "https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg",
+                     *             "sha256": "88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da",
+                     *             "format": "svg",
+                     *             "bytes": 4096,
+                     *             "sanitized": true,
+                     *             "source_url": "https://example.test/brand/alipay",
+                     *             "downloaded_on": "2026-10-08",
+                     *             "publishable": true,
+                     *             "ever_published": true,
+                     *             "created_by": "ops-yi",
+                     *             "created_at": "2026-10-08T15:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPlatformIconVersionPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreatePlatformIconVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
+                key: components["parameters"]["PlatformIconKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPlatformIconVersionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlatformIconVersionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not saved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUploadPlatformIcon: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
+                key: components["parameters"]["PlatformIconKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminPlatformIconUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description The cleaned file, ready to be previewed and saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlatformIconUploadResponse"];
+                };
+            };
+            /** @description Request body above the global limit (20001 with data.fields=[body]). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 20001,
+                     *       "msg": "参数错误",
+                     *       "data": {
+                     *         "fields": [
+                     *           "body"
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Rejected (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdatePlatformIconVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
+                key: components["parameters"]["PlatformIconKeyPath"];
+                /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
+                version: components["parameters"]["PlatformIconVersionPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "source_url": "https://example.test/brand/alipay",
+                 *       "downloaded_on": "2026-10-08"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminPlatformIconSourceRequest"];
+            };
+        };
+        responses: {
+            /** @description The version with its registration. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "version": 3,
+                     *         "url": "https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg",
+                     *         "sha256": "88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da",
+                     *         "format": "svg",
+                     *         "bytes": 4096,
+                     *         "sanitized": true,
+                     *         "source_url": "https://example.test/brand/alipay",
+                     *         "downloaded_on": "2026-10-08",
+                     *         "publishable": true,
+                     *         "ever_published": false,
+                     *         "created_by": "ops-yi",
+                     *         "created_at": "2026-10-09T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPlatformIconVersionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminPublishPlatformIcon: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
+                key: components["parameters"]["PlatformIconKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPlatformIconPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description The mark with its new published version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "key": "alipay",
+                     *         "current_version": 2,
+                     *         "current": {
+                     *           "version": 2,
+                     *           "url": "https://media.example.test/88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da.svg",
+                     *           "sha256": "88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da",
+                     *           "format": "svg",
+                     *           "bytes": 4096,
+                     *           "sanitized": true,
+                     *           "source_url": "https://example.test/brand/alipay",
+                     *           "downloaded_on": "2026-10-08",
+                     *           "publishable": true,
+                     *           "ever_published": true,
+                     *           "created_by": "ops-yi",
+                     *           "created_at": "2026-10-08T15:00:00+08:00"
+                     *         },
+                     *         "latest_version": 2,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-09T10:05:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPlatformIconResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not published (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRestoreBuiltinPlatformIcon: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
+                key: components["parameters"]["PlatformIconKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_current_version": 2
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminPlatformIconRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description The mark, now on its built-in image. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "key": "alipay",
+                     *         "current_version": null,
+                     *         "current": null,
+                     *         "latest_version": 3,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-09T11:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPlatformIconResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not restored (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     [name: string]: unknown;

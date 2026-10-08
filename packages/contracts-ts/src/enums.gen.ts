@@ -1188,6 +1188,22 @@ export const auth_level = [
 export type AuthLevel = (typeof auth_level)[number];
 
 /**
+ * 平台标识键，/v1/config.platform_icons 的键与后台「平台标识」接口的 {key} 同一份；新增平台按 BR-TEXT-24 同样规则补值
+ * Source: 规划/04 §10.1（platform_icons）；08 BR-TEXT-24 细则标识键表 (contracts/enums/platform.yaml).
+ */
+export const platform_icon_key = [
+  "taobao", // 淘宝
+  "tmall", // 天猫
+  "jd", // 京东
+  "pdd", // 拼多多（内置文件名 pinduoduo）
+  "wechat", // 微信
+  "wechat_pay", // 微信支付（内置文件名 wechat-pay）
+  "alipay", // 支付宝
+  "wecom", // 企业微信
+] as const;
+export type PlatformIconKey = (typeof platform_icon_key)[number];
+
+/**
  * 转链来源，转链请求必填，缺失或非法返回 20001。watch_alert 为 MVP 预埋（开关关闭，不对用户展示，BR-WATCH-19 待确认）；taolijin 在 tlj.enabled=off 期间服务端不接受；share_ext、wechat_bot、mcp 为 P1
  * Source: 规划/04 §2.2；BR-ATTR-08；08 §13.2 (contracts/enums/trade.yaml).
  */
@@ -1511,6 +1527,7 @@ export const enums = {
   platform_search_status,
   install_channel,
   auth_level,
+  platform_icon_key,
   scene,
   pid_scene,
   buy_type,

@@ -122,6 +122,10 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'nickname_sensitive',
     'invalid_device_hash',
     'phone_invalid',
+    // CT-17g: admin-only platform mark upload rejections (BR-TEXT-24 细则).
+    'icon_format_invalid',
+    'icon_too_large',
+    'icon_svg_unconvertible',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10']);
 });
@@ -180,6 +184,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'order_attribution',
     'withdrawal',
     'settle_batch',
+    // CT-17g: admin platform mark publish / restore CAS (04 §6.6, BR-TEXT-24).
+    'platform_icon',
   ]);
 });
 

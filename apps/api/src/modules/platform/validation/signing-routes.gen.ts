@@ -332,6 +332,41 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "GET",
+    "path": "/admin/v1/platform-icons",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/platform-icons/:key/versions",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/versions",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/uploads",
+    "signed": false
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/platform-icons/:key/versions/:version",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/publish",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/platform-icons/:key/restore-builtin",
+    "signed": false
+  },
+  {
     "method": "POST",
     "path": "/v1/agent/sessions",
     "signed": false
