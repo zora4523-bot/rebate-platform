@@ -179,9 +179,11 @@ export function createHttpTransport(input: HttpTransportOptions): VendorTranspor
       }
       if (response.body === null) throw malformed();
       const iterator = response.body[Symbol.asyncIterator]();
-      const parser = createSseChunkParser();
-      const decoder = new TextDecoder('utf-8', { fatal: true });
       const chunks: unknown[] = [];
+      const parser = createSseChunkParser((chunk) => {
+        chunks.push(chunk);
+      });
+      const decoder = new TextDecoder('utf-8', { fatal: true });
       let bytes = 0;
       let secretTail = '';
       let exhausted = false;
@@ -203,7 +205,7 @@ export function createHttpTransport(input: HttpTransportOptions): VendorTranspor
           const overlap = secretTail + text;
           if (overlap.includes(key)) throw malformed();
           secretTail = key.length > 1 ? overlap.slice(-(key.length - 1)) : '';
-          for (const chunk of parser.push(text)) chunks.push(chunk);
+          parser.push(text);
         }
         if (!parser.finished) {
           let tail: string;
@@ -212,8 +214,8 @@ export function createHttpTransport(input: HttpTransportOptions): VendorTranspor
           } catch {
             throw malformed();
           }
-          for (const chunk of parser.push(tail)) chunks.push(chunk);
-          for (const chunk of parser.end()) chunks.push(chunk);
+          parser.push(tail);
+          parser.end();
         }
         checkSignal(signal);
         if (!parser.finished) throw malformed();
