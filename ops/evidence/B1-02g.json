@@ -1,0 +1,106 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (platform/idempotency abandon route, BR-ID-10 abandon endpoint; 04 §6.1 / §5 / §3.2). The route only injects the subject from the token principal (uid, app_id), hands action / idempotency_key / trace to Idempotency.abandon and writes the IdempotentResponse out byte for byte (no re-serialisation); outcome_unknown is not caught and the global error filter drops the connection; the controller is always registered on the api entry (src/contract.test.ts: every implemented operation has a route on the database-less api entry) and fails closed with 50001 without IDEMPOTENCY; admin / stream do not mount it. Contract abandonIdempotencyKey leaves planned; route-schemas regenerated. The IDEMPOTENCY symbol moves to idempotency/token.ts and is re-exported by platform.module.ts. Conditional version gate / deletion_only scope / ban whitelist belong to B1-03c and the ban guard task (brief §9.2). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass with no findings (subject from the token principal only, pre-controller refusals 10001 / 10002 / 10403, verbatim write-out, outcome_unknown via the global filter, entry assembly, symbol move without cycles, contract and generated routes consistent, no key or body logging); out-of-scope S2: stage ④a guard (deletion_only only for account_deletion, conditional version gate) is B1-03c's"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings, checklist complete; out-of-scope S1: conditional version gate (BR-ID-01 ④a) not yet enforced on this route — assigned to B1-03c by the brief (§9.2), recorded in followups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 rounds) reviewed by fresh Claude subagents: round 1 pass with two S2; round 2 fail (S1: the orchestrator's revision of #15 restricted the no-database api 401 to 10001 / 10002 although the signed route's signature check answers 10402 first); orchestrator-approved exception round pass with no findings after Codex round 3 widened the set to 10401 / 10402 / 10001 / 10002; the three Codex rounds were squashed by the orchestrator into one test commit"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-02g",
+  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+  "spec_commit": "2d0cc1150625eae5592e0407818a8896c977adef",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2d0cc1150625eae5592e0407818a8896c977adef",
+      "tree": "54029a170fed1523a1f34f9e73aa7c875ecc4e58",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T04:13:31Z",
+      "finished_at": "2026-10-08T04:13:47Z",
+      "red_tests": [
+        "test/spec/platform/idempotency/abandon-route/contract.test.ts > [AC-B1-02g#1] 作废契约去 planned 并生成一致请求 schema，保留鉴权、签名与条件作用域元数据",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#2] withdraw 无记录作废、重复不增行、迟到原操作 20903",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#2] payout_account_change 无记录作废、重复不增行、迟到原操作 20903",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#2] phone_change 无记录作废、重复不增行、迟到原操作 20903",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#2] account_deletion 无记录作废、重复不增行、迟到原操作 20903",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#3] 同一用户同一个 key 按四种原操作分别定位",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#4] 已完成 0 返回原 code/msg/data，不改记录或重放结果",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#4] 已完成 30303 返回原 code/msg/data，不改记录或重放结果",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#4] 已完成 30301 返回原 code/msg/data，不改记录或重放结果",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#5] processing 原样返回 HTTP 409 / 40901，不把待确认键改成作废",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#6] 原事务未提交时 HTTP 作废及时返回 40901，提交后返回 completed",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#7] 他人同键完成记录不可见；只插入令牌本人的作废记录",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#8] 非默认 app 的令牌定位该 app；跨 app 令牌 10403 且不调用作废原语",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#9] 非四值 action 返回 400 / 20001，data.fields 指明字段且无写库",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#9] 缺 action 返回 400 / 20001，data.fields 指明字段且无写库",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#9] 缺 key 返回 400 / 20001，data.fields 指明字段且无写库",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#9] 短 key 返回 400 / 20001，data.fields 指明字段且无写库",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#9] 超长 key 返回 400 / 20001，data.fields 指明字段且无写库",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#9] 非法 key 字符 返回 400 / 20001，data.fields 指明字段且无写库",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#9] 数值 key 返回 400 / 20001，data.fields 指明字段且无写库",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#9] 注入主体 返回 400 / 20001，data.fields 指明字段且无写库",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#10] 接受 8 字符合法 key 的边界值",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#10] 接受 64 字符合法 key 的边界值",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#11] 缺令牌 由守卫拒绝，无作废副作用；有效令牌可恢复",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#11] 坏令牌 由守卫拒绝，无作废副作用；有效令牌可恢复",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#12] 有效令牌加错误签名 10401，不调用原语；真实签名可作废",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#13] 原语收到令牌主体与 trace，HTTP 状态及 body 字节原样写出",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#14] 提交结果未知必须断开连接或返回无统一外壳的 500",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts > [AC-B1-02g#15] api 提供作废路由，无 DB 时由签名或令牌守卫拒绝（401）或 50001；admin / stream 不提供"
+      ],
+      "expected": [
+        "test/spec/platform/idempotency/abandon-route/contract.test.ts",
+        "test/spec/platform/idempotency/abandon-route/http.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "91103961bf4ccb389129fd564c29bc27eedc4e3732fc0df3441a4173655c2cba"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4aa9b25f0bf69c4b3863fec5a61c9fda4588a451cb504591511a23f9cfb3511d"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "12ee8ac2a489e0f4442af4988e6151aeedd4aaa8",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
