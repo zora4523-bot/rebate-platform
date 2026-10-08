@@ -73,8 +73,14 @@ async function runEntry(entry: 'worker' | 'payout', url: string, limitMs: number
   });
   child.stderr.on('data', () => undefined);
   const killer = setTimeout(() => child.kill('SIGKILL'), limitMs);
+  child.on('exit', () => {
+    exited = true;
+    started.resolve(false);
+  });
+  // 'close' fires only after the child exited and its stdio streams ended, so every stdout chunk
+  // has been appended before the log is parsed below ('exit' can precede the last 'data').
   const exit = new Promise<[number | null, string | null]>((resolve) => {
-    child.on('exit', (exitCode, exitSignal) => {
+    child.on('close', (exitCode, exitSignal) => {
       exited = true;
       started.resolve(false);
       resolve([exitCode, exitSignal]);
