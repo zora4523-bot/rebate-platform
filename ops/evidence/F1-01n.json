@@ -1,0 +1,149 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-platform-badge/badge.browser.test.ts > [AC-F1-01n-VISUAL#1] h5-platform-badge",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] taobao 无下发项时只显示 taobao.svg 和 淘宝",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] taobao 加载前有内置图，load 后显示原 URL，读屏名不变",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] tmall 无下发项时只显示 tmall.svg 和 天猫",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] tmall 加载前有内置图，load 后显示原 URL，读屏名不变",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] jd 无下发项时只显示 jd.svg 和 京东",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] jd 加载前有内置图，load 后显示原 URL，读屏名不变",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] pdd 无下发项时只显示 pinduoduo.svg 和 拼多多",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] pdd 加载前有内置图，load 后显示原 URL，读屏名不变",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] wechat 无下发项时只显示 wechat.svg 和 微信",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] wechat 加载前有内置图，load 后显示原 URL，读屏名不变",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] wechat_pay 无下发项时只显示 wechat-pay.svg 和 微信支付",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] wechat_pay 加载前有内置图，load 后显示原 URL，读屏名不变",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] alipay 无下发项时只显示 alipay.svg 和 支付宝",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] alipay 加载前有内置图，load 后显示原 URL，读屏名不变",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] wecom 无下发项时只显示 wecom.svg 和 企业微信",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] wecom 加载前有内置图，load 后显示原 URL，读屏名不变",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-ERROR#1] error 后一直兜底，同 URL 重渲染、改元数据、移除再传入均不重试且无提示",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-ERROR#2] 替换图已显示后再 error，也回内置图并停止请求",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-ERROR#3] A 失败后 B 可尝试，B 失败再回 A 及卸载后新实例均不重试",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-ERROR#4] 同屏首个实例加载失败后，另一实例收到相同 URL 直接兜底且不请求",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-RACE#1] 切换 URL 后旧请求的 load 不覆盖当前图片",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-RACE#1] 切换 URL 后旧请求的 error 不覆盖当前图片",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-RACE#2] 换平台与移除 remote 立即回当前平台内置图，迟到 load 无效",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"http://media.example.test/icon.svg\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"//media.example.test/icon.svg\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"/icon.svg\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"data:image/svg+xml,<svg/>\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"blob:https://media.example.test/id\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"javascript:alert(1)\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"file:///icon.svg\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"ftp://media.example.test/icon.svg\" 等同缺失",
+    "test/spec/frontend/h5-platform-badge/source.test.ts > [AC-F1-01n-SOURCE#1] 中文文案只在 texts，尺寸和颜色使用令牌，不读图片字节或获取配置",
+    "test/spec/frontend/h5-platform-badge/source.test.ts > [AC-F1-01n-ASSETS#1] 八个占位 SVG 作为包内 URL 资源使用，单色中性且不内联 DOM"
+  ],
+  "risk_note": "RV2 by path (the PR carries rule tests; H5 component paths). H5 PlatformBadge per BR-TEXT-24 'client display' and 03 §10.2: built-in neutral placeholder icon shown first, the /v1/config platform_icons url (https only) preloaded with new Image() and swapped in on load, any load error falls back to the built-in icon and the url is recorded in a session-level failure set so no instance requests it again in this session (orchestrator ruling per the BR text), no fetch, no status or digest checks, no user prompt; the accessible name is always the platform's Chinese name. Rule tests by Codex in four calls (the fourth granted by the orchestrator, blocked B-13 option A: fixed two defects in source.test.ts only — file-path resolution under jsdom and accepting Vite's ?no-inline import) (spec-test review r1 fail on an instance-level retry assertion narrowed by the brief, r2 pass; third call only dropped an impossible inline-flex assertion on flex-row children), red first in the container (red/4, 35 tests); implementation by Opus 5.5 in two rounds (round 2 switched the built-in SVG imports to ?no-inline so Vite keeps them as asset URLs). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 2: one S2 (source test regex rejected ?no-inline), resolved by the orchestrator-granted fourth rule-test call"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent (second reviewer, general), round 2: pass; one S2 carried over (placeholder SVG currentColor through <img>), registered as a design diff"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents; r1 fail (S1 instance-level retry vs BR session-level), r2 pass; the orchestrator-granted fourth call (two source.test.ts defects) checked by another fresh subagent: pass, no findings"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "F1-01n",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "facb80d977476bbf9769fb70ba827db2d3d5c3be",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "facb80d977476bbf9769fb70ba827db2d3d5c3be",
+      "tree": "e76c5f6788cc613946c481d7c9f55ff1da742b64",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T15:45:23Z",
+      "finished_at": "2026-10-08T15:45:45Z",
+      "red_tests": [
+        "test/spec/frontend/h5-platform-badge/badge.browser.test.ts > [AC-F1-01n-VISUAL#1] h5-platform-badge",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] taobao 无下发项时只显示 taobao.svg 和 淘宝",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] taobao 加载前有内置图，load 后显示原 URL，读屏名不变",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] tmall 无下发项时只显示 tmall.svg 和 天猫",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] tmall 加载前有内置图，load 后显示原 URL，读屏名不变",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] jd 无下发项时只显示 jd.svg 和 京东",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] jd 加载前有内置图，load 后显示原 URL，读屏名不变",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] pdd 无下发项时只显示 pinduoduo.svg 和 拼多多",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] pdd 加载前有内置图，load 后显示原 URL，读屏名不变",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] wechat 无下发项时只显示 wechat.svg 和 微信",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] wechat 加载前有内置图，load 后显示原 URL，读屏名不变",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] wechat_pay 无下发项时只显示 wechat-pay.svg 和 微信支付",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] wechat_pay 加载前有内置图，load 后显示原 URL，读屏名不变",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] alipay 无下发项时只显示 alipay.svg 和 支付宝",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] alipay 加载前有内置图，load 后显示原 URL，读屏名不变",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-MAPPING#1] wecom 无下发项时只显示 wecom.svg 和 企业微信",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-LOAD#1] wecom 加载前有内置图，load 后显示原 URL，读屏名不变",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-ERROR#1] error 后一直兜底，同 URL 重渲染、改元数据、移除再传入均不重试且无提示",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-ERROR#2] 替换图已显示后再 error，也回内置图并停止请求",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-ERROR#3] A 失败后 B 可尝试，B 失败再回 A 及卸载后新实例均不重试",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-ERROR#4] 同屏首个实例加载失败后，另一实例收到相同 URL 直接兜底且不请求",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-RACE#1] 切换 URL 后旧请求的 load 不覆盖当前图片",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-RACE#1] 切换 URL 后旧请求的 error 不覆盖当前图片",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-RACE#2] 换平台与移除 remote 立即回当前平台内置图，迟到 load 无效",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"http://media.example.test/icon.svg\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"//media.example.test/icon.svg\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"/icon.svg\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"data:image/svg+xml,<svg/>\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"blob:https://media.example.test/id\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"javascript:alert(1)\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"file:///icon.svg\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts > [AC-F1-01n-URL#1] 非 https 下发项 \"ftp://media.example.test/icon.svg\" 等同缺失",
+        "test/spec/frontend/h5-platform-badge/source.test.ts > [AC-F1-01n-SOURCE#1] 中文文案只在 texts，尺寸和颜色使用令牌，不读图片字节或获取配置",
+        "test/spec/frontend/h5-platform-badge/source.test.ts > [AC-F1-01n-ASSETS#1] 八个占位 SVG 作为包内 URL 资源使用，单色中性且不内联 DOM"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-platform-badge/badge.browser.test.ts",
+        "test/spec/frontend/h5-platform-badge/behavior.test.ts",
+        "test/spec/frontend/h5-platform-badge/source.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "0b5c7c3efc8eb3dd35f03204d5d7ba87435635ba63c1e4041c1b57d6a60ab1cf"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b6b7f80a87d86afb3c5cb42d597de33e7ae14b0d7be585d46b44117d7ff4d5d0"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "e691211bacac3991976e1a231c783c47c206b035",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
