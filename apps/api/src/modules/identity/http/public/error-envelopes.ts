@@ -1,6 +1,6 @@
 // The error answers of the B1-02f identity endpoints (oauth-attempts, step-up, h5-token, consents):
-// contracts/error-codes.yaml statuses (10001 / 10002 401, 20001–20004 400, 50001 500, 50305 503)
-// and the ErrorEnvelope { code, msg, data?, trace_id }. `msg` is a fixed fallback text (clients show
+// contracts/error-codes.yaml statuses (10001 / 10002 401, 10403 403, 20001–20004 400, 50001 500,
+// 50305 503) and the ErrorEnvelope { code, msg, data?, trace_id }. `msg` is a fixed fallback text (clients show
 // their dictionary text error.<code>[.<reason>], BR-TEXT-14); `data` only carries what the result
 // defines (fields, reason, provider), never a submitted value.
 import { HttpException } from '@nestjs/common';
@@ -9,6 +9,7 @@ import { HttpException } from '@nestjs/common';
 const MESSAGES: Readonly<Record<number, string>> = Object.freeze({
   10001: '未登录',
   10002: 'access_token 过期',
+  10403: '请在 App 内操作',
   20001: '填写内容有误，请检查',
   20002: '验证码错误，请重新输入',
   20003: '验证码已失效，请重新获取',
@@ -22,6 +23,7 @@ const IDENTITY_MISMATCH_MSG = '请使用本账号已绑定的登录方式验证'
 const STATUSES: Readonly<Record<number, number>> = Object.freeze({
   10001: 401,
   10002: 401,
+  10403: 403,
   20001: 400,
   20002: 400,
   20003: 400,
@@ -31,7 +33,7 @@ const STATUSES: Readonly<Record<number, number>> = Object.freeze({
 });
 
 export type IdentityFailure =
-  | { readonly code: 10001 | 10002 | 20002 | 20003 | 50001 }
+  | { readonly code: 10001 | 10002 | 10403 | 20002 | 20003 | 50001 }
   | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } }
   | { readonly code: 20004; readonly data?: { readonly reason: 'identity_mismatch' } }
   | { readonly code: 50305; readonly data: { readonly provider: string } };

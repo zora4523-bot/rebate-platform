@@ -200,3 +200,24 @@ it('[BR-ID-04][BR-ID-08] third party after consumption: no port / unavailable / 
     action: 'account_deletion',
   });
 });
+
+it('[BR-ID-07] a token of another app than the signing device is 10403 before any code or attempt', async () => {
+  const context = setup({ bound: true });
+  expect(
+    await context.service.verify({
+      principal: PRINCIPAL,
+      verifiedDevice: { ...DEVICE, appId: 'another_app' },
+      body: { action: 'withdraw', code: '123456' },
+    }),
+  ).toEqual({ code: 10403 });
+  const third = setup({ bound: false, union: 'u1' });
+  expect(
+    await third.service.verify({
+      principal: PRINCIPAL,
+      verifiedDevice: { ...DEVICE, appId: 'another_app' },
+      body: WECHAT,
+    }),
+  ).toEqual({ code: 10403 });
+  expect(context.verifyAndConsume).not.toHaveBeenCalled();
+  expect(third.consume).not.toHaveBeenCalled();
+});

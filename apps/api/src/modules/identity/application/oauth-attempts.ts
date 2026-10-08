@@ -55,7 +55,7 @@ export interface OauthAttemptCommand {
 
 export type OauthAttemptResult =
   | { readonly code: 0; readonly data: Schema<'OauthAttemptData'> }
-  | { readonly code: 10001 | 20004 | 50001 }
+  | { readonly code: 10001 | 10403 | 20004 | 50001 }
   | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } };
 
 export interface OauthAttemptService {
@@ -189,6 +189,11 @@ export function createOauthAttemptService(options: OauthAttemptOptions): OauthAt
       const { body, verifiedDevice, principal } = command;
       const { provider, purpose } = body;
       if (purpose !== 'login' && principal === undefined) return { code: 10001 };
+      // The token and the signing device must be of one app (BR-ID-07): otherwise a user of one
+      // app would get an attempt stored under another app's keys. Every key and binding below
+      // uses this checked app_id.
+      const appId = verifiedDevice.appId;
+      if (principal !== undefined && principal.app_id !== appId) return { code: 10403 };
       if (purpose === 'step_up' && body.action === undefined) {
         return { code: 20001, data: { fields: ['action'] } };
       }
@@ -200,14 +205,13 @@ export function createOauthAttemptService(options: OauthAttemptOptions): OauthAt
       if (purpose !== 'login' && principal !== undefined) {
         uid = principal.uid;
         if (purpose === 'step_up') {
-          const bound = await phoneBound(principal.app_id, principal.uid);
+          const bound = await phoneBound(appId, principal.uid);
           // A token whose user row is gone does not identify a user.
           if (bound === null) return { code: 10001 };
           // BR-ID-08: an account with a bound phone verifies by SMS.
           if (bound) return { code: 20001, data: { fields: ['provider'] } };
         }
       }
-      const appId = verifiedDevice.appId;
       const ttlSeconds = await configuredSeconds(
         config,
         appId,

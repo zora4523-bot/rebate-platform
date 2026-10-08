@@ -200,3 +200,31 @@ it('[BR-ID-32] issue: read_only by default, configured lifetime, expire_at on th
     data: { scope: 'read_only', expire_at: '2026-10-08T02:02:00.000Z' },
   });
 });
+
+it('[BR-ID-32] a read_only h5_token may only GET: HEAD and a write on an x-auth none route are h5_read_only', async () => {
+  const context = setup();
+  const check = createTokenCheck({ tokens: context.tokens, sessions: { find: context.find } });
+  const readOnly = await h5Token(context);
+  const standard = await h5Token(context, 'standard');
+  await expect(check(input('HEAD', '/v1/me', readOnly))).rejects.toBeInstanceOf(
+    H5ReadOnlyRejection,
+  );
+  context.find.mockClear();
+  // POST /v1/devices is x-auth none and inside the h5 scope: a read_only token still cannot write.
+  const anonymousWrite = input('POST', '/v1/devices', readOnly);
+  await expect(check(anonymousWrite)).rejects.toMatchObject({
+    code: 10403,
+    data: { reason: 'h5_read_only' },
+  });
+  expect(anonymousWrite.principal).toBeUndefined();
+  // A standard h5_token, an access token, an invalid one or none: x-auth none as before.
+  await expect(check(input('POST', '/v1/devices', standard))).resolves.toBeUndefined();
+  await expect(
+    check(input('POST', '/v1/devices', await context.tokens.issueAccess(PRINCIPAL))),
+  ).resolves.toBeUndefined();
+  await expect(check(input('POST', '/v1/devices', 'not-a-token'))).resolves.toBeUndefined();
+  await expect(
+    check({ ...input('POST', '/v1/devices', readOnly), headers: { 'x-app-id': 'couli' } }),
+  ).resolves.toBeUndefined();
+  expect(context.find).not.toHaveBeenCalled();
+});

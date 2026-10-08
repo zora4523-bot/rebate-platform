@@ -204,3 +204,16 @@ it('[BR-ID-04] a closed or failing store answers 50001, never an in-memory fallb
     code: 50001,
   });
 });
+
+it('[BR-ID-07] issue: a token of another app than the signing device is 10403, nothing stored', async () => {
+  const redis = memoryRedis();
+  const attempts = service({ redis: redis.handle });
+  expect(
+    await attempts.issue({
+      body: { provider: 'wechat', purpose: 'payout_bind' },
+      verifiedDevice: DEVICE,
+      principal: { ...PRINCIPAL, app_id: 'another_app' },
+    }),
+  ).toEqual({ code: 10403 });
+  expect(redis.values.size).toBe(0);
+});

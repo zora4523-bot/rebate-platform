@@ -39,7 +39,7 @@
 // token-context); nothing in it comes from a header.
 // h5_token (B1-02f, BR-ID-32): a token that is not an access token but verifies as aud=h5 is
 // accepted with its own rules (createTokenCheck's comment): live issuing session (10002), routes
-// outside its scope 10403 (also on x-auth none), read_only only GET (10403 h5_read_only). The
+// outside its scope 10403, read_only only GET (10403 h5_read_only), both also on x-auth none. The
 // step_up_token (aud=step_up) is signed here (signScopedToken) and never accepted by this check. The session scope is not enforced here:
 // deletion_only passes ② ③ and the 10405 of x-session-scopes is stage ④a (B1-03c).
 // Nothing here logs; tokens and keys never leave these functions except as the issued strings.
@@ -409,20 +409,19 @@ export function isOutsideH5Scope(method: string, template: string): boolean {
   );
 }
 
-/** GET (and HEAD, answered by the GET handler) is all a read_only h5_token may call. */
+/** GET is all a read_only h5_token may call (BR-ID-32「只能调用 GET 接口」; HEAD included). */
 function isReadMethod(method: string): boolean {
-  const upper = method.toUpperCase();
-  return upper === 'GET' || upper === 'HEAD';
+  return method.toUpperCase() === 'GET';
 }
 
 /**
  * Stages ② and ③ after signature, before body validation, using the full contract auth table.
  * An h5_token (aud=h5, B1-02f, BR-ID-32) is accepted where an access token is, with its own rules:
  * its session (sid) must still be live (10002); a route outside its scope (isOutsideH5Scope) is
- * 10403, also on an x-auth none route when the token is a valid h5_token; a read_only token on a
- * method other than GET is 10403 with data.reason=h5_read_only, raised through `readOnlyRejection`
- * (the entry passes an error the global filter writes back with its data; the default carries
- * the data on the error only). The principal is the token's uid / app_id / sid / device_id.
+ * 10403; a read_only token on a method other than GET is 10403 with data.reason=h5_read_only
+ * (both also on an x-auth none route when the token is a valid h5_token), raised through
+ * `readOnlyRejection` (the entry passes an error the global filter writes back with its data;
+ * the default carries the data on the error only). The principal is the token's uid / app_id / sid / device_id.
  */
 export function createTokenCheck(deps: {
   tokens: TokenService;
@@ -477,18 +476,28 @@ export function createTokenCheck(deps: {
     return h5 === undefined ? { principal } : { principal, h5 };
   };
 
-  /** x-auth none never reads a token, except to refuse a valid h5_token outside its scope. */
-  const isH5Token = async (authorization: string | string[] | undefined): Promise<boolean> => {
-    if (authorization === undefined || typeof tokens.verifyH5 !== 'function') return false;
+  /**
+   * x-auth none never reads a token, except to refuse a valid h5_token outside its scope or a
+   * read_only one on a method other than GET: the h5 claims of a valid h5_token, else undefined.
+   */
+  const h5ClaimsIfAny = async (
+    authorization: string | string[] | undefined,
+  ): Promise<H5Claims | undefined> => {
+    if (authorization === undefined || typeof tokens.verifyH5 !== 'function') return undefined;
     const token = bearer(authorization);
-    if (token === undefined) return false;
+    if (token === undefined) return undefined;
     try {
-      await tokens.verifyH5(token);
-      return true;
+      return await tokens.verifyH5(token);
     } catch (error) {
-      if (error instanceof TokenRejection) return false;
+      if (error instanceof TokenRejection) return undefined;
       throw error;
     }
+  };
+
+  /** BR-ID-32: the scope of an h5_token on a route (outside its scope 10403, read_only only GET). */
+  const enforceH5Scope = (request: RequestCheckInput, template: string, h5: H5Claims): void => {
+    if (isOutsideH5Scope(request.method, template)) throw new TokenRejection(10403);
+    if (h5.scp === 'read_only' && !isReadMethod(request.method)) throw readOnlyRejection(request);
   };
 
   const check: RequestCheck = async (request) => {
@@ -500,12 +509,12 @@ export function createTokenCheck(deps: {
     // fail closed before reading Authorization or any session (bootstrap also refuses the routes).
     if (auth === 'admin' || auth === 'super') throw new TokenRejection(10001);
     if (auth === 'none') {
-      // BR-ID-32: an h5_token is refused (10403, not ignored) on the routes outside its scope.
-      if (
-        isOutsideH5Scope(request.method, template) &&
-        (await isH5Token(request.headers['authorization']))
-      ) {
-        throw new TokenRejection(10403);
+      // BR-ID-32: a valid h5_token is refused (10403, not ignored) on the routes outside its scope,
+      // and a read_only one on a method other than GET (h5_read_only), so it cannot write through
+      // an anonymous route either. Without a valid h5_token nothing changes (no session is read).
+      if (!isReadMethod(request.method) || isOutsideH5Scope(request.method, template)) {
+        const h5 = await h5ClaimsIfAny(request.headers['authorization']);
+        if (h5 !== undefined) enforceH5Scope(request, template, h5);
       }
     } else {
       const authorization = request.headers['authorization'];
@@ -513,12 +522,7 @@ export function createTokenCheck(deps: {
         const { principal, h5 } = await authenticate(authorization);
         // ③ after login, app_id comes from the token only (BR-ID-07).
         if (headerValue(request, 'x-app-id') !== principal.app_id) throw new TokenRejection(10403);
-        if (h5 !== undefined) {
-          if (isOutsideH5Scope(request.method, template)) throw new TokenRejection(10403);
-          if (h5.scp === 'read_only' && !isReadMethod(request.method)) {
-            throw readOnlyRejection(request);
-          }
-        }
+        if (h5 !== undefined) enforceH5Scope(request, template, h5);
         request.principal = principal;
         return;
       }

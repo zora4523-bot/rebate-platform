@@ -59,7 +59,7 @@ export interface StepUpCommand {
 
 export type StepUpResult =
   | { readonly code: 0; readonly data: Schema<'StepUpData'> }
-  | { readonly code: 20002 | 20003 | 50001 }
+  | { readonly code: 10403 | 20002 | 20003 | 50001 }
   | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } }
   | { readonly code: 20004; readonly data?: { readonly reason: 'identity_mismatch' } }
   | { readonly code: 50305; readonly data: { readonly provider: Schema<'LoginProvider'> } };
@@ -219,6 +219,9 @@ export function createStepUpService(options: StepUpOptions): StepUpService {
   return Object.freeze({
     async verify(command: StepUpCommand): Promise<StepUpResult> {
       const { principal, verifiedDevice } = command;
+      // The token and the signing device must be of one app (BR-ID-07); from here on
+      // principal.app_id is that checked app_id (attempt keys, users, user_oauth, the token).
+      if (principal.app_id !== verifiedDevice.appId) return { code: 10403 };
       const body = command.body as SmsBody | OauthBody;
       return isSmsBody(body)
         ? bySms(principal, body)
