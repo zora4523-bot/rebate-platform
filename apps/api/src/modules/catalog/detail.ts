@@ -40,6 +40,18 @@ export interface ProductDetailRequest {
   readonly rawItemId?: string;
 }
 
+/**
+ * Union answers a cache served from an entry past its hit window because the union was down
+ * (BR-PROD-07 熔断降级, BR-PRICE-11): the card is stale=true with the entry's quoted_at.
+ */
+const STALE_DETAILS = new WeakSet<object>();
+
+/** Marks a detail answer as a stale cache entry (infra/product-cache.ts). */
+export function markStaleDetail<T extends UnionItemDetail>(item: T): T {
+  STALE_DETAILS.add(item);
+  return item;
+}
+
 export interface ProductDetailUpstream {
   detail(request: ProductDetailRequest): Promise<UnionItemDetail>;
 }
@@ -255,7 +267,7 @@ export async function getProduct(
     ref,
     entrySource: DETAIL_ENTRY_SOURCE,
     ...(query.from_link_id === undefined ? {} : { sourceLinkId: query.from_link_id }),
-    stale: false,
+    stale: STALE_DETAILS.has(item),
     scene: 'active_query',
   });
   switch (result.kind) {

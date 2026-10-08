@@ -52,6 +52,11 @@ export interface SearchUpstreamRequest {
 export interface SearchUpstreamPage {
   readonly items: readonly SearchCandidate[];
   readonly hasMore: boolean;
+  /**
+   * True when the cache answered a union dependency failure with an entry inside the stale window
+   * (BR-PROD-07 熔断降级): every card of the page carries stale=true and its original quoted_at.
+   */
+  readonly stale?: boolean;
 }
 
 /** Adapter/cache seam: B1-05g owns caching, not this use case. No product-pool fallback. */
@@ -117,6 +122,11 @@ const MAX_LIMIT = 50;
 export const SEARCH_SESSION_TTL_SECONDS = 1800;
 /** BR-PROD-08 ②: at most 500 issued product keys; beyond that the session stops deduplicating. */
 export const SEARCH_SEEN_LIMIT = 500;
+/**
+ * Highest cursor page_no (B1-05g, D6-2). 08 未定，技术取值: with limit ≤ 50 at most 5000 results;
+ * it bounds walking back page by page through union calls. A larger page_no is 20001.
+ */
+export const SEARCH_MAX_PAGE_NO = 100;
 /** TRADE-20: with no result, the platform's first 10 feed items. */
 const FALLBACK_LIMIT = 10;
 
@@ -243,6 +253,7 @@ function parseCursor(payload: unknown): SearchCursor {
   if (typeof pageNo !== 'number' || !Number.isSafeInteger(pageNo) || pageNo < 1) {
     invalid('malformed cursor');
   }
+  if (pageNo > SEARCH_MAX_PAGE_NO) invalid('cursor page_no beyond the page cap');
   return { search_session_id: id, page_no: pageNo };
 }
 
@@ -267,6 +278,16 @@ function isUnionOutage(error: unknown): boolean {
   }
   if (error instanceof DemoUnionError || error instanceof CatalogError) return false;
   return true;
+}
+
+/** Errors the fallback feed may degrade on: the union side or a catalog refusal, nothing else. */
+function isFeedFailure(error: unknown): boolean {
+  return (
+    error instanceof GovernanceError ||
+    error instanceof UnionError ||
+    error instanceof DemoUnionError ||
+    error instanceof CatalogError
+  );
 }
 
 interface Issued {
@@ -455,7 +476,7 @@ async function searchPages(
 
   const issued: Issued[] = [];
   let order = 0;
-  const take = async (candidates: readonly SearchCandidate[]): Promise<void> => {
+  const take = async (candidates: readonly SearchCandidate[], stale: boolean): Promise<void> => {
     for (const { item, ref } of candidates) {
       const position = order++;
       // Anomalies go to the card entry, which logs PRICE_ANOMALY and skips them before any price
@@ -465,7 +486,7 @@ async function searchPages(
           item,
           ref,
           entrySource: 'search',
-          stale: false,
+          stale,
           scene: 'retrieval',
         });
         continue;
@@ -485,7 +506,7 @@ async function searchPages(
         item,
         ref,
         entrySource: 'search',
-        stale: false,
+        stale,
         scene: 'retrieval',
         deferLink: true,
       });
@@ -511,7 +532,7 @@ async function searchPages(
   }
   let lastPage = startPage;
   let hasMore = page.hasMore;
-  await take(page.items);
+  await take(page.items, page.stale === true);
 
   // BR-PRICE-08: at most one refill page; has_more follows the last upstream page.
   if (dedupeSamePage(issued).length < limit && page.hasMore) {
@@ -540,7 +561,7 @@ async function searchPages(
     if (refill !== null) {
       lastPage = startPage + 1;
       hasMore = refill.hasMore;
-      await take(refill.items);
+      await take(refill.items, refill.stale === true);
     }
   }
 
@@ -578,13 +599,15 @@ async function searchPages(
     SEARCH_SESSION_TTL_SECONDS,
   );
 
+  // The page cap: no cursor is issued beyond SEARCH_MAX_PAGE_NO, so the list ends there.
+  const more = hasMore && lastPage + 1 <= SEARCH_MAX_PAGE_NO;
   return {
     firstPage,
     items,
-    nextCursor: hasMore
+    nextCursor: more
       ? cursors.encode({ search_session_id: sessionId, page_no: lastPage + 1 })
       : null,
-    hasMore,
+    hasMore: more,
     promotionSlot: pid.pid,
   };
 }
@@ -616,7 +639,9 @@ async function fallback(
   } catch (error: unknown) {
     // Followup ②: the fallback is a courtesy list; an outage or a business refusal of the feed
     // (rejected, item unavailable, invalid policy, unsupported) degrades to an empty list with an
-    // alert instead of failing the whole search.
+    // alert instead of failing the whole search. B1-05g ③: only union, governance, demo and
+    // catalog errors are swallowed; a programming defect (TypeError …) fails the search.
+    if (!isFeedFailure(error)) throw error;
     options.logger.warn(
       {
         event: isUnionOutage(error) ? 'search_fallback_unavailable' : 'search_fallback_rejected',

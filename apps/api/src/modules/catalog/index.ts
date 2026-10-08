@@ -42,6 +42,7 @@ export type {
   CatalogProductSummary,
 } from './application/product-reader.ts';
 export { createDbCatalogProductReader } from './infra/product-reader-wiring.ts';
+export { PRODUCT_CACHE_NAMESPACE } from './infra/product-cache.ts';
 export { createCatalog } from './application/catalog.ts';
 export { SEARCH_SEEN_LIMIT, SEARCH_SESSION_TTL_SECONDS, searchProducts } from './search.ts';
 export type {

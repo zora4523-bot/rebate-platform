@@ -1,5 +1,5 @@
 // B1-05j: server-side adapters of the search use case's ports — the union upstream over the
-// governed adapters, the Redis session store, the opaque cursor codec, and the non-cloud item_ref
+// governed adapters, the Redis session store, the signed cursor codec, and the non-cloud item_ref
 // cipher used when no field keyring is configured.
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { deriveProductKey, ProductKeyUnderivable } from '@couli/domain';
@@ -20,11 +20,14 @@ import {
 import { CatalogError } from '../domain/rules.ts';
 import type { Catalog, ProductRef } from '../domain/types.ts';
 import type { CatalogConfigReader, GovernedUnion } from '../ports.ts';
+import { createSignedSearchCursorCodec, processSearchCursorKey } from './search-cursor.ts';
+import {
+  createAtomicSearchSessionStore,
+  createRedisAtomicSessionStorage,
+} from './search-session-atomic.ts';
 import type {
   SearchCandidate,
-  SearchCursor,
   SearchCursorCodec,
-  SearchSession,
   SearchSessionStore,
   SearchUpstream,
   SearchUpstreamPage,
@@ -37,56 +40,24 @@ export const SEARCH_REDIS_NAMESPACE = 'catalog-search';
 const CURSOR_LEDGER_TTL_SECONDS = 1800;
 const JD_MODE = 'product_key.jd.mode';
 
-/** Opaque wire cursor: base64url of exactly { search_session_id, page_no }; garbage → undefined. */
-export function createSearchCursorCodec(): SearchCursorCodec {
-  return {
-    encode(value: SearchCursor): string {
-      const payload = { search_session_id: value.search_session_id, page_no: value.page_no };
-      return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-    },
-    decode(value: string): unknown {
-      if (!/^[A-Za-z0-9_-]+$/.test(value)) return undefined;
-      try {
-        return JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as unknown;
-      } catch {
-        return undefined;
-      }
-    },
-  };
+/**
+ * The wire cursor codec (B1-05g ②): HMAC-signed { search_session_id, page_no } (search-cursor.ts).
+ * Without an explicit key it signs with the process-wide local / test key; CatalogModule passes the
+ * keyring-derived deployment key whenever a field keyring is configured (always in staging / prod).
+ */
+export function createSearchCursorCodec(
+  signingKey: Uint8Array = processSearchCursorKey(),
+): SearchCursorCodec {
+  return createSignedSearchCursorCodec(signingKey);
 }
 
-function isSession(value: unknown): value is SearchSession {
-  if (typeof value !== 'object' || value === null) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record['appId'] === 'string' &&
-    typeof record['requester'] === 'string' &&
-    typeof record['query'] === 'object' &&
-    record['query'] !== null &&
-    typeof record['touchedAtMs'] === 'number' &&
-    Array.isArray(record['seen']) &&
-    typeof record['dedupDisabled'] === 'boolean'
-  );
-}
-
-/** Sessions in Redis under `<app_id>:session:<id>`; an unreadable value is no session. */
+/**
+ * Sessions in Redis under `<app_id>:session:<id>`; an unreadable value is no session. Every write
+ * goes through the compare-and-swap storage (B1-05g ①): concurrent continuations of one session
+ * on different instances merge their issued keys instead of overwriting each other.
+ */
 export function createRedisSearchSessionStore(redis: RedisNamespace): SearchSessionStore {
-  const key = (appId: string, sessionId: string): string => `${appId}:session:${sessionId}`;
-  return {
-    async read(appId, sessionId) {
-      const text = await redis.get(key(appId, sessionId));
-      if (text === null) return null;
-      try {
-        const value: unknown = JSON.parse(text);
-        return isSession(value) ? value : null;
-      } catch {
-        return null;
-      }
-    },
-    async write(appId, sessionId, session, ttlSeconds) {
-      await redis.set(key(appId, sessionId), JSON.stringify(session), ttlSeconds);
-    },
-  };
+  return createAtomicSearchSessionStore(createRedisAtomicSessionStorage(redis));
 }
 
 /** Without a REDIS provider (isolated HTTP unit tests) sessions fail at call time. */
@@ -130,7 +101,7 @@ function rawItemIdOf(item: UnionItem, jdMode: 'item' | 'sku'): string | undefine
  * The union search query carries only the keyword today: sort, coupon and price lower bound are
  * filtered on our side (BR-PRICE-15) until the adapters accept them.
  * TODO(规划/11 §4.5): 向联盟透传 sort / has_coupon / price_min_fen 与查询专用推广位 — blocked on 真实适配器的检索参数（CAP-*-03）
- * TODO(规划/11 §4.5): 搜索结果缓存（BR-PROD-07 300 秒命中、熔断时 stale）— blocked on B1-05g
+ * The BR-PROD-07 page cache wraps this upstream (infra/product-cache.ts cacheSearchUpstream).
  */
 export function createUnionSearchUpstream(options: UnionSearchUpstreamOptions): SearchUpstream {
   const { union, catalog, config, clock, ledger } = options;
