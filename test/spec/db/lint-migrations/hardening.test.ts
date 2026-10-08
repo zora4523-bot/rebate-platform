@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { gate, ROOT, run, TIMEOUTS, withFixture } from './kit.ts';
@@ -178,6 +178,9 @@ it('[AC-CT-06b#5] 任意位置 RESET 或重新禁用超时都报错，后来恢�
     ['RESET ALL;', ['require-lock-timeout', 'require-statement-timeout']],
     ['RESET lock_timeout;', ['require-lock-timeout']],
     ['RESET statement_timeout;', ['require-statement-timeout']],
+    ['SET lock_timeout = 0;', ['require-lock-timeout']],
+    ['SET SESSION statement_timeout = DEFAULT;', ['require-statement-timeout']],
+    ['SET statement_timeout TO 0;', ['require-statement-timeout']],
     ...['lock_timeout', 'statement_timeout'].flatMap((setting) =>
       ['0', "'0ms'", '0.4', "'0.4ms'", 'DEFAULT'].map(
         (value) =>
@@ -250,8 +253,20 @@ it('[AC-CT-06b#7] 冻结清单确切收录 19 个原文件及 sha256，保留选
     badNames: [],
   });
   const result = run([]);
-  expect(result.status, result.stderr).toBe(0);
-  expect(result.stdout).toContain('nothing to lint');
+  const hasNewMigration = readdirSync(join(ROOT, 'db/migrations')).some(
+    (name) => /^\d{4}_.*\.sql$/.test(name) && Number(name.slice(0, 4)) > 19,
+  );
+  if (!hasNewMigration) {
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('nothing to lint');
+  }
+  for (const message of [
+    'changed after merge',
+    'is missing',
+    'numbered at or below',
+    'not a SQL migration',
+  ])
+    expect(result.stderr).not.toContain(message);
   const url = new URL('../../../../tools/ci/lint-migrations.ts', import.meta.url).href;
   const exports = (await import(/* @vite-ignore */ url)) as {
     FROZEN_MIGRATIONS?: Readonly<Record<string, string>>;
@@ -269,78 +284,106 @@ it('[AC-CT-06b#7] 冻结清单确切收录 19 个原文件及 sha256，保留选
   }
 });
 
-it('[AC-CT-06b#8] 完整冻结文件可通过，但改动内容必须拒绝且不运行 squawk', () => {
-  withFixture(frozenFiles(), (root) => {
-    const result = run(['--root', root, '--squawk', join(root, 'absent-squawk')]);
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('nothing to lint');
-    for (const name of ['0001_app-schema.sql', '0019_device-registrations-created-at-insert.sql']) {
-      const path = join(root, 'db/migrations', name);
-      const original = readFileSync(path, 'utf8');
-      writeFileSync(path, original.replace('-- Up Migration', '-- Up migration'));
-      expect(readFileSync(path, 'utf8')).not.toBe(original);
-      refuseBeforeSquawk(root, `${name} changed after merge`);
-      writeFileSync(path, original);
-    }
-  });
-});
+it.each([false, true])(
+  '[AC-CT-06b#8] 完整冻结文件可通过，但改动内容必须拒绝且不运行 squawk（有新迁移=%s）',
+  (withNewMigration) => {
+    withFixture(frozenFiles(), (root) => {
+      const result = run(['--root', root, '--squawk', join(root, 'absent-squawk')]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('nothing to lint');
+      if (withNewMigration) writeFileSync(join(root, 'db/migrations/0020_new.sql'), TIMEOUTS + DDL);
+      for (const name of [
+        '0001_app-schema.sql',
+        '0019_device-registrations-created-at-insert.sql',
+      ]) {
+        const path = join(root, 'db/migrations', name);
+        const original = readFileSync(path, 'utf8');
+        writeFileSync(path, original.replace('-- Up Migration', '-- Up migration'));
+        expect(readFileSync(path, 'utf8')).not.toBe(original);
+        refuseBeforeSquawk(root, `${name} changed after merge`);
+        writeFileSync(path, original);
+      }
+    });
+  },
+);
 
-it('[AC-CT-06b#9] 存在真实冻结文件才拒绝基线内陌生文件名，虚构旧文件名夹具仍通过', () => {
-  withFixture({ [FILE]: TIMEOUTS + DDL }, (root) => {
-    expect(run(['--root', root]).status).toBe(0);
-  });
-  // 与 CT-06a #14、#17 相同：无真实冻结成员时，不检查虚构旧文件的内容或完整性。
-  const fictionalOldFiles = {
-    '0001_old.sql': 'DROP TABLE app.orders;',
-    '0018_frozen.sql': '-- squawk-ignore-file\nINVALID SQL;',
-  };
-  withFixture(fictionalOldFiles, (root) => {
-    const result = run(['--root', root, '--squawk', join(root, 'absent-squawk')]);
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('nothing to lint');
-  });
-  withFixture({ ...fictionalOldFiles, [FILE]: TIMEOUTS + DDL }, (root) => {
-    const result = run(['--root', root]);
-    expect(result.status, result.stderr + result.stdout).toBe(0);
-    expect(result.stdout).toContain(`db/migrations/${FILE}`);
-  });
-  for (const name of ['0001_replacement.sql', '0018_unknown.sql']) {
-    withFixture({ [name]: TIMEOUTS + DDL }, (root) => {
+it.each([false, true])(
+  '[AC-CT-06b#9] 存在真实冻结文件才拒绝基线内陌生文件名，虚构旧文件名夹具仍通过（有新迁移=%s）',
+  (withNewMigration) => {
+    const extraFiles: Record<string, string> = withNewMigration
+      ? { '0020_new.sql': TIMEOUTS + DDL }
+      : {};
+    withFixture({ [FILE]: TIMEOUTS + DDL }, (root) => {
+      expect(run(['--root', root]).status).toBe(0);
+    });
+    // 与 CT-06a #14、#17 相同：无真实冻结成员时，不检查虚构旧文件的内容或完整性。
+    const fictionalOldFiles = {
+      '0001_old.sql': 'DROP TABLE app.orders;',
+      '0018_frozen.sql': '-- squawk-ignore-file\nINVALID SQL;',
+    };
+    withFixture(fictionalOldFiles, (root) => {
       const result = run(['--root', root, '--squawk', join(root, 'absent-squawk')]);
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain('nothing to lint');
     });
-    withFixture({ ...frozenFiles(), [name]: TIMEOUTS + DDL }, (root) => {
-      refuseBeforeSquawk(root, `${name} is numbered at or below the gate baseline`);
+    withFixture({ ...fictionalOldFiles, [FILE]: TIMEOUTS + DDL }, (root) => {
+      const result = run(['--root', root]);
+      expect(result.status, result.stderr + result.stdout).toBe(0);
+      expect(result.stdout).toContain(`db/migrations/${FILE}`);
     });
-  }
-});
+    for (const name of ['0001_replacement.sql', '0018_unknown.sql']) {
+      withFixture({ [name]: TIMEOUTS + DDL }, (root) => {
+        const result = run(['--root', root, '--squawk', join(root, 'absent-squawk')]);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toContain('nothing to lint');
+      });
+      withFixture({ ...frozenFiles(), ...extraFiles, [name]: TIMEOUTS + DDL }, (root) => {
+        refuseBeforeSquawk(root, `${name} is numbered at or below the gate baseline`);
+      });
+    }
+  },
+);
 
-it('[AC-CT-06b#10] 冻结集合有任一成员就必须完整，复制全集后删一个也拒绝', () => {
-  withFixture({}, (root) => {
-    const result = run(['--root', root]);
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('nothing to lint');
-  });
-  for (const name of ['0001_app-schema.sql', '0019_device-registrations-created-at-insert.sql']) {
-    withFixture(frozenFiles(), (root) => {
-      unlinkSync(join(root, 'db/migrations', name));
-      refuseBeforeSquawk(root, `${name} is missing`);
+it.each([false, true])(
+  '[AC-CT-06b#10] 冻结集合有任一成员就必须完整，复制全集后删一个也拒绝（有新迁移=%s）',
+  (withNewMigration) => {
+    const extraFiles: Record<string, string> = withNewMigration
+      ? { '0020_new.sql': TIMEOUTS + DDL }
+      : {};
+    withFixture({}, (root) => {
+      const result = run(['--root', root]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('nothing to lint');
     });
-  }
-});
+    for (const name of ['0001_app-schema.sql', '0019_device-registrations-created-at-insert.sql']) {
+      withFixture({ ...frozenFiles(), ...extraFiles }, (root) => {
+        unlinkSync(join(root, 'db/migrations', name));
+        refuseBeforeSquawk(root, `${name} is missing`);
+      });
+    }
+  },
+);
 
-it('[AC-CT-06b#11] 可执行的非 SQL 迁移全部拒绝，README 与备份不误报', () => {
-  withFixture({ 'README.md': 'migration notes', '0020_x.sql.bak': 'backup' }, (root) => {
-    expect(run(['--root', root]).status).toBe(0);
-  });
-  for (const extension of ['ts', 'js', 'cjs', 'mjs']) {
-    const name = `0020_x.${extension}`;
-    withFixture({ [name]: '// migration tool would execute this file\n' }, (root) => {
-      refuseBeforeSquawk(root, `${name} is not a SQL migration`);
+it.each([false, true])(
+  '[AC-CT-06b#11] 可执行的非 SQL 迁移全部拒绝，README 与备份不误报（有新迁移=%s）',
+  (withNewMigration) => {
+    const extraFiles: Record<string, string> = withNewMigration
+      ? { '0020_new.sql': TIMEOUTS + DDL }
+      : {};
+    withFixture({ 'README.md': 'migration notes', '0020_x.sql.bak': 'backup' }, (root) => {
+      expect(run(['--root', root]).status).toBe(0);
     });
-  }
-});
+    for (const extension of ['ts', 'js', 'cjs', 'mjs']) {
+      const name = `0020_x.${extension}`;
+      withFixture(
+        { ...extraFiles, [name]: '// migration tool would execute this file\n' },
+        (root) => {
+          refuseBeforeSquawk(root, `${name} is not a SQL migration`);
+        },
+      );
+    }
+  },
+);
 
 const DO_SAFE = [
   'DO $$ BEGIN CREATE TABLE app.article_default PARTITION OF app.articles DEFAULT; END $$;',
@@ -352,6 +395,8 @@ const DO_BAD = [
   'do $task$ begin alter table app.articles rename column a to b; end $task$;',
   'DO LANGUAGE plpgsql $$ BEGIN TRUNCATE TABLE app.articles; END $$;',
   'DO $task$ BEGIN ALTER TABLE app.articles ALTER COLUMN a TYPE bigint; END $task$;',
+  "DO $$ BEGIN EXECUTE 'DROP TABLE app.articles'; END $$;",
+  "DO $$ DECLARE t text := 'articles'; BEGIN EXECUTE format('ALTER TABLE %I RENAME TO x', t); END $$;",
 ];
 
 it('[AC-CT-06b#12] DO 的匿名或命名正文禁止破坏性 DDL，正常分区、INSERT、RAISE 可通过', async () => {
@@ -437,6 +482,8 @@ const DERIVED_SAFE = [
   "SELECT 'amount_fen' AS note INTO app.t; /* fee_fen */",
   'CREATE TABLE app.t AS SELECT 1 AS amount_fen_note;',
   'CREATE TABLE app.t (amount_fen bigint);',
+  'INSERT INTO app.t (amount_fen) SELECT amount_fen FROM app.old;',
+  'WITH s AS (SELECT amount_fen FROM app.old) INSERT INTO app.t (amount_fen) SELECT amount_fen FROM s;',
 ];
 
 it('[AC-CT-06b#15] CTAS、AS TABLE 与 SELECT INTO 含金额标识符时拒绝，字符串和注释不算', async () => {
