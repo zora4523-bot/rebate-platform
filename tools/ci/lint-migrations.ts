@@ -162,7 +162,7 @@ const TIMEOUT_SET_IN =
 const TIMEOUT_RESET_IN = /\bRESET\s+"?(lock_timeout|statement_timeout|ALL)"?(?![\w"])/i;
 /** `set_config('lock_timeout' | 'statement_timeout', <value>, …)` anywhere in a statement. */
 const TIMEOUT_SET_CONFIG =
-  /(?<![\w"])(?:"?pg_catalog"?\s*\.\s*)?"?set_config"?\s*\(\s*(?:E|U&)?'"?(lock_timeout|statement_timeout)"?'\s*,\s*([Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*'|\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$|[^,)]*)/gi;
+  /(?<![\w"])(?:"?pg_catalog"?\s*\.\s*)?"?set_config"?\s*\(\s*(?:E|U&)?'"?(lock_timeout|statement_timeout)"?'\s*,\s*([Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*'|(?<dq>\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)[\s\S]*?\k<dq>|[^,)]*)/gi;
 /** Milliseconds per unit of a timeout value (no unit means milliseconds). */
 const TIMEOUT_UNITS: Readonly<Record<string, number>> = {
   us: 0.001,
@@ -385,14 +385,20 @@ function roundHalfEven(x: number): number {
  * plain string bodies (`DO '…'`, `DO E'…'`, doubled quotes undone), each optionally with LANGUAGE.
  * `code` has comments and string contents blanked, `valued` only the comments, at the same offsets.
  */
-function doBodies(code: string, valued: string): { at: number; body: string }[] {
-  const out: { at: number; body: string }[] = [];
+function doBodies(
+  code: string,
+  valued: string,
+): { at: number; body: string; unreadable?: boolean }[] {
+  const out: { at: number; body: string; unreadable?: boolean }[] = [];
   const dollar = /\bDO\s+(?:LANGUAGE\s+\w+\s+)?(\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)/gi;
   for (const m of code.matchAll(dollar)) {
     const tag = m[1] ?? '$$';
     const open = (m.index ?? 0) + m[0].length;
     const close = code.indexOf(tag, open);
-    out.push({ at: m.index ?? 0, body: valued.slice(open, close === -1 ? code.length : close) });
+    out.push({
+      at: m.index ?? 0,
+      body: valued.slice(open, close === -1 ? code.length : close),
+    });
   }
   const quoted = /\bDO\s+(?:LANGUAGE\s+\w+\s+)?(E|U&)?'/gi;
   for (const m of code.matchAll(quoted)) {
@@ -404,7 +410,11 @@ function doBodies(code: string, valued: string): { at: number; body: string }[] 
     const uescape =
       close === -1 ? '' : (/^\s*UESCAPE\s*'[^']'/i.exec(valued.slice(close + 1))?.[0] ?? '');
     const decoded = decodeLiteral(`${m[1] ?? ''}'${raw}'${uescape}`);
-    out.push({ at: m.index ?? 0, body: decoded ?? raw.replace(/''/g, "'") });
+    out.push({
+      at: m.index ?? 0,
+      body: decoded ?? raw.replace(/''/g, "'"),
+      ...(decoded === null ? { unreadable: true } : {}),
+    });
   }
   return out;
 }
@@ -516,7 +526,12 @@ function moneyColumns(statement: string): { name: string; rest: string; at: numb
     if (open === -1) return found;
     for (const part of topLevelParts(statement, open + 1, statement.length)) {
       const m = MONEY_COLUMN_DEF.exec(part.text);
-      if (m !== null) found.push({ name: m[1] ?? m[2] ?? '', rest: m[3] ?? '', at: at(part) });
+      if (m !== null)
+        found.push({
+          name: m[1] ?? m[2] ?? '',
+          rest: m[3] ?? '',
+          at: at(part),
+        });
     }
     return found;
   }
@@ -547,7 +562,12 @@ function lineOf(text: string, index: number): number {
 }
 
 /** One SQL string literal token: E'…' (backslash escapes), U&'…' [UESCAPE 'c'], '…' or $tag$…$tag$. */
-const LITERAL_SRC = String.raw`[Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*'|\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$`;
+const LITERAL_SRC = String.raw`[Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*'|(?<dq>\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)[\s\S]*?\k<dq>`;
+
+/** The character of a code point, or null outside Unicode (PostgreSQL rejects it). */
+function codePoint(n: number): string | null {
+  return n > 0x10ffff ? null : String.fromCodePoint(n);
+}
 
 /**
  * The value of a SQL string literal as PostgreSQL reads it (CT-06f): plain '…', E'…' with every
@@ -573,10 +593,18 @@ export function decodeLiteral(token: string): string | null {
         out += esc;
         i++;
       } else if (body[i + 1] === '+' && /^[0-9a-fA-F]{6}$/.test(body.slice(i + 2, i + 8))) {
-        out += String.fromCodePoint(parseInt(body.slice(i + 2, i + 8), 16));
+        {
+          const c = codePoint(parseInt(body.slice(i + 2, i + 8), 16));
+          if (c === null) return null;
+          out += c;
+        }
         i += 7;
       } else if (/^[0-9a-fA-F]{4}$/.test(body.slice(i + 1, i + 5))) {
-        out += String.fromCodePoint(parseInt(body.slice(i + 1, i + 5), 16));
+        {
+          const c = codePoint(parseInt(body.slice(i + 1, i + 5), 16));
+          if (c === null) return null;
+          out += c;
+        }
         i += 4;
       } else return null;
     }
@@ -619,10 +647,18 @@ export function decodeLiteral(token: string): string | null {
         out += String.fromCharCode(parseInt(m, 16));
         i += 1 + m.length;
       } else if (n === 'u' && /^[0-9a-fA-F]{4}$/.test(body.slice(i + 2, i + 6))) {
-        out += String.fromCodePoint(parseInt(body.slice(i + 2, i + 6), 16));
+        {
+          const c = codePoint(parseInt(body.slice(i + 2, i + 6), 16));
+          if (c === null) return null;
+          out += c;
+        }
         i += 5;
       } else if (n === 'U' && /^[0-9a-fA-F]{8}$/.test(body.slice(i + 2, i + 10))) {
-        out += String.fromCodePoint(parseInt(body.slice(i + 2, i + 10), 16));
+        {
+          const c = codePoint(parseInt(body.slice(i + 2, i + 10), 16));
+          if (c === null) return null;
+          out += c;
+        }
         i += 9;
       } else return null;
     }
@@ -636,7 +672,7 @@ export function decodeLiteral(token: string): string | null {
 /** EXECUTE <literal> inside a DO body replaced by the SQL it runs (undecodable literals left as is). */
 function decodeExecutes(body: string): string {
   return body.replace(
-    new RegExp(String.raw`\bEXECUTE\s+(${LITERAL_SRC})`, 'g'),
+    new RegExp(String.raw`\bEXECUTE\s+(${LITERAL_SRC})`, 'gi'),
     (m, lit: string) => {
       const v = decodeLiteral(lit);
       return v === null ? m : `EXECUTE ${v};`;
@@ -659,10 +695,15 @@ function hasUnnamedColumnConstraint(text: string): boolean {
   const flat = flattenParens(text);
   let named = false;
   for (const m of flat.matchAll(
-    /\bCONSTRAINT\s+(?:"[^"]+"|\w+)|\b(?:PRIMARY\s+KEY|UNIQUE|CHECK|REFERENCES|EXCLUDE)\b/gi,
+    /\bCONSTRAINT\s+(?:"[^"]+"|\w+)|\b(?:PRIMARY\s+KEY|UNIQUE|CHECK|REFERENCES|EXCLUDE)\b|\b(?:NOT\s+NULL|NULL|DEFAULT|GENERATED)\b/gi,
   )) {
     if (/^CONSTRAINT\b/i.test(m[0])) {
       named = true;
+      continue;
+    }
+    // A name before NOT NULL, NULL, DEFAULT or GENERATED is used by it, not by the next constraint.
+    if (/^(?:NOT\s+NULL|NULL|DEFAULT|GENERATED)$/i.test(m[0])) {
+      named = false;
       continue;
     }
     if (!named) return true;
@@ -741,7 +782,20 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
   // RAISE statements are messages, not SQL: their text does not count (CT-06d). ALTER … TYPE means a
   // column type change (ALTER TABLE … ALTER [COLUMN] x [SET DATA] TYPE), not a column named type or
   // ALTER TYPE … ADD VALUE.
-  for (const { at, body: original } of doBodies(code, valued)) {
+  for (const { at, body: original, unreadable } of doBodies(code, valued)) {
+    // A body or EXECUTE string with an escape this gate cannot read could hide anything (CT-06f).
+    const undecodable = [
+      ...original.matchAll(new RegExp(String.raw`\bEXECUTE\s+(${LITERAL_SRC})`, 'gi')),
+    ].some((m) => decodeLiteral(m[1] ?? '') === null);
+    if (unreadable === true || undecodable) {
+      problems.push({
+        file,
+        line: lineOf(code, at),
+        message:
+          'DO block with an escape the gate cannot read (E or U& string): write the SQL as plain SQL',
+      });
+      continue;
+    }
     // EXECUTE strings are read as the SQL they run (CT-06f).
     const raw = decodeExecutes(original);
     const blankedBody = withoutComments(raw);
@@ -785,6 +839,14 @@ function structureProblems(file: string, sql: string, code: string): Problem[] {
         message: `${parts.join('; ')}: write it as plain SQL`,
       });
     }
+    // Unnamed funds-table indexes and constraints inside a DO block count too (CT-06f).
+    // PL/pgSQL keywords before a statement are cut like statement ends, so the statement head is read.
+    const statementsOnly = withoutComments(body).replace(
+      /\b(?:BEGIN|THEN|ELSE|LOOP|EXECUTE)\b/gi,
+      (m) => `;${' '.repeat(m.length - 1)}`,
+    );
+    for (const problem of unnamedProblems(file, statementsOnly))
+      problems.push({ ...problem, line: lineOf(code, at) });
   }
   let start = 0;
   for (const statement of code.split(';')) {
@@ -1088,7 +1150,11 @@ function fundsObjectProblems(
   const problems: Problem[] = [];
   const statements = statementsOf(code);
   const refuse = (at: number, message: string): void => {
-    problems.push({ file, line: lineOf(code, at), message: `${message} (规划/02 §16.3)` });
+    problems.push({
+      file,
+      line: lineOf(code, at),
+      message: `${message} (规划/02 §16.3)`,
+    });
   };
   // The statement with its string literals kept, for definition comparisons (CT-06d).
   const keptOf = (j: number): string =>
@@ -1226,7 +1292,8 @@ function fundsObjectProblems(
             });
             let now = clause.trim().replace(/^add\s+/i, '');
             if (validated) now = now.replace(/\s+NOT\s+VALID\b/i, '');
-            if (before !== undefined && before !== normaliseDefinition(now)) {
+            const was = validated ? before?.replace(/\s*not\s+valid\b/i, '') : before;
+            if (was !== undefined && was !== normaliseDefinition(now)) {
               refuse(at, different('constraint', name, table));
             }
           }
