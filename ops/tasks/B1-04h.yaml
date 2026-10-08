@@ -1,0 +1,27 @@
+id: B1-04h
+repo: rebate-platform
+title: 拼多多 Adapter（转链与授权备案）：goods.promotion.url.generate（p_id + custom_parameters ≤64 字节 + search_id 透传，可选 sku_id_code_list、generate_schema_url / short_url）、member.authority.query 查备案、rp.prom.url.generate channel_type=10 生成备案链接（bindPublisher）、goods.zs.unit.url.gen 直链转链
+type: impl
+# 草稿 2026-10-05；2026-10-08 按 09 4_PDD_附 §6（CAP-PDD-05、06 差异）修订。依据：BR-ID-22（授权查询与备案链接、custom_parameters 结构与长度、只传 attr_code 不传内部 user_id）、BR-ATTR-05、BR-ATTR-06、
+# BR-PRICE-08（amount_unknown 直链转链，开关 pdd.direct_convert.enabled）、09 4_PDD CAP-PDD-05、06、11 行与 4_PDD_附 §3.6、§6，02 §6.2（转链不自动重试），由编排者摘入任务书第 2 节。
+# 转链出参按官方含义映射到 ConvertResult：primary 取 schema_url（需 generate_schema_url=true），fallbacks 依次 mobile_url、mobile_short_url；`url` / `short_url` 是「浏览器内优先拉微信小程序」的链接，不作 App 内外跳目标；we_app_info、weixin_short_link 原样透传供分享（P1）。
+# custom_parameters 按 BR-ATTR-06 的 JSON 形状由 linking 给出字符串，适配器只校验 ≤64 字节并原样提交（超长报 invalid_dto，不截断）；多个 goods_sign 走 goods_sign_list 批量（上限待 CAP-PDD-06 实测，本段默认一次 1 个）。
+# 备案：channel_type=10 属标准多多客权限包（2026-10-02 接口文档），p_id_list 长度 1；member.authority.query 返回 bind 1/0 映射为 BindResult。授权状态的存储（union_bindings，写者 linking）与 30111 在 B1-06，本段只做调用与映射。备案匹配键未实测（CAP-PDD-05）：不对用户承诺。
+# 账号（负责人 2026-10-08）：复用优券汇开放平台应用与多多进宝账号；p_id 只从凑狸自己的媒体下的 union_pids（self_buy / share / agent / query，B1-19b 登记为 active）取，不得使用优券汇的推广位（BR-ATTR-03）。
+# 录制来源同 B1-04g 注释。目录约定见 B1-04b 注释；只改 union/infra/pdd/、config/union-endpoints/pdd.json 与 fixtures/union-recordings/pdd/。test_paths：test/spec/union/pdd-convert/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04g]
+paths:
+  - 'apps/api/src/modules/union/infra/pdd/**'
+  - 'config/union-endpoints/pdd.json'
+  - 'fixtures/union-recordings/pdd/**'
+test_paths:
+  - 'test/spec/union/pdd-convert/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-convert/**'
+status: todo
+pr: null

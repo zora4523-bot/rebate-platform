@@ -1,0 +1,27 @@
+id: B1-04i
+repo: rebate-platform
+title: 拼多多 Adapter（订单）：order.list.increment.get 增量查询（窗口 ≤24 小时、近 90 天、page 1–10000 倒序翻页、page_size 40–50、return_count=false）、order.list.range.get 按支付时间补拉（last_order_id 迭代）、order.detail.get 逐单补售后状态、订单 DTO（原始字段透传）
+type: impl
+# 草稿 2026-10-05；2026-10-08 按 09 4_PDD_附 §6（CAP-PDD-04、07、08 差异）与负责人 2026-10-02 拍板（4 附 §7A）修订。依据：09 4_PDD CAP-PDD-04、07、08 行，4_PDD_附 §3.4（三个订单接口的响应外层键：两个列表接口都是 order_list_get_response，详情是 order_detail_response）、
+# BR-CALC-03、BR-CALC-17，02 §7.1，由编排者摘入任务书第 2 节。
+# 字段事实（官方文档）：return_status、sku_id_code、url_last_generate_time、point_time 只在 order.detail.get 出参里，列表接口没有 → 售后状态靠逐单详情补或由 order_status 变化推断（本段提供 getOrderDetail 能力，调度策略在 order-sync 任务）；
+# 推广位字段列表接口叫 p_id、详情接口叫 pid；订单同时有 order_id 与 order_sn，DTO 的 order_id 一律取 order_sn（推广订单编号）并另存 platform_order_id=order_id，两者都按字符串；哪个是买家可见订单号待实测（F-ORD-09）。
+# N 取数（4 附 §7A 负责人 2026-10-02）：promotion_amount 含软件服务费，可分配基数 = promotion_amount − duo_id_service_fee；subsidy_duo_amount_ten_million、subsidy_duo_amount_level 不计入基数、不进任何用户可见字段。本段只在 DTO 上分别透传这几个原始字段（commission_fen=promotion_amount、service_fee_fen=duo_id_service_fee、subsidy_* 单列），扣减在 orders / 分账层做，适配器不下结论。
+# 比价（price_compare_status）、代购预判（bandan_risk_consult）、order_status 0/1/2/3/4/5/10、fail_reason、batch_no 只透传；状态映射表在 specs/order-status-map/pdd.csv（CAP-PDD-07 产物）由 order-sync 任务消费。
+# 订单接口不压测（09 README §0.2 硬规则 5）；限流错误码按 B1-04g 的映射。录制来源同 B1-04g 注释。目录约定见 B1-04b 注释。test_paths：test/spec/union/pdd-orders/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04g]
+paths:
+  - 'apps/api/src/modules/union/infra/pdd/**'
+  - 'config/union-endpoints/pdd.json'
+  - 'fixtures/union-recordings/pdd/**'
+test_paths:
+  - 'test/spec/union/pdd-orders/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-orders/**'
+status: todo
+pr: null
