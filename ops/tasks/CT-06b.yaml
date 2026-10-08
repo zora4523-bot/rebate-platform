@@ -1,0 +1,40 @@
+id: CT-06b
+repo: rebate-platform
+title: 迁移门禁加固（CT-06a 评审遗留）——squawk 列号按字节换算、超时为 0 / DEFAULT / RESET 不算、冻结迁移按确切文件名与内容哈希、拒非 SQL 迁移、DO 块内破坏性 DDL、资金表 SET SCHEMA、改名或 CTAS 产出的 *_fen 列、引号标识符紧贴写法
+type: guard-change
+# 2026-10-08 入账（负责人同日「把迁移门禁的后续缺口开成任务继续做」；缺口清单见 couli docs/changes/20261007-基础设施开源接入规划.md §7，
+# 来源是 CT-06a（#250）两家代码评审记下的 S2）。只收紧门禁，不改 02 §16.3 与 db/AGENTS.md 第 11 条已有口径；不扩大资金表清单与受保护对象（那是 CT-06c）。
+# 包装契约（规则测试按此写；CT-06a 的 107 条规则测试保持不改、继续通过，本任务只新增 test/spec/db/lint-migrations/ 下的文件）：
+# ① fundsTableAt(sql, line, column)：squawk gcc 报告的 line / column 从 0 起，column 按 UTF-8 字节计；同一行告警位置之前有多字节字符（如中文注释或字符串）
+#    时仍定位到正确语句。导出纯函数 byteColumnToIndex(lineText, byteColumn) → 该行内的 JS 字符下标。
+# ② checkTimeouts：两项超时都须在第一条非 SET 语句之前设为大于 0 的值；值为 0（含 '0'、'0ms'、'0s'、'0min'、'0h'、'0d'、按 PostgreSQL 取整后为 0 ms 的数如 0.4）、DEFAULT、
+#    或被同语句尾注释 / 块注释遮住的写法按「未设」报 require-lock-timeout / require-statement-timeout；`'5s' -- not set to 0` 这种注释在值之后的写法按已设。
+#    文件中任何位置（含设好之后）出现 `RESET lock_timeout`、`RESET statement_timeout`、`RESET ALL`，或把两项之一再设为 0 / DEFAULT，同样报对应规则。
+# ③ 冻结迁移：导出 FROZEN_MIGRATIONS（文件名 → sha256 十六进制），收 0001–0018 与 0019_device-registrations-created-at-insert.sql 当前主干内容；CLI 对
+#    db/migrations 中名字在表里的文件校验哈希，不符 stderr 含 `<文件名> changed after merge` 退出 1；序号 ≤ GATE_BASELINE 却不在表里的 .sql 文件 stderr
+#    含 `<文件名> is numbered at or below the gate baseline` 退出 1；db/migrations 里 .js / .cjs / .mjs / .ts 文件（迁移工具会执行）stderr 含
+#    `<文件名> is not a SQL migration` 退出 1。GATE_BASELINE 仍为 18，selectMigrations 语义不变。
+# ④ checkMigration 新增自检（命中即 stderr、退出 1、不跑 squawk）：DO 块（含 $tag$ 定界）正文出现 DROP、RENAME、TRUNCATE 或 ALTER … TYPE 时报
+#    `destructive DDL inside a DO block`；资金或归属表的 `ALTER TABLE … SET SCHEMA` 报 `funds or attribution table <裸表名>`（无论有无 ignore）；
+#    `RENAME COLUMN … TO <x>_fen` 报 `money column <x>_fen must be declared as bigint, not renamed into`；`CREATE TABLE … AS` / `SELECT … INTO` 的文本含
+#    `_fen` 标识符时报 `money column … must be declared as bigint`。
+# ⑤ 词法：带引号标识符可紧贴下一个记号（`"amount_fen"integer`、`DROP TABLE"app"."orders"`、`ALTER TABLE"app"."orders"DROP COLUMN c`），金额列与
+#    资金表识别结果与加空格时相同。
+# 碰 tools/**、db/AGENTS.md（第三类保护路径），合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
+refs: []
+refs_hash: {}
+deps: [CT-06a]
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'db/AGENTS.md'
+test_paths:
+  - 'test/spec/db/lint-migrations/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm run lint:migrations'
+  - 'test/spec/db/lint-migrations/**'
+status: todo
+pr: null
