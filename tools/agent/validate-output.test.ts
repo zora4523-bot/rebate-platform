@@ -516,16 +516,17 @@ it('[规划/11 §3.3] findings about behaviour outside the allowed paths are out
       scope,
     ),
   ).toEqual([]);
-  // The file lies outside the task paths and the rule-test locations.
+  // The file lies outside the task paths and the rule-test locations (db/migrations/** is class 1
+  // since CT-06d, so another path stands in).
   expect(
     scopeReasons(
       specFinding({
-        file: 'db/migrations/0001_init.sql',
-        key: 'db/migrations/0001_init.sql#-#BR-CALC-01',
+        file: 'apps/api/src/main.ts',
+        key: 'apps/api/src/main.ts#-#BR-CALC-01',
       }),
       scope,
     )[0],
-  ).toContain('file db/migrations/0001_init.sql is outside the task');
+  ).toContain('file apps/api/src/main.ts is outside the task');
   // A rule-test location, but every cited path is another module.
   expect(
     scopeReasons(
