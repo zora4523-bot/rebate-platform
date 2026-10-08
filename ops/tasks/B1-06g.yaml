@@ -8,6 +8,7 @@ type: impl
 # auth_url 的真实生成要联盟应用与回调（淘宝 redirect_uri 能否直回 App 待 09 实测），本批经演示适配器给合成地址，真实生成写 TODO(规划/11 §4.5) — blocked on 推广位 / siteId 与联盟应用。
 # 登录必需（login）：经 CallerContext，未接身份时 10001。实现路由时去掉 x-implementation: planned。linking/** 与 openapi.yaml 串行。风险：linking RV2，整体 RV2（用户授权边界）。
 # 第 1 轮台账评审后改（S1-1）：去掉 planned 后重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入，与 B1-02e / f / g、B1-03i 串行）；x-signed 路由对外放量须在 B1-03b 合并后（S2-9）。
+# 2026-10-08 补（台账 #275）：签发 state 时写 B1-06r 的 client、auth_methods（淘宝）与 auth_app_refs（每种方式所用的应用配置标识，只取服务端配置）。
 refs: []
 refs_hash: {}
 deps: [B1-06e, B1-06b, B1-02c, B1-06r]
