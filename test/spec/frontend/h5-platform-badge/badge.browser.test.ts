@@ -109,8 +109,11 @@ it('[AC-F1-01n-VISUAL#1] h5-platform-badge', async () => {
     'h2 > span, [data-testid="platform-row"] > span',
   )) {
     const appearance = computedAppearance(badge);
+    // Flex items are blockified; only the badge in the heading stays inline-flex.
+    if (badge.matches('h2 > span')) {
+      await expect.element(appearance).toHaveStyle({ display: 'inline-flex' });
+    }
     await expect.element(appearance).toHaveStyle({
-      display: 'inline-flex',
       height: '20px',
       paddingLeft: '8px',
       paddingRight: '8px',
