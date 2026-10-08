@@ -22,5 +22,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/model-degraded/**'
-status: todo
-pr: null
+status: done
+pr: 199

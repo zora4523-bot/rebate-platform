@@ -21,5 +21,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/stream-writer/**'
-status: todo
-pr: null
+status: done
+pr: 198

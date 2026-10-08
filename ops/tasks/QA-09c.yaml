@@ -19,5 +19,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/release-scan/residue/**'
-status: todo
-pr: null
+status: done
+pr: 245

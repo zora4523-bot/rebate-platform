@@ -21,5 +21,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/release-scan/detect-assoc/**'
-status: todo
-pr: null
+status: done
+pr: 258

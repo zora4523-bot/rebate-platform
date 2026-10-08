@@ -24,5 +24,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/model-openai-compat/**'
-status: todo
-pr: null
+status: done
+pr: 225

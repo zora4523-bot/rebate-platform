@@ -19,5 +19,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/resilience/**'
-status: todo
-pr: null
+status: done
+pr: 184
