@@ -101,17 +101,19 @@ const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]*):\S*@/gi;
 // A parameter name (letters or percent escapes) not glued to a preceding name character, then `=`:
 // query parameters of an embedded URL and libpq keyword/value strings (`host=… password=…`).
 const PARAMETER = /(?<![A-Za-z0-9_%])((?:[A-Za-z]|%[0-9A-Fa-f]{2})+)\s*=\s*/g;
-// An unquoted value ends at an unescaped whitespace, `&`, `#` or `;`; everything up to there is
-// masked.
-const VALUE_END = /[\s&#;]/;
+// Where an unquoted value ends. In a URL query (parameter right after `?` or `&`) the value ends
+// at whitespace, `&` or `#`. In a libpq keyword/value string it ends only at unescaped whitespace:
+// `;`, `&` and `#` are ordinary characters there (`password=a;b` is the password `a;b`).
+const QUERY_VALUE_END = /[\s&#]/;
+const KEYWORD_VALUE_END = /\s/;
 
 /**
  * Index just past the parameter value that starts at `start`, following libpq's keyword/value
  * rules: a backslash escapes the next character both inside a quoted value (`'a\'b c'`) and in
  * an unquoted one (`a\ b`), so an escaped quote or space never ends the value. An unterminated
- * quote runs to the end of the text.
+ * quote runs to the end of the text. `end` says which characters end an unquoted value.
  */
-function valueEnd(text: string, start: number): number {
+function valueEnd(text: string, start: number, end: RegExp): number {
   const quote = text[start];
   const quoted = quote === "'" || quote === '"';
   let index = quoted ? start + 1 : start;
@@ -121,7 +123,7 @@ function valueEnd(text: string, start: number): number {
       index += 2;
       continue;
     }
-    if (quoted ? char === quote : VALUE_END.test(char)) {
+    if (quoted ? char === quote : end.test(char)) {
       return quoted ? index + 1 : index;
     }
     index++;
@@ -137,9 +139,11 @@ function maskPasswordParameters(text: string): string {
     if (match.index < done || !isSecretName(match[1] ?? '')) {
       continue;
     }
+    const before = match.index > 0 ? text[match.index - 1] : '';
+    const end = before === '?' || before === '&' ? QUERY_VALUE_END : KEYWORD_VALUE_END;
     const start = match.index + match[0].length;
     result += text.slice(done, start) + MASK;
-    done = valueEnd(text, start);
+    done = valueEnd(text, start, end);
   }
   return result + text.slice(done);
 }
