@@ -7,17 +7,21 @@
 // Simulating 60 s without waiting them: the repetition is pg-boss's own timer, armed by start()
 // through the global setTimeout (pg-boss's default clock), and the runtime offers no option for the
 // interval or the clock. The tests therefore install fake setTimeout / clearTimeout before start()
-// (shouldAdvanceTime keeps them running at wall-clock speed for the database I/O in between) and
-// advance them by 60 s plus a margin. pg-boss gates each pass per queue on a server-side stamp that
-// must be at least 60 s old (pgboss.queue.monitor_claim_on, else monitor_on); the tests move those
-// stamps back by the same 60 s plus margin, the database half of the same elapsed time. Job expiry
-// itself is real: started_on lies an hour in the past, expireInSeconds of the test catalog is 60.
-// Because shouldAdvanceTime keeps the fake clock moving with wall time, #1 judges recovery inside a
-// window only: it measures wall time from just before start() (the fake clock can be no further
-// ahead of start() than that wall time plus ELAPSED_MS) and stops looking once a pass on a longer
-// period (NEXT_PERIOD_MS) could have fired. A runtime whose period exceeds 60 s plus the margin
-// is therefore red, not merely slower.
+// and advance them by 60 s plus a margin; nothing else is faked, so the pg driver and pg-boss's own
+// spin-waits (node:timers/promises) keep doing real I/O. pg-boss gates each pass per queue on a
+// server-side stamp that must be at least 60 s old (pgboss.queue.monitor_claim_on, else monitor_on);
+// the tests move those stamps back by the same 60 s plus margin, the database half of the same
+// elapsed time. Job expiry itself is real: started_on lies an hour in the past, expireInSeconds of
+// the test catalog is 60.
+// #1 keeps the fake clock frozen (no shouldAdvanceTime): it stands still however long the
+// preparation takes, moves exactly ELAPSED_MS in one advance, and then stands still again. A 60 s
+// pass therefore fires inside that advance and only its database writes are awaited, polling with
+// real time (RECOVERY_WAIT_MS); a runtime whose period exceeds ELAPSED_MS never fires and is red.
+// The fake timers are removed before teardown so that stop() and pool close run on real time.
+// #2 only checks that nothing is recovered, which a clock moving with wall time
+// (shouldAdvanceTime) can only make harder.
 import { randomUUID } from 'node:crypto';
+import { setTimeout as realDelay } from 'node:timers/promises';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import type { DB } from '@couli/db';
@@ -28,23 +32,20 @@ import { closeObserver, observerOn, setupOn, stateOf, teardown, type Setup } fro
 /** 60 s supervise interval plus margin. */
 const ELAPSED_MS = 65_000;
 
-/** The shortest wrong period #1 must tell apart from 60 s. */
-const NEXT_PERIOD_MS = 90_000;
-
-/** Wall time after start() during which no NEXT_PERIOD_MS pass can fire (5 s margin). */
-const WINDOW_MS = NEXT_PERIOD_MS - ELAPSED_MS - 5_000;
+/** Real time #1 waits, after the one advance, for the database writes of the pass it fired. */
+const RECOVERY_WAIT_MS = 30_000;
 
 /**
- * Polls `ready` every 50 ms while performance.now() is before `deadline` (real wall time: only
- * setTimeout / clearTimeout are faked); whether it got true in time. A check that starts after the
- * deadline does not count.
+ * Polls `ready` every 50 ms of real time (node:timers/promises is not faked) for at most `limitMs`
+ * of real time; whether it got true. Unlike kit.ts waitFor, it works while setTimeout is frozen.
  */
-async function trueBefore(ready: () => Promise<boolean>, deadline: number): Promise<boolean> {
-  while (performance.now() < deadline) {
-    if ((await ready()) && performance.now() < deadline) return true;
-    await sleep(50);
+async function realWaitFor(ready: () => Promise<boolean>, limitMs: number): Promise<boolean> {
+  const stop = performance.now() + limitMs;
+  for (;;) {
+    if (await ready()) return true;
+    if (performance.now() > stop) return false;
+    await realDelay(50);
   }
-  return false;
 }
 
 async function withDatabase<T>(run: (database: TestDatabase) => Promise<T>): Promise<T> {
@@ -58,6 +59,11 @@ async function withDatabase<T>(run: (database: TestDatabase) => Promise<T>): Pro
 
 function fakeTimers(): void {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+}
+
+/** Fake setTimeout / clearTimeout that move only through vi.advanceTimersByTimeAsync. */
+function frozenTimers(): void {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 }
 
 /** A process took the jobs and died: `active`, started an hour ago (expired). */
@@ -83,12 +89,11 @@ it('[AC-B1-01zm#1] worker 启动之后（启动时那一轮监管已过）才出
     const setups: Setup[] = [];
     try {
       return await observe(async () => {
-        fakeTimers();
+        frozenTimers();
         // No handler is registered, so nothing fetches: a job leaves `active` only by supervision.
         const worker = setupOn(database, 'worker');
         setups.push(worker);
-        // Taken before start() arms pg-boss's timer: the fake clock then is at most this far along.
-        const deadline = performance.now() + WINDOW_MS;
+        // pg-boss arms its next pass on the frozen clock: at most 60 s ahead of where it stands.
         await worker.runtime.start();
         const send = async (queue: string, key?: string): Promise<string> =>
           (await worker.runtime.send(
@@ -110,12 +115,14 @@ it('[AC-B1-01zm#1] worker 启动之后（启动时那一轮监管已过）才出
           pay: await stateOf(observer, 't-pay', ids.pay),
           live: await stateOf(observer, 't-wide', live),
         };
+        // The only time the fake clock moves: a pass on a period up to ELAPSED_MS fires here, a
+        // longer one never does. The clock then stands still while the pass's writes are awaited.
         await vi.advanceTimersByTimeAsync(ELAPSED_MS);
-        const recovered = await trueBefore(
+        const recovered = await realWaitFor(
           async () =>
             (await stateOf(observer, 't-std', ids.std)) !== 'active' &&
             (await stateOf(observer, 't-pay', ids.pay)) !== 'active',
-          deadline,
+          RECOVERY_WAIT_MS,
         );
         return {
           before,
@@ -129,9 +136,9 @@ it('[AC-B1-01zm#1] worker 启动之后（启动时那一轮监管已过）才出
         };
       });
     } finally {
+      vi.useRealTimers();
       await teardown(setups);
       await closeObserver(observer);
-      vi.useRealTimers();
     }
   });
   expect(seen).toEqual({
@@ -140,7 +147,7 @@ it('[AC-B1-01zm#1] worker 启动之后（启动时那一轮监管已过）才出
     after: { std: 'retry', pay: 'retry', live: 'active' },
     lines: [],
   });
-}, 60_000);
+}, 120_000);
 
 it('[AC-B1-01zm#2] 只启动 payout、不启动 worker：别的队列（及 payout 自己队列）的过期 active 任务，无论启动前已过期还是运行中才过期，启动时与 60 秒周期加余量之后都保持 active；随后启动 worker 才被回收（对照：任务确实可回收）', async () => {
   const seen = await withDatabase(async (database) => {
