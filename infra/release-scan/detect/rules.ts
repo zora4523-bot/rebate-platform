@@ -155,14 +155,20 @@ const NEW_KEY =
 const YAML_NEW_KEY =
   /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')[ \t]*:(?!\S)|^[A-Za-z_$][\w$.-]*[ \t]*:(?!\S)/;
 
-/** 整行是带填充等号的 Base64 / Base64url 串（如 `c2FsdA==`）：YAML 里这是换行书写的取值，不是 `键=`。 */
+/** 整行是带填充等号的 Base64 / Base64url 串（如 `c2FsdA==`）：允许续行的格式里这是换行书写的取值，不是 `键=`。 */
 const PADDED_BASE64_LINE = /^[A-Za-z0-9+/_-]+={1,2}[ \t]*(?:\r?\n|$)/;
 
-function newKeyAt(rest: string, yaml: boolean): boolean {
-  // 只有 YAML 允许换行缩进书写标量，Base64 填充行才是续行取值；.properties 等格式里 `mode=` 这类空值键
-  // 恰好也是「字母数字加等号」的形状，必须按新键处理，不能当作上一行空值的续行。
-  if (yaml) return !PADDED_BASE64_LINE.test(rest) && YAML_NEW_KEY.test(rest);
-  return NEW_KEY.test(rest);
+/**
+ * 不允许换行续写取值的格式：.properties（只有行尾反斜杠才续行）与 .env。这里空值键后的下一行一律按
+ * 行首形状判新键，`mode=`、`channel=` 这类空值键不能当作上一行空值的 Base64 续行。
+ * YAML、ini / cfg / conf 与其他内容允许缩进续行，Base64 填充行仍按续行取值（与 main 同口径）。
+ */
+const NO_CONTINUATION = /(?:\.(?:properties|env)|(?:^|\/)\.env(?:\.[^/]*)?)$/i;
+
+function newKeyAt(rest: string, yaml: boolean, noContinuation: boolean): boolean {
+  if (noContinuation) return NEW_KEY.test(rest);
+  if (PADDED_BASE64_LINE.test(rest)) return false;
+  return (yaml ? YAML_NEW_KEY : NEW_KEY).test(rest);
 }
 
 /** 算法参数后缀（位数、版本、轮数、长度、时效等）：带这些词的数字取值是参数，不是材料。 */
@@ -207,6 +213,7 @@ function fields(
   const configFile =
     /(?:\.(?:properties|ini|cfg|conf|env|yaml|yml)|(?:^|\/)\.env(?:\.[^/]*)?)$/i.test(file);
   const yamlFile = /\.ya?ml$/i.test(file);
+  const noContinuation = NO_CONTINUATION.test(file);
   // 前端代码与 JSON 的 latin1 视图里，UTF-8 多字节也是 0x80 以上的字节，不能当作二进制串边界。
   // 资源字符串原值视图（NUL 分隔的独立串）不是代码文本，即使引用方是 module.json 也按独立串判定。
   const codeFile =
@@ -239,7 +246,10 @@ function fields(
         text.slice(assignment.lastIndex, assignment.lastIndex + 4096),
       )![0];
       const nextAt = assignment.lastIndex + next.length;
-      if (nextAt < text.length && !newKeyAt(text.slice(nextAt, nextAt + 4096), yamlFile)) {
+      if (
+        nextAt < text.length &&
+        !newKeyAt(text.slice(nextAt, nextAt + 4096), yamlFile, noContinuation)
+      ) {
         assignment.lastIndex = nextAt;
       }
     }

@@ -1,7 +1,7 @@
 import { parseArsc } from './arsc.ts';
 import type { ArscTable } from './arsc.ts';
 import { axmlText } from './axml.ts';
-import { textViews } from './encoding.ts';
+import { axmlContent, textViews } from './encoding.ts';
 import { moduleJsonText, parseResourcesIndex } from './harmony.ts';
 import type { HarmonyTable } from './harmony.ts';
 import { UNRESOLVED } from './lines.ts';
@@ -270,10 +270,15 @@ export function artifactTextViews(entries: readonly ArtifactEntry[]): ArtifactTe
           );
           break;
         }
-        default:
+        default: {
+          // 普通资源 XML（res/xml/*.xml 等 AXML）与清单同口径：JSON 视图之外另给原值视图，
+          // 文本节点 / CDATA 里含引号的 `shared_salt="…"` 在 JSON 视图里被转义，只有原值视图能按字段检出。
+          const axml = axmlContent(entry.content, entry.path);
           for (const text of textViews(entry.content, entry.path, true)) {
-            views.push({ path: entry.path, text });
+            if (axml) push(entry.path, text);
+            else views.push({ path: entry.path, text });
           }
+        }
       }
     } catch {
       errors.push(`Artifact content unreadable: ${entry.path}`);
