@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { cleanup, render } from '@testing-library/react';
 import ts from 'typescript';
@@ -10,7 +12,10 @@ import { expectBuiltin } from './images.ts';
 
 afterEach(cleanup);
 
-const root = new URL('../../../../apps/h5/src/components/platform/', import.meta.url);
+const root = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../../apps/h5/src/components/platform/',
+);
 
 function visit(node: ts.Node, inspect: (node: ts.Node) => void): void {
   inspect(node);
@@ -53,7 +58,7 @@ it('[AC-F1-01n-SOURCE#1] 中文文案只在 texts，尺寸和颜色使用令牌�
   const files = sources();
   expect(files).toContain('PlatformBadge.tsx');
   for (const path of files) {
-    const source = readFileSync(new URL(path, root), 'utf8');
+    const source = readFileSync(join(root, path), 'utf8');
     if (path.endsWith('.css')) {
       for (const match of source
         .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -112,13 +117,13 @@ it('[AC-F1-01n-SOURCE#1] 中文文案只在 texts，尺寸和颜色使用令牌�
 it('[AC-F1-01n-ASSETS#1] 八个占位 SVG 作为包内 URL 资源使用，单色中性且不内联 DOM', () => {
   const view = render(createElement(PlatformBadge, { platform: 'taobao' }));
   const implementation = sources()
-    .map((path) => readFileSync(new URL(path, root), 'utf8'))
+    .map((path) => readFileSync(join(root, path), 'utf8'))
     .join('\n');
   for (const { key, file } of platforms) {
     view.rerender(createElement(PlatformBadge, { platform: key }));
     expectBuiltin(view.container, file);
     expect(view.container.querySelector('svg')).toBeNull();
-    const asset = new URL(`assets/${file}.svg`, root);
+    const asset = join(root, 'assets', `${file}.svg`);
     expect(existsSync(asset), `required built-in asset ${file}.svg`).toBe(true);
     const source = readFileSync(asset, 'utf8');
     const svg = new DOMParser().parseFromString(source, 'image/svg+xml');
@@ -138,9 +143,12 @@ it('[AC-F1-01n-ASSETS#1] 八个占位 SVG 作为包内 URL 资源使用，单色
       }
     }
     expect(colors.size).toBeLessThanOrEqual(1);
-    // Vite URL imports may omit ?url; ?raw and ?react would inline the SVG instead.
+    // Vite 8.3.0 inlines small SVGs even with ?url; ?no-inline preserves asset URLs.
+    // Allow URL imports only, excluding ?raw, ?react and ?inline.
     expect(implementation).toMatch(
-      new RegExp(`(?:from\\s*|import\\s*)['\"]\\./assets/${file}\\.svg(?:\\?url)?['\"]`),
+      new RegExp(
+        `(?:from\\s*|import\\s*)['\"]\\./assets/${file}\\.svg(?:\\?url|\\?no-inline)?['\"]`,
+      ),
     );
   }
 });
