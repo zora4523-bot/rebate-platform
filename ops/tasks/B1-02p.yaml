@@ -1,0 +1,23 @@
+id: B1-02p
+repo: rebate-platform
+title: 测试修改：B1-06j 落地页冻结测试 [AC-B1-06j#5] 去掉「带合法令牌时未接身份仍不提示分享者」这一过渡期断言（B1-02m 把 identity 的 CallerContext 接进默认装配后，分享者本人查看自己的分享链接 viewer_is_sharer 为 true，由 [AC-B1-06j#6] 覆盖）
+type: test-change
+# 草稿 2026-10-08（身份与风控线，identity-lane）。B1-06j 的规则测试 #5 用「真实默认装配」（不替换 CallerContext）断言带分享者本人令牌时 viewer_is_sharer 仍为 false——这是 B1-06j 合并时
+# 「未接身份」的过渡状态（B1-06j 台账注释：x-auth optional，未接身份时 viewer_is_sharer 一律 false）。B1-02m 把 identity 实现的 CallerContext 接进 LinkingModule.forRoot 的默认装配后，
+# 同一请求按 BR-ATTR-11 正确地返回 true，#5 第三行对正确实现永远红（B1-02m 实现第 1 轮宿主集成测试 350 条 1 红）。按规划/11 §4.4 先立测试变更任务（先例 B1-06n、B1-06q、B1-06s）。
+# 改法：只删 #5 里带 ownerAuth 的那一行与随之无用的 ownerAuth 变量，标题去掉「带合法令牌时未接身份仍不提示分享者」；游客查看分享 / 非分享链接、不登记、不写日志、不转链的断言全部保留。
+# 带令牌的路径由 #6（替换 CallerContext 读真实 principal，与 B1-02m 接线等价）继续覆盖。改前（main）改后（叠 B1-02m）landing 套件都绿。
+# 不改实现代码、不改其他用例；不属削弱资金测试（viewer_is_sharer 只用于提示，BR-ATTR-11）。保护路径第一类、改已有文件；test/** RV2，两家评审 pass 后按 approvals #24 加标签合并。
+# 走非 task/ 分支（test-change/B1-02p）。须在 B1-02m 之前合并（B1-02m deps 加本任务）。
+refs: []
+refs_hash: {}
+deps: [B1-06j]
+paths:
+  - 'test/spec/linking/landing/http.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/landing/**'
+status: todo
+pr: null
