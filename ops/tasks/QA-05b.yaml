@@ -18,5 +18,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/drills/queue/**'
-status: todo
-pr: null
+status: done
+pr: 195
