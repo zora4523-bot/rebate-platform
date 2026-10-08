@@ -9,6 +9,7 @@ type: impl
 # 登录必需，未接身份时 10001。实现路由时去掉两个 operation 的 x-implementation: planned。linking/** 与 openapi.yaml 串行。风险：linking RV2，整体 RV2（用户授权边界）。
 # 第 1 轮台账评审后改（S1-1）：去掉 planned 后重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入，与 B1-02e / f / g、B1-03i 串行）；x-signed 路由对外放量须在 B1-03b 合并后（S2-9）。
 # 2026-10-08 补（台账 #275）：核对 state 记录的 client 与 auth_methods（不在其中 → method_not_allowed，state 不变），换凭证时按 state 记录的 auth_app_refs 取应用配置（BR-ID-17 细则「授权方式」）。
+# 2026-10-08 补（第七棒）：站长授权按「本次所用账号」判断，与 auth-url 同口径（state 行或同一函数，B1-06g 资金 r2 S2 followup），不以「该平台任一账号有效」放行；拼多多若走 bindings 且站长授权不可用，按 BR-ID-24 2026-10-08 新句同理回 50301 data.reason=maintenance（新句只写了 auth-url，此处为默认、交编排者经 Jev 确认），淘宝仍 30101 / 30102 auth_unavailable。
 refs: []
 refs_hash: {}
 deps: [B1-06g, B1-02c, B1-06r]
