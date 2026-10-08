@@ -1,0 +1,22 @@
+id: B1-06v
+repo: rebate-platform
+title: 拼多多 open 备案判定：快照用户拼多多绑定非 active → 30111（带 auth_jump、不带 auth_url）、blocked 且未封禁 → 30153；no_rebate 按 BR-ID-18 跳过；分享 link 被他人打开且分享者未备案 → 30111 不带授权入口；京东不判定
+type: impl
+# 2026-10-08 从 B1-06f 拆出（W1 第七棒，D7-5）。依据：BR-ATTR-05（按快照转链前先校验快照 user_id 的授权：拼多多需要备案有效，分享链接校验不通过返回 30111）、BR-ID-22（30111 与 auth_jump，构造同 auth-url 的拼多多跳转）、BR-ID-18、BR-ID-17 细则「授权管理页」，由编排者摘入任务书第 2 节。
+# 本批按 union_bindings 判定（拼多多一行 per (user, platform)）；BR-ID-22 按 (用户, 推广位) 实时查联盟授权写 TODO(规划/11 §4.5) — blocked on CAP-PDD-05（followups）。拼多多站长授权失效的 open 已有规则（BR-ID-24 ④ 转链 50301 maintenance）。
+# 冻结测试冲突：open-jdpdd、open-owner、open-requote、open-norebate、register、wiring 等连库规则测试打开拼多多 link 时不种绑定、断言 200；实现前先按实现分支在 CI verify-int 上的失败清单另立 test-change（编号 B1-06u，只补种 active 拼多多绑定、不改断言，先例 B1-06q / B1-06s），本任务 deps 届时加 B1-06u。
+# 判定放在转链端口 / 组合层（同 B1-06f 淘宝），不进复核主流程。linking/** 串行（B1-06f 之后）。风险：linking RV2（归属与用户授权）。
+refs: []
+refs_hash: {}
+deps: [B1-06f]
+paths:
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/open-pdd-auth/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-pdd-auth/**'
+status: todo
+pr: null
