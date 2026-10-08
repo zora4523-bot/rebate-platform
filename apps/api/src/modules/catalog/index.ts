@@ -12,7 +12,8 @@
 // single-platform search use case (BR-PROD-07/08/10, BR-PRICE-08/15), rule tests
 // test/spec/catalog/search/**. Task B1-05j: its HTTP route GET /v1/products/search (controller
 // in CatalogModule, ports from app.module's global providers), rule tests
-// test/spec/catalog/search-route/**.
+// test/spec/catalog/search-route/**. Task B1-05e: getProduct, GET /v1/products/{product_key}
+// (ProductController in CatalogModule), rule tests test/spec/catalog/detail/**.
 export { createCatalogCardEntry } from './application/card-entry.ts';
 export type {
   CatalogCardEntry,
@@ -22,6 +23,15 @@ export type {
   CatalogCardScene,
 } from './application/card-entry.ts';
 export { CatalogSearchService } from './application/search-service.ts';
+export { CatalogDetailService } from './application/detail-service.ts';
+export { getProduct } from './detail.ts';
+export type {
+  ProductDetailData,
+  ProductDetailOptions,
+  ProductDetailQuery,
+  ProductDetailRequest,
+  ProductDetailUpstream,
+} from './detail.ts';
 export { createCatalog } from './application/catalog.ts';
 export { SEARCH_SEEN_LIMIT, SEARCH_SESSION_TTL_SECONDS, searchProducts } from './search.ts';
 export type {

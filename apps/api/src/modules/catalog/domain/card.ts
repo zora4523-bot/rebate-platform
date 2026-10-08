@@ -8,7 +8,7 @@ export type QuoteBasis = 'normal' | 'price_compare_risk';
 
 /**
  * BR-PRICE-07, no pre-check permission (M-内测 default): only these sources are normal for
- * taobao — home material feed, product pool, taolijin pool, share panel and share landing page.
+ * taobao — home material feed, product pool, taolijin pool, share (panel and landing page).
  * Every other value — parse, search, agent (and its refresh), a detail without a source card,
  * a watch whose origin is unknown, null or an unrecognised name — is price_compare_risk.
  */
@@ -16,6 +16,8 @@ const NORMAL_ENTRY_SOURCES: ReadonlySet<string> = new Set([
   'feed',
   'pool',
   'tlj_pool',
+  // 08 BR-PRICE-07 来源判定表 names the share entry `share`; the panel / landing names stay.
+  'share',
   'share_panel',
   'share_landing',
 ]);

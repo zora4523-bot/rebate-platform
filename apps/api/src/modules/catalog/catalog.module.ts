@@ -19,10 +19,13 @@ import {
 import { createUnionPidService, type UnionPidService } from '../union/index.ts';
 import { createCatalogCardEntry } from './application/card-entry.ts';
 import { createCatalog } from './application/catalog.ts';
+import { CatalogDetailService } from './application/detail-service.ts';
 import { createItemRefService, type ItemRefService } from './application/item-ref.ts';
 import { CatalogSearchService } from './application/search-service.ts';
 import type { Catalog, CatalogWarning } from './domain/types.ts';
+import { ProductController } from './http/public/product.controller.ts';
 import { SearchController } from './http/public/search.controller.ts';
+import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
 import {
   SEARCH_REDIS_NAMESPACE,
   UNAVAILABLE_SEARCH_SESSIONS,
@@ -114,13 +117,16 @@ interface ScopedRequest {
  * and GovernedUnion from app.module's global providers; the item_ref issuer (FIELD_CRYPTO, or a
  * per-process key in local / test without a keyring), the query-PID reader, the Redis session
  * store and the cursor codec are built here once per process.
+ * B1-05e: GET /v1/products/{product_key} (ProductController → CatalogDetailService → getProduct),
+ * request scoped on the same ports and the same item_ref issuer; the union side is one getItem on
+ * the governed adapter (infra/detail-wiring.ts).
  */
 @Module({})
 export class CatalogModule {
   static forRoot(configReader: CatalogConfigReaderFactory): DynamicModule {
     return {
       module: CatalogModule,
-      controllers: [SearchController],
+      controllers: [SearchController, ProductController],
       providers: [
         {
           provide: CATALOG,
@@ -247,6 +253,51 @@ export class CatalogModule {
               cursors,
               newSessionId: randomUUID,
               logger,
+            }),
+        },
+        {
+          provide: CatalogDetailService,
+          scope: Scope.REQUEST,
+          inject: [
+            ViewerContext,
+            CATALOG,
+            CatalogConfigReader,
+            CLOCK,
+            ROOT_LOGGER,
+            LinkRegistrar,
+            RebateQuoter,
+            SourceLinkReader,
+            GovernedUnion,
+            ITEM_REFS,
+          ],
+          useFactory: (
+            viewerContext: ViewerContext,
+            catalog: Catalog,
+            config: CatalogConfigReader,
+            clock: Clock,
+            logger: RootLogger,
+            registrar: LinkRegistrar,
+            quoter: RebateQuoter,
+            sourceLinks: SourceLinkReader,
+            union: GovernedUnion,
+            itemRefs: ItemRefService,
+          ): CatalogDetailService =>
+            new CatalogDetailService({
+              clock,
+              viewerContext,
+              config,
+              catalog,
+              itemRefs,
+              cards: createCatalogCardEntry({
+                clock,
+                viewerContext,
+                quoter,
+                registrar,
+                sourceLinks,
+                itemRefs,
+                logger,
+              }),
+              upstream: createUnionDetailUpstream({ union }),
             }),
         },
       ],
