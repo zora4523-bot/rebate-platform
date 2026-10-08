@@ -4,6 +4,14 @@ export * from './config/index.ts';
 export * from './logging/index.ts';
 export * from './tracing/index.ts';
 export * from './idempotency/index.ts';
+export {
+  registerIdempotencyEntryObserver,
+  registerIdempotencyPostMissCheck,
+} from './idempotency/post-miss.ts';
+export type {
+  IdempotencyEntryObserver,
+  IdempotencyPostMissCheck,
+} from './idempotency/post-miss.ts';
 export * from './http/index.ts';
 // The pre-parsing registration point of the request checks (BR-ID-01 stages ①–③; bootstrap).
 export {

@@ -204,13 +204,24 @@
 //     hook or interceptor: controllers / use cases of the operations marked I call execute or
 //     executeInTransaction (the transactional handler needs `trx`), after signature and token
 //     checks (BR-ID-01 ①–③) and before everything else. The abandon route is B1-02.
+//     Stage ④a (B1-03c): every instance carries the post-miss check list of ./post-miss.ts,
+//     awaited in both modes after a miss or before an expired-lease takeover, before any write,
+//     and an entry observer list called first in both modes (risk uses it to tell "the
+//     idempotency module disposed of this request" from "the route never reached it").
+//     While a post-miss check runs, idempotencyPostMissTransaction() returns the
+//     transaction of the claim that holds the advisory lock, so a check that reads the database
+//     reads on that connection instead of borrowing a second one from the pool (a pool full of
+//     claims would otherwise wait on itself). It is passed through an AsyncLocalStorage, not as a
+//     second argument, so the checks keep the one-argument call the rule tests pin.
 //
 // 12. Rules for the implementation: this file is compiled by the `test` project too
 //     (erasableSyntaxOnly, no decorators): erasable syntax only (no parameter properties, enum,
 //     namespace, decorators), no NestJS, `import type` for type-only imports, relative imports
-//     with `.ts`. Runtime imports only: `node:crypto`, `kysely`, and files of this directory;
+//     with `.ts`. Runtime imports only: `node:crypto`, `node:async_hooks`, `kysely`, and files of
+//     this directory;
 //     `@couli/db` and `../clock/index.ts` type-only. No process.env.
 import type { DB } from '@couli/db';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { Clock } from '../clock/index.ts';
@@ -410,6 +421,24 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
     throw new IdempotencyError('invalid_option');
   }
   const { db, clock, logger } = options;
+  // Stage ④a registration points (./post-miss.ts registers into them), read per request.
+  const hooks: IdempotencyHooks = { postMiss: [], entry: [] };
+  const postMissChecks = hooks.postMiss;
+
+  /** First thing of either execute mode, before any validation, lookup or write. */
+  function entered(request: IdempotentRequest) {
+    for (const observer of [...hooks.entry]) observer(request);
+  }
+
+  /**
+   * After a miss (or an expired lease about to be taken over), before any write or handler. The
+   * checks see the claim's transaction through idempotencyPostMissTransaction().
+   */
+  async function afterMiss(request: IdempotentRequest, trx: Transaction<DB>) {
+    await POST_MISS_CONTEXT.run({ trx }, async () => {
+      for (const check of [...postMissChecks]) await check(request);
+    });
+  }
 
   async function finish(row: Row, request: IdempotentRequest, response?: IdempotentResponse) {
     const owned = sql<boolean>`id = ${row.id} AND status = 'processing'
@@ -430,20 +459,28 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       logger.warn({ method: request.method, path: request.path }, 'idempotency_record_lost');
   }
 
-  return {
+  const instance: Idempotency = {
     async execute(request, handler) {
+      entered(request);
       const prepared = prepare(request);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       if (sensitiveOperation(request)) throw new IdempotencyError('transactional_required');
       const claimed = await transaction(db, request.traceId, async (trx) => {
         await lockScope(trx, prepared.scope);
         return boundedClaim(trx, async () => {
+          let checked = false;
           for (;;) {
             const row = await findRow(trx, prepared.scope);
-            const now = clock.now();
+            let now = clock.now();
             if (row !== undefined) {
               if (row.status !== 'processing' || now.getTime() - row.created_at.getTime() < lease) {
                 return existingResponse(row, prepared.hash, request.traceId);
+              }
+              // An expired lease is taken over like a missing key: ④a runs before the takeover.
+              if (!checked) {
+                await afterMiss(request, trx);
+                checked = true;
+                now = clock.now();
               }
               const taken = await trx
                 .updateTable('idempotency_keys')
@@ -456,6 +493,11 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
                 .executeTakeFirst();
               if (taken !== undefined) return taken;
             } else {
+              if (!checked) {
+                await afterMiss(request, trx);
+                checked = true;
+                now = clock.now();
+              }
               const inserted = await insertRow(
                 trx,
                 prepared.scope,
@@ -483,14 +525,20 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
     },
 
     async executeInTransaction(request, handler) {
+      entered(request);
       const prepared = prepare(request);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       return transaction(db, request.traceId, async (trx) => {
         await lockScope(trx, prepared.scope);
         const claim = await boundedClaim(trx, async () => {
+          let checked = false;
           for (;;) {
             const row = await findRow(trx, prepared.scope);
             if (row !== undefined) return existingResponse(row, prepared.hash, request.traceId);
+            if (!checked) {
+              await afterMiss(request, trx);
+              checked = true;
+            }
             const inserted = await insertRow(
               trx,
               prepared.scope,
@@ -576,6 +624,44 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       return Number(result.numDeletedRows);
     },
   };
+  HOOKS.set(instance, hooks);
+  return instance;
+}
+
+/** The live stage ④a hook lists of one instance (./post-miss.ts registers into them). */
+export interface IdempotencyHooks {
+  /** Awaited after a miss or before an expired-lease takeover, before any write or handler. */
+  readonly postMiss: ((request: IdempotentRequest) => Promise<void>)[];
+  /** Called synchronously on entry to execute / executeInTransaction, whatever follows. */
+  readonly entry: ((request: IdempotentRequest) => void)[];
+}
+
+const HOOKS = new WeakMap<Idempotency, IdempotencyHooks>();
+
+/** What a post-miss check may use of the claim it runs in. */
+export interface IdempotencyPostMissContext {
+  /** The claim's transaction (holding the key's advisory lock), schema app like the db handle. */
+  readonly trx: Transaction<DB>;
+}
+
+/** Set only while the post-miss checks of one claim run; never shared between claims. */
+const POST_MISS_CONTEXT = new AsyncLocalStorage<IdempotencyPostMissContext>();
+
+/**
+ * Inside a post-miss check (./post-miss.ts): the claim's transaction, to read on the connection
+ * that already holds the key's lock instead of borrowing another one from the pool. Undefined
+ * anywhere else (the store is scoped to the checks of one claim).
+ */
+export function idempotencyPostMissTransaction(): Transaction<DB> | undefined {
+  return POST_MISS_CONTEXT.getStore()?.trx;
+}
+
+/**
+ * For ./post-miss.ts only (the register functions there are the API): the live hook lists of an
+ * instance built by createIdempotency, undefined for any other object.
+ */
+export function idempotencyHooksOf(idempotency: Idempotency): IdempotencyHooks | undefined {
+  return HOOKS.get(idempotency);
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

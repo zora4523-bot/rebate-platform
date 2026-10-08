@@ -74,6 +74,7 @@ import {
   RiskModule,
   SIGNATURE_CHECK,
   createBlocklistService,
+  type MinimumVersionReaders,
   type BlocklistService,
 } from './modules/risk/index.ts';
 import {
@@ -394,9 +395,35 @@ function parsingPorts(): DynamicModule {
 }
 
 /**
+ * The risk module of the `api` entry: stage ① (device signing keys from identity) and stage ④a,
+ * whose minimum supported version port is content's reader of app_versions (same assembly as
+ * identityModule(); risk never imports content, B1-03c): cached on the pool for the guard, and
+ * built over the idempotency claim's transaction for the post-miss hook. No database handle: no reader, and a
+ * request that needs the minimum answers 50001.
+ */
+function riskModule(identity: DynamicModule): DynamicModule {
+  return RiskModule.forRoot({
+    imports: [identity],
+    minimumVersions: {
+      inject: [CLOCK, { token: DB, optional: true }],
+      // pooled: the guard's cached reader; on: a fresh reader over the idempotency claim's
+      // transaction for the post-miss hook (no second pooled connection while holding one).
+      useFactory: (clock: Clock, db?: Kysely<Database>): MinimumVersionReaders | null =>
+        db === undefined
+          ? null
+          : {
+              pooled: createContentReader({ db, clock }),
+              on: (handle) => createContentReader({ db: handle, clock }),
+            },
+    },
+  });
+}
+
+/**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes, the risk module's request signature check, whose
- * device port identity implements, and identity's token check. The union module (adapter registry
+ * device port identity implements, identity's token check, and the risk module's stage ④a gate
+ * (minimum supported version and restricted session, 10405; B1-03c) on this entry only. The union module (adapter registry
  * and endpoint configuration) loads where union platforms are called: `api` (search, linking) and `worker` (order sync); the
  * other worker entries load only the platform and admin modules.
  * The admin module provides the platform audit port on every entry (F1-06b).
@@ -456,7 +483,7 @@ export class AppModule {
         // Provides the platform AUDIT_PORT globally on every entry (F1-06b).
         AdminModule,
         ...(isHttpEntry(options.entry) ? [HealthModule] : []),
-        ...(identity === undefined ? [] : [identity, RiskModule.forRoot({ imports: [identity] })]),
+        ...(identity === undefined ? [] : [identity, riskModule(identity)]),
         ...(union === undefined ? [] : [union]),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [

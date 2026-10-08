@@ -6,8 +6,21 @@
 // PlatformModule). Loading this file loads @nestjs/common (through risk.module.ts and
 // ../platform/index.ts). The ports are plain interfaces, so identity implements them without Nest
 // types.
-export { RiskModule } from './risk.module.ts';
-export type { RiskModuleOptions } from './risk.module.ts';
+export { MINIMUM_VERSION_CHECK, RiskModule } from './risk.module.ts';
+export {
+  createMinimumVersionCheck,
+  createMinimumVersionGuard,
+  contractMinimumVersionRoutes,
+} from './application/minimum-version.ts';
+export type {
+  MinimumVersionReader,
+  MinimumVersionReaderOn,
+  MinimumVersionRequest,
+  MinimumVersionCheck,
+  MinimumVersionRoute,
+  MinimumVersionGuard,
+} from './application/minimum-version.ts';
+export type { MinimumVersionReaders, RiskModuleOptions } from './risk.module.ts';
 export {
   DEVICE_SIGNING_KEYS,
   SIGNATURE_CHECK,
