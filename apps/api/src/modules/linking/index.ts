@@ -29,6 +29,7 @@ export {
 } from './ports.ts';
 export type { Caller } from './ports.ts';
 export {
+  LINKING_AUTH_APPS,
   LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
   LINK_REGISTRATIONS,
@@ -79,3 +80,15 @@ export type {
   LinkLandingOptions,
   SnapshotCardOptions,
 } from './application/link-landing.ts';
+// Task B1-06g: GET /v1/unions/{platform}/auth-url, the one-time authorization state (BR-ID-17,
+// BR-ID-22, BR-ID-24). Rule tests: test/spec/linking/auth-url/**.
+export { createUnionAuthUrl } from './application/union-auth-url.ts';
+export type {
+  AuthClient,
+  UnionAuthMethod,
+  UnionAuthUrlInput,
+  UnionAuthUrlOptions,
+  UnionAuthUrlService,
+} from './application/union-auth-url.ts';
+export { createDemoUnionAuthApps } from './infra/auth-apps.ts';
+export type { UnionAuthApps } from './infra/auth-apps.ts';

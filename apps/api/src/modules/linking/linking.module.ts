@@ -62,6 +62,9 @@ import {
 } from './application/link-landing.ts';
 import { LinkLandingController } from './http/public/landing.controller.ts';
 import { LinkOpenController } from './http/public/open.controller.ts';
+import { UNION_AUTH_URL, UnionAuthUrlController } from './http/public/auth-url.controller.ts';
+import { createUnionAuthUrl, type UnionAuthUrlService } from './application/union-auth-url.ts';
+import { createDemoUnionAuthApps, type UnionAuthApps } from './infra/auth-apps.ts';
 import {
   AttrCodeReader,
   CallerContext,
@@ -89,6 +92,11 @@ export const LINKING_PIDS = Symbol('LINKING_PIDS');
 export const LINK_OPEN_PORTS = Symbol('LINK_OPEN_PORTS');
 /** The landing card's ports outside linking, provided by app.module.ts (B1-06j). */
 export const LINK_LANDING_PORTS = Symbol('LINK_LANDING_PORTS');
+/**
+ * B1-06g: the application references of the Taobao auth methods, optional; without it the demo
+ * references of non-production environments are used (infra/auth-apps.ts).
+ */
+export const LINKING_AUTH_APPS = Symbol('LINKING_AUTH_APPS');
 /** Process-wide open state: the shared single-flight windows and the Redis jump cache. */
 const LINK_OPEN_PROCESS = Symbol('LINK_OPEN_PROCESS');
 
@@ -248,7 +256,7 @@ export class LinkingModule {
         : { ...ports.attrCodeReader, provide: AttrCodeReader };
     return {
       module: LinkingModule,
-      controllers: [LinkOpenController, LinkLandingController],
+      controllers: [LinkOpenController, LinkLandingController, UnionAuthUrlController],
       providers: [
         {
           provide: LINK_OPEN_PROCESS,
@@ -377,6 +385,41 @@ export class LinkingModule {
                       products: landingPorts?.products ?? NO_PRODUCTS,
                     }),
             }),
+        },
+        {
+          // B1-06g: GET /v1/unions/{platform}/auth-url, per request like its CallerContext.
+          // Without a database handle (isolated HTTP unit tests) every call fails closed.
+          provide: UNION_AUTH_URL,
+          scope: Scope.REQUEST,
+          inject: [
+            { token: DB, optional: true },
+            { token: LINKING_AUTH_APPS, optional: true },
+            APP_CONFIG,
+            CLOCK,
+            ROOT_LOGGER,
+            CallerContext,
+            LinkingConfigReader,
+          ],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            authApps: UnionAuthApps | undefined,
+            appConfig: AppConfig,
+            clock: Clock,
+            logger: RootLogger,
+            callerContext: CallerContext,
+            config: LinkingConfigReader,
+          ): UnionAuthUrlService =>
+            db === undefined
+              ? { get: unavailable }
+              : createUnionAuthUrl({
+                  db,
+                  clock,
+                  callerContext,
+                  config,
+                  appEnv: appConfig.appEnv,
+                  authApps: authApps ?? createDemoUnionAuthApps(),
+                  logger,
+                }),
         },
         {
           provide: LinkingConfigReader,
