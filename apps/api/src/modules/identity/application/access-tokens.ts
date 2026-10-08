@@ -36,7 +36,11 @@
 //   route: X-App-Id must equal the app_id of the device stage ① verified. Missing, repeated or
 //   different → 10403 (§9.5 #8). Unsigned anonymous requests have no ③ here (§9.5 #2).
 // On success the verified claims are attached as the request's principal (platform
-// token-context); nothing in it comes from a header. The session scope is not enforced here:
+// token-context); nothing in it comes from a header.
+// h5_token (B1-02f, BR-ID-32): a token that is not an access token but verifies as aud=h5 is
+// accepted with its own rules (createTokenCheck's comment): live issuing session (10002), routes
+// outside its scope 10403 (also on x-auth none), read_only only GET (10403 h5_read_only). The
+// step_up_token (aud=step_up) is signed here (signScopedToken) and never accepted by this check. The session scope is not enforced here:
 // deletion_only passes ② ③ and the 10405 of x-session-scopes is stage ④a (B1-03c).
 // Nothing here logs; tokens and keys never leave these functions except as the issued strings.
 //
@@ -77,6 +81,27 @@ const REFRESH_TOKEN_BYTES = 32;
 const ISSUER = 'couli-api';
 /** App tokens; the read-only h5_token of BR-ID-32 (aud=h5) is a different audience (B1-02f). */
 const AUDIENCE = 'app';
+/** BR-ID-32: the h5_token audience (B1-02f); same issuer and keys as the access token. */
+export const H5_AUDIENCE = 'h5';
+/** BR-ID-08: the step_up_token audience (B1-02f); same issuer and keys as the access token. */
+export const STEP_UP_AUDIENCE = 'step_up';
+/** Scopes of an h5_token (contract H5TokenScope; BR-ID-32 细则「只读作用域」). */
+export type H5Scope = 'standard' | 'read_only';
+const H5_SCOPES: ReadonlySet<unknown> = new Set<H5Scope>(['standard', 'read_only']);
+/**
+ * Paths an h5_token never reaches (BR-ID-32: withdrawal, payout account, phone change, deletion,
+ * and every /v1/auth/** route including the h5-token exchange itself). The four x-step-up
+ * operations sit under these prefixes; x-signed routes are refused through the signing table.
+ */
+const H5_EXCLUDED_PREFIXES: readonly string[] = Object.freeze([
+  '/v1/withdrawals',
+  '/v1/me/payout-account',
+  '/v1/me/phone',
+  '/v1/me/deletion',
+]);
+const H5_EXCLUDED_AUTH_PREFIX = '/v1/auth/';
+/** Fallback text of 10403 data.reason=h5_read_only (contracts/texts.default.json). */
+export const H5_READ_ONLY_MSG = '暂时无法操作，请稍后再试';
 const SCOPES: ReadonlySet<unknown> = new Set<SessionScope>(['full', 'deletion_only']);
 /** Upper bound of a claim's length: the ids are UUIDs, app_id is short, sid is opaque. */
 const MAX_CLAIM_LENGTH = 128;
@@ -106,6 +131,25 @@ export class TokenRejection extends RequestRejection {
   }
 }
 
+/** 10403 with data.reason=h5_read_only: a read_only h5_token on a method other than GET. */
+export class H5ReadOnlyRejection extends TokenRejection {
+  readonly data = Object.freeze({ reason: 'h5_read_only' as const });
+
+  constructor() {
+    super(10403);
+    this.name = 'H5ReadOnlyRejection';
+  }
+}
+
+/** The verified claims of an h5_token (BR-ID-32): the session it was issued from and its scope. */
+export interface H5Claims {
+  readonly uid: string;
+  readonly app_id: string;
+  readonly sid: string;
+  readonly device_id: string;
+  readonly scp: H5Scope;
+}
+
 /** Local signing port; KMS sign(bytes) is deferred per B1-02h §9.5. */
 export interface TokenKeyProvider {
   readonly kid: string;
@@ -118,6 +162,42 @@ export interface TokenService {
   /** jose ES256 only, local kid lookup, issuer/audience checked, Clock, zero tolerance; 10002. */
   verifyAccess(token: string): Promise<TokenPrincipal>;
   issueRefresh(): { token: string; hash: string; expireAt: Date };
+  /**
+   * h5_token (aud=h5, B1-02f): same keys, issuer, typ and Clock as verifyAccess, expiry from its
+   * own exp (the lifetime is configurable); 10002 on any failure. Optional so that hand-built
+   * services of other tests keep compiling; the token check treats its absence as «no h5_token».
+   */
+  verifyH5?(token: string): Promise<H5Claims>;
+}
+
+/**
+ * Signs a short-lived token of another audience (h5_token, step_up_token; B1-02f) with the access
+ * token's key, issuer and header: ES256, { alg, kid, typ: JWT }, iat / exp in seconds.
+ */
+export async function signScopedToken(
+  keys: TokenKeyProvider,
+  input: {
+    readonly audience: typeof H5_AUDIENCE | typeof STEP_UP_AUDIENCE;
+    readonly claims: Readonly<Record<string, string>>;
+    readonly issuedAt: number;
+    readonly ttlSeconds: number;
+  },
+): Promise<string> {
+  return new SignJWT({ ...input.claims })
+    .setProtectedHeader({ alg: 'ES256', kid: keys.kid, typ: 'JWT' })
+    .setIssuer(ISSUER)
+    .setAudience(input.audience)
+    .setIssuedAt(input.issuedAt)
+    .setExpirationTime(input.issuedAt + input.ttlSeconds)
+    .sign(keys.privateKey);
+}
+
+/** The claims of a verified h5_token payload, or null when one is missing or malformed. */
+function h5ClaimsOf(payload: JWTPayload): H5Claims | null {
+  const { uid, app_id: appId, sid, device_id: deviceId, scp } = payload;
+  if (!isClaim(uid) || !isClaim(appId) || !isClaim(sid) || !isClaim(deviceId)) return null;
+  if (!H5_SCOPES.has(scp)) return null;
+  return Object.freeze({ uid, app_id: appId, sid, device_id: deviceId, scp: scp as H5Scope });
 }
 
 const generateEcKeyPair = promisify(generateKeyPair);
@@ -267,6 +347,26 @@ export function createTokenService(deps: { clock: Clock; keys: TokenKeyProvider 
         expireAt: later(clock.now(), REFRESH_TOKEN_TTL_MS),
       };
     },
+    async verifyH5(token) {
+      let payload: JWTPayload;
+      try {
+        ({ payload } = await jwtVerify(token, resolveKey, {
+          algorithms: ['ES256'],
+          issuer: ISSUER,
+          audience: H5_AUDIENCE,
+          typ: 'JWT',
+          requiredClaims: ['iat', 'exp'],
+          clockTolerance: 0,
+          currentDate: clock.now(),
+        }));
+      } catch (error) {
+        if (error instanceof errors.JOSEError) throw new TokenRejection(10002);
+        throw error;
+      }
+      const claims = h5ClaimsOf(payload);
+      if (claims === null) throw new TokenRejection(10002);
+      return claims;
+    },
   };
 }
 
@@ -300,40 +400,125 @@ export function isTokenCheck(check: unknown): boolean {
   return typeof check === 'function' && TOKEN_CHECKS.has(check as RequestCheck);
 }
 
-/** Stages ② and ③ after signature, before body validation, using the full contract auth table. */
+/** True for a route an h5_token may never call (BR-ID-32), judged on the matched template. */
+export function isOutsideH5Scope(method: string, template: string): boolean {
+  if (isContractSignedRoute(method, template)) return true;
+  if (template.startsWith(H5_EXCLUDED_AUTH_PREFIX)) return true;
+  return H5_EXCLUDED_PREFIXES.some(
+    (prefix) => template === prefix || template.startsWith(`${prefix}/`),
+  );
+}
+
+/** GET (and HEAD, answered by the GET handler) is all a read_only h5_token may call. */
+function isReadMethod(method: string): boolean {
+  const upper = method.toUpperCase();
+  return upper === 'GET' || upper === 'HEAD';
+}
+
+/**
+ * Stages ② and ③ after signature, before body validation, using the full contract auth table.
+ * An h5_token (aud=h5, B1-02f, BR-ID-32) is accepted where an access token is, with its own rules:
+ * its session (sid) must still be live (10002); a route outside its scope (isOutsideH5Scope) is
+ * 10403, also on an x-auth none route when the token is a valid h5_token; a read_only token on a
+ * method other than GET is 10403 with data.reason=h5_read_only, raised through `readOnlyRejection`
+ * (the entry passes an error the global filter writes back with its data; the default carries
+ * the data on the error only). The principal is the token's uid / app_id / sid / device_id.
+ */
 export function createTokenCheck(deps: {
   tokens: TokenService;
   sessions: SessionLookup;
+  readOnlyRejection?: (request: RequestCheckInput) => Error;
 }): RequestCheck {
   const { tokens, sessions } = deps;
   if (typeof tokens?.verifyAccess !== 'function' || typeof sessions?.find !== 'function') {
     throw new TypeError('createTokenCheck needs the token service and the session lookup');
   }
+  const readOnlyRejection = deps.readOnlyRejection ?? (() => new H5ReadOnlyRejection());
 
-  /** Stage ②: the verified claims of a live session, or 10002. */
-  const authenticate = async (authorization: string | string[]): Promise<TokenPrincipal> => {
-    const token = typeof authorization === 'string' ? BEARER.exec(authorization)?.[1] : undefined;
+  const bearer = (authorization: string | string[]): string | undefined =>
+    typeof authorization === 'string' ? BEARER.exec(authorization)?.[1] : undefined;
+
+  /** The h5 claims of a token that is not an access token, or the access token's rejection. */
+  const h5Claims = async (token: string, refusal: unknown): Promise<H5Claims> => {
+    if (!(refusal instanceof TokenRejection) || typeof tokens.verifyH5 !== 'function') {
+      throw refusal;
+    }
+    try {
+      return await tokens.verifyH5(token);
+    } catch (error) {
+      // Neither an access token nor an h5_token: the access token's answer (10002).
+      if (error instanceof TokenRejection) throw refusal;
+      throw error;
+    }
+  };
+
+  /** Stage ②: the verified claims of a live session (and the h5 claims of an h5_token), or 10002. */
+  const authenticate = async (
+    authorization: string | string[],
+  ): Promise<{ principal: TokenPrincipal; h5?: H5Claims }> => {
+    const token = bearer(authorization);
     if (token === undefined) throw new TokenRejection(10002);
-    const principal = await tokens.verifyAccess(token);
+    let principal: TokenPrincipal;
+    let h5: H5Claims | undefined;
+    try {
+      principal = await tokens.verifyAccess(token);
+    } catch (refusal) {
+      h5 = await h5Claims(token, refusal);
+      principal = Object.freeze({
+        uid: h5.uid,
+        app_id: h5.app_id,
+        sid: h5.sid,
+        device_id: h5.device_id,
+        scp: 'full' as const,
+      });
+    }
     const session = await sessions.find(principal.app_id, principal.sid);
     if (session === null || session.revoked_at !== null) throw new TokenRejection(10002);
-    return principal;
+    return h5 === undefined ? { principal } : { principal, h5 };
+  };
+
+  /** x-auth none never reads a token, except to refuse a valid h5_token outside its scope. */
+  const isH5Token = async (authorization: string | string[] | undefined): Promise<boolean> => {
+    if (authorization === undefined || typeof tokens.verifyH5 !== 'function') return false;
+    const token = bearer(authorization);
+    if (token === undefined) return false;
+    try {
+      await tokens.verifyH5(token);
+      return true;
+    } catch (error) {
+      if (error instanceof TokenRejection) return false;
+      throw error;
+    }
   };
 
   const check: RequestCheck = async (request) => {
     const template = request.routeTemplate;
     const auth = template === undefined ? undefined : contractAuthOf(request.method, template);
     // Outside the contract: no Authorization is read and no stage applies.
-    if (auth === undefined) return;
+    if (auth === undefined || template === undefined) return;
     // Admin levels: an app token never satisfies them and there is no admin token check yet, so
     // fail closed before reading Authorization or any session (bootstrap also refuses the routes).
     if (auth === 'admin' || auth === 'super') throw new TokenRejection(10001);
-    if (auth !== 'none') {
+    if (auth === 'none') {
+      // BR-ID-32: an h5_token is refused (10403, not ignored) on the routes outside its scope.
+      if (
+        isOutsideH5Scope(request.method, template) &&
+        (await isH5Token(request.headers['authorization']))
+      ) {
+        throw new TokenRejection(10403);
+      }
+    } else {
       const authorization = request.headers['authorization'];
       if (authorization !== undefined) {
-        const principal = await authenticate(authorization);
+        const { principal, h5 } = await authenticate(authorization);
         // ③ after login, app_id comes from the token only (BR-ID-07).
         if (headerValue(request, 'x-app-id') !== principal.app_id) throw new TokenRejection(10403);
+        if (h5 !== undefined) {
+          if (isOutsideH5Scope(request.method, template)) throw new TokenRejection(10403);
+          if (h5.scp === 'read_only' && !isReadMethod(request.method)) {
+            throw readOnlyRejection(request);
+          }
+        }
         request.principal = principal;
         return;
       }

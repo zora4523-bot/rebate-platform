@@ -32,3 +32,23 @@ export const SMS_LOGIN = Symbol('SMS_LOGIN');
 
 /** The RefreshService; null when the process has no database, Redis or field cipher. */
 export const REFRESH = Symbol('REFRESH');
+
+// Nest tokens of the second-verification wiring (B1-02f, identity.module.ts).
+
+/** The OauthAttemptService (oauth-attempts.ts); null when the process has no database or Redis. */
+export const OAUTH_ATTEMPTS = Symbol('OAUTH_ATTEMPTS');
+
+/**
+ * The ThirdPartyIdentityPort (step-up.ts) app.module may hand to IdentityModule.forRoot; null
+ * when none is given: the third-party step-up then answers 50305 (CT-15i provides the exchange).
+ */
+export const THIRD_PARTY_IDENTITY = Symbol('THIRD_PARTY_IDENTITY');
+
+/** The StepUpService; null when the process has no database, Redis, field cipher or SMS codes. */
+export const STEP_UP = Symbol('STEP_UP');
+
+/** The H5TokenService (h5-token.ts); null when the process has no configuration reader. */
+export const H5_TOKENS = Symbol('H5_TOKENS');
+
+/** The ConsentService (consents.ts); null when the process has no database. */
+export const CONSENTS = Symbol('CONSENTS');
