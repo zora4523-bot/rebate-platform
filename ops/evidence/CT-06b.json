@@ -1,0 +1,116 @@
+{
+  "task": "CT-06b",
+  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+  "spec_commit": "9b11f377c102ab20764609b660bdf6645136c697",
+  "red_tests": [
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#1] UTF-8 字节列号转换到 JS 下标，覆盖中文与代理对",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#2] fundsTableAt 以零起算行及字节列定位，不能跨到相邻语句",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#3] CLI 的真实 squawk 告警含中文前缀时仍禁止资金表借用同行 ignore",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#4] 两种超时必须有效且在 DDL 前设置，零值、取整为零、DEFAULT 与注释均不能绕过",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#5] 任意位置 RESET 或重新禁用超时都报错，后来恢复有效值也不能掩盖",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#6] CLI 超时错误走 stdout 的 gcc 诊断并在 squawk 前退出",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#7] 冻结清单确切收录 19 个原文件及 sha256，保留选择语义和真实仓库空操作",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#8] 完整冻结文件可通过，但改动内容必须拒绝且不运行 squawk（有新迁移=false）",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#8] 完整冻结文件可通过，但改动内容必须拒绝且不运行 squawk（有新迁移=true）",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#9] 存在真实冻结文件才拒绝基线内陌生文件名，虚构旧文件名夹具仍通过（有新迁移=false）",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#9] 存在真实冻结文件才拒绝基线内陌生文件名，虚构旧文件名夹具仍通过（有新迁移=true）",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#10] 冻结集合有任一成员就必须完整，复制全集后删一个也拒绝（有新迁移=false）",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#10] 冻结集合有任一成员就必须完整，复制全集后删一个也拒绝（有新迁移=true）",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#11] 可执行的非 SQL 迁移全部拒绝，README 与备份不误报（有新迁移=false）",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#11] 可执行的非 SQL 迁移全部拒绝，README 与备份不误报（有新迁移=true）",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#12] DO 的匿名或命名正文禁止破坏性 DDL，正常分区、INSERT、RAISE 可通过",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#13] 资金与归属表不能 SET SCHEMA，非资金表和注释不误报",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#14] 任何表不能通过列改名产出金额列，非金额列改名与 bigint 声明通过",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#15] CTAS、AS TABLE 与 SELECT INTO 含金额标识符时拒绝，字符串和注释不算",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#16] 引号金额列紧贴类型或 COLUMN 时照常校验，bigint 与 int8 通过",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#17] 引号表名紧贴 TABLE 或 DROP 时照常拒绝资金表 ignore，非资金表通过",
+    "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#18] CLI 新自检统一写 stderr 并在 squawk 前拒绝，合法紧贴金额声明仍通过"
+  ],
+  "risk_note": "RV2 by path (tools/ci, db/AGENTS.md are class 3 protected paths; owner approval label per ops/approvals.yaml 24). Guard-change hardening of the CT-06a migration gate (gaps from the CT-06a reviews): UTF-8 byte columns in squawk's report, timeouts disabled anywhere (0, DEFAULT, RESET), frozen migrations by exact name and sha256 (changed, missing, unknown old numbers once frozen files are present), JS / TS migrations refused, destructive DDL inside DO blocks, SET SCHEMA on funds tables, renamed and CTAS / SELECT INTO money columns, quoted identifiers touching the next token. Only tightens. Rule tests by Codex (red first in the container), implementation by the orchestrating session (infra-oss). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "9b11f377c102ab20764609b660bdf6645136c697",
+      "tree": "f0c1fa12978905f6aa96f98d11132d23b588a432",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T03:45:48Z",
+      "finished_at": "2026-10-08T03:46:03Z",
+      "red_tests": [
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#1] UTF-8 字节列号转换到 JS 下标，覆盖中文与代理对",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#2] fundsTableAt 以零起算行及字节列定位，不能跨到相邻语句",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#3] CLI 的真实 squawk 告警含中文前缀时仍禁止资金表借用同行 ignore",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#4] 两种超时必须有效且在 DDL 前设置，零值、取整为零、DEFAULT 与注释均不能绕过",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#5] 任意位置 RESET 或重新禁用超时都报错，后来恢复有效值也不能掩盖",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#6] CLI 超时错误走 stdout 的 gcc 诊断并在 squawk 前退出",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#7] 冻结清单确切收录 19 个原文件及 sha256，保留选择语义和真实仓库空操作",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#8] 完整冻结文件可通过，但改动内容必须拒绝且不运行 squawk（有新迁移=false）",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#8] 完整冻结文件可通过，但改动内容必须拒绝且不运行 squawk（有新迁移=true）",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#9] 存在真实冻结文件才拒绝基线内陌生文件名，虚构旧文件名夹具仍通过（有新迁移=false）",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#9] 存在真实冻结文件才拒绝基线内陌生文件名，虚构旧文件名夹具仍通过（有新迁移=true）",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#10] 冻结集合有任一成员就必须完整，复制全集后删一个也拒绝（有新迁移=false）",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#10] 冻结集合有任一成员就必须完整，复制全集后删一个也拒绝（有新迁移=true）",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#11] 可执行的非 SQL 迁移全部拒绝，README 与备份不误报（有新迁移=false）",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#11] 可执行的非 SQL 迁移全部拒绝，README 与备份不误报（有新迁移=true）",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#12] DO 的匿名或命名正文禁止破坏性 DDL，正常分区、INSERT、RAISE 可通过",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#13] 资金与归属表不能 SET SCHEMA，非资金表和注释不误报",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#14] 任何表不能通过列改名产出金额列，非金额列改名与 bigint 声明通过",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#15] CTAS、AS TABLE 与 SELECT INTO 含金额标识符时拒绝，字符串和注释不算",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#16] 引号金额列紧贴类型或 COLUMN 时照常校验，bigint 与 int8 通过",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#17] 引号表名紧贴 TABLE 或 DROP 时照常拒绝资金表 ignore，非资金表通过",
+        "test/spec/db/lint-migrations/hardening.test.ts > [AC-CT-06b#18] CLI 新自检统一写 stderr 并在 squawk 前拒绝，合法紧贴金额声明仍通过"
+      ],
+      "expected": ["test/spec/db/lint-migrations/hardening.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8aab196d21ea5421741d90513c58ef47b285f391eae8d3d4ba9fbaf6de5f706a"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "independent read-only Claude subagent, money review: pass, about 50 probes for false refusals of ordinary migrations (backfills, partition maintenance, raising timeouts, pg-boss upgrade SQL) all accepted; six S2 kept as follow-ups (other script extensions, DO-block ALTER … TYPE too broad, DO with a plain string body, set_config / quoted GUC names / timeouts disabled inside DO, 0.5 ms rounding, SELECT … INTO with FOR UPDATE)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; three S2 kept as follow-ups (CTAS with ON COMMIT before AS, SELECT … INTO with a column aliased \"update\", E'0' timeout literal)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in three test rounds (round 1 self-reported a conflict with CT-06a #14 / #17, resolved by applying the unknown-old-number rule only when frozen files are present; round 3 added the review's cases): review round 1 (95672c9) fail, one S1 (frozen-set refusals untested with a new migration present); round 2 (91fdbb8) pass with three S2; after landing started, CI timed out #18 at vitest's 5 s default, so the orchestrator added an explicit 60 s timeout to the CLI cases of hardening.test.ts (timing only, assertions unchanged; precedent B1-03b) as its own test(spec) commit before the implementation, and the red run is redone on it"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "0b419aecbae5932afdb1837ea8453f0b2b9bfe38",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

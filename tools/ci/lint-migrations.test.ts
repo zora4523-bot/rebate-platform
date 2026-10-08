@@ -588,3 +588,35 @@ it('selectMigrations: a migration merged before the gate is frozen by its exact 
     ]).lint,
   ).toEqual(['0019_other.sql', '0020_next.sql']);
 });
+
+it('CT-06b: a function body (not a DO block) may build DROP with EXECUTE, as the partition maintenance does', () => {
+  const sql =
+    "CREATE OR REPLACE FUNCTION app.drop_expired() RETURNS void LANGUAGE plpgsql AS $$\nBEGIN\n  EXECUTE format('DROP TABLE IF EXISTS %I', 'x');\nEND\n$$;\n";
+  expect(checkMigration('x.sql', sql)).toEqual([]);
+  expect(
+    checkMigration('x.sql', "DO $$ BEGIN EXECUTE 'DROP TABLE app.articles'; END $$;").map(
+      (p) => p.message,
+    ),
+  ).toEqual([expect.stringContaining('destructive DDL inside a DO block')]);
+});
+
+it('CT-06b: raising a timeout after the DDL is fine; lowering one to 0 or RESET anywhere is not', () => {
+  const ddl = 'CREATE TABLE app.t (id uuid);\n';
+  expect(
+    checkTimeouts('x.sql', `${TIMEOUTS}${ddl}SET LOCAL statement_timeout = '30min';\n`),
+  ).toEqual([]);
+  expect(checkTimeouts('x.sql', `${TIMEOUTS}${ddl}SET statement_timeout TO 0;\n`)).toEqual([
+    expect.stringContaining('require-statement-timeout'),
+  ]);
+  expect(checkTimeouts('x.sql', `RESET ALL;\n${TIMEOUTS}${ddl}`)).toHaveLength(2);
+  expect(checkTimeouts('x.sql', `${TIMEOUTS.replace("'10s'", "'0.4ms'")}${ddl}`)).toEqual([
+    expect.stringContaining('require-lock-timeout'),
+  ]);
+});
+
+it('CT-06b: the real repository passes the frozen-set check, and a script file without a number is refused', () => {
+  expect(
+    run(fixture({ '0019_new.sql': `${TIMEOUTS}CREATE TABLE app.t (id uuid);\n`, 'helper.ts': '' }))
+      .stderr,
+  ).toContain('helper.ts is not a SQL migration');
+});
