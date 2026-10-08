@@ -1,14 +1,14 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import type { Schema } from '@couli/contracts-ts';
 import { getPlatformName } from '../../texts/platform.ts';
-import alipayIcon from './assets/alipay.svg';
-import jdIcon from './assets/jd.svg';
-import pinduoduoIcon from './assets/pinduoduo.svg';
-import taobaoIcon from './assets/taobao.svg';
-import tmallIcon from './assets/tmall.svg';
-import wechatPayIcon from './assets/wechat-pay.svg';
-import wechatIcon from './assets/wechat.svg';
-import wecomIcon from './assets/wecom.svg';
+import alipayIcon from './assets/alipay.svg?no-inline';
+import jdIcon from './assets/jd.svg?no-inline';
+import pinduoduoIcon from './assets/pinduoduo.svg?no-inline';
+import taobaoIcon from './assets/taobao.svg?no-inline';
+import tmallIcon from './assets/tmall.svg?no-inline';
+import wechatPayIcon from './assets/wechat-pay.svg?no-inline';
+import wechatIcon from './assets/wechat.svg?no-inline';
+import wecomIcon from './assets/wecom.svg?no-inline';
 
 export type PlatformKey = keyof Schema<'ConfigPlatformIcons'>;
 
