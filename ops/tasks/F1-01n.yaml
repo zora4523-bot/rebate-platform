@@ -1,0 +1,23 @@
+id: F1-01n
+repo: rebate-platform
+title: H5 PlatformBadge（平台来源标识）：内置兜底图 + /v1/config.platform_icons 下发替换图（<img> 加载，error 回内置图，加载完成前先显示内置图，不重试不提示），读屏名固定平台中文名（BR-TEXT-24、03 §10.2）
+type: impl
+# 2026-10-08 入账（前端线 f1-frontend-4）。依据 BR-TEXT-24 细则「客户端显示」（H5 不读图片字节、不判 HTTP 状态与摘要，只看 img 的 error 事件）、03 §10.2 PlatformBadge 行（文字 + 小图标，白底描边、中性文字，作来源说明不作品牌宣传）、
+# CT-17f（#311）合并后的契约 Config.platform_icons / ConfigPlatformIcon；画板取用到它的列表卡（如 RankListPlatform、EarningsPlatform、OrdersFilterPlatform，编排者摘入任务书并核 sha256）。
+# 内置图：负责人提供首版前（couli design/icons/platform/README.md）用中性占位图标（不含任何平台商标或近似元素），8 个标识键各一，文件放 apps/h5/src/components/platform/assets/，按 BR-TEXT-24 标识键 → 内置文件名表命名；
+# 以后负责人给官方图时只替换这些文件。组件只收「标识键 + 可选下发项（url）」入参，不自己取 /v1/config（配置读取随页面任务接）；文案（平台中文名）取 apps/h5/src/texts/，08 没有的键按 BR-TEXT-24 表的中文名并登记 needs。
+# 不改 CSP（img-src 加 media 域名随 F1-01h 部署配置）。颜色、字号只用令牌。
+refs: []
+refs_hash: {}
+deps: [CT-17f, F1-01f]
+paths:
+  - 'apps/h5/src/components/platform/**'
+  - 'apps/h5/src/texts/platform.ts'
+test_paths:
+  - 'test/spec/frontend/h5-platform-badge/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-platform-badge/**'
+status: todo
