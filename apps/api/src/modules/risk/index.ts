@@ -1,4 +1,18 @@
 // Public surface of the risk module. Other modules import only from this file.
+export {
+  createRateLimitService,
+  createRateLimitThresholdReader,
+} from './application/rate-limit.ts';
+export type {
+  RateLimitConfigReader,
+  RateLimitThresholdReader,
+  RateLimitRule,
+  RateLimitRequest,
+  RateLimitResult,
+  RateLimitOptions,
+  RateLimitService,
+  RateLimitThresholdReaderOn,
+} from './application/rate-limit.ts';
 //
 // Also compiled by the `test` project: this file and everything it exports use erasable syntax
 // only, `import type` for type-only imports and relative imports with `.ts`; no parameter
@@ -20,7 +34,11 @@ export type {
   MinimumVersionRoute,
   MinimumVersionGuard,
 } from './application/minimum-version.ts';
-export type { MinimumVersionReaders, RiskModuleOptions } from './risk.module.ts';
+export type {
+  MinimumVersionReaders,
+  RateLimitThresholdReaders,
+  RiskModuleOptions,
+} from './risk.module.ts';
 export {
   DEVICE_SIGNING_KEYS,
   SIGNATURE_CHECK,

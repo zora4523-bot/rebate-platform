@@ -6,6 +6,11 @@
 // MinimumVersionReader port, which content's reader implements and app.module supplies as a
 // factory: a cached reader on the pool for the guard, and a reader factory over a handle for the
 // idempotency post-miss hook, which reads on the claim's transaction (task B1-03c §9.3, §12).
+// Stage ⑬ (rate limits, B1-03e) follows ④a on both paths: one global guard runs ④a then ⑬ for
+// the non-idempotent operations, and the post-miss hook of ⑬ is registered after ④a's. Its
+// thresholds come through the RateLimitThresholdReader port (content's configValue, assembled by
+// app.module); its buckets need REDIS, and without REDIS stage ⑬ is not installed (one info line
+// `rate_limit_disabled` at startup).
 //
 // Also compiled by the `test` project (through ./index.ts): a class decorator only (no parameter
 // decorators or parameter properties; dependencies are injected through a factory), as in
@@ -22,12 +27,14 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { map } from 'rxjs';
 import {
   CLOCK,
+  FIELD_CRYPTO,
   IDEMPOTENCY,
   REDIS,
   ROOT_LOGGER,
   registerIdempotencyEntryObserver,
   registerIdempotencyPostMissCheck,
   type Clock,
+  type FieldCrypto,
   type Idempotency,
   type RedisHandle,
   type RootLogger,
@@ -44,7 +51,19 @@ import {
   type MinimumVersionReader,
   type MinimumVersionReaderOn,
   type MinimumVersionRequest,
+  type MinimumVersionScope,
 } from './application/minimum-version.ts';
+import {
+  createRateLimitGuard,
+  createRateLimitPostMissCheck,
+} from './application/rate-limit-gate.ts';
+import {
+  createRateLimitService,
+  createRateLimitThresholdReader,
+  type RateLimitService,
+  type RateLimitThresholdReader,
+  type RateLimitThresholdReaderOn,
+} from './application/rate-limit.ts';
 import {
   DEVICE_SIGNING_KEYS,
   SIGNATURE_CHECK,
@@ -58,6 +77,9 @@ const MINIMUM_VERSION_READER = Symbol('MINIMUM_VERSION_READER');
 const MINIMUM_VERSION_HOOK = Symbol('MINIMUM_VERSION_HOOK');
 /** Whether stage ④a is in force on this entry: true exactly when a reader is wired. */
 const MINIMUM_VERSION_GATE = Symbol('MINIMUM_VERSION_GATE');
+const RATE_LIMIT_THRESHOLDS = Symbol('RATE_LIMIT_THRESHOLDS');
+/** Stage ⑬'s service, or null when it is not installed (no REDIS on this entry). */
+const RATE_LIMIT_SERVICE = Symbol('RATE_LIMIT_SERVICE');
 
 /** The minimum supported version port as app.module supplies it (content's reader). */
 export interface MinimumVersionReaders {
@@ -68,6 +90,17 @@ export interface MinimumVersionReaders {
    * transaction per judgement, so it never borrows a second pooled connection while holding one.
    */
   readonly on: MinimumVersionReaderOn;
+}
+
+/** The rate limit thresholds port as app.module supplies it (content's configValue). */
+export interface RateLimitThresholdReaders {
+  /** Cached reader on the pool: the guard (non-idempotent operations, outside any transaction). */
+  readonly pooled: RateLimitThresholdReader;
+  /**
+   * A reader over a given handle: the post-miss hook builds one on the idempotency claim's
+   * transaction per judgement, so it never borrows a second pooled connection while holding one.
+   */
+  readonly on: RateLimitThresholdReaderOn;
 }
 
 export interface RiskModuleOptions {
@@ -84,7 +117,25 @@ export interface RiskModuleOptions {
     FactoryProvider<MinimumVersionReaders | null>,
     'inject' | 'useFactory'
   >;
+  /**
+   * Stage ⑬ (B1-03e): the thresholds port (content's configValue), built by app.module: a cached
+   * pooled reader for the guard and a reader factory over the idempotency claim's transaction for
+   * the post-miss hook (same split as minimumVersions). A factory that returns null, or none at
+   * all, leaves the code defaults in force (no configuration read). Bucket keys use FIELD_CRYPTO's
+   * blind index when the entry has a keyring.
+   * The buckets need REDIS: without it stage ⑬ is not installed and one info line
+   * `rate_limit_disabled` is logged at startup. A store that is wired but fails refuses (42901).
+   */
+  readonly rateLimit?: {
+    readonly thresholds: Pick<
+      FactoryProvider<RateLimitThresholdReaders | null>,
+      'inject' | 'useFactory'
+    >;
+  };
 }
+
+/** No configuration reader: the code defaults only. */
+const DEFAULT_THRESHOLDS_CONFIG = { configValue: () => Promise.resolve(null) };
 
 /** No reader: a judgement that needs the minimum fails (never read as "no minimum"). */
 const UNAVAILABLE_READER: MinimumVersionReader = {
@@ -95,10 +146,22 @@ const UNAVAILABLE_READER: MinimumVersionReader = {
 /** Stage ④a not installed (no reader): the global guard slot lets every request through. */
 const GATE_DISABLED_GUARD = { canActivate: () => true };
 
-/** Stage ④a not installed (no reader): the global interceptor slot hands the handler through. */
+/** Neither stage needs the post-miss scope: the global interceptor slot hands the handler through. */
 const GATE_DISABLED_INTERCEPTOR: NestInterceptor = {
   intercept: (_context: ExecutionContext, next: CallHandler) => next.handle(),
 };
+
+type ScopeReply = MinimumVersionScope['reply'];
+
+/** The Fastify reply of the HTTP context, for headers set by a stage judged in the post-miss hook. */
+function replyOf(http: { getResponse?: () => unknown }): ScopeReply {
+  const reply = typeof http.getResponse === 'function' ? http.getResponse() : undefined;
+  return typeof reply === 'object' &&
+    reply !== null &&
+    typeof (reply as { header?: unknown }).header === 'function'
+    ? (reply as NonNullable<ScopeReply>)
+    : undefined;
+}
 
 /**
  * Opens MINIMUM_VERSION_SCOPE around the route handler for the idempotency post-miss hook, and
@@ -109,8 +172,9 @@ const GATE_DISABLED_INTERCEPTOR: NestInterceptor = {
 export const MINIMUM_VERSION_INTERCEPTOR: NestInterceptor = {
   intercept(context: ExecutionContext, next: CallHandler) {
     if (context.getType() !== 'http') return next.handle();
-    const request = context.switchToHttp().getRequest<MinimumVersionRequest>();
-    const scope = { request, idempotencyEntered: false };
+    const http = context.switchToHttp();
+    const request = http.getRequest<MinimumVersionRequest>();
+    const scope = { request, reply: replyOf(http), idempotencyEntered: false };
     const idempotent = isIdempotentMinimumVersionRoute(request);
     // Nest binds the handler to the async context in which handle() is called.
     return MINIMUM_VERSION_SCOPE.run(scope, () =>
@@ -126,6 +190,35 @@ export const MINIMUM_VERSION_INTERCEPTOR: NestInterceptor = {
   },
 };
 
+/**
+ * Stage ⑬ without stage ④a (no minimum version reader): opens MINIMUM_VERSION_SCOPE for ⑬'s
+ * post-miss hook only, without ④a's fail-closed rule.
+ */
+const RATE_LIMIT_SCOPE_INTERCEPTOR: NestInterceptor = {
+  intercept(context: ExecutionContext, next: CallHandler) {
+    if (context.getType() !== 'http') return next.handle();
+    const http = context.switchToHttp();
+    const request = http.getRequest<MinimumVersionRequest>();
+    const scope = { request, reply: replyOf(http), idempotencyEntered: false };
+    return MINIMUM_VERSION_SCOPE.run(scope, () => next.handle());
+  },
+};
+
+interface StageGuard {
+  canActivate(context: ExecutionContext): boolean | Promise<boolean>;
+}
+
+/** ④a then ⑬ in one global guard, so their order never depends on guard registration order. */
+function chainGuards(first: StageGuard, second: StageGuard | null): StageGuard {
+  if (second === null) return first;
+  return {
+    async canActivate(context: ExecutionContext) {
+      if (!(await first.canActivate(context))) return false;
+      return second.canActivate(context);
+    },
+  };
+}
+
 @Module({})
 export class RiskModule {
   /**
@@ -139,6 +232,10 @@ export class RiskModule {
    * registered, and an info line is logged once (B1-03c §13).
    */
   static forRoot(options: RiskModuleOptions): DynamicModule {
+    const thresholds: FactoryProvider<RateLimitThresholdReaders | null> =
+      options.rateLimit === undefined
+        ? { provide: RATE_LIMIT_THRESHOLDS, useFactory: () => null }
+        : { provide: RATE_LIMIT_THRESHOLDS, ...options.rateLimit.thresholds };
     const reader: FactoryProvider<MinimumVersionReaders | null> =
       options.minimumVersions === undefined
         ? { provide: MINIMUM_VERSION_READER, useFactory: () => null }
@@ -170,30 +267,77 @@ export class RiskModule {
             return false;
           },
         },
+        thresholds,
+        {
+          provide: RATE_LIMIT_SERVICE,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            RATE_LIMIT_THRESHOLDS,
+            { token: REDIS, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            configured: RateLimitThresholdReaders | null,
+            redis?: RedisHandle,
+            crypto?: FieldCrypto,
+          ): RateLimitService | null => {
+            if (redis === undefined) {
+              logger.info({ stage: '13' }, 'rate_limit_disabled');
+              return null;
+            }
+            return createRateLimitService({
+              clock,
+              redis,
+              logger,
+              thresholds:
+                configured?.pooled ?? createRateLimitThresholdReader(DEFAULT_THRESHOLDS_CONFIG),
+              ...(crypto === undefined ? {} : { crypto }),
+            });
+          },
+        },
         {
           provide: APP_GUARD,
-          inject: [MINIMUM_VERSION_CHECK, MINIMUM_VERSION_GATE],
-          useFactory: (check: MinimumVersionCheck, enabled: boolean) =>
-            enabled ? createMinimumVersionGuard(check) : GATE_DISABLED_GUARD,
+          inject: [MINIMUM_VERSION_CHECK, MINIMUM_VERSION_GATE, RATE_LIMIT_SERVICE],
+          useFactory: (
+            check: MinimumVersionCheck,
+            enabled: boolean,
+            rateLimit: RateLimitService | null,
+          ): StageGuard =>
+            chainGuards(
+              enabled ? createMinimumVersionGuard(check) : GATE_DISABLED_GUARD,
+              rateLimit === null ? null : createRateLimitGuard(rateLimit),
+            ),
         },
         {
           provide: APP_INTERCEPTOR,
-          inject: [MINIMUM_VERSION_GATE],
-          useFactory: (enabled: boolean) =>
-            enabled ? MINIMUM_VERSION_INTERCEPTOR : GATE_DISABLED_INTERCEPTOR,
+          inject: [MINIMUM_VERSION_GATE, RATE_LIMIT_SERVICE],
+          useFactory: (enabled: boolean, rateLimit: RateLimitService | null) =>
+            enabled
+              ? MINIMUM_VERSION_INTERCEPTOR
+              : rateLimit === null
+                ? GATE_DISABLED_INTERCEPTOR
+                : RATE_LIMIT_SCOPE_INTERCEPTOR,
         },
         {
+          // ④a's hook first, then ⑬'s: registration order is the judgement order.
           provide: MINIMUM_VERSION_HOOK,
           inject: [
             MINIMUM_VERSION_CHECK,
             MINIMUM_VERSION_READER,
             MINIMUM_VERSION_GATE,
+            RATE_LIMIT_SERVICE,
+            RATE_LIMIT_THRESHOLDS,
             { token: IDEMPOTENCY, optional: true },
           ],
           useFactory: (
             check: MinimumVersionCheck,
             versions: MinimumVersionReaders | null,
             enabled: boolean,
+            rateLimit: RateLimitService | null,
+            limits: RateLimitThresholdReaders | null,
             idempotency?: Idempotency,
           ) => {
             if (enabled && idempotency !== undefined) {
@@ -202,6 +346,12 @@ export class RiskModule {
                 createMinimumVersionPostMissCheck(check, versions?.on),
               );
               registerIdempotencyEntryObserver(idempotency, createMinimumVersionEntryObserver());
+            }
+            if (rateLimit !== null && idempotency !== undefined) {
+              registerIdempotencyPostMissCheck(
+                idempotency,
+                createRateLimitPostMissCheck(rateLimit, limits?.on),
+              );
             }
             return true;
           },

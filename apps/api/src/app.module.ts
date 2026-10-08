@@ -74,7 +74,9 @@ import {
   RiskModule,
   SIGNATURE_CHECK,
   createBlocklistService,
+  createRateLimitThresholdReader,
   type MinimumVersionReaders,
+  type RateLimitThresholdReaders,
   type BlocklistService,
 } from './modules/risk/index.ts';
 import {
@@ -400,6 +402,9 @@ function parsingPorts(): DynamicModule {
  * identityModule(); risk never imports content, B1-03c): cached on the pool for the guard, and
  * built over the idempotency claim's transaction for the post-miss hook. No database handle: no reader, and a
  * request that needs the minimum answers 50001.
+ * Stage ⑬ (rate limits, B1-03e): its thresholds port reads `rate_limit.ops` and
+ * `rate_limit.<group>` through content's cached configValue; no database handle: the code
+ * defaults only. Its buckets use REDIS (none: stage ⑬ is not installed).
  */
 function riskModule(identity: DynamicModule): DynamicModule {
   return RiskModule.forRoot({
@@ -415,6 +420,21 @@ function riskModule(identity: DynamicModule): DynamicModule {
               pooled: createContentReader({ db, clock }),
               on: (handle) => createContentReader({ db: handle, clock }),
             },
+    },
+    rateLimit: {
+      thresholds: {
+        inject: [CLOCK, { token: DB, optional: true }],
+        // pooled: the guard's cached reader; on: a fresh reader over the idempotency claim's
+        // transaction for the post-miss hook (no second pooled connection while holding one).
+        useFactory: (clock: Clock, db?: Kysely<Database>): RateLimitThresholdReaders | null =>
+          db === undefined
+            ? null
+            : {
+                pooled: createRateLimitThresholdReader(createContentReader({ db, clock })),
+                on: (handle) =>
+                  createRateLimitThresholdReader(createContentReader({ db: handle, clock })),
+              },
+      },
     },
   });
 }
