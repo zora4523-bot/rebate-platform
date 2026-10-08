@@ -1,0 +1,319 @@
+# Staging stack (B1-01zc): five long-running processes from ONE backend image.
+# Started only by infra/staging/deploy.sh, which runs the migration first and passes
+#   --env-file /etc/couli/staging.env  (compose interpolation of the port numbers only)
+# The image is built on the developer machine and loaded with `docker load`; this file
+# never builds or pulls. COULI_API_TAG is exported by deploy.sh (the tag being deployed).
+# Connection strings and credentials come only from the node env files (root, 600):
+#   /etc/couli/staging.env         api / stream / worker / admin
+#   /etc/couli/staging-payout.env  payout only (its own database role; payout never uses Redis)
+# Every service mounts read-only: the database CA (/etc/pki/ca.crt) and the field-encryption
+# key ring directory (/etc/couli-keys -> /run/couli-keys); api also mounts its access-token
+# signing key directory (/etc/couli-jwt -> /run/couli-jwt), loaded by infra/staging/boot.mjs.
+# Every process starts through boot.mjs (node --import), which also counts container starts.
+# All five health checks require 30s of uptime and a single start until deploy.sh marks the
+# deployment settled, so `up --wait` fails when any process crashed or restarted during it.
+# HTTP ports are published on 127.0.0.1 only; worker and payout publish nothing.
+name: couli-staging
+
+services:
+  # user-facing HTTP API (/v1)
+  api:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - '--import'
+      - ./infra/staging/boot.mjs
+      - apps/api/dist/main.api.js
+    env_file:
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging.env
+        format: raw
+    environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
+      # Listen on the container interface so the 127.0.0.1-only host port reaches it.
+      API_HOST: '0.0.0.0'
+      # boot.mjs reads the access-token signing key (es256.pem, key-id) from this mounted
+      # directory into the process environment; api is the only entry that signs tokens.
+      COULI_JWT_DIR: /run/couli-jwt
+    ports:
+      - host_ip: 127.0.0.1
+        target: '${API_PORT:-3100}'
+        published: '${API_PORT:-3100}'
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
+      # access-token signing key (PKCS#8 P-256 es256.pem + key-id): owned by uid 1000,
+      # directory 500, files 400; mounted on api only
+      - type: bind
+        source: /etc/couli-jwt
+        target: /run/couli-jwt
+        read_only: true
+    healthcheck:
+      # Healthy only when this process own /healthz on API_PORT answers 2xx AND the
+      # container has run for 30s AND (before its first healthy check) started only once:
+      # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
+      # deploy.sh writes /tmp/couli-settled only after the WHOLE deployment succeeded (all five
+      # healthy, RestartCount 0); only from then on may a restart (node reboot) pass again.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.API_PORT || '3100') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # Agent SSE streaming endpoint
+  stream:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - '--import'
+      - ./infra/staging/boot.mjs
+      - apps/api/dist/main.stream.js
+    env_file:
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging.env
+        format: raw
+    environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
+      # Listen on the container interface so the 127.0.0.1-only host port reaches it.
+      API_HOST: '0.0.0.0'
+    ports:
+      - host_ip: 127.0.0.1
+        target: '${STREAM_PORT:-3101}'
+        published: '${STREAM_PORT:-3101}'
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
+    healthcheck:
+      # Healthy only when this process own /healthz on STREAM_PORT answers 2xx AND the
+      # container has run for 30s AND (before its first healthy check) started only once:
+      # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
+      # deploy.sh writes /tmp/couli-settled only after the WHOLE deployment succeeded (all five
+      # healthy, RestartCount 0); only from then on may a restart (node reboot) pass again.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.STREAM_PORT || '3101') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # pg-boss queue worker; no port
+  worker:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - '--import'
+      - ./infra/staging/boot.mjs
+      - apps/api/dist/main.worker.js
+    env_file:
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging.env
+        format: raw
+    environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
+    healthcheck:
+      # No port: healthy once the process has run for 30s AND (before its first healthy check)
+      # started only once (/tmp/couli-starts, written by boot.mjs; kept across a restart,
+      # emptied by a recreate). One early crash is enough to keep it unhealthy, so
+      # `up --wait` fails and deploy.sh rolls back. /tmp/couli-settled is written by deploy.sh
+      # only after the whole deployment succeeded; only then may a later restart pass again.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); const ok = age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1);"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # back-office HTTP API (/admin/v1)
+  admin:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - '--import'
+      - ./infra/staging/boot.mjs
+      - apps/api/dist/main.admin.js
+    env_file:
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging.env
+        format: raw
+    environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
+      # Listen on the container interface so the 127.0.0.1-only host port reaches it.
+      API_HOST: '0.0.0.0'
+    ports:
+      - host_ip: 127.0.0.1
+        target: '${ADMIN_PORT:-3102}'
+        published: '${ADMIN_PORT:-3102}'
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
+    healthcheck:
+      # Healthy only when this process own /healthz on ADMIN_PORT answers 2xx AND the
+      # container has run for 30s AND (before its first healthy check) started only once:
+      # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
+      # deploy.sh writes /tmp/couli-settled only after the WHOLE deployment succeeded (all five
+      # healthy, RestartCount 0); only from then on may a restart (node reboot) pass again.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.ADMIN_PORT || '3102') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # payout queue worker; own database role, no Redis, no port
+  payout:
+    image: 'couli-api:${COULI_API_TAG:?deploy.sh exports the image tag}'
+    pull_policy: never
+    command:
+      - node
+      - '--import'
+      - ./infra/staging/boot.mjs
+      - apps/api/dist/main.payout.js
+    env_file:
+      # raw: values are taken literally, Compose does not expand $ inside them
+      - path: /etc/couli/staging-payout.env
+        format: raw
+    environment:
+      # Not a secret; set here so no process depends on the node file for it.
+      APP_ENV: staging
+    volumes:
+      # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
+      - type: bind
+        source: /etc/pki/ca.crt
+        target: /etc/pki/ca.crt
+        read_only: true
+      # field-encryption key ring (ADR-0003): owned by uid 1000, directory 500, files 400
+      - type: bind
+        source: /etc/couli-keys
+        target: /run/couli-keys
+        read_only: true
+    healthcheck:
+      # No port: healthy once the process has run for 30s AND (before its first healthy check)
+      # started only once (/tmp/couli-starts, written by boot.mjs; kept across a restart,
+      # emptied by a recreate). One early crash is enough to keep it unhealthy, so
+      # `up --wait` fails and deploy.sh rolls back. /tmp/couli-settled is written by deploy.sh
+      # only after the whole deployment succeeded; only then may a later restart pass again.
+      test:
+        - CMD
+        - node
+        - '-e'
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); const ok = age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1);"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - 'no-new-privileges:true'
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'

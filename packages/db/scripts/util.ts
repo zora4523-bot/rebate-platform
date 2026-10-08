@@ -1,12 +1,14 @@
 // Small helpers shared by the scripts in this directory.
+import { describeError, redactCredentials } from '../src/pg-url.ts';
 
 /** Command-line arguments without the `--` separator that pnpm passes through. */
 export function cliArgs(): string[] {
   return process.argv.slice(2).filter((arg) => arg !== '--');
 }
 
+/** Progress output (stderr). Connection passwords are masked here as well (redactCredentials). */
 export function info(message: string): void {
-  console.error(message);
+  console.error(redactCredentials(message));
 }
 
 /** A failure with a message for the owner; `main` prints it and exits with `code`. */
@@ -42,11 +44,12 @@ export async function main(run: () => Promise<void> | void): Promise<void> {
     await run();
   } catch (error) {
     if (error instanceof ScriptError) {
-      console.error(`错误：${error.message}`);
+      console.error(`错误：${redactCredentials(error.message)}`);
       process.exitCode = error.code;
       return;
     }
-    console.error(error);
+    // Never console.error(error): see describeError (src/pg-url.ts).
+    console.error(`错误：${describeError(error)}`);
     process.exitCode = 2;
   }
 }
