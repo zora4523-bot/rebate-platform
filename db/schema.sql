@@ -525,6 +525,59 @@ $$;
 
 
 --
+-- Name: reject_agent_run_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_run_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.id, NEW.app_id, NEW.session_id, NEW.prompt_version, NEW.accepted_at,
+         NEW.quota_subjects, NEW.created_at)
+      IS DISTINCT FROM
+      ROW(OLD.id, OLD.app_id, OLD.session_id, OLD.prompt_version, OLD.accepted_at,
+          OLD.quota_subjects, OLD.created_at)
+    OR (OLD.final_event IS NOT NULL AND NEW.final_event IS DISTINCT FROM OLD.final_event)
+    OR (OLD.ended_at IS NOT NULL AND NEW.ended_at IS DISTINCT FROM OLD.ended_at)
+    OR (OLD.end_reason IS NOT NULL AND NEW.end_reason IS DISTINCT FROM OLD.end_reason)
+    OR (OLD.settle_result IS NOT NULL AND NEW.settle_result IS DISTINCT FROM OLD.settle_result)
+    OR (OLD.settled_at IS NOT NULL AND NEW.settled_at IS DISTINCT FROM OLD.settled_at)
+    OR (OLD.card_delivered AND NOT NEW.card_delivered)
+    OR (OLD.settle_result IS NOT NULL AND NEW.card_delivered IS DISTINCT FROM OLD.card_delivered)
+    OR (NEW.user_text IS NOT NULL AND NEW.user_text IS DISTINCT FROM OLD.user_text)
+  THEN
+    RAISE EXCEPTION 'agent_runs ending facts are write-once and user_text may only be cleared'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_agent_session_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_session_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.id, NEW.app_id, NEW.user_id, NEW.device_id, NEW.started_at, NEW.created_at)
+      IS DISTINCT FROM
+      ROW(OLD.id, OLD.app_id, OLD.user_id, OLD.device_id, OLD.started_at, OLD.created_at)
+    OR NEW.card_seq < OLD.card_seq
+  THEN
+    RAISE EXCEPTION 'agent_sessions owner is immutable and card_seq never decreases'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_device_registration_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -987,6 +1040,218 @@ CREATE TABLE app.admin_users (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: agent_cards; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_cards (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    session_id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    card_id text NOT NULL,
+    type text NOT NULL,
+    data jsonb NOT NULL,
+    link_id uuid,
+    schema_version integer NOT NULL,
+    fallback_text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_cards_card_id_check CHECK ((card_id ~ '^c[1-9][0-9]*$'::text)),
+    CONSTRAINT agent_cards_data_check CHECK ((jsonb_typeof(data) = 'object'::text)),
+    CONSTRAINT agent_cards_earnings_no_amount_check CHECK (
+CASE
+    WHEN (type <> 'earnings_summary'::text) THEN true
+    WHEN (jsonb_typeof(data) = 'object'::text) THEN (((data - 'as_of'::text) - 'actions'::text) = '{}'::jsonb)
+    ELSE false
+END),
+    CONSTRAINT agent_cards_fallback_text_check CHECK ((fallback_text <> ''::text)),
+    CONSTRAINT agent_cards_schema_version_check CHECK ((schema_version >= 1)),
+    CONSTRAINT agent_cards_type_check CHECK ((type = ANY (ARRAY['product_list'::text, 'rebate_quote'::text, 'order_status'::text, 'claim_draft'::text, 'handoff'::text, 'auth_required'::text, 'notice'::text, 'rule_ref'::text, 'page_guide'::text, 'earnings_summary'::text])))
+);
+
+
+--
+-- Name: agent_messages; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_messages (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    session_id uuid NOT NULL,
+    run_id uuid,
+    client_msg_id text,
+    role text NOT NULL,
+    text text,
+    card_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    feedback text,
+    feedback_at timestamp with time zone,
+    reported boolean DEFAULT false NOT NULL,
+    report_reason text,
+    reported_at timestamp with time zone,
+    report_status text,
+    report_handler_id uuid,
+    report_handled_at timestamp with time zone,
+    report_note text,
+    badcase boolean DEFAULT false NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_messages_assistant_client_check CHECK (((role <> 'assistant'::text) OR (client_msg_id IS NULL))),
+    CONSTRAINT agent_messages_card_ids_check CHECK (
+CASE
+    WHEN (cardinality(card_ids) = 0) THEN true
+    WHEN (array_ndims(card_ids) = 1) THEN
+    CASE
+        WHEN (array_position(card_ids, NULL::text) IS NULL) THEN ((array_to_string(card_ids, ','::text) ~ '^c[1-9][0-9]*(,c[1-9][0-9]*)*$'::text) AND (cardinality(string_to_array(array_to_string(card_ids, ','::text), ','::text)) = cardinality(card_ids)))
+        ELSE false
+    END
+    ELSE false
+END),
+    CONSTRAINT agent_messages_down_badcase_check CHECK (((feedback IS DISTINCT FROM 'down'::text) OR badcase)),
+    CONSTRAINT agent_messages_feedback_check CHECK ((feedback = ANY (ARRAY['up'::text, 'down'::text]))),
+    CONSTRAINT agent_messages_feedback_pair_check CHECK (((feedback IS NULL) = (feedback_at IS NULL))),
+    CONSTRAINT agent_messages_report_handled_check CHECK ((((NOT (report_status IS DISTINCT FROM 'handled'::text)) = (report_handled_at IS NOT NULL)) AND ((NOT (report_status IS DISTINCT FROM 'handled'::text)) = (report_handler_id IS NOT NULL)))),
+    CONSTRAINT agent_messages_report_status_check CHECK ((report_status = ANY (ARRAY['pending'::text, 'handled'::text]))),
+    CONSTRAINT agent_messages_report_status_pair_check CHECK ((reported = (report_status IS NOT NULL))),
+    CONSTRAINT agent_messages_reported_pair_check CHECK ((reported = (reported_at IS NOT NULL))),
+    CONSTRAINT agent_messages_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text]))),
+    CONSTRAINT agent_messages_user_keys_check CHECK (((role <> 'user'::text) OR ((client_msg_id IS NOT NULL) AND (run_id IS NOT NULL)))),
+    CONSTRAINT agent_messages_user_no_feedback_check CHECK (((role <> 'user'::text) OR ((feedback IS NULL) AND (feedback_at IS NULL) AND (NOT reported))))
+);
+
+
+--
+-- Name: agent_result_sets; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_result_sets (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    run_id uuid NOT NULL,
+    conditions jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_result_sets_conditions_check CHECK ((jsonb_typeof(conditions) = 'object'::text))
+);
+
+
+--
+-- Name: agent_runs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_runs (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    session_id uuid NOT NULL,
+    user_text text,
+    intent text,
+    model text,
+    model_snapshot text,
+    prompt_version text NOT NULL,
+    input_tokens integer,
+    output_tokens integer,
+    cost_mfen bigint,
+    ttft_ms integer,
+    latency_ms integer,
+    finish_reason text,
+    final_event jsonb,
+    ended_at timestamp with time zone,
+    output_filtered boolean DEFAULT false NOT NULL,
+    filter_hits text[] DEFAULT '{}'::text[] NOT NULL,
+    output_truncated boolean DEFAULT false NOT NULL,
+    price_version text,
+    result_check_provider text,
+    judge_model text,
+    page_guide_reject_reason text,
+    accepted_at timestamp with time zone NOT NULL,
+    quota_subjects text[] NOT NULL,
+    end_reason text,
+    card_delivered boolean DEFAULT false NOT NULL,
+    settle_result text,
+    settled_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_runs_counts_check CHECK (((input_tokens >= 0) AND (output_tokens >= 0) AND (cost_mfen >= 0) AND (ttft_ms >= 0) AND (latency_ms >= 0))),
+    CONSTRAINT agent_runs_ended_order_check CHECK ((ended_at >= accepted_at)),
+    CONSTRAINT agent_runs_filter_hits_check CHECK (
+CASE
+    WHEN (cardinality(filter_hits) = 0) THEN true
+    WHEN (array_ndims(filter_hits) = 1) THEN
+    CASE
+        WHEN (array_position(filter_hits, NULL::text) IS NULL) THEN (filter_hits <@ ARRAY['amount'::text, 'url'::text, 'tpwd'::text])
+        ELSE false
+    END
+    ELSE false
+END),
+    CONSTRAINT agent_runs_final_after_settle_check CHECK (((final_event IS NULL) OR (settle_result IS NOT NULL))),
+    CONSTRAINT agent_runs_final_event_check CHECK (((final_event IS NULL) OR COALESCE(
+CASE
+    WHEN (jsonb_typeof(final_event) = 'object'::text) THEN ((final_event ?& ARRAY['type'::text, 'data'::text]) AND (((final_event - 'type'::text) - 'data'::text) = '{}'::jsonb) AND (jsonb_typeof((final_event -> 'type'::text)) = 'string'::text) AND ((final_event ->> 'type'::text) = ANY (ARRAY['done'::text, 'error'::text])) AND (jsonb_typeof((final_event -> 'data'::text)) = 'object'::text))
+    ELSE false
+END, false))),
+    CONSTRAINT agent_runs_final_pair_check CHECK (((final_event IS NULL) = (ended_at IS NULL))),
+    CONSTRAINT agent_runs_finish_reason_check CHECK ((finish_reason = ANY (ARRAY['stop'::text, 'cancelled'::text, 'limit'::text, 'budget'::text, 'error'::text, 'auth_required'::text, 'safety'::text, 'fallback'::text, 'timeout'::text]))),
+    CONSTRAINT agent_runs_intent_check CHECK ((intent = ANY (ARRAY['find_by_link'::text, 'search'::text, 'refine'::text, 'order_query'::text, 'rule_qa'::text, 'handoff'::text, 'clarify'::text, 'out_of_scope'::text, 'page_guide'::text, 'earnings_query'::text]))),
+    CONSTRAINT agent_runs_output_filtered_check CHECK ((output_filtered = (cardinality(filter_hits) > 0))),
+    CONSTRAINT agent_runs_page_guide_reject_reason_check CHECK ((page_guide_reject_reason = ANY (ARRAY['not_allowed'::text, 'extra_fields'::text, 'disabled'::text, 'untrusted_input'::text, 'params_requested'::text]))),
+    CONSTRAINT agent_runs_quota_subjects_check CHECK (
+CASE
+    WHEN (array_ndims(quota_subjects) = 1) THEN
+    CASE
+        WHEN (array_position(quota_subjects, NULL::text) IS NULL) THEN ((cardinality(quota_subjects) >= 1) AND (cardinality(quota_subjects) <= 2))
+        ELSE false
+    END
+    ELSE false
+END),
+    CONSTRAINT agent_runs_result_check_provider_check CHECK ((result_check_provider = ANY (ARRAY['rules'::text, 'jev'::text]))),
+    CONSTRAINT agent_runs_settle_after_end_check CHECK (((settle_result IS NULL) OR (end_reason IS NOT NULL))),
+    CONSTRAINT agent_runs_settle_pair_check CHECK (((settle_result IS NULL) = (settled_at IS NULL))),
+    CONSTRAINT agent_runs_settle_result_check CHECK ((settle_result = ANY (ARRAY['counted'::text, 'refunded'::text])))
+);
+
+
+--
+-- Name: agent_sessions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_sessions (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid,
+    device_id uuid NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    last_active_at timestamp with time zone NOT NULL,
+    expired_at timestamp with time zone,
+    card_seq integer DEFAULT 0 NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_sessions_active_order_check CHECK ((last_active_at >= started_at)),
+    CONSTRAINT agent_sessions_card_seq_check CHECK ((card_seq >= 0)),
+    CONSTRAINT agent_sessions_expired_order_check CHECK ((expired_at > last_active_at))
+);
+
+
+--
+-- Name: agent_tool_calls; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_tool_calls (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    run_id uuid NOT NULL,
+    seq integer NOT NULL,
+    name text NOT NULL,
+    args jsonb,
+    result_digest text,
+    status text NOT NULL,
+    latency_ms integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_tool_calls_latency_check CHECK ((latency_ms >= 0)),
+    CONSTRAINT agent_tool_calls_seq_check CHECK ((seq >= 1))
 );
 
 
@@ -2637,6 +2902,102 @@ ALTER TABLE ONLY app.admin_users
 
 
 --
+-- Name: agent_cards agent_cards_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_cards
+    ADD CONSTRAINT agent_cards_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_cards agent_cards_session_card_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_cards
+    ADD CONSTRAINT agent_cards_session_card_key UNIQUE (app_id, session_id, card_id);
+
+
+--
+-- Name: agent_messages agent_messages_client_msg_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_messages
+    ADD CONSTRAINT agent_messages_client_msg_key UNIQUE (app_id, session_id, client_msg_id);
+
+
+--
+-- Name: agent_messages agent_messages_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_messages
+    ADD CONSTRAINT agent_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_result_sets agent_result_sets_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_result_sets
+    ADD CONSTRAINT agent_result_sets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_runs agent_runs_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_runs
+    ADD CONSTRAINT agent_runs_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: agent_runs agent_runs_app_id_session_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_runs
+    ADD CONSTRAINT agent_runs_app_id_session_id_id_key UNIQUE (app_id, session_id, id);
+
+
+--
+-- Name: agent_runs agent_runs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_runs
+    ADD CONSTRAINT agent_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_sessions agent_sessions_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_sessions
+    ADD CONSTRAINT agent_sessions_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: agent_sessions agent_sessions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_sessions
+    ADD CONSTRAINT agent_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_tool_calls agent_tool_calls_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_tool_calls
+    ADD CONSTRAINT agent_tool_calls_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_tool_calls agent_tool_calls_run_seq_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_tool_calls
+    ADD CONSTRAINT agent_tool_calls_run_seq_key UNIQUE (app_id, run_id, seq);
+
+
+--
 -- Name: app_versions app_versions_app_platform_channel_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -3276,6 +3637,111 @@ CREATE INDEX admin_permissions_granted_by_idx ON app.admin_permissions USING btr
 
 
 --
+-- Name: agent_cards_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_cards_created_idx ON app.agent_cards USING btree (app_id, created_at);
+
+
+--
+-- Name: agent_cards_run_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_cards_run_idx ON app.agent_cards USING btree (app_id, run_id);
+
+
+--
+-- Name: agent_messages_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_messages_created_idx ON app.agent_messages USING btree (app_id, created_at);
+
+
+--
+-- Name: agent_messages_reported_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_messages_reported_idx ON app.agent_messages USING btree (app_id, report_status, reported_at) WHERE reported;
+
+
+--
+-- Name: agent_messages_run_role_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_messages_run_role_key ON app.agent_messages USING btree (app_id, run_id, role) WHERE (run_id IS NOT NULL);
+
+
+--
+-- Name: agent_messages_session_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_messages_session_created_idx ON app.agent_messages USING btree (app_id, session_id, created_at);
+
+
+--
+-- Name: agent_result_sets_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_result_sets_created_idx ON app.agent_result_sets USING btree (app_id, created_at);
+
+
+--
+-- Name: agent_result_sets_run_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_result_sets_run_idx ON app.agent_result_sets USING btree (app_id, run_id);
+
+
+--
+-- Name: agent_runs_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_runs_created_idx ON app.agent_runs USING btree (app_id, created_at);
+
+
+--
+-- Name: agent_runs_session_accepted_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_runs_session_accepted_idx ON app.agent_runs USING btree (app_id, session_id, accepted_at);
+
+
+--
+-- Name: agent_runs_session_unfinished_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_runs_session_unfinished_idx ON app.agent_runs USING btree (app_id, session_id) WHERE (final_event IS NULL);
+
+
+--
+-- Name: agent_sessions_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_sessions_created_idx ON app.agent_sessions USING btree (app_id, created_at);
+
+
+--
+-- Name: agent_sessions_guest_recent_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_sessions_guest_recent_idx ON app.agent_sessions USING btree (app_id, device_id, last_active_at DESC) WHERE (user_id IS NULL);
+
+
+--
+-- Name: agent_sessions_user_recent_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_sessions_user_recent_idx ON app.agent_sessions USING btree (app_id, user_id, last_active_at DESC) WHERE (user_id IS NOT NULL);
+
+
+--
+-- Name: agent_tool_calls_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_tool_calls_created_idx ON app.agent_tool_calls USING btree (app_id, created_at);
+
+
+--
 -- Name: appeals_processing_deadline_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -3808,6 +4274,20 @@ ALTER INDEX pgboss.job_pkey ATTACH PARTITION pgboss.job_common_pkey;
 
 
 --
+-- Name: agent_runs agent_runs_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_runs_no_rewrite BEFORE UPDATE ON app.agent_runs FOR EACH ROW EXECUTE FUNCTION app.reject_agent_run_rewrite();
+
+
+--
+-- Name: agent_sessions agent_sessions_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_sessions_no_rewrite BEFORE UPDATE ON app.agent_sessions FOR EACH ROW EXECUTE FUNCTION app.reject_agent_session_rewrite();
+
+
+--
 -- Name: audit_logs audit_logs_append_only; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -3926,6 +4406,86 @@ ALTER TABLE ONLY app.admin_permissions
 
 ALTER TABLE ONLY app.admin_permissions
     ADD CONSTRAINT admin_permissions_granted_by_fkey FOREIGN KEY (app_id, granted_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: agent_cards agent_cards_link_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_cards
+    ADD CONSTRAINT agent_cards_link_fkey FOREIGN KEY (app_id, link_id) REFERENCES app.links(app_id, link_id);
+
+
+--
+-- Name: agent_cards agent_cards_run_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_cards
+    ADD CONSTRAINT agent_cards_run_fkey FOREIGN KEY (app_id, session_id, run_id) REFERENCES app.agent_runs(app_id, session_id, id);
+
+
+--
+-- Name: agent_messages agent_messages_report_handler_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_messages
+    ADD CONSTRAINT agent_messages_report_handler_fkey FOREIGN KEY (app_id, report_handler_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: agent_messages agent_messages_run_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_messages
+    ADD CONSTRAINT agent_messages_run_fkey FOREIGN KEY (app_id, session_id, run_id) REFERENCES app.agent_runs(app_id, session_id, id);
+
+
+--
+-- Name: agent_messages agent_messages_session_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_messages
+    ADD CONSTRAINT agent_messages_session_fkey FOREIGN KEY (app_id, session_id) REFERENCES app.agent_sessions(app_id, id);
+
+
+--
+-- Name: agent_result_sets agent_result_sets_run_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_result_sets
+    ADD CONSTRAINT agent_result_sets_run_fkey FOREIGN KEY (app_id, run_id) REFERENCES app.agent_runs(app_id, id);
+
+
+--
+-- Name: agent_runs agent_runs_session_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_runs
+    ADD CONSTRAINT agent_runs_session_fkey FOREIGN KEY (app_id, session_id) REFERENCES app.agent_sessions(app_id, id);
+
+
+--
+-- Name: agent_sessions agent_sessions_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_sessions
+    ADD CONSTRAINT agent_sessions_device_fkey FOREIGN KEY (app_id, device_id) REFERENCES app.devices(app_id, id);
+
+
+--
+-- Name: agent_sessions agent_sessions_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_sessions
+    ADD CONSTRAINT agent_sessions_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: agent_tool_calls agent_tool_calls_run_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_tool_calls
+    ADD CONSTRAINT agent_tool_calls_run_fkey FOREIGN KEY (app_id, run_id) REFERENCES app.agent_runs(app_id, id);
 
 
 --
@@ -4395,6 +4955,20 @@ GRANT ALL ON FUNCTION app.partition_default_rows() TO couli_maint;
 
 
 --
+-- Name: FUNCTION reject_agent_run_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_agent_run_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_agent_session_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_agent_session_rewrite() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION reject_device_registration_rewrite(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -4575,6 +5149,583 @@ GRANT SELECT(created_at) ON TABLE app.admin_users TO couli_readonly;
 
 GRANT UPDATE(updated_at) ON TABLE app.admin_users TO couli_app;
 GRANT SELECT(updated_at) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: TABLE agent_cards; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_cards TO couli_app;
+GRANT SELECT ON TABLE app.agent_cards TO couli_readonly;
+
+
+--
+-- Name: TABLE agent_messages; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_messages TO couli_app;
+
+
+--
+-- Name: COLUMN agent_messages.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.session_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(session_id) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.run_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(run_id) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.client_msg_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(client_msg_id) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.role; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(role) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.text; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(text) ON TABLE app.agent_messages TO couli_app;
+
+
+--
+-- Name: COLUMN agent_messages.card_ids; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(card_ids) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(card_ids) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.feedback; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(feedback) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(feedback) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.feedback_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(feedback_at) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(feedback_at) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.reported; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reported) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(reported) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.report_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(report_reason) ON TABLE app.agent_messages TO couli_app;
+
+
+--
+-- Name: COLUMN agent_messages.reported_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reported_at) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(reported_at) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.report_status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(report_status) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(report_status) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.report_handler_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(report_handler_id) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(report_handler_id) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.report_handled_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(report_handled_at) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(report_handled_at) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.report_note; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(report_note) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(report_note) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.badcase; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(badcase) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(badcase) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(row_version) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_messages.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.agent_messages TO couli_app;
+GRANT SELECT(updated_at) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: TABLE agent_result_sets; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_result_sets TO couli_app;
+
+
+--
+-- Name: COLUMN agent_result_sets.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.agent_result_sets TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_sets.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.agent_result_sets TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_sets.run_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(run_id) ON TABLE app.agent_result_sets TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_sets.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.agent_result_sets TO couli_readonly;
+
+
+--
+-- Name: TABLE agent_runs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_runs TO couli_app;
+
+
+--
+-- Name: COLUMN agent_runs.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.session_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(session_id) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.user_text; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(user_text) ON TABLE app.agent_runs TO couli_app;
+
+
+--
+-- Name: COLUMN agent_runs.intent; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(intent) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(intent) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.model; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(model) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(model) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.model_snapshot; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(model_snapshot) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(model_snapshot) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.prompt_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(prompt_version) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.input_tokens; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(input_tokens) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(input_tokens) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.output_tokens; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(output_tokens) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(output_tokens) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.cost_mfen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(cost_mfen) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(cost_mfen) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.ttft_ms; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(ttft_ms) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(ttft_ms) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.latency_ms; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(latency_ms) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(latency_ms) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.finish_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finish_reason) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(finish_reason) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.final_event; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(final_event) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(final_event) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.ended_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(ended_at) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(ended_at) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.output_filtered; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(output_filtered) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(output_filtered) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.filter_hits; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(filter_hits) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(filter_hits) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.output_truncated; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(output_truncated) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(output_truncated) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.price_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(price_version) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(price_version) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.result_check_provider; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(result_check_provider) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(result_check_provider) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.judge_model; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(judge_model) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(judge_model) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.page_guide_reject_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(page_guide_reject_reason) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(page_guide_reject_reason) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.accepted_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(accepted_at) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.quota_subjects; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(quota_subjects) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.end_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(end_reason) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(end_reason) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.card_delivered; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(card_delivered) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(card_delivered) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.settle_result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(settle_result) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(settle_result) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.settled_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(settled_at) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(settled_at) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(row_version) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(updated_at) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: TABLE agent_sessions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_sessions TO couli_app;
+GRANT SELECT ON TABLE app.agent_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_sessions.last_active_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(last_active_at) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
+-- Name: COLUMN agent_sessions.expired_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(expired_at) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
+-- Name: COLUMN agent_sessions.card_seq; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(card_seq) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
+-- Name: COLUMN agent_sessions.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
+-- Name: COLUMN agent_sessions.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
+-- Name: TABLE agent_tool_calls; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_tool_calls TO couli_app;
+
+
+--
+-- Name: COLUMN agent_tool_calls.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.run_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(run_id) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.seq; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(seq) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.name; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(name) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.result_digest; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(result_digest) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(status) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.latency_ms; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(latency_ms) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.agent_tool_calls TO couli_readonly;
 
 
 --

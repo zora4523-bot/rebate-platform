@@ -51,6 +51,114 @@ export interface AdminUsers {
   verify_phone_set_at: Timestamp | null;
 }
 
+export interface AgentCards {
+  app_id: string;
+  card_id: string;
+  created_at: Generated<Timestamp>;
+  data: Json;
+  fallback_text: string;
+  id: string;
+  link_id: string | null;
+  run_id: string;
+  schema_version: number;
+  session_id: string;
+  type: string;
+}
+
+export interface AgentMessages {
+  app_id: string;
+  badcase: Generated<boolean>;
+  card_ids: Generated<string[]>;
+  client_msg_id: string | null;
+  created_at: Generated<Timestamp>;
+  feedback: string | null;
+  feedback_at: Timestamp | null;
+  id: string;
+  report_handled_at: Timestamp | null;
+  report_handler_id: string | null;
+  report_note: string | null;
+  report_reason: string | null;
+  report_status: string | null;
+  reported: Generated<boolean>;
+  reported_at: Timestamp | null;
+  role: string;
+  row_version: Generated<number>;
+  run_id: string | null;
+  session_id: string;
+  text: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface AgentResultSets {
+  app_id: string;
+  conditions: Json;
+  created_at: Generated<Timestamp>;
+  id: string;
+  run_id: string;
+}
+
+export interface AgentRuns {
+  accepted_at: Timestamp;
+  app_id: string;
+  card_delivered: Generated<boolean>;
+  cost_mfen: ColumnType<bigint, bigint, bigint> | null;
+  created_at: Generated<Timestamp>;
+  end_reason: string | null;
+  ended_at: Timestamp | null;
+  filter_hits: Generated<string[]>;
+  final_event: Json | null;
+  finish_reason: string | null;
+  id: string;
+  input_tokens: number | null;
+  intent: string | null;
+  judge_model: string | null;
+  latency_ms: number | null;
+  model: string | null;
+  model_snapshot: string | null;
+  output_filtered: Generated<boolean>;
+  output_tokens: number | null;
+  output_truncated: Generated<boolean>;
+  page_guide_reject_reason: string | null;
+  price_version: string | null;
+  prompt_version: string;
+  quota_subjects: string[];
+  result_check_provider: string | null;
+  row_version: Generated<number>;
+  session_id: string;
+  settle_result: string | null;
+  settled_at: Timestamp | null;
+  ttft_ms: number | null;
+  updated_at: Generated<Timestamp>;
+  user_text: string | null;
+}
+
+export interface AgentSessions {
+  app_id: string;
+  card_seq: Generated<number>;
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  expired_at: Timestamp | null;
+  id: string;
+  last_active_at: Timestamp;
+  row_version: Generated<number>;
+  started_at: Timestamp;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
+export interface AgentToolCalls {
+  app_id: string;
+  args: Json | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  latency_ms: number | null;
+  name: string;
+  result_digest: string | null;
+  run_id: string;
+  seq: number;
+  status: string;
+}
+
 export interface Appeals {
   app_id: string;
   closed_at: Timestamp | null;
@@ -751,6 +859,12 @@ export interface UserTipReads {
 export interface DB {
   admin_permissions: AdminPermissions;
   admin_users: AdminUsers;
+  agent_cards: AgentCards;
+  agent_messages: AgentMessages;
+  agent_result_sets: AgentResultSets;
+  agent_runs: AgentRuns;
+  agent_sessions: AgentSessions;
+  agent_tool_calls: AgentToolCalls;
   app_versions: AppVersions;
   appeals: Appeals;
   articles: Articles;
