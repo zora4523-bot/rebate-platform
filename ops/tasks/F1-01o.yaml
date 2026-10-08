@@ -24,4 +24,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/h5-base-fixes/**'
-status: todo
+status: done
+pr: 334
