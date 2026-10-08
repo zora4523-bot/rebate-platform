@@ -94,6 +94,34 @@
 //        created_at). If it is not (taken over, see the lease), nothing is written, exactly one
 //        line is logged — `options.logger.warn({ method, path }, 'idempotency_record_lost')` —
 //        and the handler's response is still returned (source 'handler').
+//      - The `completed` write fails (task B1-01zh: the handler has already had its effect, so a
+//        50001 "failure" would be untrue): it is retried a bounded number of times
+//        (COMPLETION_ATTEMPTS, waits COMPLETION_RETRY_DELAYS_MS, well under a second in all),
+//        each attempt with the same ownership condition (a takeover in between →
+//        idempotency_record_lost as above, the taker's row is never overwritten). An attempt that
+//        succeeds returns the handler's response. The whole of it (every attempt, connection
+//        acquisition included, and the waits) has a client-side deadline,
+//        COMPLETION_DEADLINE_MS, measured with a timer only (no clock read): a write that hangs
+//        (network gone, TCP not yet reporting it; the pool has no acquire or query timeout) is
+//        no longer awaited when it passes, no further attempt starts, and the request is
+//        treated as "every attempt failed" below, so neither the request nor shutdown (HTTP
+//        close waits for requests in flight) waits on the database. The abandoned write is left
+//        to settle on its own: its rejection is swallowed, and it logs and changes nothing more.
+//        If it later succeeds it is an ordinary `completed` write under the same ownership
+//        condition (the stored response is the handler's own; a later retry of the key replays
+//        it), which is acceptable; if it finds the row taken over it writes nothing. If every
+//        attempt fails, the row is left as it is (processing, not deleted, not changed), exactly
+//        one line is logged —
+//        `options.logger.error({ method, path, attempts }, 'idempotency_completion_unknown')`
+//        (warn when the logger has no error; never the driver error, whose message or detail
+//        may carry parameters) — and the call rejects with IdempotencyError('outcome_unknown'),
+//        which the HTTP layer answers by closing the connection as for the transactional mode.
+//        The key then answers 40901 until the lease expires; a takeover after that runs the
+//        handler again. This makes the answer honest, it does not make an external call happen
+//        only once: the transactional mode protects only writes in this database, so a
+//        per-call-billed external call needs its own idempotency and recovery.
+//        The delete after a thrown or unstored handler is not retried (unchanged): its failure
+//        rejects with the driver's error, and the key is not stored either way.
 //      - Lease (待编排会话确认; no document gives a value): a processing row whose created_at is
 //        at least `processingLeaseMs` (default 60 000) before clock.now() is stale (its process
 //        died or hangs): the next request of the scope takes it over atomically (conditional
@@ -188,11 +216,12 @@
 // 9. Factory — `createIdempotency({ db, clock, logger, processingLeaseMs? })`
 //    db: Kysely<DB> bound to schema app (platform/db `db` handle, role couli_app); clock: Clock —
 //    the only source of time (no Date.now(), no new Date() without argument, no SQL now() for
-//    values written or compared); logger: anything with pino's warn(fields, msg).
+//    values written or compared); logger: anything with pino's warn(fields, msg) and, optionally,
+//    error(fields, msg) (warn is used in its place when absent).
 //    processingLeaseMs: an integer from 1 000 to 600 000 (default 60 000), else
 //    IdempotencyError('invalid_option'). Creating touches neither db nor clock.
 //
-// 10. Logging and errors. The module logs nothing but the line of section 4 (never a body, a
+// 10. Logging and errors. The module logs nothing but the lines of section 4 (never a body, a
 //     key value, a hash or a stored response). IdempotencyError: name 'IdempotencyError', `code`,
 //     the fixed message of its code (IDEMPOTENCY_ERROR_MESSAGES); own properties exactly stack,
 //     message, name and code; no cause. Database errors other than the handled unique conflict
@@ -259,6 +288,15 @@ export const IDEMPOTENCY_RETENTION_MS = 2_592_000_000;
 /** Section 4, lease (待编排会话确认). */
 export const DEFAULT_PROCESSING_LEASE_MS = 60_000;
 
+/** Section 4, standard mode: attempts at the `completed` write before outcome_unknown. */
+export const COMPLETION_ATTEMPTS = 3;
+
+/** Section 4: the wait before each retry of the `completed` write (400 ms in all). */
+export const COMPLETION_RETRY_DELAYS_MS: readonly number[] = Object.freeze([100, 300]);
+
+/** Section 4: client-side deadline for the whole `completed` write (attempts and waits). */
+export const COMPLETION_DEADLINE_MS = 2_000;
+
 export interface IdempotencyActor {
   readonly userId: string | null;
   readonly deviceId: string | null;
@@ -303,9 +341,10 @@ export interface AbandonRequest {
   readonly traceId: string;
 }
 
-/** Anything with pino's `warn(fields, msg)`. */
+/** Anything with pino's `warn(fields, msg)`; `error` is optional (warn stands in for it). */
 export interface IdempotencyLogger {
   warn(fields: Readonly<Record<string, unknown>>, msg: string): void;
+  error?(fields: Readonly<Record<string, unknown>>, msg: string): void;
 }
 
 export interface IdempotencyOptions {
@@ -441,20 +480,61 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
   }
 
   async function finish(row: Row, request: IdempotentRequest, response?: IdempotentResponse) {
+    // Every attempt (the delete, each completion retry) keeps the ownership condition.
     const owned = sql<boolean>`id = ${row.id} AND status = 'processing'
       AND created_at = ${row.ownership_created_at}::timestamptz`;
-    const query =
-      response === undefined
-        ? db.deleteFrom('idempotency_keys').where(owned).returning('id')
-        : db
-            .updateTable('idempotency_keys')
-            .set({
-              status: 'completed',
-              response: { status: response.status, body: response.body },
-            })
-            .where(owned)
-            .returning('id');
-    const changed = await query.execute();
+    let changed: { id: unknown }[];
+    if (response === undefined) {
+      changed = await db.deleteFrom('idempotency_keys').where(owned).returning('id').execute();
+    } else {
+      const complete = () =>
+        db
+          .updateTable('idempotency_keys')
+          .set({
+            status: 'completed',
+            response: { status: response.status, body: response.body },
+          })
+          .where(owned)
+          .returning('id')
+          .execute();
+      // Attempts run until one settles the write or the deadline passes, whichever is first.
+      // The loop never rejects (a late rejection of an abandoned attempt is swallowed here), and
+      // once abandoned it starts no attempt and its result is ignored (no log, no further write).
+      let attempt = 0;
+      let abandoned = false;
+      const attempts = (async (): Promise<{ id: unknown }[] | undefined> => {
+        for (;;) {
+          attempt += 1;
+          try {
+            return await complete();
+          } catch {
+            // The handler has had its effect: never surface the driver error (a "failure").
+            if (abandoned || attempt >= COMPLETION_ATTEMPTS) return undefined;
+            await wait(COMPLETION_RETRY_DELAYS_MS[attempt - 1] ?? 0);
+            if (abandoned) return undefined;
+          }
+        }
+      })().catch(() => undefined);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), COMPLETION_DEADLINE_MS);
+      });
+      let settled: { id: unknown }[] | undefined;
+      try {
+        settled = await Promise.race([attempts, deadline]);
+      } finally {
+        abandoned = true;
+        clearTimeout(timer);
+      }
+      if (settled === undefined) {
+        const fields = { method: request.method, path: request.path, attempts: attempt };
+        if (typeof logger.error === 'function')
+          logger.error(fields, 'idempotency_completion_unknown');
+        else logger.warn(fields, 'idempotency_completion_unknown');
+        throw new IdempotencyError('outcome_unknown');
+      }
+      changed = settled;
+    }
     if (changed.length === 0)
       logger.warn({ method: request.method, path: request.path }, 'idempotency_record_lost');
   }
@@ -841,6 +921,13 @@ function errorResponse(code: 20001 | 20901 | 20903 | 40901, traceId: string): Id
     traceId,
     code === 20001 ? { fields: ['idempotency-key'] } : undefined,
   );
+}
+
+/** A pause between completion attempts (a timer, no clock read). */
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 class KeyBusy extends Error {}
