@@ -8,7 +8,7 @@ type: impl
 #    对外接口按实现者定（如保留 <Toast message durationMs> 并新增 container，或加 useToast 钩子），旧用法（F1-01f 规则测试 test/spec/frontend/h5-components/**）保持通过。
 # ② ErrorState（F1-01f Claude S2-③，03 §10.5「错误态出现时焦点移到【重试】」）：提供把焦点移到【重试】按钮的方式（如 autoFocusAction 开关或转发 ref），默认不抢焦点，旧测试保持通过。
 # ③ bridge-sdk token.ts（F1-01l Claude 复核 S2）：expire_at 的秒只接受 00–59（原生回 60 视为畸形结果，按现有畸形处理返回 90500 类错误，不缓存）。
-#    F1-01b「invalidate 后在途 request 仍用旧令牌」S2 已由 F1-01l（代次比对，ab6df3c）修好，本任务只补一条回归测试钉住，不改逻辑。弹层同次渲染栈顺序（F1-01f S2-④）已由 ModalFrame.pushModal 处理，同样只补回归测试。
+#    F1-01b「invalidate 后在途 request 仍用旧令牌」S2 已由 F1-01l（代次比对，ab6df3c）修好，弹层同次渲染栈顺序（F1-01f S2-④）已由 ModalFrame.pushModal 处理；二者不在本任务（规则测试须先红，已修的不写新规则测试）。
 # ④ ui-tokens themeFromTokens（CT-11a 两家 S2）：遇到 __proto__ / constructor / prototype 键不写原型链（用无原型对象或跳过并报错，按实现者定），正常令牌输出不变（生成物不漂移）。
 refs: []
 refs_hash: {}
@@ -16,9 +16,7 @@ deps: [F1-01f, F1-01l, CT-11a]
 paths:
   - 'apps/h5/src/components/base/**'
   - 'packages/bridge-sdk/src/token.ts'
-  - 'packages/bridge-sdk/src/index.test.ts'
   - 'packages/ui-tokens/src/generate.ts'
-  - 'packages/ui-tokens/src/index.test.ts'
 test_paths:
   - 'test/spec/frontend/h5-base-fixes/**'
 impl: claude
