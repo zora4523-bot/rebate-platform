@@ -90,6 +90,8 @@ const LOGIN_PATH = '/login';
 const MAX_TIMER_MS = 2_147_483_647;
 /** A revoke still unanswered after this is given up; the local session is already gone. */
 const LOGOUT_TIMEOUT_MS = 10_000;
+/** A binding-secret fetch still unanswered after this counts as failed (retry offered). */
+const SECRET_TIMEOUT_MS = 10_000;
 const loggedOut = (): AuthActionResponse => ({ success: true, redirectTo: LOGIN_PATH });
 
 const CODE_NOT_SIGNED_IN = 10001;
@@ -279,6 +281,10 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
   let identity: AdminIdentity | null = null;
   // Bumped whenever the login flow or the session is abandoned; late responses compare it.
   let epoch = 0;
+  // The binding-secret fetch under way: aborted when the login flow is abandoned (epoch bump) or a
+  // newer fetch starts; `secretAttempt` also discards the late answer of a timed-out fetch.
+  let secretAbort: AbortController | null = null;
+  let secretAttempt = 0;
   // Bumped whenever a session starts or ends; session calls compare it instead of the object
   // (recording activity replaces the object without changing the session).
   let generation = 0;
@@ -287,6 +293,14 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
   let logoutRequest: LogoutRequest | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let started = options.manualStart !== true;
+
+  /** Voids the login flow under way: late answers compare the epoch; a secret fetch is aborted. */
+  function abandonLogin(): void {
+    epoch += 1;
+    secretAttempt += 1;
+    secretAbort?.abort();
+    secretAbort = null;
+  }
 
   function notify(): void {
     for (const listener of [...listeners]) listener();
@@ -330,7 +344,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     identity = null;
     storage.removeItem(STORAGE_KEY);
     if (snapshot.step === 'done') {
-      epoch += 1;
+      abandonLogin();
       pending = null;
       snapshot = { step: 'credentials', username: '', error: { key: 'error.10001' } };
       notify();
@@ -416,14 +430,53 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     username: string,
     mine: number,
   ): Promise<AuthActionResponse> {
-    let secret: AdminBindingSecret;
+    secretAttempt += 1;
+    const attempt = secretAttempt;
+    secretAbort?.abort();
+    const controller = new AbortController();
+    secretAbort = controller;
+    const request = createDataProvider({
+      baseUrl: options.api.baseUrl,
+      fetch: (input, init) => options.api.fetch(input, { ...init, signal: controller.signal }),
+      getToken: () => null,
+      onError: () => undefined,
+    });
+    // A plain timer (not AbortSignal.timeout) so the deadline follows the page's clock.
+    let timedOut = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<void>((resolve) => {
+      timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        resolve();
+      }, SECRET_TIMEOUT_MS);
+    });
+    const current = (): boolean => mine === epoch && attempt === secretAttempt;
+    let secret: AdminBindingSecret | undefined;
     try {
-      secret = await post<AdminBindingSecret>('totp/secret', { login_ticket: ticket });
+      const response = await Promise.race([
+        request.custom({
+          url: '/admin/v1/auth/totp/secret',
+          method: 'post',
+          payload: { login_ticket: ticket },
+        }),
+        expired,
+      ]);
+      if (!timedOut && response !== undefined) secret = response.data as AdminBindingSecret;
     } catch (cause) {
-      if (mine !== epoch) return { success: false };
-      return stepFailure(cause, username);
+      if (!current()) return { success: false };
+      if (!timedOut) return stepFailure(cause, username);
+    } finally {
+      clearTimeout(timeout);
+      if (secretAbort === controller) secretAbort = null;
     }
-    if (mine !== epoch) return { success: false };
+    if (!current()) return { success: false };
+    if (secret === undefined) {
+      // Timed out: same as a failed fetch, the ticket is kept and 【重新获取密钥】 is offered.
+      const error: LoginError = { key: 'error.network' };
+      setSnapshot({ step: 'bind_totp', username, error });
+      return failed(error);
+    }
     setSnapshot({ step: 'bind_totp', username, secret });
     return { success: true };
   }
@@ -443,7 +496,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
 
   async function login(input: LoginInput): Promise<AuthActionResponse> {
     if (input.step === 'credentials') {
-      epoch += 1;
+      abandonLogin();
       const mine = epoch;
       pending = null;
       const username = input.username;
@@ -511,7 +564,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
   }
 
   function resetLogin(): void {
-    epoch += 1;
+    abandonLogin();
     pending = null;
     setSnapshot({ step: 'credentials', username: '' });
   }
@@ -540,7 +593,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
       error.code === CODE_NOT_SIGNED_IN &&
       reasonOf(error.data) === undefined
     ) {
-      epoch += 1;
+      abandonLogin();
       pending = null;
       endSession();
       return { logout: true, redirectTo: LOGIN_PATH, error };
@@ -579,7 +632,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     if (logoutRequest !== null && logoutRequest.generation === generation) {
       return logoutRequest.promise;
     }
-    epoch += 1;
+    abandonLogin();
     pending = null;
     const token = session?.token ?? null;
     setSnapshot({ step: 'credentials', username: '' });
@@ -654,7 +707,7 @@ export function createAuthProvider(options: AuthOptions): AdminAuthProvider {
     dispose() {
       clearTimer();
       listeners.clear();
-      epoch += 1;
+      abandonLogin();
     },
   };
 }
