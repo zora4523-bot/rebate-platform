@@ -1,0 +1,29 @@
+id: CT-08f
+repo: rebate-platform
+title: 契约——POST /v1/agent/sessions/{id}/messages 加受理前 JSON 50401（结果未知，同 client_msg_id 重试）、50001（待人工处理，引导新建对话）与 42901；cancel 描述补「截止后或已有终止原因 → 30505，已成功取消的重复调用幂等 200，200 即保证以 cancelled 结束」
+type: contract
+# 设计 couli-runs/B3-03g/design.md（定稿，Codex 三轮完整对抗评审加两次修改点核对）；负责人 2026-10-08 决定：受理与额度改用 PG、终止原因以落库为准（规划 docs/changes/20261008-Agent受理与额度改用PG.md，couli#88）。
+# 依据设计 §2.5、§5.2、§13 S2-2；规划 04 §8.1、08 §13.11 已同步（couli#88）。BR-TEXT-14 的 Agent 50001 话术键随本任务同步。
+# 契约槽全局 1 个，与其他改 openapi.yaml 的任务串行。B3-03d 依赖本任务。
+refs: [BR-AI-23]
+refs_hash:
+  BR-AI-23: 5ebdbaff580d
+contract_sections: ['6.5', '8.1']
+deps: [CT-08d]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+test_paths:
+  - 'test/spec/contracts/agent-accept/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/agent-accept/**'
+status: todo
+pr: null

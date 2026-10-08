@@ -6,11 +6,12 @@ type: impl
 # 开工条件：① B3-03d 合并；② identity index 导出同意记录读取入口（BR-AI-13 撤回即 10004）；③ B3-05 Orchestrator 的 RunBody 定稿；④ app.module.ts、main.stream.ts 无在途占用。
 # 契约里本段接口的 x-implementation: planned 由另一个小契约任务去掉（契约不在 Codex 放行路径内，CT-08d 台账 D4），排在本任务之后。
 # 风险级 RV2（app.module.ts、main.stream.ts 不在 risk-map），两家评审；派发前重新评审本台账。属 B3-03 整行（approvals 第 23 条）。
+# 2026-10-08：装配时调 B3-03g 的 createPgRunPorts、createQuotaLimitsSource、assertRunTimings，RunManager 的 maxRunMs 取同一 RunTimings；开工条件 ② 同意读取入口随「终止以落库为准」不再是收尾所需（仍是 ③ 受理校验所需）。
 refs: [BR-AI-23, BR-AI-13]
 refs_hash:
-  BR-AI-23: e4d4c7173f74
-  BR-AI-13: a782e43adca4
-deps: [B3-03d]
+  BR-AI-23: 5ebdbaff580d
+  BR-AI-13: 870069e3ab76
+deps: [B3-03d, B3-03g]
 paths:
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/main.stream.ts'

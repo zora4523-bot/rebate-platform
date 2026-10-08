@@ -1,0 +1,32 @@
+id: B3-03g
+repo: rebate-platform
+title: 流式输出：PG 受理与唯一收尾 finalizeRun——⑥–⑩ 判断、计数与 run / 消息落库同一事务，会话锁在 PG，终止原因以落库为准（取消在 run 行锁下先提交者胜），结算与终态同一事务；替换 B3-03c 的 Redis 受理
+type: impl
+# 设计 couli-runs/B3-03g/design.md（定稿，Codex 三轮完整对抗评审加两次修改点核对）；负责人 2026-10-08 决定：受理与额度改用 PG、终止原因以落库为准（规划 docs/changes/20261008-Agent受理与额度改用PG.md，couli#88）。
+# 做法见设计 §1–§7：stream/pg/** 新实现；stream/admission/** 只留类型与纯函数（RunManager 依赖的 Admission、AdmissionLimits、AdmissionTicket、RunEnding 不变）；run/** 只改 finish 返回 PG 帧。
+# B3-03b 受保护测试 test/spec/agent/stream-run/** 须保持绿；B3-03c 的受保护测试 test/spec/agent/stream-admission/** 由本任务替换（原 39 条保留 37 条行为，设计 §7.3；保护路径第一类，标签按 approvals 第 24 条）。
+# 派发前置（顺序固定）：规划同步（couli#88）→ SPEC_REF 推进 → refs_hash 更新 → B3-09b 合并。ContentReader 读失败行为由实现核实（设计 §1.4）。
+# 属 B3-03 整行（approvals 第 23 条）。
+refs: [BR-AI-23, BR-AI-15, BR-AI-13]
+refs_hash:
+  BR-AI-23: 5ebdbaff580d
+  BR-AI-15: 205067c74dda
+  BR-AI-13: 870069e3ab76
+deps: [B3-03b, B3-03c, B3-09a, B3-09b]
+paths:
+  - 'apps/api/src/modules/agent/stream/admission/**'
+  - 'apps/api/src/modules/agent/stream/pg/**'
+  - 'apps/api/src/modules/agent/stream/run/types.ts'
+  - 'apps/api/src/modules/agent/stream/run/manager.ts'
+  - 'apps/api/src/modules/agent/stream/run/index.ts'
+test_paths:
+  - 'test/spec/agent/stream-admission/**'
+  - 'test/spec/agent/stream-finalize/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-admission/**'
+  - 'test/spec/agent/stream-finalize/**'
+status: todo
+pr: null

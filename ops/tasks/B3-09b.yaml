@@ -1,0 +1,26 @@
+id: B3-09b
+repo: rebate-platform
+title: 迁移：Agent 受理与收尾改用 PG——agent_sessions 加会话锁（run_lock_run_id、run_lock_expires_at），agent_runs 加 end_draft、deadline_at、cancel_requested_at、finalize_hold（与时刻）及计数用索引（04 §3.2）
+type: migration
+# 设计 couli-runs/B3-03g/design.md（定稿，Codex 三轮完整对抗评审加两次修改点核对）；负责人 2026-10-08 决定：受理与额度改用 PG、终止原因以落库为准（规划 docs/changes/20261008-Agent受理与额度改用PG.md，couli#88）。
+# 表设计见设计 §1.2 迁移 0022 草案（列、CHECK、索引、授权，含 readonly 列级 SELECT）；0021 不改，test/spec/db/agent/** 受保护测试保持绿。
+# 两段式（db/AGENTS.md）：Opus 只写 SQL，编排者在沙箱外跑 db:snapshot 并提交生成物；编号取落地时主干最新号 +1（现为 0022）。
+# 迁移全局串行；B3-03g 依赖本任务。
+refs: [BR-AI-23, BR-AI-15]
+refs_hash:
+  BR-AI-23: 5ebdbaff580d
+  BR-AI-15: 205067c74dda
+deps: [B3-09a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/agent-acceptance/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/agent-acceptance/**'
+status: todo
+pr: null
