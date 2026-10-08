@@ -1,6 +1,6 @@
 id: B1-06f
 repo: rebate-platform
-title: 淘宝 open 与拼多多备案判定：淘宝按 union_bindings 判 30101 / 30102（带 auth_url、state、auth_methods）与 30153，下发百川打开指令（有本用户我方推广链接时 openByUrl 不传 pid，否则 openByCode + 场景 active 推广位 + relation_id）；拼多多未备案 30111
+title: 淘宝 open 与拼多多备案判定：淘宝按 union_bindings 判 30101 / 30102（带 auth_url、state、auth_methods）与 30153，下发百川打开指令（有本用户我方推广链接时 openByUrl 不传 pid，否则 openByCode + 场景 active 推广位 + relation_id）（拼多多未备案 30111 拆到 B1-06v）
 type: impl
 # 草稿 2026-10-05（W1 搜索转链线）。依据：02 §5.1 淘宝说明、BR-ATTR-27 淘宝行（「我方推广链接」的取用条件只在那里维护）、BR-ATTR-05 2026-10-03 淘宝段（pid 取 active 推广位，relation_id 取快照 user_id 的 active 绑定；
 # 无 active 绑定 30101 + auth_url，state 绑定新 link_id）、BR-ID-17、BR-ID-18、BR-ID-24（站长授权不可用时未绑定用户即使 no_rebate=true 也 30101 / 30102 auth_unavailable）、05 B1-06 行验收
@@ -10,6 +10,7 @@ type: impl
 # 2026-10-08 补：BR-PRICE-13 新句（couli#80）的淘宝用例归本任务——复核失败后 no_rebate=true 再 open 可外跳，但站长授权失效时未绑定用户仍按 BR-ID-24 例外（B1-06p 只做京东、拼多多）。
 # 2026-10-08 补（CT-02e #273 Codex 契约评审 S1→S2 的承接）：JumpStep 的「type=sdk 必带合法 sdk、其他 type 不带 sdk」schema 不强制（顶层 oneOf 会被 oasdiff 判 breaking），本任务规则测试必须断言 open 下发的每个 type=sdk 步骤都带合法 sdk（BaichuanOpen 两分支）、其他 type 不带。
 # 合并后 B1-06e 里「淘宝一律 50301」的临时处理撤掉。linking/** 串行。风险：linking RV2，整体 RV2（归属与用户授权）。
+# 2026-10-08 拆分（第七棒，D7-5）：拼多多未备案 30111 移到 B1-06v——不种绑定就打开拼多多 link 的冻结规则测试很多，需另立 test-change 补夹具，先不挡淘宝；本任务京东 / 拼多多只断言 type=sdk 不变量的回归；no_rebate_reason=binding_blocked 本任务只判淘宝，拼多多由 B1-06v 判；分享 link 分享者淘宝授权失效的 30102 data.reason（BR-ATTR-05 细则）契约未分配取值，本批不带不断言，契约任务分配后补。编排裁定见 couli-runs W1-search-linking/decision-orchestrator.md D7-4。
 refs: []
 refs_hash: {}
 deps: [B1-06h, CT-02e]

@@ -9,9 +9,10 @@ type: impl
 # 本任务依赖 B1-07a，不留临时分支。item_ref 校验调 catalog/index.ts（B1-05h）。登录必需（CallerContext）、幂等走 idempotency.execute。
 # 实现路由时去掉 convertLink 的 x-implementation: planned 并重生成 platform/validation/route-schemas.gen.ts（B1-02c 引入）。
 # x-signed：对外放量须在 B1-03b 合并后。风险：linking RV2，整体 RV2。linking/** 与 openapi.yaml 串行。
+# 2026-10-08 补（第七棒）：deps 加 B1-06v，convert 的拼多多路径共用 open 的备案判定（转链端口 / 组合层）。
 refs: []
 refs_hash: {}
-deps: [B1-06f, B1-07a, B1-05h, B1-02c]
+deps: [B1-06f, B1-06v, B1-07a, B1-05h, B1-02c]
 paths:
   - 'apps/api/src/modules/linking/**'
   - 'apps/api/src/app.module.ts'

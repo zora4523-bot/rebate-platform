@@ -1,0 +1,33 @@
+id: B1-06v
+repo: rebate-platform
+title: 拼多多 open 备案判定：快照用户拼多多绑定非 active 时先经授权查询端口复查（已授权置 active 后继续转链），未授权 → 30111（带 auth_jump）、blocked 且未封禁 → 30153；no_rebate 跳过但 blocked 时服务端记 binding_blocked；分享 link 他人打开分享者未备案 → 30111 不带授权入口；所用账号站长授权失效 → 50301 maintenance
+type: impl
+# 2026-10-08 从 B1-06f 拆出（W1 第七棒，D7-5；台账 #304 评审 fail 后按编排裁定 D7-6 补）。依据：BR-ATTR-05（按快照转链前先校验快照 user_id 的授权，拼多多需备案有效；分享链接校验不通过回 30111；③ 他人非分享 link 换当前用户新 link_id 后判当前用户）、BR-ATTR-11（分享者本人打开自己的分享 link 走自购位、判本人）、
+# BR-ID-22（30111 与 auth_jump；授权查询返回已授权才置 active）、BR-ID-18（no_rebate 跳过 30111 / 30153；binding_blocked 由服务端判、永不可找回）、BR-ID-10（授权后新幂等键重发 open）、BR-ID-24 ④（某平台转链依赖站长授权时 50301 maintenance）、BR-ID-17 细则「授权管理页」，由编排者摘入任务书第 2 节。
+# 30153 对拼多多：与 B1-06g auth-url 两平台一致；规划 BR-ID-17 末句未限定平台，待规划同步。
+# 授权查询端口（S1-1，防「授权后重发仍 30111」死循环）：union 适配器加可选方法（如 queryPddAuthority(用户, 推广位)，经治理层读调用），演示适配器实现：不带场景时缺省「已授权」，另加只对拼多多有效的演示场景（如 pdd_unauthorized）表示未授权（编排裁定 D7-7，防演示环境死循环；所有规则测试显式配置查询结果，不依赖缺省；缺省会缩小 B1-06u 的失败清单），真实适配器 TODO(规划/11 §4.5) — blocked on CAP-PDD-05；
+# open 遇拼多多绑定非 active 且非 blocked 时先查询：已授权则按单一写者、row_version CAS 置 active 后继续转链（不存在绑定行时按 B1-06h 同口径插入 active，union_account_id 取本次所用账号），未授权才 30111；规则测试必须有「授权后用新幂等键重发 open 成功」用例（断言第 2 次后 union_bindings 为 active）。
+# 写入细节：只有 released 历史行时插入新行、不改 released 行；并发插入撞 union_bindings_user_platform_key 时重读按现状判定，不报 500；写入 pdd_custom（本次查询的 custom_parameters）；查询按 BR-ID-22 / BR-ATTR-06 以 attr_code 拼 custom_parameters、不传 user_id，取不到 attr_code 按 B1-06e 口径 50301 失败即关。
+# 查询自身失败（超时、限流、熔断、上游不可用）不改绑定、不回 30111，按转链失败口径回 50303，加一条用例。
+# no_rebate（S1-2）：no_rebate=true 跳过授权校验，但拼多多绑定为 blocked 时 link_logs.no_rebate_reason 由服务端写 binding_blocked（覆盖客户端上报）；淘宝由 B1-06f 判；relation_conflict 本批不测（30151 冲突日志未落库，followups）。
+# 分享 link：他人或游客打开、分享者拼多多未备案或 blocked → 30111，data 不带 auth_jump / auth_url、不写 state（D7-4 ④，不泄露分享者状态，ErrorEnvelope 仍合法；BR-ATTR-05 细则要求的 data.reason「分享者授权失效」取值契约未分配，本批不带 reason、不断言，契约任务分配后补，followups）；他人打开分享 link 忽略 no_rebate（B1-06p 不变项），故带 no_rebate=true 仍 30111。
+# 30111 的 auth_jump 复用 union-auth-url 的同一构造与「本次所用账号」判定函数；所用账号站长授权 expired 且转链或授权查询依赖该授权时（以 specs/union/pdd.md 登记为准，演示适配器按依赖处理，同 B1-06t）open 回 50301 data.reason=maintenance（BR-ID-24 ④），至少一条用例。判定放在转链端口 / 组合层（同 B1-06f 淘宝），被 convert（B1-06i）共用，不进复核主流程。
+# 本批按 union_bindings 平台粒度（user, platform）判定；BR-ID-22 的 (user, pid) 粒度与迁移加 pid 维度记 followups（已知偏离：同一用户换场景推广位不再要求授权）。
+# 冻结测试冲突：open-jdpdd、open-owner、open-requote、open-norebate、register、wiring、landing 等连库规则测试打开拼多多 link 时不种绑定、断言 200。实现分支跑出 CI verify-int 失败清单后（可先静态 grep 补全）、本任务合并前，另立 test-change B1-06u（非 task/ 分支 test-change/B1-06u，只补种 active 拼多多绑定与对应 union_accounts、不改断言，先例 B1-06q / B1-06s），
+# B1-06u 合并后本任务变基重验再合并，deps 届时加 B1-06u；B1-06u 若改共用 kit 的缺省，本任务新规则测试必须显式设置绑定状态，不依赖 kit 缺省。
+# 实现时顺带改 linking/application/link-open-requote.ts 里指向 B1-06f 的拼多多 30111 旧注释。linking/** 串行（B1-06f 之后）；union/** 只加可选查询方法（domain 端口、governed-adapter 条件包装、演示实现、registry 真实占位抛 adapter_unimplemented）；union/** 与 B1-04p 串行（谁后合并谁变基）。风险：linking RV2（归属与用户授权）。
+refs: []
+refs_hash: {}
+deps: [B1-06f]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/linking/open-pdd-auth/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-pdd-auth/**'
+status: todo
+pr: null
