@@ -25,6 +25,7 @@ paths:
   - 'contracts/README.md'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
 test_paths:
   - 'test/spec/contracts/agent-http/**'
 impl: claude
