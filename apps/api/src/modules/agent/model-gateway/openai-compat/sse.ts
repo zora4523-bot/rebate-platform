@@ -2,7 +2,7 @@ import { malformed } from './errors.ts';
 import type { SseChunkParser } from './types.ts';
 
 /** 传输边界与 SSE 行边界无关；支持 LF、CRLF、CR 和多行 data。 */
-export function createSseChunkParser(): SseChunkParser {
+export function createSseChunkParser(onChunk?: (chunk: unknown) => void): SseChunkParser {
   let line = '';
   let data: string[] = [];
   let size = 0;
@@ -19,11 +19,15 @@ export function createSseChunkParser(): SseChunkParser {
       finished = true;
       return;
     }
+    let chunk: unknown;
     try {
-      chunks.push(JSON.parse(payload) as unknown);
+      chunk = JSON.parse(payload) as unknown;
     } catch {
       throw malformed();
     }
+    chunks.push(chunk);
+    // 逐事件交付，后续事件解析失败也不丢失本次 push 已解析的用量。
+    onChunk?.(chunk);
   };
   const consumeLine = (chunks: unknown[]): void => {
     if (line === '') dispatch(chunks);
