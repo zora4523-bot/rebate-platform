@@ -1,5 +1,5 @@
 import type { DB as Database } from '@couli/db';
-import { type DynamicModule, Module, Scope } from '@nestjs/common';
+import { type DynamicModule, type FactoryProvider, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { Kysely } from 'kysely';
 import {
@@ -155,6 +155,38 @@ interface ScopedRequest {
   readonly verifiedDevice?: VerifiedDevice;
 }
 
+/** A port provider without its token: the module supplies its own abstract class as `provide`. */
+export type LinkingPortProvider<T> = Omit<FactoryProvider<T>, 'provide'>;
+
+/**
+ * Optional port replacements (B1-02m): app.module.ts passes identity's request-scoped caller and
+ * its attr_code reader on the `api` entry. Each one absent keeps the default below unchanged.
+ */
+export interface LinkingPorts {
+  readonly callerContext?: LinkingPortProvider<CallerContext>;
+  readonly attrCodeReader?: LinkingPortProvider<AttrCodeReader>;
+}
+
+const GUEST_CALLER: FactoryProvider<CallerContext> = {
+  provide: CallerContext,
+  scope: Scope.REQUEST,
+  inject: [REQUEST],
+  useFactory: (request: ScopedRequest): CallerContext => {
+    const appId = request.headers?.['x-app-id'];
+    if (typeof appId !== 'string' || appId === '') return new UnscopedCallerContext();
+    // B1-06w: the guest's device is the one the signature check verified for this app
+    // (the open's idempotency subject); an unverified X-Device-Id is never trusted.
+    const device = request.verifiedDevice;
+    const deviceId = device !== undefined && device.appId === appId ? device.deviceId : null;
+    return createGuestCallerContext({ appId, deviceId });
+  },
+};
+
+const UNAVAILABLE_ATTR_CODES: FactoryProvider<AttrCodeReader> = {
+  provide: AttrCodeReader,
+  useFactory: createUnavailableAttrCodeReader,
+};
+
 /**
  * The read-only active-pid query of union (B1-19b). linking only reads, so the union service is
  * built with a verifier and an audit writer that refuse: no admin write can run through it.
@@ -192,9 +224,10 @@ class PausedLinkOpen extends LinkOpenService {
 /**
  * Linking (规划/02 §4.1), B1-06c: card-time link registration (catalog's LinkRegistrar) and the
  * read-only entry_source of a link (catalog's SourceLinkReader). Ports:
- * - CallerContext: a guest of the request's app (X-App-Id) and of the device its signature
- *   verified (none when unsigned), until identity replaces it (B1-02m);
- * - AttrCodeReader: unavailable until identity replaces it (B1-02m); never a user_id fallback;
+ * - CallerContext: by default a guest of the request's app (X-App-Id) and of the device its
+ *   signature verified (none when unsigned); the `api` entry passes identity's (B1-02m);
+ * - AttrCodeReader: by default unavailable; the `api` entry passes identity's (B1-02m); never a
+ *   user_id fallback;
  * - LinkingConfigReader: built once per process by the factory app.module.ts passes (content).
  * B1-06w: POST /v1/links/{link_id}/open is served by the wired open (link-open-wiring.ts), built
  * per request from LINK_OPEN_PORTS (app.module.ts: governed union, quoter, item_ref issuer,
@@ -204,7 +237,15 @@ class PausedLinkOpen extends LinkOpenService {
  */
 @Module({})
 export class LinkingModule {
-  static forRoot(configReader: LinkingConfigReaderFactory): DynamicModule {
+  static forRoot(configReader: LinkingConfigReaderFactory, ports?: LinkingPorts): DynamicModule {
+    const callerContext: FactoryProvider<CallerContext> =
+      ports?.callerContext === undefined
+        ? GUEST_CALLER
+        : { ...ports.callerContext, provide: CallerContext };
+    const attrCodeReader: FactoryProvider<AttrCodeReader> =
+      ports?.attrCodeReader === undefined
+        ? UNAVAILABLE_ATTR_CODES
+        : { ...ports.attrCodeReader, provide: AttrCodeReader };
     return {
       module: LinkingModule,
       controllers: [LinkOpenController, LinkLandingController],
@@ -343,7 +384,7 @@ export class LinkingModule {
           useFactory: (db: Kysely<Database> | undefined, clock: Clock): LinkingConfigReader =>
             db === undefined ? UNAVAILABLE_CONFIG : configReader(db, clock),
         },
-        { provide: AttrCodeReader, useFactory: createUnavailableAttrCodeReader },
+        attrCodeReader,
         {
           provide: LINKING_PIDS,
           inject: [{ token: DB, optional: true }, CLOCK],
@@ -356,21 +397,7 @@ export class LinkingModule {
           useFactory: (db: Kysely<Database> | undefined): SourceLinkReader =>
             db === undefined ? UNAVAILABLE_SOURCES : createSourceLinkReader(db),
         },
-        {
-          provide: CallerContext,
-          scope: Scope.REQUEST,
-          inject: [REQUEST],
-          useFactory: (request: ScopedRequest): CallerContext => {
-            const appId = request.headers?.['x-app-id'];
-            if (typeof appId !== 'string' || appId === '') return new UnscopedCallerContext();
-            // B1-06w: the guest's device is the one the signature check verified for this app
-            // (the open's idempotency subject); an unverified X-Device-Id is never trusted.
-            const device = request.verifiedDevice;
-            const deviceId =
-              device !== undefined && device.appId === appId ? device.deviceId : null;
-            return createGuestCallerContext({ appId, deviceId });
-          },
-        },
+        callerContext,
         {
           provide: LINK_REGISTRATIONS,
           scope: Scope.REQUEST,

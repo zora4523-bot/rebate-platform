@@ -1,4 +1,5 @@
-import { type DynamicModule, type Provider, Module } from '@nestjs/common';
+import { type DynamicModule, type Provider, Module, Scope } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { AdminModule } from './modules/admin/index.ts';
@@ -19,13 +20,20 @@ import { HealthModule } from './modules/health/index.ts';
 import {
   IdentityModule,
   TOKEN_CHECK,
+  createIdentityAttrCodeReader,
+  createIdentityCallerContext,
+  createIdentityViewerContext,
+  type IdentityAttrCodeReader,
   type IdentityConfigReader,
+  type IdentityContext,
+  type IdentityRequest,
 } from './modules/identity/index.ts';
 import {
   LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
   LINK_REGISTRATIONS,
   LinkingModule,
+  createUnavailableAttrCodeReader,
   loadLinkOpenApps,
   openScopedConfig,
   type LinkLandingPorts,
@@ -392,6 +400,28 @@ function parsingPorts(): DynamicModule {
  * /v1/inputs/parse (B1-07b), which registers its links through parsingPorts in the request's scene.
  * Business modules are added to the entries that own them by their tasks (规划/02 §4.1).
  */
+/**
+ * B1-02m: identity's request identity for catalog's ViewerContext and linking's CallerContext
+ * (the token principal, else the verified device's guest, else the X-App-Id guest), resolved per
+ * request, and its users.attr_code reader for linking's AttrCodeReader (unavailable without a
+ * database handle, as linking's default). identity implements the ports structurally.
+ */
+const identityViewer = {
+  scope: Scope.REQUEST,
+  inject: [REQUEST],
+  useFactory: (request: IdentityRequest): IdentityContext => createIdentityViewerContext(request),
+};
+const identityCaller = {
+  scope: Scope.REQUEST,
+  inject: [REQUEST],
+  useFactory: (request: IdentityRequest): IdentityContext => createIdentityCallerContext(request),
+};
+const identityAttrCodes = {
+  inject: [{ token: DB, optional: true }],
+  useFactory: (db?: Kysely<Database>): IdentityAttrCodeReader =>
+    db === undefined ? createUnavailableAttrCodeReader() : createIdentityAttrCodeReader(db),
+};
+
 @Module({})
 export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
@@ -402,7 +432,10 @@ export class AppModule {
       options.entry === 'api' || options.entry === 'worker' ? UnionModule.forRoot() : undefined;
     const linking =
       options.entry === 'api'
-        ? LinkingModule.forRoot((db, clock) => createContentReader({ db, clock }))
+        ? LinkingModule.forRoot((db, clock) => createContentReader({ db, clock }), {
+            callerContext: identityCaller,
+            attrCodeReader: identityAttrCodes,
+          })
         : undefined;
     return {
       module: AppModule,
@@ -416,7 +449,9 @@ export class AppModule {
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [
               catalogPorts(union, linking),
-              CatalogModule.forRoot((db, clock) => createContentReader({ db, clock })),
+              CatalogModule.forRoot((db, clock) => createContentReader({ db, clock }), {
+                viewerContext: identityViewer,
+              }),
               linking,
               parsingPorts(),
               // createParsing from parsing's public surface, so the route builds its service

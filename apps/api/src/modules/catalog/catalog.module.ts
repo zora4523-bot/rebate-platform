@@ -1,5 +1,5 @@
 import type { DB as Database } from '@couli/db';
-import { type DynamicModule, Module, Scope } from '@nestjs/common';
+import { type DynamicModule, type FactoryProvider, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
@@ -105,11 +105,34 @@ interface ScopedRequest {
   readonly headers?: Readonly<Record<string, string | string[] | undefined>>;
 }
 
+/** A port provider without its token: the module supplies its own abstract class as `provide`. */
+export type CatalogPortProvider<T> = Omit<FactoryProvider<T>, 'provide'>;
+
+/**
+ * Optional port replacements (B1-02m): app.module.ts passes identity's request-scoped viewer on
+ * the `api` entry. Absent, the default guest viewer below is kept unchanged.
+ */
+export interface CatalogPorts {
+  readonly viewerContext?: CatalogPortProvider<ViewerContext>;
+}
+
+const GUEST_VIEWER: FactoryProvider<ViewerContext> = {
+  provide: ViewerContext,
+  scope: Scope.REQUEST,
+  inject: [REQUEST],
+  useFactory: (request: ScopedRequest): ViewerContext => {
+    const appId = request.headers?.['x-app-id'];
+    return typeof appId === 'string' && appId !== ''
+      ? createGuestViewerContext({ appId, deviceId: null })
+      : new UnscopedViewerContext();
+  },
+};
+
 /**
  * Catalog (规划/02 §4.1): platform dictionary, product_refs, aliases and the category blocklist.
  * Assembles two of its five ports here:
- * - ViewerContext: always a guest of the request's app (X-App-Id, validated against the contract
- *   by the route schema), device unknown, until identity replaces it (B1-02m);
+ * - ViewerContext: by default a guest of the request's app (X-App-Id, validated against the
+ *   contract by the route schema), device unknown; the `api` entry passes identity's (B1-02m);
  * - CatalogConfigReader: built once per process by the factory app.module.ts passes (content's
  *   reader, F1-02b), so catalog never imports content.
  * B1-05j: GET /v1/products/search (SearchController → CatalogSearchService → searchProducts).
@@ -123,7 +146,11 @@ interface ScopedRequest {
  */
 @Module({})
 export class CatalogModule {
-  static forRoot(configReader: CatalogConfigReaderFactory): DynamicModule {
+  static forRoot(configReader: CatalogConfigReaderFactory, ports?: CatalogPorts): DynamicModule {
+    const viewerContext: FactoryProvider<ViewerContext> =
+      ports?.viewerContext === undefined
+        ? GUEST_VIEWER
+        : { ...ports.viewerContext, provide: ViewerContext };
     return {
       module: CatalogModule,
       controllers: [SearchController, ProductController],
@@ -155,17 +182,7 @@ export class CatalogModule {
           useFactory: (db: Kysely<Database> | undefined, clock: Clock): CatalogConfigReader =>
             db === undefined ? UNAVAILABLE_CONFIG : configReader(db, clock),
         },
-        {
-          provide: ViewerContext,
-          scope: Scope.REQUEST,
-          inject: [REQUEST],
-          useFactory: (request: ScopedRequest): ViewerContext => {
-            const appId = request.headers?.['x-app-id'];
-            return typeof appId === 'string' && appId !== ''
-              ? createGuestViewerContext({ appId, deviceId: null })
-              : new UnscopedViewerContext();
-          },
-        },
+        viewerContext,
         {
           provide: ITEM_REFS,
           inject: [APP_CONFIG, { token: FIELD_CRYPTO, optional: true }],
