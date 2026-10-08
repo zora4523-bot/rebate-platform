@@ -10,6 +10,7 @@ export interface StateProps {
   description: string;
   icon: ReactNode;
   action?: ComponentAction;
+  autoFocusAction?: boolean;
 }
 
 /**
