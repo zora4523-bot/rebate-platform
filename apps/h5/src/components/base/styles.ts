@@ -18,3 +18,10 @@ export const ACTION_IN_ROW = 'flex-1 basis-0 min-w-max whitespace-nowrap';
 
 /** Overlay layers: fixed, above page content, token font family. */
 export const LAYER = 'fixed z-50 font-couli-system';
+
+/**
+ * Light notices: fixed and one step above `LAYER`, so a notice stays visible over sheets and
+ * dialogs opened after its region was created (regions are never moved, to keep screen readers
+ * registered on them).
+ */
+export const TOAST_LAYER = 'fixed z-60 font-couli-system';

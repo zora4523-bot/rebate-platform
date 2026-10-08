@@ -1,0 +1,108 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-base-fixes/error-state-focus.test.ts > [AC-F1-01o-FOCUS#1] 仅显式启用且有 action 的 ErrorState 将焦点移到重试按钮",
+    "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 constructor 分组，报告危险路径且不修改 Object 或原型链",
+    "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 constructor 叶子，报告危险路径且不修改 Object 或原型链",
+    "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 prototype 分组，报告危险路径且不修改 Object 或原型链",
+    "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 prototype 叶子，报告危险路径且不修改 Object 或原型链",
+    "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 __proto__ 分组，报告危险路径且不修改 Object 或原型链",
+    "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 __proto__ 叶子，报告危险路径且不修改 Object 或原型链",
+    "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 Object.prototype 分组，报告危险路径且不修改 Object 或原型链",
+    "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 Function.prototype 分组，报告危险路径且不修改 Object 或原型链",
+    "test/spec/frontend/h5-base-fixes/toast-region.test.ts > [AC-F1-01o-TOAST#1] 默认 portal 到 body，提示和常驻播报区均在 inert 调用容器之外",
+    "test/spec/frontend/h5-base-fixes/toast-region.test.ts > [AC-F1-01o-TOAST#2] 自定义挂载点保留同一播报区，卸载后相同消息重新播报",
+    "test/spec/frontend/h5-base-fixes/toast-region.test.ts > [AC-F1-01o-TOAST#3] 文案改变、到时清空及同文新挂载均复用常驻播报区",
+    "test/spec/frontend/h5-base-fixes/token-seconds.test.ts > [AC-F1-01o-TOKEN#1] getToken 拒绝秒 60：2099-01-01T23:59:60Z，90500 后不缓存并重新取令牌",
+    "test/spec/frontend/h5-base-fixes/token-seconds.test.ts > [AC-F1-01o-TOKEN#1] getToken 拒绝秒 60：2099-01-01T12:00:60+08:00，90500 后不缓存并重新取令牌",
+    "test/spec/frontend/h5-base-fixes/token-seconds.test.ts > [AC-F1-01o-TOKEN#2] request 拒绝秒 60：2099-01-01T23:59:60Z，不 send，下一请求使用新令牌",
+    "test/spec/frontend/h5-base-fixes/token-seconds.test.ts > [AC-F1-01o-TOKEN#2] request 拒绝秒 60：2099-01-01T12:00:60+08:00，不 send，下一请求使用新令牌"
+  ],
+  "risk_note": "RV2 by path (the PR carries rule tests; H5 base components, bridge-sdk token parsing, ui-tokens generator). Fixes registered review S2s: Toast keeps one persistent aria-live=polite region per container (data-slot=toast-region, no role, rebuilt when detached), writes each notice as a role=status element inside it, portals out of the caller's (possibly inert) tree, default document.body or a container prop, and uses its own layer above modal frames; ErrorState autoFocusAction moves focus to the retry button once; expire_at seconds accept 00-59 only; themeFromTokens rejects constructor / prototype / __proto__ path segments. Rule tests by Codex in one call, red first in the container (red/2, 16 tests), spec-test review by a fresh Claude subagent passed (three S2 written into the implementation brief). Implementation by Opus 5.5 in two rounds (round 2: toast layer above Sheet / Dialog after the round-1 Claude S1). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass with one S2 (toast under later modals, same as the Claude S1), fixed in round 2; round 2 pass, no findings"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent (second reviewer, money checklist, funds items not applicable): round 1 fail (S1 toast covered by later Sheet / Dialog), round 2 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent; pass with three S2 (same-text re-announce on key swap, focus moves once, pointer-events) carried into the implementation brief"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "F1-01o",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "b5536efa1e6ad9c3c637f456075949e213a0995c",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b5536efa1e6ad9c3c637f456075949e213a0995c",
+      "tree": "3d21c8a7b492e6a9cd7f518ca73f8a0535761723",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T18:35:55Z",
+      "finished_at": "2026-10-08T18:36:08Z",
+      "red_tests": [
+        "test/spec/frontend/h5-base-fixes/error-state-focus.test.ts > [AC-F1-01o-FOCUS#1] 仅显式启用且有 action 的 ErrorState 将焦点移到重试按钮",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 constructor 分组，报告危险路径且不修改 Object 或原型链",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 constructor 叶子，报告危险路径且不修改 Object 或原型链",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 prototype 分组，报告危险路径且不修改 Object 或原型链",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 prototype 叶子，报告危险路径且不修改 Object 或原型链",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 __proto__ 分组，报告危险路径且不修改 Object 或原型链",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 __proto__ 叶子，报告危险路径且不修改 Object 或原型链",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 Object.prototype 分组，报告危险路径且不修改 Object 或原型链",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts > [AC-F1-01o-THEME#1] 拒绝 Function.prototype 分组，报告危险路径且不修改 Object 或原型链",
+        "test/spec/frontend/h5-base-fixes/toast-region.test.ts > [AC-F1-01o-TOAST#1] 默认 portal 到 body，提示和常驻播报区均在 inert 调用容器之外",
+        "test/spec/frontend/h5-base-fixes/toast-region.test.ts > [AC-F1-01o-TOAST#2] 自定义挂载点保留同一播报区，卸载后相同消息重新播报",
+        "test/spec/frontend/h5-base-fixes/toast-region.test.ts > [AC-F1-01o-TOAST#3] 文案改变、到时清空及同文新挂载均复用常驻播报区",
+        "test/spec/frontend/h5-base-fixes/token-seconds.test.ts > [AC-F1-01o-TOKEN#1] getToken 拒绝秒 60：2099-01-01T23:59:60Z，90500 后不缓存并重新取令牌",
+        "test/spec/frontend/h5-base-fixes/token-seconds.test.ts > [AC-F1-01o-TOKEN#1] getToken 拒绝秒 60：2099-01-01T12:00:60+08:00，90500 后不缓存并重新取令牌",
+        "test/spec/frontend/h5-base-fixes/token-seconds.test.ts > [AC-F1-01o-TOKEN#2] request 拒绝秒 60：2099-01-01T23:59:60Z，不 send，下一请求使用新令牌",
+        "test/spec/frontend/h5-base-fixes/token-seconds.test.ts > [AC-F1-01o-TOKEN#2] request 拒绝秒 60：2099-01-01T12:00:60+08:00，不 send，下一请求使用新令牌"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-base-fixes/error-state-focus.test.ts",
+        "test/spec/frontend/h5-base-fixes/theme-prototype.test.ts",
+        "test/spec/frontend/h5-base-fixes/toast-region.test.ts",
+        "test/spec/frontend/h5-base-fixes/token-seconds.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8d4855aadb643f5105f2654d99baca9287f2baa8aceedc9d4a83ef1eb063a298"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "c5b86df54090bfe1a460c82b7fe0fe112ff0b44a",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
