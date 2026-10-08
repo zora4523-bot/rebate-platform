@@ -8,6 +8,8 @@ type: impl
 # 令牌解析与会话校验用 B1-02h（令牌签发与令牌守卫，2026-10-06 B1-02e 拆分后）交付的鉴权守卫 / 守卫，不另写；受限会话（session_scope）与最低版本拦截不在本任务。
 # 规则测试覆盖：游客、登录用户、他 App 令牌三种情形下三个端口的返回；attr_code 缺失时返回「不可用」而不是 user_id。
 # 路径只取 identity 下本任务新建的子目录（与 B1-02e～k 不相交），加 app.module.ts。风险：identity RV1、app.module.ts RV2，整体 RV2。
+# 2026-10-08 编排者补：ViewerContext / CallerContext / AttrCodeReader 的默认实现是 CatalogModule.forRoot / LinkingModule.forRoot 自己的 providers，app.module 无法从外部覆盖；
+# 本任务给两个 forRoot 加可选的端口覆盖参数（只加参数、默认行为不变），所以 paths 加 catalog.module.ts 与 linking.module.ts 两个文件。
 refs: []
 refs_hash: {}
 deps: [B1-02h, B1-06c, B1-05c]
@@ -15,6 +17,8 @@ paths:
   - 'apps/api/src/modules/identity/ports/**'
   - 'apps/api/src/modules/identity/index.ts'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/catalog/catalog.module.ts'
+  - 'apps/api/src/modules/linking/linking.module.ts'
 test_paths:
   - 'test/spec/identity/request-context/**'
 impl: claude
