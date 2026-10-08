@@ -36,7 +36,7 @@ function isDateTime(value: string): boolean {
     minute !== undefined &&
     minute <= 59 &&
     second !== undefined &&
-    second <= 60 &&
+    second <= 59 &&
     offsetHour <= 23 &&
     offsetMinute <= 59
   );

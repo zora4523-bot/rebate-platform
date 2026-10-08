@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import { useEffect, useRef, type ReactElement } from 'react';
 import { PRIMARY_BUTTON } from './styles.ts';
 import type { StateProps } from './types.ts';
 
@@ -17,7 +17,16 @@ export function StateLayout({
   icon,
   action,
   alert,
+  autoFocusAction = false,
 }: StateLayoutProps): ReactElement {
+  const actionRef = useRef<HTMLButtonElement>(null);
+  const focusAction = alert && autoFocusAction && action !== undefined;
+
+  // Runs on mount and when the switch turns on; parent re-renders leave focus where it is.
+  useEffect(() => {
+    if (focusAction) actionRef.current?.focus();
+  }, [focusAction]);
+
   return (
     <div className="flex w-full flex-col items-center gap-couli-4 px-couli-8 text-center">
       <div
@@ -37,7 +46,12 @@ export function StateLayout({
       </div>
       {action === undefined ? null : (
         <div className="flex w-full max-w-60 flex-col">
-          <button type="button" className={`w-full ${PRIMARY_BUTTON}`} onClick={action.onClick}>
+          <button
+            ref={actionRef}
+            type="button"
+            className={`w-full ${PRIMARY_BUTTON}`}
+            onClick={action.onClick}
+          >
             {action.label}
           </button>
         </div>
