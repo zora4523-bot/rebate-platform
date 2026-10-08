@@ -198,10 +198,15 @@ export function axmlText(bytes: Buffer, resolve?: AxmlResolver, readFile?: FileR
         optional(u32(ext, end));
         str(u32(ext + 4, end));
       } else if (type === 0x0104) {
+        // ResXMLTree_cdataExt { data, Res_value typedData }：文本节点的 typedData 可以是标准 8 字节
+        // Res_value，也可以整段为零（size=0、TYPE_NULL，aapt 对纯文本常这样写）；越界、截断或其他取值仍判损坏。
         emit(str(u32(ext, end)));
-        if (u16(ext + 4, end) !== 8 || bytes[ext + 6] !== 0) invalid();
+        const valueSize = u16(ext + 4, end);
         const data = u32(ext + 8, end);
-        if (bytes[ext + 7] === 3) emit(str(data));
+        const dataType = bytes[ext + 7]!;
+        const emptyValue = valueSize === 0 && bytes[ext + 6] === 0 && dataType === 0 && data === 0;
+        if (!emptyValue && (valueSize !== 8 || bytes[ext + 6] !== 0)) invalid();
+        if (dataType === 3) emit(str(data));
       } else invalid();
     }
     at = end;

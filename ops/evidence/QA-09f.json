@@ -1,0 +1,81 @@
+{
+  "risk_note": "RV2 by the PR (rule tests under test/**; infra/release-scan/** is RV2). Default split (ops/approvals.yaml id 19): rule tests by Codex (1 attempt), implementation by Claude Opus subagents (3 attempts: review r1 found a relaxation against main for double-quoted salts in plain resource XML CDATA and for indented continuation in ini-like files; review r2 found the CLI path still lacking the AXML raw-string view and an over-broad .env.* pattern; all fixed in attempt 3). Fixes reader false positives only: AXML CDATA with an all-zero typedData, the exact Apple plist DOCTYPE recognised by content structure (not by file extension), empty-key next-line rule only for .properties / .env / *.env, source_pool without spread. Re-checked on real youquanhui apk / ipa through the CLI and scanArtifact: apk no longer exit 2 and no hit fewer than main; ipa only loses the 155 apple.com/DTDs high-entropy false positives. The scanner only tightens otherwise; no change to cli.ts, residue/**, gitleaks, repository secret scanning or thresholds. Rebased onto main with QA-09e (#333); combination covered by the required CI checks (approvals id 21). Written by hand. A one-line orchestrator fix (literal U+FEFF in a regex rewritten as \\uFEFF for the hidden-unicode guard) was reviewed by a fresh Codex session (round 3).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "fresh read-only Claude subagents with the money checklist: round 1 pass with an S2 (indented continuation relaxed in ini-like files) raised to must-fix by the orchestrator (decision 43), round 2 fail (2 S1: CLI path without the AXML raw-string view; .env.* too broad), round 3 pass (1 S2: duplicate high-entropy hits on the CLI path, same exit code, dedup belongs to cli.ts)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "fresh read-only Codex sessions, not the implementer: round 1 fail (1 S1: double-quoted salt in plain resource XML CDATA passed), round 2 pass (1 S2: an XML comment between the DOCTYPE and <plist> keeps the DTD false positive); round 3 (incremental, base 27de4aa) pass on the orchestrator's one-line fix after CI's hidden-unicode guard flagged a literal U+FEFF in plist-doctype.ts (rewritten as \\uFEFF, same regex)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 pass (0 S1; 2 S2 turned into implementation requirements and checked by the code reviews)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "QA-09f",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "4bb11cdaa2cbb774fb327c278871c8001c0e9fcf",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4bb11cdaa2cbb774fb327c278871c8001c0e9fcf",
+      "tree": "f8a9f9d9dada66a997aa542734624683c45f03ad",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T19:06:56Z",
+      "finished_at": "2026-10-08T19:07:49Z",
+      "red_tests": [
+        "test/spec/release-scan/detect-read/axml-cdata.test.ts > [AC-QA-09f-CDATA#1] res/xml/demo.xml 的合法 CDATA 不判损坏，CDATA 内签名盐仍不可豁免",
+        "test/spec/release-scan/detect-read/axml-cdata.test.ts > [AC-QA-09f-CDATA#1] AndroidManifest.xml 的合法 CDATA 不判损坏，CDATA 内签名盐仍不可豁免",
+        "test/spec/release-scan/detect-read/plist-doctype.test.ts > [AC-QA-09f-PLIST#1] utf8 标准 DOCTYPE 不误报，声明后真实高熵串及签名盐仍检出且行号不变",
+        "test/spec/release-scan/detect-read/plist-doctype.test.ts > [AC-QA-09f-PLIST#1] utf16le 标准 DOCTYPE 不误报，声明后真实高熵串及签名盐仍检出且行号不变",
+        "test/spec/release-scan/detect-read/plist-doctype.test.ts > [AC-QA-09f-PLIST#1] utf16be 标准 DOCTYPE 不误报，声明后真实高熵串及签名盐仍检出且行号不变",
+        "test/spec/release-scan/detect-read/plist-doctype.test.ts > [AC-QA-09f-PLIST#2] 只识别完整标准声明：改动的 DOCTYPE、普通值里的 DTD 地址仍报高熵",
+        "test/spec/release-scan/detect-read/properties.test.ts > [AC-QA-09f-PROPERTIES#1] 换行 \"\\n\"：空值键不冒充 Base64 续行，非空盐与 YAML 续行仍阻断",
+        "test/spec/release-scan/detect-read/properties.test.ts > [AC-QA-09f-PROPERTIES#1] 换行 \"\\r\\n\"：空值键不冒充 Base64 续行，非空盐与 YAML 续行仍阻断",
+        "test/spec/release-scan/detect-read/source-pool.test.ts > [AC-QA-09f-SOURCE-POOL#1] 160000 条来源路径不因展开传参判损坏，池首中尾及后续资源的签名盐仍阻断"
+      ],
+      "expected": [
+        "test/spec/release-scan/detect-read/axml-cdata.test.ts",
+        "test/spec/release-scan/detect-read/plist-doctype.test.ts",
+        "test/spec/release-scan/detect-read/properties.test.ts",
+        "test/spec/release-scan/detect-read/source-pool.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2ab5a6500ff1d7518a23a1ea5609584fdd85d35ecedab1c7fc3906cdeb34bcc1"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "6e3915f3d5bd5344817f43001340f44a5e5b5c3f",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}

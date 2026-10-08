@@ -1,3 +1,4 @@
+import { maskPlistDoctype } from './plist-doctype.ts';
 import type { DetectOptions, DetectRuleId, ScanHit } from './types.ts';
 
 export function defaultDetectOptions(): DetectOptions {
@@ -154,10 +155,20 @@ const NEW_KEY =
 const YAML_NEW_KEY =
   /^(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')[ \t]*:(?!\S)|^[A-Za-z_$][\w$.-]*[ \t]*:(?!\S)/;
 
-/** 整行是带填充等号的 Base64 / Base64url 串（如 `c2FsdA==`）：这是换行书写的取值，不是 `键=`。 */
+/** 整行是带填充等号的 Base64 / Base64url 串（如 `c2FsdA==`）：允许续行的格式里这是换行书写的取值，不是 `键=`。 */
 const PADDED_BASE64_LINE = /^[A-Za-z0-9+/_-]+={1,2}[ \t]*(?:\r?\n|$)/;
 
-function newKeyAt(rest: string, yaml: boolean): boolean {
+/**
+ * 不允许换行续写取值的格式，只认文件名以 `.properties` 或 `.env` 结尾（含全名 `.env` 与 `prod.env`）：
+ * .properties 只有行尾反斜杠才续行，.env 不续行。这里空值键后的下一行一律按行首形状判新键，
+ * `mode=`、`channel=` 这类空值键不能当作上一行空值的 Base64 续行。
+ * `.env.<后缀>`（.env.production、.env.yaml、.env.ini …）、YAML、ini / cfg / conf 与其他内容一律与 main 同口径：
+ * Base64 填充行仍按续行取值。
+ */
+const NO_CONTINUATION = /\.(?:properties|env)$/i;
+
+function newKeyAt(rest: string, yaml: boolean, noContinuation: boolean): boolean {
+  if (noContinuation) return NEW_KEY.test(rest);
   if (PADDED_BASE64_LINE.test(rest)) return false;
   return (yaml ? YAML_NEW_KEY : NEW_KEY).test(rest);
 }
@@ -204,6 +215,7 @@ function fields(
   const configFile =
     /(?:\.(?:properties|ini|cfg|conf|env|yaml|yml)|(?:^|\/)\.env(?:\.[^/]*)?)$/i.test(file);
   const yamlFile = /\.ya?ml$/i.test(file);
+  const noContinuation = NO_CONTINUATION.test(file);
   // 前端代码与 JSON 的 latin1 视图里，UTF-8 多字节也是 0x80 以上的字节，不能当作二进制串边界。
   // 资源字符串原值视图（NUL 分隔的独立串）不是代码文本，即使引用方是 module.json 也按独立串判定。
   const codeFile =
@@ -236,7 +248,10 @@ function fields(
         text.slice(assignment.lastIndex, assignment.lastIndex + 4096),
       )![0];
       const nextAt = assignment.lastIndex + next.length;
-      if (nextAt < text.length && !newKeyAt(text.slice(nextAt, nextAt + 4096), yamlFile)) {
+      if (
+        nextAt < text.length &&
+        !newKeyAt(text.slice(nextAt, nextAt + 4096), yamlFile, noContinuation)
+      ) {
         assignment.lastIndex = nextAt;
       }
     }
@@ -318,11 +333,13 @@ function privateDerPrefix(value: string): boolean {
 
 export function detectText(
   file: string,
-  text: string,
+  source: string,
   options: DetectOptions,
   resourceNames = false,
   rawStrings = false,
 ): ScanHit[] {
+  // XML plist 的完整标准 DOCTYPE 按结构识别后等长置空（行号、偏移不变），其余内容照常检测。
+  const text = maskPlistDoctype(source);
   const candidates: Candidate[] = [];
   const add = (rule: DetectRuleId, start: number, length: number): void => {
     if (length > 0) candidates.push({ rule, start, end: start + length });

@@ -28,7 +28,7 @@
 import { lstat } from 'node:fs/promises';
 import { compareHits } from '../compare/index.ts';
 import type { DetectOptions, ScanHit, ScanInput, ScanResult } from './types.ts';
-import { textViews } from './encoding.ts';
+import { textViewEntries } from './encoding.ts';
 import { artifactPlatform, readArtifact } from './read.ts';
 import { artifactTextViews } from './association.ts';
 import { detectText, resolveOptions } from './rules.ts';
@@ -58,7 +58,18 @@ export function detectSecrets(
   options?: Partial<DetectOptions>,
 ): ScanHit[] {
   const thresholds = resolveOptions(options);
-  return textViews(content, file).flatMap((text) => detectText(file, text, thresholds));
+  // AXML 的原值视图与 scanArtifact 同口径：按独立串检测，已在 JSON 视图按同一规则报过的同一取值不再重报 high-entropy。
+  const hits: ScanHit[] = [];
+  const seen = new Set<string>();
+  for (const view of textViewEntries(content, file)) {
+    for (const hit of detectText(file, view.text, thresholds, false, view.rawStrings === true)) {
+      const key = `${hit.rule}\u0000${hit.match}`;
+      if (view.rawStrings === true && hit.rule === 'high-entropy' && seen.has(key)) continue;
+      seen.add(key);
+      hits.push(hit);
+    }
+  }
+  return hits;
 }
 
 /** 读取 + 检测 + 与公开标识清单比对（QA-09a compareHits）。 */
