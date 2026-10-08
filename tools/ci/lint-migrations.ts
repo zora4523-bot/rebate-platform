@@ -316,7 +316,9 @@ export function checkTimeouts(file: string, sql: string): string[] {
       // Statements inside a body follow BEGIN, IF … THEN and the like: search, do not anchor.
       const set = TIMEOUT_SET_IN.exec(raw);
       const reset = TIMEOUT_RESET_IN.exec(raw);
-      if (set !== null && timeoutMilliseconds(set[2] ?? '') <= 0) {
+      // EXECUTE 'SET LOCAL lock_timeout = 0' leaves the closing quote of the EXECUTE string behind.
+      const setValue = (set?.[2] ?? '').replace(/^([^']*)'\s*$/, '$1');
+      if (set !== null && timeoutMilliseconds(setValue) <= 0) {
         if ((set[1] ?? '').toLowerCase() === 'lock_timeout') lockLost = true;
         else statementLost = true;
       } else if (reset !== null) {
@@ -708,22 +710,26 @@ export function fundsTriggerFunctions(
  * in a fixed order (pg_dump writes `DELETE OR UPDATE` for a hand-written `UPDATE OR DELETE`).
  */
 export function normaliseDefinition(text: string): string {
-  // Case folded outside string literals only ('BLOCKED' and 'blocked' differ); NEW. and OLD. in
-  // trigger WHEN conditions are row references, not schema qualifiers.
+  // Only the SQL outside string literals is normalised; literals stay exactly as written ('BLOCKED'
+  // and 'blocked', 'payout.unknown' and 'unknown' differ). NEW. and OLD. in trigger WHEN conditions
+  // are row references, not schema qualifiers.
+  const sqlPart = (p: string): string =>
+    p
+      .toLowerCase()
+      .replace(/"/g, ' ')
+      .replace(/\b(?!(?:new|old)\s*\.)[a-z_][a-z0-9_]*\s*\.\s*(?=[a-z_])/g, '')
+      .replace(/\bor\s+replace\b/g, ' ')
+      .replace(/\bif\s+(?:not\s+)?exists\b/g, ' ')
+      .replace(/\bconcurrently\b/g, ' ')
+      .replace(/\bonly\b/g, ' ')
+      .replace(/\busing\s+btree\b/g, ' ')
+      .replace(/\bexecute\s+procedure\b/g, 'execute function')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*([(),=])\s*/g, '$1');
   let t = text
-    .replace(/('(?:[^']|'')*')|([^']+)/g, (_m, q: string | undefined, o: string | undefined) =>
-      q !== undefined ? q : (o ?? '').toLowerCase(),
-    )
-    .replace(/"/g, ' ')
-    .replace(/\b(?!(?:new|old)\s*\.)[a-z_][a-z0-9_]*\s*\.\s*(?=[a-z_])/g, '')
-    .replace(/\bor\s+replace\b/g, ' ')
-    .replace(/\bif\s+(?:not\s+)?exists\b/g, ' ')
-    .replace(/\bconcurrently\b/g, ' ')
-    .replace(/\bonly\b/g, ' ')
-    .replace(/\busing\s+btree\b/g, ' ')
-    .replace(/\bexecute\s+procedure\b/g, 'execute function')
-    .replace(/\s+/g, ' ')
-    .replace(/\s*([(),=])\s*/g, '$1')
+    .split(/('(?:[^']|'')*')/)
+    .map((p, i) => (i % 2 === 1 ? p : sqlPart(p)))
+    .join('')
     .replace(/;\s*$/, '')
     .trim();
   t = t.replace(
@@ -731,6 +737,31 @@ export function normaliseDefinition(text: string): string {
     (_m, when: string, events: string) => `${when} ${events.split(' or ').sort().join(' or ')} on`,
   );
   return t;
+}
+
+/**
+ * The SQL without the statements that mention an object it also DROPs, so that the definitions left
+ * are of objects first created here. Conservative: a DROP TRIGGER / INDEX / CONSTRAINT name removes
+ * every statement naming it.
+ */
+function dropFree(sql: string): string {
+  const code = withoutComments(sql);
+  const dropped = new Set<string>();
+  for (const m of code.matchAll(
+    new RegExp(
+      String.raw`\bDROP\s+(?:TRIGGER|INDEX|CONSTRAINT)${GAP}(?:CONCURRENTLY${GAP})?(?:IF\s+EXISTS${GAP})?(${IDENT})`,
+      'gi',
+    ),
+  )) {
+    dropped.add(bareName(m[1] ?? ''));
+  }
+  if (dropped.size === 0) return sql;
+  const names = (text: string): boolean =>
+    [...dropped].some((n) => new RegExp(String.raw`(?:^|[^\w])${n}(?:[^\w]|$)`, 'i').test(text));
+  return statementsOf(code)
+    .filter(({ text }) => !names(text))
+    .map(({ start, end }) => sql.slice(start, end))
+    .join(';');
 }
 
 /** Definitions of triggers (table/name), constraints (table/name) and indexes (name), last one wins. */
@@ -776,6 +807,20 @@ function guardDefinitions(sources: readonly string[]): {
               ),
             );
           }
+          // ADD COLUMN … CONSTRAINT x CHECK (…): a column constraint added with its column (0020).
+          if (c === null && /^\s*ADD\b/i.test(part.text)) {
+            const col = new RegExp(String.raw`\sCONSTRAINT${GAP}(${IDENT})`, 'i').exec(part.text);
+            if (col !== null) {
+              constraints.set(
+                `${bareName(alter[1] ?? '')}/${bareName(col[1] ?? '')}`,
+                normaliseDefinition(
+                  partOf(part)
+                    .slice((col.index ?? 0) + 1)
+                    .trim(),
+                ),
+              );
+            }
+          }
         }
       }
       const create = new RegExp(
@@ -784,11 +829,13 @@ function guardDefinitions(sources: readonly string[]): {
       ).exec(text);
       if (create !== null) {
         for (const part of topLevelParts(text, create[0].length, text.length)) {
-          const c = new RegExp(String.raw`^\s*CONSTRAINT${GAP}(${IDENT})`, 'i').exec(part.text);
+          // Table constraints and column constraints (`col type … CONSTRAINT x CHECK (…)`) alike.
+          const c = new RegExp(String.raw`(?:^|\s)CONSTRAINT${GAP}(${IDENT})`, 'i').exec(part.text);
           if (c !== null) {
+            const from = (c.index ?? 0) + (c[0].length - c[0].trimStart().length);
             constraints.set(
               `${bareName(create[1] ?? '')}/${bareName(c[1] ?? '')}`,
-              normaliseDefinition(partOf(part).trim()),
+              normaliseDefinition(partOf(part).slice(from).trim()),
             );
           }
         }
@@ -842,7 +889,8 @@ function fundsObjectProblems(
     // With the migration history at hand (the CLI), an object no earlier migration defines is new in
     // this file: the regenerated schema already shows it, so it is not compared.
     if (context.migrationsSql.length > 0) {
-      const here = guardDefinitions([sql]);
+      // Only an object this file never drops counts as new: a DROP proves it existed before.
+      const here = guardDefinitions([dropFree(sql)]);
       const earlier = guardDefinitions(context.migrationsSql);
       for (const key of ['triggers', 'constraints', 'indexes'] as const) {
         for (const k of here[key].keys()) if (!earlier[key].has(k)) fromMigrations[key].delete(k);

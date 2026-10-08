@@ -1,7 +1,7 @@
 // The migration gate (tools/ci/lint-migrations.ts): selection by the gate baseline, the wrapper's own
 // checks, and squawk itself against fixture migrations (a scratch root with the real .squawk.toml).
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
 import {
@@ -749,4 +749,47 @@ it('CT-06d: CTAS running set_config still switches a timeout off; a DO body with
       'DO $$ BEGIN ALTER TABLE app.t ALTER COLUMN"pay_amount_fen" TYPE numeric; END $$;',
     ).map((p) => p.message),
   ).toEqual([expect.stringContaining('destructive DDL inside a DO block')]);
+});
+
+it('CT-06d: a column constraint added by an earlier migration (0020) is compared when recreated, not taken for new', () => {
+  const dir = join(REPO, 'db/migrations');
+  const migrationsSql = readdirSync(dir)
+    .filter((n) => n.endsWith('.sql'))
+    .sort()
+    .map((n) => readFileSync(join(dir, n), 'utf8'));
+  const ctx = {
+    schemaSql: readFileSync(join(REPO, 'db/schema.sql'), 'utf8'),
+    migrationsSql,
+    approved: false,
+  };
+  const sql =
+    "ALTER TABLE app.union_auth_sessions DROP CONSTRAINT union_auth_sessions_client_check;\nALTER TABLE app.union_auth_sessions ADD CONSTRAINT union_auth_sessions_client_check CHECK (client IN ('ios', 'android', 'harmony', 'web')) NOT VALID;";
+  expect(checkMigration('0099_x.sql', sql, ctx).map((p) => p.message)).toEqual([
+    expect.stringContaining(
+      'constraint union_auth_sessions_client_check on funds or attribution table union_auth_sessions recreated with a different definition',
+    ),
+  ]);
+});
+
+it('CT-06d: string literals are compared as written, and EXECUTE of a zero timeout inside DO counts', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      "CREATE UNIQUE INDEX payout_attempts_inflight_key ON app.payout_attempts (app_id) WHERE status IN ('reserved', 'unknown');",
+    ],
+    approved: false,
+  };
+  expect(
+    checkMigration(
+      'x.sql',
+      "DROP INDEX app.payout_attempts_inflight_key;\nCREATE UNIQUE INDEX payout_attempts_inflight_key ON app.payout_attempts (app_id) WHERE status IN ('reserved', 'payout.unknown');",
+      ctx,
+    ).map((p) => p.message),
+  ).toEqual([expect.stringContaining('recreated with a different definition')]);
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}DO $$ BEGIN EXECUTE 'SET LOCAL lock_timeout = 0'; END $$;\n`,
+    ),
+  ).toEqual([expect.stringContaining('require-lock-timeout')]);
 });
