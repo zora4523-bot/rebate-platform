@@ -10,8 +10,8 @@
 # key ring directory (/etc/couli-keys -> /run/couli-keys); api also mounts its access-token
 # signing key directory (/etc/couli-jwt -> /run/couli-jwt), loaded by infra/staging/boot.mjs.
 # Every process starts through boot.mjs (node --import), which also counts container starts.
-# All five health checks require 30s of uptime and a single start before the first success,
-# so `up --wait` fails when any process crashed or restarted during the deployment.
+# All five health checks require 30s of uptime and a single start until deploy.sh marks the
+# deployment settled, so `up --wait` fails when any process crashed or restarted during it.
 # HTTP ports are published on 127.0.0.1 only; worker and payout publish nothing.
 name: couli-staging
 
@@ -62,13 +62,13 @@ services:
       # Healthy only when this process own /healthz on API_PORT answers 2xx AND the
       # container has run for 30s AND (before its first healthy check) started only once:
       # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
-      # The first healthy check writes /tmp/couli-settled; later restarts (node reboot) only
-      # wait out the 30s again.
+      # deploy.sh writes /tmp/couli-settled only after the WHOLE deployment succeeded (all five
+      # healthy, RestartCount 0); only from then on may a restart (node reboot) pass again.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.API_PORT || '3100') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.API_PORT || '3100') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -123,13 +123,13 @@ services:
       # Healthy only when this process own /healthz on STREAM_PORT answers 2xx AND the
       # container has run for 30s AND (before its first healthy check) started only once:
       # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
-      # The first healthy check writes /tmp/couli-settled; later restarts (node reboot) only
-      # wait out the 30s again.
+      # deploy.sh writes /tmp/couli-settled only after the WHOLE deployment succeeded (all five
+      # healthy, RestartCount 0); only from then on may a restart (node reboot) pass again.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.STREAM_PORT || '3101') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.STREAM_PORT || '3101') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -178,12 +178,13 @@ services:
       # No port: healthy once the process has run for 30s AND (before its first healthy check)
       # started only once (/tmp/couli-starts, written by boot.mjs; kept across a restart,
       # emptied by a recreate). One early crash is enough to keep it unhealthy, so
-      # `up --wait` fails and deploy.sh rolls back. /tmp/couli-settled marks the first success.
+      # `up --wait` fails and deploy.sh rolls back. /tmp/couli-settled is written by deploy.sh
+      # only after the whole deployment succeeded; only then may a later restart pass again.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); const ok = age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1);"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); const ok = age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1);"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -238,13 +239,13 @@ services:
       # Healthy only when this process own /healthz on ADMIN_PORT answers 2xx AND the
       # container has run for 30s AND (before its first healthy check) started only once:
       # boot.mjs counts starts in /tmp/couli-starts, which a restart keeps and a recreate empties.
-      # The first healthy check writes /tmp/couli-settled; later restarts (node reboot) only
-      # wait out the 30s again.
+      # deploy.sh writes /tmp/couli-settled only after the WHOLE deployment succeeded (all five
+      # healthy, RestartCount 0); only from then on may a restart (node reboot) pass again.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.ADMIN_PORT || '3102') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); fetch('http://127.0.0.1:' + (process.env.ADMIN_PORT || '3102') + '/healthz', { signal: AbortSignal.timeout(4000) }).then((r) => { const ok = r.ok && age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1); }, () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -293,12 +294,13 @@ services:
       # No port: healthy once the process has run for 30s AND (before its first healthy check)
       # started only once (/tmp/couli-starts, written by boot.mjs; kept across a restart,
       # emptied by a recreate). One early crash is enough to keep it unhealthy, so
-      # `up --wait` fails and deploy.sh rolls back. /tmp/couli-settled marks the first success.
+      # `up --wait` fails and deploy.sh rolls back. /tmp/couli-settled is written by deploy.sh
+      # only after the whole deployment succeeded; only then may a later restart pass again.
       test:
         - CMD
         - node
         - '-e'
-        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); const ok = age >= 30 && (settled || starts === 1); if (ok) fs.writeFileSync('/tmp/couli-settled', ''); process.exit(ok ? 0 : 1);"
+        - "const fs = process.getBuiltinModule('node:fs'); const stat = fs.readFileSync('/proc/1/stat', 'utf8'); const start = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]) / 100; const age = Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]) - start; const starts = fs.readFileSync('/tmp/couli-starts', 'utf8').trim().split('\\n').length; const settled = fs.existsSync('/tmp/couli-settled'); const ok = age >= 30 && (settled || starts === 1); process.exit(ok ? 0 : 1);"
       interval: 10s
       timeout: 5s
       retries: 3

@@ -5,9 +5,9 @@ import { appendFileSync, readFileSync } from 'node:fs';
 
 // 1. Start counter for the compose health checks. /tmp lives in the container's writable layer:
 //    it survives an automatic restart of the same container and starts empty in every container
-//    that deploy.sh recreates. A process that started more than once before its first healthy
-//    check (an early crash of worker or payout, say) therefore never reports healthy, so
-//    `up --wait` fails and deploy.sh rolls back.
+//    that deploy.sh recreates. A process that started more than once before deploy.sh marks the
+//    deployment settled (/tmp/couli-settled, after all five are healthy with RestartCount 0)
+//    therefore never reports healthy, so `up --wait` fails and deploy.sh rolls back.
 appendFileSync('/tmp/couli-starts', `${String(Date.now())}\n`);
 
 // 2. api only: the access-token signing key (contract in apps/api/src/modules/platform/config/

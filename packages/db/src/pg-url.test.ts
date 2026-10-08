@@ -102,3 +102,48 @@ it('describeError prints the name, a short code and the masked message, never th
   expect(describeError(odd)).toBe('Error: boom');
   expect(describeError('postgres://u:SuperSecret7@h/db')).toBe('非 Error 异常（string）');
 });
+
+it('redactPgUrl and redactCredentials also mask sslpassword, in any case, encoding or form', () => {
+  const both = 'postgres://couli_migrator@db/couli?password=ExampleA1&sslpassword=ExampleB2';
+  expect(redactPgUrl(both)).toBe('postgres://couli_migrator@db/couli?password=***&sslpassword=***');
+  expect(redactCredentials(both)).toBe(
+    'postgres://couli_migrator@db/couli?password=***&sslpassword=***',
+  );
+  const variants = redactPgUrl(
+    'postgresql://u@db/couli?SSLPassword=ExampleC3&sslmode=verify-ca&ssl%70assword=ExampleD4&sslpassword=ExampleE5',
+  );
+  expect(variants).toBe(
+    'postgresql://u@db/couli?SSLPassword=***&sslmode=verify-ca&ssl%70assword=***&sslpassword=***',
+  );
+  const keywords = redactCredentials(
+    "host=db sslpassword=ExampleF6 sslkey=/k.pem SSLPASSWORD='Example G7' password=ExampleH8",
+  );
+  for (const secret of ['ExampleA1', 'ExampleB2', 'ExampleC3', 'ExampleD4', 'ExampleE5']) {
+    expect(variants + redactCredentials(both)).not.toContain(secret);
+  }
+  for (const secret of ['ExampleF6', 'Example G7', 'ExampleH8']) {
+    expect(keywords).not.toContain(secret);
+  }
+  expect(keywords).toContain('sslkey=/k.pem');
+  expect(redactCredentials('sslpasswords=kept mysslpassword=kept')).toBe(
+    'sslpasswords=kept mysslpassword=kept',
+  );
+});
+
+it('redactCredentials masks a URL password with unencoded @ / ? # as a whole', () => {
+  const cases = [
+    ['postgres://u:Sec@ret16@h/db', 'Sec', 'ret16'],
+    ['postgresql://u:S/ecret17@h/db', 'S/ecret17', 'ecret17'],
+    ['postgres://u:Sec#ret22@h/db', 'Sec#ret22', 'ret22'],
+    ['postgres://u:Sec?ret23@h/db', 'Sec?ret23', 'ret23'],
+    ['postgres://u:A@b/c?d#e@h:5433/db?sslmode=require', 'A@b', 'c?d#e'],
+  ] as const;
+  for (const [url, ...parts] of cases) {
+    const masked = redactCredentials(`连接失败 ${url} 已重试`);
+    expect(masked).toMatch(/^连接失败 postgres(?:ql)?:\/\/u:\*\*\*@h/);
+    expect(masked).toMatch(/ 已重试$/);
+    for (const part of parts) expect(masked).not.toContain(part);
+  }
+  expect(redactPgUrl('postgres://u:Sec@ret16@h/db')).toBe('postgres://u:***@h/db');
+  expect(redactCredentials('postgres://u@h/db and x@y')).toBe('postgres://u@h/db and x@y');
+});
