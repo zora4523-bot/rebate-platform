@@ -9,7 +9,7 @@ type: guard-change
 # ② checkTimeouts：两项超时都须在第一条非 SET 语句之前设为大于 0 的值；值为 0（含 '0'、'0ms'、'0s'、'0min'、'0h'、'0d'、按 PostgreSQL 取整后为 0 ms 的数如 0.4）、DEFAULT、或被同语句尾注释 / 块注释遮住的写法按「未设」报 require-lock-timeout / require-statement-timeout；`'5s' -- not set to 0` 这种注释在值之后的写法按已设。
 #    文件中任何位置（含设好之后）出现 `RESET lock_timeout`、`RESET statement_timeout`、`RESET ALL`，或把两项之一再设为 0 / DEFAULT，同样报对应规则。
 # ③ 冻结迁移：导出 FROZEN_MIGRATIONS（文件名 → sha256 十六进制），收 0001–0018 与 0019_device-registrations-created-at-insert.sql 当前主干内容；CLI 对
-#    db/migrations 中名字在表里的文件校验哈希，不符 stderr 含 `<文件名> changed after merge` 退出 1；序号 ≤ GATE_BASELINE 却不在表里的 .sql 文件 stderr
+#    db/migrations 中名字在表里的文件校验哈希，不符 stderr 含 `<文件名> changed after merge` 退出 1；目录里有任一冻结文件时（任务书 §10 口径修正），序号 ≤ GATE_BASELINE 却不在表里的 .sql 文件 stderr
 #    含 `<文件名> is numbered at or below the gate baseline` 退出 1；db/migrations 里 .js / .cjs / .mjs / .ts 文件（迁移工具会执行）stderr 含
 #    `<文件名> is not a SQL migration` 退出 1；目录里只要有任一冻结文件，表里每个文件都必须存在，缺的 stderr 含 `<文件名> is missing` 退出 1
 #    （台账评审 Codex P2：删掉冻结迁移会让新环境跳过它；只含新迁移的 --root 夹具不触发本条）。GATE_BASELINE 仍为 18，selectMigrations 语义不变。
@@ -35,5 +35,5 @@ accept:
   - 'pnpm verify'
   - 'pnpm run lint:migrations'
   - 'test/spec/db/lint-migrations/**'
-status: todo
-pr: null
+status: done
+pr: 283
