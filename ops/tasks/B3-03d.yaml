@@ -1,26 +1,25 @@
 id: B3-03d
 repo: rebate-platform
-title: 流式输出第四段（暂不开工）：HTTP 接线——POST /v1/agent/sessions/{id}/messages 的 SSE 响应与 ①～⑤ 校验、POST /v1/agent/runs/{run_id}/cancel、受理前错误的 JSON 外壳与 Retry-After、agent 模块入口与 stream 进程挂载
+title: 流式输出第四段：HTTP 层——POST /v1/agent/sessions、GET …/current、POST …/{id}/messages（SSE 与 ①～⑩ 受理串起）、POST /v1/agent/runs/{run_id}/cancel、受理前错误的 JSON 外壳与 Retry-After；会话 / run / 消息的 PG 读写；不挂载
 type: impl
-# 2026-10-06 草稿（B3 拆分子代理，couli-runs/B3-02-03/plan.md §2.2、§4）。与 CODEX-IMPL/ledger-drafts/B3-03d 同范围。
-# 开工条件（deps 只能写已入账任务，其余写在这里，派发前重新评审本台账）：
-#   ① 契约：contracts/openapi.yaml 加 /v1/agent/*，并定 ⑥ 重复请求的响应形状（plan.md §6 K2）——契约线、串行、Opus；
-#   ② 迁移：agent_sessions / agent_runs / agent_messages（④ 会话归属与过期、⑥ 的持久去重）——迁移线、串行、Opus；
-#   ③ stream 入口的请求签名与令牌阶段（BR-ID-01 ①–⑦，B1-02h 等）与同意记录读取入口（identity index）已合并；
-#   ④ B3-05 Orchestrator 的 RunBody 接口定稿；⑤ apps/api/src/app.module.ts 无在途占用。
-# 依据：05 B3-03；BR-AI-23 校验顺序；BR-AI-20 会话归属（非所有者与不存在一律 30504）；02 §9.1（stream 进程）。
-# 风险级 RV2（app.module.ts、main.stream.ts 不在 risk-map），两家评审。
+# 2026-10-06 草稿（couli-runs/B3-02-03/plan.md §2.2、§4）；2026-10-08 编排者（staging-b3-term）重新评审并收窄：原开工条件 ①② 已满足（CT-08d #290、B3-09a #297），
+#   ③ 同意记录读取入口未入 identity index、④ B3-05 RunBody 未定稿、⑤ app.module.ts 有在途（B1-05g），所以挂载到 stream 进程与 app.module 拆给 B3-03f。
+# 做法：AgentHttpDeps 端口注入（plan.md §2.2：access ①、identityGate ②、consent ③、sessions ④、admission、runs、registry、body、limits）；本段实现 HTTP 控制器、
+#   SSE 帧写出（流协议 contracts/agent-stream.schema.json，CT-08a～d）、①～⑩ 顺序（BR-AI-23）、会话归属（BR-AI-20：非所有者与不存在一律 30504）、
+#   ⑥ 重复消息两帧（04 §8.1），以及 agent_sessions / agent_runs / agent_messages 的 PG 读写（store/**，迁移 0021）。consent 与 body 只定端口，不给放行默认值。
+# PG 写入口径（B3-09a 评审提醒）：agent_runs.user_text 只能在 INSERT 时写（之后只能清空），受理插入 run 行时就带脱敏文本；回复行（assistant）与用户行在受理时同步写；
+#   收尾列从 NULL 写一次（同值重写放行，并发后到者 23001）。不挂 AgentModule 到 app.module / main.stream.ts（B3-03f）。
+# 风险：apps/api/src/modules/agent/** 为 RV1（risk-map）；PR 带规则测试，两家评审。属 B3-03 整行（approvals 第 23 条）。
 refs: [BR-AI-23, BR-AI-20]
 refs_hash:
   BR-AI-23: e4d4c7173f74
   BR-AI-20: ed15f04bab16
-deps: [B3-03b, B3-03c]
+deps: [B3-03b, B3-03c, CT-08d, B3-09a]
 paths:
   - 'apps/api/src/modules/agent/http/**'
+  - 'apps/api/src/modules/agent/store/**'
   - 'apps/api/src/modules/agent/index.ts'
   - 'apps/api/src/modules/agent/agent.module.ts'
-  - 'apps/api/src/app.module.ts'
-  - 'apps/api/src/main.stream.ts'
 test_paths:
   - 'test/spec/agent/stream-http/**'
 impl: codex
