@@ -1,0 +1,40 @@
+id: CT-06d
+repo: rebate-platform
+title: 迁移门禁收尾——CT-06b / CT-06c 两家评审遗留的 S2：资金表保护对象的定义变化须登记审批、资金对象改名、关超时的其余写法、DO 块判定收窄与字符串正文、SELECT INTO / CTAS 余项、引号紧贴关键字、脚本迁移扩展名、已合并迁移只增不改
+type: guard-change
+# 2026-10-08 入账（负责人同日「CT-06c 合并后把剩下的 S2 开成 CT-06d 继续做」）。来源：CT-06b（#283）、CT-06c（#291）两家代码评审与规则测试过审记下的 S2 与范围外项。只收紧（第 ② 条是收窄误拒），不改任何 BR。
+# 契约（规则测试按此写；CT-06a～CT-06c 的规则测试除 ① 所说一处外不改、继续通过，其余只新增 test/spec/db/lint-migrations/ 下的文件）：
+# ① 资金表保护对象的定义变化一律要人工审批（台账评审 Codex 两条 P1：「正文有 RAISE EXCEPTION」与「同函数、同类唯一」都证明不了保护还在，如 `IF false THEN RAISE`、
+#    触发器去掉 DELETE、唯一列换掉）：资金表触发器函数的 CREATE OR REPLACE，以及按同名重建但定义与现有不同（规范化后比对 db/schema.sql 与先前迁移里的定义：小写、
+#    合并空白、去引号与 schema、去 OR REPLACE / IF NOT EXISTS / CONCURRENTLY / ONLY / USING btree）的触发器、约束、索引，都拒；只有登记在 `APPROVED_GUARD_CHANGES`
+#    （tools/ci/lint-migrations.ts，文件名 → sha256，第三类保护路径，改它要两家评审加批准标签）的迁移放行，主干 0020 先登记。定义完全相同的重建照常放行；原定义查不到（无 schema 上下文的纯函数调用）时保持 CT-06c 行为。CT-06c `[AC-CT-06c#18]` 里「保留抛错的替换放行」一处随之改为拒（只收紧，本任务唯一改动的已有规则测试）。
+# ② `ALTER INDEX | TRIGGER … RENAME`、`ALTER TABLE <资金表> RENAME CONSTRAINT` 作用于资金表对象一律拒（消息含 `on funds or attribution table`）；`ENABLE REPLICA TRIGGER` 与 DISABLE 同拒；归属查不到的索引不得以「别的表上的同名索引」算作重建；
+#    引号标识符紧贴 CONSTRAINT / TRIGGER / INDEX / ON 等关键字（`DROP CONSTRAINT"x"`）与加空格识别结果相同。
+# ③ 超时：`SELECT set_config('lock_timeout' | 'statement_timeout', <0 / '0' / DEFAULT 等>, …)`、参数名加引号（`SET LOCAL "lock_timeout" = 0`）、E'0' 等转义字面量、DO 块里的 SET / RESET 都按「关掉」处理；取整按 PostgreSQL（0.5 ms、'500us' 取整为 0 算未设）。
+# ④ DO 块：ALTER … TYPE 只认 `ALTER TABLE … ALTER [COLUMN] x [SET DATA] TYPE`（名为 type 的列、`ALTER TYPE … ADD VALUE` 不报）；只在 EXECUTE 的字符串与正文语句里找 DROP / RENAME / TRUNCATE（RAISE 的消息文字不算）；`DO '…'` 普通字符串正文同样检查。
+# ⑤ SELECT … INTO / CTAS：按顶层语句类型判断（列别名 "update"、FOR UPDATE 不影响）；CTAS 在 AS 之前可有 ON COMMIT、WITH (…)、TABLESPACE 等子句。
+# ⑥ db/migrations 里除 `NNNN_kebab-name.sql` 与 README.md 外的文件（含 .cts / .mts 等任何 node-pg-migrate 会执行的脚本）一律拒。
+# ⑦ 已合并迁移只增不改：`db/migrations/**` 登记为保护路径第一类（只增），guard-git 的 test-guard 对修改、删除、改名已有迁移报错（与 test/spec 同规则，需批准标签）；protected-paths.json、工作流内嵌副本、tools/guard/lib/protected.test.ts、AGENTS.md §5 四处同步（同 CT-06a 登记 .squawk.toml 的做法）。
+# 将来 pg-boss 升级迁移若照抄 0002 生成器结尾（lock_timeout 恢复 DEFAULT、DO 块删分区）会被门禁拒：本任务在 db/AGENTS.md 第 11 条写明生成器输出须按门禁改写，不改生成器。
+# 碰 tools/**、protected-paths（第二、三类）、.github、AGENTS.md，合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
+refs: []
+refs_hash: {}
+deps: [CT-06c]
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'tools/guard/protected-paths.json'
+  - 'tools/guard/lib/protected.test.ts'
+  - '.github/workflows/protected-paths.yml'
+  - 'AGENTS.md'
+  - 'db/AGENTS.md'
+test_paths:
+  - 'test/spec/db/lint-migrations/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm run lint:migrations'
+  - 'test/spec/db/lint-migrations/**'
+status: todo
+pr: null
