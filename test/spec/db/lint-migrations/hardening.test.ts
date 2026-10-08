@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { gate, ROOT, run, TIMEOUTS, withFixture } from './kit.ts';
 
+// CLI cases start squawk several times per case; CI runners need more than vitest's 5 s default
+// (#18 timed out on CI, rebate-platform#283). Timing only: assertions unchanged.
+const CLI_TIMEOUT_MS = 60_000;
+
 // CT-06b §9.2 是本文件的规则来源。通过对照与拒绝样例放在同一断言组，
 // 每组都含 CT-06a 尚未实现的行为；不靠修改实现或测试钩子制造先红。
 const FILE = '0020_hardening.sql';
@@ -110,21 +114,25 @@ it('[AC-CT-06b#2] fundsTableAt 以零起算行及字节列定位，不能跨到�
   }
 });
 
-it('[AC-CT-06b#3] CLI 的真实 squawk 告警含中文前缀时仍禁止资金表借用同行 ignore', () => {
-  for (const prefix of [`/* ${'中文'.repeat(24)} */ `, `SELECT '${'中文'.repeat(24)}'; `]) {
-    // ignore 属于第一条非资金语句；后面的 orders 只能由去掉 ignore 的二次扫描发现。
-    const sql = `${TIMEOUTS}-- Obsolete article column.\n-- squawk-ignore ban-drop-column\nALTER TABLE app.articles DROP COLUMN a; ${prefix}ALTER TABLE app.orders DROP COLUMN c;`;
-    withFixture({ [FILE]: sql.replace('app.orders', 'app.other_articles') }, (root) => {
-      const result = run(['--root', root]);
-      expect(result.status, result.stderr + result.stdout).toBe(0);
-    });
-    withFixture({ [FILE]: sql }, (root) => {
-      const result = run(['--root', root]);
-      expect(result.status, result.stderr + result.stdout).toBe(1);
-      expect(result.stderr).toContain('funds or attribution table orders');
-    });
-  }
-});
+it(
+  '[AC-CT-06b#3] CLI 的真实 squawk 告警含中文前缀时仍禁止资金表借用同行 ignore',
+  () => {
+    for (const prefix of [`/* ${'中文'.repeat(24)} */ `, `SELECT '${'中文'.repeat(24)}'; `]) {
+      // ignore 属于第一条非资金语句；后面的 orders 只能由去掉 ignore 的二次扫描发现。
+      const sql = `${TIMEOUTS}-- Obsolete article column.\n-- squawk-ignore ban-drop-column\nALTER TABLE app.articles DROP COLUMN a; ${prefix}ALTER TABLE app.orders DROP COLUMN c;`;
+      withFixture({ [FILE]: sql.replace('app.orders', 'app.other_articles') }, (root) => {
+        const result = run(['--root', root]);
+        expect(result.status, result.stderr + result.stdout).toBe(0);
+      });
+      withFixture({ [FILE]: sql }, (root) => {
+        const result = run(['--root', root]);
+        expect(result.status, result.stderr + result.stdout).toBe(1);
+        expect(result.stderr).toContain('funds or attribution table orders');
+      });
+    }
+  },
+  CLI_TIMEOUT_MS,
+);
 
 it('[AC-CT-06b#4] 两种超时必须有效且在 DDL 前设置，零值、取整为零、DEFAULT 与注释均不能绕过', async () => {
   const { checkTimeouts } = await timeoutGate();
@@ -206,37 +214,41 @@ it('[AC-CT-06b#5] 任意位置 RESET 或重新禁用超时都报错，后来恢�
   }
 });
 
-it('[AC-CT-06b#6] CLI 超时错误走 stdout 的 gcc 诊断并在 squawk 前退出', () => {
-  const cases = [
-    [
-      "SET LOCAL lock_timeout = 0.4;\nSET LOCAL statement_timeout = '5s';",
-      ['require-lock-timeout'],
-    ],
-    [
-      "SET LOCAL lock_timeout = '5s';\nSET LOCAL statement_timeout TO DEFAULT;",
-      ['require-statement-timeout'],
-    ],
-    [`${TIMEOUTS}${DDL}\nRESET ALL;`, ['require-lock-timeout', 'require-statement-timeout']],
-    [`${TIMEOUTS}${DDL}\nSET LOCAL lock_timeout = 0 /* x */;`, ['require-lock-timeout']],
-  ] as const;
-  withFixture({ [FILE]: TIMEOUTS + DDL }, (root) => {
-    expect(run(['--root', root]).status).toBe(0);
-  });
-  for (const [sql, rules] of cases) {
-    withFixture({ [FILE]: sql + '\n' + DDL }, (root) => {
-      const result = run(['--root', root, '--squawk', join(root, 'absent-squawk')]);
-      expect(result.status).toBe(1);
-      for (const rule of rules) {
-        expect(result.stdout).toMatch(
-          new RegExp(`${FILE.replace('.', '\\.')}:\\d+:\\d+: warning: ${rule}\\b`),
-        );
-        expect(result.stderr).not.toContain(rule);
-      }
-      expect(result.stderr).not.toContain('absent-squawk');
-      expect(result.stdout).not.toContain('squawk over');
+it(
+  '[AC-CT-06b#6] CLI 超时错误走 stdout 的 gcc 诊断并在 squawk 前退出',
+  () => {
+    const cases = [
+      [
+        "SET LOCAL lock_timeout = 0.4;\nSET LOCAL statement_timeout = '5s';",
+        ['require-lock-timeout'],
+      ],
+      [
+        "SET LOCAL lock_timeout = '5s';\nSET LOCAL statement_timeout TO DEFAULT;",
+        ['require-statement-timeout'],
+      ],
+      [`${TIMEOUTS}${DDL}\nRESET ALL;`, ['require-lock-timeout', 'require-statement-timeout']],
+      [`${TIMEOUTS}${DDL}\nSET LOCAL lock_timeout = 0 /* x */;`, ['require-lock-timeout']],
+    ] as const;
+    withFixture({ [FILE]: TIMEOUTS + DDL }, (root) => {
+      expect(run(['--root', root]).status).toBe(0);
     });
-  }
-});
+    for (const [sql, rules] of cases) {
+      withFixture({ [FILE]: sql + '\n' + DDL }, (root) => {
+        const result = run(['--root', root, '--squawk', join(root, 'absent-squawk')]);
+        expect(result.status).toBe(1);
+        for (const rule of rules) {
+          expect(result.stdout).toMatch(
+            new RegExp(`${FILE.replace('.', '\\.')}:\\d+:\\d+: warning: ${rule}\\b`),
+          );
+          expect(result.stderr).not.toContain(rule);
+        }
+        expect(result.stderr).not.toContain('absent-squawk');
+        expect(result.stdout).not.toContain('squawk over');
+      });
+    }
+  },
+  CLI_TIMEOUT_MS,
+);
 
 it('[AC-CT-06b#7] 冻结清单确切收录 19 个原文件及 sha256，保留选择语义和真实仓库空操作', async () => {
   const module = await gate();
@@ -305,6 +317,7 @@ it.each([false, true])(
       }
     });
   },
+  CLI_TIMEOUT_MS,
 );
 
 it.each([false, true])(
@@ -342,6 +355,7 @@ it.each([false, true])(
       });
     }
   },
+  CLI_TIMEOUT_MS,
 );
 
 it.each([false, true])(
@@ -362,6 +376,7 @@ it.each([false, true])(
       });
     }
   },
+  CLI_TIMEOUT_MS,
 );
 
 it.each([false, true])(
@@ -383,6 +398,7 @@ it.each([false, true])(
       );
     }
   },
+  CLI_TIMEOUT_MS,
 );
 
 const DO_SAFE = [
@@ -522,25 +538,29 @@ it('[AC-CT-06b#17] 引号表名紧贴 TABLE 或 DROP 时照常拒绝资金表 ig
   }
 });
 
-it('[AC-CT-06b#18] CLI 新自检统一写 stderr 并在 squawk 前拒绝，合法紧贴金额声明仍通过', () => {
-  withFixture(
-    { [FILE]: TIMEOUTS + 'CREATE TABLE app.t (id bigint PRIMARY KEY, "amount_fen"bigint);' },
-    (root) => {
-      expect(run(['--root', root]).status).toBe(0);
-    },
-  );
-  const cases: readonly (readonly [string, string])[] = [
-    ...DO_BAD.map((sql) => [sql, 'destructive DDL inside a DO block'] as const),
-    ...SCHEMA_BAD.map(([sql, name]) => [sql, `funds or attribution table ${name}`] as const),
-    ...RENAME_BAD.map(
-      (sql) =>
-        [sql, 'money column amount_fen must be declared as bigint, not renamed into'] as const,
-    ),
-    ...DERIVED_BAD.map((sql) => [sql, 'must be declared as bigint'] as const),
-    ...QUOTED_MONEY_BAD.map((sql) => [sql, 'amount_fen must be bigint'] as const),
-    ...QUOTED_FUNDS_BAD.map((sql) => [sql, 'funds or attribution table orders'] as const),
-  ];
-  for (const [sql, message] of cases) {
-    withFixture({ [FILE]: TIMEOUTS + sql }, (root) => refuseBeforeSquawk(root, message));
-  }
-});
+it(
+  '[AC-CT-06b#18] CLI 新自检统一写 stderr 并在 squawk 前拒绝，合法紧贴金额声明仍通过',
+  () => {
+    withFixture(
+      { [FILE]: TIMEOUTS + 'CREATE TABLE app.t (id bigint PRIMARY KEY, "amount_fen"bigint);' },
+      (root) => {
+        expect(run(['--root', root]).status).toBe(0);
+      },
+    );
+    const cases: readonly (readonly [string, string])[] = [
+      ...DO_BAD.map((sql) => [sql, 'destructive DDL inside a DO block'] as const),
+      ...SCHEMA_BAD.map(([sql, name]) => [sql, `funds or attribution table ${name}`] as const),
+      ...RENAME_BAD.map(
+        (sql) =>
+          [sql, 'money column amount_fen must be declared as bigint, not renamed into'] as const,
+      ),
+      ...DERIVED_BAD.map((sql) => [sql, 'must be declared as bigint'] as const),
+      ...QUOTED_MONEY_BAD.map((sql) => [sql, 'amount_fen must be bigint'] as const),
+      ...QUOTED_FUNDS_BAD.map((sql) => [sql, 'funds or attribution table orders'] as const),
+    ];
+    for (const [sql, message] of cases) {
+      withFixture({ [FILE]: TIMEOUTS + sql }, (root) => refuseBeforeSquawk(root, message));
+    }
+  },
+  CLI_TIMEOUT_MS,
+);
