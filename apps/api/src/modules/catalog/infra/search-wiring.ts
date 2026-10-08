@@ -6,6 +6,7 @@ import { deriveProductKey, ProductKeyUnderivable } from '@couli/domain';
 import {
   FIELD_CRYPTO_MESSAGES,
   FieldCryptoError,
+  RedisUnavailableError,
   type Clock,
   type FieldCrypto,
   type RedisNamespace,
@@ -180,29 +181,49 @@ export function createUnionSearchUpstream(options: UnionSearchUpstreamOptions): 
     return `${input.appId}:cursor:${input.platform}:${query}:${String(pageNo)}`;
   }
 
+  /**
+   * One union page; `saved` is false when its continuation cursor could not be remembered because
+   * Redis was unavailable (02 §14: the union answer is still used; D6-8: no next cursor then).
+   */
   async function fetchPage(
     input: SearchUpstreamRequest,
     pageNo: number,
     cursor: string | undefined,
-  ): Promise<Page<UnionItem>> {
+  ): Promise<{ readonly page: Page<UnionItem>; readonly saved: boolean }> {
     const page = await adapterOf(input.platform).searchItems(
       { keyword: input.keyword, ...(cursor === undefined ? {} : { cursor }) },
       context(input.appId),
     );
     if (ledger !== null && page.nextCursor !== null) {
-      await ledger.set(ledgerKey(input, pageNo + 1), page.nextCursor, CURSOR_LEDGER_TTL_SECONDS);
+      try {
+        await ledger.set(ledgerKey(input, pageNo + 1), page.nextCursor, CURSOR_LEDGER_TTL_SECONDS);
+      } catch (error: unknown) {
+        if (!(error instanceof RedisUnavailableError)) throw error;
+        return { page, saved: false };
+      }
     }
-    return page;
+    return { page, saved: true };
+  }
+
+  /** A remembered cursor, or null when none is remembered or Redis is unavailable (walk). */
+  async function rememberedCursor(input: SearchUpstreamRequest): Promise<string | null> {
+    if (ledger === null) return null;
+    try {
+      return await ledger.get(ledgerKey(input, input.pageNo));
+    } catch (error: unknown) {
+      if (!(error instanceof RedisUnavailableError)) throw error;
+      return null;
+    }
   }
 
   async function cursorOf(input: SearchUpstreamRequest): Promise<string | null | undefined> {
     if (input.pageNo === 1) return undefined;
-    const remembered = ledger === null ? null : await ledger.get(ledgerKey(input, input.pageNo));
+    const remembered = await rememberedCursor(input);
     if (remembered !== null) return remembered;
     // Walk from page 1 to recover the cursor; null means the upstream has no such page.
     let cursor: string | undefined;
     for (let pageNo = 1; pageNo < input.pageNo; pageNo++) {
-      const page = await fetchPage(input, pageNo, cursor);
+      const { page } = await fetchPage(input, pageNo, cursor);
       if (page.nextCursor === null) return null;
       cursor = page.nextCursor;
     }
@@ -213,10 +234,11 @@ export function createUnionSearchUpstream(options: UnionSearchUpstreamOptions): 
     async search(input) {
       const cursor = await cursorOf(input);
       if (cursor === null) return { items: [], hasMore: false };
-      const page = await fetchPage(input, input.pageNo, cursor);
+      const { page, saved } = await fetchPage(input, input.pageNo, cursor);
       return {
         items: await toCandidates(input.appId, input.platform, page.items),
         hasMore: page.nextCursor !== null,
+        ...(saved ? {} : { cursorUnsaved: true }),
       };
     },
     async materialFeed(input): Promise<SearchUpstreamPage> {

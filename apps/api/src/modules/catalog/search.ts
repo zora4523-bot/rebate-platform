@@ -2,7 +2,12 @@
 // The HTTP controller will supply contract-validated query parameters and server-owned ports.
 import type { components, operations } from '@couli/contracts-ts';
 import type { Logger } from 'pino';
-import { GovernanceError, getMaterialChannels, type Clock } from '../platform/index.ts';
+import {
+  GovernanceError,
+  RedisUnavailableError,
+  getMaterialChannels,
+  type Clock,
+} from '../platform/index.ts';
 import {
   DemoUnionError,
   UnionError,
@@ -57,6 +62,11 @@ export interface SearchUpstreamPage {
    * (BR-PROD-07 熔断降级): every card of the page carries stale=true and its original quoted_at.
    */
   readonly stale?: boolean;
+  /**
+   * True when the union continuation cursor of this page could not be remembered because Redis
+   * was unavailable (02 §14, D6-8): the page is still delivered, but without a next cursor.
+   */
+  readonly cursorUnsaved?: boolean;
 }
 
 /** Adapter/cache seam: B1-05g owns caching, not this use case. No product-pool fallback. */
@@ -421,7 +431,19 @@ async function searchPages(
   let sessionId: string | null = null;
   let session: SearchSession | null = null;
   if (claims !== null) {
-    const stored = await sessions.read(appId, claims.search_session_id);
+    let stored: SearchSession | null;
+    try {
+      stored = await sessions.read(appId, claims.search_session_id);
+    } catch (error: unknown) {
+      // D6-8: a continuation cannot be deduplicated against an unreadable session; it fails as a
+      // search dependency outage (50304 { platform }) instead of a 500 or a silent restart.
+      if (!(error instanceof RedisUnavailableError)) throw error;
+      logger.warn(
+        { event: 'search_session_unavailable', platform, op: 'read', ...errorFields(error) },
+        'search: session store unavailable, continuation refused',
+      );
+      unavailable(platform, 'search session store unavailable', error);
+    }
     if (
       stored !== null &&
       stored.appId === appId &&
@@ -532,6 +554,8 @@ async function searchPages(
   }
   let lastPage = startPage;
   let hasMore = page.hasMore;
+  // D6-8: a page whose union cursor could not be remembered ends the list for this response.
+  let cursorLost = page.cursorUnsaved === true;
   await take(page.items, page.stale === true);
 
   // BR-PRICE-08: at most one refill page; has_more follows the last upstream page.
@@ -561,6 +585,7 @@ async function searchPages(
     if (refill !== null) {
       lastPage = startPage + 1;
       hasMore = refill.hasMore;
+      if (refill.cursorUnsaved === true) cursorLost = true;
       await take(refill.items, refill.stale === true);
     }
   }
@@ -584,23 +609,42 @@ async function searchPages(
     seenList.push(entry.key);
     seenPages.push(startPage);
   }
-  await sessions.write(
-    appId,
-    sessionId,
-    {
+  let continuable = true;
+  if (cursorLost) {
+    logger.warn(
+      { event: 'search_cursor_ledger_unavailable', platform, page_no: lastPage },
+      'search: union cursor ledger unavailable, returning this page without a next cursor',
+    );
+    continuable = false;
+  }
+  try {
+    await sessions.write(
       appId,
-      requester,
-      query: normalized,
-      touchedAtMs: nowMs,
-      seen: seenList,
-      seenPages,
-      dedupDisabled,
-    },
-    SEARCH_SESSION_TTL_SECONDS,
-  );
-
+      sessionId,
+      {
+        appId,
+        requester,
+        query: normalized,
+        touchedAtMs: nowMs,
+        seen: seenList,
+        seenPages,
+        dedupDisabled,
+      },
+      SEARCH_SESSION_TTL_SECONDS,
+    );
+  } catch (error: unknown) {
+    // D6-8 (02 §14): with Redis unavailable the priced and registered page is still delivered,
+    // but no next cursor is issued — cross-page deduplication cannot be guaranteed. Only the
+    // platform/redis unavailability is degraded; CAS contention (50304) and defects propagate.
+    if (!(error instanceof RedisUnavailableError)) throw error;
+    logger.warn(
+      { event: 'search_session_unavailable', platform, op: 'write', ...errorFields(error) },
+      'search: session store unavailable, returning this page without a next cursor',
+    );
+    continuable = false;
+  }
   // The page cap: no cursor is issued beyond SEARCH_MAX_PAGE_NO, so the list ends there.
-  const more = hasMore && lastPage + 1 <= SEARCH_MAX_PAGE_NO;
+  const more = continuable && hasMore && lastPage + 1 <= SEARCH_MAX_PAGE_NO;
   return {
     firstPage,
     items,

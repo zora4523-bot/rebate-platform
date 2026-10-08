@@ -260,7 +260,12 @@ function loadPage(value: unknown): CachedPage {
  * slot, relation_id, the requester or our session / cursor. The price upper bound is filtered
  * after the cache (AC-B1-05d#4) and is not a union parameter.
  */
-function searchKey(input: SearchUpstreamRequest, keyword: string, filterVersion: string): string {
+function searchKey(
+  input: SearchUpstreamRequest,
+  keyword: string,
+  filterVersion: string,
+  jdMode: string | null,
+): string {
   const params = canonicalJson({
     q: keyword,
     sort: input.sort,
@@ -268,9 +273,22 @@ function searchKey(input: SearchUpstreamRequest, keyword: string, filterVersion:
     start_price_fen: input.priceMinFen ?? null,
     page_no: input.pageNo,
     page_size: input.pageSize,
+    // The cached refs carry product keys derived under product_key.jd.mode (BR-PROD-03); a mode
+    // change must not serve keys of the old mode for the rest of the hit window.
+    ...(jdMode === null ? {} : { jd_product_key_mode: jdMode }),
   });
   const digest = createHash('sha1').update(params, 'utf8').digest('hex');
   return `${input.appId}:search:${input.platform}:${digest}:${filterVersion}`;
+}
+
+/** The JD product key mode the cached refs were derived under (absent = item, BR-PROD-03). */
+async function jdModeOf(
+  config: CatalogConfigReader,
+  input: SearchUpstreamRequest,
+): Promise<string | null> {
+  if (input.platform !== 'jd') return null;
+  const entry = await config.configValue(input.appId, 'product_key.jd.mode');
+  return entry === null ? 'item' : String(entry.value);
 }
 
 async function filterVersionOf(config: CatalogConfigReader, appId: string): Promise<string> {
@@ -303,7 +321,12 @@ export function cacheSearchUpstream(
       };
       if (cache === null) return upstream.search(request);
       const windows = await windowsOf(config, input.appId);
-      const key = searchKey(input, keyword, await filterVersionOf(config, input.appId));
+      const key = searchKey(
+        input,
+        keyword,
+        await filterVersionOf(config, input.appId),
+        await jdModeOf(config, input),
+      );
       const entry = await cache.read(key, loadPage);
       if (entry !== null && clock.now().getTime() - entry.fetchedAtMs <= windows.hitMs) {
         return { items: entry.value.items, hasMore: entry.value.hasMore };
