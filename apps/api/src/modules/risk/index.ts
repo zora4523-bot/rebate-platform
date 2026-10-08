@@ -11,6 +11,7 @@ export type {
   RateLimitResult,
   RateLimitOptions,
   RateLimitService,
+  RateLimitThresholdReaderOn,
 } from './application/rate-limit.ts';
 //
 // Also compiled by the `test` project: this file and everything it exports use erasable syntax
@@ -33,7 +34,11 @@ export type {
   MinimumVersionRoute,
   MinimumVersionGuard,
 } from './application/minimum-version.ts';
-export type { MinimumVersionReaders, RiskModuleOptions } from './risk.module.ts';
+export type {
+  MinimumVersionReaders,
+  RateLimitThresholdReaders,
+  RiskModuleOptions,
+} from './risk.module.ts';
 export {
   DEVICE_SIGNING_KEYS,
   SIGNATURE_CHECK,

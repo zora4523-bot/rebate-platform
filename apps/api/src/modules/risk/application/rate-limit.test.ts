@@ -2,6 +2,7 @@
 // scripted RedisHandle (no connection): these tests pin the arguments handed to the bucket script
 // and how its replies and failures are read; the script itself runs against a real Redis in the
 // rule tests (test/spec/risk/rate-limit/).
+import { createHash } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
 import {
   FixedClock,
@@ -11,6 +12,7 @@ import {
   type RedisScriptOptions,
 } from '../../platform/index.ts';
 import {
+  RATE_LIMIT_KEY_CONTEXT,
   createRateLimitService,
   createRateLimitThresholdReader,
   type RateLimitConfigReader,
@@ -285,4 +287,52 @@ it('[B1-03e §10] a failed configuration read uses the defaults and is not a sto
   expect(await service.check(request())).toEqual({ code: 0 });
   expect(calls[0]!.options.keys.map((key) => key.split(':')[2])).toEqual(['user', 'ip']);
   expect(lines.some((line) => String(line['msg']).startsWith('rate_limit_store_'))).toBe(false);
+});
+
+it('[B1-03e §11] with field crypto the identity part of a key is its keyed blind index', async () => {
+  const contexts: string[] = [];
+  const crypto = {
+    blindIndex(value: string, context: string) {
+      contexts.push(context);
+      return createHash('sha256').update(`secret:${context}:${value}`).digest('hex');
+    },
+  };
+  const redis = scriptedRedis(() => [1, 0]);
+  const service = createRateLimitService({
+    clock: new FixedClock('2031-05-06T07:08:09.000Z'),
+    redis: redis.handle,
+    thresholds: createRateLimitThresholdReader(config({})),
+    logger: createRootLogger({ entry: 'api', appEnv: 'test', level: 'silent' }),
+    crypto,
+  });
+  expect(await service.check(request())).toEqual({ code: 0 });
+  const unkeyed = createHash('sha256').update(IP).digest('hex').slice(0, 32);
+  const keyed = crypto.blindIndex(IP, RATE_LIMIT_KEY_CONTEXT).slice(0, 32);
+  const keys = redis.calls[0]!.options.keys;
+  expect(keys).toContain(`couli:search:ip:${keyed}:60`);
+  expect(keys.join()).not.toContain(unkeyed);
+  expect(new Set(contexts)).toEqual(new Set([RATE_LIMIT_KEY_CONTEXT]));
+});
+
+it('[B1-03e §11] a key that cannot be derived refuses (42901, Retry-After 1) without a script call', async () => {
+  const lines: Record<string, unknown>[] = [];
+  const redis = scriptedRedis(() => [1, 0]);
+  const service = createRateLimitService({
+    clock: new FixedClock('2031-05-06T07:08:09.000Z'),
+    redis: redis.handle,
+    thresholds: createRateLimitThresholdReader(config({})),
+    logger: createRootLogger(
+      { entry: 'api', appEnv: 'test', level: 'info' },
+      { write: (line: string) => void lines.push(JSON.parse(line) as Record<string, unknown>) },
+    ),
+    crypto: {
+      blindIndex: () => {
+        throw new Error('invalid_key');
+      },
+    },
+  });
+  expect(await service.check(request())).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(redis.calls).toEqual([]);
+  expect(lines.map((line) => line['msg'])).toEqual(['rate_limit_key_unavailable']);
+  expect(JSON.stringify(lines)).not.toContain(IP);
 });

@@ -76,7 +76,7 @@ import {
   createBlocklistService,
   createRateLimitThresholdReader,
   type MinimumVersionReaders,
-  type RateLimitThresholdReader,
+  type RateLimitThresholdReaders,
   type BlocklistService,
 } from './modules/risk/index.ts';
 import {
@@ -424,10 +424,16 @@ function riskModule(identity: DynamicModule): DynamicModule {
     rateLimit: {
       thresholds: {
         inject: [CLOCK, { token: DB, optional: true }],
-        useFactory: (clock: Clock, db?: Kysely<Database>): RateLimitThresholdReader | null =>
+        // pooled: the guard's cached reader; on: a fresh reader over the idempotency claim's
+        // transaction for the post-miss hook (no second pooled connection while holding one).
+        useFactory: (clock: Clock, db?: Kysely<Database>): RateLimitThresholdReaders | null =>
           db === undefined
             ? null
-            : createRateLimitThresholdReader(createContentReader({ db, clock })),
+            : {
+                pooled: createRateLimitThresholdReader(createContentReader({ db, clock })),
+                on: (handle) =>
+                  createRateLimitThresholdReader(createContentReader({ db: handle, clock })),
+              },
       },
     },
   });

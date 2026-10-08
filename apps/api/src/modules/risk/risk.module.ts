@@ -27,12 +27,14 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { map } from 'rxjs';
 import {
   CLOCK,
+  FIELD_CRYPTO,
   IDEMPOTENCY,
   REDIS,
   ROOT_LOGGER,
   registerIdempotencyEntryObserver,
   registerIdempotencyPostMissCheck,
   type Clock,
+  type FieldCrypto,
   type Idempotency,
   type RedisHandle,
   type RootLogger,
@@ -60,6 +62,7 @@ import {
   createRateLimitThresholdReader,
   type RateLimitService,
   type RateLimitThresholdReader,
+  type RateLimitThresholdReaderOn,
 } from './application/rate-limit.ts';
 import {
   DEVICE_SIGNING_KEYS,
@@ -89,6 +92,17 @@ export interface MinimumVersionReaders {
   readonly on: MinimumVersionReaderOn;
 }
 
+/** The rate limit thresholds port as app.module supplies it (content's configValue). */
+export interface RateLimitThresholdReaders {
+  /** Cached reader on the pool: the guard (non-idempotent operations, outside any transaction). */
+  readonly pooled: RateLimitThresholdReader;
+  /**
+   * A reader over a given handle: the post-miss hook builds one on the idempotency claim's
+   * transaction per judgement, so it never borrows a second pooled connection while holding one.
+   */
+  readonly on: RateLimitThresholdReaderOn;
+}
+
 export interface RiskModuleOptions {
   /** Modules that together export DEVICE_SIGNING_KEYS (the identity module). */
   readonly imports: NonNullable<DynamicModule['imports']>;
@@ -104,14 +118,17 @@ export interface RiskModuleOptions {
     'inject' | 'useFactory'
   >;
   /**
-   * Stage ⑬ (B1-03e): the thresholds port (content's configValue), built by app.module. A factory
-   * that returns null, or none at all, leaves the code defaults in force (no configuration read).
+   * Stage ⑬ (B1-03e): the thresholds port (content's configValue), built by app.module: a cached
+   * pooled reader for the guard and a reader factory over the idempotency claim's transaction for
+   * the post-miss hook (same split as minimumVersions). A factory that returns null, or none at
+   * all, leaves the code defaults in force (no configuration read). Bucket keys use FIELD_CRYPTO's
+   * blind index when the entry has a keyring.
    * The buckets need REDIS: without it stage ⑬ is not installed and one info line
    * `rate_limit_disabled` is logged at startup. A store that is wired but fails refuses (42901).
    */
   readonly rateLimit?: {
     readonly thresholds: Pick<
-      FactoryProvider<RateLimitThresholdReader | null>,
+      FactoryProvider<RateLimitThresholdReaders | null>,
       'inject' | 'useFactory'
     >;
   };
@@ -215,7 +232,7 @@ export class RiskModule {
    * registered, and an info line is logged once (B1-03c §13).
    */
   static forRoot(options: RiskModuleOptions): DynamicModule {
-    const thresholds: FactoryProvider<RateLimitThresholdReader | null> =
+    const thresholds: FactoryProvider<RateLimitThresholdReaders | null> =
       options.rateLimit === undefined
         ? { provide: RATE_LIMIT_THRESHOLDS, useFactory: () => null }
         : { provide: RATE_LIMIT_THRESHOLDS, ...options.rateLimit.thresholds };
@@ -253,12 +270,19 @@ export class RiskModule {
         thresholds,
         {
           provide: RATE_LIMIT_SERVICE,
-          inject: [CLOCK, ROOT_LOGGER, RATE_LIMIT_THRESHOLDS, { token: REDIS, optional: true }],
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            RATE_LIMIT_THRESHOLDS,
+            { token: REDIS, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
           useFactory: (
             clock: Clock,
             logger: RootLogger,
-            configured: RateLimitThresholdReader | null,
+            configured: RateLimitThresholdReaders | null,
             redis?: RedisHandle,
+            crypto?: FieldCrypto,
           ): RateLimitService | null => {
             if (redis === undefined) {
               logger.info({ stage: '13' }, 'rate_limit_disabled');
@@ -268,7 +292,9 @@ export class RiskModule {
               clock,
               redis,
               logger,
-              thresholds: configured ?? createRateLimitThresholdReader(DEFAULT_THRESHOLDS_CONFIG),
+              thresholds:
+                configured?.pooled ?? createRateLimitThresholdReader(DEFAULT_THRESHOLDS_CONFIG),
+              ...(crypto === undefined ? {} : { crypto }),
             });
           },
         },
@@ -303,6 +329,7 @@ export class RiskModule {
             MINIMUM_VERSION_READER,
             MINIMUM_VERSION_GATE,
             RATE_LIMIT_SERVICE,
+            RATE_LIMIT_THRESHOLDS,
             { token: IDEMPOTENCY, optional: true },
           ],
           useFactory: (
@@ -310,6 +337,7 @@ export class RiskModule {
             versions: MinimumVersionReaders | null,
             enabled: boolean,
             rateLimit: RateLimitService | null,
+            limits: RateLimitThresholdReaders | null,
             idempotency?: Idempotency,
           ) => {
             if (enabled && idempotency !== undefined) {
@@ -322,7 +350,7 @@ export class RiskModule {
             if (rateLimit !== null && idempotency !== undefined) {
               registerIdempotencyPostMissCheck(
                 idempotency,
-                createRateLimitPostMissCheck(rateLimit),
+                createRateLimitPostMissCheck(rateLimit, limits?.on),
               );
             }
             return true;

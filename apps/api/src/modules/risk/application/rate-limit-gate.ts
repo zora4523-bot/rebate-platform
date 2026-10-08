@@ -15,6 +15,7 @@
 // a Retry-After header in whole seconds. No risk_hits row (a rate limit is not a blocklist hit).
 import { HttpException } from '@nestjs/common';
 import {
+  idempotencyPostMissTransaction,
   tokenPrincipal,
   type CheckedRequest,
   type IdempotencyPostMissCheck,
@@ -24,7 +25,12 @@ import {
   contractRouteOf,
   type MinimumVersionRequest,
 } from './minimum-version.ts';
-import type { RateLimitRequest, RateLimitService } from './rate-limit.ts';
+import type {
+  RateLimitRequest,
+  RateLimitService,
+  RateLimitThresholdReader,
+  RateLimitThresholdReaderOn,
+} from './rate-limit.ts';
 
 /** The parsed Fastify request as stage ⑬ reads it. */
 export interface RateLimitHttpRequest extends MinimumVersionRequest {
@@ -78,10 +84,11 @@ export async function judgeRateLimit(
   service: RateLimitService,
   request: RateLimitHttpRequest,
   reply: RateLimitReply | undefined,
+  thresholds?: RateLimitThresholdReader,
 ): Promise<void> {
   const input = rateLimitRequestOf(request);
   if (input === undefined) return;
-  const result = await service.check(input);
+  const result = await service.check(input, thresholds);
   if (result.code === 0) return;
   reply?.header('Retry-After', String(result.retryAfterSec));
   throw new RateLimitedException(request.id, result.retryAfterSec);
@@ -109,12 +116,26 @@ export function createRateLimitGuard(service: RateLimitService) {
 
 /**
  * The post-miss hook part of stage ⑬: the HTTP request in MINIMUM_VERSION_SCOPE (nothing to judge
- * outside one, e.g. a job). It reads no database, so it never touches the claim's transaction.
+ * outside one, e.g. a job). The hook runs inside the idempotency claim's transaction, which holds
+ * a pooled connection: it must not borrow a second one (a pool full of claims would wait on
+ * itself, the pool having no acquire timeout), so the thresholds are read by a reader built on
+ * that transaction (idempotencyPostMissTransaction(), the RateLimitThresholdReaderOn factory:
+ * uncached, read on the claim's connection). Without a factory (no database on the entry) the
+ * service's own reader serves, which then reads no database (code defaults).
  */
-export function createRateLimitPostMissCheck(service: RateLimitService): IdempotencyPostMissCheck {
+export function createRateLimitPostMissCheck(
+  service: RateLimitService,
+  thresholdsOn?: RateLimitThresholdReaderOn,
+): IdempotencyPostMissCheck {
   return async () => {
     const scope = MINIMUM_VERSION_SCOPE.getStore();
     if (scope === undefined) return;
-    await judgeRateLimit(service, scope.request as RateLimitHttpRequest, scope.reply);
+    const trx = idempotencyPostMissTransaction();
+    await judgeRateLimit(
+      service,
+      scope.request as RateLimitHttpRequest,
+      scope.reply,
+      thresholdsOn === undefined || trx === undefined ? undefined : thresholdsOn(trx),
+    );
   };
 }

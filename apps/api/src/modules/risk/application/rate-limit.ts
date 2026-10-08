@@ -13,8 +13,10 @@
 //   rule). A missing key, malformed JSON, a wrong shape or a failed read falls back to the code
 //   defaults (06 Q-B4 as ruled in B1-03e §9.2): never a refusal.
 // Buckets (createRateLimitService): one Redis key per (app, group, dimension, identity, window),
-// `rl:<app_id>:<group>:<dim>:<sha256 of the identity, 32 hex>:<window_sec>`. The identity is hashed
-// so no uid, device id or IP is stored in Redis and keys stay bounded. Token arithmetic is integer:
+// `rl:<app_id>:<group>:<dim>:<digest of the identity, 32 hex>:<window_sec>`. The digest is the
+// deployment's keyed blind index (FIELD_CRYPTO, context `risk.rate_limit.key`; an unkeyed sha256
+// only where no keyring is wired), so no uid, device id or IP is stored in Redis or recoverable by
+// enumerating IPv4, and keys stay bounded. Token arithmetic is integer:
 // a bucket holds `limit × window_ms` units, one token is `window_ms` units and every elapsed
 // millisecond adds `limit` units, so refill is exact (no floating rounding at window boundaries).
 // One Lua script judges every bucket of the request first and spends one token from each only when
@@ -29,8 +31,11 @@
 // Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
 // for type-only imports, relative imports with `.ts`.
 import { createHash } from 'node:crypto';
+import type { DB } from '@couli/db';
+import type { Kysely } from 'kysely';
 import type {
   Clock,
+  FieldCrypto,
   RedisHandle,
   RootLogger,
   TokenPrincipal,
@@ -209,11 +214,32 @@ export interface RateLimitOptions {
   readonly redis: RedisHandle;
   readonly thresholds: RateLimitThresholdReader;
   readonly logger: RootLogger;
+  /**
+   * The deployment's field crypto (platform FIELD_CRYPTO): identities in bucket keys are its keyed
+   * blind index under RATE_LIMIT_KEY_CONTEXT, so whoever reads Redis cannot recover an IP, uid or
+   * device id by enumeration. Without it (an entry with no keyring, or a direct assembly) the key
+   * part is an unkeyed sha256.
+   */
+  readonly crypto?: Pick<FieldCrypto, 'blindIndex'>;
 }
 
+/** Blind index context of the identity part of a bucket key. */
+export const RATE_LIMIT_KEY_CONTEXT = 'risk.rate_limit.key';
+
 export interface RateLimitService {
-  check(request: RateLimitRequest): Promise<RateLimitResult>;
+  /**
+   * `thresholds`, when given, replaces the service's reader for this judgement only: the
+   * idempotency post-miss hook passes one over the claim's transaction, so a judgement inside the
+   * claim never borrows a second pooled connection (the buckets themselves touch only Redis).
+   */
+  check(request: RateLimitRequest, thresholds?: RateLimitThresholdReader): Promise<RateLimitResult>;
 }
+
+/**
+ * A RateLimitThresholdReader reading through the given handle (a transaction included: a
+ * Transaction<DB> is a Kysely<DB>). Used by the post-miss hook with the claim's transaction.
+ */
+export type RateLimitThresholdReaderOn = (db: Kysely<DB>) => RateLimitThresholdReader;
 
 /** Redis namespace of the buckets: keys read `rl:<app_id>:<group>:<dim>:…`. */
 export const RATE_LIMIT_NAMESPACE = 'rl';
@@ -280,9 +306,16 @@ interface Bucket {
   readonly rule: RateLimitRule;
 }
 
-/** Bounded, non-identifying key part for one identity of one dimension. */
-function digest(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 32);
+/**
+ * Bounded, non-identifying key part for one identity of one dimension: the keyed blind index when
+ * a field crypto is wired, else an unkeyed sha256 (32 hex either way).
+ */
+function digest(value: string, crypto: Pick<FieldCrypto, 'blindIndex'> | undefined): string {
+  const hex =
+    crypto === undefined
+      ? createHash('sha256').update(value).digest('hex')
+      : crypto.blindIndex(value, RATE_LIMIT_KEY_CONTEXT);
+  return hex.slice(0, 32);
 }
 
 /** One rule per window: two rules with the same window share a key, so keep the stricter. */
@@ -331,7 +364,7 @@ function failureFields(error: unknown): { reason: string; error_class: string } 
 
 /** B1-03e: reusable three-dimensional Redis buckets, policy lookup and outage alerts. */
 export function createRateLimitService(options: RateLimitOptions): RateLimitService {
-  const { clock, redis, thresholds, logger } = options;
+  const { clock, redis, logger } = options;
 
   /** Outage state of this process; null while the store answers. */
   let outage: { since: number; intervalStart: number; refused: Map<string, number> } | null = null;
@@ -376,14 +409,18 @@ export function createRateLimitService(options: RateLimitOptions): RateLimitServ
     outage = null;
   }
 
-  async function bucketsOf(request: RateLimitRequest, group: string): Promise<Bucket[]> {
+  async function bucketsOf(
+    request: RateLimitRequest,
+    group: string,
+    thresholds: RateLimitThresholdReader,
+  ): Promise<Bucket[]> {
     const ids = identities(request);
     const buckets: Bucket[] = [];
     for (const dimension of DIMENSIONS) {
       const id = ids[dimension];
       if (typeof id !== 'string' || id === '') continue;
       const rules = byWindow(await thresholds.rules(request.app_id, group, dimension));
-      const hashed = digest(id);
+      const hashed = digest(id, options.crypto);
       for (const rule of rules) {
         buckets.push({
           key: `${request.app_id}:${group}:${dimension}:${hashed}:${String(rule.window_sec)}`,
@@ -395,11 +432,22 @@ export function createRateLimitService(options: RateLimitOptions): RateLimitServ
   }
 
   return {
-    async check(request) {
+    async check(request, thresholds = options.thresholds) {
       if (request.entry !== 'api') return ALLOW;
       const group = await thresholds.groupFor(request.app_id, request.operationId);
       if (group === null) return ALLOW;
-      const buckets = await bucketsOf(request, group);
+      let buckets: Bucket[];
+      try {
+        buckets = await bucketsOf(request, group, thresholds);
+      } catch (error) {
+        // A key that cannot be derived (field crypto failure) refuses, never passes; the
+        // threshold reader itself never throws (failed reads fall back to the defaults).
+        logger.error(
+          { stage: '13', operation_id: request.operationId, ...failureFields(error) },
+          'rate_limit_key_unavailable',
+        );
+        return { code: 42901, retryAfterSec: RATE_LIMIT_STORE_RETRY_AFTER_SEC };
+      }
       if (buckets.length === 0) return ALLOW;
       const args: string[] = [String(clock.now().getTime())];
       let ttlCap = 1;

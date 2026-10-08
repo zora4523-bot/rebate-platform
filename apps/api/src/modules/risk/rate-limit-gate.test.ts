@@ -6,13 +6,18 @@ import 'reflect-metadata';
 import { Controller, HttpCode, Module, Post, type DynamicModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { afterEach, expect, it } from 'vitest';
+import type { DB } from '@couli/db';
+import { Kysely, PostgresDialect, type PostgresPool } from 'kysely';
+import { afterEach, expect, it, vi } from 'vitest';
 import {
   CLOCK,
   FixedClock,
   REDIS,
   ROOT_LOGGER,
+  createIdempotency,
   createRootLogger,
+  registerIdempotencyPostMissCheck,
+  type IdempotentRequest,
   type RedisHandle,
 } from '../platform/index.ts';
 import { MINIMUM_VERSION_SCOPE } from './application/minimum-version.ts';
@@ -22,7 +27,12 @@ import {
   rateLimitRequestOf,
   type RateLimitHttpRequest,
 } from './application/rate-limit-gate.ts';
-import { createRateLimitThresholdReader, type RateLimitService } from './application/rate-limit.ts';
+import {
+  createRateLimitService,
+  createRateLimitThresholdReader,
+  type RateLimitConfigReader,
+  type RateLimitService,
+} from './application/rate-limit.ts';
 import { DEVICE_SIGNING_KEYS } from './application/signature-check.ts';
 import { RiskModule } from './risk.module.ts';
 
@@ -90,15 +100,17 @@ async function build(options: { redis?: RedisHandle; minimum?: string | null }) 
         rateLimit: {
           thresholds: {
             inject: [],
-            useFactory: () =>
-              createRateLimitThresholdReader({
+            useFactory: () => {
+              const thresholds = createRateLimitThresholdReader({
                 configValue: async (_app, key) =>
                   key === 'rate_limit.ops'
                     ? { value: { recordConsent: 'consents' }, version: 1 }
                     : key === 'rate_limit.consents'
                       ? { value: { ip: [{ limit: 1, window_sec: 60 }] }, version: 1 }
                       : null,
-              }),
+              });
+              return { pooled: thresholds, on: () => thresholds };
+            },
           },
         },
       }),
@@ -212,4 +224,131 @@ it('[B1-03e §10] the post-miss hook judges the scoped request and sets Retry-Af
   await expect(refused).rejects.toBeInstanceOf(RateLimitedException);
   await expect(refused).rejects.toMatchObject({ retryAfterSec: 7 });
   expect(headers).toEqual([['Retry-After', '7']]);
+});
+
+/** A scripted pool: counts connection checkouts and logs which client ran which statement. */
+function scriptedPool() {
+  const log: string[] = [];
+  let checkouts = 0;
+  const pool = {
+    async connect() {
+      checkouts += 1;
+      const client = checkouts;
+      return {
+        release: () => undefined,
+        async query(text: string, params: readonly unknown[] = []) {
+          log.push(`${client}:${text}`);
+          let rows: unknown[] = [];
+          if (text.includes('pg_try_advisory_xact_lock')) rows = [{ acquired: true }];
+          else if (text.includes('current_setting')) rows = [{ value: '0' }];
+          else if (text.includes('config_items') && params.includes('rate_limit.ops'))
+            rows = [{ value: { openLink: 'limited' }, version: 1 }];
+          else if (text.includes('config_items') && params.includes('rate_limit.limited'))
+            rows = [{ value: { ip: [{ limit: 1, window_sec: 60 }] }, version: 1 }];
+          return { command: 'SELECT', rowCount: rows.length, rows };
+        },
+      };
+    },
+    end: async () => undefined,
+    options: {},
+  };
+  const db = new Kysely<DB>({
+    dialect: new PostgresDialect({ pool: pool as unknown as PostgresPool }),
+  }).withSchema('app');
+  return { db, log, checkouts: () => checkouts };
+}
+
+for (const mode of ['execute', 'executeInTransaction'] as const) {
+  it(`[B1-03e §11] ${mode}: the post-miss hook reads the thresholds on the claim's transaction, never on a second pooled connection`, async () => {
+    const { db, log, checkouts } = scriptedPool();
+    const clock = new FixedClock('2031-01-01T00:00:00Z');
+    const idempotency = createIdempotency({ db, clock, logger: { warn: () => undefined } });
+    const pooledRead = vi.fn(async () => null);
+    const handles: Kysely<DB>[] = [];
+    const thresholdsOn = (handle: Kysely<DB>) => {
+      handles.push(handle);
+      return createRateLimitThresholdReader({
+        async configValue(appId, key) {
+          const row = await handle
+            .selectFrom('config_items')
+            .select(['value', 'version'])
+            .where('app_id', '=', appId)
+            .where('key', '=', key)
+            .executeTakeFirst();
+          return row === undefined ? null : { value: row.value, version: row.version };
+        },
+      });
+    };
+    const redis = scripted([0, 2_500]);
+    const service = createRateLimitService({
+      clock,
+      redis: redis.handle,
+      logger: createRootLogger({ entry: 'api', appEnv: 'test', level: 'silent' }),
+      thresholds: createRateLimitThresholdReader({ configValue: pooledRead }),
+    });
+    registerIdempotencyPostMissCheck(
+      idempotency,
+      createRateLimitPostMissCheck(service, thresholdsOn),
+    );
+    const input: IdempotentRequest = {
+      appId: 'couli',
+      actor: { userId: '019a0000-0000-7000-8000-000000000010', deviceId: null, phoneHmac: null },
+      method: 'POST',
+      path: mode === 'execute' ? '/v1/links/l/open' : '/v1/withdrawals',
+      key: '019a0000-0000-7000-8000-0000000000aa',
+      body: {},
+      traceId: 'trace-1',
+    };
+    const handler = vi.fn(async () => ({
+      status: 200,
+      envelope: { code: 0, msg: '', trace_id: 'trace-1' },
+    }));
+    const headers: [string, string][] = [];
+    const reply = { header: (name: string, value: string) => headers.push([name, value]) };
+    const scope = {
+      request: httpRequest({ routeOptions: { url: '/v1/links/:link_id/open' } }),
+      reply,
+      idempotencyEntered: true,
+    };
+    await MINIMUM_VERSION_SCOPE.run(scope, async () => {
+      await expect(
+        mode === 'execute'
+          ? idempotency.execute(input, handler)
+          : idempotency.executeInTransaction(input, handler),
+      ).rejects.toMatchObject({ status: 429, retryAfterSec: 3 });
+    });
+    expect(checkouts()).toBe(1);
+    expect(pooledRead).not.toHaveBeenCalled();
+    expect(handles).toHaveLength(1);
+    expect(handles[0]).not.toBe(db);
+    const reads = log.filter((line) => line.includes('config_items'));
+    expect(reads).toHaveLength(2);
+    expect(reads.every((line) => line.startsWith('1:'))).toBe(true);
+    expect(redis.evals).toHaveLength(1);
+    expect(headers).toEqual([['Retry-After', '3']]);
+    expect(handler).not.toHaveBeenCalled();
+    await db.destroy();
+  });
+}
+
+it('[B1-03e §11] the guard path reads the thresholds through the pooled reader', async () => {
+  const redis = scripted([1, 0]);
+  const pooled = vi.fn<RateLimitConfigReader['configValue']>(async () => null);
+  const service = createRateLimitService({
+    clock: new FixedClock('2031-01-01T00:00:00Z'),
+    redis: redis.handle,
+    logger: createRootLogger({ entry: 'api', appEnv: 'test', level: 'silent' }),
+    thresholds: createRateLimitThresholdReader({ configValue: pooled }),
+  });
+  expect(
+    await service.check({
+      entry: 'api',
+      operationId: 'searchProducts',
+      app_id: 'couli',
+      client_ip: '192.0.2.7',
+    }),
+  ).toEqual({ code: 0 });
+  // Anonymous, no device: only the IP dimension is read.
+  expect(pooled.mock.calls.map(([, key]) => key)).toEqual(['rate_limit.ops', 'rate_limit.search']);
+  expect(redis.evals).toHaveLength(1);
 });
