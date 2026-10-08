@@ -67,7 +67,7 @@ it('redactPgUrl also masks every password query parameter, in any case or encodi
 it('redactCredentials masks URL passwords and password parameters inside any text', () => {
   const text =
     '连接失败 postgres://a:pw1@h:5433/db?password=pw2&PassWord=pw3 与 redis://:pw4@10.0.0.1:6379 ' +
-    "以及 host=db user=u password='pw 5' dbname=couli；password = pw6;sslmode=require";
+    "以及 host=db user=u password='pw 5' dbname=couli；password = pw6 sslmode=require";
   const masked = redactCredentials(text);
   for (const secret of ['pw1', 'pw2', 'pw3', 'pw4', 'pw 5', 'pw6']) {
     expect(masked).not.toContain(secret);
@@ -146,4 +146,41 @@ it('redactCredentials masks a URL password with unencoded @ / ? # as a whole', (
   }
   expect(redactPgUrl('postgres://u:Sec@ret16@h/db')).toBe('postgres://u:***@h/db');
   expect(redactCredentials('postgres://u@h/db and x@y')).toBe('postgres://u@h/db and x@y');
+});
+
+it('redactCredentials masks libpq values with backslash escapes as a whole', () => {
+  const quoted = ['ExampleLeft', 'ExampleRight tail'].join("\\'");
+  expect(redactCredentials(`host=db password='${quoted}' dbname=couli`)).toBe(
+    'host=db password=*** dbname=couli',
+  );
+  // Unquoted: `\ ` is an escaped space, so the password is "ExampleOne ExampleTwo".
+  const unquoted = 'host=db password=ExampleOne\\ ExampleTwo dbname=couli';
+  const masked = redactCredentials(unquoted);
+  expect(masked).toBe('host=db password=*** dbname=couli');
+  for (const part of ['ExampleOne', 'ExampleTwo']) expect(masked).not.toContain(part);
+  expect(redactCredentials('sslpassword=ExampleA\\ B\\\\ host=db')).toBe('sslpassword=*** host=db');
+  // A trailing lone backslash or an unterminated quote masks to the end, never less.
+  expect(redactCredentials('host=db password=ExampleEnd\\')).toBe('host=db password=***');
+  expect(redactCredentials("host=db password='ExampleOpen\\' rest")).toBe('host=db password=***');
+  // Values without backslashes behave as before.
+  expect(redactCredentials('host=db password=ExamplePlain dbname=couli')).toBe(
+    'host=db password=*** dbname=couli',
+  );
+});
+
+it('redactCredentials ends an unquoted libpq value only at whitespace, a query value also at & #', () => {
+  // libpq keyword/value: `;`, `&` and `#` belong to the value; the password is "Head Mid;Tail".
+  const masked = redactCredentials('host=db password=Head\\ Mid;Tail dbname=couli');
+  expect(masked).toBe('host=db password=*** dbname=couli');
+  for (const part of ['Head', 'Mid', 'Tail', ';']) expect(masked).not.toContain(part);
+  expect(redactCredentials('host=db password=ExampleA&B#C;D sslmode=require')).toBe(
+    'host=db password=*** sslmode=require',
+  );
+  expect(redactCredentials('connect failed; password=ExampleSemi;colon')).toBe(
+    'connect failed; password=***',
+  );
+  // URL query: `&` and `#` still separate parameters; `;` belongs to the value.
+  expect(redactCredentials('postgres://u@h/db?password=ExampleQ;R&sslmode=require#frag')).toBe(
+    'postgres://u@h/db?password=***&sslmode=require#frag',
+  );
 });
