@@ -1,0 +1,107 @@
+{
+  "task": "B3-02f",
+  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+  "spec_commit": "00ce6c3068536888a74f5598538fedcbc65a8d60",
+  "risk_note": "RV2 from added frozen rule tests; implementation paths are RV1. Codex-first B3-02 exception: Claude authored tests, isolated container confirmed target assertion failures, independent Codex spec-test review passed, Codex implemented through the trusted wrapper, then fresh Claude and independent Codex money reviews passed. Evidence assembled from recorded outputs under the documented pre-generator exception.",
+  "red_tests": [
+    "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#1] 线上：回放内层（billable=false）带 usage 失败，经计费转调传到外层网关——内外层计量合计零条，错误对象原样抛出、usage 不变",
+    "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#2] 离线评测：回放内层（billable=false）带 usage 失败，经计费转调传到外层网关——离线、线上计量都零条，错误对象原样抛出、usage 不变",
+    "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#3] 线上三层转调（回放内层 → 计费转调 → 中层网关 → 计费转调 → 外层网关），三层共用同一组计量去处：合计零条，错误原样抛出",
+    "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#4] 离线三层转调，各层计量去处互相独立：中层与外层都不把回放失败记成付费调用，所有去处合计零条，错误原样抛出",
+    "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#5] 线上经路由器：路由器 → 外层网关 → 计费转调 → 回放内层，回放带 usage 失败后降级；网关与路由器计量合计零条"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "00ce6c3068536888a74f5598538fedcbc65a8d60",
+      "tree": "372ce0e925b19989945752502237de270e276e5f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T10:37:50Z",
+      "finished_at": "2026-10-08T10:43:31Z",
+      "red_tests": [
+        "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#1] 线上：回放内层（billable=false）带 usage 失败，经计费转调传到外层网关——内外层计量合计零条，错误对象原样抛出、usage 不变",
+        "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#2] 离线评测：回放内层（billable=false）带 usage 失败，经计费转调传到外层网关——离线、线上计量都零条，错误对象原样抛出、usage 不变",
+        "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#3] 线上三层转调（回放内层 → 计费转调 → 中层网关 → 计费转调 → 外层网关），三层共用同一组计量去处：合计零条，错误原样抛出",
+        "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#4] 离线三层转调，各层计量去处互相独立：中层与外层都不把回放失败记成付费调用，所有去处合计零条，错误原样抛出",
+        "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#5] 线上经路由器：路由器 → 外层网关 → 计费转调 → 回放内层，回放带 usage 失败后降级；网关与路由器计量合计零条"
+      ],
+      "expected": ["test/spec/agent/model-relay-metering/relay.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "617d7d9f4856903c8dfc3f21b2d58f7947abeebf0ccafc0fb0dbde9ee30f13f2"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "open_s2": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "commit": "02d2edb7dee3e7db6b98f23d4ebf8b7bf6708404",
+      "diff_base": "00ce6c3068536888a74f5598538fedcbc65a8d60",
+      "diff_sha256": "eda9a05db2ccc207b36cdef1cddf8f64f01235d381a066987b00105c2b17698c",
+      "note": "Fresh read-only session; reviewed the implementation diff before commit. The committed diff hash was verified identical. Ledger-only main rebase preserved this diff exactly.",
+      "original_reviewed_head": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "open_s2": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "commit": "02d2edb7dee3e7db6b98f23d4ebf8b7bf6708404",
+      "diff_base": "00ce6c3068536888a74f5598538fedcbc65a8d60",
+      "diff_sha256": "eda9a05db2ccc207b36cdef1cddf8f64f01235d381a066987b00105c2b17698c",
+      "note": "Fresh read-only session; reviewed the implementation diff before commit. The committed diff hash was verified identical. Ledger-only main rebase preserved this diff exactly.",
+      "original_reviewed_head": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "spec_commit": "00ce6c3068536888a74f5598538fedcbc65a8d60",
+    "note": "Frozen test tree unchanged after ledger-only main rebase."
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "f9929296d42e21a733a9cbc4733db1eb803d4595",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "agent_smoke": {
+    "executed": false,
+    "status": "blocked",
+    "note": "Private Agent smoke corpus and replay assembly are not available. Keep this PR draft until actual private smoke succeeds; unit, property, integration and browser checks do not replace it."
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "mode": "github-actions",
+    "run_id": 37764360284,
+    "run_attempt": 1,
+    "commit": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7",
+    "url": "https://github.com/zora4523-bot/rebate-platform/actions/runs/37764360284",
+    "log_sha256": "371ff5bc92b9d01f4943c6c3ef4b56c2936f235094f2cec8d264d50cfc609ff9",
+    "note": "Actual PR #309 run: 8 test/properties files and 37 tests passed with PROP_RUNS=1000000. Seed is the repository default. After the ledger-only main rebase all recorded protected directory trees are unchanged. This is property-test evidence, not Agent private smoke."
+  },
+  "rebase": {
+    "base": "aaced450efd7f9c2fb3e929efc9c2af18e19d0f9",
+    "implementation_diff_sha256": "eda9a05db2ccc207b36cdef1cddf8f64f01235d381a066987b00105c2b17698c",
+    "rule_test_tree_unchanged": true
+  }
+}
