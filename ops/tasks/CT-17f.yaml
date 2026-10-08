@@ -1,0 +1,25 @@
+id: CT-17f
+repo: rebate-platform
+title: 契约：平台标识下发——admin_permission 加 content.platform_icon；/v1/config 加可选的 platform_icons（标识键 → {url, sha256, version}，只列发布过替换图的键）（04 §10.1、§11.2，BR-TEXT-24）
+type: contract
+# 2026-10-08 入账（前端线 f1-frontend-4）。规划 couli#74（a629034，负责人 2026-10-06「内置一套 + 后台可替换」，docs/changes/20261006-平台标识后台可替换.md）；SPEC_REF 4070ad5 已含。
+# 只做客户端读取所需的两处：① contracts/enums/admin.yaml 的 admin_permission 加 content.platform_icon（说明照 04 §11.2 原文，无 step-up）；
+# ② openapi.yaml 的 Config 加可选键 platform_icons（与 v0.9 之后新增键一样不进 required，客户端读旧的 last-good 配置不出错；服务端发布后总下发）：
+#   对象，键只许 BR-TEXT-24 细则「标识键」表的 8 个（taobao、tmall、jd、pdd、wechat、wechat_pay、alipay、wecom，additionalProperties false），
+#   值 {url（https，media 域名由部署配置，不在契约写死）, sha256（64 位小写十六进制，即文件名摘要）, version（正整数）}，全部必填；可为空对象。描述写明键缺失用包内内置图、读屏名固定平台中文名。
+#   示例里给一个键（如 alipay）。是否单列枚举 platform_icon_key 由实现者按 contracts/enums 现有做法定，二者须一致。
+# 后台上传、发布、回滚、恢复内置的 /admin/v1 接口（路径、字段、错误码）不在本任务：随 F1-02 后端与 F1-10「平台标识」页另行入账。
+# 合并后可入账 H5 PlatformBadge（取下发图、error 回内置图）；CSP img-src 随 F1-01h。实现者按 SPEC_REF 读 04 §10.1、§11.2 与 08 BR-TEXT-24 细则原文（§11.2 整节约 26KB，不点 contract_sections）。
+refs: []
+refs_hash: {}
+deps: [CT-21a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/*.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo

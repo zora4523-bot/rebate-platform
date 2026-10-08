@@ -1,0 +1,27 @@
+id: F1-06j
+repo: rebate-platform
+title: 后台绑定身份验证器页画出真实二维码（antd QRCode 按 otpauth_uri 渲染，替换占位），并修 F1-06h 评审遗留：换账号时旧的取密钥请求作废、首次权限加载失败重试成功后进第一个菜单、退出在途时禁用退出按钮
+type: impl
+# 2026-10-08 入账（前端线 f1-frontend-4）。F1-06h（#249）绑定页二维码是占位（仓库当时无二维码库）；antd 5.29.3 已带 QRCode（@rc-component/qrcode，锁文件已有），
+# 用它按契约 POST /admin/v1/auth/totp/secret 的 otpauth_uri 渲染 SVG，不新增依赖、不改锁文件，所以不另开 deps 任务。尺寸、位置按画板 AdmLoginTotpBind（148×148，role=img 名含「二维码」不变），
+# 颜色用令牌不写字面色值；拿到密钥前不画码。占位文案键（bind.qr_line1~3、「此处为占位」）删除或改为真实说明。
+# 同时修 F1-06h Codex money r3 的 S2（couli-runs/F1-frontend/followups-f101j.md）：① 换账号 / 重新登录后，上一个账号仍在途的取密钥请求
+# 不得影响新账号（按登录代次丢弃旧回包，取密钥加超时，超时显示既有「重新获取密钥」）；② 登录后首次 GET /admin/v1/me/permissions 失败、
+# 重试成功时，按既有规则进第一个有权限的菜单，不停在欢迎页；③ 退出请求在途时顶栏【退出】置灰防重复点。只用契约示例夹具，不连真实接口。
+refs: []
+refs_hash: {}
+deps: [F1-06h]
+paths:
+  - 'apps/admin/src/pages/login/**'
+  - 'apps/admin/src/providers/auth/**'
+  - 'apps/admin/src/App.tsx'
+  - 'apps/admin/src/layout/TopBar.tsx'
+  - 'apps/admin/src/texts/login.ts'
+test_paths:
+  - 'test/spec/frontend/admin-auth-qr/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-auth-qr/**'
+status: todo
