@@ -28,6 +28,9 @@ import {
   monthRange,
   names,
   reduceLine,
+  ALL_ENSURED,
+  MONTH_ENSURED,
+  monthNames,
 } from './kit.ts';
 
 interface World {
@@ -100,7 +103,7 @@ async function ensureMonths(maint: Kysely<DB>, table: string, months: readonly s
 }
 
 const MONTHS_NOV = monthRange('2026-11', '2027-02');
-const MONTH_NAMES_NOV = [...names('event_log', MONTHS_NOV), ...names('orders', MONTHS_NOV)];
+const MONTH_NAMES_NOV = monthNames(MONTHS_NOV);
 
 it('[ADR-0001 §4.2 #4 按日的表预建未来 14 天、#5; contract I2 C.3b] 新库上一次运行（时钟 2026-11-20T03:04:05Z，+08:00 的 11:04）：先建 8 个月分区，再建 link_logs 2026-11-20 至 2026-12-04 共 15 个日分区（界确切）；报告与日志确切，时钟只读一次；再跑一次报告相同', async () => {
   await withWorld(async ({ maint, app }) => {
@@ -122,9 +125,9 @@ it('[ADR-0001 §4.2 #4 按日的表预建未来 14 天、#5; contract I2 C.3b] �
       'event_log_default',
       ...names('event_log', MONTHS_NOV),
     ]);
-    expect(reduced()).toEqual([done(23, 0, 0)]);
+    expect(reduced()).toEqual([done(ALL_ENSURED, 0, 0)]);
     expect(await report(maintenance.runOnce())).toEqual(expected);
-    expect(reduced()).toEqual([done(23, 0, 0), done(23, 0, 0)]);
+    expect(reduced()).toEqual([done(ALL_ENSURED, 0, 0), done(ALL_ENSURED, 0, 0)]);
     expect(await partitionNames(app, 'link_logs')).toHaveLength(16);
   });
 });
@@ -145,7 +148,10 @@ it('[BR-ID-30 +08:00 日界; ADR-0001 §4.2 #10; contract I2] 日子按 +08:00 �
       defaultRows: [],
       failed: 0,
     });
-    expect([...first.reduced(), ...second.reduced()]).toEqual([done(23, 0, 0), done(23, 0, 0)]);
+    expect([...first.reduced(), ...second.reduced()]).toEqual([
+      done(ALL_ENSURED, 0, 0),
+      done(ALL_ENSURED, 0, 0),
+    ]);
     expect(await partitionNames(app, 'link_logs')).toEqual([
       'link_logs_default',
       ...dayNames('link_logs', dayRange('2026-11-19', '2026-12-04')),
@@ -159,7 +165,7 @@ it('[contract I2 默认关闭] dayPartitions 为 false 或不给：与原来逐�
     expect(await ensureDays(maint, 'link_logs', old)).toEqual(dayNames('link_logs', old));
     const ahead = monthRange('2026-10', '2027-01');
     const expected = {
-      ensured: [...names('event_log', ahead), ...names('orders', ahead)],
+      ensured: monthNames(ahead),
       dropped: [],
       defaultRows: [],
       failed: 0,
@@ -172,7 +178,7 @@ it('[contract I2 默认关闭] dayPartitions 为 false 或不给：与原来逐�
       logs.push(...run.reduced());
     }
     expect(results).toEqual([expected, expected]);
-    expect(logs).toEqual([done(8, 0, 0), done(8, 0, 0)]);
+    expect(logs).toEqual([done(MONTH_ENSURED, 0, 0), done(MONTH_ENSURED, 0, 0)]);
     expect(await partitionNames(app, 'link_logs')).toEqual([
       'link_logs_default',
       ...dayNames('link_logs', old),
@@ -202,7 +208,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 有数据须先迁出才能建分区、有数据�
         partition: 'link_logs_default',
         rows: 1,
       }),
-      done(22, 0, 1),
+      done(ALL_ENSURED - 1, 0, 1),
     ]);
     expect(lines.join('')).not.toMatch(/item-/);
     expect(await partitionNames(app, 'link_logs')).toEqual([
@@ -218,17 +224,17 @@ it('[BR-ID-30 每日 04:00（+08:00）删除任务、② 90 天; contract I2 C.4
     expect(await ensureDays(maint, 'link_logs', old)).toEqual(dayNames('link_logs', old));
     await ensureMonths(maint, 'event_log', ['2026-02', '2026-03']);
     const months = monthRange('2026-10', '2027-01');
-    const monthNames = [...names('event_log', months), ...names('orders', months)];
+    const monthParts = monthNames(months);
 
     // 2026-10-09 03:59:59.999 +08:00: days 2026-10-09 … 2026-10-23.
     const before = instanceAt(maint, '2026-10-08T19:59:59.999Z');
     expect(await report(before.maintenance.runOnce())).toEqual({
-      ensured: [...monthNames, ...dayNames('link_logs', dayRange('2026-10-09', '2026-10-23'))],
+      ensured: [...monthParts, ...dayNames('link_logs', dayRange('2026-10-09', '2026-10-23'))],
       dropped: [],
       defaultRows: [],
       failed: 0,
     });
-    expect(before.reduced()).toEqual([done(23, 0, 0)]);
+    expect(before.reduced()).toEqual([done(ALL_ENSURED, 0, 0)]);
     expect(await partitionNames(app, 'link_logs')).toEqual([
       'link_logs_default',
       ...dayNames('link_logs', [...old, ...dayRange('2026-10-09', '2026-10-23')]),
@@ -238,7 +244,7 @@ it('[BR-ID-30 每日 04:00（+08:00）删除任务、② 90 天; contract I2 C.4
     const atFour = instanceAt(maint, '2026-10-08T20:00:00.000Z');
     const gone = dayNames('link_logs', dayRange('2026-07-08', '2026-07-10'));
     expect(await report(atFour.maintenance.runOnce())).toEqual({
-      ensured: [...monthNames, ...dayNames('link_logs', dayRange('2026-10-09', '2026-10-23'))],
+      ensured: [...monthParts, ...dayNames('link_logs', dayRange('2026-10-09', '2026-10-23'))],
       dropped: ['event_log_p202602', 'event_log_p202603', ...gone],
       defaultRows: [],
       failed: 0,
@@ -249,7 +255,7 @@ it('[BR-ID-30 每日 04:00（+08:00）删除任务、② 90 天; contract I2 C.4
       dropLine('event_log', 'event_log_p202602'),
       dropLine('event_log', 'event_log_p202603'),
       ...gone.map((p) => dropLine('link_logs', p)),
-      done(23, 5, 0),
+      done(ALL_ENSURED, 5, 0),
     ]);
     expect(await partitionNames(app, 'link_logs')).toEqual([
       'link_logs_default',
@@ -268,7 +274,7 @@ it('[BR-ID-30 运行当日 00:00（+08:00）; contract I2 C.4] 运行把 now 原
     ]);
     expect(run.reduced()).toEqual([
       line('info', 'partition_dropped', { table: 'link_logs', partition: 'link_logs_p20260709' }),
-      done(23, 1, 0),
+      done(ALL_ENSURED, 1, 0),
     ]);
     expect(await partitionNames(app, 'link_logs')).toContain('link_logs_p20260710');
   });
@@ -283,11 +289,7 @@ it('[ADR-0001 §4.2 #4 并发; contract I2] 两个 worker（各自的 couli_main
       const months = monthRange('2028-02', '2028-05');
       const days = dayRange('2028-02-20', '2028-03-05');
       const expected = {
-        ensured: [
-          ...names('event_log', months),
-          ...names('orders', months),
-          ...dayNames('link_logs', days),
-        ],
+        ensured: [...monthNames(months), ...dayNames('link_logs', days)],
         dropped: [],
         defaultRows: [],
         failed: 0,
@@ -299,7 +301,7 @@ it('[ADR-0001 §4.2 #4 并发; contract I2] 两个 worker（各自的 couli_main
         ]);
         expect(results).toEqual([expected, expected]);
       }
-      expect([...a.reduced(), ...b.reduced()]).toEqual(Array(4).fill(done(23, 0, 0)));
+      expect([...a.reduced(), ...b.reduced()]).toEqual(Array(4).fill(done(ALL_ENSURED, 0, 0)));
       expect(await partitionNames(app, 'link_logs')).toEqual([
         'link_logs_default',
         ...dayNames('link_logs', days),

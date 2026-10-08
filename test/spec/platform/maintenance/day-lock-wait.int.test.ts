@@ -19,8 +19,10 @@ import {
   line,
   memoryLogger,
   monthRange,
-  names,
   reduceLine,
+  ALL_ENSURED,
+  MONTH_ENSURED,
+  monthNames,
 } from './kit.ts';
 
 interface World {
@@ -120,7 +122,7 @@ async function runHolding(
 
 const NOW = '2026-11-20T03:04:05Z'; // 11:04 +08:00; days 2026-11-20 … 2026-12-04
 const MONTHS = monthRange('2026-11', '2027-02');
-const MONTH_NAMES = [...names('event_log', MONTHS), ...names('orders', MONTHS)];
+const MONTH_NAMES = monthNames(MONTHS);
 
 it('[ADR-0001 §4.2 #4; contract I2 C.3b 55P03] 读事务一直持有 link_logs 的锁时：第一个日分区等 5 秒以 55P03 失败，记一条 partition_ensure_failed（day 2026-11-20），其余 14 天本轮跳过；整轮在 4–15 秒内结束，月分区照建；锁放开后下一轮建齐 15 天', async () => {
   await withWorld(async ({ database, maint, app }) => {
@@ -157,7 +159,7 @@ it('[ADR-0001 §4.2 #4; contract I2 C.3b 55P03] 读事务一直持有 link_logs 
         day: '2026-11-20',
         sqlstate: '55P03',
       }),
-      done(8, 0, 1),
+      done(MONTH_ENSURED, 0, 1),
     ]);
     expect(await partitionNames(app, 'link_logs')).toEqual(['link_logs_default']);
 
@@ -175,7 +177,7 @@ it('[ADR-0001 §4.2 #4; contract I2 C.3b 55P03] 读事务一直持有 link_logs 
       defaultRows: [],
       failed: 0,
     });
-    expect(lines.map(reduceLine)).toEqual([done(23, 0, 0)]);
+    expect(lines.map(reduceLine)).toEqual([done(ALL_ENSURED, 0, 0)]);
   });
 }, 60_000);
 
@@ -187,11 +189,7 @@ it('[BR-ID-30 ②; contract I2 C.4 55P03] 04:00（+08:00）的运行在读事务
       dayNames('link_logs', [...old, ...ahead]),
     );
     const months = monthRange('2026-10', '2027-01');
-    const ensured = [
-      ...names('event_log', months),
-      ...names('orders', months),
-      ...dayNames('link_logs', ahead),
-    ];
+    const ensured = [...monthNames(months), ...dayNames('link_logs', ahead)];
     const at = '2026-10-08T20:00:00.000Z'; // 2026-10-09 04:00 +08:00, cutoff 2026-07-11 00:00
     const hold = reader(database);
     let first = { ms: 0, report: 'not run' as unknown, releasedByTimer: false };
@@ -222,7 +220,7 @@ it('[BR-ID-30 ②; contract I2 C.4 55P03] 04:00（+08:00）的运行在读事务
     });
     expect(firstLines).toEqual([
       line('error', 'partition_drop_failed', { table: 'link_logs', sqlstate: '55P03' }),
-      done(23, 0, 1),
+      done(ALL_ENSURED, 0, 1),
     ]);
     expect(await partitionNames(app, 'link_logs')).toEqual([
       'link_logs_default',
@@ -241,7 +239,7 @@ it('[BR-ID-30 ②; contract I2 C.4 55P03] 04:00（+08:00）的运行在读事务
       ...dayNames('link_logs', old).map((partition) =>
         line('info', 'partition_dropped', { table: 'link_logs', partition }),
       ),
-      done(23, 2, 0),
+      done(ALL_ENSURED, 2, 0),
     ]);
   });
 }, 60_000);

@@ -75,7 +75,16 @@ import {
   insertLinkLog,
   linkLogRows,
 } from '../../db/partitions/day-kit.ts';
-import { done, line, memoryLogger, monthRange, names, reduceLine, settableClock } from './kit.ts';
+import {
+  done,
+  line,
+  memoryLogger,
+  monthRange,
+  reduceLine,
+  settableClock,
+  ALL_ENSURED,
+  monthNames,
+} from './kit.ts';
 
 async function withWorld(
   scenario: (maint: Kysely<DB>, app: Kysely<DB>) => Promise<void>,
@@ -153,7 +162,7 @@ async function insertOldEvent(app: Kysely<DB>): Promise<string> {
 
 const MONTH_NAMES_NOV = (() => {
   const months = monthRange('2026-11', '2027-02');
-  return [...names('event_log', months), ...names('orders', months)];
+  return monthNames(months);
 })();
 const warnRows = (table: string, rows: number): Record<string, unknown> =>
   line('warn', 'partition_default_has_rows', { table, partition: `${table}_default`, rows });
@@ -191,7 +200,7 @@ it('[ADR-0001 §4.2 #4 按日的表预建未来 14 天、DEFAULT 分区有数据
     expect({ beforeFour, atFour, again }).toEqual({
       beforeFour: {
         report: { ensured: [...MONTH_NAMES_NOV, ...days], dropped: [], defaultRows, failed: 0 },
-        lines: [warnRows('event_log', 1), warnRows('link_logs', 2), done(23, 0, 0)],
+        lines: [warnRows('event_log', 1), warnRows('link_logs', 2), done(ALL_ENSURED, 0, 0)],
         linkLogs: ['link_logs_default', 'link_logs_p20260801', ...days],
       },
       atFour: {
@@ -205,13 +214,13 @@ it('[ADR-0001 §4.2 #4 按日的表预建未来 14 天、DEFAULT 分区有数据
           dropped('link_logs_p20260801'),
           warnRows('event_log', 1),
           warnRows('link_logs', 2),
-          done(23, 1, 0),
+          done(ALL_ENSURED, 1, 0),
         ],
         linkLogs: ['link_logs_default', ...days],
       },
       again: {
         report: { ensured: [...MONTH_NAMES_NOV, ...days], dropped: [], defaultRows, failed: 0 },
-        lines: [warnRows('event_log', 1), warnRows('link_logs', 2), done(23, 0, 0)],
+        lines: [warnRows('event_log', 1), warnRows('link_logs', 2), done(ALL_ENSURED, 0, 0)],
       },
     });
     expect(await linkLogRows(app)).toEqual([
@@ -241,7 +250,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 有数据须先迁出才能建对应区间的分�
           sqlstate: '23514',
         }),
         warnRows('link_logs', 1),
-        done(22, 0, 1),
+        done(ALL_ENSURED - 1, 0, 1),
       ],
     };
     const first = { report: await report(w.maintenance.runOnce()), lines: w.fresh() };
@@ -260,7 +269,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 有数据须先迁出才能建对应区间的分�
           defaultRows,
           failed: 0,
         },
-        lines: [warnRows('link_logs', 1), done(23, 0, 0)],
+        lines: [warnRows('link_logs', 1), done(ALL_ENSURED, 0, 0)],
       },
     });
     expect(await partitionNames(app, 'link_logs')).toEqual([

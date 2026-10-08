@@ -28,8 +28,10 @@ import {
   line,
   memoryLogger,
   monthRange,
-  names,
   reduceLine,
+  ALL_ENSURED,
+  MONTH_ENSURED,
+  monthNames,
 } from './kit.ts';
 
 async function withWorld(
@@ -84,7 +86,7 @@ async function report(run: Promise<MaintenanceReport>): Promise<unknown> {
 
 const NOW = '2026-11-20T03:04:05Z';
 const MONTHS = monthRange('2026-11', '2027-02');
-const ENSURED = [...names('event_log', MONTHS), ...names('orders', MONTHS)];
+const ENSURED = monthNames(MONTHS);
 /** The worker's instance (day partitions on, B1-01w) at NOW: link_logs 2026-11-20 … 2026-12-04 (+08:00). */
 const WORKER_ENSURED = [
   ...ENSURED,
@@ -144,17 +146,26 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; maintenance 契约补�
         mutable.splice(0, 1);
       }),
     };
-    const warnBoth = [WARN_EVENT_LOG, WARN_LINK_LOGS, done(8, 0, 0)];
+    const warnBoth = [WARN_EVENT_LOG, WARN_LINK_LOGS, done(MONTH_ENSURED, 0, 0)];
     expect(seen).toEqual({
       none: { report: expectedReport, lines: warnBoth },
       empty: { report: expectedReport, lines: warnBoth },
-      linkLogs: { report: expectedReport, lines: [WARN_EVENT_LOG, INFO_LINK_LOGS, done(8, 0, 0)] },
-      eventLog: { report: expectedReport, lines: [INFO_EVENT_LOG, WARN_LINK_LOGS, done(8, 0, 0)] },
-      all: { report: expectedReport, lines: [INFO_EVENT_LOG, INFO_LINK_LOGS, done(8, 0, 0)] },
+      linkLogs: {
+        report: expectedReport,
+        lines: [WARN_EVENT_LOG, INFO_LINK_LOGS, done(MONTH_ENSURED, 0, 0)],
+      },
+      eventLog: {
+        report: expectedReport,
+        lines: [INFO_EVENT_LOG, WARN_LINK_LOGS, done(MONTH_ENSURED, 0, 0)],
+      },
+      all: {
+        report: expectedReport,
+        lines: [INFO_EVENT_LOG, INFO_LINK_LOGS, done(MONTH_ENSURED, 0, 0)],
+      },
       unrelated: { report: expectedReport, lines: warnBoth },
       mutatedAfter: {
         report: expectedReport,
-        lines: [WARN_EVENT_LOG, INFO_LINK_LOGS, done(8, 0, 0)],
+        lines: [WARN_EVENT_LOG, INFO_LINK_LOGS, done(MONTH_ENSURED, 0, 0)],
       },
     });
   });
@@ -171,7 +182,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警、#5; worker 契约 2、
     expect({ onlyLinkLogs, both }).toEqual({
       onlyLinkLogs: {
         report: { ensured: WORKER_ENSURED, dropped: [], defaultRows: [linkRows], failed: 0 },
-        lines: [line('warn', 'partition_default_has_rows', linkRows), done(23, 0, 0)],
+        lines: [line('warn', 'partition_default_has_rows', linkRows), done(ALL_ENSURED, 0, 0)],
       },
       both: {
         report: {
@@ -183,7 +194,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警、#5; worker 契约 2、
         lines: [
           line('warn', 'partition_default_has_rows', eventRows),
           line('warn', 'partition_default_has_rows', linkRows),
-          done(23, 0, 0),
+          done(ALL_ENSURED, 0, 0),
         ],
       },
     });

@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { MONTH_PARTITIONED_TABLES, MONTHS_AHEAD } from '@couli/db';
 import { expect, it } from 'vitest';
 
 import {
@@ -69,6 +70,26 @@ it('[ADR-0001 §4.2 #16; BR-ID-30 ⑫、⑰; contract B、C.4、H] 常量：默�
     }
   }
   expect(offending).toEqual([]);
+});
+
+it('[ADR-0001 §4.2 #4 按月的表预建未来 3 个月、#5、#16; BR-ID-30 ⑰; contract C.3、C.4] 名单：月分区表含 event_log 与 orders（预建计数由此推导），预建 3 个未来月；可删表每一项都是月分区表、不含 orders', () => {
+  expect({
+    monthTables: ['event_log', 'orders'].map((table) =>
+      (MONTH_PARTITIONED_TABLES as readonly string[]).includes(table),
+    ),
+    unique: new Set(MONTH_PARTITIONED_TABLES).size === MONTH_PARTITIONED_TABLES.length,
+    monthsAhead: MONTHS_AHEAD,
+    droppableAreMonthTables: DROPPABLE_TABLES.every((table) =>
+      (MONTH_PARTITIONED_TABLES as readonly string[]).includes(table),
+    ),
+    droppableHasOrders: DROPPABLE_TABLES.includes('orders'),
+  }).toEqual({
+    monthTables: [true, true],
+    unique: true,
+    monthsAhead: 3,
+    droppableAreMonthTables: true,
+    droppableHasOrders: false,
+  });
 });
 
 it('[contract G] MaintenanceError：每个代码都是固定文案、name 为 MaintenanceError、自有属性正好 code / message / name / stack、没有 cause', () => {

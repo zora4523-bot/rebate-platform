@@ -15,7 +15,10 @@ import {
   createOrStub,
   done,
   line,
+  MONTH_ENSURED,
+  MONTH_TABLES,
   memoryLogger,
+  monthNames,
   monthRange,
   names,
   reduceLine,
@@ -111,22 +114,20 @@ it('[ADR-0001 §4.2 #4 按月的表预建未来 3 个月、#5; contract C] 新�
     const { maintenance, clock, reduced } = instanceAt(maint, '2026-11-20T03:04:05Z');
     const months = monthRange('2026-11', '2027-02');
     expect(await report(maintenance.runOnce())).toEqual({
-      ensured: [...names('event_log', months), ...names('orders', months)],
+      ensured: monthNames(months),
       dropped: [],
       defaultRows: [],
       failed: 0,
     });
     expect(clock.calls()).toBe(1);
-    expect(await partitionsOf(app, 'event_log')).toEqual([
-      { name: 'event_log_default', bound: 'DEFAULT' },
-      ...months.map((m) => ({ name: names('event_log', [m])[0], bound: bound(m) })),
-    ]);
-    expect(await partitionsOf(app, 'orders')).toEqual([
-      { name: 'orders_default', bound: 'DEFAULT' },
-      ...months.map((m) => ({ name: names('orders', [m])[0], bound: bound(m) })),
-    ]);
+    for (const table of MONTH_TABLES) {
+      expect(await partitionsOf(app, table)).toEqual([
+        { name: `${table}_default`, bound: 'DEFAULT' },
+        ...months.map((m) => ({ name: names(table, [m])[0], bound: bound(m) })),
+      ]);
+    }
     expect(await partitionNames(app, 'link_logs')).toEqual(['link_logs_default']);
-    expect(reduced()).toEqual([done(8, 0, 0)]);
+    expect(reduced()).toEqual([done(MONTH_ENSURED, 0, 0)]);
   });
 });
 
@@ -135,7 +136,7 @@ it('[ADR-0001 §4.2 #4 幂等] 同一时钟再跑两次：报告相同（已存�
     const { maintenance, reduced } = instanceAt(maint, '2026-11-20T03:04:05Z');
     const months = monthRange('2026-11', '2027-02');
     const expected = {
-      ensured: [...names('event_log', months), ...names('orders', months)],
+      ensured: monthNames(months),
       dropped: [],
       defaultRows: [],
       failed: 0,
@@ -147,7 +148,11 @@ it('[ADR-0001 §4.2 #4 幂等] 同一时钟再跑两次：报告相同（已存�
       'event_log_default',
       ...names('event_log', months),
     ]);
-    expect(reduced()).toEqual([done(8, 0, 0), done(8, 0, 0), done(8, 0, 0)]);
+    expect(reduced()).toEqual([
+      done(MONTH_ENSURED, 0, 0),
+      done(MONTH_ENSURED, 0, 0),
+      done(MONTH_ENSURED, 0, 0),
+    ]);
   });
 });
 
@@ -156,31 +161,27 @@ it('[ADR-0001 §4.2 #10 时钟; contract C.2、C.3] 月份只按注入的时钟�
     const first = instanceAt(maint, '2026-11-30T16:30:00Z');
     const nov = monthRange('2026-11', '2027-02');
     expect(await report(first.maintenance.runOnce())).toEqual({
-      ensured: [...names('event_log', nov), ...names('orders', nov)],
+      ensured: monthNames(nov),
       dropped: [],
       defaultRows: [],
       failed: 0,
     });
     const second = instanceAt(maint, '2026-12-31T23:59:59.999Z');
     const dec = monthRange('2026-12', '2027-03');
-    expect(((await report(second.maintenance.runOnce())) as MaintenanceReport).ensured).toEqual([
-      ...names('event_log', dec),
-      ...names('orders', dec),
-    ]);
+    expect(((await report(second.maintenance.runOnce())) as MaintenanceReport).ensured).toEqual(
+      monthNames(dec),
+    );
     const third = instanceAt(maint, '2027-01-01T00:00:00Z');
     const jan = monthRange('2027-01', '2027-04');
-    expect(((await report(third.maintenance.runOnce())) as MaintenanceReport).ensured).toEqual([
-      ...names('event_log', jan),
-      ...names('orders', jan),
-    ]);
-    expect(await partitionNames(app, 'event_log')).toEqual([
-      'event_log_default',
-      ...names('event_log', monthRange('2026-11', '2027-04')),
-    ]);
-    expect(await partitionNames(app, 'orders')).toEqual([
-      'orders_default',
-      ...names('orders', monthRange('2026-11', '2027-04')),
-    ]);
+    expect(((await report(third.maintenance.runOnce())) as MaintenanceReport).ensured).toEqual(
+      monthNames(jan),
+    );
+    for (const table of MONTH_TABLES) {
+      expect(await partitionNames(app, table)).toEqual([
+        `${table}_default`,
+        ...names(table, monthRange('2026-11', '2027-04')),
+      ]);
+    }
   });
 });
 
@@ -192,7 +193,7 @@ it('[ADR-0001 §4.2 #4 并发] 两个 worker（各自的 couli_maint 连接池�
       const b = instanceAt(other, '2028-02-29T12:00:00Z');
       const months = monthRange('2028-02', '2028-05');
       const expected = {
-        ensured: [...names('event_log', months), ...names('orders', months)],
+        ensured: monthNames(months),
         dropped: [],
         defaultRows: [],
         failed: 0,
@@ -204,15 +205,13 @@ it('[ADR-0001 §4.2 #4 并发] 两个 worker（各自的 couli_maint 连接池�
         ]);
         expect(results).toEqual([expected, expected]);
       }
-      expect([...a.reduced(), ...b.reduced()]).toEqual(Array(6).fill(done(8, 0, 0)));
-      expect(await partitionNames(app, 'event_log')).toEqual([
-        'event_log_default',
-        ...names('event_log', months),
-      ]);
-      expect(await partitionNames(app, 'orders')).toEqual([
-        'orders_default',
-        ...names('orders', months),
-      ]);
+      expect([...a.reduced(), ...b.reduced()]).toEqual(Array(6).fill(done(MONTH_ENSURED, 0, 0)));
+      for (const table of MONTH_TABLES) {
+        expect(await partitionNames(app, table)).toEqual([
+          `${table}_default`,
+          ...names(table, months),
+        ]);
+      }
     } finally {
       await destroyDb(other);
     }
@@ -227,7 +226,7 @@ it('[ADR-0001 §4.2 #16; BR-ID-30 ⑯、⑰; 规划/02 §15.1] 04:00（+08:00）
     const { maintenance, reduced } = instanceAt(maint, '2026-10-08T20:00:00Z');
     const ahead = monthRange('2026-10', '2027-01');
     expect(await report(maintenance.runOnce())).toEqual({
-      ensured: [...names('event_log', ahead), ...names('orders', ahead)],
+      ensured: monthNames(ahead),
       dropped: ['event_log_p202602', 'event_log_p202603'],
       defaultRows: [],
       failed: 0,
@@ -235,7 +234,7 @@ it('[ADR-0001 §4.2 #16; BR-ID-30 ⑯、⑰; 规划/02 §15.1] 04:00（+08:00）
     expect(reduced()).toEqual([
       line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202602' }),
       line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202603' }),
-      done(8, 2, 0),
+      done(MONTH_ENSURED, 2, 0),
     ]);
     expect(await partitionNames(app, 'event_log')).toEqual([
       'event_log_default',
@@ -257,7 +256,7 @@ it('[ADR-0001 §4.2 #16; BR-ID-30 运行当日 00:00（+08:00）] 早 1 毫秒�
     ]);
     expect(reduced()).toEqual([
       line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202602' }),
-      done(8, 1, 0),
+      done(MONTH_ENSURED, 1, 0),
     ]);
     expect(await partitionNames(app, 'event_log')).toContain('event_log_p202603');
   });
@@ -277,10 +276,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; contract C.3、C.5、E]
     const { maintenance, reduced, lines } = instanceAt(maint, '2026-11-20T03:04:05Z');
     const months = monthRange('2026-11', '2027-02');
     const expectedReport = {
-      ensured: [
-        ...names('event_log', ['2026-11', '2026-12', '2027-02']),
-        ...names('orders', months),
-      ],
+      ensured: monthNames(months).filter((name) => name !== 'event_log_p202701'),
       dropped: [],
       defaultRows: [{ table: 'event_log', partition: 'event_log_default', rows: 2 }],
       failed: 1,
@@ -296,7 +292,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警; contract C.3、C.5、E]
         partition: 'event_log_default',
         rows: 2,
       }),
-      done(7, 0, 1),
+      done(MONTH_ENSURED - 1, 0, 1),
     ];
     expect(await report(maintenance.runOnce())).toEqual(expectedReport);
     expect(reduced()).toEqual(expectedLines);
@@ -318,7 +314,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警] DEFAULT 里只有很早
     const { maintenance, reduced } = instanceAt(maint, '2026-11-20T03:04:05Z');
     const months = monthRange('2026-11', '2027-02');
     const expectedReport = {
-      ensured: [...names('event_log', months), ...names('orders', months)],
+      ensured: monthNames(months),
       dropped: [],
       defaultRows: [{ table: 'event_log', partition: 'event_log_default', rows: 1 }],
       failed: 0,
@@ -330,7 +326,7 @@ it('[ADR-0001 §4.2 #4 DEFAULT 分区有数据即告警] DEFAULT 里只有很早
     });
     expect(await report(maintenance.runOnce())).toEqual(expectedReport);
     expect(await report(maintenance.runOnce())).toEqual(expectedReport);
-    expect(reduced()).toEqual([alert, done(8, 0, 0), alert, done(8, 0, 0)]);
+    expect(reduced()).toEqual([alert, done(MONTH_ENSURED, 0, 0), alert, done(MONTH_ENSURED, 0, 0)]);
   });
 });
 
@@ -352,8 +348,9 @@ it('[ADR-0001 §4.2 #4、#8 以 couli_maint 执行; contract C.1] 连接不是 c
     }
     const expected = { problems: [], clock: 0, lines: 0 };
     expect(got).toEqual({ couli_app: expected, couli_payout: expected, couli_readonly: expected });
-    expect(await partitionNames(app, 'event_log')).toEqual(['event_log_default']);
-    expect(await partitionNames(app, 'orders')).toEqual(['orders_default']);
+    for (const table of MONTH_TABLES) {
+      expect(await partitionNames(app, table)).toEqual([`${table}_default`]);
+    }
   });
 });
 
@@ -361,7 +358,7 @@ it('[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4] 删除只在 +
   await withWorld(async ({ maint, app }) => {
     await ensure(maint, 'event_log', monthRange('2026-02', '2026-05'));
     const ahead = monthRange('2026-10', '2027-01');
-    const ensured = [...names('event_log', ahead), ...names('orders', ahead)];
+    const ensured = monthNames(ahead);
     const results: unknown[] = [];
     const logs: unknown[] = [];
     for (const now of ['2026-10-08T16:00:00.000Z', '2026-10-08T19:59:59.999Z']) {
@@ -373,7 +370,7 @@ it('[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4] 删除只在 +
       { ensured, dropped: [], defaultRows: [], failed: 0 },
       { ensured, dropped: [], defaultRows: [], failed: 0 },
     ]);
-    expect(logs).toEqual([done(8, 0, 0), done(8, 0, 0)]);
+    expect(logs).toEqual([done(MONTH_ENSURED, 0, 0), done(MONTH_ENSURED, 0, 0)]);
     expect(await partitionNames(app, 'event_log')).toEqual([
       'event_log_default',
       ...names('event_log', ['2026-02', '2026-03', '2026-04', '2026-05', ...ahead]),
@@ -388,7 +385,7 @@ it('[BR-ID-30 每日 04:00（+08:00）删除任务; contract C.4] 删除只在 +
     expect(atFour.reduced()).toEqual([
       line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202602' }),
       line('info', 'partition_dropped', { table: 'event_log', partition: 'event_log_p202603' }),
-      done(8, 2, 0),
+      done(MONTH_ENSURED, 2, 0),
     ]);
   });
 });
@@ -423,7 +420,7 @@ it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] link_logs_
     const { maintenance, reduced, lines } = instanceAt(maint, '2026-11-20T03:04:05Z');
     const months = monthRange('2026-11', '2027-02');
     expect(await report(maintenance.runOnce())).toEqual({
-      ensured: [...names('event_log', months), ...names('orders', months)],
+      ensured: monthNames(months),
       dropped: [],
       defaultRows: [{ table: 'link_logs', partition: 'link_logs_default', rows: 3 }],
       failed: 0,
@@ -434,7 +431,7 @@ it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] link_logs_
         partition: 'link_logs_default',
         rows: 3,
       }),
-      done(8, 0, 0),
+      done(MONTH_ENSURED, 0, 0),
     ]);
     expect(lines.join('')).not.toMatch(/13912345678|item-/);
   });
@@ -446,10 +443,7 @@ it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警、须先迁
     const { maintenance, reduced } = instanceAt(maint, '2026-11-20T03:04:05Z');
     const months = monthRange('2026-11', '2027-02');
     expect(await report(maintenance.runOnce())).toEqual({
-      ensured: [
-        ...names('event_log', months),
-        ...names('orders', ['2026-11', '2026-12', '2027-02']),
-      ],
+      ensured: monthNames(months).filter((name) => name !== 'orders_p202701'),
       dropped: [],
       defaultRows: [{ table: 'orders', partition: 'orders_default', rows: 1 }],
       failed: 1,
@@ -465,7 +459,7 @@ it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警、须先迁
         partition: 'orders_default',
         rows: 1,
       }),
-      done(7, 0, 1),
+      done(MONTH_ENSURED - 1, 0, 1),
     ]);
     expect(await partitionNames(app, 'orders')).toEqual([
       'orders_default',
@@ -489,7 +483,7 @@ it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] event_log 
     const { maintenance, reduced } = instanceAt(maint, '2026-11-20T03:04:05Z');
     const months = monthRange('2026-11', '2027-02');
     expect(await report(maintenance.runOnce())).toEqual({
-      ensured: [...names('event_log', months), ...names('orders', months)],
+      ensured: monthNames(months),
       dropped: [],
       defaultRows: [
         { table: 'event_log', partition: 'event_log_default', rows: 2 },
@@ -504,7 +498,7 @@ it('[ADR-0001 §4.2 #4 每张分区表的 DEFAULT 有数据即告警] event_log 
       alert('event_log', 2),
       alert('link_logs', 1),
       alert('orders', 3),
-      done(8, 0, 0),
+      done(MONTH_ENSURED, 0, 0),
     ]);
   });
 });
@@ -516,7 +510,7 @@ it('[BR-ID-30 每日 04:00 删除任务; ADR-0001 §4.2 #4 DEFAULT 有数据即�
     const { maintenance, reduced } = instanceAt(maint, '2026-10-08T19:59:59.999Z');
     const ahead = monthRange('2026-10', '2027-01');
     expect(await report(maintenance.runOnce())).toEqual({
-      ensured: [...names('event_log', ahead), ...names('orders', ahead)],
+      ensured: monthNames(ahead),
       dropped: [],
       defaultRows: [{ table: 'link_logs', partition: 'link_logs_default', rows: 1 }],
       failed: 0,
@@ -527,7 +521,7 @@ it('[BR-ID-30 每日 04:00 删除任务; ADR-0001 §4.2 #4 DEFAULT 有数据即�
         partition: 'link_logs_default',
         rows: 1,
       }),
-      done(8, 0, 0),
+      done(MONTH_ENSURED, 0, 0),
     ]);
     expect(await partitionNames(app, 'event_log')).toEqual([
       'event_log_default',

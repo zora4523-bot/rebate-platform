@@ -23,6 +23,7 @@ import { createTestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { expect, it } from 'vitest';
 import { leaksIn, phraseOf } from '../db/kit.ts';
+import { ALL_ENSURED, MONTH_TABLES } from './kit.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../../../..');
@@ -198,6 +199,8 @@ async function partitionNames(app: Kysely<DB>, table: string): Promise<string[]>
 }
 
 const MONTHS = ['202611', '202612', '202701', '202702'];
+/** Every month table and the day table link_logs (each with its DEFAULT partition). */
+const PARTITIONED = [...MONTH_TABLES, 'link_logs'];
 /** +08:00 days 2026-11-20 … 2026-12-04 (CLOCK_NOW is 2026-11-20 11:04:05 at +08:00). */
 const DAYS = Array.from({ length: 15 }, (_, i) =>
   new Date(Date.UTC(2026, 10, 20 + i)).toISOString().slice(0, 10).replaceAll('-', ''),
@@ -230,11 +233,11 @@ it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真�
       INSERT INTO app.link_logs (app_id, event, result_code, raw_item_id, created_at)
       VALUES ('couli', 'convert', 0, 'item-13912345678', '2026-11-19T10:00:00Z')
     `.execute(app);
-    const partitions = async (): Promise<unknown> => ({
-      event_log: await partitionNames(app, 'event_log'),
-      orders: await partitionNames(app, 'orders'),
-      link_logs: await partitionNames(app, 'link_logs'),
-    });
+    const partitions = async (): Promise<unknown> => {
+      const out: Record<string, string[]> = {};
+      for (const table of PARTITIONED) out[table] = await partitionNames(app, table);
+      return out;
+    };
 
     await sql`UPDATE pgboss.version SET version = 41`.execute(app);
     const refused = await runUntilStopped('worker', { ...worker, DATABASE_MAINT_URL: maintUrl });
@@ -301,11 +304,7 @@ it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真�
     await destroyDb(app).catch(() => undefined);
     await database.drop();
   }
-  const onlyDefault = {
-    event_log: ['event_log_default'],
-    orders: ['orders_default'],
-    link_logs: ['link_logs_default'],
-  };
+  const onlyDefault = Object.fromEntries(PARTITIONED.map((table) => [table, [`${table}_default`]]));
   expect(seen).toEqual({
     built: '',
     refused: { code: 1, signal: null, key: ['startup_failed'], partitions: onlyDefault },
@@ -360,15 +359,19 @@ it('[ADR-0001 §4.2 #4、#8、#14、#20; 规划/02 §15.1; worker 契约 4] 真�
           level: 30,
           entry: 'worker',
           env: 'test',
-          ensured: 23,
+          ensured: ALL_ENSURED,
           dropped: 0,
           failed: 0,
           msg: 'partition_maintenance_done',
         },
       ],
       partitions: {
-        event_log: ['event_log_default', ...MONTHS.map((m) => `event_log_p${m}`)],
-        orders: ['orders_default', ...MONTHS.map((m) => `orders_p${m}`)],
+        ...Object.fromEntries(
+          MONTH_TABLES.map((table) => [
+            table,
+            [`${table}_default`, ...MONTHS.map((m) => `${table}_p${m}`)],
+          ]),
+        ),
         link_logs: ['link_logs_default', ...DAYS.map((d) => `link_logs_p${d}`)],
       },
       exitsPromptly: true,

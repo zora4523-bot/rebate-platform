@@ -1,4 +1,4 @@
-import type { DB } from '@couli/db';
+import { MONTH_PARTITIONED_TABLES, MONTHS_AHEAD, type DB } from '@couli/db';
 import {
   DummyDriver,
   Kysely,
@@ -10,8 +10,21 @@ import {
 import { afterEach, expect, it, vi } from 'vitest';
 import { FixedClock } from '../clock/clock.ts';
 import type { RootLogger } from '../logging/logger.ts';
-import { createPartitionMaintenance, type PartitionMaintenance } from './index.ts';
+import {
+  DAY_PARTITIONED_TABLES,
+  DAYS_AHEAD,
+  createPartitionMaintenance,
+  type PartitionMaintenance,
+} from './index.ts';
 import { createWorkerMaintenance } from './worker.ts';
+
+// Partition counts derive from the partition lists (B1-04n), so adding a month-partitioned table
+// does not rewrite these tests: every month table × (this month + MONTHS_AHEAD), plus every day
+// table × (today + DAYS_AHEAD) when day partitions are on.
+const MONTH_ENSURED = MONTH_PARTITIONED_TABLES.length * (MONTHS_AHEAD + 1);
+const ALL_ENSURED = MONTH_ENSURED + DAY_PARTITIONED_TABLES.length * (DAYS_AHEAD + 1);
+/** The UTC months a run at the default fixture instant (2026-11-20) ensures, as `p_month`. */
+const FIXTURE_MONTHS = ['2026-11-01', '2026-12-01', '2027-01-01', '2027-02-01'];
 
 const instances: PartitionMaintenance[] = [];
 const handles: Kysely<DB>[] = [];
@@ -95,7 +108,7 @@ it.each(['23514', '55P03'])(
     };
     const report = await f.maintenance.runOnce();
     expect(report.failed).toBe(1);
-    expect(report.ensured).toHaveLength(code === '55P03' ? 10 : 22);
+    expect(report.ensured).toHaveLength(code === '55P03' ? MONTH_ENSURED + 2 : ALL_ENSURED - 1);
     expect(f.logger.error.mock.calls).toEqual([
       [{ table: 'link_logs', day: '2026-11-22', sqlstate: code }, 'partition_ensure_failed'],
     ]);
@@ -107,7 +120,7 @@ it.each(['23514', '55P03'])(
     f.control.respond = async () => undefined;
     expect(await f.maintenance.runOnce()).toMatchObject({ failed: 0 });
     expect(f.logger.info.mock.calls.at(-1)).toEqual([
-      { ensured: 23, dropped: 0, failed: 0 },
+      { ensured: ALL_ENSURED, dropped: 0, failed: 0 },
       'partition_maintenance_done',
     ]);
     expect(f.now).toHaveBeenCalledTimes(2);
@@ -147,7 +160,7 @@ it.each([
         [{ table: 'link_logs', partition: 'link_logs_p20260710' }, 'partition_dropped'],
       ]);
     }
-    expect(report.ensured).toHaveLength(enabled ? 23 : 8);
+    expect(report.ensured).toHaveLength(enabled ? ALL_ENSURED : MONTH_ENSURED);
     expect(f.now).toHaveBeenCalledTimes(1);
   },
 );
@@ -177,14 +190,14 @@ it('[AC-B1-01s#3] 日删除锁超时只记一次失败，DEFAULT 仍告警，下
     'partition_default_has_rows',
   );
   expect(f.logger.info.mock.calls.at(-1)).toEqual([
-    { ensured: 23, dropped: 0, failed: 1 },
+    { ensured: ALL_ENSURED, dropped: 0, failed: 1 },
     'partition_maintenance_done',
   ]);
   await vi.advanceTimersByTimeAsync(100);
   expect(attempts).toBe(2);
   expect(f.logger.error).toHaveBeenCalledTimes(1);
   expect(f.logger.info.mock.calls.at(-1)).toEqual([
-    { ensured: 23, dropped: 1, failed: 0 },
+    { ensured: ALL_ENSURED, dropped: 1, failed: 0 },
     'partition_maintenance_done',
   ]);
 });
@@ -206,13 +219,13 @@ it('[AC-B1-01n#5] worker 按契约 8 预建 23 个分区，link_logs 与 orders 
   });
   instances.push(worker);
   const report = await worker.runOnce();
-  expect(report.ensured).toHaveLength(23);
+  expect(report.ensured).toHaveLength(ALL_ENSURED);
   expect(report.defaultRows).toEqual([
     { table: 'link_logs', partition: 'link_logs_default', rows: 2 },
     { table: 'orders', partition: 'orders_default', rows: 3 },
   ]);
   expect(f.logger.info.mock.calls).toEqual([
-    [{ ensured: 23, dropped: 0, failed: 0 }, 'partition_maintenance_done'],
+    [{ ensured: ALL_ENSURED, dropped: 0, failed: 0 }, 'partition_maintenance_done'],
   ]);
   expect(f.logger.warn.mock.calls).toEqual([
     [report.defaultRows[0], 'partition_default_has_rows'],
@@ -265,34 +278,22 @@ it('[AC-B1-01j#1] 独立参数化语句使用同一次时钟读数，失败月�
   };
   const report = await f.maintenance.runOnce();
   expect(report).toEqual({
-    ensured: [
-      'event_log:2026-11-01',
-      'event_log:2027-01-01',
-      'event_log:2027-02-01',
-      'orders:2026-11-01',
-      'orders:2027-01-01',
-      'orders:2027-02-01',
-    ],
+    ensured: MONTH_PARTITIONED_TABLES.flatMap((table) =>
+      FIXTURE_MONTHS.filter((month) => month !== '2026-12-01').map((month) => `${table}:${month}`),
+    ),
     dropped: [],
     defaultRows: [{ table: 'orders', partition: 'orders_default', rows: 3 }],
-    failed: 2,
+    failed: MONTH_PARTITIONED_TABLES.length,
   });
   expect(f.queries.filter((q) => !q.sql.includes('set_config')).map((q) => q.parameters)).toEqual([
     [],
-    ['event_log', '2026-11-01'],
-    ['event_log', '2026-12-01'],
-    ['event_log', '2027-01-01'],
-    ['event_log', '2027-02-01'],
-    ['orders', '2026-11-01'],
-    ['orders', '2026-12-01'],
-    ['orders', '2027-01-01'],
-    ['orders', '2027-02-01'],
+    ...MONTH_PARTITIONED_TABLES.flatMap((table) => FIXTURE_MONTHS.map((month) => [table, month])),
     ['event_log', new Date('2026-11-20T03:04:05Z')],
     [],
   ]);
   expect(f.now).toHaveBeenCalledTimes(1);
   expect(f.logger.error.mock.calls).toEqual(
-    ['event_log', 'orders'].map((table) => [
+    MONTH_PARTITIONED_TABLES.map((table) => [
       { table, month: '2026-12-01', sqlstate: '23514' },
       'partition_ensure_failed',
     ]),
@@ -301,14 +302,9 @@ it('[AC-B1-01j#1] 独立参数化语句使用同一次时钟读数，失败月�
     [{ table: 'orders', partition: 'orders_default', rows: 3 }, 'partition_default_has_rows'],
   ]);
   expect(f.transactions.map((transaction) => transaction.outcome)).toEqual([
-    'committed',
-    'rolled back',
-    'committed',
-    'committed',
-    'committed',
-    'rolled back',
-    'committed',
-    'committed',
+    ...MONTH_PARTITIONED_TABLES.flatMap(() =>
+      FIXTURE_MONTHS.map((month) => (month === '2026-12-01' ? 'rolled back' : 'committed')),
+    ),
     'committed',
   ]);
 });
@@ -327,7 +323,7 @@ it('[AC-B1-01j#2] 删除和 DEFAULT 检查失败分别计数，日志不泄漏�
     [{ sqlstate: null }, 'partition_default_check_failed'],
   ]);
   expect(f.logger.info.mock.calls).toEqual([
-    [{ ensured: 8, dropped: 0, failed: 2 }, 'partition_maintenance_done'],
+    [{ ensured: MONTH_ENSURED, dropped: 0, failed: 2 }, 'partition_maintenance_done'],
   ]);
 });
 
@@ -403,7 +399,7 @@ it('[AC-B1-01j#6] 连接错误由 runOnce 原样抛出，定时运行记录后�
   f.control.respond = async () => undefined;
   await vi.advanceTimersByTimeAsync(100);
   expect(f.logger.info).toHaveBeenCalledWith(
-    { ensured: 8, dropped: 0, failed: 0 },
+    { ensured: MONTH_ENSURED, dropped: 0, failed: 0 },
     'partition_maintenance_done',
   );
 });
@@ -526,7 +522,7 @@ it('[AC-B1-01j#10] 删除锁超时只记一次失败，继续 DEFAULT 告警，�
     [{ table: 'orders', partition: 'orders_default', rows: 2 }, 'partition_default_has_rows'],
   ]);
   expect(f.logger.info.mock.calls).toEqual([
-    [{ ensured: 8, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
+    [{ ensured: MONTH_ENSURED, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
   ]);
   await vi.advanceTimersByTimeAsync(99);
   expect(attempts).toBe(1);
@@ -535,7 +531,7 @@ it('[AC-B1-01j#10] 删除锁超时只记一次失败，继续 DEFAULT 告警，�
   expect(f.logger.error).toHaveBeenCalledTimes(1);
   expect(f.logger.info.mock.calls.slice(1)).toEqual([
     [{ table: 'event_log', partition: 'event_log_p202603' }, 'partition_dropped'],
-    [{ ensured: 8, dropped: 1, failed: 0 }, 'partition_maintenance_done'],
+    [{ ensured: MONTH_ENSURED, dropped: 1, failed: 0 }, 'partition_maintenance_done'],
   ]);
 });
 
@@ -566,7 +562,7 @@ it('[AC-B1-01j#11] stop 等待中的删除收到锁超时后完成，且不再�
     [{ table: 'event_log', sqlstate: '55P03' }, 'partition_drop_failed'],
   ]);
   expect(f.logger.info.mock.calls).toEqual([
-    [{ ensured: 8, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
+    [{ ensured: MONTH_ENSURED, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
   ]);
   expect(f.queries.at(-1)?.sql).toContain('partition_default_rows');
   const queryCount = f.queries.length;
@@ -580,8 +576,8 @@ it('[AC-B1-01j#12] 每次预建和 DEFAULT 计数独占短事务，首句设置�
   const boundedQueries = f.queries.filter(
     (q) => q.sql.includes('ensure_month_partition') || q.sql.includes('partition_default_rows'),
   );
-  expect(boundedQueries).toHaveLength(9);
-  expect(f.transactions).toHaveLength(9);
+  expect(boundedQueries).toHaveLength(MONTH_ENSURED + 1);
+  expect(f.transactions).toHaveLength(MONTH_ENSURED + 1);
   for (const [index, transaction] of f.transactions.entries()) {
     expect(transaction.outcome).toBe('committed');
     expect(transaction.queries).toHaveLength(2);
@@ -604,8 +600,8 @@ it.each([['event_log'], ['event_log', 'orders']])(
       }
       return undefined;
     };
-    const allNames = ['event_log', 'orders'].flatMap((table) =>
-      ['2026-11-01', '2026-12-01', '2027-01-01', '2027-02-01'].map((month) => `${table}:${month}`),
+    const allNames = MONTH_PARTITIONED_TABLES.flatMap((table) =>
+      FIXTURE_MONTHS.map((month) => `${table}:${month}`),
     );
     expect(await f.maintenance.runOnce()).toEqual({
       ensured: allNames.filter(
@@ -664,7 +660,7 @@ it('[AC-B1-01j#14] DEFAULT 锁超时回滚并记一次失败，下一定时轮�
   ]);
   expect(f.logger.warn).not.toHaveBeenCalled();
   expect(f.logger.info.mock.calls).toEqual([
-    [{ ensured: 8, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
+    [{ ensured: MONTH_ENSURED, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
   ]);
   await vi.advanceTimersByTimeAsync(99);
   expect(attempts).toBe(1);
@@ -675,7 +671,7 @@ it('[AC-B1-01j#14] DEFAULT 锁超时回滚并记一次失败，下一定时轮�
     [{ table: 'orders', partition: 'orders_default', rows: 2 }, 'partition_default_has_rows'],
   ]);
   expect(f.logger.info.mock.calls.at(-1)).toEqual([
-    { ensured: 8, dropped: 0, failed: 0 },
+    { ensured: MONTH_ENSURED, dropped: 0, failed: 0 },
     'partition_maintenance_done',
   ]);
 });
