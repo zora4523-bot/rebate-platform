@@ -1,0 +1,27 @@
+id: F1-01o
+repo: rebate-platform
+title: H5 基础组件与令牌小修：Toast 常驻 live region 只换文字并挂到 body（可传挂载点）、ErrorState 可把焦点移到【重试】、bridge-sdk expire_at 不再接受秒 60、themeFromTokens 不写原型链（F1-01f / F1-01l / CT-11a 评审 S2）
+type: impl
+# 2026-10-09 入账（前端线 f1-frontend-5）。合并几条已登记的 S2（couli-runs/F1-frontend/followups-f101j.md），都不改 BR，只按 03 §10.2、§10.5 读屏与 04 原文收紧实现：
+# ① Toast（F1-01f Claude S2-①②）：role=status 的区域常驻（页面挂载即存在、为空），新消息只替换其中文字，不靠换 key 重挂整个区域，读屏才会播报；同一消息再次触发也要重新播报（先清空再写入）。
+#    渲染经 portal 到 document.body（可选 container 参数指定挂载点），不被半屏 / 弹窗遮罩盖住、不落在 inert 容器里；仍不抢焦点、到时消失、pointer-events none。
+#    对外接口按实现者定（如保留 <Toast message durationMs> 并新增 container，或加 useToast 钩子），旧用法（F1-01f 规则测试 test/spec/frontend/h5-components/**）保持通过。
+# ② ErrorState（F1-01f Claude S2-③，03 §10.5「错误态出现时焦点移到【重试】」）：提供把焦点移到【重试】按钮的方式（如 autoFocusAction 开关或转发 ref），默认不抢焦点，旧测试保持通过。
+# ③ bridge-sdk token.ts（F1-01l Claude 复核 S2）：expire_at 的秒只接受 00–59（原生回 60 视为畸形结果，按现有畸形处理返回 90500 类错误，不缓存）。
+#    F1-01b「invalidate 后在途 request 仍用旧令牌」S2 已由 F1-01l（代次比对，ab6df3c）修好，弹层同次渲染栈顺序（F1-01f S2-④）已由 ModalFrame.pushModal 处理；二者不在本任务（规则测试须先红，已修的不写新规则测试）。
+# ④ ui-tokens themeFromTokens（CT-11a 两家 S2）：遇到 __proto__ / constructor / prototype 键不写原型链（用无原型对象或跳过并报错，按实现者定），正常令牌输出不变（生成物不漂移）。
+refs: []
+refs_hash: {}
+deps: [F1-01f, F1-01l, CT-11a]
+paths:
+  - 'apps/h5/src/components/base/**'
+  - 'packages/bridge-sdk/src/token.ts'
+  - 'packages/ui-tokens/src/generate.ts'
+test_paths:
+  - 'test/spec/frontend/h5-base-fixes/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-base-fixes/**'
+status: todo
