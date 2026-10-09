@@ -7,6 +7,7 @@ export type {
   SmsRiskAdmission,
 } from './application/sms-risk.ts';
 export {
+  SameDeviceIsolationError,
   createSameDeviceAccountsCheck,
   sameDeviceAccountsCheckToken,
   sameDeviceLoginReaderToken,
