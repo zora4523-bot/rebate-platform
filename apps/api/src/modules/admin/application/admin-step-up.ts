@@ -6,12 +6,14 @@
 //   sendSms: an account without a verify phone → 10003 (sms, verify_phone_missing), nothing sent;
 //     else one 6-digit code to the registered verify phone through identity's SmsSender port
 //     (purpose step_up), at most one per account every 60 seconds by the Clock (42901 with
-//     Retry-After); the code is valid 300 seconds and replaces any earlier one. A definite
-//     rejection by the provider frees the send slot (50001); an unknown outcome (or a thrown
-//     error) counts as sent.
+//     Retry-After); the code is valid 300 seconds and replaces any earlier one. The code is
+//     recorded before the SMS goes out (failing that: nothing sent, slot freed, 50001); a definite
+//     rejection by the provider withdraws the new code and frees the slot (50001); an unknown
+//     outcome (or a thrown error) counts as sent.
 //   stepUp: tier=totp accepts only the authenticator code (F1-06b verifier with the PG replay
 //     store, shared with the login step); tier=sms accepts only the latest SMS code sent, once
-//     (none pending, expired or replaced → 20003; never a fallback to the authenticator code);
+//     (none pending, or a replaced, used or expired code → 20003, not counted; never a fallback
+//     to the authenticator code);
 //     tier=sms without a verify phone → 10003 (sms, verify_phone_missing). A wrong code of either
 //     tier is 20002 and counts towards the login-failure lock (F1-06k's counter: the 5th sets the
 //     lock and still answers 20002; afterwards the token check answers 10001). Success issues a
@@ -51,6 +53,15 @@ export interface AdminSmsSender {
     readonly code: string;
   }): Promise<'accepted' | 'rejected' | 'unknown'>;
 }
+
+/**
+ * The sender of an entry without identity's: every send is a definite rejection, so sending
+ * answers 50001 and keeps neither the code nor the 60-second slot (a thrown error would count as
+ * sent).
+ */
+export const NO_SMS_SENDER: AdminSmsSender = Object.freeze({
+  send: () => Promise.resolve('rejected' as const),
+});
 
 /** The verified admin principal of the request. */
 export interface AdminCaller {
@@ -112,6 +123,7 @@ const EXPIRED = Object.freeze({ code: 10001 as const });
 const PHONE_MISSING = Object.freeze({ code: 10003 as const });
 const WRONG = Object.freeze({ code: 20002 as const });
 const CODE_GONE = Object.freeze({ code: 20003 as const });
+const SEND_FAILED = Object.freeze({ code: 50001 as const });
 /** Bound on drawing a code whose hash differs from the pending and replaced ones. */
 const CODE_DRAWS = 16;
 
@@ -170,19 +182,37 @@ export function createAdminStepUpService(deps: AdminStepUpDeps): AdminStepUpServ
       if (slot.kind === 'limited') {
         return { code: 42901, retryAfterSec: retryAfterSeconds(slot.retryAfterMs) };
       }
-      const known = await smsCodes.knownHashes(caller.appId, caller.adminId);
+      const free = async (): Promise<SendStepUpSmsResult> => {
+        try {
+          await smsCodes.release(caller.appId, caller.adminId, slot.reservation);
+        } catch {
+          // The slot then lapses by itself after the 60 seconds.
+        }
+        return SEND_FAILED;
+      };
       let code = '';
       let hash = '';
-      for (let draw = 0; draw < CODE_DRAWS && (hash === '' || known.has(hash)); draw += 1) {
-        code = String(randomInt(0, 10 ** STEP_UP_SMS_CODE_DIGITS)).padStart(
-          STEP_UP_SMS_CODE_DIGITS,
-          '0',
+      try {
+        const known = await smsCodes.knownHashes(caller.appId, caller.adminId);
+        for (let draw = 0; draw < CODE_DRAWS && (hash === '' || known.has(hash)); draw += 1) {
+          code = String(randomInt(0, 10 ** STEP_UP_SMS_CODE_DIGITS)).padStart(
+            STEP_UP_SMS_CODE_DIGITS,
+            '0',
+          );
+          hash = hashOf(caller, code);
+        }
+        if (known.has(hash)) return await free();
+        // The record first (repo hard rule 3): the new code becomes current and the previous one
+        // is void before the SMS can reach anyone; nothing is sent when this write fails.
+        await smsCodes.store(
+          caller.appId,
+          caller.adminId,
+          hash,
+          nowMs,
+          nowMs + STEP_UP_SMS_CODE_TTL_MS,
         );
-        hash = hashOf(caller, code);
-      }
-      if (known.has(hash)) {
-        await smsCodes.release(caller.appId, caller.adminId, slot.reservation);
-        return { code: 50001 };
+      } catch {
+        return await free();
       }
       let delivery: 'accepted' | 'rejected' | 'unknown';
       try {
@@ -192,16 +222,14 @@ export function createAdminStepUpService(deps: AdminStepUpDeps): AdminStepUpServ
         delivery = 'unknown';
       }
       if (delivery === 'rejected') {
-        await smsCodes.release(caller.appId, caller.adminId, slot.reservation);
-        return { code: 50001 };
+        // Never delivered: withdraw the new code (the previous one stays void) and the slot.
+        try {
+          await smsCodes.revoke(caller.appId, caller.adminId, hash, nowMs);
+        } catch {
+          // A code nobody received only lapses with its record.
+        }
+        return await free();
       }
-      await smsCodes.store(
-        caller.appId,
-        caller.adminId,
-        hash,
-        nowMs,
-        nowMs + STEP_UP_SMS_CODE_TTL_MS,
-      );
       return {
         code: 0,
         resendAfterSec: STEP_UP_SMS_RESEND_MS / 1000,

@@ -32,6 +32,7 @@ import {
 import { createAdminRequestCheck } from './application/admin-check.ts';
 import { createAdminAuthService, type AdminAuthService } from './application/admin-login.ts';
 import {
+  NO_SMS_SENDER,
   createAdminStepUpService,
   type AdminSmsSender,
   type AdminStepUpService,
@@ -57,7 +58,8 @@ import { createStepUpSmsCodes } from './infra/step-up-sms-codes.ts';
 export interface AdminAuthOptions {
   /**
    * identity's SMS sender (its smsSenderToken() provider: the fake in local / test), for the sms
-   * step-up tier. Absent: sending a step-up SMS fails closed (50001).
+   * step-up tier. Absent: every send is a definite rejection, so sending a step-up SMS answers
+   * 50001 and keeps neither the code nor the send slot.
    */
   readonly smsSender?: FactoryProvider<AdminSmsSender> & { readonly provide: symbol };
 }
@@ -127,11 +129,7 @@ export class AdminAuthModule {
         {
           provide: ADMIN_SMS_SENDER,
           inject: sender === undefined ? [] : [sender.provide],
-          useFactory: (provided?: AdminSmsSender): AdminSmsSender =>
-            provided ?? {
-              send: () =>
-                Promise.reject(new Error('admin auth: no SMS sender configured for this entry')),
-            },
+          useFactory: (provided?: AdminSmsSender): AdminSmsSender => provided ?? NO_SMS_SENDER,
         },
         {
           provide: ADMIN_STARTUP,

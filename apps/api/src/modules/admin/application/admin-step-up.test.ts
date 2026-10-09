@@ -6,17 +6,30 @@ import { FixedClock } from '../../platform/index.ts';
 import type { AdminAccount, AdminAccounts } from '../infra/admin-accounts.ts';
 import type { AdminProfile, AdminProfiles } from '../infra/admin-profiles.ts';
 import type { CodeCheck, StepUpSmsCodes } from '../infra/step-up-sms-codes.ts';
-import { createAdminStepUpService, type AdminSmsSender } from './admin-step-up.ts';
+import { NO_SMS_SENDER, createAdminStepUpService, type AdminSmsSender } from './admin-step-up.ts';
 import type { AdminStepUpTokens } from './permission-guard.ts';
 
+interface MemoryCodes extends StepUpSmsCodes {
+  readonly state: {
+    current: { hash: string; exp: number } | undefined;
+    voided: { hash: string; exp: number }[];
+    failStore: boolean;
+  };
+}
+
 /** StepUpSmsCodes double with the semantics of infra/step-up-sms-codes.ts. */
-function memoryCodes(): StepUpSmsCodes {
+function memoryCodes(): MemoryCodes {
   let sent: { at: number; reservation: string } | undefined;
-  let current: { hash: string; exp: number } | undefined;
-  let voided: { hash: string; exp: number }[] = [];
+  const state: MemoryCodes['state'] = { current: undefined, voided: [], failStore: false };
   return {
+    state,
     knownHashes: () =>
-      Promise.resolve(new Set([...(current ? [current.hash] : []), ...voided.map((v) => v.hash)])),
+      Promise.resolve(
+        new Set([
+          ...(state.current ? [state.current.hash] : []),
+          ...state.voided.map((v) => v.hash),
+        ]),
+      ),
     reserve: (_app, _admin, nowMs, intervalMs) => {
       if (sent !== undefined && nowMs - sent.at < intervalMs) {
         return Promise.resolve({ kind: 'limited', retryAfterMs: sent.at + intervalMs - nowMs });
@@ -28,26 +41,39 @@ function memoryCodes(): StepUpSmsCodes {
       if (sent?.reservation === reservation) sent = undefined;
       return Promise.resolve();
     },
-    store: (_app, _admin, hash, nowMs, exp) => {
-      voided = voided.filter((v) => v.exp > nowMs);
-      if (current !== undefined && current.exp > nowMs) voided.push(current);
-      current = { hash, exp };
+    store: (_app, _admin, hash, _nowMs, exp) => {
+      if (state.failStore) return Promise.reject(new Error('redis down'));
+      if (state.current !== undefined) state.voided.push(state.current);
+      state.current = { hash, exp };
+      return Promise.resolve();
+    },
+    revoke: (_app, _admin, hash) => {
+      if (state.current?.hash === hash) state.current = undefined;
+      state.voided = state.voided.filter((v) => v.hash !== hash);
       return Promise.resolve();
     },
     check: (_app, _admin, hash, nowMs): Promise<CodeCheck> => {
-      if (current === undefined || current.exp <= nowMs) return Promise.resolve('none');
-      if (current.hash === hash) {
-        current = undefined;
-        voided = [];
+      const live = state.current !== undefined && state.current.exp > nowMs;
+      if (live && state.current!.hash === hash) {
+        state.voided.push(state.current!);
+        state.current = undefined;
         return Promise.resolve('ok');
       }
-      if (voided.some((v) => v.hash === hash && v.exp > nowMs)) return Promise.resolve('voided');
-      return Promise.resolve('wrong');
+      if (state.voided.some((v) => v.hash === hash)) return Promise.resolve('voided');
+      if (state.current?.hash === hash) return Promise.resolve('expired');
+      return Promise.resolve(live ? 'wrong' : 'none');
     },
   };
 }
 
-function setup(options: { phone?: boolean; isSuper?: boolean; ticked?: string[] } = {}) {
+function setup(
+  options: {
+    phone?: boolean;
+    isSuper?: boolean;
+    ticked?: string[];
+    sender?: AdminSmsSender;
+  } = {},
+) {
   const clock = new FixedClock('2026-10-09T02:00:00.000Z');
   const id = randomUUID();
   const account: AdminAccount = {
@@ -85,8 +111,16 @@ function setup(options: { phone?: boolean; isSuper?: boolean; ticked?: string[] 
   };
   const outbox: { phone: string; code: string; purpose: string }[] = [];
   const results: ('accepted' | 'rejected' | 'unknown')[] = [];
-  const sender: AdminSmsSender = {
+  const codes = memoryCodes();
+  const blindIndex = (value: string, context: string): string => `h(${context}|${value})`;
+  /** What the code record held when each SMS went out (the record comes first). */
+  const atSend: { current: string | undefined; voided: string[] }[] = [];
+  const sender: AdminSmsSender = options.sender ?? {
     send: (message) => {
+      atSend.push({
+        current: codes.state.current?.hash,
+        voided: codes.state.voided.map((v) => v.hash),
+      });
       const result = results.shift() ?? 'accepted';
       if (result !== 'rejected') outbox.push(message);
       return Promise.resolve(result);
@@ -102,16 +136,18 @@ function setup(options: { phone?: boolean; isSuper?: boolean; ticked?: string[] 
     accounts,
     profiles,
     totp: { verify: ({ code }) => Promise.resolve(totpCodes.has(code)) },
-    smsCodes: memoryCodes(),
+    smsCodes: codes,
     sender,
     tokens,
     crypto: {
       decrypt: (cipher) => cipher.replace(/^cipher:/, ''),
-      blindIndex: (value, context) => `h(${context}|${value})`,
+      blindIndex,
     },
   });
   const caller = { appId: 'couli', adminId: id, sessionId: randomUUID(), ip: '127.0.0.1' };
-  return { clock, service, caller, outbox, results, failures };
+  const hashOf = (code: string): string =>
+    blindIndex(code, `admin_step_up.sms_code:${caller.appId}:${caller.adminId}`);
+  return { clock, service, caller, outbox, results, failures, codes, atSend, hashOf };
 }
 
 it('[AC-F1-06l#7] [AC-F1-06l#8] sends six digits to the verify phone, then limits for 60 seconds', async () => {
@@ -216,4 +252,83 @@ it('[AC-F1-06l#4] [AC-F1-06l#5] me: ticked points in enum order, masked phone or
     code: 0,
     me: { verify_phone_masked: null, permissions: [] },
   });
+});
+
+it('[AC-F1-06l#9] the code is recorded (and the previous one voided) before the SMS goes out', async () => {
+  const s = setup();
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+  const first = s.outbox.at(-1)!.code;
+  expect(s.atSend[0]).toEqual({ current: s.hashOf(first), voided: [] });
+  s.clock.advanceMs(60_000);
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+  const second = s.outbox.at(-1)!.code;
+  expect(s.atSend[1]).toEqual({ current: s.hashOf(second), voided: [s.hashOf(first)] });
+});
+
+it('[AC-F1-06l#9] a failed record write sends nothing, frees the slot and answers 50001', async () => {
+  const s = setup();
+  s.codes.state.failStore = true;
+  expect(await s.service.sendSms(s.caller)).toEqual({ code: 50001 });
+  expect(s.atSend).toEqual([]);
+  s.codes.state.failStore = false;
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+  expect(s.outbox).toHaveLength(1);
+});
+
+it('[AC-F1-06l#9] a rejected send withdraws the new code and the slot; the replaced code stays void', async () => {
+  const s = setup();
+  await s.service.sendSms(s.caller);
+  const old = s.outbox.at(-1)!.code;
+  s.clock.advanceMs(60_000);
+  s.results.push('rejected');
+  expect(await s.service.sendSms(s.caller)).toEqual({ code: 50001 });
+  expect(s.codes.state.current).toBeUndefined();
+  expect(s.codes.state.voided.map((v) => v.hash)).toEqual([s.hashOf(old)]);
+  expect(await s.service.stepUp(s.caller, 'sms', old)).toEqual({ code: 20003 });
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+  expect(s.failures).not.toHaveBeenCalled();
+});
+
+it('[AC-F1-06l#9] an unknown outcome keeps the code and the slot', async () => {
+  const s = setup();
+  s.results.push('unknown');
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+  expect(s.codes.state.current?.hash).toBe(s.hashOf(s.outbox[0]!.code));
+  expect((await s.service.sendSms(s.caller)).code).toBe(42901);
+});
+
+it('[AC-F1-06l#10] [AC-F1-06l#11] a replaced code past its own expiry is 20003, not a counted 20002', async () => {
+  const s = setup();
+  await s.service.sendSms(s.caller);
+  const old = s.outbox.at(-1)!.code;
+  s.clock.advanceMs(250_000);
+  await s.service.sendSms(s.caller);
+  s.clock.advanceMs(100_000);
+  // The old code expired 50 seconds ago; the new one is still valid.
+  expect(await s.service.stepUp(s.caller, 'sms', old)).toEqual({ code: 20003 });
+  const current = s.outbox.at(-1)!.code;
+  const wrong = String((Number(current) + 1) % 1_000_000).padStart(6, '0');
+  expect(await s.service.stepUp(s.caller, 'sms', wrong)).toEqual({ code: 20002 });
+  expect(s.failures).toHaveBeenCalledTimes(1);
+  expect((await s.service.stepUp(s.caller, 'sms', current)).code).toBe(0);
+});
+
+it('[AC-F1-06l#11] the expired current code, or any code once it expired, is 20003 and not counted', async () => {
+  const s = setup();
+  await s.service.sendSms(s.caller);
+  const code = s.outbox.at(-1)!.code;
+  s.clock.advanceMs(300_000);
+  expect(await s.service.stepUp(s.caller, 'sms', code)).toEqual({ code: 20003 });
+  expect(await s.service.stepUp(s.caller, 'sms', '000000')).toEqual({ code: 20003 });
+  expect(s.failures).not.toHaveBeenCalled();
+});
+
+it('[AC-F1-06l#9] without a configured sender: 50001, no code kept, no slot taken', async () => {
+  const s = setup({ sender: NO_SMS_SENDER });
+  expect(await s.service.sendSms(s.caller)).toEqual({ code: 50001 });
+  expect(s.codes.state).toMatchObject({ current: undefined, voided: [] });
+  expect(await s.service.sendSms(s.caller)).toEqual({ code: 50001 });
+  expect(
+    await NO_SMS_SENDER.send({ app_id: 'couli', phone: '1', purpose: 'step_up', code: '1' }),
+  ).toBe('rejected');
 });
