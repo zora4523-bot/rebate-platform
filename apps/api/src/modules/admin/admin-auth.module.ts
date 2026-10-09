@@ -2,12 +2,16 @@
 // entry's request check (whitelist + admin_token) and the CORS policy bootstrap installs. Loaded on
 // the admin entry only (app.module).
 //
+// Step-up and me/permissions (F1-06l) live here too: POST auth/step-up/sms-codes, POST
+// auth/step-up and GET me/permissions, over the same accounts, sessions and Redis; the SMS sender
+// is identity's, provided by app.module under identity's sender token (options.smsSender).
+//
 // Without a database, Redis or the field cipher (isolated HTTP unit tests, an entry started
 // without them) the routes still register and every request that needs them fails closed (50001).
 // Configuration (platform/config/admin-auth.ts): local / test without ADMIN_TOKEN_SIGNING_KEY sign
 // with a random key per process and, without ADMIN_IP_ALLOWLIST, allow loopback sources only;
 // staging / prod without the key or the whitelist refuse to start when the entry initialises.
-import { type DynamicModule, Module } from '@nestjs/common';
+import { type DynamicModule, type FactoryProvider, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import {
@@ -27,15 +31,36 @@ import {
 } from '../platform/index.ts';
 import { createAdminRequestCheck } from './application/admin-check.ts';
 import { createAdminAuthService, type AdminAuthService } from './application/admin-login.ts';
+import {
+  createAdminStepUpService,
+  type AdminSmsSender,
+  type AdminStepUpService,
+} from './application/admin-step-up.ts';
 import { adminTokenKey, createAdminTokens, type AdminTokens } from './application/admin-tokens.ts';
-import { ADMIN_AUTH, ADMIN_CHECK, ADMIN_HTTP_POLICY } from './application/tokens.ts';
+import {
+  ADMIN_STEP_UP_NAMESPACE,
+  createAdminStepUpTokens,
+} from './application/permission-guard.ts';
+import { ADMIN_AUTH, ADMIN_CHECK, ADMIN_HTTP_POLICY, ADMIN_STEP_UP } from './application/tokens.ts';
 import { createIpAllowlist } from './domain/login-policy.ts';
 import { createTotpVerifier } from './domain/totp.ts';
 import { AdminAuthController } from './http/admin/auth.controller.ts';
+import { AdminStepUpController } from './http/admin/step-up.controller.ts';
 import { createAdminAccounts, type AdminAccounts } from './infra/admin-accounts.ts';
+import { createAdminProfiles } from './infra/admin-profiles.ts';
 import { createAdminSessions, type AdminSessions } from './infra/admin-sessions.ts';
 import { createLoginTickets } from './infra/login-tickets.ts';
 import { createPgTotpReplayStore } from './infra/totp-replay-pg.ts';
+import { createStepUpSmsCodes } from './infra/step-up-sms-codes.ts';
+
+/** What app.module hands the admin entry's module. */
+export interface AdminAuthOptions {
+  /**
+   * identity's SMS sender (its smsSenderToken() provider: the fake in local / test), for the sms
+   * step-up tier. Absent: sending a step-up SMS fails closed (50001).
+   */
+  readonly smsSender?: FactoryProvider<AdminSmsSender> & { readonly provide: symbol };
+}
 
 /** What bootstrap needs to answer the console's CORS requests on the admin entry. */
 export interface AdminHttpPolicy {
@@ -49,6 +74,7 @@ const ADMIN_TOKENS = Symbol('ADMIN_TOKENS');
 const ADMIN_STORES = Symbol('ADMIN_STORES');
 const ADMIN_STARTUP = Symbol('ADMIN_STARTUP');
 const ADMIN_ALLOWLIST = Symbol('ADMIN_ALLOWLIST');
+const ADMIN_SMS_SENDER = Symbol('ADMIN_SMS_SENDER');
 const REDIS_NAMESPACE = 'admin-auth';
 /** Authenticator issuer, as the F1-06c bootstrap command shows it. */
 const ISSUER = 'Couli Admin';
@@ -58,6 +84,8 @@ interface AdminStores {
   readonly redis: () => RedisNamespace;
   readonly accounts: () => AdminAccounts;
   readonly sessions: () => AdminSessions;
+  /** Namespace `admin-step-up`: step-up tokens and SMS codes. */
+  readonly stepUp: () => RedisNamespace;
 }
 
 /** A namespace that is looked up at every command, so a missing Redis fails per request. */
@@ -89,11 +117,22 @@ function startupProblems(config: AppConfig): string[] {
 
 @Module({})
 export class AdminAuthModule {
-  static forRoot(): DynamicModule {
+  static forRoot(options: AdminAuthOptions = {}): DynamicModule {
+    const sender = options.smsSender;
     return {
       module: AdminAuthModule,
-      controllers: [AdminAuthController],
+      controllers: [AdminAuthController, AdminStepUpController],
       providers: [
+        ...(sender === undefined ? [] : [sender]),
+        {
+          provide: ADMIN_SMS_SENDER,
+          inject: sender === undefined ? [] : [sender.provide],
+          useFactory: (provided?: AdminSmsSender): AdminSmsSender =>
+            provided ?? {
+              send: () =>
+                Promise.reject(new Error('admin auth: no SMS sender configured for this entry')),
+            },
+        },
         {
           provide: ADMIN_STARTUP,
           inject: [APP_CONFIG],
@@ -134,8 +173,12 @@ export class AdminAuthModule {
                 ? undefined
                 : createAdminAccounts({ db, clock, sensitiveKeys: SENSITIVE_KEYS });
             const sessions = createAdminSessions({ redis: namespace, clock });
+            const stepUp = lazyNamespace(() =>
+              redis === undefined ? unavailable('Redis') : redis.namespace(ADMIN_STEP_UP_NAMESPACE),
+            );
             return {
               redis: () => namespace,
+              stepUp: () => stepUp,
               accounts: () => accounts ?? unavailable('database'),
               sessions: () => sessions,
             };
@@ -185,6 +228,44 @@ export class AdminAuthModule {
               }),
               crypto,
               issuer: config.appEnv === 'prod' ? ISSUER : `${ISSUER} ${config.appEnv}`,
+            });
+          },
+        },
+        {
+          provide: ADMIN_STEP_UP,
+          inject: [
+            CLOCK,
+            ADMIN_STORES,
+            ADMIN_SMS_SENDER,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            stores: AdminStores,
+            sender: AdminSmsSender,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): AdminStepUpService => {
+            if (db === undefined || crypto === undefined) {
+              const refuse = (): Promise<never> =>
+                Promise.reject(new Error('admin step-up: needs the database and the field cipher'));
+              return { sendSms: refuse, stepUp: refuse, me: refuse };
+            }
+            return createAdminStepUpService({
+              clock,
+              accounts: stores.accounts(),
+              profiles: createAdminProfiles({ db }),
+              totp: createTotpVerifier({
+                clock,
+                crypto,
+                replay: createPgTotpReplayStore({ db }),
+                digits: 6,
+              }),
+              smsCodes: createStepUpSmsCodes({ redis: stores.stepUp() }),
+              sender,
+              tokens: createAdminStepUpTokens({ clock, redis: stores.stepUp() }),
+              crypto,
             });
           },
         },

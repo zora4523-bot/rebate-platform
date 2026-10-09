@@ -56,7 +56,7 @@ const OPERATIONS = [
   ['get', '/admin/v1/admins/{admin_id}', 'super', [10001, 10403, 20001]],
 ] as const;
 
-/** The operations F1-06k implements: they carry no x-implementation marker any more. */
+/** The operations F1-06k and F1-06l implement: they carry no x-implementation marker any more. */
 const IMPLEMENTED: ReadonlySet<string> = new Set([
   '/admin/v1/auth/login',
   '/admin/v1/auth/password',
@@ -64,6 +64,10 @@ const IMPLEMENTED: ReadonlySet<string> = new Set([
   '/admin/v1/auth/totp/bind',
   '/admin/v1/auth/totp',
   '/admin/v1/auth/logout',
+  // F1-06l: two-tier step-up and me/permissions.
+  '/admin/v1/auth/step-up/sms-codes',
+  '/admin/v1/auth/step-up',
+  '/admin/v1/me/permissions',
 ]);
 
 /** Codes every admin operation may return without listing them (openapi info.description). */
@@ -102,7 +106,7 @@ const schema = (name: string): object => contract.components.schemas[name]!;
 describe('admin operations (04 §6.6, CT-02f)', () => {
   it.each(OPERATIONS)('%s %s exists, x-auth %s', (method, path, auth, codes) => {
     const op = operation(method, path);
-    // F1-06k implements the login steps and logout (no marker); the others stay planned.
+    // F1-06k / F1-06l implement these (no marker); the admins reads stay planned.
     if (IMPLEMENTED.has(path)) expect(op['x-implementation']).toBeUndefined();
     else expect(op['x-implementation']).toBe('planned');
     expect(op['x-auth']).toBe(auth);

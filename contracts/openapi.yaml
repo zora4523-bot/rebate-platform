@@ -4657,7 +4657,6 @@ paths:
       x-auth: admin
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -4726,7 +4725,6 @@ paths:
       x-auth: admin
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -4830,7 +4828,6 @@ paths:
         (B1-18). `verify_phone_masked` is null when no verify phone is registered: sms-tier
         buttons are greyed out with a prompt to register one (03 §9.2).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

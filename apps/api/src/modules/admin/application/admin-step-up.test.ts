@@ -1,0 +1,219 @@
+// Unit tests of the step-up use cases over doubles of the stores, the sender and the verifier;
+// the SQL and Redis scripts run against real services in the rule tests (test/spec/admin/**).
+import { randomUUID } from 'node:crypto';
+import { expect, it, vi } from 'vitest';
+import { FixedClock } from '../../platform/index.ts';
+import type { AdminAccount, AdminAccounts } from '../infra/admin-accounts.ts';
+import type { AdminProfile, AdminProfiles } from '../infra/admin-profiles.ts';
+import type { CodeCheck, StepUpSmsCodes } from '../infra/step-up-sms-codes.ts';
+import { createAdminStepUpService, type AdminSmsSender } from './admin-step-up.ts';
+import type { AdminStepUpTokens } from './permission-guard.ts';
+
+/** StepUpSmsCodes double with the semantics of infra/step-up-sms-codes.ts. */
+function memoryCodes(): StepUpSmsCodes {
+  let sent: { at: number; reservation: string } | undefined;
+  let current: { hash: string; exp: number } | undefined;
+  let voided: { hash: string; exp: number }[] = [];
+  return {
+    knownHashes: () =>
+      Promise.resolve(new Set([...(current ? [current.hash] : []), ...voided.map((v) => v.hash)])),
+    reserve: (_app, _admin, nowMs, intervalMs) => {
+      if (sent !== undefined && nowMs - sent.at < intervalMs) {
+        return Promise.resolve({ kind: 'limited', retryAfterMs: sent.at + intervalMs - nowMs });
+      }
+      sent = { at: nowMs, reservation: randomUUID() };
+      return Promise.resolve({ kind: 'reserved', reservation: sent.reservation });
+    },
+    release: (_app, _admin, reservation) => {
+      if (sent?.reservation === reservation) sent = undefined;
+      return Promise.resolve();
+    },
+    store: (_app, _admin, hash, nowMs, exp) => {
+      voided = voided.filter((v) => v.exp > nowMs);
+      if (current !== undefined && current.exp > nowMs) voided.push(current);
+      current = { hash, exp };
+      return Promise.resolve();
+    },
+    check: (_app, _admin, hash, nowMs): Promise<CodeCheck> => {
+      if (current === undefined || current.exp <= nowMs) return Promise.resolve('none');
+      if (current.hash === hash) {
+        current = undefined;
+        voided = [];
+        return Promise.resolve('ok');
+      }
+      if (voided.some((v) => v.hash === hash && v.exp > nowMs)) return Promise.resolve('voided');
+      return Promise.resolve('wrong');
+    },
+  };
+}
+
+function setup(options: { phone?: boolean; isSuper?: boolean; ticked?: string[] } = {}) {
+  const clock = new FixedClock('2026-10-09T02:00:00.000Z');
+  const id = randomUUID();
+  const account: AdminAccount = {
+    id,
+    appId: 'couli',
+    loginName: 'finance-jia',
+    passwordHash: 'x',
+    totpSecretCipher: Buffer.from('secret'),
+    totpBoundAt: clock.now(),
+    isSuper: options.isSuper ?? false,
+    status: 'active',
+    passwordMustChange: false,
+    failedLoginCount: 0,
+    lockedUntil: null,
+  };
+  const profile: AdminProfile = {
+    id,
+    appId: 'couli',
+    loginName: account.loginName,
+    isSuper: account.isSuper,
+    status: 'active',
+    verifyPhoneCipher: options.phone === false ? null : Buffer.from('cipher:13800135678'),
+  };
+  const failures = vi.fn();
+  const accounts = {
+    byId: () => Promise.resolve(account),
+    recordFailure: (...args: unknown[]) => {
+      failures(...args);
+      return Promise.resolve({ kind: 'counted', count: failures.mock.calls.length });
+    },
+  } as unknown as AdminAccounts;
+  const profiles: AdminProfiles = {
+    byId: () => Promise.resolve(profile),
+    permissionKeys: () => Promise.resolve(options.ticked ?? []),
+  };
+  const outbox: { phone: string; code: string; purpose: string }[] = [];
+  const results: ('accepted' | 'rejected' | 'unknown')[] = [];
+  const sender: AdminSmsSender = {
+    send: (message) => {
+      const result = results.shift() ?? 'accepted';
+      if (result !== 'rejected') outbox.push(message);
+      return Promise.resolve(result);
+    },
+  };
+  const totpCodes = new Set(['totp-ok']);
+  const tokens: AdminStepUpTokens = {
+    issue: (binding) =>
+      Promise.resolve({ step_up_token: `t-${binding.tier}`, tier: binding.tier, expire_at: 'e' }),
+  };
+  const service = createAdminStepUpService({
+    clock,
+    accounts,
+    profiles,
+    totp: { verify: ({ code }) => Promise.resolve(totpCodes.has(code)) },
+    smsCodes: memoryCodes(),
+    sender,
+    tokens,
+    crypto: {
+      decrypt: (cipher) => cipher.replace(/^cipher:/, ''),
+      blindIndex: (value, context) => `h(${context}|${value})`,
+    },
+  });
+  const caller = { appId: 'couli', adminId: id, sessionId: randomUUID(), ip: '127.0.0.1' };
+  return { clock, service, caller, outbox, results, failures };
+}
+
+it('[AC-F1-06l#7] [AC-F1-06l#8] sends six digits to the verify phone, then limits for 60 seconds', async () => {
+  const s = setup();
+  expect(await s.service.sendSms(s.caller)).toEqual({
+    code: 0,
+    resendAfterSec: 60,
+    expiresInSec: 300,
+  });
+  expect(s.outbox).toEqual([
+    {
+      app_id: 'couli',
+      phone: '13800135678',
+      purpose: 'step_up',
+      code: expect.stringMatching(/^\d{6}$/),
+    },
+  ]);
+  s.clock.advanceMs(59_001);
+  expect(await s.service.sendSms(s.caller)).toEqual({ code: 42901, retryAfterSec: 1 });
+  s.clock.advanceMs(999);
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+});
+
+it('[AC-F1-06l#6] no verify phone: 10003 for send and sms step-up, nothing sent', async () => {
+  const s = setup({ phone: false });
+  expect(await s.service.sendSms(s.caller)).toEqual({ code: 10003 });
+  expect(await s.service.stepUp(s.caller, 'sms', '123456')).toEqual({ code: 10003 });
+  expect(s.outbox).toEqual([]);
+});
+
+it('[AC-F1-06l#9] a rejected send frees the slot; an unknown outcome counts as sent', async () => {
+  const s = setup();
+  s.results.push('rejected', 'unknown');
+  expect(await s.service.sendSms(s.caller)).toEqual({ code: 50001 });
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+  expect((await s.service.sendSms(s.caller)).code).toBe(42901);
+  const code = s.outbox.at(-1)!.code;
+  expect(await s.service.stepUp(s.caller, 'sms', code)).toMatchObject({ code: 0 });
+});
+
+it('[AC-F1-06l#33] each tier accepts only its own code; a cross-tier code is a counted 20002', async () => {
+  const s = setup();
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+  const sms = s.outbox.at(-1)!.code;
+  expect(await s.service.stepUp(s.caller, 'sms', 'totp-ok')).toEqual({ code: 20002 });
+  expect(await s.service.stepUp(s.caller, 'totp', sms)).toEqual({ code: 20002 });
+  expect(s.failures).toHaveBeenCalledTimes(2);
+  expect(await s.service.stepUp(s.caller, 'totp', 'totp-ok')).toMatchObject({
+    code: 0,
+    grant: { tier: 'totp' },
+  });
+  expect(await s.service.stepUp(s.caller, 'sms', sms)).toMatchObject({
+    code: 0,
+    grant: { tier: 'sms' },
+  });
+});
+
+it('[AC-F1-06l#10] [AC-F1-06l#12] no pending code, a used or replaced code is 20003 and not counted', async () => {
+  const s = setup();
+  expect(await s.service.stepUp(s.caller, 'sms', 'totp-ok')).toEqual({ code: 20003 });
+  await s.service.sendSms(s.caller);
+  const old = s.outbox.at(-1)!.code;
+  s.clock.advanceMs(60_000);
+  await s.service.sendSms(s.caller);
+  const current = s.outbox.at(-1)!.code;
+  expect(current).not.toBe(old);
+  expect(await s.service.stepUp(s.caller, 'sms', old)).toEqual({ code: 20003 });
+  expect((await s.service.stepUp(s.caller, 'sms', current)).code).toBe(0);
+  expect(await s.service.stepUp(s.caller, 'sms', current)).toEqual({ code: 20003 });
+  expect(s.failures).not.toHaveBeenCalled();
+});
+
+it('[AC-F1-06l#11] an SMS code expires 300 seconds after it was sent', async () => {
+  const s = setup();
+  await s.service.sendSms(s.caller);
+  s.clock.advanceMs(300_000);
+  expect(await s.service.stepUp(s.caller, 'sms', s.outbox.at(-1)!.code)).toEqual({ code: 20003 });
+});
+
+it('[AC-F1-06l#4] [AC-F1-06l#5] me: ticked points in enum order, masked phone or null', async () => {
+  const s = setup({ ticked: ['fund.recon', 'retired.unknown', 'user.list'] });
+  const result = await s.service.me(s.caller);
+  expect(result).toEqual({
+    code: 0,
+    me: {
+      admin_id: s.caller.adminId,
+      username: 'finance-jia',
+      is_super: false,
+      verify_phone_masked: '138****5678',
+      permissions: [
+        { key: 'user.list', step_up_tier: null, step_up_operations: [] },
+        {
+          key: 'fund.recon',
+          step_up_tier: null,
+          step_up_operations: [{ operation: 'fund.recon.balance_recalc', tier: 'sms' }],
+        },
+      ],
+    },
+  });
+  const empty = setup({ phone: false });
+  expect(await empty.service.me(empty.caller)).toMatchObject({
+    code: 0,
+    me: { verify_phone_masked: null, permissions: [] },
+  });
+});

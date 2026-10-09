@@ -7,3 +7,5 @@ export const ADMIN_AUTH = Symbol('ADMIN_AUTH');
 export const ADMIN_CHECK = Symbol('ADMIN_CHECK');
 /** AdminHttpPolicy: the console CORS origin and the whitelist predicate, for bootstrap. */
 export const ADMIN_HTTP_POLICY = Symbol('ADMIN_HTTP_POLICY');
+/** AdminStepUpService (./admin-step-up.ts): step-up and me/permissions (F1-06l). */
+export const ADMIN_STEP_UP = Symbol('ADMIN_STEP_UP');
