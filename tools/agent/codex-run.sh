@@ -30,8 +30,10 @@
 #
 # Reasoning effort (owner decision 2026-10-09, ops/approvals.yaml id 27): Codex is the only code
 # reviewer of what Claude implemented, at a light effort. review mode passes
-# model_reasoning_effort = $CODEX_REVIEW_EFFORT, default low; only minimal, low, medium, high and
-# xhigh are accepted, anything else is a usage error (exit 2). impl mode stays at high.
+# model_reasoning_effort = $CODEX_REVIEW_EFFORT, default low. The variable is a switch to change
+# only when the owner decides otherwise (只在负责人另有决定时改), not an orchestrator knob; only
+# minimal, low, medium, high and xhigh are accepted, anything else is a usage error (exit 2).
+# impl mode stays at high.
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -71,7 +73,7 @@ usage: codex-run.sh impl   <id> [--phase test|handover] [--worktree <dir>] [--ti
                                 [--base <ref>] [--timeout-min <n>] [--dry-run]
        codex-run.sh selfcheck
 env:   CODEX_REVIEW_EFFORT  review reasoning effort: minimal|low|medium|high|xhigh (default low;
-                            impl stays high)
+                            change only when the owner decides otherwise; impl stays high)
 exit:  0 usable output | 10 no usable output | 11 model capacity | 12 position assertion failed
        124 timeout | 2 usage error or refused argument
 EOF

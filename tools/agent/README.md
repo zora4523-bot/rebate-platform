@@ -6,7 +6,7 @@
 
 **默认分工（负责人 2026-10-05，`ops/approvals.yaml` 第 19 条；规划/11 §1.1）：Opus 实现、Codex 写测试与评审。**
 
-**评审只用 Codex（负责人 2026-10-09，`ops/approvals.yaml` 第 27 条）**：Claude 写的实现不再派 Claude 新子代理做第二家评审（RV2 也不派），所有风险级的代码评审只跑 Codex 新只读会话（`gpt-6-astra`，推理档位默认 `low`，环境变量 `CODEX_REVIEW_EFFORT` 可调高）；Codex 写的规则测试仍由 Claude 新子代理过审（§11），Codex 实现的代码（换家、第 23 条首发）仍由 Claude 评审。
+**评审只用 Codex（负责人 2026-10-09，`ops/approvals.yaml` 第 27 条）**：Claude 写的实现不再派 Claude 新子代理做第二家评审（RV2 也不派），所有风险级的代码评审只跑 Codex 新只读会话（`gpt-6-astra`，推理档位 `low`；环境变量 `CODEX_REVIEW_EFFORT` 是保留的开关，只在负责人另有决定时改）；Codex 写的规则测试仍由 Claude 新子代理过审（§11），Codex 实现的代码（换家、第 23 条首发）仍由 Claude 评审。
 
 | 谁 | 做什么 | 经什么 |
 | --- | --- | --- |
@@ -20,7 +20,7 @@
 
 **旧任务按旧流程走完**（编排会话 2026-10-05 补充要求）：`tools/guard/legacy-tasks.json` 列出的 82 个台账（分工切换合入前最后一个主干提交 `85f4f53` 上的全部任务）不受新分工约束：不要求 `test_paths`、证据不要求红测记录（仍要完整的容器 `verify`）。其中台账 `impl: codex`、`tester: claude` 的（如 B1-01r～w）照旧：Claude 写规则测试 → Codex spec-test 评审（`codex-run.sh review --review-type spec-test`）→ Codex 实现（`dispatch.sh <id>` 自动选旧的实现阶段：`codex-run.sh impl --phase impl`，计 `attempts.impl`，不算换家、不记 `implementer`，任务书是旧格式：沙箱里可跑 `pnpm verify:fast`）→ Codex / Claude 代码评审。`--phase impl` 只接受这类台账；新任务一律走新分工。清单内的任务还有两条旧口径（CR3-01、CR3-02）：没有 `test_paths` 时，路径守卫、red-check 与 `--red` 的应跑清单都用同一套旧范围（全部第一类规则测试资产，`tools/lib/legacy-tasks.ts` 的 `ruleTestScope`）；骨架按切换前的规则判（文件里有 `NotImplemented`），逐语句检查只管清单外的任务。清单外的新台账只能写 `impl: claude`、`tester: codex` 或 `none`（`task.ts check`，CR3-03），换家只记在运行时的 `implementer`。
 
-**部分任务改由 Codex 实现**（负责人 2026-10-06，`ops/approvals.yaml` 第 23 条，规划/11 §1.1 例外、§2.5「Codex 首发实现」、§7.3 第 14 项）：`tools/guard/codex-impl-tasks.json` 按子任务编号放行（带小写后缀的条目只放行该子任务；不带后缀的条目是整行放行，含其全部子任务）。这些台账可写 `impl: codex`、`tester: claude`（`task.ts check`），且照新任务要求写 `test_paths`、证据要红测记录：Claude 子代理先写规则测试（`brief.ts <id> --phase test` 生成任务书）并先红 → Codex 新只读会话过审测试（`codex-run.sh review --review-type spec-test`，台账 `tester: claude` 才放行）→ 记下 `spec_commit` 后 `dispatch.sh <id>` 自动选实现阶段（`codex-run.sh impl --phase impl`，计 `attempts.impl`，上限 3；没有 `spec_commit` 拒绝派发），任务书与换家同口径：沙箱只做静态检查，测试由编排者在隔离容器或 CI 跑 → 评审按风险级：RV0 / RV1 由 Claude 新子代理；RV2 两家（Claude 新子代理 + Codex 新只读会话，`codex-run.sh review` 每次都是新会话）。这类 PR 都带规则测试（`test/**`，RV2），evidence-check 按整个 PR 算风险，所以实际上都要两家评审（第 27 条不改这一类：实现方是 Codex，evidence-check 读到台账 `impl: codex` 时照旧要求 `claude` 条目）。Codex 首发实现超限后换 Opus 实现一次（RV0 / RV1）由编排者手工记录，本脚本不自动处理；RV2 `blocked` 问负责人。这类台账只能是 `type: impl`，`paths` 不得碰清单文件 `forbidden_paths` 列的资金、归属、打款、订单、迁移、契约、客户端与门禁路径（`MONEY_PATHS` 的超集；`task.ts check` 拒收，清单缺这一栏则一律拒收）；Codex 首发台账不能再走 `dispatch.sh --handover`。清单外的任务不受影响。
+**部分任务改由 Codex 实现**（负责人 2026-10-06，`ops/approvals.yaml` 第 23 条，规划/11 §1.1 例外、§2.5「Codex 首发实现」、§7.3 第 14 项）：`tools/guard/codex-impl-tasks.json` 按子任务编号放行（带小写后缀的条目只放行该子任务；不带后缀的条目是整行放行，含其全部子任务）。这些台账可写 `impl: codex`、`tester: claude`（`task.ts check`），且照新任务要求写 `test_paths`、证据要红测记录：Claude 子代理先写规则测试（`brief.ts <id> --phase test` 生成任务书）并先红 → Codex 新只读会话过审测试（`codex-run.sh review --review-type spec-test`，台账 `tester: claude` 才放行）→ 记下 `spec_commit` 后 `dispatch.sh <id>` 自动选实现阶段（`codex-run.sh impl --phase impl`，计 `attempts.impl`，上限 3；没有 `spec_commit` 拒绝派发），任务书与换家同口径：沙箱只做静态检查，测试由编排者在隔离容器或 CI 跑 → 评审按风险级：RV0 / RV1 由 Claude 新子代理；RV2 两家（Claude 新子代理 + Codex 新只读会话，`codex-run.sh review` 每次都是新会话）。这类 PR 都带规则测试（`test/**`，RV2），evidence-check 按整个 PR 算风险，所以实际上都要两家评审。第 27 条起证据只要求实现方之外的那一家：evidence-check 读到台账 `impl: codex` 时要求 `claude` 条目，`codex` 条目可选（有则照旧校验）。Codex 首发实现超限后换 Opus 实现一次（RV0 / RV1）由编排者手工记录，本脚本不自动处理；RV2 `blocked` 问负责人。这类台账只能是 `type: impl`，`paths` 不得碰清单文件 `forbidden_paths` 列的资金、归属、打款、订单、迁移、契约、客户端与门禁路径（`MONEY_PATHS` 的超集；`task.ts check` 拒收，清单缺这一栏则一律拒收）；Codex 首发台账不能再走 `dispatch.sh --handover`。清单外的任务不受影响。
 
 **谁实现的就不评审谁**：台账 `tester` 不是 `claude` 时（Codex 写的或读不到作者）`codex-run.sh review --review-type spec-test` 一律拒绝（CR-08）；换家后（在途状态 `implementer: codex`，或运行目录里有 `phase: handover` 的调用）Codex 的代码评审一律拒绝，改由 Claude 新子代理按 §11 的做法评审（CR-09）。`codex-run.sh impl` 核对任务书「本轮阶段」与 `--phase` 一致，不一致拒绝（CR-14）。
 
@@ -199,7 +199,7 @@ TODO(规划/11 §2.4, §9.3)：上面第 2–4 步尚未执行 — blocked on �
 | `COULI_CODEX_BIN` | 换一个 `codex` 可执行文件；只在 `COULI_AGENT_TEST=1` 且运行目录在 `.tmp` 下时接受（测试夹具用），否则拒绝 |
 | `COULI_SESSION` | 编排会话名；`dispatch.sh` 用它作认领的 owner，同名会话才能续期自己的认领。不设时每次派工用一个唯一名字，仍被占着的认领不会被续期 |
 | `COULI_KILL_GRACE_SECS` | TERM 到 KILL 的等待秒数，默认 5，上限 5 |
-| `CODEX_REVIEW_EFFORT` | `review` 模式的推理档位（`model_reasoning_effort`）：`minimal` / `low` / `medium` / `high` / `xhigh`，默认 `low`（`ops/approvals.yaml` 第 27 条），其他值退出 2；`impl` 模式（Codex 写测试、换家实现）固定 `high`，不受它影响 |
+| `CODEX_REVIEW_EFFORT` | `review` 模式的推理档位（`model_reasoning_effort`）：`minimal` / `low` / `medium` / `high` / `xhigh`，默认 `low`（`ops/approvals.yaml` 第 27 条），只在负责人另有决定时改，其他值退出 2；`impl` 模式（Codex 写测试、换家实现）固定 `high`，不受它影响 |
 | `COULI_CODEX_TIMEOUT_SECS`、`COULI_CODEX_IDLE_SECS` | 把硬超时、无活动阈值调小（测试与首次自检用）；调不大。这两个变量是本目录自己加的，根 `.env.example` 末尾有注释说明 |
 | `COULI_CODEX_WRAPPER=1` | 只由本脚本设置，`codex` 垫片据此放行 |
 

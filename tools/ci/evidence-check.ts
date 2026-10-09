@@ -13,15 +13,17 @@
 //   RV0 / RV1  pass; an evidence file for the task, when present, is validated all the same.
 //   RV2        ops/evidence/<id>.json must exist at the head (id from the branch `task/<id>`):
 //              task id, spec_ref = SPEC_REF of the head, spec_commit is an ancestor of the head
-//              and no class 1 test asset changed between it and the head, the Codex review
-//              passes with no open S0 / S1 and the funds checklist complete, every recorded
+//              and no class 1 test asset changed between it and the head, the review of the
+//              side other than the implementer passes with no open S0 / S1, every recorded
 //              directory tree hash equals the head's, long-run result bound to one of those trees.
-//              Reviews (owner decision 2026-10-09, ops/approvals.yaml id 27): Codex (a fresh
-//              read-only session) is the only code reviewer of an implementation Claude wrote; a
-//              Claude review is no longer required, and a Claude entry that is present is still
-//              validated. A task whose ledger names Codex as the implementer (impl: codex,
-//              ops/approvals.yaml id 23) or whose ledger cannot be read still needs the Claude
-//              review as well (the implementer never reviews itself).
+//              Reviews (owner decision 2026-10-09, ops/approvals.yaml id 27): the required entry
+//              is the one of the side that did not implement. Ledger impl: claude (Opus
+//              implemented): the codex entry (pass, open_s0_s1 0, checklist complete); a claude
+//              entry is optional and validated when present. Ledger impl: codex (ops/approvals.yaml
+//              id 23): the claude entry; a codex entry is optional and validated when present.
+//              A ledger that cannot be read requires both (fail-closed). A PR commit carrying the
+//              handover marker without a handover record counts as impl: codex. The handover of
+//              规划/11 §2.5 is handled below.
 //              Handover (规划/11 §2.5, CR-09): when Opus used up its rounds and Codex implemented
 //              once, the evidence carries `handover` and only the Claude review of the handover
 //              implementation must pass (Codex never reviews its own code). Allowed only when the
@@ -274,11 +276,13 @@ export function evidenceProblems(
     /** Whether a handover may be recorded (absent: refused, the normal reviews required). */
     handover?: HandoverPolicy;
     /**
-     * Whether a Claude code review is required besides the Codex one: the ledger names Codex as
-     * the implementer (impl: codex, ops/approvals.yaml id 23) or cannot be read. Absent: not
-     * required (ops/approvals.yaml id 27: Codex alone reviews what Claude implemented).
+     * Who implemented, from the task ledger's `impl` (ops/approvals.yaml id 27: the side that did
+     * not implement must review). `unknown` (ledger unreadable) requires both reviews.
+     * Absent: claude (the default split, Opus implements).
      */
-    claudeReview?: boolean;
+    implementer?: 'claude' | 'codex' | 'unknown';
+    /** Why the implementer is what it is, for the error message (absent: the implementer). */
+    implementerWhy?: string;
   },
 ): string[] {
   const problems: string[] = [];
@@ -533,18 +537,25 @@ export function evidenceProblems(
       }
     }
   } else {
-    // ops/approvals.yaml id 27 (2026-10-09): the Codex review is always required; the Claude review
-    // only when Codex implemented (ctx.claudeReview). A Claude entry that is present is checked.
+    // ops/approvals.yaml id 27 (2026-10-09): the side that did not implement must review; the
+    // implementer's own entry is optional and checked when present.
+    const implementer = ctx.implementer ?? 'claude';
+    const why = ctx.implementerWhy ?? `implementer: ${implementer}`;
+    const required = new Set(
+      implementer === 'claude'
+        ? ['codex']
+        : implementer === 'codex'
+          ? ['claude']
+          : ['claude', 'codex'],
+    );
     for (const reviewer of ['claude', 'codex']) {
       const entry = reviews.find((r) => isRecord(r) && r['reviewer'] === reviewer);
       if (!isRecord(entry)) {
-        if (reviewer === 'codex') {
-          at('reviews', 'missing the codex review (规划/11 §3.2 Codex 对抗评审)');
-        } else if (ctx.claudeReview === true) {
+        if (required.has(reviewer)) {
           at(
             'reviews',
-            'missing the claude review (the task ledger names Codex as the implementer or cannot ' +
-              'be read; the implementer never reviews itself, ops/approvals.yaml id 23)',
+            `missing the ${reviewer} review (${why}; the side that did not ` +
+              'implement reviews, ops/approvals.yaml id 27, 规划/11 §3.2)',
           );
         }
         continue;
@@ -586,6 +597,37 @@ export function evidenceProblems(
     }
   }
   return problems;
+}
+
+/**
+ * Who implemented (ops/approvals.yaml id 27): the ledger's impl (anything but codex = Opus, the
+ * default split), unknown when the ledger cannot be read. A commit on the PR (merge base..head)
+ * carrying the handover marker while the evidence records no handover means Codex implemented
+ * although the ledger says claude (dispatch.sh records a handover only in the runtime state), so
+ * the Claude review is then required (Codex review of this change, S1).
+ */
+function implementerOf(
+  input: EvidenceInput,
+  ledger: TaskFile | null,
+  mergeBase: string,
+  doc: unknown,
+): { implementer: 'claude' | 'codex' | 'unknown'; implementerWhy?: string } {
+  if (ledger === null) return { implementer: 'unknown' };
+  if (ledger.impl === 'codex') return { implementer: 'codex' };
+  if (isRecord(doc) && doc['handover'] !== undefined) return { implementer: 'claude' };
+  const marked = tryGit(['log', '--format=%h %s', `${mergeBase}..${input.head}`], {
+    cwd: input.prDir,
+  })
+    .stdout.split('\n')
+    .filter((line) => line.includes(HANDOVER_MARKER))
+    .map((line) => line.split(' ')[0] ?? '');
+  if (marked.length === 0) return { implementer: 'claude' };
+  return {
+    implementer: 'codex',
+    implementerWhy:
+      `${marked.join(', ')} carries the handover marker "${HANDOVER_MARKER}", so Codex ` +
+      'implemented (规划/11 §2.5, CR-09)',
+  };
 }
 
 /** The task ledger from the trusted root, or from the head when the PR adds it; null if unreadable. */
@@ -756,7 +798,7 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
           cfg,
           red,
           handover: handoverPolicy(input, task, changed, riskMap, cfg),
-          claudeReview: readLedger(input, task)?.impl !== 'claude',
+          ...implementerOf(input, readLedger(input, task), mergeBase, doc),
         }).map((p) => `${evidencePath}: ${p}`),
       );
     }
