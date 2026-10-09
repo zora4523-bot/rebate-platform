@@ -11,6 +11,7 @@
 import type { RootLogger } from '../../../platform/index.ts';
 import type { ContentReader } from '../../../content/index.ts';
 import type { AdmissionLimits } from '../admission/index.ts';
+import { admissionDefaults } from '../admission/index.ts';
 
 export interface QuotaLimitsSource {
   current(appId: string): Promise<AdmissionLimits>;
@@ -22,6 +23,26 @@ export interface QuotaLimitsSourceDeps {
 }
 
 export function createQuotaLimitsSource(deps: QuotaLimitsSourceDeps): QuotaLimitsSource {
-  void deps;
-  throw new Error('NotImplemented: createQuotaLimitsSource');
+  return {
+    async current(appId) {
+      const limits = admissionDefaults();
+      const keys = [
+        ['memberDaily', 'agent.member_daily_quota'],
+        ['guestDaily', 'agent.guest_daily_quota'],
+        ['guestIpDaily', 'agent.guest_ip_daily_quota'],
+      ] as const;
+      // ContentReader rejects failed refreshes; never replace that failure with defaults.
+      const values = await Promise.all(keys.map(([, key]) => deps.reader.configValue(appId, key)));
+      const result = { ...limits };
+      keys.forEach(([field, key], index) => {
+        const value = values[index]?.value;
+        if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+          result[field] = value;
+        } else {
+          deps.logger?.warn({ app_id: appId, config_key: key }, 'agent.quota_config_invalid');
+        }
+      });
+      return result;
+    },
+  };
 }
