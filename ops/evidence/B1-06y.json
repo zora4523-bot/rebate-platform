@@ -1,0 +1,135 @@
+{
+  "task": "B1-06y",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "195489ba4ad8f6696b3732a3631af10729253dc7",
+  "red_tests": [
+    "test/spec/db/linking-relation-conflicts/history.int.test.ts > [AC-B1-06y#23] attr_at includes occurrence, excludes resolution, and never includes immediate already_active rows",
+    "test/spec/db/linking-relation-conflicts/history.int.test.ts > [AC-B1-06y#24] later resolution preserves the earlier attr_at evidence while removing current conflict",
+    "test/spec/db/linking-relation-conflicts/history.int.test.ts > [AC-B1-06y#25] current and historical queries isolate app, user and platform",
+    "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#16] couli_app can SELECT and INSERT but can UPDATE only the two resolution columns",
+    "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#17] updates to every non-resolution column fail with insufficient privilege",
+    "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#18] DELETE fails with insufficient privilege for unresolved and resolved logs",
+    "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#19] unresolved logs accept a single resolution while preserving occurrence data",
+    "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#20] invalid partial or backwards resolutions cannot be introduced by UPDATE",
+    "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#21] both resolution kinds reject reopening or rewriting with restrict_violation",
+    "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#22] enabled row triggers guard UPDATE and DELETE independently of column grants",
+    "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#10] validated foreign keys retain same-app users and accounts without cascades",
+    "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#11] missing users and accounts are rejected by foreign keys",
+    "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#12] existing users and accounts from another app cannot be referenced",
+    "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#13] valid unrelated users and accounts in the same app can log separate conflicts",
+    "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#14] current-conflict lookup has the specified unresolved-only index",
+    "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#15] historical lookup has a nonpartial index including occurrence time",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#1] conflict storage has the required column types and nullability",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#2] no counterparty identifiers or private profile columns are persisted",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#3] required columns reject NULL and ids cannot be duplicated",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#4] kind and resolution are constrained by explicit CHECK literals",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#5] every conflict kind can be unresolved, bound_active, or already_active at insertion",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#6] unknown or incorrectly cased kinds and resolutions fail CHECK",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#7] platform accepts all contract values and rejects non-platform values",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#8] resolution and resolved_at must be both NULL or both populated",
+    "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#9] resolution before occurrence fails CHECK for either resolution value",
+    "test/spec/db/linking-relation-conflicts/trigger-and-defaults.int.test.ts > [AC-B1-06y#26] trigger bodies reject immutable-column rewrites and DELETE with 23001",
+    "test/spec/db/linking-relation-conflicts/trigger-and-defaults.int.test.ts > [AC-B1-06y#27] occurrence and resolution timestamps have no database defaults"
+  ],
+  "risk_note": "RV2 (db/migrations; attribution evidence). Migration 0025 adds app.union_binding_conflicts (30151 conflict log): app_id, user_id, platform, union_account_id, kind (occupied / cooling / rebind), occurred_at, resolved_at, resolution (bound_active / already_active); named CHECKs for kind, resolution and platform; resolved_at and resolution both null or both set, resolved_at >= occurred_at; no database clock defaults; composite FK (app_id, platform, union_account_id) -> union_accounts(app_id, platform, id); partial index on unresolved rows and a time-point index (app_id, user_id, platform, occurred_at); couli_app SELECT, INSERT and column UPDATE (resolved_at, resolution) only, a trigger rejects other rewrites, re-resolving and DELETE; couli_readonly SELECT. tools/ci/lint-migrations.test.ts gains one funds-set line (the union_ prefix already protects the table; tightening only, ledger #374). Generated schema views through the test machine. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "195489ba4ad8f6696b3732a3631af10729253dc7",
+      "tree": "f8e077f236320229c05883541047275a73524969",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-09T11:49:26Z",
+      "finished_at": "2026-10-09T11:49:32Z",
+      "gate": {
+        "commit": "ecb2c59548575dac63ca80e672478b80c1bb8236",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/linking-relation-conflicts/history.int.test.ts > [AC-B1-06y#23] attr_at includes occurrence, excludes resolution, and never includes immediate already_active rows",
+        "test/spec/db/linking-relation-conflicts/history.int.test.ts > [AC-B1-06y#24] later resolution preserves the earlier attr_at evidence while removing current conflict",
+        "test/spec/db/linking-relation-conflicts/history.int.test.ts > [AC-B1-06y#25] current and historical queries isolate app, user and platform",
+        "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#16] couli_app can SELECT and INSERT but can UPDATE only the two resolution columns",
+        "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#17] updates to every non-resolution column fail with insufficient privilege",
+        "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#18] DELETE fails with insufficient privilege for unresolved and resolved logs",
+        "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#19] unresolved logs accept a single resolution while preserving occurrence data",
+        "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#20] invalid partial or backwards resolutions cannot be introduced by UPDATE",
+        "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#21] both resolution kinds reject reopening or rewriting with restrict_violation",
+        "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts > [AC-B1-06y#22] enabled row triggers guard UPDATE and DELETE independently of column grants",
+        "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#10] validated foreign keys retain same-app users and accounts without cascades",
+        "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#11] missing users and accounts are rejected by foreign keys",
+        "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#12] existing users and accounts from another app cannot be referenced",
+        "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#13] valid unrelated users and accounts in the same app can log separate conflicts",
+        "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#14] current-conflict lookup has the specified unresolved-only index",
+        "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts > [AC-B1-06y#15] historical lookup has a nonpartial index including occurrence time",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#1] conflict storage has the required column types and nullability",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#2] no counterparty identifiers or private profile columns are persisted",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#3] required columns reject NULL and ids cannot be duplicated",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#4] kind and resolution are constrained by explicit CHECK literals",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#5] every conflict kind can be unresolved, bound_active, or already_active at insertion",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#6] unknown or incorrectly cased kinds and resolutions fail CHECK",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#7] platform accepts all contract values and rejects non-platform values",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#8] resolution and resolved_at must be both NULL or both populated",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts > [AC-B1-06y#9] resolution before occurrence fails CHECK for either resolution value",
+        "test/spec/db/linking-relation-conflicts/trigger-and-defaults.int.test.ts > [AC-B1-06y#26] trigger bodies reject immutable-column rewrites and DELETE with 23001",
+        "test/spec/db/linking-relation-conflicts/trigger-and-defaults.int.test.ts > [AC-B1-06y#27] occurrence and resolution timestamps have no database defaults"
+      ],
+      "expected": [
+        "test/spec/db/linking-relation-conflicts/history.int.test.ts",
+        "test/spec/db/linking-relation-conflicts/permissions-and-resolution.int.test.ts",
+        "test/spec/db/linking-relation-conflicts/relations-and-indexes.int.test.ts",
+        "test/spec/db/linking-relation-conflicts/shape-and-checks.int.test.ts",
+        "test/spec/db/linking-relation-conflicts/trigger-and-defaults.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "4d6e36feafe1093d6e63da7e75a78f87b7791dd63ec0142e9dfd35e58a8ccf78"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent with the money checklist: round 1 pass with one S2 (platform consistency only by CHECK), fixed by the orchestrator's ruling with the composite foreign key"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass (its out-of-scope S1 came from a stale base and disappeared after rebasing); round 2 pass with no findings after the composite foreign key"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs, 27 tests: the second run only added a trigger-source check and the no-clock-default check asked as S2)."
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "8637c5ab5d4d8e558fe9077d5665c050fba4d047",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
