@@ -19,5 +19,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/devices/**'
-status: todo
-pr: null
+status: done
+pr: 352
