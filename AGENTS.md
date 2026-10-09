@@ -58,6 +58,7 @@
 | `apps/api/src/modules/linking/**` | Claude | Codex | Claude + Codex | RV2 |
 | `apps/api/src/modules/catalog/**` | Claude | Codex | Codex | RV1 |
 | `apps/api/src/modules/parsing/**` | Claude | Codex | Codex | RV1 |
+| `apps/api/src/modules/notification/**` | Claude | Codex | Codex | RV1 |
 | `apps/api/src/modules/agent/**` | Claude | Codex | Codex | RV1 |
 | `apps/api/src/modules/platform/**` | Claude | Codex | Claude + Codex | RV2 |
 | `packages/evals/**` | Claude | Codex | Codex | RV1 |
