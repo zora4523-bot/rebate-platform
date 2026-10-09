@@ -1,0 +1,23 @@
+id: CT-02h
+repo: rebate-platform
+title: 契约：H5 分享中间页 getSharePage 能表达「分享者授权失效」（BR-ATTR-05 细则：中间页显示「分享链接已失效，请联系分享者重新分享」），与 link 不存在的 30144 区分
+type: contract
+# 草稿 2026-10-09（W1 第七棒）。来源：CT-02g（#362）Claude 契约评审 r1 范围外 S2——getSharePage 现只能回 30144，契约无法表达分享者授权失效。
+# 依据：BR-ATTR-05 正文与细则「别人的分享 link 不可用」（H5 中间页按正文显示「分享链接已失效，请联系分享者重新分享」）、规划/12 §2.8 时序图，由编排者摘入任务书。
+# 做法（台账 #371 评审定）：getSharePage 在分享者授权失效时返回 30102（淘宝）/ 30111（拼多多）+ data.reason=sharer_auth_invalid（沿 CT-02g 取值，与规划/12 §2.8、BR-ATTR-05 正文一致），x-error-codes 加两码；error-codes.yaml 30102 / 30111 的 action 补 H5 中间页分支（显示「分享链接已失效，请联系分享者重新分享」）。只增不改已有形状（oasdiff 非破坏）。合并后由编排者回写 04 §6.3 share-pages 行与 04 §7（08 已对）。
+# 服务端实现（中间页按分享者绑定判定）另开 linking 小任务。契约全局串行，先在 couli-runs B3-lane/notices.md 登记契约槽。风险：contracts RV1。
+refs: []
+refs_hash: {}
+contract_sections: ['6.3', '7']
+deps: [CT-02g]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
