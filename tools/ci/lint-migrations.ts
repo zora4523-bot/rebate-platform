@@ -135,6 +135,8 @@ export const FUNDS_TABLE_NAMES: readonly string[] = [
   'links',
   'processed_events',
   'idempotency_keys',
+  // appeals: an appeal closed as revoked raises the BR-FUND-22 appeal-restore error ticket (CT-06j).
+  'appeals',
 ];
 
 /** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint); anything else is refused. */

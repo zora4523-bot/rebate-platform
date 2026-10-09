@@ -1083,3 +1083,12 @@ it('CT-06h: column and table constraint forms compare equal, but a changed kind 
     changed,
   );
 });
+
+it('CT-06j: appeals is a funds table, similar names are not', () => {
+  for (const ref of ['appeals', 'app.appeals', '"appeals"', '"app"."appeals"']) {
+    expect(isFundsTable(ref), ref).toBe(true);
+  }
+  for (const ref of ['appeals_archive', 'app.appeals_x', 'user_appeals']) {
+    expect(isFundsTable(ref), ref).toBe(false);
+  }
+});
