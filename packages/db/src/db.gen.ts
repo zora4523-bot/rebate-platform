@@ -36,10 +36,13 @@ export interface AdminPermissions {
 export interface AdminUsers {
   app_id: string;
   created_at: Generated<Timestamp>;
+  failed_login_count: Generated<number>;
   id: string;
   is_super: boolean;
+  locked_until: Timestamp | null;
   login_name: string;
   password_hash: string;
+  password_must_change: Generated<boolean>;
   row_version: Generated<number>;
   status: string;
   totp_bound_at: Timestamp | null;

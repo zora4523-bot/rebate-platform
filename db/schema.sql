@@ -1097,7 +1097,11 @@ CREATE TABLE app.admin_users (
     verify_phone_set_at timestamp with time zone,
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    password_must_change boolean DEFAULT false NOT NULL,
+    failed_login_count integer DEFAULT 0 NOT NULL,
+    locked_until timestamp with time zone,
+    CONSTRAINT admin_users_failed_login_count_check CHECK ((failed_login_count >= 0))
 );
 
 
@@ -5283,6 +5287,27 @@ GRANT SELECT(created_at) ON TABLE app.admin_users TO couli_readonly;
 
 GRANT UPDATE(updated_at) ON TABLE app.admin_users TO couli_app;
 GRANT SELECT(updated_at) ON TABLE app.admin_users TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_users.password_must_change; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(password_must_change) ON TABLE app.admin_users TO couli_app;
+
+
+--
+-- Name: COLUMN admin_users.failed_login_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(failed_login_count) ON TABLE app.admin_users TO couli_app;
+
+
+--
+-- Name: COLUMN admin_users.locked_until; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(locked_until) ON TABLE app.admin_users TO couli_app;
 
 
 --
