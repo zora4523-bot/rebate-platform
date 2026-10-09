@@ -3,9 +3,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
+import {
+  acquireTestRedis,
+  createTestDatabase,
+  type TestDatabase,
+  type TestRedis,
+} from '@couli/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { loadConnectionConfig } from '../../../../apps/api/src/modules/platform/db/index.ts';
 import {
   buildApp,
   countDevices,
@@ -21,6 +27,7 @@ import {
 } from './kit.ts';
 
 let database: TestDatabase | undefined;
+let redis: TestRedis | undefined;
 let db: Kysely<DB>;
 let app: HttpApp | undefined;
 let dir: string | undefined;
@@ -34,7 +41,16 @@ beforeAll(async () => {
   database = await createTestDatabase();
   db = createDb({ connectionString: database.urlFor('couli_app'), max: 4 });
   dir = makeDir();
-  app = await buildApp(db, dir, lines);
+  redis = await acquireTestRedis();
+  app = await buildApp(
+    db,
+    dir,
+    lines,
+    loadConnectionConfig('api', {
+      DATABASE_URL: database.urlFor('couli_app'),
+      REDIS_URL: redis.url,
+    }).redisUrl,
+  );
   await app.init();
 });
 
@@ -45,6 +61,7 @@ afterAll(async () => {
     try {
       if (db !== undefined) await destroyDb(db);
       await database?.drop();
+      await redis?.stop();
     } finally {
       if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
     }

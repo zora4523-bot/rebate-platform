@@ -13,7 +13,10 @@ import {
   createWrappedKeyring,
   LocalKeyProvider,
 } from '../../../../apps/api/src/modules/platform/crypto/index.ts';
-import type { DbHandles } from '../../../../apps/api/src/modules/platform/db/index.ts';
+import type {
+  DbHandles,
+  loadConnectionConfig,
+} from '../../../../apps/api/src/modules/platform/db/index.ts';
 import {
   createRootLogger,
   type RootLogger,
@@ -74,8 +77,10 @@ type CreateHttpApp = (
     logger: RootLogger;
     clock: FixedClock;
     dbHandles: DbHandles;
+    redisUrl?: RedisUrl;
   },
 ) => Promise<HttpApp>;
+type RedisUrl = ReturnType<typeof loadConnectionConfig>['redisUrl'];
 
 export function makeDir(): string {
   const base = fileURLToPath(new URL('.tmp/', ROOT));
@@ -83,7 +88,14 @@ export function makeDir(): string {
   return mkdtempSync(join(base, 'spec-b1-02c-devices-'));
 }
 
-export async function buildApp(db: Kysely<DB>, dir: string, lines: string[]): Promise<HttpApp> {
+// B1-02q: from B1-03f on, device registration reserves a per-IP slot in Redis and an entry
+// without Redis refuses it (42901), so callers that register devices pass a one-shot Redis.
+export async function buildApp(
+  db: Kysely<DB>,
+  dir: string,
+  lines: string[],
+  redisUrl?: RedisUrl,
+): Promise<HttpApp> {
   const master = randomBytes(32);
   const keyring = await createWrappedKeyring(new LocalKeyProvider(master));
   const masterFile = join(dir, 'master.hex');
@@ -105,6 +117,7 @@ export async function buildApp(db: Kysely<DB>, dir: string, lines: string[]): Pr
     ),
     // The test owns the connection and closes it after the application shuts down.
     dbHandles: { db, dbRead: null, close: async () => undefined },
+    ...(redisUrl === undefined ? {} : { redisUrl }),
   });
 }
 
