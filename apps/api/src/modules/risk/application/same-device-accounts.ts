@@ -3,19 +3,29 @@
 // user_oauth are its tables); the ranking, the merge tombstone dedupe, the threshold and the
 // configuration fallbacks are risk's (../domain/same-device-ranking.ts).
 //
-// judge(handle, input): the window is [now − 720 h, now] of the injected Clock, both ends closed.
-// Every read (configuration included) and every write goes through the caller's handle, so the
-// hit rows commit or roll back with the caller's transaction and no pooled connection is borrowed.
-// A rank ≥ risk.device_login_accounts_limit (default 3) on any device marks the subject; each
-// marked device gets one risk_hits row (rule SAME_DEVICE_MULTI_ACCOUNT, manual_review, dimension
-// device, value_hmac = the device_hash, ref = the withdrawal). The rule row is created first
-// (ON CONFLICT DO NOTHING); a repeated or concurrent judgement of the same withdrawal adds no row
-// (risk_hits_same_device_once_key, ON CONFLICT DO NOTHING) and answers the same result. Nothing
-// else is written: no user state, no session, no ban (BR-ID-37: marking only).
+// judge(handle, input): the window is [at − 720 h, at], both ends closed, where `at` is the
+// judgement instant. Every read (configuration included) and every write goes through the caller's
+// handle, so the hit rows commit or roll back with the caller's transaction and no pooled
+// connection is borrowed. A rank ≥ risk.device_login_accounts_limit (default 3) on any device marks
+// the subject; each marked device gets one risk_hits row (rule SAME_DEVICE_MULTI_ACCOUNT,
+// manual_review, dimension device, value_hmac = the device_hash, ref = the withdrawal). The rule row
+// is created first (ON CONFLICT DO NOTHING). Nothing else is written: no user state, no session, no
+// ban (BR-ID-37: marking only).
+//
+// Replays: a withdrawal judged and marked once keeps its answer. judge() first looks for this
+// rule's risk_hits rows on the same ref; when there are some, `at` is their created_at (the Clock
+// instant of the first judgement) instead of the Clock's now, nothing is written and the answer is
+// marked (login_logs is insert-only and the window's upper end is fixed, so the ranking is the
+// first one even after the window has slid). Otherwise `at` is the Clock's now. A concurrent
+// judgement that loses the insert race (risk_hits_same_device_once_key, ON CONFLICT DO NOTHING)
+// re-reads the winner's instant the same way. An unmarked first judgement leaves no record.
 //
 // Configuration: risk.device_login_accounts_limit is a safe positive integer, else 3;
 // risk.merge_tombstone_dedupe is a JSON boolean, else on. A malformed value or a failed read logs
-// one warn line (key only, no value).
+// one warn line (key only, no value). Inside the caller's transaction each read runs under a
+// savepoint, so a statement-level failure (a statement timeout, say) is rolled back to it and the
+// transaction stays usable for the default; connection-level failures (SQLSTATE classes 08 and
+// 57P) are rethrown.
 //
 // Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
 // for type-only imports, relative imports with `.ts`.
@@ -96,26 +106,49 @@ function earlierBy(instant: Date, ms: number): Date {
   return result;
 }
 
+/** SQLSTATE classes after which the connection (not just the statement) is gone: rethrow. */
+function unrecoverable(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+  return typeof code === 'string' && (code.startsWith('08') || code.startsWith('57P'));
+}
+
+const CONFIG_SAVEPOINT = sql.raw('same_device_config');
+
 export function createSameDeviceAccountsCheck(
   options: SameDeviceAccountsOptions,
 ): SameDeviceAccountsCheck {
   const { clock, logger, logins } = options;
 
-  /** The stored value of one key; undefined when missing; a failed read logs and is undefined. */
+  /**
+   * The stored value of one key; undefined when missing. A failed read logs and is undefined,
+   * except a connection-level failure, which is rethrown. Inside a transaction the read runs under
+   * a savepoint so that a failed statement does not abort the caller's transaction.
+   */
   async function configured(
+    handle: Kysely<DB>,
     reader: RateLimitConfigReader,
     appId: string,
     key: string,
   ): Promise<{ readonly found: boolean; readonly value: unknown }> {
+    const guarded = handle.isTransaction;
+    if (guarded) await sql`SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(handle);
+    let found: Awaited<ReturnType<RateLimitConfigReader['configValue']>>;
     try {
-      const found = await reader.configValue(appId, key);
-      return found === null
-        ? { found: false, value: undefined }
-        : { found: true, value: found.value };
-    } catch {
+      found = await reader.configValue(appId, key);
+    } catch (error) {
+      if (unrecoverable(error)) throw error;
+      if (guarded) {
+        await sql`ROLLBACK TO SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(handle);
+        await sql`RELEASE SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(handle);
+      }
       logger.warn({ app_id: appId, key }, 'same_device_config_unavailable');
       return { found: false, value: undefined };
     }
+    if (guarded) await sql`RELEASE SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(handle);
+    return found === null
+      ? { found: false, value: undefined }
+      : { found: true, value: found.value };
   }
 
   async function settings(
@@ -123,8 +156,8 @@ export function createSameDeviceAccountsCheck(
     appId: string,
   ): Promise<{ readonly limit: number; readonly dedupe: boolean }> {
     const reader = options.config(handle);
-    const limitValue = await configured(reader, appId, LIMIT_KEY);
-    const dedupeValue = await configured(reader, appId, DEDUPE_KEY);
+    const limitValue = await configured(handle, reader, appId, LIMIT_KEY);
+    const dedupeValue = await configured(handle, reader, appId, DEDUPE_KEY);
     let limit = parseAccountsLimit(limitValue.value);
     if (limit === null) {
       if (limitValue.found)
@@ -141,18 +174,61 @@ export function createSameDeviceAccountsCheck(
     return { limit, dedupe };
   }
 
+  /** The instant of an earlier judgement of this ref that wrote hit rows; null when none. */
+  async function judgedAt(
+    handle: Kysely<DB>,
+    input: SameDeviceAccountsInput,
+  ): Promise<Date | null> {
+    const prior = await handle
+      .withSchema('app')
+      .selectFrom('risk_hits')
+      .select('created_at')
+      .where('app_id', '=', input.app_id)
+      .where('rule_id', '=', RULE_ID)
+      .where('ref_type', '=', input.ref.type)
+      .where('ref_id', '=', input.ref.id)
+      .orderBy('created_at')
+      .limit(1)
+      .executeTakeFirst();
+    return prior === undefined ? null : prior.created_at;
+  }
+
+  /** Ranks every device the subject used in the window [at − 720 h, at]. */
+  async function rank(
+    handle: Kysely<DB>,
+    input: SameDeviceAccountsInput,
+    at: Date,
+  ): Promise<{
+    readonly devices: SameDeviceAccountsResult['devices'];
+    readonly hit: SameDeviceAccountsResult['devices'];
+  }> {
+    const { limit, dedupe } = await settings(handle, input.app_id);
+    const rows = await logins.read(handle, {
+      app_id: input.app_id,
+      user_id: input.user_id,
+      window_start: earlierBy(at, WINDOW_MS),
+      window_end: at,
+    });
+    const devices = rankSameDeviceAccounts(rows, input.user_id, dedupe);
+    return { devices, hit: devices.filter((device) => device.rank >= limit) };
+  }
+
+  /** Answer of a ref already marked at `at`: the first ranking, no write. */
+  async function replay(
+    handle: Kysely<DB>,
+    input: SameDeviceAccountsInput,
+    at: Date,
+  ): Promise<SameDeviceAccountsResult> {
+    const { devices } = await rank(handle, input, at);
+    return { marked: true, devices };
+  }
+
   return {
     async judge(handle, input) {
+      const prior = await judgedAt(handle, input);
+      if (prior !== null) return replay(handle, input, prior);
       const now = clock.now();
-      const { limit, dedupe } = await settings(handle, input.app_id);
-      const rows = await logins.read(handle, {
-        app_id: input.app_id,
-        user_id: input.user_id,
-        window_start: earlierBy(now, WINDOW_MS),
-        window_end: now,
-      });
-      const devices = rankSameDeviceAccounts(rows, input.user_id, dedupe);
-      const hit = devices.filter((device) => device.rank >= limit);
+      const { devices, hit } = await rank(handle, input, now);
       if (hit.length === 0) return { marked: false, devices };
       const app = handle.withSchema('app');
       await app
@@ -172,7 +248,7 @@ export function createSameDeviceAccountsCheck(
         .onConflict((oc) => oc.columns(['app_id', 'rule_id']).doNothing())
         .execute();
       // One statement, rows in device_hash order: concurrent judgements lock keys in one order.
-      await app
+      const inserted = await app
         .insertInto('risk_hits')
         .values(
           hit.map((device) => ({
@@ -191,7 +267,15 @@ export function createSameDeviceAccountsCheck(
         // identity key is the partial risk_hits_same_device_once_key (inferring a partial index
         // from a parameterised predicate is not reliable).
         .onConflict((oc) => oc.doNothing())
+        .returning('id')
         .execute();
+      if (inserted.length < hit.length) {
+        // A concurrent judgement of this ref committed first: answer with its instant.
+        const winner = await judgedAt(handle, input);
+        if (winner !== null && winner.getTime() !== now.getTime()) {
+          return replay(handle, input, winner);
+        }
+      }
       logger.info(
         {
           app_id: input.app_id,
