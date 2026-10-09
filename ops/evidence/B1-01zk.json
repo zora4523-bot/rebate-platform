@@ -1,0 +1,83 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 migration (db/migrations/0022, BR-ID-30 ② and ⑯) plus platform/maintenance wiring. New SECURITY DEFINER app.delete_expired_link_open_attempts(now, batch) deletes link_open_attempts with opened_at before (run day 00:00 +08:00) - 90 days in bounded SKIP LOCKED batches (1..10000, lock_timeout 5 s, EXECUTE for couli_maint only; write-once trigger and grants unchanged), opened_at index; event_log gets a created_at index on the parent (all partitions); drop_expired_month_partitions prechecks / rechecks read max(created_at) through the index (same keep-the-whole-partition semantics); the maintenance day round calls the delete after link_logs (1000 per batch, at most 100 batches, clock read once). Schema snapshot regenerated outside the sandbox. Owner allowed taking 0022 ahead of B3-09b #313 (2026-10-09). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (funds checklist): round 1 pass, no findings (cutoff and boundary, SECURITY DEFINER search_path / grants / SKIP LOCKED, rewritten partition drop equivalent to 0011, module wiring and failure path)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 attempts) reviewed by fresh Claude subagents: round 1 pass with S2 (auto-ANALYZE wait up to 120 s, proxy query, batch upper bound) fixed in attempt 2; round 2 fail (1 S1: nested transaction on a transaction object) fixed in attempt 3 under an orchestrator-approved exception round (couli-runs/B1-01zk/exception-round.md), targeted review pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zk",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "eb65ff3a12009fd2ca92046b83df3e1ba5164889",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "eb65ff3a12009fd2ca92046b83df3e1ba5164889",
+      "tree": "11ae070d8bbb3a36f85f71a89432b971b1f7af9f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-09T05:08:24Z",
+      "finished_at": "2026-10-09T05:08:59Z",
+      "red_tests": [
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts > [AC-B1-01zk#1] BR-ID-30 ②：UTC 会话下按 opened_at 的 90 天日界删除，截止相等与稍晚的保留",
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts > [AC-B1-01zk#1] BR-ID-30 ②：Pacific/Kiritimati 会话下按 opened_at 的 90 天日界删除，截止相等与稍晚的保留",
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts > [AC-B1-01zk#1] BR-ID-30 ②：America/New_York 会话下按 opened_at 的 90 天日界删除，截止相等与稍晚的保留",
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts > [AC-B1-01zk#2] 多于一批的过期行跨 app_id 清理完毕，每批有上限且重复调用返回零",
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts > [AC-B1-01zk#3] 只许维护角色经有界 SECURITY DEFINER 函数删除，直接删除仍拒绝，写一次保护仍在",
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts > [AC-B1-01zk#4] 无效截止与批大小拒绝且不删除任何行，批大小 1 与 10000 均可用",
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts > [AC-B1-01zk#5] module 同轮按 04:00 门槛清理 link_logs 与超过两批的打开尝试，注入时钟只读一次",
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts > [AC-B1-01zk#5] worker 同轮按 04:00 门槛清理 link_logs 与超过两批的打开尝试，注入时钟只读一次",
+        "test/spec/platform/maintenance/recheck-event-log.int.test.ts > [AC-B1-01zk#6] event_log 的 created_at 首列有效非部分索引覆盖父表、DEFAULT 和新月分区",
+        "test/spec/platform/maintenance/recheck-event-log.int.test.ts > [AC-B1-01zk#7] 实际删除函数复查无顺序扫描；190 天边界和晚到事件仍保护整个旧分区"
+      ],
+      "expected": [
+        "test/spec/platform/maintenance/open-attempts-retention.int.test.ts",
+        "test/spec/platform/maintenance/recheck-event-log.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "215e30c77d20fbeb756ee4481ebb31c317e373950ad3a8a50151d5c8eb22c8ca"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "1ecc9f7ef9c2218b7894274051401e8a7638725a",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}
