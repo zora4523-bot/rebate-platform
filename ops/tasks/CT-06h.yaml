@@ -1,0 +1,30 @@
+id: CT-06h
+repo: rebate-platform
+title: 迁移门禁余项二——撤掉资金表约束重建的 squawk 例外，set_config 参数引用按关，定义比对保护美元引号字面量，列约束与表约束等价
+type: guard-change
+# 2026-10-09 入账（负责人同日「继续做」；接 CT-06g（#342）两家评审记下的 S2 与范围外项）。只收紧（④ 是收窄误拒），不改任何 BR。
+# 契约（规则测试按此写；CT-06a～CT-06g 的规则测试不改、继续通过（CT-06g 的例外放行断言由 test-change 任务 CT-06i 先删），本任务只新增 test/spec/db/lint-migrations/ 下的文件）：
+# ① 撤掉 CT-06g 的 squawk 例外（台账评审两轮 P1）：资金表约束直接重建（不论 CHECK、EXCLUDE、UNIQUE、主键、外键，定义是否相同）都持 ACCESS EXCLUSIVE 扫表或建索引，
+#    可能长时间冻结资金表读写，不再自动放行；资金表上的 squawk-ignore（含 `constraint-missing-not-valid`）回到一律拒，这类重建照旧登记 APPROVED_GUARD_CHANGES（两家评审加批准标签）。db/AGENTS.md 第 11 条同步。
+# ② set_config 取值以 `$` 开头时须是完整的美元引号字面量（开闭标签相同）；`$1` 等参数引用（PREPARE … EXECUTE）按「关掉」报。
+# ③ normaliseDefinition 把美元引号字面量（$$…$$、$tag$…$tag$）与其他字面量一样解码后按规范形式保留，不做小写化：`$$ACTIVE$$` 与 `$$active$$` 不同，`$$a$$` 与 `'a'` 相同。
+# ④ 列约束与表约束等价比对：`id bigint CONSTRAINT x PRIMARY KEY` 与 `CONSTRAINT x PRIMARY KEY (id)`、列上 UNIQUE 与 `UNIQUE (列)`、列上 `REFERENCES t (c)` 与 `FOREIGN KEY (列) REFERENCES t (c)` 判为同定义（换列仍不同）。
+# 已知不处理：appeals 是否算归属表（归属口径，待负责人或 Jev）；纯函数只给部分迁移史时的比对；pg-boss 生成器输出须按门禁改写。
+# 碰 tools/**、db/AGENTS.md（第三类保护路径），合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
+refs: []
+refs_hash: {}
+deps: [CT-06g, CT-06i]
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'db/AGENTS.md'
+test_paths:
+  - 'test/spec/db/lint-migrations/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm run lint:migrations'
+  - 'test/spec/db/lint-migrations/**'
+status: todo
+pr: null
