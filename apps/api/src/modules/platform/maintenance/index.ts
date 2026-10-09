@@ -339,6 +339,33 @@
 //      reads no clock. 2026-11-19T15:59:59.999Z → 2026-11-19 … 2026-12-03;
 //      2026-11-19T16:00:00Z → 2026-11-20 … 2026-12-04.
 //    - Rules of H apply.
+//
+// J. Open attempts retention (task B1-01zk). Basis: BR-ID-30 正文 (删除条件 created_at < 运行当日
+//    00:00（+08:00）− 留存天数) and ② (打开尝试记录 link_open_attempts：与 link_logs 同期，按 open 成功时刻
+//    删除). Rule tests: test/spec/platform/maintenance/open-attempts-*.int.test.ts (its file header is
+//    the contract of the SQL function) and recheck-*.int.test.ts (event_log index, SQL only).
+//    Migration `0022_open-attempts-retention-event-log-created-index.sql` (stage 1, committed):
+//    `app.delete_expired_link_open_attempts(p_now timestamptz, p_batch_size integer) RETURNS bigint`
+//    deletes at most p_batch_size (1..10000) rows whose opened_at < 00:00 (+08:00) of p_now's day
+//    − 90 days and returns how many it deleted (SECURITY DEFINER, EXECUTE for couli_maint only;
+//    rows locked by a writer are skipped and picked up later).
+//    Module — only when `dayPartitions` is true (so also createWorkerMaintenance), inside the C.4
+//    gate (04:00:00.000 +08:00 or later; nothing before), right after the day-partition drop of
+//    link_logs of the same run, with the same single `now` (C.2; the clock is still read once):
+//      call `SELECT app.delete_expired_link_open_attempts(<now>, OPEN_ATTEMPTS_BATCH_SIZE)` as its own
+//      statement (one implicit transaction per batch; never inside an explicit transaction, so a
+//      one-connection pool suffices), repeatedly until it returns 0 or OPEN_ATTEMPTS_MAX_BATCHES
+//      calls were made in this run (a larger backlog continues in the next run).
+//      - Report unchanged in shape: the deleted rows are not part of `dropped`, `ensured` or the
+//        counts of `partition_maintenance_done`.
+//      - When at least one row was deleted: one info line `open_attempts_deleted`
+//        { table: 'link_open_attempts', rows, batches } (rows a number) after the batches.
+//        When the batch limit was reached with the last call still returning > 0, that line is a
+//        warn line `open_attempts_backlog` with the same fields instead. Nothing is logged when
+//        nothing was deleted (existing runs keep their exact log lines).
+//      - A failing call (55P03 included): the line above for the rows deleted before it (if any),
+//        then `open_attempts_delete_failed` (error) { table: 'link_open_attempts', sqlstate },
+//        failed += 1, no further batch in this run; the run goes on with C.5.
 import {
   MONTH_PARTITIONED_TABLES,
   MONTHS_AHEAD,
@@ -358,6 +385,12 @@ export const DROPPABLE_TABLES: readonly string[] = Object.freeze(['event_log']);
 
 /** Tables partitioned by +08:00 day, maintained when `dayPartitions` is on (section I2). */
 export const DAY_PARTITIONED_TABLES: readonly string[] = Object.freeze(['link_logs']);
+
+/** Rows deleted per call of app.delete_expired_link_open_attempts (section J). */
+export const OPEN_ATTEMPTS_BATCH_SIZE = 1000;
+
+/** Most deletion batches of link_open_attempts in one run (section J). */
+export const OPEN_ATTEMPTS_MAX_BATCHES = 100;
 
 /** Days pre-created after the current +08:00 day (section I2; ADR-0001 §4.2 #4). */
 export const DAYS_AHEAD = 14;
@@ -498,6 +531,40 @@ export function createPartitionMaintenance(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let scheduled: Promise<void> | undefined;
 
+  /** Section J: bounded batches, each its own statement; resolves false when a batch failed. */
+  async function deleteExpiredOpenAttempts(now: Date): Promise<boolean> {
+    const table = 'link_open_attempts';
+    let rows = 0;
+    let batches = 0;
+    let last = 0;
+    try {
+      while (batches < OPEN_ATTEMPTS_MAX_BATCHES) {
+        // No explicit transaction: every batch commits on its own and needs one connection only.
+        const result = await sql<{ deleted: bigint | number | string }>`
+          SELECT app.delete_expired_link_open_attempts(
+            ${now}::timestamptz, ${OPEN_ATTEMPTS_BATCH_SIZE}::integer
+          ) AS deleted
+        `.execute(db);
+        batches += 1;
+        last = Number(result.rows[0]!.deleted);
+        if (!Number.isSafeInteger(last) || last < 0 || last > OPEN_ATTEMPTS_BATCH_SIZE) {
+          throw new RangeError('deleted row count out of range');
+        }
+        rows += last;
+        if (last === 0) break;
+      }
+    } catch (error) {
+      if (rows > 0) logger.info({ table, rows, batches }, 'open_attempts_deleted');
+      logger.error({ table, sqlstate: sqlstate(error) }, 'open_attempts_delete_failed');
+      return false;
+    }
+    if (rows > 0) {
+      if (last > 0) logger.warn({ table, rows, batches }, 'open_attempts_backlog');
+      else logger.info({ table, rows, batches }, 'open_attempts_deleted');
+    }
+    return true;
+  }
+
   async function runOnce(): Promise<MaintenanceReport> {
     const role = await sql<{ role: string }>`SELECT current_user AS role`.execute(db);
     if (role.rows[0]?.role !== 'couli_maint') throw new MaintenanceError('wrong_role');
@@ -580,6 +647,7 @@ export function createPartitionMaintenance(
             logger.error({ table, sqlstate: sqlstate(error) }, 'partition_drop_failed');
           }
         }
+        if (!(await deleteExpiredOpenAttempts(now))) failed += 1;
       }
     }
 
