@@ -1,0 +1,28 @@
+id: B1-01zr
+repo: rebate-platform
+title: staging 部署回退再收口：重启计数失败后标记现场为「不确定」并要求显式回退；首次运行无切换记录时按未知标签处理用保存副本；口令打码按 libpq 转义规则处理转义单引号后的参数
+type: impl
+# 2026-10-10 入账（会话 b1-followups-4；来源 couli-runs/B1-followups-3-work/followups.md B1-01zj 两家第 2 轮评审 S2 ①②③，P2）。
+# ① 改了 compose.yaml 后重部署当前标签 T、第 3 步 RestartCount≠0：现在提示「deploy.sh T」，再跑仍按重部署用改过的 compose（infra/staging/deploy.sh 第 72、127、136–139 行附近）。
+# 改为 RestartCount 失败时把切换记录标成 dirty（不确定），提示用 --rollback 或指定保存副本；带 dirty 记录时 deploy.sh <标签> 一律用保存的 compose.<标签>.yaml（不存在则拒绝并说明）。
+# ② 旧版脚本留下的现场（无切换记录文件）首次运行新版：现在第 60–63 行假设在跑的就是上一成功标签；改为无记录时按「未知」处理，回退到 <旧标签> 用保存副本。
+# ③ packages/db/src/pg-url.ts 第 116–149 行：password='Head\'&sslpassword='Tail' 这类人为构造的错误文本漏出 Tail；按 libpq 转义规则（引号内 \' 不结束值）找值结尾，后续口令参数照样打码。
+# 规则测试（Codex 先写、先红，新文件，不改已冻结的 test/spec/infra/staging/*.test.ts 与 test/spec/db/pg-url-escaped-password.test.ts）：静态核对 ①② 的分支与 compose 路径选择、不打印口令；③ 的转义用例。不改应用代码。
+refs: []
+refs_hash: {}
+deps: [B1-01zj]
+paths:
+  - 'infra/staging/deploy.sh'
+  - 'infra/staging/README.md'
+  - 'packages/db/src/pg-url.ts'
+  - 'packages/db/src/pg-url.test.ts'
+test_paths:
+  - 'test/spec/infra/staging/dirty-*'
+  - 'test/spec/db/pg-url-quoted-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/infra/staging/**'
+  - 'test/spec/db/**'
+status: todo

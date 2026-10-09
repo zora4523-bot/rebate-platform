@@ -1,0 +1,27 @@
+id: B1-01zv
+repo: rebate-platform
+title: 领域事件三项：同一 eventId 并行或非 READ COMMITTED 发布不多留痕；handler 吞掉事务错误时不静默丢事件；消费端接受生产端允许的全部时刻
+type: impl
+# 2026-10-10 入账（会话 b1-followups-4；来源 followups/INDEX.md F-18，followups/B1-01g-queue-test-gaps.md B1-01h 节，P3）。
+# ① events.ts 第 71–103 行 publish 先取会话级可重入的咨询锁再 SELECT-then-INSERT：同一事务里并行发布同一 eventId，或 REPEATABLE READ 下并发发布，event_log 可能多一行。
+# 不加迁移（event_log 按 occurred_at 分区，唯一约束须含分区键，挡不住）：拒绝非 READ COMMITTED 事务里的发布（明确错误），同一事务内同一 eventId 的发布在进程内串行。
+# ② 第 164–175 行消费：handler 吞掉 trx 上的数据库错误后正常返回，提交变回滚、事件丢失且任务算完成。改为 handler 返回后探测事务状态（如在 trx 上执行一条轻查询），已中止就按失败抛出，任务照常重试。
+# ③ 生产端接受到 2^48 毫秒（validation.ts 第 64 行），消费端第 150 行正则只认四位年份：两端口径一致（消费端接受扩展年份，或生产端拒收第 10000 年及以后，由规则测试按契约定）。
+# 规则测试（Codex 先写、先红，新文件，不改已有 events 受保护测试）。
+refs: []
+refs_hash: {}
+deps: [B1-01h]
+paths:
+  - 'apps/api/src/modules/platform/events/events.ts'
+  - 'apps/api/src/modules/platform/events/validation.ts'
+  - 'apps/api/src/modules/platform/events/types.ts'
+  - 'apps/api/src/modules/platform/events/wiring.test.ts'
+  - 'apps/api/src/modules/platform/events/events.test.ts'
+test_paths:
+  - 'test/spec/platform/events/guard-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/events/**'
+status: todo

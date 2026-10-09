@@ -1,0 +1,29 @@
+id: B1-01zs
+repo: rebate-platform
+title: worker 启动失败收尾期间的信号不再被吞、不多记 stopping；队列启动读版本有上限，卡在 pgboss.version 锁上时 SIGTERM 仍能结束进程
+type: impl
+# 2026-10-10 入账（会话 b1-followups-4；来源 followups/INDEX.md F-26，B1-01t Claude 代码评审第 1 轮 S2 与观察，P3）。
+# ① apps/api/src/entry.ts worker 分支（第 156–164 行附近）自挂 onSignal、从不摘除；createWorkerContext / startWorkerServices 抛错后 runEntry 收尾期间
+# 收到 SIGTERM / SIGINT 会多记一行 stopping 且信号被吞。改为启动失败进入收尾时摘掉处理器（或与 api、payout 一样走 watchSignals().detach()），
+# 收尾期间的信号按进程默认处理或在收尾后以失败退出，B1-01t 契约 7 d（收到过信号后启动失败只记 startup_failed、退出码 1）不变。
+# ② queue.start() → runtime.ts 第 57 行 SELECT version FROM pgboss.version 无锁等待上限、无语句超时；被锁住时 SIGTERM 只记 stopping、进程一直等。
+# 改为该读取有界（lock_timeout / statement_timeout 或客户端计时，上限由实现定并写进文件头），超时按启动失败处理（startup_failed、退出码 1）；
+# 启动中收到信号的现有行为（B1-01t：启动成功后不记 started、直接停）不变。
+# 规则测试（Codex 先写、先红，新文件，不改已有 worker-* 受保护测试）。
+refs: []
+refs_hash: {}
+deps: [B1-01t, B1-01zl]
+paths:
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/modules/platform/queue/runtime.ts'
+  - 'apps/api/src/modules/platform/queue/runtime.test.ts'
+  - 'apps/api/src/modules/platform/maintenance/worker.ts'
+test_paths:
+  - 'test/spec/platform/maintenance/worker-startup-failure-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/maintenance/**'
+  - 'test/spec/platform/queue/**'
+status: todo

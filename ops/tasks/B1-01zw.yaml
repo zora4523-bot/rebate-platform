@@ -1,0 +1,24 @@
+id: B1-01zw
+repo: rebate-platform
+title: 维护：删除截止时间不再完全信任注入时钟——与数据库时间相差过大时本轮跳过删除并告警；补并发写入成功的规则测试
+type: impl
+# 2026-10-10 入账（会话 b1-followups-4；来源 followups/INDEX.md F-19，followups/B1-01g-queue-test-gaps.md B1-01j 节，P3）。
+# ① maintenance/index.ts 第 572 行 runOnce 读一次 clock.now() 作 p_now 传给三个删除函数（第 624、639、650 行），SQL 只拒 NULL 与 ±infinity：时钟被拨到未来会按未来时刻删除。
+# 改为每轮先与数据库 now() 比对，偏差超过上限（实现定，写进文件头）就跳过本轮全部删除、记一行告警（预建分区不受影响）；不改迁移与 SQL 函数。
+# ② test/spec/platform/maintenance/lock-wait.int.test.ts 第 185–204 行只断言写入耗时、没断言写入成功：新文件补「锁等待期间的并发写入成功提交」的断言（不改已有文件）。
+# 规则测试（Codex 先写、先红，新文件）。
+refs: []
+refs_hash: {}
+deps: [B1-01j, B1-01zk]
+paths:
+  - 'apps/api/src/modules/platform/maintenance/index.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.test.ts'
+test_paths:
+  - 'test/spec/platform/maintenance/clock-skew-*'
+  - 'test/spec/platform/maintenance/lock-wait-write-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/maintenance/**'
+status: todo
