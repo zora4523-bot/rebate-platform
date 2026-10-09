@@ -18,9 +18,10 @@
 //      originFormTarget) and whose `headers` carry every value of a repeated Authorization header
 //      (see checkHeaders); the first check that throws ends the request with its error (the
 //      remaining checks are not called, the body of an unbuffered route is never read);
-//   3. copy `verifiedDevice` (set by stage ①) and `principal` (set by stage ②, read it with
-//      tokenPrincipal of ./token-context.ts) onto the Fastify request for the handler and later
-//      stages, and hand a buffered body's identical bytes to Fastify's content-type parser.
+//   3. copy `verifiedDevice` (set by stage ①), `principal` (set by stage ②, read it with
+//      tokenPrincipal of ./token-context.ts) and `adminPrincipal` (set by the admin entry's token
+//      check, read it with adminPrincipal of ./admin-context.ts) onto the Fastify request for the
+//      handler and later stages, and hand a buffered body's identical bytes to Fastify's content-type parser.
 // So `bufferWhen` decides only which bodies are read before the checks (orchestrator ruling
 // B1-02h §9.5 #10): a check that needs the body (the signature of BR-ID-09) must act only on
 // buffered routes — bootstrap refuses a contract x-signed route the plan does not buffer — while
@@ -37,6 +38,7 @@
 // `.ts` extension, no NestJS, no `process.env`, no logging. Fastify is reached through the
 // structural types below: it is not a direct dependency of @couli/api.
 import { PassThrough, type Readable } from 'node:stream';
+import type { AdminPrincipal } from './admin-context.ts';
 import type { TokenPrincipal } from './token-context.ts';
 
 /** Verified by stage ①, before parsers, schema validation and later authentication stages. */
@@ -55,6 +57,12 @@ export interface RequestCheckInput {
    * authority (originFormTarget), so it reads like the origin-form target of the matched route.
    */
   readonly url: string;
+  /**
+   * The client address as Fastify derived it (`request.ip`: the socket address, or the rightmost
+   * untrusted X-Forwarded-For entry behind the configured TRUSTED_PROXIES, B1-03m). Never read
+   * the forwarded header itself.
+   */
+  readonly ip?: string;
   /** Fastify's matched route template; absent for an unmatched route. */
   readonly routeTemplate?: string;
   /**
@@ -67,6 +75,8 @@ export interface RequestCheckInput {
   verifiedDevice?: VerifiedDevice;
   /** Set by stage ② (identity's token check) after the token and its session were verified. */
   principal?: TokenPrincipal;
+  /** Set by the admin entry's token check (F1-06k) after an admin_token and its session passed. */
+  adminPrincipal?: AdminPrincipal;
 }
 
 export type RequestCheck = (request: RequestCheckInput) => Promise<void>;
@@ -75,6 +85,7 @@ export type RequestCheck = (request: RequestCheckInput) => Promise<void>;
 export interface CheckedRequest {
   verifiedDevice?: VerifiedDevice;
   principal?: TokenPrincipal;
+  adminPrincipal?: AdminPrincipal;
 }
 
 /** Selects matched routes by request method and Fastify route template (e.g. `/v1/links/:link_id/open`). */
@@ -132,6 +143,7 @@ interface HookRequest extends CheckedRequest {
   readonly id: string;
   readonly method: string;
   readonly url: string;
+  readonly ip?: string;
   /** Node's IncomingMessage: the target as sent and the header lines as name / value pairs. */
   readonly raw: {
     readonly url?: string | undefined;
@@ -147,7 +159,10 @@ interface HookServer {
     name: 'preParsing',
     hook: (request: HookRequest, reply: unknown, payload: PayloadStream) => Promise<unknown>,
   ): unknown;
-  decorateRequest(name: 'verifiedDevice' | 'principal', value: undefined): unknown;
+  decorateRequest(
+    name: 'verifiedDevice' | 'principal' | 'adminPrincipal',
+    value: undefined,
+  ): unknown;
   hasRequestDecorator(name: string): boolean;
 }
 
@@ -245,6 +260,7 @@ export function installRequestChecks(
   }
   server.decorateRequest('verifiedDevice', undefined);
   server.decorateRequest('principal', undefined);
+  server.decorateRequest('adminPrincipal', undefined);
   if (ordered.length === 0) return;
   server.addHook('preParsing', async (request, _reply, payload) => {
     const routeTemplate = request.routeOptions.url;
@@ -263,6 +279,7 @@ export function installRequestChecks(
       id: request.id,
       method: request.method,
       url: originFormTarget(request.raw.url ?? request.url),
+      ...(typeof request.ip === 'string' ? { ip: request.ip } : {}),
       routeTemplate,
       headers: checkHeaders(request),
       rawBody,
@@ -270,6 +287,7 @@ export function installRequestChecks(
     for (const check of ordered) await check(input);
     if (input.verifiedDevice !== undefined) request.verifiedDevice = input.verifiedDevice;
     if (input.principal !== undefined) request.principal = input.principal;
+    if (input.adminPrincipal !== undefined) request.adminPrincipal = input.adminPrincipal;
     return buffered ? replay(rawBody, payload) : undefined;
   });
 }

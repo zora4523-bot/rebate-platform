@@ -14,3 +14,12 @@ export {
   parseP256PublicKeyPem,
   readJwtKeyConfig,
 } from './jwt.ts';
+// Admin console authentication (F1-06k): admin_token key, login IP whitelist, console CORS origin.
+export {
+  ADMIN_AUTH_ENV_NAMES,
+  ADMIN_IP_ALLOWLIST_MAX,
+  ADMIN_TOKEN_KEY_MIN_BYTES,
+  isAllowlistItem,
+  readAdminAuthConfig,
+} from './admin-auth.ts';
+export type { AdminAuthConfig } from './admin-auth.ts';

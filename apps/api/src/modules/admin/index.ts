@@ -26,3 +26,9 @@ export { createPgTotpReplayStore } from './infra/totp-replay-pg.ts';
 export { createMemoryTotpReplayStore } from './infra/totp-replay-memory.ts';
 export { createSuperVerifier } from './application/verify-super.ts';
 export type { SuperVerifier } from './application/verify-super.ts';
+// Admin console authentication (F1-06k): the admin entry's module, its request check and the
+// CORS policy that bootstrap installs (app.module and bootstrap only).
+export { AdminAuthModule } from './admin-auth.module.ts';
+export type { AdminHttpPolicy } from './admin-auth.module.ts';
+export { ADMIN_CHECK, ADMIN_HTTP_POLICY } from './application/tokens.ts';
+export { isAdminCheck } from './application/admin-check.ts';

@@ -1,7 +1,8 @@
 // Nest wrapper of the admin module. It provides the platform audit port globally, so any
 // module can `@Inject(AUDIT_PORT)` without importing admin (规划/02 §4.1 dependency direction),
 // and the durable TOTP replay store (admin_users.totp_last_step) for admin's own later use.
-// Login, binding, permissions, step-up and /admin/v1 routes are later tasks.
+// The console login, first binding and admin_token check (F1-06k) are AdminAuthModule
+// (./admin-auth.module.ts, admin entry only); permissions and step-up are later tasks.
 import { Global, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';

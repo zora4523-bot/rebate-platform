@@ -2069,5 +2069,195 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       ],
       "additionalProperties": false
     }
+  },
+  "adminLogin": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "Account name (unique; a disabled account keeps its name, BR-ID-34).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    }
+  },
+  "adminChangeInitialPassword": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login_ticket",
+        "new_password"
+      ],
+      "properties": {
+        "login_ticket": {
+          "type": "string",
+          "description": "Intermediate credential of the admin login (BR-ID-34 细则「首次绑定身份验证器」): valid only for\nthe step it was issued for, sent in the request body, never an admin_token.\n",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "new_password": {
+          "type": "string",
+          "description": "Must differ from the initial password; composition rules are set by the server.",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    }
+  },
+  "adminGetTotpBindingSecret": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login_ticket"
+      ],
+      "properties": {
+        "login_ticket": {
+          "type": "string",
+          "description": "Intermediate credential of the admin login (BR-ID-34 细则「首次绑定身份验证器」): valid only for\nthe step it was issued for, sent in the request body, never an admin_token.\n",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
+    }
+  },
+  "adminBindTotp": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login_ticket",
+        "code"
+      ],
+      "properties": {
+        "login_ticket": {
+          "type": "string",
+          "description": "Intermediate credential of the admin login (BR-ID-34 细则「首次绑定身份验证器」): valid only for\nthe step it was issued for, sent in the request body, never an admin_token.\n",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "code": {
+          "type": "string",
+          "description": "Current 6-digit code of the authenticator, or of the SMS for the sms tier.",
+          "pattern": "^[0-9]{6}$"
+        }
+      }
+    }
+  },
+  "adminVerifyTotp": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login_ticket",
+        "code"
+      ],
+      "properties": {
+        "login_ticket": {
+          "type": "string",
+          "description": "Intermediate credential of the admin login (BR-ID-34 细则「首次绑定身份验证器」): valid only for\nthe step it was issued for, sent in the request body, never an admin_token.\n",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "code": {
+          "type": "string",
+          "description": "Current 6-digit code of the authenticator, or of the SMS for the sms tier.",
+          "pattern": "^[0-9]{6}$"
+        }
+      }
+    }
+  },
+  "adminLogout": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
   }
 } as const;

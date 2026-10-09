@@ -2,7 +2,7 @@ import { type DynamicModule, type Provider, Module, Scope } from '@nestjs/common
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { AdminModule } from './modules/admin/index.ts';
+import { ADMIN_CHECK, AdminAuthModule, AdminModule } from './modules/admin/index.ts';
 import {
   CatalogModule,
   GovernedUnion,
@@ -107,20 +107,35 @@ import {
  * body is read or validated, and its body keeps Fastify's own handling. ① skips unsigned routes;
  * ② ③ act by the route's contract x-auth and leave routes outside the contract alone.
  * The factory stays synchronous (its async dependencies are providers of their own).
- * The other HTTP entries have no check yet, so bootstrap refuses on them an x-signed route and a
- * route that takes a token (contract x-auth other than none).
+ * On the `admin` entry (F1-06k) the only check is admin's: the whitelist on every /admin/v1
+ * route, then the admin_token on the contract admin / super routes (BR-ID-34); it reads headers
+ * and the client address only, so no body is buffered.
+ * The stream entry has no check, so bootstrap refuses on it an x-signed route and a route that
+ * takes a token (contract x-auth other than none); the admin entry refuses those too, except the
+ * admin levels its check covers.
  */
 function requestChecks(options: PlatformOptions): Provider {
-  return options.entry === 'api'
-    ? {
-        provide: REQUEST_CHECKS,
-        inject: [SIGNATURE_CHECK, TOKEN_CHECK],
-        useFactory: (signature: RequestCheck, token: RequestCheck): RequestCheckPlan => ({
-          checks: [signature, token],
-          bufferWhen: isContractSignedRoute,
-        }),
-      }
-    : { provide: REQUEST_CHECKS, useValue: { checks: [] } satisfies RequestCheckPlan };
+  if (options.entry === 'api') {
+    return {
+      provide: REQUEST_CHECKS,
+      inject: [SIGNATURE_CHECK, TOKEN_CHECK],
+      useFactory: (signature: RequestCheck, token: RequestCheck): RequestCheckPlan => ({
+        checks: [signature, token],
+        bufferWhen: isContractSignedRoute,
+      }),
+    };
+  }
+  if (options.entry === 'admin') {
+    return {
+      provide: REQUEST_CHECKS,
+      inject: [ADMIN_CHECK],
+      useFactory: (admin: RequestCheck): RequestCheckPlan => ({
+        checks: [admin],
+        bufferWhen: () => false,
+      }),
+    };
+  }
+  return { provide: REQUEST_CHECKS, useValue: { checks: [] } satisfies RequestCheckPlan };
 }
 
 /**
@@ -569,6 +584,8 @@ export class AppModule {
         // Provides the platform AUDIT_PORT globally on every entry (F1-06b).
         AdminModule,
         ...(isHttpEntry(options.entry) ? [HealthModule] : []),
+        // The /admin/v1 login routes, the admin request check and CORS policy (F1-06k).
+        ...(options.entry === 'admin' ? [AdminAuthModule.forRoot()] : []),
         ...(identity === undefined ? [] : [identity, riskModule(identity)]),
         ...(union === undefined ? [] : [union]),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
