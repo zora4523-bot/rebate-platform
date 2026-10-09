@@ -5,7 +5,7 @@
 // caller's transaction before commit).
 // The device admission is keyed by device_hash, read here by (app_id, device_id); a device row
 // that is missing or cannot be read answers 42901 with Retry-After 1 — never a fallback to the
-// device id. No human verification: captcha_token is accepted by the route and ignored.
+// device id. A request without a client IP (an in-process send) skips only the IP items. No human verification: captcha_token is accepted by the route and ignored.
 // Logs carry no phone and no IP (BR-ID-33), only flat fields.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types, `.ts`
@@ -56,23 +56,27 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
       async deviceQuota(request) {
         const appId = request.app_id;
         const deviceHash = await resolveHash(appId, request.device_id);
-        if (deviceHash === null || request.client_ip === undefined) {
+        if (deviceHash === null) {
           logger.info({ app_id: appId, purpose: request.purpose }, 'sms_device_unresolved');
           return { ...refused };
         }
+        // The HTTP route always passes the client IP; an in-process send (no request behind it)
+        // has none, so only the device admission judges it.
         const admission = await risk.admit({
           appId,
           deviceHash,
           phone: request.phone,
-          clientIp: request.client_ip,
+          ...(request.client_ip === undefined ? {} : { clientIp: request.client_ip }),
         });
         return admission.code === 0
           ? null
           : { code: 42901, retryAfterSec: admission.retryAfterSec };
       },
       async afterAccepted(request) {
-        if (request.client_ip === undefined) return;
-        await risk.recordAccepted({ appId: request.app_id, clientIp: request.client_ip });
+        await risk.recordAccepted({
+          appId: request.app_id,
+          ...(request.client_ip === undefined ? {} : { clientIp: request.client_ip }),
+        });
       },
     },
     registration: {

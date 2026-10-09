@@ -20,6 +20,22 @@ function failingRedis(): RedisHandle {
   };
 }
 
+/** Records the keys of every script call; answers like an empty store (admit, no alert). */
+function recordingRedis(calls: string[][]): RedisHandle {
+  const answer = (keys: readonly string[]): unknown =>
+    keys.length === 3 ? [1, 0, 0] : keys[0]!.startsWith('dev:') ? [1, 0] : [0, 0];
+  const evalScript = (_script: string, options: { keys: readonly string[] }) => {
+    calls.push([...options.keys]);
+    return Promise.resolve(answer(options.keys));
+  };
+  const fail = () => Promise.reject(new Error('unused'));
+  return {
+    namespace: () => ({ get: fail, set: fail, eval: evalScript }),
+    close: () => Promise.resolve(),
+    onApplicationShutdown: () => Promise.resolve(),
+  } as unknown as RedisHandle;
+}
+
 const request = {
   appId: 'unit_app',
   deviceHash: 'ab'.repeat(32),
@@ -66,5 +82,30 @@ describe('sms risk', () => {
     expect(text).not.toContain(request.phone);
     expect(text).not.toContain(request.clientIp);
     expect(lines.filter((line) => line.includes('"level":50'))).toHaveLength(1);
+  });
+
+  it('[AC-B1-03g#2] a send with no client IP skips only the IP items; the device is still judged', async () => {
+    const { logger } = memoryLogger();
+    const calls: string[][] = [];
+    const risk = createSmsRisk({
+      clock: new FixedClock('2031-05-06T09:00:00Z'),
+      redis: recordingRedis(calls),
+      logger,
+      config: { configValue: () => Promise.resolve(null) },
+      crypto: ephemeralSmsRiskIndex(),
+    });
+    const withoutIp = {
+      appId: request.appId,
+      deviceHash: request.deviceHash,
+      phone: request.phone,
+    };
+    expect(await risk.admit(withoutIp)).toEqual({ code: 0 });
+    expect(calls.map((keys) => keys[0]!.split(':')[0])).toEqual(['dev']);
+    calls.length = 0;
+    await risk.recordAccepted({ appId: request.appId });
+    expect(calls.map((keys) => keys[0]!.split(':')[0])).toEqual(['budget']);
+    calls.length = 0;
+    expect(await risk.admit(request)).toEqual({ code: 0 });
+    expect(calls.map((keys) => keys[0]!.split(':')[0])).toEqual(['ip_send', 'dev']);
   });
 });

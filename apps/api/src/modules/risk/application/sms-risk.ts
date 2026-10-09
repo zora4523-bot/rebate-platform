@@ -43,7 +43,11 @@ export interface SmsRiskRequest {
   readonly deviceHash: string;
   /** Already normalized by identity; stored only as a keyed digest. */
   readonly phone: string;
-  readonly clientIp: string;
+  /**
+   * Absent only for an in-process send with no HTTP request behind it (no client IP to judge):
+   * the IP step ① is skipped then and the device admission ② still applies.
+   */
+  readonly clientIp?: string;
 }
 export type SmsRiskAdmission =
   { readonly code: 0 } | { readonly code: 42901; readonly retryAfterSec: number };
@@ -51,7 +55,8 @@ export interface SmsRisk {
   /** IP checks precede the atomic device admission; admission is never refunded. */
   admit(input: SmsRiskRequest): Promise<SmsRiskAdmission>;
   /** Called once after accepted OR unknown delivery, never for explicit rejection. */
-  recordAccepted(input: { appId: string; clientIp: string }): Promise<void>;
+  /** Without a client IP only the daily budget counts. */
+  recordAccepted(input: { appId: string; clientIp?: string }): Promise<void>;
   /** All register_method values count; called by identity before commit. */
   recordRegistered(input: { appId: string; clientIp: string; userId: string }): Promise<void>;
 }
@@ -379,22 +384,30 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       );
       const now = clock.now().getTime();
 
-      // ① the IP: both items in one read; either reached ends the decision here.
-      let ipWaits: number[];
-      try {
-        const ip = ipDigest(clientIp);
-        const reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_SCRIPT, {
-          keys: [`ip_send:${appId}:${ip}`, `ip_reg:${appId}:${ip}`],
-          args: [String(now), String(WINDOW_MS), String(sendLimit), String(IP_REGISTRATIONS_LIMIT)],
-          ttlSeconds: WINDOW_TTL_SEC,
-        });
-        ipWaits = integers(reply, 2);
-      } catch (error) {
-        return storeFailed(error);
+      // ① the IP: both items in one read; either reached ends the decision here. A send with
+      // no client IP (no HTTP request behind it) has no IP to judge and goes on to ②.
+      if (clientIp !== undefined) {
+        let ipWaits: number[];
+        try {
+          const ip = ipDigest(clientIp);
+          const reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_SCRIPT, {
+            keys: [`ip_send:${appId}:${ip}`, `ip_reg:${appId}:${ip}`],
+            args: [
+              String(now),
+              String(WINDOW_MS),
+              String(sendLimit),
+              String(IP_REGISTRATIONS_LIMIT),
+            ],
+            ttlSeconds: WINDOW_TTL_SEC,
+          });
+          ipWaits = integers(reply, 2);
+        } catch (error) {
+          return storeFailed(error);
+        }
+        storeAnswered();
+        const ipWait = Math.max(...ipWaits);
+        if (ipWait > 0) return { code: 42901, retryAfterSec: seconds(ipWait) };
       }
-      storeAnswered();
-      const ipWait = Math.max(...ipWaits);
-      if (ipWait > 0) return { code: 42901, retryAfterSec: seconds(ipWait) };
 
       // ② the device's admission set, judged, recorded and logged in one atomic step.
       let verdict: number[];
@@ -417,7 +430,7 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
 
     async recordAccepted({ appId, clientIp }) {
       if (redis === null) return;
-      await recordIp(redis, 'ip_send', appId, clientIp);
+      if (clientIp !== undefined) await recordIp(redis, 'ip_send', appId, clientIp);
       await countBudget(redis, appId);
     },
 
