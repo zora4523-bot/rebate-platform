@@ -984,3 +984,44 @@ it('CT-06g: the squawk exception covers the verified rebuild only, not a second 
     'constraint-missing-not-valid on a statement of funds or attribution table ledger_x',
   );
 });
+
+it('CT-06g review round 1: a new constraint the regenerated schema already shows gets no squawk exception', () => {
+  const history = `${TIMEOUTS}CREATE TABLE app.ledger_x (id bigint CONSTRAINT ledger_x_pkey PRIMARY KEY, amount_fen bigint NOT NULL);\n`;
+  const root = fixture({
+    '0030_a.sql': history,
+    '0031_b.sql': `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.ledger_x DROP CONSTRAINT IF EXISTS ledger_x_cap_check, ADD CONSTRAINT ledger_x_cap_check CHECK ((amount_fen < 100));\n`,
+  });
+  mkdirSync(join(root, 'db'), { recursive: true });
+  writeFileSync(
+    join(root, 'db/schema.sql'),
+    'CREATE TABLE app.ledger_x (id bigint CONSTRAINT ledger_x_pkey PRIMARY KEY, amount_fen bigint NOT NULL, CONSTRAINT ledger_x_cap_check CHECK ((amount_fen < 100)));\n',
+  );
+  const res = run(root);
+  expect(res.status).toBe(1);
+  expect(res.stderr).toContain(
+    'squawk-ignore on a statement of funds or attribution table ledger_x',
+  );
+});
+
+it('CT-06g review round 1: a cast with a length is not a plain literal; NOT inside a CHECK is not the modifier', () => {
+  expect(
+    checkTimeouts(
+      'x.sql',
+      `${TIMEOUTS}SELECT set_config('lock_timeout', '0.1s'::varchar(1), true);\n`,
+    ),
+  ).toEqual([expect.stringContaining('require-lock-timeout')]);
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      'CREATE TABLE app.orders (id bigint CONSTRAINT orders_pkey PRIMARY KEY, valid boolean NOT NULL, CONSTRAINT orders_valid_guard CHECK (NOT valid));',
+    ],
+    approved: false,
+  };
+  expect(
+    checkMigration(
+      'x.sql',
+      `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.orders DROP CONSTRAINT orders_valid_guard, ADD CONSTRAINT orders_valid_guard CHECK (NOT valid);\n`,
+      ctx,
+    ),
+  ).toEqual([]);
+});

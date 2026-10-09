@@ -266,7 +266,7 @@ function setConfigKeeps(text: string, m: RegExpMatchArray): boolean {
   if (!/^(?:[EeUu]&?'|'|\$)/.test(value)) return false;
   const after = text.slice((m.index ?? 0) + m[0].length);
   if (
-    !/^\s*(?:::\s*(?:"?pg_catalog"?\s*\.\s*)?"?(?:text|varchar|character\s+varying|name)"?(?:\s*\(\s*\d+\s*\))?\s*)?[,)]/i.test(
+    !/^\s*(?:::\s*(?:"?pg_catalog"?\s*\.\s*)?"?(?:text|varchar|character\s+varying|name)"?\s*)?[,)]/i.test(
       after,
     )
   )
@@ -584,18 +584,22 @@ function lineOf(text: string, index: number): number {
 const LITERAL_SRC = String.raw`[Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*'|(?<dq>\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)[\s\S]*?\k<dq>`;
 
 /**
- * A constraint definition without its NOT VALID modifier (CT-06g): only SQL outside string literals
- * is touched, so CHECK (label <> 'not valid') keeps its literal.
+ * A constraint definition without its NOT VALID modifier (CT-06g): only the top level is touched, so
+ * CHECK (label <> 'not valid') keeps its literal and CHECK (NOT valid) its expression.
  */
 function withoutNotValid(definition: string): string {
-  const strip = (sql: string): string => sql.replace(/\s*\bnot\s+valid\b/gi, '');
+  // Only the modifier at the top level counts: string literals, quoted identifiers and parenthesised
+  // expressions (CHECK (NOT valid)) are masked before searching (same offsets).
+  let mask = definition.replace(new RegExp(LITERAL_SRC, 'g'), (m) => ' '.repeat(m.length));
+  mask = mask.replace(/"(?:[^"]|"")*"/g, (m) => ' '.repeat(m.length));
+  mask = flattenParens(mask);
   let out = '';
   let last = 0;
-  for (const m of definition.matchAll(new RegExp(LITERAL_SRC, 'g'))) {
-    out += strip(definition.slice(last, m.index)) + m[0];
+  for (const m of mask.matchAll(/\bnot\s+valid\b/gi)) {
+    out += definition.slice(last, m.index).replace(/\s+$/, '');
     last = (m.index ?? 0) + m[0].length;
   }
-  return out + strip(definition.slice(last));
+  return out + definition.slice(last);
 }
 
 /** The character of a code point, or null outside Unicode (PostgreSQL rejects it). */
@@ -1617,8 +1621,13 @@ export function identicalRebuildIgnores(
   const code = withoutComments(sql);
   const valued = withoutComments(sql, true);
   const history = guardDefinitions(context.migrationsSql);
-  for (const [k, v] of guardDefinitions([context.schemaSql]).constraints)
-    if (!history.constraints.has(k)) history.constraints.set(k, v);
+  // With the migration history at hand (the CLI) only it counts: the regenerated schema already
+  // shows a constraint this file adds, so it would compare equal to itself. The schema alone only
+  // for a pure call without history.
+  if (context.migrationsSql.length === 0) {
+    for (const [k, v] of guardDefinitions([context.schemaSql]).constraints)
+      history.constraints.set(k, v);
+  }
   const out: { ignore: number; from: number; to: number }[] = [];
   for (const ignore of sql.matchAll(IGNORE_ANY)) {
     const at = ignore.index ?? 0;
@@ -1644,8 +1653,18 @@ export function identicalRebuildIgnores(
     };
     const adds = parts.filter((q) => addName(q.text) !== null);
     const names = new Set(adds.map((q) => addName(q.text) ?? ''));
+    const drops = new Set(
+      parts.flatMap((q) => {
+        const d = new RegExp(
+          String.raw`^\s*DROP\s+CONSTRAINT${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})\s*$`,
+          'i',
+        ).exec(q.text);
+        return d === null ? [] : [bareName(d[1] ?? '')];
+      }),
+    );
     const ok =
       adds.length > 0 &&
+      [...names].every((n) => drops.has(n)) &&
       parts.every((q) => {
         if (addName(q.text) !== null) return true;
         const d = new RegExp(
