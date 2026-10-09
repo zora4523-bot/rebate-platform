@@ -22,10 +22,11 @@
 //   (release instants cleared, bound_at kept); otherwise a new active row (bound_at = now).
 // The two partial unique indexes stay the arbiter of concurrent writes: a unique violation
 // re-reads and decides again (30151 or success), never a 500 and never an application lock.
-// A status change of an existing row (invalid → active, the user's cooling released row → active)
-// is a compare-and-set on the row_version read with it; losing it re-reads and decides again.
-// TODO(规划/11 §9.2): 状态改动改经生成的 union_bindings transition() — blocked on 状态机生成器
-// （尚无 union_binding_status 的生成入口）。
+// Every status written (the new active row, invalid → active, the user's cooling released row →
+// active) is first judged by canTransitionBinding (../domain/binding-status-transitions.ts, the
+// single entry for union_bindings.status, approvals #26); an existing row's change is then a
+// compare-and-set on the row_version read with it; losing it re-reads and decides again.
+// TODO(规划/11 §4.5): 换用生成的 transition() — blocked on CT-10 状态机生成器（approvals #26）
 //
 // Atomicity with the key (Codex money review r1): the submission runs in platform idempotency's
 // transactional mode. Everything after the key is claimed reads on that transaction except the
@@ -55,6 +56,7 @@ import {
   type Idempotency,
   type RootLogger,
 } from '../../platform/index.ts';
+import { canTransitionBinding } from '../domain/binding-status-transitions.ts';
 import type { CallerContext } from '../ports.ts';
 import {
   AuthConfigError,
@@ -173,6 +175,13 @@ function result(code: number, traceId: string, data?: Record<string, unknown>): 
   };
 }
 
+/** Throws on a status change the transition table does not allow (never written, 50001). */
+function assertTransition(from: string | null, to: string): void {
+  if (!canTransitionBinding(from, to)) {
+    throw new Error(`union_bindings: illegal status transition ${String(from)} → ${to}`);
+  }
+}
+
 function uniqueViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -240,6 +249,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       if (unreleased.status === 'active') return { kind: 'ok' };
       if (unreleased.status === 'blocked') return { kind: 'blocked' };
       // invalid (or a legacy pending_auth) → active; bound_at is written once and kept.
+      assertTransition(unreleased.status, 'active');
       const updated = await trx
         .updateTable('union_bindings')
         .set((eb) => ({
@@ -267,6 +277,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       )
       .sort((a, b) => (b.released_at?.getTime() ?? 0) - (a.released_at?.getTime() ?? 0))[0];
     if (cooling !== undefined) {
+      assertTransition(cooling.status, 'active');
       const restored = await trx
         .updateTable('union_bindings')
         .set((eb) => ({
@@ -285,6 +296,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
     }
 
     // pending_auth is never produced (BR-ID-17 细则): the row is written active directly.
+    assertTransition(null, 'active');
     await trx
       .insertInto('union_bindings')
       .values({
