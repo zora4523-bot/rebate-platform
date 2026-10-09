@@ -1,0 +1,23 @@
+id: B1-14d
+repo: rebate-platform
+title: 降级接线联盟段（待前置）：联盟查询治理按公共登记表取参，并复用 QA-05a 验证可识别的 circuit_open 与恢复
+type: impl
+# 2026-10-09 接收原 B1-14b 的全部联盟义务；依据规划/02 §6.2、§14，05 B1-14，11 §1.1 默认分工。
+# B1-14b 只做公共导出与百炼组合验收，不代表本段完成；本段保留 B1-04p 前置，union/** 与 B1-06v/B1-04p 串行，领取前重查路径。
+# 联盟查询治理复用 platform 公共登记表，不复制阈值或另造注入工具；使用 QA-05a 的本地/合成故障场景。
+# 验证超时、限流、5xx 熔断、后续 circuit_open 与恢复；保留在线/离线策略差异、读重试、写不重试。搜索缓存与 50304 属 catalog/BR-PROD-07，本段不改。
+# 不包括转链/归属/订单/资金行为；union 属 forbidden_paths，严格按 Claude 实现、Codex 规则测试及两家独立评审，不继承 Codex-first 白名单。
+refs: []
+refs_hash: {}
+deps: [B1-14b, QA-05a, B1-04p, B1-19b]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/resilience-wiring/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/resilience-wiring/**：登记表参数生效、查询熔断可识别 circuit_open、恢复；保留既有联盟规则测试'
+status: todo
+pr: null
