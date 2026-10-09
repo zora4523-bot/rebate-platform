@@ -185,16 +185,28 @@ it('redactCredentials ends an unquoted libpq value only at whitespace, a query v
   );
 });
 
-it('redactCredentials keeps masking a secret assignment glued inside an escaped-quote value', () => {
-  // `\'` does not end the quoted value; the quote after `sslpassword=` does, and the text after it
-  // is the inner assignment's value, so it is masked too.
+it('redactCredentials masks text glued to a closing quote and keeps parameters after a clean close', () => {
+  // `\'` does not end the quoted value; the quote after `sslpassword=` does, and the text glued
+  // to it (not valid libpq) is masked with the value up to the next whitespace.
   const input = String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail' dbname=couli`;
   expect(redactCredentials(input)).toBe('host=db password=*** dbname=couli');
+  // An empty quoted string glued in front of the rest does not end the masking either.
+  const empty = String.raw`host=db password='ExampleHead\'&sslpassword=''ExampleTail' dbname=couli`;
+  expect(redactCredentials(empty)).toBe('host=db password=*** dbname=couli');
+  // A well-formed quoted password that merely contains `sslpassword=` ends at its closing quote:
+  // the parameters after it stay readable.
+  expect(
+    redactCredentials("password='ExampleHead&sslpassword=' host=db.invalid dbname=couli"),
+  ).toBe('password=*** host=db.invalid dbname=couli');
   // An inner assignment whose value ends inside the outer value changes nothing.
   expect(redactCredentials("host=db password='ExampleA&password=ExampleB c' dbname=couli")).toBe(
     'host=db password=*** dbname=couli',
   );
-  // Chained: every inner value is covered, ordinary parameters after it stay readable.
+  // Chained: every glued piece is covered, ordinary parameters after it stay readable.
   const chained = String.raw`password='ExampleOne\'&password='ExampleTwo\'&sslpassword='ExampleThree' port=5432`;
   expect(redactCredentials(chained)).toBe('password=*** port=5432');
+  // In a URL query a quoted value still ends at `&`.
+  expect(redactCredentials("postgres://u@h/db?password='ExampleQ'&sslmode=require")).toBe(
+    'postgres://u@h/db?password=***&sslmode=require',
+  );
 });

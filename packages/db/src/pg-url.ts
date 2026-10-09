@@ -110,21 +110,39 @@ const KEYWORD_VALUE_END = /\s/;
 /**
  * Index just past the parameter value that starts at `start`, following libpq's keyword/value
  * rules: a backslash escapes the next character both inside a quoted value (`'a\'b c'`) and in
- * an unquoted one (`a\ b`), so an escaped quote or space never ends the value. An unterminated
- * quote runs to the end of the text. `end` says which characters end an unquoted value.
+ * an unquoted one (`a\ b`), so an escaped quote or space never ends the value; the first
+ * unescaped closing quote ends a quoted value. An unterminated quote runs to the end of the text.
+ * `end` says which characters end an unquoted value.
+ *
+ * Text glued to the closing quote (`'Head\'&sslpassword='Tail'`, `…=''Tail'`) is not valid libpq
+ * and may be the rest of a secret, so it is counted as part of the value up to the next `end`
+ * character (quotes in it are ordinary); a closing quote followed by an `end` character
+ * (`'Head&sslpassword=' host=db`) ends the value right there.
  */
 function valueEnd(text: string, start: number, end: RegExp): number {
   const quote = text[start];
-  const quoted = quote === "'" || quote === '"';
-  let index = quoted ? start + 1 : start;
+  let index = start;
+  if (quote === "'" || quote === '"') {
+    index = start + 1;
+    for (;;) {
+      if (index >= text.length) {
+        return text.length;
+      }
+      const char = text[index];
+      index += char === '\\' ? 2 : 1;
+      if (char === quote) {
+        break;
+      }
+    }
+  }
   while (index < text.length) {
     const char = text[index] ?? '';
     if (char === '\\') {
       index += 2;
       continue;
     }
-    if (quoted ? char === quote : end.test(char)) {
-      return quoted ? index + 1 : index;
+    if (end.test(char)) {
+      return index;
     }
     index++;
   }
@@ -132,29 +150,22 @@ function valueEnd(text: string, start: number, end: RegExp): number {
 }
 
 /**
- * `text` with the value of every `password=` / `sslpassword=` parameter replaced by `***`.
- * A secret assignment that sits inside a value already masked (`password='Head\'&sslpassword='Tail'`:
- * the escaped quote does not end the first value, the quote after `sslpassword=` does) still owns
- * the text after it, so the masked stretch is extended to the end of that inner value as well.
+ * `text` with the value of every `password=` / `sslpassword=` parameter replaced by `***`. Each
+ * value is cut out whole first (see `valueEnd`), so a password-looking assignment inside it
+ * (`password='Head&sslpassword=' …`) is masked with it and never starts a value of its own.
  */
 function maskPasswordParameters(text: string): string {
   let result = '';
   let done = 0;
   for (const match of text.matchAll(PARAMETER)) {
-    if (!isSecretName(match[1] ?? '')) {
+    if (match.index < done || !isSecretName(match[1] ?? '')) {
       continue;
     }
     const before = match.index > 0 ? text[match.index - 1] : '';
     const end = before === '?' || before === '&' ? QUERY_VALUE_END : KEYWORD_VALUE_END;
     const start = match.index + match[0].length;
-    const stop = valueEnd(text, start, end);
-    if (start < done) {
-      // Inside a masked value: never unmask, only extend over the inner value's remainder.
-      done = Math.max(done, stop);
-      continue;
-    }
     result += text.slice(done, start) + MASK;
-    done = stop;
+    done = valueEnd(text, start, end);
   }
   return result + text.slice(done);
 }
