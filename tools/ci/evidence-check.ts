@@ -13,16 +13,22 @@
 //   RV0 / RV1  pass; an evidence file for the task, when present, is validated all the same.
 //   RV2        ops/evidence/<id>.json must exist at the head (id from the branch `task/<id>`):
 //              task id, spec_ref = SPEC_REF of the head, spec_commit is an ancestor of the head
-//              and no class 1 test asset changed between it and the head, both reviewers pass
-//              with no open S0 / S1, every recorded directory tree hash equals the head's,
-//              long-run result bound to one of those trees.
+//              and no class 1 test asset changed between it and the head, the Codex review
+//              passes with no open S0 / S1 and the funds checklist complete, every recorded
+//              directory tree hash equals the head's, long-run result bound to one of those trees.
+//              Reviews (owner decision 2026-10-09, ops/approvals.yaml id 27): Codex (a fresh
+//              read-only session) is the only code reviewer of an implementation Claude wrote; a
+//              Claude review is no longer required, and a Claude entry that is present is still
+//              validated. A task whose ledger names Codex as the implementer (impl: codex,
+//              ops/approvals.yaml id 23) or whose ledger cannot be read still needs the Claude
+//              review as well (the implementer never reviews itself).
 //              Handover (规划/11 §2.5, CR-09): when Opus used up its rounds and Codex implemented
 //              once, the evidence carries `handover` and only the Claude review of the handover
 //              implementation must pass (Codex never reviews its own code). Allowed only when the
 //              task ledger's paths are below RV2, no money / attribution implementation path
 //              changed and the changed paths outside the rule-test assets, the task's own ledger
 //              and evidence files and docs/** are below RV2 (RV2 不换家, hard rule 3); otherwise
-//              both reviews stay required. guard-git's path guard keeps every change inside the
+//              the handover is refused. guard-git's path guard keeps every change inside the
 //              ledger paths independently of this check.
 //              Full verification (owner decision 2026-10-06, ops/approvals.yaml id 21): the
 //              required CI checks of the pull request on its head (ci-gate: verify-fast,
@@ -265,8 +271,14 @@ export function evidenceProblems(
     cfg: ProtectedConfig;
     /** The red-run requirement (absent: required, no expected files: fail-closed). */
     red?: RedRequirement;
-    /** Whether a handover may be recorded (absent: refused, both reviews required). */
+    /** Whether a handover may be recorded (absent: refused, the normal reviews required). */
     handover?: HandoverPolicy;
+    /**
+     * Whether a Claude code review is required besides the Codex one: the ledger names Codex as
+     * the implementer (impl: codex, ops/approvals.yaml id 23) or cannot be read. Absent: not
+     * required (ops/approvals.yaml id 27: Codex alone reviews what Claude implemented).
+     */
+    claudeReview?: boolean;
   },
 ): string[] {
   const problems: string[] = [];
@@ -409,8 +421,8 @@ export function evidenceProblems(
   // the task ledger only (and its ledger file) and whose subject carries the handover marker. Every
   // Claude review (other than spec-test) bound to that commit or a later ancestor of the head must
   // pass with the funds checklist, and after it only the task's evidence and ledger files change.
-  // A Codex entry is the review from before the handover and is not checked. Any defect keeps both
-  // reviews required.
+  // A Codex entry is the review from before the handover and is not checked. Any defect keeps the
+  // normal reviews required.
   const handover = doc['handover'];
   let handoverCommit: string | null = null;
   if (handover !== undefined) {
@@ -420,8 +432,8 @@ export function evidenceProblems(
     } else if (!policy.allowed) {
       at(
         'handover',
-        `not allowed: ${policy.reason} (规划/11 §2.5 RV2 不换家, hard rule 3); both reviews stay ` +
-          'required (drop the handover record and record both reviews)',
+        `not allowed: ${policy.reason} (规划/11 §2.5 RV2 不换家, hard rule 3); the normal reviews ` +
+          'stay required (drop the handover record and record the reviews)',
       );
     } else {
       let valid = true;
@@ -521,10 +533,20 @@ export function evidenceProblems(
       }
     }
   } else {
+    // ops/approvals.yaml id 27 (2026-10-09): the Codex review is always required; the Claude review
+    // only when Codex implemented (ctx.claudeReview). A Claude entry that is present is checked.
     for (const reviewer of ['claude', 'codex']) {
       const entry = reviews.find((r) => isRecord(r) && r['reviewer'] === reviewer);
       if (!isRecord(entry)) {
-        at('reviews', `missing the ${reviewer} review (规划/11 §3.2 两家评审)`);
+        if (reviewer === 'codex') {
+          at('reviews', 'missing the codex review (规划/11 §3.2 Codex 对抗评审)');
+        } else if (ctx.claudeReview === true) {
+          at(
+            'reviews',
+            'missing the claude review (the task ledger names Codex as the implementer or cannot ' +
+              'be read; the implementer never reviews itself, ops/approvals.yaml id 23)',
+          );
+        }
         continue;
       }
       if (entry['verdict'] !== 'pass') at(`reviews.${reviewer}.verdict`, 'must be pass');
@@ -734,6 +756,7 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
           cfg,
           red,
           handover: handoverPolicy(input, task, changed, riskMap, cfg),
+          claudeReview: readLedger(input, task)?.impl !== 'claude',
         }).map((p) => `${evidencePath}: ${p}`),
       );
     }

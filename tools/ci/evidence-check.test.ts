@@ -223,6 +223,7 @@ it('every field of the evidence can fail the check', () => {
       evidence({ reviews: [{ reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 }] }),
       /missing the codex review/,
     ],
+    ['no reviews at all', evidence({ reviews: [] }), /reviews: missing the codex review/],
     [
       'open S0',
       evidence({
@@ -954,4 +955,68 @@ it('[legacy flow] a legacy ledger needs no red run and no test_paths, but still 
   expect(checkEvidence({ ...input, head: noVerify }).problems).toEqual([]);
   const noRuns = commitEvidence({ ...doc, runs: [] });
   expect(checkEvidence({ ...input, head: noRuns }).problems).toEqual([]);
+});
+
+it('[approvals 27] Codex alone reviews what Claude implemented; impl: codex still needs Claude', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const problemsOf = (doc: unknown, claudeReview?: boolean): string =>
+    evidenceProblems(doc, {
+      prDir: repo,
+      head,
+      task: 'B2-01a',
+      cfg,
+      red: RED,
+      ...(claudeReview === undefined ? {} : { claudeReview }),
+    }).join('\n');
+  const codexPass = { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true };
+  const claudePass = { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 };
+  // Without a Claude entry the evidence passes (absent flag and an explicit false alike).
+  expect(problemsOf(evidence({ reviews: [codexPass] }))).toBe('');
+  expect(problemsOf(evidence({ reviews: [codexPass] }), false)).toBe('');
+  // A missing or failing Codex review still fails.
+  expect(problemsOf(evidence({ reviews: [claudePass] }))).toMatch(/missing the codex review/);
+  expect(problemsOf(evidence({ reviews: [{ ...codexPass, open_s0_s1: 1 }] }))).toMatch(
+    /reviews.codex.open_s0_s1: must be 0/,
+  );
+  expect(problemsOf(evidence({ reviews: [{ ...codexPass, checklist_complete: false }] }))).toMatch(
+    /reviews.codex.checklist_complete: must be true/,
+  );
+  // A Claude entry that is present is still validated.
+  expect(
+    problemsOf(evidence({ reviews: [{ ...claudePass, verdict: 'fail' }, codexPass] })),
+  ).toMatch(/reviews.claude.verdict: must be pass/);
+  // When Codex implemented (or the ledger cannot be read) the Claude review stays required.
+  expect(problemsOf(evidence({ reviews: [codexPass] }), true)).toMatch(
+    /reviews: missing the claude review \(the task ledger names Codex/,
+  );
+  expect(problemsOf(evidence({ reviews: [claudePass, codexPass] }), true)).toBe('');
+
+  // Through checkEvidence the flag comes from the trusted ledger: impl: claude passes without the
+  // Claude entry, impl: codex does not.
+  const onlyCodex = commitEvidence(evidence({ reviews: [codexPass] }));
+  expect(check(onlyCodex).problems).toEqual([]);
+  const codexTrusted = join(SCRATCH, 'trusted-codex-impl');
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'ops/risk-map.yaml',
+    'tools/guard/legacy-tasks.json',
+  ]) {
+    write(codexTrusted, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+  }
+  write(codexTrusted, {
+    'ops/tasks/B2-01a.yaml': readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8')
+      .replace('impl: claude', 'impl: codex')
+      .replace('tester: codex', 'tester: claude'),
+  });
+  const input = {
+    prDir: repo,
+    base,
+    head: onlyCodex,
+    headRef: 'task/B2-01a',
+    trusted: codexTrusted,
+  };
+  expect(checkEvidence(input).problems.join('\n')).toMatch(/missing the claude review/);
+  const both = commitEvidence(evidence({ reviews: [claudePass, codexPass] }));
+  expect(checkEvidence({ ...input, head: both }).problems).toEqual([]);
 });

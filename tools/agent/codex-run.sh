@@ -27,6 +27,11 @@
 #             (ops/approvals.yaml id 23)
 # A spec-test review of a task whose rule tests Codex wrote (ledger tester: codex) is refused:
 # that review goes to a fresh Claude subagent (README §11).
+#
+# Reasoning effort (owner decision 2026-10-09, ops/approvals.yaml id 27): Codex is the only code
+# reviewer of what Claude implemented, at a light effort. review mode passes
+# model_reasoning_effort = $CODEX_REVIEW_EFFORT, default low; only minimal, low, medium, high and
+# xhigh are accepted, anything else is a usage error (exit 2). impl mode stays at high.
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -51,6 +56,7 @@ PHASE=''
 TASK=''
 WT_ARG=''
 REVIEW_TYPE=''
+REVIEW_EFFORT=''
 BASE_ARG=''
 TIMEOUT_MIN=''
 DRY_RUN=0
@@ -64,6 +70,8 @@ usage: codex-run.sh impl   <id> [--phase test|handover] [--worktree <dir>] [--ti
        codex-run.sh review <id> [--worktree <dir>] [--review-type money|general|contract|spec-test]
                                 [--base <ref>] [--timeout-min <n>] [--dry-run]
        codex-run.sh selfcheck
+env:   CODEX_REVIEW_EFFORT  review reasoning effort: minimal|low|medium|high|xhigh (default low;
+                            impl stays high)
 exit:  0 usable output | 10 no usable output | 11 model capacity | 12 position assertion failed
        124 timeout | 2 usage error or refused argument
 EOF
@@ -78,6 +86,15 @@ fail_usage() {
 refuse() {
   log "refused: $1 (规划/11 §2.4 禁用)"
   exit 2
+}
+
+# Sets REVIEW_EFFORT from CODEX_REVIEW_EFFORT (default low, ops/approvals.yaml id 27).
+resolve_review_effort() {
+  REVIEW_EFFORT="${CODEX_REVIEW_EFFORT:-low}"
+  case "$REVIEW_EFFORT" in
+    minimal | low | medium | high | xhigh) ;;
+    *) fail_usage "CODEX_REVIEW_EFFORT must be minimal, low, medium, high or xhigh (got \"$REVIEW_EFFORT\")" ;;
+  esac
 }
 
 # 规划/11 §2.4: nothing a caller passes may loosen the sandbox or change how Codex is started.
@@ -146,6 +163,7 @@ parse_args() {
     esac
   else
     [ -z "$PHASE" ] || fail_usage "--phase applies to impl only"
+    resolve_review_effort
     # An empty REVIEW_TYPE is filled in from the task's risk level (resolve_review_type).
     case "$REVIEW_TYPE" in
       '' | money | general | contract | spec-test) ;;
@@ -542,9 +560,10 @@ build_argv() {
       --output-schema "$TRUSTED/tools/agent/schemas/impl.schema.json" -o "$run/impl.json"
       "$prompt")
   else
+    resolve_review_effort
     CODEX_ARGV=("$CODEX_BIN" exec -C "$wt" -s read-only
       --ignore-user-config --ignore-rules --json
-      -m "$MODEL" -c 'model_reasoning_effort="xhigh"'
+      -m "$MODEL" -c "model_reasoning_effort=\"$REVIEW_EFFORT\""
       -c 'skills.include_instructions=false' --disable plugins
       --output-schema "$TRUSTED/tools/agent/schemas/review.schema.json" -o "$run/review-codex.json"
       "$prompt")
