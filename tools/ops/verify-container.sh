@@ -72,6 +72,34 @@
 #   COULI_VERIFY_TIMEOUT_SECS (default 1200); COULI_VERIFY_PREFIX (default couli-verify;
 #   prefix of every container, network and volume this script creates);
 #   PROP_SEED / PROP_RUNS are passed through.
+#
+# External services (owner 2026-10-08: the test database runs on the test machine itself, not in
+# Docker): set COULI_VERIFY_PG_SOCKET_DIR and the run that needs databases (pnpm verify, the
+# integration groups of --red) uses the host's PostgreSQL and Redis instead of the one-shot
+# containers. All of these are then required:
+#   COULI_VERIFY_PG_SOCKET_DIR           directory of the PostgreSQL unix socket (.s.PGSQL.<port>)
+#   COULI_VERIFY_PG_PORT                 port of that socket file (default 5432)
+#   COULI_VERIFY_PG_ADMIN_USER           a superuser of that cluster (password login on the socket)
+#   COULI_VERIFY_PG_ADMIN_PASSWORD_FILE  file whose first line is its password (read here only)
+#   COULI_VERIFY_REDIS_SOCKET            the Redis unix socket (no password, test-only instance)
+# What changes in that mode, and nothing else:
+#   - no internal network, no PostgreSQL or Redis container; the database container runs with
+#     `--network none` and gets the socket directories bind-mounted read-only;
+#   - inside it a small socket proxy (node, written by this script, mounted read-only) listens on
+#     127.0.0.1:5432 and 127.0.0.1:6379 and forwards to the two sockets, so TEST_PG_ADMIN_URL is
+#     postgres://<user>:<password>@127.0.0.1:5432/postgres and TEST_REDIS_URL redis://127.0.0.1:6379/0
+#     (packages/db/src/pg-url.ts and the test Redis probe take host:port URLs only; pg_dump of
+#     db:check connects the same way). The password reaches the container only by name (`-e`);
+#   - the cluster is shared and lives on: runs that use it are serialised by the lock directory
+#     <runs>/lock/verify-external-services (a stale one, whose process is gone, is taken over), and
+#     before and after each such run the databases and roles test runs create
+#     (couli_tpl_* / couli_t_* / couli_snap_* databases, couli_factory_* roles) are dropped and
+#     Redis is emptied (FLUSHALL). The cluster-wide bootstrap roles (couli_migrator …) stay; every
+#     run sets the same derived passwords on them. The cluster's template1 must be bare (only
+#     plpgsql, as in the one-shot image), since every test database is created from it: the
+#     cleanup refuses to start a run otherwise;
+#   - result.json of such a run has "services": "external".
+# Unset, the script behaves exactly as without these lines.
 set -euo pipefail
 
 PG_IMAGE='pgvector/pgvector:0.8.6-pg18-trixie'
@@ -219,6 +247,28 @@ if [ -n "${PROP_RUNS:-}" ] && ! [[ "$PROP_RUNS" =~ ^[1-9][0-9]*$ ]]; then die "P
 PREFIX="${COULI_VERIFY_PREFIX:-couli-verify}"
 if ! [[ "$PREFIX" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then die "COULI_VERIFY_PREFIX must match [a-z0-9][a-z0-9-]*"; fi
 
+# External services (see the header): checked here, used by start_services.
+EXT_SERVICES=0
+if [ -n "${COULI_VERIFY_PG_SOCKET_DIR:-}" ] || [ -n "${COULI_VERIFY_REDIS_SOCKET:-}" ]; then
+  EXT_SERVICES=1
+  EXT_PG_DIR="${COULI_VERIFY_PG_SOCKET_DIR:-}"
+  EXT_PG_PORT="${COULI_VERIFY_PG_PORT:-5432}"
+  EXT_PG_USER="${COULI_VERIFY_PG_ADMIN_USER:-}"
+  EXT_PG_PWFILE="${COULI_VERIFY_PG_ADMIN_PASSWORD_FILE:-}"
+  EXT_REDIS_SOCKET="${COULI_VERIFY_REDIS_SOCKET:-}"
+  if [ -z "$EXT_PG_DIR" ] || [ -z "$EXT_PG_USER" ] || [ -z "$EXT_PG_PWFILE" ] || [ -z "$EXT_REDIS_SOCKET" ]; then
+    die "external services need COULI_VERIFY_PG_SOCKET_DIR, COULI_VERIFY_PG_ADMIN_USER, COULI_VERIFY_PG_ADMIN_PASSWORD_FILE and COULI_VERIFY_REDIS_SOCKET"
+  fi
+  for p in "$EXT_PG_DIR" "$EXT_REDIS_SOCKET"; do
+    [[ "$p" == /* ]] && [[ "$p" != *[:,]* ]] || die "external service paths must be absolute, without ':' or ',': $p"
+  done
+  EXT_PG_DIR="${EXT_PG_DIR%/}"
+  [[ "$EXT_PG_PORT" =~ ^[1-9][0-9]{0,4}$ ]] || die "COULI_VERIFY_PG_PORT must be a port number"
+  [[ "$EXT_PG_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "COULI_VERIFY_PG_ADMIN_USER must be a plain role name"
+  EXT_REDIS_DIR="$(dirname "$EXT_REDIS_SOCKET")"
+  EXT_REDIS_BASE="$(basename "$EXT_REDIS_SOCKET")"
+fi
+
 # The red run: which rule-test files the task added (inside its trusted test_paths), against the
 # base. The same list is what red-check reconciles the reports with (CR-10).
 RED_FILES=''
@@ -358,11 +408,13 @@ else
 fi
 
 STARTED_AT="$(now_utc)"
+# Set by start_services when the run used the external services (empty otherwise).
+SERVICES_FIELD=''
 
 write_result() {
   local tmp="$RESULT.tmp.$$"
-  printf '{\n  "mode": "%s",\n  "script": "%s",\n  "exit_code": %s,\n  "commit": %s,\n  "tree": %s,\n  "prop_seed": %s,\n  "started_at": "%s",\n  "finished_at": "%s"\n}\n' \
-    "$MODE" "$SCRIPT" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "$STARTED_AT" "$(now_utc)" >"$tmp"
+  printf '{\n  "mode": "%s",\n  "script": "%s",\n  "exit_code": %s,\n  "commit": %s,\n  "tree": %s,\n  "prop_seed": %s,\n  "started_at": "%s",\n  "finished_at": "%s"%s\n}\n' \
+    "$MODE" "$SCRIPT" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "$STARTED_AT" "$(now_utc)" "$SERVICES_FIELD" >"$tmp"
   if [ "$SCRIPT" = red ] && [ -f "$VDIR/red-check.json" ]; then
     # The red tests, the expected files and the exported reports with their sha256 (evidence).
     node -e '
@@ -447,11 +499,22 @@ TMPFS=(--tmpfs "/work:rw,exec,nosuid,uid=1000,gid=1000,mode=0755" --tmpfs "/tmp:
 
 net_created=0
 store_locked=0
+ext_locked=0
+EXT_RESET_NAME="$PREFIX-reset-$TAG"
+EXT_LOCK="$RUNS/lock/verify-external-services"
+EXT_PROXY="$VDIR/services-proxy.cjs"
 cleanup() {
   # Signals do not reach processes inside a container: remove them explicitly.
   docker rm -f -v "$VERIFY_NAME" "$RED_DB_NAME" "$FETCH_NAME" "$PG_NAME" "$REDIS_NAME" >/dev/null 2>&1 || true
   if [ "$net_created" -eq 1 ]; then docker network rm "$NET" >/dev/null 2>&1 || true; fi
   if [ "$store_locked" -eq 1 ]; then rmdir "$STORE_LOCK" 2>/dev/null || true; fi
+  if [ "$ext_locked" -eq 1 ]; then
+    docker rm -f "$EXT_RESET_NAME" >/dev/null 2>&1 || true
+    # What this run left on the shared cluster goes before the next run may start.
+    ext_reset after || log "verify-container: could not clean the external services after the run, see $LOG"
+    rm -rf "$EXT_LOCK"
+  fi
+  if [ "$EXT_SERVICES" = 1 ]; then rm -f "$EXT_PROXY"; fi
   rm -rf "$SRC"
 }
 trap cleanup EXIT
@@ -520,6 +583,151 @@ start_services() { # <what the services are for, for the log>
   wait_ready "$REDIS_NAME" redis_ready Redis
   export TEST_PG_ADMIN_URL="postgres://postgres:$PG_PASSWORD@pg:5432/postgres"
   export TEST_REDIS_URL='redis://redis:6379/0'
+}
+
+# --- external services (header: COULI_VERIFY_PG_SOCKET_DIR …) ---------------------------------
+# The database container's network, mounts and command prefix. Empty unless external services
+# are on: then `--network none`, the two socket directories read-only, the proxy, and a wrapper
+# that starts the proxy and waits for it before it execs the entrypoint.
+EXT_RUN=()
+EXT_WRAP=()
+IFS= read -r -d '' EXT_PROXY_JS <<'JS' || true
+'use strict';
+// Socket proxy of verify-container.sh (external services): the container has no network, the
+// clients take host:port URLs only, so 127.0.0.1:<port> is forwarded to the mounted sockets.
+const fs = require('node:fs');
+const net = require('node:net');
+const routes = JSON.parse(process.env.COULI_SERVICES_ROUTES);
+let listening = 0;
+for (const [port, path] of routes) {
+  const server = net.createServer((client) => {
+    const upstream = net.connect({ path });
+    client.pipe(upstream);
+    upstream.pipe(client);
+    client.on('error', () => upstream.destroy());
+    upstream.on('error', () => client.destroy());
+    client.on('close', () => upstream.end());
+    upstream.on('close', () => client.end());
+  });
+  server.on('error', (error) => {
+    process.stderr.write(`[services] cannot listen on 127.0.0.1:${port}: ${error.code}\n`);
+    process.exit(2);
+  });
+  server.listen(port, '127.0.0.1', () => {
+    listening += 1;
+    if (listening === routes.length) fs.writeFileSync('/tmp/.couli-services-ready', '');
+  });
+}
+JS
+IFS= read -r -d '' EXT_WRAP_SH <<'SH' || true
+node /couli-services/proxy.cjs &
+proxy=$!
+tries=0
+until [ -e /tmp/.couli-services-ready ]; do
+  tries=$((tries + 1))
+  if [ "$tries" -gt 200 ] || ! kill -0 "$proxy" 2>/dev/null; then
+    echo "[services] the socket proxy did not start" >&2
+    exit 2
+  fi
+  sleep 0.05
+done
+exec "$@"
+SH
+# Drops what test runs create on the shared cluster (the clone, template and snapshot databases
+# and the factory roles of packages/db/src/testing; the bootstrap roles stay) and empties Redis.
+# Runs psql and node of the verify image, no network, the sockets mounted read-only.
+IFS= read -r -d '' EXT_RESET_SH <<'SH' || true
+set -euo pipefail
+psql -X -q -At -v ON_ERROR_STOP=1 -v "phase=$RESET_PHASE" <<'SQL'
+SELECT format('[services] %s: %s leftover test databases, %s leftover factory roles', :'phase',
+  (SELECT count(*) FROM pg_database WHERE datname ~ '^couli_(tpl|snap|t)_[0-9a-f]{8}'),
+  (SELECT count(*) FROM pg_roles WHERE rolname ~ '^couli_factory_[0-9a-f]{8}$'));
+SELECT format('ALTER DATABASE %I WITH is_template false', datname) FROM pg_database
+  WHERE datname ~ '^couli_(tpl|snap|t)_[0-9a-f]{8}' AND datistemplate \gexec
+SELECT format('DROP DATABASE %I WITH (FORCE)', datname) FROM pg_database
+  WHERE datname ~ '^couli_(tpl|snap|t)_[0-9a-f]{8}' \gexec
+SELECT format('DROP ROLE %I', rolname) FROM pg_roles
+  WHERE rolname ~ '^couli_factory_[0-9a-f]{8}$' \gexec
+SQL
+# Test databases are created from template1: it must be as bare as the one-shot image's (only
+# plpgsql, nothing in public), or every test database and the db:check snapshot inherit extra
+# objects (Pigsty fills template1 with extensions and a monitor schema).
+extra="$(psql -X -q -At -v ON_ERROR_STOP=1 -d template1 -c "SELECT
+  (SELECT count(*) FROM pg_extension WHERE extname <> 'plpgsql') +
+  (SELECT count(*) FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ('public', 'information_schema')) +
+  (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public')")"
+if [ "$extra" != 0 ]; then
+  echo "[services] template1 of the external PostgreSQL holds $extra extra extensions, schemas or relations: rebuild it from template0" >&2
+  exit 1
+fi
+node -e '
+  const s = require("node:net").connect({ path: process.env.REDIS_SOCK });
+  let reply = "";
+  const fail = (why) => { process.stderr.write(`[services] Redis: ${why}\n`); process.exit(1); };
+  setTimeout(() => fail("no answer within 10 seconds"), 10000).unref();
+  s.on("connect", () => s.write("*1\r\n$8\r\nFLUSHALL\r\n"));
+  s.on("error", (e) => fail(e.code));
+  s.on("data", (d) => {
+    reply += d;
+    if (!reply.includes("\r\n")) return;
+    if (reply.startsWith("+OK")) { process.stdout.write("[services] Redis emptied\n"); process.exit(0); }
+    fail(reply.split("\r\n")[0]);
+  });
+'
+SH
+ext_reset() { # <before|after>
+  [ "${IMAGE:-}" != '' ] || return 0
+  PGPASSWORD="$EXT_PG_PASSWORD" docker run --rm --name "$EXT_RESET_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
+    --network none \
+    -v "$EXT_PG_DIR:/run/couli-pg:ro" \
+    -v "$EXT_REDIS_DIR:/run/couli-redis:ro" \
+    -e PGPASSWORD -e PGHOST=/run/couli-pg -e "PGPORT=$EXT_PG_PORT" -e "PGUSER=$EXT_PG_USER" \
+    -e PGDATABASE=postgres -e "RESET_PHASE=$1" -e "REDIS_SOCK=/run/couli-redis/$EXT_REDIS_BASE" \
+    "$IMAGE" bash -c "$EXT_RESET_SH" >>"$LOG" 2>&1 </dev/null
+}
+ext_lock() {
+  # One run on the shared cluster at a time: the cleanup drops every test database by prefix.
+  mkdir -p "$RUNS/lock"
+  local waited=0 owner
+  while ! mkdir "$EXT_LOCK" 2>/dev/null; do
+    owner="$(cat "$EXT_LOCK/pid" 2>/dev/null || true)"
+    if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+      step "taking over the stale lock $EXT_LOCK of process $owner"
+      rm -rf "$EXT_LOCK"
+      continue
+    fi
+    [ "$waited" -lt 3600 ] || die "another run holds $EXT_LOCK for more than an hour"
+    sleep 5
+    waited=$((waited + 5))
+  done
+  printf '%s\n' "$$" >"$EXT_LOCK/pid"
+  ext_locked=1
+}
+start_external_services() { # <what the services are for, for the log>
+  # Existence only: the cleanup below connects to both before the run starts.
+  [ -e "$EXT_PG_DIR/.s.PGSQL.$EXT_PG_PORT" ] || die "no PostgreSQL socket $EXT_PG_DIR/.s.PGSQL.$EXT_PG_PORT"
+  [ -e "$EXT_REDIS_SOCKET" ] || die "no Redis socket $EXT_REDIS_SOCKET"
+  [ -r "$EXT_PG_PWFILE" ] || die "cannot read COULI_VERIFY_PG_ADMIN_PASSWORD_FILE"
+  EXT_PG_PASSWORD="$(head -n 1 "$EXT_PG_PWFILE" | tr -d '\r')"
+  [ -n "$EXT_PG_PASSWORD" ] || die "COULI_VERIFY_PG_ADMIN_PASSWORD_FILE is empty"
+  step "waiting for the external-services lock $EXT_LOCK ($1)"
+  ext_lock
+  step "cleaning the external PostgreSQL ($EXT_PG_DIR, port $EXT_PG_PORT) and Redis ($EXT_REDIS_SOCKET) before the run"
+  ext_reset before || die "cannot reach or clean the external PostgreSQL / Redis, see $LOG"
+  printf '%s' "$EXT_PROXY_JS" >"$EXT_PROXY"
+  chmod 0644 "$EXT_PROXY"
+  EXT_RUN=(--network none
+    -v "$EXT_PG_DIR:/run/couli-pg:ro"
+    -v "$EXT_REDIS_DIR:/run/couli-redis:ro"
+    -v "$EXT_PROXY:/couli-services/proxy.cjs:ro"
+    -e "COULI_SERVICES_ROUTES=[[5432,\"/run/couli-pg/.s.PGSQL.$EXT_PG_PORT\"],[6379,\"/run/couli-redis/$EXT_REDIS_BASE\"]]")
+  EXT_WRAP=(bash -c "$EXT_WRAP_SH" couli-services)
+  local enc
+  enc="$(EXT_PG_PASSWORD="$EXT_PG_PASSWORD" node -e 'process.stdout.write(encodeURIComponent(process.env.EXT_PG_PASSWORD))')"
+  export TEST_PG_ADMIN_URL="postgres://$EXT_PG_USER:$enc@127.0.0.1:5432/postgres"
+  export TEST_REDIS_URL='redis://127.0.0.1:6379/0'
+  SERVICES_FIELD=$',\n  "services": "external"'
+  step "external services ready: the run gets 127.0.0.1:5432 and 127.0.0.1:6379 through the socket proxy, no network"
 }
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -614,9 +822,14 @@ if [ "$SCRIPT" = red ]; then
     local env=(-e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS" -e RED_PLAN)
     [ -z "${PROP_RUNS:-}" ] || env+=(-e "PROP_RUNS=$PROP_RUNS")
     local net=(--network none)
+    local wrap=()
     if [ "$3" = 1 ]; then
       net=(--network "$NET")
       env+=(-e TEST_PG_ADMIN_URL -e TEST_REDIS_URL)
+      if [ "$EXT_SERVICES" = 1 ]; then
+        net=("${EXT_RUN[@]}")
+        wrap=("${EXT_WRAP[@]}")
+      fi
     fi
     local red_rc=0
     RED_PLAN="$2" docker run --rm --name "$1" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
@@ -628,14 +841,19 @@ if [ "$SCRIPT" = red ]; then
       --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
       ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
       "${env[@]}" \
-      "$IMAGE" couli-verify-entrypoint red >>"$LOG" 2>&1 </dev/null || red_rc=$?
+      "$IMAGE" ${wrap[@]+"${wrap[@]}"} couli-verify-entrypoint red >>"$LOG" 2>&1 </dev/null || red_rc=$?
     [ "$red_rc" = 0 ] || die "the red run did not produce its reports (exit $red_rc), see $LOG"
   }
   red_db_plan="$(red_part 1)"
   red_offline_plan="$(red_part 0)"
   if [ -n "$red_db_plan" ]; then
-    start_services 'integration rule tests'
-    step "running the task's integration rule tests (red run) in $IMAGE on $NET (limit ${TIMEOUT_SECS}s)"
+    if [ "$EXT_SERVICES" = 1 ]; then
+      start_external_services 'integration rule tests'
+      step "running the task's integration rule tests (red run) in $IMAGE, no network, external services (limit ${TIMEOUT_SECS}s)"
+    else
+      start_services 'integration rule tests'
+      step "running the task's integration rule tests (red run) in $IMAGE on $NET (limit ${TIMEOUT_SECS}s)"
+    fi
     red_container "$RED_DB_NAME" "$red_db_plan" 1
   fi
   if [ -n "$red_offline_plan" ]; then
@@ -713,7 +931,13 @@ if [ "$SCRIPT" = 'verify:fast' ]; then
   finish "$rc"
 fi
 
-start_services 'pnpm verify'
+VERIFY_NET=(--network "$NET")
+if [ "$EXT_SERVICES" = 1 ]; then
+  start_external_services 'pnpm verify'
+  VERIFY_NET=("${EXT_RUN[@]}")
+else
+  start_services 'pnpm verify'
+fi
 
 step "running pnpm verify in $IMAGE (limit ${TIMEOUT_SECS}s)"
 ENV_ARGS=(-e TEST_PG_ADMIN_URL -e TEST_REDIS_URL
@@ -721,12 +945,12 @@ ENV_ARGS=(-e TEST_PG_ADMIN_URL -e TEST_REDIS_URL
 [ -z "${PROP_RUNS:-}" ] || ENV_ARGS+=(-e "PROP_RUNS=$PROP_RUNS")
 rc=0
 docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
-  --network "$NET" \
+  "${VERIFY_NET[@]}" \
   -v "$SRC:/src:ro" \
   -v "$STORE_VOL:/store:ro" \
   --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
   ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
   "${ENV_ARGS[@]}" \
-  "$IMAGE" couli-verify-entrypoint verify >>"$LOG" 2>&1 </dev/null || rc=$?
+  "$IMAGE" ${EXT_WRAP[@]+"${EXT_WRAP[@]}"} couli-verify-entrypoint verify >>"$LOG" 2>&1 </dev/null || rc=$?
 
 finish "$rc"

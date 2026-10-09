@@ -5,7 +5,7 @@
 // job of tools/ops/verify-container.selftest.sh (run by hand, see tools/ops/README.md).
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { repoRoot } from '../lib/paths.ts';
 import {
@@ -202,6 +202,12 @@ function run(args: string[], env: Record<string, string> = {}): Run {
       PROP_RUNS: undefined,
       PROP_SEED: undefined,
       COULI_VERIFY_TIMEOUT_SECS: undefined,
+      // The external services of the test machine are off unless a test turns them on.
+      COULI_VERIFY_PG_SOCKET_DIR: undefined,
+      COULI_VERIFY_PG_PORT: undefined,
+      COULI_VERIFY_PG_ADMIN_USER: undefined,
+      COULI_VERIFY_PG_ADMIN_PASSWORD_FILE: undefined,
+      COULI_VERIFY_REDIS_SOCKET: undefined,
       STUB_DOCKER_LOG: log,
       ...env,
     },
@@ -788,3 +794,201 @@ it('Redis has one image and one configuration in the verify container, CI and th
     '      - run: pnpm test:int\n        env:\n          TEST_REDIS_URL: redis://127.0.0.1:6379/0\n',
   );
 });
+
+/** External services (the test machine): socket paths, the admin password file. */
+function externalEnv(name: string, password: string): Record<string, string> {
+  const dir = join(base, `ext-${name}`);
+  // The script checks that the sockets exist; the stub never connects, so plain files do.
+  writeFiles(dir, {
+    'pg/.s.PGSQL.5432': '',
+    'redis/redis.sock': '',
+    'admin-password': `${password}\n`,
+  });
+  return {
+    COULI_VERIFY_PG_SOCKET_DIR: join(dir, 'pg'),
+    COULI_VERIFY_PG_ADMIN_USER: 'couli_test_admin',
+    COULI_VERIFY_PG_ADMIN_PASSWORD_FILE: join(dir, 'admin-password'),
+    COULI_VERIFY_REDIS_SOCKET: join(dir, 'redis', 'redis.sock'),
+  };
+}
+
+/** `-v` mounts of a `docker run`. */
+function mountsOf(args: readonly string[]): string[] {
+  return args.flatMap((a, i) => (args[i - 1] === '-v' ? [a] : []));
+}
+
+const EXT_PASSWORD = 'p@ss/w0rd:x';
+const EXT_PG_URL = `postgres://couli_test_admin:${encodeURIComponent(EXT_PASSWORD)}@127.0.0.1:5432/postgres`;
+
+it(
+  'external services: pnpm verify starts no service container and no network; the run reaches the host sockets through the proxy',
+  () => {
+    const env = externalEnv('verify', EXT_PASSWORD);
+    const res = run(['V4-01', '--worktree', workspace('ext-verify')], {
+      ...env,
+      STUB_DOCKER_RUN_EXIT: '3',
+    });
+    expect(res.status, res.stderr).toBe(3);
+    const dir = join(runs, 'V4-01', 'verify', '1');
+    const result = JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(result).toMatchObject({ mode: 'container', script: 'verify', exit_code: 3 });
+    expect(result['services']).toBe('external');
+
+    const { calls } = res;
+    expect(calls.some((c) => c.args[0] === 'network')).toBe(false);
+    expect(calls.some((c) => c.args[0] === 'run' && c.args.includes('-d'))).toBe(false);
+    expect(containerRuns(calls, PG_IMAGE)).toEqual([]);
+    expect(containerRuns(calls, REDIS_IMAGE)).toEqual([]);
+
+    // Cleaning before and after: psql and node of the verify image, no network, sockets read-only,
+    // the password by name only.
+    const resets = calls.filter((c) => (valueOf(c.args, '--name') ?? '').includes('-reset-'));
+    expect(resets).toHaveLength(2);
+    for (const reset of resets) {
+      expect(valueOf(reset.args, '--network')).toBe('none');
+      expect(mountsOf(reset.args)).toEqual([
+        `${env['COULI_VERIFY_PG_SOCKET_DIR'] ?? ''}:/run/couli-pg:ro`,
+        `${dirname(env['COULI_VERIFY_REDIS_SOCKET'] ?? '')}:/run/couli-redis:ro`,
+      ]);
+      expect(reset.env['PGPASSWORD']).toBe(EXT_PASSWORD);
+      expect(reset.args).not.toContain(`PGPASSWORD=${EXT_PASSWORD}`);
+      expect(reset.args.join(' ')).toContain('FLUSHALL');
+    }
+    expect(resets.map((c) => c.env['RESET_PHASE'])).toEqual(['before', 'after']);
+
+    const verifyAt = calls.findIndex((c) => c.args.includes('couli-verify-entrypoint'));
+    const verify = calls[verifyAt];
+    expect(calls.indexOf(resets[0] as Call)).toBeLessThan(verifyAt);
+    expect(calls.indexOf(resets[1] as Call)).toBeGreaterThan(verifyAt);
+    const args = verify?.args ?? [];
+    expect(args.slice(-2)).toEqual(['couli-verify-entrypoint', 'verify']);
+    expect(valueOf(args, '--network')).toBe('none');
+    // The wrapper starts the proxy, then execs the entrypoint.
+    expect(args.slice(-5, -2)).toEqual([
+      '-c',
+      expect.stringContaining('exec "$@"'),
+      'couli-services',
+    ]);
+    expect(mountsOf(args)).toEqual([
+      `${env['COULI_VERIFY_PG_SOCKET_DIR'] ?? ''}:/run/couli-pg:ro`,
+      `${dirname(env['COULI_VERIFY_REDIS_SOCKET'] ?? '')}:/run/couli-redis:ro`,
+      expect.stringMatching(
+        /\/V4-01\/verify\/1\/services-proxy\.cjs:\/couli-services\/proxy\.cjs:ro$/,
+      ),
+      expect.stringMatching(/\/V4-01\/verify\/1\/src:\/src:ro$/),
+      expect.stringMatching(/^couli-stubtest-store-[0-9a-f]{16}:\/store:ro$/),
+    ]);
+    for (const flag of ['--init', '--read-only', 'no-new-privileges']) expect(args).toContain(flag);
+    expect(JSON.parse(verify?.env['COULI_SERVICES_ROUTES'] ?? '[]')).toEqual([
+      [5432, '/run/couli-pg/.s.PGSQL.5432'],
+      [6379, '/run/couli-redis/redis.sock'],
+    ]);
+    // The admin URL (found by its value, passed by name) and the Redis URL point at the proxy.
+    expect(Object.values(verify?.env ?? {})).toContain(EXT_PG_URL);
+    expect(args.some((a) => a.includes(encodeURIComponent(EXT_PASSWORD)))).toBe(false);
+    expect(verify?.env['TEST_REDIS_URL']).toBe('redis://127.0.0.1:6379/0');
+
+    // The password is in no log; the proxy file and the lock are gone afterwards.
+    for (const text of [res.stdout, res.stderr, readFileSync(join(dir, 'log.txt'), 'utf8')]) {
+      expect(text).not.toContain(EXT_PASSWORD);
+      expect(text).not.toContain(encodeURIComponent(EXT_PASSWORD));
+    }
+    expect(existsSync(join(dir, 'services-proxy.cjs'))).toBe(false);
+    expect(existsSync(join(runs, 'lock', 'verify-external-services'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'external services: --fast and a unit-only --red touch none of them; an integration --red group gets them',
+  () => {
+    const env = externalEnv('red', EXT_PASSWORD);
+    const fast = run(['V4-02', '--worktree', workspace('ext-fast'), '--fast'], env);
+    expect(fast.status, fast.stderr).toBe(0);
+    expect(fast.calls.some((c) => (valueOf(c.args, '--name') ?? '').includes('-reset-'))).toBe(
+      false,
+    );
+    const fastRun = entrypointRun(fast.calls);
+    expect(mountsOf(fastRun?.args ?? []).some((m) => m.includes('/run/couli-'))).toBe(false);
+    const fastResult = JSON.parse(
+      readFileSync(join(runs, 'V4-02', 'verify-fast', '1', 'result.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(fastResult['services']).toBeUndefined();
+
+    const unit = run(
+      [
+        'B1-02b',
+        '--worktree',
+        redFixture('ext-red-unit', {
+          'test/spec/identity/devices.test.ts': "it('[BR-ID-05] x', () => {});\n",
+        }),
+        '--red',
+        '--base',
+        'main',
+      ],
+      env,
+    );
+    expect(unit.status).toBe(2);
+    expect(unit.calls.some((c) => (valueOf(c.args, '--name') ?? '').includes('-reset-'))).toBe(
+      false,
+    );
+    expect(noRedisUrl(entrypointRun(unit.calls))).toBe(true);
+
+    const int = run(
+      [
+        'B1-02b',
+        '--worktree',
+        redFixture('ext-red-int', {
+          'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
+        }),
+        '--red',
+        '--base',
+        'main',
+      ],
+      env,
+    );
+    // The stub writes no report, so the run stops after the red container (exit 2); the cleanup
+    // after the run still happens and the lock is released.
+    expect(int.status).toBe(2);
+    expect(int.stderr).toContain('wrote no report for spec-int');
+    expect(int.calls.some((c) => c.args[0] === 'network')).toBe(false);
+    expect(containerRuns(int.calls, PG_IMAGE)).toEqual([]);
+    const red = entrypointRun(int.calls);
+    expect(red?.args.slice(-2)).toEqual(['couli-verify-entrypoint', 'red']);
+    expect(valueOf(red?.args ?? [], '--network')).toBe('none');
+    expect(Object.values(red?.env ?? {})).toContain(EXT_PG_URL);
+    expect(red?.env['TEST_REDIS_URL']).toBe('redis://127.0.0.1:6379/0');
+    const resets = int.calls.filter((c) => (valueOf(c.args, '--name') ?? '').includes('-reset-'));
+    expect(resets.map((c) => c.env['RESET_PHASE'])).toEqual(['before', 'after']);
+    expect(existsSync(join(runs, 'lock', 'verify-external-services'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'external services: an incomplete setting or a missing socket stops the run (exit 2) before any test runs',
+  () => {
+    const env = externalEnv('broken', EXT_PASSWORD);
+    const partial = run(['V4-03', '--worktree', workspace('ext-partial')], {
+      COULI_VERIFY_PG_SOCKET_DIR: env['COULI_VERIFY_PG_SOCKET_DIR'] ?? '',
+    });
+    expect(partial.status).toBe(2);
+    expect(partial.stderr).toContain('external services need');
+    expect(partial.calls).toEqual([]);
+
+    const missing = run(['V4-04', '--worktree', workspace('ext-missing')], {
+      ...env,
+      COULI_VERIFY_REDIS_SOCKET: join(base, 'no-such-dir', 'redis.sock'),
+    });
+    expect(missing.status).toBe(2);
+    expect(missing.stderr).toContain('no Redis socket');
+    expect(entrypointRun(missing.calls)).toBeUndefined();
+    expect(existsSync(join(runs, 'V4-04', 'verify', '1', 'result.json'))).toBe(false);
+    // The run never took the lock.
+    expect(existsSync(join(runs, 'lock', 'verify-external-services'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);

@@ -58,6 +58,17 @@
 - 宿主回退已取消（Codex 评审 CR-01，2026-10-05）：原来的 `--host` 会在宿主上执行任务快照里的代码和测试（含 Codex 写的），清空环境变量挡不住。现在 `--host` 一律拒绝、退出 2；Docker 用不了就停下，把这次运行交给 CI。原 `timeout-group.pl` 随之删除。
 - worktree 在 `/tmp`、`/private/tmp`、`$TMPDIR` 下一律拒绝（那里是 Codex 沙箱的可写根，11 §0）。
 - 可调环境变量：`COULI_VERIFY_TIMEOUT_SECS`（默认与上限 1200，只能调小）、`COULI_VERIFY_PREFIX`（容器、网络、数据卷的名字前缀，默认 `couli-verify`）、`PROP_SEED`、`PROP_RUNS`。
+- 外部服务模式（负责人 2026-10-08：本机不跑 Docker，容器验证放到 AWS 测试机；测试库用 Pigsty 装在测试机的 Ubuntu 上，不进 Docker）。设了 `COULI_VERIFY_PG_SOCKET_DIR` 即开启，下列变量缺一就退出 2：
+
+  | 变量 | 含义 |
+  | --- | --- |
+  | `COULI_VERIFY_PG_SOCKET_DIR` | PostgreSQL unix socket 所在目录（测试机 `/var/run/postgresql`） |
+  | `COULI_VERIFY_PG_PORT` | socket 文件 `.s.PGSQL.<端口>` 的端口，默认 5432 |
+  | `COULI_VERIFY_PG_ADMIN_USER` | 该集群的超级用户（测试机 `couli_test_admin`，经 socket 口令登录） |
+  | `COULI_VERIFY_PG_ADMIN_PASSWORD_FILE` | 第一行是其口令的文件；口令只由本脚本读入，经 `-e 名字` 进容器，不进日志、不进命令行 |
+  | `COULI_VERIFY_REDIS_SOCKET` | Redis unix socket（测试机 `/run/couli-redis/redis.sock`，无口令、只给测试用） |
+
+  开启后只改要连库的那次运行（`pnpm verify`、`--red` 里需要库的组），其余（`--fast`、`--browser`、只有单元组的 `--red`）与原来一样：不建内部网络、不起 PG / Redis 容器；连库容器 `--network none`，两个 socket 目录只读挂进去，容器里先起本脚本写出的小代理（node，只读挂载）在 `127.0.0.1:5432`、`127.0.0.1:6379` 上转发到两个 socket，再 exec 原入口。所以 `TEST_PG_ADMIN_URL` 是 `postgres://<用户>:<口令>@127.0.0.1:5432/postgres`、`TEST_REDIS_URL` 是 `redis://127.0.0.1:6379/0`：`packages/db/src/pg-url.ts` 与测试 Redis 探活（`packages/db/src/testing/redis.ts`）只认 host:port 形式的地址，`db:check` 的 `pg_dump`（镜像里的 `postgresql-client-18`）也照此连接。集群是共享、常驻的：用库的运行经锁目录 `couli-runs/lock/verify-external-services` 串行（持有进程已不在时接管）；每次运行前后删掉测试套件建的库与角色（`couli_tpl_*`、`couli_t_*`、`couli_snap_*` 库，`couli_factory_*` 角色；正常结束时套件自己已删，这一步兜住超时或被杀的运行），并对 Redis 执行 `FLUSHALL`；集群级的 bootstrap 角色（`couli_migrator` 等）保留，每次运行设同样的派生口令（`derivedRolePasswords`）。清理用验证镜像里的 `psql` 与 `node`，同样 `--network none`、只读挂 socket；它同时核对集群的 `template1` 与一次性镜像一样干净（只有 `plpgsql`，`public` 里没有对象），否则不开跑（退出 2）：测试库和 `db:check` 的快照库都从 `template1` 建，Pigsty 默认在其中装了十几个扩展和 `monitor` 模式（测试机已于 2026-10-09 用 `template0` 重建 `template1`，Pigsty 原来的改名为 `template1_pigsty` 保留）。`result.json` 仍是 `mode: container`，多一个 `"services": "external"`（`tools/ci/evidence-check.ts` 不看这个字段；变基脚本写证据时也只取原有字段）。未设这些变量时脚本行为与原来逐字一致。编排者经运行目录的 `scripts/remote-run.sh`（`container-run.sh` 默认调用它）在测试机上以这个模式运行，结果同步回本机 `couli-runs/<编号>/`。
 
 实测（2026-10-02，M2 Max，Docker Desktop 28.0.1；当时机器同时在跑别的任务，数字偏慢）：
 
