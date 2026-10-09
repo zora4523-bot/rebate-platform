@@ -6,11 +6,15 @@ type: impl
 # 改为 antd Modal（焦点圈、Esc、遮罩由 Modal 提供）+ Form / Form.Item 显示字段错误 + 两档切换（短信 / 动态码）用 antd 现成控件；动态码输入沿用 F1-06p 改好的 components/otp-input。
 # 不改：StepUpGate 与 types 的对外接口、texts/step-up.ts 文案、Retry-After / 倒计时 / 取消后丢弃在途结果等既有时序约定；既有冻结测试 admin-stepup/** 保持全绿。
 # 画板 AdmStepUp 与 antd 默认的差异用主题变量和 props 调，调不到的登记设计差异。排在 F1-06p 之后。
+# 顺带收 F1-06p 遗留（couli-runs/F1-frontend/followups-f106p.md）：Codex r3 S2 登录页 antd Steps 丢了原「登录步骤」列表名与当前步 aria-current=step（读屏无法定位步骤），
+#  补回语义（Steps 外层或 items 上的 aria 属性，仍用 antd Steps）；侧栏 Menu 项高与选中底色按画板经 theme.ts components.Menu 令牌调紧（设计差异登记过）。
 refs: []
 refs_hash: {}
 deps: [F1-06p]
 paths:
   - 'apps/admin/src/components/step-up/**'
+  - 'apps/admin/src/pages/login/LoginPage.tsx'
+  - 'apps/admin/src/theme.ts'
 test_paths:
   - 'test/spec/frontend/admin-antd-stepup/**'
 impl: claude
