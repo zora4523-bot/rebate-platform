@@ -74,6 +74,9 @@ import {
   RiskModule,
   SIGNATURE_CHECK,
   createBlocklistService,
+  createDeviceRegistrationRisk,
+  unkeyedDeviceRegistrationIndex,
+  type DeviceRegistrationRisk,
   createRateLimitThresholdReader,
   type MinimumVersionReaders,
   type RateLimitThresholdReaders,
@@ -126,6 +129,10 @@ function requestChecks(options: PlatformOptions): Provider {
  * Its blocklist port is risk's blocklist service (B1-03d: SMS send, SMS login before creating an
  * account, the same-device limit), built here so identity and risk stay plain ports to each
  * other; without a database or field cipher there is none.
+ * Its device registration ports are risk's (B1-03f: device.ip_register_per_hour and
+ * device.hash_hot_alert_count through content's configValue, Redis sets keyed by the field
+ * cipher's blind index), built through risk's index.ts; without Redis they refuse (42901) and the
+ * hot-hash count is a no-op; without a database the thresholds are the defaults.
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
@@ -150,6 +157,32 @@ function identityModule(): DynamicModule {
         db === undefined || crypto === undefined
           ? null
           : createBlocklistService({ db, clock, crypto, logger }),
+    },
+    deviceRegistration: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: REDIS, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        redis?: RedisHandle,
+        crypto?: FieldCrypto,
+      ): DeviceRegistrationRisk =>
+        createDeviceRegistrationRisk({
+          clock,
+          logger,
+          redis: redis ?? null,
+          config:
+            db === undefined
+              ? { configValue: () => Promise.resolve(null) }
+              : createContentReader({ db, clock }),
+          crypto: crypto ?? unkeyedDeviceRegistrationIndex(),
+        }),
     },
   });
 }

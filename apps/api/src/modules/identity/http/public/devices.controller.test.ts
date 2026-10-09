@@ -13,10 +13,12 @@ import {
   DB,
   FIELD_CRYPTO,
   FixedClock,
+  REDIS,
   contractRouteSchema,
   createRootLogger,
   loadConfig,
   type FieldCrypto,
+  type RedisHandle,
 } from '../../../platform/index.ts';
 
 const CONTRACT = fileURLToPath(
@@ -118,15 +120,40 @@ function fakeCrypto(): FieldCrypto {
     keyVersionOf: unused,
     needsReencrypt: unused,
     reencrypt: unused,
-    blindIndex: unused,
+    // The per-IP reservation key (B1-03f) is the blind index of the client IP.
+    blindIndex: (value, context) =>
+      createHash('sha256').update(`index\0${context}\0${value}`).digest('hex'),
   };
+}
+
+/** A Redis stand-in whose every script answers `reply` (the reservation script's shape). */
+function scriptedRedis(reply: readonly number[]): RedisHandle & { scripts: string[][] } {
+  const scripts: string[][] = [];
+  return {
+    scripts,
+    namespace: (name) => ({
+      get: () => Promise.resolve(null),
+      set: () => Promise.resolve(),
+      eval: (_script, options) => {
+        scripts.push([name, ...options.keys]);
+        return Promise.resolve([...reply]);
+      },
+    }),
+    close: () => Promise.resolve(),
+    onApplicationShutdown: () => Promise.resolve(),
+  };
+}
+
+/** Admits every reservation and counts no hot hash. */
+function admittingRedis(): RedisHandle {
+  return scriptedRedis([1, 0]);
 }
 
 /**
  * The api entry as bootstrap builds it. With `infra`, a global test module supplies the DB and
  * FIELD_CRYPTO tokens that PlatformModule leaves out when it has no handles and no keyring.
  */
-async function build(infra?: { db: unknown; crypto: FieldCrypto }) {
+async function build(infra?: { db: unknown; crypto: FieldCrypto; redis?: RedisHandle }) {
   const lines: string[] = [];
   if (infra !== undefined) {
     const original = AppModule.forEntry;
@@ -138,8 +165,9 @@ async function build(infra?: { db: unknown; crypto: FieldCrypto }) {
         providers: [
           { provide: DB, useValue: infra.db },
           { provide: FIELD_CRYPTO, useValue: infra.crypto },
+          { provide: REDIS, useValue: infra.redis ?? admittingRedis() },
         ],
-        exports: [DB, FIELD_CRYPTO],
+        exports: [DB, FIELD_CRYPTO, REDIS],
       };
       return { ...root, imports: [...(root.imports ?? []), fakes] };
     });
@@ -267,7 +295,8 @@ it('[BR-ID-09] re-registers with 200 while X-Device-Id still names a revoked dev
   expect(inserts).toHaveLength(1);
   expect(inserts[0]!.row).toMatchObject({ id: issued, revoked_at: null });
   expect(devices[0]).toMatchObject({ id: REVOKED_DEVICE, revoked_at: expect.any(Date) });
-  expect(selects).toEqual([]);
+  // No device lookup; the only reads are the B1-03f risk thresholds (config_items).
+  expect(selects.filter((table) => table !== 'config_items')).toEqual([]);
 });
 
 it('still serves the route without database handles or keyring: invalid hashes 20001, others the 50001 envelope', async () => {
@@ -285,4 +314,22 @@ it('still serves the route without database handles or keyring: invalid hashes 2
   const body = valid.json<unknown>();
   expect(validateServerError(body), JSON.stringify(validateServerError.errors)).toBe(true);
   expect(body).toEqual({ code: 50001, msg: '服务端错误', trace_id: TRACE });
+});
+
+it('[AC-B1-03f#16] answers 42901 with Retry-After, issuing and storing nothing, when the per-IP slot is refused', async () => {
+  const { db, inserts } = fakeDb();
+  const redis = scriptedRedis([0, 1_200_500]);
+  const { app } = await build({ db, crypto: fakeCrypto(), redis });
+  const response = await register(app, { device_hash: hash, id_source: 'idfv' });
+  expect(response.statusCode).toBe(429);
+  expect(response.headers['retry-after']).toBe('1201');
+  expect(response.json()).toEqual({
+    code: 42901,
+    msg: '操作太频繁，请稍后再试',
+    trace_id: TRACE,
+  });
+  expect(inserts).toEqual([]);
+  // Only the reservation ran: no hot-hash count for a refused registration.
+  expect(redis.scripts.map(([name]) => name)).toEqual(['ip_reg']);
+  expect(redis.scripts[0]![1]).toMatch(/^couli:[0-9a-f]{32}$/);
 });

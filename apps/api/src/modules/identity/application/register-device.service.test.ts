@@ -4,7 +4,12 @@ import type { Kysely } from 'kysely';
 import { expect, it } from 'vitest';
 import { FixedClock, type FieldCrypto } from '../../platform/index.ts';
 import { DevicesRepository } from '../infra/devices.repository.ts';
-import { RegisterDeviceService, type RegisterDeviceCommand } from './register-device.service.ts';
+import {
+  RegisterDeviceService,
+  isDefiniteInsertFailure,
+  type DeviceRegistrationPorts,
+  type RegisterDeviceCommand,
+} from './register-device.service.ts';
 
 const NOW = '2026-10-05T04:00:00.000Z';
 const hash = createHash('sha256').update('9774d56d682e549d').digest('hex');
@@ -15,6 +20,7 @@ const command: RegisterDeviceCommand = {
   appVersion: '2.3.4',
   deviceHash: hash,
   idSource: 'android_id',
+  clientIp: '192.0.2.10',
 };
 
 /** Records `insertInto(table).values(row).execute()`, the only statement the repository runs. */
@@ -56,13 +62,65 @@ function fakeCrypto() {
   return { crypto, calls };
 }
 
-function service(options: { db?: Kysely<DB> | undefined; crypto?: FieldCrypto | undefined }) {
+/** Records the risk port calls; admits unless `refuse` is set. */
+function fakeRisk(refuse?: number) {
+  const calls: string[] = [];
+  const reservation = { appId: 'couli', ipDigest: 'd'.repeat(32), token: 't' };
+  const risk: DeviceRegistrationPorts = {
+    async reserve(input) {
+      calls.push(`reserve:${input.appId}:${input.clientIp}`);
+      return refuse === undefined
+        ? { code: 0, reservation }
+        : { code: 42901, retryAfterSec: refuse };
+    },
+    async release() {
+      calls.push('release');
+    },
+    async reconcile(_reservation, deviceId, exists) {
+      calls.push(`reconcile:${String(await exists(deviceId).catch(() => 'error'))}`);
+    },
+    async recordSuccess(input) {
+      calls.push(`record:${input.deviceHash === hash ? 'hash' : input.deviceHash}`);
+    },
+  };
+  return { risk, calls };
+}
+
+function service(options: {
+  db?: Kysely<DB> | undefined;
+  crypto?: FieldCrypto | undefined;
+  risk?: DeviceRegistrationPorts;
+}) {
   return new RegisterDeviceService(
     new FixedClock(NOW),
     new Set([zeros]),
     new DevicesRepository(options.db),
     options.crypto,
+    options.risk ?? fakeRisk().risk,
   );
+}
+
+/** A database whose insert rejects with `error` and whose select answers `present`. */
+function failingDb(error: unknown, present: boolean) {
+  const selects: unknown[] = [];
+  const db = {
+    insertInto: () => ({
+      values: () => ({
+        execute: () => Promise.reject(error as Error),
+      }),
+    }),
+    selectFrom: (table: string) => ({
+      select: () => ({
+        where: (_column: string, _op: string, id: string) => ({
+          executeTakeFirst: async () => {
+            selects.push({ table, id });
+            return present ? { id } : undefined;
+          },
+        }),
+      }),
+    }),
+  } as unknown as Kysely<DB>;
+  return { db, selects };
 }
 
 it('[AC-B1-02c#2][AC-B1-02c#3] stores one unbound row whose cipher is the field encryption of the returned secret', async () => {
@@ -139,4 +197,89 @@ it('fails the request, storing nothing, when the process has no keyring or no da
   expect(await service({}).register({ ...command, deviceHash: zeros })).toEqual({
     kind: 'invalid_device_hash',
   });
+});
+
+it('[AC-B1-03f#16] a refused reservation issues nothing: no secret, no cipher, no row', async () => {
+  const { db, inserts } = fakeDb();
+  const { crypto, calls } = fakeCrypto();
+  const risk = fakeRisk(1201);
+  const result = await service({ db, crypto, risk: risk.risk }).register(command);
+  expect(result).toEqual({ kind: 'rate_limited', retryAfterSec: 1201 });
+  expect(calls).toEqual([]);
+  expect(inserts).toEqual([]);
+  expect(risk.calls).toEqual(['reserve:couli:192.0.2.10']);
+});
+
+it('[AC-B1-03f#25] an invalid hash is refused before the reservation', async () => {
+  const risk = fakeRisk();
+  const result = await service({
+    db: fakeDb().db,
+    crypto: fakeCrypto().crypto,
+    risk: risk.risk,
+  }).register({ ...command, deviceHash: zeros });
+  expect(result).toEqual({ kind: 'invalid_device_hash' });
+  expect(risk.calls).toEqual([]);
+});
+
+it('[AC-B1-03f#23] a stored device is counted for the hot-hash alert after its reservation', async () => {
+  const risk = fakeRisk();
+  const result = await service({
+    db: fakeDb().db,
+    crypto: fakeCrypto().crypto,
+    risk: risk.risk,
+  }).register(command);
+  expect(result.kind).toBe('registered');
+  expect(risk.calls).toEqual(['reserve:couli:192.0.2.10', 'record:hash']);
+});
+
+it('[AC-B1-03f#27] a failing hot-hash count does not fail the registration', async () => {
+  const risk = fakeRisk();
+  const result = await service({
+    db: fakeDb().db,
+    crypto: fakeCrypto().crypto,
+    risk: {
+      ...risk.risk,
+      recordSuccess: () => Promise.reject(new Error('hot count failed')),
+    },
+  }).register(command);
+  expect(result.kind).toBe('registered');
+});
+
+it('[AC-B1-03f#20] a constraint rejection releases the reservation without a lookup', async () => {
+  const risk = fakeRisk();
+  const { db, selects } = failingDb(
+    Object.assign(new Error('duplicate'), { code: '23505' }),
+    false,
+  );
+  await expect(
+    service({ db, crypto: fakeCrypto().crypto, risk: risk.risk }).register(command),
+  ).rejects.toThrow('duplicate');
+  expect(risk.calls).toEqual(['reserve:couli:192.0.2.10', 'release']);
+  expect(selects).toEqual([]);
+});
+
+for (const present of [true, false]) {
+  it(`[AC-B1-03f#21] an unknown insert outcome reconciles against the device row (${String(present)})`, async () => {
+    const risk = fakeRisk();
+    const { db, selects } = failingDb(
+      Object.assign(new Error('connection lost'), { code: 'ECONNRESET' }),
+      present,
+    );
+    await expect(
+      service({ db, crypto: fakeCrypto().crypto, risk: risk.risk }).register(command),
+    ).rejects.toThrow('connection lost');
+    expect(risk.calls).toEqual(['reserve:couli:192.0.2.10', `reconcile:${String(present)}`]);
+    expect(selects).toEqual([{ table: 'devices', id: expect.any(String) }]);
+  });
+}
+
+it('[AC-B1-03f#20] classifies insert failures: SQLSTATE answers are definite, connection loss is not', () => {
+  expect(isDefiniteInsertFailure({ code: '23505' })).toBe(true);
+  expect(isDefiniteInsertFailure({ code: '40001' })).toBe(true);
+  expect(isDefiniteInsertFailure({ code: '08006' })).toBe(false);
+  expect(isDefiniteInsertFailure({ code: '57P01' })).toBe(false);
+  expect(isDefiniteInsertFailure({ code: 'XX000' })).toBe(false);
+  expect(isDefiniteInsertFailure({ code: 'ECONNRESET' })).toBe(false);
+  expect(isDefiniteInsertFailure(new Error('no code'))).toBe(false);
+  expect(isDefiniteInsertFailure(null)).toBe(false);
 });

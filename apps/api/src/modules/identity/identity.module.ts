@@ -38,8 +38,10 @@ import {
 } from './application/step-up.ts';
 import { DeviceSigningKeysService } from './application/device-signing-keys.service.ts';
 import {
+  DEVICE_REGISTRATION_RISK,
   INVALID_DEVICE_HASHES,
   RegisterDeviceService,
+  type DeviceRegistrationPorts,
 } from './application/register-device.service.ts';
 import {
   createSmsCodeService,
@@ -114,7 +116,21 @@ export interface IdentityModuleOptions {
    * answers 50305 after the attempt is consumed: no platform answer is ever faked here.
    */
   readonly thirdPartyIdentity?: Omit<FactoryProvider<ThirdPartyIdentityPort | null>, 'provide'>;
+  /**
+   * Builds risk's device registration ports (B1-03f: per-IP hourly cap, hot device_hash alert),
+   * assembled by app.module through risk's index.ts. Absent, every registration is refused with
+   * 42901 (never a registration without the cap).
+   */
+  readonly deviceRegistration?: Omit<FactoryProvider<DeviceRegistrationPorts>, 'provide'>;
 }
+
+/** The ports without risk's assembly: refuse like an unavailable store (Retry-After 1). */
+const REFUSING_DEVICE_REGISTRATION: DeviceRegistrationPorts = {
+  reserve: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  release: () => Promise.resolve(),
+  reconcile: () => Promise.resolve(),
+  recordSuccess: () => Promise.resolve(),
+};
 
 /**
  * 10403 with data.reason=h5_read_only (BR-ID-32 细则「只读作用域」) as an HttpException, which the
@@ -177,6 +193,9 @@ export class IdentityModule {
         // Read once while the entry starts; a missing or malformed list stops the entry.
         { provide: INVALID_DEVICE_HASHES, useFactory: () => loadInvalidDeviceHashSeeds() },
         DevicesRepository,
+        options.deviceRegistration === undefined
+          ? { provide: DEVICE_REGISTRATION_RISK, useValue: REFUSING_DEVICE_REGISTRATION }
+          : { ...options.deviceRegistration, provide: DEVICE_REGISTRATION_RISK },
         RegisterDeviceService,
         DeviceSigningKeysService,
         { provide: DEVICE_SIGNING_KEYS, useExisting: DeviceSigningKeysService },

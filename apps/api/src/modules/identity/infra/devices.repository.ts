@@ -49,6 +49,20 @@ export class DevicesRepository {
       : { id: row.id, appId: row.app_id, installSecretCipher: row.install_secret_cipher };
   }
 
+  /**
+   * Whether a device row with this id exists (revoked or not), read from the primary: the check of
+   * a registration whose insert outcome is unknown (B1-03f).
+   */
+  async exists(id: string): Promise<boolean> {
+    if (this.db === undefined) throw new Error('identity: no database handle in this process');
+    const row = await this.db
+      .selectFrom('devices')
+      .select('id')
+      .where('id', '=', id)
+      .executeTakeFirst();
+    return row !== undefined;
+  }
+
   /** A new, unbound, unrevoked device row. Re-registering the same hash adds another row. */
   async insert(device: NewDevice): Promise<void> {
     if (this.db === undefined) throw new Error('identity: no database handle in this process');
