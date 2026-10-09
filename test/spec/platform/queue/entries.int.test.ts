@@ -80,8 +80,10 @@ async function runEntry(
     stderr += chunk;
   });
   const timer = setTimeout(() => child.kill('SIGKILL'), limitMs);
+  // 'close' fires only after the child exited and its stdio streams ended, so every stdout chunk
+  // has been appended before the log is parsed below ('exit' can precede the last 'data').
   const [code, signal] = await new Promise<[number | null, string | null]>((resolve) => {
-    child.on('exit', (exitCode, exitSignal) => {
+    child.on('close', (exitCode, exitSignal) => {
       resolve([exitCode, exitSignal]);
     });
   });
