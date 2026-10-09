@@ -58,17 +58,24 @@
 - 宿主回退已取消（Codex 评审 CR-01，2026-10-05）：原来的 `--host` 会在宿主上执行任务快照里的代码和测试（含 Codex 写的），清空环境变量挡不住。现在 `--host` 一律拒绝、退出 2；Docker 用不了就停下，把这次运行交给 CI。原 `timeout-group.pl` 随之删除。
 - worktree 在 `/tmp`、`/private/tmp`、`$TMPDIR` 下一律拒绝（那里是 Codex 沙箱的可写根，11 §0）。
 - 可调环境变量：`COULI_VERIFY_TIMEOUT_SECS`（默认与上限 1200，只能调小）、`COULI_VERIFY_PREFIX`（容器、网络、数据卷的名字前缀，默认 `couli-verify`）、`PROP_SEED`、`PROP_RUNS`。
-- 外部服务模式（负责人 2026-10-08：本机不跑 Docker，容器验证放到 AWS 测试机；测试库用 Pigsty 装在测试机的 Ubuntu 上，不进 Docker）。设了 `COULI_VERIFY_PG_SOCKET_DIR` 即开启，下列变量缺一就退出 2：
+- 宿主一次性服务模式（负责人 2026-10-08 / 09：本机不跑 Docker，容器验证放到 AWS 测试机；测试库不进 Docker；10-09 定方案 A）。设 `COULI_VERIFY_HOST_SERVICES=1` 开启（其他取值退出 2），只改要连库的那次运行（`pnpm verify`、`--red` 里需要库的组），其余（`--fast`、`--browser`、只有单元组的 `--red`）与原来一样：
 
-  | 变量 | 含义 |
-  | --- | --- |
-  | `COULI_VERIFY_PG_SOCKET_DIR` | PostgreSQL unix socket 所在目录（测试机 `/var/run/postgresql`） |
-  | `COULI_VERIFY_PG_PORT` | socket 文件 `.s.PGSQL.<端口>` 的端口，默认 5432 |
-  | `COULI_VERIFY_PG_ADMIN_USER` | 该集群的超级用户（测试机 `couli_test_admin`，经 socket 口令登录） |
-  | `COULI_VERIFY_PG_ADMIN_PASSWORD_FILE` | 第一行是其口令的文件；口令只由本脚本读入，经 `-e 名字` 进容器，不进日志、不进命令行 |
-  | `COULI_VERIFY_REDIS_SOCKET` | Redis unix socket（测试机 `/run/couli-redis/redis.sock`，无口令、只给测试用） |
+  | 变量 | 默认 | 含义 |
+  | --- | --- | --- |
+  | `COULI_VERIFY_SVC_USER` | `couli-svc` | 一次性服务的运行用户；只能属于下一行的组 |
+  | `COULI_VERIFY_SVC_GROUP` | `couli-sock` | socket 的属组；只有本次的测试容器经 `--group-add` 拿到它 |
+  | `COULI_VERIFY_SVC_ROOT` | `/var/lib/couli-ephemeral` | 放一次性实例的 tmpfs（0700，属运行用户） |
+  | `COULI_VERIFY_PG_BIN` | `/usr/lib/postgresql/18/bin` | PostgreSQL 18 程序（测试机为 Pigsty 装的包，pgvector 0.8.6 已 hold） |
+  | `COULI_VERIFY_REDIS_BIN` | `/usr/bin` | `redis-server`、`redis-cli` 所在目录（Pigsty 装的 Redis 7.2） |
 
-  开启后只改要连库的那次运行（`pnpm verify`、`--red` 里需要库的组），其余（`--fast`、`--browser`、只有单元组的 `--red`）与原来一样：不建内部网络、不起 PG / Redis 容器；连库容器 `--network none`，两个 socket 目录只读挂进去，容器里先起本脚本写出的小代理（node，只读挂载）在 `127.0.0.1:5432`、`127.0.0.1:6379` 上转发到两个 socket，再 exec 原入口。所以 `TEST_PG_ADMIN_URL` 是 `postgres://<用户>:<口令>@127.0.0.1:5432/postgres`、`TEST_REDIS_URL` 是 `redis://127.0.0.1:6379/0`：`packages/db/src/pg-url.ts` 与测试 Redis 探活（`packages/db/src/testing/redis.ts`）只认 host:port 形式的地址，`db:check` 的 `pg_dump`（镜像里的 `postgresql-client-18`）也照此连接。集群是共享、常驻的：用库的运行经锁目录 `couli-runs/lock/verify-external-services` 串行（持有进程已不在时接管）；每次运行前后删掉测试套件建的库与角色（`couli_tpl_*`、`couli_t_*`、`couli_snap_*` 库，`couli_factory_*` 角色；正常结束时套件自己已删，这一步兜住超时或被杀的运行），并对 Redis 执行 `FLUSHALL`；集群级的 bootstrap 角色（`couli_migrator` 等）保留，每次运行设同样的派生口令（`derivedRolePasswords`）。清理用验证镜像里的 `psql` 与 `node`，同样 `--network none`、只读挂 socket；它同时核对集群的 `template1` 与一次性镜像一样干净（只有 `plpgsql`，`public` 里没有对象），否则不开跑（退出 2）：测试库和 `db:check` 的快照库都从 `template1` 建，Pigsty 默认在其中装了十几个扩展和 `monitor` 模式（测试机已于 2026-10-09 用 `template0` 重建 `template1`，Pigsty 原来的改名为 `template1_pigsty` 保留）。`result.json` 仍是 `mode: container`，多一个 `"services": "external"`（`tools/ci/evidence-check.ts` 不看这个字段；变基脚本写证据时也只取原有字段）。未设这些变量时脚本行为与原来逐字一致。编排者经运行目录的 `scripts/remote-run.sh`（`container-run.sh` 默认调用它）在测试机上以这个模式运行，结果同步回本机 `couli-runs/<编号>/`。
+  测试机先用运行目录的 `RUNNER/setup-isolation.sh` 准备一次（建用户与组、代码目录 0700、按 uid 封出网的 nftables 表 `inet couli_isolation` 及开机加载单元、tmpfs）。脚本需要 `sudo`（`systemd-run`、`systemctl`、`nft`、`install`、`rm`）和 `flock`。每次连库运行：
+  1. 先核对隔离：运行用户只属于 socket 组，`inet couli_isolation` 的 output 链对其 uid 拒绝，再以该用户实测连 `1.1.1.1:443` 必须失败；任一不满足退出 2。
+  2. 取 `couli-runs/lock/verify-host-services.flock` 的 `flock`（进程没了锁就没了，不存在失效锁接管），再清掉被杀运行留下的东西：带 `couli.services=host` 标签的容器、`couli-svc-*` 临时单元、tmpfs 里的目录；清不掉退出 2。
+  3. 在 tmpfs 的本次目录里 `initdb`（超级用户 `postgres`，口令随机、只属本次，经 `systemd-run --pipe` 的标准输入交给 initdb，不上命令行），起 `postgres`（`listen_addresses=''`，只开本次 socket 目录里的 unix socket，权限 0770 给 socket 组）和 `redis-server`（`port 0`、只开 unix socket、`save ""`、`appendonly no`、`maxmemory 256mb`、`noeviction`，与 `infra/local/compose.yaml` 一致；另把 `MIGRATE`、`REPLICAOF`、`SLAVEOF`、`MODULE`、`DEBUG`、`SAVE`、`BGSAVE`、`BGREWRITEAOF`、`SHUTDOWN`、`FAILOVER`、`SYNC`、`PSYNC` 改名为空即禁用，受保护配置（`dir`、`dbfilename` 等）运行中不可改；`CONFIG` 保留，因为 Redis 规则测试用 `CONFIG GET maxmemory-policy` 核对策略（与 CI、容器里的 Redis 一样）；开跑前核对 `MIGRATE` 已是未知命令、策略是 `noeviction`）。三者都是以运行用户身份起的 systemd 临时单元，带沙箱：独立的空网络命名空间、只许 `AF_UNIX`、`IPAddressDeny=any`、系统只读、看不到 `/home`、`/root`、`/run`、`/Users`、只有本次目录可写、无特权能力、`NoNewPrivileges`、独立的 `/proc` 视图、`RuntimeMaxSec` 兜底。超级用户执行 `COPY ... PROGRAM` 起的进程同样在这个沙箱里。
+  4. 连库容器 `--network none`，只把本次 socket 目录（只有这两个 socket）只读挂到 `/run/couli-services`，加 socket 组和小代理（node，本脚本写出、只读挂载）：代理在容器内 `127.0.0.1:5432`、`127.0.0.1:6379` 上转发到两个 socket。所以 `TEST_PG_ADMIN_URL` 是 `postgres://postgres:<口令>@127.0.0.1:5432/postgres`、`TEST_REDIS_URL` 是 `redis://127.0.0.1:6379/0`：`packages/db/src/pg-url.ts` 与测试 Redis 探活只认 host:port 形式的地址，`db:check` 的 `pg_dump` 也照此连接。
+  5. 运行结束（含失败、超时、信号）停掉单元、删掉本次目录并核对已不存在；成功了才写 `result.json`，清理失败或服务起不来按基础设施错误退出 2、不写结果。`result.json` 仍是 `mode: container`，多一个 `"services": "host-ephemeral"`（`tools/ci/evidence-check.ts` 不看这个字段）。
+
+  残留风险：`TEST_PG_ADMIN_URL` 仍经环境变量进容器（`global-setup.ts` 只从环境读，改读文件要动测试代码），容器里的代码能从 `/proc/1/environ` 读到这个口令；它只是本次一次性实例的超级用户，该实例以无网、读不到代码的运行用户在沙箱里跑、运行后即删。未设 `COULI_VERIFY_HOST_SERVICES` 时脚本行为与原来逐字一致。编排者经运行目录的 `scripts/remote-run.sh`（`container-run.sh` 默认调用它）在测试机上以这个模式运行，结果同步回本机 `couli-runs/<编号>/`。
 
 实测（2026-10-02，M2 Max，Docker Desktop 28.0.1；当时机器同时在跑别的任务，数字偏慢）：
 

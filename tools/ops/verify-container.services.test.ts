@@ -3,9 +3,17 @@
 // plan — what starts on which network with which settings, what the verify container receives,
 // what is removed at the end — is checked without Docker. Whether the real images behave is the
 // job of tools/ops/verify-container.selftest.sh (run by hand, see tools/ops/README.md).
-import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { repoRoot } from '../lib/paths.ts';
 import {
@@ -43,7 +51,8 @@ const REDIS_SETTINGS = {
 // `image inspect` fail, so the script builds the image (the `build` call is recorded).
 // STUB_DOCKER_SCREENSHOT=1 makes the browser container leave one PNG in <out>/screenshots (where
 // Vitest browser mode writes), STUB_DOCKER_SMOKE_SHOTS=<n> n build smoke PNGs (smoke-<i>.png at the
-// top of <out>/screenshots).
+// top of <out>/screenshots). STUB_DOCKER_ORPHANS=<id,...> is what `ps` lists (containers an earlier
+// host-services run left).
 const STUB = String.raw`'use strict';
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -92,6 +101,7 @@ if (args[0] === 'run' && args.includes('couli-verify-entrypoint')) {
   }
   answer('', Number(process.env.STUB_DOCKER_RUN_EXIT || '0'));
 }
+if (args[0] === 'ps') answer((process.env.STUB_DOCKER_ORPHANS || '').split(',').filter((x) => x !== '').join('\n'), 0);
 if (args[0] === 'inspect') answer(failures.includes('redis-exits') && aboutRedis ? 'false' : 'true', 0);
 if (args[0] === 'exec' && args.includes('redis-cli')) {
   if (failures.includes('redis-exits')) {
@@ -202,12 +212,13 @@ function run(args: string[], env: Record<string, string> = {}): Run {
       PROP_RUNS: undefined,
       PROP_SEED: undefined,
       COULI_VERIFY_TIMEOUT_SECS: undefined,
-      // The external services of the test machine are off unless a test turns them on.
-      COULI_VERIFY_PG_SOCKET_DIR: undefined,
-      COULI_VERIFY_PG_PORT: undefined,
-      COULI_VERIFY_PG_ADMIN_USER: undefined,
-      COULI_VERIFY_PG_ADMIN_PASSWORD_FILE: undefined,
-      COULI_VERIFY_REDIS_SOCKET: undefined,
+      // The host services of the test machine are off unless a test turns them on.
+      COULI_VERIFY_HOST_SERVICES: undefined,
+      COULI_VERIFY_SVC_USER: undefined,
+      COULI_VERIFY_SVC_GROUP: undefined,
+      COULI_VERIFY_SVC_ROOT: undefined,
+      COULI_VERIFY_PG_BIN: undefined,
+      COULI_VERIFY_REDIS_BIN: undefined,
       STUB_DOCKER_LOG: log,
       ...env,
     },
@@ -795,21 +806,182 @@ it('Redis has one image and one configuration in the verify container, CI and th
   );
 });
 
-/** External services (the test machine): socket paths, the admin password file. */
-function externalEnv(name: string, password: string): Record<string, string> {
-  const dir = join(base, `ext-${name}`);
-  // The script checks that the sockets exist; the stub never connects, so plain files do.
-  writeFiles(dir, {
-    'pg/.s.PGSQL.5432': '',
-    'redis/redis.sock': '',
-    'admin-password': `${password}\n`,
-  });
-  return {
-    COULI_VERIFY_PG_SOCKET_DIR: join(dir, 'pg'),
-    COULI_VERIFY_PG_ADMIN_USER: 'couli_test_admin',
-    COULI_VERIFY_PG_ADMIN_PASSWORD_FILE: join(dir, 'admin-password'),
-    COULI_VERIFY_REDIS_SOCKET: join(dir, 'redis', 'redis.sock'),
+// --- host services (COULI_VERIFY_HOST_SERVICES=1, the AWS test machine) -------------------------
+// Stand-ins for sudo, id, getent and timeout, first on PATH in these tests only. sudo records every
+// call (arguments, and what arrived on stdin) to STUB_SUDO_LOG and plays the host: nft lists the
+// isolation chain, systemd-run "starts" a unit (initdb makes pgdata, postgres and redis-server make
+// their socket files), systemctl stop / is-active / list-units, install -d, find, rm and test act on
+// the scratch directory. STUB_SUDO_FAIL (comma-separated): firewall-missing, firewall-accept,
+// egress-open, initdb, pg-exits, redis-migrate (MIGRATE still known), stop (units stay active), rm
+// (the run directory cannot be removed). STUB_SUDO_UNITS=<unit,...> is what list-units shows.
+const SUDO_STUB = String.raw`'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+let args = process.argv.slice(2);
+const fail = (process.env.STUB_SUDO_FAIL || '').split(',');
+let stdin = '';
+if (args.includes('--pipe')) stdin = fs.readFileSync(0, 'utf8');
+fs.appendFileSync(process.env.STUB_SUDO_LOG, JSON.stringify({ args, stdin }) + '\n');
+if (args[0] === '-n') args = args.slice(1);
+const out = (text, code) => {
+  if (text !== '') process.stdout.write(text + '\n');
+  process.exit(code);
+};
+const real = (cmd, rest) => {
+  const r = spawnSync(cmd, rest, { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
+};
+if (args[0] === '-u') {
+  const cmd = args.slice(2);
+  const base = path.basename(cmd[0]);
+  if (base === 'timeout') out('', fail.includes('egress-open') ? 0 : 1);
+  if (base === 'pg_isready') out('', fail.includes('pg-exits') ? 2 : 0);
+  if (base === 'redis-cli') {
+    if (cmd.includes('ping')) out('PONG', 0);
+    if (cmd.includes('MIGRATE'))
+      out(fail.includes('redis-migrate') ? 'NOKEY' : "ERR unknown command 'MIGRATE'", 0);
+    if (cmd.includes('CONFIG')) out('maxmemory-policy\nnoeviction', 0);
+  }
+  out('', 1);
+}
+const [cmd, ...rest] = args;
+if (cmd === 'nft') {
+  if (fail.includes('firewall-missing')) out('Error: No such file or directory', 1);
+  const verdict = fail.includes('firewall-accept') ? 'accept' : 'reject';
+  out('table inet couli_isolation {\n\tchain output {\n\t\ttype filter hook output priority -300; policy accept;\n\t\tmeta skuid 4242 counter packets 0 bytes 0 ' + verdict + ' comment "couli-svc: no egress"\n\t}\n}', 0);
+}
+if (cmd === 'install') {
+  fs.mkdirSync(rest.at(-1), { recursive: true });
+  out('', 0);
+}
+if (cmd === 'systemd-run') {
+  const unit = (rest.find((a) => a.startsWith('--unit=')) || '').slice('--unit='.length);
+  if (unit.endsWith('-initdb')) {
+    if (fail.includes('initdb')) out('initdb: error: stub', 1);
+    const dir = rest[rest.indexOf('sh', rest.indexOf('--')) + 1];
+    fs.mkdirSync(dir + '/pgdata', { recursive: true });
+  }
+  if (unit.endsWith('-pg')) {
+    const sock = rest.find((a) => a.startsWith('unix_socket_directories=')).split('=')[1];
+    fs.writeFileSync(sock + '/.s.PGSQL.5432', '');
+  }
+  if (unit.endsWith('-redis')) fs.writeFileSync(rest[rest.indexOf('--unixsocket') + 1], '');
+  out('', 0);
+}
+if (cmd === 'systemctl') {
+  if (rest[0] === 'list-units')
+    out((process.env.STUB_SUDO_UNITS || '').split(',').filter((u) => u !== '').map((u) => u + ' loaded active running stub').join('\n'), 0);
+  if (rest[0] === 'stop') out('', fail.includes('stop') ? 1 : 0);
+  if (rest[0] === 'is-active') {
+    if (fail.includes('stop')) out('active', 0);
+    if (fail.includes('pg-exits') && rest[1].endsWith('-pg.service')) out('failed', 3);
+    out('inactive', 3);
+  }
+  out('', 0);
+}
+if (cmd === 'journalctl') out('stub journal', 0);
+if (cmd === 'rm' && fail.includes('rm')) out('rm: stub refuses', 1);
+if (cmd === 'find' || cmd === 'rm' || cmd === 'test') real(cmd, rest);
+out('', 0);
+`;
+const ID_STUB = `#!/bin/sh
+case "$1 $2" in
+  '-u couli-svc') echo 4242 ;;
+  '-Gn couli-svc') echo couli-sock ;;
+  *) exec /usr/bin/id "$@" ;;
+esac
+`;
+const GETENT_STUB = `#!/bin/sh
+if [ "$1 $2" = 'group couli-sock' ]; then echo 'couli-sock:x:4243:'; exit 0; fi
+exec /usr/bin/getent "$@"
+`;
+// GNU timeout's interface, without the limit (the stub host answers at once).
+const TIMEOUT_STUB = `#!/bin/sh
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -k) shift 2 ;;
+    -*) shift ;;
+    *) shift; break ;;
+  esac
+done
+exec "$@"
+`;
+
+type SudoCall = { args: string[]; stdin: string };
+
+let hostBin = '';
+function hostBinDir(): string {
+  if (hostBin !== '') return hostBin;
+  hostBin = join(base, 'hostbin');
+  writeFiles(hostBin, { 'sudo-stub.cjs': SUDO_STUB });
+  const scripts: Record<string, string> = {
+    sudo: `#!/bin/sh\nexec '${process.execPath}' '${join(hostBin, 'sudo-stub.cjs')}' "$@"\n`,
+    id: ID_STUB,
+    getent: GETENT_STUB,
+    timeout: TIMEOUT_STUB,
   };
+  for (const [name, body] of Object.entries(scripts)) {
+    writeFileSync(join(hostBin, name), body);
+    chmodSync(join(hostBin, name), 0o755);
+  }
+  // The installed binaries the script checks for (never run: sudo answers for them).
+  for (const exe of [
+    'pg/initdb',
+    'pg/postgres',
+    'pg/pg_isready',
+    'redis/redis-server',
+    'redis/redis-cli',
+  ]) {
+    writeFiles(join(base, 'hostsvc-bin'), { [exe]: '#!/bin/sh\nexit 99\n' });
+    chmodSync(join(base, 'hostsvc-bin', exe), 0o755);
+  }
+  return hostBin;
+}
+
+let hostRuns = 0;
+/** Runs the script with host services on, the stub host and its own tmpfs stand-in. */
+function hostRun(
+  args: string[],
+  env: Record<string, string> = {},
+  prepare?: (svcRoot: string) => void,
+): Run & { sudo: SudoCall[]; svcRoot: string } {
+  hostRuns += 1;
+  const svcRoot = join(base, `svc-root-${String(hostRuns)}`);
+  mkdirSync(svcRoot, { recursive: true });
+  prepare?.(svcRoot);
+  const sudoLog = join(base, `sudo-${String(hostRuns)}.jsonl`);
+  const res = run(args, {
+    PATH: `${hostBinDir()}:${bin}:${process.env['PATH'] ?? ''}`,
+    COULI_VERIFY_HOST_SERVICES: '1',
+    COULI_VERIFY_SVC_ROOT: svcRoot,
+    COULI_VERIFY_PG_BIN: join(base, 'hostsvc-bin', 'pg'),
+    COULI_VERIFY_REDIS_BIN: join(base, 'hostsvc-bin', 'redis'),
+    STUB_SUDO_LOG: sudoLog,
+    ...env,
+  });
+  const sudo = existsSync(sudoLog)
+    ? readFileSync(sudoLog, 'utf8')
+        .split('\n')
+        .filter((l) => l !== '')
+        .map((l) => JSON.parse(l) as SudoCall)
+    : [];
+  return { ...res, sudo, svcRoot };
+}
+
+/** `systemd-run` calls of the stub host by unit suffix (initdb, pg, redis). */
+function unitRun(sudo: readonly SudoCall[], suffix: string): SudoCall | undefined {
+  return sudo.find(
+    (c) =>
+      c.args.includes('systemd-run') &&
+      c.args.some((a) => a.startsWith('--unit=') && a.endsWith(`-${suffix}`)),
+  );
+}
+
+/** `-p` properties of a systemd-run call. */
+function properties(call: SudoCall | undefined): string[] {
+  const a = call?.args ?? [];
+  return a.flatMap((x, i) => (a[i - 1] === '-p' ? [x] : []));
 }
 
 /** `-v` mounts of a `docker run`. */
@@ -817,15 +989,20 @@ function mountsOf(args: readonly string[]): string[] {
   return args.flatMap((a, i) => (args[i - 1] === '-v' ? [a] : []));
 }
 
-const EXT_PASSWORD = 'p@ss/w0rd:x';
-const EXT_PG_URL = `postgres://couli_test_admin:${encodeURIComponent(EXT_PASSWORD)}@127.0.0.1:5432/postgres`;
+const HOST_PG_URL = /^postgres:\/\/postgres:([0-9a-f]{32})@127\.0\.0\.1:5432\/postgres$/;
+
+/** Passwords of the host-services PostgreSQL URLs handed to the container of `call`. */
+function hostPgPasswords(call: Call | undefined): string[] {
+  return Object.values(call?.env ?? {}).flatMap((v) => {
+    const m = v === null ? null : HOST_PG_URL.exec(v);
+    return m?.[1] === undefined ? [] : [m[1]];
+  });
+}
 
 it(
-  'external services: pnpm verify starts no service container and no network; the run reaches the host sockets through the proxy',
+  'host services: pnpm verify gets a fresh sandboxed PostgreSQL and Redis as couli-svc, reaches only their sockets, and the result exists only after they are gone',
   () => {
-    const env = externalEnv('verify', EXT_PASSWORD);
-    const res = run(['V4-01', '--worktree', workspace('ext-verify')], {
-      ...env,
+    const res = hostRun(['V4-01', '--worktree', workspace('host-verify')], {
       STUB_DOCKER_RUN_EXIT: '3',
     });
     expect(res.status, res.stderr).toBe(3);
@@ -834,161 +1011,356 @@ it(
       string,
       unknown
     >;
-    expect(result).toMatchObject({ mode: 'container', script: 'verify', exit_code: 3 });
-    expect(result['services']).toBe('external');
+    expect(result).toMatchObject({
+      mode: 'container',
+      script: 'verify',
+      exit_code: 3,
+      services: 'host-ephemeral',
+    });
 
-    const { calls } = res;
+    // No service container and no network at all.
+    const { calls, sudo } = res;
     expect(calls.some((c) => c.args[0] === 'network')).toBe(false);
     expect(calls.some((c) => c.args[0] === 'run' && c.args.includes('-d'))).toBe(false);
-    expect(containerRuns(calls, PG_IMAGE)).toEqual([]);
-    expect(containerRuns(calls, REDIS_IMAGE)).toEqual([]);
 
-    // Cleaning before and after: psql and node of the verify image, no network, sockets read-only,
-    // the password by name only.
-    const resets = calls.filter((c) => (valueOf(c.args, '--name') ?? '').includes('-reset-'));
-    expect(resets).toHaveLength(2);
-    for (const reset of resets) {
-      expect(valueOf(reset.args, '--network')).toBe('none');
-      expect(mountsOf(reset.args)).toEqual([
-        `${env['COULI_VERIFY_PG_SOCKET_DIR'] ?? ''}:/run/couli-pg:ro`,
-        `${dirname(env['COULI_VERIFY_REDIS_SOCKET'] ?? '')}:/run/couli-redis:ro`,
-      ]);
-      expect(reset.env['PGPASSWORD']).toBe(EXT_PASSWORD);
-      expect(reset.args).not.toContain(`PGPASSWORD=${EXT_PASSWORD}`);
-      expect(reset.args.join(' ')).toContain('FLUSHALL');
-    }
-    expect(resets.map((c) => c.env['RESET_PHASE'])).toEqual(['before', 'after']);
-
-    const verifyAt = calls.findIndex((c) => c.args.includes('couli-verify-entrypoint'));
-    const verify = calls[verifyAt];
-    expect(calls.indexOf(resets[0] as Call)).toBeLessThan(verifyAt);
-    expect(calls.indexOf(resets[1] as Call)).toBeGreaterThan(verifyAt);
-    const args = verify?.args ?? [];
-    expect(args.slice(-2)).toEqual(['couli-verify-entrypoint', 'verify']);
-    expect(valueOf(args, '--network')).toBe('none');
-    // The wrapper starts the proxy, then execs the entrypoint.
-    expect(args.slice(-5, -2)).toEqual([
-      '-c',
-      expect.stringContaining('exec "$@"'),
-      'couli-services',
+    // Isolation checked first (rule and live probe), then what an earlier run left, then the units.
+    const at = (pred: (c: SudoCall) => boolean): number => sudo.findIndex(pred);
+    const nftAt = at((c) => c.args.includes('nft'));
+    const probeAt = at(
+      (c) =>
+        c.args.includes('-u') && c.args.includes('bash') && c.args.join(' ').includes('/dev/tcp/'),
+    );
+    const sweepAt = at((c) => c.args.includes('list-units'));
+    const initdbAt = sudo.indexOf(unitRun(sudo, 'initdb') as SudoCall);
+    expect(sudo[nftAt]?.args).toEqual([
+      '-n',
+      'nft',
+      'list',
+      'chain',
+      'inet',
+      'couli_isolation',
+      'output',
     ]);
+    expect(nftAt).toBeGreaterThanOrEqual(0);
+    expect(probeAt).toBeGreaterThan(nftAt);
+    expect(sweepAt).toBeGreaterThan(probeAt);
+    expect(initdbAt).toBeGreaterThan(sweepAt);
+    expect(
+      calls.some((c) => c.args[0] === 'ps' && c.args.includes('label=couli.services=host')),
+    ).toBe(true);
+
+    // Every unit runs as couli-svc in the sandbox.
+    const runDir = (unitRun(sudo, 'initdb')?.args ?? []).at(-2) ?? '';
+    expect(runDir).toMatch(new RegExp(`^${res.svcRoot}/v4-01-1-\\d+$`));
+    for (const suffix of ['initdb', 'pg', 'redis']) {
+      const call = unitRun(sudo, suffix);
+      expect(call?.args).toEqual(
+        expect.arrayContaining(['--uid=couli-svc', '--gid=couli-sock', '--collect']),
+      );
+      expect(properties(call)).toEqual(
+        expect.arrayContaining([
+          'PrivateNetwork=yes',
+          'RestrictAddressFamilies=AF_UNIX',
+          'IPAddressDeny=any',
+          'NoNewPrivileges=yes',
+          'ProtectSystem=strict',
+          'ProtectHome=yes',
+          `ReadWritePaths=${runDir}`,
+          'TemporaryFileSystem=/run:ro',
+          'InaccessiblePaths=-/Users',
+          'CapabilityBoundingSet=',
+          'ProtectProc=invisible',
+        ]),
+      );
+    }
+    // The password reaches initdb on stdin only.
+    const initdb = unitRun(sudo, 'initdb');
+    const password = /^([0-9a-f]{32})\n$/.exec(initdb?.stdin ?? '')?.[1] ?? '';
+    expect(password).toMatch(/^[0-9a-f]{32}$/);
+    expect(initdb?.args).toContain('--pipe');
+    // PostgreSQL: no TCP, socket only, in the run's socket directory, group access only.
+    const pg = unitRun(sudo, 'pg')?.args ?? [];
+    expect(pg).toEqual(
+      expect.arrayContaining([
+        'listen_addresses=',
+        `unix_socket_directories=${runDir}/sock`,
+        'unix_socket_permissions=0770',
+      ]),
+    );
+    expect(properties(unitRun(sudo, 'pg'))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^RuntimeMaxSec=\d+$/)]),
+    );
+    // Redis: no TCP, no persistence, the limits of the local stack, dangerous commands disabled.
+    const redis = unitRun(sudo, 'redis')?.args ?? [];
+    const after = redis.slice(redis.indexOf('--') + 2);
+    expect(settings(after.slice(0, 16))).toMatchObject({
+      port: '0',
+      unixsocket: `${runDir}/sock/redis.sock`,
+      unixsocketperm: '770',
+      ...REDIS_SETTINGS,
+    });
+    const renamed = after.flatMap((a, i) => (after[i - 1] === '--rename-command' ? [a] : []));
+    expect(renamed).toEqual(
+      expect.arrayContaining(['MIGRATE', 'REPLICAOF', 'SLAVEOF', 'MODULE', 'DEBUG']),
+    );
+    // CONFIG stays (the Redis rule tests read maxmemory-policy); protected settings are immutable.
+    expect(renamed).not.toContain('CONFIG');
+    expect(
+      settings(
+        after.slice(
+          after.indexOf('--enable-protected-configs'),
+          after.indexOf('--enable-protected-configs') + 6,
+        ),
+      ),
+    ).toEqual({
+      'enable-protected-configs': 'no',
+      'enable-debug-command': 'no',
+      'enable-module-command': 'no',
+    });
+    for (const c of renamed) expect(after[after.indexOf(c) + 1]).toBe('');
+
+    // The verify container: no network, only the run's socket directory and the proxy, the socket
+    // group, the label the next run sweeps by, the proxy routes; the URL carries the password.
+    const verify = entrypointRun(calls);
+    const args = verify?.args ?? [];
+    expect(valueOf(args, '--network')).toBe('none');
+    expect(valueOf(args, '--group-add')).toBe('4243');
+    expect(args).toEqual(expect.arrayContaining(['--label', 'couli.services=host']));
     expect(mountsOf(args)).toEqual([
-      `${env['COULI_VERIFY_PG_SOCKET_DIR'] ?? ''}:/run/couli-pg:ro`,
-      `${dirname(env['COULI_VERIFY_REDIS_SOCKET'] ?? '')}:/run/couli-redis:ro`,
+      `${runDir}/sock:/run/couli-services:ro`,
       expect.stringMatching(
         /\/V4-01\/verify\/1\/services-proxy\.cjs:\/couli-services\/proxy\.cjs:ro$/,
       ),
       expect.stringMatching(/\/V4-01\/verify\/1\/src:\/src:ro$/),
       expect.stringMatching(/^couli-stubtest-store-[0-9a-f]{16}:\/store:ro$/),
     ]);
-    for (const flag of ['--init', '--read-only', 'no-new-privileges']) expect(args).toContain(flag);
-    expect(JSON.parse(verify?.env['COULI_SERVICES_ROUTES'] ?? '[]')).toEqual([
-      [5432, '/run/couli-pg/.s.PGSQL.5432'],
-      [6379, '/run/couli-redis/redis.sock'],
+    expect(args.slice(-5, -2)).toEqual([
+      '-c',
+      expect.stringContaining('exec "$@"'),
+      'couli-services',
     ]);
-    // The admin URL (found by its value, passed by name) and the Redis URL point at the proxy.
-    expect(Object.values(verify?.env ?? {})).toContain(EXT_PG_URL);
-    expect(args.some((a) => a.includes(encodeURIComponent(EXT_PASSWORD)))).toBe(false);
+    expect(JSON.parse(verify?.env['COULI_SERVICES_ROUTES'] ?? '[]')).toEqual([
+      [5432, '/run/couli-services/.s.PGSQL.5432'],
+      [6379, '/run/couli-services/redis.sock'],
+    ]);
+    expect(passedEnv(args)).toEqual(expect.arrayContaining(['TEST_REDIS_URL']));
+    // Exactly one PostgreSQL URL (found by its value, passed by name) with initdb's password.
+    expect(hostPgPasswords(verify)).toEqual([password]);
     expect(verify?.env['TEST_REDIS_URL']).toBe('redis://127.0.0.1:6379/0');
+    for (const flag of ['--init', '--read-only', 'no-new-privileges']) expect(args).toContain(flag);
 
-    // The password is in no log; the proxy file and the lock are gone afterwards.
-    for (const text of [res.stdout, res.stderr, readFileSync(join(dir, 'log.txt'), 'utf8')]) {
-      expect(text).not.toContain(EXT_PASSWORD);
-      expect(text).not.toContain(encodeURIComponent(EXT_PASSWORD));
+    // Afterwards: units stopped, run directory removed (and checked), before result.json.
+    const stopAt = at(
+      (c) => c.args.includes('stop') && c.args.some((a) => a.endsWith('-pg.service')),
+    );
+    const rmAt = at((c) => c.args.includes('rm') && c.args.includes(runDir));
+    expect(stopAt).toBeGreaterThan(initdbAt);
+    expect(rmAt).toBeGreaterThan(stopAt);
+    expect(existsSync(runDir)).toBe(false);
+    const log = readFileSync(join(dir, 'log.txt'), 'utf8');
+    expect(log.indexOf('host services of this run stopped and removed')).toBeGreaterThan(-1);
+
+    // The password is in no command line, log or output; the proxy file is gone.
+    for (const text of [
+      res.stdout,
+      res.stderr,
+      log,
+      JSON.stringify(calls.map((c) => c.args)),
+      JSON.stringify(sudo.map((c) => c.args)),
+    ]) {
+      expect(text).not.toContain(password);
     }
     expect(existsSync(join(dir, 'services-proxy.cjs'))).toBe(false);
-    expect(existsSync(join(runs, 'lock', 'verify-external-services'))).toBe(false);
   },
   CLI_TIMEOUT,
 );
 
 it(
-  'external services: --fast and a unit-only --red touch none of them; an integration --red group gets them',
+  'host services: --fast and a unit-only --red start none; an integration --red group gets them and they are removed',
   () => {
-    const env = externalEnv('red', EXT_PASSWORD);
-    const fast = run(['V4-02', '--worktree', workspace('ext-fast'), '--fast'], env);
+    const fast = hostRun(['V4-02', '--worktree', workspace('host-fast'), '--fast']);
     expect(fast.status, fast.stderr).toBe(0);
-    expect(fast.calls.some((c) => (valueOf(c.args, '--name') ?? '').includes('-reset-'))).toBe(
-      false,
-    );
-    const fastRun = entrypointRun(fast.calls);
-    expect(mountsOf(fastRun?.args ?? []).some((m) => m.includes('/run/couli-'))).toBe(false);
+    expect(fast.sudo).toEqual([]);
     const fastResult = JSON.parse(
       readFileSync(join(runs, 'V4-02', 'verify-fast', '1', 'result.json'), 'utf8'),
     ) as Record<string, unknown>;
     expect(fastResult['services']).toBeUndefined();
 
-    const unit = run(
-      [
-        'B1-02b',
-        '--worktree',
-        redFixture('ext-red-unit', {
-          'test/spec/identity/devices.test.ts': "it('[BR-ID-05] x', () => {});\n",
-        }),
-        '--red',
-        '--base',
-        'main',
-      ],
-      env,
-    );
+    const unit = hostRun([
+      'B1-02b',
+      '--worktree',
+      redFixture('host-red-unit', {
+        'test/spec/identity/devices.test.ts': "it('[BR-ID-05] x', () => {});\n",
+      }),
+      '--red',
+      '--base',
+      'main',
+    ]);
     expect(unit.status).toBe(2);
-    expect(unit.calls.some((c) => (valueOf(c.args, '--name') ?? '').includes('-reset-'))).toBe(
-      false,
-    );
+    expect(unit.sudo).toEqual([]);
     expect(noRedisUrl(entrypointRun(unit.calls))).toBe(true);
 
-    const int = run(
-      [
-        'B1-02b',
-        '--worktree',
-        redFixture('ext-red-int', {
-          'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
-        }),
-        '--red',
-        '--base',
-        'main',
-      ],
-      env,
-    );
-    // The stub writes no report, so the run stops after the red container (exit 2); the cleanup
-    // after the run still happens and the lock is released.
+    const int = hostRun([
+      'B1-02b',
+      '--worktree',
+      redFixture('host-red-int', {
+        'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
+      }),
+      '--red',
+      '--base',
+      'main',
+    ]);
+    // The stub writes no report: the run stops after the red container (exit 2); the services
+    // are removed all the same.
     expect(int.status).toBe(2);
     expect(int.stderr).toContain('wrote no report for spec-int');
-    expect(int.calls.some((c) => c.args[0] === 'network')).toBe(false);
-    expect(containerRuns(int.calls, PG_IMAGE)).toEqual([]);
     const red = entrypointRun(int.calls);
     expect(red?.args.slice(-2)).toEqual(['couli-verify-entrypoint', 'red']);
     expect(valueOf(red?.args ?? [], '--network')).toBe('none');
-    expect(Object.values(red?.env ?? {})).toContain(EXT_PG_URL);
-    expect(red?.env['TEST_REDIS_URL']).toBe('redis://127.0.0.1:6379/0');
-    const resets = int.calls.filter((c) => (valueOf(c.args, '--name') ?? '').includes('-reset-'));
-    expect(resets.map((c) => c.env['RESET_PHASE'])).toEqual(['before', 'after']);
-    expect(existsSync(join(runs, 'lock', 'verify-external-services'))).toBe(false);
+    expect(hostPgPasswords(red)).toHaveLength(1);
+    expect(unitRun(int.sudo, 'pg')).toBeDefined();
+    expect(int.sudo.some((c) => c.args.includes('rm'))).toBe(true);
+    expect(readdirOf(int.svcRoot)).toEqual([]);
+  },
+  CLI_TIMEOUT,
+);
+
+function readdirOf(dir: string): string[] {
+  return existsSync(dir) ? readdirSync(dir) : [];
+}
+
+it(
+  'host services: no egress rule, a rule that accepts, or a probe that gets out stops the run before any service starts (exit 2, no result)',
+  () => {
+    for (const [i, failure] of ['firewall-missing', 'firewall-accept', 'egress-open'].entries()) {
+      const id = `V4-1${String(i)}`;
+      const res = hostRun([id, '--worktree', workspace(`host-fw-${failure}`)], {
+        STUB_SUDO_FAIL: failure,
+      });
+      expect(res.status, failure).toBe(2);
+      expect(res.stderr).toContain("the host services' isolation is not in place");
+      expect(unitRun(res.sudo, 'initdb')).toBeUndefined();
+      expect(entrypointRun(res.calls)).toBeUndefined();
+      expect(existsSync(join(runs, id, 'verify', '1', 'result.json'))).toBe(false);
+    }
   },
   CLI_TIMEOUT,
 );
 
 it(
-  'external services: an incomplete setting or a missing socket stops the run (exit 2) before any test runs',
+  'host services: a failed initdb or a PostgreSQL that exits stops the run (exit 2, no result) and the run directory is removed',
   () => {
-    const env = externalEnv('broken', EXT_PASSWORD);
-    const partial = run(['V4-03', '--worktree', workspace('ext-partial')], {
-      COULI_VERIFY_PG_SOCKET_DIR: env['COULI_VERIFY_PG_SOCKET_DIR'] ?? '',
+    const initdb = hostRun(['V4-20', '--worktree', workspace('host-initdb')], {
+      STUB_SUDO_FAIL: 'initdb',
     });
-    expect(partial.status).toBe(2);
-    expect(partial.stderr).toContain('external services need');
-    expect(partial.calls).toEqual([]);
+    expect(initdb.status).toBe(2);
+    expect(initdb.stderr).toContain('initdb of the one-shot PostgreSQL failed');
+    expect(unitRun(initdb.sudo, 'pg')).toBeUndefined();
+    expect(entrypointRun(initdb.calls)).toBeUndefined();
+    expect(readdirOf(initdb.svcRoot)).toEqual([]);
+    expect(existsSync(join(runs, 'V4-20', 'verify', '1', 'result.json'))).toBe(false);
 
-    const missing = run(['V4-04', '--worktree', workspace('ext-missing')], {
-      ...env,
-      COULI_VERIFY_REDIS_SOCKET: join(base, 'no-such-dir', 'redis.sock'),
+    const exits = hostRun(['V4-21', '--worktree', workspace('host-pg-exits')], {
+      STUB_SUDO_FAIL: 'pg-exits',
     });
-    expect(missing.status).toBe(2);
-    expect(missing.stderr).toContain('no Redis socket');
-    expect(entrypointRun(missing.calls)).toBeUndefined();
-    expect(existsSync(join(runs, 'V4-04', 'verify', '1', 'result.json'))).toBe(false);
-    // The run never took the lock.
-    expect(existsSync(join(runs, 'lock', 'verify-external-services'))).toBe(false);
+    expect(exits.status).toBe(2);
+    expect(exits.stderr).toContain('PostgreSQL exited before it became ready');
+    expect(exits.sudo.some((c) => c.args.includes('journalctl'))).toBe(true);
+    expect(entrypointRun(exits.calls)).toBeUndefined();
+    expect(readdirOf(exits.svcRoot)).toEqual([]);
+
+    const config = hostRun(['V4-22', '--worktree', workspace('host-redis-migrate')], {
+      STUB_SUDO_FAIL: 'redis-migrate',
+    });
+    expect(config.status).toBe(2);
+    expect(config.stderr).toContain('still knows MIGRATE');
+    expect(entrypointRun(config.calls)).toBeUndefined();
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: when the clean-up fails a green run is an infrastructure error (exit 2) and writes no result',
+  () => {
+    for (const [i, failure] of ['rm', 'stop'].entries()) {
+      const id = `V4-3${String(i)}`;
+      const res = hostRun([id, '--worktree', workspace(`host-cleanup-${failure}`)], {
+        STUB_SUDO_FAIL: failure,
+      });
+      expect(entrypointRun(res.calls)).toBeDefined();
+      expect(res.status, failure).toBe(2);
+      expect(res.stderr).toContain('could not be removed');
+      expect(existsSync(join(runs, id, 'verify', '1', 'result.json'))).toBe(false);
+    }
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: what an earlier killed run left (container, units, directories) is removed under the lock before the services start',
+  () => {
+    const res = hostRun(
+      ['V4-40', '--worktree', workspace('host-sweep')],
+      {
+        STUB_DOCKER_ORPHANS: 'deadbeef0001,deadbeef0002',
+        STUB_SUDO_UNITS: 'couli-svc-x-1-9-pg.service,couli-svc-x-1-9-redis.service',
+      },
+      (root) => writeFiles(root, { 'x-1-9/pgdata/PG_VERSION': '18\n' }),
+    );
+    expect(res.status, res.stderr).toBe(0);
+    const rmOrphans = res.calls.find((c) => c.args[0] === 'rm' && c.args.includes('deadbeef0001'));
+    expect(rmOrphans?.args).toEqual(['rm', '-f', '-v', 'deadbeef0001', 'deadbeef0002']);
+    const stopOrphans = res.sudo.find(
+      (c) => c.args.includes('stop') && c.args.includes('couli-svc-x-1-9-pg.service'),
+    );
+    expect(stopOrphans?.args).toEqual(expect.arrayContaining(['couli-svc-x-1-9-redis.service']));
+    expect(res.sudo.indexOf(stopOrphans as SudoCall)).toBeLessThan(
+      res.sudo.indexOf(unitRun(res.sudo, 'initdb') as SudoCall),
+    );
+    expect(res.calls.indexOf(rmOrphans as Call)).toBeLessThan(
+      res.calls.indexOf(entrypointRun(res.calls) as Call),
+    );
+    expect(readdirOf(res.svcRoot)).toEqual([]);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: a second run waits for the lock (flock) held by the first',
+  async () => {
+    mkdirSync(join(runs, 'lock'), { recursive: true });
+    const lock = join(runs, 'lock', 'verify-host-services.flock');
+    const holder = spawn('flock', [lock, 'sleep', '3'], { stdio: 'ignore' });
+    await new Promise((r) => setTimeout(r, 500));
+    const started = Date.now();
+    const res = hostRun(['V4-50', '--worktree', workspace('host-lock')]);
+    const waited = Date.now() - started;
+    holder.kill();
+    expect(res.status, res.stderr).toBe(0);
+    expect(waited).toBeGreaterThanOrEqual(2000);
+    expect(readFileSync(join(runs, 'V4-50', 'verify', '1', 'log.txt'), 'utf8')).toContain(
+      'waiting for the host-services lock',
+    );
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: COULI_VERIFY_HOST_SERVICES other than 1, or a path that is not plain, stops before anything runs',
+  () => {
+    const bad = run(['V4-60', '--worktree', workspace('host-bad')], {
+      COULI_VERIFY_HOST_SERVICES: 'yes',
+    });
+    expect(bad.status).toBe(2);
+    expect(bad.stderr).toContain('COULI_VERIFY_HOST_SERVICES must be 1');
+    expect(bad.calls).toEqual([]);
+    const root = run(['V4-61', '--worktree', workspace('host-root')], {
+      COULI_VERIFY_HOST_SERVICES: '1',
+      COULI_VERIFY_SVC_ROOT: '/var/lib/x y',
+    });
+    expect(root.status).toBe(2);
+    expect(root.stderr).toContain('host service paths must be absolute');
+    expect(root.calls).toEqual([]);
   },
   CLI_TIMEOUT,
 );
