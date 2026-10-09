@@ -1,0 +1,28 @@
+id: CT-06j
+repo: rebate-platform
+title: 迁移门禁资金与归属表清单纳入 appeals（申诉撤销会触发 BR-FUND-22 申诉恢复）
+type: guard-change
+# 2026-10-09 入账（负责人同日问及 appeals；规划回写 couli#94 的 Codex 评审指出：申诉以撤销结案会自动生成 BR-FUND-22「申诉恢复」差错单，恢复黑名单作废 / 扣回的订单、
+# 补发封禁期间被剥夺的佣金，04 `appeals` 行发 appeal.resolved，申诉表是资金恢复的触发源）。只收紧迁移门禁，不改任何 BR 或归属规则；冲突断言已由 test-change CT-06k（#357）删除。
+# 契约（规则测试按此写；CT-06a～CT-06i 的规则测试继续通过，本任务只新增 test/spec/db/lint-migrations/ 下的文件）：
+# ① FUNDS_TABLE_NAMES 增加 appeals（整名匹配，去 schema 与引号）：isFundsTable('app.appeals')、'"app"."appeals"' 为真；'appeals_archive' 等相似名仍为假。
+# ② 于是资金表的全部规则对 appeals 生效：DROP / 改类型 / RENAME / SET SCHEMA 拒，squawk-ignore 拒，触发器 / 约束 / 索引只删或停用拒，未命名约束与索引拒，定义变化须登记 APPROVED_GUARD_CHANGES。
+# ③ 真实仓库（0014 建 appeals 已冻结；0020、0021 不碰 appeals）无参数运行仍须通过。db/AGENTS.md 第 11 条资金表举例补「申诉」。
+# 碰 tools/**、db/AGENTS.md（第三类保护路径），合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
+refs: []
+refs_hash: {}
+deps: [CT-06h, CT-06k]
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'db/AGENTS.md'
+test_paths:
+  - 'test/spec/db/lint-migrations/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm run lint:migrations'
+  - 'test/spec/db/lint-migrations/**'
+status: todo
+pr: null
