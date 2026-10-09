@@ -62,7 +62,8 @@ TODO(规划/11 §4.1): Prism mock（prism-cli 要 Node ≥24.18，ADR-0001 §7�
 
 14. 每个 `/v1` 写接口（POST、PUT、PATCH、DELETE）标 `x-min-version-gate`：`true`（受最低支持版本约束）、`false`、`conditional`（按请求体字段豁免，条件写在 operation 说明里）；GET 不标。取值只照规划/08 BR-ID-01 细则「最低支持版本的接口层拦截」的接口表，`conformance.ts` 的 `GATE_EXCEPTIONS` 是它的副本（不一致以 08 为准、改副本）；表里「不判定」的接口写 `false` 并在说明写「不判定：非三端请求」。`true` 与 `conditional` 的接口 `x-error-codes` 含 10405。
 15. BR-ID-01 细则「受限会话」表里的接口标 `x-session-scopes: [full, deletion_only]`（`conformance.ts` 的 `DELETION_ONLY_SCOPE` 是副本），只对部分请求体接受的在说明里写条件；其余接口不标（等于 `[full]`）。带令牌调用不接受其作用域的接口返回 10405，作为公共码写在 `info.description`，不逐接口列；受限登录（四个登录接口）另列 10405（`data.reason=no_account`）。以后声明的接口都按这两条标注。
-16. 流式接口（CT-08d）：200 为 `text/event-stream` 的接口登记在 `conformance.ts` 的 `STREAM_OPERATIONS`（现在只有 `POST /v1/agent/sessions/{id}/messages`）；其他接口的任何响应都不能声明 `text/event-stream`。它的 200 只声明 `text/event-stream`（schema `type: string`，必填 `Cache-Control: no-cache`），每个事件是 `agent-stream.schema.json` 的一帧，例子用 `|` 字面块写整段帧流（第 1 条的「至少一个 example」对它按 `text/event-stream` 判）；受理前的拒绝仍是 `application/json` 的错误外壳。
+16. 流式接口（CT-08d）：200 为 `text/event-stream` 的接口登记在 `conformance.ts` 的 `STREAM_OPERATIONS`（现在只有 `POST /v1/agent/sessions/{id}/messages`）；其他接口的任何响应都不能声明 `text/event-stream`。它的 200 只声明 `text/event-stream`（schema `type: string`，必填 `Cache-Control: no-cache`），每个事件是 `agent-stream.schema.json` 的一帧，例子把整段帧流写成一行双引号字符串，换行写 `\n`，帧之间与最后一帧之后都以空行结束（`\n\n`）：字面块会裁掉结尾空行，保留结尾空行的块写法仓库的 YAML 子集不支持（第 1 条的「至少一个 example」对它按 `text/event-stream` 判）；受理前的拒绝仍是 `application/json` 的错误外壳。共享响应经 `$ref` 引用时按解引用后的内容检查。
+17. 每个响应（成功、错误与 `components/responses` 里的共享响应）都声明响应头 `X-Trace-Id`：`$ref: '#/components/headers/TraceId'`，值与响应体的 `trace_id` 相同（schema 同 `TraceId`）；新增接口与共享响应照此写（由 `test/spec/contracts/hygiene` 的规则测试检查）。
 
 第 10、11、13、14、15、16 条与金额字段为 int64 由 `pnpm contracts:check` 里的一致性检查（`conformance.ts`）执行。
 

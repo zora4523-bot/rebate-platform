@@ -1,0 +1,89 @@
+{
+  "red_tests": [],
+  "risk_note": "RV1 contract change (contracts/openapi.yaml, bridge.schema.json, README, packages/contracts-ts) with new rule tests under test/** (RV2 for evidence). Every response, inline or shared, declares the required X-Trace-Id header (components/headers/TraceId, schema TraceId, same value as the body trace_id; no Access-Control-Expose-Headers by orchestrator decision); the three SSE examples are double-quoted strings ending in a blank line; conformance resolves $ref responses / headers and checks the stream operation's 200 (only text/event-stream, required Cache-Control: no-cache); net.signedRequest path rejects empty segments; openapi.gen.ts regenerated outside the sandbox (pnpm codegen), contracts:check exit 0. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (review-contract): round 1 pass, no findings (306 operation responses and all shared responses carry X-Trace-Id; deref chains; new checks only on STREAM_OPERATIONS 200; regex rejects all empty segments incl. before the query; SSE frames unchanged; README rule 17 consistent)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass (contract review), no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (test/spec/contracts/hygiene/**, 14 cases) reviewed by a fresh Claude subagent: round 1 pass with two S2 test-sensitivity notes, turned into implementation guidance"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "CT-01e",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "6a61e4828f25a599cbaadcdc286fa163944eee16",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6a61e4828f25a599cbaadcdc286fa163944eee16",
+      "tree": "27828f5f5d8ceb67dc397feae31970a4fc88faee",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-09T04:42:33Z",
+      "finished_at": "2026-10-09T04:47:56Z",
+      "red_tests": [
+        "test/spec/contracts/hygiene/conformance.test.ts > [AC-CT-01e#4] 未登记的 get /healthz 的 200 经共享响应引用声明 SSE 时必须报错",
+        "test/spec/contracts/hygiene/conformance.test.ts > [AC-CT-01e#4] 未登记的 post /v1/devices 的 4XX 经共享响应引用声明 SSE 时必须报错",
+        "test/spec/contracts/hygiene/conformance.test.ts > [AC-CT-01e#4] 未登记的 post /admin/v1/auth/login 的 5XX 经共享响应引用声明 SSE 时必须报错",
+        "test/spec/contracts/hygiene/conformance.test.ts > [AC-CT-01e#5] 流式接口 200 同时声明 JSON 时，conformance 必须指出该接口的媒体类型问题",
+        "test/spec/contracts/hygiene/conformance.test.ts > [AC-CT-01e#6] 流式接口 200 的 Cache-Control 为 missing 时必须报错",
+        "test/spec/contracts/hygiene/conformance.test.ts > [AC-CT-01e#6] 流式接口 200 的 Cache-Control 为 optional 时必须报错",
+        "test/spec/contracts/hygiene/conformance.test.ts > [AC-CT-01e#6] 流式接口 200 的 Cache-Control 为 unspecified 时必须报错",
+        "test/spec/contracts/hygiene/signed-request.test.ts > [AC-CT-01e#7] signedRequest 路径拒绝空段、保留合法路径和查询串，生成物与源契约一致",
+        "test/spec/contracts/hygiene/sse-examples.test.ts > [AC-CT-01e#2] SSE 示例 accepted 经 parseYamlLite 原样读取后保留最后一帧的空行",
+        "test/spec/contracts/hygiene/sse-examples.test.ts > [AC-CT-01e#2] SSE 示例 duplicateEnded 经 parseYamlLite 原样读取后保留最后一帧的空行",
+        "test/spec/contracts/hygiene/sse-examples.test.ts > [AC-CT-01e#2] SSE 示例 duplicateInProgress 经 parseYamlLite 原样读取后保留最后一帧的空行",
+        "test/spec/contracts/hygiene/sse-examples.test.ts > [AC-CT-01e#3] README 规则 16 保留 SSE 与必填缓存头约定，并说明双引号字符串写法",
+        "test/spec/contracts/hygiene/trace-header.test.ts > [AC-CT-01e#1] 每个 operation 的所有成功与错误响应都声明同格式的 X-Trace-Id",
+        "test/spec/contracts/hygiene/trace-header.test.ts > [AC-CT-01e#1] 所有共享响应组件也声明 X-Trace-Id，引用的头与 TraceId schema 一致"
+      ],
+      "expected": [
+        "test/spec/contracts/hygiene/conformance.test.ts",
+        "test/spec/contracts/hygiene/signed-request.test.ts",
+        "test/spec/contracts/hygiene/sse-examples.test.ts",
+        "test/spec/contracts/hygiene/trace-header.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "10e36a3829f6233c6406fcf498bd1b4ba8d483f0783f4cf129553625fcbbb0b5"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "78e04160eeceec209fa365107c82e92fa9756679",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}

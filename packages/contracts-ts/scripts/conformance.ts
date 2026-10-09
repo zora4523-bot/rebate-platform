@@ -190,6 +190,36 @@ function refName(v: unknown, kind: string): string | null {
   return v['$ref'].startsWith(prefix) ? v['$ref'].slice(prefix.length) : null;
 }
 
+/**
+ * Follows local `$ref`s (`#/…` JSON pointers, `~1` / `~0` unescaped) until a node without one, so a
+ * response or header declared in components is checked like an inline one. Undefined for a
+ * missing target, a remote reference or a cycle.
+ */
+function deref(doc: Obj, value: unknown): unknown {
+  let node = value;
+  const seen = new Set<string>();
+  while (isObj(node) && typeof node['$ref'] === 'string') {
+    const ref = node['$ref'];
+    if (!ref.startsWith('#/') || seen.has(ref)) return undefined;
+    seen.add(ref);
+    let cur: unknown = doc;
+    for (const raw of ref.slice(2).split('/')) {
+      const part = raw.replaceAll('~1', '/').replaceAll('~0', '~');
+      if (!isObj(cur)) return undefined;
+      cur = cur[part];
+    }
+    node = cur;
+  }
+  return node;
+}
+
+/** The content map of a response (inline or `$ref`), or undefined. */
+function responseContent(doc: Obj, response: unknown): Obj | undefined {
+  const resolved = deref(doc, response);
+  const content = isObj(resolved) ? resolved['content'] : undefined;
+  return isObj(content) ? content : undefined;
+}
+
 function sameSet(a: readonly unknown[], b: readonly unknown[]): boolean {
   return a.length === b.length && a.every((x) => b.includes(x));
 }
@@ -417,6 +447,7 @@ const APP_ONLY_PARAMETERS = [
  * 429 → TooManyRequests; x-error-codes are live codes; the 200 response has an example.
  */
 function checkAdminOperation(
+  doc: Obj,
   op: Obj,
   where: string,
   live: ReadonlyMap<number, ErrorCodeDef>,
@@ -446,8 +477,8 @@ function checkAdminOperation(
       }
     }
   }
-  const media = at(op, 'responses/200/content');
-  const json = isObj(media) ? media['application/json'] : undefined;
+  const media = responseContent(doc, at(op, 'responses/200'));
+  const json = media?.['application/json'];
   if (!isObj(json) || (json['example'] === undefined && !isObj(json['examples']))) {
     problems.push(`${where}: the 200 response needs at least one example`);
   }
@@ -455,15 +486,17 @@ function checkAdminOperation(
 
 /**
  * Only STREAM_OPERATIONS answer text/event-stream, on any response of any path (/healthz and
- * /admin/v1 included), and their 200 must be text/event-stream.
+ * /admin/v1 included; shared responses are followed through `$ref`). Their 200 declares
+ * text/event-stream and nothing else, with a required `Cache-Control: no-cache` header
+ * (contracts/README.md rule 16).
  */
-function checkStream(op: Obj, where: string, problems: string[]): void {
+function checkStream(doc: Obj, op: Obj, where: string, problems: string[]): void {
   const stream = STREAM_OPERATIONS.includes(where);
   const responses = op['responses'];
   if (isObj(responses)) {
     for (const [status, response] of Object.entries(responses)) {
-      const content = isObj(response) ? response['content'] : undefined;
-      const sse = isObj(content) && content['text/event-stream'] !== undefined;
+      const content = responseContent(doc, response);
+      const sse = content !== undefined && content['text/event-stream'] !== undefined;
       if (sse && !(stream && status === '200')) {
         problems.push(
           `${where}: only the 200 of STREAM_OPERATIONS may answer text/event-stream (${status})`,
@@ -471,9 +504,30 @@ function checkStream(op: Obj, where: string, problems: string[]): void {
       }
     }
   }
-  const media = at(op, 'responses/200/content');
-  if (stream && !(isObj(media) && media['text/event-stream'] !== undefined)) {
+  if (!stream) return;
+  const ok = deref(doc, at(op, 'responses/200'));
+  const media = responseContent(doc, ok);
+  if (media === undefined || media['text/event-stream'] === undefined) {
     problems.push(`${where}: a STREAM_OPERATIONS 200 answers text/event-stream`);
+  }
+  const others = Object.keys(media ?? {}).filter((type) => type !== 'text/event-stream');
+  if (others.length > 0) {
+    problems.push(
+      `${where}: a STREAM_OPERATIONS 200 declares only text/event-stream content (also ${others.join(', ')})`,
+    );
+  }
+  const headers = isObj(ok) ? ok['headers'] : undefined;
+  const cache = deref(doc, isObj(headers) ? headers['Cache-Control'] : undefined);
+  const values = isObj(cache) ? at(cache, 'schema/enum') : undefined;
+  if (
+    !isObj(cache) ||
+    cache['required'] !== true ||
+    !Array.isArray(values) ||
+    !sameSet(values, ['no-cache'])
+  ) {
+    problems.push(
+      `${where}: a STREAM_OPERATIONS 200 declares the required header Cache-Control: no-cache`,
+    );
   }
 }
 
@@ -566,9 +620,9 @@ export function checkConformance(
         problems.push(`${where}: x-implementation may only be "planned"`);
       }
       checkStepUp(op, where, stepUpActions, stepUpByOperation.get(where), problems);
-      checkStream(op, where, problems);
+      checkStream(doc, op, where, problems);
       if (admin) {
-        checkAdminOperation(op, where, live, problems);
+        checkAdminOperation(doc, op, where, live, problems);
         continue;
       }
       if (!path.startsWith('/v1/')) continue;
@@ -604,9 +658,9 @@ export function checkConformance(
           }
         }
       }
-      const media = at(op, 'responses/200/content');
+      const media = responseContent(doc, at(op, 'responses/200'));
       const type = STREAM_OPERATIONS.includes(where) ? 'text/event-stream' : 'application/json';
-      const json = isObj(media) ? media[type] : undefined;
+      const json = media?.[type];
       if (!isObj(json) || (json['example'] === undefined && !isObj(json['examples']))) {
         problems.push(`${where}: the 200 response needs at least one example`);
       }

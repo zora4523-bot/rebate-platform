@@ -29,4 +29,5 @@ accept:
   - 'pnpm verify'
   - 'pnpm contracts:check'
   - 'test/spec/contracts/hygiene/**'
-status: todo
+status: done
+pr: 346

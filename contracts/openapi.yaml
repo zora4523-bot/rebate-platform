@@ -93,6 +93,9 @@ paths:
       responses:
         '200':
           description: The process is initialised.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -157,6 +160,9 @@ paths:
       responses:
         '200':
           description: Device registered.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -218,6 +224,9 @@ paths:
       responses:
         '200':
           description: Accepted (also when the report was ignored).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -288,6 +297,9 @@ paths:
       responses:
         '200':
           description: The provider accepted the SMS, or its outcome is unknown (counted as sent).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -366,6 +378,9 @@ paths:
       responses:
         '200':
           description: Logged in.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -455,6 +470,9 @@ paths:
       responses:
         '200':
           description: A new attempt.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -534,6 +552,9 @@ paths:
       responses:
         '200':
           description: Logged in.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -615,6 +636,9 @@ paths:
       responses:
         '200':
           description: Logged in.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -693,6 +717,9 @@ paths:
       responses:
         '200':
           description: Logged in.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -786,6 +813,9 @@ paths:
       responses:
         '200':
           description: A step-up token for the action.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -848,6 +878,9 @@ paths:
       responses:
         '200':
           description: New token pair.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -903,6 +936,9 @@ paths:
       responses:
         '200':
           description: The session is revoked.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -981,6 +1017,9 @@ paths:
       responses:
         '200':
           description: The consent row is recorded.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1035,6 +1074,9 @@ paths:
       responses:
         '200':
           description: A new h5_token.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1083,6 +1125,9 @@ paths:
       responses:
         '200':
           description: Authorization state per platform.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1150,6 +1195,9 @@ paths:
       responses:
         '200':
           description: The authorization link.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1259,6 +1307,9 @@ paths:
       responses:
         '200':
           description: The binding state after binding.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1351,6 +1402,9 @@ paths:
       responses:
         '200':
           description: A page of orders.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1411,6 +1465,9 @@ paths:
       responses:
         '200':
           description: Pending-track cards.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1475,6 +1532,9 @@ paths:
       responses:
         '200':
           description: The card of this attempt is closed.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1528,6 +1588,9 @@ paths:
       responses:
         '200':
           description: The order.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1618,6 +1681,9 @@ paths:
       responses:
         '200':
           description: Articles of the category.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1694,6 +1760,9 @@ paths:
       responses:
         '200':
           description: The article.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1752,6 +1821,9 @@ paths:
       responses:
         '200':
           description: Version information.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1822,6 +1894,9 @@ paths:
       responses:
         '200':
           description: The draft page.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1875,6 +1950,9 @@ paths:
       responses:
         '200':
           description: The message.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -1934,6 +2012,9 @@ paths:
       responses:
         '200':
           description: The summary.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2004,6 +2085,9 @@ paths:
       responses:
         '200':
           description: The dashboard figures.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2094,6 +2178,9 @@ paths:
       responses:
         '200':
           description: Entries, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2173,6 +2260,9 @@ paths:
       responses:
         '200':
           description: Rules and estimate.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2231,6 +2321,9 @@ paths:
       responses:
         '200':
           description: Withdrawals, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2326,6 +2419,9 @@ paths:
       responses:
         '200':
           description: The withdrawal.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2389,6 +2485,9 @@ paths:
       responses:
         '200':
           description: The withdrawal.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2452,6 +2551,9 @@ paths:
       responses:
         '200':
           description: The current user.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2556,6 +2658,9 @@ paths:
       responses:
         '200':
           description: The number is bound to the account.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2602,6 +2707,9 @@ paths:
       responses:
         '200':
           description: The current payout account, or an empty object.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2710,6 +2818,9 @@ paths:
       responses:
         '200':
           description: The saved account (masked).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2759,6 +2870,9 @@ paths:
       responses:
         '200':
           description: The read states.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2818,6 +2932,9 @@ paths:
       responses:
         '200':
           description: Recorded (or already recorded).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2870,6 +2987,9 @@ paths:
       responses:
         '200':
           description: The read records are cleared.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2916,6 +3036,9 @@ paths:
       responses:
         '200':
           description: The latest request, or null.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -2985,6 +3108,9 @@ paths:
       responses:
         '200':
           description: The request, now in cooling.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3041,6 +3167,9 @@ paths:
       responses:
         '200':
           description: The cancelled request.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3098,6 +3227,9 @@ paths:
       responses:
         '200':
           description: My appeals, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3182,6 +3314,9 @@ paths:
       responses:
         '200':
           description: The appeal, new or the processing one already on this target.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3266,6 +3401,9 @@ paths:
       responses:
         '200':
           description: The key is abandoned, or its completed result is returned.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3333,6 +3471,9 @@ paths:
       responses:
         '200':
           description: The current configuration.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3505,6 +3646,9 @@ paths:
       responses:
         '200':
           description: One page of results.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3558,6 +3702,9 @@ paths:
       responses:
         '200':
           description: The product card of the detail page.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3621,6 +3768,9 @@ paths:
       responses:
         '200':
           description: One result per recognised link or token, in input order.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3708,6 +3858,9 @@ paths:
       responses:
         '200':
           description: Jump plan and price re-check result.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3792,6 +3945,9 @@ paths:
       responses:
         '200':
           description: The registered link and its jump plan.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3840,6 +3996,9 @@ paths:
       responses:
         '200':
           description: The link kind and its card.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -3918,6 +4077,8 @@ paths:
         '200':
           description: The share page card.
           headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
             Cache-Control:
               $ref: '#/components/headers/NoStore'
           content:
@@ -4004,6 +4165,8 @@ paths:
         '200':
           description: The token.
           headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
             Cache-Control:
               $ref: '#/components/headers/NoStore'
           content:
@@ -4066,6 +4229,9 @@ paths:
       responses:
         '200':
           description: Account and password accepted; the next step and its ticket.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4105,6 +4271,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Login rejected (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4157,6 +4326,9 @@ paths:
       responses:
         '200':
           description: Password replaced; the next step and its ticket.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4173,6 +4345,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Password change rejected (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4226,6 +4401,8 @@ paths:
         '200':
           description: The secret to bind.
           headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
             Cache-Control:
               $ref: '#/components/headers/NoStore'
           content:
@@ -4243,6 +4420,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Secret not issued (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4296,6 +4476,9 @@ paths:
       responses:
         '200':
           description: Bound and signed in.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4312,6 +4495,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Binding rejected (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4365,6 +4551,9 @@ paths:
       responses:
         '200':
           description: Signed in.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4381,6 +4570,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Code rejected (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4420,6 +4612,9 @@ paths:
       responses:
         '200':
           description: The admin session is revoked.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4433,6 +4628,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not signed out (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4473,6 +4671,9 @@ paths:
       responses:
         '200':
           description: The provider accepted the SMS, or its outcome is unknown (counted as sent).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4488,6 +4689,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not sent (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4555,6 +4759,9 @@ paths:
       responses:
         '200':
           description: A step-up token of the requested tier.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4584,6 +4791,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Verification failed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4632,6 +4842,9 @@ paths:
       responses:
         '200':
           description: The account and its permission points.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4684,6 +4897,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4723,6 +4939,9 @@ paths:
       responses:
         '200':
           description: One page of admin accounts.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4760,6 +4979,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4799,6 +5021,9 @@ paths:
       responses:
         '200':
           description: The admin account.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4821,6 +5046,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4863,6 +5091,9 @@ paths:
       responses:
         '200':
           description: Every platform mark with its published version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4946,6 +5177,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -4988,6 +5222,9 @@ paths:
       responses:
         '200':
           description: One page of versions, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5031,6 +5268,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5099,6 +5339,9 @@ paths:
       responses:
         '200':
           description: The new version, or the version this upload_id was already saved as.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5128,6 +5371,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not saved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5189,6 +5435,9 @@ paths:
       responses:
         '200':
           description: The cleaned file, ready to be previewed and saved.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5210,6 +5459,9 @@ paths:
                     trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '413':
           description: Request body above the global limit (20001 with data.fields=[body]).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5225,6 +5477,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Rejected (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5283,6 +5538,9 @@ paths:
       responses:
         '200':
           description: The version with its registration.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5309,6 +5567,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5376,6 +5637,9 @@ paths:
       responses:
         '200':
           description: The mark with its new published version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5409,6 +5673,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not published (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5464,6 +5731,9 @@ paths:
       responses:
         '200':
           description: The mark, now on its built-in image.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5484,6 +5754,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         4XX:
           description: Not restored (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5537,6 +5810,9 @@ paths:
       responses:
         '200':
           description: The new session, or the owner's newest empty one.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5589,6 +5865,9 @@ paths:
       responses:
         '200':
           description: The current session or null.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -5691,6 +5970,8 @@ paths:
         '200':
           description: The reply stream (frames per contracts/agent-stream.schema.json).
           headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
             Cache-Control:
               $ref: '#/components/headers/NoCache'
           content:
@@ -5701,40 +5982,13 @@ paths:
               examples:
                 accepted:
                   summary: An accepted message answered with one page guide card
-                  value: |
-                    event: meta
-                    id: 1
-                    data: {"session_id":"019a0000-0000-7000-8000-000000000021","run_id":"019a0000-0000-7000-8000-000000000121","message_id":"019a0000-0000-7000-8000-000000000221","prompt_version":"demo-prompt-v1","model_label":"演示模型","ai_label":"内容由 AI 生成，仅供参考","duplicate":false}
-
-                    : ping
-
-                    event: card
-                    id: 2
-                    data: {"seq":2,"card_id":"c1","type":"page_guide","schema_version":1,"data":{"route":"WithdrawRecords","text_key":"agent.guide.WithdrawRecords"},"fallback_text":"提现进度在提现记录里查看。"}
-
-                    event: done
-                    id: 3
-                    data: {"finish_reason":"stop","quota_left":24}
+                  value: "event: meta\nid: 1\ndata: {\"session_id\":\"019a0000-0000-7000-8000-000000000021\",\"run_id\":\"019a0000-0000-7000-8000-000000000121\",\"message_id\":\"019a0000-0000-7000-8000-000000000221\",\"prompt_version\":\"demo-prompt-v1\",\"model_label\":\"演示模型\",\"ai_label\":\"内容由 AI 生成，仅供参考\",\"duplicate\":false}\n\n: ping\n\nevent: card\nid: 2\ndata: {\"seq\":2,\"card_id\":\"c1\",\"type\":\"page_guide\",\"schema_version\":1,\"data\":{\"route\":\"WithdrawRecords\",\"text_key\":\"agent.guide.WithdrawRecords\"},\"fallback_text\":\"提现进度在提现记录里查看。\"}\n\nevent: done\nid: 3\ndata: {\"finish_reason\":\"stop\",\"quota_left\":24}\n\n"
                 duplicateEnded:
                   summary: A repeated client_msg_id whose run has ended
-                  value: |
-                    event: meta
-                    id: 1
-                    data: {"session_id":"019a0000-0000-7000-8000-000000000021","run_id":"019a0000-0000-7000-8000-000000000121","message_id":"019a0000-0000-7000-8000-000000000221","prompt_version":"demo-prompt-v1","model_label":"演示模型","ai_label":"内容由 AI 生成，仅供参考","duplicate":true}
-
-                    event: done
-                    id: 2
-                    data: {"finish_reason":"stop","quota_left":24}
+                  value: "event: meta\nid: 1\ndata: {\"session_id\":\"019a0000-0000-7000-8000-000000000021\",\"run_id\":\"019a0000-0000-7000-8000-000000000121\",\"message_id\":\"019a0000-0000-7000-8000-000000000221\",\"prompt_version\":\"demo-prompt-v1\",\"model_label\":\"演示模型\",\"ai_label\":\"内容由 AI 生成，仅供参考\",\"duplicate\":true}\n\nevent: done\nid: 2\ndata: {\"finish_reason\":\"stop\",\"quota_left\":24}\n\n"
                 duplicateInProgress:
                   summary: A repeated client_msg_id whose run is still running
-                  value: |
-                    event: meta
-                    id: 1
-                    data: {"session_id":"019a0000-0000-7000-8000-000000000021","run_id":"019a0000-0000-7000-8000-000000000123","message_id":"019a0000-0000-7000-8000-000000000223","prompt_version":"demo-prompt-v1","model_label":"演示模型","ai_label":"内容由 AI 生成，仅供参考","duplicate":true}
-
-                    event: error
-                    id: 2
-                    data: {"code":30506,"msg":"上一条还在回复中","retryable":true,"fallback":null,"fallback_q":null}
+                  value: "event: meta\nid: 1\ndata: {\"session_id\":\"019a0000-0000-7000-8000-000000000021\",\"run_id\":\"019a0000-0000-7000-8000-000000000123\",\"message_id\":\"019a0000-0000-7000-8000-000000000223\",\"prompt_version\":\"demo-prompt-v1\",\"model_label\":\"演示模型\",\"ai_label\":\"内容由 AI 生成，仅供参考\",\"duplicate\":true}\n\nevent: error\nid: 2\ndata: {\"code\":30506,\"msg\":\"上一条还在回复中\",\"retryable\":true,\"fallback\":null,\"fallback_q\":null}\n\n"
         '429':
           $ref: '#/components/responses/TooManyRequests'
         4XX:
@@ -5779,6 +6033,9 @@ paths:
       responses:
         '200':
           description: The run is being stopped.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
@@ -6043,6 +6300,8 @@ components:
     NoStoreClientError:
       description: Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则).
       headers:
+        X-Trace-Id:
+          $ref: '#/components/headers/TraceId'
         Cache-Control:
           $ref: '#/components/headers/NoStore'
       content:
@@ -6099,6 +6358,8 @@ components:
     NoStoreTooManyRequests:
       description: Same as TooManyRequests (42901 with Retry-After), with Cache-Control no-store (share pages).
       headers:
+        X-Trace-Id:
+          $ref: '#/components/headers/TraceId'
         Cache-Control:
           $ref: '#/components/headers/NoStore'
         Retry-After:
@@ -6119,6 +6380,8 @@ components:
     NoStoreServerError:
       description: Same as ServerError, with Cache-Control no-store (share pages).
       headers:
+        X-Trace-Id:
+          $ref: '#/components/headers/TraceId'
         Cache-Control:
           $ref: '#/components/headers/NoStore'
       content:
@@ -6156,6 +6419,9 @@ components:
       description: |
         Business or request error. Clients act on `code` only (contracts/error-codes.yaml);
         the HTTP status per code is listed there as well.
+      headers:
+        X-Trace-Id:
+          $ref: '#/components/headers/TraceId'
       content:
         application/json:
           schema:
@@ -6210,6 +6476,8 @@ components:
     TooManyRequests:
       description: Rate limited (42901) with the required Retry-After header in seconds (BR-ID-05, BR-TEXT-14).
       headers:
+        X-Trace-Id:
+          $ref: '#/components/headers/TraceId'
         Retry-After:
           required: true
           description: Seconds to wait before retrying.
@@ -6227,6 +6495,9 @@ components:
             trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     ServerError:
       description: Server-side error; 503 codes carry `data.platform` / `data.reason` where listed.
+      headers:
+        X-Trace-Id:
+          $ref: '#/components/headers/TraceId'
       content:
         application/json:
           schema:
@@ -6273,6 +6544,11 @@ components:
         type: string
         enum:
           - no-cache
+    TraceId:
+      required: true
+      description: The trace id of the request on every response, the same value as `trace_id` in the body (02 logging); echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.
+      schema:
+        $ref: '#/components/schemas/TraceId'
   examples:
     AdminWrongPassword:
       summary: 10008 account or password wrong (no data)
