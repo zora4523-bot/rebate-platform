@@ -962,7 +962,7 @@ it('CT-06f review round 2: octal and hex escapes are UTF-8 bytes when definition
   ]);
 });
 
-it('CT-06g: the squawk exception covers the verified rebuild only, not a second statement on its line', () => {
+it('CT-06h: no squawk exception on funds tables, not even for an identical rebuild (CT-06g withdrawn)', () => {
   const history = `${TIMEOUTS}CREATE TABLE app.ledger_x (id bigint CONSTRAINT ledger_x_pkey PRIMARY KEY, amount_fen bigint NOT NULL, CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0));\n`;
   const rebuild =
     'ALTER TABLE app.ledger_x DROP CONSTRAINT ledger_x_amount_check, ADD CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0);';
@@ -972,16 +972,9 @@ it('CT-06g: the squawk exception covers the verified rebuild only, not a second 
       '0031_b.sql': `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\n${rebuild}\n`,
     }),
   );
-  expect(ok.status, ok.stderr).toBe(0);
-  const res = run(
-    fixture({
-      '0030_a.sql': history,
-      '0031_b.sql': `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\n${rebuild} ALTER TABLE app.ledger_x ADD CONSTRAINT ledger_x_cap_check CHECK (amount_fen < 100);\n`,
-    }),
-  );
-  expect(res.status).toBe(1);
-  expect(res.stderr).toContain(
-    'constraint-missing-not-valid on a statement of funds or attribution table ledger_x',
+  expect(ok.status).toBe(1);
+  expect(ok.stderr).toContain(
+    'squawk-ignore on a statement of funds or attribution table ledger_x',
   );
 });
 
@@ -1020,20 +1013,23 @@ it('CT-06g review round 1: a cast with a length is not a plain literal; NOT insi
   expect(
     checkMigration(
       'x.sql',
-      `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.orders DROP CONSTRAINT orders_valid_guard, ADD CONSTRAINT orders_valid_guard CHECK (NOT valid);\n`,
+      `${TIMEOUTS}ALTER TABLE app.orders DROP CONSTRAINT orders_valid_guard, ADD CONSTRAINT orders_valid_guard CHECK (NOT valid);\n`,
       ctx,
     ),
   ).toEqual([]);
 });
 
-it('CT-06g review round 2: identical rebuilds written over several lines or as two ALTER TABLE statements pass; no history, no exception', () => {
+it('CT-06h: identical rebuilds over several lines or as two ALTER TABLE statements get no squawk exception either', () => {
   const history = `${TIMEOUTS}CREATE TABLE app.ledger_x (id bigint CONSTRAINT ledger_x_pkey PRIMARY KEY, amount_fen bigint NOT NULL, CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0));\n`;
   for (const body of [
     '-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.ledger_x\n  DROP CONSTRAINT ledger_x_amount_check,\n  ADD CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0);\n',
     'ALTER TABLE app.ledger_x DROP CONSTRAINT ledger_x_amount_check;\n-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.ledger_x ADD CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0);\n',
   ]) {
     const res = run(fixture({ '0030_a.sql': history, '0031_b.sql': TIMEOUTS + body }));
-    expect(res.status, res.stdout + res.stderr).toBe(0);
+    expect(res.status, res.stdout + res.stderr).toBe(1);
+    expect(res.stderr).toContain(
+      'squawk-ignore on a statement of funds or attribution table ledger_x',
+    );
   }
   // A new constraint over several lines still gets squawk's finding.
   const fresh = run(
@@ -1057,4 +1053,33 @@ it('CT-06g review round 2: identical rebuilds written over several lines or as t
   ).toEqual([
     expect.stringContaining('squawk-ignore on a statement of funds or attribution table orders'),
   ]);
+});
+
+it('CT-06h: column and table constraint forms compare equal, but a changed kind or referenced table is a change', () => {
+  const ctx = {
+    schemaSql: '',
+    migrationsSql: [
+      'CREATE TABLE app.accounts (id bigint CONSTRAINT accounts_pkey PRIMARY KEY);\nCREATE TABLE app.payouts_x (id bigint CONSTRAINT payouts_x_pkey PRIMARY KEY);\nCREATE TABLE app.ledger_x (id bigint CONSTRAINT ledger_x_pkey PRIMARY KEY, ref text CONSTRAINT ledger_x_ref_key UNIQUE, account_id bigint CONSTRAINT ledger_x_acct_fkey REFERENCES app.accounts (id));',
+    ],
+    approved: false,
+  };
+  const rebuild = (name: string, clause: string) =>
+    checkMigration(
+      'x.sql',
+      `${TIMEOUTS}ALTER TABLE app.ledger_x DROP CONSTRAINT ${name}, ADD CONSTRAINT ${name} ${clause};\n`,
+      ctx,
+    ).map((p) => p.message);
+  expect(rebuild('ledger_x_pkey', 'PRIMARY KEY (id)')).toEqual([]);
+  expect(rebuild('ledger_x_ref_key', 'UNIQUE (ref)')).toEqual([]);
+  expect(
+    rebuild('ledger_x_acct_fkey', 'FOREIGN KEY (account_id) REFERENCES app.accounts (id)'),
+  ).toEqual([]);
+  const changed = [expect.stringContaining('recreated with a different definition')];
+  expect(rebuild('ledger_x_ref_key', 'PRIMARY KEY (ref)')).toEqual(changed);
+  expect(
+    rebuild('ledger_x_acct_fkey', 'FOREIGN KEY (account_id) REFERENCES app.payouts_x (id)'),
+  ).toEqual(changed);
+  expect(rebuild('ledger_x_acct_fkey', 'FOREIGN KEY (id) REFERENCES app.accounts (id)')).toEqual(
+    changed,
+  );
 });
