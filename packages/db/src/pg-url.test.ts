@@ -184,3 +184,17 @@ it('redactCredentials ends an unquoted libpq value only at whitespace, a query v
     'postgres://u@h/db?password=***&sslmode=require#frag',
   );
 });
+
+it('redactCredentials keeps masking a secret assignment glued inside an escaped-quote value', () => {
+  // `\'` does not end the quoted value; the quote after `sslpassword=` does, and the text after it
+  // is the inner assignment's value, so it is masked too.
+  const input = String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail' dbname=couli`;
+  expect(redactCredentials(input)).toBe('host=db password=*** dbname=couli');
+  // An inner assignment whose value ends inside the outer value changes nothing.
+  expect(redactCredentials("host=db password='ExampleA&password=ExampleB c' dbname=couli")).toBe(
+    'host=db password=*** dbname=couli',
+  );
+  // Chained: every inner value is covered, ordinary parameters after it stay readable.
+  const chained = String.raw`password='ExampleOne\'&password='ExampleTwo\'&sslpassword='ExampleThree' port=5432`;
+  expect(redactCredentials(chained)).toBe('password=*** port=5432');
+});

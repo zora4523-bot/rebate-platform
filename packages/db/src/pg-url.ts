@@ -131,19 +131,30 @@ function valueEnd(text: string, start: number, end: RegExp): number {
   return text.length;
 }
 
-/** `text` with the value of every `password=` / `sslpassword=` parameter replaced by `***`. */
+/**
+ * `text` with the value of every `password=` / `sslpassword=` parameter replaced by `***`.
+ * A secret assignment that sits inside a value already masked (`password='Head\'&sslpassword='Tail'`:
+ * the escaped quote does not end the first value, the quote after `sslpassword=` does) still owns
+ * the text after it, so the masked stretch is extended to the end of that inner value as well.
+ */
 function maskPasswordParameters(text: string): string {
   let result = '';
   let done = 0;
   for (const match of text.matchAll(PARAMETER)) {
-    if (match.index < done || !isSecretName(match[1] ?? '')) {
+    if (!isSecretName(match[1] ?? '')) {
       continue;
     }
     const before = match.index > 0 ? text[match.index - 1] : '';
     const end = before === '?' || before === '&' ? QUERY_VALUE_END : KEYWORD_VALUE_END;
     const start = match.index + match[0].length;
+    const stop = valueEnd(text, start, end);
+    if (start < done) {
+      // Inside a masked value: never unmask, only extend over the inner value's remainder.
+      done = Math.max(done, stop);
+      continue;
+    }
     result += text.slice(done, start) + MASK;
-    done = valueEnd(text, start, end);
+    done = stop;
   }
   return result + text.slice(done);
 }

@@ -9,12 +9,14 @@ set -Eeuo pipefail
 # uptime and a single container start, see compose.yaml) -> confirm RestartCount 0 for all five
 # -> on success mark the containers settled, record the tag with a copy of the compose file used
 # and remove older images; on a failed health check switch back to the last successful tag (with
-# the compose file saved for it) and exit 1. A RestartCount other than 0 records nothing and exits
-# 1 with the manual rollback command (no automatic rollback there).
+# the compose file saved for it) and exit 1. A RestartCount other than 0 records no tag, marks the
+# running version as uncertain (when a successful tag exists) and exits 1 with the manual rollback
+# command (no automatic rollback there).
 # Manual rollback is `./deploy.sh <older tag>`: it uses the compose file saved with that tag when
 # there is one, otherwise the compose.yaml next to this script. Redeploying the tag that is both the
 # last successful one and the one running uses the compose.yaml next to this script (and saves it
-# again on success), so an edited compose.yaml takes effect.
+# again on success), so an edited compose.yaml takes effect. While the running version is uncertain
+# every `./deploy.sh <tag>` uses the compose file saved with that tag and is refused without one.
 # Node credential files are only referenced by path; their contents are never printed.
 
 log() { printf '[deploy] %s\n' "$*"; }
@@ -28,6 +30,9 @@ STATE_FILE="$STATE_DIR/staging-api.tag"
 # The tag the five processes were last switched to (written just before each switch and after a
 # rollback switch), whether or not that deployment succeeded.
 SWITCHED_FILE="$STATE_DIR/staging-api.switched"
+# Written to SWITCHED_FILE after a RestartCount failure: what is running is uncertain. It cannot be
+# an image tag (a tag starts with a letter or digit).
+DIRTY_MARK='-uncertain-'
 LOCK_FILE=/run/lock/couli-staging-deploy.lock
 
 if [[ ! "$COULI_API_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
@@ -54,20 +59,28 @@ if [[ ! -f "$COMPOSE_FILE" ]]; then
 fi
 
 # First deployment: no recorded tag yet, so there is nothing to roll back to. Without a record of
-# the last switch (first run of this script version) the running tag is taken to be the last
-# successful one.
+# the last switch (first run of this script version, left by an older one) the running tag is
+# unknown: it is never taken to be the last successful one, so that tag's saved compose is used.
 mkdir -p "$STATE_DIR"
 touch "$STATE_FILE" "$SWITCHED_FILE"
 PREVIOUS_TAG="$(cat "$STATE_FILE")"
 SWITCHED_TAG="$(cat "$SWITCHED_FILE")"
-SWITCHED_TAG="${SWITCHED_TAG:-$PREVIOUS_TAG}"
+
+# After a RestartCount failure the running version is uncertain: only a tag with a saved compose
+# file may be deployed (the edited compose.yaml next to this script may be what broke it), until a
+# deployment succeeds again. Refuse before the migration and the switch.
+if [[ "$SWITCHED_TAG" == "$DIRTY_MARK" && ! -f "$STATE_DIR/compose.$COULI_API_TAG.yaml" ]]; then
+  fail "the last deployment failed its RestartCount check, so what is running is uncertain; no compose file saved with couli-api:$COULI_API_TAG ($STATE_DIR/compose.$COULI_API_TAG.yaml is missing)"
+  fail "deploy a tag that has a saved compose file first, e.g. the last successful one: deploy.sh ${PREVIOUS_TAG:-<previous tag>}"
+  exit 2
+fi
 
 # A tag deployed successfully before has its own compose file saved; an older image may not fit
 # the current compose.yaml, so a manual rollback (`deploy.sh <older tag>`) uses the saved one.
 # Redeploying the tag that is the last successful one AND is running is not a rollback: it uses
 # the compose.yaml next to this script, so an edit to it takes effect and is saved on success.
-# After a RestartCount failure the running tag is the failed one, so `deploy.sh <last successful>`
-# is a rollback and uses the saved copy.
+# After a RestartCount failure the switch record holds DIRTY_MARK, never a tag, so every
+# `deploy.sh <tag>` (the last successful one included) uses the saved copy.
 if [[ -f "$STATE_DIR/compose.$COULI_API_TAG.yaml" ]]; then
   if [[ "$COULI_API_TAG" == "$PREVIOUS_TAG" && "$COULI_API_TAG" == "$SWITCHED_TAG" ]]; then
     log "couli-api:$COULI_API_TAG is already the running, last successful tag; redeploying with the current compose.yaml next to deploy.sh (saved again on success)"
@@ -131,11 +144,14 @@ if docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env up -d --f
   # need not look again at a service it has already seen healthy, so a crash anywhere from the
   # first service becoming healthy until `up --wait` returns can slip past step 2; this catches
   # it. The rollback must then be run by hand (the switch above is the script's only automatic
-  # rollback point); it uses the compose file saved with the previous tag.
+  # rollback point). With a successful tag recorded the switch record becomes DIRTY_MARK, so the
+  # next run uses saved compose files only; a fresh node (no successful tag) keeps the plain retry.
   RESTART_COUNTS="$(docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env ps --all --quiet | xargs -r docker inspect --format '{{.RestartCount}}' | tr '\n' ' ')"
   if [[ "$RESTART_COUNTS" != "0 0 0 0 0 " ]]; then
-    fail "expected five containers with RestartCount 0, got: ${RESTART_COUNTS:-none}; nothing recorded"
+    fail "expected five containers with RestartCount 0, got: ${RESTART_COUNTS:-none}; no tag recorded"
+    printf '%s\n' "${PREVIOUS_TAG:+$DIRTY_MARK}" > "$SWITCHED_FILE"
     fail "roll back by hand: deploy.sh ${PREVIOUS_TAG:-<previous tag>}"
+    fail "when a successful tag is recorded the running version is now marked uncertain${PREVIOUS_TAG:+ (the rollback uses $STATE_DIR/compose.$PREVIOUS_TAG.yaml)}: until a deployment succeeds, deploy.sh <tag> uses only the compose file saved with that tag and refuses a tag without one; a fresh node without any successful tag is not marked and may retry"
     exit 1
   fi
   # Only now may a later restart (node reboot) pass the health checks again.
