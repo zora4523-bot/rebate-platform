@@ -194,7 +194,12 @@ async function start(
           ...(maintHandle === null ? [] : [() => maintHandle.close()]),
         ],
       });
-      // Startup owns cleanup until here; a signal during startup stops the services now.
+      // Startup owns cleanup until here. A signal during startup stops the services now: no
+      // `started` line and no keep-alive timer (B1-01t contract 7 c).
+      if (signals.stopping()) {
+        await signals.stop(() => services.stop());
+        return;
+      }
       const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
       await signals.serve(
         async () => {

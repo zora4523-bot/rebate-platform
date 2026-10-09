@@ -1,5 +1,6 @@
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
+import { fromKysely } from 'pg-boss';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { RootLogger } from '../logging/logger.ts';
 import { createQueueRuntime } from './runtime.ts';
@@ -8,11 +9,15 @@ import type { JobPayload, QueueRuntime, QueueSpec } from './types.ts';
 // No database runs: fetch is observed independently from business handler calls.
 // Each statement records its text and the executor it ran on (B1-01zs: the version read).
 const statements = vi.hoisted(() => [] as { text: string; executor: unknown }[]);
+// A statement text that rejects with `error` (B1-01zs: a lock timeout during start).
+const failing = vi.hoisted(() => ({ text: '', error: undefined as unknown }));
 vi.mock('kysely', async (original) => ({
   ...(await original<typeof import('kysely')>()),
   sql: (strings: TemplateStringsArray) => ({
     execute: async (executor: unknown) => {
-      statements.push({ text: strings.join('$'), executor });
+      const text = strings.join('$');
+      statements.push({ text, executor });
+      if (failing.error !== undefined && text === failing.text) throw failing.error;
       return {
         rows: [{ version: 42, id: 'claimed', startedOnExact: '2026-10-04 00:00:00.123456+00' }],
       };
@@ -33,14 +38,19 @@ const fake = vi.hoisted(() => ({
   complete: vi.fn(async (): Promise<void> => undefined),
   fail: vi.fn(async () => undefined),
   stop: vi.fn(async () => undefined),
+  getQueues: vi.fn(async (): Promise<unknown[]> => []),
+  options: undefined as
+    | { db: { executeSql(text: string, values?: unknown[]): Promise<{ rows: unknown[] }> } }
+    | undefined,
 }));
 vi.mock('pg-boss', () => ({
-  fromKysely: () => ({}),
+  fromKysely: vi.fn(() => ({})),
   PgBoss: class {
-    on() {}
-    async getQueues() {
-      return [];
+    constructor(options: typeof fake.options) {
+      fake.options = options;
     }
+    on() {}
+    getQueues = fake.getQueues;
     async start() {}
     async createQueue() {}
     async findJobs() {
@@ -55,6 +65,7 @@ vi.mock('pg-boss', () => ({
 const runtimes: QueueRuntime[] = [];
 
 afterEach(async () => {
+  failing.error = undefined;
   const stopping = Promise.all(runtimes.splice(0).map((runtime) => runtime.stop()));
   await vi.advanceTimersByTimeAsync(100);
   await stopping;
@@ -279,13 +290,17 @@ it('[AC-B1-01g#8] 优雅关闭等处理器及完成写入；未领取任务不�
 });
 
 function boundedFixture(
-  transaction: () => { execute: (run: (trx: unknown) => unknown) => unknown },
+  connection: () => { execute: (run: (conn: unknown) => unknown) => unknown },
 ) {
   vi.useFakeTimers();
   fake.fetch.mockReset();
   fake.fetch.mockResolvedValue([]);
   fake.stop.mockClear();
   statements.length = 0;
+  failing.text = '';
+  failing.error = undefined;
+  const plain = { executeSql: vi.fn(async () => ({ rows: [{ plain: true }] })) };
+  vi.mocked(fromKysely).mockReturnValueOnce(plain as never);
   const logger = { warn: vi.fn(), error: vi.fn() };
   const spec: QueueSpec = {
     name: 'payout',
@@ -301,7 +316,7 @@ function boundedFixture(
   };
   const runtime = createQueueRuntime({
     entry: 'payout',
-    db: { executeQuery: vi.fn(), transaction } as unknown as Kysely<DB>,
+    db: { executeQuery: vi.fn(), connection } as unknown as Kysely<DB>,
     logger: logger as unknown as RootLogger,
     catalog: [spec],
     plan: {
@@ -314,37 +329,65 @@ function boundedFixture(
     stopTimeoutMs: 100,
   });
   runtimes.push(runtime);
-  return { runtime, logger };
+  return { runtime, logger, plain };
 }
 
-it('[AC-B1-01zs#3] start 读 pgboss.version 在独立事务里先设事务内的等锁与语句上限，再读版本', async () => {
-  const trx = { name: 'version-read transaction' };
-  const transaction = vi.fn(() => ({
-    execute: async (run: (inner: unknown) => unknown) => run(trx),
+const LIMIT =
+  /^SELECT set_config\('lock_timeout', \$, false\),\s+set_config\('statement_timeout', \$, false\)$/;
+const RESET = ['RESET lock_timeout', 'RESET statement_timeout'];
+
+it('[AC-B1-01zs#3] start 期间版本读取与 pg-boss 的每条语句都在固定连接上先设会话等锁与语句上限、用完复原；启动结束后 pg-boss 语句走共享池、不再设上限', async () => {
+  const conn = { executeQuery: vi.fn(async () => ({ rows: [{ queue: 'row' }] })) };
+  const connection = vi.fn(() => ({
+    execute: async (run: (inner: unknown) => unknown) => run(conn),
   }));
-  const { runtime } = boundedFixture(transaction);
+  const { runtime, plain } = boundedFixture(connection);
+  let duringStart: unknown;
+  fake.getQueues.mockImplementationOnce(async () => {
+    duringStart = await fake.options?.db.executeSql('SELECT name FROM pgboss.queue', ['a']);
+    return [];
+  });
   runtime.register('payout', async () => undefined);
   await runtime.start();
-  expect(transaction).toHaveBeenCalledOnce();
-  const [bound, read] = statements;
-  expect(bound?.executor).toBe(trx);
-  expect(bound?.text).toMatch(/set_config\('lock_timeout', \$, true\)/);
-  expect(bound?.text).toMatch(/set_config\('statement_timeout', \$, true\)/);
-  expect(read).toEqual({ text: 'SELECT version FROM pgboss.version', executor: trx });
+  expect(duringStart).toEqual({ rows: [{ queue: 'row' }] });
+  expect(conn.executeQuery).toHaveBeenCalledOnce();
+  expect(conn.executeQuery.mock.calls[0]).toMatchObject([
+    { sql: 'SELECT name FROM pgboss.queue', parameters: ['a'] },
+  ]);
+  expect(statements.every((statement) => statement.executor === conn)).toBe(true);
+  const texts = statements.map((statement) => statement.text);
+  expect(texts).toEqual([
+    expect.stringMatching(LIMIT),
+    'SELECT version FROM pgboss.version',
+    ...RESET,
+    expect.stringMatching(LIMIT),
+    ...RESET,
+  ]);
+  expect(connection).toHaveBeenCalledTimes(2);
+  expect(await fake.options?.db.executeSql('SELECT 1', [])).toEqual({ rows: [{ plain: true }] });
+  expect(plain.executeSql).toHaveBeenCalledExactlyOnceWith('SELECT 1', []);
+  expect(connection).toHaveBeenCalledTimes(2);
 });
 
-it('[AC-B1-01zs#3] 版本读取等锁超时：start 以同一错误拒绝，不领任务、不写日志，stop 照常结束', async () => {
+it('[AC-B1-01zs#3] 版本读取等锁超时：先回滚再复原会话上限，start 以同一错误拒绝，不领任务、不写日志，stop 照常结束', async () => {
+  const conn = { executeQuery: vi.fn() };
+  const { runtime, logger } = boundedFixture(() => ({
+    execute: async (run: (inner: unknown) => unknown) => run(conn),
+  }));
   const timeout = Object.assign(new Error('canceling statement due to lock timeout'), {
     code: '55P03',
   });
-  const { runtime, logger } = boundedFixture(() => ({
-    execute: async () => {
-      throw timeout;
-    },
-  }));
+  failing.text = 'SELECT version FROM pgboss.version';
+  failing.error = timeout;
   runtime.register('payout', async () => undefined);
   await expect(runtime.start()).rejects.toBe(timeout);
   await runtime.stop();
+  expect(statements.map((statement) => statement.text)).toEqual([
+    expect.stringMatching(LIMIT),
+    'SELECT version FROM pgboss.version',
+    'ROLLBACK',
+    ...RESET,
+  ]);
   expect(fake.fetch).not.toHaveBeenCalled();
   expect(logger.warn).not.toHaveBeenCalled();
   expect(logger.error).not.toHaveBeenCalled();
