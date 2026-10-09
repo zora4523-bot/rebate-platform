@@ -1,0 +1,216 @@
+{
+  "task": "B3-02h",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "ecb83b1dc58e6c6301258b7b059f55ef38d7f2b5",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ecb83b1dc58e6c6301258b7b059f55ef38d7f2b5",
+      "tree": "d957e3db3f48ce887436c518daf677bf9b84bc7c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T15:07:25Z",
+      "finished_at": "2026-10-08T15:07:53Z",
+      "red_tests": [
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005][AC-B3-02h-003#2][AC-B3-02h-004#3] 真实网关 online 调用的计量对照：[DONE] 之后跟畸形帧照常成功、本用途只记一条 64/9；没有有效 usage 的畸形流以 malformed 失败、usage 为 null、两处都不写（不记零）；64/9（或先 30/1 后 64/9）之后遇畸形帧，五种读取方式都以 malformed 失败、本用途恰记一条 64/9、另一计量去处不写",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005][AC-B3-02h-003#2][AC-B3-02h-004#3] 真实网关 offline 调用的计量对照：[DONE] 之后跟畸形帧照常成功、本用途只记一条 64/9；没有有效 usage 的畸形流以 malformed 失败、usage 为 null、两处都不写（不记零）；64/9（或先 30/1 后 64/9）之后遇畸形帧，五种读取方式都以 malformed 失败、本用途恰记一条 64/9、另一计量去处不写",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#5][AC-B3-02h-003#9] 真实网关 online 调用：有效 usage 64/9、畸形帧、随后又有有效 usage 64/12 与 [DONE]，整段一次读取、切在畸形帧之后、畸形帧前后各切，都以 malformed 失败、错误 usage 都是 64/9，本用途恰记一条 64/9、另一计量去处不写；畸形帧前没有有效 usage 时 usage 为 null、两处都不写，不借用之后的 64/12",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#5][AC-B3-02h-003#9] 真实网关 offline 调用：有效 usage 64/9、畸形帧、随后又有有效 usage 64/12 与 [DONE]，整段一次读取、切在畸形帧之后、畸形帧前后各切，都以 malformed 失败、错误 usage 都是 64/9，本用途恰记一条 64/9、另一计量去处不写；畸形帧前没有有效 usage 时 usage 为 null、两处都不写，不借用之后的 64/12",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#2][AC-B3-02h-003#5] 真实网关 offline 调用：完整有效 usage 64/0 之后遇畸形帧，与畸形帧同一次读取或分开读取，都以 malformed 失败、错误 usage 为 64/0、本用途恰记一条 64/0、另一计量去处不写",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#2][AC-B3-02h-003#5] 真实网关 online 调用：完整有效 usage 64/0 之后遇畸形帧，与畸形帧同一次读取或分开读取，都以 malformed 失败、错误 usage 为 64/0、本用途恰记一条 64/0、另一计量去处不写",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#3][AC-B3-02h-003#6] 同一个真实网关与 HTTP transport 连续两次 offline 调用：第一次 64/9 与畸形帧同一次读取失败、第二次没有任何 usage 失败；第二次错误 usage 为 null，本用途从头到尾只有第一次的一条 64/9，另一计量去处不写",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#3][AC-B3-02h-003#6] 同一个真实网关与 HTTP transport 连续两次 online 调用：第一次 64/9 与畸形帧同一次读取失败、第二次没有任何 usage 失败；第二次错误 usage 为 null，本用途从头到尾只有第一次的一条 64/9，另一计量去处不写",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#4][AC-B3-02h-003#7] 同一个真实网关与 HTTP transport 上两次调用交错：线上 A 第一块收到 64/9 后停住，离线 B 在同一块里收到 64/0 与畸形帧并失败，再放 A 的畸形帧；A 以 malformed 失败、usage 64/9，B 以 malformed 失败、usage 64/0；B 结束时线上不写、离线只有 B 的 64/0；最终线上恰一条 A 的 64/9、离线恰一条 B 的 64/0",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#6][AC-B3-02h-003#11] 真实网关 online 调用：尚无结束片时中途片带完整有效 usage 30/1（finish_reason=null）后遇畸形帧，与畸形帧同一次读取、有效帧后切开、畸形帧之后才有结束片 64/9（整段或前后各切），都以 malformed 失败（status 与厂商短码为空、不含原文与凭据）、错误 usage 都是 30/1，本用途恰记一条 30/1、另一计量去处不写；没有 usage 也没有结束片时 usage 为 null、两处都不写；同一网关先 30/1 合块失败、再无 usage 失败，第二次 usage 为 null、不新增计量",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#6][AC-B3-02h-003#11] 真实网关 offline 调用：尚无结束片时中途片带完整有效 usage 30/1（finish_reason=null）后遇畸形帧，与畸形帧同一次读取、有效帧后切开、畸形帧之后才有结束片 64/9（整段或前后各切），都以 malformed 失败（status 与厂商短码为空、不含原文与凭据）、错误 usage 都是 30/1，本用途恰记一条 30/1、另一计量去处不写；没有 usage 也没有结束片时 usage 为 null、两处都不写；同一网关先 30/1 合块失败、再无 usage 失败，第二次 usage 为 null、不新增计量",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#7][AC-B3-02h-003#14] 真实网关 + 真实 GLM 配置的 HTTP 传输，GLM 离线调用（合成数据、评审打分、假额度配置）：独立 usage 帧或结束片带 64/9 之后遇畸形帧，同一次读取或有效帧后切开，先 30/1 后 64/9（整段或 30/1 在前一次读取），64/9、畸形帧、64/12（整段或切在畸形帧后），都以 malformed 失败（status 与厂商短码为空、不含原文与凭据）、错误 usage 64/9，离线恰记一条 GLM 64/9、线上不写；64/0 恰记一条 64/0；畸形帧前没有 usage 时 usage 为 null、两处都不写；[DONE] 之后的畸形帧照常成功、离线恰记一条 64/9",
+        "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#8][AC-B3-02h-003#15] 同一个真实网关与真实 GLM 配置的 HTTP 传输连续四次 GLM 离线调用：64/9 与畸形帧同一次读取、没有 usage、先 30/1 后 64/9 与畸形帧同一次读取、畸形帧前没有 usage 而之后有 64/12，都以 malformed 失败；错误 usage 依次是 64/9、null、64/9、null，离线依次累计为一条、一条、两条、两条 GLM 64/9，线上始终不写",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001] 有效 usage 64/9 之后遇到畸形帧，不论九种读取方式（usage 与畸形帧分开读或同一次读、CRLF、usage 在结束片上）：都以 malformed 失败、不含原文与凭据，错误 usage 都是 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001#3][AC-B3-02h-003#8] 有效 usage 64/9、畸形帧、随后又有有效 usage 64/12 与 [DONE]：整段一次读取、CRLF、切在畸形帧之后、切在 64/12 中间、畸形帧前后各切、逐字节、先 30/1 后 64/9、没有 [DONE]，都以 malformed 失败、错误 usage 都是 64/9（不是 64/12，也不相加）；畸形帧前没有有效 usage 时，整段或切开读取都是 null，不借用之后的 64/12",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-002] 先有累计 usage 30/1、后有 64/9 再遇畸形帧，三种读取方式：错误 usage 都取最新的 64/9，不是 30/1，也不是相加的 94/10",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-003] 失败用量只认完整有效的 usage 帧：没有 usage、usage 帧被截断、只有无效 usage 时为 null（未知，不当作零）；完整 64/9 之后再来截断的 usage 帧时，不论分开读还是同一次读都是 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（prompt_tokens 为负数）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（completion_tokens 为字符串）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（prompt_tokens 为小数）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（缺 completion_tokens）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（usage 是字符串）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-004] [DONE] 是成功边界：畸形帧与多余数据在 [DONE] 之后时，四种读取方式都成功返回 [DONE] 之前的三片与 usage 64/9；同样的帧把畸形帧挪到 [DONE] 之前、整段一次读取时以 malformed 失败，错误 usage 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-004#2] 流在 [DONE] 之前结束不当作成功：有效 usage 后直接结束、后接不带结尾空行的畸形帧、后接完整的畸形帧，整段一次读取或在 usage 帧前切开，都以 malformed 失败，错误 usage 是 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001#2][AC-B3-02h-003#3] 完整有效 usage 64/0（已计输入、尚无输出）之后遇到畸形帧，四种读取方式（与畸形帧同一次读、在畸形帧前切开、切在畸形帧中间、逐字节）：都以 malformed 失败、不含原文与凭据，错误 usage 都是 64/0，不是 null",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-003#4] 同一个 HTTP transport 连续发送四次：64/9 与畸形帧同一次读取、没有 usage、64/9 后分开读取、usage 帧被截断，都以 malformed 失败；错误 usage 依次是 64/9、null、64/9、null，前一次的用量不带进后一次",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001#4][AC-B3-02h-003#10] 尚无结束片时，中途片（finish_reason=null）带完整有效 usage 30/1 后遇畸形帧：与畸形帧同一次读取、在有效帧后或畸形帧中间切开、逐字节、CRLF、没有 [DONE]、前有文本片、畸形帧之后才有结束片 64/9（整段、切在结束片前、前后各切）、之后有 usage:null 片、截断或无效 usage 帧，都以 malformed 失败、不含原文与凭据，错误 usage 都是 30/1（不借用之后的 64/9）；畸形帧前没有完整有效 usage（含只有 usage:null）时，不论整段或切开读取都是 null，不借用之后的 30/1",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-002#2] 尚无结束片时，中途片先后带累计 usage 30/1 与 40/3 再遇畸形帧，五种读取方式（整段、30/1 在前一次读取、40/3 后切开、逐字节、畸形帧后才有结束片 64/9）：都以 malformed 失败，错误 usage 都取最新的 40/3，不是 30/1、不是相加的 70/4，也不是畸形帧之后的 64/9",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001#5][AC-B3-02h-003#12] 真实 GLM 配置的 HTTP 传输（vendor=glm、quirksFor(glm)）：独立 usage 帧或结束片带完整有效 64/9 之后遇畸形帧，与畸形帧同一次读取、有效帧后切开、切在畸形帧中间、逐字节、CRLF，都以 malformed 失败（status 与厂商短码为空、不含原文与凭据）、错误 usage 都是 64/9；64/0 同一次或分开读取都是 64/0；没有 usage、usage 帧被截断时为 null",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-002#3][AC-B3-02h-001#6][AC-B3-02h-006#3] 真实 GLM 配置的 HTTP 传输：只认首个畸形帧之前最近一次完整有效的累计 usage——先 30/1 后 64/9 取 64/9（整段、30/1 在前一次读取、逐字节）；尚无结束片时中途片 30/1 取 30/1，30/1、40/3 取 40/3，不借畸形帧之后的结束片 64/9；64/9、畸形帧、64/12 不论整段、切在畸形帧后、逐字节都是 64/9；畸形帧前没有 usage 时整段或切开都是 null；之后的截断或无效 usage 不覆盖 64/9；全部以 malformed 失败、不含原文与凭据",
+        "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-003#13] 同一个真实 GLM 配置的 HTTP 传输连续发送四次：64/9 与畸形帧同一次读取、没有 usage、结束片 64/9 后切开、畸形帧前没有 usage 而之后有 64/12，都以 malformed 失败；错误 usage 依次是 64/9、null、64/9、null，前一次的用量不带进后一次，也不借用畸形帧之后的用量"
+      ],
+      "expected": [
+        "test/spec/agent/model-sse-metering/gateway.test.ts",
+        "test/spec/agent/model-sse-metering/transport.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b5dc3271cfd4ccac10b61658057b239be7ff08b9e80491413c55f276ecf96b5a"
+        }
+      ]
+    }
+  ],
+  "red_tests": [
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005][AC-B3-02h-003#2][AC-B3-02h-004#3] 真实网关 online 调用的计量对照：[DONE] 之后跟畸形帧照常成功、本用途只记一条 64/9；没有有效 usage 的畸形流以 malformed 失败、usage 为 null、两处都不写（不记零）；64/9（或先 30/1 后 64/9）之后遇畸形帧，五种读取方式都以 malformed 失败、本用途恰记一条 64/9、另一计量去处不写",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005][AC-B3-02h-003#2][AC-B3-02h-004#3] 真实网关 offline 调用的计量对照：[DONE] 之后跟畸形帧照常成功、本用途只记一条 64/9；没有有效 usage 的畸形流以 malformed 失败、usage 为 null、两处都不写（不记零）；64/9（或先 30/1 后 64/9）之后遇畸形帧，五种读取方式都以 malformed 失败、本用途恰记一条 64/9、另一计量去处不写",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#5][AC-B3-02h-003#9] 真实网关 online 调用：有效 usage 64/9、畸形帧、随后又有有效 usage 64/12 与 [DONE]，整段一次读取、切在畸形帧之后、畸形帧前后各切，都以 malformed 失败、错误 usage 都是 64/9，本用途恰记一条 64/9、另一计量去处不写；畸形帧前没有有效 usage 时 usage 为 null、两处都不写，不借用之后的 64/12",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#5][AC-B3-02h-003#9] 真实网关 offline 调用：有效 usage 64/9、畸形帧、随后又有有效 usage 64/12 与 [DONE]，整段一次读取、切在畸形帧之后、畸形帧前后各切，都以 malformed 失败、错误 usage 都是 64/9，本用途恰记一条 64/9、另一计量去处不写；畸形帧前没有有效 usage 时 usage 为 null、两处都不写，不借用之后的 64/12",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#2][AC-B3-02h-003#5] 真实网关 offline 调用：完整有效 usage 64/0 之后遇畸形帧，与畸形帧同一次读取或分开读取，都以 malformed 失败、错误 usage 为 64/0、本用途恰记一条 64/0、另一计量去处不写",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#2][AC-B3-02h-003#5] 真实网关 online 调用：完整有效 usage 64/0 之后遇畸形帧，与畸形帧同一次读取或分开读取，都以 malformed 失败、错误 usage 为 64/0、本用途恰记一条 64/0、另一计量去处不写",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#3][AC-B3-02h-003#6] 同一个真实网关与 HTTP transport 连续两次 offline 调用：第一次 64/9 与畸形帧同一次读取失败、第二次没有任何 usage 失败；第二次错误 usage 为 null，本用途从头到尾只有第一次的一条 64/9，另一计量去处不写",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#3][AC-B3-02h-003#6] 同一个真实网关与 HTTP transport 连续两次 online 调用：第一次 64/9 与畸形帧同一次读取失败、第二次没有任何 usage 失败；第二次错误 usage 为 null，本用途从头到尾只有第一次的一条 64/9，另一计量去处不写",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#4][AC-B3-02h-003#7] 同一个真实网关与 HTTP transport 上两次调用交错：线上 A 第一块收到 64/9 后停住，离线 B 在同一块里收到 64/0 与畸形帧并失败，再放 A 的畸形帧；A 以 malformed 失败、usage 64/9，B 以 malformed 失败、usage 64/0；B 结束时线上不写、离线只有 B 的 64/0；最终线上恰一条 A 的 64/9、离线恰一条 B 的 64/0",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#6][AC-B3-02h-003#11] 真实网关 online 调用：尚无结束片时中途片带完整有效 usage 30/1（finish_reason=null）后遇畸形帧，与畸形帧同一次读取、有效帧后切开、畸形帧之后才有结束片 64/9（整段或前后各切），都以 malformed 失败（status 与厂商短码为空、不含原文与凭据）、错误 usage 都是 30/1，本用途恰记一条 30/1、另一计量去处不写；没有 usage 也没有结束片时 usage 为 null、两处都不写；同一网关先 30/1 合块失败、再无 usage 失败，第二次 usage 为 null、不新增计量",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#6][AC-B3-02h-003#11] 真实网关 offline 调用：尚无结束片时中途片带完整有效 usage 30/1（finish_reason=null）后遇畸形帧，与畸形帧同一次读取、有效帧后切开、畸形帧之后才有结束片 64/9（整段或前后各切），都以 malformed 失败（status 与厂商短码为空、不含原文与凭据）、错误 usage 都是 30/1，本用途恰记一条 30/1、另一计量去处不写；没有 usage 也没有结束片时 usage 为 null、两处都不写；同一网关先 30/1 合块失败、再无 usage 失败，第二次 usage 为 null、不新增计量",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#7][AC-B3-02h-003#14] 真实网关 + 真实 GLM 配置的 HTTP 传输，GLM 离线调用（合成数据、评审打分、假额度配置）：独立 usage 帧或结束片带 64/9 之后遇畸形帧，同一次读取或有效帧后切开，先 30/1 后 64/9（整段或 30/1 在前一次读取），64/9、畸形帧、64/12（整段或切在畸形帧后），都以 malformed 失败（status 与厂商短码为空、不含原文与凭据）、错误 usage 64/9，离线恰记一条 GLM 64/9、线上不写；64/0 恰记一条 64/0；畸形帧前没有 usage 时 usage 为 null、两处都不写；[DONE] 之后的畸形帧照常成功、离线恰记一条 64/9",
+    "test/spec/agent/model-sse-metering/gateway.test.ts > [BR-AI-14 多厂商接入 计量][AC-B3-02h-005#8][AC-B3-02h-003#15] 同一个真实网关与真实 GLM 配置的 HTTP 传输连续四次 GLM 离线调用：64/9 与畸形帧同一次读取、没有 usage、先 30/1 后 64/9 与畸形帧同一次读取、畸形帧前没有 usage 而之后有 64/12，都以 malformed 失败；错误 usage 依次是 64/9、null、64/9、null，离线依次累计为一条、一条、两条、两条 GLM 64/9，线上始终不写",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001] 有效 usage 64/9 之后遇到畸形帧，不论九种读取方式（usage 与畸形帧分开读或同一次读、CRLF、usage 在结束片上）：都以 malformed 失败、不含原文与凭据，错误 usage 都是 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001#3][AC-B3-02h-003#8] 有效 usage 64/9、畸形帧、随后又有有效 usage 64/12 与 [DONE]：整段一次读取、CRLF、切在畸形帧之后、切在 64/12 中间、畸形帧前后各切、逐字节、先 30/1 后 64/9、没有 [DONE]，都以 malformed 失败、错误 usage 都是 64/9（不是 64/12，也不相加）；畸形帧前没有有效 usage 时，整段或切开读取都是 null，不借用之后的 64/12",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-002] 先有累计 usage 30/1、后有 64/9 再遇畸形帧，三种读取方式：错误 usage 都取最新的 64/9，不是 30/1，也不是相加的 94/10",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-003] 失败用量只认完整有效的 usage 帧：没有 usage、usage 帧被截断、只有无效 usage 时为 null（未知，不当作零）；完整 64/9 之后再来截断的 usage 帧时，不论分开读还是同一次读都是 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（prompt_tokens 为负数）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（completion_tokens 为字符串）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（prompt_tokens 为小数）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（缺 completion_tokens）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-006][AC-B3-02h-006#2] 有效 usage 64/9 之后出现无效 usage（usage 是字符串）：没有畸形帧且正常 [DONE]、后接畸形帧且在有效 usage 后切开、后接畸形帧且整段一次读取，都以 malformed 失败，错误 usage 仍是 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-004] [DONE] 是成功边界：畸形帧与多余数据在 [DONE] 之后时，四种读取方式都成功返回 [DONE] 之前的三片与 usage 64/9；同样的帧把畸形帧挪到 [DONE] 之前、整段一次读取时以 malformed 失败，错误 usage 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-004#2] 流在 [DONE] 之前结束不当作成功：有效 usage 后直接结束、后接不带结尾空行的畸形帧、后接完整的畸形帧，整段一次读取或在 usage 帧前切开，都以 malformed 失败，错误 usage 是 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001#2][AC-B3-02h-003#3] 完整有效 usage 64/0（已计输入、尚无输出）之后遇到畸形帧，四种读取方式（与畸形帧同一次读、在畸形帧前切开、切在畸形帧中间、逐字节）：都以 malformed 失败、不含原文与凭据，错误 usage 都是 64/0，不是 null",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-003#4] 同一个 HTTP transport 连续发送四次：64/9 与畸形帧同一次读取、没有 usage、64/9 后分开读取、usage 帧被截断，都以 malformed 失败；错误 usage 依次是 64/9、null、64/9、null，前一次的用量不带进后一次",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001#4][AC-B3-02h-003#10] 尚无结束片时，中途片（finish_reason=null）带完整有效 usage 30/1 后遇畸形帧：与畸形帧同一次读取、在有效帧后或畸形帧中间切开、逐字节、CRLF、没有 [DONE]、前有文本片、畸形帧之后才有结束片 64/9（整段、切在结束片前、前后各切）、之后有 usage:null 片、截断或无效 usage 帧，都以 malformed 失败、不含原文与凭据，错误 usage 都是 30/1（不借用之后的 64/9）；畸形帧前没有完整有效 usage（含只有 usage:null）时，不论整段或切开读取都是 null，不借用之后的 30/1",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-002#2] 尚无结束片时，中途片先后带累计 usage 30/1 与 40/3 再遇畸形帧，五种读取方式（整段、30/1 在前一次读取、40/3 后切开、逐字节、畸形帧后才有结束片 64/9）：都以 malformed 失败，错误 usage 都取最新的 40/3，不是 30/1、不是相加的 70/4，也不是畸形帧之后的 64/9",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-001#5][AC-B3-02h-003#12] 真实 GLM 配置的 HTTP 传输（vendor=glm、quirksFor(glm)）：独立 usage 帧或结束片带完整有效 64/9 之后遇畸形帧，与畸形帧同一次读取、有效帧后切开、切在畸形帧中间、逐字节、CRLF，都以 malformed 失败（status 与厂商短码为空、不含原文与凭据）、错误 usage 都是 64/9；64/0 同一次或分开读取都是 64/0；没有 usage、usage 帧被截断时为 null",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-002#3][AC-B3-02h-001#6][AC-B3-02h-006#3] 真实 GLM 配置的 HTTP 传输：只认首个畸形帧之前最近一次完整有效的累计 usage——先 30/1 后 64/9 取 64/9（整段、30/1 在前一次读取、逐字节）；尚无结束片时中途片 30/1 取 30/1，30/1、40/3 取 40/3，不借畸形帧之后的结束片 64/9；64/9、畸形帧、64/12 不论整段、切在畸形帧后、逐字节都是 64/9；畸形帧前没有 usage 时整段或切开都是 null；之后的截断或无效 usage 不覆盖 64/9；全部以 malformed 失败、不含原文与凭据",
+    "test/spec/agent/model-sse-metering/transport.test.ts > [BR-AI-14][AC-B3-02h-003#13] 同一个真实 GLM 配置的 HTTP 传输连续发送四次：64/9 与畸形帧同一次读取、没有 usage、结束片 64/9 后切开、畸形帧前没有 usage 而之后有 64/12，都以 malformed 失败；错误 usage 依次是 64/9、null、64/9、null，前一次的用量不带进后一次，也不借用畸形帧之后的用量"
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "actual_base": "e41d107074556910745e748b89e76412b13d5d32",
+      "actual_commit": "94b750622ef25f0cc1cb24361898056e9d9b1435",
+      "equivalent_commit": "bd9c66abbec82e24e649c9578b65fe12455513ec",
+      "diff_sha256": "e00aba52d8e494e32208c6b4f799774b4c46f1da8efd55a5e816049f117c7f30",
+      "review_sha256": "290d93a6d691f42521c82ea799bd9f57e2ccb062e1fc868b03447e40a223e703",
+      "identity": "02e4deee-ab64-437b-aa15-4d8dc0f2baa9",
+      "model": "claude-opus-5-5"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "actual_base": "e41d107074556910745e748b89e76412b13d5d32",
+      "actual_commit": "94b750622ef25f0cc1cb24361898056e9d9b1435",
+      "equivalent_commit": "bd9c66abbec82e24e649c9578b65fe12455513ec",
+      "diff_sha256": "e00aba52d8e494e32208c6b4f799774b4c46f1da8efd55a5e816049f117c7f30",
+      "review_sha256": "6d887ff40f0c8a12e3fc8b3eb5a5a3ffa2a0f13054945094245e7c34a0139c7c",
+      "identity": "01a11c00-486d-75d2-b70a-166d91f0834c",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "round": 6,
+    "verdict": "pass",
+    "actual_base": "45816eee9e84163747042f83927688e25ec9a12f",
+    "actual_head": "046433f9de8230c67c20a5608f1d58bc230e5f2f",
+    "thread_id": "01a11bf3-1ad0-7e13-bebd-d39fff4213f9"
+  },
+  "review_mapping": {
+    "timestamp": "2026-10-08T15:07:17.417238+00:00",
+    "old_base": "e41d107074556910745e748b89e76412b13d5d32",
+    "new_base": "c049d869953b0a1499d35997e50023d5b482c0cb",
+    "mapping": {
+      "spec": {
+        "old": "ce80de9f76b5980026a88b61e7ae130038392825",
+        "new": "ecb83b1dc58e6c6301258b7b059f55ef38d7f2b5"
+      },
+      "implementation": {
+        "old": "6e114021ee8387a4b71f503752917dc122b038d0",
+        "new": "cff7b9f85ad2e2dd3de943fafe9f413a290157f3"
+      },
+      "reviewed_head": {
+        "old": "94b750622ef25f0cc1cb24361898056e9d9b1435",
+        "new": "bd9c66abbec82e24e649c9578b65fe12455513ec"
+      }
+    },
+    "full_pr_diff_sha256": "e00aba52d8e494e32208c6b4f799774b4c46f1da8efd55a5e816049f117c7f30",
+    "implementation_diff_sha256": "b34028c00eafcf952c0b296add5668ec761cb0dc09a618cab168e1978792e9fd",
+    "full_diff_identical_bytes": true,
+    "production_diff_identical_bytes": true,
+    "frozen_tests_identical_bytes": true,
+    "reviews_actual_old_base_and_head_preserved": true,
+    "final_red_pending": false,
+    "spec_tree": "d957e3db3f48ce887436c518daf677bf9b84bc7c",
+    "final_red_result": "red/10/result.json",
+    "final_red_count": 31,
+    "impact_note": "The new baseline contains task ledgers, HTTP minimum-version/idempotency wiring and migration guards. Agent code, BR14, direct fixtures, review prompt/validator and frozen test bytes are unchanged. Shared fixture reexports can load platform/idempotency modules; the added hooks are not called by this SSE/gateway suite. Root/protected rule changes only add append-only migrations, absent from this diff. Full PR and pure implementation diffs are byte-identical; final baseline red was rerun. Actual reviewer base/head remain recorded, not claimed to have been re-reviewed."
+  },
+  "private_agent_smoke": {
+    "executed": false,
+    "status": "blocked",
+    "reason": "No private synthetic suite/manifest or assembled application AgentUnderTest; draft PR retained. Public CI does not replace private Agent smoke."
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "61c9f7e4289ac32ad5b2b794bdb329f542287b2c",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "mode": "github-actions",
+    "workflow": "longrun-props",
+    "run_id": 37798235054,
+    "run_attempt": 1,
+    "url": "https://github.com/zora4523-bot/rebate-platform/actions/runs/37798235054",
+    "tested_commit": "bd9c66abbec82e24e649c9578b65fe12455513ec",
+    "job": "longrun-run",
+    "job_executed": true,
+    "test_files": 8,
+    "tests": 37,
+    "workflow_combined_tree": "fbd9f7ba77e2707215c80d00eba15552e60aa103",
+    "log_sha256": "9fc497ce064266f2cb224b4ea5ab1ea74301ed8744d3860b23638dcbd007c0a2",
+    "seed_source": "Workflow sets PROP_RUNS=1000000; PROP_SEED unset, packages/testing/src/index.ts DEFAULT_PROP_SEED=20261001. Actual log: 8 files / 37 tests passed."
+  },
+  "risk_note": "Codex-first B3-02 task under approval23; entire PR is RV2 because it adds test/spec assets and approved orchestration metadata. Claude Opus5.5 authored all rule tests; Codex implemented only sse.ts and transport.ts. Both fresh money reviews passed over the identical full PR diff including approvals25-28. No production keys or rewritten private samples were read; no paid provider calls.",
+  "attempts": {
+    "test": 7,
+    "spec_test": 6,
+    "impl": 1,
+    "code": 1,
+    "codex_calls": 9,
+    "codex_limit": 10,
+    "uncounted_calls": 1,
+    "uncounted_note": "One spec-review no-output timeout was refunded by trusted settle, still consumes total calls. All historical failures and owner-specific continuation approvals are preserved in the private run directory."
+  },
+  "implementation": {
+    "actual_commit": "6e114021ee8387a4b71f503752917dc122b038d0",
+    "equivalent_commit": "cff7b9f85ad2e2dd3de943fafe9f413a290157f3",
+    "diff_sha256": "b34028c00eafcf952c0b296add5668ec761cb0dc09a618cab168e1978792e9fd",
+    "thread_id": "01a11bfd-2f7d-7b21-81dd-b3e9f27fcc04",
+    "model": "gpt-6-astra",
+    "static_checks_exit": 0,
+    "host_tests_executed": false
+  },
+  "verification_note": "Per approval21, full verification is determined by required checks on the final PR head; no mode:ci runs are listed. Container red10 exactly matches frozen spec tree. Private Agent smoke is unexecuted and the PR remains draft."
+}
