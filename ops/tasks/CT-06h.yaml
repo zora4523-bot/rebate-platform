@@ -1,13 +1,11 @@
 id: CT-06h
 repo: rebate-platform
-title: 迁移门禁余项二——资金表唯一约束、外键、主键的同定义重建例外，set_config 参数引用按关，定义比对保护美元引号字面量
+title: 迁移门禁余项二——squawk 例外限 CHECK / EXCLUDE，set_config 参数引用按关，定义比对保护美元引号字面量，列约束与表约束等价
 type: guard-change
-# 2026-10-09 入账（负责人同日「继续做」；接 CT-06g（#342）两家评审记下的 S2 与范围外项）。只收紧（① 是收窄误拒），不改任何 BR。
+# 2026-10-09 入账（负责人同日「继续做」；接 CT-06g（#342）两家评审记下的 S2 与范围外项）。只收紧（④ 是收窄误拒），不改任何 BR。
 # 契约（规则测试按此写；CT-06a～CT-06g 的规则测试不改、继续通过，本任务只新增 test/spec/db/lint-migrations/ 下的文件）：
-# ① CT-06g 的 squawk 例外扩到其他约束种类。squawk 对资金表约束按原定义同名重建实测报的规则：CHECK、EXCLUDE 只报 constraint-missing-not-valid；UNIQUE 另报
-#    disallowed-unique-constraint；FOREIGN KEY 另报 adding-foreign-key-constraint；PRIMARY KEY 另报 adding-serial-primary-key-field。ignore 列的规则集合须恰好等于
-#    该语句各 ADD CONSTRAINT 种类所需规则的并集（顺序不限）；门禁核实同定义重建（CT-06g 的条件不变）后，checkMigration 不报该 ignore，CLI 主跑与去 ignore 复跑只豁免
-#    该语句范围内的这几条规则。多列、少列、列别的规则、种类与规则不符（CHECK 配 disallowed-unique-constraint）一律按资金表 ignore 拒。db/AGENTS.md 第 11 条写明。
+# ① CT-06g 的 squawk 例外只给 CHECK、EXCLUDE（squawk 只报 constraint-missing-not-valid）。UNIQUE、PRIMARY KEY、FOREIGN KEY 的同定义重建另有 disallowed-unique-constraint /
+#    adding-serial-primary-key-field / adding-foreign-key-constraint，直接重建会以 ACCESS EXCLUSIVE 建索引或扫表（台账评审 P1），不给例外，照旧登记 APPROVED_GUARD_CHANGES；带这几类的 ignore 门禁直接拒。
 # ② set_config 取值以 `$` 开头时须是完整的美元引号字面量（开闭标签相同）；`$1` 等参数引用（PREPARE … EXECUTE）按「关掉」报。
 # ③ normaliseDefinition 把美元引号字面量（$$…$$、$tag$…$tag$）与其他字面量一样解码后按规范形式保留，不做小写化：`$$ACTIVE$$` 与 `$$active$$` 不同，`$$a$$` 与 `'a'` 相同。
 # ④ 列约束与表约束等价比对：`id bigint CONSTRAINT x PRIMARY KEY` 与 `CONSTRAINT x PRIMARY KEY (id)`、列上 UNIQUE 与 `UNIQUE (列)`、列上 `REFERENCES t (c)` 与 `FOREIGN KEY (列) REFERENCES t (c)` 判为同定义（换列仍不同）。
