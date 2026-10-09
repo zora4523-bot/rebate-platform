@@ -3,8 +3,16 @@
 // plan — what starts on which network with which settings, what the verify container receives,
 // what is removed at the end — is checked without Docker. Whether the real images behave is the
 // job of tools/ops/verify-container.selftest.sh (run by hand, see tools/ops/README.md).
-import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { repoRoot } from '../lib/paths.ts';
@@ -43,7 +51,8 @@ const REDIS_SETTINGS = {
 // `image inspect` fail, so the script builds the image (the `build` call is recorded).
 // STUB_DOCKER_SCREENSHOT=1 makes the browser container leave one PNG in <out>/screenshots (where
 // Vitest browser mode writes), STUB_DOCKER_SMOKE_SHOTS=<n> n build smoke PNGs (smoke-<i>.png at the
-// top of <out>/screenshots).
+// top of <out>/screenshots). STUB_DOCKER_ORPHANS=<id,...> is what `ps` lists (containers an earlier
+// host-services run left).
 const STUB = String.raw`'use strict';
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -79,6 +88,14 @@ if (args[0] === 'run' && args.includes('-d')) {
 }
 if (args[0] === 'run' && args.includes('couli-verify-entrypoint')) {
   const out = args.find((a, i) => args[i - 1] === '-v' && a.endsWith(':/out'));
+  // Host services: STUB_DOCKER_ECHO_URL=1 prints the PostgreSQL URL (to the run's log),
+  // STUB_DOCKER_RED_URL=1 writes it into a red report, STUB_DOCKER_SLEEP=<s> hangs that long.
+  const url = Object.values(env).find((v) => typeof v === 'string' && v.startsWith('postgres://'));
+  if (process.env.STUB_DOCKER_ECHO_URL === '1' && url) process.stdout.write('connecting to ' + url + '\n');
+  if (process.env.STUB_DOCKER_RED_URL === '1' && url && out)
+    fs.writeFileSync(out.slice(0, -':/out'.length) + '/spec-int.json', JSON.stringify({ title: 'probe ' + url }));
+  if (process.env.STUB_DOCKER_SLEEP)
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.STUB_DOCKER_SLEEP) * 1000);
   if (process.env.STUB_DOCKER_SCREENSHOT === '1' && args.at(-1) === 'browser' && out) {
     const dir = out.slice(0, -':/out'.length) + '/screenshots/spec/x.browser.test.ts';
     fs.mkdirSync(dir, { recursive: true });
@@ -92,6 +109,7 @@ if (args[0] === 'run' && args.includes('couli-verify-entrypoint')) {
   }
   answer('', Number(process.env.STUB_DOCKER_RUN_EXIT || '0'));
 }
+if (args[0] === 'ps') answer((process.env.STUB_DOCKER_ORPHANS || '').split(',').filter((x) => x !== '').join('\n'), 0);
 if (args[0] === 'inspect') answer(failures.includes('redis-exits') && aboutRedis ? 'false' : 'true', 0);
 if (args[0] === 'exec' && args.includes('redis-cli')) {
   if (failures.includes('redis-exits')) {
@@ -202,6 +220,13 @@ function run(args: string[], env: Record<string, string> = {}): Run {
       PROP_RUNS: undefined,
       PROP_SEED: undefined,
       COULI_VERIFY_TIMEOUT_SECS: undefined,
+      // The host services of the test machine are off unless a test turns them on.
+      COULI_VERIFY_HOST_SERVICES: undefined,
+      COULI_VERIFY_SVC_USER: undefined,
+      COULI_VERIFY_SVC_GROUP: undefined,
+      COULI_VERIFY_SVC_ROOT: undefined,
+      COULI_VERIFY_PG_BIN: undefined,
+      COULI_VERIFY_REDIS_BIN: undefined,
       STUB_DOCKER_LOG: log,
       ...env,
     },
@@ -788,3 +813,848 @@ it('Redis has one image and one configuration in the verify container, CI and th
     '      - run: pnpm test:int\n        env:\n          TEST_REDIS_URL: redis://127.0.0.1:6379/0\n',
   );
 });
+
+// --- host services (COULI_VERIFY_HOST_SERVICES=1, the AWS test machine) -------------------------
+// Stand-ins for sudo, id, getent and timeout, first on PATH in these tests only. sudo records every
+// call (arguments, and what arrived on stdin) to STUB_SUDO_LOG and plays the host: nft lists the
+// isolation chain, systemd-run "starts" a unit (initdb makes pgdata, postgres and redis-server make
+// their socket files), systemctl stop / show / is-active / list-units, pgrep, install -d, find, rm
+// and the presence / instance-root / residue checks act on the scratch directory.
+// STUB_SUDO_FAIL (comma-separated): firewall-missing, firewall-accept, egress-open, initdb,
+// pg-exits, redis-migrate (MIGRATE still known), root-not-mount, root-not-tmpfs, root-owner, stop
+// (units stay active), rm (the run directory cannot be removed); and, only once the verify
+// container has run (the clean-up after the run): state-empty (systemctl show answers nothing),
+// state-timeout (it times out), state-error (it cannot reach systemd), presence-error (the
+// presence check cannot run), procs-left, pgrep-error, ipc-left, ipcs-fails, find-fails (inside
+// the real check script), procs-sudo-error (sudo refuses the process listing).
+// STUB_SUDO_UNITS=<unit,...> is what list-units shows.
+const SUDO_STUB = String.raw`'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+let args = process.argv.slice(2);
+const fail = (process.env.STUB_SUDO_FAIL || '').split(',');
+let stdin = '';
+if (args.includes('--pipe')) stdin = fs.readFileSync(0, 'utf8');
+fs.appendFileSync(process.env.STUB_SUDO_LOG, JSON.stringify({ args, stdin }) + '\n');
+if (args[0] === '-n') args = args.slice(1);
+// The clean-up after the run: the verify container has been started (the docker stub's log).
+const dockerLog = process.env.STUB_DOCKER_LOG;
+const after = fs.existsSync(dockerLog) && fs.readFileSync(dockerLog, 'utf8').includes('couli-verify-entrypoint');
+const late = (mode) => after && fail.includes(mode);
+const out = (text, code) => {
+  if (text !== '') process.stdout.write(text + '\n');
+  process.exit(code);
+};
+const real = (cmd, rest) => {
+  const r = spawnSync(cmd, rest, { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
+};
+if (args[0] === '-u') {
+  const cmd = args.slice(2);
+  const base = path.basename(cmd[0]);
+  if (base === 'timeout') out('', fail.includes('egress-open') ? 0 : 1);
+  if (base === 'pg_isready') out('', fail.includes('pg-exits') ? 2 : 0);
+  if (base === 'redis-cli') {
+    if (cmd.includes('ping')) out('PONG', 0);
+    if (cmd.includes('MIGRATE'))
+      out(fail.includes('redis-migrate') ? 'NOKEY' : "ERR unknown command 'MIGRATE'", 0);
+    if (cmd.includes('CONFIG')) out('maxmemory-policy\nnoeviction', 0);
+  }
+  out('', 1);
+}
+const [cmd, ...rest] = args;
+if (cmd === 'nft') {
+  if (fail.includes('firewall-missing')) out('Error: No such file or directory', 1);
+  const verdict = fail.includes('firewall-accept') ? 'accept' : 'reject';
+  out('table inet couli_isolation {\n\tchain output {\n\t\ttype filter hook output priority -300; policy accept;\n\t\tmeta skuid 4242 counter packets 0 bytes 0 ' + verdict + ' comment "couli-svc: no egress"\n\t}\n}', 0);
+}
+if (cmd === 'install') {
+  fs.mkdirSync(rest.at(-1), { recursive: true });
+  out('', 0);
+}
+if (cmd === 'systemd-run') {
+  const unit = (rest.find((a) => a.startsWith('--unit=')) || '').slice('--unit='.length);
+  if (unit.endsWith('-initdb')) {
+    if (fail.includes('initdb')) out('initdb: error: stub', 1);
+    const dir = rest[rest.indexOf('sh', rest.indexOf('--')) + 1];
+    fs.mkdirSync(dir + '/pgdata', { recursive: true });
+  }
+  if (unit.endsWith('-pg')) {
+    const sock = rest.find((a) => a.startsWith('unix_socket_directories=')).split('=')[1];
+    fs.writeFileSync(sock + '/.s.PGSQL.5432', '');
+  }
+  if (unit.endsWith('-redis')) fs.writeFileSync(rest[rest.indexOf('--unixsocket') + 1], '');
+  out('', 0);
+}
+if (cmd === 'systemctl') {
+  if (rest[0] === 'list-units')
+    out((process.env.STUB_SUDO_UNITS || '').split(',').filter((u) => u !== '').map((u) => u + ' loaded active running stub').join('\n'), 0);
+  if (rest[0] === 'stop') out('', fail.includes('stop') ? 1 : 0);
+  if (rest[0] === 'show') {
+    if (late('state-empty')) out('', 0);
+    if (late('state-timeout')) process.exit(124);
+    if (late('state-error')) {
+      process.stderr.write('Failed to connect to bus: stub\n');
+      process.exit(1);
+    }
+    if (fail.includes('stop')) out('LoadState=loaded\nActiveState=active', 0);
+    out('LoadState=not-found\nActiveState=inactive', 0);
+  }
+  if (rest[0] === 'is-active') {
+    if (fail.includes('pg-exits') && rest[1].endsWith('-pg.service')) out('failed', 3);
+    out('inactive', 3);
+  }
+  out('', 0);
+}
+if (cmd === 'pgrep') {
+  if (late('procs-left')) out('4711 postgres', 0);
+  if (late('pgrep-error')) process.exit(3);
+  out('', 1);
+}
+if (cmd === 'sh' && rest[0] === '-c') {
+  // The real host-check script of verify-container.sh, with fake findmnt, stat, pgrep, ipcs,
+  // ipcrm and find first on PATH; sudo itself refusing is presence-error / procs-sudo-error.
+  const check = rest[2];
+  if (check === 'couli-presence' && late('presence-error')) process.exit(1);
+  if (check === 'couli-procs' && late('procs-sudo-error')) process.exit(1);
+  const fake = path.join(path.dirname(process.argv[1]), 'fake');
+  const r = spawnSync('sh', rest, { stdio: 'inherit', env: { ...process.env, PATH: fake + ':' + process.env.PATH } });
+  process.exit(r.status ?? 1);
+}
+if (cmd === 'journalctl') out('stub journal', 0);
+if (cmd === 'rm' && fail.includes('rm')) out('rm: stub refuses', 1);
+if (cmd === 'find' || cmd === 'rm') real(cmd, rest);
+out('', 0);
+`;
+// Fake host commands for the real check script (see the sudo stub): the same failure switches.
+const FAKEHOST = String.raw`'use strict';
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const [name, ...args] = process.argv.slice(2);
+const fail = (process.env.STUB_SUDO_FAIL || '').split(',');
+const dockerLog = process.env.STUB_DOCKER_LOG;
+const after = fs.existsSync(dockerLog) && fs.readFileSync(dockerLog, 'utf8').includes('couli-verify-entrypoint');
+const late = (mode) => after && fail.includes(mode);
+const out = (text, code) => {
+  if (text !== '') process.stdout.write(text + '\n');
+  process.exit(code);
+};
+if (name === 'findmnt') {
+  if (fail.includes('root-not-mount')) out('', 1);
+  out(args[args.indexOf('--mountpoint') + 1] + ' ' + (fail.includes('root-not-tmpfs') ? 'ext4' : 'tmpfs'), 0);
+}
+if (name === 'stat') out(fail.includes('root-owner') ? 'root 755' : 'couli-svc 700', 0);
+if (name === 'pgrep') {
+  if (late('procs-left')) out('4711 postgres', 0);
+  if (late('pgrep-error')) out('', 3);
+  out('', 1);
+}
+if (name === 'ipcs') {
+  if (late('ipcs-fails')) out('', 1);
+  const header = '------ Shared Memory Segments --------\nkey        shmid      owner      perms      bytes      nattch     status';
+  out(late('ipc-left') ? header + '\n0x00000000 7          couli-svc  600        4096       0' : header, 0);
+}
+if (name === 'ipcrm') out('', 0);
+if (name === 'find') {
+  if (args.some((a) => a === '/dev/shm' || a === '/dev/mqueue')) out('', late('find-fails') ? 1 : 0);
+  const r = spawnSync('find', args, { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
+}
+out('', 2);
+`;
+const ID_STUB = `#!/bin/sh
+case "$1 $2" in
+  '-u couli-svc') echo 4242 ;;
+  '-Gn couli-svc') echo couli-sock ;;
+  *) exec /usr/bin/id "$@" ;;
+esac
+`;
+const GETENT_STUB = `#!/bin/sh
+if [ "$1 $2" = 'group couli-sock' ]; then echo 'couli-sock:x:4243:'; exit 0; fi
+exec /usr/bin/getent "$@"
+`;
+// GNU timeout's interface, without the limit (the stub host answers at once); STUB_REAL_TIMEOUT=1
+// uses the real one.
+const TIMEOUT_STUB = `#!/bin/sh
+if [ -n "\${STUB_REAL_TIMEOUT:-}" ] && [ -x /usr/bin/timeout ]; then exec /usr/bin/timeout "$@"; fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -k) shift 2 ;;
+    -*) shift ;;
+    *) shift; break ;;
+  esac
+done
+exec "$@"
+`;
+
+type SudoCall = { args: string[]; stdin: string };
+
+let hostBin = '';
+function hostBinDir(): string {
+  if (hostBin !== '') return hostBin;
+  hostBin = join(base, 'hostbin');
+  writeFiles(hostBin, { 'sudo-stub.cjs': SUDO_STUB });
+  const scripts: Record<string, string> = {
+    sudo: `#!/bin/sh\nexec '${process.execPath}' '${join(hostBin, 'sudo-stub.cjs')}' "$@"\n`,
+    id: ID_STUB,
+    getent: GETENT_STUB,
+    timeout: TIMEOUT_STUB,
+  };
+  for (const [name, body] of Object.entries(scripts)) {
+    writeFileSync(join(hostBin, name), body);
+    chmodSync(join(hostBin, name), 0o755);
+  }
+  writeFiles(join(hostBin, 'fake'), { 'fakehost.cjs': FAKEHOST });
+  for (const name of ['findmnt', 'stat', 'pgrep', 'ipcs', 'ipcrm', 'find']) {
+    const file = join(hostBin, 'fake', name);
+    writeFileSync(
+      file,
+      `#!/bin/sh\nexec '${process.execPath}' '${join(hostBin, 'fake', 'fakehost.cjs')}' ${name} "$@"\n`,
+    );
+    chmodSync(file, 0o755);
+  }
+  // Every command line of node, sed, awk and grep the script runs is recorded (STUB_ARGV_LOG):
+  // the one-shot password must be in none of them.
+  for (const name of ['node', 'sed', 'awk', 'grep']) {
+    const real =
+      name === 'node'
+        ? process.execPath
+        : spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
+    const file = join(hostBin, name);
+    writeFileSync(
+      file,
+      `#!/bin/sh\nif [ -n "\${STUB_ARGV_LOG:-}" ]; then printf '%s\\n' "${name} $*" >>"$STUB_ARGV_LOG"; fi\nexec '${real}' "$@"\n`,
+    );
+    chmodSync(file, 0o755);
+  }
+  // The installed binaries the script checks for (never run: sudo answers for them).
+  for (const exe of [
+    'pg/initdb',
+    'pg/postgres',
+    'pg/pg_isready',
+    'redis/redis-server',
+    'redis/redis-cli',
+  ]) {
+    writeFiles(join(base, 'hostsvc-bin'), { [exe]: '#!/bin/sh\nexit 99\n' });
+    chmodSync(join(base, 'hostsvc-bin', exe), 0o755);
+  }
+  return hostBin;
+}
+
+let hostRuns = 0;
+/** Runs the script with host services on, the stub host and its own tmpfs stand-in. */
+function hostRun(
+  args: string[],
+  env: Record<string, string> = {},
+  prepare?: (svcRoot: string, registry: string) => void,
+): Run & { sudo: SudoCall[]; svcRoot: string; registry: string; argv: string } {
+  hostRuns += 1;
+  const svcRoot = join(base, `svc-root-${String(hostRuns)}`);
+  const lockDir = join(base, `svc-lock-${String(hostRuns)}`);
+  mkdirSync(svcRoot, { recursive: true });
+  mkdirSync(lockDir, { recursive: true });
+  const registry = join(lockDir, 'couli-host-services.runs');
+  prepare?.(svcRoot, registry);
+  const sudoLog = join(base, `sudo-${String(hostRuns)}.jsonl`);
+  const argvLog = join(base, `argv-${String(hostRuns)}.log`);
+  const res = run(args, {
+    PATH: `${hostBinDir()}:${bin}:${process.env['PATH'] ?? ''}`,
+    COULI_VERIFY_HOST_SERVICES: '1',
+    COULI_VERIFY_SVC_ROOT: svcRoot,
+    COULI_VERIFY_SVC_LOCK: join(lockDir, 'couli-host-services.lock'),
+    COULI_VERIFY_PG_BIN: join(base, 'hostsvc-bin', 'pg'),
+    COULI_VERIFY_REDIS_BIN: join(base, 'hostsvc-bin', 'redis'),
+    STUB_SUDO_LOG: sudoLog,
+    STUB_ARGV_LOG: argvLog,
+    ...env,
+  });
+  const sudo = existsSync(sudoLog)
+    ? readFileSync(sudoLog, 'utf8')
+        .split('\n')
+        .filter((l) => l !== '')
+        .map((l) => JSON.parse(l) as SudoCall)
+    : [];
+  const argv = existsSync(argvLog) ? readFileSync(argvLog, 'utf8') : '';
+  return { ...res, sudo, svcRoot, registry, argv };
+}
+
+/** `systemd-run` calls of the stub host by unit suffix (initdb, pg, redis). */
+function unitRun(sudo: readonly SudoCall[], suffix: string): SudoCall | undefined {
+  return sudo.find(
+    (c) =>
+      c.args.includes('systemd-run') &&
+      c.args.some((a) => a.startsWith('--unit=') && a.endsWith(`-${suffix}`)),
+  );
+}
+
+/** `-p` properties of a systemd-run call. */
+function properties(call: SudoCall | undefined): string[] {
+  const a = call?.args ?? [];
+  return a.flatMap((x, i) => (a[i - 1] === '-p' ? [x] : []));
+}
+
+/** `-v` mounts of a `docker run`. */
+function mountsOf(args: readonly string[]): string[] {
+  return args.flatMap((a, i) => (args[i - 1] === '-v' ? [a] : []));
+}
+
+const HOST_PG_URL = /^postgres:\/\/postgres:([0-9a-f]{32})@127\.0\.0\.1:5432\/postgres$/;
+
+/** Passwords of the host-services PostgreSQL URLs handed to the container of `call`. */
+function hostPgPasswords(call: Call | undefined): string[] {
+  return Object.values(call?.env ?? {}).flatMap((v) => {
+    const m = v === null ? null : HOST_PG_URL.exec(v);
+    return m?.[1] === undefined ? [] : [m[1]];
+  });
+}
+
+it(
+  'host services: pnpm verify gets a fresh sandboxed PostgreSQL and Redis as couli-svc, reaches only their sockets, and the result exists only after they are gone',
+  () => {
+    const res = hostRun(['V4-01', '--worktree', workspace('host-verify')], {
+      STUB_DOCKER_RUN_EXIT: '3',
+    });
+    expect(res.status, res.stderr).toBe(3);
+    const dir = join(runs, 'V4-01', 'verify', '1');
+    const result = JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(result).toMatchObject({
+      mode: 'container',
+      script: 'verify',
+      exit_code: 3,
+      services: 'host-ephemeral',
+    });
+
+    // No service container and no network at all.
+    const { calls, sudo } = res;
+    expect(calls.some((c) => c.args[0] === 'network')).toBe(false);
+    expect(calls.some((c) => c.args[0] === 'run' && c.args.includes('-d'))).toBe(false);
+
+    // Isolation checked first (rule and live probe), then what an earlier run left, then the units.
+    const at = (pred: (c: SudoCall) => boolean): number => sudo.findIndex(pred);
+    const nftAt = at((c) => c.args.includes('nft'));
+    const probeAt = at(
+      (c) =>
+        c.args.includes('-u') && c.args.includes('bash') && c.args.join(' ').includes('/dev/tcp/'),
+    );
+    const sweepAt = at((c) => c.args.includes('list-units'));
+    const initdbAt = sudo.indexOf(unitRun(sudo, 'initdb') as SudoCall);
+    expect(sudo[nftAt]?.args).toEqual([
+      '-n',
+      'nft',
+      'list',
+      'chain',
+      'inet',
+      'couli_isolation',
+      'output',
+    ]);
+    expect(nftAt).toBeGreaterThanOrEqual(0);
+    expect(probeAt).toBeGreaterThan(nftAt);
+    expect(sweepAt).toBeGreaterThan(probeAt);
+    expect(initdbAt).toBeGreaterThan(sweepAt);
+    expect(
+      calls.some((c) => c.args[0] === 'ps' && c.args.includes('label=couli.services=host')),
+    ).toBe(true);
+
+    // Every unit runs as couli-svc in the sandbox.
+    const runDir = (unitRun(sudo, 'initdb')?.args ?? []).at(-2) ?? '';
+    expect(runDir).toMatch(new RegExp(`^${res.svcRoot}/v4-01-1-\\d+$`));
+    for (const suffix of ['initdb', 'pg', 'redis']) {
+      const call = unitRun(sudo, suffix);
+      expect(call?.args).toEqual(
+        expect.arrayContaining(['--uid=couli-svc', '--gid=couli-sock', '--collect']),
+      );
+      expect(properties(call)).toEqual(
+        expect.arrayContaining([
+          'PrivateNetwork=yes',
+          'RestrictAddressFamilies=AF_UNIX',
+          'IPAddressDeny=any',
+          'NoNewPrivileges=yes',
+          'ProtectSystem=strict',
+          'ProtectHome=yes',
+          `ReadWritePaths=${runDir}`,
+          'TemporaryFileSystem=/run:ro',
+          'CapabilityBoundingSet=',
+          'ProtectProc=invisible',
+          // No host IPC, limits, the system-service calls only; /tmp, /var/tmp and /dev/shm in
+          // the run directory on the tmpfs (no PrivateTmp on the host's disk).
+          'PrivateIPC=yes',
+          'RemoveIPC=yes',
+          'MemoryMax=4G',
+          'TasksMax=512',
+          'SystemCallFilter=@system-service',
+          `BindPaths=${runDir}/tmp:/tmp ${runDir}/vartmp:/var/tmp ${runDir}/shm:/dev/shm`,
+        ]),
+      );
+      // The code, the logs and the host services' configuration (Pigsty's passwords) are hidden.
+      const hidden = (properties(call).find((p) => p.startsWith('InaccessiblePaths=')) ?? '')
+        .slice('InaccessiblePaths='.length)
+        .split(' ');
+      expect(hidden).toEqual(
+        expect.arrayContaining([
+          '-/Users',
+          '-/var/log',
+          '-/data',
+          '-/etc/grafana',
+          '-/etc/pg_exporter.yml',
+          '-/etc/alertmanager.yml',
+        ]),
+      );
+    }
+    // The password reaches initdb on stdin only.
+    const initdb = unitRun(sudo, 'initdb');
+    const password = /^([0-9a-f]{32})\n$/.exec(initdb?.stdin ?? '')?.[1] ?? '';
+    expect(password).toMatch(/^[0-9a-f]{32}$/);
+    expect(initdb?.args).toContain('--pipe');
+    // PostgreSQL: no TCP, socket only, in the run's socket directory, group access only.
+    const pg = unitRun(sudo, 'pg')?.args ?? [];
+    expect(pg).toEqual(
+      expect.arrayContaining([
+        'listen_addresses=',
+        `unix_socket_directories=${runDir}/sock`,
+        'unix_socket_permissions=0770',
+      ]),
+    );
+    expect(properties(unitRun(sudo, 'pg'))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^RuntimeMaxSec=\d+$/)]),
+    );
+    // Redis: no TCP, no persistence, the limits of the local stack, dangerous commands disabled.
+    const redis = unitRun(sudo, 'redis')?.args ?? [];
+    const after = redis.slice(redis.indexOf('--') + 2);
+    expect(settings(after.slice(0, 16))).toMatchObject({
+      port: '0',
+      unixsocket: `${runDir}/sock/redis.sock`,
+      unixsocketperm: '770',
+      ...REDIS_SETTINGS,
+    });
+    const renamed = after.flatMap((a, i) => (after[i - 1] === '--rename-command' ? [a] : []));
+    expect(renamed).toEqual(
+      expect.arrayContaining(['MIGRATE', 'REPLICAOF', 'SLAVEOF', 'MODULE', 'DEBUG']),
+    );
+    // CONFIG stays (the Redis rule tests read maxmemory-policy); protected settings are immutable.
+    expect(renamed).not.toContain('CONFIG');
+    expect(
+      settings(
+        after.slice(
+          after.indexOf('--enable-protected-configs'),
+          after.indexOf('--enable-protected-configs') + 6,
+        ),
+      ),
+    ).toEqual({
+      'enable-protected-configs': 'no',
+      'enable-debug-command': 'no',
+      'enable-module-command': 'no',
+    });
+    for (const c of renamed) expect(after[after.indexOf(c) + 1]).toBe('');
+
+    // The verify container: no network, only the run's socket directory and the proxy, the socket
+    // group, the label the next run sweeps by, the proxy routes; the URL carries the password.
+    const verify = entrypointRun(calls);
+    const args = verify?.args ?? [];
+    expect(valueOf(args, '--network')).toBe('none');
+    expect(valueOf(args, '--group-add')).toBe('4243');
+    expect(args).toEqual(expect.arrayContaining(['--label', 'couli.services=host']));
+    expect(mountsOf(args)).toEqual([
+      `${runDir}/sock:/run/couli-services:ro`,
+      expect.stringMatching(
+        /\/V4-01\/verify\/1\/services-proxy\.cjs:\/couli-services\/proxy\.cjs:ro$/,
+      ),
+      expect.stringMatching(/\/V4-01\/verify\/1\/src:\/src:ro$/),
+      expect.stringMatching(/^couli-stubtest-store-[0-9a-f]{16}:\/store:ro$/),
+    ]);
+    expect(args.slice(-5, -2)).toEqual([
+      '-c',
+      expect.stringContaining('exec "$@"'),
+      'couli-services',
+    ]);
+    expect(JSON.parse(verify?.env['COULI_SERVICES_ROUTES'] ?? '[]')).toEqual([
+      [5432, '/run/couli-services/.s.PGSQL.5432'],
+      [6379, '/run/couli-services/redis.sock'],
+    ]);
+    expect(passedEnv(args)).toEqual(expect.arrayContaining(['TEST_REDIS_URL']));
+    // Exactly one PostgreSQL URL (found by its value, passed by name) with initdb's password.
+    expect(hostPgPasswords(verify)).toEqual([password]);
+    expect(verify?.env['TEST_REDIS_URL']).toBe('redis://127.0.0.1:6379/0');
+    for (const flag of ['--init', '--read-only', 'no-new-privileges']) expect(args).toContain(flag);
+
+    // Afterwards: units stopped, run directory removed (and checked), before result.json.
+    const stopAt = at(
+      (c) => c.args.includes('stop') && c.args.some((a) => a.endsWith('-pg.service')),
+    );
+    const rmAt = at((c) => c.args.includes('rm') && c.args.includes(runDir));
+    expect(stopAt).toBeGreaterThan(initdbAt);
+    expect(rmAt).toBeGreaterThan(stopAt);
+    expect(existsSync(runDir)).toBe(false);
+    const log = readFileSync(join(dir, 'log.txt'), 'utf8');
+    expect(log.indexOf('host services of this run stopped and removed')).toBeGreaterThan(-1);
+    // Removal is confirmed, not assumed: the units' state, no process left, the directory absent,
+    // no IPC or shared memory left; the run leaves the registry.
+    const cleanupCalls = sudo.slice(stopAt);
+    expect(
+      cleanupCalls.some((c) => c.args.includes('show') && c.args.includes('ActiveState')),
+    ).toBe(true);
+    expect(cleanupCalls.some((c) => c.args.includes('couli-procs'))).toBe(true);
+    expect(
+      cleanupCalls.some((c) => c.args.includes('couli-presence') && c.args.includes(runDir)),
+    ).toBe(true);
+    expect(cleanupCalls.some((c) => c.args.includes('couli-residue'))).toBe(true);
+    expect(readFileSync(res.registry, 'utf8')).toBe('');
+    // The instance root was checked (dedicated tmpfs) before anything was swept or created.
+    const rootAt = at((c) => c.args.includes('couli-rootcheck'));
+    expect(rootAt).toBeGreaterThan(probeAt);
+    expect(rootAt).toBeLessThan(sweepAt);
+    // Provenance of the gate, recorded in the result itself.
+    const gate = result['gate'] as { commit: unknown; clean: unknown; script_sha256: unknown };
+    expect(Object.keys(gate).sort()).toEqual(['clean', 'commit', 'script_sha256']);
+    expect(gate.commit === null || /^[0-9a-f]{40,64}$/.test(String(gate.commit))).toBe(true);
+    expect(typeof gate.clean).toBe('boolean');
+    expect(gate.script_sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(properties(unitRun(sudo, 'pg'))).not.toContain('PrivateTmp=yes');
+
+    // The password is in no command line, log or output; the proxy file is gone.
+    for (const text of [
+      res.stdout,
+      res.stderr,
+      log,
+      JSON.stringify(calls.map((c) => c.args)),
+      JSON.stringify(sudo.map((c) => c.args)),
+    ]) {
+      expect(text).not.toContain(password);
+    }
+    expect(existsSync(join(dir, 'services-proxy.cjs'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: --fast and a unit-only --red start none; an integration --red group gets them and they are removed',
+  () => {
+    const fast = hostRun(['V4-02', '--worktree', workspace('host-fast'), '--fast']);
+    expect(fast.status, fast.stderr).toBe(0);
+    expect(fast.sudo).toEqual([]);
+    const fastResult = JSON.parse(
+      readFileSync(join(runs, 'V4-02', 'verify-fast', '1', 'result.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(fastResult['services']).toBeUndefined();
+
+    const unit = hostRun([
+      'B1-02b',
+      '--worktree',
+      redFixture('host-red-unit', {
+        'test/spec/identity/devices.test.ts': "it('[BR-ID-05] x', () => {});\n",
+      }),
+      '--red',
+      '--base',
+      'main',
+    ]);
+    expect(unit.status).toBe(2);
+    expect(unit.sudo).toEqual([]);
+    expect(noRedisUrl(entrypointRun(unit.calls))).toBe(true);
+
+    const int = hostRun([
+      'B1-02b',
+      '--worktree',
+      redFixture('host-red-int', {
+        'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
+      }),
+      '--red',
+      '--base',
+      'main',
+    ]);
+    // The stub writes no report: the run stops after the red container (exit 2); the services
+    // are removed all the same.
+    expect(int.status).toBe(2);
+    expect(int.stderr).toContain('wrote no report for spec-int');
+    const red = entrypointRun(int.calls);
+    expect(red?.args.slice(-2)).toEqual(['couli-verify-entrypoint', 'red']);
+    expect(valueOf(red?.args ?? [], '--network')).toBe('none');
+    expect(hostPgPasswords(red)).toHaveLength(1);
+    expect(unitRun(int.sudo, 'pg')).toBeDefined();
+    expect(int.sudo.some((c) => c.args.includes('rm'))).toBe(true);
+    expect(readdirOf(int.svcRoot)).toEqual([]);
+  },
+  CLI_TIMEOUT,
+);
+
+function readdirOf(dir: string): string[] {
+  return existsSync(dir) ? readdirSync(dir) : [];
+}
+
+it(
+  'host services: no egress rule, a rule that accepts, or a probe that gets out stops the run before any service starts (exit 2, no result)',
+  () => {
+    for (const [i, failure] of ['firewall-missing', 'firewall-accept', 'egress-open'].entries()) {
+      const id = `V4-1${String(i)}`;
+      const res = hostRun([id, '--worktree', workspace(`host-fw-${failure}`)], {
+        STUB_SUDO_FAIL: failure,
+      });
+      expect(res.status, failure).toBe(2);
+      expect(res.stderr).toContain("the host services' isolation is not in place");
+      expect(unitRun(res.sudo, 'initdb')).toBeUndefined();
+      expect(entrypointRun(res.calls)).toBeUndefined();
+      expect(existsSync(join(runs, id, 'verify', '1', 'result.json'))).toBe(false);
+    }
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: a failed initdb or a PostgreSQL that exits stops the run (exit 2, no result) and the run directory is removed',
+  () => {
+    const initdb = hostRun(['V4-20', '--worktree', workspace('host-initdb')], {
+      STUB_SUDO_FAIL: 'initdb',
+    });
+    expect(initdb.status).toBe(2);
+    expect(initdb.stderr).toContain('initdb of the one-shot PostgreSQL failed');
+    expect(unitRun(initdb.sudo, 'pg')).toBeUndefined();
+    expect(entrypointRun(initdb.calls)).toBeUndefined();
+    expect(readdirOf(initdb.svcRoot)).toEqual([]);
+    expect(existsSync(join(runs, 'V4-20', 'verify', '1', 'result.json'))).toBe(false);
+
+    const exits = hostRun(['V4-21', '--worktree', workspace('host-pg-exits')], {
+      STUB_SUDO_FAIL: 'pg-exits',
+    });
+    expect(exits.status).toBe(2);
+    expect(exits.stderr).toContain('PostgreSQL exited before it became ready');
+    expect(exits.sudo.some((c) => c.args.includes('journalctl'))).toBe(true);
+    expect(entrypointRun(exits.calls)).toBeUndefined();
+    expect(readdirOf(exits.svcRoot)).toEqual([]);
+
+    const config = hostRun(['V4-22', '--worktree', workspace('host-redis-migrate')], {
+      STUB_SUDO_FAIL: 'redis-migrate',
+    });
+    expect(config.status).toBe(2);
+    expect(config.stderr).toContain('still knows MIGRATE');
+    expect(entrypointRun(config.calls)).toBeUndefined();
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: when the clean-up fails a green run is an infrastructure error (exit 2) and writes no result',
+  () => {
+    // Every way of not knowing counts as not removed: a state query that answers nothing, times
+    // out or cannot reach systemd, a presence check that cannot run, processes or IPC left, a
+    // process listing that fails.
+    const failures = [
+      'rm',
+      'stop',
+      'state-empty',
+      'state-timeout',
+      'state-error',
+      'presence-error',
+      'procs-left',
+      'pgrep-error',
+      'ipc-left',
+      // Failures inside the real check script, and sudo refusing it (formerly read as "none").
+      'ipcs-fails',
+      'find-fails',
+      'procs-sudo-error',
+    ];
+    for (const [i, failure] of failures.entries()) {
+      const id = `V4-3${String(i)}a`;
+      const res = hostRun([id, '--worktree', workspace(`host-cleanup-${failure}`)], {
+        STUB_SUDO_FAIL: failure,
+      });
+      expect(entrypointRun(res.calls)).toBeDefined();
+      expect(res.status, failure).toBe(2);
+      expect(res.stderr).toContain('could not be removed');
+      expect(existsSync(join(runs, id, 'verify', '1', 'result.json'))).toBe(false);
+    }
+  },
+  CLI_TIMEOUT * 6,
+);
+
+it(
+  'host services: what an earlier killed run left (container, units, directories) is removed under the lock before the services start',
+  () => {
+    const res = hostRun(
+      ['V4-40', '--worktree', workspace('host-sweep')],
+      {
+        STUB_DOCKER_ORPHANS: 'deadbeef0001,deadbeef0002',
+        STUB_SUDO_UNITS: 'couli-svc-x-1-9-pg.service,couli-svc-x-1-9-redis.service',
+      },
+      (root, registry) => {
+        writeFiles(root, { 'x-1-9/pgdata/PG_VERSION': '18\n' });
+        writeFileSync(registry, 'x-1-9\n');
+      },
+    );
+    expect(res.status, res.stderr).toBe(0);
+    const rmOrphans = res.calls.find((c) => c.args[0] === 'rm' && c.args.includes('deadbeef0001'));
+    expect(rmOrphans?.args).toEqual(['rm', '-f', '-v', 'deadbeef0001', 'deadbeef0002']);
+    const stopOrphans = res.sudo.find(
+      (c) => c.args.includes('stop') && c.args.includes('couli-svc-x-1-9-pg.service'),
+    );
+    expect(stopOrphans?.args).toEqual(expect.arrayContaining(['couli-svc-x-1-9-redis.service']));
+    expect(res.sudo.indexOf(stopOrphans as SudoCall)).toBeLessThan(
+      res.sudo.indexOf(unitRun(res.sudo, 'initdb') as SudoCall),
+    );
+    expect(res.calls.indexOf(rmOrphans as Call)).toBeLessThan(
+      res.calls.indexOf(entrypointRun(res.calls) as Call),
+    );
+    expect(readdirOf(res.svcRoot)).toEqual([]);
+    expect(readFileSync(res.registry, 'utf8')).toBe('');
+
+    // A directory no registered run owns is never removed: the run stops instead.
+    const stray = hostRun(['V4-41', '--worktree', workspace('host-stray')], {}, (root) =>
+      writeFiles(root, { 'not-ours/keep': 'x' }),
+    );
+    expect(stray.status).toBe(2);
+    expect(stray.stderr).toContain('cannot remove what an earlier run left');
+    expect(readFileSync(join(runs, 'V4-41', 'verify', '1', 'log.txt'), 'utf8')).toContain(
+      'holds entries no registered run owns (not removed): not-ours',
+    );
+    expect(existsSync(join(stray.svcRoot, 'not-ours', 'keep'))).toBe(true);
+    expect(unitRun(stray.sudo, 'initdb')).toBeUndefined();
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: an instance root that is not the dedicated tmpfs (not a mount point, not tmpfs, wrong owner or mode) stops the run before anything is swept or created',
+  () => {
+    for (const [i, failure] of ['root-not-mount', 'root-not-tmpfs', 'root-owner'].entries()) {
+      const id = `V4-7${String(i)}`;
+      const res = hostRun(
+        [id, '--worktree', workspace(`host-${failure}`)],
+        { STUB_SUDO_FAIL: failure },
+        (root) => writeFiles(root, { 'something/else': 'x' }),
+      );
+      expect(res.status, failure).toBe(2);
+      expect(res.stderr).toContain('the instance root is not the dedicated tmpfs');
+      expect(res.sudo.some((c) => c.args.includes('list-units'))).toBe(false);
+      expect(unitRun(res.sudo, 'initdb')).toBeUndefined();
+      expect(existsSync(join(res.svcRoot, 'something', 'else'))).toBe(true);
+    }
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: a second run waits for the lock (flock) held by the first',
+  async () => {
+    mkdirSync(join(base, 'shared-lock'), { recursive: true });
+    const lock = join(base, 'shared-lock', 'couli-host-services.lock');
+    const holder = spawn('flock', [lock, 'sleep', '3'], { stdio: 'ignore' });
+    await new Promise((r) => setTimeout(r, 500));
+    const started = Date.now();
+    const res = hostRun(['V4-50', '--worktree', workspace('host-lock')], {
+      COULI_VERIFY_SVC_LOCK: lock,
+    });
+    const waited = Date.now() - started;
+    holder.kill();
+    expect(res.status, res.stderr).toBe(0);
+    expect(waited).toBeGreaterThanOrEqual(2000);
+    expect(readFileSync(join(runs, 'V4-50', 'verify', '1', 'log.txt'), 'utf8')).toContain(
+      'waiting for the host-services lock',
+    );
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: COULI_VERIFY_HOST_SERVICES other than 1, or a path that is not plain, stops before anything runs',
+  () => {
+    const bad = run(['V4-60', '--worktree', workspace('host-bad')], {
+      COULI_VERIFY_HOST_SERVICES: 'yes',
+    });
+    expect(bad.status).toBe(2);
+    expect(bad.stderr).toContain('COULI_VERIFY_HOST_SERVICES must be 1');
+    expect(bad.calls).toEqual([]);
+    const root = run(['V4-61', '--worktree', workspace('host-root')], {
+      COULI_VERIFY_HOST_SERVICES: '1',
+      COULI_VERIFY_SVC_ROOT: '/var/lib/x y',
+    });
+    expect(root.status).toBe(2);
+    expect(root.stderr).toContain('host service paths must be absolute');
+    expect(root.calls).toEqual([]);
+  },
+  CLI_TIMEOUT,
+);
+
+/** The one-shot password of a host-services run (what initdb got on stdin). */
+function oneShotPassword(sudo: readonly SudoCall[]): string {
+  return /^([0-9a-f]{32})\n$/.exec(unitRun(sudo, 'initdb')?.stdin ?? '')?.[1] ?? '';
+}
+
+it(
+  'host services: the one-shot password is replaced in the log and in red reports, and is in no command line, the redaction included',
+  () => {
+    const res = hostRun(['V4-80', '--worktree', workspace('host-redact')], {
+      STUB_DOCKER_ECHO_URL: '1',
+    });
+    expect(res.status, res.stderr).toBe(0);
+    const password = oneShotPassword(res.sudo);
+    expect(password).toMatch(/^[0-9a-f]{32}$/);
+    const dir = join(runs, 'V4-80', 'verify', '1');
+    const log = readFileSync(join(dir, 'log.txt'), 'utf8');
+    expect(log).toContain('connecting to postgres://postgres:[one-shot password]@127.0.0.1:5432/');
+    expect(log).not.toContain(password);
+    expect(readFileSync(join(dir, 'result.json'), 'utf8')).not.toContain(password);
+    // node (the redaction, the proxy, red-plan ...), sed, awk and grep ran, never with it.
+    expect(res.argv).toContain('node -e');
+    expect(res.argv).not.toContain(password);
+    for (const c of res.sudo) expect(c.args.join(' ')).not.toContain(password);
+    for (const c of res.calls) expect(c.args.join(' ')).not.toContain(password);
+
+    const red = hostRun(
+      [
+        'B1-02b',
+        '--worktree',
+        redFixture('host-redact-red', {
+          'test/spec/identity/devices.int.test.ts': "it('[BR-ID-05] y', () => {});\n",
+        }),
+        '--red',
+        '--base',
+        'main',
+      ],
+      { STUB_DOCKER_RED_URL: '1' },
+    );
+    // The stub's report is no Vitest report: red-check does not pass it (exit 1 or 2); the report
+    // is redacted all the same.
+    expect([1, 2]).toContain(red.status);
+    const redPassword = oneShotPassword(red.sudo);
+    const n = readdirSync(join(runs, 'B1-02b', 'red'))
+      .map(Number)
+      .sort((x, y) => x - y)
+      .at(-1);
+    const report = readFileSync(
+      join(runs, 'B1-02b', 'red', String(n), 'out', 'spec-int.json'),
+      'utf8',
+    );
+    expect(report).toContain('[one-shot password]');
+    expect(report).not.toContain(redPassword);
+    expect(red.argv).not.toContain(redPassword);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  'host services: a docker run that outlives the host-side limit is removed, the services are stopped, and no result is written',
+  () => {
+    const res = hostRun(['V4-81', '--worktree', workspace('host-limit')], {
+      STUB_REAL_TIMEOUT: '1',
+      COULI_VERIFY_SVC_RUN_LIMIT: '2',
+      STUB_DOCKER_SLEEP: '20',
+    });
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain('exceeded the host-side limit of 2s');
+    expect(existsSync(join(runs, 'V4-81', 'verify', '1', 'result.json'))).toBe(false);
+    const verifyAt = res.calls.findIndex((c) => c.args.includes('couli-verify-entrypoint'));
+    const name = valueOf(res.calls[verifyAt]?.args ?? [], '--name') ?? '';
+    const rmAt = res.calls.findIndex(
+      (c, i) => i > verifyAt && c.args[0] === 'rm' && c.args.includes(name),
+    );
+    expect(rmAt).toBeGreaterThan(verifyAt);
+    expect(
+      res.sudo.some(
+        (c) => c.args.includes('stop') && c.args.some((a) => a.endsWith('-pg.service')),
+      ),
+    ).toBe(true);
+    expect(readdirOf(res.svcRoot)).toEqual([]);
+  },
+  CLI_TIMEOUT,
+);
