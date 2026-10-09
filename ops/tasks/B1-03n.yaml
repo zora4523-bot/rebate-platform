@@ -1,0 +1,26 @@
+id: B1-03n
+repo: rebate-platform
+title: 同设备多账号判定的结果持久化与调用约束（BR-ID-37）：首次判定结果（含未命中）按 (app_id, rule_id, ref_type, ref_id) 落库并以 PG 唯一约束去重，重试直接重放；配置读取失败的处理（兜底默认值还是拒绝判定）定死并钉测试；judge 只接受事务 handle，拒绝已执行语句的 repeatable read / serializable 事务；须在 B2-05 提现受理接入 judge 之前合并
+type: impl
+# 草稿 2026-10-09（身份与风控线，identity-lane）。来源：B1-03k 评审——Codex money 第 3 轮（最后一轮）S1：首次判定配置读取 57014 后按默认阈值得未命中且不留记录，
+# 重试读到真实阈值得命中并新增命中行，同一提现单前后结论相反；Codex S2 / Claude r2-r3 S2：非事务 handle 无锁、RR / serializable 下咨询锁不起作用、重放按当前状态重算 rank。
+# B1-03k 合并时 judge 在仓库里尚无调用方（消费者 B2-05 未做），负责人 2026-10-09 选「先合并、另立任务」。
+# 需新表或新列（迁移），表结构按 04 risk 表的写者约定由 risk 写；判定结果只插入。
+refs: []
+refs_hash: {}
+deps: [B1-03k]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/app.module.ts'
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/risk/same-device-replay/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/same-device-replay/**'
+status: todo
+pr: null
