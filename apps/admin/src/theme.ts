@@ -46,6 +46,21 @@ export function createAntdTheme(root: Element = document.documentElement): Theme
     },
     components: {
       Button: { controlHeight: 36, fontWeight: 600, paddingInline: 16 },
+      Input: { controlHeight: 40 },
+      Form: { itemMarginBottom: 20, verticalLabelPadding: '0 0 6px' },
+      // Shell (design-hifi Adm* boards): 220 wide light sider, 56 high header on the surface.
+      Layout: {
+        headerHeight: 56,
+        headerPadding: '0 24px',
+        ...(colors.colorBgContainer === undefined ? {} : { headerBg: colors.colorBgContainer }),
+        ...(colors.colorBgLayout === undefined ? {} : { bodyBg: colors.colorBgLayout }),
+      },
+      Menu: {
+        itemHeight: 40,
+        itemMarginInline: 8,
+        groupTitleFontSize: 12,
+        activeBarBorderWidth: 0,
+      },
     },
   };
 }
