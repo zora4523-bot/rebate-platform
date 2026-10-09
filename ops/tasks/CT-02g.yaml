@@ -1,0 +1,23 @@
+id: CT-02g
+repo: rebate-platform
+title: 契约：分享 link 被他人打开、分享者授权失效时 30102 / 30111 的 data.reason 取值（「失效的是分享者的授权」，与打开者本人待授权区分；客户端不弹授权、显示 link_landing.invalid）
+type: contract
+# 草稿 2026-10-09（W1 第七棒，编排者同意立）。依据 BR-ATTR-05 细则「别人的分享 link 不可用」（30102 / 30111 不带 auth_url 与 state，并在 data.reason 带分享者授权失效的取值，取值由契约线按 08 §13.11 分配）；台账 #304 第 2 轮评审 S2-1。
+# 现状：error-codes.yaml 30102 的 reason 只有 auth_unavailable、retry_kind after_action；30111 没有 data.reason。改法：两码共用新取值 sharer_auth_invalid（08 §13.11：小写下划线，文案子键 error.<code>.<reason>）；30102 加 reason 取值与 retry_kind_by_reason {sharer_auth_invalid: never}；30111 新增 data.reason 与 retry_kind_by_reason（同 never）；两码 action 说明补「分享者授权失效：不弹授权、不重放、不提供无返利购买，显示 link_landing.invalid」；两码 sources 补 BR-ATTR-05（30102 现无）；30102 / 30111 的 action 写成「同 30101；sharer_auth_invalid：……」（30101 本身不加此取值）；packages/contracts-ts/src/catalog.test.ts 里 30102 / 30111 的断言同步改；openapi 错误 data 说明同步，重生成 contracts-ts。只增取值，不改已有形状（oasdiff 非破坏）。
+# 任务书第 2 节由编排者摘入 BR-ATTR-05 细则「别人的分享 link 不可用」前三项（refs 为空，先例 CT-02e）。合并后由编排者交规划回写 08 §13.11 的 30102、30111 两行与 04 §7（先例 B1-06r → couli#83）。
+# 不加进 B1-06f / B1-06v 的 deps（它们排在 B1-06h 后、CT-02g 要等契约槽，避免互相卡住）：哪边先合并，后者补 reason 与断言；两者都先合并则另开小任务。契约全局串行，先在 couli-runs B3-lane/notices.md 登记契约槽。风险：contracts RV1。
+refs: []
+refs_hash: {}
+contract_sections: ['7']
+deps: []
+paths:
+  - 'contracts/error-codes.yaml'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

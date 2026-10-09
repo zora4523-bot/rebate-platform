@@ -24,5 +24,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/auth-url-pdd/**'
-status: todo
-pr: null
+status: done
+pr: 305
