@@ -78,7 +78,10 @@
 //   cancel_requested_at IS NULL AND now < deadline_at → 'accepted'; a repeated call on a run whose
 //   cancel_requested_at is set and whose end_reason is NULL or 'cancelled' → 'accepted' with no
 //   write; anything else (no such run, ended, other ending, deadline reached) → 'not_running'.
-//   'accepted' guarantees the run ends cancelled. Then signals?.requestCancel best effort.
+//   'accepted' guarantees the run ends cancelled. Then signals?.requestCancel best effort. An
+//   error before its COMMIT rolls back and rejects (no retry; B3-03d maps it, the client retries).
+//   The run row lock is taken before anything about the run is read: an ending committed while
+//   the cancel waited for that lock is seen (→ 'not_running'), never a value read before it.
 // finalizer.finalize(runId) — finalizeRun in recovery mode, one independent transaction, limits
 //   from deps.limits.current(appId) (a rejection → AdmissionUnavailableError, nothing written).
 // assertRunTimings(t): throws RangeError unless runMaxMs === admissionRunMaxMs, lockGraceMs ≥
@@ -91,7 +94,9 @@
 // (finalizer.finalize), cancel (cancel write), cancel_poll (the PG cancel read).
 //   beforeSql(step, pid): awaited before every SQL statement of the step, with the backend pid of
 //     its connection; a rejection counts as a lost connection (retryable).
-//   beforeCommit(step, pid): awaited after the step's last statement, before COMMIT (locks held).
+//   beforeCommit(step, pid): awaited after the step's last statement, before COMMIT (locks held);
+//     a rejection is a connection lost before COMMIT: the transaction rolls back (its locks go)
+//     and the step fails like any retryable error. cancel is never retried: it rejects.
 //   afterCommit(step): awaited after COMMIT succeeded; a rejection counts as a COMMIT whose reply
 //     was lost (for admit: the lookup above).
 //   crash(point, phase): called synchronously before the step sends anything ('before') and after

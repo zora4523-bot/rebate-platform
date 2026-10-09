@@ -18,6 +18,7 @@ import {
   liveTail,
   member,
   newSession,
+  nextPid,
   request,
   runRow,
   settled,
@@ -191,32 +192,41 @@ it('[AC-B3-03g#6] 取消 UPDATE 停在提交前、S4 等同一 run 行锁：放�
 it('[AC-B3-03g#7] 取消事务在提交前失败回滚、S4 正在等锁：S4 按自己的结局落为 timeout，无卡退还', async () => {
   const { a, ticket } = await acceptOne();
   const c = instance(pg.db, { clock: new FixedClock(new Date(START_MS + 19_000)) });
-  let pid!: (n: number) => void;
-  const s4Pid = new Promise<number>((resolve) => (pid = resolve));
-  let s4Waiting!: () => void;
-  const waiting = new Promise<void>((resolve) => (s4Waiting = resolve));
+  let atCommit!: () => void;
+  const cancelAtCommit = new Promise<void>((resolve) => (atCommit = resolve));
+  let fail!: () => void;
+  const failNow = new Promise<void>((resolve) => (fail = resolve));
+  // The cancel transaction holds the run row lock at its COMMIT, then fails there (rolled back).
   c.hooks.onCommit('cancel', async () => {
-    await waiting;
+    atCommit();
+    await failNow;
     throw new Error('connection lost before COMMIT');
   });
-  a.hooks.onSql('ending', (n) => {
-    pid(n);
-    return Promise.resolve();
-  });
   const cancel = settled(c.ports.cancel({ appId: APP, runId: ticket.runId }));
-  a.clock.set(new Date(DEADLINE));
-  const s4 = a.ports.registry.recordEnding(
-    ticket.runId,
-    { ending: 'timeout', cardsDelivered: 0 },
-    draftOf('timeout'),
-  );
+  let s4: Promise<unknown> | undefined;
   try {
+    expect(
+      await Promise.race([
+        cancelAtCommit.then(() => 'at-commit'),
+        cancel.then(() => 'cancel-ended'),
+      ]),
+      'the cancel holds the row lock before S4 starts',
+    ).toBe('at-commit');
+    const s4Pid = nextPid(a.hooks, 'ending');
+    a.clock.set(new Date(DEADLINE));
+    s4 = settled(
+      a.ports.registry.recordEnding(
+        ticket.runId,
+        { ending: 'timeout', cardsDelivered: 0 },
+        draftOf('timeout'),
+      ),
+    );
     await waitingOnLock(pg.db, await s4Pid);
   } finally {
-    s4Waiting();
+    fail();
   }
   expect(await cancel).toBeInstanceOf(Error);
-  await s4;
+  expect(await s4).toBeUndefined();
   const tail = await liveTail(a, ticket, 'timeout', 0);
   expect(tail.refunded).toBe(true);
   const row = await runRow(pg.db, ticket.runId);
@@ -314,4 +324,78 @@ it('[AC-B3-03g#12] 取消接受 ⇒ 最终必为 cancelled；not_running ⇒ 本
     }
   }
   void START;
+});
+
+it('[AC-B3-03g#84] S4（timeout）已写入、停在提交前；截止前的取消随后到达并等 run 行锁：S4 提交后取消为 not_running，cancel_requested_at 仍为空，终止原因 timeout、无卡退还（取消不得沿用锁前读到的旧值）', async () => {
+  const { a, ticket } = await acceptOne();
+  const c = instance(pg.db, { clock: new FixedClock(new Date(START_MS + 19_000)) });
+  a.clock.set(new Date(DEADLINE));
+  const held = a.hooks.hold('ending');
+  const s4 = settled(
+    a.ports.registry.recordEnding(
+      ticket.runId,
+      { ending: 'timeout', cardsDelivered: 0 },
+      draftOf('timeout'),
+    ),
+  );
+  let cancel: Promise<string | Error> | undefined;
+  try {
+    expect(
+      await Promise.race([held.reached.then(() => 'at-commit'), s4.then(() => 's4-ended')]),
+      'S4 holds the run row lock with its UPDATE not yet committed',
+    ).toBe('at-commit');
+    const cancelPid = nextPid(c.hooks, 'cancel');
+    cancel = settled(c.ports.cancel({ appId: APP, runId: ticket.runId }));
+    await waitingOnLock(pg.db, await cancelPid);
+  } finally {
+    held.release();
+  }
+  expect(await s4).toBeUndefined();
+  expect(await cancel).toBe('not_running');
+  const row = await runRow(pg.db, ticket.runId);
+  expect(row['end_reason']).toBe('timeout');
+  expect(row['end_draft']).toEqual(stored(draftOf('timeout')));
+  expect(row['cancel_requested_at']).toBeNull();
+  const tail = await liveTail(a, ticket, 'timeout', 0);
+  expect(tail).toMatchObject({ refunded: true, quotaLeft: 100 });
+  expect(tail.sent).toEqual(doneFrame('timeout', 100));
+  expect((await runRow(pg.db, ticket.runId))['cancel_requested_at']).toBeNull();
+});
+
+it('[AC-B3-03g#85] 截止前 1 ms 取消成功但回包丢失，重试到达时已到或已过截止：已有取消记录优先于截止判断，重试返回 accepted 且整行不变——收尾前、活进程收尾为 cancelled 后、崩溃后恢复为 cancelled 后都一样', async () => {
+  for (const phase of ['open', 'live_finalized', 'recovered'] as const) {
+    const { a, ticket } = await acceptOne();
+    a.clock.set(new Date(DEADLINE - 1));
+    expect(await a.ports.cancel({ appId: APP, runId: ticket.runId }), phase).toBe('accepted');
+    expect((await runRow(pg.db, ticket.runId))['cancel_requested_at'], phase).toEqual(
+      new Date(DEADLINE - 1),
+    );
+    const retryAt: number[] = [];
+    if (phase === 'open') {
+      retryAt.push(DEADLINE, DEADLINE + 1, LOCK_END - 1);
+    } else if (phase === 'live_finalized') {
+      a.clock.set(new Date(DEADLINE));
+      const tail = await liveTail(a, ticket, 'timeout', 0);
+      expect(tail.sent, phase).toEqual(doneFrame('cancelled', 99));
+      retryAt.push(DEADLINE, DEADLINE + 1, LOCK_END + 10_000);
+    } else {
+      const r = instance(pg.db, { clock: new FixedClock(new Date(LOCK_END)) });
+      expect(await r.ports.finalizer.finalize(ticket.runId), phase).toMatchObject({
+        kind: 'final',
+        frame: doneFrame('cancelled', 99),
+        refunded: false,
+      });
+      retryAt.push(LOCK_END, LOCK_END + 10_000);
+    }
+    const before = await runRow(pg.db, ticket.runId);
+    expect(before['end_reason'], phase).toBe(phase === 'open' ? null : 'cancelled');
+    for (const ms of retryAt) {
+      const retry = instance(pg.db, { clock: new FixedClock(new Date(ms)) });
+      expect(
+        await retry.ports.cancel({ appId: APP, runId: ticket.runId }),
+        `${phase} retry at deadline${ms >= DEADLINE ? '+' : ''}${String(ms - DEADLINE)} ms`,
+      ).toBe('accepted');
+      expect(await runRow(pg.db, ticket.runId), `${phase} ${String(ms)}`).toEqual(before);
+    }
+  }
 });

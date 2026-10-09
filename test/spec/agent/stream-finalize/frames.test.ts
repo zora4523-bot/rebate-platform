@@ -1,5 +1,7 @@
 // B3-03g: the two forms of a terminal frame and the run timing check (design §3.4, §5.1;
 // final_event / end_draft shape of 0021 / 0023). Pure: no database.
+import { isDeepStrictEqual } from 'node:util';
+
 import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
@@ -49,20 +51,27 @@ it('[AC-B3-03g#40] toStored / fromStored 往返：持久化形状恰为 {type, d
     event: 'done',
     data: { finish_reason: 'stop', quota_left: 0 },
   });
+  // Boolean property body; the one assertion is outside fc.check. Values are compared after a
+  // JSON round trip (what PostgreSQL jsonb keeps), key order and absent keys ignored.
+  const same = (x: unknown, y: unknown): boolean =>
+    isDeepStrictEqual(JSON.parse(JSON.stringify(x)), JSON.parse(JSON.stringify(y)));
   const holds = (draft: TerminalDraft, quota: number): boolean => {
     const frame = withQuota(draft, quota);
     const storedDraft = toStored(draft);
     const storedFrame = toStored(frame);
-    expect(Object.keys(storedFrame).sort()).toEqual(['data', 'type']);
-    expect(storedFrame.type).toBe(draft.event);
-    expect(fromStored(JSON.parse(JSON.stringify(storedDraft)) as unknown, 'draft')).toEqual(draft);
-    expect(fromStored(JSON.parse(JSON.stringify(storedFrame)) as unknown, 'final')).toEqual(frame);
-    if (draft.event === 'done') {
-      expect(frame).toEqual({ event: 'done', data: { ...draft.data, quota_left: quota } });
-    } else {
-      expect(frame).toEqual(draft);
-    }
-    return true;
+    const expectedFrame =
+      draft.event === 'done'
+        ? { event: 'done', data: { ...draft.data, quota_left: quota } }
+        : draft;
+    return (
+      same(Object.keys(storedFrame).sort(), ['data', 'type']) &&
+      same(Object.keys(storedDraft).sort(), ['data', 'type']) &&
+      storedFrame.type === draft.event &&
+      same(storedDraft, { type: draft.event, data: draft.data }) &&
+      same(frame, expectedFrame) &&
+      same(fromStored(JSON.parse(JSON.stringify(storedDraft)) as unknown, 'draft'), draft) &&
+      same(fromStored(JSON.parse(JSON.stringify(storedFrame)) as unknown, 'final'), frame)
+    );
   };
   const details = fc.check(fc.property(draftArb, fc.nat({ max: 1_000 }), holds), propParams());
   expect(details.failed, fc.defaultReportMessage(details) ?? '').toBe(false);
