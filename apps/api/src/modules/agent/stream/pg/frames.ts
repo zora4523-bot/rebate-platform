@@ -16,6 +16,19 @@
 // Rules for the implementation: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`.
 import type { TerminalDraft, TerminalFrame } from '../run/types.ts';
+import type { FinishReason } from '../writer/index.ts';
+
+const FINISH_REASONS: readonly FinishReason[] = [
+  'stop',
+  'cancelled',
+  'limit',
+  'budget',
+  'error',
+  'auth_required',
+  'safety',
+  'fallback',
+  'timeout',
+];
 
 export interface StoredFrame {
   readonly type: 'done' | 'error';
@@ -25,18 +38,62 @@ export interface StoredFrame {
 export class StoredFrameInvalid extends Error {}
 
 export function toStored(frame: TerminalFrame | TerminalDraft): StoredFrame {
-  void frame;
-  throw new Error('NotImplemented: toStored');
+  return { type: frame.event, data: { ...frame.data } };
 }
 
+export function fromStored(value: unknown, kind: 'final'): TerminalFrame;
+export function fromStored(value: unknown, kind: 'draft'): TerminalDraft;
+export function fromStored(value: unknown, kind: 'final' | 'draft'): TerminalFrame | TerminalDraft;
 export function fromStored(value: unknown, kind: 'final' | 'draft'): TerminalFrame | TerminalDraft {
-  void value;
-  void kind;
-  throw new Error('NotImplemented: fromStored');
+  if (
+    !object(value) ||
+    Object.keys(value).length !== 2 ||
+    !('type' in value) ||
+    !('data' in value) ||
+    !object(value['data'])
+  ) {
+    throw new StoredFrameInvalid('Invalid stored envelope');
+  }
+  const event = value['type'];
+  const data = { ...value['data'] };
+  if (event !== 'done' && event !== 'error') throw new StoredFrameInvalid('Invalid event');
+  if (event === 'done') {
+    if (
+      !FINISH_REASONS.includes(data['finish_reason'] as FinishReason) ||
+      Object.keys(data).some((key) => !['finish_reason', 'quota_left'].includes(key)) ||
+      (kind === 'draft'
+        ? 'quota_left' in data
+        : typeof data['quota_left'] !== 'number' ||
+          !Number.isSafeInteger(data['quota_left']) ||
+          data['quota_left'] < 0)
+    ) {
+      throw new StoredFrameInvalid('Invalid stored done data');
+    }
+  } else if (
+    !Number.isSafeInteger(data['code']) ||
+    typeof data['msg'] !== 'string' ||
+    typeof data['retryable'] !== 'boolean' ||
+    !nullableText(data['fallback']) ||
+    ('fallback_q' in data && !nullableText(data['fallback_q'])) ||
+    Object.keys(data).some(
+      (key) => !['code', 'msg', 'retryable', 'fallback', 'fallback_q'].includes(key),
+    )
+  ) {
+    throw new StoredFrameInvalid('Invalid stored error data');
+  }
+  return { event, data } as TerminalFrame | TerminalDraft;
 }
 
 export function withQuota(draft: TerminalDraft, quotaLeft: number): TerminalFrame {
-  void draft;
-  void quotaLeft;
-  throw new Error('NotImplemented: withQuota');
+  return draft.event === 'done'
+    ? { event: 'done', data: { ...draft.data, quota_left: quotaLeft } }
+    : draft;
+}
+
+function object(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function nullableText(value: unknown): boolean {
+  return value === null || typeof value === 'string';
 }

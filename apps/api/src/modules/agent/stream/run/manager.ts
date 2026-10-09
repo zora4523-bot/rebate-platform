@@ -58,6 +58,7 @@ async function run(
   let cardsDelivered = 0;
   let cardQueue = Promise.resolve();
   let factsQueue = Promise.resolve();
+  let endingSaved: Promise<void> | undefined;
   let resolveEnd!: (end: End) => void;
   const ended = new Promise<End>((resolve) => {
     resolveEnd = resolve;
@@ -74,6 +75,9 @@ async function run(
   function choose(end: End, reason?: AbortReason): void {
     if (stopped) return;
     stopped = true;
+    endingSaved = registry
+      .recordEnding?.(runId, { ending: end.ending, cardsDelivered }, draftOf(end))
+      .catch(() => undefined);
     waits.abort();
     if (reason !== undefined) bodyAbort.abort(reason);
     resolveEnd(end);
@@ -288,12 +292,10 @@ async function run(
     const end = await ended;
     // Wait only for facts from writes that actually succeeded, never for an outstanding card
     // reservation or body. A late live fact cannot overwrite the final ending.
+    await endingSaved;
     await factsQueue;
     const outcome = { ending: end.ending, cardsDelivered };
-    const draft: TerminalDraft =
-      end.event === 'done'
-        ? { event: 'done', data: { finish_reason: end.finishReason } }
-        : { event: 'error', data: end.error };
+    const draft = draftOf(end);
     // Always save a fresh final snapshot, even after all live saves failed. Exhausted retries
     // are logged, but must not prevent the admission gate releasing the lock. The draft keeps
     // the complete chosen result recoverable if this process dies after settle, before finish.
@@ -306,12 +308,18 @@ async function run(
             data: { ...draft.data, quota_left: settled.quotaLeft },
           }
         : draft;
-    await registry.finish(runId, terminal);
-    if (terminal.event === 'done') write('done', terminal.data);
-    else write('error', terminal.data);
-    return { terminal, ...outcome };
+    const sent = (await registry.finish(runId, terminal)) ?? terminal;
+    if (sent.event === 'done') write('done', sent.data);
+    else write('error', sent.data);
+    return { terminal: sent, ...outcome };
   } finally {
     stopped = true;
     waits.abort();
   }
+}
+
+function draftOf(end: End): TerminalDraft {
+  return end.event === 'done'
+    ? { event: 'done', data: { finish_reason: end.finishReason } }
+    : { event: 'error', data: end.error };
 }
