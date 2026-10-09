@@ -22,6 +22,21 @@ export type {
 // types.
 export { MINIMUM_VERSION_CHECK, RiskModule } from './risk.module.ts';
 export {
+  RiskStateTransitionError,
+  createRiskStateService,
+  riskStateServiceToken,
+} from './application/risk-state.ts';
+export { canTransitionRiskState } from './domain/risk-state-transitions.ts';
+export type {
+  RiskReasonCategory,
+  RiskSubject,
+  RiskStateSnapshot,
+  SetRiskState,
+  RiskStateRequest,
+  RiskStateService,
+  RiskStateOptions,
+} from './application/risk-state.ts';
+export {
   createMinimumVersionCheck,
   createMinimumVersionGuard,
   contractMinimumVersionRoutes,
