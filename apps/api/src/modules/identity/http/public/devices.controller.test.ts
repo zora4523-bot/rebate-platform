@@ -5,6 +5,13 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { dereference } from '@readme/openapi-parser';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import ajvFormats from 'ajv-formats';
+import {
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type DatabaseConnection,
+} from 'kysely';
 import type { OpenAPIV3_1 } from 'openapi-types';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { AppModule } from '../../../../app.module.ts';
@@ -63,6 +70,35 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+/**
+ * Executor for the raw statements of a repository transaction (the device advisory lock, B1-03f):
+ * a Kysely on a driver that answers every statement with no rows.
+ */
+function rawExecutor() {
+  const connection: DatabaseConnection = {
+    executeQuery: async () => ({ rows: [] }),
+    async *streamQuery() {
+      throw new Error('not used');
+    },
+  };
+  return new Kysely<Record<string, never>>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => ({
+        init: async () => undefined,
+        acquireConnection: async () => connection,
+        beginTransaction: async () => undefined,
+        commitTransaction: async () => undefined,
+        rollbackTransaction: async () => undefined,
+        releaseConnection: async () => undefined,
+        destroy: async () => undefined,
+      }),
+      createIntrospector: (kysely) => new PostgresIntrospector(kysely),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  }).getExecutor();
+}
+
 /** A device row the fake database starts with: issued earlier, then revoked (revoked_at set). */
 const REVOKED_DEVICE = '019a0000-0000-7000-8000-00000000dead';
 
@@ -104,6 +140,11 @@ function fakeDb() {
       };
       return query;
     },
+    // The repository's transactions run on the same fake; raw statements answer no rows.
+    transaction: () => ({
+      execute: <T>(callback: (trx: unknown) => Promise<T>) =>
+        callback({ ...db, getExecutor: rawExecutor }),
+    }),
   };
   return { db, inserts, selects, devices };
 }

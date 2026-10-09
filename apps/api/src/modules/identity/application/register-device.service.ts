@@ -4,7 +4,7 @@
 // B1-03f (BR-ID-05 device.ip_register_per_hour, BR-ID-09 hot-hash monitoring): after the
 // invalid-hash list and before anything is issued, risk's per-IP slot is reserved (refused: 42901,
 // nothing issued or stored). An explicit insert failure releases the slot; an unknown outcome
-// keeps it while risk checks the device row. A stored device is then counted for the hot-hash
+// keeps it while risk checks the device row (after the insert transaction has ended). A stored device is then counted for the hot-hash
 // alert (alert only; its failure never fails the registration).
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { DeviceIdSource } from '@couli/contracts-ts';
@@ -123,7 +123,11 @@ export class RegisterDeviceService {
       if (isDefiniteInsertFailure(error)) {
         await this.risk.release(reservation);
       } else {
-        await this.risk.reconcile(reservation, deviceId, (id) => this.devices.exists(id));
+        // The check waits for the insert transaction's advisory lock before reading (S1 r1),
+        // scoped to this app; a timeout or error keeps the slot.
+        await this.risk.reconcile(reservation, deviceId, (id) =>
+          this.devices.exists(command.appId, id),
+        );
       }
       throw error;
     }
