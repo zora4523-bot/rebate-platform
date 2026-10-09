@@ -11,6 +11,7 @@ type: migration
 # 约束：resolved_at 与 resolution 同空同非空 CHECK；resolved_at ≥ occurred_at CHECK；部分索引 (app_id, user_id, platform) WHERE resolved_at IS NULL（当前判定），普通索引 (app_id, user_id, platform, occurred_at)（BR-ATTR-18 时点查询：occurred_at ≤ attr_at AND (resolved_at IS NULL OR resolved_at > attr_at)）。
 # 权限：couli_app 只授 SELECT、INSERT 与 resolved_at / resolution 列级 UPDATE，触发器拒绝改写其余列、拒绝已解决行再改、拒绝 DELETE（db/AGENTS.md 第 4、8 条，先例 B1-06r）。deps [B1-06h] 只为排期（排在 B1-06h 合并后、避免 B1-06z 前改两次），不是技术依赖。
 # 迁移全局串行，编号取落地时最新 +1（迁移门禁 CT-06 系列规则照旧）。风险：迁移 RV2（订单归属相关判定的依据）。
+# 2026-10-09 补（实现阶段）：新表的归属表保护来自 union_ 前缀（lint-migrations.ts isFundsTable），建表即生效；tools/ci/lint-migrations.test.ts「classifies every table」的 funds 集合要同步加一行 'union_binding_conflicts'，只让分类测试与之一致——只加这一行，属收紧、不放宽任何规则（先例 CT-06j 纳入 appeals）。这一行必须和建表同在 B1-06y 的 PR 里落地（该用例要求 funds 集合每项都在 schema.sql），不能先单独提交。该文件属第三类保护路径，合并前按 approvals 第 24 条两家评审后加标签。
 refs: []
 refs_hash: {}
 deps: [B1-06h]
@@ -18,6 +19,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/db/linking-relation-conflicts/**'
 impl: claude
