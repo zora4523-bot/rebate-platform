@@ -1,0 +1,48 @@
+{
+  "task": "CT-02g",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "662c4010552ac972a0289ee5649b69002bdf6f3e",
+  "red_tests": [],
+  "risk_note": "RV2 by path (contracts). 30102 gains data.reason sharer_auth_invalid (retry never) and 30111 gains an optional data.reason with the same value (retry never), for someone else's share link whose sharer's authorization is invalid (BR-ATTR-05 细则「别人的分享 link 不可用」): no auth_url / state / auth_jump, the client does not prompt authorization, does not replay and offers no no-rebate purchase, showing link_landing.invalid. 30101 unchanged; openLink description only; additive, no shape change. tester none: catalog test updated by the implementer in packages/contracts-ts. Implementation by Opus 5.5 (one run). Written by hand.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass with no findings (a first launch exited before reviewing because the run directory lacked brief.md)"
+    },
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent (contract): round 1 pass with no findings; one out-of-scope S2 (getSharePage cannot express the sharer's invalid authorization) recorded as follow-up CT-02h"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "tester none (contract task)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "6008e7db5560267a741b7da18385252adc6af0d6",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
