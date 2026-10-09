@@ -1,0 +1,96 @@
+{
+  "task": "F1-06o",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "77ff77eb69b5297b28fca7c95f4f870ef3630c99",
+  "red_tests": [
+    "test/spec/db/admin/login-state/existing-grants.int.test.ts > [AC-F1-06o#12] adding login-state grants preserves existing admin_users column access",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#1] login state has the specified types, nullability and default presence",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#2] an insert omitting all login columns gets false, zero and NULL",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#3] negative failure counts reject INSERT and UPDATE with the named CHECK",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#4] zero and positive integer counts can be inserted, updated and reset",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#5] the required password flag and failure count reject explicit NULL",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#6] couli_app updates all three login columns and reads back their persisted values",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#7] locked_until preserves an offset timestamp as an instant and can return to NULL",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#8] couli_app retains table SELECT/INSERT but receives only column-level UPDATE",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#9] couli_readonly cannot SELECT any login-state column",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#10] readonly, payout and maintenance roles cannot UPDATE any login-state column",
+    "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#11] login state adds no application triggers to admin_users"
+  ],
+  "risk_note": "RV2 (db/migrations; admin login state for BR-ID-34). Migration 0024 adds app.admin_users.password_must_change (boolean NOT NULL DEFAULT false), failed_login_count (integer NOT NULL DEFAULT 0, named CHECK admin_users_failed_login_count_check >= 0) and locked_until (timestamptz NULL, written from the injected Clock); column-level UPDATE on the three columns for couli_app only, nothing for couli_readonly or other roles; 0016 unchanged; no triggers. Generated schema.sql and db.gen.ts from pnpm db:snapshot on the test machine. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "77ff77eb69b5297b28fca7c95f4f870ef3630c99",
+      "tree": "6727aea40cf97878ffd14bf3bb8c0a75e590abb4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-09T09:39:31Z",
+      "finished_at": "2026-10-09T09:39:35Z",
+      "red_tests": [
+        "test/spec/db/admin/login-state/existing-grants.int.test.ts > [AC-F1-06o#12] adding login-state grants preserves existing admin_users column access",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#1] login state has the specified types, nullability and default presence",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#2] an insert omitting all login columns gets false, zero and NULL",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#3] negative failure counts reject INSERT and UPDATE with the named CHECK",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#4] zero and positive integer counts can be inserted, updated and reset",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#5] the required password flag and failure count reject explicit NULL",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#6] couli_app updates all three login columns and reads back their persisted values",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#7] locked_until preserves an offset timestamp as an instant and can return to NULL",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#8] couli_app retains table SELECT/INSERT but receives only column-level UPDATE",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#9] couli_readonly cannot SELECT any login-state column",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#10] readonly, payout and maintenance roles cannot UPDATE any login-state column",
+        "test/spec/db/admin/login-state/login-state.int.test.ts > [AC-F1-06o#11] login state adds no application triggers to admin_users"
+      ],
+      "expected": [
+        "test/spec/db/admin/login-state/existing-grants.int.test.ts",
+        "test/spec/db/admin/login-state/login-state.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b7c69382d9765d47ff721bbfac09b1c614a536144ef089e67d180d6a23b11a93"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent, money checklist: round 1 pass with no findings (columns, defaults, named CHECK, column grants, generated files consistent with the migration)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings; checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs: the first run's output was rejected only because the trusted clone lacked node_modules for the validator; the second run kept its 11 tests and added one grant-regression test) reviewed by a fresh Claude subagent: round 1 pass (S2: no regression assertion that other roles' INSERT and other tables' grants are unchanged)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "12f066056ac7317d10c2abfe2522d515d9554e1c",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
