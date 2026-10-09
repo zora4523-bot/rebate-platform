@@ -5002,7 +5002,7 @@ ALTER TABLE ONLY app.union_auth_sessions
 --
 
 ALTER TABLE ONLY app.union_binding_conflicts
-    ADD CONSTRAINT union_binding_conflicts_account_fkey FOREIGN KEY (app_id, union_account_id) REFERENCES app.union_accounts(app_id, id);
+    ADD CONSTRAINT union_binding_conflicts_account_fkey FOREIGN KEY (app_id, platform, union_account_id) REFERENCES app.union_accounts(app_id, platform, id);
 
 
 --

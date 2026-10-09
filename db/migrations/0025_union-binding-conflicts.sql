@@ -12,8 +12,12 @@
 --   app_id, user_id   the user whose authorization was refused (FK app.users (app_id, id)).
 --   platform          the union platform (contracts/enums/platform.yaml platform; named CHECK).
 --   union_account_id  our union account the authorization was for (FK app.union_accounts
---                     (app_id, id): same app). The platform is checked by its own CHECK, not by a
---                     composite foreign key (orchestrator ruling D7-20).
+--                     (app_id, platform, id), precedent 0015 union_pids / 0018 union_bindings:
+--                     same app and the row's platform equals the account's). The platform keeps
+--                     its own named CHECK as well (orchestrator ruling D7-20): a CHECK is evaluated
+--                     when the row is formed, before the foreign key triggers, so an unknown
+--                     platform is still rejected as 23514 and only a known platform that differs
+--                     from the account's is rejected by the foreign key (23503).
 --   kind              occupied (relation held by another user's active binding) / cooling (held
 --                     by another user's binding in cooldown) / rebind (this user already has a
 --                     different unreleased binding on this platform).
@@ -55,8 +59,8 @@ CREATE TABLE app.union_binding_conflicts (
   CONSTRAINT union_binding_conflicts_pkey PRIMARY KEY (id),
   CONSTRAINT union_binding_conflicts_user_fkey FOREIGN KEY (app_id, user_id)
     REFERENCES app.users (app_id, id),
-  CONSTRAINT union_binding_conflicts_account_fkey FOREIGN KEY (app_id, union_account_id)
-    REFERENCES app.union_accounts (app_id, id),
+  CONSTRAINT union_binding_conflicts_account_fkey FOREIGN KEY (app_id, platform, union_account_id)
+    REFERENCES app.union_accounts (app_id, platform, id),
   CONSTRAINT union_binding_conflicts_platform_check CHECK (
     platform IN ('taobao', 'jd', 'pdd', 'meituan', 'vip', 'douyin', 'eleme', 'kuaishou', 'suning')
   ),
