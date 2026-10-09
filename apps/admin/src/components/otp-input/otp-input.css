@@ -15,9 +15,8 @@
   box-sizing: border-box;
   width: 44px;
   height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   border: var(--component-control-border-width) solid var(--color-border-control);
   border-radius: var(--radius-small);
   background-color: var(--color-background-surface);
@@ -34,6 +33,7 @@
 .otp-input-field .otp-input-control {
   position: absolute;
   inset: 0;
+  height: 100%;
   opacity: 0;
   cursor: text;
 }
