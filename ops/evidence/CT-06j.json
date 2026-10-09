@@ -1,0 +1,108 @@
+{
+  "task": "CT-06j",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "fd593c9e6cd72be7838c351d26dab7694f8c35fb",
+  "red_tests": [
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#1] appeals 按整名纳入，带 schema 与引号等价，相似名字不纳入",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] DROP 表 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] DROP 列 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] 改类型 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] RENAME 列 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] RENAME 表 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#3] SET SCHEMA 对 appeals 拒绝，对普通表放行",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#4] appeals 的安全语句也不接受 squawk-ignore，登记审批不豁免",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#5] appeals 索引 只删不重建拒绝，普通表同写法放行",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#5] appeals 约束 只删不重建拒绝，普通表同写法放行",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#6] appeals 未命名 index 拒绝，普通表同写法放行",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#6] appeals 未命名 constraint 拒绝，普通表同写法放行",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#7] index 对照真实 0014：同定义放行，改定义须登记审批，普通表不受此限制",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#7] constraint 对照真实 0014：同定义放行，改定义须登记审批，普通表不受此限制",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#8] 新增到 appeals 的触发器也不能只删或停用：DROP TRIGGER appeals_guard ON app.appeals;",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#8] 新增到 appeals 的触发器也不能只删或停用：ALTER TABLE app.appeals DISABLE TRIGGER appeals_guard;",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#8] 新增到 appeals 的触发器也不能只删或停用：ALTER TABLE app.appeals ENABLE REPLICA TRIGGER appeals_guard;",
+    "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#9] 真实仓库无参数运行通过，CLI 从冻结迁移史识别 appeals 索引并拒绝只删"
+  ],
+  "risk_note": "RV2 by path (tools/ci and db/AGENTS.md are protected classes; owner approval label per ops/approvals.yaml 24 — tightening only). appeals joins the migration gate's funds and attribution tables by its whole name: an appeal closed as revoked raises the BR-FUND-22 appeal-restore error ticket, so the table triggers fund restoration (owner asked 2026-10-09; the CT-06c assertion that appeals is not a funds table was removed first by test-change CT-06k #357). Rule tests by Codex (red first on the AWS test runner), implementation by the orchestrating session (infra-oss). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fd593c9e6cd72be7838c351d26dab7694f8c35fb",
+      "tree": "49b1380e232cc31629d5031a939bdfcac30c9fc3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-09T08:46:42Z",
+      "finished_at": "2026-10-09T08:46:47Z",
+      "red_tests": [
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#1] appeals 按整名纳入，带 schema 与引号等价，相似名字不纳入",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] DROP 表 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] DROP 列 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] 改类型 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] RENAME 列 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#2] RENAME 表 拒绝，普通表可用语句级例外，appeals 不得用相同例外绕过",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#3] SET SCHEMA 对 appeals 拒绝，对普通表放行",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#4] appeals 的安全语句也不接受 squawk-ignore，登记审批不豁免",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#5] appeals 索引 只删不重建拒绝，普通表同写法放行",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#5] appeals 约束 只删不重建拒绝，普通表同写法放行",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#6] appeals 未命名 index 拒绝，普通表同写法放行",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#6] appeals 未命名 constraint 拒绝，普通表同写法放行",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#7] index 对照真实 0014：同定义放行，改定义须登记审批，普通表不受此限制",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#7] constraint 对照真实 0014：同定义放行，改定义须登记审批，普通表不受此限制",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#8] 新增到 appeals 的触发器也不能只删或停用：DROP TRIGGER appeals_guard ON app.appeals;",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#8] 新增到 appeals 的触发器也不能只删或停用：ALTER TABLE app.appeals DISABLE TRIGGER appeals_guard;",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#8] 新增到 appeals 的触发器也不能只删或停用：ALTER TABLE app.appeals ENABLE REPLICA TRIGGER appeals_guard;",
+        "test/spec/db/lint-migrations/appeals.test.ts > [AC-CT-06j#9] 真实仓库无参数运行通过，CLI 从冻结迁移史识别 appeals 索引并拒绝只删"
+      ],
+      "expected": ["test/spec/db/lint-migrations/appeals.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d6991485fb4f036f7d954d9a9ec7bfa0068b11548a387b9fd0743b2fa9cbcc96"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "independent read-only Claude subagent, money review r1 pass with no findings (whole-name matching, every funds rule through isFundsTable, frozen 0014 constraints and indexes named, real repository incl. 0022 passes; mutation: a prefix entry would be caught)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "r1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in one test round (080a10e, appeals.test.ts, 18 cases red first on the AWS test runner) pass with one S2 (renames and trigger-function drops have no appeals-specific case; the same isFundsTable path covers them)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "abc823cded19990dbd2528458d546562e11fa377",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (reused from CT-06d, same tree)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

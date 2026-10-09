@@ -165,6 +165,7 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'link_open_attempts',
     'processed_events',
     'idempotency_keys',
+    'appeals',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
@@ -1082,4 +1083,13 @@ it('CT-06h: column and table constraint forms compare equal, but a changed kind 
   expect(rebuild('ledger_x_acct_fkey', 'FOREIGN KEY (id) REFERENCES app.accounts (id)')).toEqual(
     changed,
   );
+});
+
+it('CT-06j: appeals is a funds table, similar names are not', () => {
+  for (const ref of ['appeals', 'app.appeals', '"appeals"', '"app"."appeals"']) {
+    expect(isFundsTable(ref), ref).toBe(true);
+  }
+  for (const ref of ['appeals_archive', 'app.appeals_x', 'user_appeals']) {
+    expect(isFundsTable(ref), ref).toBe(false);
+  }
 });
