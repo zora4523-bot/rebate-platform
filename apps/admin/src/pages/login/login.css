@@ -1,5 +1,4 @@
-/* Login page layout only (规划/03 §9.1): components are antd, coloured by the ConfigProvider
-   theme (theme.ts); sizes follow the AdmLogin* boards. Colours come from @couli/ui-tokens. */
+/* Login layout only (规划/03 §9.1): antd + theme.ts; colours from @couli/ui-tokens. */
 .login-page {
   position: relative;
   min-height: 100vh;
@@ -46,4 +45,11 @@
 .login-bind-body {
   flex: 1 1 0;
   min-width: 0;
+}
+.login-progress {
+  width: min(320px, 100%);
+  align-self: center;
+}
+.login-focus-title:focus {
+  outline: none;
 }

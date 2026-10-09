@@ -14,7 +14,13 @@ type ColorToken =
   | 'colorBgContainer'
   | 'colorSuccess'
   | 'colorWarning'
-  | 'colorError';
+  | 'colorError'
+  | 'colorInfo'
+  | 'colorInfoHover'
+  | 'colorInfoText'
+  | 'colorInfoBg'
+  | 'colorInfoBorder'
+  | 'colorInfoBorderHover';
 
 const COLOR_VARIABLES: readonly (readonly [ColorToken, string])[] = [
   ['colorPrimary', '--color-brand-primary'],
@@ -28,6 +34,13 @@ const COLOR_VARIABLES: readonly (readonly [ColorToken, string])[] = [
   ['colorSuccess', '--color-status-success-text'],
   ['colorWarning', '--color-status-warning-text'],
   ['colorError', '--color-status-error-text'],
+  // Info is neutral on the boards (muted panel, no border, secondary icon), not antd blue.
+  ['colorInfo', '--color-text-secondary'],
+  ['colorInfoHover', '--color-text-secondary'],
+  ['colorInfoText', '--color-text-secondary'],
+  ['colorInfoBg', '--color-background-muted'],
+  ['colorInfoBorder', '--color-background-muted'],
+  ['colorInfoBorderHover', '--color-background-muted'],
 ];
 
 export function createAntdTheme(root: Element = document.documentElement): ThemeConfig {

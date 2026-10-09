@@ -1,5 +1,4 @@
-/* Admin shell layout only (规划/03 §9.1): components are antd, coloured by the ConfigProvider
-   theme (theme.ts). Colours here come from @couli/ui-tokens variables. */
+/* Admin shell layout only (规划/03 §9.1): antd + theme.ts; colours from @couli/ui-tokens. */
 @import '@couli/ui-tokens/tokens.css';
 
 html,
@@ -13,7 +12,6 @@ body {
   height: 100vh;
   overflow: hidden;
 }
-/* Sider 220 wide, header 56 high (theme.ts); hairlines are inset shadows so sizes stay exact. */
 .admin-sider {
   overflow-y: auto;
   box-shadow: inset -1px 0 0 var(--color-border-subtle);
@@ -48,4 +46,8 @@ body {
 .admin-content {
   overflow-y: auto;
   padding: var(--space-6);
+}
+.admin-result-avatar {
+  background-color: var(--color-background-muted);
+  color: var(--color-text-secondary);
 }
