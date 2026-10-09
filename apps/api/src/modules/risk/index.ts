@@ -1,5 +1,15 @@
 // Public surface of the risk module. Other modules import only from this file.
 export {
+  createDeviceRegistrationRisk,
+  unkeyedDeviceRegistrationIndex,
+} from './application/device-registration.ts';
+export type {
+  DeviceRegistrationRisk,
+  DeviceRegistrationRiskOptions,
+  DeviceRegistrationReservation,
+  DeviceRegistrationAdmission,
+} from './application/device-registration.ts';
+export {
   createRateLimitService,
   createRateLimitThresholdReader,
 } from './application/rate-limit.ts';

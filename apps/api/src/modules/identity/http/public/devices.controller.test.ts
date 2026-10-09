@@ -5,6 +5,13 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { dereference } from '@readme/openapi-parser';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import ajvFormats from 'ajv-formats';
+import {
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type DatabaseConnection,
+} from 'kysely';
 import type { OpenAPIV3_1 } from 'openapi-types';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { AppModule } from '../../../../app.module.ts';
@@ -13,10 +20,12 @@ import {
   DB,
   FIELD_CRYPTO,
   FixedClock,
+  REDIS,
   contractRouteSchema,
   createRootLogger,
   loadConfig,
   type FieldCrypto,
+  type RedisHandle,
 } from '../../../platform/index.ts';
 
 const CONTRACT = fileURLToPath(
@@ -61,6 +70,35 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+/**
+ * Executor for the raw statements of a repository transaction (the device advisory lock, B1-03f):
+ * a Kysely on a driver that answers every statement with no rows.
+ */
+function rawExecutor() {
+  const connection: DatabaseConnection = {
+    executeQuery: async () => ({ rows: [] }),
+    async *streamQuery() {
+      throw new Error('not used');
+    },
+  };
+  return new Kysely<Record<string, never>>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => ({
+        init: async () => undefined,
+        acquireConnection: async () => connection,
+        beginTransaction: async () => undefined,
+        commitTransaction: async () => undefined,
+        rollbackTransaction: async () => undefined,
+        releaseConnection: async () => undefined,
+        destroy: async () => undefined,
+      }),
+      createIntrospector: (kysely) => new PostgresIntrospector(kysely),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  }).getExecutor();
+}
+
 /** A device row the fake database starts with: issued earlier, then revoked (revoked_at set). */
 const REVOKED_DEVICE = '019a0000-0000-7000-8000-00000000dead';
 
@@ -102,6 +140,11 @@ function fakeDb() {
       };
       return query;
     },
+    // The repository's transactions run on the same fake; raw statements answer no rows.
+    transaction: () => ({
+      execute: <T>(callback: (trx: unknown) => Promise<T>) =>
+        callback({ ...db, getExecutor: rawExecutor }),
+    }),
   };
   return { db, inserts, selects, devices };
 }
@@ -118,15 +161,40 @@ function fakeCrypto(): FieldCrypto {
     keyVersionOf: unused,
     needsReencrypt: unused,
     reencrypt: unused,
-    blindIndex: unused,
+    // The per-IP reservation key (B1-03f) is the blind index of the client IP.
+    blindIndex: (value, context) =>
+      createHash('sha256').update(`index\0${context}\0${value}`).digest('hex'),
   };
+}
+
+/** A Redis stand-in whose every script answers `reply` (the reservation script's shape). */
+function scriptedRedis(reply: readonly number[]): RedisHandle & { scripts: string[][] } {
+  const scripts: string[][] = [];
+  return {
+    scripts,
+    namespace: (name) => ({
+      get: () => Promise.resolve(null),
+      set: () => Promise.resolve(),
+      eval: (_script, options) => {
+        scripts.push([name, ...options.keys]);
+        return Promise.resolve([...reply]);
+      },
+    }),
+    close: () => Promise.resolve(),
+    onApplicationShutdown: () => Promise.resolve(),
+  };
+}
+
+/** Admits every reservation and counts no hot hash. */
+function admittingRedis(): RedisHandle {
+  return scriptedRedis([1, 0]);
 }
 
 /**
  * The api entry as bootstrap builds it. With `infra`, a global test module supplies the DB and
  * FIELD_CRYPTO tokens that PlatformModule leaves out when it has no handles and no keyring.
  */
-async function build(infra?: { db: unknown; crypto: FieldCrypto }) {
+async function build(infra?: { db: unknown; crypto: FieldCrypto; redis?: RedisHandle }) {
   const lines: string[] = [];
   if (infra !== undefined) {
     const original = AppModule.forEntry;
@@ -138,8 +206,9 @@ async function build(infra?: { db: unknown; crypto: FieldCrypto }) {
         providers: [
           { provide: DB, useValue: infra.db },
           { provide: FIELD_CRYPTO, useValue: infra.crypto },
+          { provide: REDIS, useValue: infra.redis ?? admittingRedis() },
         ],
-        exports: [DB, FIELD_CRYPTO],
+        exports: [DB, FIELD_CRYPTO, REDIS],
       };
       return { ...root, imports: [...(root.imports ?? []), fakes] };
     });
@@ -267,7 +336,8 @@ it('[BR-ID-09] re-registers with 200 while X-Device-Id still names a revoked dev
   expect(inserts).toHaveLength(1);
   expect(inserts[0]!.row).toMatchObject({ id: issued, revoked_at: null });
   expect(devices[0]).toMatchObject({ id: REVOKED_DEVICE, revoked_at: expect.any(Date) });
-  expect(selects).toEqual([]);
+  // No device lookup; the only reads are the B1-03f risk thresholds (config_items).
+  expect(selects.filter((table) => table !== 'config_items')).toEqual([]);
 });
 
 it('still serves the route without database handles or keyring: invalid hashes 20001, others the 50001 envelope', async () => {
@@ -285,4 +355,22 @@ it('still serves the route without database handles or keyring: invalid hashes 2
   const body = valid.json<unknown>();
   expect(validateServerError(body), JSON.stringify(validateServerError.errors)).toBe(true);
   expect(body).toEqual({ code: 50001, msg: '服务端错误', trace_id: TRACE });
+});
+
+it('[AC-B1-03f#16] answers 42901 with Retry-After, issuing and storing nothing, when the per-IP slot is refused', async () => {
+  const { db, inserts } = fakeDb();
+  const redis = scriptedRedis([0, 1_200_500]);
+  const { app } = await build({ db, crypto: fakeCrypto(), redis });
+  const response = await register(app, { device_hash: hash, id_source: 'idfv' });
+  expect(response.statusCode).toBe(429);
+  expect(response.headers['retry-after']).toBe('1201');
+  expect(response.json()).toEqual({
+    code: 42901,
+    msg: '操作太频繁，请稍后再试',
+    trace_id: TRACE,
+  });
+  expect(inserts).toEqual([]);
+  // Only the reservation ran: no hot-hash count for a refused registration.
+  expect(redis.scripts.map(([name]) => name)).toEqual(['ip_reg']);
+  expect(redis.scripts[0]![1]).toMatch(/^couli:[0-9a-f]{32}$/);
 });
