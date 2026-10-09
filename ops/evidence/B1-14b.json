@@ -1,0 +1,153 @@
+{
+  "task": "B1-14b",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "31a2d4cef356910df04b54c21107e0067a5a86a0",
+  "red_tests": [
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-007][QA-05a][02 §14 千问] 百炼故障定义与登记表 model.qwen 故障表现对应：429、503、超时；normal 是非流式 JSON",
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-008][02 §14 千问][BR-AI-14] 429：主位 Flash 限流，切备位 Plus 成功；先 Flash 后 Plus，各发一次真实 HTTP 请求",
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-009][02 §14 千问][BR-AI-14] 503：主位 Flash 服务端错误，切备位 Plus 成功",
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-010][02 §14 千问][BR-AI-14] 超时：登记表覆盖的 2500 毫秒单次时限生效，到点中止 Flash 请求（不等 QA-05a 的 15000 毫秒）再切 Plus",
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-011][02 §14 千问][BR-AI-14] 主备都失败（Flash 429、Plus 503）→ ModelOutcome.degraded(models_failed)，不计量",
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-012][02 §14 千问][BR-AI-14] 主备都超时 → degraded(models_failed)，各在 2500 毫秒被中止",
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-013][02 §14 千问 当日预算用完][BR-AI-16] 预算耗尽 → 直接 degraded(budget)，不发任何上游请求、不计量",
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-014][02 §6.2 熔断][02 §14 千问] 每条目独立熔断：Flash 打开后不发请求、Plus 照常；openMs 前不重试，到点恢复并成功",
+    "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-015][02 §6.2 熔断][02 §14 千问] 主备两条目都打开 → 不发请求，直接 degraded(models_failed)，两条目各记 circuit_open",
+    "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-001][B1-14b 公共出口] platform/index.ts 暴露 createResilienceRegistry，且是可调用的工厂",
+    "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-002][02 §14 登记范围] 经公共出口取得的登记表：七行内容与顺序不变",
+    "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-003][02 §14 千问][BR-AI-14] 公共出口的 model.qwen 默认策略：单次不超过 8000 毫秒、不重试；联盟两行仍是 02 §6.2 在线值",
+    "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-004][02 §14 覆盖] 公共出口的工厂按 model.qwen 覆盖合并 timeoutMs 与 breaker；其他行不受影响",
+    "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-005][02 §14 覆盖] 公共出口的工厂对非法覆盖照旧抛 GovernanceError(invalid_policy)",
+    "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-006][02 §14 登记表] 公共出口每次返回新对象：改动取到的条目不影响后续查询，也不影响另一份登记表"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e9442ca0a6a62b3d53a7647b0ef90b2f5ca7492c",
+      "tree": "a577a5d832deb285f2f0fce11a8742ad258c9a40",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-09T03:37:44Z",
+      "finished_at": "2026-10-09T03:38:08Z",
+      "red_tests": [
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-007][QA-05a][02 §14 千问] 百炼故障定义与登记表 model.qwen 故障表现对应：429、503、超时；normal 是非流式 JSON",
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-008][02 §14 千问][BR-AI-14] 429：主位 Flash 限流，切备位 Plus 成功；先 Flash 后 Plus，各发一次真实 HTTP 请求",
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-009][02 §14 千问][BR-AI-14] 503：主位 Flash 服务端错误，切备位 Plus 成功",
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-010][02 §14 千问][BR-AI-14] 超时：登记表覆盖的 2500 毫秒单次时限生效，到点中止 Flash 请求（不等 QA-05a 的 15000 毫秒）再切 Plus",
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-011][02 §14 千问][BR-AI-14] 主备都失败（Flash 429、Plus 503）→ ModelOutcome.degraded(models_failed)，不计量",
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-012][02 §14 千问][BR-AI-14] 主备都超时 → degraded(models_failed)，各在 2500 毫秒被中止",
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-013][02 §14 千问 当日预算用完][BR-AI-16] 预算耗尽 → 直接 degraded(budget)，不发任何上游请求、不计量",
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-014][02 §6.2 熔断][02 §14 千问] 每条目独立熔断：Flash 打开后不发请求、Plus 照常；openMs 前不重试，到点恢复并成功",
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts > [AC-B1-14b-015][02 §6.2 熔断][02 §14 千问] 主备两条目都打开 → 不发请求，直接 degraded(models_failed)，两条目各记 circuit_open",
+        "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-001][B1-14b 公共出口] platform/index.ts 暴露 createResilienceRegistry，且是可调用的工厂",
+        "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-002][02 §14 登记范围] 经公共出口取得的登记表：七行内容与顺序不变",
+        "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-003][02 §14 千问][BR-AI-14] 公共出口的 model.qwen 默认策略：单次不超过 8000 毫秒、不重试；联盟两行仍是 02 §6.2 在线值",
+        "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-004][02 §14 覆盖] 公共出口的工厂按 model.qwen 覆盖合并 timeoutMs 与 breaker；其他行不受影响",
+        "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-005][02 §14 覆盖] 公共出口的工厂对非法覆盖照旧抛 GovernanceError(invalid_policy)",
+        "test/spec/platform/resilience-wiring/public-export.test.ts > [AC-B1-14b-006][02 §14 登记表] 公共出口每次返回新对象：改动取到的条目不影响后续查询，也不影响另一份登记表"
+      ],
+      "expected": [
+        "test/spec/platform/resilience-wiring/bailian-chain.test.ts",
+        "test/spec/platform/resilience-wiring/public-export.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "579839dc07d1f1a6391ca0f7bb8e977653653a8d5f8b9c46a1d7c303010ee931"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "actual_base": "8ade43b5990de2357778f851ae99960080ebca6e",
+      "actual_commit": "86839224420e0ce8c4d49b91986dd4710bee5c98",
+      "diff_sha256": "001ebe86b8ecca75de2cf56dcc67a3f97fe7c00fb41a4b8cd1fd75ab8b851ce4",
+      "review_sha256": "f8659fb4a24e4a2bad10707f8cc47b055b04444eac74ae90bc47d8a2d2301a24",
+      "identity": "e9398f3d-05a7-48f8-ae73-c1fd5a6296c8",
+      "model": "claude-opus-5-5"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "actual_base": "8ade43b5990de2357778f851ae99960080ebca6e",
+      "actual_commit": "86839224420e0ce8c4d49b91986dd4710bee5c98",
+      "diff_sha256": "001ebe86b8ecca75de2cf56dcc67a3f97fe7c00fb41a4b8cd1fd75ab8b851ce4",
+      "review_sha256": "751a4d9279dbeb81029645e22ddb8f36d2aeaad34f099ca422747adf85007ff0",
+      "identity": "01a11ec3-1171-7e31-94ce-f4d17c965c0d",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "c0081d2d179833d55f330b6bf9848c7e20f82e5d",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "spec_test_review": {
+    "reviewer": "codex",
+    "round": 1,
+    "verdict": "pass",
+    "actual_base": "8ade43b5990de2357778f851ae99960080ebca6e",
+    "actual_head": "e9442ca0a6a62b3d53a7647b0ef90b2f5ca7492c",
+    "reviewed_tree": "a577a5d832deb285f2f0fce11a8742ad258c9a40",
+    "thread_id": "01a11ebb-f346-7292-b8c6-b53a4d7ec5c1",
+    "review_sha256": "75ec0b7f8df50dc7865106ce591c9e4026b2f6bc5991c2986ba74ebe468a46e4"
+  },
+  "implementation": {
+    "actual_commit": "86839224420e0ce8c4d49b91986dd4710bee5c98",
+    "diff_sha256": "2c1807f551ceb4f857b404755811af36f5d6574f606768d72ada54026d493264",
+    "thread_id": "01a11ebe-3fd7-7c22-aad4-71b3c519f583",
+    "model": "gpt-6-astra",
+    "static_checks_exit": 0,
+    "host_tests_executed": false
+  },
+  "scope_note": "Public resilience factory/type exports and synthetic in-process Bailian composition. Existing QA-05a failure mappings reused; no external provider calls or production Agent wiring. Original union wiring obligations retained in B1-14d, default Claude with original prerequisites. Formal ledger-only review was code round 1; full PR dual money review is code round 2.",
+  "private_agent_smoke": {
+    "executed": false,
+    "status": "not-applicable-to-change",
+    "reason": "Only platform public exports and synthetic platform tests changed; no Agent service, prompt, model configuration or private evaluation input changed. No private smoke result claimed."
+  },
+  "verification_note": "Container red exactly matches frozen spec tree. Full verification uses required checks on final PR head per approval21; CI records are not inserted into runs.",
+  "attempts": {
+    "test": 2,
+    "impl": 1,
+    "handover": 0,
+    "spec-test": 1,
+    "code": 2,
+    "codex_calls": 4,
+    "codex_limit": 10,
+    "uncounted_calls": 0
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "mode": "github-actions",
+    "workflow": "longrun-props",
+    "run_id": 37880881027,
+    "run_attempt": 1,
+    "url": "https://github.com/zora4523-bot/rebate-platform/actions/runs/37880881027",
+    "tested_commit": "86839224420e0ce8c4d49b91986dd4710bee5c98",
+    "job": "longrun-run",
+    "job_executed": true,
+    "test_files": 8,
+    "tests": 37,
+    "workflow_combined_tree": "79235ac760853223dbc8aaa3076c08125d23bc2a",
+    "log_sha256": "3ec905ded7d98adc91a40983a8ef213d75cf1d2a4e83067fc6736f55f88fbd1d",
+    "seed_source": "Workflow sets PROP_RUNS=1000000; PROP_SEED unset, packages/testing/src/index.ts default=20261001. Actual job log: 8 files / 37 tests passed."
+  }
+}
