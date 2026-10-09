@@ -13,6 +13,18 @@ export type {
   IdempotencyPostMissCheck,
 } from './idempotency/post-miss.ts';
 export * from './http/index.ts';
+export { createResilienceRegistry } from './resilience/index.ts';
+export type {
+  DependencyId,
+  OwnerModule,
+  FailureMode,
+  DegradeAction,
+  DegradeSpec,
+  ResilienceEntry,
+  PolicyOverride,
+  ResilienceOverrides,
+  ResilienceRegistry,
+} from './resilience/index.ts';
 // The pre-parsing registration point of the request checks (BR-ID-01 stages ①–③; bootstrap).
 export {
   installRequestChecks,
