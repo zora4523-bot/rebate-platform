@@ -1,4 +1,6 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { createSession } from '../../../../apps/api/src/modules/identity/application/sessions.ts';
 import { loadConfig } from '../../../../apps/api/src/modules/platform/config/config.ts';
 import type { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import type { DbHandles } from '../../../../apps/api/src/modules/platform/db/index.ts';
@@ -8,16 +10,8 @@ import {
   type JsonSchema,
 } from '../../../../apps/api/src/modules/platform/validation/index.ts';
 import { contract, ROOT, type Response } from '../../risk/signature/kit.ts';
-import { HEADERS } from '../../identity/token/kit.ts';
-import {
-  openSuite,
-  closeSuite,
-  fixture,
-  rejectTokenWrites,
-  seedUser,
-  type Fixture,
-  type Suite,
-} from './kit.ts';
+import { HEADERS, fixture as tokenFixture } from '../../identity/token/kit.ts';
+import { openSuite, closeSuite, rejectTokenWrites, seedUser, type Suite } from './kit.ts';
 
 let suite: Suite;
 beforeAll(async () => {
@@ -26,6 +20,91 @@ beforeAll(async () => {
 afterAll(async () => {
   await closeSuite(suite);
 }, 30_000);
+
+// HTTP headers and every fixture row must use a registered app. Isolate cases by user/device,
+// not by app id; changing only the header would disagree with the signed access token.
+async function fixture(suite: Suite) {
+  const deps = tokenFixture();
+  const appId = 'couli';
+  const db = suite.db.withSchema('app');
+  const uid = await seedUser(db, appId);
+  const device = async () => {
+    const id = randomUUID();
+    await db
+      .insertInto('devices')
+      .values({
+        id,
+        app_id: appId,
+        device_hash: createHash('sha256').update(id).digest('hex'),
+        id_source: 'idfv',
+        install_secret_cipher: Buffer.from('unused-by-logout-tests'),
+        platform: 'ios',
+        app_version: '2.0.0',
+        last_seen_at: deps.clock.now(),
+      })
+      .execute();
+    return id;
+  };
+  const deviceId = await device();
+  const issue = (user = uid, dev = deviceId) =>
+    db
+      .transaction()
+      .execute((trx) =>
+        createSession(trx, { uid: user, app_id: appId, device_id: dev, scp: 'full' }, deps),
+      );
+  const initial = await issue();
+  const seedToken = async (
+    overrides: { device_id?: string; user_id?: string; bound_sid?: string } = {},
+  ) => {
+    const id = randomUUID();
+    await db
+      .insertInto('push_tokens')
+      .values({
+        id,
+        app_id: appId,
+        device_id: deviceId,
+        user_id: uid,
+        bound_sid: initial.sid,
+        provider: 'apns',
+        token: `fixture-token-${id}`,
+        token_set_at: deps.clock.now(),
+        acquired_by_move_at: null,
+        frozen_until: null,
+        revoked_at: null,
+        created_at: deps.clock.now(),
+        updated_at: deps.clock.now(),
+        ...overrides,
+      })
+      .execute();
+    return id;
+  };
+  const token = (id: string) =>
+    db.selectFrom('push_tokens').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
+  const session = (sid = initial.sid) =>
+    db
+      .selectFrom('sessions')
+      .selectAll()
+      .where('app_id', '=', appId)
+      .where('sid', '=', sid)
+      .executeTakeFirstOrThrow();
+  const deviceRow = () =>
+    db.selectFrom('devices').selectAll().where('id', '=', deviceId).executeTakeFirstOrThrow();
+  return {
+    ...deps,
+    appId,
+    db,
+    uid,
+    deviceId,
+    device,
+    issue,
+    initial,
+    seedToken,
+    token,
+    session,
+    deviceRow,
+  };
+}
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 interface HttpApp {
   init(): Promise<unknown>;
