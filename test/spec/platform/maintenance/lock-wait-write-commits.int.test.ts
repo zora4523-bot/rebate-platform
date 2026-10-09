@@ -38,6 +38,8 @@ const FOUR_MONTHS = monthRange('2026-11', '2027-02');
 const RUN_LIMIT_MS = 20_000;
 const WRITE_LIMIT_MS = 20_000;
 const MAINT_WAIT_LIMIT_MS = 5_000;
+/** Upper bound for seeing the insert queue on event_log; polling stops earlier once either settles. */
+const WRITE_QUEUE_LIMIT_MS = 20_000;
 
 interface World {
   readonly database: TestDatabase;
@@ -88,8 +90,10 @@ function holder(
     release = resolve;
   });
   let ready: () => void = () => undefined;
-  const isReady = new Promise<void>((resolve) => {
+  let fail: (error: unknown) => void = () => undefined;
+  const isReady = new Promise<void>((resolve, reject) => {
     ready = resolve;
+    fail = reject;
   });
   const finished = db
     .transaction()
@@ -98,7 +102,11 @@ function holder(
       ready();
       await released;
     })
-    .catch(() => undefined)
+    // A refused connection (e.g. 53300) or a failing `hold` rejects `ready` with the original error,
+    // so the scenario fails at once and its cleanup still runs; once `ready` resolved this is a no-op.
+    .catch((error: unknown) => {
+      fail(error);
+    })
     .finally(() => destroyDb(db).catch(() => undefined));
   return { ready: isReady, release, done: finished.then(() => undefined) };
 }
@@ -114,6 +122,30 @@ async function maintWaits(observer: Kysely<DB>, limitMs: number): Promise<boolea
     `.execute(observer);
     return r.rows[0]?.n !== '0';
   }, limitMs);
+}
+
+/**
+ * Polls (≤ limitMs, and only while `open()` holds) until a couli_app session of this database has an
+ * ungranted lock request on app.event_log; returns whether one was seen.
+ */
+async function appWaitsOnEventLog(
+  observer: Kysely<DB>,
+  open: () => boolean,
+  limitMs: number,
+): Promise<boolean> {
+  let seen = false;
+  await waitFor(async () => {
+    const r = await sql<{ n: string }>`
+      SELECT count(*)::text AS n
+      FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+      WHERE NOT l.granted AND a.usename = 'couli_app'
+        AND l.relation = 'app.event_log'::regclass
+        AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+    `.execute(observer);
+    seen = r.rows[0]?.n !== '0';
+    return seen || !open();
+  }, limitMs);
+  return seen;
 }
 
 /**
@@ -179,7 +211,7 @@ function except(all: readonly string[], skipped: readonly string[]): string[] {
   return all.filter((name) => !skipped.includes(name));
 }
 
-it('[AC-B1-01zw#1] [ADR-0001 §4.2 #4 #16; contract C.3 lock_timeout] 读事务持有 event_log 的 ACCESS SHARE 锁、2027-01 分区尚不存在时跑一轮：维护等锁期间向当月分区的并发插入成功提交（不被拒绝、9 秒内完成、之后可在 event_log_p202611 查到该行），本轮 event_log 预建以 55P03 失败一次、orders 照常建满；读事务结束后下一轮建成', async () => {
+it('[AC-B1-01zw#1] [ADR-0001 §4.2 #4 #16; contract C.3 lock_timeout] 读事务持有 event_log 的 ACCESS SHARE 锁、2027-01 分区尚不存在时跑一轮：维护等锁期间向当月分区的并发插入确实在 event_log 上排队等锁并成功提交（不被拒绝、9 秒内完成、之后可在 event_log_p202611 查到该行），本轮 event_log 预建以 55P03 失败一次、orders 照常建满；读事务结束后下一轮建成', async () => {
   await withWorld(async ({ database, maint, app }) => {
     await ensure(maint, 'event_log', ['2026-11', '2026-12']);
     await ensure(maint, 'orders', ['2026-11', '2026-12']);
@@ -198,7 +230,12 @@ it('[AC-B1-01zw#1] [ADR-0001 §4.2 #4 #16; contract C.3 lock_timeout] 读事务�
       const writing = insertEvent(app, EVENT_ID);
       pending.push(writing);
       const write = timed(writing);
-      const [runState, writeState] = await Promise.all([
+      const [writeQueued, runState, writeState] = await Promise.all([
+        appWaitsOnEventLog(
+          app,
+          () => run.state() === 'pending' && write.state() === 'pending',
+          WRITE_QUEUE_LIMIT_MS,
+        ),
         settled(run, RUN_LIMIT_MS),
         settled(write, WRITE_LIMIT_MS),
       ]);
@@ -207,6 +244,7 @@ it('[AC-B1-01zw#1] [ADR-0001 §4.2 #4 #16; contract C.3 lock_timeout] 读事务�
       const writeMs = write.ms();
       expect({
         queued,
+        writeQueued,
         writeState,
         writeWithinBound: writeMs !== undefined && writeMs <= 9_000,
         committedIn: await committedIn(app, EVENT_ID),
@@ -215,6 +253,7 @@ it('[AC-B1-01zw#1] [ADR-0001 §4.2 #4 #16; contract C.3 lock_timeout] 读事务�
         lines: lines.map(reduceLine),
       }).toEqual({
         queued: true,
+        writeQueued: true,
         writeState: 'resolved',
         writeWithinBound: true,
         committedIn: names('event_log', ['2026-11']),
