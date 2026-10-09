@@ -12,13 +12,23 @@
 // is created first (ON CONFLICT DO NOTHING). Nothing else is written: no user state, no session, no
 // ban (BR-ID-37: marking only).
 //
+// Serialisation: inside the caller's transaction judge() first takes a transaction-level advisory
+// lock on (app_id, ref_type, ref_id) (pg_advisory_xact_lock, the B1-03f identity devices pattern),
+// then looks for prior hits, ranks and writes. Two judgements of one withdrawal therefore run one
+// after the other: the later one starts after the earlier one's transaction ended, so it sees the
+// committed hit rows and replays instead of ranking at a newer instant (which could add a device
+// that only became a hit later). Other withdrawals are never blocked. Outside a transaction (no
+// transactional entry point) the lock would be released at the end of its own statement, so it is
+// not taken; that path relies on the unique index and the re-read below.
+//
 // Replays: a withdrawal judged and marked once keeps its answer. judge() first looks for this
 // rule's risk_hits rows on the same ref; when there are some, `at` is their created_at (the Clock
 // instant of the first judgement) instead of the Clock's now, nothing is written and the answer is
 // marked (login_logs is insert-only and the window's upper end is fixed, so the ranking is the
 // first one even after the window has slid). Otherwise `at` is the Clock's now. A concurrent
 // judgement that loses the insert race (risk_hits_same_device_once_key, ON CONFLICT DO NOTHING)
-// re-reads the winner's instant the same way. An unmarked first judgement leaves no record.
+// re-reads the winner's instant the same way (a fallback for the unlocked path). An unmarked first
+// judgement leaves no record.
 //
 // Configuration: risk.device_login_accounts_limit is a safe positive integer, else 3;
 // risk.merge_tombstone_dedupe is a JSON boolean, else on. A malformed value or a failed read logs
@@ -174,6 +184,13 @@ export function createSameDeviceAccountsCheck(
     return { limit, dedupe };
   }
 
+  /** Transaction-level lock of one judged ref; held until the caller's transaction ends. */
+  async function lockRef(handle: Kysely<DB>, input: SameDeviceAccountsInput): Promise<void> {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`risk.same_device:${input.app_id}:${input.ref.type}:${input.ref.id}`}, 0))`.execute(
+      handle,
+    );
+  }
+
   /** The instant of an earlier judgement of this ref that wrote hit rows; null when none. */
   async function judgedAt(
     handle: Kysely<DB>,
@@ -225,6 +242,7 @@ export function createSameDeviceAccountsCheck(
 
   return {
     async judge(handle, input) {
+      if (handle.isTransaction) await lockRef(handle, input);
       const prior = await judgedAt(handle, input);
       if (prior !== null) return replay(handle, input, prior);
       const now = clock.now();

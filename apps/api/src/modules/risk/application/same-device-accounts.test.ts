@@ -3,8 +3,9 @@
 // reader, configuration read on the caller's handle, the fallback warnings, and the writes (rule
 // row then hit rows with the Clock instant, both ON CONFLICT DO NOTHING; none when unmarked), the
 // replay of an already marked withdrawal at its first instant, and the configuration savepoints
-// inside a transaction (statement errors rolled back and defaulted, connection errors rethrown). The
-// SQL itself runs against PostgreSQL in the rule tests (test/spec/risk/same-device).
+// inside a transaction (statement errors rolled back and defaulted, connection errors rethrown), and
+// the per-withdrawal advisory lock taken first inside a transaction (before the prior-hit read).
+// The SQL itself runs against PostgreSQL in the rule tests (test/spec/risk/same-device).
 import type { DB } from '@couli/db';
 import {
   Kysely,
@@ -292,4 +293,66 @@ it('[AC-B1-03k#7] 不在事务里时不发保存点语句', async () => {
   const { statements, judge } = setup({}, { failing: ['risk.merge_tombstone_dedupe'] });
   expect((await judge('c')).marked).toBe(true);
   expect(statements.filter((sql) => /SAVEPOINT/.test(sql))).toEqual([]);
+});
+
+it('[AC-B1-03k#10] 事务内先对提现单取事务级咨询锁，再查已有命中、计算、写入', async () => {
+  const { statements, writes, judgeInTransaction } = setup({});
+  expect((await judgeInTransaction('c')).marked).toBe(true);
+  expect(statements[0]).toBe('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))');
+  expect(statements[1]).toMatch(/^select "created_at" from "app"\."risk_hits" where /);
+  expect(statements.filter((sql) => sql.includes('pg_advisory_xact_lock'))).toHaveLength(1);
+  expect(writes()).toHaveLength(2);
+});
+
+it('[AC-B1-03k#10] 锁键按 app_id、ref_type、ref_id 区分', async () => {
+  const keys: unknown[] = [];
+  const statements: string[] = [];
+  const db = new Kysely<DB>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => ({
+        init: async () => undefined,
+        acquireConnection: async () => ({
+          executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
+            statements.push(compiled.sql);
+            if (compiled.sql.includes('pg_advisory_xact_lock')) keys.push(compiled.parameters[0]);
+            return Promise.resolve({ rows: [] } as QueryResult<R>);
+          },
+          async *streamQuery() {
+            throw new Error('not used');
+          },
+        }),
+        beginTransaction: async () => undefined,
+        commitTransaction: async () => undefined,
+        rollbackTransaction: async () => undefined,
+        releaseConnection: async () => undefined,
+        destroy: async () => undefined,
+      }),
+      createIntrospector: (kysely) => new PostgresIntrospector(kysely),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  });
+  const service = createSameDeviceAccountsCheck({
+    clock,
+    logger: createRootLogger({ level: 'fatal', entry: 'api', appEnv: 'test' }, { write: () => {} }),
+    logins: { read: () => Promise.resolve([]) },
+    config: () => ({ configValue: () => Promise.resolve(null) }),
+  });
+  for (const id of ['w1', 'w2']) {
+    await db
+      .transaction()
+      .execute((trx) =>
+        service.judge(trx, { app_id: 'couli', user_id: 'c', ref: { type: 'withdrawal', id } }),
+      );
+  }
+  expect(keys).toEqual([
+    'risk.same_device:couli:withdrawal:w1',
+    'risk.same_device:couli:withdrawal:w2',
+  ]);
+});
+
+it('[AC-B1-03k#10] 不在事务里时不发咨询锁语句', async () => {
+  const { statements, judge } = setup({});
+  expect((await judge('c')).marked).toBe(true);
+  expect(statements.some((sql) => sql.includes('pg_advisory_xact_lock'))).toBe(false);
 });
