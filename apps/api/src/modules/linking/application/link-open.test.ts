@@ -21,6 +21,26 @@ describe('linking open HTTP result', () => {
     const result = openHttpResult({ code: 20001, data: null }, 'synthetic-trace');
     expect(result.envelope.data).toEqual({ fields: ['idempotency-key'] });
   });
+
+  it.each([30101, 30102, 30153])(
+    '[AC-B1-06f] authorization refusal %i is HTTP 422 with its error data only',
+    (code) => {
+      const result = openHttpResult(
+        { code, data: null, error: { reason: 'auth_unavailable' } },
+        'synthetic-trace',
+      );
+      expect(result.status).toBe(422);
+      expect(result.envelope).toEqual({
+        code,
+        msg: expect.any(String),
+        data: { reason: 'auth_unavailable' },
+        trace_id: 'synthetic-trace',
+      });
+      expect(openHttpResult({ code, data: null }, 'synthetic-trace').envelope).not.toHaveProperty(
+        'data',
+      );
+    },
+  );
 });
 
 describe('linking no-rebate product page', () => {

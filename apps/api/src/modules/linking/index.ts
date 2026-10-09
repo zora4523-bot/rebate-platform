@@ -50,6 +50,10 @@ export type {
   LinkOpenQuoteReads,
   WiredLinkOpenOptions,
 } from './application/link-open-wiring.ts';
+// Task B1-06f: the Taobao open (Baichuan instruction, 30101 / 30102 / 30153, no_rebate, share
+// link) composed over the wired open. Rule tests: test/spec/linking/open-taobao/**.
+export { createTaobaoLinkOpen } from './application/link-open-taobao.ts';
+export type { TaobaoLinkOpenOptions } from './application/link-open-taobao.ts';
 export { openScopedConfig } from './application/link-open-reads.ts';
 export { loadLinkOpenApps } from './infra/apps-json.ts';
 export { createLinkOpenRequote } from './application/link-open-requote.ts';
