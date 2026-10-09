@@ -137,6 +137,20 @@ export async function waitingOnLock(db: Kysely<DB>, pid: number): Promise<void> 
 }
 
 /**
+ * Waits (bounded polling, no fixed sleep) until backend `pid` is blocked by backend `blocker`
+ * (`pg_blocking_pids`): the waiter queues behind that very transaction, not just on some lock.
+ */
+export async function blockedBy(db: Kysely<DB>, pid: number, blocker: number): Promise<void> {
+  for (let i = 0; i < 500; i += 1) {
+    const r = await sql<{ b: boolean }>`SELECT ${blocker}::int = ANY(pg_blocking_pids(${pid}::int))
+      AS b`.execute(db);
+    if (r.rows[0]?.b === true) return;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  expect.fail(`backend ${String(pid)} was never blocked by backend ${String(blocker)}`);
+}
+
+/**
  * A test-held row lock (barrier): `SELECT … FOR UPDATE` on one row of agent_sessions or agent_runs
  * in the test's own transaction. Resolves once the lock is held; the returned function commits it
  * (releasing the lock) and waits for that commit.

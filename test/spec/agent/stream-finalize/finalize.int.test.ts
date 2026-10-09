@@ -1,6 +1,7 @@
-// B3-03g: crash points and the single finalization (design §3.1–3.5, §4.1 C2–C14a, §7.2 X-10,
-// r4-3, r4 L2, 并发退还; BR-AI-23 细则「受理记录与收尾」, BR-AI-15 退还 / 归日 / quota_left,
-// BR-AI-13; inherited B3-09b S1 BR-AI-23-lock-release-same-tx and BR-AI-15-derived-counting).
+// B3-03g: crash points and the single finalization (design §3.1–3.5, §4.1 C2–C14a, §4.3 S4 vs
+// F3 overlapping, §7.2 X-10, r4-3, r4 L2, 并发退还; BR-AI-23 细则「受理记录与收尾」, BR-AI-15 退还 /
+// 归日 / quota_left, BR-AI-13; inherited B3-09b S1 BR-AI-23-lock-release-same-tx and
+// BR-AI-15-derived-counting).
 import { randomUUID } from 'node:crypto';
 
 import { sql } from 'kysely';
@@ -21,6 +22,7 @@ import {
   RECOVERED,
   START_MS,
   accepted,
+  blockedBy,
   doneFrame,
   draftOf,
   guest,
@@ -667,5 +669,183 @@ it('[AC-B3-03g#88][BR-AI-23] 旧 run R 无终态、会话锁已指向另一 run 
       settle_result: null,
     });
     expect(await usedOn(pg.db, memberKey(user), '2026-10-06'), via).toBe(1);
+  }
+});
+
+type Recovery = 'finalizer' | 'same_key';
+
+/** Resolves with what `reached` gives, or fails when `work` ends first (it never got there). */
+async function before<T>(reached: Promise<T>, work: Promise<unknown>, what: string): Promise<T> {
+  const first = await Promise.race([
+    reached.then((value) => ({ value })),
+    work.then(() => 'ended' as const),
+  ]);
+  if (first === 'ended') throw new Error(`${what}: ended before getting there`);
+  return first.value;
+}
+
+/**
+ * S4 of a slow live process against the recovery of the same run after the lock period, truly
+ * overlapping (design §4.3「活进程 S4 与恢复方 F3」, §3.3, §3.1 S4 RETURNING; Codex spec-test review
+ * r2 S1-2). The live process chose consent_withdrawn (no card). `first` holds its transaction
+ * before COMMIT with its write done, so it holds the run row lock: S4 its decision UPDATE, the
+ * recovery (the independent finalizer, or the same-key retry finalizing R in the admission D path)
+ * its whole finalization. While it is held the test checks from its own connection that the run
+ * row still reads end_reason = NULL, starts the other side and waits until pg_blocking_pids shows
+ * it blocked by the holder; the holder is released in `finally`. Then the live tail goes on as
+ * RunManager does after S4: S4′ (recordFacts), S5 settle, S6 finish with its local frame.
+ */
+async function raceEnding(first: 'live' | 'recovery', via: Recovery) {
+  const label = `${first}-first/${via}`;
+  const { a, user, session, req, ticket } = await acceptOne();
+  a.clock.set(new Date(START_MS + 10_000));
+  const r = instance(pg.db, { clock: at(LOCK_END + 1) });
+  const facts = { ending: 'consent_withdrawn', cardsDelivered: 0 } as const;
+  const draft = draftOf('consent_withdrawn');
+  const step = via === 'finalizer' ? 'finalize' : 'admit';
+  const startS4 = () => settled(a.ports.registry.recordEnding(ticket.runId, facts, draft));
+  const startRecovery = (): Promise<FinalizeOutcome | AdmissionResult | Error> =>
+    via === 'finalizer'
+      ? settled(r.ports.finalizer.finalize(ticket.runId))
+      : settled(r.ports.admission.admit(request(user, session, req.clientMsgId), limits()));
+  let s4: Promise<void | Error>;
+  let recovery: Promise<FinalizeOutcome | AdmissionResult | Error>;
+  if (first === 'live') {
+    const held = a.hooks.hold('ending');
+    s4 = startS4();
+    try {
+      const holder = await before(held.reached, s4, `${label}: S4 at its COMMIT`);
+      expect(
+        (await runRow(pg.db, ticket.runId))['end_reason'],
+        `${label}: S4 written, not committed`,
+      ).toBeNull();
+      const pid = nextPid(r.hooks, step);
+      recovery = startRecovery();
+      await blockedBy(pg.db, await before(pid, recovery, `${label}: recovery SQL`), holder);
+    } finally {
+      held.release();
+    }
+  } else {
+    const held = r.hooks.hold(step);
+    recovery = startRecovery();
+    try {
+      const holder = await before(held.reached, recovery, `${label}: recovery at its COMMIT`);
+      expect(
+        (await runRow(pg.db, ticket.runId))['end_reason'],
+        `${label}: recovery written, not committed`,
+      ).toBeNull();
+      const pid = nextPid(a.hooks, 'ending');
+      s4 = startS4();
+      await blockedBy(pg.db, await before(pid, s4, `${label}: S4 SQL`), holder);
+    } finally {
+      held.release();
+    }
+  }
+  expect(await s4, `${label}: S4 resolves (0 rows is not an error)`).toBeUndefined();
+  const recovered = await recovery;
+  const factsAfterS4 = await a.ports.registry.facts(ticket.runId);
+  a.clock.set(new Date(LOCK_END + 5_000));
+  await a.ports.registry.recordFacts(ticket.runId, facts, draft);
+  const settle = await a.ports.admission.settle(ticket, facts, limits());
+  if (draft.event !== 'error') throw new Error('consent_withdrawn has an error draft');
+  const sent = await a.ports.registry.finish(ticket.runId, draft);
+  return { label, user, req, session, ticket, recovered, factsAfterS4, settle, sent };
+}
+
+const RECOVERIES: Recovery[] = ['finalizer', 'same_key'];
+
+it('[AC-B3-03g#89][BR-AI-23][BR-AI-13][BR-AI-15] 活进程 S4（consent_withdrawn）已写入、停在提交前；锁期后恢复方（独立 finalizer / 同键重试）开始收尾时 run 行仍是 end_reason=null，并被 S4 挡在该 run 行锁上：S4 提交后恢复方读回 PG 依据按 10004 收尾、无卡不退，不写 server_error、不标 hold、无约束错误；只结算一次，两边发出的帧都等于 final_event', async () => {
+  const consent = draftOf('consent_withdrawn');
+  for (const via of RECOVERIES) {
+    const { label, user, req, session, ticket, recovered, factsAfterS4, settle, sent } =
+      await raceEnding('live', via);
+    if (via === 'finalizer') {
+      expect(recovered, label).toEqual({
+        kind: 'final',
+        frame: consent,
+        refunded: false,
+        snapshotQuotaLeft: null,
+        quotaLeft: 99,
+        wrote: true,
+      });
+    } else {
+      expect(recovered, label).toEqual({
+        kind: 'duplicate',
+        original: {
+          runId: req.runId,
+          userMessageId: req.messageId,
+          assistantMessageId: req.reply.assistantMessageId,
+          promptVersion: req.reply.promptVersion,
+          modelSnapshot: req.reply.modelSnapshot,
+        },
+        reply: { kind: 'final', frame: consent },
+      });
+    }
+    expect(factsAfterS4, label).toEqual({ ending: 'consent_withdrawn', cardsDelivered: 0 });
+    expect(settle, label).toEqual({ refunded: false, quotaLeft: 99 });
+    expect(sent, label).toEqual(consent);
+    const row = await runRow(pg.db, ticket.runId);
+    expect(row, label).toMatchObject({
+      end_reason: 'consent_withdrawn',
+      card_delivered: false,
+      settle_result: 'counted',
+      finalize_hold: null,
+      finalize_hold_at: null,
+    });
+    expect(row['end_draft'], label).toEqual(stored(consent));
+    expect(row['final_event'], label).toEqual(stored(consent));
+    expect(row['settled_at'], `${label}: settled once, by the recovery`).toEqual(
+      new Date(LOCK_END + 1),
+    );
+    expect(row['ended_at'], label).toEqual(new Date(LOCK_END + 1));
+    expect(await usedOn(pg.db, memberKey(user), '2026-10-06'), label).toBe(1);
+    expect((await sessionRow(pg.db, session))['run_lock_run_id'], label).toBeNull();
+  }
+});
+
+it('[AC-B3-03g#90][BR-AI-23][BR-AI-15] 反向：锁期后恢复方（独立 finalizer / 同键重试）已写 server_error 收尾、停在提交前；活进程 S4（consent_withdrawn）随后被挡在该 run 行锁上：恢复方提交后 S4 为 0 行、活进程读回 PG 值，按 50001 无卡退还一次，不改写为 10004、不标 hold，两边发出的帧都等于 final_event', async () => {
+  for (const via of RECOVERIES) {
+    const { label, user, req, session, ticket, recovered, factsAfterS4, settle, sent } =
+      await raceEnding('recovery', via);
+    if (via === 'finalizer') {
+      expect(recovered, label).toEqual({
+        kind: 'final',
+        frame: RECOVERED,
+        refunded: true,
+        snapshotQuotaLeft: null,
+        quotaLeft: 100,
+        wrote: true,
+      });
+    } else {
+      expect(recovered, label).toEqual({
+        kind: 'duplicate',
+        original: {
+          runId: req.runId,
+          userMessageId: req.messageId,
+          assistantMessageId: req.reply.assistantMessageId,
+          promptVersion: req.reply.promptVersion,
+          modelSnapshot: req.reply.modelSnapshot,
+        },
+        reply: { kind: 'final', frame: RECOVERED },
+      });
+    }
+    expect(factsAfterS4, label).toEqual({ ending: 'server_error', cardsDelivered: 0 });
+    expect(settle, label).toEqual({ refunded: true, quotaLeft: 100 });
+    expect(sent, label).toEqual(RECOVERED);
+    const row = await runRow(pg.db, ticket.runId);
+    expect(row, label).toMatchObject({
+      end_reason: 'server_error',
+      card_delivered: false,
+      settle_result: 'refunded',
+      finalize_hold: null,
+      finalize_hold_at: null,
+    });
+    expect(row['end_draft'], label).toEqual(stored(RECOVERED));
+    expect(row['final_event'], label).toEqual(stored(RECOVERED));
+    expect(row['settled_at'], `${label}: settled once, by the recovery`).toEqual(
+      new Date(LOCK_END + 1),
+    );
+    expect(await usedOn(pg.db, memberKey(user), '2026-10-06'), label).toBe(0);
+    expect((await sessionRow(pg.db, session))['run_lock_run_id'], label).toBeNull();
   }
 });
