@@ -157,3 +157,9 @@ approvals:
     granted: true
     date: '2026-10-06'
     note: '负责人原话「不用等我加标签 请你直接加」（对话中直接给编排会话「Couli-runs handoff」）；扩大第 16 条的范围（第 16 条只覆盖门禁流程小改动）；例外四类沿用第 16 条；本条所在的 PR 由编排会话按负责人同一句授权加标签'
+  - id: 25
+    row: 4
+    title: '第 20 条例外扩到 user_risk_state.state：状态机生成器（CT-04）合并之前，user_risk_state.state 以 risk 模块领域层的纯迁移判定（apps/api/src/modules/risk/domain/，canTransitionRiskState）为唯一入口，配合单一写者与 row_version 比较并更新（CAS）防并发覆盖，代码留 TODO 指向生成器；生成器合并后改用生成的 transition()，本条随之作废。只加 user_risk_state.state，不适用于订单、提现、账务等其他状态字段'
+    granted: true
+    date: '2026-10-09'
+    note: '负责人在对话里直接对身份与风控线编排会话（identity-lane）选「1 扩大例外」（编排会话事先说明了 1 扩第 20 条与 2 等生成器的取舍）；起因 B1-03h 代码评审第 1、2 轮 Codex 判 S1「状态迁移未经生成的 transition()，approvals 未登记例外」；本条所在的 PR 由编排会话按负责人同一句授权加标签（先例第 20 条）'
