@@ -1880,7 +1880,9 @@ CREATE TABLE app.login_logs (
     device_id_hash text NOT NULL,
     ip inet NOT NULL,
     method text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    device_hash text,
+    CONSTRAINT login_logs_device_hash_check CHECK ((device_hash ~ '^[0-9a-f]{64}$'::text))
 );
 
 
@@ -4012,6 +4014,13 @@ CREATE INDEX link_open_attempts_user_opened_idx ON app.link_open_attempts USING 
 
 
 --
+-- Name: login_logs_device_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX login_logs_device_created_idx ON app.login_logs USING btree (app_id, device_hash, created_at) WHERE (device_hash IS NOT NULL);
+
+
+--
 -- Name: order_rights_order_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -4142,6 +4151,13 @@ CREATE INDEX risk_hits_ref_idx ON app.risk_hits USING btree (app_id, ref_type, r
 --
 
 CREATE INDEX risk_hits_related_phone_idx ON app.risk_hits USING btree (app_id, related_phone_hmac) WHERE (related_phone_hmac IS NOT NULL);
+
+
+--
+-- Name: risk_hits_same_device_once_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX risk_hits_same_device_once_key ON app.risk_hits USING btree (app_id, rule_id, ref_type, ref_id, value_hmac) WHERE (rule_id = 'SAME_DEVICE_MULTI_ACCOUNT'::text);
 
 
 --

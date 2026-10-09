@@ -440,6 +440,7 @@ export interface Links {
 export interface LoginLogs {
   app_id: string;
   created_at: Generated<Timestamp>;
+  device_hash: string | null;
   device_id_hash: string;
   id: Generated<ColumnType<bigint, bigint, bigint>>;
   ip: string;
