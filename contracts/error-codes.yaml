@@ -236,18 +236,19 @@ codes:
     sources: [BR-ID-17, BR-ID-18, BR-ID-24, BR-ATTR-05, BR-TEXT-14]
   - code: 30102
     http: 422
-    meaning: 淘宝授权已失效，需重新授权（data 同 30101：data.auth_url、data.state、data.auth_methods）；站长授权过期或失效期间带 reason=auth_unavailable
-    action: 同 30101
-    retry: 同 30101
+    meaning: 淘宝授权已失效，需重新授权（data 同 30101：data.auth_url、data.state、data.auth_methods）；站长授权过期或失效期间带 reason=auth_unavailable；别人的分享 link 而分享者的淘宝绑定不是 active 时带 reason=sharer_auth_invalid（失效的是分享者的授权，与打开者本人待授权区分），不带 auth_url、state（BR-ATTR-05 细则「别人的分享 link 不可用」；站长授权失效期间同样按分享者的绑定判断，返回 sharer_auth_invalid 而不是 auth_unavailable）
+    action: 同 30101；sharer_auth_invalid：不弹授权、不重放、不提供无返利购买，显示 link_landing.invalid
+    retry: 同 30101；sharer_auth_invalid：否
     retry_kind: after_action
     retry_kind_by_reason:
       auth_unavailable: later
+      sharer_auth_invalid: never
     data:
       auth_url: ~
       state: ~
       auth_methods: [web_code, sdk_token]
-      reason: [auth_unavailable]
-    sources: [BR-ID-17, BR-ID-21, BR-ID-24, BR-TEXT-14]
+      reason: [auth_unavailable, sharer_auth_invalid]
+    sources: [BR-ID-17, BR-ID-21, BR-ID-24, BR-ATTR-05, BR-TEXT-14]
   - code: 30103
     http: 422
     meaning: 该渠道已被限制推广（渠道 ID 黑名单）
@@ -266,13 +267,16 @@ codes:
     sources: [BR-ID-17]
   - code: 30111
     http: 422
-    meaning: 拼多多未授权（data.auth_jump：服务端下发的授权跳转首选与备选，形状即 openapi AuthJumpPlan，选法见 BR-ID-22 细则；客户端用执行购买跳转方案的同一个执行器按 primary、fallbacks 顺序执行，h5 步骤交系统浏览器，不上报 link_jump）
-    action: 同 30101
-    retry: 授权后
+    meaning: 拼多多未授权（data.auth_jump：服务端下发的授权跳转首选与备选，形状即 openapi AuthJumpPlan，选法见 BR-ID-22 细则；客户端用执行购买跳转方案的同一个执行器按 primary、fallbacks 顺序执行，h5 步骤交系统浏览器，不上报 link_jump）；别人的分享 link 而分享者的拼多多备案失效时带 data.reason=sharer_auth_invalid（失效的是分享者的授权，与打开者本人待授权区分），不带 auth_jump（BR-ATTR-05 细则「别人的分享 link 不可用」）
+    action: 同 30101；sharer_auth_invalid：不弹授权、不重放、不提供无返利购买，显示 link_landing.invalid
+    retry: 授权后；sharer_auth_invalid：否
     retry_kind: after_action
+    retry_kind_by_reason:
+      sharer_auth_invalid: never
     data:
       auth_jump: ~
-    sources: [BR-ID-18, BR-ID-22, BR-TEXT-14]
+      reason: [sharer_auth_invalid]
+    sources: [BR-ID-18, BR-ID-22, BR-ATTR-05, BR-TEXT-14]
   - code: 30121
     http: 422
     meaning: 京东该链接暂不支持转链（权限不足）

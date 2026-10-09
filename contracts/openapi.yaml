@@ -3810,6 +3810,13 @@ paths:
         new request with a new Idempotency-Key; the original key is only for retrying the same
         request (BR-ID-10 细则). 30101 / 30102 carry auth_url, state and auth_methods; 30111
         carries auth_jump.
+        A share link opened by anyone but the sharer while the sharer's own authorization is no
+        longer valid (Taobao binding not active, or Pinduoduo filing invalid) gets 30102 (Taobao)
+        or 30111 (Pinduoduo) with data.reason=sharer_auth_invalid and no auth_url, state or
+        auth_jump; this holds during a site-owner authorization outage too (never
+        auth_unavailable here). The opener is not the one to authorize: the client shows no
+        AuthSheet, does not replay the link, offers no no-rebate purchase and shows
+        link_landing.invalid (BR-ATTR-05 细则「别人的分享 link 不可用」).
       x-auth: optional
       x-signed: true
       x-idempotent: true
