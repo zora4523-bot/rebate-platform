@@ -2416,6 +2416,40 @@ ALTER TABLE app.risk_hits ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: risk_judgements; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.risk_judgements (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    rule_id text NOT NULL,
+    ref_type text NOT NULL,
+    ref_id text NOT NULL,
+    user_id uuid NOT NULL,
+    marked boolean NOT NULL,
+    result jsonb NOT NULL,
+    judged_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT risk_judgements_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text]))),
+    CONSTRAINT risk_judgements_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND ((result -> 'marked'::text) = to_jsonb(marked))))
+);
+
+
+--
+-- Name: risk_judgements_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.risk_judgements ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.risk_judgements_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: risk_rules; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3501,6 +3535,22 @@ ALTER TABLE ONLY app.refresh_tokens
 
 ALTER TABLE ONLY app.risk_hits
     ADD CONSTRAINT risk_hits_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: risk_judgements risk_judgements_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_judgements
+    ADD CONSTRAINT risk_judgements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: risk_judgements risk_judgements_ref_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_judgements
+    ADD CONSTRAINT risk_judgements_ref_key UNIQUE (app_id, rule_id, ref_type, ref_id);
 
 
 --
@@ -4963,6 +5013,22 @@ ALTER TABLE ONLY app.risk_hits
 
 ALTER TABLE ONLY app.risk_hits
     ADD CONSTRAINT risk_hits_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: risk_judgements risk_judgements_rule_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_judgements
+    ADD CONSTRAINT risk_judgements_rule_fkey FOREIGN KEY (app_id, rule_id) REFERENCES app.risk_rules(app_id, rule_id);
+
+
+--
+-- Name: risk_judgements risk_judgements_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_judgements
+    ADD CONSTRAINT risk_judgements_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -6975,6 +7041,77 @@ GRANT INSERT(amount_fen) ON TABLE app.risk_hits TO couli_app;
 --
 
 GRANT INSERT(created_at) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: TABLE risk_judgements; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT ON TABLE app.risk_judgements TO couli_app;
+GRANT SELECT ON TABLE app.risk_judgements TO couli_readonly;
+
+
+--
+-- Name: COLUMN risk_judgements.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(app_id) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.rule_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(rule_id) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.ref_type; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(ref_type) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.ref_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(ref_id) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(user_id) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.marked; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(marked) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(result) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.judged_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(judged_at) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(created_at) ON TABLE app.risk_judgements TO couli_app;
 
 
 --

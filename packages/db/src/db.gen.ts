@@ -695,6 +695,19 @@ export interface RiskHits {
   value_hmac: string;
 }
 
+export interface RiskJudgements {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  judged_at: Timestamp;
+  marked: boolean;
+  ref_id: string;
+  ref_type: string;
+  result: Json;
+  rule_id: string;
+  user_id: string;
+}
+
 export interface RiskRules {
   app_id: string;
   conditions: Json;
@@ -919,6 +932,7 @@ export interface DB {
   push_tokens: PushTokens;
   refresh_tokens: RefreshTokens;
   risk_hits: RiskHits;
+  risk_judgements: RiskJudgements;
   risk_rules: RiskRules;
   sessions: Sessions;
   union_accounts: UnionAccounts;
