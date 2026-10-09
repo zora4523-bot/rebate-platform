@@ -36,5 +36,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/auth/**'
-status: todo
-pr: null
+status: done
+pr: 379
