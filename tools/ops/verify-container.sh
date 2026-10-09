@@ -121,7 +121,11 @@
 #     process of the services user may be left; the directory must be reported absent (a check
 #     that cannot run is not "absent"); no IPC or shared memory may be left. result.json is written
 #     only after all that succeeded (a failed clean-up or a service that does not start is an
-#     infrastructure error: exit 2, no result.json); the one-shot password is replaced in the log;
+#     infrastructure error: exit 2, no result.json); the one-shot password is replaced in the log,
+#     red-check.json and every regular file under out/ before the result is derived from them
+#     (handed to node on stdin, never on a command line; a failure is exit 2); the database
+#     container's whole docker run has a host-side hard limit (its own limit plus 15 minutes):
+#     past it the containers are removed and the run stops with exit 2, no result;
 #   - result.json has "gate" (recorded when the run starts: the trusted root's commit, whether its
 #     tracked files equal that commit — an overlaid gate does not —, this script's sha256) and
 #     "services": "host-ephemeral".
@@ -298,6 +302,9 @@ if [ -n "${COULI_VERIFY_HOST_SERVICES:-}" ]; then
   [[ "$SVC_LOCK" =~ ^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$ ]] && [[ "$SVC_LOCK" != *..* ]] ||
     die "COULI_VERIFY_SVC_LOCK must be an absolute, plain path"
   SVC_REGISTRY="${SVC_LOCK%.lock}.runs"
+  if [ -n "${COULI_VERIFY_SVC_RUN_LIMIT:-}" ] && ! [[ "$COULI_VERIFY_SVC_RUN_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+    die "COULI_VERIFY_SVC_RUN_LIMIT must be a positive integer"
+  fi
 fi
 
 # The red run: which rule-test files the task added (inside its trusted test_paths), against the
@@ -483,11 +490,16 @@ write_result() {
 }
 
 finish() {
+  if [ "$SVC_RUN_TIMED_OUT" = 1 ]; then
+    die "the container exceeded the host-side limit of ${SVC_RUN_LIMIT}s (no result is written), see $LOG"
+  fi
   # Host services: the result exists only once this run's instances are gone.
   if [ "$SVC_ACTIVE" = 1 ]; then
     stop_host_services || die "the host services of this run could not be removed, see $LOG (no result is written)"
   fi
-  if [ "$HOST_SVC" = 1 ]; then svc_redact_log; fi
+  if [ "$HOST_SVC" = 1 ]; then
+    svc_redact || die "cannot remove the one-shot password from the run's log and reports (no result is written)"
+  fi
   write_result "$1"
   # The snapshot is identified by `tree` in result.json; the copy itself is not kept.
   rm -rf "$SRC"
@@ -568,7 +580,7 @@ cleanup() {
   fi
   if [ "$HOST_SVC" = 1 ]; then
     rm -f "$EXT_PROXY"
-    svc_redact_log
+    svc_redact || log "verify-container: could not remove the one-shot password from $VDIR"
   fi
   rm -rf "$SRC"
 }
@@ -708,6 +720,8 @@ if [ "$HOST_SVC" = 1 ]; then
 fi
 # 1 once this run holds the host-services lock (fd 9): only then do the docker runs close fd 9.
 SVC_LOCKED=0
+# 1 when a docker run outlived the host-side limit (svc_run): the run then writes no result.
+SVC_RUN_TIMED_OUT=0
 # Every privileged step has a hard time limit: a hanging sudo, systemctl or rm cannot hold the
 # lock forever.
 svc_sudo() { # <seconds> <sudo arguments...>
@@ -728,56 +742,106 @@ svc_docker() { # <seconds> <docker arguments...>: docker calls of the host-servi
 svc_journal() { # <unit>: its last lines into the log (startup failures)
   svc_sudo 20 journalctl -u "$1" -n 40 --no-pager >>"$LOG" 2>&1 || true
 }
-# Runs the docker run of a database container; it must not inherit the host-services lock.
-# Without host services the command runs exactly as written at the call site.
+# Runs the docker run of a container. Without host services the command runs exactly as written at
+# the call site. With them (this run holds the host-wide lock): the container does not inherit the
+# lock (fd 9), and the whole docker run has a host-side hard limit (the container's own limit plus
+# 15 minutes for the offline install), since a docker daemon that never answers, or an install
+# that hangs before the container's timeout starts, would otherwise hold the lock for ever. When
+# that limit hits: the run's containers are removed (bounded) and the run stops as an
+# infrastructure error (exit 2, no result; the EXIT trap removes the services).
 svc_run() {
-  if [ "$SVC_LOCKED" = 1 ]; then "$@" 9>&-; else "$@"; fi
+  if [ "$SVC_LOCKED" != 1 ]; then
+    "$@"
+    return
+  fi
+  local limit=$((TIMEOUT_SECS + 900)) started rc=0
+  # COULI_VERIFY_SVC_RUN_LIMIT (tool tests) can only lower it.
+  if [ -n "${COULI_VERIFY_SVC_RUN_LIMIT:-}" ] && [ "$COULI_VERIFY_SVC_RUN_LIMIT" -lt "$limit" ]; then
+    limit="$COULI_VERIFY_SVC_RUN_LIMIT"
+  fi
+  started="$(date +%s)"
+  timeout -k 30 "$limit" "$@" 9>&- || rc=$?
+  if { [ "$rc" = 124 ] || [ "$rc" = 137 ]; } && [ $(($(date +%s) - started)) -ge "$limit" ]; then
+    # The caller's stderr is the log: the reason is recorded here, the run stops in finish (or,
+    # for a red group, at its missing report).
+    printf '[verify-container %s] %s\n' "$(now_utc)" "the container exceeded the host-side limit of ${limit}s; removing it" >>"$LOG"
+    svc_docker 120 rm -f -v "$VERIFY_NAME" "$RED_DB_NAME" >/dev/null 2>>"$LOG" ||
+      printf '[verify-container %s] %s\n' "$(now_utc)" "docker rm of the timed-out containers failed or timed out" >>"$LOG"
+    SVC_RUN_TIMED_OUT=1
+    SVC_RUN_LIMIT="$limit"
+  fi
+  return "$rc"
 }
-# Host checks run as root through one small script each: the answer is printed, so "absent" and
-# "the check could not run" (sudo, time-out, permission) are never confused. Every caller requires
-# exit 0 and the exact expected output.
-#   couli-presence <path>        prints absent | present
-#   couli-rootcheck <root>       prints "<mount target> <fstype>" and "<owner> <octal mode>"
+# Host checks run as root through one small script each. Every check ends its output with the line
+# "couli-check: ok" only when each command it ran succeeded; the callers require that line, so
+# "the query ran and found nothing" is never confused with "the query did not run" (sudo refused,
+# time-out, a failing ipcs / pgrep / find).
+#   couli-presence <path>        absent | present
+#   couli-rootcheck <root>       "<mount target> <fstype>" and "<owner> <octal mode>"
+#   couli-procs <user>           "procs: none", or the user's processes
 #   couli-residue <user> <mode>  lists (mode list) or removes, then lists (mode clean) the user's
-#                                /dev/shm and /dev/mqueue entries and SysV IPC objects; prints
+#                                /dev/shm and /dev/mqueue entries and SysV IPC objects;
 #                                "residue: none" when there are none
 IFS= read -r -d '' SVC_HOST_SH <<'SH' || true
 set -u
+ok() { echo 'couli-check: ok'; exit 0; }
 case "$0" in
   couli-presence)
     if [ -e "$1" ] || [ -L "$1" ]; then echo present; else echo absent; fi
+    ok
     ;;
   couli-rootcheck)
-    findmnt -n -r -o TARGET,FSTYPE --mountpoint "$1" || exit 1
-    stat -c '%U %a' "$1" || exit 1
+    m="$(findmnt -n -r -o TARGET,FSTYPE --mountpoint "$1")" || exit 1
+    s="$(stat -c '%U %a' "$1")" || exit 1
+    printf '%s\n%s\n' "$m" "$s"
+    ok
+    ;;
+  couli-procs)
+    rc=0
+    p="$(pgrep -u "$1" -l)" || rc=$?
+    case "$rc" in
+      0) printf '%s\n' "$p" ;;
+      1) echo 'procs: none' ;;
+      *) exit 1 ;;
+    esac
+    ok
     ;;
   couli-residue)
     user="$1"
     list() {
       for d in /dev/shm /dev/mqueue; do
         [ -d "$d" ] || continue
-        find "$d" -mindepth 1 -maxdepth 1 -user "$user" -printf "file $d/%f\n" || return 1
+        f="$(find "$d" -mindepth 1 -maxdepth 1 -user "$user" -printf "file $d/%f\n")" || return 1
+        [ -z "$f" ] || printf '%s\n' "$f"
       done
-      ipcs -m -q -s | awk -v u="$user" '$3 == u { print "ipc " $2 }' || return 1
+      i="$(ipcs -m -q -s)" || return 1
+      printf '%s\n' "$i" | awk -v u="$user" '$3 == u { print "ipc " $2 }'
     }
     if [ "$2" = clean ]; then
       for d in /dev/shm /dev/mqueue; do
-        [ -d "$d" ] && { find "$d" -mindepth 1 -maxdepth 1 -user "$user" -exec rm -rf -- {} + || exit 1; }
+        if [ -d "$d" ]; then find "$d" -mindepth 1 -maxdepth 1 -user "$user" -exec rm -rf -- {} + || exit 1; fi
       done
       for t in m q s; do
-        ipcs -"$t" | awk -v u="$user" '$3 == u { print $2 }' | while read -r id; do ipcrm -"$t" "$id" || exit 1; done || exit 1
+        i="$(ipcs -"$t")" || exit 1
+        for id in $(printf '%s\n' "$i" | awk -v u="$user" '$3 == u { print $2 }'); do ipcrm -"$t" "$id" || exit 1; done
       done
     fi
     out="$(list)" || exit 1
     if [ -z "$out" ]; then echo 'residue: none'; else printf '%s\n' "$out"; fi
+    ok
     ;;
   *) exit 2 ;;
 esac
 SH
-svc_host() { # <seconds> <check> <args...>: prints the check's answer; fails when it could not run
-  local secs="$1" check="$2"
+svc_host() { # <seconds> <check> <args...>: prints the check's answer without the success line;
+  # fails unless the check ran completely (exit 0 and the success line last)
+  local secs="$1" check="$2" out
   shift 2
-  svc_sudo "$secs" sh -c "$SVC_HOST_SH" "$check" "$@"
+  out="$(svc_sudo "$secs" sh -c "$SVC_HOST_SH" "$check" "$@")" || return 1
+  case "$out" in
+    *$'\n''couli-check: ok') printf '%s\n' "${out%$'\n'couli-check: ok}" ;;
+    *) return 1 ;;
+  esac
 }
 svc_absent() { # <path>: true only when the path is certainly gone
   [ "$(svc_host 20 couli-presence "$1" 2>>"$LOG")" = absent ]
@@ -810,13 +874,13 @@ svc_unit_stopped() { # <unit>
 }
 # No process of the services user may be left (one host-services run at a time: any is ours).
 svc_no_processes() {
-  local rc=0 out
-  out="$(svc_sudo 20 pgrep -u "$SVC_USER" -l 2>>"$LOG")" || rc=$?
-  case "$rc" in
-    1) return 0 ;;
-    0) step "processes of $SVC_USER are still running: $(printf '%s' "$out" | tr '\n' ' ')" ;;
-    *) step "cannot list the processes of $SVC_USER (exit $rc)" ;;
-  esac
+  local out
+  out="$(svc_host 20 couli-procs "$SVC_USER" 2>>"$LOG")" || {
+    step "cannot list the processes of $SVC_USER"
+    return 1
+  }
+  [ "$out" = 'procs: none' ] && return 0
+  step "processes of $SVC_USER are still running: $(printf '%s' "$out" | tr '\n' ' ')"
   return 1
 }
 # The services user may send nothing anywhere: the nftables rule exists and a live probe as that
@@ -1052,12 +1116,28 @@ start_host_services() { # <what the services are for, for the log>
   RESULT_EXTRA="$RESULT_EXTRA"$',\n  "services": "host-ephemeral"'
   step "host services ready: the run gets 127.0.0.1:5432 and 127.0.0.1:6379 through the socket proxy, no network"
 }
-# The run's log may quote the one-shot password (a test printing a URL): it is replaced before
-# the result is written and whenever the script ends.
-svc_redact_log() {
-  if [ -n "${SVC_PG_PASSWORD:-}" ] && [ -f "$LOG" ]; then
-    sed -i "s/$SVC_PG_PASSWORD/[one-shot password]/g" "$LOG" 2>/dev/null || true
-  fi
+# What a run writes may quote the one-shot password (a test printing a URL, a red report's failure
+# message or test title): the log, red-check.json and every regular file under out/ have it
+# replaced before the result (reports' sha256, red_tests) is derived from them, and again when the
+# script ends. The password reaches node on stdin, never a command line; symbolic links, FIFOs
+# and other special files are skipped, never opened.
+svc_redact() {
+  [ -n "${SVC_PG_PASSWORD:-}" ] || return 0
+  printf '%s' "$SVC_PG_PASSWORD" | node -e '
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const secret = fs.readFileSync(0, "utf8");
+    if (!/^[0-9a-f]{32}$/.test(secret)) throw new Error("unexpected one-shot password on stdin");
+    const visit = (p) => {
+      let st;
+      try { st = fs.lstatSync(p); } catch (e) { if (e.code === "ENOENT") return; throw e; }
+      if (st.isDirectory()) { for (const n of fs.readdirSync(p)) visit(path.join(p, n)); return; }
+      if (!st.isFile()) return;
+      const text = fs.readFileSync(p, "latin1");
+      if (text.includes(secret)) fs.writeFileSync(p, text.split(secret).join("[one-shot password]"), "latin1");
+    };
+    for (const p of process.argv.slice(1)) visit(p);
+  ' "$LOG" "$VDIR/red-check.json" "$VDIR/out" 2>>"$LOG"
 }
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
