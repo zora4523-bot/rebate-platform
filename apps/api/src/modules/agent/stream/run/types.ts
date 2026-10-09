@@ -95,7 +95,18 @@ export interface RunRegistry {
   facts(runId: string): Promise<RunFacts | null>;
   requestCancel(runId: string, ownerKey: string): Promise<'ok' | 'not_found'>;
   cancelRequested(runId: string): Promise<boolean>;
-  finish(runId: string, terminal: TerminalFrame): Promise<void>;
+  /**
+   * Saves the terminal after settlement. B3-03g: a registry that persists the terminal returns the
+   * frame actually stored (agent_runs.final_event), and the manager sends that one instead of its
+   * own; returning nothing (B3-03b fakes, the Redis registry) keeps sending `terminal`.
+   */
+  finish(runId: string, terminal: TerminalFrame): Promise<TerminalFrame | void>;
+  /**
+   * B3-03g S4 (design §3.1): called by the manager inside choose(), when the ending is chosen and
+   * before anything is awaited (no wait for pending card facts); the PG registry writes the ending
+   * with the decision UPDATE at once. Optional: registries without it are skipped.
+   */
+  recordEnding?(runId: string, facts: RunFacts, draft: TerminalDraft): Promise<void>;
   final(runId: string): Promise<TerminalFrame | null>;
 }
 
