@@ -47,7 +47,7 @@
     "test/spec/db/agent-acceptance/pg-acceptance.int.test.ts > [AC-B3-09b#15] agent_runs: exact application and readonly privileges for new columns",
     "test/spec/db/agent-acceptance/pg-acceptance.int.test.ts > [AC-B3-09b#16] agent_runs: payout/maint acquire no rights to the new columns"
   ],
-  "risk_note": "RV2 migration task (db/migrations/0022_agent-pg-admission.sql: agent_sessions run lock, agent_runs end_draft, deadline_at, cancel_requested_at, finalize hold; write-once rules added to the 0021 trigger with its conditions kept verbatim; counting indexes; column grants incl. readonly SELECT). Owner decisions 2026-10-08 (couli#88): Agent admission and quota in PostgreSQL, ending follows the persisted record. Codex wrote test/spec/db/agent-acceptance/** (attempt 1, container red 43 tests), Claude spec-test review round 1 pass. Opus implemented once (SQL only, 43/43 green in the container); the orchestrator ran pnpm db:snapshot outside the sandbox (db:check clean). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "risk_note": "RV2 migration task (db/migrations/0023_agent-pg-admission.sql (renumbered from 0022 after B1-01zk #350 took 0022; snapshot regenerated on the AWS test machine with remote-snapshot.sh, unchanged): agent_sessions run lock, agent_runs end_draft, deadline_at, cancel_requested_at, finalize hold; write-once rules added to the 0021 trigger with its conditions kept verbatim; counting indexes; column grants incl. readonly SELECT). Owner decisions 2026-10-08 (couli#88): Agent admission and quota in PostgreSQL, ending follows the persisted record. Codex wrote test/spec/db/agent-acceptance/** (attempt 1, container red 43 tests), Claude spec-test review round 1 pass. Opus implemented once (SQL only, 43/43 green in the container); the orchestrator ran pnpm db:snapshot outside the sandbox (db:check clean). Full verification is the required CI checks (ops/approvals.yaml id 21).",
   "runs": [
     {
       "mode": "container",
@@ -56,8 +56,8 @@
       "commit": "0e48525429db66b96ab75fbdcd86bbfbb12bebe8",
       "tree": "9c979f508b80266b762c0a15cfe4932cd1ef12bb",
       "prop_seed": 20261001,
-      "started_at": "2026-10-09T07:32:32Z",
-      "finished_at": "2026-10-09T07:32:38Z",
+      "started_at": "2026-10-09T08:06:37Z",
+      "finished_at": "2026-10-09T08:06:43Z",
       "red_tests": [
         "test/spec/db/agent-acceptance/pg-acceptance.int.test.ts > [AC-B3-09b#1] agent_sessions: additive columns have exact types, nullable and no defaults",
         "test/spec/db/agent-acceptance/pg-acceptance.int.test.ts > [AC-B3-09b#1] agent_runs: additive columns have exact types, nullable and no defaults",
