@@ -4,7 +4,7 @@
 // Also compiled by the `test` project: erasable syntax only, `import type` for types, `.ts`
 // relative imports, no decorators.
 import type { DB } from '@couli/db';
-import type { Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 
 export interface LoginAccount {
   readonly id: string;
@@ -31,9 +31,12 @@ export async function findAccountByPhone(
     .executeTakeFirst();
 }
 
-/** device_hash of the request's device row (the registration service reads no devices). */
+/**
+ * device_hash of the request's device row (the registration service reads no devices). Also read
+ * on the pool by the SMS send risk (B1-03g, application/sms-risk-ports.ts).
+ */
 export async function deviceHashOf(
-  trx: Transaction<DB>,
+  trx: Kysely<DB>,
   appId: string,
   deviceId: string,
 ): Promise<string | undefined> {
