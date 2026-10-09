@@ -186,15 +186,6 @@ function fixture(files: Record<string, string>, check: (root: string) => void): 
   }
 }
 
-function cliAllowed(sql = ALLOWED): void {
-  fixture({ [HISTORY_FILE]: HISTORY, [FILE]: sql }, (root) => {
-    const result = cli(['--root', root]);
-    expect(result.status, result.stderr + result.stdout).toBe(0);
-    expect(result.stdout).toContain('squawk over');
-    expect(result.stderr).not.toContain('while the file carries squawk-ignore');
-  });
-}
-
 it(
   '[AC-CT-06g#4] 同定义重建仅豁免指定语句的 constraint-missing-not-valid，真 squawk 复查也通过',
   () => {
@@ -205,8 +196,6 @@ it(
       expect(result.stdout).toContain('squawk over');
       expect(result.stdout).toContain('constraint-missing-not-valid');
     });
-    cliAllowed();
-    expect(checkMigration(FILE, ALLOWED, CONTEXT)).toEqual([]);
   },
   CLI_TIMEOUT_MS,
 );
@@ -262,8 +251,6 @@ it.each(REJECTED_IGNORES)(
       expect(result.stderr).toContain(IGNORE_REFUSAL);
       expect(result.stderr).toContain(`${FILE}:`);
     });
-    cliAllowed();
-    expect(checkMigration(FILE, ALLOWED, CONTEXT)).toEqual([]);
   },
   CLI_TIMEOUT_MS,
 );
@@ -285,8 +272,6 @@ it(
       expect(result.status, result.stderr + result.stdout).toBe(1);
       expect(result.stderr).toContain(IGNORE_REFUSAL);
     });
-    cliAllowed(multi);
-    expect(checkMigration(FILE, multi, CONTEXT)).toEqual([]);
   },
   CLI_TIMEOUT_MS,
 );
@@ -297,7 +282,6 @@ it(
     // 仓库可有 0020、0021 等待检查文件，也可全在冻结清单；不假定 nothing to lint。
     const result = cli([], join(ROOT, 'test'));
     expect(result.status, result.stderr + result.stdout).toBe(0);
-    cliAllowed();
   },
   CLI_TIMEOUT_MS,
 );

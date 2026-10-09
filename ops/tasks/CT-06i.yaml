@@ -1,0 +1,20 @@
+id: CT-06i
+repo: rebate-platform
+title: 迁移门禁受保护测试 CT-06g leftovers.test.ts 去掉「资金表约束同定义重建的 squawk 例外放行」断言（为 CT-06h 撤掉该例外铺路）
+type: test-change
+# 2026-10-09 入账（负责人同日「继续做」；CT-06h 台账评审 #348 两轮 Codex P1：资金表约束直接重建都持 ACCESS EXCLUSIVE 扫表或建索引，CT-06g 的 squawk 例外要撤）。
+# 按规划/11 §4.4 先立独立的测试变更任务（先例 CT-06e）。本任务只删 leftovers.test.ts [AC-CT-06g#4]～#7 里的放行断言（cliAllowed 及同定义重建 checkMigration 为空），
+# 拒绝断言全部保留；改前（CT-06g 实现）改后（CT-06h 实现）都绿，已分别验证。拒绝行为由 CT-06h 自己的规则测试覆盖。不改任何实现代码。
+# 保护路径第一类，合并要批准标签（approvals 第 24 条；只删「放行」断言，不削弱拒绝）。
+refs: []
+refs_hash: {}
+deps: [CT-06g]
+paths:
+  - 'test/spec/db/lint-migrations/leftovers.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/lint-migrations/**'
+status: todo
+pr: null
