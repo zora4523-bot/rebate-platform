@@ -15,5 +15,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/db/lint-migrations/**'
-status: todo
-pr: null
+status: done
+pr: 357
