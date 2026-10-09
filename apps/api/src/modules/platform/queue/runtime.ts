@@ -1,4 +1,10 @@
-import { sql } from 'kysely';
+// Queue runtime over pg-boss (B1-01g). Every entry's queue.start() first reads pgboss.version;
+// that read is bounded (B1-01zs): it runs in its own transaction with SET LOCAL-equivalent
+// lock_timeout and statement_timeout of VERSION_READ_TIMEOUT (20 s), so a session holding a lock
+// on pgboss.version makes start() reject (startup_failed) instead of waiting forever. The bound
+// is well above a short lock held during deployment and below the rule tests' 60 s limit.
+import { sql, type Kysely } from 'kysely';
+import type { DB } from '@couli/db';
 import { PgBoss, fromKysely } from 'pg-boss';
 import { reportQueueError, runExecutor } from './executor.ts';
 import {
@@ -11,6 +17,23 @@ import {
   type QueueSpec,
 } from './types.ts';
 import { runtimeOptions, validateSend } from './validation.ts';
+
+/** Upper bound of the pgboss.version read at start (lock wait and statement), see the header. */
+const VERSION_READ_TIMEOUT = '20s';
+
+async function readVersion(db: Kysely<DB>): Promise<readonly { version: number }[]> {
+  // The settings are transaction-local (set_config(..., true)), so the pooled connection keeps
+  // its defaults afterwards. A minimal db without transactions (unit-test doubles of the
+  // runtime option, which only requires executeQuery) reads directly.
+  if (typeof db.transaction !== 'function') {
+    return (await sql<{ version: number }>`SELECT version FROM pgboss.version`.execute(db)).rows;
+  }
+  return db.transaction().execute(async (trx) => {
+    await sql`SELECT set_config('lock_timeout', ${VERSION_READ_TIMEOUT}, true),
+      set_config('statement_timeout', ${VERSION_READ_TIMEOUT}, true)`.execute(trx);
+    return (await sql<{ version: number }>`SELECT version FROM pgboss.version`.execute(trx)).rows;
+  });
+}
 
 function queueSettings(spec: QueueSpec) {
   return {
@@ -54,10 +77,8 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
 
   const start = async (): Promise<void> => {
     try {
-      const version = await sql<{ version: number }>`SELECT version FROM pgboss.version`.execute(
-        db,
-      );
-      if (version.rows.length !== 1 || version.rows[0]?.version !== PGBOSS_SCHEMA_VERSION) {
+      const version = await readVersion(db);
+      if (version.length !== 1 || version[0]?.version !== PGBOSS_SCHEMA_VERSION) {
         throw new QueueError('schema_mismatch');
       }
       // Check ALL existing queues before making any changes or starting pg-boss timers.

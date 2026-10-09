@@ -6,12 +6,17 @@ import { createQueueRuntime } from './runtime.ts';
 import type { JobPayload, QueueRuntime, QueueSpec } from './types.ts';
 
 // No database runs: fetch is observed independently from business handler calls.
+// Each statement records its text and the executor it ran on (B1-01zs: the version read).
+const statements = vi.hoisted(() => [] as { text: string; executor: unknown }[]);
 vi.mock('kysely', async (original) => ({
   ...(await original<typeof import('kysely')>()),
-  sql: () => ({
-    execute: async () => ({
-      rows: [{ version: 42, id: 'claimed', startedOnExact: '2026-10-04 00:00:00.123456+00' }],
-    }),
+  sql: (strings: TemplateStringsArray) => ({
+    execute: async (executor: unknown) => {
+      statements.push({ text: strings.join('$'), executor });
+      return {
+        rows: [{ version: 42, id: 'claimed', startedOnExact: '2026-10-04 00:00:00.123456+00' }],
+      };
+    },
   }),
 }));
 
@@ -271,4 +276,76 @@ it('[AC-B1-01g#8] 优雅关闭等处理器及完成写入；未领取任务不�
   expect(fake.fail).not.toHaveBeenCalled();
   expect(pending.get('payout')).toEqual([job('waiting')]);
   expect(logger.warn).not.toHaveBeenCalled();
+});
+
+function boundedFixture(
+  transaction: () => { execute: (run: (trx: unknown) => unknown) => unknown },
+) {
+  vi.useFakeTimers();
+  fake.fetch.mockReset();
+  fake.fetch.mockResolvedValue([]);
+  fake.stop.mockClear();
+  statements.length = 0;
+  const logger = { warn: vi.fn(), error: vi.fn() };
+  const spec: QueueSpec = {
+    name: 'payout',
+    policy: 'exclusive',
+    retryLimit: 0,
+    retryDelaySeconds: 1,
+    retryBackoff: false,
+    retryDelayMaxSeconds: null,
+    expireInSeconds: 1,
+    retentionSeconds: 60,
+    deleteAfterSeconds: 60,
+    deadLetter: null,
+  };
+  const runtime = createQueueRuntime({
+    entry: 'payout',
+    db: { executeQuery: vi.fn(), transaction } as unknown as Kysely<DB>,
+    logger: logger as unknown as RootLogger,
+    catalog: [spec],
+    plan: {
+      api: [],
+      stream: [],
+      admin: [],
+      worker: [],
+      payout: [{ queue: 'payout', concurrency: 1, pollingIntervalSeconds: 0.5 }],
+    },
+    stopTimeoutMs: 100,
+  });
+  runtimes.push(runtime);
+  return { runtime, logger };
+}
+
+it('[AC-B1-01zs#3] start 读 pgboss.version 在独立事务里先设事务内的等锁与语句上限，再读版本', async () => {
+  const trx = { name: 'version-read transaction' };
+  const transaction = vi.fn(() => ({
+    execute: async (run: (inner: unknown) => unknown) => run(trx),
+  }));
+  const { runtime } = boundedFixture(transaction);
+  runtime.register('payout', async () => undefined);
+  await runtime.start();
+  expect(transaction).toHaveBeenCalledOnce();
+  const [bound, read] = statements;
+  expect(bound?.executor).toBe(trx);
+  expect(bound?.text).toMatch(/set_config\('lock_timeout', \$, true\)/);
+  expect(bound?.text).toMatch(/set_config\('statement_timeout', \$, true\)/);
+  expect(read).toEqual({ text: 'SELECT version FROM pgboss.version', executor: trx });
+});
+
+it('[AC-B1-01zs#3] 版本读取等锁超时：start 以同一错误拒绝，不领任务、不写日志，stop 照常结束', async () => {
+  const timeout = Object.assign(new Error('canceling statement due to lock timeout'), {
+    code: '55P03',
+  });
+  const { runtime, logger } = boundedFixture(() => ({
+    execute: async () => {
+      throw timeout;
+    },
+  }));
+  runtime.register('payout', async () => undefined);
+  await expect(runtime.start()).rejects.toBe(timeout);
+  await runtime.stop();
+  expect(fake.fetch).not.toHaveBeenCalled();
+  expect(logger.warn).not.toHaveBeenCalled();
+  expect(logger.error).not.toHaveBeenCalled();
 });
