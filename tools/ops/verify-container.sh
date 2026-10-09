@@ -89,19 +89,26 @@
 # (systemd-run, systemctl, nft, install, rm) and flock. What changes in that mode, and nothing else:
 #   - before the services start: the nftables table `inet couli_isolation` must reject every packet
 #     of the services user (checked, plus a live probe as that user), else exit 2; one run at a
-#     time (flock on <runs>/lock/verify-host-services.flock; the lock dies with the process), and
-#     whatever an earlier killed run left (containers labelled couli.services=host, transient units
-#     couli-svc-*, directories under the tmpfs) is removed first, or the run stops (exit 2);
+#     time on the whole host (flock on /run/lock/couli-host-services.lock, shared by every lane
+#     and every COULI_RUNS; the lock dies with the process); the instance root must be the
+#     dedicated tmpfs mount point (owned by the services user, 0700), else exit 2; whatever an
+#     earlier killed run left (containers labelled couli.services=host, transient units
+#     couli-svc-*, the directories of runs in the registry /run/lock/couli-host-services.runs, the
+#     user's processes, /dev/shm, /dev/mqueue and SysV IPC objects) is removed first, or the run
+#     stops (exit 2); an unregistered entry in the instance root is never removed (exit 2);
 #   - initdb on the tmpfs (superuser postgres, a random password that exists only in this run; it
 #     reaches initdb on stdin, never a command line), then postgres (listen_addresses='', unix
 #     socket only, 0770 to the socket group) and redis-server (port 0, unix socket only, no RDB or
 #     AOF, maxmemory 256mb noeviction as infra/local/compose.yaml / ADR-0001 §4.2 #17; MIGRATE,
 #     REPLICAOF, SLAVEOF, MODULE, DEBUG, SAVE, BGSAVE, BGREWRITEAOF, SHUTDOWN, FAILOVER, SYNC,
 #     PSYNC disabled, protected settings immutable; CONFIG stays for the rule tests' CONFIG GET),
-#     each a transient systemd unit as the services user, sandboxed: own
-#     empty network namespace, AF_UNIX only, IPAddressDeny=any, read-only system, no /home, /root,
-#     /run or /Users, only its own run directory writable, no capabilities, no new privileges, own
-#     /proc view, RuntimeMaxSec; whatever COPY ... PROGRAM starts runs inside that sandbox too;
+#     each a transient systemd unit as the services user, sandboxed: own empty network namespace,
+#     AF_UNIX only, IPAddressDeny=any, own IPC namespace (RemoveIPC), /tmp, /var/tmp and /dev/shm
+#     inside the run directory on the tmpfs, read-only system, no /home, /root, /run, /Users,
+#     /var/log, /data or the host services' configuration (Pigsty's passwords), only its own run
+#     directory writable, no capabilities, no new privileges, @system-service calls only,
+#     MemoryMax=4G, TasksMax=512, own /proc view, RuntimeMaxSec; whatever COPY ... PROGRAM starts
+#     runs inside that sandbox too;
 #   - the database container runs with `--network none` and gets only the run's socket directory
 #     (the two sockets) read-only, the socket group, and a small proxy (node, written by this
 #     script, mounted read-only) on 127.0.0.1:5432 / 127.0.0.1:6379 that forwards to the two
@@ -109,8 +116,14 @@
 #     TEST_REDIS_URL redis://127.0.0.1:6379/0 (packages/db/src/pg-url.ts and the test Redis probe
 #     take host:port URLs only; pg_dump of db:check connects the same way);
 #   - after the run (also on failure, time-out or signal) the units are stopped and the run
-#     directory removed; result.json is written only after that succeeded (a failed clean-up or a
-#     service that does not start is an infrastructure error: exit 2, no result.json), and has
+#     directory removed, each confirmed: a unit is stopped only when systemd says not-found, or
+#     loaded and inactive / failed (no answer, an empty answer or a time-out is not stopped); no
+#     process of the services user may be left; the directory must be reported absent (a check
+#     that cannot run is not "absent"); no IPC or shared memory may be left. result.json is written
+#     only after all that succeeded (a failed clean-up or a service that does not start is an
+#     infrastructure error: exit 2, no result.json); the one-shot password is replaced in the log;
+#   - result.json has "gate" (recorded when the run starts: the trusted root's commit, whether its
+#     tracked files equal that commit — an overlaid gate does not —, this script's sha256) and
 #     "services": "host-ephemeral".
 # Unset, the script behaves exactly as without these lines.
 set -euo pipefail
@@ -278,6 +291,13 @@ if [ -n "${COULI_VERIFY_HOST_SERVICES:-}" ]; then
       die "host service paths must be absolute, plain, without a trailing slash: $v"
   done
   [ "$SVC_ROOT" != / ] || die "COULI_VERIFY_SVC_ROOT must not be /"
+  # One lock and one run registry for the whole host (tmpfiles.d of setup-isolation.sh creates
+  # both on every boot, as the tmpfs comes back empty). COULI_VERIFY_SVC_LOCK exists for the tool
+  # tests only; on the test machine every lane uses the default.
+  SVC_LOCK="${COULI_VERIFY_SVC_LOCK:-/run/lock/couli-host-services.lock}"
+  [[ "$SVC_LOCK" =~ ^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$ ]] && [[ "$SVC_LOCK" != *..* ]] ||
+    die "COULI_VERIFY_SVC_LOCK must be an absolute, plain path"
+  SVC_REGISTRY="${SVC_LOCK%.lock}.runs"
 fi
 
 # The red run: which rule-test files the task added (inside its trusted test_paths), against the
@@ -419,13 +439,29 @@ else
 fi
 
 STARTED_AT="$(now_utc)"
-# Set by start_host_services when the run used the host services (empty otherwise).
-SERVICES_FIELD=''
+# Extra result fields of the host-services mode (empty otherwise): the gate's provenance, and
+# "services" once start_host_services ran.
+RESULT_EXTRA=''
+if [ "$HOST_SVC" = 1 ]; then
+  # Where this gate comes from, recorded before anything runs: the trusted root's commit, whether
+  # its tracked files equal that commit (an overlaid gate does not), and this script's sha256.
+  # Evidence takes only results with a clean gate of a known commit; a trusted root that is not a
+  # git checkout records commit null, clean false.
+  gate_commit=null
+  gate_clean=false
+  if gate_head="$(git --no-optional-locks -c core.fsmonitor=false -C "$TRUSTED" rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null)" &&
+    [[ "$gate_head" =~ ^[0-9a-f]{40,64}$ ]]; then
+    gate_commit="\"$gate_head\""
+    if git --no-optional-locks -c core.fsmonitor=false -C "$TRUSTED" diff --quiet HEAD -- 2>/dev/null; then gate_clean=true; fi
+  fi
+  gate_sha="$(sha256_stdin <"$SELF_DIR/verify-container.sh")"
+  RESULT_EXTRA=$',\n  "gate": { "commit": '"$gate_commit"', "clean": '"$gate_clean"', "script_sha256": "'"$gate_sha"'" }'
+fi
 
 write_result() {
   local tmp="$RESULT.tmp.$$"
   printf '{\n  "mode": "%s",\n  "script": "%s",\n  "exit_code": %s,\n  "commit": %s,\n  "tree": %s,\n  "prop_seed": %s,\n  "started_at": "%s",\n  "finished_at": "%s"%s\n}\n' \
-    "$MODE" "$SCRIPT" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "$STARTED_AT" "$(now_utc)" "$SERVICES_FIELD" >"$tmp"
+    "$MODE" "$SCRIPT" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "$STARTED_AT" "$(now_utc)" "$RESULT_EXTRA" >"$tmp"
   if [ "$SCRIPT" = red ] && [ -f "$VDIR/red-check.json" ]; then
     # The red tests, the expected files and the exported reports with their sha256 (evidence).
     node -e '
@@ -451,6 +487,7 @@ finish() {
   if [ "$SVC_ACTIVE" = 1 ]; then
     stop_host_services || die "the host services of this run could not be removed, see $LOG (no result is written)"
   fi
+  if [ "$HOST_SVC" = 1 ]; then svc_redact_log; fi
   write_result "$1"
   # The snapshot is identified by `tree` in result.json; the copy itself is not kept.
   rm -rf "$SRC"
@@ -519,13 +556,20 @@ SVC_ACTIVE=0
 EXT_PROXY="$VDIR/services-proxy.cjs"
 cleanup() {
   # Signals do not reach processes inside a container: remove them explicitly.
-  docker rm -f -v "$VERIFY_NAME" "$RED_DB_NAME" "$FETCH_NAME" "$PG_NAME" "$REDIS_NAME" >/dev/null 2>&1 || true
+  if [ "$HOST_SVC" = 1 ]; then
+    timeout -k 5 120 docker rm -f -v "$VERIFY_NAME" "$RED_DB_NAME" "$FETCH_NAME" "$PG_NAME" "$REDIS_NAME" >/dev/null 2>&1 || true
+  else
+    docker rm -f -v "$VERIFY_NAME" "$RED_DB_NAME" "$FETCH_NAME" "$PG_NAME" "$REDIS_NAME" >/dev/null 2>&1 || true
+  fi
   if [ "$net_created" -eq 1 ]; then docker network rm "$NET" >/dev/null 2>&1 || true; fi
   if [ "$store_locked" -eq 1 ]; then rmdir "$STORE_LOCK" 2>/dev/null || true; fi
   if [ "$SVC_ACTIVE" = 1 ]; then
     stop_host_services || log "verify-container: the host services of this run could not be removed (the next run removes them or stops), see $LOG"
   fi
-  if [ "$HOST_SVC" = 1 ]; then rm -f "$EXT_PROXY"; fi
+  if [ "$HOST_SVC" = 1 ]; then
+    rm -f "$EXT_PROXY"
+    svc_redact_log
+  fi
   rm -rf "$SRC"
 }
 trap cleanup EXIT
@@ -662,7 +706,8 @@ if [ "$HOST_SVC" = 1 ]; then
   SVC_DIR="$SVC_ROOT/$TAG"
   SVC_SOCK="$SVC_DIR/sock"
 fi
-SVC_LOCK="$RUNS/lock/verify-host-services.flock"
+# 1 once this run holds the host-services lock (fd 9): only then do the docker runs close fd 9.
+SVC_LOCKED=0
 # Every privileged step has a hard time limit: a hanging sudo, systemctl or rm cannot hold the
 # lock forever.
 svc_sudo() { # <seconds> <sudo arguments...>
@@ -675,8 +720,104 @@ svc_as_user() { # <seconds> <command...>: as the services user (readiness probes
   shift
   svc_sudo "$secs" -u "$SVC_USER" "$@"
 }
+svc_docker() { # <seconds> <docker arguments...>: docker calls of the host-services mode
+  local secs="$1"
+  shift
+  timeout -k 5 "$secs" docker "$@"
+}
 svc_journal() { # <unit>: its last lines into the log (startup failures)
   svc_sudo 20 journalctl -u "$1" -n 40 --no-pager >>"$LOG" 2>&1 || true
+}
+# Runs the docker run of a database container; it must not inherit the host-services lock.
+# Without host services the command runs exactly as written at the call site.
+svc_run() {
+  if [ "$SVC_LOCKED" = 1 ]; then "$@" 9>&-; else "$@"; fi
+}
+# Host checks run as root through one small script each: the answer is printed, so "absent" and
+# "the check could not run" (sudo, time-out, permission) are never confused. Every caller requires
+# exit 0 and the exact expected output.
+#   couli-presence <path>        prints absent | present
+#   couli-rootcheck <root>       prints "<mount target> <fstype>" and "<owner> <octal mode>"
+#   couli-residue <user> <mode>  lists (mode list) or removes, then lists (mode clean) the user's
+#                                /dev/shm and /dev/mqueue entries and SysV IPC objects; prints
+#                                "residue: none" when there are none
+IFS= read -r -d '' SVC_HOST_SH <<'SH' || true
+set -u
+case "$0" in
+  couli-presence)
+    if [ -e "$1" ] || [ -L "$1" ]; then echo present; else echo absent; fi
+    ;;
+  couli-rootcheck)
+    findmnt -n -r -o TARGET,FSTYPE --mountpoint "$1" || exit 1
+    stat -c '%U %a' "$1" || exit 1
+    ;;
+  couli-residue)
+    user="$1"
+    list() {
+      for d in /dev/shm /dev/mqueue; do
+        [ -d "$d" ] || continue
+        find "$d" -mindepth 1 -maxdepth 1 -user "$user" -printf "file $d/%f\n" || return 1
+      done
+      ipcs -m -q -s | awk -v u="$user" '$3 == u { print "ipc " $2 }' || return 1
+    }
+    if [ "$2" = clean ]; then
+      for d in /dev/shm /dev/mqueue; do
+        [ -d "$d" ] && { find "$d" -mindepth 1 -maxdepth 1 -user "$user" -exec rm -rf -- {} + || exit 1; }
+      done
+      for t in m q s; do
+        ipcs -"$t" | awk -v u="$user" '$3 == u { print $2 }' | while read -r id; do ipcrm -"$t" "$id" || exit 1; done || exit 1
+      done
+    fi
+    out="$(list)" || exit 1
+    if [ -z "$out" ]; then echo 'residue: none'; else printf '%s\n' "$out"; fi
+    ;;
+  *) exit 2 ;;
+esac
+SH
+svc_host() { # <seconds> <check> <args...>: prints the check's answer; fails when it could not run
+  local secs="$1" check="$2"
+  shift 2
+  svc_sudo "$secs" sh -c "$SVC_HOST_SH" "$check" "$@"
+}
+svc_absent() { # <path>: true only when the path is certainly gone
+  [ "$(svc_host 20 couli-presence "$1" 2>>"$LOG")" = absent ]
+}
+svc_no_residue() { # <list|clean>: true only when the services user certainly left no IPC / shm
+  local out
+  out="$(svc_host 60 couli-residue "$SVC_USER" "$1" 2>>"$LOG")" || {
+    step "cannot list what $SVC_USER left in /dev/shm, /dev/mqueue and SysV IPC"
+    return 1
+  }
+  [ "$out" = 'residue: none' ] && return 0
+  step "$SVC_USER left IPC or shared memory behind: $(printf '%s' "$out" | tr '\n' ' ')"
+  return 1
+}
+# A unit counts as stopped only when systemd answers for it: not loaded, or loaded and inactive /
+# failed. No answer, an empty answer, a time-out or any other state is not "stopped".
+svc_unit_stopped() { # <unit>
+  local out load active
+  out="$(svc_sudo 20 systemctl show -p LoadState -p ActiveState "$1" 2>>"$LOG")" || {
+    step "cannot ask systemd about $1"
+    return 1
+  }
+  load="$(printf '%s\n' "$out" | sed -n 's/^LoadState=//p')"
+  active="$(printf '%s\n' "$out" | sed -n 's/^ActiveState=//p')"
+  case "$load/$active" in
+    not-found/inactive | loaded/inactive | loaded/failed) return 0 ;;
+  esac
+  step "unit $1 is not stopped (LoadState=${load:-?} ActiveState=${active:-?})"
+  return 1
+}
+# No process of the services user may be left (one host-services run at a time: any is ours).
+svc_no_processes() {
+  local rc=0 out
+  out="$(svc_sudo 20 pgrep -u "$SVC_USER" -l 2>>"$LOG")" || rc=$?
+  case "$rc" in
+    1) return 0 ;;
+    0) step "processes of $SVC_USER are still running: $(printf '%s' "$out" | tr '\n' ' ')" ;;
+    *) step "cannot list the processes of $SVC_USER (exit $rc)" ;;
+  esac
+  return 1
 }
 # The services user may send nothing anywhere: the nftables rule exists and a live probe as that
 # user fails. The user has no group but the socket group (no docker, no adm ...).
@@ -692,8 +833,10 @@ svc_check_isolation() {
     step "nftables chain inet couli_isolation output is missing (couli-runs/RUNNER/setup-isolation.sh)"
     return 1
   }
-  if ! printf '%s\n' "$rules" | grep -Eq "type filter hook output " ||
-    ! printf '%s\n' "$rules" | grep -Eq "meta skuid (\"?$SVC_USER\"?|$uid) .*(reject|drop)"; then
+  # The rule itself: the uid match, an optional counter, then the verdict (not a word in a comment,
+  # not a rule narrowed to some destination).
+  if ! printf '%s\n' "$rules" | grep -Eq '^[[:space:]]*type filter hook output priority [^;]+; policy accept;$' ||
+    ! printf '%s\n' "$rules" | grep -Eq "^[[:space:]]*meta skuid (\"?$SVC_USER\"?|$uid) (counter packets [0-9]+ bytes [0-9]+ )?(reject|drop)( comment \"[^\"]*\")?\$"; then
     step "nftables chain inet couli_isolation output does not block $SVC_USER (uid $uid)"
     return 1
   fi
@@ -702,54 +845,97 @@ svc_check_isolation() {
     return 1
   fi
 }
-# Under the lock nothing else may use host services: whatever is there was left by a run that was
-# killed (SIGKILL leaves its container and units behind) and goes first.
+# The instance root must be the dedicated tmpfs: a mount point of its own, tmpfs, owned by the
+# services user, 0700. Anything else (an unmounted directory, a mistyped path) stops the run
+# before anything there is created or removed.
+svc_check_root() {
+  local out
+  out="$(svc_host 20 couli-rootcheck "$SVC_ROOT" 2>>"$LOG")" || {
+    step "$SVC_ROOT is not a mount point (couli-runs/RUNNER/setup-isolation.sh)"
+    return 1
+  }
+  if [ "$out" != "$SVC_ROOT tmpfs"$'\n'"$SVC_USER 700" ]; then
+    step "$SVC_ROOT must be a tmpfs mount point owned by $SVC_USER with mode 0700, found: $(printf '%s' "$out" | tr '\n' ' ')"
+    return 1
+  fi
+}
+# Run registry (one tag per line, under the lock): a run is registered before its directory and
+# units exist and leaves only after both are certainly gone. Only registered directories are ever
+# removed; an unregistered entry in the instance root stops the run.
+svc_registered() { [ -f "$SVC_REGISTRY" ] && grep -vx '' "$SVC_REGISTRY" || true; }
+svc_unregister() { # <tag>
+  local tmp="$SVC_REGISTRY.tmp.$$"
+  { grep -vxF -- "$1" "$SVC_REGISTRY" || true; } >"$tmp" && mv "$tmp" "$SVC_REGISTRY"
+}
+# Removes a registered run completely: its units stopped (and confirmed), no process of the
+# services user left, its directory removed (and confirmed absent).
+svc_remove_run() { # <tag>
+  local tag="$1" u ok=0
+  # Not-loaded units make `systemctl stop` fail; the state check below is what decides.
+  svc_sudo 90 systemctl stop "couli-svc-$tag-pg.service" "couli-svc-$tag-redis.service" "couli-svc-$tag-initdb.service" >>"$LOG" 2>&1 || true
+  for u in pg redis initdb; do
+    svc_unit_stopped "couli-svc-$tag-$u.service" || ok=1
+  done
+  [ "$ok" = 0 ] || return 1
+  svc_no_processes || return 1
+  if ! svc_sudo 120 rm -rf --one-file-system -- "$SVC_ROOT/$tag" >>"$LOG" 2>&1; then
+    step "cannot remove $SVC_ROOT/$tag"
+    return 1
+  fi
+  svc_absent "$SVC_ROOT/$tag" || {
+    step "$SVC_ROOT/$tag is not certainly gone"
+    return 1
+  }
+}
+# Under the lock nothing else may use host services: what is there was left by a run that was
+# killed (SIGKILL leaves its container, units and directory behind) and goes first.
 svc_sweep() {
-  local ids units left
-  ids="$(docker ps -aq --filter label=couli.services=host 2>>"$LOG")" || return 1
+  local ids units left tag
+  ids="$(svc_docker 60 ps -aq --filter label=couli.services=host 2>>"$LOG")" || {
+    step "docker ps failed or timed out"
+    return 1
+  }
   if [ -n "$ids" ]; then
     step "removing containers an earlier run left: $(printf '%s' "$ids" | tr '\n' ' ')"
     # shellcheck disable=SC2086 # container ids, one word each
-    docker rm -f -v $ids >/dev/null 2>>"$LOG" || return 1
+    svc_docker 120 rm -f -v $ids >/dev/null 2>>"$LOG" || {
+      step "docker rm of the leftover containers failed or timed out"
+      return 1
+    }
   fi
   units="$(svc_sudo 30 systemctl list-units --all --plain --no-legend --type=service 'couli-svc-*' 2>>"$LOG" | awk '{print $1}')" || return 1
   if [ -n "$units" ]; then
     step "stopping units an earlier run left: $(printf '%s' "$units" | tr '\n' ' ')"
     # shellcheck disable=SC2086 # unit names, one word each
-    svc_sudo 90 systemctl stop $units >>"$LOG" 2>&1 || return 1
+    svc_sudo 90 systemctl stop $units >>"$LOG" 2>&1 || true
+    for u in $units; do svc_unit_stopped "$u" || return 1; done
     # shellcheck disable=SC2086
     svc_sudo 30 systemctl reset-failed $units >/dev/null 2>&1 || true
   fi
+  for tag in $(svc_registered); do
+    [[ "$tag" =~ ^[a-z0-9-]+$ ]] || {
+      step "unexpected entry in $SVC_REGISTRY: $tag"
+      return 1
+    }
+    step "removing what the earlier run $tag left"
+    svc_remove_run "$tag" || return 1
+    svc_unregister "$tag" || return 1
+  done
   left="$(svc_sudo 30 find "$SVC_ROOT" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>>"$LOG")" || return 1
   if [ -n "$left" ]; then
-    step "removing directories an earlier run left in $SVC_ROOT: $(printf '%s' "$left" | tr '\n' ' ')"
-    svc_sudo 120 find "$SVC_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf --one-file-system -- {} + >>"$LOG" 2>&1 || return 1
+    step "$SVC_ROOT holds entries no registered run owns (not removed): $(printf '%s' "$left" | tr '\n' ' ')"
+    return 1
   fi
+  svc_no_processes || return 1
+  svc_no_residue clean
 }
-# Stops this run's units and removes its directory; fails when anything is left.
+# Stops this run's units and removes its directory; fails unless everything is certainly gone.
 stop_host_services() {
-  local u state ok=0
-  svc_sudo 90 systemctl stop "$SVC_UNIT-pg.service" "$SVC_UNIT-redis.service" "$SVC_UNIT-initdb.service" >/dev/null 2>&1 || true
-  for u in pg redis initdb; do
-    state="$(svc_sudo 20 systemctl is-active "$SVC_UNIT-$u.service" 2>/dev/null || true)"
-    case "$state" in
-      inactive | failed | unknown | '') ;;
-      *)
-        step "unit $SVC_UNIT-$u.service is still $state"
-        ok=1
-        ;;
-    esac
-  done
-  svc_sudo 120 rm -rf --one-file-system -- "$SVC_DIR" >>"$LOG" 2>&1 || ok=1
-  if svc_sudo 20 test -e "$SVC_DIR"; then
-    step "$SVC_DIR is still there"
-    ok=1
-  fi
-  if [ "$ok" = 0 ]; then
-    SVC_ACTIVE=0
-    step "host services of this run stopped and removed"
-  fi
-  return "$ok"
+  svc_remove_run "$TAG" || return 1
+  svc_no_residue list || return 1
+  svc_unregister "$TAG" || return 1
+  SVC_ACTIVE=0
+  step "host services of this run stopped and removed"
 }
 svc_pg_ready() { svc_as_user 10 "$SVC_PG_BIN/pg_isready" -q -h "$SVC_SOCK" -p 5432 >/dev/null 2>&1; }
 svc_redis_ready() { [ "$(svc_as_user 10 "$SVC_REDIS_BIN/redis-cli" -s "$SVC_SOCK/redis.sock" ping 2>/dev/null)" = PONG ]; }
@@ -783,27 +969,42 @@ start_host_services() { # <what the services are for, for the log>
   gid="$(getent group "$SVC_GROUP" | cut -d: -f3)"
   [[ "$gid" =~ ^[0-9]+$ ]] || die "host services: no group $SVC_GROUP"
 
-  mkdir -p "$RUNS/lock"
-  exec 9>>"$SVC_LOCK"
+  # One lock for the whole host (every lane, every COULI_RUNS): the container label, the unit
+  # prefix and the instance root below are all host-wide, and so is this lock.
+  exec 9>>"$SVC_LOCK" || die "cannot open the host-services lock $SVC_LOCK"
   step "waiting for the host-services lock $SVC_LOCK ($1)"
   flock -w 3600 9 || die "another run holds $SVC_LOCK for more than an hour"
+  SVC_LOCKED=1
   svc_check_isolation || die "the host services' isolation is not in place, see $LOG"
+  svc_check_root || die "the instance root is not the dedicated tmpfs, see $LOG"
   svc_sweep || die "cannot remove what an earlier run left of the host services, see $LOG"
 
+  printf '%s\n' "$TAG" >>"$SVC_REGISTRY" || die "cannot register this run in $SVC_REGISTRY"
   SVC_ACTIVE=1
   step "starting one-shot PostgreSQL ($SVC_PG_BIN) and Redis ($SVC_REDIS_BIN/redis-server) as $SVC_USER in $SVC_DIR"
-  svc_sudo 30 install -d -o "$SVC_USER" -g "$SVC_GROUP" -m 0700 "$SVC_DIR" >>"$LOG" 2>&1 &&
-    svc_sudo 30 install -d -o "$SVC_USER" -g "$SVC_GROUP" -m 0750 "$SVC_SOCK" >>"$LOG" 2>&1 ||
+  local d
+  svc_sudo 30 install -d -o "$SVC_USER" -g "$SVC_GROUP" -m 0700 "$SVC_DIR" >>"$LOG" 2>&1 ||
     die "cannot create $SVC_DIR, see $LOG"
-  # The sandbox of every unit (initdb, postgres, redis-server and whatever they start).
+  for d in sock:0750 tmp:0700 vartmp:0700 shm:0700; do
+    svc_sudo 30 install -d -o "$SVC_USER" -g "$SVC_GROUP" -m "${d#*:}" "$SVC_DIR/${d%%:*}" >>"$LOG" 2>&1 ||
+      die "cannot create $SVC_DIR/${d%%:*}, see $LOG"
+  done
+  # The sandbox of every unit (initdb, postgres, redis-server and whatever they start): no network,
+  # no IPC namespace of the host, /tmp, /var/tmp and /dev/shm inside the run directory on the
+  # tmpfs, only that directory writable, the host's service configuration (Pigsty's passwords)
+  # hidden, limits on memory and tasks, the system-service system calls only.
   local sandbox=(--quiet --collect "--uid=$SVC_USER" "--gid=$SVC_GROUP"
     -p NoNewPrivileges=yes -p PrivateNetwork=yes -p RestrictAddressFamilies=AF_UNIX -p IPAddressDeny=any
-    -p PrivateTmp=yes -p PrivateDevices=yes -p ProtectSystem=strict -p ProtectHome=yes
-    -p "ReadWritePaths=$SVC_DIR" -p TemporaryFileSystem=/run:ro -p InaccessiblePaths=-/Users
-    -p ProtectProc=invisible -p ProtectKernelTunables=yes -p ProtectKernelModules=yes
+    -p PrivateIPC=yes -p RemoveIPC=yes -p PrivateDevices=yes -p ProtectSystem=strict -p ProtectHome=yes
+    -p "ReadWritePaths=$SVC_DIR" -p TemporaryFileSystem=/run:ro
+    -p "BindPaths=$SVC_DIR/tmp:/tmp $SVC_DIR/vartmp:/var/tmp $SVC_DIR/shm:/dev/shm"
+    -p "InaccessiblePaths=-/Users -/data -/infra -/var/log -/var/lib/grafana -/var/lib/haproxy -/var/lib/docker -/var/lib/cloud -/var/lib/snapd -/var/lib/ubuntu-advantage -/var/lib/amazon -/etc/grafana -/etc/pg_exporter.yml -/etc/pgbouncer_exporter.yml -/etc/alertmanager.yml -/etc/nginx -/etc/postgresql -/etc/patroni -/etc/pgbouncer -/etc/vector -/etc/cloud -/etc/dnsmasq.conf -/etc/sudoers -/etc/sudoers.d"
+    -p ProtectProc=invisible -p ProcSubset=pid -p ProtectKernelTunables=yes -p ProtectKernelModules=yes
     -p ProtectKernelLogs=yes -p ProtectControlGroups=yes -p ProtectClock=yes -p ProtectHostname=yes
     -p RestrictNamespaces=yes -p RestrictRealtime=yes -p RestrictSUIDSGID=yes -p LockPersonality=yes
-    -p CapabilityBoundingSet= -p SystemCallArchitectures=native -p UMask=0007
+    -p CapabilityBoundingSet= -p SystemCallArchitectures=native
+    -p SystemCallFilter=@system-service -p SystemCallErrorNumber=EPERM
+    -p MemoryMax=4G -p MemorySwapMax=0 -p TasksMax=512 -p UMask=0007
     -p "WorkingDirectory=$SVC_DIR" -p Environment=TZ=Etc/UTC -p Environment=LANG=en_US.utf8)
   local life=(-p "RuntimeMaxSec=$((TIMEOUT_SECS * 2 + 1800))" -p TimeoutStopSec=20s)
 
@@ -848,8 +1049,15 @@ start_host_services() { # <what the services are for, for the log>
   EXT_WRAP=(bash -c "$EXT_WRAP_SH" couli-services)
   export TEST_PG_ADMIN_URL="postgres://postgres:$SVC_PG_PASSWORD@127.0.0.1:5432/postgres"
   export TEST_REDIS_URL='redis://127.0.0.1:6379/0'
-  SERVICES_FIELD=$',\n  "services": "host-ephemeral"'
+  RESULT_EXTRA="$RESULT_EXTRA"$',\n  "services": "host-ephemeral"'
   step "host services ready: the run gets 127.0.0.1:5432 and 127.0.0.1:6379 through the socket proxy, no network"
+}
+# The run's log may quote the one-shot password (a test printing a URL): it is replaced before
+# the result is written and whenever the script ends.
+svc_redact_log() {
+  if [ -n "${SVC_PG_PASSWORD:-}" ] && [ -f "$LOG" ]; then
+    sed -i "s/$SVC_PG_PASSWORD/[one-shot password]/g" "$LOG" 2>/dev/null || true
+  fi
 }
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -954,7 +1162,7 @@ if [ "$SCRIPT" = red ]; then
       fi
     fi
     local red_rc=0
-    RED_PLAN="$2" docker run --rm --name "$1" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
+    RED_PLAN="$2" svc_run docker run --rm --name "$1" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
       "${net[@]}" \
       -v "$SRC:/src:ro" \
       -v "$STORE_VOL:/store:ro" \
@@ -963,7 +1171,7 @@ if [ "$SCRIPT" = red ]; then
       --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
       ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
       "${env[@]}" \
-      "$IMAGE" ${wrap[@]+"${wrap[@]}"} couli-verify-entrypoint red >>"$LOG" 2>&1 </dev/null 9>&- || red_rc=$?
+      "$IMAGE" ${wrap[@]+"${wrap[@]}"} couli-verify-entrypoint red >>"$LOG" 2>&1 </dev/null || red_rc=$?
     [ "$red_rc" = 0 ] || die "the red run did not produce its reports (exit $red_rc), see $LOG"
   }
   red_db_plan="$(red_part 1)"
@@ -1066,13 +1274,13 @@ ENV_ARGS=(-e TEST_PG_ADMIN_URL -e TEST_REDIS_URL
   -e "PROP_SEED=$PROP_SEED_VALUE" -e "VERIFY_TIMEOUT_SECS=$TIMEOUT_SECS")
 [ -z "${PROP_RUNS:-}" ] || ENV_ARGS+=(-e "PROP_RUNS=$PROP_RUNS")
 rc=0
-docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
+svc_run docker run --rm --name "$VERIFY_NAME" "${LABELS[@]}" "${HARDEN[@]}" "${TMPFS[@]}" \
   "${VERIFY_NET[@]}" \
   -v "$SRC:/src:ro" \
   -v "$STORE_VOL:/store:ro" \
   --tmpfs "/store/v10/projects:rw,nosuid,uid=1000,gid=1000,mode=0755" \
   ${SPEC_ARGS[@]+"${SPEC_ARGS[@]}"} \
   "${ENV_ARGS[@]}" \
-  "$IMAGE" ${EXT_WRAP[@]+"${EXT_WRAP[@]}"} couli-verify-entrypoint verify >>"$LOG" 2>&1 </dev/null 9>&- || rc=$?
+  "$IMAGE" ${EXT_WRAP[@]+"${EXT_WRAP[@]}"} couli-verify-entrypoint verify >>"$LOG" 2>&1 </dev/null || rc=$?
 
 finish "$rc"
