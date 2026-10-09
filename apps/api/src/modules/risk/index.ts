@@ -1,4 +1,11 @@
 // Public surface of the risk module. Other modules import only from this file.
+export { createSmsRisk, ephemeralSmsRiskIndex } from './application/sms-risk.ts';
+export type {
+  SmsRisk,
+  SmsRiskOptions,
+  SmsRiskRequest,
+  SmsRiskAdmission,
+} from './application/sms-risk.ts';
 export {
   createDeviceRegistrationRisk,
   unkeyedDeviceRegistrationIndex,

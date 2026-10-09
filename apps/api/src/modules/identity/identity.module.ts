@@ -16,7 +16,7 @@ import {
   type RequestCheckInput,
   type RootLogger,
 } from '../platform/index.ts';
-import { DEVICE_SIGNING_KEYS, type BlocklistService } from '../risk/index.ts';
+import { DEVICE_SIGNING_KEYS, type BlocklistService, type SmsRisk } from '../risk/index.ts';
 import {
   H5_READ_ONLY_MSG,
   createTokenCheck,
@@ -58,6 +58,7 @@ import {
 } from './application/registration.ts';
 import { createSmsLoginService, type SmsLoginService } from './application/sms-login.ts';
 import { identityRiskPorts, type IdentityRiskPorts } from './application/risk-ports.ts';
+import { createSmsRiskPorts, type SmsRiskPorts } from './application/sms-risk-ports.ts';
 import type { MinimumVersionReader } from './application/session-scope.ts';
 import {
   CONSENTS,
@@ -84,6 +85,7 @@ import { RefreshController } from './http/public/refresh.controller.ts';
 import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
+import { deviceHashOf } from './infra/login-accounts.ts';
 import { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
 import { loadInvalidDeviceHashSeeds } from './infra/invalid-device-hashes.ts';
 import { createSessionLookup } from './infra/session-lookup.ts';
@@ -122,6 +124,12 @@ export interface IdentityModuleOptions {
    * 42901 (never a registration without the cap).
    */
   readonly deviceRegistration?: Omit<FactoryProvider<DeviceRegistrationPorts>, 'provide'>;
+  /**
+   * Builds risk's SMS send risk (B1-03g: per-device distinct phones, per-IP sends and new accounts,
+   * daily budget alerts), assembled by app.module through risk's index.ts. Absent, every SMS send
+   * is refused with 42901 (never a send without the checks).
+   */
+  readonly smsRisk?: Omit<FactoryProvider<SmsRisk>, 'provide'>;
 }
 
 /** The ports without risk's assembly: refuse like an unavailable store (Retry-After 1). */
@@ -130,6 +138,13 @@ const REFUSING_DEVICE_REGISTRATION: DeviceRegistrationPorts = {
   release: () => Promise.resolve(),
   reconcile: () => Promise.resolve(),
   recordSuccess: () => Promise.resolve(),
+};
+
+/** The SMS send risk without risk's assembly: refuse like an unavailable store (Retry-After 1). */
+const REFUSING_SMS_RISK: SmsRisk = {
+  admit: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  recordAccepted: () => Promise.resolve(),
+  recordRegistered: () => Promise.resolve(),
 };
 
 /**
@@ -172,6 +187,10 @@ const INVITE_CODE_WORDS = Symbol('INVITE_CODE_WORDS');
 const BLOCKLIST_SERVICE = Symbol('IDENTITY_BLOCKLIST_SERVICE');
 /** identity's ports onto risk's blocklist (identityRiskPorts), or null without one. */
 const RISK_PORTS = Symbol('IDENTITY_RISK_PORTS');
+/** risk's SMS send risk as app.module builds it (IdentityModuleOptions.smsRisk). */
+const SMS_RISK = Symbol('IDENTITY_SMS_RISK');
+/** identity's ports onto risk's SMS send risk (createSmsRiskPorts). */
+const SMS_RISK_PORTS = Symbol('IDENTITY_SMS_RISK_PORTS');
 
 @Module({})
 export class IdentityModule {
@@ -214,6 +233,22 @@ export class IdentityModule {
               ? null
               : identityRiskPorts(risk, fieldCrypto),
         },
+        options.smsRisk === undefined
+          ? { provide: SMS_RISK, useValue: REFUSING_SMS_RISK }
+          : { ...options.smsRisk, provide: SMS_RISK },
+        {
+          provide: SMS_RISK_PORTS,
+          inject: [SMS_RISK, ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (risk: SmsRisk, logger: RootLogger, db?: Kysely<Database>): SmsRiskPorts =>
+            createSmsRiskPorts({
+              risk,
+              logger,
+              devices: {
+                deviceHashOf: async (appId, deviceId) =>
+                  db === undefined ? null : ((await deviceHashOf(db, appId, deviceId)) ?? null),
+              },
+            }),
+        },
         {
           provide: smsSenderToken(),
           inject: [APP_CONFIG, ROOT_LOGGER],
@@ -229,6 +264,7 @@ export class IdentityModule {
             smsSenderToken(),
             IDENTITY_CONFIG,
             RISK_PORTS,
+            SMS_RISK_PORTS,
             { token: REDIS, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -239,6 +275,7 @@ export class IdentityModule {
             sender: SmsSender,
             reader: SmsConfigReader | null,
             risk: IdentityRiskPorts | null,
+            smsRisk: SmsRiskPorts,
             redis?: RedisHandle,
             fieldCrypto?: FieldCrypto,
           ): SmsCodeService | null =>
@@ -251,7 +288,7 @@ export class IdentityModule {
                   config: reader,
                   logger,
                   hmac: createSmsHmac(config.appEnv, fieldCrypto),
-                  ...(risk === null ? {} : { hooks: risk.smsHooks }),
+                  hooks: { ...(risk === null ? {} : risk.smsHooks), ...smsRisk.smsHooks },
                 }),
         },
         {
@@ -290,6 +327,7 @@ export class IdentityModule {
             TOKEN_SERVICE,
             INVITE_CODE_WORDS,
             RISK_PORTS,
+            SMS_RISK_PORTS,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -301,6 +339,7 @@ export class IdentityModule {
             tokens: TokenService,
             sensitiveWords: SensitiveWords,
             risk: IdentityRiskPorts | null,
+            smsRisk: SmsRiskPorts,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): SmsLoginService | null =>
@@ -313,7 +352,7 @@ export class IdentityModule {
                   logger,
                   versions: reader,
                   sms,
-                  // TODO(规划/11 §2.3): invite binding (bindInvite), B1-03g ports — blocked on B1-11, B1-03g
+                  // TODO(规划/11 §2.3): invite binding (bindInvite) — blocked on B1-11
                   registration: createRegistrationService({
                     clock,
                     config: reader,
@@ -321,6 +360,7 @@ export class IdentityModule {
                     logger,
                     sensitiveWords,
                     ...(risk === null ? {} : risk.registration),
+                    ...smsRisk.registration,
                   }),
                   ...(risk === null ? {} : risk.login),
                   // Registration keys are snapshotted before the login transaction opens.

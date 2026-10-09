@@ -75,8 +75,11 @@ import {
   SIGNATURE_CHECK,
   createBlocklistService,
   createDeviceRegistrationRisk,
+  createSmsRisk,
+  ephemeralSmsRiskIndex,
   unkeyedDeviceRegistrationIndex,
   type DeviceRegistrationRisk,
+  type SmsRisk,
   createRateLimitThresholdReader,
   type MinimumVersionReaders,
   type RateLimitThresholdReaders,
@@ -133,6 +136,10 @@ function requestChecks(options: PlatformOptions): Provider {
  * device.hash_hot_alert_count through content's configValue, Redis sets keyed by the field
  * cipher's blind index), built through risk's index.ts; without Redis they refuse (42901) and the
  * hot-hash count is a no-op; without a database the thresholds are the defaults.
+ * Its SMS send risk is risk's (B1-03g: sms.device_distinct_phones_per_hour, sms.ip_sends_per_hour,
+ * the per-IP new-account limit and the daily budget alert through content's configValue; phones and
+ * IPs as the field cipher's blind index, a process-local key in local / test without a keyring);
+ * without Redis every send is refused (42901).
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
@@ -182,6 +189,32 @@ function identityModule(): DynamicModule {
               ? { configValue: () => Promise.resolve(null) }
               : createContentReader({ db, clock }),
           crypto: crypto ?? unkeyedDeviceRegistrationIndex(),
+        }),
+    },
+    smsRisk: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: REDIS, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        redis?: RedisHandle,
+        crypto?: FieldCrypto,
+      ): SmsRisk =>
+        createSmsRisk({
+          clock,
+          logger,
+          redis: redis ?? null,
+          config:
+            db === undefined
+              ? { configValue: () => Promise.resolve(null) }
+              : createContentReader({ db, clock }),
+          crypto: crypto ?? ephemeralSmsRiskIndex(),
         }),
     },
   });
