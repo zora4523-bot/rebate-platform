@@ -162,7 +162,7 @@ export function createRefreshService(options: RefreshOptions): RefreshService {
     cause: string,
   ): Promise<Answer> {
     const revoked = await revokeSession(trx, { app_id: appId, sid, reason: REUSE_REASON }, clock);
-    if (revoked && afterRevoked !== undefined) await afterRevoked(trx, [sid]);
+    if (revoked && afterRevoked !== undefined) await afterRevoked(trx, [sid], { app_id: appId });
     logger.warn(
       { app_id: appId, token_hash_prefix: tokenHash.slice(0, 8), cause },
       'refresh_reuse_revoked',

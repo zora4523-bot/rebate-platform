@@ -13,7 +13,14 @@ export type {
 export { revokeSessionsByUser, revokeSessionsByDevice } from './application/revoke-sessions.ts';
 export type { AfterSessionsRevoked, SessionRevokeReason } from './application/revoke-sessions.ts';
 export { IdentityModule } from './identity.module.ts';
-export type { IdentityConfigReader, IdentityModuleOptions } from './identity.module.ts';
+export type {
+  AssembledRevokeByDevice,
+  AssembledRevokeByUser,
+  IdentityConfigReader,
+  IdentityModuleOptions,
+} from './identity.module.ts';
+// B1-12b: the push token port app.module builds from notification's commands.
+export type { SessionPushTokens } from './application/push-tokens.ts';
 // The token stages ② ③ (BR-ID-01) for the api entry's request check plan (app.module).
 export { TOKEN_CHECK } from './application/tokens.ts';
 // Bootstrap's route guard: is a plan's check identity's token check (BR-ID-01 ②)?
