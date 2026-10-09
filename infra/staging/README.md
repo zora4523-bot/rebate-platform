@@ -7,7 +7,7 @@
 | `Dockerfile` | 多阶段镜像：Node 24，按 `pnpm-lock.yaml` 离线安装，构建 `@couli/api`；运行阶段用非 root 用户 `node` |
 | `compose.yaml` | 五个服务，同一个镜像，`command` 选入口；只用 `image:`，不构建、不拉取 |
 | `boot.mjs` | 五个进程启动时先加载（`node --import`）：记录容器启动次数供健康检查用；api 从挂载文件读签名私钥 |
-| `deploy.sh` | 部署与回退脚本，参数是镜像标签 |
+| `deploy.sh` | 部署与回退脚本，参数是镜像标签（可选第二个参数 `--with-current-compose`，见第 4 节） |
 | `../../.dockerignore` | 构建上下文排除环境文件、证书与密钥文件、SSH 私钥、`.git`、`node_modules`、构建产物 |
 
 ## 1. 首次准备（节点上，一次）
@@ -124,7 +124,7 @@ scp infra/staging/compose.yaml infra/staging/deploy.sh <staging 节点>:/opt/cou
 1. 检查镜像已经 `docker load` 到节点，检查第 1 节列出的节点文件都存在；
 2. 用新镜像一次性运行迁移（`node packages/db/scripts/migrate.ts`，只读 `staging-migrator.env`，挂载数据库 CA），迁移失败直接停下，正在运行的进程不受影响；迁移脚本出错时只打印错误类型和去掉口令的消息；
 3. `docker compose up -d --force-recreate --wait` 重建全部五个进程并等五个健康检查都通过（上限 240 秒）：api / stream / admin 要求本进程 `/healthz` 返回 2xx，五个进程都要求容器已连续运行 30 秒，并且在本次部署被标记为稳定（`/tmp/couli-settled`）之前**只启动过一次**。`boot.mjs` 每次进程启动往容器内 `/tmp/couli-starts` 追加一行：这个文件在容器的可写层里，自动重启后还在，重建容器后清空。所以本次部署中任何一个进程（包括没有端口的 worker 与 payout）哪怕只崩溃、重启过一次，健康检查就一直不通过，这一步失败并回退。健康检查自己不写稳定标记，崩溃重启过的进程以后一直不健康；但 `up --wait` 对已经见过健康的服务不一定再看一遍，所以从任一服务首次健康后到 `up --wait` 返回这一整段里发生的崩溃重启，这一步可能发现不了，要靠第 4 步核对；
-4. 五个都健康后，再用 `docker inspect` 核对五个容器的 RestartCount 都是 0；通过后才往五个容器里写 `/tmp/couli-settled`（以后节点重启等情况下的自动重启只需重新等 30 秒，不会一直不健康），然后把新标签写入 `/var/lib/couli/staging-api.tag`，并把这次用的 `compose.yaml` 存一份为 `/var/lib/couli/compose.<标签>.yaml`；
+4. 五个都健康后，再用 `docker inspect` 核对五个容器的 RestartCount 都是 0；通过后才往五个容器里写 `/tmp/couli-settled`（以后节点重启等情况下的自动重启只需重新等 30 秒，不会一直不健康），然后先把这次用的 `compose.yaml` 存一份为 `/var/lib/couli/compose.<标签>.yaml`（先写临时文件再改名到位；磁盘满等原因写不成时脚本就此失败，标签不记录，上一个成功标签和它的副本仍可用来回退），再把新标签写入 `/var/lib/couli/staging-api.tag`；
 5. 删除更早的 `couli-api` 镜像和对应的 compose 副本，只保留本次和上一次成功的标签（回退要用），避免写满与数据库共用的 20G 系统盘。本次标签与上一次成功的标签相同（重复部署同一版本）时不删任何镜像，之前留下的回退镜像保留。
 
 脚本不打印任何环境文件的内容，也不开启命令跟踪。
@@ -135,6 +135,7 @@ scp infra/staging/compose.yaml infra/staging/deploy.sh <staging 节点>:/opt/cou
 
 - **自动回退**：第 3 步健康检查不通过时，脚本把五个进程切回状态文件里记录的上一个成功标签，再等一次健康检查，然后以非零退出。回退用该标签成功部署时存下的 `/var/lib/couli/compose.<标签>.yaml`（旧镜像不一定配得上新版 compose）；没有这份副本（例如该标签是本版本脚本之前部署的）时用脚本旁当前的 `compose.yaml` 并如实打印，不会沿用失败那次部署选用的别的标签的副本。首次部署没有上一个标签，脚本只报错退出，容器保留用于排查。
 - **手动回退**：直接用旧标签再部署一次，`deploy.sh <旧标签>`。该标签成功部署时存下的 `/var/lib/couli/compose.<旧标签>.yaml` 还在时就用它（与自动回退一致）；不在时用脚本旁当前的 `compose.yaml`，并打印一行说明。第 4 步 RestartCount 不为 0 之后按提示执行的 `deploy.sh <上一个成功标签>` 也算回退（这时在跑什么不确定），同样用存下的副本；即使失败的正是重部署当前标签（例如改了 `compose.yaml`），也用存下的旧副本，不再用改过的 `compose.yaml`。这次回退成功后，再跑一次 `deploy.sh <当前标签>` 才会重新用脚本旁的 `compose.yaml`。
+- **「不确定」时上一个成功标签没有副本**：只用本版本之前的脚本部署过的节点（当前 staging 就是这样）没有任何 `compose.<标签>.yaml`。这时切换记录为「不确定」，`deploy.sh <标签>` 会被拒绝，拒绝时列出现有副本可以部署的标签。唯一的出路是：先把脚本旁的 `compose.yaml` 恢复成与上一个成功标签配套、确认可用的版本，再运行 `deploy.sh <上一个成功标签> --with-current-compose`。脚本会打印警告后用脚本旁的 `compose.yaml` 部署，成功后存为该标签的副本。这个参数只对「不确定」状态下没有副本的上一个成功标签有效，其他标签照样拒绝。
 - **重部署当前版本**：请求的标签既是上一次成功的标签、又是切换记录里当前在跑的标签时（没有切换记录或标记为「不确定」都不算），不算回退：脚本用脚本旁当前的 `compose.yaml`（不用存下的副本），成功后把它重新存为该标签的副本。所以只改了 `compose.yaml` 时，把它放到节点上再跑一次 `deploy.sh <当前标签>` 即可生效。
 - 迁移只向前执行，回退不会撤销已经执行的迁移；新迁移必须与上一个版本的代码兼容（先加后删）。
 

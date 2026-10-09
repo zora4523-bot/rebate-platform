@@ -185,28 +185,53 @@ it('redactCredentials ends an unquoted libpq value only at whitespace, a query v
   );
 });
 
-it('redactCredentials masks text glued to a closing quote and keeps parameters after a clean close', () => {
-  // `\'` does not end the quoted value; the quote after `sslpassword=` does, and the text glued
-  // to it (not valid libpq) is masked with the value up to the next whitespace.
-  const input = String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail' dbname=couli`;
-  expect(redactCredentials(input)).toBe('host=db password=*** dbname=couli');
-  // An empty quoted string glued in front of the rest does not end the masking either.
-  const empty = String.raw`host=db password='ExampleHead\'&sslpassword=''ExampleTail' dbname=couli`;
-  expect(redactCredentials(empty)).toBe('host=db password=*** dbname=couli');
-  // A well-formed quoted password that merely contains `sslpassword=` ends at its closing quote:
-  // the parameters after it stay readable.
-  expect(
-    redactCredentials("password='ExampleHead&sslpassword=' host=db.invalid dbname=couli"),
-  ).toBe('password=*** host=db.invalid dbname=couli');
-  // An inner assignment whose value ends inside the outer value changes nothing.
-  expect(redactCredentials("host=db password='ExampleA&password=ExampleB c' dbname=couli")).toBe(
-    'host=db password=*** dbname=couli',
-  );
-  // Chained: every glued piece is covered, ordinary parameters after it stay readable.
-  const chained = String.raw`password='ExampleOne\'&password='ExampleTwo\'&sslpassword='ExampleThree' port=5432`;
-  expect(redactCredentials(chained)).toBe('password=*** port=5432');
-  // In a URL query a quoted value still ends at `&`.
-  expect(redactCredentials("postgres://u@h/db?password='ExampleQ'&sslmode=require")).toBe(
-    'postgres://u@h/db?password=***&sslmode=require',
-  );
+it('redactCredentials masks a secret up to the next certain parameter start, whatever is glued in', () => {
+  const cases: [string, string][] = [
+    // Review round 1: an escaped quote, then a second password assignment glued in.
+    [
+      String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail' dbname=couli`,
+      'host=db password=*** dbname=couli',
+    ],
+    // Review round 2: an empty quoted string glued in front of the rest.
+    [
+      String.raw`host=db password='ExampleHead\'&sslpassword=''ExampleTail' dbname=couli`,
+      'host=db password=*** dbname=couli',
+    ],
+    // Review round 2: a well-formed password that merely contains `sslpassword=`.
+    [
+      "password='ExampleHead&sslpassword=' host=db.invalid dbname=couli",
+      'password=*** host=db.invalid dbname=couli',
+    ],
+    // Review round 3: a space and more secret text after the glued quote.
+    [
+      String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail ExampleSuffix' dbname=couli`,
+      'host=db password=*** dbname=couli',
+    ],
+    // A keyword inside the opening quoted part does not end the value.
+    ["password='ExampleA host=ExampleB' dbname=couli", 'password=*** dbname=couli'],
+    [
+      "host=db password='ExampleA&password=ExampleB c' dbname=couli",
+      'host=db password=*** dbname=couli',
+    ],
+    // Chained glued assignments.
+    [
+      String.raw`password='ExampleOne\'&password='ExampleTwo\'&sslpassword='ExampleThree' port=5432`,
+      'password=*** port=5432',
+    ],
+    // Text that is not a known parameter is masked with the secret.
+    [
+      'host=db password=ExampleSecret ExampleMore dbname=couli',
+      'host=db password=*** dbname=couli',
+    ],
+    // libpq skips spaces after `=`: here the password is the text `host=db`.
+    ['password= host=ExampleNotHost port=5432', 'password= *** port=5432'],
+    // A quoted value in a URL query ends at `&` followed by a known parameter.
+    [
+      "postgres://u@h/db?password='ExampleQ&x'&sslmode=require",
+      'postgres://u@h/db?password=***&sslmode=require',
+    ],
+  ];
+  for (const [input, expected] of cases) {
+    expect(redactCredentials(input)).toBe(expected);
+  }
 });

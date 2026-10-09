@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # Staging deployment (B1-01zc). Run as root on the staging node:
-#   ./deploy.sh <image-tag>
+#   ./deploy.sh <image-tag> [--with-current-compose]
 # The image couli-api:<image-tag> must already be loaded on the node (docker load).
 # Order: take the deployment lock -> check the node files exist -> migrate with the new image ->
 # switch all five processes and wait until every health check passes (each requires 30s of
@@ -17,13 +17,19 @@ set -Eeuo pipefail
 # there is one, otherwise the compose.yaml next to this script. Redeploying the tag that is both the
 # last successful one and the one running uses the compose.yaml next to this script (and saves it
 # again on success), so an edited compose.yaml takes effect. While the running version is uncertain
-# every `./deploy.sh <tag>` uses the compose file saved with that tag and is refused without one.
+# every `./deploy.sh <tag>` uses the compose file saved with that tag and is refused without one;
+# the one way out when the last successful tag has no saved copy (a node deployed only by the
+# script before compose copies were saved) is `./deploy.sh <that tag> --with-current-compose`,
+# after the compose.yaml next to this script has been put back to a version that works with it.
 # Node credential files are only referenced by path; their contents are never printed.
 
 log() { printf '[deploy] %s\n' "$*"; }
 fail() { printf '[deploy] FAILED: %s\n' "$*" >&2; }
 
-export COULI_API_TAG="${1:?usage: deploy.sh IMAGE_TAG}"
+export COULI_API_TAG="${1:?usage: deploy.sh IMAGE_TAG [--with-current-compose]}"
+# Explicit confirmation, accepted only while the running version is uncertain and only for the last
+# successful tag when it has no saved compose file (see below).
+CONFIRM_CURRENT_COMPOSE="${2:-}"
 COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/compose.yaml"
 SCRIPT_COMPOSE_FILE="$COMPOSE_FILE"
 STATE_DIR=/var/lib/couli
@@ -39,6 +45,10 @@ LOCK_FILE=/run/lock/couli-staging-deploy.lock
 
 if [[ ! "$COULI_API_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
   fail "image tag must be letters, digits, dot, dash or underscore"
+  exit 2
+fi
+if [[ $# -gt 2 || ( -n "$CONFIRM_CURRENT_COMPOSE" && "$CONFIRM_CURRENT_COMPOSE" != "--with-current-compose" ) ]]; then
+  fail "usage: deploy.sh IMAGE_TAG [--with-current-compose]"
   exit 2
 fi
 
@@ -70,11 +80,24 @@ SWITCHED_TAG="$(cat "$SWITCHED_FILE")"
 
 # While the running version is uncertain only a tag with a saved compose file may be deployed (the
 # edited compose.yaml next to this script may be what broke it), until a deployment succeeds
-# again. Refuse before the migration and the switch.
+# again. Refuse before the migration and the switch, naming the tags that can be deployed. The
+# last successful tag without a saved copy (a node deployed only by the script before copies were
+# saved) may still be deployed with the compose.yaml next to this script, but only when the
+# operator confirms it explicitly with --with-current-compose; otherwise there would be no way out.
 if [[ "$SWITCHED_TAG" == "$DIRTY_MARK" && ! -f "$STATE_DIR/compose.$COULI_API_TAG.yaml" ]]; then
-  fail "the last deployment did not complete (RestartCount failure, error or interruption), so what is running is uncertain; no compose file saved with couli-api:$COULI_API_TAG ($STATE_DIR/compose.$COULI_API_TAG.yaml is missing)"
-  fail "deploy a tag that has a saved compose file first, e.g. the last successful one: deploy.sh ${PREVIOUS_TAG:-<previous tag>}"
-  exit 2
+  if [[ "$COULI_API_TAG" == "$PREVIOUS_TAG" && "$CONFIRM_CURRENT_COMPOSE" == "--with-current-compose" ]]; then
+    log "WARNING: what is running is uncertain and no compose file is saved with couli-api:$COULI_API_TAG; deploying it with the current compose.yaml next to deploy.sh as confirmed (--with-current-compose)"
+  else
+    SAVED_TAGS="$(find "$STATE_DIR" -maxdepth 1 -name 'compose.*.yaml' -exec basename '{}' ';' | sed -e 's/^compose\.//' -e 's/\.yaml$//' | tr '\n' ' ')"
+    fail "the last deployment did not complete (RestartCount failure, error or interruption), so what is running is uncertain; no compose file saved with couli-api:$COULI_API_TAG ($STATE_DIR/compose.$COULI_API_TAG.yaml is missing)"
+    fail "tags with a saved compose file, deployable now: ${SAVED_TAGS:-none}"
+    if [[ -n "$PREVIOUS_TAG" && ! -f "$STATE_DIR/compose.$PREVIOUS_TAG.yaml" ]]; then
+      fail "the last successful tag has no saved compose file either: put the compose.yaml next to deploy.sh back to a version that works with it, then run deploy.sh $PREVIOUS_TAG --with-current-compose"
+    else
+      fail "roll back first with the saved copy, e.g. the last successful one: deploy.sh ${PREVIOUS_TAG:-<previous tag>}"
+    fi
+    exit 2
+  fi
 fi
 
 # A tag deployed successfully before has its own compose file saved; an older image may not fit
@@ -155,7 +178,7 @@ if docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env up -d --f
   if [[ "$RESTART_COUNTS" != "0 0 0 0 0 " ]]; then
     fail "expected five containers with RestartCount 0, got: ${RESTART_COUNTS:-none}; no tag recorded"
     fail "roll back by hand: deploy.sh ${PREVIOUS_TAG:-<previous tag>}"
-    fail "when a successful tag is recorded the running version stays marked uncertain${PREVIOUS_TAG:+ (the rollback uses $STATE_DIR/compose.$PREVIOUS_TAG.yaml)}: until a deployment succeeds, deploy.sh <tag> uses only the compose file saved with that tag and refuses a tag without one; a fresh node without any successful tag is not marked and may retry"
+    fail "when a successful tag is recorded the running version stays marked uncertain${PREVIOUS_TAG:+ (the rollback deploy.sh $PREVIOUS_TAG uses $STATE_DIR/compose.$PREVIOUS_TAG.yaml; if that copy does not exist, restore compose.yaml next to deploy.sh to a working version and run deploy.sh $PREVIOUS_TAG --with-current-compose)}: until a deployment succeeds, deploy.sh <tag> uses only the compose file saved with that tag and refuses a tag without one; a fresh node without any successful tag is not marked and may retry"
     exit 1
   fi
   # Only now may a later restart (node reboot) pass the health checks again.
@@ -165,14 +188,18 @@ if docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env up -d --f
   docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env exec -T admin touch /tmp/couli-settled
   docker compose -f "$COMPOSE_FILE" --env-file /etc/couli/staging.env exec -T payout touch /tmp/couli-settled
   log "step 3/4: RestartCount 0 for all five; marked settled"
+  # Save the compose file used before the tag is recorded, through a temporary file renamed into
+  # place: a failed copy (disk full) stops here under set -e with neither a partial copy nor the
+  # tag recorded, so the previous tag and its copy stay the way back. A redeployment of a tag with
+  # a saved compose file used that very file: copying it onto itself would fail and, under set -e,
+  # report a healthy deployment as failed.
+  if [[ ! "$COMPOSE_FILE" -ef "$STATE_DIR/compose.$COULI_API_TAG.yaml" ]]; then
+    cp "$COMPOSE_FILE" "$STATE_DIR/compose.$COULI_API_TAG.yaml.partial"
+    mv -f "$STATE_DIR/compose.$COULI_API_TAG.yaml.partial" "$STATE_DIR/compose.$COULI_API_TAG.yaml"
+  fi
   # Record the tag only after health success; the next deployment rolls back to it, using the
   # compose file saved with it (an older image may not fit a newer compose file).
   printf '%s\n' "$COULI_API_TAG" > "$STATE_FILE"
-  # A redeployment of a tag with a saved compose file used that very file: copying it onto itself
-  # would fail and, under set -e, report a healthy deployment as failed.
-  if [[ ! "$COMPOSE_FILE" -ef "$STATE_DIR/compose.$COULI_API_TAG.yaml" ]]; then
-    cp "$COMPOSE_FILE" "$STATE_DIR/compose.$COULI_API_TAG.yaml"
-  fi
   # Complete: only now does the switch record name the running tag again.
   printf '%s\n' "$COULI_API_TAG" > "$SWITCHED_FILE"
   log "step 3/4: recorded couli-api:$COULI_API_TAG as last successful (compose file saved with it)"
