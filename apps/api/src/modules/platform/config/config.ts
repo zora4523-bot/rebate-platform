@@ -5,6 +5,7 @@ import { APP_ENVS, type AppEnv } from './app-env.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
 import { JWT_ENV_NAMES, readJwtKeyConfig, type JwtKeyConfig } from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
+import { readTrustedProxies } from './trusted-proxies.ts';
 
 export { APP_ENVS, type AppEnv } from './app-env.ts';
 
@@ -51,6 +52,12 @@ export interface AppConfig {
    * when identity's key provider is created. A hand-built config without it counts as null.
    */
   readonly jwt: JwtKeyConfig | null;
+  /**
+   * TRUSTED_PROXIES (./trusted-proxies.ts, B1-03m): addresses / ranges of the gateways whose
+   * X-Forwarded-For entries every HTTP entry believes when deriving `request.ip`. Empty (unset)
+   * trusts no forwarded header; a hand-built config without it counts as empty.
+   */
+  readonly trustedProxies?: readonly string[];
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -124,6 +131,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
       problems.push(...readKeyringConfig(appEnv.data, env).problems);
       problems.push(...readJwt(appEnv.data, env).problems);
     }
+    problems.push(...readTrustedProxies(env).problems);
     throw new ConfigError(problems);
   }
 
@@ -133,6 +141,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...problems);
   const { jwt, problems: jwtProblems } = readJwt(values.APP_ENV, env);
   violations.push(...jwtProblems);
+  const { trustedProxies, problems: proxyProblems } = readTrustedProxies(env);
+  violations.push(...proxyProblems);
   if (violations.length > 0) throw new ConfigError(violations);
 
   return {
@@ -146,5 +156,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     adminPort: values.ADMIN_PORT,
     keyring,
     jwt,
+    trustedProxies,
   };
 }

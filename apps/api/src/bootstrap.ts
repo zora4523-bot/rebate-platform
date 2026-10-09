@@ -84,9 +84,14 @@ export async function createHttpApp(
   let app: NestFastifyApplication | undefined;
   try {
     const options = platformOptions(entry, overrides);
+    // Client IP (B1-03m): only the configured gateways' X-Forwarded-For entries are believed, so
+    // `request.ip` is the rightmost untrusted address; with none configured (or a hand-built
+    // config without the field) it stays the socket address. Every consumer reads `request.ip`.
+    const trustedProxies = options.config.trustedProxies ?? [];
     const adapter = new PlatformFastifyAdapter({
       loggerInstance: options.logger,
       genReqId: (request: IncomingMessage) => resolveTraceId(request.headers['x-trace-id']),
+      ...(trustedProxies.length === 0 ? {} : { trustProxy: [...trustedProxies] }),
     });
     adapter.getInstance().setValidatorCompiler(createValidatorCompiler());
     // Cover every HTTP entry, including errors and responses without an envelope/body.
