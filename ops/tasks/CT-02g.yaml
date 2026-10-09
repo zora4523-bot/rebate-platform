@@ -1,0 +1,22 @@
+id: CT-02g
+repo: rebate-platform
+title: 契约：分享 link 被他人打开、分享者授权失效时 30102 / 30111 的 data.reason 取值（「失效的是分享者的授权」，与打开者本人待授权区分；客户端不弹授权、显示 link_landing.invalid）
+type: contract
+# 草稿 2026-10-09（W1 第七棒，编排者同意立）。依据 BR-ATTR-05 细则「别人的分享 link 不可用」（30102 / 30111 不带 auth_url 与 state，并在 data.reason 带分享者授权失效的取值，取值由契约线按 08 §13.11 分配）；台账 #304 第 2 轮评审 S2-1。
+# 现状：error-codes.yaml 30102 的 reason 只有 auth_unavailable，30111 只有 auth_jump。改法：两码 data.reason 增加同一取值（名字由本任务按 08 §13.11 命名规则定，如 sharer_unauthorized），openapi 的错误 data 说明同步，重生成 contracts-ts。只增取值，不改已有形状（oasdiff 非破坏）。
+# 合并后 B1-06f（淘宝 30102）、B1-06v（拼多多 30111）若已合并，另开小任务补 reason 与断言；未合并则在其实现阶段带上。契约全局串行，先在 couli-runs B3-lane/notices.md 登记契约槽。风险：contracts RV1。
+refs: []
+refs_hash: {}
+contract_sections: ['7']
+deps: []
+paths:
+  - 'contracts/error-codes.yaml'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

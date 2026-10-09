@@ -1,0 +1,21 @@
+id: B1-06z
+repo: rebate-platform
+title: linking 写入与读取 30151 冲突日志：bindings 返回 30151 时同事务写一行（替换 B1-06h 的结构化 warn）；open 的 no_rebate=true 在该用户该平台存在未解决冲突日志时由服务端写 no_rebate_reason=relation_conflict（覆盖客户端值，优先于 binding_blocked 的判定顺序按 BR-ID-18）
+type: impl
+# 草稿 2026-10-09（W1 第七棒）。依据 BR-ID-18（no_rebate_reason 由服务端判：存在未解决的 30151 冲突日志 → relation_conflict；绑定 blocked → binding_blocked）、BR-ID-19 细则「并发绑定」、B1-06h 的 30151 分支（现只记 warn linking.bindings.relation_conflict），由编排者摘入任务书。
+# 冲突日志的「解决」（后台重置授权，BR-ID-20）不在本任务，后台任务另立；本任务只写入与读取未解决行。淘宝与拼多多 open 的 binding_blocked 判定分别在 B1-06f、B1-06v，本任务在同一处加 relation_conflict（排在它们之后，linking 串行）。
+# 风险：linking RV2（订单归属：relation_conflict 永不可找回）。
+refs: []
+refs_hash: {}
+deps: [B1-06y, B1-06h, B1-06f, B1-06v]
+paths:
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/relation-conflict/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/relation-conflict/**'
+status: todo
+pr: null
