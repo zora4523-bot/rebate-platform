@@ -1,4 +1,5 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { createSameDeviceLoginReader } from './ports/same-device-logins.ts';
 export {
   createIdentityViewerContext,
   createIdentityCallerContext,

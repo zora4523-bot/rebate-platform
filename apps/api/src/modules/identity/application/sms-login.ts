@@ -30,8 +30,9 @@
 //      login-page consent records (privacy, agreement; version from the request, client_at =
 //      consent_at, server_at = created_at = one Clock instant), then
 //      login_merge of this installation's device-level current states, one login_logs row
-//      (method sms, the HMAC of the device id), the first-App-login review port (BR-INV-09: App
-//      platforms, landing-bound user, no login_logs before this one), then createSession.
+//      (method sms, the HMAC of the device id, the device row's device_hash for BR-ID-37), the
+//      first-App-login review port (BR-INV-09: App platforms, landing-bound user, no login_logs
+//      before this one), then createSession.
 // Any non-zero answer after step 3 and any thrown error roll the whole transaction back: no
 // consent, no login log, no session. A banned user logs in like anyone else (BR-ID-31: no 10006).
 //
@@ -291,10 +292,13 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
     );
     const deviceIdHash = crypto.blindIndex(deviceId, LOGIN_LOGS_DEVICE_ID_CONTEXT);
     const firstLogin = !(await hasLoginLog(trx, appId, userId));
+    // BR-ID-37: the device_hash of this request's verified device row, for the same-device check.
+    const deviceHash = (await deviceHashOf(trx, appId, deviceId)) ?? null;
     await insertLoginLog(trx, {
       app_id: appId,
       user_id: userId,
       device_id_hash: deviceIdHash,
+      device_hash: deviceHash,
       ip: command.client_ip,
       method: SMS_LOGIN_METHOD,
       created_at: now,

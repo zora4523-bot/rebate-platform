@@ -25,6 +25,7 @@ import {
   type ExecutionContext,
   type FactoryProvider,
   type NestInterceptor,
+  type Provider,
   Module,
 } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
@@ -83,6 +84,15 @@ import {
   type RiskStateService,
 } from './application/risk-state.ts';
 import {
+  createSameDeviceAccountsCheck,
+  sameDeviceAccountsCheckToken,
+  sameDeviceLoginReaderToken,
+  type SameDeviceAccountsCheck,
+  type SameDeviceAccountsOptions,
+  type SameDeviceLoginReader,
+} from './application/same-device-accounts.ts';
+import type { RateLimitConfigReader } from './application/rate-limit.ts';
+import {
   DEVICE_SIGNING_KEYS,
   SIGNATURE_CHECK,
   createSignatureCheck,
@@ -100,6 +110,10 @@ const RATE_LIMIT_THRESHOLDS = Symbol('RATE_LIMIT_THRESHOLDS');
 const RISK_STATE_SERVICE = riskStateServiceToken();
 /** Stage ⑬'s service, or null when it is not installed (no REDIS on this entry). */
 const RATE_LIMIT_SERVICE = Symbol('RATE_LIMIT_SERVICE');
+/** BR-ID-37's check (B1-03k), or null when no login reader is wired. */
+const SAME_DEVICE_ACCOUNTS_CHECK = sameDeviceAccountsCheckToken();
+const SAME_DEVICE_LOGIN_READER = sameDeviceLoginReaderToken();
+const SAME_DEVICE_CONFIG = Symbol('SAME_DEVICE_CONFIG');
 
 /** The minimum supported version port as app.module supplies it (content's reader). */
 export interface MinimumVersionReaders {
@@ -149,6 +163,18 @@ export interface RiskModuleOptions {
   readonly rateLimit?: {
     readonly thresholds: Pick<
       FactoryProvider<RateLimitThresholdReaders | null>,
+      'inject' | 'useFactory'
+    >;
+  };
+  /**
+   * BR-ID-37 同设备多账号 (B1-03k): identity's login reader and the configuration port bound to a
+   * handle (content's reader over the caller's transaction), both assembled by app.module. Absent:
+   * sameDeviceAccountsCheckToken() provides null.
+   */
+  readonly sameDevice?: {
+    readonly logins: SameDeviceLoginReader;
+    readonly config: Pick<
+      FactoryProvider<(handle: Kysely<Database>) => RateLimitConfigReader>,
       'inject' | 'useFactory'
     >;
   };
@@ -263,10 +289,30 @@ export class RiskModule {
       options.minimumVersions === undefined
         ? { provide: MINIMUM_VERSION_READER, useFactory: () => null }
         : { provide: MINIMUM_VERSION_READER, ...options.minimumVersions };
+    const sameDevice = options.sameDevice;
+    const sameDeviceProviders: Provider[] =
+      sameDevice === undefined
+        ? [{ provide: SAME_DEVICE_ACCOUNTS_CHECK, useValue: null }]
+        : [
+            { provide: SAME_DEVICE_LOGIN_READER, useValue: sameDevice.logins },
+            { provide: SAME_DEVICE_CONFIG, ...sameDevice.config },
+            {
+              provide: SAME_DEVICE_ACCOUNTS_CHECK,
+              inject: [CLOCK, ROOT_LOGGER, SAME_DEVICE_LOGIN_READER, SAME_DEVICE_CONFIG],
+              useFactory: (
+                clock: Clock,
+                logger: RootLogger,
+                logins: SameDeviceLoginReader,
+                config: SameDeviceAccountsOptions['config'],
+              ): SameDeviceAccountsCheck =>
+                createSameDeviceAccountsCheck({ clock, logger, logins, config }),
+            },
+          ];
     return {
       module: RiskModule,
       imports: [...options.imports],
       providers: [
+        ...sameDeviceProviders,
         {
           provide: SIGNATURE_CHECK,
           inject: [DEVICE_SIGNING_KEYS, CLOCK, { token: REDIS, optional: true }],
@@ -421,7 +467,12 @@ export class RiskModule {
           },
         },
       ],
-      exports: [SIGNATURE_CHECK, MINIMUM_VERSION_CHECK, RISK_STATE_SERVICE],
+      exports: [
+        SIGNATURE_CHECK,
+        MINIMUM_VERSION_CHECK,
+        RISK_STATE_SERVICE,
+        SAME_DEVICE_ACCOUNTS_CHECK,
+      ],
     };
   }
 }
