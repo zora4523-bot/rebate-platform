@@ -92,3 +92,20 @@ export type {
 } from './application/union-auth-url.ts';
 export { createDemoUnionAuthApps } from './infra/auth-apps.ts';
 export type { UnionAuthApps } from './infra/auth-apps.ts';
+// Task B1-06h: POST /v1/unions/{platform}/bindings and GET /v1/unions/bindings (BR-ID-17 细则
+// 「授权方式」「授权管理页」, BR-ID-19, BR-ID-24 ④). Rule tests: test/spec/linking/bindings/**.
+export { createUnionBindings } from './application/union-bindings.ts';
+export type {
+  UnionBindInput,
+  UnionBindingsListInput,
+  UnionBindingsOptions,
+  UnionBindingsService,
+} from './application/union-bindings.ts';
+export { createUnionAuthReads } from './application/union-auth-reads.ts';
+export type { UnionAuthReads, UnionAuthReadsOptions } from './application/union-auth-reads.ts';
+export { UnionBindingExchanger } from './application/union-binding-exchanger.ts';
+export type {
+  UnionBindPublisher,
+  UnionBindingExchangeInput,
+  UnionBindingExchangeResult,
+} from './application/union-binding-exchanger.ts';
