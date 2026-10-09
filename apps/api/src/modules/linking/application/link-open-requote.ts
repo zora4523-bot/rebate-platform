@@ -43,7 +43,9 @@
 // The transaction never takes a second pooled connection: settings, active pids and attr_codes
 // are read before it (link-open-reads.ts); the log of a rolled-back result is wholly the opened
 // link's as committed (its identity, pid and expiry), the opener in opener_user_id.
-// Not here: authorization (30101/30102/30111), taobao (B1-06f).
+// B1-06f: authorization stays out of this core. A conversion port may decide it (authorize, after
+// admit and before any cache or price work, inside the open's transaction); a refusal (30101 /
+// 30102 / 30153) is stored and logged like any 3xxxx result and carries the port's error data.
 import type { components, Scene } from '@couli/contracts-ts';
 import { scene as SCENES } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
@@ -123,6 +125,11 @@ export interface LinkOpenCachedJump {
   readonly fetchedAt: string;
   /** The jump-plan variant the jump was built for; a mismatch is a miss. */
   readonly variant?: string;
+  /**
+   * B1-06f: the conversion port's cache tag when the jump was built (LinkOpenConversionPort
+   * cacheTag); a mismatch is a miss and the entry is rebuilt. The key itself is unchanged.
+   */
+  readonly tag?: string;
 }
 
 export interface LinkOpenConversionInput {
@@ -136,6 +143,34 @@ export interface LinkOpenConversionInput {
   readonly traceId: string;
 }
 
+/** no_rebate_reason values only the server decides (contracts/enums/trade.yaml). */
+export type LinkOpenServerNoRebateReason = 'binding_blocked' | 'relation_conflict';
+
+/** B1-06f: a conversion port's authorization of one open (see LinkOpenConversionPort.authorize). */
+export type LinkOpenAuthorization =
+  | {
+      readonly kind: 'allowed';
+      /** Overrides the client's no_rebate_reason in the open log (BR-ID-18). */
+      readonly noRebateReason?: LinkOpenServerNoRebateReason;
+    }
+  | {
+      readonly kind: 'refused';
+      /** 10001: the state cannot be bound to the caller's user and device (rolled back). */
+      readonly code: 10001 | 30101 | 30102 | 30153;
+      /** The error envelope's data (contracts/error-codes.yaml); absent when it defines none. */
+      readonly data?: Readonly<Record<string, unknown>>;
+    };
+
+export interface LinkOpenAuthorizationInput {
+  readonly caller: Caller;
+  readonly owner: LinkOpenOwnerResult;
+  /** The effective no_rebate (BR-ATTR-05 ①: ignored on another user's share link). */
+  readonly noRebate: boolean;
+  readonly client: LinkOpenRequoteInput['client'];
+  /** The open's transaction: a state issued here commits or rolls back with the open. */
+  readonly executor: Kysely<DB>;
+}
+
 /** The conversion port: convert, plus the optional admission and plan variant (B1-06e). */
 export interface LinkOpenConversionPort {
   convert(input: LinkOpenConversionInput): Promise<LinkOpenJump>;
@@ -147,6 +182,17 @@ export interface LinkOpenConversionPort {
    * inside it may take a second pooled connection; link-open-reads.ts).
    */
   prepare?(plan: LinkOpenReadPlan): Promise<void>;
+  /**
+   * B1-06f: the platform authorization of this open, after admit and before any cache or price
+   * work. It may throw a paused (50301) failure like admit. Absent: every open is allowed.
+   */
+  authorize?(input: LinkOpenAuthorizationInput): Promise<LinkOpenAuthorization>;
+  /**
+   * B1-06f: what a cached jump of this open must have been built with, read after authorize
+   * (Taobao: the snapshot user's active relation_id, BR-ID-17 — never a jump of an earlier
+   * binding). Stored with the entry and compared on read; absent or undefined: no tag.
+   */
+  cacheTag?(owner: LinkOpenOwnerResult, noRebate: boolean): string | undefined;
 }
 
 export interface LinkOpenRequoteOptions extends LinkOpenOwnerOptions {
@@ -223,7 +269,15 @@ export type LinkOpenRequoteResult = Omit<
 
 export type LinkOpenRequoteOutcome =
   | { readonly code: 0; readonly data: LinkOpenRequoteResult }
-  | { readonly code: number; readonly data: null };
+  | {
+      readonly code: number;
+      readonly data: null;
+      /** B1-06f: the error envelope's data of an authorization refusal, when it defines one. */
+      readonly error?: Readonly<Record<string, unknown>>;
+    };
+
+/** Codes whose error envelope carries data from the open (contracts/error-codes.yaml). */
+const ERROR_DATA_CODES: ReadonlySet<number> = new Set([30101, 30102, 30153]);
 
 export interface LinkOpenRequoteService {
   open(input: LinkOpenRequoteInput): Promise<LinkOpenRequoteOutcome>;
@@ -293,6 +347,10 @@ interface Settled {
   readonly quotedPriceFen: bigint | null;
   readonly cacheHit: boolean;
   readonly data: Omit<LinkOpenRequoteResult, 'attempt_id'> | null;
+  /** B1-06f: the refusal's error data (authorization). */
+  readonly error?: Readonly<Record<string, unknown>>;
+  /** B1-06f: the server's no_rebate_reason, overriding the client's in the log. */
+  readonly noRebateReason?: LinkOpenServerNoRebateReason;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -300,6 +358,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MESSAGES: Readonly<Record<number, string>> = {
   0: 'ok',
   50301: 'convert_paused',
+  30101: 'auth_required',
+  30102: 'auth_invalid',
+  30153: 'binding_blocked',
   30141: 'off_shelf',
   30602: 'tlj_claimed_out',
   50303: 'requote_failed',
@@ -312,8 +373,11 @@ const STATUS: Readonly<Record<number, number>> = {
   20001: 400,
   20901: 409,
   20903: 409,
+  30101: 422,
+  30102: 422,
   30141: 422,
   30144: 404,
+  30153: 422,
   30602: 422,
   40901: 409,
   50001: 500,
@@ -409,11 +473,25 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     };
   }
 
+  function cacheTagOf(owner: LinkOpenOwnerResult, input: LinkOpenRequoteInput): string | undefined {
+    return conversion.cacheTag?.(owner, input.noRebate === true);
+  }
+
+  /** The in-flight name of one cache identity and tag (a changed tag never shares a jump). */
+  function flightName(key: LinkOpenCacheKey, tag: string | undefined): string {
+    return JSON.stringify(tag === undefined ? key : { ...key, tag });
+  }
+
   /**
-   * A cached jump of exactly this identity and plan variant, no older than the configured TTL
-   * (≤ 900 s) and still before its jump.expire_at (BR-ATTR-05 ②: the URL's usable period).
+   * A cached jump of exactly this identity, plan variant and port tag, no older than the
+   * configured TTL (≤ 900 s) and still before its jump.expire_at (BR-ATTR-05 ②: the URL's usable
+   * period).
    */
-  async function cached(appId: string, key: LinkOpenCacheKey): Promise<LinkOpenJump | null> {
+  async function cached(
+    appId: string,
+    key: LinkOpenCacheKey,
+    tag: string | undefined,
+  ): Promise<LinkOpenJump | null> {
     const ttlSec = Math.min(
       await setting(appId, CONVERT_CACHE_TTL_SEC, MAX_CONVERT_CACHE_TTL_SEC),
       MAX_CONVERT_CACHE_TTL_SEC,
@@ -423,6 +501,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     const fetchedMs = Date.parse(entry.fetchedAt);
     if (!Number.isFinite(fetchedMs)) return null;
     if ((entry.variant ?? undefined) !== key.variant) return null;
+    if ((entry.tag ?? undefined) !== tag) return null;
     const nowMs = clock.now().getTime();
     const expireMs = Date.parse(entry.jump.expire_at);
     if (!Number.isFinite(expireMs) || nowMs >= expireMs) return null;
@@ -438,7 +517,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
   ): Promise<Converted> {
     const noRebate = input.noRebate === true;
     const key = cacheKeyOf(owner, input);
-    const hit = await cached(owner.link.app_id, key);
+    const tag = cacheTagOf(owner, input);
+    const hit = await cached(owner.link.app_id, key, tag);
     if (hit !== null) return { kind: 'ok', jump: hit, cacheHit: true };
     let jump: LinkOpenJump;
     try {
@@ -459,6 +539,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       jump,
       fetchedAt: clock.now().toISOString(),
       ...(variant === undefined ? {} : { variant }),
+      ...(tag === undefined ? {} : { tag }),
     });
     return { kind: 'ok', jump, cacheHit: false };
   }
@@ -553,7 +634,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     input: LinkOpenRequoteInput,
     item?: AssembleCardInput['item'],
   ): Promise<Converted> {
-    const key = JSON.stringify(cacheKeyOf(owner, input));
+    const key = flightName(cacheKeyOf(owner, input), cacheTagOf(owner, input));
     const pending = flight.conversions.get(key);
     if (pending !== undefined) {
       const shared = await pending;
@@ -625,10 +706,11 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     // One lookup per identity key and window: a first 50303 is not turned into a cached jump by
     // a conversion another open stored meanwhile; a reused jump still has to be usable now.
     const key = cacheKeyOf(owner, input);
-    const name = JSON.stringify(key);
+    const tag = cacheTagOf(owner, input);
+    const name = flightName(key, tag);
     let lookup = flight.fallbacks.get(name);
     if (lookup === undefined) {
-      lookup = cached(owner.link.app_id, key);
+      lookup = cached(owner.link.app_id, key, tag);
       flight.fallbacks.set(name, lookup);
     }
     const found = await lookup;
@@ -698,10 +780,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
     nowMs: number,
+    executor: Kysely<DB>,
   ): Promise<Settled> {
-    const flight = flightFor(owner, input.linkId, nowMs);
-    const link: LinkRow = owner.link;
-
     // BR-PROD-10: a paused platform answers 50301 before any cache or price work.
     if (conversion.admit !== undefined) {
       try {
@@ -710,6 +790,43 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         return failure(conversionFailure(error).code === 50301 ? 50301 : 50303, owner);
       }
     }
+    // B1-06f: the port's authorization, before any cache or price work (an unauthorized open
+    // neither fetches a price nor reuses a cached jump).
+    let reason: LinkOpenServerNoRebateReason | undefined;
+    if (conversion.authorize !== undefined) {
+      let decided: LinkOpenAuthorization;
+      try {
+        decided = await conversion.authorize({
+          caller,
+          owner,
+          noRebate: input.noRebate === true,
+          client: input.client,
+          executor,
+        });
+      } catch (error) {
+        if ((error as { code?: unknown } | null)?.code === 50301) return failure(50301, owner);
+        throw error;
+      }
+      if (decided.kind === 'refused') {
+        return {
+          ...failure(decided.code, owner),
+          ...(decided.data === undefined ? {} : { error: decided.data }),
+        };
+      }
+      reason = decided.noRebateReason;
+    }
+    const settled = await settleAuthorized(caller, owner, input, nowMs);
+    return reason === undefined ? settled : { ...settled, noRebateReason: reason };
+  }
+
+  async function settleAuthorized(
+    caller: Caller,
+    owner: LinkOpenOwnerResult,
+    input: LinkOpenRequoteInput,
+    nowMs: number,
+  ): Promise<Settled> {
+    const flight = flightFor(owner, input.linkId, nowMs);
+    const link: LinkRow = owner.link;
 
     // BR-PRICE-13: amount_unknown has no snapshot; it only converts.
     if (owner.old_final_price_fen === null) {
@@ -881,7 +998,9 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         quoted_price_fen: settled.quotedPriceFen,
         no_rebate: input.noRebate === true,
         no_rebate_reason:
-          input.noRebate === true ? (input.noRebateReason ?? 'auth_declined') : null,
+          input.noRebate === true
+            ? (settled.noRebateReason ?? input.noRebateReason ?? 'auth_declined')
+            : null,
         agent_session_id: identitySnapshot.agent_session_id,
         result_code: settled.code,
         latency_ms: Math.max(0, now.getTime() - startMs),
@@ -931,6 +1050,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       quotedPriceFen: opened.quoted_final_price_fen,
       cacheHit: settled.cacheHit,
       data: null,
+      ...(settled.noRebateReason === undefined ? {} : { noRebateReason: settled.noRebateReason }),
     };
     await record(db, caller, subject, input, failed, start, opened.link_id);
   }
@@ -1081,7 +1201,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         ? { noRebateReason: request.noRebateReason }
         : {}),
     };
-    const settled = await settle(caller, owner, input, start);
+    const settled = await settle(caller, owner, input, start, trx);
     if (!stored(settled.code)) {
       // The transaction rolls back (a claim or a registered link with it), so the log is written
       // once the rollback is done (BR-ATTR-14: failures are logged), wholly for the opened link
@@ -1092,7 +1212,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     }
     const attemptId = await record(trx, caller, owner, input, settled, start, settled.linkId);
     if (settled.code !== 0 || settled.data === null || attemptId === null) {
-      return envelope(settled.code);
+      return envelope(settled.code, settled.error ?? null);
     }
     return envelope(0, { attempt_id: attemptId, ...settled.data });
   }
@@ -1134,6 +1254,14 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     }
     if (parsed.code === 0 && parsed.data !== null && parsed.data !== undefined) {
       return { code: 0, data: parsed.data as LinkOpenRequoteResult };
+    }
+    if (
+      ERROR_DATA_CODES.has(parsed.code) &&
+      typeof parsed.data === 'object' &&
+      parsed.data !== null &&
+      !Array.isArray(parsed.data)
+    ) {
+      return { code: parsed.code, data: null, error: parsed.data as Record<string, unknown> };
     }
     return { code: parsed.code, data: null };
   }

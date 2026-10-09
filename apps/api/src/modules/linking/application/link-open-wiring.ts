@@ -8,6 +8,8 @@
 //   at admit, before any price or conversion call. Fresh conversions, cached jumps and the unpromoted no-rebate page
 //   are admitted alike; nothing admitted → 50301 (the open fails closed before its commit, so no
 //   attempt is recorded for a jump that is never handed out).
+// Taobao (B1-06f, link-open-taobao.ts): outside prod the instruction is handed out as built; prod
+// admits no Taobao path until CAP-TB-11 is verified, so a Taobao open there answers 50301 at admit.
 // The cache plan variant is the client itself (web is not folded into h5 here), so a cached jump
 // is admitted for exactly the client it was built for.
 import type { AppEnv } from '../../platform/index.ts';
@@ -25,6 +27,7 @@ import {
   createLinkOpenRequote,
   type LinkOpenCacheKey,
   type LinkOpenCachedJump,
+  type LinkOpenConversionPort,
   type LinkOpenJump,
   type LinkOpenRequoteInput,
   type LinkOpenRequoteOptions,
@@ -128,8 +131,18 @@ function paused(message: string): Error & { readonly code: 50301 } {
   return Object.assign(new Error(message), { code: 50301 as const });
 }
 
-/** AppModule's open entry, including admission of fresh, cached and fallback jump paths. */
-export function createWiredLinkOpen(options: WiredLinkOpenOptions): LinkOpenService {
+/** The jd / pdd conversion port and the cache of one environment, with path admission. */
+export interface WiredConversion {
+  readonly admission: ReturnType<typeof createJumpAdmission>;
+  readonly conversion: Required<Omit<LinkOpenConversionPort, 'authorize' | 'cacheTag'>>;
+  readonly cache: LinkOpenRequoteOptions['cache'];
+}
+
+/**
+ * The wired conversion of jd / pdd (B1-06w admission of fresh, cached and fallback jump paths),
+ * shared by createWiredLinkOpen and the Taobao composition (link-open-taobao.ts, B1-06f).
+ */
+export function createWiredConversion(options: WiredLinkOpenOptions): WiredConversion {
   const { environment, cache, quoteReads } = options;
   const admission = createJumpAdmission(environment);
   const base = createLinkOpenConversion({ ...options, apps: environment.apps });
@@ -189,5 +202,19 @@ export function createWiredLinkOpen(options: WiredLinkOpenOptions): LinkOpenServ
     },
   };
 
-  return linkOpenOf(createLinkOpenRequote({ ...options, cache: admittedCache, conversion }));
+  return { admission, conversion, cache: admittedCache };
+}
+
+/**
+ * AppModule's open entry, including admission of fresh, cached and fallback jump paths.
+ * `compose` (B1-06f) builds the open's conversion port over the wired jd / pdd one (the Taobao
+ * composition, link-open-taobao.ts); absent, the wired port is used as it is.
+ */
+export function createWiredLinkOpen(
+  options: WiredLinkOpenOptions,
+  compose?: (wired: WiredConversion) => LinkOpenConversionPort,
+): LinkOpenService {
+  const wired = createWiredConversion(options);
+  const conversion = compose === undefined ? wired.conversion : compose(wired);
+  return linkOpenOf(createLinkOpenRequote({ ...options, cache: wired.cache, conversion }));
 }

@@ -18,8 +18,10 @@ import type { CatalogCardEntry } from '../../catalog/index.ts';
 import { FixedClock, type HandlerResult, type Idempotency } from '../../platform/index.ts';
 import type { UnionPidService } from '../../union/index.ts';
 import { openScopedConfig } from './link-open-reads.ts';
+import { SINGLE_FLIGHT_MS } from '../domain/rules.ts';
 import {
   createLinkOpenRequote,
+  type LinkOpenCachedJump,
   type LinkOpenPrice,
   type LinkOpenRequoteOptions,
 } from './link-open-requote.ts';
@@ -151,6 +153,9 @@ function linkA(clock: FixedClock) {
 function fixture(
   price: () => Promise<LinkOpenPrice>,
   faults: { readonly settingsFail?: boolean; readonly slowLinks?: boolean } = {},
+  ports: (
+    clock: FixedClock,
+  ) => Partial<Pick<LinkOpenRequoteOptions, 'conversion' | 'cache'>> = () => ({}),
 ) {
   const clock = new FixedClock(NOW);
   const original = linkA(clock);
@@ -265,6 +270,7 @@ function fixture(
     },
     cache: { get: async () => null, put: async () => undefined },
     idempotency,
+    ...ports(clock),
   };
   const service = createLinkOpenRequote(options);
   const request = {
@@ -273,7 +279,7 @@ function fixture(
     traceId: 'synthetic-trace',
     client: 'ios' as const,
   };
-  return { service, driver, request };
+  return { service, driver, request, clock };
 }
 
 /** The named columns and values of the last INSERT into a table. */
@@ -416,5 +422,106 @@ describe('linking open connection use (B1-06m)', () => {
     expect(unhandled).toEqual([]);
     // The failed setting fails the open where it is used, as when it was read in place.
     expect(outcome).toBeInstanceOf(Error);
+  });
+});
+
+describe('linking open cache tag (B1-06f)', () => {
+  it('[AC-B1-06f] a cached jump of the same key built for an old relation_id is a miss and is rebuilt', async () => {
+    let relation = 'rel-1';
+    const built: string[] = [];
+    const store = new Map<string, LinkOpenCachedJump>();
+    const f = fixture(
+      async () => ({
+        kind: 'available',
+        input: {
+          item: {
+            platform: 'jd',
+            final_price_fen: 2990n,
+            coupon_fen: 0n,
+            coupon_ids: '',
+            quoted_at: NOW,
+          },
+          stale: false,
+        } as unknown as Extract<LinkOpenPrice, { kind: 'available' }>['input'],
+      }),
+      {},
+      () => ({
+        conversion: {
+          authorize: async () => ({ kind: 'allowed' }),
+          cacheTag: (_owner, noRebate) => (noRebate ? undefined : `relation:${relation}`),
+          convert: async ({ noRebate }) => {
+            const relationId = noRebate ? null : relation;
+            built.push(relationId ?? 'none');
+            return {
+              primary: {
+                type: 'sdk',
+                value: '12345',
+                sdk: {
+                  provider: 'baichuan',
+                  open_by: 'code',
+                  page: 'detail',
+                  item_id: '12345',
+                  taoke: {
+                    pid: 'mm_1_2_3',
+                    ...(relationId === null ? {} : { relation_id: relationId }),
+                  },
+                },
+              },
+              fallbacks: [],
+              expire_at: '2031-05-06T07:15:00.000Z',
+            };
+          },
+        },
+        cache: {
+          get: async (key) => store.get(JSON.stringify(key)) ?? null,
+          put: async (key, value) => {
+            store.set(JSON.stringify(key), value);
+          },
+        },
+      }),
+    );
+    const relationOf = (outcome: Awaited<ReturnType<typeof f.service.open>>) =>
+      (outcome.data?.jump.primary.sdk as { taoke?: { relation_id?: string } } | undefined)?.taoke
+        ?.relation_id;
+    // Past the single-flight window, so every open below reads the cache itself.
+    const later = () => f.clock.advanceMs(SINGLE_FLIGHT_MS + 1000);
+
+    const first = await f.service.open({ ...f.request, idempotencyKey: 'synthetic-open-1' });
+    expect(first.code).toBe(0);
+    expect(relationOf(first)).toBe('rel-1');
+    expect(store.size).toBe(1);
+    const [name] = [...store.keys()];
+
+    later();
+    const reused = await f.service.open({ ...f.request, idempotencyKey: 'synthetic-open-2' });
+    expect(reused.code).toBe(0);
+    expect(relationOf(reused)).toBe('rel-1');
+    expect(built).toEqual(['rel-1']);
+
+    // Unbound and bound again within the TTL: a new relation_id under the same key.
+    relation = 'rel-2';
+    later();
+    const rebound = await f.service.open({ ...f.request, idempotencyKey: 'synthetic-open-3' });
+    expect(rebound.code).toBe(0);
+    expect(relationOf(rebound)).toBe('rel-2');
+    expect(built).toEqual(['rel-1', 'rel-2']);
+    // The same key, overwritten with the new instruction and its tag.
+    expect([...store.keys()]).toEqual([name]);
+    expect(store.get(name!)).toMatchObject({ tag: 'relation:rel-2' });
+    expect(JSON.stringify(rebound)).not.toContain('rel-1');
+
+    // no_rebate has no tag and its own key: it neither reuses nor replaces the attributed jump.
+    later();
+    const plain = await f.service.open({
+      ...f.request,
+      idempotencyKey: 'synthetic-open-4',
+      noRebate: true,
+    });
+    expect(plain.code).toBe(0);
+    expect(relationOf(plain)).toBeUndefined();
+    expect(built).toEqual(['rel-1', 'rel-2', 'none']);
+    expect(store.size).toBe(2);
+    expect(store.get(name!)).toMatchObject({ tag: 'relation:rel-2' });
+    expect([...store.values()].find((entry) => entry.tag === undefined)).toBeDefined();
   });
 });

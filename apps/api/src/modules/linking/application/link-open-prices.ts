@@ -8,6 +8,7 @@ import { newUuidV7, type Clock } from '../../platform/index.ts';
 import {
   DemoUnionError,
   UnionError,
+  type ItemRef,
   type RegisteredPlatform,
   type UnionAdapter,
 } from '../../union/index.ts';
@@ -36,16 +37,20 @@ export function createLinkOpenPrices(options: LinkOpenPricesOptions): LinkOpenPr
   async function fetch(owner: LinkOpenOwnerResult): Promise<LinkOpenPrice> {
     const { link } = owner;
     const platform = link.platform;
-    // TODO(规划/11 §4.5): 淘宝复核取价 — blocked on B1-06f。
-    if (platform !== 'jd' && platform !== 'pdd') {
+    if (platform !== 'jd' && platform !== 'pdd' && platform !== 'taobao') {
       throw new Error('linking: no re-check price source for this platform');
     }
     if (link.raw_item_id === null || link.raw_item_id === '' || link.product_key === null) {
       throw new Error('linking: link has no raw item id or product key to re-check');
     }
+    // B1-06f: Taobao re-checks through the item detail only (no union link API is called).
+    const ref: ItemRef =
+      platform === 'taobao'
+        ? { platform: 'taobao', item_id: link.raw_item_id }
+        : itemRefOf(platform, link.raw_item_id);
     let item;
     try {
-      item = await union.adapter(platform).getItem(itemRefOf(platform, link.raw_item_id), {
+      item = await union.adapter(platform).getItem(ref, {
         appId: link.app_id,
         requestId: newUuidV7(clock.now()),
         purpose: 'online',
@@ -54,7 +59,7 @@ export function createLinkOpenPrices(options: LinkOpenPricesOptions): LinkOpenPr
       if (unavailable(error)) return { kind: 'off_shelf' };
       throw error;
     }
-    const ref: ProductRef = {
+    const product: ProductRef = {
       appId: link.app_id,
       platform,
       productKey: link.product_key,
@@ -70,7 +75,7 @@ export function createLinkOpenPrices(options: LinkOpenPricesOptions): LinkOpenPr
     };
     return {
       kind: 'available',
-      input: { item, ref, entrySource: link.entry_source, stale: false },
+      input: { item, ref: product, entrySource: link.entry_source, stale: false },
     };
   }
 

@@ -40,12 +40,21 @@ function reasonOf(error: unknown): string {
 
 const STEP_TYPES = new Set(['scheme', 'universal_link', 'h5']);
 
+/** B1-06f: a cached Baichuan instruction keeps its pairing (type=sdk iff sdk, 04 §8.4). */
+function isSdk(value: unknown, stepValue: string): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const sdk = value as { provider?: unknown; open_by?: unknown; url?: unknown; item_id?: unknown };
+  if (sdk.provider !== 'baichuan') return false;
+  if (sdk.open_by === 'url') return typeof sdk.url === 'string' && sdk.url === stepValue;
+  return sdk.open_by === 'code' && typeof sdk.item_id === 'string' && sdk.item_id === stepValue;
+}
+
 function isStep(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
-  const step = value as { type?: unknown; value?: unknown };
-  return (
-    typeof step.type === 'string' && STEP_TYPES.has(step.type) && typeof step.value === 'string'
-  );
+  const step = value as { type?: unknown; value?: unknown; sdk?: unknown };
+  if (typeof step.value !== 'string') return false;
+  if (step.type === 'sdk') return isSdk(step.sdk, step.value);
+  return typeof step.type === 'string' && STEP_TYPES.has(step.type) && !Object.hasOwn(step, 'sdk');
 }
 
 function cachedJumpOf(text: string): LinkOpenCachedJump | null {
@@ -56,7 +65,7 @@ function cachedJumpOf(text: string): LinkOpenCachedJump | null {
     return null;
   }
   if (typeof value !== 'object' || value === null) return null;
-  const entry = value as { jump?: unknown; fetchedAt?: unknown; variant?: unknown };
+  const entry = value as { jump?: unknown; fetchedAt?: unknown; variant?: unknown; tag?: unknown };
   const jump = entry.jump as { primary?: unknown; fallbacks?: unknown; expire_at?: unknown };
   if (
     typeof jump !== 'object' ||
@@ -66,7 +75,8 @@ function cachedJumpOf(text: string): LinkOpenCachedJump | null {
     !jump.fallbacks.every(isStep) ||
     typeof jump.expire_at !== 'string' ||
     typeof entry.fetchedAt !== 'string' ||
-    (entry.variant !== undefined && typeof entry.variant !== 'string')
+    (entry.variant !== undefined && typeof entry.variant !== 'string') ||
+    (entry.tag !== undefined && typeof entry.tag !== 'string')
   ) {
     return null;
   }

@@ -14,22 +14,25 @@
 // union_auth_sessions. The site authorization judged is that of the union account this
 // authorization actually uses (the unreleased binding's, else the platform's active self_buy pid's,
 // else the platform's first account in the pid service's order), never "any account still valid".
-import { randomBytes } from 'node:crypto';
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import { sql, type Kysely } from 'kysely';
+import type { Kysely } from 'kysely';
 import type { AppEnv, Clock, HandlerResult, RootLogger } from '../../platform/index.ts';
 import type { UnionPidService } from '../../union/index.ts';
 import type { CallerContext, LinkingConfigReader } from '../ports.ts';
 import { appSchemeOf, buildDefaultLinkJump, pathsOf } from './link-open-conversion.ts';
 import { createJumpAdmission, type LinkOpenEnvironment } from './link-open-wiring.ts';
 import { createLinkingPidReader } from '../infra/pid-reader.ts';
+import { AuthConfigError, createUnionAuthReads, type AuthClient } from './union-auth-reads.ts';
 import {
-  AuthConfigError,
-  createUnionAuthReads,
-  type AuthClient,
-  type UnionAuthMethod,
-} from './union-auth-reads.ts';
+  AUTH_STATE_TTL_MS,
+  authAppRefs,
+  deviceClientOf,
+  insertAuthSession,
+  newAuthState,
+  syntheticAuthUrl,
+  type UnionAuthAppsPort,
+} from './union-auth-state.ts';
 
 export type { AuthClient, UnionAuthMethod } from './union-auth-reads.ts';
 
@@ -47,14 +50,7 @@ export interface UnionAuthUrlOptions {
   readonly config: LinkingConfigReader;
   readonly appEnv: AppEnv;
   /** Server-owned application configuration references, scoped to the issuing environment. */
-  readonly authApps: {
-    resolve(
-      appId: string,
-      environment: AppEnv,
-      client: AuthClient,
-      method: UnionAuthMethod,
-    ): Promise<{ readonly ref: string }>;
-  };
+  readonly authApps: UnionAuthAppsPort;
   /**
    * union's read-only active-pid query (the account channel registration uses); absent → the same
    * read-only reader built on this db.
@@ -77,9 +73,6 @@ export interface UnionAuthUrlService {
 type AuthJumpPlan = components['schemas']['AuthJumpPlan'];
 type AuthJumpStep = components['schemas']['AuthJumpStep'];
 
-/** BR-ID-17: a state lives 10 minutes. */
-const STATE_TTL_MS = 600_000;
-const CLIENTS: ReadonlySet<string> = new Set<AuthClient>(['ios', 'android', 'harmony']);
 const STATUS: Readonly<Record<number, number>> = {
   0: 200,
   10001: 401,
@@ -111,23 +104,6 @@ function fail(code: number, traceId: string, data?: Record<string, unknown>): Ha
       trace_id: traceId,
     },
   };
-}
-
-/**
- * 128+ random bits from the CSPRNG, base64url; it carries no identity in clear (BR-ID-17: the
- * binding to uid / device lives in the row, not in the state string).
- */
-function newState(): string {
-  return `st_${randomBytes(32).toString('base64url')}`;
-}
-
-/**
- * TODO(规划/11 §4.5): real authorization link generation — blocked on 推广位 / siteId 与联盟应用.
- * Until then a synthetic address on example.test carrying only the issued state.
- */
-function syntheticAuthUrl(platform: 'taobao' | 'pdd', state: string): string {
-  const host = platform === 'taobao' ? 'oauth.example.test' : 'auth.example.test';
-  return `https://${host}/${platform}/authorize?state=${encodeURIComponent(state)}`;
 }
 
 const AUTH_STEP_TYPES: ReadonlySet<string> = new Set<AuthJumpStep['type']>([
@@ -184,40 +160,14 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     };
   }
 
-  async function appRefs(
-    appId: string,
-    client: AuthClient,
-    methods: readonly UnionAuthMethod[],
-  ): Promise<Record<string, string>> {
-    const refs: Record<string, string> = {};
-    for (const method of methods) {
-      // Only the reference leaves the resolver; nothing else it returns is kept.
-      const { ref } = await authApps.resolve(appId, appEnv, client, method);
-      if (typeof ref !== 'string' || ref.trim() === '') {
-        throw new AuthConfigError('linking: no application reference for an auth method');
-      }
-      refs[method] = ref;
-    }
-    return refs;
-  }
-
   async function issue(input: UnionAuthUrlInput): Promise<HandlerResult> {
     const caller = await callerContext.current();
     if (caller.userId === null || caller.deviceId === null) return fail(10001, input.traceId);
     const { appId, userId, deviceId } = caller;
 
     // The client is the device record's (BR-ID-17 细则), never the X-Platform declaration.
-    const device = await db
-      .selectFrom('devices')
-      .select(['platform', 'revoked_at'])
-      .where('app_id', '=', appId)
-      .where('id', '=', deviceId)
-      .executeTakeFirst();
-    if (device === undefined || device.revoked_at !== null) return fail(10001, input.traceId);
-    if (!CLIENTS.has(device.platform)) {
-      throw new AuthConfigError('linking: device record carries no supported client');
-    }
-    const client = device.platform as AuthClient;
+    const client = await deviceClientOf(db, appId, deviceId);
+    if (client === 'missing') return fail(10001, input.traceId);
     if (client !== input.reportedClient) {
       logger?.warn(
         {
@@ -255,33 +205,26 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     const now = clock.now();
     // A second reading of the injected clock, moved by the TTL (no `new Date` outside the clock).
     const expireAt = clock.now();
-    expireAt.setTime(now.getTime() + STATE_TTL_MS);
-    const state = newState();
+    expireAt.setTime(now.getTime() + AUTH_STATE_TTL_MS);
+    const state = newAuthState();
     const authUrl = syntheticAuthUrl(platform, state);
     const authJump = methods === null ? pddJump(authUrl, client, input.installed, expireAt) : null;
-    const refs = methods === null ? null : await appRefs(appId, client, methods);
+    const refs =
+      methods === null ? null : await authAppRefs(authApps, appEnv, appId, client, methods);
 
-    await db
-      .insertInto('union_auth_sessions')
-      .values({
-        state,
-        app_id: appId,
-        user_id: userId,
-        device_id: deviceId,
-        platform,
-        mode: 'bind',
-        link_id: null,
-        expire_at: expireAt,
-        used_at: null,
-        created_at: now,
-        client,
-        auth_methods: methods === null ? null : [...methods],
-        auth_app_refs:
-          refs === null
-            ? null
-            : sql<DB['union_auth_sessions']['auth_app_refs']>`${JSON.stringify(refs)}::jsonb`,
-      })
-      .execute();
+    await insertAuthSession(db, {
+      state,
+      appId,
+      userId,
+      deviceId,
+      platform,
+      client,
+      linkId: null,
+      now,
+      expireAt,
+      methods,
+      refs,
+    });
 
     const data =
       methods === null

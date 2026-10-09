@@ -33,10 +33,10 @@ import {
 } from '../union/index.ts';
 import { LinkOpenService, type LinkOpenInput } from './application/link-open.ts';
 import { createLinkOpenPrices } from './application/link-open-prices.ts';
+import { createTaobaoLinkOpen } from './application/link-open-taobao.ts';
 import { createLinkOpenFlights, type LinkOpenFlights } from './application/link-open-requote.ts';
 // Through the module namespace, so the composition is observable where it is built.
 import {
-  createWiredLinkOpen,
   type LinkOpenApps,
   type LinkOpenEnvironment,
   type LinkOpenQuoteReads,
@@ -279,6 +279,7 @@ export class LinkingModule {
             LinkingConfigReader,
             LINKING_PIDS,
             SourceLinkReader,
+            { token: LINKING_AUTH_APPS, optional: true },
           ],
           useFactory: (
             db: Kysely<Database> | undefined,
@@ -293,6 +294,7 @@ export class LinkingModule {
             config: LinkingConfigReader,
             pids: PidReader,
             sourceLinks: SourceLinkReader,
+            authApps: UnionAuthApps | undefined,
           ): LinkOpenService => {
             if (db === undefined || idempotency === undefined || ports === undefined) {
               return new PausedLinkOpen();
@@ -314,7 +316,8 @@ export class LinkingModule {
               pids,
               context: { scene: 'search' },
             });
-            return createWiredLinkOpen({
+            // B1-06f: the wired open (createWiredLinkOpen) with the Taobao conversion port.
+            return createTaobaoLinkOpen({
               db,
               clock,
               callerContext,
@@ -342,6 +345,8 @@ export class LinkingModule {
                 apps: ports.apps,
                 verifiedPaths: ports.verifiedPaths,
               },
+              appEnv: appConfig.appEnv,
+              authApps: authApps ?? createDemoUnionAuthApps(),
             });
           },
         },
