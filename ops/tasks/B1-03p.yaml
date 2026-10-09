@@ -1,0 +1,24 @@
+id: B1-03p
+repo: rebate-platform
+title: 热修：主干迁移撞号——0025_login-logs-device-hash.sql（B1-03k #377，后合并）改名为 0026，只改文件名、SQL 内容不变，schema 快照不变
+type: migration
+# 2026-10-09 入账（W1 搜索转链线代办，编排裁定；身份线已收工）。主干同时有 0025_union-binding-conflicts.sql（B1-06y #375，先合并）与 0025_login-logs-device-hash.sql（B1-03k #377，后合并），
+# packages/db migrations.test.ts「numbered without gaps」在主干红，所有 PR 的 verify-fast 都红。按「落地时主干最大号 +1、后合并的一方让号」改名后合并的一方。
+# 核对：staging 只部署过 main ee4a706（2026-10-08），两个 0025 都未应用；迁移门禁的冻结哈希只覆盖 0001–0019；仓库内无其他引用该文件名；remote-snapshot 重生成 schema.sql / db.gen.ts 无变化。
+# 非 task/ 分支的热修被 evidence-check 拒（迁移属资金与归属路径须 task/<id> 与证据），故立本任务；RV2 须规则测试作者（task.ts）：Codex 写 test/spec/db/migration-numbering/**（迁移编号唯一且连续、0026_login-logs-device-hash.sql 存在且内容与原 0025 文件逐字相同），在当前主干上先红。保护路径 db/migrations，两家评审后按 approvals 第 24 条加标签。风险：迁移 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-03k, B1-06y]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/migration-numbering/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/migration-numbering/**'
+status: todo
+pr: null
