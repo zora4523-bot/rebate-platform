@@ -40,13 +40,58 @@ function reasonOf(error: unknown): string {
 
 const STEP_TYPES = new Set(['scheme', 'universal_link', 'h5']);
 
-/** B1-06f: a cached Baichuan instruction keeps its pairing (type=sdk iff sdk, 04 §8.4). */
+const SDK_KEYS = new Set(['provider', 'open_by', 'url', 'page', 'item_id', 'sku_id', 'taoke']);
+const TAOKE_KEYS = new Set(['pid', 'relation_id']);
+/** contracts BaichuanTaoke.pid. */
+const TAOKE_PID = /^mm_\d+_\d+_\d+$/;
+
+function onlyKeys(value: object, allowed: ReadonlySet<string>): boolean {
+  return Object.keys(value).every((name) => allowed.has(name));
+}
+
+function boundedString(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length >= 1 && value.length <= max;
+}
+
+function isTaoke(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  if (!onlyKeys(value, TAOKE_KEYS)) return false;
+  const taoke = value as { pid?: unknown; relation_id?: unknown };
+  if (!boundedString(taoke.pid, 64) || !TAOKE_PID.test(taoke.pid)) return false;
+  return !Object.hasOwn(taoke, 'relation_id') || boundedString(taoke.relation_id, 32);
+}
+
+function isHttpsUrl(value: unknown): value is string {
+  if (!boundedString(value, 2048)) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && parsed.host !== '';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * B1-06f: a cached Baichuan instruction is reused only in a contract shape (BaichuanOpen, 04 §8.4):
+ * url branch = provider, open_by, url only; code branch = page=detail, item_id, a valid taoke and
+ * an optional sku_id, no url; the step value repeats sdk.url / sdk.item_id. Anything else is a miss.
+ */
 function isSdk(value: unknown, stepValue: string): boolean {
-  if (typeof value !== 'object' || value === null) return false;
-  const sdk = value as { provider?: unknown; open_by?: unknown; url?: unknown; item_id?: unknown };
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  if (!onlyKeys(value, SDK_KEYS)) return false;
+  const sdk = value as Record<string, unknown>;
   if (sdk.provider !== 'baichuan') return false;
-  if (sdk.open_by === 'url') return typeof sdk.url === 'string' && sdk.url === stepValue;
-  return sdk.open_by === 'code' && typeof sdk.item_id === 'string' && sdk.item_id === stepValue;
+  const has = (name: string) => Object.hasOwn(sdk, name);
+  if (sdk.open_by === 'url') {
+    if (has('taoke') || has('page') || has('item_id') || has('sku_id')) return false;
+    return isHttpsUrl(sdk.url) && sdk.url === stepValue;
+  }
+  if (sdk.open_by !== 'code' || has('url')) return false;
+  if (sdk.page !== 'detail' || !boundedString(sdk.item_id, 64) || sdk.item_id !== stepValue) {
+    return false;
+  }
+  if (has('sku_id') && !boundedString(sdk.sku_id, 64)) return false;
+  return isTaoke(sdk.taoke);
 }
 
 function isStep(value: unknown): boolean {

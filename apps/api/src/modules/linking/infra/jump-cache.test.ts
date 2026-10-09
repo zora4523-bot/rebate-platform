@@ -122,6 +122,56 @@ describe('Redis jump cache (B1-06w)', () => {
       });
       expect(await cache.get(key)).toBeNull();
     }
+    // BaichuanOpen in full: a shape the contract refuses is a miss, never a 200 instruction.
+    const code = {
+      provider: 'baichuan',
+      open_by: 'code',
+      page: 'detail',
+      item_id: '00012345',
+      taoke: { pid: 'mm_1_2_3', relation_id: 'rel-1' },
+    };
+    const url = { provider: 'baichuan', open_by: 'url', url: 'https://promo.example.test/s' };
+    const invalid: [string, Record<string, unknown>][] = [
+      ['00012345', { provider: 'baichuan', open_by: 'code', item_id: '00012345' }],
+      ['00012345', { ...code, page: undefined }],
+      ['00012345', { ...code, page: 'shop' }],
+      ['00012345', { ...code, taoke: undefined }],
+      ['00012345', { ...code, taoke: {} }],
+      ['00012345', { ...code, taoke: { pid: 'synthetic-pid' } }],
+      ['00012345', { ...code, taoke: { pid: 'mm_1_2_3', relation_id: '' } }],
+      ['00012345', { ...code, taoke: { pid: 'mm_1_2_3', relation_id: 'r'.repeat(33) } }],
+      ['00012345', { ...code, taoke: { pid: 'mm_1_2_3', extra: 'x' } }],
+      ['00012345', { ...code, url: 'https://promo.example.test/s' }],
+      ['00012345', { ...code, sku_id: '' }],
+      ['00012345', { ...code, extra: 'x' }],
+      ['00012345', { ...code, provider: 'other' }],
+      ['https://promo.example.test/s', { ...url, taoke: { pid: 'mm_1_2_3' } }],
+      ['https://promo.example.test/s', { ...url, item_id: '00012345' }],
+      ['https://promo.example.test/s', { ...url, page: 'detail' }],
+      ['https://promo.example.test/s', { ...url, sku_id: '1' }],
+      ['https://promo.example.test/s', { ...url, url: undefined }],
+      ['not a url', { ...url, url: 'not a url' }],
+      ['http://promo.example.test/s', { ...url, url: 'http://promo.example.test/s' }],
+    ];
+    for (const [value, body] of invalid) {
+      const primary = { type: 'sdk', value, sdk: JSON.parse(JSON.stringify(body)) as unknown };
+      store.set(name, {
+        value: JSON.stringify({ ...sdk, jump: { ...sdk.jump, primary } }),
+        ttl: 1,
+      });
+      expect(await cache.get(key)).toBeNull();
+    }
+    for (const [value, body] of [
+      ['https://promo.example.test/s', url],
+      ['00012345', { ...code, sku_id: '67890', taoke: { pid: 'mm_1_2_3' } }],
+    ] as const) {
+      const primary = { type: 'sdk', value, sdk: body };
+      store.set(name, {
+        value: JSON.stringify({ ...sdk, jump: { ...sdk.jump, primary } }),
+        ttl: 1,
+      });
+      expect(await cache.get(key)).toMatchObject({ jump: { primary } });
+    }
     // The port's cache tag (relation_id) round-trips; a non-string tag is no entry.
     await cache.put(key, { ...sdk, tag: 'relation:rel-1' });
     expect(await cache.get(key)).toMatchObject({ tag: 'relation:rel-1' });

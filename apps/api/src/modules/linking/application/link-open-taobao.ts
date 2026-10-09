@@ -17,7 +17,7 @@
 //   with no state, no_rebate included; otherwise an explicit no_rebate open goes out, else a
 //   one-time state bound to uid + device + the link this open serves (union-auth-state.ts).
 // - active → the instruction with the snapshot user's relation_id (only that user's active
-//   binding in this app).
+//   binding in this app), paired only with a slot of the binding's union account (taobaoTaoke).
 // The instruction (BR-ATTR-27 Taobao row; 02 §5.1): no union link API is called (the Taobao
 // adapter's convert / resolveLink are never used). Our own promotion link of this link's user and
 // scene (links.promo_url) usable before links.expire_at → openByUrl with no commission parameter,
@@ -82,9 +82,45 @@ function paused(message: string): Error & { readonly code: 50301 } {
   return Object.assign(new Error(message), { code: 50301 as const });
 }
 
-/** The relation this open's authorization settled on, per owner stage result. */
-interface Authorized {
+/** What this open's authorization settled on, per owner stage result. */
+export interface TaobaoAuthorized {
+  /** The snapshot user's active relation_id; null for a no_rebate open (no user parameter). */
   readonly relationId: string | null;
+  /** union_account_id of the active binding the relation_id belongs to; null with no relation. */
+  readonly bindingAccountId: string | null;
+  /** The active slot selected for this open (the scene's, or self_buy for no_rebate). */
+  readonly slot: Pick<UnionPidRow, 'pid' | 'union_account_id'>;
+}
+
+/**
+ * BR-ATTR-07: a relation_id means something only under the union account its binding belongs to,
+ * so an attributed openByCode pairs it only with a slot of that same account. The union PID port
+ * picks the scene's active slot without an account filter: a slot of another account is refused
+ * (null → 50301 with a warning), never a cross-account pid + relation_id. No relation (no_rebate):
+ * the slot alone.
+ */
+export function taobaoTaoke(
+  decided: TaobaoAuthorized,
+): { readonly pid: string; readonly relation_id?: string } | null {
+  const { relationId, bindingAccountId, slot } = decided;
+  if (relationId === null) return { pid: slot.pid };
+  if (bindingAccountId === null || slot.union_account_id !== bindingAccountId) return null;
+  return { pid: slot.pid, relation_id: relationId };
+}
+
+/**
+ * The cache tag of a Taobao open (link-open-requote.ts cacheTag; also its single-flight name):
+ * a cached instruction is reused only when it was built for the same relation_id and binding
+ * account (BR-ID-17: a rebind within the TTL is a miss) and the same selected active slot and its
+ * account (BR-ATTR-05: a slot retired and replaced within the TTL is a miss) — no_rebate included,
+ * which carries the self_buy slot and no user parameter. Not authorized: a tag no stored entry has.
+ */
+export function taobaoCacheTag(decided: TaobaoAuthorized | undefined, noRebate: boolean): string {
+  if (decided === undefined) return 'unauthorized';
+  const slot = [decided.slot.union_account_id, decided.slot.pid];
+  if (noRebate) return JSON.stringify(['no_rebate', ...slot]);
+  if (decided.relationId === null) return 'unauthorized';
+  return JSON.stringify(['relation', decided.bindingAccountId, decided.relationId, ...slot]);
 }
 
 /**
@@ -114,7 +150,7 @@ function createTaobaoConversion(
   // Inside the open's transaction these answer only from the pre-reads (link-open-reads.ts).
   const config = openScopedConfig(options.config);
   const pids = openScopedPids(options.pids);
-  const authorized = new WeakMap<LinkOpenOwnerResult, Authorized>();
+  const authorized = new WeakMap<LinkOpenOwnerResult, TaobaoAuthorized>();
 
   async function prepare(plan: LinkOpenReadPlan): Promise<void> {
     const { appId } = plan;
@@ -186,28 +222,34 @@ function createTaobaoConversion(
   async function activeRelation(executor: Kysely<DB>, appId: string, userId: string) {
     const row = await executor
       .selectFrom('union_bindings')
-      .select('relation_id')
+      .select(['relation_id', 'union_account_id'])
       .where('app_id', '=', appId)
       .where('user_id', '=', userId)
       .where('platform', '=', PLATFORM)
       .where('status', '=', 'active')
       .executeTakeFirst();
     const relation = row?.relation_id ?? null;
-    if (relation === null || relation === '' || relation.length > RELATION_MAX) {
+    if (
+      row === undefined ||
+      relation === null ||
+      relation === '' ||
+      relation.length > RELATION_MAX
+    ) {
       logger.warn(
         { event: 'linking.open.relation_unavailable', app_id: appId, platform: PLATFORM },
         'linking: active taobao binding without a usable relation_id',
       );
       throw paused('linking: active binding without a usable relation_id');
     }
-    return relation;
+    return { relationId: relation, bindingAccountId: row.union_account_id };
   }
 
   async function authorize(input: LinkOpenAuthorizationInput): Promise<LinkOpenAuthorization> {
     const { caller, owner, noRebate, executor } = input;
     const { link, identitySnapshot: snapshot } = owner;
     const appId = link.app_id;
-    await activePid(appId, noRebate ? 'self_buy' : snapshot.pid_scene);
+    const slot = await activePid(appId, noRebate ? 'self_buy' : snapshot.pid_scene);
+    const unattributed: TaobaoAuthorized = { relationId: null, bindingAccountId: null, slot };
     const sharedByOther = snapshot.pid_scene === 'share' && snapshot.user_id !== caller.userId;
     const subject = snapshot.user_id;
     if (subject === null) {
@@ -221,8 +263,8 @@ function createTaobaoConversion(
 
     if (status === 'active') {
       // no_rebate carries no user parameter, so it needs no relation_id.
-      const relationId = noRebate ? null : await activeRelation(executor, appId, subject);
-      authorized.set(owner, { relationId });
+      const relation = noRebate ? null : await activeRelation(executor, appId, subject);
+      authorized.set(owner, relation === null ? unattributed : { ...relation, slot });
       return { kind: 'allowed' };
     }
     // BR-ATTR-05 细则「别人的分享 link 不可用」: the sharer's status is never disclosed.
@@ -232,7 +274,7 @@ function createTaobaoConversion(
     if (status === 'blocked') {
       // BR-ID-18: an explicit no_rebate purchase goes out; the reason is the server's.
       if (noRebate) {
-        authorized.set(owner, { relationId: null });
+        authorized.set(owner, unattributed);
         return { kind: 'allowed', noRebateReason: 'binding_blocked' };
       }
       // A banned user has no session (BR-ID-31); one still reaching here asks to log in.
@@ -246,7 +288,7 @@ function createTaobaoConversion(
       return { kind: 'refused', code, data: { reason: 'auth_unavailable' } };
     }
     if (noRebate) {
-      authorized.set(owner, { relationId: null });
+      authorized.set(owner, unattributed);
       return { kind: 'allowed' };
     }
     return issue(executor, caller, owner, subject, code);
@@ -320,7 +362,6 @@ function createTaobaoConversion(
     const { owner, noRebate, client } = input;
     const { link, identitySnapshot: snapshot } = owner;
     const appId = link.app_id;
-    const pid = await activePid(appId, noRebate ? 'self_buy' : snapshot.pid_scene);
     const decided = authorized.get(owner);
     if (decided === undefined) throw paused('linking: taobao open converted without authorization');
     const nowMs = clock.now().getTime();
@@ -354,9 +395,21 @@ function createTaobaoConversion(
       if (itemId === null || itemId === '' || itemId.length > ITEM_MAX) {
         throw new Error('linking: link has no taobao item id for the instruction');
       }
-      const relationId = noRebate ? null : decided.relationId;
-      if (!noRebate && relationId === null) {
+      if (!noRebate && decided.relationId === null) {
         throw paused('linking: no relation_id for an attributed taobao open');
+      }
+      const taoke = taobaoTaoke(noRebate ? { ...decided, relationId: null } : decided);
+      if (taoke === null) {
+        logger.warn(
+          {
+            event: 'linking.open.pid_account_mismatch',
+            app_id: appId,
+            platform: PLATFORM,
+            pid_scene: snapshot.pid_scene,
+          },
+          'linking: the active taobao slot belongs to another union account than the binding',
+        );
+        throw paused('linking: active promotion slot of another union account');
       }
       steps = [
         {
@@ -367,7 +420,7 @@ function createTaobaoConversion(
             open_by: 'code',
             page: 'detail',
             item_id: itemId,
-            taoke: { pid: pid.pid, ...(relationId === null ? {} : { relation_id: relationId }) },
+            taoke,
           },
         },
       ];
@@ -379,18 +432,8 @@ function createTaobaoConversion(
     return admitted;
   }
 
-  /**
-   * BR-ID-17: a cached instruction is reused only when it was built for the relation_id of the
-   * snapshot user's current active binding (a rebind within the TTL gets a new relation_id: the
-   * old instruction is a miss and is rebuilt). no_rebate carries no user parameter and has no tag;
-   * its key differs from the attributed one (noRebate), so the two never hit each other.
-   */
   function cacheTag(owner: LinkOpenOwnerResult, noRebate: boolean): string | undefined {
-    if (noRebate) return undefined;
-    const decided = authorized.get(owner);
-    // Not authorized here: a tag no stored entry has, so nothing cached is reused.
-    if (decided === undefined || decided.relationId === null) return 'unauthorized';
-    return `relation:${decided.relationId}`;
+    return taobaoCacheTag(authorized.get(owner), noRebate);
   }
 
   return { prepare, admit, authorize, cacheTag, convert };
