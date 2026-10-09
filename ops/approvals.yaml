@@ -163,3 +163,9 @@ approvals:
     granted: true
     date: '2026-10-09'
     note: '负责人在对话里直接对身份与风控线编排会话（identity-lane）选「1 扩大例外」（编排会话事先说明了 1 扩第 20 条与 2 等生成器的取舍）；起因 B1-03h 代码评审第 1、2 轮 Codex 判 S1「状态迁移未经生成的 transition()，approvals 未登记例外」；本条所在的 PR 由编排会话按负责人同一句授权加标签（先例第 20 条）'
+  - id: 26
+    row: 4
+    title: '第 20 条例外扩到 union_bindings.status：union_binding 状态机（规划/05 CT-10，依赖 CT-04 生成器）合并之前，union_bindings.status 以 linking 模块领域层的纯迁移判定（apps/api/src/modules/linking/domain/，如 canTransitionBinding）为唯一入口，配合单一写者（linking）与 row_version 比较并更新（CAS）防并发覆盖，代码留 TODO 指向 CT-10；CT-10 合并后改用生成的 transition()，本条随之作废。只加 union_bindings.status，不适用于订单、提现、账务等其他状态字段'
+    granted: true
+    date: '2026-10-09'
+    note: '负责人 2026-10-09 在对话里选「A」（经编排会话「Couli-runs handoff」转达；W1 搜索转链线事先在 couli-runs B1-06h/blocked.md 列了 A 扩例外、B 先做 CT-04 → CT-10、C 生成器最小子集三项）；起因 B1-06h（POST /v1/unions/{platform}/bindings）代码评审第 2 轮 Codex 判 S1「invalid → active、冷却中 released 恢复直接改状态，未经生成的 transition()」，而仓库尚无状态机生成器；B1-06v（拼多多授权查询后置 active）也走同一入口；本条所在的 PR 由编排会话按负责人同一句授权加标签（先例第 20、25 条）'
