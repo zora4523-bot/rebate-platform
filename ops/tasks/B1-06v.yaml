@@ -16,6 +16,7 @@ type: impl
 # 冻结测试冲突：open-jdpdd、open-owner、open-requote、open-norebate、register、wiring、landing 等连库规则测试打开拼多多 link 时不种绑定、断言 200。实现分支跑出 CI verify-int 失败清单后（可先静态 grep 补全）、本任务合并前，另立 test-change B1-06u（非 task/ 分支 test-change/B1-06u，只补种 active 拼多多绑定与对应 union_accounts、不改断言，先例 B1-06q / B1-06s），
 # B1-06u 合并后本任务变基重验再合并，deps 届时加 B1-06u；B1-06u 若改共用 kit 的缺省，本任务新规则测试必须显式设置绑定状态，不依赖 kit 缺省。
 # 实现时顺带改 linking/application/link-open-requote.ts 里指向 B1-06f 的拼多多 30111 旧注释。linking/** 串行（B1-06f 之后）；union/** 只加可选查询方法（domain 端口、governed-adapter 条件包装、演示实现、registry 真实占位抛 adapter_unimplemented）；union/** 与 B1-04p 串行（谁后合并谁变基）。风险：linking RV2（归属与用户授权）。
+# 2026-10-09 补：分享者授权失效的 data.reason 取值由 CT-02g 分配（sharer_auth_invalid）；CT-02g 先合并则本任务带上 reason 与断言，否则合并后另开小任务补（不加 deps，避免互卡）。
 refs: []
 refs_hash: {}
 deps: [B1-06f]

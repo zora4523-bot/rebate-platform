@@ -1,11 +1,14 @@
 id: B1-06y
 repo: rebate-platform
-title: 迁移：联盟绑定冲突日志表（30151 落库）——记录 app_id、user_id、platform、union_account_id、冲突类别（他人占用 / 他人冷却中 / 本人已有不同未释放绑定）、发生时刻、解决时刻与解决方式（后台重置授权等），只增不删、不存对方 user_id 明文以外的个人信息；供 BR-ID-18 判 relation_conflict 与找回资格读取
+title: 迁移：联盟绑定冲突日志表 app.union_binding_conflicts（30151 落库）——app_id、user_id、platform、union_account_id、冲突类别（他人占用 / 他人冷却中 / 本人已有不同未释放绑定）、发生时刻、解决时刻与解决方式（resolution=bound_active）；供 BR-ID-18 判 relation_conflict 与 BR-ATTR-17 / 18 找回按 attr_at 时点读取
 type: migration
 # 草稿 2026-10-09（W1 第七棒，编排者 10-09 裁定：口径已由 BR-ID-18 规定——no_rebate_reason=relation_conflict 按「该用户该平台存在未解决的 30151 冲突日志」判定，找回资格（BR-ATTR-17 / 18）也读它，直接立落库任务，排在 B1-06h 之后）。
 # 依据：BR-ID-18、BR-ID-19（细则「并发绑定」：撞唯一约束后到者 30151 并写冲突日志）、BR-ID-20（后台重置授权）、BR-ATTR-17 / 18、规划/12 联盟绑定时序图「写冲突日志，原绑定不变」，由编排者摘入任务书。
 # 04 §3.2 尚无该表的形状（只有 30151 码与引用）：本任务迁移先落地，合并后由编排者交规划会话回写 04 §3.2（先例 B1-06r → couli#83）。
-# 列建议（实现时以评审为准）：id、app_id、user_id、platform、union_account_id、relation_id（判同一账号用，非密钥）、kind（occupied / cooling / rebind 之类，枚举走 contracts/enums 或 CHECK 字面量择一）、occurred_at、resolved_at（可空）、resolved_by / resolution（可空），索引 (app_id, user_id, platform) WHERE resolved_at IS NULL；couli_app 只授 SELECT / INSERT 与 resolved_* 列的 UPDATE。
+# 「已解决」口径（规划 couli#96 / #97，BR-ID-18 2026-10-09 补，代理经 Jev 判定 A 0.74；变更记录 couli docs/changes/20261009-30151冲突日志何时算已解决.md）：该用户该平台绑定成功变为 active（新建、invalid → active、冷却行恢复；拼多多为备案有效）时，同一事务把该用户该平台全部未解决冲突日志标为已解决（resolved_at、resolution=bound_active）；已写入 link_logs 的 no_rebate_reason 不改，找回按 attr_at 时点判断。不另立后台人工解决任务。
+# 表名定为 app.union_binding_conflicts（前缀 union_ 落进迁移门禁归属表保护）。列：id、app_id、user_id、platform、union_account_id、kind（occupied / cooling / rebind，CHECK 字面量或 contracts/enums 择一）、occurred_at、resolved_at（可空）、resolution（可空，现只有 bound_active）；不存对方 user_id 与 relation_id 以外的个人信息（relation_id 不存：判定不需要；如评审要求可加可空 conflicting_binding_id FK union_bindings，只供客服核实、不下发）。
+# 约束：resolved_at 与 resolution 同空同非空 CHECK；resolved_at ≥ occurred_at CHECK；部分索引 (app_id, user_id, platform) WHERE resolved_at IS NULL（当前判定），普通索引 (app_id, user_id, platform, occurred_at)（BR-ATTR-18 时点查询：occurred_at ≤ attr_at AND (resolved_at IS NULL OR resolved_at > attr_at)）。
+# 权限：couli_app 只授 SELECT、INSERT 与 resolved_at / resolution 列级 UPDATE，触发器拒绝改写其余列、拒绝已解决行再改、拒绝 DELETE（db/AGENTS.md 第 4、8 条，先例 B1-06r）。deps [B1-06h] 只为排期（排在 B1-06h 合并后、避免 B1-06z 前改两次），不是技术依赖。
 # 迁移全局串行，编号取落地时最新 +1（迁移门禁 CT-06 系列规则照旧）。风险：迁移 RV2（订单归属相关判定的依据）。
 refs: []
 refs_hash: {}
