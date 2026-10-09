@@ -1,0 +1,106 @@
+{
+  "task": "CT-06h",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "c78b078011dffcc36d516c0846bcfddbc48de0ad",
+  "red_tests": [
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] CHECK 单行 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] CHECK 分行 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] CHECK 两条 ALTER 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] EXCLUDE 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] UNIQUE 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] PRIMARY KEY 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] FOREIGN KEY 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#2] lock_timeout 的 set_config 参数引用和不匹配美元标签按关闭处理，完整字面量保留",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#2] statement_timeout 的 set_config 参数引用和不匹配美元标签按关闭处理，完整字面量保留",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#3] $$ 字面量大小写保留；等价单引号允许重建，改变内容须拒绝",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#3] $tag$ 字面量大小写保留；等价单引号允许重建，改变内容须拒绝",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] CREATE TABLE 的列级 PRIMARY KEY 与表级约束等价，换列仍拒绝",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] ADD COLUMN 的列级 PRIMARY KEY 与表级约束等价，换列仍拒绝",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] CREATE TABLE 的列级 UNIQUE 与表级约束等价，换列仍拒绝",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] ADD COLUMN 的列级 UNIQUE 与表级约束等价，换列仍拒绝",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] CREATE TABLE 的列级 FOREIGN KEY 与表级约束等价，换列仍拒绝",
+    "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] ADD COLUMN 的列级 FOREIGN KEY 与表级约束等价，换列仍拒绝"
+  ],
+  "risk_note": "RV2 by path (tools/ci and db/AGENTS.md are protected classes; owner approval label per ops/approvals.yaml 24 — tightening only, ④ narrows a false refusal). Migration gate leftovers 2: CT-06g's squawk exception withdrawn (any direct funds constraint rebuild holds ACCESS EXCLUSIVE while it scans or builds an index; needs APPROVED_GUARD_CHANGES; ledger review #348 P1 twice; CT-06g's pass assertions removed first by test-change CT-06i #349), set_config $1 parameters count as off, dollar-quoted literals compared by their text, column and table constraint forms compare equal. Rule tests by Codex (red first on the AWS test runner), implementation by the orchestrating session (infra-oss). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c78b078011dffcc36d516c0846bcfddbc48de0ad",
+      "tree": "89436cf9eb59f3e197d49f288970ae4416d5590b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-09T05:35:17Z",
+      "finished_at": "2026-10-09T05:35:22Z",
+      "red_tests": [
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] CHECK 单行 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] CHECK 分行 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] CHECK 两条 ALTER 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] EXCLUDE 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] UNIQUE 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] PRIMARY KEY 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#1] FOREIGN KEY 同定义重建带 ignore 也须在 CLI 自检拒绝，不得启动 squawk",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#2] lock_timeout 的 set_config 参数引用和不匹配美元标签按关闭处理，完整字面量保留",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#2] statement_timeout 的 set_config 参数引用和不匹配美元标签按关闭处理，完整字面量保留",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#3] $$ 字面量大小写保留；等价单引号允许重建，改变内容须拒绝",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#3] $tag$ 字面量大小写保留；等价单引号允许重建，改变内容须拒绝",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] CREATE TABLE 的列级 PRIMARY KEY 与表级约束等价，换列仍拒绝",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] ADD COLUMN 的列级 PRIMARY KEY 与表级约束等价，换列仍拒绝",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] CREATE TABLE 的列级 UNIQUE 与表级约束等价，换列仍拒绝",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] ADD COLUMN 的列级 UNIQUE 与表级约束等价，换列仍拒绝",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] CREATE TABLE 的列级 FOREIGN KEY 与表级约束等价，换列仍拒绝",
+        "test/spec/db/lint-migrations/leftovers-2.test.ts > [AC-CT-06h#4] ADD COLUMN 的列级 FOREIGN KEY 与表级约束等价，换列仍拒绝"
+      ],
+      "expected": ["test/spec/db/lint-migrations/leftovers-2.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8591c518488d440a9f5f7d7173dcd69c852739b03d4f0ab62ba7ceb2c373e408"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "scope": "independent read-only Claude subagent, money review r1 pass with one S2 kept as a follow-up (CT-06h/followups.md): a column UNIQUE NULLS NOT DISTINCT, or a column constraint followed by NOT NULL, does not get its column filled in, so the equivalent table form is refused (refuses more, never passes more)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "r1 pass with the same S2 (column UNIQUE NULLS NOT DISTINCT compared with its table form)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in one test round (185d8f6, leftovers-2.test.ts, 17 cases red first on the AWS test runner) pass with one S2 (a changed constraint kind or referenced table not covered), covered by a tools/ci unit test"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "f4311423fd76375759d1335d5655cb7dcd3f8559",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (reused from CT-06d, same tree)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
