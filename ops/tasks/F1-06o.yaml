@@ -1,0 +1,27 @@
+id: F1-06o
+repo: rebate-platform
+title: 迁移：admin_users 补后台登录状态列——仍在用初始密码的标记、连续登录失败次数、锁定截止时间（BR-ID-34 失败 5 次锁定 30 分钟、首次登录强制改密码），只授 couli_app 更新这几列
+type: migration
+# 2026-10-09 入账（后台后端线 admin-backend）。为什么要：F1-06a（0016）的 admin_users 没有「仍在用初始密码」与登录失败锁定的列，F1-06k 的登录与改初始密码要落库；
+# 04 §3.2 admin_users 行写「列名代理自定」。依据 BR-ID-34 正文（连续失败 5 次锁定 30 分钟）与细则「首次绑定身份验证器」的「初始密码」「首次登录强制改密码」
+# （初始密码只能用于首次登录、改掉即失效；动态码错误与密码错误同一计数、同一锁定时长），由编排者摘入任务书第 2 节。
+# 列（名字代理自定）：初始密码标记 boolean NOT NULL DEFAULT false（已有账号都由 F1-06c 引导命令行建、密码由本人设定，取 false）；失败次数 integer NOT NULL DEFAULT 0
+# 且 CHECK ≥0；锁定截止 timestamptz 可空。授权写在本迁移：couli_app 只得这三列的 UPDATE；couli_readonly 不授这三列（F1-06m 走主库读，台账评审 S1-3）。
+# 不建会话表：admin_token 的空闲过期、退出作废与登录中间凭证放 Redis（F1-06k 定）。迁移号取落地时主干最新 +1，并在 B3-lane/notices.md 登记；
+# 迁移以 SET LOCAL lock_timeout 与 statement_timeout 开头（db/AGENTS.md）。两段式同 F1-06a：实现子代理写 SQL，编排者在测试机跑迁移、db:snapshot 并提交生成物。
+refs: []
+refs_hash: {}
+deps: [F1-06a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/admin/login-state/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/admin/login-state/**'
+status: todo
+pr: null

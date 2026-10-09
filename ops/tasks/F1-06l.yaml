@@ -1,0 +1,38 @@
+id: F1-06l
+repo: rebate-platform
+title: 后台二次验证与我的权限：step-up 两档（动态码 / 短信发到登记的验证手机号）签发记档位的一次性令牌、按权限点与档位的守卫（10403 / 10003）、GET me/permissions（超管全有、无权限点返回空集、带档位标注）；去掉这 3 条的 planned
+type: impl
+# 2026-10-09 入账（后台后端线 admin-backend，任务书 §2 第 2 项）。依据 BR-ID-34 正文（step-up 分两档、令牌记档位、动态码档令牌不能用于短信档、未登记验证手机号不能做短信档）与细则
+# 「二次验证分两档」两例、04 §11（权限点与 step-up 列）、§6.6 auth、§7 的 10003 data.tier / reason、08 §13.11 10003 / 10403 / 20002 / 20003 行、03 §9.2 StepUpModal，
+# 以及 contracts/openapi.yaml adminSendStepUpSms、adminStepUp、adminGetMyPermissions 的描述，由编排者摘入任务书第 2 节。
+# 要点：POST auth/step-up/sms-codes 未登记验证手机号 10003 tier=sms reason=verify_phone_missing、不发；发码经 identity 的 SmsSender 端口（模板 ADMIN_STEP_UP，不新接供应商；
+# local / test 用假发送器），发送频率与有效期代理自定并由响应写明（42901 带 Retry-After）；POST auth/step-up 动态码档复用 F1-06b 的 TOTP 校验与防重放，码错 20002、短信码过期 20003；
+# step-up token 绑定后台账号与档位、有效期代理自定、只在业务成功（2xx 且 code=0）时核销（同 BR-ID-08 做法），经请求头 X-Step-Up-Token 传。
+# 守卫：后台操作按权限点（非超管且没勾该点 10403 admin_permission_denied）与该操作的档位（缺令牌、过期、已核销、档位不够 10003 data.tier）判；供以后各模块的后台接口复用。
+# 权限点与档位的来源：specs/permissions.yaml（05 B1-18 规格资产，B1-18 未入账；本任务按 04 §11 step-up 列先建权限点与操作档位两部分，键与 contracts/enums/admin.yaml 一致，B1-18 以后补全其余字段）。
+# me/permissions：超管 is_super=true 返回全部权限点；其余返回勾选的点；没有返回空集；step_up_tier / step_up_operations 来自 specs/permissions.yaml；verify_phone_masked 按 BR-ID-33 脱敏。
+# 运行时不解析 YAML：按 platform/specs 的做法生成 *.gen.ts 快照与生成脚本，放 admin/** 下（只 admin 用）；去掉三个操作的 planned，重生成 openapi.gen.ts，admin-auth.test.ts 只改这三个的 planned 断言。与 F1-06m 串行（后合并者变基重生成）。
+# identity/index.ts 只加导出 SmsSender 类型与入口提供的发送器令牌一行（admin 依赖全部模块，02 §4.1），不改 identity 其他文件；开工前在收件箱知会身份线。
+refs: []
+refs_hash: {}
+deps: [F1-06k]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'specs/permissions.yaml'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/admin-auth.test.ts'
+test_paths:
+  - 'test/spec/admin/step-up/**'
+  - 'test/spec/admin/permissions/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/step-up/**'
+  - 'test/spec/admin/permissions/**'
+status: todo
+pr: null

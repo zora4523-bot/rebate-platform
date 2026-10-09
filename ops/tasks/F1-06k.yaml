@@ -1,0 +1,40 @@
+id: F1-06k
+repo: rebate-platform
+title: 后台鉴权核心：/admin/v1 登录两步（账号密码 → 动态码）、首次登录改初始密码与绑定身份验证器、退出；admin_token（独立密钥 JWT，aud=admin，8 小时 / 空闲 30 分钟）校验挂进 admin 入口；IP 白名单；写操作审计；去掉这 6 条的 planned
+type: impl
+# 2026-10-09 入账（后台后端线 admin-backend，任务书 couli-runs/briefs/ADMIN-backend-lane.md §2 第 1 项）。依据 BR-ID-34 正文与细则「首次绑定身份验证器」（含初始密码、首次登录强制改密码）、
+# 08 §13.11 的 10001 / 10008 / 10009 / 10403 / 20002 行、04 §6.6 auth、§7 各码 data 形状、02 §12.1 admin_token 行、§12.5，以及 contracts/openapi.yaml 六个操作（adminLogin、adminChangeInitialPassword、adminGetTotpBindingSecret、adminBindTotp、adminVerifyTotp、adminLogout）的描述，由编排者摘入任务书第 2 节。
+# 要点：IP 白名单先于密码（10403 admin_ip_not_allowed，配置项 ≤50 条 IP 或网段，经 platform/config，超 50 拒绝启动；local / test 未配置只放回环，staging / prod 未配置拒绝启动；客户端 IP 用 request.ip，与 B1-03m 同一取法——B1-03m 合并前 admin 入口不得部署到网关 / 反向代理后面，台账评审 S2-1）；
+# 账号或密码错 10008 不区分账号不存在（不存在时照样做一次哈希比对）；连续失败 5 次锁 30 分钟（F1-06o 的列；密码错与动态码错同一计数，一条原子 UPDATE…RETURNING 计数，成功或锁到期后清零），锁定期内正确密码也 10009 带 locked_until；
+# 成功不签 admin_token，只返回 next 与 login_ticket（Redis，一次性、绑定账号与步骤，过期或用错步骤 10001 login_ticket_expired）；change_password 新密码不得与初始密码相同（20001 fields=[new_password]）；totp/secret 同一凭证返回同一密钥、新登录重新生成；bind 动态码错 20002 totp_bind_invalid 不绑定、计入失败；totp 第二步错 20002 totp_invalid。
+# admin_token：jose 签发（B1-02h 做法），签名密钥与 App 令牌分开、经 platform/config 读；空闲 30 分钟与退出作废记在 Redis（Redis 不可用一律拒绝，不放行）。
+# admin 入口的请求检查计划加后台令牌检查（x-auth admin / super；super 级非超管 10403 admin_permission_denied），bootstrap 只在 admin 入口放开后台路由，api / stream 仍拒绝。
+# 复用 F1-06b / c 的导出（TOTP 校验与防重放、审计写入、scrypt 密码哈希与校验、密钥生成），不重写；登录成功、锁定、改密码、绑定、退出写审计（不含密码与密钥）。
+# 去掉六个操作的 planned，重生成 route-schemas.gen.ts 与 openapi.gen.ts；admin-auth.test.ts 只把这六个的「是 planned」断言改为「已实现」，其余不动；main.admin.ts 去掉 STUB 注释。test 环境给后台令牌密钥默认值、Redis 懒连接，bootstrap.test / contract.test 不传 Redis 也能建 admin 入口。契约槽：改 openapi.yaml 前认领（B3-lane/notices.md）。
+refs: []
+refs_hash: {}
+deps: [F1-06b, F1-06c, F1-06o, CT-02f, B1-02h]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/main.admin.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/modules/platform/http/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/index.ts'
+  - '.env.example'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/admin-auth.test.ts'
+  - 'apps/api/src/bootstrap.test.ts'
+  - 'apps/api/src/contract.test.ts'
+test_paths:
+  - 'test/spec/admin/auth/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/auth/**'
+status: todo
+pr: null

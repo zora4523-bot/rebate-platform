@@ -33,5 +33,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/**'
-status: todo
-pr: null
+status: done
+pr: 136
