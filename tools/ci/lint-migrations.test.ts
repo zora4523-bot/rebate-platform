@@ -961,3 +961,26 @@ it('CT-06f review round 2: octal and hex escapes are UTF-8 bytes when definition
     expect.stringContaining('recreated with a different definition'),
   ]);
 });
+
+it('CT-06g: the squawk exception covers the verified rebuild only, not a second statement on its line', () => {
+  const history = `${TIMEOUTS}CREATE TABLE app.ledger_x (id bigint CONSTRAINT ledger_x_pkey PRIMARY KEY, amount_fen bigint NOT NULL, CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0));\n`;
+  const rebuild =
+    'ALTER TABLE app.ledger_x DROP CONSTRAINT ledger_x_amount_check, ADD CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0);';
+  const ok = run(
+    fixture({
+      '0030_a.sql': history,
+      '0031_b.sql': `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\n${rebuild}\n`,
+    }),
+  );
+  expect(ok.status, ok.stderr).toBe(0);
+  const res = run(
+    fixture({
+      '0030_a.sql': history,
+      '0031_b.sql': `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\n${rebuild} ALTER TABLE app.ledger_x ADD CONSTRAINT ledger_x_cap_check CHECK (amount_fen < 100);\n`,
+    }),
+  );
+  expect(res.status).toBe(1);
+  expect(res.stderr).toContain(
+    'constraint-missing-not-valid on a statement of funds or attribution table ledger_x',
+  );
+});

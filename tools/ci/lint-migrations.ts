@@ -256,6 +256,24 @@ export function isFundsTable(reference: string): boolean {
  * considers slow, so a migration that only creates tables would pass them without any timeout; the
  * gate requires the two statements regardless. Reported in squawk's gcc format under the rule names.
  */
+/**
+ * Whether a set_config call keeps its timeout on (CT-06g): the value must be one string literal,
+ * optionally cast to a text type, and nothing else up to the next argument or the closing
+ * parenthesis; NULL, a function call, a column, an operator or a subquery could be 0 and counts as off.
+ */
+function setConfigKeeps(text: string, m: RegExpMatchArray): boolean {
+  const value = (m[2] ?? '').trim();
+  if (!/^(?:[EeUu]&?'|'|\$)/.test(value)) return false;
+  const after = text.slice((m.index ?? 0) + m[0].length);
+  if (
+    !/^\s*(?:::\s*(?:"?pg_catalog"?\s*\.\s*)?"?(?:text|varchar|character\s+varying|name)"?(?:\s*\(\s*\d+\s*\))?\s*)?[,)]/i.test(
+      after,
+    )
+  )
+    return false;
+  return timeoutMilliseconds(value) > 0;
+}
+
 export function checkTimeouts(file: string, sql: string): string[] {
   // Both settings must be set to more than 0 before the first statement that is not a SET (a timeout
   // set after the DDL does not protect it), and nothing later in the file may RESET them or set them
@@ -304,7 +322,7 @@ export function checkTimeouts(file: string, sql: string): string[] {
     )
       continue;
     for (const m of value.matchAll(TIMEOUT_SET_CONFIG)) {
-      if (timeoutMilliseconds(m[2] ?? '') > 0) continue;
+      if (setConfigKeeps(value, m)) continue;
       if ((m[1] ?? '').toLowerCase() === 'lock_timeout') lockLost = true;
       else statementLost = true;
     }
@@ -333,8 +351,9 @@ export function checkTimeouts(file: string, sql: string): string[] {
         if (what !== 'lock_timeout') statementLost = true;
       }
     }
-    for (const m of withoutComments(body, true).matchAll(TIMEOUT_SET_CONFIG)) {
-      if (timeoutMilliseconds(m[2] ?? '') > 0) continue;
+    const keptBody = withoutComments(body, true);
+    for (const m of keptBody.matchAll(TIMEOUT_SET_CONFIG)) {
+      if (setConfigKeeps(keptBody, m)) continue;
       if ((m[1] ?? '').toLowerCase() === 'lock_timeout') lockLost = true;
       else statementLost = true;
     }
@@ -564,6 +583,21 @@ function lineOf(text: string, index: number): number {
 /** One SQL string literal token: E'…' (backslash escapes), U&'…' [UESCAPE 'c'], '…' or $tag$…$tag$. */
 const LITERAL_SRC = String.raw`[Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*'|(?<dq>\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)[\s\S]*?\k<dq>`;
 
+/**
+ * A constraint definition without its NOT VALID modifier (CT-06g): only SQL outside string literals
+ * is touched, so CHECK (label <> 'not valid') keeps its literal.
+ */
+function withoutNotValid(definition: string): string {
+  const strip = (sql: string): string => sql.replace(/\s*\bnot\s+valid\b/gi, '');
+  let out = '';
+  let last = 0;
+  for (const m of definition.matchAll(new RegExp(LITERAL_SRC, 'g'))) {
+    out += strip(definition.slice(last, m.index)) + m[0];
+    last = (m.index ?? 0) + m[0].length;
+  }
+  return out + strip(definition.slice(last));
+}
+
 /** The character of a code point, or null outside Unicode (PostgreSQL rejects it). */
 function codePoint(n: number): string | null {
   return n > 0x10ffff ? null : String.fromCodePoint(n);
@@ -619,7 +653,9 @@ export function decodeLiteral(token: string): string | null {
     const flush = (): boolean => {
       if (bytes.length === 0) return true;
       try {
-        out += new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes));
+        out += new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+          new Uint8Array(bytes),
+        );
       } catch {
         return false;
       }
@@ -1138,7 +1174,7 @@ function guardDefinitions(sources: readonly string[]): {
           if (v !== null) {
             const key = `${bareName(alter[1] ?? '')}/${bareName(v[1] ?? '')}`;
             const d = constraints.get(key);
-            if (d !== undefined) constraints.set(key, d.replace(/\s*not\s+valid\b/i, ''));
+            if (d !== undefined) constraints.set(key, withoutNotValid(d));
           }
           // ADD COLUMN … CONSTRAINT x CHECK (…) [CONSTRAINT y …]: column constraints added with
           // their column (0020 has two on one column).
@@ -1345,8 +1381,8 @@ function fundsObjectProblems(
                 return parts.slice(from).some(isValidate);
               });
             let now = clause.trim().replace(/^add\s+/i, '');
-            if (validated) now = now.replace(/\s+NOT\s+VALID\b/i, '');
-            const was = validated ? before?.replace(/\s*not\s+valid\b/i, '') : before;
+            if (validated) now = withoutNotValid(now);
+            const was = validated && before !== undefined ? withoutNotValid(before) : before;
             if (was !== undefined && was !== normaliseDefinition(now)) {
               refuse(at, different('constraint', name, table));
             }
@@ -1533,7 +1569,9 @@ export function checkMigration(
       message: 'squawk-ignore-file is not accepted; ignore single statements with a reason instead',
     });
   }
+  const allowedIgnores = identicalRebuildIgnores(sql, context);
   for (const ignore of sql.matchAll(IGNORE_ANY)) {
+    if (allowedIgnores.some((a) => a.ignore === ignore.index)) continue;
     // The statement the ignore belongs to: the one the comment precedes or sits inside (from the `;`
     // before the comment to the `;` after it; comments blanked, positions kept), or, for a comment
     // that follows a `;` on the same line with nothing in between, the statement that just ended
@@ -1562,6 +1600,74 @@ export function checkMigration(
   return problems;
 }
 
+/**
+ * CT-06g: squawk refuses a constraint added without NOT VALID (constraint-missing-not-valid) and a
+ * VALIDATE in the same transaction, while the gate refuses a funds-table constraint rebuilt NOT VALID
+ * without VALIDATE. The one way through: `-- squawk-ignore constraint-missing-not-valid` (that rule
+ * alone) on the line before an ALTER TABLE of a funds table whose every ADD CONSTRAINT recreates a
+ * constraint with exactly its definition in the migration history (no NOT VALID), and whose other
+ * subcommands only drop those same constraints. Returns each such ignore's offset and the [from, to)
+ * offsets of its statement.
+ */
+export function identicalRebuildIgnores(
+  sql: string,
+  context: MigrationContext = NO_CONTEXT,
+): { ignore: number; from: number; to: number }[] {
+  if (context.migrationsSql.length === 0 && context.schemaSql === '') return [];
+  const code = withoutComments(sql);
+  const valued = withoutComments(sql, true);
+  const history = guardDefinitions(context.migrationsSql);
+  for (const [k, v] of guardDefinitions([context.schemaSql]).constraints)
+    if (!history.constraints.has(k)) history.constraints.set(k, v);
+  const out: { ignore: number; from: number; to: number }[] = [];
+  for (const ignore of sql.matchAll(IGNORE_ANY)) {
+    const at = ignore.index ?? 0;
+    const eol = sql.indexOf('\n', at);
+    const rest = sql.slice(at, eol === -1 ? sql.length : eol);
+    if (!/^squawk-ignore\s+constraint-missing-not-valid\s*(?:\*\/\s*)?$/.test(rest)) continue;
+    // The statement the comment precedes (not one it trails).
+    const prev = code.lastIndexOf(';', at);
+    if (prev !== -1 && /^[ \t]*$/.test(code.slice(prev + 1, at))) continue;
+    const stop = code.indexOf(';', at);
+    const end = stop === -1 ? code.length : stop;
+    const text = code.slice(prev + 1, end);
+    const kept = valued.slice(prev + 1, end);
+    // Only the comment itself may sit between it and the statement.
+    if (!/^[^\n]*\n\s*ALTER\b/i.test(text.slice(at - prev - 1))) continue;
+    const a = ALTER_TABLE.exec(text);
+    if (a === null || !isFundsTable(a[1] ?? '')) continue;
+    const table = bareName(a[1] ?? '');
+    const parts = topLevelParts(text, a[0].length, text.length);
+    const addName = (q: string): string | null => {
+      const c = new RegExp(String.raw`^\s*ADD\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(q);
+      return c === null ? null : bareName(c[1] ?? '');
+    };
+    const adds = parts.filter((q) => addName(q.text) !== null);
+    const names = new Set(adds.map((q) => addName(q.text) ?? ''));
+    const ok =
+      adds.length > 0 &&
+      parts.every((q) => {
+        if (addName(q.text) !== null) return true;
+        const d = new RegExp(
+          String.raw`^\s*DROP\s+CONSTRAINT${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})\s*$`,
+          'i',
+        ).exec(q.text);
+        return d !== null && names.has(bareName(d[1] ?? ''));
+      }) &&
+      adds.every((q) => {
+        const clause = kept
+          .slice(q.start, q.start + q.text.length)
+          .trim()
+          .replace(/^add\s+/i, '');
+        if (withoutNotValid(clause) !== clause) return false;
+        const before = history.constraints.get(`${table}/${addName(q.text) ?? ''}`);
+        return before !== undefined && before === normaliseDefinition(clause);
+      });
+    if (ok) out.push({ ignore: at, from: prev + 1, to: end });
+  }
+  return out;
+}
+
 /** The SQL with every squawk-ignore directive blanked (same offsets): what squawk reports without the exceptions. */
 export function withoutIgnores(sql: string): string {
   return sql.replace(/squawk-ignore(?:-file)?/g, (m) => ' '.repeat(m.length));
@@ -1584,16 +1690,22 @@ export function byteColumnToIndex(lineText: string, byteColumn: number): number 
  * `line` and `column` are squawk's gcc report positions, both counted from 0; the column counts
  * UTF-8 bytes.
  */
-export function fundsTableAt(sql: string, line: number, column: number): string | null {
-  const code = withoutComments(sql);
+/** The string offset in `sql` of squawk's report position (line from 0, column in UTF-8 bytes). */
+function findingOffset(sql: string, line: number, column: number): number | null {
   let offset = 0;
   for (let l = 0; l < line; l++) {
-    const n = code.indexOf('\n', offset);
+    const n = sql.indexOf('\n', offset);
     if (n === -1) return null;
     offset = n + 1;
   }
   const end = sql.indexOf('\n', offset);
-  const at = offset + byteColumnToIndex(sql.slice(offset, end === -1 ? sql.length : end), column);
+  return offset + byteColumnToIndex(sql.slice(offset, end === -1 ? sql.length : end), column);
+}
+
+export function fundsTableAt(sql: string, line: number, column: number): string | null {
+  const code = withoutComments(sql);
+  const at = findingOffset(sql, line, column);
+  if (at === null) return null;
   const stop = code.indexOf(';', at);
   const statement = code.slice(code.lastIndexOf(';', at - 1) + 1, stop === -1 ? code.length : stop);
   for (const ref of statement.matchAll(TABLE_REF)) {
@@ -1615,16 +1727,19 @@ export function fundsTableAt(sql: string, line: number, column: number): string 
 function ignoredFundsFindings(
   binary: string,
   config: string,
-  files: readonly { file: string; sql: string }[],
+  files: readonly { file: string; sql: string; allowed: readonly { from: number; to: number }[] }[],
 ): string[] | null {
   const scratch = mkdtempSync(join(tmpdir(), 'lint-migrations-'));
   try {
-    const bare = new Map<string, { file: string; sql: string }>();
+    const bare = new Map<
+      string,
+      { file: string; sql: string; allowed: readonly { from: number; to: number }[] }
+    >();
     for (const entry of files) {
       const name = basename(entry.file);
       const copy = withoutIgnores(entry.sql);
       writeFileSync(join(scratch, name), copy);
-      bare.set(name, { file: entry.file, sql: copy });
+      bare.set(name, { file: entry.file, sql: copy, allowed: entry.allowed });
     }
     const res = spawnSync(binary, ['-c', config, '--reporter', 'gcc', ...bare.keys()], {
       cwd: scratch,
@@ -1637,6 +1752,14 @@ function ignoredFundsFindings(
       const entry = m === null ? undefined : bare.get(basename(m[1] ?? ''));
       if (m === null || entry === undefined) continue;
       const table = fundsTableAt(entry.sql, Number(m[2]), Number(m[3]));
+      // The identical funds constraint rebuild the gate verified (CT-06g) keeps its one exception.
+      const at = findingOffset(entry.sql, Number(m[2]), Number(m[3]));
+      if (
+        m[4] === 'constraint-missing-not-valid' &&
+        at !== null &&
+        entry.allowed.some((a) => at >= a.from && at < a.to)
+      )
+        continue;
       if (table !== null) {
         refusals.push(
           `${entry.file}:${Number(m[2]) + 1}: ${m[4]} on a statement of funds or attribution table ${bareTableName(table)} (${table}) while the file carries squawk-ignore: no exceptions there (规划/02 §16.3)`,
@@ -1752,16 +1875,21 @@ function main(argv: readonly string[]): number {
     .filter((name) => name.endsWith('.sql'))
     .sort()
     .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') }));
-  const withIgnores: { file: string; sql: string }[] = [];
+  const withIgnores: {
+    file: string;
+    sql: string;
+    allowed: readonly { from: number; to: number }[];
+  }[] = [];
   for (const file of files) {
     const sql = readFileSync(join(root, file), 'utf8');
-    if (/squawk-ignore/.test(sql)) withIgnores.push({ file, sql });
     const context: MigrationContext = {
       approved:
         APPROVED_GUARD_CHANGES[basename(file)] === createHash('sha256').update(sql).digest('hex'),
       schemaSql,
       migrationsSql: allSql.filter((m) => m.name < basename(file)).map((m) => m.sql),
     };
+    if (/squawk-ignore/.test(sql))
+      withIgnores.push({ file, sql, allowed: identicalRebuildIgnores(sql, context) });
     for (const problem of checkMigration(file, sql, context)) {
       console.error(`lint-migrations: ${problem.file}:${problem.line}: ${problem.message}`);
       failed = true;
