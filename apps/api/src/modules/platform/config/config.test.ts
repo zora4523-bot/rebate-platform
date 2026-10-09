@@ -25,6 +25,7 @@ describe('loadConfig', () => {
       adminPort: 3102,
       keyring: null,
       jwt: null,
+      trustedProxies: [],
     });
   });
 
@@ -43,6 +44,7 @@ describe('loadConfig', () => {
         ADMIN_PORT: '8082',
         DATABASE_URL: 'postgres://couli_app@127.0.0.1:54329/couli',
         REDIS_URL: 'redis://127.0.0.1:63790',
+        TRUSTED_PROXIES: ' 198.51.100.0/24, 2001:db8::1 ',
         PATH: '/usr/bin',
       }),
     ).toEqual({
@@ -56,6 +58,7 @@ describe('loadConfig', () => {
       adminPort: 8082,
       keyring: { provider: 'kms', keyringFile: '/srv/couli/keyring.json' },
       jwt: null,
+      trustedProxies: ['198.51.100.0/24', '2001:db8::1'],
     });
   });
 
@@ -194,5 +197,23 @@ describe('loadConfig', () => {
       privateKeyPem: pem,
       verificationKeys: {},
     });
+  });
+});
+
+describe('readTrustedProxies', () => {
+  it('[AC-B1-03m#6] rejects hop counts, catch-all ranges and netmasks without echoing values', () => {
+    for (const value of ['2', '0.0.0.0/0', '::/0', '10.0.0.0/255.0.0.0', 'fe80::1%eth0', 'a,,b']) {
+      const problems = problemsOf({ APP_ENV: 'local', TRUSTED_PROXIES: value });
+      expect(problems).toHaveLength(1);
+      expect(problems[0]?.startsWith('TRUSTED_PROXIES:')).toBe(true);
+      expect(problems.join('\n')).not.toContain(value);
+    }
+  });
+
+  it('[AC-B1-03m#2] accepts addresses and prefix ranges at both families’ bounds', () => {
+    expect(
+      loadConfig({ APP_ENV: 'local', TRUSTED_PROXIES: '10.0.0.0/8,198.51.100.1/32,::1/128' })
+        .trustedProxies,
+    ).toEqual(['10.0.0.0/8', '198.51.100.1/32', '::1/128']);
   });
 });
