@@ -32,3 +32,18 @@ export { AdminAuthModule } from './admin-auth.module.ts';
 export type { AdminHttpPolicy } from './admin-auth.module.ts';
 export { ADMIN_CHECK, ADMIN_HTTP_POLICY } from './application/tokens.ts';
 export { isAdminCheck } from './application/admin-check.ts';
+export { getAdminPermissionCatalog } from './domain/permission-catalog.ts';
+export type { AdminPermissionDefinition, AdminStepUpTier } from './domain/permission-catalog.ts';
+export {
+  createAdminPermissionGuard,
+  createAdminStepUpTokens,
+} from './application/permission-guard.ts';
+export type {
+  AdminBusinessResponse,
+  AdminPermissionGuard,
+  AdminPermissionPrincipal,
+  AdminPermissionRequest,
+  AdminStepUpBinding,
+  AdminStepUpGrant,
+  AdminStepUpTokens,
+} from './application/permission-guard.ts';
