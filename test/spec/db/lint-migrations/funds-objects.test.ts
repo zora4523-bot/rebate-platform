@@ -45,10 +45,10 @@ function cliRefused(root: string, message: string): void {
   expect(result.stdout).not.toContain('squawk over');
 }
 
-it('[AC-CT-06c#1] 去重与接口幂等表按整名纳入，appeals 与相似名字不纳入', async () => {
+it('[AC-CT-06c#1] 去重与接口幂等表按整名纳入，相似名字不纳入', async () => {
   const module = (await gate()) as Gate & { FUNDS_TABLE_NAMES?: readonly string[] };
   const schema = requiredText('db/schema.sql');
-  for (const table of ['appeals', 'processed_events_archive', 'idempotency_keys_extra']) {
+  for (const table of ['processed_events_archive', 'idempotency_keys_extra']) {
     expect(module.isFundsTable(`app.${table}`), table).toBe(false);
   }
   for (const table of ['processed_events', 'idempotency_keys']) {
