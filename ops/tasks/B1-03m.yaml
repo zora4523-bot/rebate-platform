@@ -1,0 +1,23 @@
+id: B1-03m
+repo: rebate-platform
+title: 客户端 IP 取法：HTTP 入口按部署配置信任网关转发的客户端地址（Fastify trustProxy，可信跳数或网段由配置给出，未配置时不信任转发头），限流 ⑬、短信发码与登录、设备注册同 IP 上限共用同一取法；上线有网关前必须合并
+type: impl
+# 草稿 2026-10-09（身份与风控线，identity-lane）。全仓取客户端 IP 用 Fastify request.ip（B1-03e rate-limit-gate、identity sms-codes / sms-login、B1-03f devices），
+# bootstrap.ts 建 Fastify 时未配 trustProxy：经网关部署时 request.ip 是网关地址，所有客户端共用一个 IP 桶 / 名额（B1-03e 评审 S2 记为部署任务；B1-03f Codex 第 2 轮判 S1）。
+# 本任务统一处理：platform 配置新增可信代理项（跳数或网段，不信任任意 X-Forwarded-For），bootstrap 按配置设 trustProxy；未配置保持现状（直连）。
+# 规则测试钉住：未配置时忽略转发头；配置可信网段后取最右一个不可信地址；伪造的多余转发头不被采信；限流、发码、设备注册三处拿到同一地址。
+refs: []
+refs_hash: {}
+deps: [B1-03e, B1-03f]
+paths:
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/modules/platform/**'
+test_paths:
+  - 'test/spec/platform/client-ip/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/client-ip/**'
+status: todo
+pr: null
