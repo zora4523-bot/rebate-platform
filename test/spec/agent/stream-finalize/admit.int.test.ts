@@ -97,6 +97,8 @@ it('[AC-B3-03g#30] 锁期内同键：duplicate running（04 §8.1 原 run 字段
   const session = await newSession(pg.db);
   const req = request(user, session, 'm-1');
   accepted(await a.ports.admission.admit(req, limits({ memberDaily: 1 })));
+  // Every fixture row exists before the snapshot: only the requests under test run after it.
+  const other = await newSession(pg.db);
   const before = await snapshot(pg.db);
   const b = instance(pg.db, { clock: at(START_MS + 30_000) });
   expect(
@@ -116,7 +118,6 @@ it('[AC-B3-03g#30] 锁期内同键：duplicate running（04 §8.1 原 run 字段
     kind: 'rejected',
     code: 30506,
   });
-  const other = await newSession(pg.db);
   expect(
     await b.ports.admission.admit(request(user, other), limits({ memberDaily: 1 })),
   ).toMatchObject({ code: 30502 });

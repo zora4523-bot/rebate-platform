@@ -136,6 +136,51 @@ export async function waitingOnLock(db: Kysely<DB>, pid: number): Promise<void> 
   expect.fail(`backend ${String(pid)} never waited on a lock`);
 }
 
+/**
+ * A test-held row lock (barrier): `SELECT … FOR UPDATE` on one row of agent_sessions or agent_runs
+ * in the test's own transaction. Resolves once the lock is held; the returned function commits it
+ * (releasing the lock) and waits for that commit.
+ */
+export async function lockRow(
+  db: Kysely<DB>,
+  table: 'agent_sessions' | 'agent_runs',
+  id: string,
+): Promise<() => Promise<void>> {
+  let locked!: () => void;
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => (locked = resolve));
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const tx = db.transaction().execute(async (trx) => {
+    const r = await sql`SELECT id FROM ${sql.table(`app.${table}`)} WHERE id = ${id}
+      FOR UPDATE`.execute(trx);
+    expect(r.rows, `${table} ${id}`).toHaveLength(1);
+    locked();
+    await gate;
+  });
+  const ended = tx.then(
+    () => 'ended' as const,
+    () => 'ended' as const,
+  );
+  if ((await Promise.race([ready.then(() => 'locked' as const), ended])) !== 'locked') {
+    await tx;
+    expect.fail(`lock on ${table} ${id} was never held`);
+  }
+  return async () => {
+    release();
+    await tx;
+  };
+}
+
+/** The backend pid of the next SQL statement `hooks` runs for `step` (register before starting). */
+export function nextPid(hooks: Hooks, step: TxStep): Promise<number> {
+  return new Promise<number>((resolve) => {
+    hooks.onSql(step, (pid) => {
+      resolve(pid);
+      return Promise.resolve();
+    });
+  });
+}
+
 export async function terminate(db: Kysely<DB>, pid: number): Promise<void> {
   await sql`SELECT pg_terminate_backend(${pid})`.execute(db);
 }

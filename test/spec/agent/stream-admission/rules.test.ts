@@ -51,6 +51,50 @@ it('[AC-B3-03g#47][BR-AI-15] 默认值：会员 30 条/日，游客档 3 条/dev
   await expect(failing.current('couli')).rejects.toThrow();
 });
 
+it('[AC-B3-03g#83][BR-AI-15] 三个日上限各由自己的配置项决定：agent.member_daily_quota、agent.guest_daily_quota、agent.guest_ip_daily_quota 取不同的有效值（含游客 0）时逐项读到，互不串位、不告警', async () => {
+  const cases: [number, number, number][] = [
+    [45, 5, 12],
+    [7, 0, 19],
+    [0, 8, 1],
+  ];
+  for (const [member, guestDevice, guestIp] of cases) {
+    const label = `${String(member)}/${String(guestDevice)}/${String(guestIp)}`;
+    const config: Record<string, number> = {
+      'agent.member_daily_quota': member,
+      'agent.guest_daily_quota': guestDevice,
+      'agent.guest_ip_daily_quota': guestIp,
+    };
+    const asked: string[] = [];
+    const warns: unknown[] = [];
+    const source = createQuotaLimitsSource({
+      reader: {
+        configValue: (appId, key) => {
+          asked.push(`${appId}:${key}`);
+          return Promise.resolve(
+            key in config ? { value: config[key] as never, version: 3 } : null,
+          );
+        },
+      },
+      logger: { warn: (...args: unknown[]) => void warns.push(args) },
+    });
+    expect(await source.current('couli'), label).toEqual({
+      memberDaily: member,
+      guestDaily: guestDevice,
+      guestIpDaily: guestIp,
+      perMinute: 10,
+      maxRounds: 30,
+    });
+    expect(asked, label).toEqual(
+      expect.arrayContaining([
+        'couli:agent.member_daily_quota',
+        'couli:agent.guest_daily_quota',
+        'couli:agent.guest_ip_daily_quota',
+      ]),
+    );
+    expect(warns, label).toEqual([]);
+  }
+});
+
 it('[AC-B3-03g#48][BR-AI-15] 自然日按 +08:00：日界两侧分属两天，reset_at 为次日 00:00+08:00，计数区间 [当日 00:00, 次日 00:00)', () => {
   const cases: [string, string, string][] = [
     ['2026-10-06T15:59:59.999Z', '2026-10-06', '2026-10-07T00:00:00+08:00'],

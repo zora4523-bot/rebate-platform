@@ -1,6 +1,8 @@
 // B3-03g: crash points and the single finalization (design §3.1–3.5, §4.1 C2–C14a, §7.2 X-10,
 // r4-3, r4 L2, 并发退还; BR-AI-23 细则「受理记录与收尾」, BR-AI-15 退还 / 归日 / quota_left,
 // BR-AI-13; inherited B3-09b S1 BR-AI-23-lock-release-same-tx and BR-AI-15-derived-counting).
+import { randomUUID } from 'node:crypto';
+
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 
@@ -8,7 +10,11 @@ import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/inde
 import {
   AdmissionHeldError,
   AdmissionUnavailableError,
+  type AdmissionRequest,
+  type AdmissionResult,
+  type AdmissionTicket,
 } from '../../../../apps/api/src/modules/agent/stream/admission/index.ts';
+import type { FinalizeOutcome } from '../../../../apps/api/src/modules/agent/stream/pg/index.ts';
 import {
   APP,
   MutableLimits,
@@ -21,9 +27,11 @@ import {
   instance,
   limits,
   liveTail,
+  lockRow,
   member,
   memberKey,
   newSession,
+  nextPid,
   opaque,
   request,
   runRow,
@@ -33,6 +41,7 @@ import {
   terminate,
   usedOn,
   usePg,
+  waitingOnLock,
 } from './kit.ts';
 
 const pg = usePg();
@@ -485,4 +494,178 @@ it('[AC-B3-03g#28] 活进程 settle 与恢复方 finalize 并发（S4 已提交�
     quotaLeft: 100,
     wrote: false,
   });
+});
+
+type Racer = 'admission' | 'finalizer';
+type Barrier = 'agent_sessions' | 'agent_runs';
+
+/**
+ * Lock order (design §2.2: session row → run row → subject locks, for the admission transaction
+ * and the independent finalizeRun alike). A left-over run R (lock period over); the test holds
+ * the `barrier` row lock, starts `first` and waits until it blocks on a lock, then starts the
+ * other one and waits until it blocks too, then releases. Holding the session row with the
+ * admission queued first makes an admission that holds the session wait for R while a finalizer
+ * that took R first waits for the session; holding R with the finalizer queued first is the
+ * mirror. A correct order never deadlocks (no 40P01, no AdmissionUnavailableError).
+ */
+async function raceLeftOver(
+  barrier: Barrier,
+  first: Racer,
+  kind: 'same_key' | 'new_message',
+): Promise<{
+  label: string;
+  user: ReturnType<typeof member>;
+  session: string;
+  req: AdmissionRequest;
+  next: AdmissionRequest;
+  ticket: AdmissionTicket;
+  admission: AdmissionResult | Error;
+  recovery: FinalizeOutcome | Error;
+}> {
+  const label = `${barrier}/${first}/${kind}`;
+  const quota = limits({ memberDaily: 1 });
+  const { user, session, req, ticket } = await acceptOne(quota);
+  const admitter = instance(pg.db, { clock: at(LOCK_END), limits: new MutableLimits(quota) });
+  const finalizer = instance(pg.db, { clock: at(LOCK_END), limits: new MutableLimits(quota) });
+  const next =
+    kind === 'same_key' ? request(user, session, req.clientMsgId) : request(user, session);
+  const runs: {
+    admission?: Promise<AdmissionResult | Error>;
+    recovery?: Promise<FinalizeOutcome | Error>;
+  } = {};
+  const start = (who: Racer): Promise<number> => {
+    if (who === 'admission') {
+      const pid = nextPid(admitter.hooks, 'admit');
+      runs.admission = settled(admitter.ports.admission.admit(next, quota));
+      return pid;
+    }
+    const pid = nextPid(finalizer.hooks, 'finalize');
+    runs.recovery = settled(finalizer.ports.finalizer.finalize(ticket.runId));
+    return pid;
+  };
+  const release = await lockRow(
+    pg.db,
+    barrier,
+    barrier === 'agent_sessions' ? session : ticket.runId,
+  );
+  try {
+    for (const who of first === 'admission'
+      ? (['admission', 'finalizer'] as const)
+      : (['finalizer', 'admission'] as const)) {
+      await waitingOnLock(pg.db, await start(who));
+    }
+  } finally {
+    await release();
+  }
+  const admission = await runs.admission!;
+  const recovery = await runs.recovery!;
+  return { label, user, session, req, next, ticket, admission, recovery };
+}
+
+const RACES: [Barrier, Racer][] = [
+  ['agent_sessions', 'admission'],
+  ['agent_sessions', 'finalizer'],
+  ['agent_runs', 'admission'],
+  ['agent_runs', 'finalizer'],
+];
+
+it('[AC-B3-03g#86][BR-AI-23] 锁顺序：同键重试（受理事务内收尾遗留 run）与独立恢复方同时处理同一遗留 run，会话行 / run 行两种持锁交错 × 两种启动顺序都完成、不死锁；只结算一次，同键得 duplicate(final 原终态)，恢复方得同一终态', async () => {
+  for (const [barrier, first] of RACES) {
+    const { label, user, session, req, ticket, admission, recovery } = await raceLeftOver(
+      barrier,
+      first,
+      'same_key',
+    );
+    expect(admission, label).toEqual({
+      kind: 'duplicate',
+      original: {
+        runId: req.runId,
+        userMessageId: req.messageId,
+        assistantMessageId: req.reply.assistantMessageId,
+        promptVersion: req.reply.promptVersion,
+        modelSnapshot: req.reply.modelSnapshot,
+      },
+      reply: { kind: 'final', frame: RECOVERED },
+    });
+    expect(recovery, label).toMatchObject({ kind: 'final', frame: RECOVERED, refunded: true });
+    const row = await runRow(pg.db, ticket.runId);
+    expect(row, label).toMatchObject({ end_reason: 'server_error', settle_result: 'refunded' });
+    expect(row['final_event'], label).toEqual(stored(RECOVERED));
+    expect(await usedOn(pg.db, memberKey(user), '2026-10-06'), label).toBe(0);
+    expect((await sessionRow(pg.db, session))['run_lock_run_id'], label).toBeNull();
+  }
+});
+
+it('[AC-B3-03g#87][BR-AI-23] 锁顺序：同会话新消息（先收尾再受理）与独立恢复方同时处理同一遗留 run，两种持锁交错 × 两种启动顺序都完成、不死锁；遗留 50001 只退一次，新消息受理（quota_left 0）且锁归新 run', async () => {
+  for (const [barrier, first] of RACES) {
+    const { label, user, session, next, ticket, admission, recovery } = await raceLeftOver(
+      barrier,
+      first,
+      'new_message',
+    );
+    expect(admission, label).toMatchObject({ kind: 'accepted', quotaLeft: 0 });
+    expect(recovery, label).toMatchObject({ kind: 'final', frame: RECOVERED, refunded: true });
+    const row = await runRow(pg.db, ticket.runId);
+    expect(row, label).toMatchObject({ end_reason: 'server_error', settle_result: 'refunded' });
+    expect(row['final_event'], label).toEqual(stored(RECOVERED));
+    expect(await usedOn(pg.db, memberKey(user), '2026-10-06'), label).toBe(1);
+    expect((await sessionRow(pg.db, session))['run_lock_run_id'], label).toBe(next.runId);
+    expect((await runRow(pg.db, next.runId))['final_event'], label).toBeNull();
+  }
+});
+
+it('[AC-B3-03g#88][BR-AI-23] 旧 run R 无终态、会话锁已指向另一 run N 且未过期（特制遗留）：R 不算运行中——恢复方与 R 的同键重试都按遗留收尾（50001 无卡退），N 的锁与锁期不变、N 不被收尾', async () => {
+  for (const via of ['finalizer', 'same_key'] as const) {
+    const { user, session, req, ticket } = await acceptOne();
+    const other = randomUUID();
+    const otherLockEnd = new Date(START_MS + 51_000);
+    await sql`INSERT INTO app.agent_runs
+      (id, app_id, session_id, prompt_version, accepted_at, quota_subjects, deadline_at)
+      SELECT ${other}, app_id, session_id, prompt_version, ${new Date(START_MS + 1_000)},
+        quota_subjects, ${new Date(START_MS + 21_000)}
+      FROM app.agent_runs WHERE app_id = ${APP} AND id = ${ticket.runId}`.execute(pg.db);
+    await sql`UPDATE app.agent_sessions SET run_lock_run_id = ${other},
+      run_lock_expires_at = ${otherLockEnd} WHERE app_id = ${APP} AND id = ${session}`.execute(
+      pg.db,
+    );
+    const r = instance(pg.db, { clock: at(START_MS + 5_000) });
+    if (via === 'finalizer') {
+      expect(await r.ports.finalizer.finalize(ticket.runId), via).toEqual({
+        kind: 'final',
+        frame: RECOVERED,
+        refunded: true,
+        snapshotQuotaLeft: null,
+        quotaLeft: 99,
+        wrote: true,
+      });
+    } else {
+      expect(
+        await r.ports.admission.admit(request(user, session, req.clientMsgId), limits()),
+        via,
+      ).toEqual({
+        kind: 'duplicate',
+        original: {
+          runId: req.runId,
+          userMessageId: req.messageId,
+          assistantMessageId: req.reply.assistantMessageId,
+          promptVersion: req.reply.promptVersion,
+          modelSnapshot: req.reply.modelSnapshot,
+        },
+        reply: { kind: 'final', frame: RECOVERED },
+      });
+    }
+    const row = await runRow(pg.db, ticket.runId);
+    expect(row, via).toMatchObject({ end_reason: 'server_error', settle_result: 'refunded' });
+    expect(row['final_event'], via).toEqual(stored(RECOVERED));
+    expect(await sessionRow(pg.db, session), via).toMatchObject({
+      run_lock_run_id: other,
+      run_lock_expires_at: otherLockEnd,
+    });
+    expect(await runRow(pg.db, other), via).toMatchObject({
+      end_reason: null,
+      final_event: null,
+      settle_result: null,
+    });
+    expect(await usedOn(pg.db, memberKey(user), '2026-10-06'), via).toBe(1);
+  }
 });
