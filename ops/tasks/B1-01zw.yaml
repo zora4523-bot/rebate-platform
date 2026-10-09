@@ -1,9 +1,9 @@
 id: B1-01zw
 repo: rebate-platform
-title: 维护规则测试补漏（只新增文件）：event_log 分区删除锁等待期间的并发写入成功提交
+title: 维护规则测试补漏（只新增文件）：event_log 分区预建被读事务阻塞等锁期间，并发写入成功提交
 type: test-change
 # 2026-10-10 入账（会话 b1-followups-4；来源 followups/INDEX.md F-19，followups/B1-01g-queue-test-gaps.md B1-01j 节，P3）。
-# test/spec/platform/maintenance/lock-wait.int.test.ts 第 185–204 行只断言写入耗时（within 把失败也算作完成）、没断言写入成功：
+# test/spec/platform/maintenance/lock-wait.int.test.ts 第 169–204 行（预建缺失的月分区被读事务阻塞、预期 dropped 为空）只断言写入耗时（within 把失败也算作完成）、没断言写入成功：
 # 新文件补「锁等待期间的并发 insert 成功提交、行可查到」的断言；不改已有文件与实现，对现有实现应为绿（补漏，不走先红）。
 # F-19 另一半「删除截止时间完全信任注入时钟」不改：时间只读注入的 Clock（AGENTS.md 硬规则 5、ADR-0001 §4.2 第 10 项、maintenance 契约 C.2，
 # staging 用 CLOCK_NOW 有意推进时间），与数据库 now() 比对会违反规则并误判演练（台账评审 LR-04a S1）。
