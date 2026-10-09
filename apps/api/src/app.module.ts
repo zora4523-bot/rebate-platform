@@ -24,6 +24,7 @@ import {
   createIdentityAttrCodeReader,
   createIdentityCallerContext,
   createIdentityViewerContext,
+  createSameDeviceLoginReader,
   type IdentityAttrCodeReader,
   type IdentityConfigReader,
   type IdentityContext,
@@ -471,6 +472,8 @@ function parsingPorts(): DynamicModule {
  * Stage ⑬ (rate limits, B1-03e): its thresholds port reads `rate_limit.ops` and
  * `rate_limit.<group>` through content's cached configValue; no database handle: the code
  * defaults only. Its buckets use REDIS (none: stage ⑬ is not installed).
+ * Same-device multi-account check (BR-ID-37, B1-03k): sameDeviceAccountsCheckToken(), over
+ * identity's login reader and content's configuration reader bound to the caller's handle.
  */
 function riskModule(identity: DynamicModule): DynamicModule {
   return RiskModule.forRoot({
@@ -500,6 +503,16 @@ function riskModule(identity: DynamicModule): DynamicModule {
                 on: (handle) =>
                   createRateLimitThresholdReader(createContentReader({ db: handle, clock })),
               },
+      },
+    },
+    // BR-ID-37 (B1-03k): identity's login reader; configuration through content's reader over
+    // the caller's handle, so the check reads and writes on the caller's transaction only.
+    sameDevice: {
+      logins: createSameDeviceLoginReader(),
+      config: {
+        inject: [CLOCK],
+        useFactory: (clock: Clock) => (handle: Kysely<Database>) =>
+          createContentReader({ db: handle, clock }),
       },
     },
   });

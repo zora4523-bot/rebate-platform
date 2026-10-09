@@ -11,6 +11,11 @@ export interface NewLoginLog {
   readonly user_id: string;
   /** HMAC of the device_id (LOGIN_LOGS_DEVICE_ID_CONTEXT), never the plain id. */
   readonly device_id_hash: string;
+  /**
+   * devices.device_hash of the verified device row the login ran on (BR-ID-37 同设备多账号);
+   * null only when that row is missing.
+   */
+  readonly device_hash: string | null;
   readonly ip: string;
   readonly method: string;
   readonly created_at: Date;
