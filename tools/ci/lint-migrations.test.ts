@@ -1025,3 +1025,36 @@ it('CT-06g review round 1: a cast with a length is not a plain literal; NOT insi
     ),
   ).toEqual([]);
 });
+
+it('CT-06g review round 2: identical rebuilds written over several lines or as two ALTER TABLE statements pass; no history, no exception', () => {
+  const history = `${TIMEOUTS}CREATE TABLE app.ledger_x (id bigint CONSTRAINT ledger_x_pkey PRIMARY KEY, amount_fen bigint NOT NULL, CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0));\n`;
+  for (const body of [
+    '-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.ledger_x\n  DROP CONSTRAINT ledger_x_amount_check,\n  ADD CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0);\n',
+    'ALTER TABLE app.ledger_x DROP CONSTRAINT ledger_x_amount_check;\n-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.ledger_x ADD CONSTRAINT ledger_x_amount_check CHECK (amount_fen >= 0);\n',
+  ]) {
+    const res = run(fixture({ '0030_a.sql': history, '0031_b.sql': TIMEOUTS + body }));
+    expect(res.status, res.stdout + res.stderr).toBe(0);
+  }
+  // A new constraint over several lines still gets squawk's finding.
+  const fresh = run(
+    fixture({
+      '0030_a.sql': history,
+      '0031_b.sql': `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.ledger_x\n  DROP CONSTRAINT IF EXISTS ledger_x_cap_check,\n  ADD CONSTRAINT ledger_x_cap_check CHECK (amount_fen < 100);\n`,
+    }),
+  );
+  expect(fresh.status).toBe(1);
+  expect(
+    checkMigration(
+      'x.sql',
+      `${TIMEOUTS}-- squawk-ignore constraint-missing-not-valid\nALTER TABLE app.orders DROP CONSTRAINT IF EXISTS orders_label_guard, ADD CONSTRAINT orders_label_guard CHECK (label <> 'x');\n`,
+      {
+        schemaSql:
+          "CREATE TABLE app.orders (label text, CONSTRAINT orders_label_guard CHECK (label <> 'x'));",
+        migrationsSql: [],
+        approved: false,
+      },
+    ).map((p) => p.message),
+  ).toEqual([
+    expect.stringContaining('squawk-ignore on a statement of funds or attribution table orders'),
+  ]);
+});

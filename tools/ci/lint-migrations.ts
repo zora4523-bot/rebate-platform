@@ -1617,17 +1617,12 @@ export function identicalRebuildIgnores(
   sql: string,
   context: MigrationContext = NO_CONTEXT,
 ): { ignore: number; from: number; to: number }[] {
-  if (context.migrationsSql.length === 0 && context.schemaSql === '') return [];
+  // Only the migration history proves a constraint existed: no history, no exception.
+  if (context.migrationsSql.length === 0) return [];
   const code = withoutComments(sql);
   const valued = withoutComments(sql, true);
   const history = guardDefinitions(context.migrationsSql);
-  // With the migration history at hand (the CLI) only it counts: the regenerated schema already
-  // shows a constraint this file adds, so it would compare equal to itself. The schema alone only
-  // for a pure call without history.
-  if (context.migrationsSql.length === 0) {
-    for (const [k, v] of guardDefinitions([context.schemaSql]).constraints)
-      history.constraints.set(k, v);
-  }
+  // The regenerated schema already shows a constraint this file adds, so it is never used here.
   const out: { ignore: number; from: number; to: number }[] = [];
   for (const ignore of sql.matchAll(IGNORE_ANY)) {
     const at = ignore.index ?? 0;
@@ -1653,15 +1648,24 @@ export function identicalRebuildIgnores(
     };
     const adds = parts.filter((q) => addName(q.text) !== null);
     const names = new Set(adds.map((q) => addName(q.text) ?? ''));
-    const drops = new Set(
-      parts.flatMap((q) => {
+    const dropsIn = (qs: readonly { text: string }[]): string[] =>
+      qs.flatMap((q) => {
         const d = new RegExp(
           String.raw`^\s*DROP\s+CONSTRAINT${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})\s*$`,
           'i',
         ).exec(q.text);
         return d === null ? [] : [bareName(d[1] ?? '')];
-      }),
-    );
+      });
+    // The DROP may sit in this statement or in an earlier ALTER TABLE of the same table.
+    const earlierDrops = code
+      .slice(0, prev + 1)
+      .split(';')
+      .flatMap((t) => {
+        const e = ALTER_TABLE.exec(t);
+        if (e === null || bareName(e[1] ?? '') !== table) return [];
+        return dropsIn(topLevelParts(t, e[0].length, t.length));
+      });
+    const drops = new Set([...earlierDrops, ...dropsIn(parts)]);
     const ok =
       adds.length > 0 &&
       [...names].every((n) => drops.has(n)) &&
@@ -1950,7 +1954,7 @@ function main(argv: readonly string[]): number {
   console.log(`lint-migrations: squawk over ${files.join(' ')}`);
   const res = spawnSync(binary, ['-c', config, '--reporter', 'gcc', ...files], {
     cwd: root,
-    stdio: 'inherit',
+    encoding: 'utf8',
   });
   if (res.error !== undefined) {
     console.error(`lint-migrations: cannot run squawk: ${res.error.message}`);
@@ -1960,7 +1964,32 @@ function main(argv: readonly string[]): number {
     console.error(`lint-migrations: squawk was killed by signal ${res.signal ?? 'unknown'}`);
     return 2;
   }
-  return res.status !== 0 ? 1 : 0;
+  // squawk's ignore covers the next line only; a verified identical rebuild written over several
+  // lines (DROP on one, ADD on the next) keeps its one exception for its whole statement (CT-06g).
+  let reported = 0;
+  let exempted = 0;
+  for (const line of res.stdout.split('\n')) {
+    if (/^.+?:\d+:\d+: error:/.test(line)) reported++;
+    const m = /^(.+?):(\d+):(\d+): warning: (\S+)/.exec(line);
+    if (m !== null) {
+      const entry = withIgnores.find((e) => basename(e.file) === basename(m[1] ?? ''));
+      const at = entry === undefined ? null : findingOffset(entry.sql, Number(m[2]), Number(m[3]));
+      if (
+        m[4] === 'constraint-missing-not-valid' &&
+        entry !== undefined &&
+        at !== null &&
+        entry.allowed.some((a) => at >= a.from && at < a.to)
+      ) {
+        exempted++;
+        continue;
+      }
+      reported++;
+    }
+    if (line !== '') console.log(line);
+  }
+  if (res.stderr !== '') process.stderr.write(res.stderr);
+  if (res.status === 0) return 0;
+  return reported === 0 && exempted > 0 ? 0 : 1;
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(import.meta.filename)) {
