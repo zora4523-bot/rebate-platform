@@ -7,6 +7,19 @@ export type {
   SmsRiskAdmission,
 } from './application/sms-risk.ts';
 export {
+  createSameDeviceAccountsCheck,
+  sameDeviceAccountsCheckToken,
+  sameDeviceLoginReaderToken,
+} from './application/same-device-accounts.ts';
+export type {
+  SameDeviceFirstLogin,
+  SameDeviceLoginReader,
+  SameDeviceAccountsInput,
+  SameDeviceAccountsResult,
+  SameDeviceAccountsCheck,
+  SameDeviceAccountsOptions,
+} from './application/same-device-accounts.ts';
+export {
   createDeviceRegistrationRisk,
   unkeyedDeviceRegistrationIndex,
 } from './application/device-registration.ts';
