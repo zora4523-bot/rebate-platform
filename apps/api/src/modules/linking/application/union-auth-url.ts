@@ -119,46 +119,49 @@ function authStep(step: { readonly type: string; readonly value: string }): Auth
   return { type: step.type as AuthJumpStep['type'], value: step.value };
 }
 
+/**
+ * Pinduoduo authorization jump (BR-ID-22 细则; 04 §7 30111): the open's own BR-ATTR-27 matrix by
+ * the device record's client and installed (missing → unknown), over the authorization page's
+ * paths; in prod only the paths the open admits (none admitted → AuthConfigError, no state).
+ * Shared by auth-url and the Pinduoduo open's 30111 (B1-06v, link-open-pdd-auth.ts).
+ */
+export function pddAuthJump(
+  environment: { readonly appEnv: AppEnv; readonly jumpEnvironment?: LinkOpenEnvironment },
+  authUrl: string,
+  client: AuthClient,
+  installed: UnionAuthUrlInput['installed'],
+  expireAt: Date,
+): AuthJumpPlan {
+  const { appEnv, jumpEnvironment } = environment;
+  if (appEnv === 'prod' && jumpEnvironment === undefined) {
+    throw new AuthConfigError('linking: no jump environment for the pdd auth jump in prod');
+  }
+  const jump = buildDefaultLinkJump({
+    platform: 'pdd',
+    client,
+    installed: installed ?? 'unknown',
+    paths: pathsOf('pdd', authUrl, appSchemeOf(jumpEnvironment?.apps, 'pdd')),
+    expireAt: expireAt.toISOString(),
+  });
+  const admitted =
+    jumpEnvironment === undefined
+      ? jump
+      : createJumpAdmission({ ...jumpEnvironment, appEnv }).jump('pdd', client, jump);
+  if (admitted === null) {
+    throw new AuthConfigError('linking: no verified pdd jump path for this client');
+  }
+  return {
+    primary: authStep(admitted.primary),
+    fallbacks: admitted.fallbacks.map(authStep),
+    expire_at: admitted.expire_at,
+  };
+}
+
 export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlService {
   const { db, clock, callerContext, config, appEnv, authApps, jumpEnvironment, logger } = options;
   const pids = options.pids ?? createLinkingPidReader(db, clock);
   // The same judgements the bindings submission makes (union-auth-reads.ts).
   const reads = createUnionAuthReads({ db, config, appEnv, pids });
-
-  /**
-   * Pinduoduo authorization jump (BR-ID-22 细则; 04 §7 30111): the open's own BR-ATTR-27 matrix by
-   * the device record's client and installed (missing → unknown), over the authorization page's
-   * paths; in prod only the paths the open admits (none admitted → a server fault, no state).
-   */
-  function pddJump(
-    authUrl: string,
-    client: AuthClient,
-    installed: UnionAuthUrlInput['installed'],
-    expireAt: Date,
-  ): AuthJumpPlan {
-    if (appEnv === 'prod' && jumpEnvironment === undefined) {
-      throw new AuthConfigError('linking: no jump environment for the pdd auth jump in prod');
-    }
-    const jump = buildDefaultLinkJump({
-      platform: 'pdd',
-      client,
-      installed: installed ?? 'unknown',
-      paths: pathsOf('pdd', authUrl, appSchemeOf(jumpEnvironment?.apps, 'pdd')),
-      expireAt: expireAt.toISOString(),
-    });
-    const admitted =
-      jumpEnvironment === undefined
-        ? jump
-        : createJumpAdmission({ ...jumpEnvironment, appEnv }).jump('pdd', client, jump);
-    if (admitted === null) {
-      throw new AuthConfigError('linking: no verified pdd jump path for this client');
-    }
-    return {
-      primary: authStep(admitted.primary),
-      fallbacks: admitted.fallbacks.map(authStep),
-      expire_at: admitted.expire_at,
-    };
-  }
 
   async function issue(input: UnionAuthUrlInput): Promise<HandlerResult> {
     const caller = await callerContext.current();
@@ -208,7 +211,16 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     expireAt.setTime(now.getTime() + AUTH_STATE_TTL_MS);
     const state = newAuthState();
     const authUrl = syntheticAuthUrl(platform, state);
-    const authJump = methods === null ? pddJump(authUrl, client, input.installed, expireAt) : null;
+    const authJump =
+      methods === null
+        ? pddAuthJump(
+            { appEnv, ...(jumpEnvironment === undefined ? {} : { jumpEnvironment }) },
+            authUrl,
+            client,
+            input.installed,
+            expireAt,
+          )
+        : null;
     const refs =
       methods === null ? null : await authAppRefs(authApps, appEnv, appId, client, methods);
 

@@ -120,8 +120,11 @@ function failed(message: string, noRebateUrl: string): LinkConversionFailure {
   return Object.assign(new Error(message), { code: 50303 as const, noRebateUrl });
 }
 
-/** The only subclass linking builds; the adapter accepts nothing else (isServerIdentity). */
-class LinkingUnionIdentity extends UnionIdentity implements JdPddIdentity {
+/**
+ * The only subclass linking builds; the adapter accepts nothing else (isServerIdentity). Also the
+ * identity of the Pinduoduo authority query (B1-06v, link-open-pdd-auth.ts), built the same way.
+ */
+export class LinkingUnionIdentity extends UnionIdentity implements JdPddIdentity {
   readonly subUnionId?: string;
   readonly custom_parameters?: Readonly<{ app: 'n'; uid?: string; sc: string; lk?: string }>;
 

@@ -20,6 +20,7 @@ import {
   type MaterialReq,
   type OrderQueryOpt,
   type Page,
+  type PddAuthority,
   type RegisteredPlatform,
   type ResolvedLink,
   type SearchQuery,
@@ -47,6 +48,8 @@ import {
  * items from the synthetic promotion detail; price_anomaly makes the detail disagree with the
  * promotion final price by one fen (calc_diff); unknown_promo adds an unlisted promotion name
  * (unknown_promo under the default switch). These two are Taobao-only scenarios.
+ * pdd_unauthorized (Pinduoduo only, B1-06v) -> queryPddAuthority answers authorized=false; without
+ * it the demo authority query answers authorized=true (orchestrator ruling D7-7: no demo dead loop).
  */
 export type DemoScenario =
   | 'timeout'
@@ -55,7 +58,8 @@ export type DemoScenario =
   | 'coupon_expired'
   | 'no_commission'
   | 'price_anomaly'
-  | 'unknown_promo';
+  | 'unknown_promo'
+  | 'pdd_unauthorized';
 
 const SCENARIOS: readonly DemoScenario[] = [
   'timeout',
@@ -65,8 +69,11 @@ const SCENARIOS: readonly DemoScenario[] = [
   'no_commission',
   'price_anomaly',
   'unknown_promo',
+  'pdd_unauthorized',
 ];
 const TAOBAO_ONLY_SCENARIOS: readonly DemoScenario[] = ['price_anomaly', 'unknown_promo'];
+/** B1-06v: the authority query answers "not filed" (only queryPddAuthority reads it). */
+const PDD_ONLY_SCENARIOS: readonly DemoScenario[] = ['pdd_unauthorized'];
 
 export interface DemoUnionOptions {
   readonly platform: RegisteredPlatform;
@@ -349,6 +356,23 @@ export class DemoUnionAdapter implements UnionAdapter {
     return this.#page(this.#feed, req.cursor, FEED_PAGE_SIZE, scenario);
   }
 
+  /**
+   * B1-06v: the demo Pinduoduo authority (备案) query of a server-built identity: authorized unless
+   * the call carries the pdd_unauthorized scenario. Synthetic; never a capability claim (CAP-PDD-05).
+   */
+  async queryPddAuthority(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthority> {
+    this.#claims(identity, ctx);
+    const scenario = this.#scenario(ctx);
+    if (this.platform !== 'pdd') {
+      throw new UnionError(
+        'adapter_unimplemented',
+        `Demo union adapter for ${this.platform} has no authority query`,
+        this.platform,
+      );
+    }
+    return Object.freeze({ authorized: scenario !== 'pdd_unauthorized' });
+  }
+
   async listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>> {
     void win;
     void opt;
@@ -368,7 +392,8 @@ export class DemoUnionAdapter implements UnionAdapter {
     if (
       !(SCENARIOS as readonly string[]).includes(scenario) ||
       (this.platform !== 'taobao' &&
-        (TAOBAO_ONLY_SCENARIOS as readonly string[]).includes(scenario))
+        (TAOBAO_ONLY_SCENARIOS as readonly string[]).includes(scenario)) ||
+      (this.platform !== 'pdd' && (PDD_ONLY_SCENARIOS as readonly string[]).includes(scenario))
     ) {
       throw new DemoUnionError('demo_unknown_scenario', 'Unknown demo scenario', this.platform);
     }

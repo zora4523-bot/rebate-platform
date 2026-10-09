@@ -1,7 +1,8 @@
 // B1-06f: the Taobao open — a composition over the shared open core (owner, re-check, idempotency,
 // logs, attempts; link-open-requote.ts) and the jd / pdd wired conversion (link-open-wiring.ts),
 // adding a Taobao conversion port with its own authorization. The re-check core itself knows no
-// authorization; jd and pdd opens are served exactly as before.
+// authorization; jd opens are served exactly as before, pdd opens get the Pinduoduo filing check
+// (B1-06v, link-open-pdd-auth.ts).
 // Order of one Taobao open: ownership (10001 / 30144, owner stage) → convert.enabled.taobao and
 // path admission (50301) → the scene's active promotion slot (50301 with a warning) →
 // authorization (30153 / 30101 / 30102) → re-check price (30141 / 30602 / 50303) → instruction.
@@ -37,6 +38,7 @@ import {
 } from '../domain/rules.ts';
 import type { LinkOpenService } from './link-open.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
+import { createPddAuthorization } from './link-open-pdd-auth.ts';
 import { openScopedConfig, openScopedPids, type LinkOpenReadPlan } from './link-open-reads.ts';
 import type {
   LinkOpenAuthorization,
@@ -442,21 +444,24 @@ function createTaobaoConversion(
 export function createTaobaoLinkOpen(options: TaobaoLinkOpenOptions): LinkOpenService {
   return createWiredLinkOpen(options, (wired) => {
     const taobao = createTaobaoConversion(options, wired.admission);
+    // B1-06v (ruling D7-11 ⑨): Pinduoduo opens get the Pinduoduo filing check; jd passes.
+    const pdd = createPddAuthorization(options);
     const isTaobao = (owner: LinkOpenOwnerResult) => owner.link.platform === PLATFORM;
     return {
       variant: wired.conversion.variant,
       async prepare(plan) {
         await Promise.allSettled([
           wired.conversion.prepare(plan),
+          pdd.prepare(plan),
           ...(plan.platform === PLATFORM ? [taobao.prepare(plan)] : []),
         ]);
       },
       admit: (owner, client) =>
         isTaobao(owner) ? taobao.admit(owner, client) : wired.conversion.admit(owner, client),
       authorize: (input) =>
-        isTaobao(input.owner) ? taobao.authorize(input) : Promise.resolve({ kind: 'allowed' }),
+        isTaobao(input.owner) ? taobao.authorize(input) : pdd.authorize(input),
       cacheTag: (owner, noRebate) =>
-        isTaobao(owner) ? taobao.cacheTag(owner, noRebate) : undefined,
+        isTaobao(owner) ? taobao.cacheTag(owner, noRebate) : pdd.cacheTag(owner, noRebate),
       convert: (input) =>
         isTaobao(input.owner) ? taobao.convert(input) : wired.conversion.convert(input),
     };
