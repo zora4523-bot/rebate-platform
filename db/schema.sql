@@ -60,6 +60,60 @@ CREATE TYPE pgboss.job_state AS ENUM (
 
 
 --
+-- Name: delete_expired_link_open_attempts(timestamp with time zone, integer); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.delete_expired_link_open_attempts(p_now timestamp with time zone, p_batch_size integer) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    SET lock_timeout TO '5s'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz;
+  v_deleted bigint;
+BEGIN
+  IF p_now IS NULL OR p_batch_size IS NULL THEN
+    RAISE EXCEPTION 'delete_expired_link_open_attempts: p_now and p_batch_size are required'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  IF NOT isfinite(p_now) THEN
+    RAISE EXCEPTION 'delete_expired_link_open_attempts: p_now must be finite'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  IF p_batch_size < 1 OR p_batch_size > 10000 THEN
+    RAISE EXCEPTION 'delete_expired_link_open_attempts: p_batch_size must be between 1 and 10000'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Fixed UTC+08:00, never the session TimeZone. Subtract calendar days before converting
+  -- local midnight back to an instant (BR-ID-30 正文: run day 00:00 +08:00 − 90 days).
+  v_cutoff := (((p_now AT TIME ZONE INTERVAL '8 hours')::date - 90)::timestamp
+    AT TIME ZONE INTERVAL '8 hours');
+
+  -- One bounded batch over every app_id. SKIP LOCKED: a row a writer holds is left for a
+  -- later batch instead of making maintenance wait; table-level waits are capped by the
+  -- function's lock_timeout.
+  WITH victims AS (
+    SELECT a.attempt_id
+    FROM app.link_open_attempts a
+    WHERE a.opened_at < v_cutoff
+    ORDER BY a.opened_at
+    LIMIT p_batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  DELETE FROM app.link_open_attempts t
+  USING victims v
+  WHERE t.attempt_id = v.attempt_id;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END
+$$;
+
+
+--
 -- Name: drop_expired_day_partitions(text, timestamp with time zone); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -195,7 +249,7 @@ DECLARE
   v_bounds     text[];
   v_candidates text[] := ARRAY[]::text[];
   v_name       text;
-  v_has_recent boolean;
+  v_latest     timestamptz;
   v_dropped    text[] := ARRAY[]::text[];
 BEGIN
   IF p_table IS NULL OR p_now IS NULL THEN
@@ -272,9 +326,10 @@ BEGIN
       -- Read-only preflight: a recent row already rules out deletion, so do not
       -- queue an exclusive parent lock for this partition. Recheck under lock below
       -- because concurrent writers may commit after this snapshot.
-      EXECUTE format('SELECT EXISTS (SELECT 1 FROM app.%I WHERE created_at >= $1)',
-        v_partition.name) INTO v_has_recent USING v_cutoff;
-      IF NOT v_has_recent THEN
+      -- max() is answered from the end of the created_at index (one probe, no
+      -- statistics needed); NULL means an empty partition.
+      EXECUTE format('SELECT max(created_at) FROM app.%I', v_partition.name) INTO v_latest;
+      IF v_latest IS NULL OR v_latest < v_cutoff THEN
         v_candidates := array_append(v_candidates, v_partition.name);
       END IF;
     END IF;
@@ -320,9 +375,9 @@ BEGIN
     EXECUTE format('LOCK TABLE app.%I IN ACCESS EXCLUSIVE MODE', v_partition.name);
     -- Separate statement AFTER lock acquisition: includes writers that committed while
     -- we waited. Equality keeps the entire partition; never delete individual rows.
-    EXECUTE format('SELECT EXISTS (SELECT 1 FROM app.%I WHERE created_at >= $1)',
-      v_partition.name) INTO v_has_recent USING v_cutoff;
-    IF NOT v_has_recent THEN
+    -- Same index-end probe as the preflight, so the exclusive lock is held only briefly.
+    EXECUTE format('SELECT max(created_at) FROM app.%I', v_partition.name) INTO v_latest;
+    IF v_latest IS NULL OR v_latest < v_cutoff THEN
       EXECUTE format('DROP TABLE app.%I', v_partition.name);
       v_dropped := array_append(v_dropped, v_partition.name);
     END IF;
@@ -3840,6 +3895,20 @@ CREATE UNIQUE INDEX devices_app_id_id_key ON app.devices USING btree (app_id, id
 
 
 --
+-- Name: event_log_created_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX event_log_created_at_idx ON ONLY app.event_log USING btree (created_at);
+
+
+--
+-- Name: event_log_default_created_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX event_log_default_created_at_idx ON app.event_log_default USING btree (created_at);
+
+
+--
 -- Name: event_log_event_id_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -3879,6 +3948,13 @@ CREATE INDEX link_logs_default_app_id_link_id_created_at_idx ON app.link_logs_de
 --
 
 CREATE INDEX link_open_attempts_link_idx ON app.link_open_attempts USING btree (app_id, link_id);
+
+
+--
+-- Name: link_open_attempts_opened_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX link_open_attempts_opened_idx ON app.link_open_attempts USING btree (opened_at);
 
 
 --
@@ -4215,6 +4291,13 @@ CREATE INDEX queue_stats_i1 ON ONLY pgboss.queue_stats USING btree (name, captur
 --
 
 CREATE INDEX warning_i1 ON pgboss.warning USING btree (created_on DESC);
+
+
+--
+-- Name: event_log_default_created_at_idx; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.event_log_created_at_idx ATTACH PARTITION app.event_log_default_created_at_idx;
 
 
 --
@@ -4912,6 +4995,14 @@ GRANT USAGE ON SCHEMA app TO couli_maint;
 
 GRANT USAGE ON SCHEMA pgboss TO couli_app;
 GRANT USAGE ON SCHEMA pgboss TO couli_payout;
+
+
+--
+-- Name: FUNCTION delete_expired_link_open_attempts(p_now timestamp with time zone, p_batch_size integer); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.delete_expired_link_open_attempts(p_now timestamp with time zone, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.delete_expired_link_open_attempts(p_now timestamp with time zone, p_batch_size integer) TO couli_maint;
 
 
 --

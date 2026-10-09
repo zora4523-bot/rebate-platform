@@ -13,6 +13,8 @@ import type { RootLogger } from '../logging/logger.ts';
 import {
   DAY_PARTITIONED_TABLES,
   DAYS_AHEAD,
+  OPEN_ATTEMPTS_BATCH_SIZE,
+  OPEN_ATTEMPTS_MAX_BATCHES,
   createPartitionMaintenance,
   type PartitionMaintenance,
 } from './index.ts';
@@ -66,6 +68,7 @@ async function fixture(instant = '2026-11-20T03:04:05Z', dayPartitions = false) 
       else if (/ensure_(month|day)_partition/.test(query.sql)) {
         rows = [{ partition: `${String(query.parameters[0])}:${String(query.parameters[1])}` }];
       } else if (/drop_expired_(month|day)_partitions/.test(query.sql)) rows = [{ partitions: [] }];
+      else if (query.sql.includes('delete_expired_link_open_attempts')) rows = [{ deleted: 0n }];
       else if (query.sql.includes('partition_default_rows')) rows = [];
       else if (query.sql.includes('set_config')) rows = [];
       else throw new Error('unexpected statement');
@@ -710,3 +713,117 @@ it.each(['ensure_month_partition', 'partition_default_rows'])(
     expect(f.queries).toHaveLength(queryCount);
   },
 );
+
+const OPEN_ATTEMPTS = 'delete_expired_link_open_attempts';
+
+it.each([
+  ['2026-10-08T19:59:59.999Z', true, 0],
+  ['2026-10-08T20:00:00.000Z', true, 4],
+  ['2026-10-08T20:00:00.000Z', false, 0],
+] as const)(
+  '[AC-B1-01zk#5] 打开尝试按 04:00 门槛与开关分批删除到返回 0（%s，启用=%s，调用 %i 次），共用 now、不开显式事务',
+  async (instant, enabled, calls) => {
+    const f = await fixture(instant, enabled);
+    const deleted = [1000n, 1000n, 1n, 0n];
+    f.control.respond = async (query) =>
+      query.sql.includes(OPEN_ATTEMPTS) ? [{ deleted: deleted.shift() }] : undefined;
+    const report = await f.maintenance.runOnce();
+    const batches = f.queries.filter((q) => q.sql.includes(OPEN_ATTEMPTS));
+    expect(batches).toHaveLength(calls);
+    expect(f.now).toHaveBeenCalledTimes(1);
+    expect(report).toMatchObject({ dropped: [], failed: 0 });
+    expect(f.transactions.some((t) => t.queries.some((q) => q.sql.includes(OPEN_ATTEMPTS)))).toBe(
+      false,
+    );
+    if (calls > 0) {
+      const now = f.now.mock.results[0]!.value;
+      expect(batches.map((q) => q.parameters)).toEqual(
+        Array.from({ length: calls }, () => [now, OPEN_ATTEMPTS_BATCH_SIZE]),
+      );
+      const order = f.queries.map((q) => q.sql);
+      const lastDayDrop = order.findLastIndex((sql) => sql.includes('drop_expired_day_partitions'));
+      const firstBatch = order.findIndex((sql) => sql.includes(OPEN_ATTEMPTS));
+      const defaults = order.findIndex((sql) => sql.includes('partition_default_rows'));
+      expect(lastDayDrop).toBeGreaterThanOrEqual(0);
+      expect(lastDayDrop).toBeLessThan(firstBatch);
+      expect(order.findLastIndex((sql) => sql.includes(OPEN_ATTEMPTS))).toBeLessThan(defaults);
+      expect(f.logger.info.mock.calls).toEqual([
+        [{ table: 'link_open_attempts', rows: 2001, batches: 4 }, 'open_attempts_deleted'],
+        [{ ensured: ALL_ENSURED, dropped: 0, failed: 0 }, 'partition_maintenance_done'],
+      ]);
+    } else {
+      expect(f.logger.info.mock.calls).toEqual([
+        [
+          { ensured: enabled ? ALL_ENSURED : MONTH_ENSURED, dropped: 0, failed: 0 },
+          'partition_maintenance_done',
+        ],
+      ]);
+    }
+    expect(f.logger.warn).not.toHaveBeenCalled();
+    expect(f.logger.error).not.toHaveBeenCalled();
+  },
+);
+
+it('[AC-B1-01zk#5] 无过期打开尝试时只调用一次且不多写日志', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  await f.maintenance.runOnce();
+  expect(f.queries.filter((q) => q.sql.includes(OPEN_ATTEMPTS))).toHaveLength(1);
+  expect(f.logger.info.mock.calls).toEqual([
+    [{ ensured: ALL_ENSURED, dropped: 0, failed: 0 }, 'partition_maintenance_done'],
+  ]);
+});
+
+it('[AC-B1-01zk#5] 中途失败记一次失败、不再续批，已删行数照记，DEFAULT 检查照常', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  let call = 0;
+  f.control.respond = async (query) => {
+    if (!query.sql.includes(OPEN_ATTEMPTS)) return undefined;
+    call += 1;
+    if (call === 2) throw { code: '55P03', message: 'private SQL', detail: 'private row data' };
+    return [{ deleted: 1000n }];
+  };
+  const report = await f.maintenance.runOnce();
+  expect(call).toBe(2);
+  expect(report.failed).toBe(1);
+  expect(f.queries.at(-1)?.sql).toContain('partition_default_rows');
+  expect(f.logger.info.mock.calls).toEqual([
+    [{ table: 'link_open_attempts', rows: 1000, batches: 1 }, 'open_attempts_deleted'],
+    [{ ensured: ALL_ENSURED, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
+  ]);
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'link_open_attempts', sqlstate: '55P03' }, 'open_attempts_delete_failed'],
+  ]);
+});
+
+it('[AC-B1-01zk#5] 达到本轮批次上限即停并告警，余量留给下一轮', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  f.control.respond = async (query) =>
+    query.sql.includes(OPEN_ATTEMPTS) ? [{ deleted: BigInt(OPEN_ATTEMPTS_BATCH_SIZE) }] : undefined;
+  const report = await f.maintenance.runOnce();
+  expect(f.queries.filter((q) => q.sql.includes(OPEN_ATTEMPTS))).toHaveLength(
+    OPEN_ATTEMPTS_MAX_BATCHES,
+  );
+  expect(report.failed).toBe(0);
+  expect(f.logger.warn.mock.calls).toEqual([
+    [
+      {
+        table: 'link_open_attempts',
+        rows: OPEN_ATTEMPTS_BATCH_SIZE * OPEN_ATTEMPTS_MAX_BATCHES,
+        batches: OPEN_ATTEMPTS_MAX_BATCHES,
+      },
+      'open_attempts_backlog',
+    ],
+  ]);
+});
+
+it('[AC-B1-01zk#5] worker 实例同样清理打开尝试', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z');
+  const worker = createWorkerMaintenance({
+    db: f.db,
+    logger: f.logger as unknown as RootLogger,
+    clock: f.clock,
+  });
+  instances.push(worker);
+  await worker.runOnce();
+  expect(f.queries.filter((q) => q.sql.includes(OPEN_ATTEMPTS))).toHaveLength(1);
+});

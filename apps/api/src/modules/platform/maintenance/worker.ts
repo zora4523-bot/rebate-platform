@@ -16,6 +16,8 @@
 //    ./index.ts, validated there; any other key (quietDefaultTables and dayPartitions included)
 //    → MaintenanceError
 //    ('invalid_option') synchronously. Opens no connection, reads no time, logs nothing.
+//    Because dayPartitions is on, the worker also deletes expired link_open_attempts in the same
+//    daily run as the link_logs day-partition drop (B1-01zk, section J of ./index.ts).
 //
 // 3. `startWorkerServices(parts)` → Promise<WorkerServices> — start and stop order of the worker
 //    entry, testable without a process. parts (a plain object):
