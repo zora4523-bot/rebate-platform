@@ -14,7 +14,13 @@ import {
   type Ref,
   type RefObject,
 } from 'react';
-import { CheckCircleOutlined, CopyOutlined, UserOutlined } from '@ant-design/icons';
+import {
+  CheckCircleOutlined,
+  CopyOutlined,
+  EyeInvisibleOutlined,
+  EyeOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import {
   Alert,
   Avatar,
@@ -113,6 +119,8 @@ function LoginSteps({
   return (
     <Steps
       size="small"
+      responsive={false}
+      className="login-progress"
       items={[
         { title: loginText('steps.credentials'), status: stage === 'first' ? 'process' : 'finish' },
         {
@@ -133,6 +141,22 @@ interface FieldProps {
   readonly required?: boolean;
   readonly error?: string | undefined;
   readonly inputRef?: Ref<InputRef>;
+}
+
+/**
+ * Show / hide password as a real antd Button (focusable, named, aria-pressed); Input.Password
+ * clones it and adds the toggling onClick, so Enter and Space work from the keyboard.
+ */
+function renderVisibilityToggle(visible: boolean): ReactNode {
+  return (
+    <Button
+      type="text"
+      size="small"
+      aria-label={loginText(visible ? 'credentials.hide_password' : 'credentials.show_password')}
+      aria-pressed={visible}
+      icon={visible ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+    />
+  );
 }
 
 /** One labelled antd Input in a Form.Item; local and server (20001) errors show on the item. */
@@ -167,7 +191,11 @@ function Field({
       validateStatus={invalid ? 'error' : ''}
       help={invalid ? <span id={errorId}>{error}</span> : undefined}
     >
-      {password === true ? <Input.Password {...inputProps} /> : <Input {...inputProps} />}
+      {password === true ? (
+        <Input.Password {...inputProps} iconRender={renderVisibilityToggle} />
+      ) : (
+        <Input {...inputProps} />
+      )}
     </Form.Item>
   );
 }
@@ -662,7 +690,12 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
             status="success"
             className="login-result"
             title={
-              <Typography.Title level={4} ref={headingRef} tabIndex={-1}>
+              <Typography.Title
+                level={4}
+                ref={headingRef}
+                tabIndex={-1}
+                className="login-focus-title"
+              >
                 {loginText('done.title')}
               </Typography.Title>
             }
@@ -702,7 +735,13 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
               {view === 'done' ? (
                 <Typography.Text type="secondary">{loginText('done.subtitle')}</Typography.Text>
               ) : (
-                <Typography.Title level={5} ref={headingRef} tabIndex={-1} style={{ margin: 0 }}>
+                <Typography.Title
+                  level={5}
+                  ref={headingRef}
+                  tabIndex={-1}
+                  className="login-focus-title"
+                  style={{ margin: 0 }}
+                >
                   {loginText(titleKey)}
                 </Typography.Title>
               )}
