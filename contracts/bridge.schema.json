@@ -396,7 +396,7 @@
           "path": {
             "type": "string",
             "maxLength": 2048,
-            "pattern": "^/v1/[A-Za-z0-9_/-]*(\\?[^#]*)?$",
+            "pattern": "^/v1(/[A-Za-z0-9_-]+)+(\\?[^#]*)?$",
             "description": "Path plus raw query, without host. Native compares the path part (query removed) exactly with signed_paths; '.', '%' and empty segments are rejected by the pattern"
           },
           "body": {

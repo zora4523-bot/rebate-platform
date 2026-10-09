@@ -4581,6 +4581,7 @@ export interface components {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
         NoStoreClientError: {
             headers: {
+                "X-Trace-Id": components["headers"]["TraceId"];
                 "Cache-Control": components["headers"]["NoStore"];
                 [name: string]: unknown;
             };
@@ -4591,6 +4592,7 @@ export interface components {
         /** @description Same as TooManyRequests (42901 with Retry-After), with Cache-Control no-store (share pages). */
         NoStoreTooManyRequests: {
             headers: {
+                "X-Trace-Id": components["headers"]["TraceId"];
                 "Cache-Control": components["headers"]["NoStore"];
                 /** @description Seconds to wait before retrying. */
                 "Retry-After": number;
@@ -4610,6 +4612,7 @@ export interface components {
         /** @description Same as ServerError, with Cache-Control no-store (share pages). */
         NoStoreServerError: {
             headers: {
+                "X-Trace-Id": components["headers"]["TraceId"];
                 "Cache-Control": components["headers"]["NoStore"];
                 [name: string]: unknown;
             };
@@ -4623,6 +4626,7 @@ export interface components {
          */
         ClientError: {
             headers: {
+                "X-Trace-Id": components["headers"]["TraceId"];
                 [name: string]: unknown;
             };
             content: {
@@ -4632,6 +4636,7 @@ export interface components {
         /** @description Rate limited (42901) with the required Retry-After header in seconds (BR-ID-05, BR-TEXT-14). */
         TooManyRequests: {
             headers: {
+                "X-Trace-Id": components["headers"]["TraceId"];
                 /** @description Seconds to wait before retrying. */
                 "Retry-After": number;
                 [name: string]: unknown;
@@ -4650,6 +4655,7 @@ export interface components {
         /** @description Server-side error; 503 codes carry `data.platform` / `data.reason` where listed. */
         ServerError: {
             headers: {
+                "X-Trace-Id": components["headers"]["TraceId"];
                 [name: string]: unknown;
             };
             content: {
@@ -4732,6 +4738,8 @@ export interface components {
         NoStore: "no-store";
         /** @description Always no-cache; the stream is neither cached nor buffered. */
         NoCache: "no-cache";
+        /** @description The trace id of the request on every response, the same value as `trace_id` in the body (02 logging); echo of a well-formed X-Trace-Id request header, otherwise a generated UUID. */
+        TraceId: components["schemas"]["TraceId"];
     };
     pathItems: never;
 }
@@ -4749,6 +4757,7 @@ export interface operations {
             /** @description The process is initialised. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4804,6 +4813,7 @@ export interface operations {
             /** @description Device registered. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4863,6 +4873,7 @@ export interface operations {
             /** @description Accepted (also when the report was ignored). */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4928,6 +4939,7 @@ export interface operations {
             /** @description The provider accepted the SMS, or its outcome is unknown (counted as sent). */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5002,6 +5014,7 @@ export interface operations {
             /** @description Logged in. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5081,6 +5094,7 @@ export interface operations {
             /** @description A new attempt. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5155,6 +5169,7 @@ export interface operations {
             /** @description Logged in. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5236,6 +5251,7 @@ export interface operations {
             /** @description Logged in. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5316,6 +5332,7 @@ export interface operations {
             /** @description Logged in. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5385,6 +5402,7 @@ export interface operations {
             /** @description A step-up token for the action. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5452,6 +5470,7 @@ export interface operations {
             /** @description New token pair. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5504,6 +5523,7 @@ export interface operations {
             /** @description The session is revoked. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5563,6 +5583,7 @@ export interface operations {
             /** @description The consent row is recorded. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5618,6 +5639,7 @@ export interface operations {
             /** @description A new h5_token. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5668,6 +5690,7 @@ export interface operations {
             /** @description Authorization state per platform. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5735,6 +5758,7 @@ export interface operations {
             /** @description The authorization link. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5796,6 +5820,7 @@ export interface operations {
             /** @description The binding state after binding. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5860,6 +5885,7 @@ export interface operations {
             /** @description A page of orders. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5925,6 +5951,7 @@ export interface operations {
             /** @description Pending-track cards. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5997,6 +6024,7 @@ export interface operations {
             /** @description The card of this attempt is closed. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6045,6 +6073,7 @@ export interface operations {
             /** @description The order. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6138,6 +6167,7 @@ export interface operations {
             /** @description Articles of the category. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6215,6 +6245,7 @@ export interface operations {
             /** @description The article. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6268,6 +6299,7 @@ export interface operations {
             /** @description Version information. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6334,6 +6366,7 @@ export interface operations {
             /** @description The draft page. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6386,6 +6419,7 @@ export interface operations {
             /** @description The message. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6443,6 +6477,7 @@ export interface operations {
             /** @description The summary. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6506,6 +6541,7 @@ export interface operations {
             /** @description The dashboard figures. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6613,6 +6649,7 @@ export interface operations {
             /** @description Entries, newest first. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6688,6 +6725,7 @@ export interface operations {
             /** @description Rules and estimate. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6753,6 +6791,7 @@ export interface operations {
             /** @description Withdrawals, newest first. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6848,6 +6887,7 @@ export interface operations {
             /** @description The withdrawal. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6911,6 +6951,7 @@ export interface operations {
             /** @description The withdrawal. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6972,6 +7013,7 @@ export interface operations {
             /** @description The current user. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7083,6 +7125,7 @@ export interface operations {
             /** @description The number is bound to the account. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7129,6 +7172,7 @@ export interface operations {
             /** @description The current payout account, or an empty object. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7192,6 +7236,7 @@ export interface operations {
             /** @description The saved account (masked). */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7244,6 +7289,7 @@ export interface operations {
             /** @description The read states. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7307,6 +7353,7 @@ export interface operations {
             /** @description Recorded (or already recorded). */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7356,6 +7403,7 @@ export interface operations {
             /** @description The read records are cleared. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7402,6 +7450,7 @@ export interface operations {
             /** @description The latest request, or null. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7477,6 +7526,7 @@ export interface operations {
             /** @description The request, now in cooling. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7531,6 +7581,7 @@ export interface operations {
             /** @description The cancelled request. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7590,6 +7641,7 @@ export interface operations {
             /** @description My appeals, newest first. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7676,6 +7728,7 @@ export interface operations {
             /** @description The appeal, new or the processing one already on this target. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7749,6 +7802,7 @@ export interface operations {
             /** @description The key is abandoned, or its completed result is returned. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7787,6 +7841,7 @@ export interface operations {
             /** @description The current configuration. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7953,6 +8008,7 @@ export interface operations {
             /** @description One page of results. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7997,6 +8053,7 @@ export interface operations {
             /** @description The product card of the detail page. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8054,6 +8111,7 @@ export interface operations {
             /** @description One result per recognised link or token, in input order. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8122,6 +8180,7 @@ export interface operations {
             /** @description Jump plan and price re-check result. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8190,6 +8249,7 @@ export interface operations {
             /** @description The registered link and its jump plan. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8231,6 +8291,7 @@ export interface operations {
             /** @description The link kind and its card. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8307,6 +8368,7 @@ export interface operations {
             /** @description The share page card. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     "Cache-Control": components["headers"]["NoStore"];
                     [name: string]: unknown;
                 };
@@ -8394,6 +8456,7 @@ export interface operations {
             /** @description The token. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     "Cache-Control": components["headers"]["NoStore"];
                     [name: string]: unknown;
                 };
@@ -8441,6 +8504,7 @@ export interface operations {
             /** @description Account and password accepted; the next step and its ticket. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8451,6 +8515,7 @@ export interface operations {
             /** @description Login rejected (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8485,6 +8550,7 @@ export interface operations {
             /** @description Password replaced; the next step and its ticket. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8507,6 +8573,7 @@ export interface operations {
             /** @description Password change rejected (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8540,6 +8607,7 @@ export interface operations {
             /** @description The secret to bind. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     "Cache-Control": components["headers"]["NoStore"];
                     [name: string]: unknown;
                 };
@@ -8562,6 +8630,7 @@ export interface operations {
             /** @description Secret not issued (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8596,6 +8665,7 @@ export interface operations {
             /** @description Bound and signed in. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8618,6 +8688,7 @@ export interface operations {
             /** @description Binding rejected (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8652,6 +8723,7 @@ export interface operations {
             /** @description Signed in. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8674,6 +8746,7 @@ export interface operations {
             /** @description Code rejected (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8698,6 +8771,7 @@ export interface operations {
             /** @description The admin session is revoked. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8716,6 +8790,7 @@ export interface operations {
             /** @description Not signed out (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8740,6 +8815,7 @@ export interface operations {
             /** @description The provider accepted the SMS, or its outcome is unknown (counted as sent). */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8761,6 +8837,7 @@ export interface operations {
             /** @description Not sent (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8789,6 +8866,7 @@ export interface operations {
             /** @description A step-up token of the requested tier. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8799,6 +8877,7 @@ export interface operations {
             /** @description Verification failed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8823,6 +8902,7 @@ export interface operations {
             /** @description The account and its permission points. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8833,6 +8913,7 @@ export interface operations {
             /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8862,6 +8943,7 @@ export interface operations {
             /** @description One page of admin accounts. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8911,6 +8993,7 @@ export interface operations {
             /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8938,6 +9021,7 @@ export interface operations {
             /** @description The admin account. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8966,6 +9050,7 @@ export interface operations {
             /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8990,6 +9075,7 @@ export interface operations {
             /** @description Every platform mark with its published version. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9097,6 +9183,7 @@ export interface operations {
             /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9129,6 +9216,7 @@ export interface operations {
             /** @description One page of versions, newest first. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9183,6 +9271,7 @@ export interface operations {
             /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9214,6 +9303,7 @@ export interface operations {
             /** @description The new version, or the version this upload_id was already saved as. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9224,6 +9314,7 @@ export interface operations {
             /** @description Not saved (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9255,6 +9346,7 @@ export interface operations {
             /** @description The cleaned file, ready to be previewed and saved. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9264,6 +9356,7 @@ export interface operations {
             /** @description Request body above the global limit (20001 with data.fields=[body]). */
             413: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9286,6 +9379,7 @@ export interface operations {
             /** @description Rejected (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9326,6 +9420,7 @@ export interface operations {
             /** @description The version with its registration. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9358,6 +9453,7 @@ export interface operations {
             /** @description Not changed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9389,6 +9485,7 @@ export interface operations {
             /** @description The mark with its new published version. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9429,6 +9526,7 @@ export interface operations {
             /** @description Not published (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9465,6 +9563,7 @@ export interface operations {
             /** @description The mark, now on its built-in image. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9491,6 +9590,7 @@ export interface operations {
             /** @description Not restored (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9527,6 +9627,7 @@ export interface operations {
             /** @description The new session, or the owner's newest empty one. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9577,6 +9678,7 @@ export interface operations {
             /** @description The current session or null. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9628,6 +9730,7 @@ export interface operations {
             /** @description The reply stream (frames per contracts/agent-stream.schema.json). */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     "Cache-Control": components["headers"]["NoCache"];
                     [name: string]: unknown;
                 };
@@ -9670,6 +9773,7 @@ export interface operations {
             /** @description The run is being stopped. */
             200: {
                 headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
