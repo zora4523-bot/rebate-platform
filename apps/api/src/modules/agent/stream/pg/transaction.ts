@@ -63,6 +63,11 @@ export function retryable(error: unknown): boolean {
 }
 
 export function unavailable(error: unknown): never {
+  // Outcome lookup has already classified these errors. In particular, a failed lookup
+  // cannot turn an unknown admission outcome into a confirmed rollback at the port boundary.
+  if (error instanceof AdmissionUnavailableError) throw error;
+  if (error instanceof TransactionFailure && error.original instanceof AdmissionUnavailableError)
+    throw error.original;
   if (retryable(error)) {
     throw new AdmissionUnavailableError(
       error instanceof TransactionFailure && error.commitAttempted ? 'unknown' : 'rolled_back',
@@ -102,39 +107,55 @@ export function createTransactions(deps: PgRunDeps) {
     let result: T;
     try {
       result = await deps.db.connection().execute(async (connection: Kysely<DB>) => {
-        // Connection metadata bootstrap, before starting the instrumented transaction. Every
-        // statement in the transaction (including the first SET) runs through beforeSql.
-        const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(
-          connection,
-        );
-        const pid = rows[0]!.pid;
-        if (prepare) {
-          await prepare({
-            async query(statement) {
-              await deps.hooks?.beforeSql?.(step, pid);
-              return (await statement.execute(connection)).rows;
-            },
-          });
-        }
-        await deps.hooks?.beforeSql?.(step, pid);
-        return connection
-          .transaction()
-          .setIsolationLevel('read committed')
-          .execute(async (trx) => {
-            const q: Queries = {
+        try {
+          // Connection metadata bootstrap, before starting the instrumented transaction. Every
+          // statement in the transaction (including the first SET) runs through beforeSql.
+          const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(
+            connection,
+          );
+          const pid = rows[0]!.pid;
+          if (prepare) {
+            await prepare({
               async query(statement) {
                 await deps.hooks?.beforeSql?.(step, pid);
-                return (await statement.execute(trx)).rows;
+                return (await statement.execute(connection)).rows;
               },
-            };
-            await q.query(sql`SET LOCAL lock_timeout = '2s'`);
-            await q.query(sql`SET LOCAL statement_timeout = '3s'`);
-            const value = await work(q);
-            await deps.hooks?.beforeCommit?.(step, pid);
-            await deps.hooks?.beforeSql?.(step, pid);
-            commitAttempted = true;
-            return value;
-          });
+            });
+          }
+          await deps.hooks?.beforeSql?.(step, pid);
+          return await connection
+            .transaction()
+            .setIsolationLevel('read committed')
+            .execute(async (trx) => {
+              const q: Queries = {
+                async query(statement) {
+                  await deps.hooks?.beforeSql?.(step, pid);
+                  return (await statement.execute(trx)).rows;
+                },
+              };
+              await q.query(sql`SET LOCAL lock_timeout = '2s'`);
+              await q.query(sql`SET LOCAL statement_timeout = '3s'`);
+              const value = await work(q);
+              await deps.hooks?.beforeCommit?.(step, pid);
+              await deps.hooks?.beforeSql?.(step, pid);
+              commitAttempted = true;
+              return value;
+            });
+        } catch (error) {
+          // Kysely skips ROLLBACK when BEGIN fails. A pg FATAL response can reject BEGIN
+          // before the socket closes, while pg still considers the client reusable. Keep
+          // this lease until another round trip either confirms a clean session or observes
+          // the disconnect: pg then marks it non-queryable and pg-pool discards it on release.
+          // Cleanup must also cover bootstrap/preparation failures and must not use fault
+          // hooks (a hook failure must never prevent rollback). Never terminate another PID
+          // or destroy the shared pool. Preserve the original failure and commit phase.
+          try {
+            await sql`ROLLBACK`.execute(connection);
+          } catch {
+            // The failed cleanup has observed the broken connection before it is released.
+          }
+          throw error;
+        }
       });
       await deps.hooks?.afterCommit?.(step);
     } catch (error) {
