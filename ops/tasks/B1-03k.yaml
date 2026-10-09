@@ -9,6 +9,9 @@ type: impl
 # 本任务不碰 payout，也不据此封禁或拦截登录。阈值 risk.device_login_accounts_limit 与开关 risk.merge_tombstone_dedupe 经 F1-02b 的配置读取取值（B1-03e 定义的端口），
 # 未配置时用 08 的默认值兜底（3、on）。消费者在 B2，优先级低于 b～i。
 # identity 与 app.module.ts 路径，整体按 RV2。
+# 2026-10-09 identity-lane 补：主干 login_logs 只有 device_id_hash，缺 04 §3.2 的 device_hash 列（BR-ID-37 口径）与 (app_id, device_hash, created_at) 索引；risk_hits 无唯一约束，
+# 判定幂等（硬规则 4）要部分唯一索引。本任务一并新增迁移（加列可空、存量行不回填——device_id_hash 不可逆、上线前无真实数据，空值行不参与判定；索引；授权写在同一迁移），
+# schema.sql 与 db.gen.ts 由编排者在测试机上重新生成。不另开库表任务。
 refs: []
 refs_hash: {}
 deps: [B1-03d, B1-03e, B1-02j]
@@ -16,6 +19,9 @@ paths:
   - 'apps/api/src/modules/risk/**'
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/app.module.ts'
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
 test_paths:
   - 'test/spec/risk/same-device/**'
 impl: claude
