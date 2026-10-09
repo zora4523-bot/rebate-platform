@@ -108,6 +108,14 @@ export type {
 // Stage ② context (BR-ID-01, BR-ID-07): identity's token check attaches it at the registration
 // point; handlers and later stages of any module read it with tokenPrincipal.
 export { tokenPrincipal, type TokenPrincipal } from './http/token-context.ts';
+// Admin token check context (F1-06k): the verified admin session on the admin entry's requests.
+export {
+  adminPrincipal,
+  type AdminPrincipal,
+  type AdminPrincipalCarrier,
+} from './http/admin-context.ts';
+// CORS of the admin entry (F1-06k; 02 §3.4): only the console's exact origin.
+export { installAdminCors, type AdminCorsPolicy } from './http/admin-cors.ts';
 // Generated x-auth table of every contract operation (BR-ID-01 ②; no openapi at run time).
 export {
   contractAuthRoutes,

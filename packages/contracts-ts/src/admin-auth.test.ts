@@ -56,6 +56,16 @@ const OPERATIONS = [
   ['get', '/admin/v1/admins/{admin_id}', 'super', [10001, 10403, 20001]],
 ] as const;
 
+/** The operations F1-06k implements: they carry no x-implementation marker any more. */
+const IMPLEMENTED: ReadonlySet<string> = new Set([
+  '/admin/v1/auth/login',
+  '/admin/v1/auth/password',
+  '/admin/v1/auth/totp/secret',
+  '/admin/v1/auth/totp/bind',
+  '/admin/v1/auth/totp',
+  '/admin/v1/auth/logout',
+]);
+
 /** Codes every admin operation may return without listing them (openapi info.description). */
 const ADMIN_COMMON = [10403, 20001, 42901, 50001];
 
@@ -90,9 +100,11 @@ function examplesOf(media: Media): [string, unknown][] {
 const schema = (name: string): object => contract.components.schemas[name]!;
 
 describe('admin operations (04 §6.6, CT-02f)', () => {
-  it.each(OPERATIONS)('%s %s exists, is planned, x-auth %s', (method, path, auth, codes) => {
+  it.each(OPERATIONS)('%s %s exists, x-auth %s', (method, path, auth, codes) => {
     const op = operation(method, path);
-    expect(op['x-implementation']).toBe('planned');
+    // F1-06k implements the login steps and logout (no marker); the others stay planned.
+    if (IMPLEMENTED.has(path)) expect(op['x-implementation']).toBeUndefined();
+    else expect(op['x-implementation']).toBe('planned');
     expect(op['x-auth']).toBe(auth);
     expect(op.security).toEqual(auth === 'none' ? [] : [{ adminBearerAuth: [] }]);
     expect(op['x-error-codes']).toEqual(expect.arrayContaining([...codes]));

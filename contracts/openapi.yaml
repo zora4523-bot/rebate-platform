@@ -4213,7 +4213,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10008
         - 10009
@@ -4310,7 +4309,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10009
@@ -4386,7 +4384,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10009
@@ -4459,7 +4456,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10009
@@ -4534,7 +4530,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10009
@@ -4606,7 +4601,6 @@ paths:
       x-auth: admin
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

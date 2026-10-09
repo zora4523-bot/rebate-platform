@@ -2,9 +2,10 @@
 // plan has no request signature check (stream and admin today) refuses to register a contract
 // x-signed route, so it cannot start serving one unchecked (BR-ID-09 ①); an entry whose plan has
 // no token check refuses a contract route that takes a token (BR-ID-01 ②), and a token check placed
-// before the signature check keeps the entry from starting; every entry refuses a contract route
-// at an admin level (x-auth admin / super) until an admin token check exists; and an error while
-// the plan is installed closes the application it already created.
+// before the signature check keeps the entry from starting; an entry whose plan has no admin check
+// (api, stream) refuses a contract route at an admin level (x-auth admin / super), while the admin
+// entry, whose plan runs it (F1-06k), registers them; and an error while the plan is installed
+// closes the application it already created.
 import { Controller, Post } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -96,7 +97,7 @@ it('[BR-ID-01] a Nest controller on a login template keeps the stream entry from
   );
 });
 
-for (const entry of ['api', 'stream', 'admin'] as const) {
+for (const entry of ['api', 'stream'] as const) {
   it(`[BR-ID-01] the ${entry} entry refuses a contract admin / super route at registration`, async () => {
     const admin = contractAuthRoutes().filter(
       (route) => route.auth === 'admin' || route.auth === 'super',
@@ -109,13 +110,34 @@ for (const entry of ['api', 'stream', 'admin'] as const) {
       expect(() =>
         server.route({ method: route.method, url: route.path, handler: () => ({}) }),
       ).toThrow(
-        `no entry runs the admin token check (admin_auth_level) yet; the ${entry} entry refuses this contract admin route: ${route.method} ${route.path}`,
+        `the ${entry} entry does not run the admin token check (admin_auth_level); it refuses this contract admin route: ${route.method} ${route.path}`,
       );
     }
     await app.init();
     expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
   });
 }
+
+it('[BR-ID-34] the admin entry, whose plan runs the admin check, registers contract admin / super routes', async () => {
+  const admin = contractAuthRoutes().filter(
+    (route) => route.auth === 'admin' || route.auth === 'super',
+  );
+  app = await createHttpApp('admin', overrides('admin'));
+  const server = app.getHttpAdapter().getInstance();
+  // Nest registers the implemented ones (logout) in init; the planned ones register as probes.
+  await app.init();
+  let probed = 0;
+  for (const route of admin) {
+    if (server.hasRoute({ method: route.method, url: route.path })) continue;
+    expect(() =>
+      server.route({ method: route.method, url: route.path, handler: () => ({}) }),
+    ).not.toThrow();
+    probed += 1;
+  }
+  expect(probed).toBeGreaterThan(0);
+  expect(server.hasRoute({ method: 'POST', url: '/admin/v1/auth/logout' })).toBe(true);
+  expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
+});
 
 it('[BR-ID-01] an api plan running the token check before the signature check keeps the entry from starting', async () => {
   const original = AppModule.forEntry;
