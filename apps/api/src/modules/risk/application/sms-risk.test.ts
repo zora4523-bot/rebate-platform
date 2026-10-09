@@ -108,4 +108,38 @@ describe('sms risk', () => {
     expect(await risk.admit(request)).toEqual({ code: 0 });
     expect(calls.map((keys) => keys[0]!.split(':')[0])).toEqual(['ip_send', 'dev']);
   });
+  it('[AC-B1-03g#5] the device step reads its time after the IP step, so a slow IP read does not age it', async () => {
+    const { logger } = memoryLogger();
+    const clock = new FixedClock('2031-05-06T10:00:00Z');
+    const seen: { key: string; now: string }[] = [];
+    const evalScript = (
+      _script: string,
+      options: { keys: readonly string[]; args: readonly string[] },
+    ) => {
+      const key = options.keys[0]!.split(':')[0]!;
+      seen.push({ key, now: options.args[0]! });
+      // the IP round trip takes 300 ms (another process may admit the same phone meanwhile)
+      if (key === 'ip_send') clock.advanceMs(300);
+      return Promise.resolve(key === 'dev' ? [1, 0] : [0, 0]);
+    };
+    const fail = () => Promise.reject(new Error('unused'));
+    const redis = {
+      namespace: () => ({ get: fail, set: fail, eval: evalScript }),
+      close: () => Promise.resolve(),
+      onApplicationShutdown: () => Promise.resolve(),
+    } as unknown as RedisHandle;
+    const risk = createSmsRisk({
+      clock,
+      redis,
+      logger,
+      config: { configValue: () => Promise.resolve(null) },
+      crypto: ephemeralSmsRiskIndex(),
+    });
+    expect(await risk.admit(request)).toEqual({ code: 0 });
+    const start = Date.parse('2031-05-06T10:00:00Z');
+    expect(seen).toEqual([
+      { key: 'ip_send', now: String(start) },
+      { key: 'dev', now: String(start + 300) },
+    ]);
+  });
 });

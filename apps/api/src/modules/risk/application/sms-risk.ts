@@ -9,7 +9,8 @@
 //      accepted for the IP (sms.ip_sends_per_hour, default 20). Either reached → 42901 with the
 //      later release: the (N−L+1)-th oldest record + 3601 s − now. Nothing is admitted then;
 //   ② the device: the admission set of (app, device_hash), members the phone's keyed digest.
-//      One Lua script cleans the expired members, then: a member → refreshed and admitted; not a
+//      One Lua script cleans the expired members, then: a member → refreshed (its time only moves
+//      forward: max of the held and this request's time) and admitted; not a
 //      member with room → added and admitted; otherwise 42901 (not added) waiting for the
 //      (N−L+1)-th oldest member (the earliest one when the set is exactly full) + 3601 s − now.
 //      The same script appends a request record (time in ms, phone digest, result) to a capped
@@ -135,8 +136,11 @@ local stamp = string.format('%.0f', now)
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. string.format('%.0f', now - window))
 local result
 local outcome
-if redis.call('ZSCORE', KEYS[1], member) then
-  redis.call('ZADD', KEYS[1], stamp, member)
+local held = redis.call('ZSCORE', KEYS[1], member)
+if held then
+  -- a refresh only moves a member's time forward: a late request (its clock read before a
+  -- newer refresh by another process) must not pull the member back and age it out early
+  if now > tonumber(held) then redis.call('ZADD', KEYS[1], stamp, member) end
   result = {1, 0}
   outcome = 'refreshed'
 else
@@ -409,13 +413,21 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
         if (ipWait > 0) return { code: 42901, retryAfterSec: seconds(ipWait) };
       }
 
-      // ② the device's admission set, judged, recorded and logged in one atomic step.
+      // ② the device's admission set, judged, recorded and logged in one atomic step. Its time is
+      // read after ①, so the IP round trip does not make it older than a concurrent request's.
+      const deviceNow = clock.now().getTime();
       let verdict: number[];
       try {
         const member = crypto.blindIndex(phone, SMS_RISK_PHONE_CONTEXT);
         const reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(DEVICE_SCRIPT, {
           keys: [`dev:${appId}:${deviceHash}`, `req:${appId}:${deviceHash}`],
-          args: [String(now), String(WINDOW_MS), String(deviceLimit), member, String(RECORD_CAP)],
+          args: [
+            String(deviceNow),
+            String(WINDOW_MS),
+            String(deviceLimit),
+            member,
+            String(RECORD_CAP),
+          ],
           ttlSeconds: WINDOW_TTL_SEC,
         });
         verdict = integers(reply, 2);
