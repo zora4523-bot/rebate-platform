@@ -10,6 +10,7 @@ import {
   type EventBus,
   type EventBusOptions,
   type EventConsumerOptions,
+  type PublishResult,
   type ReceivedEvent,
 } from './types.ts';
 import * as check from './validation.ts';
@@ -23,6 +24,17 @@ export function newEventId(now: Date): string {
   const hex = bytes.toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+/**
+ * Per business transaction: the tail of its publishes (one connection, so publishes on it run one
+ * after another) and whether its isolation level has been checked.
+ */
+interface TransactionState {
+  tail: Promise<unknown>;
+  checked: boolean;
+}
+
+const transactions = new WeakMap<object, TransactionState>();
 
 export function createEventBus(options: EventBusOptions): EventBus {
   if (
@@ -54,8 +66,9 @@ export function createEventBus(options: EventBusOptions): EventBus {
         throw new EventError('invalid_event');
       if (!check.appId(event.appId)) throw new EventError('invalid_app_id');
       if (!EVENT_NAMES.includes(event.name)) throw new EventError('unknown_event');
-      const version = Object.hasOwn(event, 'version') ? event.version : 1;
-      if (!check.version(version)) throw new EventError('invalid_version');
+      const given = Object.hasOwn(event, 'version') ? event.version : 1;
+      if (!check.version(given)) throw new EventError('invalid_version');
+      const version: number = given;
       if (Object.hasOwn(event, 'eventId') && !check.uuid(event.eventId)) {
         throw new EventError('invalid_event_id');
       }
@@ -68,46 +81,70 @@ export function createEventBus(options: EventBusOptions): EventBus {
       const occurredAt = Date.prototype.toISOString.call(now);
       const auditPayload = JSON.stringify({ v: version, data });
 
-      // event_log is partitioned on occurred_at; its index on event_id is not globally unique.
-      // The transaction lock spans every partition and lasts until the business transaction ends.
-      await sql`select pg_advisory_xact_lock(hashtextextended(${`platform.events:${eventId}`}, 0))`.execute(
-        trx,
-      );
-      const app = trx.withSchema('app');
-      const previous = await app
-        .selectFrom('event_log')
-        .select((eb) =>
-          eb
-            .and([
-              eb('app_id', '=', appId),
-              eb('name', '=', name),
-              eb('payload', '=', sql<DB['event_log']['payload']>`${auditPayload}::jsonb`),
-            ])
-            .as('same'),
-        )
-        .where('event_id', '=', eventId)
-        .executeTakeFirst();
-      if (previous !== undefined) {
-        if (!previous.same) throw new EventError('event_conflict');
-        return Object.freeze({ eventId, duplicate: true });
+      let state = transactions.get(trx);
+      if (state === undefined) {
+        state = { tail: Promise.resolve(), checked: false };
+        transactions.set(trx, state);
       }
-      await app
-        .insertInto('event_log')
-        .values({
-          app_id: appId,
-          event_id: eventId,
-          name,
-          payload: sql`${auditPayload}::jsonb`,
-          occurred_at: occurredAt,
-        })
-        .execute();
-      const envelope = { app_id: appId, v: version, occurred_at: occurredAt, data };
-      for (const route of routes) {
-        if (route.events.includes(name)) {
-          await queue.send(`evt.${route.consumer}`, name, envelope, { trx, id: eventId });
+      const current = state;
+      // The advisory lock below is re-entrant within the session, so two publishes on the same
+      // transaction would both pass the lookup before either inserts: run them one after another.
+      const run = current.tail.then(() => write());
+      current.tail = run.catch(() => undefined);
+      return run;
+
+      async function write(): Promise<PublishResult> {
+        if (!current.checked) {
+          // Under REPEATABLE READ or SERIALIZABLE the lookup reads the transaction's snapshot and
+          // misses a row committed by a concurrent publish after the lock was granted.
+          const { rows } = await sql<{
+            level: string;
+          }>`select current_setting('transaction_isolation') as level`.execute(trx);
+          if (rows[0]?.level !== 'read committed') throw new EventError('invalid_transaction');
+          current.checked = true;
         }
+
+        // event_log is partitioned on occurred_at; its index on event_id is not globally unique.
+        // The transaction lock spans every partition and lasts until the business transaction ends.
+        await sql`select pg_advisory_xact_lock(hashtextextended(${`platform.events:${eventId}`}, 0))`.execute(
+          trx,
+        );
+        const app = trx.withSchema('app');
+        const previous = await app
+          .selectFrom('event_log')
+          .select((eb) =>
+            eb
+              .and([
+                eb('app_id', '=', appId),
+                eb('name', '=', name),
+                eb('payload', '=', sql<DB['event_log']['payload']>`${auditPayload}::jsonb`),
+              ])
+              .as('same'),
+          )
+          .where('event_id', '=', eventId)
+          .executeTakeFirst();
+        if (previous !== undefined) {
+          if (!previous.same) throw new EventError('event_conflict');
+          return Object.freeze({ eventId, duplicate: true });
+        }
+        await app
+          .insertInto('event_log')
+          .values({
+            app_id: appId,
+            event_id: eventId,
+            name,
+            payload: sql`${auditPayload}::jsonb`,
+            occurred_at: occurredAt,
+          })
+          .execute();
+        const envelope = { app_id: appId, v: version, occurred_at: occurredAt, data };
+        for (const route of routes) {
+          if (route.events.includes(name)) {
+            await queue.send(`evt.${route.consumer}`, name, envelope, { trx, id: eventId });
+          }
+        }
+        return Object.freeze({ eventId, duplicate: false });
       }
-      return Object.freeze({ eventId, duplicate: false });
     },
   };
 }
@@ -146,8 +183,7 @@ export function registerEventConsumer(
       !check.keys(envelope, ['app_id', 'v', 'occurred_at', 'data']) ||
       !check.appId(envelope.app_id) ||
       !check.version(envelope.v) ||
-      typeof envelope.occurred_at !== 'string' ||
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(envelope.occurred_at) ||
+      !check.occurredAt(envelope.occurred_at) ||
       !check.plain(envelope.data)
     )
       throw new EventError('invalid_event');
@@ -171,6 +207,10 @@ export function registerEventConsumer(
         .executeTakeFirst();
       if (inserted === undefined) return true;
       await handler(event, trx);
+      // A handler that caught a database error and returned leaves an aborted transaction, whose
+      // commit would silently roll back. Any statement fails there (25P02): the job then fails and
+      // is retried, as if the handler had rejected.
+      await sql`select 1`.execute(trx);
       return false;
     });
     if (duplicate) {
