@@ -18,7 +18,7 @@ import type { OpenAPIV3_1 } from 'openapi-types';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { AppModule } from '../../../app.module.ts';
 import { createHttpApp } from '../../../bootstrap.ts';
-import { IdempotencyError } from '../idempotency/index.ts';
+import { IdempotencyError, requestHashOf } from '../idempotency/index.ts';
 import { FixedClock, createRootLogger, loadConfig } from '../index.ts';
 import { createValidatorCompiler } from '../validation/index.ts';
 import { PlatformFastifyAdapter } from './global-errors.ts';
@@ -81,6 +81,11 @@ class ProbeController {
   @UseGuards(FailingGuard)
   guarded() {
     return { guardWasBypassed: true };
+  }
+
+  @Post('hash')
+  hash(@Body() body: unknown) {
+    return { hash: requestHashOf(body) };
   }
 
   @Post('echo')
@@ -339,4 +344,42 @@ it('[AC-B1-01za#1] the adapter keeps request body errors and Fastify server erro
   } finally {
     await adapter.close();
   }
+});
+
+it('[AC-B1-01zt#4] an unknown outcome closes the connection and logs one error line with method and path only', async () => {
+  lines.length = 0;
+  await expect(
+    post('/__global_errors/controller/uncertain?q=1', `{"note":"${BODY_MARKER}"}`),
+  ).rejects.toMatchObject({ code: 'LIGHT_ECONNRESET' });
+  const errors = lines
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((record) => record['level'] === 50);
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toMatchObject({
+    msg: 'idempotency_outcome_unknown',
+    trace_id: TRACE,
+    method: 'POST',
+    path: '/__global_errors/controller/uncertain',
+  });
+  expect(unhandled()).toEqual([]);
+  expect(lines.join('')).not.toContain(BODY_MARKER);
+});
+
+it('[AC-B1-01zt#2] a body nested beyond the request hash limit answers 400 / 20001 [body], unlogged', async () => {
+  lines.length = 0;
+  const deep = '{"a":'.repeat(5000) + `"${BODY_MARKER}"` + '}'.repeat(5000);
+  const response = await post('/__global_errors/hash', deep);
+  expect(response.statusCode).toBe(400);
+  expect(response.json()).toEqual({
+    code: 20001,
+    msg: '参数校验失败',
+    data: { fields: ['body'] },
+    trace_id: TRACE,
+  });
+  expect(validate(response.json())).toBe(true);
+  expect(unhandled()).toEqual([]);
+  expect(response.body + lines.join('')).not.toContain(BODY_MARKER);
+  const normal = await post('/__global_errors/hash', '{"a":{"b":[1]}}');
+  expect(normal.statusCode).toBe(201);
+  expect(normal.json()).toEqual({ hash: requestHashOf({ a: { b: [1] } }) });
 });
