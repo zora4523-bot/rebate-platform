@@ -1,0 +1,19 @@
+id: CT-06k
+repo: rebate-platform
+title: 迁移门禁受保护测试 CT-06c [AC-CT-06c#1] 去掉「appeals 不是资金表」一条断言（为 CT-06j 把 appeals 纳入保护表清单铺路）
+type: test-change
+# 2026-10-09 入账（负责人同日问及 appeals；Codex 评审 couli#94 指出：申诉以撤销结案会自动生成 BR-FUND-22「申诉恢复」差错单，恢复黑名单作废 / 扣回的订单、补发封禁期间被剥夺的佣金，申诉表是资金恢复的触发源）。
+# 按规划/11 §4.4 先立独立的测试变更任务（先例 CT-06e、CT-06i）。本任务只从 #1 的「不纳入」列表里删掉 'appeals'（相似名字的两条否定断言与两张表的纳入断言保留），
+# 改前（现实现）改后（CT-06j 实现）都绿。纳入行为由 CT-06j 自己的规则测试覆盖。不改任何实现代码。保护路径第一类，合并要批准标签（approvals 第 24 条；只删一条否定断言，不削弱拒绝）。
+refs: []
+refs_hash: {}
+deps: [CT-06h]
+paths:
+  - 'test/spec/db/lint-migrations/funds-objects.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/lint-migrations/**'
+status: todo
+pr: null
