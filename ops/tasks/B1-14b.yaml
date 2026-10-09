@@ -1,15 +1,17 @@
 id: B1-14b
 repo: rebate-platform
-title: 降级接线第一段（暂不开工）：platform/index.ts 导出登记表；用 QA-05a 的注入工具验证百炼行与联盟查询熔断登记的降级
+title: 降级登记表公共导出与百炼进程内组合验收：复用 QA-05a 故障定义，验证已实现 ModelRouter 的主备、熔断与恢复
 type: impl
-# 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
-# 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
-# 开工条件：platform/index.ts 无在途占用（现被 B1-02h、B1-03c、F1-06b、CT-15m 占用）；union 模块 B1-04b/c/o/p、B1-19b 合并；B3-02c 合并（百炼行由 ModelGateway 执行，本段只核对接线）。
-# 联盟搜索降级的 50304 与读缓存属 catalog（BR-PROD-07，B1-05 线），本段不改 catalog，只核对熔断打开时 union 返回可识别的 circuit_open。
-# union 在门禁 forbidden_paths 内（归属，MONEY_PATHS）：联盟治理按登记表取参的接线留给第 12 项分工（Opus 实现、Codex 测试），另立 union 线任务；本段不碰 union。
+# 2026-10-09 从原 b 收窄独立交付；依据 SPEC_REF 的规划/02 §6.2、§14，05 B1-14、QA-05，11 §1.1 与 approvals23。
+# B1-14a 已实现登记表，但 platform/index.ts 未导出；本段只补公共导出，以登记表 model.qwen.policy 配置真实 ModelRouter 做进程内组合验收。
+# 复用 QA-05a buildMappings 的百炼 timeout/429/503 定义；成功应答用明确标注的合成 SSE 夹具，因为 QA-05a normal 是非流式 JSON。
+# 所有 fetch、Scheduler、计量依赖均注入；不监听、不外发、不读真实密钥，不冒称启动 WireMock 或生产装配完成；不改 QA-05a 工具与 Agent 实现。
+# 原联盟查询治理接线、按登记表取参及 circuit_open 验收完整转 B1-14d（默认 Claude，实现受 forbidden_paths 限制），仍等 B1-04p；不删除原义务。
+# B1-14c 保留对本公共导出的依赖；生产 Agent 装配由 B3-03f/B3-05 依真实入口完成，本段不新增虚假应用接线。
+# 开工前已核对 platform/index.ts 原占用 B1-02h/B1-03c/F1-06b/CT-15m 均合并，当前有效 claims 与开放 PR 无相交路径。
 refs: []
 refs_hash: {}
-deps: [B1-14a, QA-05a, B1-04p, B3-02c]
+deps: [B1-14a, QA-05a, B3-02c]
 paths:
   - 'apps/api/src/modules/platform/index.ts'
 test_paths:
@@ -18,6 +20,6 @@ impl: codex
 tester: claude
 accept:
   - 'pnpm verify'
-  - 'test/spec/platform/resilience-wiring/**'
+  - 'test/spec/platform/resilience-wiring/**：公共出口可用且登记表原语义不变；登记表策略组合真实 ModelRouter，百炼故障主备、熔断与恢复可核验'
 status: todo
 pr: null
