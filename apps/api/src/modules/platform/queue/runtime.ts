@@ -1,17 +1,23 @@
 // Queue runtime over pg-boss (B1-01g).
 //
-// Bounded start (B1-01zs). start() reads pgboss.version, then pg-boss reads it again in
-// boss.start() (schema check) and runs further statements (queue reads, create/update, cache
-// warm-up, the first supervise). Every one of these statements issued while start() runs, the
-// runtime's own version read included, runs on a pinned pool connection whose session
-// lock_timeout and statement_timeout are first set to START_STATEMENT_TIMEOUT (20 s) and reset
-// to the session defaults right afterwards. So a session holding a lock on pgboss.version (or on
-// any other pg-boss table) makes that statement, and start(), reject within 20 s — the entry then
-// logs startup_failed and exits 1 — instead of waiting forever. 20 s is well above a short lock
-// held during a deployment and below the rule tests' 60 s limit. Once start() has settled, pg-boss
-// statements (fetch, complete, fail, supervise, send without a transaction) run unbounded on the
-// shared pool as before; the limits never stay on a pooled connection. A db without connection()
-// (unit-test doubles of the option, which only requires executeQuery) runs unbounded.
+// Bounded start (B1-01zs). start() reads pgboss.version, then pg-boss reads it again inside
+// boss.start() (Contractor.check) and runs further statements (queue reads, create/update, cache
+// warm-up, its manager start). From the runtime's own version read until boss.start() returns,
+// every statement runs in a transaction of its own, each on whichever pool connection that
+// transaction borrows: first SELECT set_config('lock_timeout' | 'statement_timeout',
+// START_STATEMENT_TIMEOUT, true) — transaction-local, i.e. SET LOCAL — then the statement, then
+// COMMIT (ROLLBACK on error). Nothing has to be reset, so a pooled connection never keeps the
+// limits, even when the ROLLBACK itself fails. A text that is already a pg-boss transaction
+// (BEGIN; SET LOCAL lock_timeout = 30000; ...; COMMIT) runs unchanged: pg-boss bounds its lock
+// waits itself. So a session holding a lock on pgboss.version (or another pg-boss table) makes
+// that statement, and start(), reject within 20 s — the entry then logs startup_failed and exits
+// 1 — instead of waiting forever. start() rejects as soon as the statement fails; the ROLLBACK
+// that returns the connection runs afterwards, and stop() waits for it (at most stopTimeoutMs).
+// 20 s is well above a short lock held during a deployment and below the rule tests' 60 s limit.
+// The first supervise (worker) and everything after boss.start() returned — fetch, complete,
+// fail, periodic supervise, send — run unbounded on the shared pool as before. A db without
+// transaction() (unit-test doubles of the option, which only requires executeQuery) runs
+// unbounded.
 import { CompiledQuery, sql, type Kysely } from 'kysely';
 import type { DB } from '@couli/db';
 import { PgBoss, fromKysely } from 'pg-boss';
@@ -27,39 +33,11 @@ import {
 } from './types.ts';
 import { runtimeOptions, validateSend } from './validation.ts';
 
-/** Session lock_timeout / statement_timeout of every statement during start(), see the header. */
+/** Transaction-local lock_timeout / statement_timeout during start(), see the header. */
 const START_STATEMENT_TIMEOUT = '20s';
 
-/**
- * Runs `run` on one pinned connection whose lock_timeout and statement_timeout are set for the
- * duration and then reset. A failed multi-statement text (pg-boss's BEGIN ... COMMIT) can leave
- * the session in an aborted transaction: it is rolled back before the reset. When the reset
- * fails, the call fails too (the start then fails), so no limited connection is reported fine.
- */
-async function bounded<T>(db: Kysely<DB>, run: (conn: Kysely<DB>) => Promise<T>): Promise<T> {
-  return db.connection().execute(async (conn) => {
-    await sql`SELECT set_config('lock_timeout', ${START_STATEMENT_TIMEOUT}, false),
-      set_config('statement_timeout', ${START_STATEMENT_TIMEOUT}, false)`.execute(conn);
-    let failed = false;
-    let failure: unknown;
-    let result: T | undefined;
-    try {
-      result = await run(conn);
-    } catch (error) {
-      failed = true;
-      failure = error;
-    }
-    try {
-      if (failed) await sql`ROLLBACK`.execute(conn);
-      await sql`RESET lock_timeout`.execute(conn);
-      await sql`RESET statement_timeout`.execute(conn);
-    } catch (error) {
-      throw failed ? failure : error;
-    }
-    if (failed) throw failure;
-    return result as T;
-  });
-}
+/** pg-boss's own transaction texts (plans.transaction), which set their own lock_timeout. */
+const OWN_TRANSACTION = /^\s*BEGIN\s*;/i;
 
 function queueSettings(spec: QueueSpec) {
   return {
@@ -83,15 +61,48 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
   const runningHandlers = new Set<Promise<void>>();
   const shutdown = new AbortController();
   const deadline = new AbortController();
-  // pg-boss's statements go through `bossDb`: bounded while start() runs (see the header).
+  // ROLLBACKs (and COMMITs) still running after a bounded statement settled; stop() waits.
+  const cleanups = new Set<Promise<void>>();
+  const canBound = typeof db.transaction === 'function';
+  /**
+   * Runs `run` in its own transaction after the transaction-local limits. When the limits or the
+   * statement fail, the result rejects at once with that error; the transaction's ROLLBACK goes
+   * on in the background and is tracked in `cleanups`.
+   */
+  const bounded = <T>(run: (trx: Kysely<DB>) => Promise<T>): Promise<T> => {
+    let failNow: (error: unknown) => void = () => undefined;
+    const failed = new Promise<never>((_, reject) => {
+      failNow = reject;
+    });
+    const transaction = db.transaction().execute(async (trx) => {
+      try {
+        await sql`SELECT set_config('lock_timeout', ${START_STATEMENT_TIMEOUT}, true),
+          set_config('statement_timeout', ${START_STATEMENT_TIMEOUT}, true)`.execute(trx);
+        return await run(trx);
+      } catch (error) {
+        failNow(error);
+        throw error;
+      }
+    });
+    const settled = transaction.then(
+      () => undefined,
+      () => undefined,
+    );
+    cleanups.add(settled);
+    void settled.then(() => cleanups.delete(settled));
+    // Both promises are observed by the race, so neither rejection is unhandled.
+    return Promise.race([transaction, failed]);
+  };
+  // pg-boss's statements go through `bossDb`: bounded until boss.start() returns (the header).
   const plainDb = fromKysely(db);
-  const canBound = typeof db.connection === 'function';
   let bounding = false;
   const bossDb = {
     executeSql(text: string, values?: unknown[]): Promise<{ rows: unknown[] }> {
-      if (!bounding || !canBound) return plainDb.executeSql(text, values);
-      return bounded(db, async (conn) => {
-        const result = await conn.executeQuery(CompiledQuery.raw(text, values ?? []));
+      if (!bounding || !canBound || OWN_TRANSACTION.test(text)) {
+        return plainDb.executeSql(text, values);
+      }
+      return bounded(async (trx) => {
+        const result = await trx.executeQuery(CompiledQuery.raw(text, values ?? []));
         return { rows: [...result.rows] };
       });
     },
@@ -99,7 +110,7 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
   const readVersion = async (): Promise<readonly { version: number }[]> => {
     const read = (executor: Kysely<DB>) =>
       sql<{ version: number }>`SELECT version FROM pgboss.version`.execute(executor);
-    return (canBound ? await bounded(db, read) : await read(db)).rows;
+    return (canBound ? await bounded(read) : await read(db)).rows;
   };
   const boss = new PgBoss({
     db: bossDb,
@@ -174,12 +185,12 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
       // No periodic cache snapshot may start until every catalog queue exists and is warm.
       // Otherwise a slow startup can publish an older snapshot after the warm-up above.
       await boss.start();
+      // Bounded start statements end here: supervise, consumers and timers run unbounded.
+      bounding = false;
       if (stopping) return;
       // Recovery addendum 1: reclaim crashed workers' expired jobs, including payout jobs,
       // before registering any consumer. Pg-boss repeats supervision at its default 60 s interval.
       if (entry === 'worker') await boss.supervise();
-      // Start statements end here: consumers and later pg-boss work run unbounded.
-      bounding = false;
       for (const [queue, handler] of handlers) {
         if (stopping) return;
         const item = work.get(queue)!;
@@ -216,6 +227,17 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
 
   const stop = async (): Promise<void> => {
     await starting?.catch(() => undefined);
+    if (cleanups.size > 0) {
+      // A failed bounded start statement: let its ROLLBACK return the connection first.
+      let wait: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        Promise.allSettled([...cleanups]),
+        new Promise<void>((resolve) => {
+          wait = setTimeout(resolve, stopTimeoutMs);
+        }),
+      ]);
+      clearTimeout(wait);
+    }
     const workersDrained = Promise.allSettled(executors);
     const drain = Promise.allSettled([...runningHandlers, workersDrained]);
     let timer: ReturnType<typeof setTimeout> | undefined;

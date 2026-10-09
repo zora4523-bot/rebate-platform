@@ -39,6 +39,7 @@ const fake = vi.hoisted(() => ({
   fail: vi.fn(async () => undefined),
   stop: vi.fn(async () => undefined),
   getQueues: vi.fn(async (): Promise<unknown[]> => []),
+  bossStart: vi.fn(async (): Promise<void> => undefined),
   options: undefined as
     | { db: { executeSql(text: string, values?: unknown[]): Promise<{ rows: unknown[] }> } }
     | undefined,
@@ -51,7 +52,7 @@ vi.mock('pg-boss', () => ({
     }
     on() {}
     getQueues = fake.getQueues;
-    async start() {}
+    start = fake.bossStart;
     async createQueue() {}
     async findJobs() {
       return [];
@@ -289,9 +290,9 @@ it('[AC-B1-01g#8] 优雅关闭等处理器及完成写入；未领取任务不�
   expect(logger.warn).not.toHaveBeenCalled();
 });
 
-function boundedFixture(
-  connection: () => { execute: (run: (conn: unknown) => unknown) => unknown },
-) {
+type FakeTransaction = { execute: (run: (trx: unknown) => Promise<unknown>) => Promise<unknown> };
+
+function boundedFixture(transaction: () => FakeTransaction) {
   vi.useFakeTimers();
   fake.fetch.mockReset();
   fake.fetch.mockResolvedValue([]);
@@ -316,7 +317,7 @@ function boundedFixture(
   };
   const runtime = createQueueRuntime({
     entry: 'payout',
-    db: { executeQuery: vi.fn(), connection } as unknown as Kysely<DB>,
+    db: { executeQuery: vi.fn(), transaction } as unknown as Kysely<DB>,
     logger: logger as unknown as RootLogger,
     catalog: [spec],
     plan: {
@@ -332,47 +333,72 @@ function boundedFixture(
   return { runtime, logger, plain };
 }
 
+/** Transaction-local limits (is_local = true): nothing to reset on the pooled connection. */
 const LIMIT =
-  /^SELECT set_config\('lock_timeout', \$, false\),\s+set_config\('statement_timeout', \$, false\)$/;
-const RESET = ['RESET lock_timeout', 'RESET statement_timeout'];
+  /^SELECT set_config\('lock_timeout', \$, true\),\s+set_config\('statement_timeout', \$, true\)$/;
+const OWN = '\n    BEGIN;\n    SET LOCAL lock_timeout = 30000;\n    SELECT 1;\n    COMMIT;\n  ';
 
-it('[AC-B1-01zs#3] start 期间版本读取与 pg-boss 的每条语句都在固定连接上先设会话等锁与语句上限、用完复原；启动结束后 pg-boss 语句走共享池、不再设上限', async () => {
-  const conn = { executeQuery: vi.fn(async () => ({ rows: [{ queue: 'row' }] })) };
-  const connection = vi.fn(() => ({
-    execute: async (run: (inner: unknown) => unknown) => run(conn),
+it('[AC-B1-01zs#3] 版本读取与 boss.start() 返回前 pg-boss 的单条语句各在自己的事务里先设事务内上限；pg-boss 自带事务的文本、boss.start() 之后的语句走共享池，不设上限也无需复原', async () => {
+  const trxs: { executeQuery: ReturnType<typeof vi.fn> }[] = [];
+  const transaction = vi.fn(() => ({
+    execute: async (run: (inner: unknown) => Promise<unknown>) => {
+      const trx = { executeQuery: vi.fn(async () => ({ rows: [{ queue: 'row' }] })) };
+      trxs.push(trx);
+      return run(trx);
+    },
   }));
-  const { runtime, plain } = boundedFixture(connection);
-  let duringStart: unknown;
+  const { runtime, plain } = boundedFixture(transaction);
+  const seen: unknown[] = [];
   fake.getQueues.mockImplementationOnce(async () => {
-    duringStart = await fake.options?.db.executeSql('SELECT name FROM pgboss.queue', ['a']);
+    seen.push(await fake.options?.db.executeSql('SELECT name FROM pgboss.queue', ['a']));
+    seen.push(await fake.options?.db.executeSql(OWN));
     return [];
+  });
+  fake.bossStart.mockImplementationOnce(async () => {
+    seen.push(await fake.options?.db.executeSql('SELECT version FROM pgboss.version', []));
   });
   runtime.register('payout', async () => undefined);
   await runtime.start();
-  expect(duringStart).toEqual({ rows: [{ queue: 'row' }] });
-  expect(conn.executeQuery).toHaveBeenCalledOnce();
-  expect(conn.executeQuery.mock.calls[0]).toMatchObject([
-    { sql: 'SELECT name FROM pgboss.queue', parameters: ['a'] },
+  expect(seen).toEqual([
+    { rows: [{ queue: 'row' }] },
+    { rows: [{ plain: true }] },
+    { rows: [{ queue: 'row' }] },
   ]);
-  expect(statements.every((statement) => statement.executor === conn)).toBe(true);
-  const texts = statements.map((statement) => statement.text);
-  expect(texts).toEqual([
-    expect.stringMatching(LIMIT),
-    'SELECT version FROM pgboss.version',
-    ...RESET,
-    expect.stringMatching(LIMIT),
-    ...RESET,
+  // Runtime read, pg-boss queue read, pg-boss's own version read inside boss.start().
+  expect(transaction).toHaveBeenCalledTimes(3);
+  expect(
+    statements.map((statement) => [statement.text, trxs.indexOf(statement.executor as never)]),
+  ).toEqual([
+    [expect.stringMatching(LIMIT), 0],
+    ['SELECT version FROM pgboss.version', 0],
+    [expect.stringMatching(LIMIT), 1],
+    [expect.stringMatching(LIMIT), 2],
   ]);
-  expect(connection).toHaveBeenCalledTimes(2);
+  expect(trxs[1]?.executeQuery.mock.calls).toMatchObject([
+    [{ sql: 'SELECT name FROM pgboss.queue', parameters: ['a'] }],
+  ]);
+  expect(trxs[2]?.executeQuery.mock.calls).toMatchObject([
+    [{ sql: 'SELECT version FROM pgboss.version', parameters: [] }],
+  ]);
+  expect(plain.executeSql.mock.calls).toEqual([[OWN, undefined]]);
   expect(await fake.options?.db.executeSql('SELECT 1', [])).toEqual({ rows: [{ plain: true }] });
-  expect(plain.executeSql).toHaveBeenCalledExactlyOnceWith('SELECT 1', []);
-  expect(connection).toHaveBeenCalledTimes(2);
+  expect(plain.executeSql).toHaveBeenLastCalledWith('SELECT 1', []);
+  expect(transaction).toHaveBeenCalledTimes(3);
 });
 
-it('[AC-B1-01zs#3] 版本读取等锁超时：先回滚再复原会话上限，start 以同一错误拒绝，不领任务、不写日志，stop 照常结束', async () => {
-  const conn = { executeQuery: vi.fn() };
+it('[AC-B1-01zs#3] 版本读取等锁超时：start 立即以同一错误拒绝，不等回滚；stop 等回滚结束才继续；不领任务、不写日志', async () => {
+  const rollback = Promise.withResolvers<void>();
+  let rolledBack = false;
   const { runtime, logger } = boundedFixture(() => ({
-    execute: async (run: (inner: unknown) => unknown) => run(conn),
+    execute: async (run: (inner: unknown) => Promise<unknown>) => {
+      try {
+        return await run({});
+      } catch (error) {
+        await rollback.promise;
+        rolledBack = true;
+        throw error;
+      }
+    },
   }));
   const timeout = Object.assign(new Error('canceling statement due to lock timeout'), {
     code: '55P03',
@@ -381,12 +407,22 @@ it('[AC-B1-01zs#3] 版本读取等锁超时：先回滚再复原会话上限，s
   failing.error = timeout;
   runtime.register('payout', async () => undefined);
   await expect(runtime.start()).rejects.toBe(timeout);
-  await runtime.stop();
+  expect(rolledBack).toBe(false);
+  let stopped = false;
+  const stopping = runtime.stop().then(() => {
+    stopped = true;
+  });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(stopped).toBe(false);
+  // Only start()'s own failure cleanup has stopped pg-boss so far.
+  expect(fake.stop).toHaveBeenCalledTimes(1);
+  rollback.resolve();
+  await stopping;
+  expect(rolledBack).toBe(true);
+  expect(fake.stop).toHaveBeenCalledTimes(2);
   expect(statements.map((statement) => statement.text)).toEqual([
     expect.stringMatching(LIMIT),
     'SELECT version FROM pgboss.version',
-    'ROLLBACK',
-    ...RESET,
   ]);
   expect(fake.fetch).not.toHaveBeenCalled();
   expect(logger.warn).not.toHaveBeenCalled();
