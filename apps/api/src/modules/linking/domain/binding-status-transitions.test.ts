@@ -16,6 +16,7 @@ it('[AC-B1-06h-UNIT#1] 绑定状态迁移只认迁移表：BR-ID-17/19/20/21 列
   ] as const;
   const legal = new Set([
     'null→active',
+    'unbound→active',
     'pending_auth→active',
     'pending_auth→blocked',
     'active→invalid',
@@ -41,9 +42,10 @@ it('[AC-B1-06h-UNIT#2] blocked 不能直接回 active（恢复返利与解封只
   expect(canTransitionBinding('released', 'released')).toBe(false);
 });
 
-it('[AC-B1-06h-UNIT#3] 状态取值守卫只认落库取值，unbound 是投影不落库', () => {
+it('[AC-B1-06h-UNIT#3] 状态取值守卫认 0018 CHECK 允许的全部取值（含 unbound），其余不认', () => {
   expect(isBindingStatus('active')).toBe(true);
   expect(isBindingStatus('pending_auth')).toBe(true);
-  expect(isBindingStatus('unbound')).toBe(false);
+  expect(isBindingStatus('unbound')).toBe(true);
+  expect(isBindingStatus('cooling')).toBe(false);
   expect(isBindingStatus(null)).toBe(false);
 });

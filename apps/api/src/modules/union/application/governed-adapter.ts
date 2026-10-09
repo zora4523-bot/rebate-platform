@@ -23,6 +23,7 @@ import {
   type CallCtx,
   type UnionAdapter,
   type UnionEndpoint,
+  type UnionIdentity,
 } from '../domain/types.ts';
 
 export interface GovernedAdapterOptions {
@@ -82,7 +83,29 @@ export function createGovernedAdapter(
       classify: classifyUnionError,
     });
 
-  const { bindPublisher, listRefunds, listPunishments, materialFeed, createTaolijin } = adapter;
+  const {
+    bindPublisher,
+    listRefunds,
+    listPunishments,
+    materialFeed,
+    createTaolijin,
+    queryPddAuthority,
+  } = adapter;
+
+  /** UnionIdentity is built only by linking on the server (BR-ATTR-05, BR-AI-03). */
+  const assertIdentity = (identity: UnionIdentity, ctx: CallCtx, operation: string): void => {
+    if (
+      !isServerIdentity(identity) ||
+      identity.claims.appId !== ctx.appId ||
+      identity.claims.platform !== endpoint.platform
+    ) {
+      throw new UnionError(
+        'invalid_identity',
+        `${operation} requires a server-side identity of the same app and platform`,
+        endpoint.platform,
+      );
+    }
+  };
   const governed: UnionAdapter = {
     platform: adapter.platform,
     searchItems: (q, ctx) => run('idempotent_read', ctx, (c) => adapter.searchItems(q, c)),
@@ -91,18 +114,7 @@ export function createGovernedAdapter(
     listOrders: (win, opt, ctx) =>
       run('idempotent_read', ctx, (c) => adapter.listOrders(win, opt, c)),
     async convert(req, identity, ctx) {
-      // UnionIdentity is built only by linking on the server (BR-ATTR-05, BR-AI-03).
-      if (
-        !isServerIdentity(identity) ||
-        identity.claims.appId !== ctx.appId ||
-        identity.claims.platform !== endpoint.platform
-      ) {
-        throw new UnionError(
-          'invalid_identity',
-          'convert requires a server-side identity of the same app and platform',
-          endpoint.platform,
-        );
-      }
+      assertIdentity(identity, ctx, 'convert');
       return await run('write', ctx, (c) => adapter.convert(req, identity, c));
     },
     ...(bindPublisher === undefined
@@ -134,6 +146,17 @@ export function createGovernedAdapter(
       : {
           createTaolijin: (req, ctx) =>
             run('write', ctx, (c) => createTaolijin.call(adapter, req, c)),
+        }),
+    // B1-06v: the Pinduoduo authority query is an idempotent read of a server-built identity.
+    ...(queryPddAuthority === undefined
+      ? {}
+      : {
+          async queryPddAuthority(identity: UnionIdentity, ctx: CallCtx) {
+            assertIdentity(identity, ctx, 'queryPddAuthority');
+            return await run('idempotent_read', ctx, (c) =>
+              queryPddAuthority.call(adapter, identity, c),
+            );
+          },
         }),
   };
   return Object.freeze(governed);

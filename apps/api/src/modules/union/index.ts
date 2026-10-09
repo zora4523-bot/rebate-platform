@@ -19,6 +19,7 @@ export type {
   OrderInput,
   OrderQueryOpt,
   Page,
+  PddAuthority,
   Platform,
   RegisteredPlatform,
   ResolvedLink,

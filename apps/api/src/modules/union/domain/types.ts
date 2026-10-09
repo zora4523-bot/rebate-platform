@@ -261,4 +261,16 @@ export interface UnionAdapter {
   listPunishments?(win: TimeWindow, ctx: CallCtx): Promise<Page<UnionPunish>>;
   materialFeed?(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>>;
   createTaolijin?(req: TljCreateReq, ctx: CallCtx): Promise<TljCreateResult>;
+  /**
+   * B1-06v: whether the user the server-built identity names (Pinduoduo custom_parameters
+   * {app, uid=attr_code, sc}, never a user_id) is filed (备案) under the identity's promotion slot
+   * (BR-ID-22: only an authorized answer turns a binding active). An idempotent read; Pinduoduo
+   * only. TODO(规划/11 §4.5): 真实查询 — blocked on CAP-PDD-05。
+   */
+  queryPddAuthority?(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthority>;
+}
+
+/** B1-06v: the answer of UnionAdapter.queryPddAuthority. */
+export interface PddAuthority {
+  readonly authorized: boolean;
 }
