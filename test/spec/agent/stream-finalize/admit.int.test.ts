@@ -1,6 +1,7 @@
 // B3-03g: the admission transaction (design §2.1–2.5, §4.2 I3b I8 I9 I11 I14 I18, §7.2 同键交错 /
 // 先收尾再受理 / 30506 零写入 / 活跃时间 / 提交结果未知 / 脱敏 / Redis 不可用; BR-AI-23 ⑥–⑩ in one
 // PG transaction, 细则「受理结果不明」「谁来收尾」).
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 
@@ -36,7 +37,7 @@ import {
   waitingOnLock,
 } from './kit.ts';
 
-const pg = usePg();
+const pg = usePg(createTestDatabase);
 const LOCK_END = START_MS + 50_000;
 const at = (ms: number) => new FixedClock(new Date(ms));
 

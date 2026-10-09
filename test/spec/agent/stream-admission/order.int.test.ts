@@ -1,4 +1,5 @@
 // B3-03g replacement of the B3-03c order rules on PostgreSQL (design §7.3 rows order:25 … :230).
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   accepted,
@@ -12,7 +13,7 @@ import {
   withGate,
 } from './kit.ts';
 
-const pg = usePg();
+const pg = usePg(createTestDatabase);
 const STOP = { ending: 'stop', cardsDelivered: 1 } as const;
 
 it('[AC-B3-03g#50][BR-AI-23] 同时不满足多条时返回顺序在前的码（⑦>⑧>⑨>⑩），被拒请求三张表逐行不变', async () => {

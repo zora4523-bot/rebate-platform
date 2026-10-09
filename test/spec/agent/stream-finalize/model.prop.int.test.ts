@@ -6,6 +6,7 @@
 // code under test. Each sample returns its list of violated invariants; the property is "the
 // list is empty" (a boolean), asserted once outside fc.check. Runs and seed come only from
 // PROP_RUNS / PROP_SEED (runs scaled, see MODEL_RUNS).
+import { createTestDatabase } from '@couli/db/testing';
 import { isDeepStrictEqual } from 'node:util';
 
 import { propRuns, propSeed } from '@couli/testing';
@@ -37,7 +38,7 @@ import {
   type Row,
 } from './kit.ts';
 
-const pg = usePg();
+const pg = usePg(createTestDatabase);
 const DEADLINE = START_MS + 20_000;
 const LOCK_END = START_MS + 50_000;
 const QUOTA = limits({ memberDaily: 3 });

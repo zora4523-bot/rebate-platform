@@ -2,6 +2,7 @@
 // 活进程发 PG 帧): the ending is written inside choose() without waiting for a pending card fact,
 // and the frame sent is the one stored (agent_runs.final_event), not the locally chosen one.
 // Waits go through a scheduler that never fires on its own: only the body ends the run.
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 
 import type { Scheduler } from '../../../../apps/api/src/modules/platform/index.ts';
@@ -34,7 +35,7 @@ import {
   type Inst,
 } from './kit.ts';
 
-const pg = usePg();
+const pg = usePg(createTestDatabase);
 
 const idle: Scheduler = {
   now: () => 0,

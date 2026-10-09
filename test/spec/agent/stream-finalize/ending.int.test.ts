@@ -2,6 +2,7 @@
 // lock, first commit wins; the cancel endpoint's deadline is judged after the row lock (BR-AI-23
 // 细则「崩溃不改变结果」「取消」, owner 2026-10-08; design §3.3, §5.2, §13 S2-2/S2-3, §7.2 r4-2;
 // inherited B3-09b S1 BR-AI-23-cancel-first-commit and BR-AI-23-cancel-deadline).
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -29,7 +30,7 @@ import {
   usePg,
 } from './kit.ts';
 
-const pg = usePg();
+const pg = usePg(createTestDatabase);
 const DEADLINE = START_MS + 20_000;
 const LOCK_END = START_MS + 50_000;
 

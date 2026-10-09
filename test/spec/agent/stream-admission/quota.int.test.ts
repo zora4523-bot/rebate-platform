@@ -1,6 +1,7 @@
 // B3-03g replacement of the B3-03c quota rules on PostgreSQL (design §7.3 rows quota:23 … :287).
 // Day usage = runs accepted that +08:00 day whose settle_result is not 'refunded'; settle's
 // quota_left uses the limits the source gives at settle time (set by the kit before settle).
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   nextStepOf,
@@ -9,7 +10,7 @@ import {
 } from '../../../../apps/api/src/modules/agent/stream/admission/index.ts';
 import { accepted, guest, limits, member, opaque, usePg, withGate } from './kit.ts';
 
-const pg = usePg();
+const pg = usePg(createTestDatabase);
 
 it('[AC-B3-03g#70][BR-AI-15] 会员按 user_id 计：quota_left 逐条递减到 0，下一条 30502{reset_at 次日 00:00+08:00, next none}，跨设备合计', async () => {
   await withGate(pg, async ({ a, b, req }) => {
