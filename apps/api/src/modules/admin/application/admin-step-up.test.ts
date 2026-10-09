@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
 import { FixedClock } from '../../platform/index.ts';
+import { STEP_UP_SMS_HISTORY_KEEP, STEP_UP_SMS_HISTORY_MS } from '../domain/step-up-policy.ts';
 import type { AdminAccount, AdminAccounts } from '../infra/admin-accounts.ts';
 import type { AdminProfile, AdminProfiles } from '../infra/admin-profiles.ts';
 import type { CodeCheck, StepUpSmsCodes } from '../infra/step-up-sms-codes.ts';
@@ -12,7 +13,7 @@ import type { AdminStepUpTokens } from './permission-guard.ts';
 interface MemoryCodes extends StepUpSmsCodes {
   readonly state: {
     current: { hash: string; exp: number } | undefined;
-    voided: { hash: string; exp: number }[];
+    history: { hash: string; at: number }[];
     failStore: boolean;
   };
 }
@@ -20,14 +21,18 @@ interface MemoryCodes extends StepUpSmsCodes {
 /** StepUpSmsCodes double with the semantics of infra/step-up-sms-codes.ts. */
 function memoryCodes(): MemoryCodes {
   let sent: { at: number; reservation: string } | undefined;
-  const state: MemoryCodes['state'] = { current: undefined, voided: [], failStore: false };
+  const state: MemoryCodes['state'] = { current: undefined, history: [], failStore: false };
+  const windowed = (nowMs: number): { hash: string; at: number }[] =>
+    state.history
+      .filter((v) => nowMs - v.at < STEP_UP_SMS_HISTORY_MS)
+      .slice(-STEP_UP_SMS_HISTORY_KEEP);
   return {
     state,
     knownHashes: () =>
       Promise.resolve(
         new Set([
           ...(state.current ? [state.current.hash] : []),
-          ...state.voided.map((v) => v.hash),
+          ...state.history.map((v) => v.hash),
         ]),
       ),
     reserve: (_app, _admin, nowMs, intervalMs) => {
@@ -41,25 +46,24 @@ function memoryCodes(): MemoryCodes {
       if (sent?.reservation === reservation) sent = undefined;
       return Promise.resolve();
     },
-    store: (_app, _admin, hash, _nowMs, exp) => {
+    store: (_app, _admin, hash, nowMs, exp) => {
       if (state.failStore) return Promise.reject(new Error('redis down'));
-      if (state.current !== undefined) state.voided.push(state.current);
+      state.history = [...windowed(nowMs), { hash, at: nowMs }].slice(-STEP_UP_SMS_HISTORY_KEEP);
       state.current = { hash, exp };
       return Promise.resolve();
     },
-    revoke: (_app, _admin, hash) => {
+    revoke: (_app, _admin, hash, nowMs) => {
       if (state.current?.hash === hash) state.current = undefined;
-      state.voided = state.voided.filter((v) => v.hash !== hash);
+      state.history = windowed(nowMs).filter((v) => v.hash !== hash);
       return Promise.resolve();
     },
     check: (_app, _admin, hash, nowMs): Promise<CodeCheck> => {
       const live = state.current !== undefined && state.current.exp > nowMs;
       if (live && state.current!.hash === hash) {
-        state.voided.push(state.current!);
         state.current = undefined;
         return Promise.resolve('ok');
       }
-      if (state.voided.some((v) => v.hash === hash)) return Promise.resolve('voided');
+      if (windowed(nowMs).some((v) => v.hash === hash)) return Promise.resolve('voided');
       if (state.current?.hash === hash) return Promise.resolve('expired');
       return Promise.resolve(live ? 'wrong' : 'none');
     },
@@ -114,12 +118,12 @@ function setup(
   const codes = memoryCodes();
   const blindIndex = (value: string, context: string): string => `h(${context}|${value})`;
   /** What the code record held when each SMS went out (the record comes first). */
-  const atSend: { current: string | undefined; voided: string[] }[] = [];
+  const atSend: { current: string | undefined; history: string[] }[] = [];
   const sender: AdminSmsSender = options.sender ?? {
     send: (message) => {
       atSend.push({
         current: codes.state.current?.hash,
-        voided: codes.state.voided.map((v) => v.hash),
+        history: codes.state.history.map((v) => v.hash),
       });
       const result = results.shift() ?? 'accepted';
       if (result !== 'rejected') outbox.push(message);
@@ -254,15 +258,18 @@ it('[AC-F1-06l#4] [AC-F1-06l#5] me: ticked points in enum order, masked phone or
   });
 });
 
-it('[AC-F1-06l#9] the code is recorded (and the previous one voided) before the SMS goes out', async () => {
+it('[AC-F1-06l#9] the code is recorded (current and in the history) before the SMS goes out', async () => {
   const s = setup();
   expect((await s.service.sendSms(s.caller)).code).toBe(0);
   const first = s.outbox.at(-1)!.code;
-  expect(s.atSend[0]).toEqual({ current: s.hashOf(first), voided: [] });
+  expect(s.atSend[0]).toEqual({ current: s.hashOf(first), history: [s.hashOf(first)] });
   s.clock.advanceMs(60_000);
   expect((await s.service.sendSms(s.caller)).code).toBe(0);
   const second = s.outbox.at(-1)!.code;
-  expect(s.atSend[1]).toEqual({ current: s.hashOf(second), voided: [s.hashOf(first)] });
+  expect(s.atSend[1]).toEqual({
+    current: s.hashOf(second),
+    history: [s.hashOf(first), s.hashOf(second)],
+  });
 });
 
 it('[AC-F1-06l#9] a failed record write sends nothing, frees the slot and answers 50001', async () => {
@@ -283,7 +290,7 @@ it('[AC-F1-06l#9] a rejected send withdraws the new code and the slot; the repla
   s.results.push('rejected');
   expect(await s.service.sendSms(s.caller)).toEqual({ code: 50001 });
   expect(s.codes.state.current).toBeUndefined();
-  expect(s.codes.state.voided.map((v) => v.hash)).toEqual([s.hashOf(old)]);
+  expect(s.codes.state.history.map((v) => v.hash)).toEqual([s.hashOf(old)]);
   expect(await s.service.stepUp(s.caller, 'sms', old)).toEqual({ code: 20003 });
   expect((await s.service.sendSms(s.caller)).code).toBe(0);
   expect(s.failures).not.toHaveBeenCalled();
@@ -326,9 +333,60 @@ it('[AC-F1-06l#11] the expired current code, or any code once it expired, is 200
 it('[AC-F1-06l#9] without a configured sender: 50001, no code kept, no slot taken', async () => {
   const s = setup({ sender: NO_SMS_SENDER });
   expect(await s.service.sendSms(s.caller)).toEqual({ code: 50001 });
-  expect(s.codes.state).toMatchObject({ current: undefined, voided: [] });
+  expect(s.codes.state).toMatchObject({ current: undefined, history: [] });
   expect(await s.service.sendSms(s.caller)).toEqual({ code: 50001 });
   expect(
     await NO_SMS_SENDER.send({ app_id: 'couli', phone: '1', purpose: 'step_up', code: '1' }),
   ).toBe('rejected');
+});
+
+it('[AC-F1-06l#10] [AC-F1-06l#11] an old code whose record lapsed past 300 seconds is still 20003 after a resend', async () => {
+  const s = setup();
+  await s.service.sendSms(s.caller);
+  const old = s.outbox.at(-1)!.code;
+  s.clock.advanceMs(301_000);
+  // The current-code record is gone (Redis cleanup); the history is kept apart from it.
+  s.codes.state.current = undefined;
+  expect((await s.service.sendSms(s.caller)).code).toBe(0);
+  const current = s.outbox.at(-1)!.code;
+  expect(await s.service.stepUp(s.caller, 'sms', old)).toEqual({ code: 20003 });
+  expect(s.failures).not.toHaveBeenCalled();
+  expect((await s.service.stepUp(s.caller, 'sms', current)).code).toBe(0);
+});
+
+it('[AC-F1-06l#10] codes sent within 24 hours answer 20003; an older one is a counted 20002', async () => {
+  const s = setup();
+  await s.service.sendSms(s.caller);
+  const dayOld = s.outbox.at(-1)!.code;
+  s.clock.advanceMs(STEP_UP_SMS_HISTORY_MS - 120_000);
+  await s.service.sendSms(s.caller);
+  const recent = s.outbox.at(-1)!.code;
+  s.clock.advanceMs(60_000);
+  await s.service.sendSms(s.caller);
+  const current = s.outbox.at(-1)!.code;
+  // dayOld was sent 23h59m ago: still remembered.
+  expect(await s.service.stepUp(s.caller, 'sms', dayOld)).toEqual({ code: 20003 });
+  expect(await s.service.stepUp(s.caller, 'sms', recent)).toEqual({ code: 20003 });
+  expect(s.failures).not.toHaveBeenCalled();
+  s.clock.advanceMs(60_000);
+  // Now 24 hours have passed since dayOld was sent; the current code is still valid.
+  expect(await s.service.stepUp(s.caller, 'sms', dayOld)).toEqual({ code: 20002 });
+  expect(s.failures).toHaveBeenCalledTimes(1);
+  expect((await s.service.stepUp(s.caller, 'sms', current)).code).toBe(0);
+});
+
+it('[AC-F1-06l#10] the history keeps the newest 32 codes; the oldest beyond that is a counted 20002', async () => {
+  const s = setup();
+  const sent: string[] = [];
+  for (let i = 0; i < STEP_UP_SMS_HISTORY_KEEP + 1; i += 1) {
+    expect((await s.service.sendSms(s.caller)).code).toBe(0);
+    sent.push(s.outbox.at(-1)!.code);
+    s.clock.advanceMs(60_000);
+  }
+  expect(s.codes.state.history).toHaveLength(STEP_UP_SMS_HISTORY_KEEP);
+  s.codes.state.current = { hash: s.hashOf(sent.at(-1)!), exp: s.clock.now().getTime() + 1 };
+  expect(await s.service.stepUp(s.caller, 'sms', sent[1]!)).toEqual({ code: 20003 });
+  expect(s.failures).not.toHaveBeenCalled();
+  expect(await s.service.stepUp(s.caller, 'sms', sent[0]!)).toEqual({ code: 20002 });
+  expect(s.failures).toHaveBeenCalledTimes(1);
 });

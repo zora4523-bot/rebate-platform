@@ -13,6 +13,14 @@ export const STEP_UP_SMS_CODE_TTL_MS = 300 * 1000;
 export const STEP_UP_SMS_RESEND_MS = 60 * 1000;
 /** Six digits, as the authenticator code (AdminTotpCode). */
 export const STEP_UP_SMS_CODE_DIGITS = 6;
+/**
+ * Every SMS code sent is remembered (as its keyed hash) for 24 hours by the Clock, apart from the
+ * current code's 300 seconds, so a replaced, used or expired code answers 20003 rather than a
+ * counted 20002 (ruling round 3 #1).
+ */
+export const STEP_UP_SMS_HISTORY_MS = 24 * 60 * 60 * 1000;
+/** At most this many remembered hashes per account; the oldest go first. */
+export const STEP_UP_SMS_HISTORY_KEEP = 32;
 /** Extra Redis lifetime beyond the Clock-judged limits: cleanup only. */
 export const STEP_UP_CLEANUP_MARGIN_SEC = 60;
 
