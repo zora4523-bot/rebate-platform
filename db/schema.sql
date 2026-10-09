@@ -589,10 +589,10 @@ CREATE FUNCTION app.reject_agent_run_rewrite() RETURNS trigger
     AS $$
 BEGIN
   IF ROW(NEW.id, NEW.app_id, NEW.session_id, NEW.prompt_version, NEW.accepted_at,
-         NEW.quota_subjects, NEW.created_at)
+         NEW.quota_subjects, NEW.created_at, NEW.deadline_at)
       IS DISTINCT FROM
       ROW(OLD.id, OLD.app_id, OLD.session_id, OLD.prompt_version, OLD.accepted_at,
-          OLD.quota_subjects, OLD.created_at)
+          OLD.quota_subjects, OLD.created_at, OLD.deadline_at)
     OR (OLD.final_event IS NOT NULL AND NEW.final_event IS DISTINCT FROM OLD.final_event)
     OR (OLD.ended_at IS NOT NULL AND NEW.ended_at IS DISTINCT FROM OLD.ended_at)
     OR (OLD.end_reason IS NOT NULL AND NEW.end_reason IS DISTINCT FROM OLD.end_reason)
@@ -601,6 +601,9 @@ BEGIN
     OR (OLD.card_delivered AND NOT NEW.card_delivered)
     OR (OLD.settle_result IS NOT NULL AND NEW.card_delivered IS DISTINCT FROM OLD.card_delivered)
     OR (NEW.user_text IS NOT NULL AND NEW.user_text IS DISTINCT FROM OLD.user_text)
+    OR (OLD.end_draft IS NOT NULL AND NEW.end_draft IS DISTINCT FROM OLD.end_draft)
+    OR (OLD.cancel_requested_at IS NOT NULL
+        AND NEW.cancel_requested_at IS DISTINCT FROM OLD.cancel_requested_at)
   THEN
     RAISE EXCEPTION 'agent_runs ending facts are write-once and user_text may only be cleared'
       USING ERRCODE = 'restrict_violation';
@@ -1229,7 +1232,20 @@ CREATE TABLE app.agent_runs (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deadline_at timestamp with time zone,
+    end_draft jsonb,
+    cancel_requested_at timestamp with time zone,
+    finalize_hold text,
+    finalize_hold_at timestamp with time zone,
+    CONSTRAINT agent_runs_cancel_order_check CHECK ((cancel_requested_at >= accepted_at)),
     CONSTRAINT agent_runs_counts_check CHECK (((input_tokens >= 0) AND (output_tokens >= 0) AND (cost_mfen >= 0) AND (ttft_ms >= 0) AND (latency_ms >= 0))),
+    CONSTRAINT agent_runs_deadline_order_check CHECK ((deadline_at >= accepted_at)),
+    CONSTRAINT agent_runs_end_draft_check CHECK (((end_draft IS NULL) OR COALESCE(
+CASE
+    WHEN (jsonb_typeof(end_draft) = 'object'::text) THEN ((end_draft ?& ARRAY['type'::text, 'data'::text]) AND (((end_draft - 'type'::text) - 'data'::text) = '{}'::jsonb) AND (jsonb_typeof((end_draft -> 'type'::text)) = 'string'::text) AND ((end_draft ->> 'type'::text) = ANY (ARRAY['done'::text, 'error'::text])) AND (jsonb_typeof((end_draft -> 'data'::text)) = 'object'::text))
+    ELSE false
+END, false))),
+    CONSTRAINT agent_runs_end_draft_reason_check CHECK (((end_draft IS NULL) OR (end_reason IS NOT NULL))),
     CONSTRAINT agent_runs_ended_order_check CHECK ((ended_at >= accepted_at)),
     CONSTRAINT agent_runs_filter_hits_check CHECK (
 CASE
@@ -1248,6 +1264,9 @@ CASE
     ELSE false
 END, false))),
     CONSTRAINT agent_runs_final_pair_check CHECK (((final_event IS NULL) = (ended_at IS NULL))),
+    CONSTRAINT agent_runs_finalize_hold_check CHECK ((finalize_hold = ANY (ARRAY['stored_frame_invalid'::text, 'facts_inconsistent'::text]))),
+    CONSTRAINT agent_runs_finalize_hold_open_check CHECK (((finalize_hold IS NULL) OR (final_event IS NULL))),
+    CONSTRAINT agent_runs_finalize_hold_pair_check CHECK (((finalize_hold IS NULL) = (finalize_hold_at IS NULL))),
     CONSTRAINT agent_runs_finish_reason_check CHECK ((finish_reason = ANY (ARRAY['stop'::text, 'cancelled'::text, 'limit'::text, 'budget'::text, 'error'::text, 'auth_required'::text, 'safety'::text, 'fallback'::text, 'timeout'::text]))),
     CONSTRAINT agent_runs_intent_check CHECK ((intent = ANY (ARRAY['find_by_link'::text, 'search'::text, 'refine'::text, 'order_query'::text, 'rule_qa'::text, 'handoff'::text, 'clarify'::text, 'out_of_scope'::text, 'page_guide'::text, 'earnings_query'::text]))),
     CONSTRAINT agent_runs_output_filtered_check CHECK ((output_filtered = (cardinality(filter_hits) > 0))),
@@ -1284,9 +1303,12 @@ CREATE TABLE app.agent_sessions (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    run_lock_run_id uuid,
+    run_lock_expires_at timestamp with time zone,
     CONSTRAINT agent_sessions_active_order_check CHECK ((last_active_at >= started_at)),
     CONSTRAINT agent_sessions_card_seq_check CHECK ((card_seq >= 0)),
-    CONSTRAINT agent_sessions_expired_order_check CHECK ((expired_at > last_active_at))
+    CONSTRAINT agent_sessions_expired_order_check CHECK ((expired_at > last_active_at)),
+    CONSTRAINT agent_sessions_run_lock_pair_check CHECK (((run_lock_run_id IS NULL) = (run_lock_expires_at IS NULL)))
 );
 
 
@@ -3755,6 +3777,20 @@ CREATE INDEX agent_runs_created_idx ON app.agent_runs USING btree (app_id, creat
 
 
 --
+-- Name: agent_runs_quota_first_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_runs_quota_first_idx ON app.agent_runs USING btree (app_id, (quota_subjects[1]), accepted_at);
+
+
+--
+-- Name: agent_runs_quota_second_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_runs_quota_second_idx ON app.agent_runs USING btree (app_id, (quota_subjects[2]), accepted_at) WHERE (cardinality(quota_subjects) = 2);
+
+
+--
 -- Name: agent_runs_session_accepted_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -3780,6 +3816,13 @@ CREATE INDEX agent_sessions_created_idx ON app.agent_sessions USING btree (app_i
 --
 
 CREATE INDEX agent_sessions_guest_recent_idx ON app.agent_sessions USING btree (app_id, device_id, last_active_at DESC) WHERE (user_id IS NULL);
+
+
+--
+-- Name: agent_sessions_run_lock_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_sessions_run_lock_idx ON app.agent_sessions USING btree (run_lock_expires_at, id) WHERE (run_lock_run_id IS NOT NULL);
 
 
 --
@@ -5707,6 +5750,45 @@ GRANT SELECT(updated_at) ON TABLE app.agent_runs TO couli_readonly;
 
 
 --
+-- Name: COLUMN agent_runs.deadline_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(deadline_at) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.end_draft; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(end_draft) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(end_draft) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.cancel_requested_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(cancel_requested_at) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(cancel_requested_at) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.finalize_hold; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finalize_hold) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(finalize_hold) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_runs.finalize_hold_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finalize_hold_at) ON TABLE app.agent_runs TO couli_app;
+GRANT SELECT(finalize_hold_at) ON TABLE app.agent_runs TO couli_readonly;
+
+
+--
 -- Name: TABLE agent_sessions; Type: ACL; Schema: app; Owner: -
 --
 
@@ -5747,6 +5829,20 @@ GRANT UPDATE(row_version) ON TABLE app.agent_sessions TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
+-- Name: COLUMN agent_sessions.run_lock_run_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(run_lock_run_id) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
+-- Name: COLUMN agent_sessions.run_lock_expires_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(run_lock_expires_at) ON TABLE app.agent_sessions TO couli_app;
 
 
 --

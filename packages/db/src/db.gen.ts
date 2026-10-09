@@ -100,13 +100,18 @@ export interface AgentResultSets {
 export interface AgentRuns {
   accepted_at: Timestamp;
   app_id: string;
+  cancel_requested_at: Timestamp | null;
   card_delivered: Generated<boolean>;
   cost_mfen: ColumnType<bigint, bigint, bigint> | null;
   created_at: Generated<Timestamp>;
+  deadline_at: Timestamp | null;
+  end_draft: Json | null;
   end_reason: string | null;
   ended_at: Timestamp | null;
   filter_hits: Generated<string[]>;
   final_event: Json | null;
+  finalize_hold: string | null;
+  finalize_hold_at: Timestamp | null;
   finish_reason: string | null;
   id: string;
   input_tokens: number | null;
@@ -141,6 +146,8 @@ export interface AgentSessions {
   id: string;
   last_active_at: Timestamp;
   row_version: Generated<number>;
+  run_lock_expires_at: Timestamp | null;
+  run_lock_run_id: string | null;
   started_at: Timestamp;
   updated_at: Generated<Timestamp>;
   user_id: string | null;

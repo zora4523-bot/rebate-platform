@@ -22,5 +22,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/agent-acceptance/**'
-status: todo
-pr: null
+status: done
+pr: 313
