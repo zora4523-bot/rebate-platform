@@ -4,6 +4,7 @@ title: linking 写入、解决与读取 30151 冲突日志：bindings 返回 301
 type: impl
 # 草稿 2026-10-09（W1 第七棒）。依据 BR-ID-18（no_rebate_reason 由服务端判：存在未解决的 30151 冲突日志 → relation_conflict；绑定 blocked → binding_blocked）、BR-ID-19 细则「并发绑定」、B1-06h 的 30151 分支（现只记 warn linking.bindings.relation_conflict），由编排者摘入任务书。
 # 「已解决」口径：BR-ID-18 2026-10-09 补（规划 couli#96 / #97，Jev A 0.74）——绑定成功变 active 时同一事务全部标已解决（resolution=bound_active）；不另立后台人工解决任务。已写入 link_logs 的 no_rebate_reason 不改。
+# 写入即解决（规划 couli#98，Jev B 0.77）：写 30151 冲突日志前重读该用户该平台绑定，已有 active 则该行直接记 resolved（resolution=already_active），授权照常 30151；resolution 取值 bound_active / already_active（CHECK 字面量，B1-06y）。
 # 判定范围：① 只在服务端真正走无返利路径时判，BR-ID-24 站长授权不可用例外（带 no_rebate 仍 30101 / 30102 auth_unavailable）先于它；② 他人打开别人的分享 link 时 no_rebate 被忽略、不写任何 no_rebate_reason；③ 读当前请求用户的日志，不是快照 user_id 的。B1-06h 的 30151 分支现不区分类别，本任务补类别。淘宝与拼多多 open 的 binding_blocked 判定分别在 B1-06f、B1-06v，本任务在同一处加 relation_conflict（排在它们之后，linking 串行）。
 # 风险：linking RV2（订单归属：relation_conflict 永不可找回）。
 refs: []
