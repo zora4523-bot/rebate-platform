@@ -1,0 +1,31 @@
+id: CT-06g
+repo: rebate-platform
+title: 迁移门禁余项——set_config 非字面量取值按关、去 NOT VALID 避开字面量、保留 UTF-8 BOM、资金表约束同定义重建的 squawk 例外
+type: guard-change
+# 2026-10-09 入账（负责人同日「把剩下的 S2 开成 CT-06g 继续做」；接 CT-06f（#324）两家代码评审记下的 S2 与范围外项）。只收紧（④ 是收窄误拒），不改任何 BR。
+# 契约（规则测试按此写；CT-06a～CT-06f 的规则测试不改、继续通过，本任务只新增 test/spec/db/lint-migrations/ 下的文件）：
+# ① set_config('lock_timeout' | 'statement_timeout', <值>, …) 的值不是字面量（NULL、函数表达式、列引用、运算、子查询）一律按「关掉」报；字面量（含 `'…'::text` 类强转）照旧按取值判断。
+# ② 定义比对去 `NOT VALID` 只去约束定义末尾（字面量之外）的修饰符；字符串里的 "not valid" 原样参与比较（CHECK (label <> 'not valid') 与 CHECK (label <> '') 不同）。
+# ③ 字面量解码保留开头的 UTF-8 BOM（E'\xef\xbb\xbf…' 与无 BOM 的定义不同）。
+# ④ 资金表约束按原定义同名重建经 CLI 无免登记写法（squawk constraint-missing-not-valid 与门禁互斥）：资金表上 `-- squawk-ignore constraint-missing-not-valid`（只此一条规则）
+#    写在 ALTER TABLE 语句上一行，且该语句里每个 ADD CONSTRAINT 都是与迁移史定义相同（不带 NOT VALID）的同名重建时放行，ignore 复跑也不报；
+#    规则名不同、带其他规则、语句里有新约束或定义不同的重建，仍按资金表 ignore 拒。db/AGENTS.md 第 11 条写明这条写法。
+# 已知不处理：appeals 是否算归属表（涉及归属口径，待负责人或 Jev）；纯函数只给部分迁移史时的比对；pg-boss 生成器输出须按门禁改写。
+# 碰 tools/**、db/AGENTS.md（第三类保护路径），合并前要批准标签（approvals 第 24 条）。RV2，两家 money 评审。
+refs: []
+refs_hash: {}
+deps: [CT-06f]
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'db/AGENTS.md'
+test_paths:
+  - 'test/spec/db/lint-migrations/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm run lint:migrations'
+  - 'test/spec/db/lint-migrations/**'
+status: todo
+pr: null
