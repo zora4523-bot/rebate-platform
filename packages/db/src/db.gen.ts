@@ -756,6 +756,18 @@ export interface UnionAuthSessions {
   user_id: string;
 }
 
+export interface UnionBindingConflicts {
+  app_id: string;
+  id: string;
+  kind: string;
+  occurred_at: Timestamp;
+  platform: string;
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  union_account_id: string;
+  user_id: string;
+}
+
 export interface UnionBindings {
   app_id: string;
   blocked_reason: string | null;
@@ -910,6 +922,7 @@ export interface DB {
   sessions: Sessions;
   union_accounts: UnionAccounts;
   union_auth_sessions: UnionAuthSessions;
+  union_binding_conflicts: UnionBindingConflicts;
   union_bindings: UnionBindings;
   union_credentials: UnionCredentials;
   union_pids: UnionPids;

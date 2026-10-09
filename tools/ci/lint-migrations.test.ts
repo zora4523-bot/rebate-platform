@@ -159,6 +159,7 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'union_pids',
     'union_bindings',
     'union_auth_sessions',
+    'union_binding_conflicts',
     'links',
     'link_logs',
     'link_logs_default',

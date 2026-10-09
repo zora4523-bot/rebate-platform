@@ -804,6 +804,31 @@ $$;
 
 
 --
+-- Name: reject_union_binding_conflict_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_union_binding_conflict_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.id, NEW.app_id, NEW.user_id, NEW.platform, NEW.union_account_id, NEW.kind,
+         NEW.occurred_at)
+      IS DISTINCT FROM
+      ROW(OLD.id, OLD.app_id, OLD.user_id, OLD.platform, OLD.union_account_id, OLD.kind,
+          OLD.occurred_at)
+    OR ((OLD.resolved_at IS NOT NULL OR OLD.resolution IS NOT NULL)
+      AND ROW(NEW.resolved_at, NEW.resolution) IS DISTINCT FROM ROW(OLD.resolved_at, OLD.resolution))
+  THEN
+    RAISE EXCEPTION 'union_binding_conflicts are immutable and resolve at most once'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_update_delete(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -2488,6 +2513,28 @@ END)),
 
 
 --
+-- Name: union_binding_conflicts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.union_binding_conflicts (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    platform text NOT NULL,
+    union_account_id uuid NOT NULL,
+    kind text NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    resolved_at timestamp with time zone,
+    resolution text,
+    CONSTRAINT union_binding_conflicts_kind_check CHECK ((kind = ANY (ARRAY['occupied'::text, 'cooling'::text, 'rebind'::text]))),
+    CONSTRAINT union_binding_conflicts_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text]))),
+    CONSTRAINT union_binding_conflicts_resolution_check CHECK ((resolution = ANY (ARRAY['bound_active'::text, 'already_active'::text]))),
+    CONSTRAINT union_binding_conflicts_resolution_pair_check CHECK (((resolved_at IS NULL) = (resolution IS NULL))),
+    CONSTRAINT union_binding_conflicts_resolved_order_check CHECK ((resolved_at >= occurred_at))
+);
+
+
+--
 -- Name: union_bindings; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3519,6 +3566,14 @@ ALTER TABLE ONLY app.union_auth_sessions
 
 
 --
+-- Name: union_binding_conflicts union_binding_conflicts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_binding_conflicts
+    ADD CONSTRAINT union_binding_conflicts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: union_bindings union_bindings_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4180,6 +4235,20 @@ CREATE INDEX union_auth_sessions_user_idx ON app.union_auth_sessions USING btree
 
 
 --
+-- Name: union_binding_conflicts_history_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_binding_conflicts_history_idx ON app.union_binding_conflicts USING btree (app_id, user_id, platform, occurred_at);
+
+
+--
+-- Name: union_binding_conflicts_unresolved_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX union_binding_conflicts_unresolved_idx ON app.union_binding_conflicts USING btree (app_id, user_id, platform) WHERE (resolved_at IS NULL);
+
+
+--
 -- Name: union_bindings_relation_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -4513,6 +4582,20 @@ CREATE TRIGGER product_refs_no_key_rewrite BEFORE UPDATE ON app.product_refs FOR
 --
 
 CREATE TRIGGER union_auth_sessions_no_rewrite BEFORE UPDATE ON app.union_auth_sessions FOR EACH ROW EXECUTE FUNCTION app.reject_union_auth_session_rewrite();
+
+
+--
+-- Name: union_binding_conflicts union_binding_conflicts_no_delete; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER union_binding_conflicts_no_delete BEFORE DELETE ON app.union_binding_conflicts FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: union_binding_conflicts union_binding_conflicts_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER union_binding_conflicts_no_rewrite BEFORE UPDATE ON app.union_binding_conflicts FOR EACH ROW EXECUTE FUNCTION app.reject_union_binding_conflict_rewrite();
 
 
 --
@@ -4915,6 +4998,22 @@ ALTER TABLE ONLY app.union_auth_sessions
 
 
 --
+-- Name: union_binding_conflicts union_binding_conflicts_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_binding_conflicts
+    ADD CONSTRAINT union_binding_conflicts_account_fkey FOREIGN KEY (app_id, platform, union_account_id) REFERENCES app.union_accounts(app_id, platform, id);
+
+
+--
+-- Name: union_binding_conflicts union_binding_conflicts_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_binding_conflicts
+    ADD CONSTRAINT union_binding_conflicts_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: union_bindings union_bindings_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5153,6 +5252,13 @@ REVOKE ALL ON FUNCTION app.reject_product_ref_key_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_union_auth_session_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_union_binding_conflict_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_union_binding_conflict_rewrite() FROM PUBLIC;
 
 
 --
@@ -6962,6 +7068,28 @@ GRANT SELECT ON TABLE app.union_auth_sessions TO couli_readonly;
 --
 
 GRANT UPDATE(used_at) ON TABLE app.union_auth_sessions TO couli_app;
+
+
+--
+-- Name: TABLE union_binding_conflicts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.union_binding_conflicts TO couli_app;
+GRANT SELECT ON TABLE app.union_binding_conflicts TO couli_readonly;
+
+
+--
+-- Name: COLUMN union_binding_conflicts.resolved_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resolved_at) ON TABLE app.union_binding_conflicts TO couli_app;
+
+
+--
+-- Name: COLUMN union_binding_conflicts.resolution; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resolution) ON TABLE app.union_binding_conflicts TO couli_app;
 
 
 --
