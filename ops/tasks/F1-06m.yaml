@@ -1,0 +1,28 @@
+id: F1-06m
+repo: rebate-platform
+title: 后台账号只读：GET /admin/v1/admins（页码分页 page、page_size ≤200）与 GET /admin/v1/admins/{admin_id}，只限超管，不返回密码哈希、动态码密钥与完整验证手机号；查询走主库；去掉这 2 条的 planned
+type: impl
+# 2026-10-09 入账（后台后端线 admin-backend，任务书 §2 第 3 项）。依据 04 §6.6 admins 行、§5 分页、§11（「后台账号与权限」只限超管、不是权限点）、BR-ID-34 正文、BR-ID-33（验证手机号脱敏）、
+# 03 §9.1 分页，以及 contracts/openapi.yaml adminListAdmins、adminGetAdmin 与 AdminAccount 的描述，由编排者摘入任务书第 2 节。
+# 要点：x-auth super（F1-06k 的后台令牌检查已判非超管 10403 admin_permission_denied）；page / page_size 越界 20001；admin_id 不存在按契约；排序固定、可复现；
+# 列表与详情只读，走主库 couli_app（账号数少；couli_readonly 读不到验证手机号密文，台账评审 S1-3）；permissions 字段按契约 AdminAccount：超管返回空集（is_super=true 即全有），
+# 其余按 admin_permissions；locked_until 取 F1-06o 的列，锁已到期返回 null；verify_phone_masked 按 BR-ID-33 脱敏。去掉两个操作的 planned，重生成 openapi.gen.ts，admin-auth.test.ts 只改这两个的 planned 断言。
+# 不做：新建、停用、勾选权限点、重置身份验证器（契约里还没有，随后续契约任务）。与 F1-06l 串行（契约槽一次一个，后合并者变基重生成）。合并后在 HANDOFF「F1 前端线」一节末尾留一行：F1-06i 账号列表页可入账。
+refs: []
+refs_hash: {}
+deps: [F1-06k]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/admin-auth.test.ts'
+test_paths:
+  - 'test/spec/admin/accounts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/accounts/**'
+status: todo
+pr: null
