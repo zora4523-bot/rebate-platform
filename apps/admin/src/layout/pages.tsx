@@ -1,9 +1,9 @@
 // Shell-owned pages: no permission yet (design-hifi AdmHomeNoPerm), welcome, a menu whose page
 // is not wired yet, and a failed permission load (antd Result / Card / Empty).
 import { LockOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, Flex, Result, Typography } from 'antd';
+import { Avatar, Button, Card, Empty, Flex, Result, Typography } from 'antd';
 import type { MouseEvent } from 'react';
-import { useHref, useNavigate } from 'react-router';
+import { useHref, useLinkClickHandler } from 'react-router';
 import { noPermissionTexts, shellTexts } from '../texts/shell.ts';
 
 export interface NoPermissionPageProps {
@@ -21,12 +21,12 @@ export function NoPermissionPage({
   permissionCount,
   onRefresh,
 }: NoPermissionPageProps) {
-  const navigate = useNavigate();
   const reportsHref = useHref(REPORTS);
+  // A real link: plain left clicks navigate inside the router; modified or middle clicks keep the
+  // browser's default (new tab / window).
+  const handleReportsClick = useLinkClickHandler<HTMLAnchorElement>(REPORTS);
   function openReports(event: MouseEvent<HTMLElement>): void {
-    // A real link (new tab, copy address) that still navigates inside the router.
-    event.preventDefault();
-    void navigate(REPORTS);
+    handleReportsClick(event as MouseEvent<HTMLAnchorElement>);
   }
   return (
     <Flex vertical gap="middle">
@@ -35,7 +35,7 @@ export function NoPermissionPage({
       </Typography.Title>
       <Card>
         <Result
-          icon={<LockOutlined />}
+          icon={<Avatar size={64} icon={<LockOutlined />} className="admin-result-avatar" />}
           title={<h2 className="admin-plain-heading">{noPermissionTexts.title}</h2>}
           subTitle={noPermissionTexts.description(username)}
           extra={[
