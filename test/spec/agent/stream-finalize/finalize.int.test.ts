@@ -2,6 +2,7 @@
 // F3 overlapping, §7.2 X-10, r4-3, r4 L2, 并发退还; BR-AI-23 细则「受理记录与收尾」, BR-AI-15 退还 /
 // 归日 / quota_left, BR-AI-13; inherited B3-09b S1 BR-AI-23-lock-release-same-tx and
 // BR-AI-15-derived-counting).
+import { createTestDatabase } from '@couli/db/testing';
 import { randomUUID } from 'node:crypto';
 
 import { sql } from 'kysely';
@@ -46,7 +47,7 @@ import {
   waitingOnLock,
 } from './kit.ts';
 
-const pg = usePg();
+const pg = usePg(createTestDatabase);
 const LOCK_END = START_MS + 50_000;
 const at = (ms: number) => new FixedClock(new Date(ms));
 

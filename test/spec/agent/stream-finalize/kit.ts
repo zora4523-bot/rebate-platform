@@ -6,7 +6,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect } from 'vitest';
 
@@ -49,12 +48,22 @@ export interface Pg {
   readonly db: Kysely<DB>;
 }
 
-/** Registers beforeAll / afterAll for one database of this file; `pg.db` inside tests. */
-export function usePg(): Pg {
-  let database: TestDatabase | undefined;
+/** The one-shot database a test file creates (createTestDatabase from @couli/db/testing). */
+export interface FixtureDatabase {
+  urlFor(role: string): string;
+  drop(): Promise<void>;
+}
+
+/**
+ * Registers beforeAll / afterAll for one database of this file; `pg.db` inside tests. The
+ * integration test passes createTestDatabase: only *.int.test.ts files may import
+ * @couli/db/testing (.dependency-cruiser.cjs testcontainers-only-in-int-tests).
+ */
+export function usePg(createDatabase: () => Promise<FixtureDatabase>): Pg {
+  let database: FixtureDatabase | undefined;
   let db: Kysely<DB> | undefined;
   beforeAll(async () => {
-    database = await createTestDatabase();
+    database = await createDatabase();
     db = createDb({ connectionString: database.urlFor('couli_app'), max: 24 });
     connect(db);
   });

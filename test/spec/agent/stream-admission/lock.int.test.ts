@@ -1,5 +1,6 @@
 // B3-03g replacement of the B3-03c lock rules on PostgreSQL (design §7.3 rows lock:26 … :171;
 // lock:196 / :212 were Redis TTL rules and are dropped; rules:115 becomes the PG-unavailable case).
+import { createTestDatabase } from '@couli/db/testing';
 import { createDb, destroyDb } from '@couli/db';
 import { expect, it } from 'vitest';
 import {
@@ -21,7 +22,7 @@ import {
   withGate,
 } from './kit.ts';
 
-const pg = usePg();
+const pg = usePg(createTestDatabase);
 const K = 8;
 const STOP = { ending: 'stop', cardsDelivered: 0 } as const;
 
