@@ -35,6 +35,10 @@
 // same table compares as validated; literals are decoded as PostgreSQL reads them (E'…', U&'…',
 // dollar quotes; unknown escapes count as switching a timeout off); guard changes inside DO blocks are
 // refused; set_config anywhere in a statement.
+// CT-06g / CT-06h: set_config values must be plain string literals (a $1 parameter or a cast with a
+// length counts as off); NOT VALID is stripped only at the top level; the UTF-8 BOM is kept; dollar-
+// quoted literals compare by their text; column and table constraint forms compare equal. No squawk
+// exception on funds tables: any direct constraint rebuild holds ACCESS EXCLUSIVE and needs approval.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -264,6 +268,9 @@ export function isFundsTable(reference: string): boolean {
 function setConfigKeeps(text: string, m: RegExpMatchArray): boolean {
   const value = (m[2] ?? '').trim();
   if (!/^(?:[EeUu]&?'|'|\$)/.test(value)) return false;
+  // A value starting with $ must be a whole dollar-quoted literal: $1 is a parameter (CT-06h).
+  if (value.startsWith('$') && !/^(\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)[\s\S]*\1$/.test(value))
+    return false;
   const after = text.slice((m.index ?? 0) + m[0].length);
   if (
     !/^\s*(?:::\s*(?:"?pg_catalog"?\s*\.\s*)?"?(?:text|varchar|character\s+varying|name)"?\s*)?[,)]/i.test(
@@ -1066,7 +1073,13 @@ export function normaliseDefinition(text: string): string {
       .replace(/\s*([(),=])\s*/g, '$1');
   // Literals (E'…', U&'…', '…') are decoded and rewritten in one canonical form, so E'a\'b' equals
   // 'a''b' and a backslash escape cannot shift where literals start and end (CT-06f).
-  let t = text
+  // Dollar-quoted literals ($$…$$, $tag$…$tag$) become plain ones first, so their text is kept as
+  // written and $$a$$ equals 'a' (CT-06h).
+  // Read token by token, so a $$ inside a quoted literal is left alone.
+  const plain = text.replace(new RegExp(LITERAL_SRC, 'g'), (m: string) =>
+    m.startsWith('$') ? `'${(decodeLiteral(m) ?? '').replace(/'/g, "''")}'` : m,
+  );
+  let t = plain
     .split(
       /([Ee]'(?:[^'\\]|''|\\[\s\S])*'|[Uu]&'(?:[^']|'')*'(?:\s*UESCAPE\s*'[^']')?|'(?:[^']|'')*')/,
     )
@@ -1122,10 +1135,25 @@ function namedConstraints(blanked: string, kept: string): { name: string; defini
     name: bareName(m[1] ?? ''),
     at: (m.index ?? 0) + (m[0].length - m[0].trimStart().length),
   }));
-  return found.map((c, i) => ({
-    name: c.name,
-    definition: normaliseDefinition(kept.slice(c.at, found[i + 1]?.at ?? kept.length).trim()),
-  }));
+  // A column constraint names its column implicitly: written as the table constraint it equals
+  // (`id bigint CONSTRAINT x PRIMARY KEY` is `CONSTRAINT x PRIMARY KEY (id)`, REFERENCES is
+  // FOREIGN KEY (col) REFERENCES), so both forms compare equal (CT-06h).
+  const head = blanked.replace(/^\s*ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?/i, '');
+  const column = /^\s*(?:CONSTRAINT|PRIMARY|UNIQUE|CHECK|FOREIGN|EXCLUDE|LIKE)\b/i.test(head)
+    ? null
+    : (/^\s*("[^"]+"|\w+)/.exec(head)?.[1] ?? null);
+  return found.map((c, i) => {
+    let raw = kept.slice(c.at, found[i + 1]?.at ?? kept.length).trim();
+    if (column !== null) {
+      raw = raw
+        .replace(
+          /^(CONSTRAINT\s+\S+\s+)(PRIMARY\s+KEY|UNIQUE)(?!\s*(?:\(|NULLS\b))/i,
+          `$1$2 (${column})`,
+        )
+        .replace(/^(CONSTRAINT\s+\S+\s+)REFERENCES\b/i, `$1FOREIGN KEY (${column}) REFERENCES`);
+    }
+    return { name: c.name, definition: normaliseDefinition(raw) };
+  });
 }
 
 /** Definitions of triggers (table/name), constraints (table/name) and indexes (name), last one wins. */
@@ -1573,9 +1601,7 @@ export function checkMigration(
       message: 'squawk-ignore-file is not accepted; ignore single statements with a reason instead',
     });
   }
-  const allowedIgnores = identicalRebuildIgnores(sql, context);
   for (const ignore of sql.matchAll(IGNORE_ANY)) {
-    if (allowedIgnores.some((a) => a.ignore === ignore.index)) continue;
     // The statement the ignore belongs to: the one the comment precedes or sits inside (from the `;`
     // before the comment to the `;` after it; comments blanked, positions kept), or, for a comment
     // that follows a `;` on the same line with nothing in between, the statement that just ended
@@ -1602,93 +1628,6 @@ export function checkMigration(
     }
   }
   return problems;
-}
-
-/**
- * CT-06g: squawk refuses a constraint added without NOT VALID (constraint-missing-not-valid) and a
- * VALIDATE in the same transaction, while the gate refuses a funds-table constraint rebuilt NOT VALID
- * without VALIDATE. The one way through: `-- squawk-ignore constraint-missing-not-valid` (that rule
- * alone) on the line before an ALTER TABLE of a funds table whose every ADD CONSTRAINT recreates a
- * constraint with exactly its definition in the migration history (no NOT VALID), and whose other
- * subcommands only drop those same constraints. Returns each such ignore's offset and the [from, to)
- * offsets of its statement.
- */
-export function identicalRebuildIgnores(
-  sql: string,
-  context: MigrationContext = NO_CONTEXT,
-): { ignore: number; from: number; to: number }[] {
-  // Only the migration history proves a constraint existed: no history, no exception.
-  if (context.migrationsSql.length === 0) return [];
-  const code = withoutComments(sql);
-  const valued = withoutComments(sql, true);
-  const history = guardDefinitions(context.migrationsSql);
-  // The regenerated schema already shows a constraint this file adds, so it is never used here.
-  const out: { ignore: number; from: number; to: number }[] = [];
-  for (const ignore of sql.matchAll(IGNORE_ANY)) {
-    const at = ignore.index ?? 0;
-    const eol = sql.indexOf('\n', at);
-    const rest = sql.slice(at, eol === -1 ? sql.length : eol);
-    if (!/^squawk-ignore\s+constraint-missing-not-valid\s*(?:\*\/\s*)?$/.test(rest)) continue;
-    // The statement the comment precedes (not one it trails).
-    const prev = code.lastIndexOf(';', at);
-    if (prev !== -1 && /^[ \t]*$/.test(code.slice(prev + 1, at))) continue;
-    const stop = code.indexOf(';', at);
-    const end = stop === -1 ? code.length : stop;
-    const text = code.slice(prev + 1, end);
-    const kept = valued.slice(prev + 1, end);
-    // Only the comment itself may sit between it and the statement.
-    if (!/^[^\n]*\n\s*ALTER\b/i.test(text.slice(at - prev - 1))) continue;
-    const a = ALTER_TABLE.exec(text);
-    if (a === null || !isFundsTable(a[1] ?? '')) continue;
-    const table = bareName(a[1] ?? '');
-    const parts = topLevelParts(text, a[0].length, text.length);
-    const addName = (q: string): string | null => {
-      const c = new RegExp(String.raw`^\s*ADD\s+CONSTRAINT${GAP}(${IDENT})`, 'i').exec(q);
-      return c === null ? null : bareName(c[1] ?? '');
-    };
-    const adds = parts.filter((q) => addName(q.text) !== null);
-    const names = new Set(adds.map((q) => addName(q.text) ?? ''));
-    const dropsIn = (qs: readonly { text: string }[]): string[] =>
-      qs.flatMap((q) => {
-        const d = new RegExp(
-          String.raw`^\s*DROP\s+CONSTRAINT${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})\s*$`,
-          'i',
-        ).exec(q.text);
-        return d === null ? [] : [bareName(d[1] ?? '')];
-      });
-    // The DROP may sit in this statement or in an earlier ALTER TABLE of the same table.
-    const earlierDrops = code
-      .slice(0, prev + 1)
-      .split(';')
-      .flatMap((t) => {
-        const e = ALTER_TABLE.exec(t);
-        if (e === null || bareName(e[1] ?? '') !== table) return [];
-        return dropsIn(topLevelParts(t, e[0].length, t.length));
-      });
-    const drops = new Set([...earlierDrops, ...dropsIn(parts)]);
-    const ok =
-      adds.length > 0 &&
-      [...names].every((n) => drops.has(n)) &&
-      parts.every((q) => {
-        if (addName(q.text) !== null) return true;
-        const d = new RegExp(
-          String.raw`^\s*DROP\s+CONSTRAINT${GAP}(?:IF\s+EXISTS${GAP})?(${IDENT})\s*$`,
-          'i',
-        ).exec(q.text);
-        return d !== null && names.has(bareName(d[1] ?? ''));
-      }) &&
-      adds.every((q) => {
-        const clause = kept
-          .slice(q.start, q.start + q.text.length)
-          .trim()
-          .replace(/^add\s+/i, '');
-        if (withoutNotValid(clause) !== clause) return false;
-        const before = history.constraints.get(`${table}/${addName(q.text) ?? ''}`);
-        return before !== undefined && before === normaliseDefinition(clause);
-      });
-    if (ok) out.push({ ignore: at, from: prev + 1, to: end });
-  }
-  return out;
 }
 
 /** The SQL with every squawk-ignore directive blanked (same offsets): what squawk reports without the exceptions. */
@@ -1750,19 +1689,16 @@ export function fundsTableAt(sql: string, line: number, column: number): string 
 function ignoredFundsFindings(
   binary: string,
   config: string,
-  files: readonly { file: string; sql: string; allowed: readonly { from: number; to: number }[] }[],
+  files: readonly { file: string; sql: string }[],
 ): string[] | null {
   const scratch = mkdtempSync(join(tmpdir(), 'lint-migrations-'));
   try {
-    const bare = new Map<
-      string,
-      { file: string; sql: string; allowed: readonly { from: number; to: number }[] }
-    >();
+    const bare = new Map<string, { file: string; sql: string }>();
     for (const entry of files) {
       const name = basename(entry.file);
       const copy = withoutIgnores(entry.sql);
       writeFileSync(join(scratch, name), copy);
-      bare.set(name, { file: entry.file, sql: copy, allowed: entry.allowed });
+      bare.set(name, { file: entry.file, sql: copy });
     }
     const res = spawnSync(binary, ['-c', config, '--reporter', 'gcc', ...bare.keys()], {
       cwd: scratch,
@@ -1775,14 +1711,6 @@ function ignoredFundsFindings(
       const entry = m === null ? undefined : bare.get(basename(m[1] ?? ''));
       if (m === null || entry === undefined) continue;
       const table = fundsTableAt(entry.sql, Number(m[2]), Number(m[3]));
-      // The identical funds constraint rebuild the gate verified (CT-06g) keeps its one exception.
-      const at = findingOffset(entry.sql, Number(m[2]), Number(m[3]));
-      if (
-        m[4] === 'constraint-missing-not-valid' &&
-        at !== null &&
-        entry.allowed.some((a) => at >= a.from && at < a.to)
-      )
-        continue;
       if (table !== null) {
         refusals.push(
           `${entry.file}:${Number(m[2]) + 1}: ${m[4]} on a statement of funds or attribution table ${bareTableName(table)} (${table}) while the file carries squawk-ignore: no exceptions there (规划/02 §16.3)`,
@@ -1898,21 +1826,16 @@ function main(argv: readonly string[]): number {
     .filter((name) => name.endsWith('.sql'))
     .sort()
     .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') }));
-  const withIgnores: {
-    file: string;
-    sql: string;
-    allowed: readonly { from: number; to: number }[];
-  }[] = [];
+  const withIgnores: { file: string; sql: string }[] = [];
   for (const file of files) {
     const sql = readFileSync(join(root, file), 'utf8');
+    if (/squawk-ignore/.test(sql)) withIgnores.push({ file, sql });
     const context: MigrationContext = {
       approved:
         APPROVED_GUARD_CHANGES[basename(file)] === createHash('sha256').update(sql).digest('hex'),
       schemaSql,
       migrationsSql: allSql.filter((m) => m.name < basename(file)).map((m) => m.sql),
     };
-    if (/squawk-ignore/.test(sql))
-      withIgnores.push({ file, sql, allowed: identicalRebuildIgnores(sql, context) });
     for (const problem of checkMigration(file, sql, context)) {
       console.error(`lint-migrations: ${problem.file}:${problem.line}: ${problem.message}`);
       failed = true;
@@ -1954,7 +1877,7 @@ function main(argv: readonly string[]): number {
   console.log(`lint-migrations: squawk over ${files.join(' ')}`);
   const res = spawnSync(binary, ['-c', config, '--reporter', 'gcc', ...files], {
     cwd: root,
-    encoding: 'utf8',
+    stdio: 'inherit',
   });
   if (res.error !== undefined) {
     console.error(`lint-migrations: cannot run squawk: ${res.error.message}`);
@@ -1964,32 +1887,7 @@ function main(argv: readonly string[]): number {
     console.error(`lint-migrations: squawk was killed by signal ${res.signal ?? 'unknown'}`);
     return 2;
   }
-  // squawk's ignore covers the next line only; a verified identical rebuild written over several
-  // lines (DROP on one, ADD on the next) keeps its one exception for its whole statement (CT-06g).
-  let reported = 0;
-  let exempted = 0;
-  for (const line of res.stdout.split('\n')) {
-    if (/^.+?:\d+:\d+: error:/.test(line)) reported++;
-    const m = /^(.+?):(\d+):(\d+): warning: (\S+)/.exec(line);
-    if (m !== null) {
-      const entry = withIgnores.find((e) => basename(e.file) === basename(m[1] ?? ''));
-      const at = entry === undefined ? null : findingOffset(entry.sql, Number(m[2]), Number(m[3]));
-      if (
-        m[4] === 'constraint-missing-not-valid' &&
-        entry !== undefined &&
-        at !== null &&
-        entry.allowed.some((a) => at >= a.from && at < a.to)
-      ) {
-        exempted++;
-        continue;
-      }
-      reported++;
-    }
-    if (line !== '') console.log(line);
-  }
-  if (res.stderr !== '') process.stderr.write(res.stderr);
-  if (res.status === 0) return 0;
-  return reported === 0 && exempted > 0 ? 0 : 1;
+  return res.status !== 0 ? 1 : 0;
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(import.meta.filename)) {
