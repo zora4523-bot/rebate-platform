@@ -6,8 +6,9 @@ import {
   useRef,
   useState,
   type ReactElement,
+  type ReactNode,
 } from 'react';
-import { createPortal } from 'react-dom';
+import { Button, Flex, Modal, Typography } from 'antd';
 import { stepUpTexts } from '../../texts/step-up.ts';
 import { OTP_LENGTH, OtpInput } from '../otp-input/index.ts';
 import type { StepUpModalProps, StepUpResult } from './types.ts';
@@ -25,7 +26,11 @@ const ERROR_TOO_FREQUENT = 42901;
 
 const FOCUSABLE = 'a[href], button, input:not([type="hidden"]), select, textarea, [tabindex]';
 
-/** Tabbable controls inside the dialog in DOM order (disabled and negative tabindex skipped). */
+/**
+ * Tabbable controls inside the dialog content in DOM order (disabled and negative tabindex
+ * skipped). `panel` is the content wrapper, so rc-dialog's two focus sentinels around it are not
+ * part of the cycle.
+ */
 function tabbables(panel: HTMLElement): HTMLElement[] {
   return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
     (element) => element.tabIndex >= 0 && !element.matches(':disabled'),
@@ -93,6 +98,30 @@ function retryAfter(seconds: number | undefined, fallback: number): number {
     : fallback;
 }
 
+/** The antd Modal is portalled straight into `body`, so its root is the layer `isolate` keeps. */
+function bodyContainer(): HTMLElement {
+  return document.body;
+}
+
+/** Direct child of `body` that holds `element` (the Modal's root), or `element` itself. */
+function bodyLayer(element: HTMLElement): HTMLElement {
+  let layer = element;
+  while (layer.parentElement !== null && layer.parentElement !== document.body)
+    layer = layer.parentElement;
+  return layer;
+}
+
+/** antd renders the title element (`aria-labelledby` of the dialog); make it the focus target. */
+function focusTitle(panel: HTMLElement, descriptionId: string): void {
+  const dialog = panel.closest<HTMLElement>('[role="dialog"]');
+  const labelledBy = dialog?.getAttribute('aria-labelledby');
+  const title = labelledBy ? document.getElementById(labelledBy) : null;
+  if (dialog === null || title === null) return;
+  dialog.setAttribute('aria-describedby', descriptionId);
+  title.tabIndex = -1;
+  title.focus({ preventScroll: true });
+}
+
 /**
  * Hide everything behind the dialog (`inert` + `aria-hidden`): every direct child of `body`
  * except the dialog's own layer — so antd Modal / Drawer portals underneath are isolated too —
@@ -123,24 +152,6 @@ function isolate(layer: HTMLElement, root: HTMLElement | null): () => void {
   };
 }
 
-function CloseIcon(): ReactElement {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M6 6l12 12M18 6 6 18" />
-    </svg>
-  );
-}
-
 /**
  * Step-up verification dialog (规划/03 §9.2, BR-ID-34). It neither stores the token nor sends
  * requests: the caller verifies in `onSubmit` / `onResend` and closes it after `onVerified`.
@@ -155,11 +166,9 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
   const { tier, operation, details, maskedPhone, onSubmit, onResend, onClose, onVerified } = props;
   const clock = props.clock ?? monotonicNow;
   const copy = stepUpTexts[tier];
-  const titleId = useId();
   const descriptionId = useId();
-  const layerRef = useRef<HTMLDivElement>(null);
+  // Wrapper around the antd Modal content (modalRender): close button, header, body, footer.
   const panelRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
   // Bumped on every opening and closing; results of requests started under an older
@@ -227,16 +236,22 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
     nextTabbable(panel, event.shiftKey)?.focus();
   });
 
+  function handleAfterOpenChange(opened: boolean): void {
+    const panel = panelRef.current;
+    // rc-dialog focuses its own sentinel only when focus is outside; keep the title as the start.
+    if (opened && panel !== null && !panel.contains(document.activeElement))
+      focusTitle(panel, descriptionId);
+  }
+
   const applicationRoot = props.applicationRoot;
   useLayoutEffect(() => {
     const panel = panelRef.current;
-    const layer = layerRef.current;
-    if (panel === null || layer === null) return;
+    if (panel === null) return;
     generationRef.current += 1;
     const active = document.activeElement;
     const previous = active instanceof HTMLElement && active !== document.body ? active : null;
-    const undo = isolate(layer, applicationRoot ?? document.getElementById('root'));
-    titleRef.current?.focus();
+    const undo = isolate(bodyLayer(panel), applicationRoot ?? document.getElementById('root'));
+    focusTitle(panel, descriptionId);
     const listener = (event: KeyboardEvent) => handleKeyDown(event, panel);
     // Capture on window so the dialog sees keys before any layer underneath.
     window.addEventListener('keydown', listener, true);
@@ -247,7 +262,7 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
       undo();
       restoreFocus(panel, previous);
     };
-  }, [applicationRoot]);
+  }, [applicationRoot, descriptionId]);
 
   useEffect(() => {
     const delays = [
@@ -348,60 +363,79 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
     } else applyFailure(result, 'resend', sendRoundRef.current);
   }
 
-  return createPortal(
-    <div ref={layerRef} className="step-up-layer">
-      <div className="step-up-backdrop" aria-hidden="true" />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        className="step-up-dialog"
-      >
-        <div className="step-up-header">
-          <h2 ref={titleRef} id={titleId} tabIndex={-1} className="step-up-title">
-            {copy.title}
-          </h2>
-          <button
-            type="button"
-            aria-label={stepUpTexts.close}
-            className="step-up-close"
-            onClick={dismiss}
-          >
-            <CloseIcon />
-          </button>
-        </div>
-        <div id={descriptionId} className="step-up-description">
-          <div>
+  const footer: ReactNode = [
+    <Button key="cancel" autoInsertSpace={false} onClick={dismiss}>
+      {stepUpTexts.cancel}
+    </Button>,
+    <Button
+      key="submit"
+      type="primary"
+      autoInsertSpace={false}
+      disabled={!canSubmit}
+      loading={submitting}
+      aria-busy={submitting ? true : undefined}
+      onClick={() => void submit()}
+    >
+      {stepUpTexts.submit}
+    </Button>,
+  ];
+
+  return (
+    <Modal
+      open
+      centered
+      width={480}
+      title={copy.title}
+      closable={{ 'aria-label': stepUpTexts.close }}
+      maskClosable={false}
+      // Escape and Tab are handled by the capture listener above (cancel in-flight work first).
+      keyboard={false}
+      destroyOnHidden
+      // No zoom / fade: the dialog is measured and screenshotted right after opening, and it
+      // unmounts at once on close (every opening starts afresh).
+      transitionName=""
+      maskTransitionName=""
+      getContainer={bodyContainer}
+      classNames={{ header: 'step-up-header' }}
+      footer={footer}
+      onCancel={dismiss}
+      afterOpenChange={handleAfterOpenChange}
+      modalRender={(content) => <div ref={panelRef}>{content}</div>}
+    >
+      <Flex vertical gap={20}>
+        <Flex vertical gap={4} id={descriptionId}>
+          <Typography.Text>
             {stepUpTexts.operationPrefix}
-            <span className="step-up-operation">{operation}</span>
-          </div>
+            <Typography.Text strong>{operation}</Typography.Text>
+          </Typography.Text>
           {(details ?? []).map((line, index) => (
-            <div key={index} className="step-up-detail">
+            <Typography.Text key={index} type="secondary">
               {line}
-            </div>
+            </Typography.Text>
           ))}
           {tier === 'sms' ? (
-            <div className="step-up-detail">{stepUpTexts.smsExplanation}</div>
+            <Typography.Text type="secondary">{stepUpTexts.smsExplanation}</Typography.Text>
           ) : null}
-        </div>
-        <div className="step-up-code">
+        </Flex>
+        <Flex vertical align="center" gap="small">
           {tier === 'sms' ? (
-            <div className="step-up-sent">
-              <span>
+            <Flex align="center" justify="space-between" gap="small" className="step-up-sent">
+              <Typography.Text>
                 {stepUpTexts.smsSentTo}
-                <span className="step-up-phone">{maskedPhone}</span>
-              </span>
-              <button
-                type="button"
-                className="step-up-resend"
+                <Typography.Text strong className="step-up-phone">
+                  {maskedPhone}
+                </Typography.Text>
+              </Typography.Text>
+              <Button
+                type="link"
+                size="small"
+                autoInsertSpace={false}
                 disabled={countdown > 0 || resending || onResend === undefined}
                 onClick={() => void resend()}
               >
                 {countdown > 0 ? stepUpTexts.resendCountdown(countdown) : stepUpTexts.resend}
-              </button>
-            </div>
+              </Button>
+            </Flex>
           ) : null}
           <OtpInput
             value={code}
@@ -413,24 +447,8 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
             inputRef={inputRef}
             onEnter={() => void submit()}
           />
-        </div>
-        <div className="step-up-actions">
-          <button type="button" className="step-up-button step-up-button-default" onClick={dismiss}>
-            {stepUpTexts.cancel}
-          </button>
-          <button
-            type="button"
-            className="step-up-button step-up-button-primary"
-            disabled={!canSubmit}
-            aria-busy={submitting ? true : undefined}
-            onClick={() => void submit()}
-          >
-            {submitting ? <span className="step-up-spinner" aria-hidden="true" /> : null}
-            {stepUpTexts.submit}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+        </Flex>
+      </Flex>
+    </Modal>
   );
 }
