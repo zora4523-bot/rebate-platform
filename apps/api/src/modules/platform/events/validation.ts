@@ -66,6 +66,30 @@ export function instant(value: unknown): asserts value is Date {
   }
 }
 
+const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/**
+ * Exactly the strings Date#toISOString() gives for an instant of 0..2^48−1 ms (what publish puts in
+ * occurred_at): a four-digit year up to 9999, or `+` and six digits from year 10000 on.
+ */
+export function occurredAt(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = /^(?:(\d{4})|\+(0\d{5}))-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.\d{3}Z$/.exec(
+    value,
+  );
+  if (match === null) return false;
+  const [, short, long, month, day, hour, minute, second] = match.map(Number);
+  const year = (match[1] === undefined ? long : short)!;
+  if (match[2] !== undefined && year < 10_000) return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = month === 2 && leap ? 29 : daysInMonth[month! - 1];
+  if (days === undefined || day! < 1 || day! > days || hour! > 23 || minute! > 59 || second! > 59) {
+    return false;
+  }
+  const ms = Date.parse(value);
+  return Number.isInteger(ms) && ms >= 0 && ms < 2 ** 48;
+}
+
 export function subscriptions(
   value: unknown,
   catalog?: readonly QueueSpec[],
