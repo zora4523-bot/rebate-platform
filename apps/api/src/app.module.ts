@@ -80,6 +80,7 @@ import {
 } from './modules/platform/index.ts';
 import {
   RiskModule,
+  RiskScanModule,
   SIGNATURE_CHECK,
   createBlocklistService,
   createDeviceRegistrationRisk,
@@ -647,6 +648,9 @@ export class AppModule {
         ...(options.entry === 'admin' ? [adminAuthModule()] : []),
         ...(identity === undefined ? [] : [identity, riskModule(identity)]),
         ...(union === undefined ? [] : [union]),
+        // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
+        // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
+        ...(options.entry === 'worker' ? [RiskScanModule.forWorker()] : []),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [
               catalogPorts(union, linking),
