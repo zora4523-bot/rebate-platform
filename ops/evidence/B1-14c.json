@@ -1,0 +1,94 @@
+{
+  "risk_note": "RV1 (apps/api/src/modules/notification/resilience/**; notification is RV1 since #365; rule tests under test/**). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit), container red run on the spec_commit tree, implementation by Codex through codex-run.sh impl --phase impl (1 attempt; the orchestrator only ran prettier --write on it). Ledger refs are empty (the rows come from 规划/02 §14 短信 / 推送, not 08). Fake channels only; the backup SMS vendor is not registered, so the backup channel is a port with a fake id. Local container verify:fast: the task's tests passed, unrelated tests timed out under host load ~120; full verification by the required CI checks (approvals id 21). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist (idempotency, concurrency, clock ok; rounding, sign, partial refund, app_id n/a): SMS failover, breaker, no write retry, result shapes, push inbox-first fallback match the skeleton contract and 02 §14; 1 S2 (the sms.provider switch read has no timeout; no switch port is wired yet) to follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 2,
+      "note": "fresh read-only Codex session, not the implementing one: round 1 ran on an incomplete brief (brief.ts refused the 35 KB review brief) and is not counted as the verdict; round 2 on the full brief: pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by a Claude subagent reviewed by a fresh read-only Codex session: round 1 pass"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-14c",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "c1acf48b80abd4655cd9dd8bba4a07ebdd811cc7",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c1acf48b80abd4655cd9dd8bba4a07ebdd811cc7",
+      "tree": "17d25cbcc67672c3b21744de44d12b3685891691",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T05:20:24Z",
+      "finished_at": "2026-10-10T05:21:09Z",
+      "red_tests": [
+        "test/spec/notification/resilience/push-fallback.test.ts > [02 §14 推送] 推送成功：站内消息先写入一次再推送，推送只调用一次，不写第二条站内消息",
+        "test/spec/notification/resilience/push-fallback.test.ts > [02 §14 推送][QA-05a] 推送通道 503、连接重置、429：回落站内消息（照常写入一次），结果标明推送未送达；推送不自动重试",
+        "test/spec/notification/resilience/push-fallback.test.ts > [02 §14 推送][02 §1 原则 4][QA-05a] 推送超时：按登记表 push 行单次时限 3000 毫秒中止推送并回落，站内消息已在推送前写入",
+        "test/spec/notification/resilience/push-fallback.test.ts > [02 §14 推送][02 §1 原则 4] 登记表对 push 的时限覆盖（1000 毫秒）生效",
+        "test/spec/notification/resilience/push-fallback.test.ts > [02 §14 推送] 推送通道应答拒收：同样回落站内消息，标明 rejected，不重发",
+        "test/spec/notification/resilience/push-fallback.test.ts > [02 §14 推送][02 §1 原则 4] 熔断：推送按登记表熔断策略打开后不再调推送通道、直接回落站内消息；熔断期满恢复推送",
+        "test/spec/notification/resilience/push-fallback.test.ts > [02 §14 推送] 站内消息写入失败：deliver 以同一错误拒绝，不推送（交给至少一次投递重来，避免重复推送）",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信] 开关指向主通道 aliyun 且主通道正常：只走主通道，未降级；备用通道不被调用",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信][QA-05a] 主通道 503（服务端错误）：同一条短信改走备用通道，结果标明实际用备用、发生降级",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信][QA-05a] 主通道连接重置、429 限流同样算通道故障：各自改走备用通道",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信][02 §1 原则 4][QA-05a] 主通道超时：按登记表 sms 行单次时限 3000 毫秒中止主通道请求，再切备用（不等 QA-05a 的 15000 毫秒）",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信][02 §1 原则 4] 登记表对 sms 的时限覆盖（1500 毫秒）生效：主通道到 1500 毫秒即判超时切备用",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信][QA-05a] 主通道慢 1000 毫秒但在时限内应答成功：仍走主通道，不降级、不调备用",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信 sms.provider] 开关指向备用通道（人工切换）：直接走备用通道，不调主通道，不算降级",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信 sms.provider] 开关每条短信都读一次：改开关后下一条短信即换通道，不必重建",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信 sms.provider] 人工切到备用后备用通道故障：改走另一个已登记通道（主通道），标明降级",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信 sms.provider] 开关读不到（拒绝、同步抛错、空值、空串、未登记的标识）一律按主通道发送，不因开关故障停发",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信 sms.provider] 开关指向备用标识但没有登记备用通道：按主通道发送",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信][02 §1 原则 4] 通道写不自动重试：主备都 503 时每个通道对这条短信只调用 1 次，返回明确失败（不抛异常、不伪造成功）",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信][QA-05a] 主备都超时：各在 3000 毫秒中止，共 6000 毫秒后返回 all_channels_down",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信] 没有登记备用通道且主通道故障：返回 no_backup 失败，主通道只调用 1 次",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信] 通道应答拒收（不是通道故障）：不切备用、不重发，结果为 rejected",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信][02 §1 原则 4] 熔断：主通道按登记表熔断策略打开后，后续短信不再调主通道、直接走备用；熔断期满回主通道",
+        "test/spec/notification/resilience/sms-failover.test.ts > [02 §14 短信] 主备通道提供方标识必须是非空串且互不相同，否则构造即拒绝（invalid_policy）"
+      ],
+      "expected": [
+        "test/spec/notification/resilience/push-fallback.test.ts",
+        "test/spec/notification/resilience/sms-failover.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "45c03e6c00010279f4ccc4d61ee0f43e3f01a4bb1ce4197ccede50a86b378173"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "2c4cb816237e564c8b4b377c558ca398932cf1b4",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
