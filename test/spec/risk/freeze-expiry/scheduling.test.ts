@@ -9,7 +9,7 @@ import {
   PostgresQueryCompiler,
 } from 'kysely';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createScan, job, ports, type Job, type Options } from './kit.ts';
+import { createScan, job, ports, type Job, type Options, type Scan } from './kit.ts';
 
 const databases: Kysely<DB>[] = [];
 afterEach(async () => {
@@ -40,6 +40,9 @@ async function emptyScan() {
 }
 
 it('[AC-B1-03j#22] AppModule 只给 worker 装配 risk-scan handler，队列启动后投两类种子', async () => {
+  const scanModule = (await import(
+    new URL('../../../../apps/api/src/modules/risk/application/risk-scan.ts', import.meta.url).href
+  )) as { createRiskScan(options: Options): Scan };
   const apiRequire = createRequire(new URL('../../../../apps/api/package.json', import.meta.url));
   const { NestFactory } = (await import(
     pathToFileURL(apiRequire.resolve('@nestjs/core')).href
@@ -83,6 +86,9 @@ it('[AC-B1-03j#22] AppModule 只给 worker 装配 risk-scan handler，队列启�
         running = false;
       },
     };
+    const start = queue.start;
+    // Observe the actual assembled service; seed() remains an explicit caller responsibility.
+    const scanFactory = vi.spyOn(scanModule, 'createRiskScan');
     const original = PlatformModule.forRoot.bind(PlatformModule);
     const spy = vi.spyOn(PlatformModule, 'forRoot').mockImplementation((options) => {
       const module = original(options);
@@ -113,12 +119,31 @@ it('[AC-B1-03j#22] AppModule 只给 worker 装配 risk-scan handler，队列启�
       const handlers = register.mock.calls.filter(([name]) => name === 'risk-scan');
       expect(handlers).toHaveLength(entry === 'worker' ? 1 : 0);
       expect(send).not.toHaveBeenCalled();
+      expect(queue.start).toBe(start);
       await queue.start();
+      expect(send).not.toHaveBeenCalled();
+      if (entry === 'worker') {
+        expect(scanFactory).toHaveBeenCalledTimes(1);
+        const result = scanFactory.mock.results[0]!;
+        expect(result.type).toBe('return');
+        await result.value.seed();
+      }
       const seeds = send.mock.calls.filter(([name]) => name === 'risk-scan');
       expect(seeds.map(([, name]) => name).sort()).toEqual(
         entry === 'worker' ? ['daily-alerts', 'freeze-expiry'] : [],
       );
       if (entry === 'worker') {
+        for (const [name, singletonKey] of [
+          ['freeze-expiry', 'freeze-expiry:2026-10-14T16:00'],
+          ['daily-alerts', 'daily-alerts:2026-10-15'],
+        ]) {
+          expect(send).toHaveBeenCalledWith(
+            'risk-scan',
+            name,
+            {},
+            expect.objectContaining({ trx: null, singletonKey }),
+          );
+        }
         send.mockClear();
         await handlers[0]![1](job('freeze-expiry'));
         expect(send).toHaveBeenCalledExactlyOnceWith(
@@ -131,6 +156,7 @@ it('[AC-B1-03j#22] AppModule 只给 worker 装配 risk-scan handler，队列启�
     } finally {
       await context?.close();
       spy.mockRestore();
+      scanFactory.mockRestore();
     }
   }
 }, 30_000);

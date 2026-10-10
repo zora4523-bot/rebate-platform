@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { sql, type Transaction, type ValueNode } from 'kysely';
 import type { DB } from '@couli/db';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -195,6 +196,96 @@ for (const change of ['extended', 'indefinite', 'appealing', 'banned'] as const)
   });
 }
 
+for (const change of ['extended', 'indefinite', 'appealing'] as const) {
+  it(`[AC-B1-03j#6] 事务内重查后、写状态前并发 ${change}，行锁或重新判定必须保护人工结果`, async () => {
+    const service = await f.service();
+    const subject = await f.user();
+    const appealId = randomUUID();
+    const frozenUntil = change === 'extended' ? new Date(f.clock.now().getTime() + DAY) : null;
+    const attempts: unknown[] = [];
+    const intervene = () =>
+      f.db.transaction().execute(async (trx) => {
+        // The scan holds its connection here, so this transaction uses a different connection.
+        // PostgreSQL's lock_timeout provides the handshake: no sleeps or timing guesses.
+        await sql`SET LOCAL lock_timeout = '100ms'`.execute(trx);
+        await trx
+          .selectFrom('user_risk_state')
+          .select('state')
+          .where('app_id', '=', subject.app_id)
+          .where('user_id', '=', subject.user_id)
+          .forUpdate()
+          .executeTakeFirstOrThrow();
+        await trx
+          .updateTable('user_risk_state')
+          .set((eb) => ({
+            state: change === 'appealing' ? 'appealing' : 'frozen',
+            frozen_until: frozenUntil,
+            reason: PRIVATE_REASON,
+            reason_category: 'other',
+            changed_by: 'human-reviewer',
+            row_version: eb('row_version', '+', 1),
+          }))
+          .where('app_id', '=', subject.app_id)
+          .where('user_id', '=', subject.user_id)
+          .executeTakeFirstOrThrow();
+        if (change === 'appealing') {
+          await trx
+            .insertInto('appeals')
+            .values({
+              id: appealId,
+              ...subject,
+              target_type: 'account',
+              target_id: subject.user_id,
+              prev_risk_state: 'frozen',
+              status: 'processing',
+              content: PRIVATE_CONTENT,
+              deadline_at: new Date(f.clock.now().getTime() + 3 * DAY),
+            })
+            .execute();
+        }
+      });
+    f.setRiskState.mockImplementationOnce(async (trx, command) => {
+      // Pause exactly at the writer boundary, after the scanner's last eligibility read.
+      // Keep observations outside the callback: the scanner may catch per-user errors.
+      try {
+        await intervene();
+        attempts.push('committed');
+      } catch (error) {
+        attempts.push(
+          typeof error === 'object' && error !== null && 'code' in error && error.code === '55P03'
+            ? 'blocked'
+            : error,
+        );
+      }
+      await f.writeState(trx, command);
+    });
+    await service.expireFrozen();
+    expect(f.setRiskState).toHaveBeenCalledTimes(1);
+    expect(attempts).toHaveLength(1);
+    expect(['blocked', 'committed']).toContain(attempts[0]);
+    if (attempts[0] === 'blocked') {
+      // The competing transaction rolled back. It may commit only after the scan releases its lock.
+      expect((await f.states())[0]).toMatchObject({ state: 'normal', row_version: 8 });
+      await intervene();
+    } else {
+      // A committed change must make the scan abandon its stale candidate without publishing.
+      expect(await f.eventRows()).toEqual([]);
+    }
+    expect((await f.states())[0]).toMatchObject({
+      ...subject,
+      state: change === 'appealing' ? 'appealing' : 'frozen',
+      frozen_until: frozenUntil,
+      changed_by: 'human-reviewer',
+      row_version: attempts[0] === 'blocked' ? 9 : 8,
+    });
+    if (change === 'appealing') {
+      expect(await f.appeals()).toEqual([
+        expect.objectContaining({ id: appealId, ...subject, status: 'processing' }),
+      ]);
+    }
+  });
+}
+
 it('[AC-B1-03j#7] 分批扫描不会因前批被解冻移出结果集而漏掉后批，查询有批量上限', async () => {
   const queryLimits: (number | undefined)[] = [];
   const db = f.db.withPlugin({
@@ -215,11 +306,20 @@ it('[AC-B1-03j#7] 分批扫描不会因前批被解冻移出结果集而漏掉�
     },
   });
   const service = await createScan({ ...f.options, db });
-  // Broad enough to cross ordinary scan batches without prescribing a production batch size.
-  for (let i = 0; i < 257; i++) await f.user();
+  // Discover the implementation's actual candidate limit on an empty scan, without changing
+  // the skeleton's public signature or assuming an arbitrary production batch size.
+  await service.expireFrozen();
+  const batchSize = queryLimits[0]!;
+  expect(batchSize).toBeGreaterThan(0);
+  expect(Number.isSafeInteger(batchSize)).toBe(true);
+  queryLimits.length = 0;
+  const userCount = batchSize + 3;
+  for (let i = 0; i < userCount; i++) await f.user();
   await service.expireFrozen();
   expect((await f.states()).filter((r) => r.state !== 'normal')).toEqual([]);
-  expect(await f.eventRows()).toHaveLength(257);
+  expect(await f.eventRows()).toHaveLength(userCount);
+  expect(queryLimits[0]).toBe(batchSize);
+  expect(queryLimits.filter((limit) => limit === batchSize).length).toBeGreaterThanOrEqual(2);
   // Per-user lookups can be unbounded; the initial candidate list must be bounded.
   expect(queryLimits[0]).toBeGreaterThan(0);
   expect(Number.isSafeInteger(queryLimits[0])).toBe(true);
