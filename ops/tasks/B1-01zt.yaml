@@ -20,6 +20,9 @@ paths:
   - 'apps/api/src/modules/platform/http/global-errors.test.ts'
 test_paths:
   - 'test/spec/platform/idempotency/followup-*'
+  # 既有规则测试 B1-03c#16 第 129 行断言锁被占时不读库（f.events 为空），与本任务 ① 的无锁读一次相冲突；
+  # 改为 toEqual(['lookup'])（钩子不运行的断言不变），走 test-change/B1-01zt 分支、负责人标签（2026-10-10 规划会话转达）。
+  - 'test/spec/risk/min-version/idempotency.test.ts'
 impl: claude
 tester: codex
 accept:
