@@ -14,6 +14,23 @@ afterEach(() => {
 });
 
 for (const tier of ['totp', 'sms'] as const) {
+  it(`[AC-F1-06r-MODAL#2] ${tier} 使用可见的 antd 遮罩，点击遮罩不取消验证`, () => {
+    const onClose = vi.fn();
+    render(createElement(StepUpModal, modalProps({ tier, maskedPhone: '137****3366', onClose })));
+    const dialog = screen.getByRole('dialog', { name: COPY[tier].title });
+    const wrap = dialog.closest('.ant-modal-wrap');
+    expect(wrap, 'dialog must belong to an antd Modal wrap').not.toBeNull();
+    const mask = wrap!.parentElement?.querySelector('.ant-modal-mask');
+    expect(mask, 'the same Modal must render its antd mask').toBeInstanceOf(HTMLElement);
+    expect(getComputedStyle(mask!).display).not.toBe('none');
+    // rc-dialog handles outside clicks on the wrap, not on the mask sibling.
+    fireEvent.mouseDown(wrap!);
+    fireEvent.mouseUp(wrap!);
+    fireEvent.click(wrap!);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: COPY[tier].title })).toBe(dialog);
+  });
+
   it(`[AC-F1-06r-MODAL#1] ${tier} 使用 antd 弹窗、按钮与输入框，失败提示仍可读`, async () => {
     const onSubmit = vi.fn(async () => ({ ok: false as const, code: 20002 }));
     render(

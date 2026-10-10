@@ -57,8 +57,9 @@ function bindings(file: ts.SourceFile, module: string, imported: string): Set<st
   return names;
 }
 
-it('[AC-F1-06r-SOURCE#1] step-up 从 antd 导入并以 JSX 渲染 Modal 和 Button', () => {
+it('[AC-F1-06r-SOURCE#1] step-up 从 antd 导入并以 JSX 渲染 Modal 和 Button，不关闭内置遮罩', () => {
   const sourceFiles = sources();
+  const disabledMasks: string[] = [];
   for (const component of ['Modal', 'Button']) {
     const rendered: string[] = [];
     for (const file of sourceFiles) {
@@ -67,12 +68,26 @@ it('[AC-F1-06r-SOURCE#1] step-up 从 antd 导入并以 JSX 渲染 Modal 和 Butt
         if (
           (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
           names.has(node.tagName.getText(file))
-        )
+        ) {
           rendered.push(location(file, node));
+          if (component === 'Modal') {
+            for (const attribute of node.attributes.properties) {
+              if (!ts.isJsxAttribute(attribute) || attribute.name.getText(file) !== 'mask')
+                continue;
+              const initializer = attribute.initializer;
+              if (!initializer || !ts.isJsxExpression(initializer)) continue;
+              let value = initializer.expression;
+              while (value && ts.isParenthesizedExpression(value)) value = value.expression;
+              if (value?.kind === ts.SyntaxKind.FalseKeyword)
+                disabledMasks.push(`${location(file, attribute)}: Modal mask={false}`);
+            }
+          }
+        }
       });
     }
     expect(rendered.length, `render imported antd ${component}`).toBeGreaterThan(0);
   }
+  expect(disabledMasks).toEqual([]);
 });
 
 it('[AC-F1-06r-SOURCE#2] step-up 无手写 portal、原生基础控件或仿造的 ant 类名', () => {

@@ -68,7 +68,7 @@ it('[AC-F1-06r-LOGIN-STEPS#2] 绑定流程保留具名 antd 步骤，完成页�
   currentStep('账号密码');
   await credentials(user);
   await screen.findByRole('heading', { name: TITLES.bind_totp });
-  expect(namedSteps().querySelectorAll('[aria-current="step"]')).toHaveLength(1);
+  currentStep('绑定身份验证器');
   await user.type(screen.getByRole('textbox', { name: '动态码' }), '123456');
   await user.click(screen.getByRole('button', { name: '验证并绑定' }));
   await screen.findByRole('heading', { name: TITLES.done });
