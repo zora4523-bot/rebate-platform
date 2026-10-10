@@ -21,6 +21,8 @@ import { HealthModule } from './modules/health/index.ts';
 import {
   IdentityModule,
   TOKEN_CHECK,
+  createSmsSender,
+  smsSenderToken,
   createIdentityAttrCodeReader,
   createIdentityCallerContext,
   createIdentityViewerContext,
@@ -550,6 +552,22 @@ function riskModule(identity: DynamicModule): DynamicModule {
 }
 
 /**
+ * The admin entry's console module (F1-06k, F1-06l). The sms step-up tier sends through identity's
+ * SmsSender port, provided here under identity's sender token as identity provides it on the api
+ * entry (the fake adapter in local / test, whose outbox tests read), so admin never imports
+ * identity.
+ */
+function adminAuthModule(): DynamicModule {
+  return AdminAuthModule.forRoot({
+    smsSender: {
+      provide: smsSenderToken(),
+      inject: [APP_CONFIG, ROOT_LOGGER],
+      useFactory: (config: AppConfig, logger: RootLogger) => createSmsSender(config.appEnv, logger),
+    },
+  });
+}
+
+/**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes, the risk module's request signature check, whose
  * device port identity implements, identity's token check, and the risk module's stage ④a gate
@@ -613,8 +631,9 @@ export class AppModule {
         // Provides the platform AUDIT_PORT globally on every entry (F1-06b).
         AdminModule,
         ...(isHttpEntry(options.entry) ? [HealthModule] : []),
-        // The /admin/v1 login routes, the admin request check and CORS policy (F1-06k).
-        ...(options.entry === 'admin' ? [AdminAuthModule.forRoot()] : []),
+        // The /admin/v1 login routes, the admin request check and CORS policy (F1-06k); step-up
+        // and me/permissions (F1-06l), whose sms tier sends through identity's SMS sender.
+        ...(options.entry === 'admin' ? [adminAuthModule()] : []),
         ...(identity === undefined ? [] : [identity, riskModule(identity)]),
         ...(union === undefined ? [] : [union]),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined

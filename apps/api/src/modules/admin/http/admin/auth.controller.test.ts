@@ -54,7 +54,7 @@ const post = (url: string, payload: unknown, remoteAddress = '127.0.0.1', header
     remoteAddress,
   });
 
-it('[AC-F1-06k] the admin entry mounts the six auth routes with their contract schemas', async () => {
+it('[AC-F1-06k] [AC-F1-06l#19] the admin entry mounts the auth and step-up routes with their contract schemas', async () => {
   const { schemas } = await build();
   expect([...schemas].sort()).toEqual(
     [
@@ -64,6 +64,9 @@ it('[AC-F1-06k] the admin entry mounts the six auth routes with their contract s
       '/admin/v1/auth/totp/bind',
       '/admin/v1/auth/totp',
       '/admin/v1/auth/logout',
+      // F1-06l: step-up (me/permissions is outside /admin/v1/auth/).
+      '/admin/v1/auth/step-up/sms-codes',
+      '/admin/v1/auth/step-up',
     ].sort(),
   );
   expect(contractRouteSchema('adminLogin')).toBeDefined();
@@ -180,7 +183,7 @@ it('[AC-F1-06k] staging without the admin key or whitelist refuses to initialise
 it('[AC-F1-06k] a contract admin / super route added after init is behind the admin check', async () => {
   await build();
   const server = app!.getHttpAdapter().getInstance();
-  server.get('/admin/v1/me/permissions', () => ({ code: 0, data: {} }));
+  // me/permissions is a real route since F1-06l; the admins list is still added here.
   server.get('/admin/v1/admins', () => ({ code: 0, data: {} }));
   for (const url of ['/admin/v1/me/permissions', '/admin/v1/admins']) {
     const response = await app!.inject({ method: 'GET', url, remoteAddress: '127.0.0.1' });

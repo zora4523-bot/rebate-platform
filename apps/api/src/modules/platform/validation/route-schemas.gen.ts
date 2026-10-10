@@ -2259,5 +2259,73 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       },
       "required": []
     }
+  },
+  "adminSendStepUpSms": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
+  },
+  "adminStepUp": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tier",
+        "code"
+      ],
+      "properties": {
+        "tier": {
+          "type": "string",
+          "description": "Admin step-up tier (enum admin_step_up_tier, BR-ID-34).",
+          "enum": [
+            "totp",
+            "sms"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "description": "Current 6-digit code of the authenticator, or of the SMS for the sms tier.",
+          "pattern": "^[0-9]{6}$"
+        }
+      }
+    }
+  },
+  "adminGetMyPermissions": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
   }
 } as const;

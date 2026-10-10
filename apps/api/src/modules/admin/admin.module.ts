@@ -2,7 +2,7 @@
 // module can `@Inject(AUDIT_PORT)` without importing admin (规划/02 §4.1 dependency direction),
 // and the durable TOTP replay store (admin_users.totp_last_step) for admin's own later use.
 // The console login, first binding and admin_token check (F1-06k) are AdminAuthModule
-// (./admin-auth.module.ts, admin entry only); permissions and step-up are later tasks.
+// (./admin-auth.module.ts, admin entry only), as are step-up and me/permissions (F1-06l).
 import { Global, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';

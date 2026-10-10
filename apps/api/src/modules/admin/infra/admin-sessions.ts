@@ -4,7 +4,8 @@
 // check, all read from the injected Clock (ruling §9.2 #11: the Redis TTL only cleans up).
 //
 // `touch` rewrites the record only while it still exists (SET … XX in one script), so a request
-// racing a logout never brings the revoked session back.
+// racing a logout never brings the revoked session back, and only with a later lastSeen, so an
+// older concurrent request never overwrites a newer one.
 //
 // Pure module (no decorators, erasable syntax, type-only imports from the platform barrel).
 import type { Clock, RedisNamespace } from '../../platform/index.ts';
@@ -30,7 +31,15 @@ export interface AdminSessions {
 /** Extra Redis lifetime beyond the Clock-judged limits: cleanup only. */
 const CLEANUP_MARGIN_SEC = 60;
 
-const TOUCH_SCRIPT = `if redis.call('SET', KEYS[1], ARGV[2], 'XX', 'EX', ARGV[1]) then return 1 end
+// Only a later lastSeen is written (F1-06l, F1-06k review S2): of concurrent requests, an older one
+// that lands last never moves the idle period back; it still reports the live session (1).
+const TOUCH_SCRIPT = `local current = redis.call('GET', KEYS[1])
+if not current then return 0 end
+local ok, record = pcall(cjson.decode, current)
+if ok and type(record) == 'table' and tonumber(record.lastSeenMs) and tonumber(record.lastSeenMs) >= tonumber(ARGV[3]) then
+  return 1
+end
+if redis.call('SET', KEYS[1], ARGV[2], 'XX', 'EX', ARGV[1]) then return 1 end
 return 0`;
 const REVOKE_SCRIPT = `return redis.call('DEL', KEYS[1])`;
 
@@ -73,7 +82,7 @@ export function createAdminSessions(deps: {
     async touch(sessionId, record) {
       const reply = await redis.eval(TOUCH_SCRIPT, {
         keys: [keyOf(sessionId)],
-        args: [JSON.stringify(record)],
+        args: [JSON.stringify(record), String(record.lastSeenMs)],
         ttlSeconds: ttlOf(record),
       });
       return reply === 1;

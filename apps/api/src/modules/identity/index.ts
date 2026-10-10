@@ -62,3 +62,5 @@ export type {
   SmsLoginResult,
   SmsLoginService,
 } from './application/sms-login.ts';
+// The process SMS sender and its Nest token (the admin entry's sms step-up tier, F1-06l).
+export { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
