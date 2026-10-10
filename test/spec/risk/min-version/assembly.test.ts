@@ -192,7 +192,8 @@ for (const transactional of [false, true]) {
         });
         const handled = vi.fn(async () => RESULT);
         let idem: Idempotency;
-        // 此 planned 路由实现时须换为其他 planned 路由，或改为替换真实控制器的服务依赖。
+        // B1-03i 起 submitAppeal 有真实控制器（risk 的 AppealsController）：下面 RiskModule.forRoot 的替换
+        // 把它去掉，由本探针独占该路由（B1-03r）；其余装配照旧是生产代码。
         class Probe {
           async submitAppeal() {
             const result = transactional
@@ -225,6 +226,9 @@ for (const transactional of [false, true]) {
           const module = originalRisk(options);
           return {
             ...module,
+            controllers: (module.controllers ?? []).filter(
+              (controller) => (controller as { name?: string }).name !== 'AppealsController',
+            ),
             providers: [
               ...(module.providers ?? []),
               { provide: SIGNATURE_CHECK, useValue: signature },
