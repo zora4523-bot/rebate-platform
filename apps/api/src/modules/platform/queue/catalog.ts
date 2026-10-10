@@ -13,13 +13,23 @@ const defaults = {
 } as const;
 
 export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
-  ...['order-rescan', 'settle', 'payout', 'notify', 'pool-refresh', 'poster', 'agent-trace'].map(
-    (name): QueueSpec =>
-      Object.freeze({
-        ...defaults,
-        name,
-        policy: name === 'settle' || name === 'payout' ? 'exclusive' : 'standard',
-      }),
+  ...[
+    'order-rescan',
+    'settle',
+    'payout',
+    'notify',
+    'pool-refresh',
+    'poster',
+    'agent-trace',
+    'risk-scan',
+  ].map((name): QueueSpec =>
+    Object.freeze({
+      ...defaults,
+      name,
+      // risk-scan (B1-03j): at most one queued or active job per time-slot singletonKey.
+      policy:
+        name === 'settle' || name === 'payout' || name === 'risk-scan' ? 'exclusive' : 'standard',
+    }),
   ),
   Object.freeze({
     name: 'dead-letter',
@@ -49,6 +59,7 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('pool-refresh', 1),
     work('poster', 2, 0.5),
     work('agent-trace', 2),
+    work('risk-scan', 1),
   ]),
   payout: Object.freeze([work('payout', 1)]),
 });
