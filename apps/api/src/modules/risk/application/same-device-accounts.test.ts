@@ -1,11 +1,11 @@
-// Unit tests of the same-device check's I/O shape without a database (B1-03k): Kysely runs on a
-// scripted driver that records every compiled statement, to pin the window passed to the login
-// reader, configuration read on the caller's handle, the fallback warnings, and the writes (rule
-// row then hit rows with the Clock instant, both ON CONFLICT DO NOTHING; none when unmarked), the
-// replay of an already marked withdrawal at its first instant, and the configuration savepoints
-// inside a transaction (statement errors rolled back and defaulted, connection errors rethrown), and
-// the per-withdrawal advisory lock taken first inside a transaction (before the prior-hit read).
-// The SQL itself runs against PostgreSQL in the rule tests (test/spec/risk/same-device).
+// Unit tests of the same-device check's I/O shape without a database (B1-03k, B1-03n): Kysely runs
+// on a scripted driver that records every compiled statement, to pin the window passed to the
+// login reader, configuration read on the judging transaction, the fallback warnings, the isolation
+// refusal, the per-withdrawal advisory lock, the stored-judgement lookup and verbatim replay, the
+// writes (rule row, judgement row, then hit rows, all ON CONFLICT DO NOTHING; a judgement row even
+// when unmarked), the unique-conflict re-read, and the configuration savepoints (statement errors
+// rolled back and defaulted, connection errors rethrown). The SQL itself runs against PostgreSQL in
+// the rule tests (test/spec/risk/same-device, test/spec/risk/same-device-replay).
 import type { DB } from '@couli/db';
 import {
   Kysely,
@@ -20,6 +20,7 @@ import {
 import { expect, it } from 'vitest';
 import { createRootLogger, type Clock } from '../../platform/index.ts';
 import {
+  SameDeviceIsolationError,
   createSameDeviceAccountsCheck,
   sameDeviceAccountsCheckToken,
   sameDeviceLoginReaderToken,
@@ -32,17 +33,33 @@ const NOW = '2026-09-25T00:00:00.000Z';
 /** A fixed instant, a fresh Date per read. */
 const clock: Clock = { now: () => new Date(Date.parse(NOW)) };
 
-/** Rows a scripted statement answers; by default one returned id for an insert into risk_hits. */
+/** Rows a scripted statement answers. */
 type Respond = (sql: string, index: number) => readonly unknown[];
 
-const defaultRespond: Respond = (sql) =>
-  sql.startsWith('insert into "app"."risk_hits"') ? [{ id: 1n }] : [];
+const ISOLATION_SQL = "SELECT current_setting('transaction_isolation') AS isolation";
+const LOOKUP = 'select "result" from "app"."risk_judgements" where ';
+const JUDGEMENT_INSERT = 'insert into "app"."risk_judgements"';
 
-function fakeDb(statements: string[], respond: Respond = defaultRespond): Kysely<DB> {
+/** Read committed, an empty lookup, and one returned id for the judgement insert. */
+const defaultRespond: Respond = (sql) => {
+  if (sql === ISOLATION_SQL) return [{ isolation: 'read committed' }];
+  if (sql.startsWith(JUDGEMENT_INSERT)) return [{ id: 1n }];
+  return [];
+};
+
+interface Recorder {
+  readonly statements: string[];
+  readonly parameters: (readonly unknown[])[];
+  /** The isolation level each transaction judge() began itself was opened with. */
+  readonly begun: unknown[];
+}
+
+function fakeDb(recorder: Recorder, respond: Respond = defaultRespond): Kysely<DB> {
   const connection: DatabaseConnection = {
     executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
-      statements.push(compiled.sql);
-      const rows = respond(compiled.sql, statements.length - 1);
+      recorder.statements.push(compiled.sql);
+      recorder.parameters.push(compiled.parameters);
+      const rows = respond(compiled.sql, recorder.statements.length - 1);
       return Promise.resolve({ rows } as QueryResult<R>);
     },
     async *streamQuery() {
@@ -52,7 +69,9 @@ function fakeDb(statements: string[], respond: Respond = defaultRespond): Kysely
   const driver: Driver = {
     init: async () => undefined,
     acquireConnection: async () => connection,
-    beginTransaction: async () => undefined,
+    beginTransaction: async (_connection, settings) => {
+      recorder.begun.push(settings.isolationLevel);
+    },
     commitTransaction: async () => undefined,
     rollbackTransaction: async () => undefined,
     releaseConnection: async () => undefined,
@@ -91,9 +110,10 @@ interface SetupOptions {
 function setup(values: Record<string, unknown>, opts: SetupOptions = {}) {
   const failing = opts.failing ?? [];
   const failure = opts.failure ?? (() => new Error('down'));
-  const statements: string[] = [];
+  const recorder: Recorder = { statements: [], parameters: [], begun: [] };
+  const { statements } = recorder;
   const lines: string[] = [];
-  const db = fakeDb(statements, opts.respond);
+  const db = fakeDb(recorder, opts.respond);
   const windows: { start: Date; end: Date; handle: unknown }[] = [];
   const configHandles: unknown[] = [];
   const service = createSameDeviceAccountsCheck({
@@ -132,36 +152,169 @@ function setup(values: Record<string, unknown>, opts: SetupOptions = {}) {
     lines.map((line) => JSON.parse(line) as { level: number }).filter((l) => l.level === 40);
   /** Statements other than reads and savepoint control. */
   const writes = () => statements.filter((sql) => sql.startsWith('insert'));
-  return { db, statements, windows, configHandles, judge, judgeInTransaction, warns, writes };
+  return {
+    db,
+    recorder,
+    statements,
+    windows,
+    configHandles,
+    judge,
+    judgeInTransaction,
+    warns,
+    writes,
+  };
 }
 
-it('[AC-B1-03k#3] 窗口是 Clock 的 [now − 720h, now]，读写与配置都走传入 handle', async () => {
+/** A respond that answers the stored-judgement lookup with `stored` (after `empty` misses). */
+function storedRespond(stored: unknown, empty = 0): Respond {
+  let lookups = 0;
+  return (sql) => {
+    if (sql.startsWith(LOOKUP)) {
+      lookups += 1;
+      return lookups > empty ? [{ result: stored }] : [];
+    }
+    if (sql.startsWith(JUDGEMENT_INSERT)) return [];
+    return defaultRespond(sql, 0);
+  };
+}
+
+it('[AC-B1-03k#3] 窗口是 Clock 的 [now − 720h, now]，配置与登录读取都走同一判定事务', async () => {
   const { db, windows, configHandles, judge } = setup({});
   await judge('a');
   expect(windows).toHaveLength(1);
   expect(windows[0]!.end.toISOString()).toBe(NOW);
   expect(Date.parse(NOW) - windows[0]!.start.getTime()).toBe(720 * 3600 * 1000);
-  expect(windows[0]!.handle).toBe(db);
-  expect(configHandles).toEqual([db]);
+  const trx = windows[0]!.handle as Kysely<DB>;
+  expect(trx).not.toBe(db);
+  expect(trx.isTransaction).toBe(true);
+  expect(configHandles).toEqual([trx]);
 });
 
-it('[AC-B1-03k#1] 未命中不写任何行', async () => {
-  const { writes, judge } = setup({});
-  expect(await judge('b')).toEqual({ marked: false, devices: [{ device_hash: H, rank: 2 }] });
-  expect(writes()).toEqual([]);
+it('[AC-B1-03n#1] 未命中：登记规则并写一行判定（marked=false、完整结果、Clock 时刻），不写命中行', async () => {
+  const { statements, recorder, writes, judge } = setup({});
+  const result = await judge('b');
+  expect(result).toEqual({ marked: false, devices: [{ device_hash: H, rank: 2 }] });
+  expect(writes()).toHaveLength(2);
+  expect(writes()[0]).toMatch(/^insert into "app"\."risk_rules"/);
+  const index = statements.findIndex((sql) => sql.startsWith(JUDGEMENT_INSERT));
+  expect(statements[index]).toMatch(
+    /on conflict \("app_id", "rule_id", "ref_type", "ref_id"\) do nothing returning "id"$/,
+  );
+  const params = recorder.parameters[index]!;
+  expect(params).toContain('couli');
+  expect(params).toContain('SAME_DEVICE_MULTI_ACCOUNT');
+  expect(params).toContain('withdrawal');
+  expect(params).toContain('w1');
+  expect(params).toContain('b');
+  expect(params).toContain(false);
+  expect(params).toContain(JSON.stringify(result));
+  expect(params.some((value) => value instanceof Date && value.toISOString() === NOW)).toBe(true);
 });
 
-it('[AC-B1-03k#8][AC-B1-03k#10] 命中先登记规则再写命中行，都带 ON CONFLICT DO NOTHING', async () => {
-  const { statements, judge } = setup({});
+it('[AC-B1-03k#8][AC-B1-03n#1] 命中：先登记规则，再写判定行，最后写命中行', async () => {
+  const { statements, writes, judge } = setup({});
   expect(await judge('c')).toEqual({ marked: true, devices: [{ device_hash: H, rank: 3 }] });
-  expect(statements).toHaveLength(3);
-  expect(statements[0]).toMatch(/^select "created_at" from "app"\."risk_hits" where /);
-  expect(statements[1]).toMatch(
+  expect(writes()).toHaveLength(3);
+  expect(writes()[0]).toMatch(
     /^insert into "app"\."risk_rules".* on conflict \("app_id", "rule_id"\) do nothing$/,
   );
-  expect(statements[2]).toMatch(
-    /^insert into "app"\."risk_hits".* on conflict do nothing returning "id"$/,
+  expect(writes()[1]!.startsWith(JUDGEMENT_INSERT)).toBe(true);
+  expect(writes()[2]).toMatch(/^insert into "app"\."risk_hits".* on conflict do nothing$/);
+  expect(statements.at(-1)).toBe(writes()[2]);
+});
+
+it('[AC-B1-03n#2][AC-B1-03n#3] 已有判定：原样返回存储结果，不读配置、不读登录、不写行', async () => {
+  const stored = { marked: true, devices: [{ device_hash: H, rank: 7 }] };
+  const { windows, configHandles, writes, statements, judge } = setup(
+    { 'risk.device_login_accounts_limit': 4 },
+    { respond: storedRespond(stored) },
   );
+  expect(await judge('b')).toEqual(stored);
+  expect(windows).toEqual([]);
+  expect(configHandles).toEqual([]);
+  expect(writes()).toEqual([]);
+  expect(statements.at(-1)).toMatch(
+    /^select "result" from "app"\."risk_judgements" where "app_id" = \$1 and "rule_id" = \$2 and "ref_type" = \$3 and "ref_id" = \$4$/,
+  );
+});
+
+it('[AC-B1-03n#5] 判定行唯一冲突：重读先提交的结论返回，不写命中行', async () => {
+  const winner = { marked: false, devices: [{ device_hash: H, rank: 2 }] };
+  const { writes, judge } = setup({}, { respond: storedRespond(winner, 1) });
+  expect(await judge('c')).toEqual(winner);
+  expect(writes().some((sql) => sql.startsWith('insert into "app"."risk_hits"'))).toBe(false);
+});
+
+it('[AC-B1-03n#5] 唯一冲突后读不到判定行时报错，不当作未命中', async () => {
+  const { judge } = setup(
+    {},
+    {
+      respond: (sql) => (sql.startsWith(JUDGEMENT_INSERT) ? [] : defaultRespond(sql, 0)),
+    },
+  );
+  await expect(judge('c')).rejects.toThrow(/conflicting row unread/);
+});
+
+it.each([
+  null,
+  [],
+  { marked: 'yes', devices: [] },
+  { marked: true },
+  { marked: true, devices: [{ device_hash: H }] },
+  { marked: true, devices: [{ device_hash: H, rank: 1.5 }] },
+  { marked: true, devices: [null] },
+])('[AC-B1-03n#2] 存储结果畸形 %j 时报错，不重算', async (stored) => {
+  const { windows, judge } = setup({}, { respond: storedRespond(stored) });
+  await expect(judge('c')).rejects.toThrow(/stored result malformed/);
+  expect(windows).toEqual([]);
+});
+
+it.each(['repeatable read', 'serializable'])(
+  '[AC-B1-03n#7] %s 事务拒绝判定（错误提示 read committed），不取锁、不读、不写',
+  async (isolation) => {
+    const { statements, windows, configHandles, judgeInTransaction } = setup(
+      {},
+      {
+        respond: (sql) => (sql === ISOLATION_SQL ? [{ isolation }] : defaultRespond(sql, 0)),
+      },
+    );
+    const failure = judgeInTransaction('c');
+    await expect(failure).rejects.toBeInstanceOf(SameDeviceIsolationError);
+    await expect(failure).rejects.toThrow(/read committed/i);
+    expect(statements).toEqual([ISOLATION_SQL]);
+    expect(windows).toEqual([]);
+    expect(configHandles).toEqual([]);
+  },
+);
+
+it('[AC-B1-03n#7] 读不到隔离级别时报错，不判定', async () => {
+  const { windows, judge } = setup(
+    {},
+    { respond: (sql) => (sql === ISOLATION_SQL ? [] : defaultRespond(sql, 0)) },
+  );
+  await expect(judge('c')).rejects.toThrow(/transaction_isolation unread/);
+  expect(windows).toEqual([]);
+});
+
+it('[AC-B1-03n#6] 连接池 handle：自开 read committed 事务，先查隔离级别、取锁、查判定，再计算写入', async () => {
+  const { db, recorder, statements, windows, judge } = setup({});
+  expect((await judge('c')).marked).toBe(true);
+  expect(recorder.begun).toEqual(['read committed']);
+  expect(statements[0]).toBe(ISOLATION_SQL);
+  expect(statements[1]).toBe('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))');
+  expect(statements[2]!.startsWith(LOOKUP)).toBe(true);
+  expect(windows[0]!.handle).not.toBe(db);
+});
+
+it('[AC-B1-03n#5] 事务 handle：照用调用方事务，不另开事务；顺序同连接池', async () => {
+  const { recorder, statements, windows, judgeInTransaction } = setup({});
+  expect((await judgeInTransaction('c')).marked).toBe(true);
+  expect(recorder.begun).toEqual([undefined]);
+  expect(statements[0]).toBe(ISOLATION_SQL);
+  expect(statements[1]).toBe('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))');
+  expect(statements[2]!.startsWith(LOOKUP)).toBe(true);
+  expect(statements.filter((sql) => sql.includes('pg_advisory_xact_lock'))).toHaveLength(1);
+  expect((windows[0]!.handle as Kysely<DB>).isTransaction).toBe(true);
 });
 
 it('[AC-B1-03k#7] limit 坏值回 3 并打 warn；缺失不打 warn；读取失败回默认并打 warn', async () => {
@@ -180,6 +333,17 @@ it('[AC-B1-03k#7] limit 坏值回 3 并打 warn；缺失不打 warn；读取失�
   expect(failing.warns()).toHaveLength(2);
 });
 
+it('[AC-B1-03n#4] 配置读取失败按默认 3 判定，结论照常写进判定行', async () => {
+  const { recorder, statements, judge } = setup(
+    { 'risk.device_login_accounts_limit': 2 },
+    { failing: ['risk.device_login_accounts_limit'] },
+  );
+  const result = await judge('b');
+  expect(result).toEqual({ marked: false, devices: [{ device_hash: H, rank: 2 }] });
+  const index = statements.findIndex((sql) => sql.startsWith(JUDGEMENT_INSERT));
+  expect(recorder.parameters[index]).toContain(JSON.stringify(result));
+});
+
 it('[AC-B1-03k#7] 有效阈值生效', async () => {
   const two = setup({ 'risk.device_login_accounts_limit': 2 });
   expect((await two.judge('b')).marked).toBe(true);
@@ -194,63 +358,24 @@ it('[AC-B1-03k#8] 令牌是稳定的 symbol', () => {
   expect(sameDeviceLoginReaderToken()).not.toBe(sameDeviceAccountsCheckToken());
 });
 
-const FIRST = '2026-09-25T00:00:00.000Z';
-const LATER = '2026-10-15T00:00:00.000Z';
+it.each([false, true])(
+  '[AC-B1-03k#7] 配置读取各在保存点里，成功后释放（事务 handle=%s）',
+  async (inTransaction) => {
+    const ctx = setup({});
+    expect((await (inTransaction ? ctx.judgeInTransaction('c') : ctx.judge('c'))).marked).toBe(
+      true,
+    );
+    const control = ctx.statements.filter((sql) => /SAVEPOINT/.test(sql));
+    expect(control).toEqual([
+      'SAVEPOINT same_device_config',
+      'RELEASE SAVEPOINT same_device_config',
+      'SAVEPOINT same_device_config',
+      'RELEASE SAVEPOINT same_device_config',
+    ]);
+  },
+);
 
-it('[AC-B1-03k#10] 同一提现单已命中：以首次判定时刻为判定时点重算，返回已标记，不再写行', async () => {
-  const { statements, windows, writes, judge } = setup(
-    {},
-    {
-      clock: { now: () => new Date(Date.parse(LATER)) },
-      respond: (sql) =>
-        sql.startsWith('select "created_at" from "app"."risk_hits"')
-          ? [{ created_at: new Date(Date.parse(FIRST)) }]
-          : [],
-    },
-  );
-  expect(await judge('c')).toEqual({ marked: true, devices: [{ device_hash: H, rank: 3 }] });
-  expect(windows).toHaveLength(1);
-  expect(windows[0]!.end.toISOString()).toBe(FIRST);
-  expect(Date.parse(FIRST) - windows[0]!.start.getTime()).toBe(720 * 3600 * 1000);
-  expect(writes()).toEqual([]);
-  expect(statements[0]).toMatch(
-    /^select "created_at" from "app"\."risk_hits" where "app_id" = \$1 and "rule_id" = \$2 and "ref_type" = \$3 and "ref_id" = \$4 order by "created_at" limit \$5$/,
-  );
-});
-
-it('[AC-B1-03k#10] 并发判定写入落败：取先提交那次的判定时刻重算并返回', async () => {
-  let selects = 0;
-  const { windows, writes, judge } = setup(
-    {},
-    {
-      respond: (sql) => {
-        if (sql.startsWith('select "created_at" from "app"."risk_hits"')) {
-          selects += 1;
-          return selects === 1 ? [] : [{ created_at: new Date(Date.parse(NOW) - 1000) }];
-        }
-        return [];
-      },
-    },
-  );
-  expect(await judge('c')).toEqual({ marked: true, devices: [{ device_hash: H, rank: 3 }] });
-  expect(selects).toBe(2);
-  expect(writes()).toHaveLength(2);
-  expect(windows.map((w) => w.end.getTime())).toEqual([Date.parse(NOW), Date.parse(NOW) - 1000]);
-});
-
-it('[AC-B1-03k#7] 事务内配置读取各在保存点里，成功后释放', async () => {
-  const { statements, judgeInTransaction } = setup({});
-  expect((await judgeInTransaction('c')).marked).toBe(true);
-  const control = statements.filter((sql) => /SAVEPOINT/.test(sql));
-  expect(control).toEqual([
-    'SAVEPOINT same_device_config',
-    'RELEASE SAVEPOINT same_device_config',
-    'SAVEPOINT same_device_config',
-    'RELEASE SAVEPOINT same_device_config',
-  ]);
-});
-
-it('[AC-B1-03k#7] 事务内语句级错误（57014）回滚到保存点、用默认值并打 warn，事务可继续用', async () => {
+it('[AC-B1-03k#7] 语句级错误（57014）回滚到保存点、用默认值并打 warn，事务可继续用', async () => {
   const { statements, warns, writes, judgeInTransaction } = setup(
     {},
     {
@@ -271,7 +396,7 @@ it('[AC-B1-03k#7] 事务内语句级错误（57014）回滚到保存点、用默
     'RELEASE SAVEPOINT same_device_config',
   ]);
   expect(warns()).toHaveLength(1);
-  expect(writes()).toHaveLength(2);
+  expect(writes()).toHaveLength(3);
 });
 
 it('[AC-B1-03k#7] 连接级错误（08006、57P01）照常抛出，不写行', async () => {
@@ -289,34 +414,24 @@ it('[AC-B1-03k#7] 连接级错误（08006、57P01）照常抛出，不写行', a
   }
 });
 
-it('[AC-B1-03k#7] 不在事务里时不发保存点语句', async () => {
-  const { statements, judge } = setup({}, { failing: ['risk.merge_tombstone_dedupe'] });
-  expect((await judge('c')).marked).toBe(true);
-  expect(statements.filter((sql) => /SAVEPOINT/.test(sql))).toEqual([]);
-});
-
-it('[AC-B1-03k#10] 事务内先对提现单取事务级咨询锁，再查已有命中、计算、写入', async () => {
-  const { statements, writes, judgeInTransaction } = setup({});
-  expect((await judgeInTransaction('c')).marked).toBe(true);
-  expect(statements[0]).toBe('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))');
-  expect(statements[1]).toMatch(/^select "created_at" from "app"\."risk_hits" where /);
-  expect(statements.filter((sql) => sql.includes('pg_advisory_xact_lock'))).toHaveLength(1);
-  expect(writes()).toHaveLength(2);
-});
-
-it('[AC-B1-03k#10] 锁键按 app_id、ref_type、ref_id 区分', async () => {
+it('[AC-B1-03k#10][AC-B1-03n#8] 锁键按 app_id、ref_type、ref_id 区分', async () => {
   const keys: unknown[] = [];
-  const statements: string[] = [];
-  const db = new Kysely<DB>({
+  const db = fakeDb({ statements: [], parameters: [], begun: [] }, (sql) =>
+    sql === ISOLATION_SQL
+      ? [{ isolation: 'read committed' }]
+      : sql.startsWith(JUDGEMENT_INSERT)
+        ? [{ id: 1n }]
+        : [],
+  );
+  const recorded = new Kysely<DB>({
     dialect: {
       createAdapter: () => new PostgresAdapter(),
       createDriver: () => ({
         init: async () => undefined,
         acquireConnection: async () => ({
-          executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
-            statements.push(compiled.sql);
+          async executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
             if (compiled.sql.includes('pg_advisory_xact_lock')) keys.push(compiled.parameters[0]);
-            return Promise.resolve({ rows: [] } as QueryResult<R>);
+            return db.executeQuery<R>(compiled);
           },
           async *streamQuery() {
             throw new Error('not used');
@@ -339,20 +454,14 @@ it('[AC-B1-03k#10] 锁键按 app_id、ref_type、ref_id 区分', async () => {
     config: () => ({ configValue: () => Promise.resolve(null) }),
   });
   for (const id of ['w1', 'w2']) {
-    await db
-      .transaction()
-      .execute((trx) =>
-        service.judge(trx, { app_id: 'couli', user_id: 'c', ref: { type: 'withdrawal', id } }),
-      );
+    await service.judge(recorded, {
+      app_id: 'couli',
+      user_id: 'c',
+      ref: { type: 'withdrawal', id },
+    });
   }
   expect(keys).toEqual([
     'risk.same_device:couli:withdrawal:w1',
     'risk.same_device:couli:withdrawal:w2',
   ]);
-});
-
-it('[AC-B1-03k#10] 不在事务里时不发咨询锁语句', async () => {
-  const { statements, judge } = setup({});
-  expect((await judge('c')).marked).toBe(true);
-  expect(statements.some((sql) => sql.includes('pg_advisory_xact_lock'))).toBe(false);
 });
