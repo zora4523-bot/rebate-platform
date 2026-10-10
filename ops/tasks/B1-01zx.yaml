@@ -18,4 +18,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/crypto/**'
-status: todo
+status: done
+pr: 398
