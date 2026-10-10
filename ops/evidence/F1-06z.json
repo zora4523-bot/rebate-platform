@@ -1,0 +1,125 @@
+{
+  "task": "F1-06z",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "6a9341636b4412723b6d6e90f3621fc9a4ddfe37",
+  "red_tests": [
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#2] local 未设置媒体地址时使用保留域名默认值",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#2] test 未设置媒体地址时使用保留域名默认值",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#3] local 通过 loadConfig 下发合法 https 媒体地址",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#3] test 通过 loadConfig 下发合法 https 媒体地址",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#3] staging 通过 loadConfig 下发合法 https 媒体地址",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#3] prod 通过 loadConfig 下发合法 https 媒体地址",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#4] local 拒绝非 https、相对地址、查询和片段",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#4] test 拒绝非 https、相对地址、查询和片段",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#4] staging 拒绝非 https、相对地址、查询和片段",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#4] prod 拒绝非 https、相对地址、查询和片段",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#5] staging 缺少媒体地址仍可加载配置，写入与取地址按请求失败（空串同未设置）",
+    "test/spec/platform/media/config.test.ts > [AC-F1-06z#5] prod 缺少媒体地址仍可加载配置，写入与取地址按请求失败（空串同未设置）",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#6] svg 写入后能读回原字节，地址与读接口计算一致",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#6] png 写入后能读回原字节，地址与读接口计算一致",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#7] 同一摘要顺序和并发重复写入均幂等，其他内容独立保存",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#8] 拒绝摘要与实际字节不符，失败不能插入或覆盖已存内容",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#9] 摘要只接受小写六十四位十六进制",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#10] SHA-256 使用 Uint8Array 视图内的字节，不包含底层缓冲区前后缀",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#11] local 选择可写可取回的内存替身",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#11] test 选择可写可取回的内存替身",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#12] staging 未接适配器可构造，但每次 put 抛出映射为 50001 的约定错误",
+    "test/spec/platform/media/store.test.ts > [AC-F1-06z#12] prod 未接适配器可构造，但每次 put 抛出映射为 50001 的约定错误",
+    "test/spec/platform/media/url.test.ts > [AC-F1-06z#1] svg URL 保留路径前缀、去掉全部结尾斜杠并使用内容摘要",
+    "test/spec/platform/media/url.test.ts > [AC-F1-06z#1] png URL 保留路径前缀、去掉全部结尾斜杠并使用内容摘要",
+    "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#13] platform 公共出口导出 Symbol 令牌及不需写入即可调用的 URL 函数",
+    "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#14] local 在三个 HTTP 入口全局提供并导出按环境选择的 MEDIA_STORE",
+    "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#14] test 在三个 HTTP 入口全局提供并导出按环境选择的 MEDIA_STORE",
+    "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#14] staging 在三个 HTTP 入口全局提供并导出按环境选择的 MEDIA_STORE",
+    "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#14] prod 在三个 HTTP 入口全局提供并导出按环境选择的 MEDIA_STORE"
+  ],
+  "risk_note": "RV2 (platform/media, platform/config). Media store port for the platform-icons backend (BR-TEXT-24 storage): MEDIA_STORE (Symbol) provided globally on every entry; put(sha256, bytes, contentType) validates a lowercase 64-hex digest equal to the SHA-256 of the bytes and is idempotent per digest; mediaUrlOf(base, sha256, format) builds <base>/<sha256>.<ext>; MEDIA_PUBLIC_BASE_URL read through platform/config (https only, no query, fragment, userinfo or whitespace; local / test default https://media.local.invalid; staging / prod may leave it unset without refusing to start). local / test use an in-memory stand-in; staging / prod (no OSS adapter yet, B1-30) fail each put and URL request with MediaStoreUnavailableError, mapped to HTTP 500 / 50001 by the global filter; logs carry the digest only. No real storage call, no secret. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6a9341636b4412723b6d6e90f3621fc9a4ddfe37",
+      "tree": "382e464ab65cf9bb5fad4b4a6ffcb6218cfc9f9f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T08:02:28Z",
+      "finished_at": "2026-10-10T08:02:32Z",
+      "red_tests": [
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#2] local 未设置媒体地址时使用保留域名默认值",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#2] test 未设置媒体地址时使用保留域名默认值",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#3] local 通过 loadConfig 下发合法 https 媒体地址",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#3] test 通过 loadConfig 下发合法 https 媒体地址",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#3] staging 通过 loadConfig 下发合法 https 媒体地址",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#3] prod 通过 loadConfig 下发合法 https 媒体地址",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#4] local 拒绝非 https、相对地址、查询和片段",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#4] test 拒绝非 https、相对地址、查询和片段",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#4] staging 拒绝非 https、相对地址、查询和片段",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#4] prod 拒绝非 https、相对地址、查询和片段",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#5] staging 缺少媒体地址仍可加载配置，写入与取地址按请求失败（空串同未设置）",
+        "test/spec/platform/media/config.test.ts > [AC-F1-06z#5] prod 缺少媒体地址仍可加载配置，写入与取地址按请求失败（空串同未设置）",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#6] svg 写入后能读回原字节，地址与读接口计算一致",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#6] png 写入后能读回原字节，地址与读接口计算一致",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#7] 同一摘要顺序和并发重复写入均幂等，其他内容独立保存",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#8] 拒绝摘要与实际字节不符，失败不能插入或覆盖已存内容",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#9] 摘要只接受小写六十四位十六进制",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#10] SHA-256 使用 Uint8Array 视图内的字节，不包含底层缓冲区前后缀",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#11] local 选择可写可取回的内存替身",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#11] test 选择可写可取回的内存替身",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#12] staging 未接适配器可构造，但每次 put 抛出映射为 50001 的约定错误",
+        "test/spec/platform/media/store.test.ts > [AC-F1-06z#12] prod 未接适配器可构造，但每次 put 抛出映射为 50001 的约定错误",
+        "test/spec/platform/media/url.test.ts > [AC-F1-06z#1] svg URL 保留路径前缀、去掉全部结尾斜杠并使用内容摘要",
+        "test/spec/platform/media/url.test.ts > [AC-F1-06z#1] png URL 保留路径前缀、去掉全部结尾斜杠并使用内容摘要",
+        "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#13] platform 公共出口导出 Symbol 令牌及不需写入即可调用的 URL 函数",
+        "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#14] local 在三个 HTTP 入口全局提供并导出按环境选择的 MEDIA_STORE",
+        "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#14] test 在三个 HTTP 入口全局提供并导出按环境选择的 MEDIA_STORE",
+        "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#14] staging 在三个 HTTP 入口全局提供并导出按环境选择的 MEDIA_STORE",
+        "test/spec/platform/media/wiring.test.ts > [AC-F1-06z#14] prod 在三个 HTTP 入口全局提供并导出按环境选择的 MEDIA_STORE"
+      ],
+      "expected": [
+        "test/spec/platform/media/config.test.ts",
+        "test/spec/platform/media/store.test.ts",
+        "test/spec/platform/media/url.test.ts",
+        "test/spec/platform/media/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8bf3762ce4209fd005636ce2a37c1914cdc078d80a629b658b0efca5e3524552"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (the memory stand-in shares Buffer memory through slice()) tracked in followups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "29 rule tests by Codex (2 runs) reviewed by fresh Claude subagents: round 1 fail (S1: requiring a config problem for staging / prod without MEDIA_PUBLIC_BASE_URL contradicted frozen rule tests; the orchestrator ruling was changed to per-request 50001; S2: 50001 asserted through the global error handler, no trailing-slash assertion), round 2 pass with no findings"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "5ce651e6f8de8684423d904ca0ccb24ccc9dd2f5",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

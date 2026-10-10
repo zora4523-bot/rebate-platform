@@ -6,6 +6,7 @@ import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
 import { JWT_ENV_NAMES, readJwtKeyConfig, type JwtKeyConfig } from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
+import { readMediaConfig } from './media.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 
 export { APP_ENVS, type AppEnv } from './app-env.ts';
@@ -37,6 +38,12 @@ type EnvKey = keyof z.input<typeof envSchema>;
 const ENV_KEYS = Object.keys(envSchema.shape) as EnvKey[];
 
 export interface AppConfig {
+  /**
+   * MEDIA_PUBLIC_BASE_URL (./media.ts, F1-06z): https base of stored media files. loadConfig gives
+   * the local / test default when unset there; undefined in staging / prod when unset (media writes
+   * and URLs then fail per request). A hand-built config without it counts as unset.
+   */
+  readonly mediaPublicBaseUrl?: string | undefined;
   readonly appEnv: AppEnv;
   readonly logLevel: LogLevel;
   /** Validated CLOCK_NOW text; parsed into an instant only inside platform/clock. */
@@ -141,6 +148,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     }
     problems.push(...readTrustedProxies(env).problems);
     problems.push(...readAdminAuthConfig(appEnv.success ? appEnv.data : undefined, env).problems);
+    problems.push(...readMediaConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     throw new ConfigError(problems);
   }
 
@@ -154,6 +162,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...proxyProblems);
   const { adminAuth, problems: adminProblems } = readAdminAuthConfig(values.APP_ENV, env);
   violations.push(...adminProblems);
+  const { mediaPublicBaseUrl, problems: mediaProblems } = readMediaConfig(values.APP_ENV, env);
+  violations.push(...mediaProblems);
   if (violations.length > 0) throw new ConfigError(violations);
 
   return {
@@ -169,5 +179,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     jwt,
     trustedProxies,
     adminAuth,
+    mediaPublicBaseUrl,
   };
 }

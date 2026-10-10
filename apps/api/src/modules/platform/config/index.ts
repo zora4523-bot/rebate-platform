@@ -23,3 +23,5 @@ export {
   readAdminAuthConfig,
 } from './admin-auth.ts';
 export type { AdminAuthConfig } from './admin-auth.ts';
+// Media public base URL (F1-06z): https base of content-addressed media files.
+export { MEDIA_DEFAULT_LOCAL_BASE_URL, MEDIA_ENV_NAME, readMediaConfig } from './media.ts';
