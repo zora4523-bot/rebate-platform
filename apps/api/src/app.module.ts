@@ -507,6 +507,8 @@ function parsingPorts(): DynamicModule {
  * defaults only. Its buckets use REDIS (none: stage ⑬ is not installed).
  * Same-device multi-account check (BR-ID-37, B1-03k): sameDeviceAccountsCheckToken(), over
  * identity's login reader and content's configuration reader bound to the caller's handle.
+ * Appeals (POST / GET /v1/me/appeals, B1-03i): the deadline calendar through content's reader
+ * bound to the submission's transaction.
  */
 function riskModule(identity: DynamicModule): DynamicModule {
   return RiskModule.forRoot({
@@ -542,6 +544,15 @@ function riskModule(identity: DynamicModule): DynamicModule {
     // the caller's handle, so the check reads and writes on the caller's transaction only.
     sameDevice: {
       logins: createSameDeviceLoginReader(),
+      config: {
+        inject: [CLOCK],
+        useFactory: (clock: Clock) => (handle: Kysely<Database>) =>
+          createContentReader({ db: handle, clock }),
+      },
+    },
+    // Appeals (BR-ID-36, B1-03i): the deadline's working-day calendar (calendar.cn_holidays.<year>,
+    // calendar.cn_makeup_workdays.<year>) through content's reader over the submission's handle.
+    appeals: {
       config: {
         inject: [CLOCK],
         useFactory: (clock: Clock) => (handle: Kysely<Database>) =>
