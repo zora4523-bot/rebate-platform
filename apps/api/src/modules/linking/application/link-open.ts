@@ -39,6 +39,7 @@ const STATUS: Readonly<Record<number, number>> = {
   20903: 409,
   30101: 422,
   30102: 422,
+  30111: 422,
   30141: 422,
   30144: 404,
   30153: 422,
@@ -58,6 +59,7 @@ const MESSAGES: Readonly<Record<number, string>> = {
   20903: '该请求已放弃',
   30101: '请先授权淘宝',
   30102: '淘宝授权已失效，请重新授权',
+  30111: '购买前需完成拼多多授权',
   30141: '商品已下架',
   30144: '链接不存在',
   30153: '该平台返利已被停用，请联系客服',
@@ -111,7 +113,8 @@ export function openHttpResult(outcome: LinkOpenRequoteOutcome, traceId: string)
   }
   // Error envelopes carry data only for codes that define it (ErrorEnvelope): 20001, which only
   // the idempotency layer answers, for the Idempotency-Key header; 30101 / 30102 / 30153 with the
-  // authorization's data (B1-06f: auth_url, state, auth_methods, or reason).
+  // authorization's data (B1-06f: auth_url, state, auth_methods, or reason); 30111 with auth_jump
+  // or reason and 50301 with reason=maintenance (B1-06v).
   const error = 'error' in outcome ? outcome.error : undefined;
   return {
     status: STATUS[outcome.code] ?? 500,

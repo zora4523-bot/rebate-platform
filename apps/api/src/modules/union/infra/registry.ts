@@ -41,6 +41,9 @@ function unimplementedAdapter(platform: RegisteredPlatform): UnionAdapter {
     resolveLink: () => reject('resolveLink'),
     convert: () => reject('convert'),
     listOrders: () => reject('listOrders'),
+    // B1-06v: the Pinduoduo authority query is optional; the placeholder refuses it like the rest.
+    // TODO(规划/11 §4.5): 真实备案查询 — blocked on CAP-PDD-05。
+    ...(platform === 'pdd' ? { queryPddAuthority: () => reject('queryPddAuthority') } : {}),
   });
 }
 
