@@ -11,6 +11,7 @@ import {
   type MediaStore,
 } from '../../../../apps/api/src/modules/platform/media/index.ts';
 import { BASE_URL, SVG, digest, memoryLogger } from './kit.ts';
+import { expectRequestFailure } from './error-response.ts';
 
 // Computed imports keep Nest's decorators outside the spec project's erasable-only TS build.
 interface DynamicModule {
@@ -89,6 +90,7 @@ it.each(['local', 'test', 'staging', 'prod'] as const)(
           expect(store).not.toBeInstanceOf(MemoryMediaStore);
           await expect(store.put(input)).rejects.toBeInstanceOf(MediaStoreUnavailableError);
           await expect(store.put(input)).rejects.toBeInstanceOf(MediaStoreUnavailableError);
+          await expectRequestFailure(() => store.put(input), logger);
         }
       } finally {
         await context.close();

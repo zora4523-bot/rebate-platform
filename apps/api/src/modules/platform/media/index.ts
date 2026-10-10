@@ -17,7 +17,11 @@ export function MEDIA_STORE(): never {
   throw new Error('NotImplemented: MEDIA_STORE');
 }
 
-export function mediaUrlOf(baseUrl: string, sha256: string, format: 'svg' | 'png'): string {
+export function mediaUrlOf(
+  baseUrl: string | undefined,
+  sha256: string,
+  format: 'svg' | 'png',
+): string {
   void baseUrl;
   void sha256;
   void format;
@@ -51,7 +55,11 @@ export class MediaStoreUnavailableError extends Error {
 }
 
 /** Local/test use memory; staging/prod construct successfully and fail on every put. */
-export function createMediaStore(appEnv: AppEnv, baseUrl: string, logger: RootLogger): MediaStore {
+export function createMediaStore(
+  appEnv: AppEnv,
+  baseUrl: string | undefined,
+  logger: RootLogger,
+): MediaStore {
   void appEnv;
   void baseUrl;
   void logger;

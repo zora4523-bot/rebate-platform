@@ -6,6 +6,7 @@ import {
   MediaStoreUnavailableError,
 } from '../../../../apps/api/src/modules/platform/media/index.ts';
 import { BASE_URL, SVG, PNG, digest, memoryLogger } from './kit.ts';
+import { expectRequestFailure } from './error-response.ts';
 
 it.each([
   { bytes: SVG, contentType: 'image/svg+xml', format: 'svg' },
@@ -106,6 +107,7 @@ it.each(['staging', 'prod'] as const)(
     for (const bytes of [SVG, SVG, PNG]) {
       const input = { sha256: digest(bytes), bytes, contentType: 'image/png' as const };
       await expect(store.put(input)).rejects.toBeInstanceOf(MediaStoreUnavailableError);
+      await expectRequestFailure(() => store.put(input), logger);
     }
     const logs = lines.join('');
     expect(logs).not.toContain('media-private-marker');
