@@ -223,6 +223,7 @@ it('every field of the evidence can fail the check', () => {
       evidence({ reviews: [{ reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 }] }),
       /missing the codex review/,
     ],
+    ['no reviews at all', evidence({ reviews: [] }), /reviews: missing the codex review/],
     [
       'open S0',
       evidence({
@@ -954,4 +955,92 @@ it('[legacy flow] a legacy ledger needs no red run and no test_paths, but still 
   expect(checkEvidence({ ...input, head: noVerify }).problems).toEqual([]);
   const noRuns = commitEvidence({ ...doc, runs: [] });
   expect(checkEvidence({ ...input, head: noRuns }).problems).toEqual([]);
+});
+
+it('[approvals 27] the side that did not implement reviews; the other entry is optional', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const problemsOf = (doc: unknown, implementer?: 'claude' | 'codex' | 'unknown'): string =>
+    evidenceProblems(doc, {
+      prDir: repo,
+      head,
+      task: 'B2-01a',
+      cfg,
+      red: RED,
+      ...(implementer === undefined ? {} : { implementer }),
+    }).join('\n');
+  const codexPass = { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true };
+  const claudePass = { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 };
+  // Opus implemented (absent or explicit claude): the Codex review alone is enough.
+  expect(problemsOf(evidence({ reviews: [codexPass] }))).toBe('');
+  expect(problemsOf(evidence({ reviews: [codexPass] }), 'claude')).toBe('');
+  // A missing or failing Codex review still fails.
+  expect(problemsOf(evidence({ reviews: [claudePass] }))).toMatch(/missing the codex review/);
+  expect(problemsOf(evidence({ reviews: [{ ...codexPass, open_s0_s1: 1 }] }))).toMatch(
+    /reviews.codex.open_s0_s1: must be 0/,
+  );
+  expect(problemsOf(evidence({ reviews: [{ ...codexPass, checklist_complete: false }] }))).toMatch(
+    /reviews.codex.checklist_complete: must be true/,
+  );
+  // A Claude entry that is present is still validated.
+  expect(
+    problemsOf(evidence({ reviews: [{ ...claudePass, verdict: 'fail' }, codexPass] })),
+  ).toMatch(/reviews.claude.verdict: must be pass/);
+  // Codex implemented: the Claude review is required, the Codex one optional (checked if present).
+  expect(problemsOf(evidence({ reviews: [codexPass] }), 'codex')).toMatch(
+    /reviews: missing the claude review \(implementer: codex/,
+  );
+  expect(problemsOf(evidence({ reviews: [claudePass] }), 'codex')).toBe('');
+  expect(
+    problemsOf(evidence({ reviews: [claudePass, { ...codexPass, verdict: 'fail' }] }), 'codex'),
+  ).toMatch(/reviews.codex.verdict: must be pass/);
+  // Unknown implementer (ledger unreadable): both are required.
+  expect(problemsOf(evidence({ reviews: [codexPass] }), 'unknown')).toMatch(
+    /missing the claude review/,
+  );
+  expect(problemsOf(evidence({ reviews: [claudePass] }), 'unknown')).toMatch(
+    /missing the codex review/,
+  );
+  expect(problemsOf(evidence({ reviews: [claudePass, codexPass] }), 'unknown')).toBe('');
+
+  // A handover commit on the head without a handover record: Codex implemented although the
+  // ledger says claude, so the Claude review stays required (Codex review CR-27-01). The fixture's
+  // implementation commit carries the handover marker.
+  const onlyCodex = commitEvidence(evidence({ reviews: [codexPass] }));
+  expect(check(onlyCodex).problems.join('\n')).toMatch(
+    /missing the claude review \(\w+ carries the handover marker/,
+  );
+  // Through checkEvidence the implementer comes from the trusted ledger: the same implementation
+  // committed without the marker passes with the Codex review alone.
+  const branchBack = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  git(repo, ['checkout', '-q', '-b', 'approvals-27-plain', specCommit]);
+  write(repo, { 'packages/money/src/index.ts': 'export const a = 2;\n' });
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'impl']);
+  const plain = commitEvidence(evidence({ reviews: [codexPass] }));
+  expect(check(plain).problems).toEqual([]);
+  const codexTrusted = join(SCRATCH, 'trusted-codex-impl');
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'ops/risk-map.yaml',
+    'tools/guard/legacy-tasks.json',
+  ]) {
+    write(codexTrusted, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+  }
+  write(codexTrusted, {
+    'ops/tasks/B2-01a.yaml': readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8')
+      .replace('impl: claude', 'impl: codex')
+      .replace('tester: codex', 'tester: claude'),
+  });
+  const input = {
+    prDir: repo,
+    base,
+    head: plain,
+    headRef: 'task/B2-01a',
+    trusted: codexTrusted,
+  };
+  expect(checkEvidence(input).problems.join('\n')).toMatch(/missing the claude review/);
+  const onlyClaude = commitEvidence(evidence({ reviews: [claudePass] }));
+  expect(checkEvidence({ ...input, head: onlyClaude }).problems).toEqual([]);
+  git(repo, ['checkout', '-q', branchBack]);
 });

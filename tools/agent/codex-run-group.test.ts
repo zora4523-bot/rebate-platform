@@ -212,7 +212,8 @@ it(
       'ok    process-group kill: exit 124, no process of the group left',
     );
     expect(res.stdout).toContain('workspace-write');
-    expect(res.stdout).toContain('model_reasoning_effort="xhigh"');
+    expect(res.stdout).toContain('model_reasoning_effort="high"');
+    expect(res.stdout).toContain('model_reasoning_effort="low"');
     expect(res.stdout).toContain('selfcheck: ok');
     expect(existsSync(join(fx.log, 'argv.nul'))).toBe(false);
 

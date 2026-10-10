@@ -92,7 +92,7 @@ function expectedReviewArgv(fx: Fixture, prompt: string): string[] {
     '-m',
     'gpt-6-astra',
     '-c',
-    'model_reasoning_effort="xhigh"',
+    'model_reasoning_effort="low"',
     '-c',
     'skills.include_instructions=false',
     '--disable',
@@ -546,6 +546,38 @@ it('review type follows the risk level: RV2 defaults to money and refuses genera
   const rv1 = codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--dry-run']);
   expect(decodeDryRun(rv1.stdout).join('\n')).toContain('- Review type: general');
 });
+
+it(
+  '[ops/approvals.yaml id 27] review effort: default low, CODEX_REVIEW_EFFORT, impl stays high',
+  LONG,
+  () => {
+    const fx = fixture('review-effort');
+    const effortOf = (argv: string[]): string | undefined =>
+      argv.find((a) => a.startsWith('model_reasoning_effort='));
+    const review = ['review', TASK, '--base', fx.baseSha, '--dry-run'];
+    const byDefault = codexRun(fx, review);
+    expect(byDefault.status, byDefault.stderr).toBe(0);
+    expect(effortOf(decodeDryRun(byDefault.stdout))).toBe('model_reasoning_effort="low"');
+    // An empty value falls back to the default.
+    const empty = codexRun(fx, review, { CODEX_REVIEW_EFFORT: '' });
+    expect(effortOf(decodeDryRun(empty.stdout))).toBe('model_reasoning_effort="low"');
+    for (const effort of ['minimal', 'medium', 'high', 'xhigh']) {
+      const res = codexRun(fx, review, { CODEX_REVIEW_EFFORT: effort });
+      expect(res.status, res.stderr).toBe(0);
+      expect(effortOf(decodeDryRun(res.stdout))).toBe(`model_reasoning_effort="${effort}"`);
+    }
+    for (const effort of ['HIGH', 'ultra', 'low"', 'low -c sandbox_mode=x']) {
+      const res = codexRun(fx, review, { CODEX_REVIEW_EFFORT: effort });
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain('CODEX_REVIEW_EFFORT must be');
+    }
+    expect(existsSync(join(fx.log, 'argv.nul'))).toBe(false);
+    // Codex writing tests keeps high whatever the review variable says.
+    const impl = codexRun(fx, ['impl', TASK, '--dry-run'], { CODEX_REVIEW_EFFORT: 'minimal' });
+    expect(impl.status, impl.stderr).toBe(0);
+    expect(effortOf(decodeDryRun(impl.stdout))).toBe('model_reasoning_effort="high"');
+  },
+);
 
 it(
   '[ops/approvals.yaml id 19] impl phases; Codex never gets the spec-test review of its own tests',
