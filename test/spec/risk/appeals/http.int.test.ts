@@ -106,16 +106,20 @@ for (const sameKey of [false, true]) {
     expect(completed.length).toBeGreaterThan(0);
     for (const data of completed) expect(data).toEqual(completed[0]);
     if (sameKey) {
-      expect(
-        await accepted(
-          await c.send(
-            'POST',
-            PATH,
-            { target_type: 'account', content: '并发申诉' },
-            { 'idempotency-key': keys[0]! },
-          ),
-        ),
-      ).toEqual(completed[0]);
+      const replayTraceId = randomUUID();
+      const replay = await c.send(
+        'POST',
+        PATH,
+        { target_type: 'account', content: '并发申诉' },
+        { 'idempotency-key': keys[0]!, 'x-trace-id': replayTraceId },
+      );
+      // 回放体保留首次请求的 trace_id，响应头使用本次请求的追踪号。
+      expect(replay.statusCode).toBe(200);
+      expect(replay.headers['x-trace-id']).toBe(replayTraceId);
+      expect(replay.json()).toEqual(
+        responses.find((response) => response.statusCode === 200)!.json(),
+      );
+      expect(replay.json<{ data: unknown }>().data).toEqual(completed[0]);
     } else expect(completed).toHaveLength(2);
     expect(await appeals(f, c)).toHaveLength(1);
     expect(await events(f, c)).toHaveLength(before.length + 1);
