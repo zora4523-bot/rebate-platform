@@ -40,7 +40,10 @@ function tabbables(panel: HTMLElement): HTMLElement[] {
 function nextTabbable(panel: HTMLElement, backwards: boolean): HTMLElement | undefined {
   const items = tabbables(panel);
   const active = document.activeElement;
-  if (active === null || !panel.contains(active)) return backwards ? items.at(-1) : items[0];
+  // Outside the dialog, or on the title (tabindex=-1, the opening focus target): rc-dialog puts
+  // the close button before the title in the DOM, so start the cycle from its ends explicitly.
+  if (active === null || !panel.contains(active) || !items.includes(active as HTMLElement))
+    return backwards ? items.at(-1) : items[0];
   if (backwards) {
     const before = items.filter(
       (item) => item.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -371,8 +374,9 @@ function StepUpDialog(props: StepUpModalProps): ReactElement {
       key="submit"
       type="primary"
       autoInsertSpace={false}
+      // Busy state is aria-busy only (no antd loading icon): the accessible name stays
+      // 「验证并继续」 and repeated clicks are dropped by busyRef, as before.
       disabled={!canSubmit}
-      loading={submitting}
       aria-busy={submitting ? true : undefined}
       onClick={() => void submit()}
     >
