@@ -1,0 +1,94 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (platform/idempotency, platform/http). Lock miss: unlocked read replays a completed same-hash record, otherwise 40901; canonical JSON depth limit 256 -> invalid_request (HTTP 400 / 20001, fields [body]); cleanup failure rethrows the handler error and logs idempotency_cleanup_failed; outcome-unknown paths log one line (method, path, trace_id; no body, key or driver text). Full verification by the required CI checks (approvals id 21). Includes a test-change before the rule-test commit: B1-03c#16 (test/spec/risk/min-version/idempotency.test.ts) now expects exactly one unlocked lookup when the lock is busy (hook still not run, still 40901); owner agreed 2026-10-10 via the planning session, ledger test_paths updated (#408), owner-approved label on the head.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent, round 1 pass, no findings (20001 shape checked against contracts/error-codes.yaml)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 money pass, checklist complete, no findings; round 2 money review of the B1-03c#16 test change: pass (one S2: land it together with the implementation, done by folding it into this branch)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "Codex rule tests reviewed by a fresh Claude subagent: round 1 pass, S2 items turned into implementation guidance (impl-notes.md)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zt",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "1491ed24f07b45c088657670ce09e94d6aa64b85",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1491ed24f07b45c088657670ce09e94d6aa64b85",
+      "tree": "1058770003245b1b2eca32291c6f231c13477681",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T05:24:30Z",
+      "finished_at": "2026-10-10T05:24:41Z",
+      "gate": {
+        "commit": "a1a7ecd7345d8bba756bfc7b7b62b31116f8d5e9",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/platform/idempotency/followup-database.int.test.ts > [AC-B1-01zt#1] execute 已完成键的八个重放全部返回原响应；锁竞争时不同哈希仍拒绝",
+        "test/spec/platform/idempotency/followup-database.int.test.ts > [AC-B1-01zt#1] executeInTransaction 已完成键的八个重放全部返回原响应；锁竞争时不同哈希仍拒绝",
+        "test/spec/platform/idempotency/followup-database.int.test.ts > [AC-B1-01zt#3] 处理异常且删行失败：保留原错误对象，记录一行脱敏日志，不重跑处理函数",
+        "test/spec/platform/idempotency/followup-database.int.test.ts > [AC-B1-01zt#4] 事务已提交但确认丢失：outcome_unknown、一行脱敏 error，原键可恢复原响应",
+        "test/spec/platform/idempotency/followup-depth.test.ts > [AC-B1-01zt#2] 数组=false：10000 层归一化及哈希返回 invalid_request，50 层保持原哈希",
+        "test/spec/platform/idempotency/followup-depth.test.ts > [AC-B1-01zt#2] 数组=true：10000 层归一化及哈希返回 invalid_request，50 层保持原哈希",
+        "test/spec/platform/idempotency/followup-depth.test.ts > [AC-B1-01zt#2] execute 在触库和处理函数之前拒绝超深请求，错误类型不是 RangeError",
+        "test/spec/platform/idempotency/followup-depth.test.ts > [AC-B1-01zt#2] executeInTransaction 在触库和处理函数之前拒绝超深请求，错误类型不是 RangeError",
+        "test/spec/platform/idempotency/followup-http.test.ts > [AC-B1-01zt#2] 超深请求返回 HTTP 400 / 20001 契约错误，随后 50 层请求仍正常",
+        "test/spec/platform/idempotency/followup-http.test.ts > [AC-B1-01zt#4] outcome_unknown 仍断开连接，HTTP 层只记一行含 method/path 的脱敏 error"
+      ],
+      "expected": [
+        "test/spec/platform/idempotency/followup-database.int.test.ts",
+        "test/spec/platform/idempotency/followup-depth.test.ts",
+        "test/spec/platform/idempotency/followup-http.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "645e81213863e7bfe78b941f906e86db1a641bc507b9bb109ed8a94bf2d7ff5c"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "323553c28707096c1e266d7f76fe99a7f2602151899bfa4c196a2e1b5a7d46b8"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "96c6fe66aea507fe5578a9baa945d90e356da1c6",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
