@@ -109,6 +109,9 @@ function groupSecret(secret: string): string {
 
 type View = 'credentials' | 'change_password' | 'totp' | 'bind_totp' | 'done';
 
+/** Role for the step bar; antd Steps forwards it to its root element. */
+const STEPS_GROUP = { role: 'group' } as const;
+
 /** Two-step bar: account and password, then the second step (antd Steps). */
 function LoginSteps({
   second,
@@ -117,16 +120,25 @@ function LoginSteps({
   readonly second: string;
   readonly stage: 'first' | 'second' | 'done';
 }) {
+  // antd Steps has no list semantics of its own: name the bar and mark the current step.
+  const current = { 'aria-current': 'step' } as const;
   return (
     <Steps
+      {...STEPS_GROUP}
+      aria-label={loginText('steps.label')}
       size="small"
       responsive={false}
       className="login-progress"
       items={[
-        { title: loginText('steps.credentials'), status: stage === 'first' ? 'process' : 'finish' },
+        {
+          title: loginText('steps.credentials'),
+          status: stage === 'first' ? 'process' : 'finish',
+          ...(stage === 'first' ? current : {}),
+        },
         {
           title: second,
           status: stage === 'first' ? 'wait' : stage === 'second' ? 'process' : 'finish',
+          ...(stage === 'second' ? current : {}),
         },
       ]}
     />

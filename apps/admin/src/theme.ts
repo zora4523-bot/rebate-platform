@@ -50,6 +50,8 @@ export function createAntdTheme(root: Element = document.documentElement): Theme
     const value = style.getPropertyValue(variable).trim();
     if (value !== '') colors[token] = value;
   }
+  const menuSelectedBg = style.getPropertyValue('--color-brand-subtle').trim();
+  const menuSelectedColor = style.getPropertyValue('--color-brand-primary').trim();
   return {
     token: {
       ...colors,
@@ -68,11 +70,15 @@ export function createAntdTheme(root: Element = document.documentElement): Theme
         ...(colors.colorBgContainer === undefined ? {} : { headerBg: colors.colorBgContainer }),
         ...(colors.colorBgLayout === undefined ? {} : { bodyBg: colors.colorBgLayout }),
       },
+      // Sider menu: 32 high items, 4 apart; the selected item uses the brand tint tokens.
       Menu: {
-        itemHeight: 40,
+        itemHeight: 32,
+        itemMarginBlock: 4,
         itemMarginInline: 8,
         groupTitleFontSize: 12,
         activeBarBorderWidth: 0,
+        ...(menuSelectedBg === '' ? {} : { itemSelectedBg: menuSelectedBg }),
+        ...(menuSelectedColor === '' ? {} : { itemSelectedColor: menuSelectedColor }),
       },
     },
   };
