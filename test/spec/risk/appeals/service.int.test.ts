@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { seedUser } from '../../identity/registration/kit.ts';
 import { closeKit, fixture, openKit, publicAppeal, success, type Kit } from './service-kit.ts';
@@ -131,16 +132,60 @@ for (const body of [
 
 it('[AC-B1-03i#11] 两个服务实例并发提交，均返回同一单，只有一次状态迁移及事件', async () => {
   const f = await fixture(kit);
-  const services = [await f.service(), await f.service()];
-  const results = await Promise.all(services.map((service) => f.submit(service)));
-  const data = results.map(success);
-  expect(data[0]).toEqual(data[1]);
-  expect(await f.appeals()).toHaveLength(1);
-  expect(await f.rows()).toMatchObject([
-    { state: 'appealing', row_version: f.beforeRows[0]!.row_version + 1 },
-  ]);
-  expect(await f.eventRows()).toHaveLength(f.beforeEvents.length + 1);
-});
+  const serviceA = await f.service();
+  const serviceB = await f.service();
+  const body = { target_type: 'account' as const, content: '请复核' };
+  const a = await f.db.startTransaction().execute();
+  try {
+    await sql`SET LOCAL statement_timeout = '10s'`.execute(a);
+    // A 已完成业务写入，但保持事务未提交；B 必须在另一连接上等待 A。
+    const first = success(await serviceA.submit(a, f.subject, body));
+    let secondPid: number | undefined;
+    const pending = f.db
+      .transaction()
+      .execute(async (b) => {
+        await sql`SET LOCAL statement_timeout = '10s'`.execute(b);
+        const pid = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(b);
+        secondPid = pid.rows[0]!.pid;
+        return serviceB.submit(b, f.subject, body);
+      })
+      .then(
+        (result) => ({ status: 'fulfilled' as const, result }),
+        (error: unknown) => ({ status: 'rejected' as const, error }),
+      );
+    try {
+      // 以数据库实际阻塞关系为栅栏，不靠延时猜测两个提交是否交错。
+      await expect
+        .poll(
+          async () => {
+            if (secondPid === undefined) return false;
+            const waiting = await sql<{ blocked: boolean }>`
+                SELECT pg_backend_pid() = ANY(pg_blocking_pids(${secondPid})) AS blocked
+              `.execute(a);
+            return waiting.rows[0]!.blocked;
+          },
+          { timeout: 5_000, interval: 10 },
+        )
+        .toBe(true);
+      await a.commit().execute();
+      expect(await pending).toEqual({ status: 'fulfilled', result: { code: 0, data: first } });
+    } finally {
+      // 即使栅栏断言失败，也先释放 A，再等 B 结束，避免遗留持锁事务。
+      if (!a.isCommitted && !a.isRolledBack) await a.rollback().execute();
+      await pending;
+    }
+    expect(await f.appeals()).toHaveLength(1);
+    expect(await f.appeals()).toMatchObject([{ id: first.appeal_id, status: 'processing' }]);
+    expect(await f.rows()).toMatchObject([
+      { state: 'appealing', row_version: f.beforeRows[0]!.row_version + 1 },
+    ]);
+    expect(await f.eventRows()).toHaveLength(f.beforeEvents.length + 1);
+    expect(f.setRiskState).toHaveBeenCalledTimes(1);
+    expect(f.publish).toHaveBeenCalledTimes(1);
+  } finally {
+    if (!a.isCommitted && !a.isRolledBack) await a.rollback().execute();
+  }
+}, 30_000);
 
 for (const failure of ['caller', 'state', 'event'] as const) {
   it(`[AC-B1-03i#12] ${failure} 失败使申诉、状态、事件整体回滚`, async () => {

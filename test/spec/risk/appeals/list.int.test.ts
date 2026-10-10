@@ -63,7 +63,9 @@ it('[AC-B1-03i#22] 仅本人本 app 的 account/order；混合状态、同刻 id
   ];
   const other = await seedUser(f.db, c.appId);
   await seed(c, { uid: other });
-  await seed(c, { appId: `${c.appId}_other` }); // same uid, different tenant
+  const otherAppId = `${c.appId}_other`;
+  const otherAppUser = await seedUser(f.db, otherAppId);
+  await seed(c, { appId: otherAppId, uid: otherAppUser });
   await seed(c, { type: 'blocked_request' });
   const first = await listed(await c.send('GET', `${PATH}?limit=2`));
   expect(first.items.map((row) => row.appeal_id)).toEqual(rows.slice(0, 2).map((row) => row.id));
