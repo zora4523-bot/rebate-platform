@@ -15,7 +15,7 @@ type: impl
 # app.module.ts 不在白名单，整体按 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-03h, B1-03e, CT-02c, F1-06b, F1-02b]
+deps: [B1-03h, B1-03e, CT-02c, F1-06b, F1-02b, B1-03r]
 paths:
   - 'apps/api/src/modules/risk/**'
   - 'apps/api/src/app.module.ts'
