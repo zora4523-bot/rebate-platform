@@ -37,6 +37,8 @@ type EnvKey = keyof z.input<typeof envSchema>;
 const ENV_KEYS = Object.keys(envSchema.shape) as EnvKey[];
 
 export interface AppConfig {
+  /** MEDIA_PUBLIC_BASE_URL; loadConfig must populate it (F1-06z). Optional for legacy fixtures. */
+  readonly mediaPublicBaseUrl?: string;
   readonly appEnv: AppEnv;
   readonly logLevel: LogLevel;
   /** Validated CLOCK_NOW text; parsed into an instant only inside platform/clock. */

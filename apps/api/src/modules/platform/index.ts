@@ -127,3 +127,4 @@ export {
 export { compareClientVersions, isVersionGatedPlatform } from './client-version/index.ts';
 export type { JwtKeyConfig } from './config/jwt.ts';
 export * from './qrcode/index.ts';
+export * from './media/index.ts';
