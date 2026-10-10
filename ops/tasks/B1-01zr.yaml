@@ -26,4 +26,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/infra/staging/**'
   - 'test/spec/db/**'
-status: todo
+status: done
+pr: 399

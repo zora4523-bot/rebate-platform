@@ -26,4 +26,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/events/**'
-status: todo
+status: done
+pr: 403
