@@ -10,6 +10,7 @@ type: impl
 # 审计经 F1-06b 的审计端口（actor 记系统）；告警出口同 B1-03f 注释。
 # platform 路径，整体按 RV2。
 # 2026-10-10（identity-lane）：paths 加 apps/api/src/entry.ts——平台队列没有 cron，扫描任务链靠 worker 在队列 runtime start() 之后显式调用 risk 的 seed() 起头；该调用只能放在 entry.ts 的 worker 启动段（规则测试评审 r2 范围外 S1：不接上则任务链永不启动）。
+# 同日 paths 加 test/spec/platform/queue/contract.test.ts：该冻结测试用 toStrictEqual 钉住 QUEUE_CATALOG 与 ENTRY_PLAN 全表，新增 risk-scan 队列后必红；改动（目录与 worker 计划各补 risk-scan 一项，其余不变）只能与 B1-03j 同一 PR 落地（先合哪个都会让另一个红），保护路径第一类，按 approvals #24 加标签。
 refs: []
 refs_hash: {}
 deps: [B1-03h, F1-06b, B1-03i]
@@ -18,6 +19,7 @@ paths:
   - 'apps/api/src/modules/platform/queue/catalog.ts'
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/entry.ts'
+  - 'test/spec/platform/queue/contract.test.ts'
 test_paths:
   - 'test/spec/risk/freeze-expiry/**'
 impl: claude
