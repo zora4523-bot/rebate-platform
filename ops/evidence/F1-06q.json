@@ -1,0 +1,35 @@
+{
+  "task": "F1-06q",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "a897a6ad802f2aba5da8e736a1f0ff127a7c6e9b",
+  "red_tests": [],
+  "risk_note": "RV2 by path (apps/api/package.json dependencies and pnpm-lock.yaml; class-2 protected, exempt for a deps task, label per approvals id 24 after the review and the required checks). Deps task for the platform-icons backend: @fastify/multipart 10.1.2 (2026-09-22; declares fastify 5.x, locked fastify 5.12.5), @xmldom/xmldom 0.9.12 (2026-08-21) and pngjs 7.0.0 (already locked through qrcode) as dependencies, @types/pngjs 6.0.5 as a devDependency; all exact, MIT, published at least 7 days ago (approvals id 3). New transitive packages: @fastify/busboy 3.2.2 and @fastify/deepmerge 3.2.1 (MIT). No scripts changed. Lockfile by the orchestrator's pnpm install outside the sandbox. Ledger tester: none, no rule tests, no red run. Reviews: Codex only (approvals id 27). Full verification by the required CI checks (approvals id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings; exact versions, lock entries with integrity, licenses and release ages checked; money checklist n/a"
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "5ce651e6f8de8684423d904ca0ccb24ccc9dd2f5",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
