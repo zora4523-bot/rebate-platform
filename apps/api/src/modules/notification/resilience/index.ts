@@ -78,6 +78,7 @@
 // `process.env`, no logging, no wall clock. Not exported from ../index.ts and not wired into any
 // flow yet (later task).
 import type { ResilienceRegistry, Scheduler } from '../../platform/index.ts';
+import { createGovernor, GovernanceError } from '../../platform/index.ts';
 
 // ---------- SMS ----------
 
@@ -159,8 +160,85 @@ export interface SmsSender {
 }
 
 export function createSmsSender(deps: SmsSenderDeps): SmsSender {
-  void deps;
-  throw new Error('NotImplemented: createSmsSender');
+  const { primary, backup, providerSwitch, registry, scheduler } = deps;
+  if (
+    typeof primary.provider !== 'string' ||
+    primary.provider.trim() === '' ||
+    (backup !== undefined &&
+      (typeof backup.provider !== 'string' ||
+        backup.provider.trim() === '' ||
+        backup.provider === primary.provider))
+  ) {
+    throw new GovernanceError('invalid_policy', 'sms', 'Invalid SMS provider identifiers');
+  }
+
+  const policy = registry.entry('sms').policy;
+  const channelRoute = (channel: SmsChannel, route: SmsRoute) => ({
+    channel,
+    provider: channel.provider,
+    route,
+    governor: createGovernor(`sms.${channel.provider}`, policy, { scheduler }),
+  });
+  // Keep each breaker across sends, independently of the current switch value.
+  const primaryRoute = channelRoute(primary, 'primary');
+  const backupRoute = backup === undefined ? undefined : channelRoute(backup, 'backup');
+
+  return {
+    async send(message) {
+      let selectedRoute = primaryRoute;
+      try {
+        const provider = await providerSwitch.current();
+        if (backupRoute !== undefined && provider === backupRoute.provider) {
+          selectedRoute = backupRoute;
+        }
+      } catch {
+        // A failed switch read (including a synchronous throw) uses the primary.
+      }
+      const selected = selectedRoute.route;
+      const otherRoute = selected === 'primary' ? backupRoute : primaryRoute;
+      const attempts: SmsAttempt[] = [];
+      for (const target of [selectedRoute, otherRoute]) {
+        if (target === undefined) continue;
+        const { channel, provider, route, governor } = target;
+        let answer: SmsChannelAnswer;
+        try {
+          answer = await governor.call((signal) => channel.send(message, signal), {
+            kind: 'write',
+          });
+        } catch (error) {
+          attempts.push({ provider, route, result: channelFailure(error) });
+          continue;
+        }
+        // A refusal is a completed channel response, so the governor counts it as healthy.
+        attempts.push({
+          provider,
+          route,
+          result: answer.status === 'accepted' ? 'ok' : 'rejected',
+        });
+        const result = { provider, route, selected, degraded: route !== selected, attempts };
+        if (answer.status === 'accepted') {
+          return { ...result, outcome: 'sent', providerMessageId: answer.providerMessageId };
+        }
+        return { ...result, outcome: 'rejected' };
+      }
+      return {
+        outcome: 'failed',
+        reason: otherRoute === undefined ? 'no_backup' : 'all_channels_down',
+        selected,
+        attempts,
+      };
+    },
+  };
+}
+
+function channelFailure(error: unknown): 'timeout' | 'circuit_open' | 'channel_error' {
+  if (
+    error instanceof GovernanceError &&
+    (error.code === 'timeout' || error.code === 'circuit_open')
+  ) {
+    return error.code;
+  }
+  return 'channel_error';
 }
 
 // ---------- Push with inbox fallback ----------
@@ -205,6 +283,22 @@ export interface PushDispatcher {
 }
 
 export function createPushDispatcher(deps: PushDispatcherDeps): PushDispatcher {
-  void deps;
-  throw new Error('NotImplemented: createPushDispatcher');
+  const { registry, scheduler, push, inbox } = deps;
+  const governor = createGovernor('push', registry.entry('push').policy, { scheduler });
+  return {
+    async deliver(notification) {
+      // Store failure must propagate unchanged; only push failures become a fallback.
+      await inbox.write(notification);
+      try {
+        const answer = await governor.call((signal) => push.send(notification, signal), {
+          kind: 'write',
+        });
+        return answer.status === 'accepted'
+          ? { inbox: 'written', push: 'delivered', pushFailure: null }
+          : { inbox: 'written', push: 'fallback', pushFailure: 'rejected' };
+      } catch (error) {
+        return { inbox: 'written', push: 'fallback', pushFailure: channelFailure(error) };
+      }
+    },
+  };
 }
