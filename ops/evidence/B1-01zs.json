@@ -1,0 +1,80 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (entry.ts, platform/queue). Both pgboss.version reads up to boss.start() run with 20 s local lock/statement limits (per-statement transactions); a timed-out start rejects at once (rollback in the background, bounded by stop); a signal during startup-failure teardown is absorbed; a worker signalled during startup stops without a keep-alive timer; supervise runs unbounded. Full verification by the required CI checks (approvals id 21). Exception round (couli-runs/B1-01zs/exception-round.md, owner via the planning session 2026-10-10): CI on #400 found the unit test importing pg-boss and a timing-dependent transaction count; fixed in runtime.test.ts only.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "fresh read-only Claude subagents: round 1 pass (S2), round 2 pass (S2), round 3 pass, no findings"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 4,
+      "note": "round 1 fail (S1: second version read unbounded) fixed; round 2 fail (S1: signal window before rejection) fixed; round 3 pass, checklist complete, no findings; round 4 targeted money review of the exception-round test fix: pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "Codex rule tests reviewed by a fresh Claude subagent: round 1 pass, S2 items turned into implementation guidance (impl-notes.md)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zs",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "2413f82d796fc4270683fcced41c730b0ac1a1cb",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2413f82d796fc4270683fcced41c730b0ac1a1cb",
+      "tree": "45ddf0757b87675b5326a5613700e24bdf8c48e5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T04:58:05Z",
+      "finished_at": "2026-10-10T05:00:31Z",
+      "gate": {
+        "commit": "6eadf2b5fe4732f08c37d68ce29da8584ba028c5",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/platform/maintenance/worker-startup-failure-signals.int.test.ts > [AC-B1-01zs#1] 启动失败收尾期间收到 SIGTERM：只记 startup_failed，以 1 自然退出",
+        "test/spec/platform/maintenance/worker-startup-failure-signals.int.test.ts > [AC-B1-01zs#2] 启动失败收尾期间收到 SIGINT：只记 startup_failed，以 1 自然退出",
+        "test/spec/platform/maintenance/worker-startup-failure-signals.int.test.ts > [AC-B1-01zs#3] 版本表一直被锁，不发信号：有界启动失败、退出码 1，不能靠释放锁退出",
+        "test/spec/platform/maintenance/worker-startup-failure-signals.int.test.ts > [AC-B1-01zs#4] 版本表一直被锁，锁等待期间发 SIGTERM：有界启动失败、退出码 1，不能靠释放锁退出"
+      ],
+      "expected": ["test/spec/platform/maintenance/worker-startup-failure-signals.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "09eeeb2bf03a826a3c759847a35131556cb3081ed9aebb1a9693ff443d2ccfea"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "203281c8155d68f6b50800c7ccaec03d50fc5ade",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
