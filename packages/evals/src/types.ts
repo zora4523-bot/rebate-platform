@@ -1,7 +1,7 @@
 // Shapes of part 2 (B3-01b): recordings, the agent under test, case results and the report.
 // Stream frames follow contracts/agent-stream.schema.json (04 §8.1–8.3); the grader reads only
 // `event`, `data.delta` of text.delta frames and `data.type` of card frames.
-import type { Category, EvalSet, Intent, Split, Subject } from './cases.ts';
+import type { Category, EvalSet, Intent, Provenance, Split, Subject } from './cases.ts';
 
 /** The full request sent to the model (after redaction). */
 export interface ModelRequest {
@@ -10,6 +10,8 @@ export interface ModelRequest {
   messages: unknown[];
   tools: unknown[];
   params: Record<string, unknown>;
+  /** For live calls the runner overwrites this with the calling case's trusted provenance. */
+  provenance?: Provenance;
 }
 
 /** A tool call together with the session state and configuration it depends on. */

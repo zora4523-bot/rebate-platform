@@ -285,6 +285,7 @@ interface RunState {
 interface CaseContext {
   runId: number;
   caseId: string;
+  readonly provenance: EvalCase['provenance'];
   misses: CaseMisses;
   run: RunState;
 }
@@ -340,7 +341,11 @@ function wrapPorts(own: CaseContext): AgentPorts {
   return {
     model: async (req) => {
       const plan = planOf();
-      return plan.model === undefined ? lookup(plan, (store) => store.model(req)) : plan.model(req);
+      if (plan.model === undefined) return lookup(plan, (store) => store.model(req));
+      // Unlike the port plan, provenance follows even an ended calling context's async work.
+      // Only calls without a context use the provenance captured for the port's own case.
+      const provenance = (caseContext.getStore() ?? own).provenance;
+      return plan.model({ ...req, provenance });
     },
     tool: async (call) => {
       const plan = planOf();
@@ -373,7 +378,7 @@ async function runCase(
   runId: number,
 ): Promise<CaseRun> {
   const misses: CaseMisses = { open: true, turn: 0, first: undefined };
-  const context: CaseContext = { runId, caseId: c.id, misses, run };
+  const context: CaseContext = { runId, caseId: c.id, provenance: c.provenance, misses, run };
   const outputs: TurnOutput[] = [];
   const leakOnly: TurnOutput[] = [];
   const checkOnly: TurnOutput[] = [];
