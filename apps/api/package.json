@@ -13,9 +13,11 @@
     "@couli/db": "workspace:*",
     "@couli/domain": "workspace:*",
     "@couli/money": "workspace:*",
+    "@fastify/multipart": "10.1.2",
     "@nestjs/common": "12.1.0",
     "@nestjs/core": "12.1.0",
     "@nestjs/platform-fastify": "12.1.0",
+    "@xmldom/xmldom": "0.9.12",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "ioredis": "5.11.1",
@@ -24,6 +26,7 @@
     "pg": "8.23.0",
     "pg-boss": "12.34.0",
     "pino": "10.3.1",
+    "pngjs": "7.0.0",
     "qrcode": "1.5.4",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
@@ -34,6 +37,7 @@
     "@nestjs/testing": "12.1.0",
     "@readme/openapi-parser": "9.0.0",
     "@types/pg": "8.23.1",
+    "@types/pngjs": "6.0.5",
     "@types/qrcode": "1.5.6",
     "openapi-types": "12.1.3"
   }
