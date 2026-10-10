@@ -1,0 +1,85 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (platform/events). Publish rejects non-read-committed transactions and serialises publishes per transaction object; consume probes the transaction after the handler (25P02 fails the job, savepoint recovery commits); consumer accepts exactly the instants the producer can write (0..2^48-1 ms). Contract header updated. Full verification by the required CI checks (approvals id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent, round 1 pass (S2: derived transaction handles bypass the per-object queue, follow-up)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 money pass, checklist complete (same S2 as Claude, follow-up)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "Codex rule tests reviewed by a fresh Claude subagent: round 1 pass, S2 items turned into implementation guidance (impl-notes.md)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zv",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "2974fb43ccad59df7b8f07c8f0edac732f6684e1",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2974fb43ccad59df7b8f07c8f0edac732f6684e1",
+      "tree": "1de9fab8565f1a1cf7d56e9800a96476ff817c5c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T03:34:34Z",
+      "finished_at": "2026-10-10T03:34:41Z",
+      "gate": {
+        "commit": "30976e1e961f412a72b303e48292e0dd2c87c82b",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/platform/events/guard-consume.int.test.ts > [AC-B1-01zv#3] handler 吞掉事务 SQL 错误并返回：任务重试后成功，副作用与处理标记恰好一次",
+        "test/spec/platform/events/guard-consume.int.test.ts > [AC-B1-01zv#4] 首个扩展年份 的生产端时刻可被消费，原样传给 handler 并提交副作用",
+        "test/spec/platform/events/guard-consume.int.test.ts > [AC-B1-01zv#4] 最大允许毫秒 的生产端时刻可被消费，原样传给 handler 并提交副作用",
+        "test/spec/platform/events/guard-publish.int.test.ts > [AC-B1-01zv#1] 同一事务 Promise.all 发布同一 eventId：一个首次发布、一个重复，日志和每个消费者的任务各一份",
+        "test/spec/platform/events/guard-publish.int.test.ts > [AC-B1-01zv#2] repeatable read 事务发布明确拒绝：即使调用方捕获错误并提交，也不留下事件日志或任务",
+        "test/spec/platform/events/guard-publish.int.test.ts > [AC-B1-01zv#2] serializable 事务发布明确拒绝：即使调用方捕获错误并提交，也不留下事件日志或任务"
+      ],
+      "expected": [
+        "test/spec/platform/events/guard-consume.int.test.ts",
+        "test/spec/platform/events/guard-publish.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2a7065ce3c7f53a6af3f6b47f024dbf0f80e9222ffb53d813afd72bee4079205"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "f99f827a1ee04b9a4e2935503bf7553337ee36bd",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
