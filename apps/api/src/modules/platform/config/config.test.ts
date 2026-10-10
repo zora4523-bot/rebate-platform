@@ -27,6 +27,7 @@ describe('loadConfig', () => {
       jwt: null,
       trustedProxies: [],
       adminAuth: null,
+      mediaPublicBaseUrl: 'https://media.local.invalid',
     });
   });
 
