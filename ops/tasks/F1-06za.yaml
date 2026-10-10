@@ -1,0 +1,20 @@
+id: F1-06za
+repo: rebate-platform
+title: 规则测试（test 包 jsdom / node 单元层）单条超时由 Vitest 默认 5 秒提到 15 秒：antd 页面在 jsdom 下 getComputedStyle 变慢，冻结的后台登录规则测试超时
+type: test-change
+# 2026-10-10 入账（前端线 f1-frontend-6；原编号 F1-06s 与后台后端线同日入账的 F1-06s 撞号，改 F1-06za）。blocked B-14：F1-06p（#385）按规划 03 §9.1 把后台登录页改用 antd，antd cssinjs 注入的大量样式让 jsdom 的
+# getComputedStyle（user-event 每次指针 / 键入都会调）变慢，CI 实测冻结的 test/spec/frontend/admin-auth/login.test.ts [AC-F1-06h-UI#3] 5.48 秒，
+# 超过 Vitest 默认 5 秒；F1-06p 第 4 轮已把键入时的整页重渲染去掉（36→33.5 秒），剩下的开销来自样式注入，绕不开。编排会话 10-10 定 C：
+# 只把 test/vitest.config.ts（unitConfig 外包一层）的 testTimeout 提到 15 秒，不改任何断言、不动 vitest.shared.ts 的其他层。
+# test/vitest.config.ts 属保护路径第二类，合并要负责人标签（owner-approved-<头提交前 12 位>），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-06h]
+paths:
+  - 'test/vitest.config.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 407
