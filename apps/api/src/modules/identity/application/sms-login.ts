@@ -32,7 +32,9 @@
 //      login_merge of this installation's device-level current states, one login_logs row
 //      (method sms, the HMAC of the device id, the device row's device_hash for BR-ID-37), the
 //      first-App-login review port (BR-INV-09: App platforms, landing-bound user, no login_logs
-//      before this one), then createSession.
+//      before this one), then createSession, whose afterCreated binds this device's push tokens
+//      to the new session through the push token port (BR-ID-07 细则「登录时绑定」; B1-12b) when
+//      one is given.
 // Any non-zero answer after step 3 and any thrown error roll the whole transaction back: no
 // consent, no login log, no session. A banned user logs in like anyone else (BR-ID-31: no 10006).
 //
@@ -77,6 +79,7 @@ import {
   type InviteBindResult,
   type RegistrationService,
 } from './registration.ts';
+import type { SessionPushTokens } from './push-tokens.ts';
 import { sessionScope, type MinimumVersionReader } from './session-scope.ts';
 import { createSession } from './sessions.ts';
 import type { SmsCodeService, SmsConfigReader } from './sms-codes.ts';
@@ -145,6 +148,11 @@ export interface SmsLoginOptions {
    */
   readonly config?: SmsConfigReader;
   readonly tokens: TokenService;
+  /**
+   * notification's push token commands (B1-12b), assembled by app.module: the login binds the
+   * device's push tokens to the new session in the session's transaction. Absent, nothing is bound.
+   */
+  readonly pushTokens?: SessionPushTokens;
   readonly firstAppLoginReview?: FirstAppLoginReview;
   /** B1-03d, only before creating an account; absent means no block. No plaintext phone. */
   readonly phoneBlocklist?: (
@@ -314,10 +322,20 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       await review.review(trx, { app_id: appId, user_id: userId, device_id_hash: deviceIdHash });
     }
     // TODO(规划/11 §2.3): sessions.login_method='sms' — blocked on the sessions.login_method column (04 §3.2, not in db/schema.sql yet)
+    const pushTokens = options.pushTokens;
     const session = await createSession(
       trx,
       { uid: userId, app_id: appId, device_id: deviceId, scp: scope },
       { clock, tokens },
+      pushTokens === undefined
+        ? undefined
+        : (sameTransaction, issued) =>
+            pushTokens.bind(sameTransaction, {
+              app_id: appId,
+              user_id: userId,
+              device_id: deviceId,
+              sid: issued.sid,
+            }),
     );
     // The expiries the session primitive actually issued (JWT exp, refresh_tokens.expire_at).
     return {
