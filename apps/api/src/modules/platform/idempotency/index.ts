@@ -42,6 +42,13 @@
 //      - anything else, at any depth (undefined inside an object or array, NaN, ±Infinity,
 //        bigint, symbol, function, Date, Map, Buffer, any other class instance) →
 //        IdempotencyError('invalid_request').
+//      - nesting deeper than MAX_CANONICAL_DEPTH (256) arrays / objects (the top-level array or
+//        object is depth 1; task B1-01zt) → IdempotencyError('invalid_request'), raised before
+//        the encoder recurses that deep, so a deeply nested body never overflows the stack (a
+//        RangeError would end as 50001). isNestingTooDeep(error) tells this error apart from the
+//        other invalid_request errors (the HTTP layer answers it as 20001 with data.fields
+//        ['body']); the mark lives outside the error object, which keeps section 10's own
+//        properties.
 //    Only the body is hashed: method, path, app and subject are part of the unique key instead.
 //
 // 4. One request — `idempotency.execute(request, handler)` (standard operations) and
@@ -67,6 +74,12 @@
 //                                       do not order 40901 against 20901 for a running request;
 //                                       a running sensitive request is not visible at all, so the
 //                                       standard mode answers 40901 as well)
+//    Contention (task B1-01zt): both modes take the scope's advisory lock without waiting; when
+//    another request holds it, the scope is read once without the lock (the committed state at
+//    that moment): completed with the same request_hash → that replay; anything else (no visible
+//    row, processing, abandoned, completed with another hash) → 40901. So concurrent retries of a
+//    finished request all get the original response, and a different body under contention
+//    still gets 40901 (20901 once the lock is free).
 //    In each of these cases the handler is not called. Replay comes before everything the
 //    handler checks (ban, version gate, step-up: BR-ID-01 ④ before ④a–⑮, BR-ID-08), so a
 //    completed record is returned without calling the handler even when it would now refuse.
@@ -120,8 +133,12 @@
 //        handler again. This makes the answer honest, it does not make an external call happen
 //        only once: the transactional mode protects only writes in this database, so a
 //        per-call-billed external call needs its own idempotency and recovery.
-//        The delete after a thrown or unstored handler is not retried (unchanged): its failure
-//        rejects with the driver's error, and the key is not stored either way.
+//        The delete after a thrown or unstored handler is not retried (unchanged). After an
+//        unstored result its failure rejects with the driver's error. After a thrown handler
+//        (task B1-01zt) the handler's error is still rethrown unchanged; the failed delete only
+//        logs one line — `error` (else warn) `({ method, path }, 'idempotency_cleanup_failed')`,
+//        never the driver error, a body or a key — and the row stays processing (40901 until the
+//        lease expires, then a takeover). The key is not stored either way.
 //      - Lease (待编排会话确认; no document gives a value): a processing row whose created_at is
 //        at least `processingLeaseMs` (default 60 000) before clock.now() is stale (its process
 //        died or hangs): the next request of the scope takes it over atomically (conditional
@@ -151,7 +168,9 @@
 //        everything (the handler's writes too) and return the response. Handler threw → roll
 //        back, rethrow the same error.
 //      - The commit itself fails (outcome unknown, e.g. the connection dropped during COMMIT) →
-//        reject with IdempotencyError('outcome_unknown'): the HTTP layer must then answer without
+//        one line `error` (else warn) `({ method, path }, 'idempotency_commit_unknown')` (task
+//        B1-01zt; never the driver error, a body or a key; also for the claim commit of the
+//        standard mode) and reject with IdempotencyError('outcome_unknown'): the HTTP layer must then answer without
 //        the envelope (close the connection), BR-ID-10 细则「服务端的配合」. A failure before
 //        COMMIT rolls back and rejects with the driver's error.
 //
@@ -416,7 +435,7 @@ export function subjectOf(actor: IdempotencyActor): string {
 export function canonicalJson(body: unknown): string {
   if (body === undefined) return '';
   const ancestors = new Set<object>();
-  function encode(value: unknown): string {
+  function encode(value: unknown, depth: number): string {
     if (
       value === null ||
       typeof value === 'string' ||
@@ -427,22 +446,37 @@ export function canonicalJson(body: unknown): string {
     if (typeof value !== 'object' || value === null || ancestors.has(value)) {
       throw new IdempotencyError('invalid_request');
     }
+    if (depth > MAX_CANONICAL_DEPTH) {
+      const error = new IdempotencyError('invalid_request');
+      TOO_DEEP.add(error);
+      throw error;
+    }
     ancestors.add(value);
     try {
       if (Array.isArray(value)) {
         // Array.from visits holes too; sparse arrays must not silently lose values.
-        return `[${Array.from(value, (item: unknown) => encode(item)).join(',')}]`;
+        return `[${Array.from(value, (item: unknown) => encode(item, depth + 1)).join(',')}]`;
       }
       if (!isPlainObject(value)) throw new IdempotencyError('invalid_request');
       return `{${Object.keys(value)
         .sort()
-        .map((key) => `${JSON.stringify(key)}:${encode(value[key])}`)
+        .map((key) => `${JSON.stringify(key)}:${encode(value[key], depth + 1)}`)
         .join(',')}}`;
     } finally {
       ancestors.delete(value);
     }
   }
-  return encode(body);
+  return encode(body, 1);
+}
+
+/** Section 3: the deepest nesting of arrays / objects canonicalJson accepts (task B1-01zt). */
+export const MAX_CANONICAL_DEPTH = 256;
+
+const TOO_DEEP = new WeakSet<object>();
+
+/** Section 3: true only for the invalid_request error of a body nested deeper than the limit. */
+export function isNestingTooDeep(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && TOO_DEEP.has(error);
 }
 
 /** Section 3. */
@@ -463,6 +497,12 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
   // Stage ④a registration points (./post-miss.ts registers into them), read per request.
   const hooks: IdempotencyHooks = { postMiss: [], entry: [] };
   const postMissChecks = hooks.postMiss;
+
+  /** One error line (warn when the logger has no error); fields never carry a body or key. */
+  function report(fields: Readonly<Record<string, unknown>>, msg: string) {
+    if (typeof logger.error === 'function') logger.error(fields, msg);
+    else logger.warn(fields, msg);
+  }
 
   /** First thing of either execute mode, before any validation, lookup or write. */
   function entered(request: IdempotentRequest) {
@@ -528,9 +568,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       }
       if (settled === undefined) {
         const fields = { method: request.method, path: request.path, attempts: attempt };
-        if (typeof logger.error === 'function')
-          logger.error(fields, 'idempotency_completion_unknown');
-        else logger.warn(fields, 'idempotency_completion_unknown');
+        report(fields, 'idempotency_completion_unknown');
         throw new IdempotencyError('outcome_unknown');
       }
       changed = settled;
@@ -545,8 +583,8 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       const prepared = prepare(request);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       if (sensitiveOperation(request)) throw new IdempotencyError('transactional_required');
-      const claimed = await transaction(db, request.traceId, async (trx) => {
-        await lockScope(trx, prepared.scope);
+      const claimed = await transaction(db, request, report, async (trx) => {
+        if (!(await lockScope(trx, prepared.scope))) return busyResponse(trx, prepared, request);
         return boundedClaim(trx, async () => {
           let checked = false;
           for (;;) {
@@ -597,7 +635,13 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       try {
         result = handlerResponse(await handler());
       } catch (error) {
-        await finish(claimed, request);
+        // The handler's error is the answer; a failed cleanup must not replace it (B1-01zt ③).
+        // The row stays processing until its lease expires (40901 meanwhile, then a takeover).
+        try {
+          await finish(claimed, request);
+        } catch {
+          report({ method: request.method, path: request.path }, 'idempotency_cleanup_failed');
+        }
         throw error;
       }
       await finish(claimed, request, result.store ? result.response : undefined);
@@ -608,8 +652,8 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       entered(request);
       const prepared = prepare(request);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
-      return transaction(db, request.traceId, async (trx) => {
-        await lockScope(trx, prepared.scope);
+      return transaction(db, request, report, async (trx) => {
+        if (!(await lockScope(trx, prepared.scope))) return busyResponse(trx, prepared, request);
         const claim = await boundedClaim(trx, async () => {
           let checked = false;
           for (;;) {
@@ -664,36 +708,41 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
         path: operation.path,
         key: request.key,
       };
-      return transaction(db, request.traceId, async (trx) => {
-        await lockScope(trx, scope);
-        return boundedClaim(trx, async () => {
-          for (;;) {
-            const row = await findRow(trx, scope);
-            if (row?.status === 'processing') return errorResponse(40901, request.traceId);
-            if (row?.status === 'completed') {
-              const stored = storedResponse(row);
-              const original = JSON.parse(stored.body) as ResponseEnvelope;
-              return envelopeResponse(200, 0, '', request.traceId, {
-                outcome: 'completed',
-                original: {
-                  code: original.code,
-                  msg: original.msg,
-                  ...(Object.hasOwn(original, 'data') ? { data: original.data } : {}),
-                },
-              });
+      return transaction(
+        db,
+        { method: operation.method, path: operation.path, traceId: request.traceId },
+        report,
+        async (trx) => {
+          if (!(await lockScope(trx, scope))) throw new KeyBusy();
+          return boundedClaim(trx, async () => {
+            for (;;) {
+              const row = await findRow(trx, scope);
+              if (row?.status === 'processing') return errorResponse(40901, request.traceId);
+              if (row?.status === 'completed') {
+                const stored = storedResponse(row);
+                const original = JSON.parse(stored.body) as ResponseEnvelope;
+                return envelopeResponse(200, 0, '', request.traceId, {
+                  outcome: 'completed',
+                  original: {
+                    code: original.code,
+                    msg: original.msg,
+                    ...(Object.hasOwn(original, 'data') ? { data: original.data } : {}),
+                  },
+                });
+              }
+              if (
+                row?.status === 'abandoned' ||
+                (await insertRow(trx, scope, 'abandoned', null, clock.now())) !== undefined
+              ) {
+                return envelopeResponse(200, 0, '', request.traceId, {
+                  outcome: 'abandoned',
+                  original: null,
+                });
+              }
             }
-            if (
-              row?.status === 'abandoned' ||
-              (await insertRow(trx, scope, 'abandoned', null, clock.now())) !== undefined
-            ) {
-              return envelopeResponse(200, 0, '', request.traceId, {
-                outcome: 'abandoned',
-                original: null,
-              });
-            }
-          }
-        });
-      });
+          });
+        },
+      );
     },
 
     async purgeExpired() {
@@ -939,7 +988,8 @@ class RollbackResponse extends Error {
   }
 }
 
-async function lockScope(trx: Transaction<DB>, scope: Scope) {
+/** Takes the scope's transaction-scoped advisory lock without waiting; false when it is held. */
+async function lockScope(trx: Transaction<DB>, scope: Scope): Promise<boolean> {
   const digest = createHash('sha256')
     .update(JSON.stringify([scope.app_id, scope.subject, scope.method, scope.path, scope.key]))
     .digest();
@@ -949,7 +999,26 @@ async function lockScope(trx: Transaction<DB>, scope: Scope) {
   }>`SELECT pg_try_advisory_xact_lock(${digest.readInt32BE(0)}::int4, ${digest.readInt32BE(4)}::int4) AS acquired`.execute(
     trx,
   );
-  if (!lock.rows[0]?.acquired) throw new KeyBusy();
+  return lock.rows[0]?.acquired === true;
+}
+
+/**
+ * The scope's lock is held by another request (B1-01zt ①): one read without the lock (READ
+ * COMMITTED, so it sees what is committed now). A completed record of the same request hash is
+ * final, so its stored response is replayed as without contention; anything else (no visible
+ * row, processing, abandoned, completed with another hash) stays 40901, since the holder may be
+ * about to change it.
+ */
+async function busyResponse(
+  trx: Transaction<DB>,
+  prepared: { scope: Scope; hash: string },
+  request: { traceId: string },
+): Promise<IdempotentResponse> {
+  const row = await findRow(trx, prepared.scope);
+  if (row?.status === 'completed' && row.request_hash === prepared.hash) {
+    return { ...storedResponse(row), source: 'replay' };
+  }
+  return errorResponse(40901, request.traceId);
 }
 
 async function boundedClaim<T>(trx: Transaction<DB>, claim: () => Promise<T>): Promise<T> {
@@ -972,7 +1041,8 @@ async function boundedClaim<T>(trx: Transaction<DB>, claim: () => Promise<T>): P
 
 async function transaction<T>(
   db: Kysely<DB>,
-  traceId: string,
+  request: { method: string; path: string; traceId: string },
+  report: (fields: Readonly<Record<string, unknown>>, msg: string) => void,
   run: (trx: Transaction<DB>) => Promise<T>,
 ): Promise<T | IdempotentResponse> {
   let committing = false;
@@ -988,8 +1058,13 @@ async function transaction<T>(
         return result;
       });
   } catch (error) {
-    if (committing) throw new IdempotencyError('outcome_unknown');
-    if (error instanceof KeyBusy) return errorResponse(40901, traceId);
+    if (committing) {
+      // One line (B1-01zt ④): method and path only, never the driver error (it may carry
+      // parameters), a body or a key.
+      report({ method: request.method, path: request.path }, 'idempotency_commit_unknown');
+      throw new IdempotencyError('outcome_unknown');
+    }
+    if (error instanceof KeyBusy) return errorResponse(40901, request.traceId);
     if (error instanceof RollbackResponse) return error.response;
     throw error;
   }

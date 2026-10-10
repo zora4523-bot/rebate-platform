@@ -126,7 +126,8 @@ for (const transactional of [false, true]) {
       registerIdempotencyPostMissCheck(f.idem, check);
       expect(JSON.parse((await f.execute()).body)).toMatchObject({ code: 40901 });
       expect(check).not.toHaveBeenCalled();
-      expect(f.events).toEqual([]);
+      // 锁被占时只做一次无锁查找（B1-01zt ①），不读最低版本、不插入/更新/删除。
+      expect(f.events).toEqual(['lookup']);
     } finally {
       await f.db.destroy();
     }
