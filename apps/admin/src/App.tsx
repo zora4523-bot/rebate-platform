@@ -11,7 +11,7 @@ import {
   type ResourceProps,
 } from '@refinedev/core';
 import routerProvider from '@refinedev/react-router';
-import { ConfigProvider } from 'antd';
+import { ConfigProvider, Layout, Typography } from 'antd';
 import {
   useCallback,
   useEffect,
@@ -33,6 +33,7 @@ import {
 import { LoadFailedPage, NoPermissionPage, PagePending, WelcomePage } from './layout/pages.tsx';
 import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
+import { AdminsPage } from './pages/admins/index.ts';
 import { LoginPage } from './pages/login/index.ts';
 import {
   createAccessControl,
@@ -274,7 +275,7 @@ function AdminApp({ options }: { readonly options: AdminAppOptions }) {
   );
 
   return (
-    <ConfigProvider theme={theme}>
+    <ConfigProvider theme={theme} button={{ autoInsertSpace: false }}>
       <ShellRouter kind={options.router ?? 'memory'} initialRoute={options.initialRoute}>
         <Refine
           routerProvider={routerProvider}
@@ -368,9 +369,9 @@ function ShellFrame({
       : [match.group.label, match.item.label, ...(subpage === undefined ? [] : [subpage])];
 
   let content: ReactNode = (
-    <p className="admin-secondary" role="status">
+    <Typography.Text type="secondary" role="status">
       {shellTexts.loading}
-    </p>
+    </Typography.Text>
   );
   if (state.status === 'failed') {
     content = <LoadFailedPage onRetry={onRefresh} />;
@@ -380,6 +381,9 @@ function ShellFrame({
     const { snapshot } = state;
     if (match !== undefined && options.renderPage !== undefined) {
       content = options.renderPage(match.item.id, access);
+    } else if (match !== undefined && match.item.id === 'admins') {
+      // Default page for the super-admin-only menu (the menu itself is hidden otherwise).
+      content = <AdminsPage />;
     } else if (match !== undefined) {
       content = <PagePending title={match.item.label} />;
     } else if (menuId !== '') {
@@ -400,19 +404,19 @@ function ShellFrame({
   }
 
   return (
-    <div className="admin-shell">
+    <Layout hasSider className="admin-shell">
       <Sidebar groups={groups} activeId={match?.item.id} />
-      <div className="admin-column">
+      <Layout className="admin-column">
         <TopBar
           crumbs={crumbs}
           environment={options.environment}
           displayName={account.displayName}
           onLogout={onLogout}
         />
-        <main className="admin-content" aria-busy={state.status === 'loading'}>
+        <Layout.Content className="admin-content" aria-busy={state.status === 'loading'}>
           {content}
-        </main>
-      </div>
-    </div>
+        </Layout.Content>
+      </Layout>
+    </Layout>
   );
 }

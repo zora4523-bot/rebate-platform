@@ -1,3 +1,4 @@
+import { Breadcrumb, Button, Flex, Layout, Tag, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import type { AdminEnvironment } from '../shell-options.ts';
 import { shellTexts } from '../texts/shell.ts';
@@ -10,7 +11,7 @@ export interface TopBarProps {
   readonly onLogout: () => void | Promise<unknown>;
 }
 
-/** Breadcrumb on the left; environment tag, account and logout on the right. */
+/** Breadcrumb on the left; environment tag, account and logout on the right (antd Layout.Header). */
 export function TopBar({ crumbs, environment, displayName, onLogout }: TopBarProps) {
   const [loggingOut, setLoggingOut] = useState(false);
   // The click handler reads this, so a second click in the same frame is ignored too.
@@ -37,31 +38,30 @@ export function TopBar({ crumbs, environment, displayName, onLogout }: TopBarPro
   }
 
   return (
-    <header className="admin-topbar">
-      <nav className="admin-breadcrumb" aria-label={shellTexts.breadcrumb}>
-        <ol>
-          {crumbs.map((crumb, index) => (
-            <li key={index} aria-current={index === crumbs.length - 1 ? 'page' : undefined}>
-              {crumb}
-            </li>
-          ))}
-        </ol>
-      </nav>
-      <div className="admin-topbar-account">
-        {environment === 'production' ? null : (
-          <span className="admin-env-tag">{shellTexts.nonProductionEnvironment}</span>
-        )}
-        <span>{displayName}</span>
-        <button
-          type="button"
-          className="admin-logout"
-          disabled={loggingOut}
-          aria-busy={loggingOut || undefined}
-          onClick={logout}
-        >
-          {shellTexts.logout}
-        </button>
-      </div>
-    </header>
+    <Layout.Header role="banner" className="admin-header">
+      <Flex align="center" justify="space-between" style={{ height: '100%' }}>
+        <Breadcrumb
+          aria-label={shellTexts.breadcrumb}
+          items={crumbs.map((crumb, index) => ({ key: index, title: crumb }))}
+        />
+        <Flex align="center" gap="small">
+          {environment === 'production' ? null : (
+            <Tag color="warning" bordered={false}>
+              {shellTexts.nonProductionEnvironment}
+            </Tag>
+          )}
+          <Typography.Text>{displayName}</Typography.Text>
+          <Button
+            type="link"
+            autoInsertSpace={false}
+            disabled={loggingOut}
+            aria-busy={loggingOut || undefined}
+            onClick={logout}
+          >
+            {shellTexts.logout}
+          </Button>
+        </Flex>
+      </Flex>
+    </Layout.Header>
   );
 }
