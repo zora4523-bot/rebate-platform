@@ -1,0 +1,43 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 by path (pnpm-lock.yaml is class-2 protected, exempt for a deps task; owner label before merge per 规划/11 §4.4). Deps task: apps/admin dependencies gain @ant-design/v5-patch-for-react-19 1.0.3 (exact; published 2024-12-26, past the 7-day minimum release age; no dependencies, peers antd >=5.22.6 and react / react-dom >=19), imported first in apps/admin/src/main.tsx so antd's imperative APIs (Modal / message / notification) work under React 19 before F1-06r. No scripts changed. Lockfile by the orchestrator's pnpm add outside the sandbox; the one-line import written by the orchestrator. Ledger tester: none. Reviews: Codex only (approvals id 27). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "no findings; exact version, one new lock entry with integrity, import before any antd render; money checklist n/a"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "deps task, ledger tester: none"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "F1-06t",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "5723f670796edbaaf1868983417776d8078b32a1",
+  "runs": [],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "b1cb10c00e5bb24c60b773a17a9b1bd75f8ca431",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
