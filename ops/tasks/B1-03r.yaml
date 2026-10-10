@@ -1,0 +1,20 @@
+id: B1-03r
+repo: rebate-platform
+title: 测试修改：B1-03c 最低版本装配冻结测试 [AC-B1-03c#22] 的探针控制器占用 POST /v1/me/appeals，B1-03i 实现真实申诉控制器后 Fastify 报路由重复；改为在已有 RiskModule.forRoot 替换里去掉真实 AppealsController，由探针独占该路由
+type: test-change
+# 草稿 2026-10-10（身份与风控线，identity-lane）。test/spec/risk/min-version/assembly.test.ts 的 #22 用 planned 路由 submitAppeal 挂探针控制器（代码注释已写「此 planned 路由实现时须换为其他 planned 路由，或改为替换真实控制器的服务依赖」）；
+# B1-03i（申诉接口）在 RiskModule 注册真实 AppealsController 后，测试机完整验证 4 条 #22 全部 FastifyError「Method 'POST' already declared for route '/v1/me/appeals'」（379 个文件只此一文件红）。
+# 改法（编排者定）：不换别的 planned 路由（其余候选 createWithdrawal、bindPhone、convertLink 都有在途实现，会重复撞车）；在用例已有的 RiskModule.forRoot 替换里过滤掉名为 AppealsController 的控制器，探针照旧独占该路由；断言、向量、标题不改，注释同步。
+# 改前（main，无真实控制器，过滤为空操作）改后（叠 B1-03i）都绿。不属削弱资金测试；保护路径第一类、改已有文件；走非 task/ 分支 test-change/B1-03r，Codex 评审 pass 后经 need-label 请规划会话按 approvals #24 加标签。须在 B1-03i 之前合并（B1-03i deps 加本任务）。
+refs: []
+refs_hash: {}
+deps: [B1-03c]
+paths:
+  - 'test/spec/risk/min-version/assembly.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/min-version/**'
+status: todo
+pr: null
