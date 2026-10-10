@@ -1,0 +1,32 @@
+id: F1-06p
+repo: rebate-platform
+title: 后台登录页与外壳改用 antd 现成组件（Layout / Menu / Breadcrumb / Result、Form / Input / Steps），删掉手写表单、菜单与成套 CSS；动态码改为包着单个 antd Input 的封装
+type: impl
+# 2026-10-09 入账（前端线 f1-frontend-6）。负责人看本机预览后定：F1-06e 外壳与 F1-06h 登录页用纯 CSS 手写表单、菜单，不符合规范；规划 03 §9.1 加硬规则（couli#102）：
+# 后台壳、表单、表格、弹窗一律用 antd 5.29 现成组件 + theme.ts 令牌主题；禁止重建 antd 已有基础控件的结构、交互与整套皮肤，基于 antd 的业务封装与少量令牌化布局样式允许。
+# ① 外壳：Layout（Sider / Header / Content）+ Menu（分组 type group，选中项跟路由，菜单项内仍是可达链接）+ Breadcrumb + 顶栏 Tag（环境）/ Button type=link（退出）；
+#    「暂无权限」「加载失败」「尚未接入」用 Result / Empty / Alert。
+# ② 登录三步（账号密码、改初始密码、动态码 / 绑定）：Form + Form.Item + Input / Input.Password + Button + Steps；字段错误经 Form.Item validateStatus / help（按 data.fields）；绑定页仍用 antd QRCode。
+# ③ 动态码按 03 §9.2 是单个输入框（maxlength=6、inputmode=numeric、autocomplete=one-time-code，六格只是视觉）：components/otp-input 改为包着单个 antd Input 的封装，不用多格 Input.OTP；对外接口不变（step-up 弹窗照用）。
+# ④ 样式：删掉被替代的 login.css 与 admin.css 同类规则，只留主题盖不到的少量布局；颜色、圆角、字号走 theme.ts（ConfigProvider theme，令牌变量）与组件 token，不写字面色值。
+# 不改：providers（auth / data / access-control）行为与接口、texts/** 文案、resources/ 菜单表、路由路径；外部可见文案与 aria 名称不变；既有冻结测试（admin-shell、admin-auth、admin-auth-qr、admin-stepup、build-smoke）保持全绿。
+# 画板（AdmLogin、AdmLoginTotp、AdmLoginTotpBind / BindInvalid / BindDone、AdmHomeNoPerm、AdmStepUp）与 antd 默认的差异用主题变量和 props 调，调不到的登记设计差异，不为贴稿手写。
+# step-up 弹窗本体改 antd Modal 另见 F1-06r。
+refs: []
+refs_hash: {}
+deps: [F1-06h, F1-06j]
+paths:
+  - 'apps/admin/src/App.tsx'
+  - 'apps/admin/src/layout/**'
+  - 'apps/admin/src/pages/login/**'
+  - 'apps/admin/src/components/otp-input/**'
+  - 'apps/admin/src/styles/**'
+  - 'apps/admin/src/theme.ts'
+test_paths:
+  - 'test/spec/frontend/admin-antd/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-antd/**'
+status: todo
