@@ -27,7 +27,7 @@
 import { randomBytes } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { link, open, unlink } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readLocalKeyProvider } from '../src/modules/platform/config/keyring-startup.ts';
 import { createWrappedKeyring } from '../src/modules/platform/crypto/index.ts';
@@ -39,12 +39,10 @@ export async function initLocalKeyring(masterKeyFile: string, outputFile: string
   const provider = await readLocalKeyProvider(masterKeyFile);
   const keyring = await createWrappedKeyring(provider);
   const text = `${JSON.stringify(keyring, null, 2)}\n`;
-  // Same directory as the output: link() cannot cross file systems.
+  // Same directory as the output: link() cannot cross file systems. The temporary name does not
+  // embed the output name, so any legal output name (up to NAME_MAX bytes) keeps it short.
   const directory = dirname(outputFile);
-  const temporary = join(
-    directory,
-    `.${basename(outputFile)}.${randomBytes(8).toString('hex')}.tmp`,
-  );
+  const temporary = join(directory, `.keyring-init.${randomBytes(16).toString('hex')}.tmp`);
   const file = await open(temporary, 'wx', 0o600);
   try {
     try {
