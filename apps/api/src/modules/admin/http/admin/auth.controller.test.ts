@@ -183,9 +183,10 @@ it('[AC-F1-06k] staging without the admin key or whitelist refuses to initialise
 it('[AC-F1-06k] a contract admin / super route added after init is behind the admin check', async () => {
   await build();
   const server = app!.getHttpAdapter().getInstance();
-  // me/permissions is a real route since F1-06l; the admins list is still added here.
-  server.get('/admin/v1/admins', () => ({ code: 0, data: {} }));
-  for (const url of ['/admin/v1/me/permissions', '/admin/v1/admins']) {
+  // me/permissions (F1-06l) and the admins reads (F1-06m) are real routes; a still-planned
+  // contract admin route added after init is behind the same check.
+  server.get('/admin/v1/platform-icons', () => ({ code: 0, data: {} }));
+  for (const url of ['/admin/v1/me/permissions', '/admin/v1/admins', '/admin/v1/platform-icons']) {
     const response = await app!.inject({ method: 'GET', url, remoteAddress: '127.0.0.1' });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ code: 10001 });

@@ -9,3 +9,5 @@ export const ADMIN_CHECK = Symbol('ADMIN_CHECK');
 export const ADMIN_HTTP_POLICY = Symbol('ADMIN_HTTP_POLICY');
 /** AdminStepUpService (./admin-step-up.ts): step-up and me/permissions (F1-06l). */
 export const ADMIN_STEP_UP = Symbol('ADMIN_STEP_UP');
+/** AdminAccountsReader (./admin-accounts-read.ts; F1-06m, admin entry only). */
+export const ADMIN_ACCOUNTS_READ = Symbol('ADMIN_ACCOUNTS_READ');

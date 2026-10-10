@@ -4921,7 +4921,6 @@ paths:
         or the full verify phone. Creating, disabling and ticking permission points (super admin,
         step-up, audit) come with a later task.
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -5004,7 +5003,6 @@ paths:
         otherwise). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`. Never returns the
         password, its hash, the TOTP secret or the full verify phone.
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
