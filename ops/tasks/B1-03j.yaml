@@ -10,10 +10,10 @@ type: impl
 # 审计经 F1-06b 的审计端口（actor 记系统）；告警出口同 B1-03f 注释。
 # platform 路径，整体按 RV2。
 # 2026-10-10（identity-lane）：paths 加 apps/api/src/entry.ts——平台队列没有 cron，扫描任务链靠 worker 在队列 runtime start() 之后显式调用 risk 的 seed() 起头；该调用只能放在 entry.ts 的 worker 启动段（规则测试评审 r2 范围外 S1：不接上则任务链永不启动）。
-# 同日 paths 加 test/spec/platform/queue/contract.test.ts：该冻结测试用 toStrictEqual 钉住 QUEUE_CATALOG 与 ENTRY_PLAN 全表，新增 risk-scan 队列后必红；改动（目录与 worker 计划各补 risk-scan 一项，其余不变）只能与 B1-03j 同一 PR 落地（先合哪个都会让另一个红），保护路径第一类，按 approvals #24 加标签。该文件是规则测试（test(spec) 提交里改），列在 test_paths 而非 paths（evidence-check 要求规则测试在 spec_commit 之前改完，guard-git 的 path-guard-author 要求 rule-test 提交只碰 test_paths）。
+# 同日 paths 加 test/spec/platform/queue/contract.test.ts：该冻结测试用 toStrictEqual 钉住 QUEUE_CATALOG 与 ENTRY_PLAN 全表，新增 risk-scan 队列后必红；改动（目录与 worker 计划各补 risk-scan 一项，其余不变）只能与 B1-03j 同一 PR 落地（先合哪个都会让另一个红），保护路径第一类，按 approvals #24 加标签。（作废：同 PR 修改不可行——列 test_paths 时 red-check 把整份文件的既有用例当作本任务规则测试而拒。改由 test-change B1-03s 先合，本任务不再改该文件，已从 test_paths 移除，deps 加 B1-03s。）
 refs: []
 refs_hash: {}
-deps: [B1-03h, F1-06b, B1-03i]
+deps: [B1-03h, F1-06b, B1-03i, B1-03s]
 paths:
   - 'apps/api/src/modules/risk/**'
   - 'apps/api/src/modules/platform/queue/catalog.ts'
@@ -21,7 +21,6 @@ paths:
   - 'apps/api/src/entry.ts'
 test_paths:
   - 'test/spec/risk/freeze-expiry/**'
-  - 'test/spec/platform/queue/contract.test.ts'
 impl: claude
 tester: codex
 accept:

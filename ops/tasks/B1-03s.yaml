@@ -1,0 +1,19 @@
+id: B1-03s
+repo: rebate-platform
+title: 测试修改：平台队列冻结测试（test/spec/platform/queue/contract.test.ts）钉死全目录与 worker 计划的两条断言容许 B1-03j 的 risk-scan 队列（存在时必须恰为 exclusive、worker 并发 1），其余项与顺序照旧逐项确切
+type: test-change
+# 草稿 2026-10-10（身份与风控线，identity-lane）。B1-03j（冻结到期任务）在 platform/queue/catalog.ts 新增 risk-scan（exclusive，只 worker 并发 1），而该冻结测试用 toStrictEqual 钉住 QUEUE_CATALOG 与 ENTRY_PLAN 全表，叠上 B1-03j 后必红。
+# 先试过与 B1-03j 同 PR 修改（台账 #424、#426）：放在实现之后 evidence-check 拒（spec_commit 之后改规则测试），放在 test(spec) 提交里又被 red-check 当作本任务规则测试、整份文件的既有用例「在骨架上为绿」而拒。故改按 B1-03r 先例单独先合。
+# 改法：两条断言把 risk-scan 项排除后与原全表逐项确切比较（其余项、顺序、取值不变）；若目录 / worker 计划里有 risk-scan，它必须恰为 {name:'risk-scan', ...DEFAULT, policy:'exclusive'} 且位于 agent-trace 之后、dead-letter 之前 / worker 计划里为 w('risk-scan', 1)。main 上（无 risk-scan）与叠 B1-03j 后都绿；risk-scan 的存在与取值另由 B1-03j 冻结测试 [AC-B1-03j#12] 钉住，不属削弱。保护路径第一类、改已有文件；走非 task/ 分支 test-change/B1-03s，Codex 评审 pass 后加 owner-approved 标签。须在 B1-03j 之前合并。
+refs: []
+refs_hash: {}
+deps: [B1-03r]
+paths:
+  - 'test/spec/platform/queue/contract.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/queue/**'
+status: todo
+pr: null
