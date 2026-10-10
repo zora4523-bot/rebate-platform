@@ -16,5 +16,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/risk/sms-risk/**'
-status: todo
-pr: null
+status: done
+pr: 394
