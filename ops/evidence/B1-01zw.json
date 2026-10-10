@@ -1,0 +1,50 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (test/**). test-change: new lock-wait-write-commits.int.test.ts asserts that an event_log insert queued behind partition pre-creation commits and really queued on the lock; green on the current implementation. Full verification by the required CI checks (approvals id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "fresh read-only Claude subagent: round 1 pass (S2: insert not proven queued), round 2 pass after the fix (S2 kept as follow-up: 5 s lock window under extreme load)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 general pass (S2: holder connect failure hangs ready); round 2 money pass after the fix, checklist complete (same 5 s window S2 as follow-up)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "ledger tester: none (test-change written by a Claude subagent, reviewed by both families)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zw",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "301d9c8e0b497d5a921a4686c3ee99b23286a2bf",
+  "runs": [],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "2269966cad879a9ade64654bd4a80b9f852a995b",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
