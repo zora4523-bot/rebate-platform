@@ -1,16 +1,8 @@
-/* Six visual cells 44 × 48 (design-hifi AdmStepUp / AdmStepUpSms); the transparent input on top
-   is the only control. Colours come from @couli/ui-tokens variables. */
-.otp-input {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-}
-
+/* Six visual cells 44 × 48 (design-hifi AdmStepUp); the transparent antd Input on top is the only
+   control. Colours come from @couli/ui-tokens variables. */
 .otp-input-field {
   position: relative;
 }
-
 .otp-input-label {
   position: absolute;
   width: 1px;
@@ -19,61 +11,33 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-
-.otp-input-cells {
-  display: flex;
-  gap: var(--space-2);
-}
-
 .otp-input-cell {
   box-sizing: border-box;
   width: 44px;
   height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   border: var(--component-control-border-width) solid var(--color-border-control);
   border-radius: var(--radius-small);
   background-color: var(--color-background-surface);
-  color: var(--color-text-primary);
   font-size: 20px;
-  line-height: 28px;
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
-
 .otp-input-cell[data-invalid] {
   border-color: var(--color-status-error-text);
 }
-
 .otp-input-cell[data-active] {
   border: var(--focus-width) solid var(--color-focus-ring);
 }
-
-.otp-input-control {
+.otp-input-field .otp-input-control {
   position: absolute;
   inset: 0;
-  width: 100%;
   height: 100%;
-  margin: 0;
-  border: 0;
-  padding: 0;
   opacity: 0;
-  font: inherit;
   cursor: text;
 }
-
-.otp-input-error,
 .otp-input-hint {
   font-size: var(--font-size-caption);
-  line-height: 18px;
   text-align: center;
-}
-
-.otp-input-error {
-  color: var(--color-status-error-text);
-}
-
-.otp-input-hint {
-  color: var(--color-text-secondary);
 }
