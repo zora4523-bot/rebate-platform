@@ -8,8 +8,9 @@
 //     NULL` in the WHERE clause): a session revoked earlier keeps its time and reason.
 //   - Nothing else is written: refresh tokens are judged through their session, and
 //     devices.last_login_sid stays as it is (BR-ID-07 细则「旧会话终止与当前有效会话并存」).
-//   - afterRevoked runs in the same transaction with the revoked sids (the unbinding extension
-//     point of B1-12b); a failing hook rolls the revocation back with the caller's transaction.
+//   - afterRevoked runs in the same transaction with the revoked sids and their app (the push
+//     token unbinding of B1-12b, push-tokens.ts unbindRevoked); a failing hook rolls the
+//     revocation back with the caller's transaction.
 // The refresh reuse detection (refresh.ts) revokes one sid with revokeSession and the same hook.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
@@ -26,7 +27,12 @@ export type SessionRevokeReason =
   | 'admin_revoked'
   | 'device_revoked';
 
-export type AfterSessionsRevoked = (trx: Transaction<DB>, sids: readonly string[]) => Promise<void>;
+/** The sids are sessions of `context.app_id` (sid is unique per app, 0013). */
+export type AfterSessionsRevoked = (
+  trx: Transaction<DB>,
+  sids: readonly string[],
+  context: { readonly app_id: string },
+) => Promise<void>;
 
 /** The fixed revoke_reason values (orchestrator ruling B1-02k §9.2). */
 const REVOKE_REASONS: ReadonlySet<unknown> = new Set<SessionRevokeReason>([
@@ -64,7 +70,9 @@ async function revokeWhere(
     .returning('sid')
     .execute();
   const sids = rows.map((row) => row.sid);
-  if (sids.length > 0 && afterRevoked !== undefined) await afterRevoked(trx, sids);
+  if (sids.length > 0 && afterRevoked !== undefined) {
+    await afterRevoked(trx, sids, { app_id: input.app_id });
+  }
   return sids;
 }
 

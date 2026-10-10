@@ -1,0 +1,103 @@
+{
+  "task": "B1-03n",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "776f1ac412c568d32ecd8d00cde645b2267c3fb9",
+  "red_tests": [
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#1] 首次未命中也完整落库，判定时刻来自 Clock，无 risk_hits",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#2] 未命中重放不读配置或登录，阈值改变和时钟前进不改变结论",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#3] 命中后窗口、阈值、去重开关及并号改变，完整排名仍原样重放",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#4] 配置读取失败 port 按默认 3 持久化，恢复后的真实阈值 2 不改结论",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#4] 配置读取失败 statement 按默认 3 持久化，恢复后的真实阈值 2 不改结论",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#5] 并发 pooled=false：等待期间新设备登录，两个调用仍只认首次结果",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#6] 并发 pooled=true：等待期间新设备登录，两个调用仍只认首次结果",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#7] repeatable read 事务已执行查询后拒绝判定，无配置读取、登录读取或落库",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#7] serializable 事务已执行查询后拒绝判定，无配置读取、登录读取或落库",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#5] 唯一冲突兜底重读已提交结果，不残留败方的命中行",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#7] read committed 使用同一事务，结果和命中随调用方回滚",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#8] 不同单号重新判定；同单号跨 app_id 不串用结论",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#8] PG 四列唯一约束拒绝绕过 judge 的重复插入，user_id 不是去重键",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#8] 同 app、同 ref_id 的其他规则或引用类型不得被当作本单结果",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#3] 旧 risk_hits 没有判定结果时重新判定，不凭旧命中重放或回填",
+    "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#9] couli_app 只有插入和读取权，UPDATE / DELETE 拒绝；readonly 可读"
+  ],
+  "risk_note": "RV2 (same-device judgement persistence, BR-ID-37 'judged once'; migration 0027). New insert-only app.risk_judgements (one row per app_id, rule_id, ref_type, ref_id; result jsonb; FKs to risk_rules and users; CHECK result.marked = marked; couli_app SELECT and column INSERT only). judge always runs in one read committed transaction (opens its own for a pool handle), refuses repeatable read / serializable, takes the per-ref advisory lock, replays a stored judgement verbatim (no config read, no recompute), otherwise judges at the Clock instant, registers the rule, stores the judgement (non-hits too) and then the hit rows; a unique-key conflict re-reads the stored result. Closes the B1-03k review items (non-hit not persisted, pool-handle races, replayed rank drift). judge still has no business caller (B2-05). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "776f1ac412c568d32ecd8d00cde645b2267c3fb9",
+      "tree": "86e99d856c1f3ff474f0a0f28498a5934d22536d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T02:27:04Z",
+      "finished_at": "2026-10-10T02:27:10Z",
+      "red_tests": [
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#1] 首次未命中也完整落库，判定时刻来自 Clock，无 risk_hits",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#2] 未命中重放不读配置或登录，阈值改变和时钟前进不改变结论",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#3] 命中后窗口、阈值、去重开关及并号改变，完整排名仍原样重放",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#4] 配置读取失败 port 按默认 3 持久化，恢复后的真实阈值 2 不改结论",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#4] 配置读取失败 statement 按默认 3 持久化，恢复后的真实阈值 2 不改结论",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#5] 并发 pooled=false：等待期间新设备登录，两个调用仍只认首次结果",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#6] 并发 pooled=true：等待期间新设备登录，两个调用仍只认首次结果",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#7] repeatable read 事务已执行查询后拒绝判定，无配置读取、登录读取或落库",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#7] serializable 事务已执行查询后拒绝判定，无配置读取、登录读取或落库",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#5] 唯一冲突兜底重读已提交结果，不残留败方的命中行",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#7] read committed 使用同一事务，结果和命中随调用方回滚",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#8] 不同单号重新判定；同单号跨 app_id 不串用结论",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#8] PG 四列唯一约束拒绝绕过 judge 的重复插入，user_id 不是去重键",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#8] 同 app、同 ref_id 的其他规则或引用类型不得被当作本单结果",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#3] 旧 risk_hits 没有判定结果时重新判定，不凭旧命中重放或回填",
+        "test/spec/risk/same-device-replay/rules.int.test.ts > [AC-B1-03n#9] couli_app 只有插入和读取权，UPDATE / DELETE 拒绝；readonly 可读"
+      ],
+      "expected": ["test/spec/risk/same-device-replay/rules.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a281106398ba13162322d130b83bc9801d3757078b901bb3a70ef656aa4a826e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "independent read-only Claude subagent: pass (S2: the replay does not compare the caller's user_id with the stored row; tracked in followups)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass (S2: the result.marked = marked CHECK lets a row without the marked key through because the comparison is NULL; judge always writes it); checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, 16 tests red for the right reason on the test runner) reviewed by a fresh Claude subagent: round 1 pass (S2 no rejection case for the ref_type CHECK; S2 #7 pins the 'read committed' wording, which the implementation uses)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "f90bff3d254f10aa01c76fc6c7328944627469f1",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

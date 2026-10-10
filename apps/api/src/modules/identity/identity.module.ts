@@ -1,6 +1,6 @@
 import { type DynamicModule, type FactoryProvider, HttpException, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
-import type { Kysely } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import {
   APP_CONFIG,
   CLOCK,
@@ -51,6 +51,12 @@ import {
 } from './application/sms-codes.ts';
 import { createLogout, type Logout } from './application/logout.ts';
 import { createRefreshService, type RefreshService } from './application/refresh.ts';
+import { unbindRevoked, type SessionPushTokens } from './application/push-tokens.ts';
+import {
+  revokeSessionsByDevice,
+  revokeSessionsByUser,
+  type SessionRevokeReason,
+} from './application/revoke-sessions.ts';
 import {
   createDefaultInviteCodeFilter,
   createRegistrationService,
@@ -130,7 +136,27 @@ export interface IdentityModuleOptions {
    * is refused with 42901 (never a send without the checks).
    */
   readonly smsRisk?: Omit<FactoryProvider<SmsRisk>, 'provide'>;
+  /**
+   * Builds the push token port (B1-12b: notification's binding and conditional unbinding
+   * commands), assembled by app.module so identity never imports notification. The SMS login
+   * binds through it, and logout, the refresh reuse revocation and the assembled revocation by
+   * user / by device unbind through it, each in the session's own transaction. Absent (or null),
+   * sessions are created and ended without touching push tokens.
+   */
+  readonly pushTokens?: Omit<FactoryProvider<SessionPushTokens | null>, 'provide'>;
 }
+
+/** Revocation by user as assembled (Nest token: the function revokeSessionsByUser itself). */
+export type AssembledRevokeByUser = (
+  trx: Transaction<Database>,
+  input: { app_id: string; user_id: string; reason: SessionRevokeReason },
+) => Promise<string[]>;
+
+/** Revocation by device as assembled (Nest token: the function revokeSessionsByDevice itself). */
+export type AssembledRevokeByDevice = (
+  trx: Transaction<Database>,
+  input: { app_id: string; device_id: string; reason: SessionRevokeReason },
+) => Promise<string[]>;
 
 /** The ports without risk's assembly: refuse like an unavailable store (Retry-After 1). */
 const REFUSING_DEVICE_REGISTRATION: DeviceRegistrationPorts = {
@@ -174,6 +200,10 @@ function h5ReadOnlyRejection(request: RequestCheckInput): HttpException {
  * passes this module to RiskModule.
  * Exports TOKEN_CHECK, the token stages ② ③ (BR-ID-01) that app.module places right after the
  * signature check in the api entry's REQUEST_CHECKS.
+ * Push tokens (B1-12b): app.module hands in notification's commands as the push token port
+ * (options.pushTokens); login binds, logout / reuse / revocation by user or device unbind, each in
+ * the session's transaction. The assembled revocation entries are provided under the tokens
+ * revokeSessionsByUser / revokeSessionsByDevice (the functions index.ts exports).
  * SMS: the sender under smsSenderToken() is the fake adapter in local / test (its outbox is the
  * only way to read a code there); the code service needs Redis and the configuration reader.
  * Tokens: the signing key (TOKEN_KEYS) is the configured JWT_* key, or one ephemeral key pair per
@@ -191,6 +221,8 @@ const RISK_PORTS = Symbol('IDENTITY_RISK_PORTS');
 const SMS_RISK = Symbol('IDENTITY_SMS_RISK');
 /** identity's ports onto risk's SMS send risk (createSmsRiskPorts). */
 const SMS_RISK_PORTS = Symbol('IDENTITY_SMS_RISK_PORTS');
+/** The push token port as app.module builds it (IdentityModuleOptions.pushTokens), or null. */
+const PUSH_TOKENS = Symbol('IDENTITY_PUSH_TOKENS');
 
 @Module({})
 export class IdentityModule {
@@ -222,6 +254,39 @@ export class IdentityModule {
         options.blocklist === undefined
           ? { provide: BLOCKLIST_SERVICE, useValue: null }
           : { ...options.blocklist, provide: BLOCKLIST_SERVICE },
+        options.pushTokens === undefined
+          ? { provide: PUSH_TOKENS, useValue: null }
+          : { ...options.pushTokens, provide: PUSH_TOKENS },
+        // The internal revocation entries (merge, ban, admin revocation by user or by device), as
+        // the Nest container hands them out: the provider token is identity's exported function
+        // itself, the value takes only (trx, input) — the Clock and the push token unbinding of
+        // every revoked session (BR-ID-07 细则「被动结束会话时解绑」) are assembled here.
+        {
+          provide: revokeSessionsByUser,
+          inject: [CLOCK, PUSH_TOKENS],
+          useFactory:
+            (clock: Clock, pushTokens: SessionPushTokens | null): AssembledRevokeByUser =>
+            (trx, input) =>
+              revokeSessionsByUser(
+                trx,
+                input,
+                clock,
+                pushTokens === null ? undefined : unbindRevoked(pushTokens),
+              ),
+        },
+        {
+          provide: revokeSessionsByDevice,
+          inject: [CLOCK, PUSH_TOKENS],
+          useFactory:
+            (clock: Clock, pushTokens: SessionPushTokens | null): AssembledRevokeByDevice =>
+            (trx, input) =>
+              revokeSessionsByDevice(
+                trx,
+                input,
+                clock,
+                pushTokens === null ? undefined : unbindRevoked(pushTokens),
+              ),
+        },
         {
           provide: RISK_PORTS,
           inject: [BLOCKLIST_SERVICE, { token: FIELD_CRYPTO, optional: true }],
@@ -328,6 +393,7 @@ export class IdentityModule {
             INVITE_CODE_WORDS,
             RISK_PORTS,
             SMS_RISK_PORTS,
+            PUSH_TOKENS,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -340,6 +406,7 @@ export class IdentityModule {
             sensitiveWords: SensitiveWords,
             risk: IdentityRiskPorts | null,
             smsRisk: SmsRiskPorts,
+            pushTokens: SessionPushTokens | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): SmsLoginService | null =>
@@ -366,16 +433,18 @@ export class IdentityModule {
                   // Registration keys are snapshotted before the login transaction opens.
                   config: reader,
                   tokens,
+                  ...(pushTokens === null ? {} : { pushTokens }),
                 }),
         },
         {
-          // The unbinding hook of a reuse revocation (afterRevoked) joins with B1-12b.
+          // The reuse revocation unbinds the session's push tokens (afterRevoked, B1-12b).
           provide: REFRESH,
           inject: [
             CLOCK,
             ROOT_LOGGER,
             IDENTITY_CONFIG,
             TOKEN_SERVICE,
+            PUSH_TOKENS,
             { token: DB, optional: true },
             { token: REDIS, optional: true },
             { token: FIELD_CRYPTO, optional: true },
@@ -385,6 +454,7 @@ export class IdentityModule {
             logger: RootLogger,
             reader: IdentityConfigReader | null,
             tokens: TokenService,
+            pushTokens: SessionPushTokens | null,
             db?: Kysely<Database>,
             redis?: RedisHandle,
             fieldCrypto?: FieldCrypto,
@@ -399,6 +469,7 @@ export class IdentityModule {
                   redis,
                   versions: reader,
                   logger,
+                  ...(pushTokens === null ? {} : { afterRevoked: unbindRevoked(pushTokens) }),
                 }),
         },
         options.thirdPartyIdentity === undefined
@@ -487,8 +558,12 @@ export class IdentityModule {
         },
         {
           provide: LOGOUT,
-          inject: [CLOCK, { token: DB, optional: true }],
-          useFactory: (clock: Clock, db?: Kysely<Database>): Logout => createLogout({ db, clock }),
+          inject: [CLOCK, PUSH_TOKENS, { token: DB, optional: true }],
+          useFactory: (
+            clock: Clock,
+            pushTokens: SessionPushTokens | null,
+            db?: Kysely<Database>,
+          ): Logout => createLogout({ db, clock, pushTokens }),
         },
       ],
       exports: [DEVICE_SIGNING_KEYS, TOKEN_CHECK],

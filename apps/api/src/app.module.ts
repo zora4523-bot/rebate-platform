@@ -29,6 +29,7 @@ import {
   type IdentityConfigReader,
   type IdentityContext,
   type IdentityRequest,
+  type SessionPushTokens,
 } from './modules/identity/index.ts';
 import {
   LINK_LANDING_PORTS,
@@ -42,6 +43,10 @@ import {
   type LinkOpenPorts,
   type LinkRegistrations,
 } from './modules/linking/index.ts';
+import {
+  bindPushTokensForSession,
+  unbindPushTokensForSession,
+} from './modules/notification/index.ts';
 import {
   ParsingLinkRegistrars,
   ParsingModule,
@@ -156,6 +161,10 @@ function requestChecks(options: PlatformOptions): Provider {
  * the per-IP new-account limit and the daily budget alert through content's configValue; phones and
  * IPs as the field cipher's blind index, a process-local key in local / test without a keyring);
  * without Redis every send is refused (42901).
+ * Its push token port is notification's binding and conditional unbinding commands (B1-12b,
+ * BR-ID-07 细则「推送令牌与会话」), assembled here over the Clock so identity never imports
+ * notification (and notification nothing of identity): login binds, logout, the refresh reuse
+ * revocation and the revocation entries by user / by device unbind, in the session's transaction.
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
@@ -232,6 +241,13 @@ function identityModule(): DynamicModule {
               : createContentReader({ db, clock }),
           crypto: crypto ?? ephemeralSmsRiskIndex(),
         }),
+    },
+    pushTokens: {
+      inject: [CLOCK],
+      useFactory: (clock: Clock): SessionPushTokens => ({
+        bind: (trx, session) => bindPushTokensForSession(trx, session, clock),
+        unbind: (trx, session) => unbindPushTokensForSession(trx, session, clock),
+      }),
     },
   });
 }
