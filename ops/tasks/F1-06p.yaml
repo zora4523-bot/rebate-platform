@@ -29,4 +29,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/admin-antd/**'
-status: todo
+status: done
+pr: 385
