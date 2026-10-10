@@ -607,6 +607,47 @@ export interface PayoutAccountVerifyAttempts {
   verify_date: Timestamp;
 }
 
+export interface PlatformIcons {
+  app_id: string;
+  current_version: number | null;
+  key: string;
+  revision: Generated<number>;
+  updated_at: Timestamp | null;
+  updated_by: string | null;
+  updated_by_admin_id: string | null;
+}
+
+export interface PlatformIconUploads {
+  app_id: string;
+  bytes: number;
+  created_at: Generated<Timestamp>;
+  created_by_admin_id: string;
+  expires_at: Timestamp;
+  format: string;
+  id: string;
+  key: string;
+  sanitized: boolean;
+  sha256: string;
+}
+
+export interface PlatformIconVersions {
+  app_id: string;
+  bytes: number;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  created_by_admin_id: string;
+  downloaded_on: Timestamp | null;
+  ever_published: Generated<boolean>;
+  format: string;
+  key: string;
+  revision: Generated<number>;
+  sanitized: boolean;
+  sha256: string;
+  source_url: string | null;
+  upload_id: string;
+  version: number;
+}
+
 export interface Platforms {
   code: string;
   convert_support: string;
@@ -925,6 +966,9 @@ export interface DB {
   payout_account_changes: PayoutAccountChanges;
   payout_account_verify_attempts: PayoutAccountVerifyAttempts;
   payout_accounts: PayoutAccounts;
+  platform_icon_uploads: PlatformIconUploads;
+  platform_icon_versions: PlatformIconVersions;
+  platform_icons: PlatformIcons;
   platforms: Platforms;
   processed_events: ProcessedEvents;
   product_key_aliases: ProductKeyAliases;
