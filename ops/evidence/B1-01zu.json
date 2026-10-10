@@ -1,0 +1,88 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (platform/logging). Boxed values unwrap with the built-in valueOf; Error subclasses with toJSON keep the Error rule, every own property and cause/aggregateErrors pass the free-text net (numbers keep their type unless the net matches); errors rebuilt by a custom formatter keep Error identity only when identical to an input copy. Full verification by the required CI checks (approvals id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent, round 1 pass, no findings (contract wording in masking/index.ts noted as follow-up)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 money pass, checklist complete; two S2 needing crafted formatters recorded as follow-ups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "Codex rule tests reviewed by a fresh Claude subagent: round 1 pass, S2 items turned into implementation guidance (impl-notes.md)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zu",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "22b7952574d222345ff6cee0ed04f37558878382",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "22b7952574d222345ff6cee0ed04f37558878382",
+      "tree": "3c9af840264b2bb61cefe8409c0547a4ac5ac070",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T03:35:14Z",
+      "finished_at": "2026-10-10T03:35:17Z",
+      "gate": {
+        "commit": "30976e1e961f412a72b303e48292e0dd2c87c82b",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/platform/masking/log-redaction-shapes-boxed.test.ts > [AC-B1-01zu#1] String 的 valueOf 返回带 toJSON 的对象时不写出隐藏原文",
+        "test/spec/platform/masking/log-redaction-shapes-boxed.test.ts > [AC-B1-01zu#1] Number 的 valueOf 返回带 toJSON 的对象时不写出隐藏原文",
+        "test/spec/platform/masking/log-redaction-shapes-boxed.test.ts > [AC-B1-01zu#1] Boolean 的 valueOf 返回带 toJSON 的对象时不写出隐藏原文",
+        "test/spec/platform/masking/log-redaction-shapes-boxed.test.ts > [AC-B1-01zu#1] BigInt 的 valueOf 返回带 toJSON 的对象时不写出隐藏原文",
+        "test/spec/platform/masking/log-redaction-shapes-error.test.ts > [AC-B1-01zu#2] 带 toJSON 的 Error 子类经 field 写日志不泄露 response.data 中的手机号",
+        "test/spec/platform/masking/log-redaction-shapes-error.test.ts > [AC-B1-01zu#2] 带 toJSON 的 Error 子类经 nested 写日志不泄露 response.data 中的手机号",
+        "test/spec/platform/masking/log-redaction-shapes-error.test.ts > [AC-B1-01zu#2] 带 toJSON 的 Error 子类经 binding 写日志不泄露 response.data 中的手机号",
+        "test/spec/platform/masking/log-redaction-shapes-formatter.test.ts > [AC-B1-01zu#3] child 的自定义 formatter 重建 err 后保留数字 code",
+        "test/spec/platform/masking/log-redaction-shapes-formatter.test.ts > [AC-B1-01zu#3] grandchild 的自定义 formatter 重建 err 后保留数字 code"
+      ],
+      "expected": [
+        "test/spec/platform/masking/log-redaction-shapes-boxed.test.ts",
+        "test/spec/platform/masking/log-redaction-shapes-error.test.ts",
+        "test/spec/platform/masking/log-redaction-shapes-formatter.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "5abd2253eacea73c35b603511b22f80aa29502c826c323ec3fb50160245b61a6"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "79d411b47a0b55bc130d6d0dbcdcc1bb38cac5f0",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
