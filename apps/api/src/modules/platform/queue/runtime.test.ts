@@ -1,6 +1,5 @@
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { fromKysely } from 'pg-boss';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { RootLogger } from '../logging/logger.ts';
 import { createQueueRuntime } from './runtime.ts';
@@ -34,6 +33,8 @@ interface FetchedJob {
   signal?: AbortSignal;
 }
 const fake = vi.hoisted(() => ({
+  // pg-boss's fromKysely, reached only through the module mock below (no import of pg-boss here).
+  fromKysely: vi.fn<(db: unknown) => unknown>(() => ({})),
   fetch: vi.fn<(queue: string) => Promise<FetchedJob[]>>(),
   complete: vi.fn(async (): Promise<void> => undefined),
   fail: vi.fn(async () => undefined),
@@ -45,7 +46,7 @@ const fake = vi.hoisted(() => ({
     | undefined,
 }));
 vi.mock('pg-boss', () => ({
-  fromKysely: vi.fn(() => ({})),
+  fromKysely: fake.fromKysely,
   PgBoss: class {
     constructor(options: typeof fake.options) {
       fake.options = options;
@@ -301,7 +302,7 @@ function boundedFixture(transaction: () => FakeTransaction) {
   failing.text = '';
   failing.error = undefined;
   const plain = { executeSql: vi.fn(async () => ({ rows: [{ plain: true }] })) };
-  vi.mocked(fromKysely).mockReturnValueOnce(plain as never);
+  fake.fromKysely.mockReturnValueOnce(plain);
   const logger = { warn: vi.fn(), error: vi.fn() };
   const spec: QueueSpec = {
     name: 'payout',
@@ -357,7 +358,8 @@ it('[AC-B1-01zs#3] 版本读取与 boss.start() 返回前 pg-boss 的单条语�
   fake.bossStart.mockImplementationOnce(async () => {
     seen.push(await fake.options?.db.executeSql('SELECT version FROM pgboss.version', []));
   });
-  runtime.register('payout', async () => undefined);
+  // No handler is registered: a consumer lane would open its fetch transaction right after
+  // boss.start() returned, racing the counts below. Every transaction counted here is start()'s.
   await runtime.start();
   expect(seen).toEqual([
     { rows: [{ queue: 'row' }] },
