@@ -184,3 +184,54 @@ it('redactCredentials ends an unquoted libpq value only at whitespace, a query v
     'postgres://u@h/db?password=***&sslmode=require#frag',
   );
 });
+
+it('redactCredentials masks a secret up to the next certain parameter start, whatever is glued in', () => {
+  const cases: [string, string][] = [
+    // Review round 1: an escaped quote, then a second password assignment glued in.
+    [
+      String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail' dbname=couli`,
+      'host=db password=*** dbname=couli',
+    ],
+    // Review round 2: an empty quoted string glued in front of the rest.
+    [
+      String.raw`host=db password='ExampleHead\'&sslpassword=''ExampleTail' dbname=couli`,
+      'host=db password=*** dbname=couli',
+    ],
+    // Review round 2: a well-formed password that merely contains `sslpassword=`.
+    [
+      "password='ExampleHead&sslpassword=' host=db.invalid dbname=couli",
+      'password=*** host=db.invalid dbname=couli',
+    ],
+    // Review round 3: a space and more secret text after the glued quote.
+    [
+      String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail ExampleSuffix' dbname=couli`,
+      'host=db password=*** dbname=couli',
+    ],
+    // A keyword inside the opening quoted part does not end the value.
+    ["password='ExampleA host=ExampleB' dbname=couli", 'password=*** dbname=couli'],
+    [
+      "host=db password='ExampleA&password=ExampleB c' dbname=couli",
+      'host=db password=*** dbname=couli',
+    ],
+    // Chained glued assignments.
+    [
+      String.raw`password='ExampleOne\'&password='ExampleTwo\'&sslpassword='ExampleThree' port=5432`,
+      'password=*** port=5432',
+    ],
+    // Text that is not a known parameter is masked with the secret.
+    [
+      'host=db password=ExampleSecret ExampleMore dbname=couli',
+      'host=db password=*** dbname=couli',
+    ],
+    // libpq skips spaces after `=`: here the password is the text `host=db`.
+    ['password= host=ExampleNotHost port=5432', 'password= *** port=5432'],
+    // A quoted value in a URL query ends at `&` followed by a known parameter.
+    [
+      "postgres://u@h/db?password='ExampleQ&x'&sslmode=require",
+      'postgres://u@h/db?password=***&sslmode=require',
+    ],
+  ];
+  for (const [input, expected] of cases) {
+    expect(redactCredentials(input)).toBe(expected);
+  }
+});
