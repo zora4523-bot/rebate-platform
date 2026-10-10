@@ -33,6 +33,7 @@ import {
 import { LoadFailedPage, NoPermissionPage, PagePending, WelcomePage } from './layout/pages.tsx';
 import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
+import { AdminsPage } from './pages/admins/index.ts';
 import { LoginPage } from './pages/login/index.ts';
 import {
   createAccessControl,
@@ -380,6 +381,9 @@ function ShellFrame({
     const { snapshot } = state;
     if (match !== undefined && options.renderPage !== undefined) {
       content = options.renderPage(match.item.id, access);
+    } else if (match !== undefined && match.item.id === 'admins') {
+      // Default page for the super-admin-only menu (the menu itself is hidden otherwise).
+      content = <AdminsPage />;
     } else if (match !== undefined) {
       content = <PagePending title={match.item.label} />;
     } else if (menuId !== '') {
