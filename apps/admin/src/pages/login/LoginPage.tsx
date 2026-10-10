@@ -4,6 +4,7 @@
 // role=alert, and leaving the page discards the ticket and the binding secret. The
 // change-password step has no artboard and reuses the AdmLogin layout.
 import {
+  memo,
   useEffect,
   useId,
   useRef,
@@ -134,8 +135,10 @@ function LoginSteps({
 
 interface FieldProps {
   readonly label: string;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
+  /** Value when the field mounts; afterwards the field keeps its own value. */
+  readonly initial: string;
+  /** Mirrors every change to the page (read on submit), without re-rendering the page. */
+  readonly onValue: (value: string) => void;
   readonly password?: boolean;
   readonly autoComplete: string;
   readonly required?: boolean;
@@ -159,11 +162,14 @@ function renderVisibilityToggle(visible: boolean): ReactNode {
   );
 }
 
-/** One labelled antd Input in a Form.Item; local and server (20001) errors show on the item. */
-function Field({
+/**
+ * One labelled antd Input in a Form.Item; local and server (20001) errors show on the item.
+ * Typing re-renders only this field: the page reads the values when it submits.
+ */
+const Field = memo(function Field({
   label,
-  value,
-  onChange,
+  initial,
+  onValue,
   password,
   autoComplete,
   required,
@@ -172,6 +178,7 @@ function Field({
 }: FieldProps) {
   const id = useId();
   const errorId = useId();
+  const [value, setValue] = useState(initial);
   const invalid = error !== undefined;
   const inputProps = {
     id,
@@ -181,7 +188,10 @@ function Field({
     'aria-required': required === true ? true : undefined,
     'aria-invalid': invalid ? true : undefined,
     'aria-describedby': invalid ? errorId : undefined,
-    onChange: (event: { target: { value: string } }) => onChange(event.target.value),
+    onChange: (event: { target: { value: string } }) => {
+      setValue(event.target.value);
+      onValue(event.target.value);
+    },
   };
   return (
     <Form.Item
@@ -198,7 +208,7 @@ function Field({
       )}
     </Form.Item>
   );
-}
+});
 
 function ErrorBanner({ text }: { readonly text: string }) {
   return <Alert type="error" showIcon message={text} />;
@@ -227,6 +237,109 @@ function isCodeError(error: LoginError | undefined): boolean {
   return error?.key.startsWith('error.20002') === true;
 }
 
+interface CodeFormProps {
+  /** The provider's current error: a new wrong-code error (20002) empties the cells. */
+  readonly error: LoginError | undefined;
+  readonly readError: () => LoginError | undefined;
+  readonly disabled: boolean;
+  readonly submitLabel: string;
+  readonly label: string;
+  readonly hint: string;
+  readonly invalid: boolean;
+  readonly errorText: string | undefined;
+  readonly inputRef: Ref<HTMLInputElement>;
+  readonly onSubmit: (code: string) => void;
+  /** Lays out the code input and the submit button among the page's other (unchanged) parts. */
+  readonly layout: (input: ReactElement, submit: ReactElement) => ReactNode;
+}
+
+/** The dynamic-code form; typing a digit re-renders only this form, not the page. */
+function CodeForm({
+  error,
+  readError,
+  disabled,
+  submitLabel,
+  label,
+  hint,
+  invalid,
+  errorText,
+  inputRef,
+  onSubmit,
+  layout,
+}: CodeFormProps) {
+  // A wrong code (20002) empties the cells in the same render that shows the error; digits typed
+  // after that error are kept.
+  const [codeState, setCodeState] = useState<{
+    readonly value: string;
+    readonly seenError: LoginError | undefined;
+  }>({ value: '', seenError: undefined });
+  const code = codeState.seenError !== error && isCodeError(error) ? '' : codeState.value;
+  const setCode = (value: string): void => setCodeState({ value, seenError: readError() });
+  const submit = (): void => onSubmit(code);
+  return (
+    <Form layout="vertical" onFinish={submit}>
+      <Flex vertical gap="large">
+        {layout(
+          <OtpInput
+            value={code}
+            onChange={setCode}
+            label={label}
+            hint={hint}
+            invalid={invalid}
+            error={errorText}
+            inputRef={inputRef}
+            onEnter={submit}
+          />,
+          <Button
+            type="primary"
+            htmlType="submit"
+            size="large"
+            block
+            disabled={disabled || code.length !== OTP_LENGTH}
+          >
+            {submitLabel}
+          </Button>,
+        )}
+      </Flex>
+    </Form>
+  );
+}
+
+/** Two-character Chinese buttons keep their text as written (no inserted space). */
+const BUTTON_CONFIG = { autoInsertSpace: false } as const;
+
+type TypedField = 'username' | 'password' | 'newPassword' | 'confirmPassword';
+
+/** The page's copy of the typed values: written on each keystroke, read on submit and mount. */
+class TypedValues {
+  private readonly values: Record<TypedField, string> = {
+    username: '',
+    password: '',
+    newPassword: '',
+    confirmPassword: '',
+  };
+
+  private readonly setters = new Map<TypedField, (value: string) => void>();
+
+  get(name: TypedField): string {
+    return this.values[name];
+  }
+
+  set(name: TypedField, value: string): void {
+    this.values[name] = value;
+  }
+
+  /** A stable setter per field, so the memoised fields are not re-rendered by the page. */
+  setter(name: TypedField): (value: string) => void {
+    let setter = this.setters.get(name);
+    if (setter === undefined) {
+      setter = (value) => this.set(name, value);
+      this.setters.set(name, setter);
+    }
+    return setter;
+  }
+}
+
 export function LoginPage({ authProvider, environment, onComplete }: LoginPageProps): ReactElement {
   const snapshot: LoginSnapshot = useSyncExternalStore(
     authProvider.subscribe,
@@ -238,16 +351,9 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     ensureMatchMedia();
     return createAntdTheme();
   });
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  // A wrong code (20002) empties the cells in the same render that shows the error; digits typed
-  // after that error are kept.
-  const [codeState, setCodeState] = useState<{
-    readonly value: string;
-    readonly seenError: LoginError | undefined;
-  }>({ value: '', seenError: undefined });
+  // What the user typed lives in the fields; the page keeps a copy for submitting and only
+  // re-renders on its own state (step, errors, submitting), not on every keystroke.
+  const [typed] = useState(() => new TypedValues());
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [copied, setCopied] = useState(false);
@@ -262,10 +368,6 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
   // no longer holds the buttons disabled or moves focus on the new attempt.
   const runId = useRef(0);
   const cooling = useCooldown(snapshot.error);
-  const code =
-    codeState.seenError !== snapshot.error && isCodeError(snapshot.error) ? '' : codeState.value;
-  const setCode = (value: string): void =>
-    setCodeState({ value, seenError: authProvider.getSnapshot().error });
 
   // A dynamic-code login stays on its page until the shell takes over; a binding shows its done
   // page. Both come from the same provider update, so no step flashes in between.
@@ -296,13 +398,13 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
   const [shownView, setShownView] = useState(view);
   if (shownView !== view) {
     setShownView(view);
-    setCodeState({ value: '', seenError: undefined });
     setCopied(false);
     setFieldErrors({});
-    if (view === 'credentials') setPassword('');
+    // Each step's form mounts afresh (keyed by step) and starts from these values.
+    if (view === 'credentials') typed.set('password', '');
     if (view !== 'change_password') {
-      setNewPassword('');
-      setConfirmPassword('');
+      typed.set('newPassword', '');
+      typed.set('confirmPassword', '');
     }
   }
 
@@ -338,6 +440,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
 
   async function submitCredentials(): Promise<void> {
     if (submitting || cooling) return;
+    const username = typed.get('username');
+    const password = typed.get('password');
     const errors: Record<string, string> = {};
     if (username.trim() === '') errors['username'] = loginText('field.username_required');
     if (password === '') errors['password'] = loginText('field.password_required');
@@ -362,6 +466,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
 
   async function submitPassword(): Promise<void> {
     if (submitting || cooling) return;
+    const newPassword = typed.get('newPassword');
+    const confirmPassword = typed.get('confirmPassword');
     const errors: Record<string, string> = {};
     if (newPassword === '') errors['newPassword'] = loginText('password.new_required');
     else if (confirmPassword !== newPassword) errors['confirm'] = loginText('password.mismatch');
@@ -378,7 +484,7 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     focusFirst([[newPasswordRef, rejectedFields().has('new_password')]]);
   }
 
-  async function submitCode(step: 'totp' | 'bind_totp'): Promise<void> {
+  async function submitCode(step: 'totp' | 'bind_totp', code: string): Promise<void> {
     if (submitting || cooling || code.length !== OTP_LENGTH) return;
     const ok = await run(() => authProvider.login({ step, code }));
     if (ok === undefined) return;
@@ -400,8 +506,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
     runId.current += 1;
     setSubmitting(false);
     authProvider.resetLogin();
-    if (!keepUsername) setUsername('');
-    setPassword('');
+    if (!keepUsername) typed.set('username', '');
+    typed.set('password', '');
   }
 
   async function copySecret(secret: string): Promise<void> {
@@ -416,6 +522,7 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
   const errorText = snapshot.error === undefined ? undefined : loginErrorText(snapshot.error);
   const blocked = submitting || cooling;
   const codeInvalid = isCodeError(snapshot.error) || serverFields.has('code');
+  const readError = (): LoginError | undefined => authProvider.getSnapshot().error;
 
   let titleKey: LoginTextKey = 'credentials.title';
   let body: ReactNode = null;
@@ -436,11 +543,11 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
       body = (
         <>
           <LoginSteps second={loginText('steps.totp')} stage="first" />
-          <Form layout="vertical" onFinish={() => void submitCredentials()}>
+          <Form key={view} layout="vertical" onFinish={() => void submitCredentials()}>
             <Field
               label={loginText('credentials.username')}
-              value={username}
-              onChange={setUsername}
+              initial={typed.get('username')}
+              onValue={typed.setter('username')}
               autoComplete="username"
               required
               inputRef={usernameRef}
@@ -448,8 +555,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
             />
             <Field
               label={loginText('credentials.password')}
-              value={password}
-              onChange={setPassword}
+              initial={typed.get('password')}
+              onValue={typed.setter('password')}
               password
               autoComplete="current-password"
               required
@@ -475,11 +582,11 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
           <LoginSteps second={loginText('password.step')} stage="second" />
           <AccountRow username={snapshot.username} onSwitch={() => backToStart(false)} />
           <InfoBanner text={loginText('password.intro')} />
-          <Form layout="vertical" onFinish={() => void submitPassword()}>
+          <Form key={view} layout="vertical" onFinish={() => void submitPassword()}>
             <Field
               label={loginText('password.new')}
-              value={newPassword}
-              onChange={setNewPassword}
+              initial={typed.get('newPassword')}
+              onValue={typed.setter('newPassword')}
               password
               autoComplete="new-password"
               inputRef={newPasswordRef}
@@ -487,8 +594,8 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
             />
             <Field
               label={loginText('password.confirm')}
-              value={confirmPassword}
-              onChange={setConfirmPassword}
+              initial={typed.get('confirmPassword')}
+              onValue={typed.setter('confirmPassword')}
               password
               autoComplete="new-password"
               inputRef={confirmRef}
@@ -510,39 +617,37 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
       );
       break;
 
-    case 'totp':
+    case 'totp': {
       titleKey = 'totp.title';
+      const totpBack = backRow(loginText('totp.help'));
       body = (
         <>
           <LoginSteps second={loginText('steps.totp')} stage="second" />
           <AccountRow username={snapshot.username} onSwitch={() => backToStart(false)} />
-          <Form layout="vertical" onFinish={() => void submitCode('totp')}>
-            <Flex vertical gap="large">
-              <OtpInput
-                value={code}
-                onChange={setCode}
-                label={loginText('totp.label')}
-                hint={loginText('totp.hint')}
-                invalid={codeInvalid}
-                error={errorText}
-                inputRef={codeRef}
-                onEnter={() => void submitCode('totp')}
-              />
-              <Button
-                type="primary"
-                htmlType="submit"
-                size="large"
-                block
-                disabled={blocked || code.length !== OTP_LENGTH}
-              >
-                {loginText('totp.submit')}
-              </Button>
-              {backRow(loginText('totp.help'))}
-            </Flex>
-          </Form>
+          <CodeForm
+            key={view}
+            error={snapshot.error}
+            readError={readError}
+            disabled={blocked}
+            submitLabel={loginText('totp.submit')}
+            label={loginText('totp.label')}
+            hint={loginText('totp.hint')}
+            invalid={codeInvalid}
+            errorText={errorText}
+            inputRef={codeRef}
+            onSubmit={(code) => void submitCode('totp', code)}
+            layout={(input, submit) => (
+              <>
+                {input}
+                {submit}
+                {totpBack}
+              </>
+            )}
+          />
         </>
       );
       break;
+    }
 
     case 'bind_totp': {
       wide = true;
@@ -552,6 +657,88 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
       // The secret could not be fetched: the ticket is kept, only the secret is asked again.
       const secretFailed =
         secret === undefined && snapshot.secretLoading !== true && snapshot.error !== undefined;
+      const bindIntro = (
+        <>
+          <BindStep number={1} title={loginText('bind.step1')}>
+            <Typography.Text type="secondary">{loginText('bind.step1_hint')}</Typography.Text>
+          </BindStep>
+          <BindStep number={2} title={loginText('bind.step2')}>
+            <Flex gap="large" align="flex-start">
+              <div
+                className="login-qr"
+                role="img"
+                aria-label={loginText('bind.qr_label')}
+                data-drawn={secret === undefined ? undefined : ''}
+              >
+                {/* Drawn only from this account's current URI; nothing before the secret. */}
+                {secret === undefined ? null : (
+                  <QRCode
+                    value={secret.otpauth_uri}
+                    type="svg"
+                    errorLevel="M"
+                    bordered={false}
+                    color="currentColor"
+                    bgColor="transparent"
+                    size={QR_SIZE}
+                    aria-hidden="true"
+                  />
+                )}
+              </div>
+              <Flex vertical gap={4} className="login-bind-manual">
+                <Typography.Text type="secondary">{loginText('bind.manual')}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {loginText('bind.account_label')}
+                </Typography.Text>
+                <Typography.Text>
+                  {loginText('bind.account_value', { username: snapshot.username })}
+                </Typography.Text>
+                <Typography.Text type="secondary">{loginText('bind.secret_label')}</Typography.Text>
+                <Typography.Text strong code>
+                  {secret !== undefined
+                    ? groupSecret(secret.totp_secret)
+                    : snapshot.secretLoading === true
+                      ? loginText('bind.secret_loading')
+                      : ''}
+                </Typography.Text>
+                <Flex align="center" gap="small">
+                  {secretFailed ? (
+                    <Button
+                      type="link"
+
+                      disabled={blocked}
+                      onClick={() => void authProvider.retryBindingSecret()}
+                    >
+                      {loginText('bind.secret_retry')}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="link"
+
+                      icon={<CopyOutlined aria-hidden="true" />}
+                      disabled={secret === undefined}
+                      onClick={() => {
+                        if (secret !== undefined) void copySecret(secret.totp_secret);
+                      }}
+                    >
+                      {loginText('bind.copy')}
+                    </Button>
+                  )}
+                  <Typography.Text type="success" role="status">
+                    {copied ? loginText('bind.copied') : ''}
+                  </Typography.Text>
+                </Flex>
+                <Typography.Text type="secondary">{loginText('bind.type')}</Typography.Text>
+              </Flex>
+            </Flex>
+          </BindStep>
+        </>
+      );
+      const bindEnd = (
+        <>
+          {backRow(loginText('bind.help'))}
+          <Typography.Text type="secondary">{loginText('bind.leave_note')}</Typography.Text>
+        </>
+      );
       body = (
         <>
           <LoginSteps second={loginText('steps.bind')} stage="second" />
@@ -573,107 +760,29 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
             <InfoBanner text={loginText('bind.intro')} />
           )}
           {secretFailed && errorText !== undefined ? <ErrorBanner text={errorText} /> : null}
-          <Form layout="vertical" onFinish={() => void submitCode('bind_totp')}>
-            <Flex vertical gap="large">
-              <BindStep number={1} title={loginText('bind.step1')}>
-                <Typography.Text type="secondary">{loginText('bind.step1_hint')}</Typography.Text>
-              </BindStep>
-              <BindStep number={2} title={loginText('bind.step2')}>
-                <Flex gap="large" align="flex-start">
-                  <div
-                    className="login-qr"
-                    role="img"
-                    aria-label={loginText('bind.qr_label')}
-                    data-drawn={secret === undefined ? undefined : ''}
-                  >
-                    {/* Drawn only from this account's current URI; nothing before the secret. */}
-                    {secret === undefined ? null : (
-                      <QRCode
-                        value={secret.otpauth_uri}
-                        type="svg"
-                        errorLevel="M"
-                        bordered={false}
-                        color="currentColor"
-                        bgColor="transparent"
-                        size={QR_SIZE}
-                        aria-hidden="true"
-                      />
-                    )}
-                  </div>
-                  <Flex vertical gap={4} className="login-bind-manual">
-                    <Typography.Text type="secondary">{loginText('bind.manual')}</Typography.Text>
-                    <Typography.Text type="secondary">
-                      {loginText('bind.account_label')}
-                    </Typography.Text>
-                    <Typography.Text>
-                      {loginText('bind.account_value', { username: snapshot.username })}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      {loginText('bind.secret_label')}
-                    </Typography.Text>
-                    <Typography.Text strong code>
-                      {secret !== undefined
-                        ? groupSecret(secret.totp_secret)
-                        : snapshot.secretLoading === true
-                          ? loginText('bind.secret_loading')
-                          : ''}
-                    </Typography.Text>
-                    <Flex align="center" gap="small">
-                      {secretFailed ? (
-                        <Button
-                          type="link"
-
-                          disabled={blocked}
-                          onClick={() => void authProvider.retryBindingSecret()}
-                        >
-                          {loginText('bind.secret_retry')}
-                        </Button>
-                      ) : (
-                        <Button
-                          type="link"
-
-                          icon={<CopyOutlined aria-hidden="true" />}
-                          disabled={secret === undefined}
-                          onClick={() => {
-                            if (secret !== undefined) void copySecret(secret.totp_secret);
-                          }}
-                        >
-                          {loginText('bind.copy')}
-                        </Button>
-                      )}
-                      <Typography.Text type="success" role="status">
-                        {copied ? loginText('bind.copied') : ''}
-                      </Typography.Text>
-                    </Flex>
-                    <Typography.Text type="secondary">{loginText('bind.type')}</Typography.Text>
-                  </Flex>
-                </Flex>
-              </BindStep>
-              <BindStep number={3} title={loginText('bind.step3')}>
-                <OtpInput
-                  value={code}
-                  onChange={setCode}
-                  label={loginText('bind.label')}
-                  hint={loginText('bind.hint')}
-                  invalid={codeInvalid}
-                  error={secretFailed ? undefined : errorText}
-                  inputRef={codeRef}
-                  onEnter={() => void submitCode('bind_totp')}
-                />
-              </BindStep>
-              <Button
-                type="primary"
-                htmlType="submit"
-                size="large"
-                block
-                disabled={blocked || code.length !== OTP_LENGTH || secret === undefined}
-              >
-                {loginText('bind.submit')}
-              </Button>
-              {backRow(loginText('bind.help'))}
-              <Typography.Text type="secondary">{loginText('bind.leave_note')}</Typography.Text>
-            </Flex>
-          </Form>
+          <CodeForm
+            key={view}
+            error={snapshot.error}
+            readError={readError}
+            disabled={blocked || secret === undefined}
+            submitLabel={loginText('bind.submit')}
+            label={loginText('bind.label')}
+            hint={loginText('bind.hint')}
+            invalid={codeInvalid}
+            errorText={secretFailed ? undefined : errorText}
+            inputRef={codeRef}
+            onSubmit={(code) => void submitCode('bind_totp', code)}
+            layout={(input, submit) => (
+              <>
+                {bindIntro}
+                <BindStep number={3} title={loginText('bind.step3')}>
+                  {input}
+                </BindStep>
+                {submit}
+                {bindEnd}
+              </>
+            )}
+          />
         </>
       );
       break;
@@ -721,7 +830,7 @@ export function LoginPage({ authProvider, environment, onComplete }: LoginPagePr
   }
 
   return (
-    <ConfigProvider theme={theme} button={{ autoInsertSpace: false }}>
+    <ConfigProvider theme={theme} button={BUTTON_CONFIG}>
       <Flex vertical align="center" justify="center" gap="large" className="login-page">
         <Card className="login-card" data-wide={wide ? '' : undefined}>
           <Flex vertical gap="large">
