@@ -1,6 +1,7 @@
 // Admin console authentication (F1-06k; 08 BR-ID-34): the /admin/v1/auth routes, the admin
-// entry's request check (whitelist + admin_token) and the CORS policy bootstrap installs. Loaded on
-// the admin entry only (app.module).
+// entry's request check (whitelist + admin_token) and the CORS policy bootstrap installs; and the
+// read-only admin accounts of the super admin (F1-06m, /admin/v1/admins, primary database only).
+// Loaded on the admin entry only (app.module).
 //
 // Step-up and me/permissions (F1-06l) live here too: POST auth/step-up/sms-codes, POST
 // auth/step-up and GET me/permissions, over the same accounts, sessions and Redis; the SMS sender
@@ -29,6 +30,10 @@ import {
   type RedisNamespace,
   type RequestCheck,
 } from '../platform/index.ts';
+import {
+  createAdminAccountsReader,
+  type AdminAccountsReader,
+} from './application/admin-accounts-read.ts';
 import { createAdminRequestCheck } from './application/admin-check.ts';
 import { createAdminAuthService, type AdminAuthService } from './application/admin-login.ts';
 import {
@@ -42,12 +47,20 @@ import {
   ADMIN_STEP_UP_NAMESPACE,
   createAdminStepUpTokens,
 } from './application/permission-guard.ts';
-import { ADMIN_AUTH, ADMIN_CHECK, ADMIN_HTTP_POLICY, ADMIN_STEP_UP } from './application/tokens.ts';
+import {
+  ADMIN_ACCOUNTS_READ,
+  ADMIN_AUTH,
+  ADMIN_CHECK,
+  ADMIN_HTTP_POLICY,
+  ADMIN_STEP_UP,
+} from './application/tokens.ts';
 import { createIpAllowlist } from './domain/login-policy.ts';
 import { createTotpVerifier } from './domain/totp.ts';
+import { AdminAccountsController } from './http/admin/admins.controller.ts';
 import { AdminAuthController } from './http/admin/auth.controller.ts';
 import { AdminStepUpController } from './http/admin/step-up.controller.ts';
 import { createAdminAccounts, type AdminAccounts } from './infra/admin-accounts.ts';
+import { createAdminDirectory } from './infra/admin-directory.ts';
 import { createAdminProfiles } from './infra/admin-profiles.ts';
 import { createAdminSessions, type AdminSessions } from './infra/admin-sessions.ts';
 import { createLoginTickets } from './infra/login-tickets.ts';
@@ -123,7 +136,7 @@ export class AdminAuthModule {
     const sender = options.smsSender;
     return {
       module: AdminAuthModule,
-      controllers: [AdminAuthController, AdminStepUpController],
+      controllers: [AdminAuthController, AdminStepUpController, AdminAccountsController],
       providers: [
         ...(sender === undefined ? [] : [sender]),
         {
@@ -263,6 +276,29 @@ export class AdminAuthModule {
               smsCodes: createStepUpSmsCodes({ redis: stores.stepUp() }),
               sender,
               tokens: createAdminStepUpTokens({ clock, redis: stores.stepUp() }),
+              crypto,
+            });
+          },
+        },
+        {
+          provide: ADMIN_ACCOUNTS_READ,
+          // DB is the primary (couli_app); DB_READ is deliberately not used (ruling §9.2 #1).
+          inject: [CLOCK, { token: DB, optional: true }, { token: FIELD_CRYPTO, optional: true }],
+          useFactory: (
+            clock: Clock,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): AdminAccountsReader => {
+            if (db === undefined || crypto === undefined) {
+              const refuse = (): Promise<never> =>
+                Promise.reject(
+                  new Error('admin accounts: needs the database and the field cipher'),
+                );
+              return { list: refuse, get: refuse };
+            }
+            return createAdminAccountsReader({
+              clock,
+              directory: createAdminDirectory({ db }),
               crypto,
             });
           },

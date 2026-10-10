@@ -314,7 +314,13 @@ it('[AC-F1-06l#10] [AC-F1-06l#11] a replaced code past its own expiry is 20003, 
   // The old code expired 50 seconds ago; the new one is still valid.
   expect(await s.service.stepUp(s.caller, 'sms', old)).toEqual({ code: 20003 });
   const current = s.outbox.at(-1)!.code;
-  const wrong = String((Number(current) + 1) % 1_000_000).padStart(6, '0');
+  // A six-digit code that is neither the current code nor the replaced one (which answers 20003).
+  let next = Number(current);
+  let wrong = current;
+  while (wrong === current || wrong === old) {
+    next = (next + 1) % 1_000_000;
+    wrong = String(next).padStart(6, '0');
+  }
   expect(await s.service.stepUp(s.caller, 'sms', wrong)).toEqual({ code: 20002 });
   expect(s.failures).toHaveBeenCalledTimes(1);
   expect((await s.service.stepUp(s.caller, 'sms', current)).code).toBe(0);
