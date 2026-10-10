@@ -1,0 +1,20 @@
+id: F1-06t
+repo: rebate-platform
+title: 依赖：后台加 antd v5 的 React 19 兼容补丁 @ant-design/v5-patch-for-react-19 1.0.3，并在后台入口最先导入（Modal / message / notification 等命令式 API 在 React 19 下才可用）
+type: deps
+# 2026-10-10 入账（前端线 f1-frontend-6）。仓库 React 19.3 + antd 5.29.3，预览控制台有 antd 告警「antd v5 support React is 16 ~ 18」；官方补丁包
+# @ant-design/v5-patch-for-react-19 1.0.3（2024-12-26 发布，远超 minimumReleaseAge 7 天；无依赖，peer antd >=5.22.6、react / react-dom >=19）。
+# 只加 apps/admin dependencies（精确版本）与锁文件，apps/admin/src/main.tsx 第一行 import 该补丁；不改 scripts。
+# 排在 F1-06r（step-up 弹窗改 antd Modal）之前。锁文件属保护路径第二类，合并前要负责人标签。
+refs: []
+refs_hash: {}
+deps: [F1-06p]
+paths:
+  - 'apps/admin/package.json'
+  - 'pnpm-lock.yaml'
+  - 'apps/admin/src/main.tsx'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo

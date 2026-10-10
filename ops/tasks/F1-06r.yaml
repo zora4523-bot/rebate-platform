@@ -10,7 +10,7 @@ type: impl
 #  补回语义（Steps 外层或 items 上的 aria 属性，仍用 antd Steps）；侧栏 Menu 项高与选中底色按画板经 theme.ts components.Menu 令牌调紧（设计差异登记过）。
 refs: []
 refs_hash: {}
-deps: [F1-06p]
+deps: [F1-06p, F1-06t]
 paths:
   - 'apps/admin/src/components/step-up/**'
   - 'apps/admin/src/pages/login/LoginPage.tsx'
