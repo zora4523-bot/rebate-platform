@@ -1,0 +1,26 @@
+id: F1-06v
+repo: rebate-platform
+title: content 领域：平台标识文件校验与 SVG 清洗（纯函数）——按字节识别格式、PNG 透明底与边长校验、SVG 保真转换（展开 use、样式改写）加白名单清洗，超限即停、整份拒收
+type: impl
+# 2026-10-10 入账（后台后端线 admin-backend，任务书 briefs/ADMIN-backend-lane.md §2 第 4 项「平台标识后端」；content 线收件箱提问 20 小时无回复、无人认领，由本线做）。
+# 依据 BR-TEXT-24 正文与细则、04 §10.1 platform_icons、§11.2 content.platform_icon、05 F1-02 末尾、contracts/openapi.yaml /admin/v1/platform-icons 七个操作（CT-17g）；
+# 规划与契约未定处的编排者裁定见 couli-runs/F1-06n/decision-orchestrator.md（编号即下文「裁定 N」），由编排者摘入任务书第 2 节。
+# 要点：照 BR-TEXT-24 细则两步：① 展开文档内 use（含 xlink:href，换算 x、y），循环或外部引用拒收；边展开边计数，元素 >5000、嵌套 >8、产物 > max_bytes×4、耗时 >2 秒立即停（裁定 6：注入的单调计时）；
+# style 属性与 <style> 简单选择器改写成 15 个同名表现属性，其余声明、复杂选择器、@ 规则、外部 url(...) 拒收；② 白名单 17 个元素与几何、填充、描边、变换属性，删 on* 与 style，href / url(...) 规范化后只留 #id。
+# 裁定 3、4、5：按字节判格式，svgz / gzip 拒收；允许 XML 声明与不带内部子集的 DOCTYPE（不取外部 DTD），只拒内部子集、ENTITY 与 xml-stylesheet 等其他处理指令；PNG 要 alpha 且四角透明、边长 512–4096，原样保存 sanitized=false；max_bytes 比原件。
+# 输出 {bytes, sha256, format, sanitized} 或 reason ∈ icon_format_invalid / icon_too_large / icon_svg_unconvertible；序列化确定。规则测试含 30 层每层两次引用、外部 url 加 script、use 加 class 着色三份；逐像素比对按裁定 10 记 followups。
+# 一次 PR 放不下时编排者再拆 F1-06za（第 ① 步转换）。
+refs: []
+refs_hash: {}
+deps: [F1-06q]
+paths:
+  - 'apps/api/src/modules/content/domain/platform-icon/**'
+test_paths:
+  - 'test/spec/content/platform-icons/sanitize/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/platform-icons/sanitize/**'
+status: todo
+pr: null

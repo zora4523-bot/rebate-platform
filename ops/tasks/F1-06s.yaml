@@ -1,0 +1,28 @@
+id: F1-06s
+repo: rebate-platform
+title: platform：multipart 上传请求支持——路由 schema 生成放行只有 multipart/form-data 的请求体（只校验 params 与 headers）、只在 admin 入口注册 multipart 插件（1 个文件、0 个字段）、错误映射到契约错误体
+type: impl
+# 2026-10-10 入账（后台后端线 admin-backend，任务书 briefs/ADMIN-backend-lane.md §2 第 4 项「平台标识后端」；content 线收件箱提问 20 小时无回复、无人认领，由本线做）。
+# 依据 BR-TEXT-24 正文与细则、04 §10.1 platform_icons、§11.2 content.platform_icon、05 F1-02 末尾、contracts/openapi.yaml /admin/v1/platform-icons 七个操作（CT-17g）；
+# 规划与契约未定处的编排者裁定见 couli-runs/F1-06n/decision-orchestrator.md（编号即下文「裁定 N」），由编排者摘入任务书第 2 节。
+# 要点（裁定 5、14）：platform/validation 的 routeSchemaOf 与生成脚本放行「请求体只有 multipart/form-data 一种内容类型」；其他非 JSON 写法照旧在生成时报错（既有规则测试不改）。
+# bootstrap 只在 admin 入口注册插件（files 1、fields 0、parts 1，不 attachFieldsToBody，由 handler 先过守卫再读文件流）；缺 part、part 名不是 file、多文件 → 20001 fields=[file]；请求体超全局上限（Fastify 默认 1 MiB 不改）→ 413 fields=[body]——全局 bodyLimit 不管插件的文件流，须显式设插件 limits.fileSize 并把超限映射成 413（台账评审 S2-2）；
+# api / stream 入口收到 multipart 仍 415 fields=[body]。platform/http/global-errors.ts 补插件错误的映射。本任务不改 openapi.yaml。
+refs: []
+refs_hash: {}
+deps: [F1-06q]
+paths:
+  - 'apps/api/src/modules/platform/validation/**'
+  - 'apps/api/src/modules/platform/http/**'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/bootstrap.test.ts'
+test_paths:
+  - 'test/spec/platform/multipart/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/multipart/**'
+status: todo
+pr: null

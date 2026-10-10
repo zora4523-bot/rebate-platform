@@ -1,0 +1,33 @@
+id: F1-06y
+repo: rebate-platform
+title: content：平台标识补登来源、发布 / 回滚、恢复内置——PATCH {key}/versions/{version}、POST {key}/publish、POST {key}/restore-builtin（revision 比较并更新、只增不减、同值为空操作）与下发读口 publishedPlatformIcons；去掉这 3 条的 planned
+type: impl
+# 2026-10-10 入账（后台后端线 admin-backend，任务书 briefs/ADMIN-backend-lane.md §2 第 4 项「平台标识后端」；content 线收件箱提问 20 小时无回复、无人认领，由本线做）。
+# 依据 BR-TEXT-24 正文与细则、04 §10.1 platform_icons、§11.2 content.platform_icon、05 F1-02 末尾、contracts/openapi.yaml /admin/v1/platform-icons 七个操作（CT-17g）；
+# 规划与契约未定处的编排者裁定见 couli-runs/F1-06n/decision-orchestrator.md（编号即下文「裁定 N」），由编排者摘入任务书第 2 节。
+# 要点：PATCH 用版本自己的 revision 做 CAS（不匹配 20902 resource=platform_icon），已发布过或未知版本 20001 fields=[version]，每次改 revision+1，审计 version_source；
+# publish / restore-builtin 用标识的 revision 做 CAS，每次 +1；发布当前版本或已是内置且 revision 匹配为空操作（不加 revision、不写审计）；缺登记 20001 fields 列出全部缺项；ever_published 置 true；
+# version < current_version 为 rollback（裁定 8），审计分 publish / rollback / restore_builtin；一条带条件的 UPDATE（或 INSERT…ON CONFLICT）完成 CAS，规则测试含并发。
+# content/index.ts 导出 publishedPlatformIcons(appId) → {key:{url,sha256,version}}，每次读库、不缓存（契约：发布 / 回滚 / 恢复内置成功后下一次 GET /v1/config 随之变化；admin 与 api 是不同进程，进程内缓存无法失效；裁定 11 改，Codex 台账评审 S2），供以后的 /v1/config。顺手修 CT-17g 遗留 S2 两处（裁定 16）。
+# 去掉 adminUpdatePlatformIconVersion、adminPublishPlatformIcon、adminRestoreBuiltinPlatformIcon 的 planned 并重生成；contracts-ts 测试只改这三个的 planned 断言。契约槽同 F1-06w。
+# 平台标识是契约里最后一批 planned 后台接口：x、y 后落地者让 platform/http/request-check-plan.test.ts「probed > 0」失效，按「没有 planned 后台路由时不探针」改断言（台账评审 S1-2）。
+refs: []
+refs_hash: {}
+deps: [F1-06w]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/admin-platform-icons.test.ts'
+  - 'apps/api/src/modules/platform/http/request-check-plan.test.ts'
+test_paths:
+  - 'test/spec/content/platform-icons/publish/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/platform-icons/publish/**'
+status: todo
+pr: null
