@@ -1,0 +1,20 @@
+id: B1-03p
+repo: rebate-platform
+title: 测试修改：B1-03g 发码预算告警日志的档位字段由 level 改名 budget_level（与 pino 数字 level 同名，JSON 里后者覆盖、告警丢失 warn 等级），冻结测试 [AC-B1-03g] ip-budget 的档位断言同步改读 budget_level
+type: test-change
+# 草稿 2026-10-09（身份与风控线，identity-lane）。B1-03g（#372）两家评审各记 S2：sms-risk.ts 的 sms_daily_budget_alert 日志同时有 pino 的 level=40 和业务字段 level='ratio'/'full'，
+# JSON 解析后 level 变字符串，按数值级别筛选告警的消费者会漏掉；冻结测试 test/spec/risk/sms-risk/ip-budget.int.test.ts:129 按 level 取档位断言两档各一条，
+# 实现单改字段名会让冻结测试红。按规划/11 §4.4 立测试修改任务（先例 B1-02p、B1-02q）：测试与实现同一 PR 改，档位与次数断言不变，另加一条断言告警行的 level 为 40。
+refs: []
+refs_hash: {}
+deps: [B1-03g]
+paths:
+  - 'test/spec/risk/sms-risk/ip-budget.int.test.ts'
+  - 'apps/api/src/modules/risk/application/sms-risk.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/sms-risk/**'
+status: todo
+pr: null
