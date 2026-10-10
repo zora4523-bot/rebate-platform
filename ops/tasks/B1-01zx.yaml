@@ -1,0 +1,21 @@
+id: B1-01zx
+repo: rebate-platform
+title: keyring-init 输出文件名较长时临时文件名不再超长（ENAMETOOLONG）
+type: impl
+# 2026-10-10 入账（会话 b1-followups-4；来源 couli-runs/B1-followups-3-work/followups.md B1-01zi Codex 第 1 轮 S2，P3）。
+# apps/api/scripts/keyring-init.ts 第 44–48 行临时文件名是 .<输出文件名>.<16 位十六进制>.tmp，输出文件名超过 233 字节（本身仍合法）时 open 报 ENAMETOOLONG。
+# 改为临时文件名长度与输出文件名无关（如截断或只用随机串，仍在同一目录、仍原子就位、权限 0600、不覆盖已有文件），B1-01zi 的原子就位与不覆盖行为不变。
+# 规则测试（Codex 先写、先红，新文件）。
+refs: []
+refs_hash: {}
+deps: [B1-01zi]
+paths:
+  - 'apps/api/scripts/keyring-init.ts'
+test_paths:
+  - 'test/spec/platform/crypto/keyring-init-long-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/crypto/**'
+status: todo

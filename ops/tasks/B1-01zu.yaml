@@ -1,0 +1,26 @@
+id: B1-01zu
+repo: rebate-platform
+title: 日志脱敏三项：装箱对象 valueOf 被覆盖时解包结果再走转换规则；带 toJSON 的 Error 子类只写安全字段；自定义 formatter 重建的 err 不把数字 code 变字符串
+type: impl
+# 2026-10-10 入账（会话 b1-followups-4；来源 followups/INDEX.md F-16，followups/B1-01c-url-path-and-trace-id.md 第 3–5 项，P3，刻意构造才触发）。
+# ① logging/redaction.ts 第 189 行装箱对象 value.valueOf() 的结果不再过 resolveJSON，toJSON 被忽略、内层键原样拷出：改为用内建 valueOf 取原始值（或解包后再走一遍转换）。
+# ② Error 分支（第 197–212 行）写出全部自有可枚举键，axios 类错误的 config / request / response 整体写出：Error 与 toJSON 的先后由规则测试按 B1-01c 契约补充 A、L 定，
+# 至少保证响应数据里的手机号等经自由文本安全网，不原样写出。
+# ③ logger.ts 第 166 行自定义 formatter 返回新 err 对象时不在 errorCopies 里，数字 code 经 redactText 变字符串：改为按 Error 形状识别或保留数字类型（不泄露，只是多脱敏）。
+# data: URL 的 base64 原样写出（INDEX F-21）是规则 R 明定的，本任务不改。规则测试（Codex 先写、先红，新文件，不改已有 masking 受保护测试）。
+refs: []
+refs_hash: {}
+deps: [B1-01c, B1-01u]
+paths:
+  - 'apps/api/src/modules/platform/logging/redaction.ts'
+  - 'apps/api/src/modules/platform/logging/logger.ts'
+  - 'apps/api/src/modules/platform/logging/logger.test.ts'
+  - 'apps/api/src/modules/platform/logging/redaction-regression.test.ts'
+test_paths:
+  - 'test/spec/platform/masking/log-redaction-shapes-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/masking/**'
+status: todo

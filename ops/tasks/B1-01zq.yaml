@@ -1,0 +1,23 @@
+id: B1-01zq
+repo: rebate-platform
+title: 规则测试补漏：队列入口测试等子进程输出收齐再解析（改已有受保护测试）；日志脱敏补内层不是 URL 的 blob 带查询串与片段的用例（新文件）
+type: test-change
+# 2026-10-10 入账（会话 b1-followups-4；来源 couli-runs/B1-followups-3-work/followups.md「B1-01zm 例外轮实现者」一条、followups/INDEX.md F-23，P2 / P3）。
+# ① test/spec/platform/queue/entries.int.test.ts 第 84 行附近在子进程 'exit' 事件上立即解析 stdout，最后一批输出可能还没到，正确实现也会偶发误报；
+# 照 entry-send-keepalive.int.test.ts（B1-01zm）的写法改为等 'close' 后再解析。只改等待时机，不改任何断言含义。改已有受保护文件，合并要批准标签
+# （CT-plan/need-label.md 已登记，按 approvals 第 24 条由编排会话加）。
+# ② 新文件：内层不是 URL 的 blob（如 blob:foo?x=1#h）写出时不带查询串与片段（规则 Q），现有用例抓不到这类错误。对现有实现应为绿。
+# 分工：测试即交付物，Claude 子代理编写，Codex 新只读会话对抗评审。
+refs: []
+refs_hash: {}
+deps: [B1-01g, B1-01u, B1-01zm]
+paths:
+  - 'test/spec/platform/queue/entries.int.test.ts'
+  - 'test/spec/platform/masking/log-redaction-blob-*'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/queue/**'
+  - 'test/spec/platform/masking/**'
+status: todo

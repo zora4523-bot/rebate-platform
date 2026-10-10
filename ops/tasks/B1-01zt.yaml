@@ -1,0 +1,28 @@
+id: B1-01zt
+repo: rebate-platform
+title: 幂等收尾四项：已完成的键并发重放返回原响应而非 40901；请求体嵌套过深返回契约错误而非 5xx；清理失败不覆盖原错误；结果未知断开连接时记一行日志
+type: impl
+# 2026-10-10 入账（会话 b1-followups-4；来源 followups/INDEX.md F-17，followups/B1-01i-review-s2.md 第 2–5 条，P3）。
+# ① platform/idempotency/index.ts 三条路径先 lockScope（pg_try_advisory_xact_lock，第 942–953 行），拿不到锁即 KeyBusy → 40901，已完成的键并发重放也得 40901。
+# 改为拿不到锁时先无锁读一次：已是 completed 且请求哈希一致就返回存储的响应；其余情况保持 40901。
+# ② canonicalJson（第 416–446 行）无深度上限，约 5000 层栈溢出成 RangeError → 50001。改为超过深度上限（实现定，写进文件头）抛 invalid_request 一类契约错误。
+# ③ 处理函数抛错后 finish 删行失败（第 598–602、487–488 行）时原错误被驱动错误替换：改为抛原错误，删行失败记一行不含请求体与键值的日志。
+# ④ 事务模式 commit 结果未知（第 991 行）与 global-errors.ts 第 169–173 行断开连接都不记日志：补一行 error 日志（method、path，不含请求体、键值与驱动错误原文）。
+# 规则测试（Codex 先写、先红，新文件）。不改 B1-01zh 的 completed 写入重试行为。
+refs: []
+refs_hash: {}
+deps: [B1-01i, B1-01zh]
+paths:
+  - 'apps/api/src/modules/platform/idempotency/index.ts'
+  - 'apps/api/src/modules/platform/idempotency/failures.test.ts'
+  - 'apps/api/src/modules/platform/idempotency/http.test.ts'
+  - 'apps/api/src/modules/platform/http/global-errors.ts'
+  - 'apps/api/src/modules/platform/http/global-errors.test.ts'
+test_paths:
+  - 'test/spec/platform/idempotency/followup-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/idempotency/**'
+status: todo
