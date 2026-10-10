@@ -1,0 +1,28 @@
+id: F1-06z
+repo: rebate-platform
+title: platform：媒体存储端口 MediaStore（按内容 SHA-256 命名、幂等写入、返回 https 地址）与 local / test 内存替身；staging / prod 未接 OSS 适配器时按请求失败
+type: impl
+# 2026-10-10 入账（后台后端线 admin-backend，任务书 briefs/ADMIN-backend-lane.md §2 第 4 项「平台标识后端」；content 线收件箱提问 20 小时无回复、无人认领，由本线做）。
+# 依据 BR-TEXT-24 正文与细则、04 §10.1 platform_icons、§11.2 content.platform_icon、05 F1-02 末尾、contracts/openapi.yaml /admin/v1/platform-icons 七个操作（CT-17g）；
+# 规划与契约未定处的编排者裁定见 couli-runs/F1-06n/decision-orchestrator.md（编号即下文「裁定 N」），由编排者摘入任务书第 2 节。
+# 要点（裁定 12）：platform/media 端口 put(sha256, bytes, contentType) → url，同一摘要重复写不报错；url = MEDIA_PUBLIC_BASE_URL（经 platform/config，须 https，local / test 有默认值）+ /<sha256>.<ext>（svg / png）。
+# 另导出纯函数 mediaUrlOf(sha256, format) 按同一规则算地址（读接口不调 put 也能给出 url，台账评审 S1-1）。
+# local / test 用内存替身；staging / prod 未配适配器时启动不拒绝、每次 put 50001（同短信发送器缺省先例）；ali-oss 适配器排 B1-30 之后另入账。.env.example 只加变量名与说明。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/media/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - '.env.example'
+test_paths:
+  - 'test/spec/platform/media/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/media/**'
+status: todo
+pr: null

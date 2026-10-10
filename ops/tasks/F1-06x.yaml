@@ -1,0 +1,34 @@
+id: F1-06x
+repo: rebate-platform
+title: content：平台标识上传与存为版本——POST /admin/v1/platform-icons/{key}/uploads（multipart，校验清洗后写媒体存储与上传暂存）与 POST {key}/versions（来源登记可缺→草稿；同一 upload_id 幂等）；去掉这 2 条的 planned
+type: impl
+# 2026-10-10 入账（后台后端线 admin-backend，任务书 briefs/ADMIN-backend-lane.md §2 第 4 项「平台标识后端」；content 线收件箱提问 20 小时无回复、无人认领，由本线做）。
+# 依据 BR-TEXT-24 正文与细则、04 §10.1 platform_icons、§11.2 content.platform_icon、05 F1-02 末尾、contracts/openapi.yaml /admin/v1/platform-icons 七个操作（CT-17g）；
+# 规划与契约未定处的编排者裁定见 couli-runs/F1-06n/decision-orchestrator.md（编号即下文「裁定 N」），由编排者摘入任务书第 2 节。
+# 要点：先过守卫再读文件流；max_bytes 读 config content.platform_icon.max_bytes（缺省 204800，写路径直接读库不用缓存）；F1-06v 校验清洗 → 先提交 uploads 行（expires_at 24 小时，裁定 2；外部写先落单，Codex 台账评审 S2）→ 再 MediaStore.put（按摘要幂等）→ 成功才把 upload_id 返回；put 失败 50001、upload_id 不外露，该行到期作废（uploads 无 UPDATE 授权，不改状态）。
+# 存为版本：不锁 upload 行（uploads 只授 SELECT/INSERT，FOR UPDATE 要 UPDATE 权限，台账评审 S1-3）；事务内先 INSERT…ON CONFLICT DO NOTHING 再 SELECT…FOR UPDATE 锁 platform_icons 行串行同一标识，
+# 幂等靠 versions.upload_id UNIQUE（冲突后回读现有版本）。upload 不存在 / 过期 / 属别的键 20001 fields=[upload_id]；已存过返回现有版本 200 不建第二个；sanitized=true 而 sanitized_confirmed 不为 true 20001 fields=[sanitized_confirmed]；
+# 版本号每标识 max+1（主键冲突兜底）；缺 source_url 或 downloaded_on 存草稿 publishable=false；更新 platform_icons 的 updated_by / updated_at 不加 revision；审计 version_create（裁定 7）；上传不写审计。
+# 去掉 adminUploadPlatformIcon、adminCreatePlatformIconVersion 的 planned 并重生成；contracts-ts 测试只改这两个的 planned 断言。契约槽同 F1-06w。
+# 同 PR 在 openapi.yaml 上传操作的 icon_format_invalid 说明里补「PNG 边长超过 4096」（裁定 3，台账评审 S2-3）。
+# 平台标识是契约里最后一批 planned 后台接口：x、y 后落地者让 platform/http/request-check-plan.test.ts「probed > 0」失效，按「没有 planned 后台路由时不探针」改断言（台账评审 S1-2）。
+refs: []
+refs_hash: {}
+deps: [F1-06s, F1-06z, F1-06v, F1-06w]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/admin-platform-icons.test.ts'
+  - 'apps/api/src/modules/platform/http/request-check-plan.test.ts'
+test_paths:
+  - 'test/spec/content/platform-icons/upload/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/platform-icons/upload/**'
+status: todo
+pr: null

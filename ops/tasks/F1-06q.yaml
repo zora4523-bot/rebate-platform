@@ -1,0 +1,21 @@
+id: F1-06q
+repo: rebate-platform
+title: 依赖：apps/api 加 @fastify/multipart（fastify 5 兼容的 9.x）、@xmldom/xmldom、pngjs 7.0.0 与 devDependency @types/pngjs（平台标识上传、SVG 解析、PNG 校验）
+type: deps
+# 2026-10-10 入账（后台后端线 admin-backend，任务书 briefs/ADMIN-backend-lane.md §2 第 4 项「平台标识后端」；content 线收件箱提问 20 小时无回复、无人认领，由本线做）。
+# 依据 BR-TEXT-24 正文与细则、04 §10.1 platform_icons、§11.2 content.platform_icon、05 F1-02 末尾、contracts/openapi.yaml /admin/v1/platform-icons 七个操作（CT-17g）；
+# 规划与契约未定处的编排者裁定见 couli-runs/F1-06n/decision-orchestrator.md（编号即下文「裁定 N」），由编排者摘入任务书第 2 节。
+# 基线外依赖（approvals #3）：精确版本在落地时查定，须发布满 7 天、许可证在白名单（以上均 MIT，含传递依赖逐个列出）、另一家评审通过。不加原生光栅化库（裁定 10）；ali-oss 归 B1-30。
+# 只改 apps/api/package.json 与 pnpm-lock.yaml（保护路径第二类，按 approvals #24 评审通过、必过检查全绿后由编排会话加标签）；deps 任务全局串行，开工前看 claims/ 有无在途 deps 任务。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
