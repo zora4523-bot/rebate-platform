@@ -2243,6 +2243,73 @@ CREATE TABLE app.payout_accounts (
 
 
 --
+-- Name: platform_icon_uploads; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.platform_icon_uploads (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    key text NOT NULL,
+    sha256 text NOT NULL,
+    format text NOT NULL,
+    bytes integer NOT NULL,
+    sanitized boolean NOT NULL,
+    created_by_admin_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT platform_icon_uploads_bytes_check CHECK ((bytes > 0)),
+    CONSTRAINT platform_icon_uploads_expiry_check CHECK ((expires_at > created_at)),
+    CONSTRAINT platform_icon_uploads_format_check CHECK ((format = ANY (ARRAY['svg'::text, 'png'::text]))),
+    CONSTRAINT platform_icon_uploads_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: platform_icon_versions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.platform_icon_versions (
+    app_id text NOT NULL,
+    key text NOT NULL,
+    version integer NOT NULL,
+    upload_id uuid NOT NULL,
+    sha256 text NOT NULL,
+    format text NOT NULL,
+    bytes integer NOT NULL,
+    sanitized boolean NOT NULL,
+    source_url text,
+    downloaded_on date,
+    ever_published boolean DEFAULT false NOT NULL,
+    revision integer DEFAULT 1 NOT NULL,
+    created_by text NOT NULL,
+    created_by_admin_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_icon_versions_bytes_check CHECK ((bytes > 0)),
+    CONSTRAINT platform_icon_versions_format_check CHECK ((format = ANY (ARRAY['svg'::text, 'png'::text]))),
+    CONSTRAINT platform_icon_versions_revision_check CHECK ((revision >= 1)),
+    CONSTRAINT platform_icon_versions_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT platform_icon_versions_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: platform_icons; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.platform_icons (
+    app_id text NOT NULL,
+    key text NOT NULL,
+    current_version integer,
+    revision integer DEFAULT 0 NOT NULL,
+    updated_by text,
+    updated_by_admin_id uuid,
+    updated_at timestamp with time zone,
+    CONSTRAINT platform_icons_key_check CHECK ((key ~ '^[a-z_]{1,32}$'::text)),
+    CONSTRAINT platform_icons_revision_check CHECK ((revision >= 0))
+);
+
+
+--
 -- Name: platforms; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3439,6 +3506,38 @@ ALTER TABLE ONLY app.payout_account_verify_attempts
 
 ALTER TABLE ONLY app.payout_accounts
     ADD CONSTRAINT payout_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: platform_icon_uploads platform_icon_uploads_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_uploads
+    ADD CONSTRAINT platform_icon_uploads_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: platform_icon_versions platform_icon_versions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_versions
+    ADD CONSTRAINT platform_icon_versions_pkey PRIMARY KEY (app_id, key, version);
+
+
+--
+-- Name: platform_icon_versions platform_icon_versions_upload_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_versions
+    ADD CONSTRAINT platform_icon_versions_upload_id_key UNIQUE (upload_id);
+
+
+--
+-- Name: platform_icons platform_icons_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icons
+    ADD CONSTRAINT platform_icons_pkey PRIMARY KEY (app_id, key);
 
 
 --
@@ -4957,6 +5056,46 @@ ALTER TABLE ONLY app.payout_account_verify_attempts
 
 ALTER TABLE ONLY app.payout_accounts
     ADD CONSTRAINT payout_accounts_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: platform_icon_uploads platform_icon_uploads_created_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_uploads
+    ADD CONSTRAINT platform_icon_uploads_created_by_admin_id_fkey FOREIGN KEY (created_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: platform_icon_versions platform_icon_versions_created_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_versions
+    ADD CONSTRAINT platform_icon_versions_created_by_admin_id_fkey FOREIGN KEY (created_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: platform_icon_versions platform_icon_versions_upload_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_versions
+    ADD CONSTRAINT platform_icon_versions_upload_id_fkey FOREIGN KEY (upload_id) REFERENCES app.platform_icon_uploads(id);
+
+
+--
+-- Name: platform_icons platform_icons_current_version_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icons
+    ADD CONSTRAINT platform_icons_current_version_fkey FOREIGN KEY (app_id, key, current_version) REFERENCES app.platform_icon_versions(app_id, key, version);
+
+
+--
+-- Name: platform_icons platform_icons_updated_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icons
+    ADD CONSTRAINT platform_icons_updated_by_admin_id_fkey FOREIGN KEY (updated_by_admin_id) REFERENCES app.admin_users(id);
 
 
 --
@@ -6711,6 +6850,58 @@ GRANT UPDATE(row_version) ON TABLE app.payout_accounts TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: TABLE platform_icon_uploads; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.platform_icon_uploads TO couli_app;
+GRANT SELECT ON TABLE app.platform_icon_uploads TO couli_readonly;
+
+
+--
+-- Name: TABLE platform_icon_versions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.platform_icon_versions TO couli_app;
+GRANT SELECT ON TABLE app.platform_icon_versions TO couli_readonly;
+
+
+--
+-- Name: COLUMN platform_icon_versions.source_url; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(source_url) ON TABLE app.platform_icon_versions TO couli_app;
+
+
+--
+-- Name: COLUMN platform_icon_versions.downloaded_on; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(downloaded_on) ON TABLE app.platform_icon_versions TO couli_app;
+
+
+--
+-- Name: COLUMN platform_icon_versions.ever_published; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(ever_published) ON TABLE app.platform_icon_versions TO couli_app;
+
+
+--
+-- Name: COLUMN platform_icon_versions.revision; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(revision) ON TABLE app.platform_icon_versions TO couli_app;
+
+
+--
+-- Name: TABLE platform_icons; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.platform_icons TO couli_app;
+GRANT SELECT ON TABLE app.platform_icons TO couli_readonly;
 
 
 --
