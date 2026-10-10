@@ -1,0 +1,28 @@
+id: B1-04g
+repo: rebate-platform
+title: 拼多多 Adapter（商品侧）：MD5 签名与公共参数（client_id + client_secret，不需用户令牌，timestamp 容差 10 分钟）、按接口登记的响应外层键与 error_response 映射、商品搜索（goods.search）、详情（goods.detail）、链接解析（search keyword / url.short.parse）、物料推荐（goods.recommend.get）
+type: impl
+# 草稿 2026-10-05；2026-10-08 按 09 4_PDD_附（官方文档核对）与"复用优券汇应用"决定（4 附 §5 第 1 项）修订。依据：09 4_PDD 主表 CAP-PDD-01、02、03、10、12 行，
+# 4_PDD_附 §3.2～§3.5（公共参数、签名四步与官方测试向量、响应外层键按接口登记、错误码表、限流）、§6（商品接口不返回 goods_id；range_id / sort_type 枚举）、04 §7，BR-TEXT-17 细则「联盟物料频道」，由编排者摘入任务书第 2 节。
+# 签名：参数按名 ASCII 升序 → 名值拼接 → 头尾加 client_secret → MD5 大写；单元测试必须含 4 附 §3.3 的官方示例向量（secret 为示例值 testSecret）。数组 / 对象参数的序列化方式文档未写（4 附 §8）：按 JSON 字符串参与签名，录制回放校验时作为待实测项标注。
+# 响应：外层键不能由接口名推导（goods_search_response、goods_detail_response 等按接口文档逐个登记）；错误走 error_response{error_code,error_msg,sub_code,sub_msg,request_id}。
+# 错误映射（4 附 §3.4 表）：20005 IP 白名单 / 20031 无权限包 / 70036 测试状态超限 → upstream_rejected 且告警；52101、70031 → rate_limited；52102、52103、70033、5xx → upstream_unavailable；70032、70034、70035 → upstream_rejected（停用平台开关由上层处理，适配器只分类）。
+# 商品 DTO：goods.search / goods.detail 出参没有 goods_id，只有 goods_sign；DTO 的 goods_id 留空、goods_sign 必填；product_key 派生在 catalog（B1-05b），不在本段改。价格字段 min_group_price / coupon_discount 等整数分直接透传为 price_fen / coupon_fen，券后价公式（min_group_price − coupon_discount，官方 FAQ）只在 catalog 算。
+# 凭据：client_id / client_secret（优券汇应用的，负责人本机 ~/.couli/pdd.env → KMS）从 union_credentials（B1-19a）经 platform 的凭据读取拿；录制 / 演示模式不需要凭据。拼多多没有沙箱（4 附 §1）；没有真实录制时只用 doc-derived 合成录制，验收记录不写通过（规划/11 §4.5）。
+# 目录约定见 B1-04b 注释：只改 union/infra/pdd/、config/union-endpoints/pdd.json 与 fixtures/union-recordings/pdd/；共同文件要改先回 b、c。test_paths：test/spec/union/pdd-goods/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04c, B1-19b]
+paths:
+  - 'apps/api/src/modules/union/infra/pdd/**'
+  - 'config/union-endpoints/pdd.json'
+  - 'fixtures/union-recordings/pdd/**'
+test_paths:
+  - 'test/spec/union/pdd-goods/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-goods/**'
+status: todo
+pr: null
