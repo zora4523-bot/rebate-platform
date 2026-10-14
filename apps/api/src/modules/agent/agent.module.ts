@@ -27,8 +27,11 @@
 // AgentModule.forWorker(): a DynamicModule providing and exporting agentSweeperToken(), injected
 //   [CLOCK, ROOT_LOGGER, {token: DB, optional: true}]. Without a DB handle the provider is null and
 //   one info line 'agent_sweeper_disabled' is logged (as RiskScanModule's 'risk_scan_disabled');
-//   with one it is createAgentSweeperRuntime({db, clock, logger}). Building it starts nothing (no
-//   timer, no query).
+//   with one it is exactly createAgentSweeperRuntime({db, clock, logger}) (one assembly path: the
+//   provider's value has the same fields and its start() runs the real loop over the real step —
+//   a tick takes the advisory lock and finalizes left-over runs). Building it starts nothing (no
+//   timer, no query); only start() does. start(options) takes the loop's test seams (schedule,
+//   random); production passes nothing.
 // entry.ts (worker only, after startWorkerServices resolved and before `started`): resolves the
 //   token with context.get(agentSweeperToken(), {strict: false}); a throw, null, undefined or a
 //   value without a start function → no loop, no crash (as startRiskScanHeal); a stop already

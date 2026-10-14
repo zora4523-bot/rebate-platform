@@ -28,7 +28,7 @@ import {
   type AgentSweeperRuntime,
 } from '../../../../apps/api/src/modules/agent/index.ts';
 import { ports } from '../../risk/freeze-expiry/kit.ts';
-import { LEVEL, fileErrorMsg } from './kit.ts';
+import { LEVEL, ManualSchedule, fileErrorMsg } from './kit.ts';
 
 const databases: Kysely<DB>[] = [];
 afterEach(async () => {
@@ -148,6 +148,42 @@ it('[AC-B3-03h#26] worker 入口（有库）：agentSweeperToken() 提供运行�
     expect(lines().filter((l) => l.msg === 'agent_sweeper_disabled')).toEqual([]);
     // One process-wide runtime.
     expect(context.get(agentSweeperToken(), { strict: false })).toBe(runtime);
+  } finally {
+    await context.close();
+  }
+});
+
+it('[AC-B3-03h#36] 真实 provider 的 start() 接到了真循环：AppModule worker 上下文取出的运行体 start({schedule}) 排一个 tick；触发后在库句柄上发 advisory lock 查询并记一条循环结束日志（只编译不连库：锁拿不到即跳过或记锁失败）；stop 后已排的 tick 被取消、迟到触发也不再查询', async () => {
+  const { context, queries, lines } = await contextOf('worker', true);
+  try {
+    const runtime = context.get(agentSweeperToken(), { strict: false }) as AgentSweeperRuntime;
+    const schedule = new ManualSchedule();
+    const loop = runtime.start({ schedule: schedule.schedule });
+    expect(schedule.armed.map((a) => a.timer)).toEqual(['tick']);
+    expect(queries.filter((q) => /advisory/.test(q))).toEqual([]);
+    const armed = schedule.armed[0]!;
+    await schedule.fire('tick');
+    expect(queries.filter((q) => /pg_try_advisory_lock/.test(q))).toHaveLength(1);
+    const ends = lines().filter((l) =>
+      [
+        'agent_sweep_skipped',
+        'agent_sweep_lock_failed',
+        'agent_sweep_tick',
+        'agent_sweep_tick_timeout',
+        'agent_sweep_lock_lost',
+        'agent_sweep_failed',
+      ].includes(l.msg),
+    );
+    expect(ends.length).toBeGreaterThanOrEqual(1);
+    expect(armed.fired).toBe(true);
+    const next = schedule.pending('tick');
+    expect(next).toHaveLength(1);
+
+    await loop.stop();
+    expect(next[0]!.cancelled).toBe(true);
+    const before = queries.length;
+    await schedule.fireLate(next[0]!);
+    expect(queries.length).toBe(before);
   } finally {
     await context.close();
   }
