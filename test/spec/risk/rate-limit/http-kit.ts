@@ -156,9 +156,25 @@ export async function withHttp(
     }
   }
   common.Controller('v1')(PlannedEndpoints);
+  // Once convertLink is implemented (B1-06i) its controller owns POST /v1/links/convert: keep the
+  // real route, guards and idempotency wiring, and only swap the handler body for the fixture one
+  // (a second registration of the same route would make Fastify refuse to start).
+  const convertController = await import(
+    new URL('apps/api/src/modules/linking/http/public/convert.controller.ts', ROOT).href
+  ).then(
+    (module: Record<string, unknown>) =>
+      module['LinkConvertController'] as { prototype: { convert(req: Request): unknown } },
+    () => undefined,
+  );
+  const convertSpy =
+    convertController === undefined
+      ? undefined
+      : vi
+          .spyOn(convertController.prototype, 'convert')
+          .mockImplementation((req: Request) => PlannedEndpoints.prototype.convert(req));
   for (const [name, path] of [
     ['tip', 'me/tips/:tip_key/read'],
-    ['convert', 'links/convert'],
+    ...(convertSpy === undefined ? ([['convert', 'links/convert']] as const) : []),
   ] as const) {
     const descriptor = Object.getOwnPropertyDescriptor(PlannedEndpoints.prototype, name)!;
     common.Req()(PlannedEndpoints.prototype, name, 0);
@@ -254,6 +270,7 @@ export async function withHttp(
     });
   } finally {
     spy.mockRestore();
+    convertSpy?.mockRestore();
     try {
       await app?.close();
     } finally {
