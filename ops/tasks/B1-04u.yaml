@@ -2,11 +2,11 @@ id: B1-04u
 repo: rebate-platform
 title: 拼多多 Adapter 商品侧映射：goods.search（searchItems）、goods.detail（getItem）、链接解析（search keyword / url.short.parse → resolveLink）、goods.recommend.get（materialFeed，默认频道见注释）；价格三字段与佣金比例按 BR-PRICE-01/02 映射
 type: impl
-# 草稿 2026-10-14（台账 #306 评审 S1-2/S1-3/S2-3/S2-7 后从 B1-04g 拆出）。开工前提：CAP-PDD-01/02/03/10 的 probe 录制已在私有库（负责人终端跑探测脚本产生，PDD-lane/plan.md §2）；映射只用 probe 录制里出现过的字段，任务书附字段清单。
+# 草稿 2026-10-14（台账 #306 评审 S1-2/S1-3/S2-3/S2-7 后从 B1-04g 拆出）。开工前提：ops/approvals.yaml 第 28 条已登记（负责人 2026-10-14：本人在终端运行 couli-runs/probes/pdd_probe.py 的产物 + rebate-private/probe-runs.log 一行，认定为本线的 probe 依据，覆盖 CAP-PDD-01/02/03/10），且该次探测产物已在 rebate-private/cap-tests/；登记前不派工。映射只用任务书附的 probe 字段清单。
 # 依据：BR-PRICE-01、BR-PRICE-02（适配器出 price_fen / coupon_fen / final_price_fen 三字段并自算券后价，只用 packages/money / domain 的函数；拼多多 price_fen 取 min_group_price）、BR-PROD-03（商品接口不返回 goods_id，不得以任何方式补出）、BR-TEXT-17 细则「联盟物料频道」、09 4_PDD CAP-PDD-01/02/03/10 与 4_PDD_附 §6，由编排者摘入任务书。
-# 价格：coupon_fen 按 BR-PRICE-01 选券规则从 coupon_discount 取（门槛、有效期）；coupon ≥ price 或缺价 → price_status='anomaly'；commission_rate_bp = promotion_rate（千分比整数）× 10，整数运算。goods_id 留空、goods_sign 必填；product_key 稳定性（BR-PROD-06）由负责人在切 live 前定，本段不处理。
+# 价格：coupon_fen 只取 coupon_discount（门槛 coupon_min_order_amount 按 min_group_price 判断、有效期按注入的 Clock 判断，不满足则 0）；平台券、店铺券、收藏券、补贴（platform_discount_list、mall_coupon_*、clt_cpn_*、subsidy_*）不计入，待 CAP-PDD-02 实测另开；coupon ≥ price 或缺价 → price_status='anomaly'；commission_rate_bp = promotion_rate（千分比整数）× 10，整数运算。goods_id 留空、goods_sign 必填；product_key 稳定性（BR-PROD-06）由负责人在切 live 前定，本段不处理。
 # 物料：MaterialReq 只有 cursor，本段固定 channel_type=4（精选，与进宝网站一致）；要按频道取另开任务改端口。
-# 报文样例由规则测试作者放在 test_paths 目录，标 doc-derived 或引用 probe 形状，经注入的内存传输喂给适配器；不新增 fixtures/union-recordings/ 场景。
+# 报文样例由规则测试作者按任务书附的字段清单自拟，值全部合成，不标 doc-derived，不拷贝私有录制的原文或掩码值（AGENTS §6）；经注入的内存传输喂给适配器；不新增 fixtures/union-recordings/ 场景。
 # 目录：只改 union/infra/pdd/**。test_paths：test/spec/union/pdd-goods/**。整体 RV2。
 refs: []
 refs_hash: {}

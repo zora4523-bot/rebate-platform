@@ -9,6 +9,7 @@ type: impl
 # 传输：新建 union/infra/http-transport.ts（只允许 https、超时与取消走注入的 signal、请求体与 secret 不进日志），实现 replay.ts 的 UnionTransport 类型；单元测试只用内存假传输，不联网、不 listen。
 # 解包与错误：外层键按接口逐个登记（4 附 §3.4 列出的与官方原文为准），不由接口名推导；error_response{error_code,error_msg,sub_code,sub_msg,request_id} 分类：20005 / 20031 / 70036 / 20004 / 10019 / 70032 / 70034 / 70035 → upstream_rejected（20004、20005、70035 另记告警事件）；52101、70031 → rate_limited；52102、52103、70033、50000、50001、50002、52001、52002、HTTP 5xx 与网络错误 → upstream_unavailable；表外 error_code → upstream_rejected。
 # 占位：searchItems / getItem / resolveLink / convert / listOrders 一律抛 UnionError('adapter_unimplemented')；不提供 queryPddAuthority（端口缺失时 linking 走 50303）。不写任何商品 / 订单字段映射（AGENTS §4 第 7 条、规划/11 §4.5：没有 probe 录制不写平台字段映射），不新增 fixtures/union-recordings/ 场景（第一类测试 test/spec/load/wiremock/union.test.ts 只认 synthetic-smoke）。
+# 与 B1-04p（union 原始报文归档，会给传输包一层）串行：本段先；B1-04p 的去敏清单须含拼多多的 client_secret、sign、client_id。
 # 目录：只改 union/infra/pdd/** 与 union/infra/http-transport.ts。test_paths：test/spec/union/pdd-core/**。整体 RV2。
 refs: []
 refs_hash: {}
