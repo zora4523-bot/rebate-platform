@@ -1,0 +1,201 @@
+// HTTP layer of /v1/agent/* (B3-03d after the 2026-10-08 redesign): createAgentSession,
+// getCurrentAgentSession, sendAgentMessage (SSE) and cancelAgentRun of contracts/openapi.yaml,
+// framework-neutral. The Nest / Fastify adapter and the mount on the stream entry are B3-03f. The
+// rule tests in test/spec/agent/stream-http/** import this file by path: names, signatures and the
+// semantics written here are the contract.
+//
+// The caller has passed BR-ID-01 ①–⑦ (signature, token, bans, …) before any method here runs.
+// Every port is required unless marked optional; a port is never skipped or assumed to allow
+// (consent, redactor and the run body have no permissive default).
+//
+// sendMessage(caller, sessionId, body, reply) — BR-AI-23, the first failure wins:
+//   0. body is checked against the contract request body of sendAgentMessage (AgentMessageRequest:
+//      types, client_msg_id format, unknown fields, missing fields): a failure is 20001 with
+//      data.fields naming each offending field once (the rules of validationErrorEnvelope in
+//      ../../platform/validation: missingProperty, additionalProperty, else the instancePath;
+//      'body' when the body itself is not an object), before ① and before any port is called.
+//   ① access.check → 30501; ② identity.check → 10001 / 10005; ③ consent.check → 10004 with
+//   data.consent_type 'ai_third_party'; ④ sessions.owned(owner, sessionId) null or expired →
+//   30504 without data (BR-AI-20); ⑤ text longer than settings.textMaxCodePoints Unicode code
+//   points → 20001 data.fields ['text']. A refusal at 0–⑤ calls no later step: in particular no
+//   redactor, no limits, no admission.
+//   Then, in this order: three new ids from deps.ids() (runId, the user messageId, the
+//   assistantMessageId; all distinct); redactor.redact(appId, text) once — the same result is
+//   runUserText and messageText, the raw text never enters the admission request; limits =
+//   deps.limits.current(appId) (the instance B3-03g's finalization uses too; a rejection → JSON
+//   50401 and admit is not called); labels.current(caller) → promptVersion, modelSnapshot; then
+//   admission.admit({sessionId, clientMsgId, runId, messageId, subject, reply: {assistantMessageId,
+//   promptVersion, modelSnapshot, runUserText, messageText}}, limits). Quota subject: member
+//   {userId} when the caller has a user id and a bound phone; otherwise guest {loggedIn: userId !==
+//   null, deviceHash, ipKey} (BR-AI-15, BR-ID-03).
+//   admit's answer:
+//   - accepted → reply.stream(SSE headers), then runs.start({ticket, ownerKey, limits, meta:
+//     {message_id: assistantMessageId, prompt_version, model_label: labels.modelLabel(appId,
+//     modelSnapshot), ai_label: labels.aiLabel(appId)}, sink}, body(input)); the RunManager writes
+//     every frame (meta first, one terminal frame last); after start resolves, sink.end().
+//   - duplicate → reply.stream(SSE headers) and exactly two frames, ids 1 and 2 (04 §8.1): meta
+//     {session_id, run_id: original.runId, message_id: original.assistantMessageId,
+//     prompt_version: original.promptVersion, model_label: labels.modelLabel(appId,
+//     original.modelSnapshot), ai_label: labels.aiLabel(appId), duplicate: true}; then for reply
+//     final the stored terminal frame as it is (event and data unchanged), for reply running
+//     error {code 30506, msg texts.errorMsg(30506), retryable true, fallback null, fallback_q
+//     null}; then sink.end(). runs.start is not called.
+//   - rejected 30506 → JSON 30506 without data; 42901 → JSON 42901 with header Retry-After =
+//     retryAfterSeconds (decimal seconds); 30504 round_limit → JSON 30504 data {reason:
+//     'round_limit'}; 30504 expired → JSON 30504 without data (as ④); 30502 → JSON 30502 data
+//     {reset_at: resetAt, next}.
+//   admit throws: AdmissionUnavailableError (either outcome) → JSON 50401; AdmissionHeldError →
+//   JSON 50001; anything else → JSON 50001 (msg is texts.errorMsg(50001), nothing of the error).
+//   A failure of the redactor or the labels port → JSON 50001, admit not called.
+//   Streams: frames are written with the 04 §8.1 layout (`event:` / `id:` / `data:` lines). When
+//   the client is gone (the sink's write throws, or onClose fired) nothing more is written by
+//   this layer and sendMessage still resolves (never rejects, no unhandled rejection).
+//
+// JSON answers: reply.json(status of contracts/error-codes.yaml for the code, headers
+//   {'content-type': 'application/json'} (+ 'retry-after' for 42901), ErrorEnvelope {code, msg:
+//   texts.errorMsg(code), data?, trace_id: caller.traceId}). Success: 200 {code 0, msg '', data,
+//   trace_id: caller.traceId}; times as RFC 3339 strings of the stored instants.
+// SSE headers: {'content-type': 'text/event-stream', 'cache-control': 'no-cache'}.
+// Owner (../store): user {appId, userId, deviceId} with a user id, else device {appId, deviceId};
+//   owner key u:<user_id> | d:<device_id> (BR-AI-20).
+//
+// createSession(caller, reply): 0 is skipped (no body); ①–③; sessions.open(owner, ids()) → 200
+//   AgentSessionResponse. currentSession(caller, reply): ①–③; sessions.current(owner) → 200
+//   {session: … | null}. Neither calls admission.
+// cancelRun(caller, runId, reply): ①–③; sessions.ownsRun(owner, runId) false → JSON 30505 (no
+//   such run and not the caller's are never told apart; cancel not called); cancel({appId,
+//   runId}): 'accepted' → 200 EmptyResponse (data {}), then signals?.requestCancel(runId,
+//   ownerKey) best effort: not awaited before the answer, a rejection or a throw changes nothing;
+//   'not_running' → JSON 30505, no signal; the cancel port rejects → JSON 50001, no signal.
+//
+// Rules for the implementation: erasable syntax only, `import type` for type-only imports,
+// relative imports with `.ts`, no NestJS, no process.env, time only from an injected Clock.
+import type { Clock, RootLogger } from '../../platform/index.ts';
+import type { Admission, AdmissionLimits, RedactedText } from '../stream/admission/index.ts';
+import type { CancelQuery, QuotaLimitsSource } from '../stream/pg/index.ts';
+import type { RunBody, RunManager, RunRegistry, RunSink, RunTexts } from '../stream/run/index.ts';
+import type { AgentSessionStore } from '../store/index.ts';
+
+export interface AgentCaller {
+  readonly appId: string;
+  readonly traceId: string;
+  readonly deviceId: string;
+  readonly deviceHash: string;
+  /** Opaque IP counting key (never a plain IP). */
+  readonly ipKey: string;
+  /** From the access token; null for a guest. */
+  readonly userId: string | null;
+  readonly phoneBound: boolean;
+}
+
+/** ① agent.enabled / whitelist (BR-AI-12). */
+export interface AgentAccessPort {
+  check(caller: AgentCaller): Promise<null | { readonly code: 30501 }>;
+}
+
+/** ② identity requirements (BR-AI-11, BR-ID-03). */
+export interface AgentIdentityPort {
+  check(caller: AgentCaller): Promise<null | { readonly code: 10001 | 10005 }>;
+}
+
+/** ③ AI consent (BR-AI-13). */
+export interface AgentConsentPort {
+  check(caller: AgentCaller): Promise<null | { readonly code: 10004 }>;
+}
+
+/** BR-AI-19 redaction; the only producer of RedactedText here. */
+export interface AgentRedactor {
+  redact(appId: string, text: string): Promise<RedactedText>;
+}
+
+/** Labels of a run (B3-05 / model routing / texts). */
+export interface AgentRunLabels {
+  current(
+    caller: AgentCaller,
+  ): Promise<{ readonly promptVersion: string; readonly modelSnapshot: string | null }>;
+  /** The display name of a model snapshot today (04 §8.1). */
+  modelLabel(appId: string, modelSnapshot: string | null): Promise<string>;
+  /** texts.ai_label (BR-TEXT-16). */
+  aiLabel(appId: string): Promise<string>;
+}
+
+export interface AgentHttpSettings {
+  /** BR-AI-23 ⑤. */
+  readonly textMaxCodePoints: number;
+}
+
+export interface AgentMessageBody {
+  readonly client_msg_id: string;
+  readonly text: string;
+  readonly context?: Readonly<Record<string, unknown>>;
+}
+
+export interface RunBodyInput {
+  readonly caller: AgentCaller;
+  readonly sessionId: string;
+  readonly runId: string;
+  readonly userMessageId: string;
+  readonly assistantMessageId: string;
+  /** The text as sent. */
+  readonly text: string;
+  readonly redactedText: RedactedText;
+  readonly context?: Readonly<Record<string, unknown>>;
+  readonly limits: AdmissionLimits;
+}
+
+export interface AgentStreamSink extends RunSink {
+  end(): void;
+}
+
+export interface AgentHttpReply {
+  json(status: number, headers: Readonly<Record<string, string>>, body: unknown): void;
+  stream(headers: Readonly<Record<string, string>>): AgentStreamSink;
+}
+
+export interface AgentHttpDeps {
+  readonly access: AgentAccessPort;
+  readonly identity: AgentIdentityPort;
+  readonly consent: AgentConsentPort;
+  readonly sessions: AgentSessionStore;
+  /** B3-03g PgRunPorts.admission (only admit is used here). */
+  readonly admission: Pick<Admission, 'admit'>;
+  /** The RunManager (B3-03b) wired on B3-03g's registry and admission. */
+  readonly runs: Pick<RunManager, 'start'>;
+  /** B3-03g PgRunPorts.cancel. */
+  readonly cancel: (query: CancelQuery) => Promise<'accepted' | 'not_running'>;
+  /** Redis fast path for the cancel signal; may be absent or failing. */
+  readonly signals?: Pick<RunRegistry, 'requestCancel'>;
+  /** The same QuotaLimitsSource instance given to createPgRunPorts. */
+  readonly limits: QuotaLimitsSource;
+  readonly body: (input: RunBodyInput) => RunBody;
+  readonly redactor: AgentRedactor;
+  readonly labels: AgentRunLabels;
+  readonly settings: AgentHttpSettings;
+  readonly texts: Pick<RunTexts, 'errorMsg'>;
+  /** New UUIDv7 ids (sessions, runs, messages). */
+  readonly ids: () => string;
+  readonly clock: Clock;
+  readonly logger?: Pick<RootLogger, 'error' | 'warn'>;
+}
+
+export interface AgentHttp {
+  createSession(caller: AgentCaller, reply: AgentHttpReply): Promise<void>;
+  currentSession(caller: AgentCaller, reply: AgentHttpReply): Promise<void>;
+  sendMessage(
+    caller: AgentCaller,
+    sessionId: string,
+    body: unknown,
+    reply: AgentHttpReply,
+  ): Promise<void>;
+  cancelRun(caller: AgentCaller, runId: string, reply: AgentHttpReply): Promise<void>;
+}
+
+/** BR-AI-23 ⑤: 500 Unicode code points. */
+export function agentHttpDefaults(): AgentHttpSettings {
+  throw new Error('NotImplemented: agentHttpDefaults');
+}
+
+export function createAgentHttp(deps: AgentHttpDeps): AgentHttp {
+  void deps;
+  throw new Error('NotImplemented: createAgentHttp');
+}
