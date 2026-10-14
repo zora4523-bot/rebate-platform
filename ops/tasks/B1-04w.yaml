@@ -1,0 +1,26 @@
+id: B1-04w
+repo: rebate-platform
+title: 拼多多订单拉取的三处收口：listOrders 内部每一次上游分页请求（尾页探测与倒序翻页）都经配额治理；increment 时间窗先按毫秒校验跨度与先后再取整到秒；订单 goods_id 无损整数解析（超过 2^53 报 invalid_dto，恰好 2^53 按既有规则测试接受）
+type: impl
+# 草稿 2026-10-15（拼多多接入线 pdd-lane）。来源：B1-04i（#476）Codex money r1 三条 S2（couli-runs/B1-04i/review-codex.json）与 spec-test r1 S2。order-sync 接入拼多多前做。
+# ① 配额（最优先）：现状 createGovernedAdapter 只在外层对 listOrders 扣一次 token，而适配器内部会发多次上游请求（探最后一页 + 倒序翻页），共享的多多进宝账号（与优券汇共用）有上游限流风险。做法由实现定，但须满足：每次实际上游请求都消耗一次配额且不重复计数；取消信号照常传递；限流错误（52101 / 70031）仍按 B1-04g 分类为 rate_limited。若需改 governed-adapter 的接口（例如给适配器注入按请求取 token 的回调），保持其他平台与既有调用方行为不变。
+# ② 时间窗：跨度 ≤ 24 小时、from ≥ now − 90 天、from < to 按毫秒原值判，再把边界按上游秒精度转换（from 向下取整、to 向上取整后不得因此被拒）。
+# ③ goods_id：从原始 JSON 文本无损取整数（或等价做法），> 2^53 → invalid_dto；= 2^53 仍接受（AC-B1-04i 既有规则测试 DTO#12）。
+# 风险：union/** RV2（订单数据进佣金计算链）。与 B1-04u / B1-04h 同改 union/infra/pdd/**，派工串行。
+refs: []
+refs_hash: {}
+deps: [B1-04i]
+paths:
+  - 'apps/api/src/modules/union/infra/pdd/**'
+  - 'apps/api/src/modules/union/application/governed-adapter.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
+  - 'apps/api/src/modules/union/domain/types.ts'
+test_paths:
+  - 'test/spec/union/pdd-orders-quota/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-orders-quota/**'
+status: todo
+pr: null
