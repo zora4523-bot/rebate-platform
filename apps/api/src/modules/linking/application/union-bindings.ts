@@ -15,11 +15,15 @@
 // state recorded for the method (④: credential_invalid → 30104, state stays used, bindings
 // unchanged; an upstream failure → 50001, same). Last, BR-ID-19 decides on the relation id R:
 // - another user's active / invalid / blocked row of (app, account, platform, R), or their
-//   released row still cooling (cooldown_until > now) → 30151, nothing written (structured warn);
+//   released row still cooling (cooldown_until > now) → 30151 (conflict kind occupied / cooling);
 // - the user's unreleased binding: same account and R → active stays untouched, invalid becomes
-//   active (bound_at kept); a different R → 30151, never replaced;
+//   active (bound_at kept); a different R → 30151 (kind rebind), never replaced;
 // - no unreleased binding: the user's own released row of R still cooling → restored to active
 //   (release instants cleared, bound_at kept); otherwise a new active row (bound_at = now).
+// B1-06z: every 30151 writes one conflict row on the submission's transaction (bindings unchanged;
+// ../infra/binding-conflicts.ts, written already resolved when the user has an active binding),
+// and every write that makes the binding active resolves the user's unresolved taobao rows in the
+// same savepoint (BR-ID-18). A replay of the key answers the stored 30151 and writes nothing.
 // The two partial unique indexes stay the arbiter of concurrent writes: a unique violation
 // re-reads and decides again (30151 or success), never a 500 and never an application lock.
 // Every status written (the new active row, invalid → active, the user's cooling released row →
@@ -57,6 +61,11 @@ import {
   type RootLogger,
 } from '../../platform/index.ts';
 import { canTransitionBinding } from '../domain/binding-status-transitions.ts';
+import {
+  recordBindingConflict,
+  resolveBindingConflictsOnActive,
+  type BindingConflictKind,
+} from '../infra/binding-conflicts.ts';
 import type { CallerContext } from '../ports.ts';
 import {
   AuthConfigError,
@@ -199,7 +208,7 @@ function credentialOf(body: BindUnionRequest): UnionBindingExchangeInput['creden
 
 type Decision =
   | { readonly kind: 'ok' }
-  | { readonly kind: 'conflict' }
+  | { readonly kind: 'conflict'; readonly conflict: BindingConflictKind }
   | { readonly kind: 'blocked' }
   | { readonly kind: 'retry' };
 
@@ -225,14 +234,17 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       .where('relation_id', '=', relationId)
       .where('user_id', '!=', userId)
       .execute();
-    const occupied = others.some(
+    // Held by another user's unreleased row before any cooling one (BR-ID-19).
+    if (others.some((row) => OCCUPYING.includes(row.status))) {
+      return { kind: 'conflict', conflict: 'occupied' };
+    }
+    const othersCooling = others.some(
       (row) =>
-        OCCUPYING.includes(row.status) ||
-        (row.status === 'released' &&
-          row.cooldown_until !== null &&
-          row.cooldown_until.getTime() > now.getTime()),
+        row.status === 'released' &&
+        row.cooldown_until !== null &&
+        row.cooldown_until.getTime() > now.getTime(),
     );
-    if (occupied) return { kind: 'conflict' };
+    if (othersCooling) return { kind: 'conflict', conflict: 'cooling' };
 
     const mine: BindingRow[] = await trx
       .selectFrom('union_bindings')
@@ -244,7 +256,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
     const unreleased = mine.find((row) => UNRELEASED.includes(row.status));
     if (unreleased !== undefined) {
       if (unreleased.relation_id !== relationId || unreleased.union_account_id !== accountId) {
-        return { kind: 'conflict' };
+        return { kind: 'conflict', conflict: 'rebind' };
       }
       if (unreleased.status === 'active') return { kind: 'ok' };
       if (unreleased.status === 'blocked') return { kind: 'blocked' };
@@ -262,7 +274,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
         .where('status', '=', unreleased.status)
         .where('row_version', '=', unreleased.row_version)
         .executeTakeFirst();
-      return updated.numUpdatedRows === 1n ? { kind: 'ok' } : { kind: 'retry' };
+      return updated.numUpdatedRows === 1n ? activated(trx, appId, userId, now) : { kind: 'retry' };
     }
 
     // No unreleased binding: the user's own row of R still cooling is restored (BR-ID-19).
@@ -292,7 +304,9 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
         .where('status', '=', 'released')
         .where('row_version', '=', cooling.row_version)
         .executeTakeFirst();
-      return restored.numUpdatedRows === 1n ? { kind: 'ok' } : { kind: 'retry' };
+      return restored.numUpdatedRows === 1n
+        ? activated(trx, appId, userId, now)
+        : { kind: 'retry' };
     }
 
     // pending_auth is never produced (BR-ID-17 细则): the row is written active directly.
@@ -315,6 +329,17 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
         updated_at: now,
       })
       .execute();
+    return activated(trx, appId, userId, now);
+  }
+
+  /** The binding just became active: its unresolved conflicts resolve with it (BR-ID-18). */
+  async function activated(
+    trx: Transaction<DB>,
+    appId: string,
+    userId: string,
+    now: Date,
+  ): Promise<Decision> {
+    await resolveBindingConflictsOnActive(trx, appId, userId, 'taobao', now);
     return { kind: 'ok' };
   }
 
@@ -433,11 +458,16 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
 
     const decision = await settle(trx, appId, userId, accountId, exchanged.relationId);
     if (decision.kind === 'conflict') {
-      // No conflict log table yet (D7-3 ⑥): a structured warn without R or the other user.
-      logger.warn(
-        { event: 'linking.bindings.relation_conflict', app_id: appId, user_id: userId, platform },
-        'linking: the union relation is held by another binding',
-      );
+      // BR-ID-18 / BR-ID-19: one conflict row per 30151, committed with the stored answer; it
+      // names the account used, never R or the other user.
+      await recordBindingConflict(trx, {
+        appId,
+        userId,
+        platform,
+        accountId,
+        kind: decision.conflict,
+        now: clock.now(),
+      });
       return result(30151, traceId);
     }
     if (decision.kind === 'blocked') return result(30153, traceId);
