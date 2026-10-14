@@ -77,6 +77,7 @@ import {
   priceChanged,
   quoteSnapshotChanged,
 } from '../domain/rules.ts';
+import { hasUnresolvedBindingConflict } from '../infra/binding-conflicts.ts';
 import type { Caller } from '../ports.ts';
 import {
   attrCodeOf,
@@ -163,6 +164,11 @@ export type LinkOpenAuthorization =
       readonly code: 10001 | 30101 | 30102 | 30111 | 30153 | 50301 | 50303;
       /** The error envelope's data (contracts/error-codes.yaml); absent when it defines none. */
       readonly data?: Readonly<Record<string, unknown>>;
+      /**
+       * B1-06z: present when the refusal still lies on the server's no-rebate path (a blocked
+       * user's no_rebate purchase): the failure log carries the server's reason, not the client's.
+       */
+      readonly noRebateReason?: LinkOpenServerNoRebateReason;
     };
 
 export interface LinkOpenAuthorizationInput {
@@ -785,6 +791,30 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     };
   }
 
+  /**
+   * BR-ID-18: the server's no_rebate_reason of an open on the no-rebate path — relation_conflict
+   * while the requesting user (never the snapshot user) has an unresolved 30151 conflict on the
+   * link's platform, ahead of the port's own reason (binding_blocked). Read on the open's
+   * transaction; only the log takes it, never the idempotent request body.
+   */
+  async function serverNoRebateReason(
+    caller: Caller,
+    owner: LinkOpenOwnerResult,
+    input: LinkOpenRequoteInput,
+    executor: Kysely<DB>,
+    portReason: LinkOpenServerNoRebateReason | undefined,
+  ): Promise<LinkOpenServerNoRebateReason | undefined> {
+    if (input.noRebate !== true || caller.userId === null) return portReason;
+    const { link } = owner;
+    const conflicted = await hasUnresolvedBindingConflict(
+      executor,
+      link.app_id,
+      caller.userId,
+      link.platform,
+    );
+    return conflicted ? 'relation_conflict' : portReason;
+  }
+
   async function settle(
     caller: Caller,
     owner: LinkOpenOwnerResult,
@@ -820,13 +850,19 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         throw error;
       }
       if (decided.kind === 'refused') {
+        const refusedReason =
+          decided.noRebateReason === undefined
+            ? undefined
+            : await serverNoRebateReason(caller, owner, input, executor, decided.noRebateReason);
         return {
           ...failure(decided.code, owner),
           ...(decided.data === undefined ? {} : { error: decided.data }),
+          ...(refusedReason === undefined ? {} : { noRebateReason: refusedReason }),
         };
       }
       reason = decided.noRebateReason;
     }
+    reason = await serverNoRebateReason(caller, owner, input, executor, reason);
     const settled = await settleAuthorized(caller, owner, input, nowMs);
     return reason === undefined ? settled : { ...settled, noRebateReason: reason };
   }

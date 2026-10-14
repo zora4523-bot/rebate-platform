@@ -28,11 +28,15 @@
 // binding), else a new active row of the account used — released history is never touched. The
 // write runs under a savepoint inside the open's transaction (ruling D7-11 ④; no second pooled
 // connection): a concurrent writer winning the unique index re-reads and decides on what won.
+// B1-06z (BR-ID-18): a write that makes the binding active resolves the user's unresolved pdd
+// conflict rows in the same savepoint (bound_active); a row found already active resolves nothing.
+// An own blocked user's no_rebate refused for maintenance carries the server's no_rebate_reason.
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import { newUuidV7 } from '../../platform/index.ts';
 import type { UnionPidRow } from '../../union/index.ts';
 import { canTransitionBinding } from '../domain/binding-status-transitions.ts';
+import { resolveBindingConflictsOnActive } from '../infra/binding-conflicts.ts';
 import type { LinkOpenService } from './link-open.ts';
 import { LinkingUnionIdentity } from './link-open-conversion.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
@@ -268,9 +272,9 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
         .where('status', '=', stored.status)
         .where('row_version', '=', stored.row_version)
         .executeTakeFirst();
-      return updated.numUpdatedRows === 1n
-        ? { kind: 'active', id: stored.id, accountId: account }
-        : { kind: 'retry' };
+      if (updated.numUpdatedRows !== 1n) return { kind: 'retry' };
+      await resolveBindingConflictsOnActive(executor, appId, userId, PLATFORM, now);
+      return { kind: 'active', id: stored.id, accountId: account };
     }
     if (!canTransitionBinding(null, 'active')) {
       throw new Error('union_bindings: illegal status transition (none) → active');
@@ -295,6 +299,7 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
         updated_at: now,
       })
       .execute();
+    await resolveBindingConflictsOnActive(executor, appId, userId, PLATFORM, now);
     return { kind: 'active', id, accountId };
   }
 
@@ -439,7 +444,10 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     // BR-ID-24 ④: the account this authorization uses, never "any account still valid".
     const accountId = await reads.authAccountId(appId, PLATFORM, bound);
     if (accountId === null || !(await reads.siteAuthAvailable(appId, PLATFORM, accountId))) {
-      return MAINTENANCE;
+      // A blocked user's no_rebate purchase refused here is still logged with the server's reason.
+      return noRebate && status === 'blocked'
+        ? { ...MAINTENANCE, noRebateReason: 'binding_blocked' }
+        : MAINTENANCE;
     }
     if (noRebate) return allow(owner, true, null, status === 'blocked');
     if (active !== null) return allow(owner, false, active);
