@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpException, Inject, Post, Req } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpException, Inject, Post, Req, Res } from '@nestjs/common';
 import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Schema } from '@couli/contracts-ts';
 import { contractRouteSchema } from '../../../platform/index.ts';
@@ -17,6 +17,11 @@ interface BindingsHttpRequest {
   readonly params?: { readonly platform?: string };
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
   readonly body?: Schema<'BindUnionRequest'>;
+}
+
+/** What this controller writes on the Fastify reply besides the body. */
+interface HeaderReply {
+  header(name: string, value: string): unknown;
 }
 
 function header(request: BindingsHttpRequest, name: string): string {
@@ -43,7 +48,7 @@ export class UnionBindingsController {
     this.#service = service;
   }
 
-  async bind(request: BindingsHttpRequest): Promise<UnionBindingResponse> {
+  async bind(request: BindingsHttpRequest, reply?: HeaderReply): Promise<UnionBindingResponse> {
     const key = request.headers['idempotency-key'];
     const result = await this.#service.bind({
       platform: request.params?.platform ?? '',
@@ -53,6 +58,10 @@ export class UnionBindingsController {
     });
     if (result.status === 200 && result.envelope.code === 0) {
       return result.envelope as unknown as UnionBindingResponse;
+    }
+    // 42901 of the bounded admission queue (B1-06za): Retry-After as the global rate limit's.
+    if (result.retryAfterSec !== undefined) {
+      reply?.header('Retry-After', String(Math.max(1, Math.ceil(result.retryAfterSec))));
     }
     throw new HttpException(result.envelope, result.status);
   }
@@ -72,6 +81,7 @@ export class UnionBindingsController {
   const list = Object.getOwnPropertyDescriptor(prototype, 'list')!;
   Inject(UNION_BINDINGS)(UnionBindingsController, undefined, 0);
   Req()(prototype, 'bind', 0);
+  Res({ passthrough: true })(prototype, 'bind', 1);
   Post('unions/:platform/bindings')(prototype, 'bind', bind);
   HttpCode(200)(prototype, 'bind', bind);
   RouteSchema(contractRouteSchema('bindUnion'))(prototype, 'bind', bind);

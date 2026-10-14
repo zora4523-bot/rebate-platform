@@ -16,6 +16,10 @@
 //   concurrent writer winning the unique index or the CAS re-reads and decides on what won.
 // B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ID-17): pddAuthorityIdentity takes the account in use; with
 // it only that account's active slot builds the identity (none → no_pid, never another account's).
+// B1-06za (规划/02 §6.2, §18; D9-4): queryPddAuthority admits at most PDD_QUERY_CONCURRENCY
+// queries of this process at once (the open and GET /v1/unions/bindings share the count). A query
+// over the cap does not wait: it is refused at once as a failed query (null, logged; the adapter is
+// not called) and touches no count; a query that entered frees its one slot when it ends.
 // TODO(规划/11 §4.5): BR-ID-22 的 (user, pid) 粒度 — blocked on union_bindings 加 pid 维度的迁移
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
@@ -30,6 +34,9 @@ import { UNRELEASED } from './union-auth-reads.ts';
 export const PDD = 'pdd';
 const ATTR_CODE = /^[0-9a-z]{8}$/;
 const ACTIVATE_ATTEMPTS = 3;
+/** Pinduoduo authority queries of this process in flight at once (open + bindings list). */
+export const PDD_QUERY_CONCURRENCY = 8;
+let pddQueriesInFlight = 0;
 
 type PidScene = Parameters<LinkConversionOptions['pids']['getActivePid']>[0]['pidScene'];
 type Warn = LinkConversionOptions['logger'];
@@ -126,6 +133,22 @@ export async function queryPddAuthority(
   },
 ): Promise<boolean | null> {
   const { appId, identity, traceId } = input;
+  const failed = (error: unknown): null => {
+    deps.logger.warn(
+      {
+        event: `${input.events}.pdd_authority_query_failed`,
+        app_id: appId,
+        platform: PDD,
+        trace_id: traceId,
+        error_code: String((error as { code?: unknown } | null)?.code ?? 'unknown'),
+      },
+      'linking: pdd authority query failed; binding left unchanged',
+    );
+    return null;
+  };
+  // Over the cap: refused before any slot is taken, so a refusal never frees another's slot.
+  if (pddQueriesInFlight >= PDD_QUERY_CONCURRENCY) return failed({ code: 'concurrency_limit' });
+  pddQueriesInFlight += 1;
   try {
     const adapter = deps.registry.get(PDD);
     const query = adapter.queryPddAuthority;
@@ -138,17 +161,9 @@ export async function queryPddAuthority(
     if (typeof answer?.authorized !== 'boolean') throw new Error('linking: malformed answer');
     return answer.authorized;
   } catch (error) {
-    deps.logger.warn(
-      {
-        event: `${input.events}.pdd_authority_query_failed`,
-        app_id: appId,
-        platform: PDD,
-        trace_id: traceId,
-        error_code: String((error as { code?: unknown } | null)?.code ?? 'unknown'),
-      },
-      'linking: pdd authority query failed; binding left unchanged',
-    );
-    return null;
+    return failed(error);
+  } finally {
+    pddQueriesInFlight -= 1;
   }
 }
 
