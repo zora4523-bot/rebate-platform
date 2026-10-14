@@ -45,7 +45,10 @@
 //     an object that recurs inside itself (a circular reference)   "[Circular]" where it recurs
 //     an Error                 an object: type (the name of its constructor), message and stack
 //                              (free text, see below), its enumerable own properties by these
-//                              rules, aggregateErrors (its `errors` by these rules, when that is
+//                              rules (strings among them, at any depth, pass the free-text safety
+//                              net below; a number or bigint keeps its type unless its decimal
+//                              text matches a pattern of that net, then it is "[REDACTED]"),
+//                              aggregateErrors (its `errors` by these rules, when that is
 //                              an array: AggregateError), cause (its own `cause` property by
 //                              these rules, when it has one)
 //     an object with toJSON()  what toJSON() returns, by these rules
@@ -54,8 +57,8 @@
 //     any other object         its enumerable own string-keyed properties by these rules (plain
 //                              objects, objects without a prototype, class instances)
 //   Otherwise a function or an undefined property is left out, as JSON.stringify does.
-// - Values under other names (apart from the free-text keys msg, message and stack, below) are
-//   structured data (order numbers, ids, amounts) and are written as they are: personal data is
+// - Values under other names (apart from the free-text keys msg, message and stack, below, and
+//   the own properties of an Error, above) are structured data (order numbers, ids, amounts) and are written as they are: personal data is
 //   logged only under a sensitive name (规划/02 §19;
 //   apps/api/AGENTS.md 硬规则 3, 只打平铺字段).
 // - An Error passed as the first argument is written under `err`, and its message is `msg` when
@@ -122,7 +125,12 @@
 // K. Buffer, TypedArray, DataView, ArrayBuffer and SharedArrayBuffer write only
 //   "[Binary <byteLength> bytes]" everywhere, before toJSON; sensitive names still redact them.
 // L. Non-Error values below err are free text. Error properties other than message/stack retain
-//   their structured types, including when the logger copies them through multiple stages.
+//   their structured types, including when the logger copies them through multiple stages: a
+//   string passes the free-text net, a number or bigint is "[REDACTED]" only when its text
+//   matches that net and otherwise stays a number. This holds when a child's log formatter
+//   changes the logged Error's fields in place or replaces them with a copy of exactly the same
+//   fields (taken before the formatter ran); an object that never came from an Error does not
+//   gain these rules.
 //
 // Rules for the implementation: this directory is also compiled by the `test` project: erasable
 // syntax only (no parameter properties, no enum, no namespace, no decorators), `import type` for

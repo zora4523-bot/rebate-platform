@@ -210,3 +210,45 @@ describe('PinoNestLogger', () => {
     expect(third).toMatchObject({ level: 30, msg: '{"shape":"object"}' });
   });
 });
+
+describe('child log formatters and Error copies', () => {
+  const formatted = (log: (record: Record<string, unknown>) => object) => {
+    const { logger, records } = capture();
+    const child = logger.child(
+      {},
+      { formatters: { log: (record) => log(record as Record<string, unknown>) } },
+    );
+    return { child, records };
+  };
+
+  it('keeps the Error scalar net on a cause changed in place by the formatter', () => {
+    const { child, records } = formatted((record) => {
+      const cause = (record['err'] as Record<string, Record<string, unknown>>)['cause']!;
+      cause['detail'] = '13900000000';
+      cause['count'] = 13900000000;
+      return record;
+    });
+    const failure = new Error('outer', { cause: Object.assign(new Error('inner'), { code: 7 }) });
+    child.error({ err: failure }, 'nested');
+    const cause = (records()[0]?.['err'] as { cause: Record<string, unknown> }).cause;
+    expect(cause).toMatchObject({ code: 7, detail: REDACTED, count: REDACTED });
+  });
+
+  it('treats a replacement whose fields differ from every Error copy as free text', () => {
+    const { child, records } = formatted((record) => {
+      record['err'] = { ...(record['err'] as object), extra: 1 };
+      return record;
+    });
+    child.error({ err: Object.assign(new Error('boom'), { code: 503 }) }, 'changed');
+    expect(records()[0]?.['err']).toMatchObject({ code: '503', extra: '1' });
+  });
+
+  it('keeps numbers of an Error copy replaced in place on the received record', () => {
+    const { child, records } = formatted((record) => {
+      record['err'] = { ...(record['err'] as object) };
+      return record;
+    });
+    child.error({ err: Object.assign(new Error('boom'), { code: 503 }) }, 'replaced');
+    expect(records()[0]?.['err']).toMatchObject({ type: 'Error', message: 'boom', code: 503 });
+  });
+});
