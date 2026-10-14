@@ -8,7 +8,12 @@
 // Classification, first match wins:
 // - IdempotencyError 'outcome_unknown': no response at all, the connection is closed (BR-ID-10
 //   细则「服务端的配合」: a lost COMMIT acknowledgement is not a definite business failure, and no
-//   answer may make the client start another sensitive operation).
+//   answer may make the client start another sensitive operation). One pino `error` line
+//   'idempotency_outcome_unknown' with trace_id, method and path (the URL without its query) is
+//   written first (task B1-01zt); never the body, the Idempotency-Key or any property of the error.
+// - The IdempotencyError of a body nested deeper than the request hash accepts (isNestingTooDeep
+//   of ../idempotency/index.ts): HTTP 400 and 20001 with data.fields ['body'], like a malformed
+//   body; not logged (task B1-01zt; it used to end as 50001).
 // - HttpException (the 20001 envelopes thrown by controllers, every business error, Nest's 404):
 //   written back unchanged by Nest's BaseExceptionFilter; not logged.
 // - RequestRejection (./request-checks.ts: a request check refusing a request before the body is
@@ -41,7 +46,7 @@
 import { Catch, HttpException, type ArgumentsHost, type HttpServer } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
-import { IdempotencyError } from '../idempotency/index.ts';
+import { IdempotencyError, isNestingTooDeep } from '../idempotency/index.ts';
 import type { RootLogger } from '../logging/index.ts';
 import { fieldsErrorEnvelope, validationErrorEnvelope } from '../validation/index.ts';
 import { RequestRejection } from './request-checks.ts';
@@ -167,6 +172,15 @@ export class GlobalErrorFilter extends BaseExceptionFilter<unknown> {
   override catch(error: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     if (error instanceof IdempotencyError && error.code === 'outcome_unknown') {
+      const request = http.getRequest<{ id: string; method: string; url: string }>();
+      this.#logger.error(
+        {
+          trace_id: request.id,
+          method: request.method,
+          path: request.url.split('?', 1)[0],
+        },
+        'idempotency_outcome_unknown',
+      );
       const reply = http.getResponse<Reply>();
       reply.hijack();
       reply.raw.destroy();
@@ -178,6 +192,7 @@ export class GlobalErrorFilter extends BaseExceptionFilter<unknown> {
     }
     const traceId = http.getRequest<{ id: string }>().id;
     const response =
+      (isNestingTooDeep(error) ? fieldsErrorEnvelope(['body'], traceId) : undefined) ??
       requestRejectionEnvelope(error, traceId) ??
       validationErrorEnvelope(error, traceId) ??
       requestBodyErrorEnvelope(error, traceId) ??

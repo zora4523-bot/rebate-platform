@@ -5,7 +5,12 @@ import { FixedClock } from '../clock/index.ts';
 import {
   COMPLETION_ATTEMPTS,
   COMPLETION_DEADLINE_MS,
+  IdempotencyError,
+  MAX_CANONICAL_DEPTH,
+  canonicalJson,
   createIdempotency,
+  isNestingTooDeep,
+  requestHashOf,
   type IdempotentRequest,
 } from './index.ts';
 
@@ -331,4 +336,159 @@ it('[AC-B1-01zh#2] an abandoned completed write that succeeds late logs nothing 
   await hangingCompletion((pending) => {
     pending.resolve([]);
   });
+});
+
+// B1-01zt: a scripted driver whose advisory lock is held by someone else, or whose delete / COMMIT
+// fails, to check contention replay, cleanup failure and commit-unknown logging without PG.
+function followupFixture(options: {
+  lockHeld?: boolean;
+  row?: Record<string, unknown> | undefined;
+  failDelete?: boolean;
+  failCommit?: boolean;
+}) {
+  const error = Object.assign(new Error('driver failure fu-secret-key fu-secret-body'), {
+    code: '08006',
+  });
+  const statements: string[] = [];
+  const release = vi.fn();
+  const client = {
+    release,
+    async query(text: string) {
+      statements.push(text);
+      if (options.failDelete === true && text.startsWith('delete')) throw error;
+      if (options.failCommit === true && text === 'commit') throw error;
+      let rows: unknown[] = [];
+      if (text.includes('pg_try_advisory_xact_lock')) rows = [{ acquired: !options.lockHeld }];
+      else if (text.includes('current_setting')) rows = [{ value: '0' }];
+      else if (text.startsWith('select') && options.row !== undefined) rows = [options.row];
+      else if (text.startsWith('insert'))
+        rows = [{ id: 1n, ownership_created_at: '2031-01-01 00:00:00+00' }];
+      return { command: 'SELECT', rowCount: rows.length, rows };
+    },
+  };
+  const pool = { connect: async () => client, end: async () => undefined, options: {} };
+  const db = new Kysely<DB>({
+    dialect: new PostgresDialect({ pool: pool as unknown as PostgresPool }),
+  }).withSchema('app');
+  const logger = { warn: vi.fn<LogFn>(), error: vi.fn<LogFn>() };
+  const idem = createIdempotency({ db, clock: new FixedClock('2031-01-01T00:00:00Z'), logger });
+  return { db, idem, logger, statements, release, error };
+}
+
+const fuRequest: IdempotentRequest = {
+  ...request,
+  path: '/v1/links/fu-link/open',
+  key: 'fu-secret-key',
+  body: { secret: 'fu-secret-body' },
+};
+const storedBody = '{"code":0,"msg":"","data":{"n":1},"trace_id":"first-trace"}';
+
+it('[AC-B1-01zt#1] with the key lock held, a completed record of the same hash replays and anything else is 40901', async () => {
+  for (const mode of ['execute', 'executeInTransaction'] as const) {
+    const req = mode === 'execute' ? fuRequest : { ...fuRequest, path: '/v1/withdrawals' };
+    const completed = {
+      id: 1n,
+      status: 'completed',
+      request_hash: requestHashOf(req.body),
+      response: { status: 201, body: storedBody },
+      ownership_created_at: '2031-01-01 00:00:00+00',
+    };
+    const cases = [
+      [completed, { status: 201, body: storedBody, source: 'replay' }],
+      [{ ...completed, request_hash: 'f'.repeat(64) }, 40901],
+      [{ ...completed, status: 'processing', response: null }, 40901],
+      [{ ...completed, status: 'abandoned', request_hash: null, response: null }, 40901],
+      [undefined, 40901],
+    ] as const;
+    for (const [row, expected] of cases) {
+      const f = followupFixture({ lockHeld: true, row });
+      const handler = vi.fn(async () => stored);
+      try {
+        const response = await f.idem[mode](req, handler);
+        if (expected === 40901) {
+          expect(response.status).toBe(409);
+          expect(JSON.parse(response.body)).toMatchObject({ code: 40901, trace_id: 'unit-trace' });
+        } else expect(response).toStrictEqual(expected);
+        expect(handler).not.toHaveBeenCalled();
+        // One connection, no write, no lock wait: the read happens in the lock's transaction.
+        expect(f.release).toHaveBeenCalledTimes(1);
+        expect(f.statements.some((text) => /^(insert|update|delete)/.test(text))).toBe(false);
+        expect(f.statements.some((text) => text.includes('lock_timeout'))).toBe(false);
+      } finally {
+        await f.db.destroy();
+      }
+    }
+  }
+});
+
+it('[AC-B1-01zt#3] a thrown handler whose cleanup delete fails rethrows its own error and logs one redacted line', async () => {
+  const f = followupFixture({ failDelete: true });
+  const thrown = new Error('handler failed');
+  try {
+    await expect(
+      f.idem.execute(fuRequest, async () => {
+        throw thrown;
+      }),
+    ).rejects.toBe(thrown);
+    expect(f.logger.error).toHaveBeenCalledTimes(1);
+    expect(f.logger.error).toHaveBeenCalledWith(
+      { method: 'POST', path: '/v1/links/fu-link/open' },
+      'idempotency_cleanup_failed',
+    );
+    expect(f.logger.warn).not.toHaveBeenCalled();
+    // An unstored result keeps the driver error (unchanged behaviour).
+    await expect(
+      f.idem.execute(fuRequest, async () => ({
+        status: 403,
+        envelope: { code: 10003, msg: 'no', trace_id: 'unit-trace' },
+      })),
+    ).rejects.toBe(f.error);
+    expect(f.logger.error).toHaveBeenCalledTimes(1);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[AC-B1-01zt#4] an unknown COMMIT outcome logs one error line with method and path only', async () => {
+  const f = followupFixture({ failCommit: true });
+  try {
+    await expect(
+      f.idem.executeInTransaction({ ...fuRequest, path: '/v1/withdrawals' }, async () => stored),
+    ).rejects.toMatchObject({ name: 'IdempotencyError', code: 'outcome_unknown' });
+    expect(f.logger.error).toHaveBeenCalledTimes(1);
+    expect(f.logger.error).toHaveBeenCalledWith(
+      { method: 'POST', path: '/v1/withdrawals' },
+      'idempotency_commit_unknown',
+    );
+    expect(f.logger.warn).not.toHaveBeenCalled();
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[AC-B1-01zt#2] nesting up to the limit is hashed; one level more is a marked invalid_request', () => {
+  const nested = (depth: number) => JSON.parse('['.repeat(depth) + ']'.repeat(depth)) as unknown;
+  const deepest = nested(MAX_CANONICAL_DEPTH);
+  expect(canonicalJson(deepest)).toBe(
+    '['.repeat(MAX_CANONICAL_DEPTH) + ']'.repeat(MAX_CANONICAL_DEPTH),
+  );
+  let caught: unknown;
+  try {
+    canonicalJson({ a: nested(MAX_CANONICAL_DEPTH) });
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(IdempotencyError);
+  expect(caught).toMatchObject({ code: 'invalid_request' });
+  expect(Reflect.ownKeys(caught as object).sort()).toEqual(['code', 'message', 'name', 'stack']);
+  expect(isNestingTooDeep(caught)).toBe(true);
+  expect(isNestingTooDeep(new IdempotencyError('invalid_request'))).toBe(false);
+  let other: unknown;
+  try {
+    canonicalJson({ a: Number.NaN });
+  } catch (error) {
+    other = error;
+  }
+  expect(isNestingTooDeep(other)).toBe(false);
+  expect(isNestingTooDeep(null)).toBe(false);
 });
