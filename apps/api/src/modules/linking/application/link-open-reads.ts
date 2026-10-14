@@ -7,7 +7,11 @@
 // wrapped reader only answers from what was pre-read. A value not pre-read fails the open closed
 // (it throws, the transaction rolls back) instead of borrowing a connection.
 // Outside an open (card registration, direct use of a stage) the wrappers read straight through.
+// B1-19d: the active-pid key carries the optional union account filter (unscoped reads key on
+// null), so a scoped and an unscoped read never answer for each other.
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { DB } from '@couli/db';
+import type { Kysely } from 'kysely';
 import type { UnionPidService } from '../../union/index.ts';
 import type { AttrCodeReader, LinkingConfigReader } from '../ports.ts';
 
@@ -77,7 +81,14 @@ export function openScopedPids(pids: PidReader): PidReader {
     getActivePid: (input: PidInput) =>
       through(
         pids,
-        JSON.stringify([input.appId, input.platform, input.pidScene, input.purpose]),
+        JSON.stringify([
+          input.appId,
+          input.platform,
+          input.pidScene,
+          input.purpose,
+          // B1-19d: the account filter is part of the key; unscoped reads key on null.
+          input.unionAccountId ?? null,
+        ]),
         `active pid ${input.platform}/${input.pidScene}`,
         () => pids.getActivePid(input),
       ),
@@ -108,4 +119,43 @@ export interface LinkOpenReadPlan {
   readonly appId: string;
   readonly platform: string;
   readonly identities: readonly LinkOpenReadIdentity[];
+}
+
+/**
+ * B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ID-17): the account-scoped slot reads an authorization may
+ * make inside the open's transaction, pre-read for every union account of the platform in this
+ * app (the account in use is only known from the binding read inside the transaction; one
+ * account per platform is the default, BR-ATTR-02). A read-only select of union_accounts ids
+ * scoped by app_id, as union-auth-reads.ts does; failures surface when the slot is read.
+ */
+export async function prepareAccountSlots(
+  db: Kysely<DB>,
+  pids: PidReader,
+  input: {
+    readonly appId: string;
+    readonly platform: PidInput['platform'];
+    readonly scenes: Iterable<string>;
+  },
+): Promise<void> {
+  const { appId, platform } = input;
+  const accounts = await db
+    .selectFrom('union_accounts')
+    .select('id')
+    .where('app_id', '=', appId)
+    .where('platform', '=', platform)
+    .execute();
+  const scenes = [...new Set(input.scenes)];
+  await Promise.allSettled(
+    accounts.flatMap((account) =>
+      scenes.map((pidScene) =>
+        pids.getActivePid({
+          appId,
+          platform,
+          pidScene: pidScene as PidInput['pidScene'],
+          purpose: 'convert',
+          unionAccountId: account.id,
+        }),
+      ),
+    ),
+  );
 }

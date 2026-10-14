@@ -14,6 +14,8 @@
 //   resolves the user's unresolved pdd conflict rows in the same savepoint, after the write
 //   (BR-ID-18; resolveBindingConflictsOnActive takes the (app, user, platform) advisory lock). A
 //   concurrent writer winning the unique index or the CAS re-reads and decides on what won.
+// B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ID-17): pddAuthorityIdentity takes the account in use; with
+// it only that account's active slot builds the identity (none → no_pid, never another account's).
 // TODO(规划/11 §4.5): BR-ID-22 的 (user, pid) 粒度 — blocked on union_bindings 加 pid 维度的迁移
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
@@ -55,6 +57,8 @@ export interface PddIdentityInput {
   readonly appId: string;
   readonly userId: string | null;
   readonly pidScene: string;
+  /** B1-19d: the union account in use; omitted, the scene's slot app-wide (as before). */
+  readonly unionAccountId?: string;
   readonly traceId: string;
   /** The log event prefix of the caller (`linking.open`, `linking.bindings`). */
   readonly events: string;
@@ -66,15 +70,17 @@ export async function pddAuthorityIdentity(
   input: PddIdentityInput,
 ): Promise<LinkingUnionIdentity | 'no_pid' | 'no_attr_code'> {
   const { pids, attrCodes, logger } = deps;
-  const { appId, pidScene, traceId, events } = input;
+  const { appId, pidScene, traceId, events, unionAccountId } = input;
   const row = await pids.getActivePid({
     appId,
     platform: PDD,
     pidScene: pidScene as PidScene,
     purpose: 'convert',
+    ...(unionAccountId === undefined ? {} : { unionAccountId }),
   });
   if (
     row === null ||
+    (unionAccountId !== undefined && row.union_account_id !== unionAccountId) ||
     row.status !== 'active' ||
     row.app_id !== appId ||
     row.platform !== PDD ||

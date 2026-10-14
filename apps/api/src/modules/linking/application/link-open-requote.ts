@@ -149,6 +149,12 @@ export interface LinkOpenConversionInput {
   readonly client: LinkOpenRequoteInput['client'];
   readonly idempotencyKey: string;
   readonly traceId: string;
+  /**
+   * B1-19d (BR-ATTR-07, BR-ID-17): the union account this open's authorization settled on (set
+   * by the Pinduoduo composition); the conversion then reads only that account's active slot.
+   * Absent: the scene's slot app-wide, as before. The re-check core never sets or reads it.
+   */
+  readonly unionAccountId?: string;
 }
 
 /** no_rebate_reason values only the server decides (contracts/enums/trade.yaml). */

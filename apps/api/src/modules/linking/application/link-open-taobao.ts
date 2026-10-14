@@ -27,6 +27,11 @@
 // the self_buy slot with no user parameter and never the promotion link. h5 / web get only the
 // promotion link (h5), else 50301. Whether the SDK returns to the app is CAP-TB-11, not promised;
 // prod hands out no Taobao path until it is verified (link-open-wiring.ts admission).
+// B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ATTR-08, BR-ID-17): the slot is the scene's active slot of
+// the account this open uses (union-auth-reads.ts authAccountId: the unreleased binding's, else
+// the account of the platform's current self_buy slot, else its first account) — read with the
+// union port's account filter, so another account's earlier-activated slot never wins and never
+// stands in when the account has none (50301). taobaoTaoke's account check stays as the last line.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { UnionPidRow } from '../../union/index.ts';
@@ -39,7 +44,12 @@ import {
 import type { LinkOpenService } from './link-open.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
 import { createPddAuthorization } from './link-open-pdd-auth.ts';
-import { openScopedConfig, openScopedPids, type LinkOpenReadPlan } from './link-open-reads.ts';
+import {
+  openScopedConfig,
+  openScopedPids,
+  prepareAccountSlots,
+  type LinkOpenReadPlan,
+} from './link-open-reads.ts';
 import type {
   LinkOpenAuthorization,
   LinkOpenAuthorizationInput,
@@ -97,10 +107,10 @@ export interface TaobaoAuthorized {
 
 /**
  * BR-ATTR-07: a relation_id means something only under the union account its binding belongs to,
- * so an attributed openByCode pairs it only with a slot of that same account. The union PID port
- * picks the scene's active slot without an account filter: a slot of another account is refused
- * (null → 50301 with a warning), never a cross-account pid + relation_id. No relation (no_rebate):
- * the slot alone.
+ * so an attributed openByCode pairs it only with a slot of that same account. The slot is read
+ * with the binding's account filter (B1-19d); this check stays as the last line: a slot of
+ * another account is still refused (null → 50301 with a warning), never a cross-account pid +
+ * relation_id. No relation (no_rebate): the slot alone.
  */
 export function taobaoTaoke(
   decided: TaobaoAuthorized,
@@ -162,6 +172,7 @@ function createTaobaoConversion(
       scenes.add(identity.noRebate ? 'self_buy' : identity.pidScene);
     }
     await Promise.allSettled([
+      prepareAccountSlots(options.db, pids, { appId, platform: PLATFORM, scenes }),
       config.configValue(appId, SWITCH),
       config.configValue(appId, CONVERT_CACHE_TTL_SEC),
       ...AUTH_CLIENTS.map((client) =>
@@ -189,14 +200,25 @@ function createTaobaoConversion(
     }
   }
 
-  /** The scene's active promotion slot; none (or not a Taobao pid) → 50301 with a warning. */
-  async function activePid(appId: string, pidScene: string): Promise<UnionPidRow> {
-    const row = await pids.getActivePid({
-      appId,
-      platform: PLATFORM,
-      pidScene: pidScene as PidScene,
-      purpose: 'convert',
-    });
+  /**
+   * The scene's active promotion slot of the account in use (B1-19d); no account, none, or not a
+   * Taobao pid → 50301 with a warning. Never another account's slot nor another scene's.
+   */
+  async function activePid(
+    appId: string,
+    pidScene: string,
+    accountId: string | null,
+  ): Promise<UnionPidRow> {
+    const row =
+      accountId === null
+        ? null
+        : await pids.getActivePid({
+            appId,
+            platform: PLATFORM,
+            pidScene: pidScene as PidScene,
+            purpose: 'convert',
+            unionAccountId: accountId,
+          });
     if (
       row === null ||
       row.status !== 'active' ||
@@ -251,18 +273,23 @@ function createTaobaoConversion(
     const { caller, owner, noRebate, executor } = input;
     const { link, identitySnapshot: snapshot } = owner;
     const appId = link.app_id;
-    const slot = await activePid(appId, noRebate ? 'self_buy' : snapshot.pid_scene);
-    const unattributed: TaobaoAuthorized = { relationId: null, bindingAccountId: null, slot };
     const sharedByOther = snapshot.pid_scene === 'share' && snapshot.user_id !== caller.userId;
     const subject = snapshot.user_id;
+    const reads = createUnionAuthReads({ db: executor, config, appEnv, pids });
+    // B1-19d: the account this open uses decides the slot; a guest's share link has no binding.
+    const { status, accountId: bound } =
+      subject === null
+        ? { status: 'unbound', accountId: null }
+        : await reads.binding(appId, subject, PLATFORM);
+    const accountId = await reads.authAccountId(appId, PLATFORM, bound);
+    const slot = await activePid(appId, noRebate ? 'self_buy' : snapshot.pid_scene, accountId);
+    const unattributed: TaobaoAuthorized = { relationId: null, bindingAccountId: null, slot };
     if (subject === null) {
       // Only a guest's unclaimed share link can name no user: its sharer has no binding.
       if (sharedByOther)
         return { kind: 'refused', code: 30102, data: { reason: 'sharer_auth_invalid' } };
       throw new Error('linking: an own taobao open without a snapshot user');
     }
-    const reads = createUnionAuthReads({ db: executor, config, appEnv, pids });
-    const { status, accountId: bound } = await reads.binding(appId, subject, PLATFORM);
 
     if (status === 'active') {
       // no_rebate carries no user parameter, so it needs no relation_id.
@@ -285,7 +312,6 @@ function createTaobaoConversion(
       return { kind: 'refused', code: 30153 };
     }
     const code = status === 'invalid' ? 30102 : 30101;
-    const accountId = await reads.authAccountId(appId, PLATFORM, bound);
     // BR-ID-24 ④: the exception holds for no_rebate too.
     if (!(await reads.siteAuthAvailable(appId, PLATFORM, accountId))) {
       return { kind: 'refused', code, data: { reason: 'auth_unavailable' } };
@@ -470,7 +496,7 @@ export function composeTaobaoConversion(
     cacheTag: (owner, noRebate) =>
       isTaobao(owner) ? taobao.cacheTag(owner, noRebate) : pdd.cacheTag(owner, noRebate),
     convert: (input) =>
-      isTaobao(input.owner) ? taobao.convert(input) : wired.conversion.convert(input),
+      isTaobao(input.owner) ? taobao.convert(input) : wired.conversion.convert(pdd.scoped(input)),
   };
 }
 

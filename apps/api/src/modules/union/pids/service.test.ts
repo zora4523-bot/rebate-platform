@@ -219,3 +219,22 @@ it('[AC-B1-19b-UNIT#9] 幂等层回答「同键不同请求」「同键进行中
   }
   expect(append).not.toHaveBeenCalled();
 });
+
+it('[AC-B1-19d-UNIT#1] 指定的联盟账号不是 UUID 时直接返回 null，不碰数据库', async () => {
+  const { service, verify, append } = setup(null);
+  const results = [];
+  for (const unionAccountId of ['', 'not-a-uuid', `${PID_ID} `]) {
+    results.push(
+      await service.getActivePid({
+        appId: APP,
+        platform: 'pdd',
+        pidScene: 'share',
+        purpose: 'convert',
+        unionAccountId,
+      }),
+    );
+  }
+  expect(results).toEqual([null, null, null]);
+  expect(verify).not.toHaveBeenCalled();
+  expect(append).not.toHaveBeenCalled();
+});

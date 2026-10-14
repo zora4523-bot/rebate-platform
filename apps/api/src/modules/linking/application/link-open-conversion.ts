@@ -10,6 +10,9 @@
 // - convert.enabled.<platform> off, taobao before B1-06f, a missing attr_code or no active pid →
 //   50301 (with a warning for the last two); any adapter failure (timeout, circuit, quota, error)
 //   → 50303 carrying the unpromoted product page for the explicit no-rebate purchase (BR-PRICE-08).
+// - B1-19d (BR-ATTR-07, BR-ID-17): an input carrying unionAccountId (the Pinduoduo composition's
+//   account in use) converts only with that account's active slot; none → 50301, never another
+//   account's. Without it the scene's slot app-wide, as before.
 import { bridge, type components } from '@couli/contracts-ts';
 import type { Clock } from '../../platform/index.ts';
 import {
@@ -125,8 +128,15 @@ function failed(message: string, noRebateUrl: string): LinkConversionFailure {
  * identity of the Pinduoduo authority query (B1-06v, link-open-pdd-auth.ts), built the same way.
  */
 export class LinkingUnionIdentity extends UnionIdentity implements JdPddIdentity {
-  readonly subUnionId?: string;
-  readonly custom_parameters?: Readonly<{ app: 'n'; uid?: string; sc: string; lk?: string }>;
+  // `declare`: no own property unless set below (a pdd identity carries no subUnionId key at all;
+  // a jd one no custom_parameters key), B1-19d.
+  declare readonly subUnionId?: string;
+  declare readonly custom_parameters?: Readonly<{
+    app: 'n';
+    uid?: string;
+    sc: string;
+    lk?: string;
+  }>;
 
   constructor(input: {
     readonly appId: string;
@@ -289,6 +299,7 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
     platform: 'jd' | 'pdd',
     noRebate: boolean,
     traceId: string,
+    unionAccountId: string | undefined,
   ): Promise<LinkingUnionIdentity> {
     const { link, identitySnapshot } = owner;
     const appId = link.app_id;
@@ -298,9 +309,11 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
       platform,
       pidScene: pidScene as Parameters<typeof pids.getActivePid>[0]['pidScene'],
       purpose: 'convert',
+      ...(unionAccountId === undefined ? {} : { unionAccountId }),
     });
     if (
       row === null ||
+      (unionAccountId !== undefined && row.union_account_id !== unionAccountId) ||
       row.status !== 'active' ||
       row.app_id !== appId ||
       row.platform !== platform ||
@@ -372,7 +385,13 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
     const platform = link.platform as 'jd' | 'pdd';
     const caller = await callerContext.current();
     const noRebate = effectiveNoRebate(caller, owner, input.noRebate);
-    const identity = await identityFor(owner, platform, noRebate, input.traceId);
+    const identity = await identityFor(
+      owner,
+      platform,
+      noRebate,
+      input.traceId,
+      input.unionAccountId,
+    );
     let noRebateUrl = '';
     try {
       noRebateUrl =

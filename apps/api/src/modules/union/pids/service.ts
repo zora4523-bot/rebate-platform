@@ -22,6 +22,9 @@
 // affected is a conflict.
 //
 // Read queries (getActivePid, isWhitelisted) never verify or audit and work on a read-only role.
+// B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ATTR-08, BR-ID-17): getActivePid takes an optional union
+// account filter; activating a PID while another union account already has an active PID in the
+// same app × platform × scene only warns through the optional logger (never refuses).
 //
 // Pure module (no decorators, erasable syntax, no Nest injection). Its runtime platform helpers
 // (newUuidV7, createIdempotency) come through platform/index.ts as the module boundary requires
@@ -81,6 +84,17 @@ export interface PidServiceDeps {
    * db and clock; only executeInTransaction is used, which never logs.
    */
   readonly idempotency?: Pick<Idempotency, 'executeInTransaction'>;
+  /**
+   * B1-19d: receives one flat warn event per cross-account active conflict after an activation
+   * commits (pino shape). Optional; without it the warning is dropped, so every runtime caller
+   * (the B1-19c command line included) passes its logger.
+   */
+  readonly logger?: PidWarnLogger;
+}
+
+/** Structural subset of a pino logger; only flat fields are ever passed. */
+export interface PidWarnLogger {
+  warn(fields: Readonly<Record<string, unknown>>, message: string): void;
 }
 
 export interface WriteContext {
@@ -130,6 +144,12 @@ export interface ActivePidInput {
   readonly pidScene: PidScene;
   /** query 位仅供查价；fallback 从不用于转链。 */
   readonly purpose: 'convert' | 'query';
+  /**
+   * B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ID-17): when given, only that union account's active
+   * row in the scene; no other account, scene or fallback stands in. A non-UUID or an account
+   * of another app yields null. Omitted: unchanged app-wide behaviour.
+   */
+  readonly unionAccountId?: string;
 }
 
 export interface WhitelistInput {
@@ -596,7 +616,9 @@ export function createUnionPidService(deps: PidServiceDeps): UnionPidService {
         path: `/admin/v1/union-pids/${input.pidId.toLowerCase()}/status`,
         body: { status: target },
       };
-      return run(input, actor, scope, async (trx) => {
+      let conflicts: { id: string; union_account_id: string }[] = [];
+      const activated = await run(input, actor, scope, async (trx) => {
+        conflicts = [];
         const before = await lockPid(trx, actor.appId, input.pidId);
         // Forward only: pending → active → retired (BR-ATTR-02). No delete.
         if (!canTransitionPid(before.status, target)) {
@@ -626,6 +648,23 @@ export function createUnionPidService(deps: PidServiceDeps): UnionPidService {
           .returningAll()
           .executeTakeFirst();
         if (row === undefined) casFailed();
+        // B1-19d: other accounts' active rows in the same app × platform × scene are only
+        // reported (never refused, never added to the audit row); read in this transaction.
+        conflicts =
+          next === 'active'
+            ? await trx
+                .selectFrom('union_pids')
+                .select(['id', 'union_account_id'])
+                .where('app_id', '=', actor.appId)
+                .where('platform', '=', row.platform)
+                .where('pid_scene', '=', row.pid_scene)
+                .where('status', '=', 'active')
+                .where('union_account_id', '<>', row.union_account_id)
+                .orderBy('updated_at', 'asc')
+                .orderBy('created_at', 'asc')
+                .orderBy('id', 'asc')
+                .execute()
+            : [];
         await deps.auditWriter(trx).append({
           appId: actor.appId,
           actor: actor.adminId,
@@ -637,6 +676,23 @@ export function createUnionPidService(deps: PidServiceDeps): UnionPidService {
         });
         return row;
       });
+      // Only after commit; a replayed key runs no work and reports nothing again.
+      for (const conflict of conflicts) {
+        deps.logger?.warn(
+          {
+            event: 'union.pid.cross_account_active',
+            app_id: actor.appId,
+            platform: activated.platform,
+            pid_scene: activated.pid_scene,
+            pid_id: activated.id,
+            union_account_id: activated.union_account_id,
+            conflict_pid_id: conflict.id,
+            conflict_union_account_id: conflict.union_account_id,
+          },
+          '告警：同场景已有其他联盟账号的 active 推广位（已照常激活）',
+        );
+      }
+      return activated;
     },
 
     /**
@@ -655,13 +711,17 @@ export function createUnionPidService(deps: PidServiceDeps): UnionPidService {
           ? CONVERT_SCENES.includes(input.pidScene)
           : input.purpose === 'query' && input.pidScene === 'query';
       if (!allowed || !isPlatform(input.platform) || typeof input.appId !== 'string') return null;
-      const row = await db
+      const account = input.unionAccountId;
+      if (account !== undefined && !isUuid(account)) return null;
+      let query = db
         .selectFrom('union_pids')
         .selectAll()
         .where('app_id', '=', input.appId)
         .where('platform', '=', input.platform)
         .where('pid_scene', '=', input.pidScene)
-        .where('status', '=', 'active')
+        .where('status', '=', 'active');
+      if (account !== undefined) query = query.where('union_account_id', '=', account);
+      const row = await query
         .orderBy('updated_at', 'asc')
         .orderBy('created_at', 'asc')
         .orderBy('id', 'asc')

@@ -33,11 +33,25 @@
 // An own blocked user's no_rebate refused for maintenance carries the server's no_rebate_reason.
 // B1-06x: the identity, the authority query and the activation are pdd-authority.ts's, shared with
 // the authorization page refresh (union-bindings-pdd.ts); behaviour here is unchanged.
+// B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ATTR-08, BR-ID-17): every slot this check and the
+// conversion use is the scene's active slot of the account this authorization uses (authAccountId
+// above; after an activation, the binding's account), read with the union port's account filter;
+// that account having none → 50301, never another account's slot or another scene's. The
+// conversion gets the account through LinkOpenConversionInput.unionAccountId.
 import type { UnionPidRow } from '../../union/index.ts';
 import type { LinkOpenService } from './link-open.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
-import { openScopedAttrCodes, openScopedPids, type LinkOpenReadPlan } from './link-open-reads.ts';
-import type { LinkOpenAuthorization, LinkOpenAuthorizationInput } from './link-open-requote.ts';
+import {
+  openScopedAttrCodes,
+  openScopedPids,
+  prepareAccountSlots,
+  type LinkOpenReadPlan,
+} from './link-open-reads.ts';
+import type {
+  LinkOpenAuthorization,
+  LinkOpenAuthorizationInput,
+  LinkOpenConversionInput,
+} from './link-open-requote.ts';
 import { createWiredLinkOpen, type WiredLinkOpenOptions } from './link-open-wiring.ts';
 import {
   PDD,
@@ -112,10 +126,19 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
   const pids = openScopedPids(options.pids);
   const attrCodes = openScopedAttrCodes(options.attrCodes);
   const decisions = new WeakMap<LinkOpenOwnerResult, Parameters<typeof pddCacheTag>[0]>();
+  /** B1-19d: the account each allowed open converts with (LinkOpenConversionInput). */
+  const accounts = new WeakMap<LinkOpenOwnerResult, string>();
 
-  /** authAccountId's self_buy slot; the scenes' slots and attr_codes are the wired prepare's. */
+  /**
+   * authAccountId's self_buy slot, and every account's slots of the plan's scenes (B1-19d); the
+   * unscoped scenes' slots and attr_codes are the wired prepare's.
+   */
   async function prepare(plan: LinkOpenReadPlan): Promise<void> {
     if (plan.platform !== PLATFORM) return;
+    const scenes = new Set<string>(['self_buy']);
+    for (const identity of plan.identities) {
+      scenes.add(identity.noRebate ? 'self_buy' : identity.pidScene);
+    }
     await Promise.allSettled([
       pids.getActivePid({
         appId: plan.appId,
@@ -123,17 +146,19 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
         pidScene: 'self_buy',
         purpose: 'convert',
       }),
+      prepareAccountSlots(options.db, pids, { appId: plan.appId, platform: PLATFORM, scenes }),
     ]);
   }
 
   /** The slot the conversion will use (validated again there); null when there is none. */
-  async function slotOf(appId: string, pidScene: string) {
+  async function slotOf(appId: string, pidScene: string, accountId: string) {
     try {
       const row = await pids.getActivePid({
         appId,
         platform: PLATFORM,
         pidScene: pidScene as PidScene,
         purpose: 'convert',
+        unionAccountId: accountId,
       });
       return row === null ? null : { pid: row.pid, union_account_id: row.union_account_id };
     } catch {
@@ -145,11 +170,14 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     owner: LinkOpenOwnerResult,
     noRebate: boolean,
     binding: { readonly id: string; readonly accountId: string } | null,
+    accountId: string,
     blocked = false,
   ): Promise<LinkOpenAuthorization> {
     const { link, identitySnapshot } = owner;
-    const slot = await slotOf(link.app_id, noRebate ? 'self_buy' : identitySnapshot.pid_scene);
+    const pidScene = noRebate ? 'self_buy' : identitySnapshot.pid_scene;
+    const slot = await slotOf(link.app_id, pidScene, accountId);
     decisions.set(owner, { binding, slot });
+    accounts.set(owner, accountId);
     return blocked ? { kind: 'allowed', noRebateReason: 'binding_blocked' } : { kind: 'allowed' };
   }
 
@@ -241,8 +269,8 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
         ? { ...MAINTENANCE, noRebateReason: 'binding_blocked' }
         : MAINTENANCE;
     }
-    if (noRebate) return allow(owner, true, null, status === 'blocked');
-    if (active !== null) return allow(owner, false, active);
+    if (noRebate) return allow(owner, true, null, accountId, status === 'blocked');
+    if (active !== null) return allow(owner, false, active, active.accountId);
 
     const identity = await pddAuthorityIdentity(
       { pids, attrCodes, logger },
@@ -250,6 +278,7 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
         appId,
         userId: subject,
         pidScene: snapshot.pid_scene,
+        unionAccountId: accountId,
         traceId: input.traceId,
         events: 'linking.open',
       },
@@ -270,7 +299,7 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
       custom,
     });
     if (written.kind === 'blocked') return { kind: 'refused', code: 30153 };
-    return allow(owner, false, { id: written.id, accountId: written.accountId });
+    return allow(owner, false, { id: written.id, accountId: written.accountId }, written.accountId);
   }
 
   function cacheTag(owner: LinkOpenOwnerResult, noRebate: boolean): string | undefined {
@@ -278,7 +307,18 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     return pddCacheTag(decisions.get(owner), noRebate);
   }
 
-  return { prepare, authorize, cacheTag };
+  /** B1-19d: the conversion input with this open's account in use (Pinduoduo opens only). */
+  function scoped<T extends LinkOpenConversionInput>(input: T): T {
+    if (input.owner.link.platform !== PLATFORM) return input;
+    const unionAccountId = accounts.get(input.owner);
+    if (unionAccountId === undefined) {
+      // A Pinduoduo open always passes authorize first; converting without it is a fault.
+      throw paused('linking: pdd open converted without authorization');
+    }
+    return { ...input, unionAccountId };
+  }
+
+  return { prepare, authorize, cacheTag, scoped };
 }
 
 export function createPddAuthLinkOpen(options: PddAuthLinkOpenOptions): LinkOpenService {
@@ -291,6 +331,7 @@ export function createPddAuthLinkOpen(options: PddAuthLinkOpenOptions): LinkOpen
       },
       authorize: pdd.authorize,
       cacheTag: pdd.cacheTag,
+      convert: (input) => wired.conversion.convert(pdd.scoped(input)),
     };
   });
 }

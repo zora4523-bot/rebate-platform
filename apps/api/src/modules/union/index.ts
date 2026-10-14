@@ -68,6 +68,7 @@ export type {
   PidRow as UnionPidRow,
   PidServiceDeps,
   PidStatus,
+  PidWarnLogger,
   RegisterAccountInput,
   RegisterPidInput,
   SetPidStatusInput,
