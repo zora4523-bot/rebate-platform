@@ -165,32 +165,50 @@ function collectObjects(root: unknown, visit: (item: object) => void): void {
   }
 }
 
-function sameFields(left: object, right: object): boolean {
-  const keys = Object.keys(left);
-  if (keys.length !== Object.keys(right).length) return false;
+/** The own data fields of an object, read without invoking getters. */
+function fieldsOf(item: object): Map<string, unknown> {
+  const fields = new Map<string, unknown>();
+  for (const name of Object.keys(item)) {
+    const descriptor = Object.getOwnPropertyDescriptor(item, name);
+    fields.set(name, descriptor && 'value' in descriptor ? descriptor.value : descriptor);
+  }
+  return fields;
+}
+
+function sameFields(item: object, snapshot: ReadonlyMap<string, unknown>): boolean {
+  const keys = Object.keys(item);
+  if (keys.length !== snapshot.size) return false;
   return keys.every((name) => {
-    const a = Object.getOwnPropertyDescriptor(left, name);
-    const b = Object.getOwnPropertyDescriptor(right, name);
-    return !!a && !!b && 'value' in a && 'value' in b && Object.is(a.value, b.value);
+    const descriptor = Object.getOwnPropertyDescriptor(item, name);
+    return (
+      !!descriptor &&
+      'value' in descriptor &&
+      snapshot.has(name) &&
+      Object.is(descriptor.value, snapshot.get(name))
+    );
   });
 }
 
 /**
- * A caller formatter may rebuild an Error copy ({ ...err }). A plain object in its output that
- * holds exactly the fields of an Error copy from its input keeps the Error provenance; any other
- * object (including an Error lookalike that never came from an Error) does not.
+ * A caller formatter may rebuild an Error copy ({ ...err }), returning a new record or
+ * replacing err on the record it received. Snapshot the fields of every Error copy in the input
+ * before the formatter runs; the returned function marks each plain object in the formatter's
+ * output that holds exactly the fields of one snapshot as an Error copy. Any other object
+ * (including an Error lookalike that never came from an Error) is not marked. An Error copy the
+ * formatter changes in place keeps its provenance, so its fields still pass the Error rules.
  */
-export function retainErrorCopies(input: unknown, output: unknown): void {
-  if (input === output) return;
-  const copies: object[] = [];
+export function collectErrorCopies(input: unknown): (output: unknown) => void {
+  const snapshots: Array<ReadonlyMap<string, unknown>> = [];
   collectObjects(input, (item) => {
-    if (errorCopies.has(item)) copies.push(item);
+    if (errorCopies.has(item)) snapshots.push(fieldsOf(item));
   });
-  if (copies.length === 0) return;
-  collectObjects(output, (item) => {
-    if (errorCopies.has(item) || Object.getPrototypeOf(item) !== Object.prototype) return;
-    if (copies.some((copy) => sameFields(item, copy))) errorCopies.add(item);
-  });
+  return (output) => {
+    if (snapshots.length === 0) return;
+    collectObjects(output, (item) => {
+      if (errorCopies.has(item) || Object.getPrototypeOf(item) !== Object.prototype) return;
+      if (snapshots.some((snapshot) => sameFields(item, snapshot))) errorCopies.add(item);
+    });
+  };
 }
 
 /** Under an Error's own properties: personal data in text is replaced, other types are kept. */
@@ -277,7 +295,11 @@ export function redactValue(
       return Array.from({ length: value.length }, (_, index) => field(String(index)));
     }
     if (value instanceof Map || value instanceof Set) return {};
-    const fields = Object.fromEntries(Object.keys(value).map((name) => [name, field(name)]));
+    // An Error copy (from an earlier stage, possibly changed by a caller formatter) gets the
+    // same treatment as the Error's own properties: scalars pass redactErrorScalar.
+    const fields = Object.fromEntries(
+      Object.keys(value).map((name) => [name, field(name, errorText || error)]),
+    );
     if (error) errorCopies.add(fields);
     return fields;
   } catch {

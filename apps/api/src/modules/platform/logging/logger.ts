@@ -12,11 +12,11 @@ import {
   REDACTED,
   SENSITIVE_KEYS,
   attempt,
+  collectErrorCopies,
   redactMessage,
   redactPath,
   redactRecord,
   redactValue,
-  retainErrorCopies,
   stringifyValue,
   type FieldSerializers,
 } from './redaction.ts';
@@ -166,9 +166,12 @@ export function createRootLogger(
           ),
         log: (value) => {
           if (!logFormatter) return redactRecord(value);
+          // Snapshot Error copies before the formatter can change or replace them in place; a
+          // rebuilt copy of an Error copy keeps its numeric code (addenda I/L).
+          let retain: (output: unknown) => void = () => undefined;
+          attempt(() => (retain = collectErrorCopies(value)));
           const formatted = logFormatter(value);
-          // A rebuilt copy of an Error copy keeps its numeric code (addenda I/L).
-          attempt(() => retainErrorCopies(value, formatted));
+          attempt(() => retain(formatted));
           return redactRecord(formatted);
         },
       },
