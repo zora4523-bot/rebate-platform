@@ -8,7 +8,7 @@ type: impl
 # 响应：外层键不能由接口名推导（goods_search_response、goods_detail_response 等按接口文档逐个登记）；错误走 error_response{error_code,error_msg,sub_code,sub_msg,request_id}。
 # 错误映射（4 附 §3.4 表）：20005 IP 白名单 / 20031 无权限包 / 70036 测试状态超限 → upstream_rejected 且告警；52101、70031 → rate_limited；52102、52103、70033、5xx → upstream_unavailable；70032、70034、70035 → upstream_rejected（停用平台开关由上层处理，适配器只分类）。
 # 商品 DTO：goods.search / goods.detail 出参没有 goods_id，只有 goods_sign；DTO 的 goods_id 留空、goods_sign 必填；product_key 派生在 catalog（B1-05b），不在本段改。价格字段 min_group_price / coupon_discount 等整数分直接透传为 price_fen / coupon_fen，券后价公式（min_group_price − coupon_discount，官方 FAQ）只在 catalog 算。
-# 凭据：client_id / client_secret（优券汇应用的，负责人本机 ~/.couli/pdd.env → KMS）从 union_credentials（B1-19a）经 platform 的凭据读取拿；录制 / 演示模式不需要凭据。拼多多没有沙箱（4 附 §1）；没有真实录制时只用 doc-derived 合成录制，验收记录不写通过（规划/11 §4.5）。
+# 凭据：client_id / client_secret 是应用级密钥（优券汇应用的，负责人本机 ~/.couli/pdd.env → staging 节点文件 / prod KMS），不是 union_credentials（那张表存 OAuth 令牌）。本段适配器只经构造参数注入的凭据提供者取 {clientId, clientSecret}，不读环境变量、不读文件；配置读取与注册表在 live / replay 模式装配真实适配器归 B1-04t（2026-10-14 编排定）。HTTP 一律经注入的 UnionTransport（infra/replay.ts），测试不联网。录制 / 演示模式不需要凭据。拼多多没有沙箱（4 附 §1）；没有真实录制时只用 doc-derived 合成录制，验收记录不写通过（规划/11 §4.5）。
 # 目录约定见 B1-04b 注释：只改 union/infra/pdd/、config/union-endpoints/pdd.json 与 fixtures/union-recordings/pdd/；共同文件要改先回 b、c。test_paths：test/spec/union/pdd-goods/**。整体 RV2。
 refs: []
 refs_hash: {}
