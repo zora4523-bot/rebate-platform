@@ -20,7 +20,8 @@ set -Eeuo pipefail
 # every `./deploy.sh <tag>` uses the compose file saved with that tag and is refused without one;
 # the one way out when the last successful tag has no saved copy (a node deployed only by the
 # script before compose copies were saved) is `./deploy.sh <that tag> --with-current-compose`,
-# after the compose.yaml next to this script has been put back to a version that works with it.
+# after the compose.yaml next to this script has been put back to a version that works with it;
+# --with-current-compose in any other case is refused (exit 2) before the migration.
 # Node credential files are only referenced by path; their contents are never printed.
 
 log() { printf '[deploy] %s\n' "$*"; }
@@ -28,7 +29,8 @@ fail() { printf '[deploy] FAILED: %s\n' "$*" >&2; }
 
 export COULI_API_TAG="${1:?usage: deploy.sh IMAGE_TAG [--with-current-compose]}"
 # Explicit confirmation, accepted only while the running version is uncertain and only for the last
-# successful tag when it has no saved compose file (see below).
+# successful tag when it has no saved compose file; anywhere else it is refused with exit 2 before
+# the migration (see below).
 CONFIRM_CURRENT_COMPOSE="${2:-}"
 COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/compose.yaml"
 SCRIPT_COMPOSE_FILE="$COMPOSE_FILE"
@@ -77,6 +79,33 @@ mkdir -p "$STATE_DIR"
 touch "$STATE_FILE" "$SWITCHED_FILE"
 PREVIOUS_TAG="$(cat "$STATE_FILE")"
 SWITCHED_TAG="$(cat "$SWITCHED_FILE")"
+
+# --with-current-compose applies to exactly one case: the switch record marks what is running as
+# uncertain, the requested tag is the last successful one, and no compose file is saved with it.
+# Anywhere else it would be silently ignored (a saved copy or a fresh node would be used instead
+# of the compose.yaml the operator restored), so refuse it here, before the compose file is chosen
+# and before the migration, naming all three conditions and the ones not met.
+if [[ "$CONFIRM_CURRENT_COMPOSE" == "--with-current-compose" ]]; then
+  CONFIRM_SAVED_COPY="$STATE_DIR/compose.$COULI_API_TAG.yaml"
+  UNMET_DIRTY=''
+  UNMET_PREVIOUS=''
+  UNMET_SAVED=''
+  if [[ "$SWITCHED_TAG" != "$DIRTY_MARK" ]]; then
+    UNMET_DIRTY=' (1) the switch record does not mark what is running as uncertain (dirty);'
+  fi
+  if [[ -z "$PREVIOUS_TAG" ]]; then
+    UNMET_PREVIOUS=' (2) no last successful tag is recorded;'
+  elif [[ "$COULI_API_TAG" != "$PREVIOUS_TAG" ]]; then
+    UNMET_PREVIOUS=" (2) couli-api:$COULI_API_TAG is not the last successful tag ($PREVIOUS_TAG);"
+  fi
+  if [[ -f "$CONFIRM_SAVED_COPY" ]]; then
+    UNMET_SAVED=" (3) a compose file is already saved with couli-api:$COULI_API_TAG ($CONFIRM_SAVED_COPY);"
+  fi
+  if [[ -n "$UNMET_DIRTY$UNMET_PREVIOUS$UNMET_SAVED" ]]; then
+    fail "--with-current-compose is accepted only when all three hold: (1) the switch record marks what is running as uncertain (dirty), (2) the requested tag is the last successful tag, (3) no compose file is saved with that tag. Not met:$UNMET_DIRTY$UNMET_PREVIOUS$UNMET_SAVED Run without --with-current-compose; nothing was migrated or switched"
+    exit 2
+  fi
+fi
 
 # While the running version is uncertain only a tag with a saved compose file may be deployed (the
 # edited compose.yaml next to this script may be what broke it), until a deployment succeeds
