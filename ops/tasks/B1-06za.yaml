@@ -1,0 +1,23 @@
+id: B1-06za
+repo: rebate-platform
+title: linking 上游调用的进程内并发与排队上限：拼多多授权查询（open 与 GET bindings 共用）满额按查询失败处理（open 50303、GET 按库内投影）；bindings 换凭证排队加上限与等待时限，满或超时 42901 + Retry-After 且不消费 state
+type: impl
+# 草稿 2026-10-14（W1 第九棒）。来源：followups「B1-06v 实现（D7-25）授权查询占开链事务连接，排队无上限、无超时」「B1-06h Claude 资金 r2 换凭证占事务连接与并发名额，排队无上限、无超时」（接真实适配器前必须做）。
+# 现状核对（D9-4）：两者都已经过 union 治理层（online 3 秒时限、幂等读重试、熔断、配额），缺的是进程内并发与排队上限：open 的授权查询在开链事务内等待上游；bindings 的 withBindSlot（BIND_CONCURRENCY=4）等待队列无上限、无等待时限。
+# 做法：① 拼多多授权查询（application/pdd-authority.ts，B1-06x 抽出的共用函数）加进程内并发上限，满额立即按查询失败处理——open 回 50303（现有「查询失败」口径）、GET bindings 记 warn 按库内投影返回；不排队。② union-bindings.ts 的 withBindSlot 等待队列加长度上限与等待时限，满或等待超时 → 42901 + Retry-After（全局限流层已在任意路由返回 42901，不新增码），且在消费 state 之前判定（state 不烧、可重试）。③ 上限取值为模块常量（查询并发 8、换凭证排队 16、等待 2 秒，同 BIND_CONCURRENCY 先例），不新增配置项与环境变量。
+# 依据：规划/02 §6.2（联盟治理）、§18（并发固定做法）；BR-ID-22、BR-ID-17（state 单次使用）。由编排者摘入任务书。
+# 风险：linking RV2（用户授权）。linking/** 串行。
+refs: []
+refs_hash: {}
+deps: [B1-06x]
+paths:
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/upstream-limits/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/upstream-limits/**'
+status: todo
+pr: null
