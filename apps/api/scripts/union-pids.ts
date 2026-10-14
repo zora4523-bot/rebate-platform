@@ -490,6 +490,8 @@ async function main(): Promise<number> {
       superVerifier: verifyMod.createSuperVerifier({ db, clock, crypto, activeStatus: 'active' }),
       auditWriter: (trx) =>
         auditMod.createAuditWriter({ db: trx, clock, sensitiveKeys: loggerMod.SENSITIVE_KEYS }),
+      // B1-19d: cross-account activation warnings go to stderr through this logger.
+      logger,
     });
     const queries: UnionPidQueries = {
       async listAccounts(input) {
