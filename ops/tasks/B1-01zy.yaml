@@ -1,0 +1,33 @@
+id: B1-01zy
+repo: rebate-platform
+title: pg-url 口令打码改为单一扫描状态机：引号闭合后紧跟的下一个口令赋值照样整段打码；oauth_client_secret 算口令；已知参数名表补 PG18 与常见别名；属性测试保证任何口令片段都不出现在输出里
+type: impl
+# 2026-10-15 入账（会话 b1-followups-5；来源 B1-followups-4-work/followups.md B1-01zr Codex r3 S2 ①③，核对 B1-followups-5-work/verify-followups.md 第 1 节，P2）。
+# 现状（packages/db/src/pg-url.ts）：带引号的值遇第一个未转义同种引号结束（:200-212），之后找「空白 + 已知参数名 + =」（:160-168、:213-222）；
+# 闭合引号后紧跟的第二个口令赋值若开新引号，代码不认，第二个值里的「空格 + host=」被当成新参数开头：
+#   redactCredentials("password='Head\\'&sslpassword='Tail host=SecretSuffix'") → "password=*** host=SecretSuffix'"（URL 查询串与 keyword/value 形式都漏）。
+# SECRET_NAMES（:57）只有 password、sslpassword：oauth_client_secret=TopSecret 原样写出（redactPgUrl 同）。
+# 改法：valueEnd 与 maskPasswordParameters 合成一个扫描状态机（普通 / 口令值未加引号 / 口令值引号内并记住引号种类）；口令值里转义字符一律跳过；
+# 引号闭合后若紧跟 [口令键]\s*=\s*['"] 就继续当口令值打码；只在普通或未加引号状态下遇「空白（查询串还有 &）+ 确知参数名 + =」才结束。
+# SECRET_NAMES 加 oauth_client_secret（scram_client_key / scram_server_key 按 PG18 官方文档核实属实再加）；LIBPQ_KEYWORDS 补 servicefile、oauth_issuer、oauth_client_id、
+# oauth_scope、requiressl、uselibpqcompat（只影响可读性）。查询串里不带引号的值遇空白结束是既有设计，不改。
+# 规则测试（Codex 先写、先红，只新增文件，不改已冻结的 test/spec/db/pg-url-*.test.ts——其期望与新语义一致）：上面两类泄露用例与正常参数仍可读；
+# 属性测试 test/properties/db/pg-url-redaction.test.ts（fast-check 经 @couli/testing，次数与种子读 PROP_RUNS / PROP_SEED）：口令片段与引号、反斜杠、&、空格、口令键拼接，
+# 断言任何口令片段都不出现在输出里、普通字段仍可读。调用方只有 packages/db/scripts，不改应用代码。
+refs: []
+refs_hash: {}
+deps: [B1-01zr]
+paths:
+  - 'packages/db/src/pg-url.ts'
+  - 'packages/db/src/pg-url.test.ts'
+test_paths:
+  - 'test/spec/db/pg-url-state-*'
+  - 'test/properties/db/pg-url-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/**'
+  - 'test/properties/db/**'
+status: todo
+pr: null
