@@ -630,7 +630,7 @@ codes:
     sources: [BR-AI-15, BR-AI-20, BR-AI-23]
   - code: 30505
     http: 404
-    meaning: run 不存在或已结束
+    meaning: run 不存在或已结束（取消接口：已有终止原因或已过截止也按已结束，BR-AI-23 细则「取消」，2026-10-08）
     action: 刷新会话消息
     retry: 否
     retry_kind: never
@@ -779,11 +779,11 @@ codes:
     sources: [BR-ID-05, BR-ID-32]
   - code: 50001
     http: 500
-    meaning: 服务端错误
-    action: 通用错误态 + trace_id 后 6 位
+    meaning: 服务端错误（Agent 发送消息返回 JSON 50001：该会话遗留 run 待人工处理，BR-AI-23 细则，2026-10-08）
+    action: 通用错误态 + trace_id 后 6 位；Agent 发送消息收到 JSON 50001 时引导新建对话
     retry: 是
     retry_kind: immediate
-    sources: [BR-TEXT-14, BR-INV-06]
+    sources: [BR-TEXT-14, BR-INV-06, BR-AI-23]
   - code: 50301
     http: 503
     meaning: 平台维护或熔断，或平台未开放
@@ -840,11 +840,11 @@ codes:
     sources: [BR-ID-04, BR-ID-08]
   - code: 50401
     http: 504
-    meaning: 依赖超时
-    action: 通用错误态 + trace_id 后 6 位
+    meaning: 依赖超时（Agent 发送消息：存储暂不可用或受理结果未知，不保证未计数，BR-AI-23 细则，2026-10-08）
+    action: 通用错误态 + trace_id 后 6 位；Agent 发送消息用同一 client_msg_id 重试
     retry: 是
     retry_kind: immediate
-    sources: [BR-PROD-05, BR-ID-25]
+    sources: [BR-PROD-05, BR-ID-25, BR-AI-23]
 # JSBridge 专用码段，逐码定义在 规划/04 §9 与 contracts/bridge.schema.json（CT-03），HTTP 接口不返回。
 ranges:
   - from: 90001
