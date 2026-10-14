@@ -318,8 +318,8 @@ export const errorCodes = {
   30102: {
     http: 422,
     http_also: [],
-    meaning: "淘宝授权已失效，需重新授权（data 同 30101：data.auth_url、data.state、data.auth_methods）；站长授权过期或失效期间带 reason=auth_unavailable；别人的分享 link 而分享者的淘宝绑定不是 active 时带 reason=sharer_auth_invalid（失效的是分享者的授权，与打开者本人待授权区分），不带 auth_url、state（BR-ATTR-05 细则「别人的分享 link 不可用」；站长授权失效期间同样按分享者的绑定判断，返回 sharer_auth_invalid 而不是 auth_unavailable）",
-    action: "同 30101；sharer_auth_invalid：不弹授权、不重放、不提供无返利购买，显示 link_landing.invalid",
+    meaning: "淘宝授权已失效，需重新授权（data 同 30101：data.auth_url、data.state、data.auth_methods）；站长授权过期或失效期间带 reason=auth_unavailable；别人的分享 link 而分享者的淘宝绑定不是 active 时带 reason=sharer_auth_invalid（失效的是分享者的授权，与打开者本人待授权区分），不带 auth_url、state（BR-ATTR-05 细则「别人的分享 link 不可用」；站长授权失效期间同样按分享者的绑定判断，返回 sharer_auth_invalid 而不是 auth_unavailable）；GET /v1/share-pages/{link_id} 分享者淘宝绑定不是 active 时同码同 reason",
+    action: "同 30101；sharer_auth_invalid：不弹授权、不重放、不提供无返利购买，App 内显示 link_landing.invalid，H5 分享中间页（GET /v1/share-pages/{link_id}）显示「分享链接已失效，请联系分享者重新分享」",
     retry: "同 30101；sharer_auth_invalid：否",
     retry_kind: "after_action",
     retry_kind_by_reason: {"auth_unavailable":"later","sharer_auth_invalid":"never"},
@@ -360,8 +360,8 @@ export const errorCodes = {
   30111: {
     http: 422,
     http_also: [],
-    meaning: "拼多多未授权（data.auth_jump：服务端下发的授权跳转首选与备选，形状即 openapi AuthJumpPlan，选法见 BR-ID-22 细则；客户端用执行购买跳转方案的同一个执行器按 primary、fallbacks 顺序执行，h5 步骤交系统浏览器，不上报 link_jump）；别人的分享 link 而分享者的拼多多备案失效时带 data.reason=sharer_auth_invalid（失效的是分享者的授权，与打开者本人待授权区分），不带 auth_jump（BR-ATTR-05 细则「别人的分享 link 不可用」）",
-    action: "同 30101；sharer_auth_invalid：不弹授权、不重放、不提供无返利购买，显示 link_landing.invalid",
+    meaning: "拼多多未授权（data.auth_jump：服务端下发的授权跳转首选与备选，形状即 openapi AuthJumpPlan，选法见 BR-ID-22 细则；客户端用执行购买跳转方案的同一个执行器按 primary、fallbacks 顺序执行，h5 步骤交系统浏览器，不上报 link_jump）；别人的分享 link 而分享者的拼多多备案失效时带 data.reason=sharer_auth_invalid（失效的是分享者的授权，与打开者本人待授权区分），不带 auth_jump（BR-ATTR-05 细则「别人的分享 link 不可用」）；GET /v1/share-pages/{link_id} 分享者拼多多备案失效时同码同 reason",
+    action: "同 30101；sharer_auth_invalid：不弹授权、不重放、不提供无返利购买，App 内显示 link_landing.invalid，H5 分享中间页（GET /v1/share-pages/{link_id}）显示「分享链接已失效，请联系分享者重新分享」",
     retry: "授权后；sharer_auth_invalid：否",
     retry_kind: "after_action",
     retry_kind_by_reason: {"sharer_auth_invalid":"never"},

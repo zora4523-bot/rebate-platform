@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, expect, expectTypeOf, it } from 'vitest';
-import { createApiClient, enums, type Schema } from './index.ts';
+import { createApiClient, enums, errorCodes, type Schema } from './index.ts';
 
 type OpenLinkResponse = Schema<'OpenLinkResponse'>;
 
@@ -770,4 +770,22 @@ it('[AC-CT-02d#5] 生成枚举包含被拦请求对象与四种请求类型 (04 
     .toEqual(['account', 'order', 'blocked_request'].sort());
   // Property assertion keeps a missing generated enum an AssertionError, not an import failure.
   expect.soft(enums).toHaveProperty('blocked_request_type', blockedRequestTypes);
+});
+
+it('share page tells the sharer authorization invalid apart from a missing link (BR-ATTR-05, 04 §6.3, §7)', () => {
+  const op = (
+    contract.paths as unknown as Record<
+      string,
+      { get: { description: string; 'x-error-codes': number[] } }
+    >
+  )['/v1/share-pages/{link_id}']!.get;
+  expect(op['x-error-codes']).toEqual([30102, 30111, 30144]);
+  expect(op.description).toContain('data.reason=sharer_auth_invalid');
+  expect(op.description).toContain('分享链接已失效，请联系分享者重新分享');
+  for (const code of [30102, 30111] as const) {
+    expect(errorCodes[code].data.reason).toContain('sharer_auth_invalid');
+    expect(errorCodes[code].retry_kind_by_reason.sharer_auth_invalid).toBe('never');
+    expect(errorCodes[code].action).toContain('link_landing.invalid');
+    expect(errorCodes[code].action).toContain('分享链接已失效，请联系分享者重新分享');
+  }
 });
