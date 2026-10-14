@@ -8,6 +8,8 @@
 // loadConfig runs before any module and platform imports no module; identity's
 // smsCredentialEnvNames() returns this list.
 //
+// Pinduoduo: PDD_CLIENT_ID and PDD_CLIENT_SECRET_FILE, declared by the live adapter wiring (B1-04t).
+//
 // PROVISIONAL matcher for union, Alipay and bank channels until their adapters declare names.
 // TODO(规划/11 §8): replace it with the declared key names of each adapter as they land.
 const CREDENTIAL_ENV_NAME =
@@ -19,14 +21,25 @@ export const SMS_CREDENTIAL_ENV_NAMES: readonly string[] = Object.freeze([
   'SMS_ALIYUN_ACCESS_KEY_SECRET',
 ]);
 
-const SMS_NAMES = new Set(SMS_CREDENTIAL_ENV_NAMES.map((name) => name.toUpperCase()));
+/**
+ * Credential variables of the Pinduoduo live adapter (B1-04t; approvals #28 ②): the client id and
+ * the path of the node file that holds client_secret. Only staging reads them (./pdd.ts).
+ */
+export const PDD_CREDENTIAL_ENV_NAMES: readonly string[] = Object.freeze([
+  'PDD_CLIENT_ID',
+  'PDD_CLIENT_SECRET_FILE',
+]);
+
+const DECLARED_NAMES = new Set(
+  [...SMS_CREDENTIAL_ENV_NAMES, ...PDD_CREDENTIAL_ENV_NAMES].map((name) => name.toUpperCase()),
+);
 
 /**
- * True for a declared SMS credential name (compared without regard to case) and for a name with
+ * True for a declared SMS or Pinduoduo credential name (compared without regard to case) and for a name with
  * prefix UNION_/ALIPAY_/BANK_ and suffix _SECRET/_PRIVATE_KEY/_ACCESS_KEY.
  */
 export function looksLikeRealCredentialEnvName(name: string): boolean {
-  return SMS_NAMES.has(name.toUpperCase()) || CREDENTIAL_ENV_NAME.test(name);
+  return DECLARED_NAMES.has(name.toUpperCase()) || CREDENTIAL_ENV_NAME.test(name);
 }
 
 /** Names (never values) of credential-looking variables that are set to a non-empty value. */

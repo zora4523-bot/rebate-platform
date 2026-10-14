@@ -3,8 +3,12 @@
 // platform rejects every call with `adapter_unimplemented` instead of returning invented data.
 // With endpoint options, a platform configured as mode=demo gets the DemoUnionAdapter (B1-04o);
 // the endpoint set is validated again, so prod with any demo endpoint refuses to assemble.
-// Real adapters replace the unimplemented entries under infra/<platform>/ in later tasks.
-// TODO(规划/11 §4.5): 凭据读取 — blocked on 推广位 / siteId
+// B1-04t: only when the caller passes `pddLive` (credentials provider + transport) does a pdd
+// endpoint with mode=live get the real PddUnionAdapter of B1-04g, returned as is: governance is
+// wrapped once by the existing caller (app.module.ts governedUnion), not here. Without `pddLive`,
+// pdd live / replay stay `adapter_unimplemented`; which environments may pass `pddLive` is decided
+// by union.module.ts. Real jd / taobao adapters replace their entries in later tasks.
+// TODO(规划/11 §4.5): jd / taobao 凭据读取 — blocked on 推广位 / siteId
 import {
   REGISTERED_PLATFORMS,
   UnionError,
@@ -13,10 +17,25 @@ import {
 } from '../domain/types.ts';
 import { DemoUnionAdapter, type DemoUnionRegistryOptions } from './demo/demo-adapter.ts';
 import { parseUnionEndpoints } from './endpoints.ts';
+import { PddUnionAdapter, type PddCredentials } from './pdd/pdd-adapter.ts';
+import type { PddWarning } from './pdd/response.ts';
+import type { UnionTransport } from './replay.ts';
+
+/** The real Pinduoduo adapter's injected dependencies (B1-04t); used only for mode=live. */
+export interface PddLiveOptions {
+  /** Hands out the credentials already read at startup; never reads a file or the environment. */
+  readonly credentials: () => Promise<PddCredentials>;
+  readonly transport: UnionTransport;
+  readonly warn?: (event: PddWarning) => void;
+}
+
+export interface UnionRegistryOptions extends DemoUnionRegistryOptions {
+  readonly pddLive?: PddLiveOptions;
+}
 
 export interface UnionRegistration {
   readonly platform: RegisteredPlatform;
-  /** True only for a demo adapter today; live adapters are not implemented yet. */
+  /** True for a demo adapter and for the real pdd adapter assembled through `pddLive`. */
   readonly implemented: boolean;
 }
 
@@ -49,33 +68,50 @@ function unimplementedAdapter(platform: RegisteredPlatform): UnionAdapter {
 
 /**
  * Exactly jd, pdd and taobao registered. Without options every call rejects
- * `adapter_unimplemented`; with options, mode=demo endpoints get a demo adapter.
+ * `adapter_unimplemented`; with options, mode=demo endpoints get a demo adapter, and a pdd
+ * endpoint with mode=live gets the real PddUnionAdapter when `pddLive` is given.
  */
-export function createUnionRegistry(options?: DemoUnionRegistryOptions): UnionRegistry {
+export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegistry {
   const demoPlatforms = new Set<RegisteredPlatform>();
+  let pddLive: UnionAdapter | undefined;
   if (options !== undefined) {
     // Same validation as startup: incomplete sets, and demo / replay in prod, are refused.
     for (const endpoint of parseUnionEndpoints(options.endpoints, options.environment)) {
       if (endpoint.mode === 'demo') demoPlatforms.add(endpoint.platform);
+      if (endpoint.platform === 'pdd' && endpoint.mode === 'live' && options.pddLive) {
+        const live = options.pddLive;
+        pddLive = new PddUnionAdapter({
+          credentials: live.credentials,
+          transport: live.transport,
+          clock: options.clock,
+          endpoint,
+          ...(live.warn === undefined ? {} : { warn: live.warn }),
+        });
+      }
     }
   }
+  const adapterFor = (platform: RegisteredPlatform): UnionAdapter => {
+    if (platform === 'pdd' && pddLive !== undefined) return pddLive;
+    if (options !== undefined && demoPlatforms.has(platform)) {
+      return new DemoUnionAdapter({
+        platform,
+        seed: options.seed,
+        clock: options.clock,
+        environment: options.environment,
+        ...(options.warn === undefined ? {} : { warn: options.warn }),
+      });
+    }
+    return unimplementedAdapter(platform);
+  };
   const adapters = new Map<RegisteredPlatform, UnionAdapter>(
-    REGISTERED_PLATFORMS.map((platform) => [
-      platform,
-      options !== undefined && demoPlatforms.has(platform)
-        ? new DemoUnionAdapter({
-            platform,
-            seed: options.seed,
-            clock: options.clock,
-            environment: options.environment,
-            ...(options.warn === undefined ? {} : { warn: options.warn }),
-          })
-        : unimplementedAdapter(platform),
-    ]),
+    REGISTERED_PLATFORMS.map((platform) => [platform, adapterFor(platform)]),
   );
   const registrations = Object.freeze(
     REGISTERED_PLATFORMS.map((platform) =>
-      Object.freeze({ platform, implemented: demoPlatforms.has(platform) }),
+      Object.freeze({
+        platform,
+        implemented: demoPlatforms.has(platform) || (platform === 'pdd' && pddLive !== undefined),
+      }),
     ),
   );
   return {

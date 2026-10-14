@@ -28,6 +28,7 @@ describe('loadConfig', () => {
       trustedProxies: [],
       adminAuth: null,
       mediaPublicBaseUrl: 'https://media.local.invalid',
+      pdd: null,
     });
   });
 
@@ -62,6 +63,7 @@ describe('loadConfig', () => {
       jwt: null,
       trustedProxies: ['198.51.100.0/24', '2001:db8::1'],
       adminAuth: null,
+      pdd: null,
     });
   });
 

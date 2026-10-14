@@ -1,0 +1,145 @@
+{
+  "task": "B1-04t",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "3cb77da2ea509a0c196ad638c6a2d926e4b846fd",
+  "red_tests": [
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#1] PDD_CLIENT_ID 登记为真实凭据变量并进入启动检查",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#1] PDD_CLIENT_SECRET_FILE 登记为真实凭据变量并进入启动检查",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#2] local/test 任一或两个凭据变量设置即拒绝且不泄漏值：{\"PDD_CLIENT_ID\":\"FAKE_PDD_CLIENT_ID\"}",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#2] local/test 任一或两个凭据变量设置即拒绝且不泄漏值：{\"PDD_CLIENT_SECRET_FILE\":\"/FAKE_PDD_PATH/secret.txt\"}",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#2] local/test 任一或两个凭据变量设置即拒绝且不泄漏值：{\"PDD_CLIENT_ID\":\"FAKE_PDD_CLIENT_ID\",\"PDD_CLIENT_SECRET_FILE\":\"/FAKE_PDD_PATH/secret.txt\"}",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#3] staging 只设置 PDD_CLIENT_ID 时拒绝，问题文本只提变量名",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#3] staging 只设置 PDD_CLIENT_SECRET_FILE 时拒绝，问题文本只提变量名",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#4] prod 拒绝文件来源，与 FIELD_KEY_PROVIDER=undefined 无关",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#4] prod 拒绝文件来源，与 FIELD_KEY_PROVIDER=kms 无关",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#4] prod 拒绝文件来源，与 FIELD_KEY_PROVIDER=local 无关",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#4] prod 其他配置有效、只设置密钥文件变量也拒绝且不泄漏路径",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#5] loadConfig 纯校验：保留标识与文件路径，不读取文件或保存 secret",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#6] 其他配置无效时仍汇总 PDD 启动限制，且不泄漏原值",
+    "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#7] 环境示例仅列注释变量名，不提供凭据或路径值",
+    "test/spec/union/pdd-live-wiring/registry.test.ts > [AC-B1-04t-REGISTRY#1] 显式 pddLive 装配 B1-04g，注入凭据/传输/时钟/端点，直接委托适配器",
+    "test/spec/union/pdd-live-wiring/registry.test.ts > [AC-B1-04t-REGISTRY#2] 相同显式凭据仅在 live 装配：replay 不构造真实适配器、不取凭据或联网",
+    "test/spec/union/pdd-live-wiring/registry.test.ts > [AC-B1-04t-REGISTRY#2] 相同显式凭据仅在 live 装配：demo 不构造真实适配器、不取凭据或联网",
+    "test/spec/union/pdd-live-wiring/registry.test.ts > [AC-B1-04t-REGISTRY#3] 新选项显式启用；旧无选项、test/live、prod/live 调用保持未实现且不提前拒绝",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#1] local 的 pdd/live 在模块工厂拒绝（prod 等待 KMS），不构造适配器或联网",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#1] test 的 pdd/live 在模块工厂拒绝（prod 等待 KMS），不构造适配器或联网",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#1] prod 的 pdd/live 在模块工厂拒绝（prod 等待 KMS），不构造适配器或联网",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#8] local 即使直接注入 staging 配置与可读文件，也不得绕过 live 禁令",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#8] test 即使直接注入 staging 配置与可读文件，也不得绕过 live 禁令",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#8] prod 即使直接注入 staging 配置与可读文件，也不得绕过 live 禁令",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#2] staging 的 pdd/live 缺凭据在启动时失败，不延迟到第一次请求",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"\"",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"\\n\"",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"\\r\\n\"",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"missing\"",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"directory\"",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#4] EACCES 原始异常含路径和假 secret 也不能透传到启动错误或日志",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#5] staging 在启动时读一次并去末尾换行 \"\"，删除文件后仍用原凭据且不泄漏",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#5] staging 在启动时读一次并去末尾换行 \"\\n\"，删除文件后仍用原凭据且不泄漏",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#5] staging 在启动时读一次并去末尾换行 \"\\r\\n\"，删除文件后仍用原凭据且不泄漏",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#6] 工厂向 B1-04g 注入现有 HTTPS 传输，禁止降级与跳转",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#7] staging replay 不读取或装配真实凭据，同一配置切 live 才装配",
+    "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#7] staging demo 不读取或装配真实凭据，同一配置切 live 才装配"
+  ],
+  "risk_note": "RV2 (platform/config and union wiring). Pinduoduo live wiring: PDD_CLIENT_ID / PDD_CLIENT_SECRET_FILE declared as real credential names (local/test refuse to start), staging both-or-neither, prod refuses the file source (KMS TODO); the secret file is read once at startup by the union module factory with fixed-text errors (no path or content); the registry builds the B1-04g adapter only with the explicit pddLive option and returns it unwrapped (governance stays in app.module governedUnion, ruling D-t1); pdd live is refused in local/test/prod and without credentials. config/union-endpoints/pdd.json stays demo. approvals 28. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3cb77da2ea509a0c196ad638c6a2d926e4b846fd",
+      "tree": "ed441d5c3cc2b9962fd1e194cc1ef0dd91231c52",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T17:23:57Z",
+      "finished_at": "2026-10-14T17:24:01Z",
+      "gate": {
+        "commit": "d34f11d79a44b0de53d338005e59320bdbce2db1",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#1] PDD_CLIENT_ID 登记为真实凭据变量并进入启动检查",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#1] PDD_CLIENT_SECRET_FILE 登记为真实凭据变量并进入启动检查",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#2] local/test 任一或两个凭据变量设置即拒绝且不泄漏值：{\"PDD_CLIENT_ID\":\"FAKE_PDD_CLIENT_ID\"}",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#2] local/test 任一或两个凭据变量设置即拒绝且不泄漏值：{\"PDD_CLIENT_SECRET_FILE\":\"/FAKE_PDD_PATH/secret.txt\"}",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#2] local/test 任一或两个凭据变量设置即拒绝且不泄漏值：{\"PDD_CLIENT_ID\":\"FAKE_PDD_CLIENT_ID\",\"PDD_CLIENT_SECRET_FILE\":\"/FAKE_PDD_PATH/secret.txt\"}",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#3] staging 只设置 PDD_CLIENT_ID 时拒绝，问题文本只提变量名",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#3] staging 只设置 PDD_CLIENT_SECRET_FILE 时拒绝，问题文本只提变量名",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#4] prod 拒绝文件来源，与 FIELD_KEY_PROVIDER=undefined 无关",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#4] prod 拒绝文件来源，与 FIELD_KEY_PROVIDER=kms 无关",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#4] prod 拒绝文件来源，与 FIELD_KEY_PROVIDER=local 无关",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#4] prod 其他配置有效、只设置密钥文件变量也拒绝且不泄漏路径",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#5] loadConfig 纯校验：保留标识与文件路径，不读取文件或保存 secret",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#6] 其他配置无效时仍汇总 PDD 启动限制，且不泄漏原值",
+        "test/spec/union/pdd-live-wiring/config.test.ts > [AC-B1-04t-CONFIG#7] 环境示例仅列注释变量名，不提供凭据或路径值",
+        "test/spec/union/pdd-live-wiring/registry.test.ts > [AC-B1-04t-REGISTRY#1] 显式 pddLive 装配 B1-04g，注入凭据/传输/时钟/端点，直接委托适配器",
+        "test/spec/union/pdd-live-wiring/registry.test.ts > [AC-B1-04t-REGISTRY#2] 相同显式凭据仅在 live 装配：replay 不构造真实适配器、不取凭据或联网",
+        "test/spec/union/pdd-live-wiring/registry.test.ts > [AC-B1-04t-REGISTRY#2] 相同显式凭据仅在 live 装配：demo 不构造真实适配器、不取凭据或联网",
+        "test/spec/union/pdd-live-wiring/registry.test.ts > [AC-B1-04t-REGISTRY#3] 新选项显式启用；旧无选项、test/live、prod/live 调用保持未实现且不提前拒绝",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#1] local 的 pdd/live 在模块工厂拒绝（prod 等待 KMS），不构造适配器或联网",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#1] test 的 pdd/live 在模块工厂拒绝（prod 等待 KMS），不构造适配器或联网",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#1] prod 的 pdd/live 在模块工厂拒绝（prod 等待 KMS），不构造适配器或联网",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#8] local 即使直接注入 staging 配置与可读文件，也不得绕过 live 禁令",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#8] test 即使直接注入 staging 配置与可读文件，也不得绕过 live 禁令",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#8] prod 即使直接注入 staging 配置与可读文件，也不得绕过 live 禁令",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#2] staging 的 pdd/live 缺凭据在启动时失败，不延迟到第一次请求",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"\"",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"\\n\"",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"\\r\\n\"",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"missing\"",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#3] 文件为空/仅换行/不存在/无法读取时启动失败且错误不含路径或内容：\"directory\"",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#4] EACCES 原始异常含路径和假 secret 也不能透传到启动错误或日志",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#5] staging 在启动时读一次并去末尾换行 \"\"，删除文件后仍用原凭据且不泄漏",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#5] staging 在启动时读一次并去末尾换行 \"\\n\"，删除文件后仍用原凭据且不泄漏",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#5] staging 在启动时读一次并去末尾换行 \"\\r\\n\"，删除文件后仍用原凭据且不泄漏",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#6] 工厂向 B1-04g 注入现有 HTTPS 传输，禁止降级与跳转",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#7] staging replay 不读取或装配真实凭据，同一配置切 live 才装配",
+        "test/spec/union/pdd-live-wiring/startup.test.ts > [AC-B1-04t-STARTUP#7] staging demo 不读取或装配真实凭据，同一配置切 live 才装配"
+      ],
+      "expected": [
+        "test/spec/union/pdd-live-wiring/config.test.ts",
+        "test/spec/union/pdd-live-wiring/registry.test.ts",
+        "test/spec/union/pdd-live-wiring/startup.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "19743b62a4d088545bf9dccad3957e204e22c31c0ff98c237a1bd124a12ec71e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs, test/spec/union/pdd-live-wiring); round 1 fail (registry asked to add its own governance, ruling D-t1; prod secret-file-only case, D-t2), round 2 pass with no findings. The orchestrator prettier-formatted two rule-test files in the spec commit (assertions unchanged) and fixed one unit-test import to go through platform/index.ts (D-t3)."
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "2eb661dd9824c3fedc213396506e23f01c0bd67e",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
