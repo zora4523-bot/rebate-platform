@@ -18,11 +18,16 @@
 //   | released (blocked_reason=deletion, the daily release task after 180 days)
 // - released → active (the user's own row restored while it is still cooling, BR-ID-19; whether it
 //   is still cooling is the caller's check)
-// - the same status again is not a transition (no write); `unbound` is a projection, never stored
+// - unbound (allowed by the 0018 CHECK; the projection value of "no binding", not produced by the
+//   current writers) → active (the user authorized) — kept as an explicit edge so a stored row
+//   still goes through this single entry (approvals #26)
+// - the same status again is not a transition (no write)
 
-export type BindingStatus = 'pending_auth' | 'active' | 'invalid' | 'blocked' | 'released';
+export type BindingStatus =
+  'unbound' | 'pending_auth' | 'active' | 'invalid' | 'blocked' | 'released';
 
 const NEXT: Readonly<Record<BindingStatus, readonly BindingStatus[]>> = Object.freeze({
+  unbound: Object.freeze(['active'] as const),
   pending_auth: Object.freeze(['active', 'blocked'] as const),
   active: Object.freeze(['invalid', 'blocked', 'released'] as const),
   invalid: Object.freeze(['active', 'blocked', 'released'] as const),
@@ -32,6 +37,7 @@ const NEXT: Readonly<Record<BindingStatus, readonly BindingStatus[]>> = Object.f
 
 export function isBindingStatus(value: unknown): value is BindingStatus {
   return (
+    value === 'unbound' ||
     value === 'pending_auth' ||
     value === 'active' ||
     value === 'invalid' ||
