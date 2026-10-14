@@ -1,0 +1,25 @@
+id: B1-04v
+repo: rebate-platform
+title: 规则测试改写：两处写死「现有月分区表 / 资金表恰好是哪几张」的断言改为对 B1-04a 新增 union_raw_payloads 前后都成立（改已有受保护测试）
+type: test-change
+# 2026-10-15 入账（会话 b1-followups-5）。B1-04a（PR #469）CI 红在两条既有受保护断言，都与新表无关的行为含义：
+# ① test/spec/platform/db/maint-handle.int.test.ts 第 163 行 report.ensured 写死 8（= 2 张月分区表 × (MONTHS_AHEAD + 1)），B1-04n 当时漏掉；
+#    改为 MONTH_PARTITIONED_TABLES.length * (MONTHS_AHEAD + 1)（从 @couli/db 引入），标题里的「预建 8 个分区」同步改为按名单推导的说法。
+# ② tools/ci/lint-migrations.test.ts「classifies every table of db/schema.sql」的资金与归属表集合写死；union_ 前缀的表按 isFundsTable 规则属资金与归属表，
+#    union_raw_payloads 与其 union_raw_payloads_default 加进集合（规则更严，不削弱）；B1-04a 落地前 main 的 schema.sql 里还没有这两张表，
+#    「集合里每张表都在 schema 里」那条只对已存在的旧表断言（新两张单列，B1-04a 合并后由后续去掉例外，couli-runs/B1-followups-5-work/followups.md）。
+# 两处在当前 main 与 B1-04a 合并后都应为绿；不改实现、不改任何断言含义。保护路径第一类与第三类，合并要批准标签（approvals 第 24 条由编排会话加；不属四类例外）。
+# 分工：测试即交付物，Claude 子代理编写，Codex 新只读会话对抗评审。
+refs: []
+refs_hash: {}
+deps: [B1-04n]
+paths:
+  - 'test/spec/platform/db/maint-handle.int.test.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/db/**'
+status: todo
+pr: null
