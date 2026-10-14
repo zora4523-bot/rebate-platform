@@ -1,0 +1,19 @@
+id: B1-03t
+repo: rebate-platform
+title: 门禁改动：CI 的 verify-fast 作业时限由 20 分钟放宽到 30 分钟（GitHub 托管机上属性测试偶尔跑满 20 分钟被取消，只能反复重跑）
+type: guard-change
+# 2026-10-14 入账（身份与风控线 identity-lane）。负责人 2026-10-14「都同意」（经规划会话转达，含本项：把 verify-fast 时限从 20 改到 30 分钟，只改 ci.yml 那一行）。
+# 起因：2026-10-10 台账 PR #424、#426、#427 的 verify-fast 均在 GitHub 托管机上跑满 timeout-minutes: 20 被取消（ci-gate 记 FAST: cancelled），日志里属性测试仍在通过、没有失败用例，重跑后在 20 分钟内通过。
+# 改法：只把 .github/workflows/ci.yml 里 verify-fast 作业的 timeout-minutes 由 20 改为 30；其他作业、步骤、并发设置一律不动。不改任何测试、不放宽密钥扫描、不削弱资金测试。
+# 第三类保护路径（.github/**），评审 pass、CI 绿后由规划会话按 approvals #24 加 owner-approved 标签。走非 task/ 分支 guard-change/B1-03t。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

@@ -28,7 +28,9 @@ concurrency:
 jobs:
   verify-fast:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 → 35 (2026-10-14): main's verify-fast reached 19m50s on 2026-10-10 and PRs are being
+    # cancelled at the cap (two 100k-run property passes plus pnpm verify:fast).
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
