@@ -1,0 +1,19 @@
+id: B1-01zzb
+repo: rebate-platform
+title: 规则测试收尾：tools/ci/lint-migrations.test.ts 去掉 B1-04v 留的 notYetInSchema 过渡例外（B1-04a 已合并，两张表已在 schema.sql）
+type: test-change
+# 2026-10-15 入账（会话 b1-followups-5；来源 B1-followups-5-work/followups.md F5-2）。B1-04v（#471）为让断言在 B1-04a 合并前后都成立，
+# 给「资金与归属表集合里每张表都在 schema 里」加了 notYetInSchema（union_raw_payloads、union_raw_payloads_default）；B1-04a（#469）已合并，db/schema.sql 已有两表。
+# 删掉该常量与跳过分支（约 3 行），断言恢复为集合里每张表都必须在 schema 里。不削弱测试（恢复更严）。保护路径第三类，合并要批准标签（approvals 第 24 条由编排会话加）。
+# 分工：测试即交付物，Claude 子代理编写，Codex 新只读会话对抗评审。
+refs: []
+refs_hash: {}
+deps: [B1-04a, B1-04v]
+paths:
+  - 'tools/ci/lint-migrations.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

@@ -1,0 +1,32 @@
+id: B1-01zz
+repo: rebate-platform
+title: 日志脱敏：child logger 自定义 formatter 改动或替换 Error 副本后仍按 Error 处理——formatter 调用前快照副本、第二轮副本字段过 Error 标量安全网；masking 文件头补写 Error 自有属性的契约
+type: impl
+# 2026-10-15 入账（会话 b1-followups-5；来源 B1-followups-4-work/followups.md B1-01zu Codex r1 S2×2 与 Claude r1 观察，核对 verify-followups.md 第 3 节，P2，BR-ID-33）。
+# 实测（createRootLogger(...).child({}, { formatters: { log } })，err = Object.assign(new Error('boom'), { code: 503, detail: 'ok' })）：
+#   A  r.err.detail = '13987654321'; return { ...r }  → 手机号原样写出（A2 原地 return r 同）；
+#   B  r.err = { ...r.err }; return r                → code 503 变 "503"。B2 return { ...r, err: { ...r.err } }（B1-01zu#3 已有用例）正常。
+# 原因：logging/logger.ts:166-171 先调 logFormatter 再 retainErrorCopies（原地改动后旧副本收集不到）；logging/redaction.ts:183 input === output 提前返回；
+# 第二轮 redactRecord 对 Error 副本走普通对象分支（redaction.ts:283-285），field(name) 继承 errorText=false，副本字段不过 redactErrorScalar。
+# 改法：① formatter 调用前收集 value 里的 Error 副本并保存字段快照，调用后按快照与 formatted 里的对象做 sameFields 匹配（拆成收集与匹配两步，去掉身份比较）；
+# ② 副本字段第二轮用 field(name, true)，过 redactErrorScalar（幂等：已替换的值不再命中，未命中的数字保持数字）；
+# ③ masking/index.ts 文件头（:46-48、:57-58 与补充 L）写明：Error 自有属性（message / stack 以外）的字符串过自由文本安全网，数字命中时写 "[REDACTED]"、未命中保持数字。
+# 规则测试（Codex 先写、先红，新文件 test/spec/platform/masking/log-redaction-formatter-*，不改已冻结的 log-redaction-shapes-formatter.test.ts 等）：A、A2、B 三种 formatter 写法；
+# 「不是来自 Error 的仿冒 err」照旧写成字符串（B1-01zu#3 口径不变）。目前业务代码没有自定义 formatter，不改调用方。
+refs: []
+refs_hash: {}
+deps: [B1-01zu]
+paths:
+  - 'apps/api/src/modules/platform/logging/logger.ts'
+  - 'apps/api/src/modules/platform/logging/redaction.ts'
+  - 'apps/api/src/modules/platform/logging/*.test.ts'
+  - 'apps/api/src/modules/platform/masking/index.ts'
+test_paths:
+  - 'test/spec/platform/masking/log-redaction-formatter-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/masking/**'
+status: todo
+pr: null

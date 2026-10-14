@@ -1,0 +1,27 @@
+id: B1-01zza
+repo: rebate-platform
+title: staging deploy.sh：--with-current-compose 只在「切换记录 dirty、请求的是上一成功标签、且该标签没有保存副本」时接受，其他情况在迁移前报错退出 2，不再静默忽略
+type: impl
+# 2026-10-15 入账（会话 b1-followups-5；来源 B1-followups-4-work/followups.md B1-01zr Claude r3 S2 与 Codex r3 S2 ②，核对 verify-followups.md 第 2 节 ②③，P3）。
+# 现状：infra/staging/deploy.sh 只在 :87-88 读这个参数（外层条件 dirty 且请求标签无副本），其他情况无检查、无输出，退出 0：
+#   ② 现场干净、SWITCHED_TAG=v2、有 compose.v1.yaml 时 ./deploy.sh v1 --with-current-compose 用的是保存副本，运维以为改过的 compose.yaml 生效了；全新节点同样被静默接受；
+#   ③ dirty、PREVIOUS_TAG=v1、有 compose.v1.yaml 时同一命令用副本部署成功，与脚本 :30-31 的说明不符。
+# （原第 ① 条「先记标签后复制副本」已由 B1-01zr 修好，:196-204 先复制再记，不在本任务。）
+# 改法：加锁之后、迁移之前统一校验（约 :101 之后）：带了 --with-current-compose 但不满足「SWITCHED_TAG 为 dirty 标记 且 请求标签 == PREVIOUS_TAG 且 compose.<标签>.yaml 不存在」时 fail 说明原因、exit 2；
+# README.md 对应说明句同步。规则测试（Codex 先写、先红，新文件 test/spec/infra/staging/current-compose-*，照 dirty-recovery.test.ts 的打桩写法，不起真 docker、不联网）：②③ 与全新节点三种情形退出 2、
+# 不跑迁移、不打印口令；适用情形照旧可用。
+refs: []
+refs_hash: {}
+deps: [B1-01zr]
+paths:
+  - 'infra/staging/deploy.sh'
+  - 'infra/staging/README.md'
+test_paths:
+  - 'test/spec/infra/staging/current-compose-*'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/infra/staging/**'
+status: todo
+pr: null
