@@ -44,6 +44,30 @@ function int8AsBigInt(): pg.TypeOverrides {
   return overrides;
 }
 
+// A disconnected backend surfaces as an 'error' event: on the pool while the client is idle,
+// and on the client itself while it is checked out (pg-pool only listens to idle clients).
+// Neither emitter may be left without a listener, or Node turns the event into an uncaught
+// exception. The listeners only absorb the event: pg-pool already drops an idle client that
+// errors, and drops a checked-out one on release because it is no longer queryable, so
+// releasing, destroying or rebuilding anything here would double-handle it. The query that
+// was running, or the next one on that lease, still rejects through its own promise.
+// This package has no logger, so nothing is reported here.
+function ignoreConnectionError(): void {}
+
+class DefaultClient extends pg.Client {
+  constructor(clientConfig?: pg.ClientConfig) {
+    super(clientConfig);
+    this.on('error', ignoreConnectionError);
+  }
+}
+
+/** Pool used when the caller supplies no poolFactory; factory pools are left untouched. */
+function defaultPool(config: pg.PoolConfig): pg.Pool {
+  const pool = new pg.Pool({ ...config, Client: DefaultClient });
+  pool.on('error', ignoreConnectionError);
+  return pool;
+}
+
 /**
  * Creates a Kysely instance bound to schema `app`, backed by its own pg pool.
  * Call `destroyDb` to close the pool.
@@ -63,7 +87,7 @@ export function createDb(opts: CreateDbOptions): Kysely<DB> {
   if (opts.applicationName !== undefined) {
     config.application_name = opts.applicationName;
   }
-  const pool = opts.poolFactory?.(config) ?? new pg.Pool(config);
+  const pool = opts.poolFactory?.(config) ?? defaultPool(config);
   return new Kysely<DB>({ dialect: new PostgresDialect({ pool }) }).withSchema(APP_SCHEMA);
 }
 
