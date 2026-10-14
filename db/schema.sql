@@ -494,7 +494,7 @@ BEGIN
 
   -- Allow-list of month-partitioned tables (ADR-0001 §4.2 #5). Extend it in the migration
   -- that creates the next partitioned table.
-  IF p_table NOT IN ('event_log', 'orders') THEN
+  IF p_table NOT IN ('event_log', 'orders', 'union_raw_payloads') THEN
     RAISE EXCEPTION 'ensure_month_partition: table "%" is not month-partitioned', p_table
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
@@ -2710,6 +2710,63 @@ CREATE TABLE app.union_pids (
 
 
 --
+-- Name: union_raw_payloads; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.union_raw_payloads (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    kind text NOT NULL,
+    payload bytea NOT NULL,
+    fetched_at timestamp with time zone NOT NULL,
+    content_hash text NOT NULL,
+    request_summary jsonb NOT NULL,
+    latency_ms integer NOT NULL,
+    error_code text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT union_raw_payloads_latency_check CHECK ((latency_ms >= 0)),
+    CONSTRAINT union_raw_payloads_request_summary_check CHECK ((jsonb_typeof(request_summary) = 'object'::text))
+)
+PARTITION BY RANGE (fetched_at);
+
+
+--
+-- Name: union_raw_payloads_default; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.union_raw_payloads_default (
+    id bigint CONSTRAINT union_raw_payloads_id_not_null NOT NULL,
+    app_id text CONSTRAINT union_raw_payloads_app_id_not_null NOT NULL,
+    platform text CONSTRAINT union_raw_payloads_platform_not_null NOT NULL,
+    kind text CONSTRAINT union_raw_payloads_kind_not_null NOT NULL,
+    payload bytea CONSTRAINT union_raw_payloads_payload_not_null NOT NULL,
+    fetched_at timestamp with time zone CONSTRAINT union_raw_payloads_fetched_at_not_null NOT NULL,
+    content_hash text CONSTRAINT union_raw_payloads_content_hash_not_null NOT NULL,
+    request_summary jsonb CONSTRAINT union_raw_payloads_request_summary_not_null NOT NULL,
+    latency_ms integer CONSTRAINT union_raw_payloads_latency_ms_not_null NOT NULL,
+    error_code text,
+    created_at timestamp with time zone DEFAULT now() CONSTRAINT union_raw_payloads_created_at_not_null NOT NULL,
+    CONSTRAINT union_raw_payloads_latency_check CHECK ((latency_ms >= 0)),
+    CONSTRAINT union_raw_payloads_request_summary_check CHECK ((jsonb_typeof(request_summary) = 'object'::text))
+);
+
+
+--
+-- Name: union_raw_payloads_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.union_raw_payloads ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.union_raw_payloads_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: user_oauth; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3076,6 +3133,13 @@ ALTER TABLE ONLY app.link_logs ATTACH PARTITION app.link_logs_default DEFAULT;
 --
 
 ALTER TABLE ONLY app.orders ATTACH PARTITION app.orders_default DEFAULT;
+
+
+--
+-- Name: union_raw_payloads_default; Type: TABLE ATTACH; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_raw_payloads ATTACH PARTITION app.union_raw_payloads_default DEFAULT;
 
 
 --
@@ -3754,6 +3818,22 @@ ALTER TABLE ONLY app.union_pids
 
 ALTER TABLE ONLY app.union_pids
     ADD CONSTRAINT union_pids_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: union_raw_payloads union_raw_payloads_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_raw_payloads
+    ADD CONSTRAINT union_raw_payloads_pkey PRIMARY KEY (id, fetched_at);
+
+
+--
+-- Name: union_raw_payloads_default union_raw_payloads_default_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.union_raw_payloads_default
+    ADD CONSTRAINT union_raw_payloads_default_pkey PRIMARY KEY (id, fetched_at);
 
 
 --
@@ -4631,6 +4711,13 @@ ALTER INDEX app.orders_pkey ATTACH PARTITION app.orders_default_pkey;
 
 
 --
+-- Name: union_raw_payloads_default_pkey; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.union_raw_payloads_pkey ATTACH PARTITION app.union_raw_payloads_default_pkey;
+
+
+--
 -- Name: job_common_pkey; Type: INDEX ATTACH; Schema: pgboss; Owner: -
 --
 
@@ -4768,6 +4855,13 @@ CREATE TRIGGER union_binding_conflicts_no_rewrite BEFORE UPDATE ON app.union_bin
 --
 
 CREATE TRIGGER union_pids_no_delete BEFORE DELETE ON app.union_pids FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: union_raw_payloads union_raw_payloads_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER union_raw_payloads_append_only BEFORE DELETE OR UPDATE ON app.union_raw_payloads FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
@@ -7508,6 +7602,14 @@ GRANT SELECT(updated_at) ON TABLE app.union_credentials TO couli_readonly;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.union_pids TO couli_app;
 GRANT SELECT ON TABLE app.union_pids TO couli_readonly;
+
+
+--
+-- Name: TABLE union_raw_payloads; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.union_raw_payloads TO couli_app;
+GRANT SELECT ON TABLE app.union_raw_payloads TO couli_readonly;
 
 
 --

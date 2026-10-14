@@ -871,6 +871,20 @@ export interface UnionPids {
   updated_at: Generated<Timestamp>;
 }
 
+export interface UnionRawPayloads {
+  app_id: string;
+  content_hash: string;
+  created_at: Generated<Timestamp>;
+  error_code: string | null;
+  fetched_at: Timestamp;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  kind: string;
+  latency_ms: number;
+  payload: Buffer;
+  platform: string;
+  request_summary: Json;
+}
+
 export interface UserOauth {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -985,6 +999,7 @@ export interface DB {
   union_bindings: UnionBindings;
   union_credentials: UnionCredentials;
   union_pids: UnionPids;
+  union_raw_payloads: UnionRawPayloads;
   user_oauth: UserOauth;
   user_risk_state: UserRiskState;
   user_tip_reads: UserTipReads;

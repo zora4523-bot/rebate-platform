@@ -706,7 +706,7 @@ it.each(['ensure_month_partition', 'partition_default_rows'])(
     expect(stopped).toHaveBeenCalledExactlyOnceWith(undefined);
     expect(f.transactions.every((t) => t.outcome !== 'pending')).toBe(true);
     expect(f.transactions.filter((t) => t.outcome === 'rolled back')).toHaveLength(
-      functionName === 'ensure_month_partition' ? 2 : 1,
+      functionName === 'ensure_month_partition' ? MONTH_PARTITIONED_TABLES.length : 1,
     );
     const queryCount = f.queries.length;
     await vi.advanceTimersByTimeAsync(1000);
