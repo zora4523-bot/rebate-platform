@@ -20,6 +20,7 @@ export type {
   OrderQueryOpt,
   Page,
   PddAuthority,
+  PddOrderFields,
   Platform,
   RegisteredPlatform,
   ResolvedLink,
