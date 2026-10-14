@@ -19,5 +19,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/relation-conflict/**'
-status: todo
-pr: null
+status: done
+pr: 431

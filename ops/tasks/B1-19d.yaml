@@ -1,0 +1,24 @@
+id: B1-19d
+repo: rebate-platform
+title: union 推广位读取按联盟账号筛选：getActivePid 加可选 unionAccountId 条件（只取该账号下 active 的场景推广位），linking 淘宝 / 拼多多转链按所用账号取推广位，替代「取到后核对、不一致 50301」
+type: impl
+# 草稿 2026-10-14（W1 第八棒）。来源：B1-06f Claude 资金 r2 S2（union 推广位端口不能按联盟账号筛选，多账号跨配置或账号迁移时 B1-06f 只能取到后核对、不一致 50301 拒绝外跳）。
+# 依据：BR-ATTR-02（每平台一个联盟账号为默认，多账号是配置可能）、BR-ATTR-08（按 scene 推出 pid_scene，找不到该场景 active 推广位不转链、不得改用 fallback 或其他场景）、BR-ID-17（relation_id 属账号），由编排者摘入任务书。
+# 做法：union/pids 的 getActivePid 读查询加可选 unionAccountId（不传时行为不变，兼容已有调用与冻结测试）；linking 的淘宝 / 拼多多组合层按 auth-url 同口径的「所用账号」传入；查不到 → 维持原有不转链口径（返回码沿用现状，不新增码）。后台激活推广位时对跨账号配置告警不在本任务（另记 followup）。
+# 风险：union / linking RV2（订单归属）。linking/** 与 union/** 串行。
+refs: []
+refs_hash: {}
+deps: [B1-06f, B1-06v]
+paths:
+  - 'apps/api/src/modules/union/pids/**'
+  - 'apps/api/src/modules/union/index.ts'
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/union/pids-by-account/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pids-by-account/**'
+status: todo
+pr: null
