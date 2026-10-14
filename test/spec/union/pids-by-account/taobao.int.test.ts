@@ -14,6 +14,9 @@ for (const scene of ['detail', 'share'] as const) {
     const slots = await accountSlots(db, f.appId, 'taobao', f.account);
     const selected = scene === 'share' ? 'share' : 'self_buy';
     const service = createTaobaoLinkOpen({ ...f.options, pids: slots.pids });
+    // BR-ATTR-11: the sharer opening his own share link is re-registered as self_buy; the share
+    // slot is exercised by another user opening A's share link (A's identity and relation).
+    if (scene === 'share') f.opener(f.b);
     const success = await outcome(() => service.open(f.request()));
     const read = slots.pids.getActivePid.getMockImplementation()!;
     // 保留 B1-06f 的最后防线：即便端口违反账号条件，不能拼 B 的 pid 和 A 的 relation。

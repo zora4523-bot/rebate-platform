@@ -14,7 +14,8 @@ for (const binding of ['active', 'pending_auth', 'invalid'] as const) {
       const slots = await accountSlots(db, f.appId, 'pdd', f.accountId);
       const service = createPddAuthLinkOpen({ ...f.options, pids: slots.pids });
       const result = await outcome(() => service.open(f.request()));
-      const selected = scene === 'detail' ? 'self_buy' : scene;
+      // BR-ATTR-11: A opening his own share link is re-registered as self_buy (decideOpenOwner).
+      const selected = scene === 'agent' ? 'agent' : 'self_buy';
       expect(result).toMatchObject({ status: 200, envelope: { code: 0 } });
       expect(f.convert).toHaveBeenCalledTimes(1);
       expect(f.convert.mock.calls[0]?.[1]).toMatchObject({
@@ -105,6 +106,8 @@ it('[AC-B1-19d#9] 拼多多指定账号没有该场景位时停止，不借用 B
     .where('id', '=', slots.a.share.id)
     .execute();
   const service = createPddAuthLinkOpen({ ...f.options, pids: slots.pids });
+  // Another user opens A's share link (BR-ATTR-11: A himself would be re-registered as self_buy).
+  f.opener('b');
   const result = await outcome(() => service.open(f.request()));
   expect(result).toMatchObject({ envelope: { code: 50301 } });
   expect(result).not.toHaveProperty('envelope.data.jump');
