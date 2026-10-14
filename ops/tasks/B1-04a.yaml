@@ -10,6 +10,10 @@ type: migration
 # 做法加一条 180 天规则，并同步 platform/maintenance 的 DROPPABLE_TABLES（评审若嫌两件事一起太大，可把留存拆成后续任务）。
 # 登记进允许名单会碰到维护模块受保护测试的写死断言：先由独立的测试变更任务 B1-04n 把它们改成按允许名单推导（规划/11 §4.4，Codex 台账评审第 2 轮），
 # 本任务依赖 B1-04n、不改任何既有测试；maintenance/index.test.ts 的计数也由 B1-04n 改为推导。
+# 2026-10-14 编排者（b1-followups-5）收窄：留存删除规则拆出、本任务不做。test/spec/platform/maintenance/contract.test.ts 第 45 行与 day-contract.test.ts 第 32 行
+# 仍写死 DROPPABLE_TABLES 为 ['event_log']（B1-04n 只把预建名单改成推导），加 union_raw_payloads 会打红受保护测试；180 天另立
+# 「测试变更 + 实现」后续（couli-runs/B1-followups-5-work/followups.md）。本任务只建表（DEFAULT 分区）、加进月分区允许名单并同步 partitions.ts、授权；
+# drop_expired_month_partitions 对本表照旧拒绝（无留存规则），DROPPABLE_TABLES 不变。
 # 主键带分区键（同 orders 的做法），id 用 bigint 以对上 orders.raw_payload_id。列：platform、kind（04 写 order / rights / query…，没给全集，留 text）、
 # payload（压缩字节）、fetched_at、content_hash，另加 02 §6.1 的请求摘要、耗时、错误码。请求摘要不得含 appKey、secret、sign、session、access_token
 # （09 README 脱敏要求），由写入方（B1-04c）保证，迁移头注释写明。只授 INSERT / SELECT。
@@ -23,7 +27,6 @@ paths:
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
   - 'packages/db/src/partitions.ts'
-  - 'apps/api/src/modules/platform/maintenance/index.ts'
 impl: claude
 tester: codex
 accept:
