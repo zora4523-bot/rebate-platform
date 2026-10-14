@@ -1,0 +1,22 @@
+id: B1-06x
+repo: rebate-platform
+title: GET /v1/unions/bindings 对拼多多复用授权查询端口：本地绑定非 active 且非 blocked 时查联盟备案，已授权则经 canTransitionBinding + row_version CAS 置 active（并按 BR-ID-18 同事务解决冲突日志），查询失败不报错、按库内状态返回
+type: impl
+# 草稿 2026-10-14（W1 第八棒）。来源：台账 #304 r2 范围外（D7-7）——授权管理页授权拼多多后，GET bindings 没有路径把拼多多绑定置 active（只有 open 经 B1-06v 查询端口置 active）。
+# 依据：BR-ID-22（拼多多备案）、BR-ID-18 2026-10-09 补句（拼多多备案有效时同事务解决冲突日志）、approvals #26（union_bindings.status 唯一入口），由编排者摘入任务书。
+# 做法：复用 B1-06v 的 queryPddAuthority 与置 active 帮手、B1-06z 的 resolveBindingConflictsOnActive（同一把 advisory 锁）；GET 是读接口：查询失败 / 超时 / 方法缺失时不报错，按库内状态返回；不写 link_logs。查询的超时与并发上限见 followups（真实拼多多适配器前）。
+# 风险：linking RV2（用户授权）。linking/** 串行。
+refs: []
+refs_hash: {}
+deps: [B1-06v, B1-06z]
+paths:
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/bindings-pdd-query/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/bindings-pdd-query/**'
+status: todo
+pr: null
