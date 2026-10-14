@@ -16,6 +16,7 @@ type: contract
 # 2026-10-14 编排者（staging-b3-term）：规划 couli#109（docs/changes/20261014-问一问深挖更正.md）在 04 §6.5 写定历史响应形状，SPEC_REF 推进到 7c268cb（#433）。
 #   以 04 新段为准：上面 10-06 草稿中的「按轮分页」「reply.status / content_status」「ops.yaml 三个新枚举」作废（04 未写），不回放 tool.status / ping / suggestions / meta；
 #   片段 openapi-fragment-CT-08e.yaml 需按新形状改写后再用。反馈、举报部分照旧。
+# 2026-10-14 编排者：实现阶段 verify:fast 发现 auth-routes.gen.ts、min-version-routes.gen.ts 两张生成表同样列出全部契约 operation（含 planned），新增接口须重新生成，补进 paths（CT-08d 先例 #292）。
 refs: [BR-AI-23, BR-AI-20]
 refs_hash:
   BR-AI-23: 5ebdbaff580d
@@ -28,6 +29,8 @@ paths:
   - 'contracts/README.md'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/contracts/agent-history/**'
 impl: claude
