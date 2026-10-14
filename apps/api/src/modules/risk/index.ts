@@ -60,6 +60,12 @@ export {
   RISK_SCAN_QUEUE,
 } from './application/risk-scan.ts';
 export type { RiskScan, RiskScanOptions } from './application/risk-scan.ts';
+export { startRiskScanHeal } from './application/risk-scan-heal.ts';
+export type {
+  RiskScanHealer,
+  RiskScanHealControl,
+  RiskScanHealSchedule,
+} from './application/risk-scan-heal.ts';
 export {
   RiskStateTransitionError,
   createRiskStateService,
