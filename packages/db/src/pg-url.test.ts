@@ -197,11 +197,9 @@ it('redactCredentials masks a secret up to the next certain parameter start, wha
       String.raw`host=db password='ExampleHead\'&sslpassword=''ExampleTail' dbname=couli`,
       'host=db password=*** dbname=couli',
     ],
-    // Review round 2: a well-formed password that merely contains `sslpassword=`.
-    [
-      "password='ExampleHead&sslpassword=' host=db.invalid dbname=couli",
-      'password=*** host=db.invalid dbname=couli',
-    ],
+    // A password that ends in `sslpassword=`: the `sslpassword` assignment is scanned from its own
+    // value start too (its quote opens a value that never closes), so the rest is masked.
+    ["password='ExampleHead&sslpassword=' host=db.invalid dbname=couli", 'password=***'],
     // Review round 3: a space and more secret text after the glued quote.
     [
       String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail ExampleSuffix' dbname=couli`,
@@ -308,4 +306,42 @@ it('redactCredentials ends a secret at the PostgreSQL 18 keywords and at any sec
   expect(redactCredentials("password='ExampleSecret requiressl=1' host=db")).toBe(
     'password=*** host=db',
   );
+});
+
+it('redactCredentials keeps masking when whitespace and & separate a closing quote from a secret', () => {
+  for (const separator of [' &', '& ', ' & ', '\t&& ', '&&', '&']) {
+    for (const prefix of ['', 'host=db ', 'postgres://u@h/db?']) {
+      const input =
+        `${prefix}password='ExampleHead'${separator}` +
+        "sslpassword='ExampleTail host=ExampleSuffix' dbname=couli";
+      const masked = redactCredentials(input);
+      for (const part of ['ExampleHead', 'ExampleTail', 'ExampleSuffix']) {
+        expect(masked).not.toContain(part);
+      }
+      expect(masked).toMatch(/password=\*\*\* dbname=couli$/);
+      expect(masked.startsWith(`${prefix}password=***`)).toBe(true);
+    }
+  }
+  expect(
+    redactCredentials(
+      "password='ExampleHead' &sslpassword='ExampleTail host=ExampleSuffix' dbname=couli",
+    ),
+  ).toBe('password=*** dbname=couli');
+  // A plain space before the next secret is an ordinary boundary.
+  expect(
+    redactCredentials(
+      "password='ExampleHead' sslpassword='ExampleTail host=ExampleSuffix' dbname=couli",
+    ),
+  ).toBe('password=*** sslpassword=*** dbname=couli');
+});
+
+it('redactCredentials scans a secret assignment inside an already masked value from its own start', () => {
+  // The unquoted first value ends before ` host=`; the `sslpassword` value inside it is quoted and
+  // runs past that place, so the masked stretch runs to its closing quote.
+  expect(
+    redactCredentials("password=ExampleA&sslpassword='ExampleB host=ExampleC' dbname=couli"),
+  ).toBe('password=*** dbname=couli');
+  expect(
+    redactCredentials('password=ExampleA &SSLPASSWORD = "ExampleB host=ExampleC" dbname=couli'),
+  ).toBe('password=*** dbname=couli');
 });

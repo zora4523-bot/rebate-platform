@@ -173,8 +173,9 @@ const LIBPQ_KEYWORDS = new Set([
 ]);
 const NEXT_AFTER_SPACE = new RegExp(`\\s+(${NAME})\\s*=`, 'y');
 const NEXT_AFTER_AMPERSAND = new RegExp(`&(${NAME})\\s*=`, 'y');
-// A secret assignment glued to a closing quote (`'…'&sslpassword='…`, `'…'password=…`).
-const GLUED_SECRET = new RegExp(`&?(${NAME})\\s*=\\s*`, 'y');
+// A secret assignment right after a closing quote, separated by any run of whitespace and `&`
+// (`'…'&sslpassword='…`, `'…' &password=…`, `'…'password=…`).
+const GLUED_SECRET = new RegExp(`[\\s&]*(${NAME})\\s*=\\s*`, 'y');
 // Text ending in a parameter assignment (`…&sslpassword=`), name not glued to a name character.
 const ENDS_IN_ASSIGNMENT = new RegExp(`(?<![A-Za-z0-9_%])(${NAME})\\s*=\\s*$`);
 
@@ -216,8 +217,8 @@ function endsInSecretAssignment(segment: string): boolean {
  *   closes it, and nothing inside it ends the value.
  *
  * After a closing quote the value ends if a new parameter certainly starts there. Otherwise the
- * scanner stays inside the secret: a secret assignment glued to the quote (`'…'&sslpassword='…`)
- * is masked with it; a closing quote that really is the opening quote of such a glued assignment
+ * scanner stays inside the secret: a secret assignment after the quote, separated by nothing or
+ * by any run of whitespace and `&` (`'…'&sslpassword='…`, `'…' &password=…`), is masked with it; a closing quote that really is the opening quote of such a glued assignment
  * (`'…\'&sslpassword='Tail …'`: the quote right after `sslpassword=`, or an empty `''`) opens a
  * new quoted part; any other glued text continues unquoted. So no malformed or adversarial
  * construction leaves a piece of a secret readable; at worst some text between the secret and the
@@ -294,20 +295,26 @@ function valueEnd(text: string, start: number, query: boolean): number {
 
 /**
  * `text` with the value of every secret parameter (`SECRET_NAMES`) replaced by `***` (see
- * `valueEnd` for where a value ends). A secret-looking assignment inside a masked value is masked
- * with it.
+ * `valueEnd` for where a value ends). Every secret assignment is scanned from its own value start,
+ * also one that lies inside an already masked value: the masked stretch then runs to the farther
+ * of the two ends, so no reading of where a value ends leaves a piece of either secret readable.
  */
 function maskPasswordParameters(text: string): string {
   let result = '';
   let done = 0;
   for (const match of text.matchAll(PARAMETER)) {
-    if (match.index < done || !isSecretName(match[1] ?? '')) {
+    if (!isSecretName(match[1] ?? '')) {
       continue;
     }
     const before = match.index > 0 ? text[match.index - 1] : '';
     const start = match.index + match[0].length;
+    const end = valueEnd(text, start, before === '?' || before === '&');
+    if (match.index < done) {
+      done = Math.max(done, end);
+      continue;
+    }
     result += text.slice(done, start) + MASK;
-    done = valueEnd(text, start, before === '?' || before === '&');
+    done = end;
   }
   return result + text.slice(done);
 }
