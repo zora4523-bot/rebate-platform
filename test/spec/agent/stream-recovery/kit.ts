@@ -47,6 +47,10 @@ import {
   type RunBody,
   type RunTexts,
 } from '../../../../apps/api/src/modules/agent/stream/run/index.ts';
+import type {
+  FinalizeOutcome,
+  Finalizer,
+} from '../../../../apps/api/src/modules/agent/stream/pg/index.ts';
 import {
   sweepStart,
   type SweepCursor,
@@ -514,5 +518,62 @@ export class GatedSweeper implements Sweeper {
     this.calls += 1;
     if (this.#gate !== null) await this.#gate;
     return this.#inner.sweepOnce(cursor);
+  }
+}
+
+/**
+ * Records every finalize call into a shared event list (`<prefix>call:<label>`) and forwards to
+ * the real B3-03g finalizer. With `holdFirst`, the first call waits (before touching the
+ * database) until release(): a finalize that blocks longer than the tick may last.
+ */
+export class HeldFinalizer implements Finalizer {
+  readonly calls: string[] = [];
+  readonly outcomes: Promise<FinalizeOutcome | Error>[] = [];
+  readonly #inner: Finalizer;
+  readonly #events: string[];
+  readonly #label: (runId: string) => string;
+  readonly #prefix: string;
+  #hold: boolean;
+  #release: () => void = () => undefined;
+  readonly #gate: Promise<void>;
+  constructor(
+    inner: Finalizer,
+    events: string[],
+    label: (runId: string) => string,
+    options: { prefix?: string; holdFirst?: boolean } = {},
+  ) {
+    this.#inner = inner;
+    this.#events = events;
+    this.#label = label;
+    this.#prefix = options.prefix ?? '';
+    this.#hold = options.holdFirst ?? false;
+    this.#gate = new Promise<void>((resolve) => (this.#release = resolve));
+  }
+  release(): void {
+    this.#release();
+  }
+  finalize(runId: string): Promise<FinalizeOutcome> {
+    this.calls.push(runId);
+    this.#events.push(`${this.#prefix}call:${this.#label(runId)}`);
+    const held = this.#hold;
+    this.#hold = false;
+    const work = held
+      ? this.#gate.then(() => this.#inner.finalize(runId))
+      : this.#inner.finalize(runId);
+    this.outcomes.push(
+      work.then(
+        (o) => o,
+        (e: unknown) => e as Error,
+      ),
+    );
+    return work;
+  }
+}
+
+/** Lets in-flight database work of an abandoned step show itself (bounded, a few round trips). */
+export async function settleWork(db: Kysely<DB>): Promise<void> {
+  for (let i = 0; i < 5; i += 1) {
+    await sql`SELECT 1`.execute(db);
+    await flush();
   }
 }

@@ -1,13 +1,17 @@
 // B3-03h 第 9 节 5：worker 循环本身（设计 couli-runs/B3-03g/design.md v5 §5.3「worker 内循环 + advisory
-// lock」、§10.1 T10）。真 PostgreSQL（本文件一库；advisory lock 按库，不与别的测试文件互相看见），sweeper 用
-// 脚本替身（sweepOnce 的内容 B3-03e 已测），tick 只由注入的 schedule 触发，时长只走注入的 Clock：
-// 两轮周期确实执行、游标跨轮保存、异常后继续、持锁连接被杀后锁自动释放并由另一 worker 接管、running 期间
-// 不并发、单轮时限、stop 等进行中的一轮。
+// lock」、§10.1 T10；编排者第 2 轮口径：循环交给一行的 sweeper 逐行调用，每次派发前查 stop、本轮上限、时限、
+// 锁连接）。真 PostgreSQL（本文件一库；advisory lock 按库），一行 sweeper 用脚本替身（每次 sweepOnce 至多
+// 处理一行，内容 B3-03e 已测），tick 只由注入的 schedule 触发，时长只走注入的 Clock：两轮周期、游标跨轮、
+// 本轮上限、step 抛错后下一轮照常、按 Clock 的时限、running 期间不并发、按定时器的时限（旧轮不再派发）、stop
+// 等进行中的一行且不再派发、stop 的等待上限。真 finalize 下的超时与失锁见 takeover.int.test.ts。
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
-import { sweepStart } from '../../../../apps/api/src/modules/agent/stream/sweeper/index.ts';
+import {
+  sweepStart,
+  type SweepCursor,
+} from '../../../../apps/api/src/modules/agent/stream/sweeper/index.ts';
 import {
   agentSweepLoopDefaults,
   startAgentSweeper,
@@ -23,7 +27,7 @@ import {
   ScriptedSweeper,
   advisoryHolders,
   result,
-  terminate,
+  settleWork,
   until,
 } from './kit.ts';
 
@@ -33,7 +37,7 @@ interface Rig {
   readonly clock: FixedClock;
   readonly logs: Logs;
   readonly schedule: ManualSchedule;
-  readonly sweeper: ScriptedSweeper;
+  readonly step: ScriptedSweeper;
   readonly config: AgentSweepLoopConfig;
   readonly loop: AgentSweepLoop;
 }
@@ -42,10 +46,10 @@ function rig(options: { random?: () => number; config?: Partial<AgentSweepLoopCo
   const clock = new FixedClock(new Date(START_MS));
   const logs = new Logs();
   const schedule = new ManualSchedule();
-  const sweeper = new ScriptedSweeper();
+  const step = new ScriptedSweeper();
   const config = { ...agentSweepLoopDefaults(), ...options.config };
   const loop = startAgentSweeper({
-    sweeper,
+    step,
     db: pg.db,
     clock,
     logger: logs.logger,
@@ -53,61 +57,64 @@ function rig(options: { random?: () => number; config?: Partial<AgentSweepLoopCo
     schedule: schedule.schedule,
     ...(options.random === undefined ? {} : { random: options.random }),
   });
-  return { clock, logs, schedule, sweeper, config, loop };
+  return { clock, logs, schedule, step, config, loop };
 }
 
-const cursorA = {
-  lockExpiresAt: new Date(START_MS - 5_000),
-  sessionId: '0190a000-0000-7000-8000-00000000000a',
-};
-const cursorB = {
-  lockExpiresAt: new Date(START_MS - 1_000),
-  sessionId: '0190a000-0000-7000-8000-00000000000b',
-};
+function cursor(n: number): SweepCursor {
+  return {
+    lockExpiresAt: new Date(START_MS - 60_000 + n * 1_000),
+    sessionId: `0190a000-0000-7000-8000-${n.toString(16).padStart(12, '0')}`,
+  };
+}
 
-it('[AC-B3-03h#8] 连续两轮周期确实执行：每次延迟为 interval ×(1 ± 抖动)（注入的 random 决定），tick 先排下一轮再干活；每轮在一条连接上取锁、调 sweepOnce、释放锁，记一条 agent_sweep_tick（计数与 Clock 计的耗时）；游标跨轮保存', async () => {
+/** One row handled (a step result of a one-row sweeper). */
+const one = (n: number, kind: 'final' | 'running' = 'final') =>
+  result({
+    processed: 1,
+    finalized: kind === 'final' ? 1 : 0,
+    skipped: { running: kind === 'running' ? 1 : 0, held: 0 },
+    nextCursor: cursor(n),
+    wrapped: false,
+  });
+/** Nothing left from this cursor: back to the start. */
+const done = () => result({ processed: 0, nextCursor: sweepStart(), wrapped: true });
+
+it('[AC-B3-03h#8] 连续两轮周期：每次延迟为 interval ×(1 ± 抖动)，tick 先排下一轮再干活；一轮逐行调用 step，到本轮上限即停、记一条 agent_sweep_tick（行数合计与 Clock 计的耗时）；下一轮从上一轮停下的游标接着走，wrapped 时本轮结束；每轮结束锁已释放', async () => {
   const draws = [0, 0.75, 0.999_999];
-  const r = rig({ random: () => draws.shift() ?? 0.5 });
+  const r = rig({ random: () => draws.shift() ?? 0.5, config: { maxPerTick: 2 } });
   try {
     const { intervalMs, jitterRatio } = r.config;
     const delay = (x: number) => Math.round(intervalMs * (1 + jitterRatio * (2 * x - 1)));
     expect(r.schedule.armed.map((a) => [a.timer, a.delayMs])).toEqual([['tick', delay(0)]]);
-    const answers = [
-      result({
-        processed: 3,
-        finalized: 2,
-        skipped: { running: 1, held: 0 },
-        nextCursor: cursorA,
-        wrapped: false,
-      }),
-      result({ processed: 1, finalized: 1, failed: 0, nextCursor: cursorB, wrapped: false }),
-    ];
-    r.sweeper.answer = () => {
-      r.clock.advanceMs(1_234);
+    const answers = [one(1), one(2, 'running'), one(3), done()];
+    r.step.answer = () => {
+      r.clock.advanceMs(400);
       return Promise.resolve(answers.shift()!);
     };
 
     await r.schedule.fire('tick');
     expect(r.schedule.pending('tick').map((a) => a.delayMs)).toEqual([delay(0.75)]);
-    expect(await advisoryHolders(pg.db)).toEqual([]);
-    await r.schedule.fire('tick');
-    expect(r.schedule.pending('tick').map((a) => a.delayMs)).toEqual([delay(0.999_999)]);
+    expect(r.step.cursors).toEqual([sweepStart(), cursor(1)]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
 
-    expect(r.sweeper.cursors).toEqual([sweepStart(), cursorA]);
-    const ticks = r.logs.of('agent_sweep_tick');
-    expect(ticks).toHaveLength(2);
-    expect(ticks[0]).toMatchObject({
-      level: LEVEL.info,
-      processed: 3,
-      finalized: 2,
-      skipped_running: 1,
-      skipped_held: 0,
-      failed: 0,
-      wrapped: false,
-      duration_ms: 1_234,
-    });
-    expect(ticks[1]).toMatchObject({ processed: 1, finalized: 1, duration_ms: 1_234 });
+    await r.schedule.fire('tick');
+    expect(r.schedule.pending('tick').map((a) => a.delayMs)).toEqual([delay(0.999_999)]);
+    expect(r.step.cursors).toEqual([sweepStart(), cursor(1), cursor(2), cursor(3)]);
+    expect(await advisoryHolders(pg.db)).toEqual([]);
+
+    expect(r.logs.of('agent_sweep_tick')).toEqual([
+      expect.objectContaining({
+        level: LEVEL.info,
+        processed: 2,
+        finalized: 1,
+        skipped_running: 1,
+        skipped_held: 0,
+        failed: 0,
+        wrapped: false,
+        duration_ms: 800,
+      }),
+      expect.objectContaining({ processed: 1, finalized: 1, wrapped: true, duration_ms: 800 }),
+    ]);
     for (const a of r.schedule.armed.filter((x) => x.timer === 'tick')) {
       expect(a.delayMs).toBeGreaterThanOrEqual(intervalMs * (1 - jitterRatio));
       expect(a.delayMs).toBeLessThanOrEqual(intervalMs * (1 + jitterRatio));
@@ -117,100 +124,95 @@ it('[AC-B3-03h#8] 连续两轮周期确实执行：每次延迟为 interval ×(1
   }
 });
 
-it('[AC-B3-03h#9] 一轮里 sweepOnce 抛错：记 error agent_sweep_failed（只记错误名，不记消息）、锁照样释放、游标不变；下一轮照常', async () => {
+it('[AC-B3-03h#9] step 抛错：本轮不再派发、记 error agent_sweep_failed（只记错误名，不记消息）、锁照样释放、游标停在最后一次成功处；下一轮从那里照常', async () => {
   const r = rig();
   try {
-    let calls = 0;
-    r.sweeper.answer = () => {
-      calls += 1;
-      if (calls === 1) return Promise.reject(new TypeError('用户原话 13800138000 不得入日志'));
-      return Promise.resolve(result({ processed: 0 }));
-    };
+    const answers: (() => Promise<ReturnType<typeof done>>)[] = [
+      () => Promise.resolve(one(1)),
+      () => Promise.reject(new TypeError('用户原话 13800138000 不得入日志')),
+      () => Promise.resolve(done()),
+    ];
+    r.step.answer = () => answers.shift()!();
     await r.schedule.fire('tick');
+    expect(r.step.cursors).toEqual([sweepStart(), cursor(1)]);
     expect(r.logs.of('agent_sweep_failed')).toEqual([
       expect.objectContaining({ level: LEVEL.error, error_name: 'TypeError' }),
     ]);
+    expect(r.logs.of('agent_sweep_tick')).toEqual([]);
     expect(r.logs.lines.join('\n')).not.toContain('13800138000');
     expect(await advisoryHolders(pg.db)).toEqual([]);
-    expect(r.schedule.pending('tick')).toHaveLength(1);
 
     await r.schedule.fire('tick');
-    expect(r.sweeper.cursors).toEqual([sweepStart(), sweepStart()]);
-    expect(r.logs.of('agent_sweep_tick')).toHaveLength(1);
+    expect(r.step.cursors).toEqual([sweepStart(), cursor(1), cursor(1)]);
+    expect(r.logs.of('agent_sweep_tick')).toEqual([
+      expect.objectContaining({ processed: 0, wrapped: true }),
+    ]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
   } finally {
     await r.loop.stop();
   }
 });
 
-it('[AC-B3-03h#10] 持锁连接被 pg_terminate_backend 杀掉：锁随连接自动释放，另一 worker 下一轮拿到锁接管；原 worker 本轮记 agent_sweep_lock_failed、不抛，下一轮照常', async () => {
-  const a = rig();
-  const b = rig();
+it('[AC-B3-03h#10] 按 Clock 的单轮时限：一行处理完时 Clock 已过 tickTimeoutMs → 不再派发下一行，记 warn agent_sweep_tick_timeout、锁释放；已完成那一行的游标保留，下一轮从它之后接着走', async () => {
+  const r = rig();
   try {
-    const tickA = a.schedule.fire('tick');
-    await a.sweeper.started(1);
-    const holders = await advisoryHolders(pg.db);
-    expect(holders).toHaveLength(1);
-    await terminate(pg.db, holders[0]!);
-    await until(
-      'the killed backend released its lock',
-      async () => (await advisoryHolders(pg.db)).length === 0,
-    );
-
-    b.sweeper.answer = () => Promise.resolve(result({ processed: 0 }));
-    await b.schedule.fire('tick');
-    expect(b.sweeper.cursors).toHaveLength(1);
-    expect(b.logs.of('agent_sweep_tick')).toHaveLength(1);
-    expect(b.logs.of('agent_sweep_skipped')).toEqual([]);
-
-    a.sweeper.pending[0]!.resolve(result({ processed: 0 }));
-    await tickA;
-    expect(a.logs.of('agent_sweep_lock_failed')).toEqual([
-      expect.objectContaining({ level: LEVEL.error, error_name: expect.any(String) }),
+    let calls = 0;
+    r.step.answer = () => {
+      calls += 1;
+      if (calls === 1) r.clock.advanceMs(r.config.tickTimeoutMs);
+      return Promise.resolve(calls === 1 ? one(1) : done());
+    };
+    await r.schedule.fire('tick');
+    expect(r.step.cursors).toEqual([sweepStart()]);
+    expect(r.logs.of('agent_sweep_tick_timeout')).toEqual([
+      expect.objectContaining({
+        level: LEVEL.warn,
+        timeout_ms: r.config.tickTimeoutMs,
+        processed: 1,
+      }),
     ]);
+    expect(r.logs.of('agent_sweep_tick')).toEqual([]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
 
-    a.sweeper.answer = () => Promise.resolve(result({ processed: 0 }));
-    await a.schedule.fire('tick');
-    expect(a.sweeper.cursors).toHaveLength(2);
-    expect(a.logs.of('agent_sweep_tick').length).toBeGreaterThanOrEqual(1);
-    expect(await advisoryHolders(pg.db)).toEqual([]);
+    await r.schedule.fire('tick');
+    expect(r.step.cursors).toEqual([sweepStart(), cursor(1)]);
+    expect(r.logs.of('agent_sweep_tick')).toHaveLength(1);
   } finally {
-    for (const p of a.sweeper.pending) p.resolve(result());
-    await a.loop.stop();
-    await b.loop.stop();
+    await r.loop.stop();
   }
 });
 
-it('[AC-B3-03h#11] running 期间再次触发不并发：第二次 tick 记 agent_sweep_skipped busy 后立即结束，不借连接、不调 sweepOnce；前一轮照常结束并释放锁', async () => {
+it('[AC-B3-03h#11] running 期间再次触发不并发：第二次 tick 记 agent_sweep_skipped busy 后立即结束，不借连接、不调 step；前一轮照常结束并释放锁', async () => {
   const r = rig();
   try {
     const first = r.schedule.fire('tick');
-    await r.sweeper.started(1);
+    await r.step.started(1);
     expect(await advisoryHolders(pg.db)).toHaveLength(1);
     await r.schedule.fire('tick');
-    expect(r.sweeper.cursors).toHaveLength(1);
+    expect(r.step.cursors).toHaveLength(1);
     expect(r.logs.of('agent_sweep_skipped')).toEqual([expect.objectContaining({ reason: 'busy' })]);
     expect(await advisoryHolders(pg.db)).toHaveLength(1);
 
-    r.sweeper.pending[0]!.resolve(result({ processed: 2, finalized: 2 }));
+    r.step.answer = () => Promise.resolve(done());
+    r.step.pending[0]!.resolve(one(1));
     await first;
+    expect(r.step.cursors).toEqual([sweepStart(), cursor(1)]);
     expect(r.logs.of('agent_sweep_tick')).toEqual([
-      expect.objectContaining({ processed: 2, finalized: 2 }),
+      expect.objectContaining({ processed: 1, finalized: 1, wrapped: true }),
     ]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
     expect(r.schedule.pending('tick')).toHaveLength(1);
   } finally {
-    for (const p of r.sweeper.pending) p.resolve(result());
+    for (const p of r.step.pending) p.resolve(done());
     await r.loop.stop();
   }
 });
 
-it('[AC-B3-03h#12] 单轮时限：sweepOnce 挂起超过 tickTimeoutMs → 记 warn agent_sweep_timeout、本轮结束并释放锁、游标不变；迟到的结果或拒绝被忽略；后续轮不受影响', async () => {
+it('[AC-B3-03h#12] 按定时器的单轮时限：一行挂起时 tick_timeout 触发 → 本轮立即结束（warn agent_sweep_tick_timeout）、锁释放；挂起的那一行稍后成功或失败都被忽略，旧轮此后一行都不再派发；下一轮从旧游标照常', async () => {
   const r = rig();
   try {
     const tick = r.schedule.fire('tick');
-    await r.sweeper.started(1);
+    await r.step.started(1);
     await until(
       'the tick time limit is armed',
       () => r.schedule.pending('tick_timeout').length === 1,
@@ -218,19 +220,21 @@ it('[AC-B3-03h#12] 单轮时限：sweepOnce 挂起超过 tickTimeoutMs → 记 w
     expect(r.schedule.pending('tick_timeout')[0]!.delayMs).toBe(r.config.tickTimeoutMs);
     await r.schedule.fire('tick_timeout');
     await tick;
-    expect(r.logs.of('agent_sweep_timeout')).toEqual([
+    expect(r.logs.of('agent_sweep_tick_timeout')).toEqual([
       expect.objectContaining({ level: LEVEL.warn, timeout_ms: r.config.tickTimeoutMs }),
     ]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
 
-    // The abandoned pass rejects late: ignored, never an unhandled rejection.
-    r.sweeper.pending[0]!.reject(new Error('late'));
-    r.sweeper.answer = () =>
-      Promise.resolve(result({ processed: 1, finalized: 1, nextCursor: cursorA, wrapped: false }));
+    // The abandoned step resolves late with more rows to go: the old tick dispatches nothing.
+    r.step.pending[0]!.resolve(one(1));
+    await settleWork(pg.db);
+    expect(r.step.cursors).toEqual([sweepStart()]);
+
+    r.step.answer = () => Promise.resolve(done());
     await r.schedule.fire('tick');
-    expect(r.sweeper.cursors).toEqual([sweepStart(), sweepStart()]);
+    expect(r.step.cursors).toEqual([sweepStart(), sweepStart()]);
     expect(r.logs.of('agent_sweep_tick')).toEqual([
-      expect.objectContaining({ processed: 1, finalized: 1 }),
+      expect.objectContaining({ processed: 0, wrapped: true }),
     ]);
     expect(r.logs.of('agent_sweep_failed')).toEqual([]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
@@ -239,10 +243,30 @@ it('[AC-B3-03h#12] 单轮时限：sweepOnce 挂起超过 tickTimeoutMs → 记 w
   }
 });
 
-it('[AC-B3-03h#13] stop：等进行中的一轮结束才 resolve（锁已释放）；取消已排的 tick，停后迟到的 tick 什么都不做；重复调用都 resolve', async () => {
+it('[AC-B3-03h#13] 迟到的拒绝：被定时器放弃的那一行稍后拒绝，不成为未处理的拒绝、不记 agent_sweep_failed、不派发', async () => {
+  const r = rig();
+  try {
+    const tick = r.schedule.fire('tick');
+    await r.step.started(1);
+    await until(
+      'the tick time limit is armed',
+      () => r.schedule.pending('tick_timeout').length === 1,
+    );
+    await r.schedule.fire('tick_timeout');
+    await tick;
+    r.step.pending[0]!.reject(new Error('late'));
+    await settleWork(pg.db);
+    expect(r.step.cursors).toHaveLength(1);
+    expect(r.logs.of('agent_sweep_failed')).toEqual([]);
+  } finally {
+    await r.loop.stop();
+  }
+});
+
+it('[AC-B3-03h#14] stop：进行中的一行做完后不再派发下一行，解锁后 stop 才 resolve；取消已排的 tick，停后迟到的 tick 什么都不做；重复调用都 resolve', async () => {
   const r = rig();
   const tick = r.schedule.fire('tick');
-  await r.sweeper.started(1);
+  await r.step.started(1);
   const armedTick = r.schedule.pending('tick')[0]!;
   let stopped = false;
   const stopping = r.loop.stop().then(() => (stopped = true));
@@ -251,36 +275,35 @@ it('[AC-B3-03h#13] stop：等进行中的一轮结束才 resolve（锁已释放�
   expect(stopped).toBe(false);
   expect(armedTick.cancelled).toBe(true);
 
-  r.sweeper.pending[0]!.resolve(result());
+  r.step.pending[0]!.resolve(one(1));
   await tick;
   await stopping;
+  expect(r.step.cursors).toEqual([sweepStart()]);
+  expect(r.logs.of('agent_sweep_tick')).toEqual([
+    expect.objectContaining({ processed: 1, wrapped: false }),
+  ]);
   expect(await advisoryHolders(pg.db)).toEqual([]);
 
   await r.schedule.fireLate(armedTick);
-  expect(r.sweeper.cursors).toHaveLength(1);
+  expect(r.step.cursors).toHaveLength(1);
   await expect(r.loop.stop()).resolves.toBeUndefined();
   expect(r.schedule.pending('tick')).toEqual([]);
 });
 
-it('[AC-B3-03h#14] stop 的等待有上限：进行中的一轮挂起时 stop_timeout 触发即 resolve；之后不再起新一轮', async () => {
+it('[AC-B3-03h#33] stop 的等待有上限：进行中的一行挂起时 stop_timeout 触发即 resolve；之后不再起新一轮，挂起的一行结束后也不再派发', async () => {
   const r = rig();
   const tick = r.schedule.fire('tick');
-  await r.sweeper.started(1);
+  await r.step.started(1);
   const stopping = r.loop.stop();
   await until('stop arms its upper bound', () => r.schedule.pending('stop_timeout').length === 1);
   await r.schedule.fire('stop_timeout');
   await stopping;
   expect(r.schedule.pending('tick')).toEqual([]);
 
-  // The hung pass ends later on its own time limit; the lock is released, nothing else starts.
-  await until(
-    'the tick time limit is armed',
-    () => r.schedule.pending('tick_timeout').length === 1,
-  );
-  await r.schedule.fire('tick_timeout');
+  r.step.pending[0]!.resolve(one(1));
   await tick;
-  r.sweeper.pending[0]!.resolve(result());
+  await settleWork(pg.db);
   expect(await advisoryHolders(pg.db)).toEqual([]);
-  expect(r.sweeper.cursors).toHaveLength(1);
+  expect(r.step.cursors).toHaveLength(1);
   expect(r.schedule.pending('tick')).toEqual([]);
 });

@@ -11,6 +11,7 @@ import {
   startAgentSweeper,
   type AgentSweepLoopConfig,
 } from '../../../../apps/api/src/modules/agent/stream/sweeper/loop.ts';
+import { sweeperDefaults } from '../../../../apps/api/src/modules/agent/stream/sweeper/index.ts';
 import { Logs, ManualSchedule, START_MS, ScriptedSweeper } from './kit.ts';
 
 afterEach(() => {
@@ -36,7 +37,7 @@ function start(config: AgentSweepLoopConfig, schedule?: ManualSchedule, random?:
   const sweeper = new ScriptedSweeper();
   const logs = new Logs();
   const loop = startAgentSweeper({
-    sweeper,
+    step: sweeper,
     db,
     clock: new FixedClock(new Date(START_MS)),
     logger: logs.logger,
@@ -47,13 +48,19 @@ function start(config: AgentSweepLoopConfig, schedule?: ManualSchedule, random?:
   return { loop, sweeper, logs, touched };
 }
 
-it('[AC-B3-03h#15] 默认参数：周期 60 s、抖动 ±10 %、单轮时限 60 s，stop 等待上限为正的安全整数；每次调用返回新对象', () => {
+it('[AC-B3-03h#15] 默认参数：周期 60 s、抖动 ±10 %、单轮时限 60 s、单轮至多 sweeperDefaults().maxPerTick 条，stop 等待上限为正的安全整数；每次调用返回新对象', () => {
   const d = agentSweepLoopDefaults();
-  expect(d).toMatchObject({ intervalMs: 60_000, jitterRatio: 0.1, tickTimeoutMs: 60_000 });
+  expect(d).toMatchObject({
+    intervalMs: 60_000,
+    jitterRatio: 0.1,
+    tickTimeoutMs: 60_000,
+    maxPerTick: sweeperDefaults().maxPerTick,
+  });
   expect(Number.isSafeInteger(d.stopTimeoutMs) && d.stopTimeoutMs >= 1).toBe(true);
   expect(Object.keys(d).sort()).toEqual([
     'intervalMs',
     'jitterRatio',
+    'maxPerTick',
     'stopTimeoutMs',
     'tickTimeoutMs',
   ]);
@@ -61,7 +68,7 @@ it('[AC-B3-03h#15] 默认参数：周期 60 s、抖动 ±10 %、单轮时限 60 
   expect(agentSweepLoopDefaults()).toEqual(d);
 });
 
-it('[AC-B3-03h#16] 参数校验：interval / tickTimeout / stopTimeout 须为 ≥ 1 的安全整数、0 ≤ jitterRatio < 1，否则 startAgentSweeper 抛 RangeError 且不排任何定时器；抖动 0 合法', () => {
+it('[AC-B3-03h#16] 参数校验：interval / tickTimeout / maxPerTick / stopTimeout 须为 ≥ 1 的安全整数、0 ≤ jitterRatio < 1，否则 startAgentSweeper 抛 RangeError 且不排任何定时器；抖动 0 合法', () => {
   const base = agentSweepLoopDefaults();
   const invalid: [string, AgentSweepLoopConfig][] = [
     ['interval 0', { ...base, intervalMs: 0 }],
@@ -72,6 +79,8 @@ it('[AC-B3-03h#16] 参数校验：interval / tickTimeout / stopTimeout 须为 �
     ['jitter NaN', { ...base, jitterRatio: Number.NaN }],
     ['tickTimeout 0', { ...base, tickTimeoutMs: 0 }],
     ['tickTimeout Infinity', { ...base, tickTimeoutMs: Number.POSITIVE_INFINITY }],
+    ['maxPerTick 0', { ...base, maxPerTick: 0 }],
+    ['maxPerTick 1.5', { ...base, maxPerTick: 1.5 }],
     ['stopTimeout 0', { ...base, stopTimeoutMs: 0 }],
     ['stopTimeout 2.5', { ...base, stopTimeoutMs: 2.5 }],
   ];

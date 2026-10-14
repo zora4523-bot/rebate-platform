@@ -128,10 +128,13 @@ it('[AC-B3-03h#26] worker 入口（有库）：agentSweeperToken() 提供运行�
     const runtime = context.get(agentSweeperToken(), { strict: false }) as AgentSweeperRuntime;
     expect(runtime).not.toBeNull();
     expect(typeof runtime.start).toBe('function');
-    expect(typeof runtime.sweeper.sweepOnce).toBe('function');
+    expect(typeof runtime.step.sweepOnce).toBe('function');
     expect(runtime.timings).toEqual(runTimingsDefaults());
     expect(runtime.sweeperConfig).toEqual(sweeperDefaults());
-    expect(runtime.loopConfig).toEqual(agentSweepLoopDefaults());
+    expect(runtime.loopConfig).toEqual({
+      ...agentSweepLoopDefaults(),
+      maxPerTick: sweeperDefaults().maxPerTick,
+    });
     expect(() =>
       assertRunTimings({
         ...runtime.timings,

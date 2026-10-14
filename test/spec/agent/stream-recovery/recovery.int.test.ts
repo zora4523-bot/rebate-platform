@@ -198,10 +198,10 @@ it('[AC-B3-03h#3] 两个 worker（各自的连接池、同一库）同时 tick�
   const poolB = pg.pool();
   const wa = worker(pg.db);
   const wb = worker(poolB);
-  const ga = new GatedSweeper(wa.runtime.sweeper);
-  const gb = new GatedSweeper(wb.runtime.sweeper);
+  const ga = new GatedSweeper(wa.runtime.step);
+  const gb = new GatedSweeper(wb.runtime.step);
   const la = startAgentSweeper({
-    sweeper: ga,
+    step: ga,
     db: pg.db,
     clock: wa.clock,
     logger: wa.logs.logger,
@@ -209,7 +209,7 @@ it('[AC-B3-03h#3] 两个 worker（各自的连接池、同一库）同时 tick�
     schedule: wa.schedule.schedule,
   });
   const lb = startAgentSweeper({
-    sweeper: gb,
+    step: gb,
     db: poolB,
     clock: wb.clock,
     logger: wb.logs.logger,

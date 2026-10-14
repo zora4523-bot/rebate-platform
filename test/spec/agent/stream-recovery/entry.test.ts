@@ -67,8 +67,13 @@ async function fixture(env: Record<string, string> = {}) {
   });
   const order: string[] = [];
   const msgs = (): string[] => p.lines.map((line) => (JSON.parse(line) as { msg: string }).msg);
+  // loop.stop() resolves at once unless the test holds it (holdLoopStop): then it settles only
+  // when the test says so, as a loop waiting for its running tick does.
+  let loopStopGate: Promise<void> | null = null;
   const loopStop = vi.fn(async () => {
-    order.push('sweep-stop');
+    order.push('sweep-stop-called');
+    if (loopStopGate !== null) await loopStopGate;
+    order.push('sweep-stopped');
   });
   const start = vi.fn((...args: unknown[]) => {
     void args;
@@ -145,6 +150,19 @@ async function fixture(env: Record<string, string> = {}) {
     onStart(fn: () => void) {
       duringStart = fn;
     },
+    holdLoopStop(): { release(): void; fail(error: Error): void } {
+      let release!: () => void;
+      let fail!: (error: Error) => void;
+      loopStopGate = new Promise<void>((resolve, reject) => {
+        release = resolve;
+        fail = reject;
+      });
+      return { release: () => release(), fail: (error) => fail(error) };
+    },
+    /** Drains pending continuations without advancing time (fake timers). */
+    async drain() {
+      for (let i = 0; i < 5; i += 1) await vi.advanceTimersByTimeAsync(0);
+    },
     async settleShutdown() {
       await vi.advanceTimersByTimeAsync(0);
       expect(msgs().some((m) => m === 'stopped' || m === 'shutdown_failed')).toBe(true);
@@ -153,18 +171,29 @@ async function fixture(env: Record<string, string> = {}) {
   return f;
 }
 
-it('[AC-B3-03h#20] worker 入口：startWorkerServices 解决之后、started 之前起一次循环（不带测试缝）；SIGTERM 时先 stop 循环再 services.stop，不留定时器', async () => {
+it('[AC-B3-03h#20] worker 入口：startWorkerServices 解决之后、started 之前起一次循环（不带测试缝）；SIGTERM 时先等循环 stop 完成（它 resolve 之前 services.stop 不被调用），之后才 services.stop，不留定时器', async () => {
   const f = await fixture();
   await f.run('worker');
   expect(f.start).toHaveBeenCalledTimes(1);
   expect(f.start.mock.calls[0]).toEqual([]);
   expect(f.order).toEqual(['queue-start', 'sweep-start']);
   expect(f.msgs()).toContain('started');
+  const held = f.holdLoopStop();
   f.signal('SIGTERM');
-  await f.settleShutdown();
+  await f.drain();
   expect(f.loopStop).toHaveBeenCalledTimes(1);
+  expect(f.servicesStop, 'services.stop waits for loop.stop').not.toHaveBeenCalled();
+  expect(f.msgs()).not.toContain('stopped');
+  held.release();
+  await f.settleShutdown();
   expect(f.servicesStop).toHaveBeenCalledTimes(1);
-  expect(f.order).toEqual(['queue-start', 'sweep-start', 'sweep-stop', 'services-stop']);
+  expect(f.order).toEqual([
+    'queue-start',
+    'sweep-start',
+    'sweep-stop-called',
+    'sweep-stopped',
+    'services-stop',
+  ]);
   expect(f.msgs()).toContain('stopped');
   expect(vi.getTimerCount()).toBe(0);
 }, 30_000);
@@ -216,7 +245,23 @@ it('[AC-B3-03h#24] 上下文里没有可用的循环运行体（get 抛错、nul
   }
 }, 30_000);
 
-it('[AC-B3-03h#25] 循环 stop 拒绝时 services.stop 仍被调用、keep-alive 清掉，不留定时器', async () => {
+it('[AC-B3-03h#25] 循环 stop 拒绝时 services.stop 仍被调用（在拒绝之后，不在之前）、keep-alive 清掉，不留定时器', async () => {
+  const f = await fixture();
+  await f.run('worker');
+  expect(f.start).toHaveBeenCalledTimes(1);
+  const held = f.holdLoopStop();
+  f.signal('SIGTERM');
+  await f.drain();
+  expect(f.loopStop).toHaveBeenCalledTimes(1);
+  expect(f.servicesStop).not.toHaveBeenCalled();
+  held.fail(new Error('fixture-loop-stop-failed'));
+  await f.settleShutdown();
+  expect(f.servicesStop).toHaveBeenCalledTimes(1);
+  expect(f.order).toEqual(['queue-start', 'sweep-start', 'sweep-stop-called', 'services-stop']);
+  expect(vi.getTimerCount()).toBe(0);
+}, 30_000);
+
+it('[AC-B3-03h#34] 循环 stop 立即拒绝（同步就失败的停止）：services.stop 仍被调用，不留定时器', async () => {
   const f = await fixture();
   f.loopStop.mockRejectedValueOnce(new Error('fixture-loop-stop-failed'));
   await f.run('worker');

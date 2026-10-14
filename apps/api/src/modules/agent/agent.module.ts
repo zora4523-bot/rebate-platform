@@ -14,13 +14,15 @@
 //   texts service exists (BR-TEXT-14); every call returns the same object.
 // createAgentSweeperRuntime({db, clock, logger}) → AgentSweeperRuntime, built with nothing running:
 //   texts = agentDefaultTexts(); timings = runTimingsDefaults(); sweeperConfig = sweeperDefaults();
-//   loopConfig = agentSweepLoopDefaults() (each a fresh value of those functions; T14: the one
-//   frozen RunTimings, assertRunTimings({...timings, admissionRunMaxMs: timings.runMaxMs,
-//   sweepMarginMs: sweeperConfig.marginMs}) holds);
+//   loopConfig = agentSweepLoopDefaults() with loopConfig.maxPerTick = sweeperConfig.maxPerTick
+//   (each a fresh value of those functions; T14: the one frozen RunTimings,
+//   assertRunTimings({...timings, admissionRunMaxMs: timings.runMaxMs, sweepMarginMs:
+//   sweeperConfig.marginMs}) holds);
 //   finalizer = createPgRunPorts({db, clock, timings, limits: createQuotaLimitsSource({reader:
 //   createContentReader({db, clock}), logger}), texts, logger}).finalizer (no signals: the sweeper
-//   needs no Redis); sweeper = createSweeper({db, finalizer, clock, config: sweeperConfig, logger}).
-//   start(options?) = startAgentSweeper({sweeper, db, clock, logger, config: loopConfig,
+//   needs no Redis); step = createSweeper({db, finalizer, clock, config: {...sweeperConfig,
+//   maxPerTick: 1}, logger}) — one row per call, so the loop can stop between rows (loop.ts).
+//   start(options?) = startAgentSweeper({step, db, clock, logger, config: loopConfig,
 //   ...options}) — every call starts one more loop (entry.ts calls it once).
 // AgentModule.forWorker(): a DynamicModule providing and exporting agentSweeperToken(), injected
 //   [CLOCK, ROOT_LOGGER, {token: DB, optional: true}]. Without a DB handle the provider is null and
@@ -76,7 +78,8 @@ export interface AgentSweeperRuntime {
   readonly timings: RunTimings;
   readonly sweeperConfig: SweeperConfig;
   readonly loopConfig: AgentSweepLoopConfig;
-  readonly sweeper: Sweeper;
+  /** The one-row sweeper the loop calls row by row (createSweeper with maxPerTick 1). */
+  readonly step: Sweeper;
   start(options?: AgentSweeperStartOptions): AgentSweepLoop;
 }
 
