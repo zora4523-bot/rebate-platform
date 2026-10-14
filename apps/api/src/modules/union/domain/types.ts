@@ -139,9 +139,47 @@ export interface ItemInput extends ItemRef {
   readonly commission_percent: string;
 }
 
-export interface UnionOrder extends ItemRef {
+/**
+ * PDD-only internal order data; absent on other platforms. Missing upstream fields are null.
+ * Times retain integer Unix seconds (UTC), not milliseconds or local-time strings.
+ * Rates retain integer per-mille units as bigint, not the product DTO's basis points.
+ * subsidy_* are internal channel data, never user-visible amounts or commission components.
+ */
+export interface PddOrderFields {
+  readonly platform_order_id?: string | null;
+  readonly pid?: string | null;
+  readonly custom_parameters?: string | null;
+  readonly order_status?: number | null;
+  readonly order_status_desc?: string | null;
+  readonly fail_reason?: string | null;
+  /** Detail-only; missing is null, not an inferred no-after-sales status. */
+  readonly return_status?: number | null;
+  readonly service_fee_fen?: bigint | null;
+  readonly goods_price_fen?: bigint | null;
+  readonly platform_discount_fen?: bigint | null;
+  readonly sep_market_fee_fen?: bigint | null;
+  readonly promotion_rate?: bigint | null;
+  readonly sep_rate?: bigint | null;
+  readonly order_create_time?: number | null;
+  readonly order_pay_time?: number | null;
+  readonly order_group_success_time?: number | null;
+  readonly order_receive_time?: number | null;
+  readonly order_verify_time?: number | null;
+  readonly order_settle_time?: number | null;
+  readonly order_modify_at?: number | null;
+  readonly url_last_generate_time?: number | null;
+  readonly subsidy_duo_amount_level?: bigint | null;
+  readonly subsidy_duo_amount_ten_million?: bigint | null;
+  readonly subsidy_type?: number | null;
+  /** Probe confirmed only the array, not its member schema; no nested field mapping. */
+  readonly subsidy_list?: readonly unknown[] | null;
+}
+
+export interface UnionOrder extends ItemRef, PddOrderFields {
   readonly order_id: string;
   readonly paid_fen: bigint;
+  /** PDD: promotion_amount 含软件服务费，不是可分配基数；基数 = promotion_amount −
+   * duo_id_service_fee，在 orders / 分账层扣。subsidy_* 不并入此金额。 */
   readonly commission_fen: bigint;
 }
 
@@ -236,6 +274,8 @@ export interface TimeWindow {
 }
 export interface OrderQueryOpt {
   readonly cursor?: string;
+  /** PDD: omitted = increment (update time); pay_time uses the payment-time range API. */
+  readonly queryMode?: 'increment' | 'pay_time';
 }
 export interface MaterialReq {
   readonly cursor?: string;
@@ -257,6 +297,8 @@ export interface UnionAdapter {
   convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult>;
   bindPublisher?(req: BindReq, ctx: CallCtx): Promise<BindResult>;
   listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>>;
+  /** PDD detail, including optional after-sales status; an idempotent read. */
+  getPddOrderDetail?(orderSn: string, ctx: CallCtx): Promise<UnionOrder>;
   listRefunds?(win: TimeWindow, ctx: CallCtx): Promise<Page<UnionRefund>>;
   listPunishments?(win: TimeWindow, ctx: CallCtx): Promise<Page<UnionPunish>>;
   materialFeed?(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>>;

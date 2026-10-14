@@ -164,6 +164,12 @@ export class PddUnionAdapter implements UnionAdapter {
     void win;
     void opt;
     void ctx;
-    throw unimplemented('listOrders');
+    throw new Error('NotImplemented: listOrders');
+  }
+
+  async getPddOrderDetail(orderSn: string, ctx: CallCtx): Promise<UnionOrder> {
+    void orderSn;
+    void ctx;
+    throw new Error('NotImplemented: getPddOrderDetail');
   }
 }
