@@ -19,5 +19,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/upstream-limits/**'
-status: todo
-pr: null
+status: done
+pr: 454
