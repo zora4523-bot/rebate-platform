@@ -13,11 +13,12 @@ const { parseYamlLite } = createRequire(import.meta.url)(
   parseYamlLite(text: string): unknown;
 };
 
-let validator: ValidateFunction | undefined;
+// Compile once during module initialization, before any HTTP instance or request is created.
+// Every instance shares this validator; constructing an instance performs no contract I/O.
+const validator: ValidateFunction = load();
 
 /** sendAgentMessage is planned, so it is absent from the generated route schemas. */
 export function messageValidator(): ValidateFunction {
-  validator ??= load();
   return validator;
 }
 

@@ -209,7 +209,7 @@ export function createAgentHttp(deps: AgentHttpDeps): AgentHttp {
   ) {
     throw new RangeError('Invalid agent text limit');
   }
-  // Prepare the contract before accepting requests; manual clocks must never wait on file I/O.
+  // Reuse the validator compiled at module load; instance creation performs no contract I/O.
   const validate = messageValidator();
   function refuse(
     caller: AgentCaller,
