@@ -41,15 +41,16 @@ it('[AC-B1-01zy#6] 任意多段粘连口令、引号及转义组合均不泄露�
         `host=db.invalid ${body} dbname=couli`,
         `postgres://u@h/db?${body} dbname=couli`,
       ];
-      return inputs.every((input) =>
-        [redactCredentials(input), describeError(new Error(input))].every(
-          (output) =>
-            secrets.every((secret) => !output.includes(secret)) &&
-            output.includes('***') &&
-            output.includes('application_name=public-app') &&
-            output.includes('dbname=couli'),
-        ),
-      );
+      for (const input of inputs) {
+        for (const output of [redactCredentials(input), describeError(new Error(input))]) {
+          for (const secret of secrets) {
+            expect(output.includes(secret), 'no password fragment may survive').toBe(false);
+          }
+          expect(output.includes('***'), 'use the existing redaction marker').toBe(true);
+          expect(output.includes('application_name=public-app')).toBe(true);
+          expect(output.includes('dbname=couli')).toBe(true);
+        }
+      }
     }),
     params,
   );
@@ -77,14 +78,15 @@ it('[AC-B1-01zy#7] 两个 URL 入口均隐藏任意重复 OAuth 口令且保留�
         const input =
           `postgres://u@db.invalid/couli?${query}` +
           '&oauth_client_id=public-client&sslmode=require';
-        return [redactCredentials(input), redactPgUrl(input)].every(
-          (output) =>
-            pairs.every(({ secret }) => !output.includes(secret)) &&
-            output.includes('***') &&
-            output.includes('postgres://u@db.invalid/couli?') &&
-            output.includes('oauth_client_id=public-client') &&
-            output.includes('sslmode=require'),
-        );
+        for (const output of [redactCredentials(input), redactPgUrl(input)]) {
+          for (const { secret } of pairs) {
+            expect(output.includes(secret), 'no password fragment may survive').toBe(false);
+          }
+          expect(output.includes('***'), 'use the existing redaction marker').toBe(true);
+          expect(output.includes('postgres://u@db.invalid/couli?')).toBe(true);
+          expect(output.includes('oauth_client_id=public-client')).toBe(true);
+          expect(output.includes('sslmode=require')).toBe(true);
+        }
       },
     ),
     propParams(),
