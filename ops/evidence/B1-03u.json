@@ -1,0 +1,108 @@
+{
+  "task": "B1-03u",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "7be1084ba300eba6cb3e0803ceea4880d0c4c61c",
+  "red_tests": [
+    "test/spec/risk/freeze-expiry-heal/entry.test.ts > [AC-B1-03u#11] 真实入口在 worker 队列启动及 seed 后接上补投，停止时清理；其他四入口不装",
+    "test/spec/risk/freeze-expiry-heal/entry.test.ts > [AC-B1-03u#12] services.stop 拒绝仍调用补投 stop 并清掉 keep-alive，不能留下定时器",
+    "test/spec/risk/freeze-expiry-heal/entry.test.ts > [AC-B1-03u#13] seed 投递失败只 warn 后仍启动补投，初次断链无需等重启",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#1] 健康链补投与 handle 续投完全同 key，重复 worker 被 exclusive 去重且不额外扫描",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#2] freeze-expiry 续投失败断链后，不重启，heal 接上未来任务并在到点处理后继续续投",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#2] daily-alerts 续投失败断链后，不重启，heal 接上未来任务并在到点处理后继续续投",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-10-15T00:00:00+08:00 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-10-15T00:04:59.999+08:00 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-10-15T00:05:00+08:00 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-12-31T23:59:59+08:00 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-12-31T23:59:59Z 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#4] 当天 daily-alerts 已完成不再占 key，heal 仍只补明天，不重复当天告警",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#5] freeze-expiry 补投失败只记规定 warn；另一条独立投递，下次仍能恢复",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#5] daily-alerts 补投失败只记规定 warn；另一条独立投递，下次仍能恢复",
+    "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#5] both 补投失败只记规定 warn；另一条独立投递，下次仍能恢复",
+    "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#6] 导出的固定间隔为五分钟；只在周期到达时补投，连续多个周期都工作",
+    "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#7] 补投拒绝不会丢掉后续周期，记录 warn 后下一周期仍调用 heal",
+    "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#8] 收到停止信号后不再补投；stop 清理定时器，已排进事件循环的回调也不能补投",
+    "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#9] 启动前已停止或没有扫描服务时不装定时器",
+    "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#10] 默认调度实际每五分钟触发；停止后无悬挂定时器"
+  ],
+  "risk_note": "RV2 (risk-scan chain self-heal; BR-ID-36 freeze expiry and daily alerts keep running; no migration). The worker re-queues each chain's next time slot every 5 minutes with the chain's own singleton key: deduplicated by the exclusive risk-scan queue while the chain is healthy, restarts a chain broken by a failed re-enqueue; the current slot is never re-queued (no duplicate daily alerts). A failed re-queue only warns, the other chain still goes; the timer stops before the services stop and is unref'd. B1-03j behaviour and frozen tests unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "7be1084ba300eba6cb3e0803ceea4880d0c4c61c",
+      "tree": "2afef9bb052814cd7d7783805ef9d7611a566872",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T06:50:37Z",
+      "finished_at": "2026-10-14T06:50:43Z",
+      "red_tests": [
+        "test/spec/risk/freeze-expiry-heal/entry.test.ts > [AC-B1-03u#11] 真实入口在 worker 队列启动及 seed 后接上补投，停止时清理；其他四入口不装",
+        "test/spec/risk/freeze-expiry-heal/entry.test.ts > [AC-B1-03u#12] services.stop 拒绝仍调用补投 stop 并清掉 keep-alive，不能留下定时器",
+        "test/spec/risk/freeze-expiry-heal/entry.test.ts > [AC-B1-03u#13] seed 投递失败只 warn 后仍启动补投，初次断链无需等重启",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#1] 健康链补投与 handle 续投完全同 key，重复 worker 被 exclusive 去重且不额外扫描",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#2] freeze-expiry 续投失败断链后，不重启，heal 接上未来任务并在到点处理后继续续投",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#2] daily-alerts 续投失败断链后，不重启，heal 接上未来任务并在到点处理后继续续投",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-10-15T00:00:00+08:00 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-10-15T00:04:59.999+08:00 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-10-15T00:05:00+08:00 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-12-31T23:59:59+08:00 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#3] 2026-12-31T23:59:59Z 只按注入 Clock 补下一 UTC 分钟和下一 +08 日期，不补当前槽",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#4] 当天 daily-alerts 已完成不再占 key，heal 仍只补明天，不重复当天告警",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#5] freeze-expiry 补投失败只记规定 warn；另一条独立投递，下次仍能恢复",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#5] daily-alerts 补投失败只记规定 warn；另一条独立投递，下次仍能恢复",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts > [AC-B1-03u#5] both 补投失败只记规定 warn；另一条独立投递，下次仍能恢复",
+        "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#6] 导出的固定间隔为五分钟；只在周期到达时补投，连续多个周期都工作",
+        "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#7] 补投拒绝不会丢掉后续周期，记录 warn 后下一周期仍调用 heal",
+        "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#8] 收到停止信号后不再补投；stop 清理定时器，已排进事件循环的回调也不能补投",
+        "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#9] 启动前已停止或没有扫描服务时不装定时器",
+        "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts > [AC-B1-03u#10] 默认调度实际每五分钟触发；停止后无悬挂定时器"
+      ],
+      "expected": [
+        "test/spec/risk/freeze-expiry-heal/entry.test.ts",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts",
+        "test/spec/risk/freeze-expiry-heal/lifecycle.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "cc2a9ad5331f0ecfcc4cc97fa97f1d6800a79cf8679c34f3382ede177f210481"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass (0 findings); checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run; 20 tests in 3 files red for the right reason on the test runner) reviewed by a fresh Claude subagent: round 1 pass (S2: #1 expects no log line at all, stricter than the ruling)"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "15276679f139a405ca8a5d0118b292c4e76a1afc",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
