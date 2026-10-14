@@ -182,3 +182,9 @@ approvals:
     granted: true
     date: '2026-10-14'
     note: '负责人在对话里直接对拼多多接入线编排会话（pdd-lane，账号 4）作答：问「录制由谁、在哪跑」选「你在本机跑一条命令（推荐）」，问「staging 服务端 client_secret 放在哪」选「staging 节点文件（推荐）」；两问的选项说明由编排会话拟写（含 IP 白名单只加不删、prod 仍 KMS），不是负责人原话；起因台账 PR #306 评审 r1 S1-2 / S1-7、r2 S1-A；本条所在的 PR 按第 24 条由编排会话或规划会话加标签'
+  - id: 29
+    row: 4
+    title: '第 28 条 ① 的补充：拼多多探测脚本（couli-runs/probes/pdd_probe.py 与 pdd_probe_goods.py，只读接口、共用 ≤40 次调用预算、进程内读 ~/.couli/pdd.env 不显示、产物只留字段名 / 类型 / 掩码形状）可由拼多多接入线编排会话代负责人运行，产物同样认定为本线 probe 依据，存 rebate-private/cap-tests/ 并在 probe-runs.log 记「代理代跑」；备案授权等必须由真人账号完成的步骤仍由负责人本人做'
+    granted: true
+    date: '2026-10-15'
+    note: '负责人在对话里直接对 pdd-lane（账号 4）作答：问「探测谁跑」选「授权你代我跑」（选项说明由编排会话拟写，含只读、≤40 次、密钥只在脚本进程里读、补登记 approvals）；同日首轮代跑 10 次（cap-tests/2026-10-15/pdd/）；本条所在的 PR 按第 24 条由编排会话加标签'
