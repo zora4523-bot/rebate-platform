@@ -6,8 +6,9 @@ import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import type { AssembleCardInput, CatalogCardEntry } from '../../catalog/index.ts';
-import { FixedClock, type Idempotency } from '../../platform/index.ts';
+import { FixedClock, GovernanceError, type Idempotency } from '../../platform/index.ts';
 import type { UnionItem, UnionPidRow } from '../../union/index.ts';
+import { detailFailure, parseFailure } from './link-convert.ts';
 import { openHttpResult } from './link-open.ts';
 import {
   createLinkOpenRequote,
@@ -279,5 +280,53 @@ describe('linking convert core (B1-06i)', () => {
     [30141, 422],
   ])('[AC-B1-06i] convert code %i keeps HTTP %i', (code, status) => {
     expect(openHttpResult({ code, data: null }, 'synthetic-trace').status).toBe(status);
+  });
+});
+
+describe('linking convert upstream governance failures (B1-06i)', () => {
+  const dependencyDown = ['timeout', 'quota_exceeded', 'circuit_open'] as const;
+
+  it.each(dependencyDown)(
+    '[AC-B1-06i#10] a governed catalog / union call failing with %s is 50303, not a fault',
+    (code) => {
+      const error = new GovernanceError(code, 'union.jd', 'synthetic governance failure');
+      const result = detailFailure(error, 'jd:i_12345');
+      expect(result).toEqual({ kind: 'refused', code: 50303, productKey: 'jd:i_12345' });
+    },
+  );
+
+  it.each(dependencyDown)(
+    '[AC-B1-06i#10] a governed parse call failing with %s is 50303, not a fault',
+    (code) => {
+      const error = new GovernanceError(code, 'union.jd', 'synthetic governance failure');
+      expect(parseFailure(error)).toEqual({ kind: 'refused', code: 50303, productKey: null });
+    },
+  );
+
+  it("[AC-B1-06i#10] parsing's dependency-down 50301 is the convert's 50303", () => {
+    const error = Object.assign(new Error('synthetic parse failure'), { code: 50301 });
+    expect(parseFailure(error)).toEqual({ kind: 'refused', code: 50303, productKey: null });
+  });
+
+  it('[AC-B1-06i] invalid_policy is a configuration fault on both paths', () => {
+    const error = new GovernanceError('invalid_policy', 'union.jd', 'synthetic bad policy');
+    expect(detailFailure(error, 'jd:i_12345').kind).toBe('fault');
+    expect(parseFailure(error).kind).toBe('fault');
+  });
+
+  it('[AC-B1-06i] a governed refusal before registration is logged as a convert failure', async () => {
+    const { core, writes, request } = harness();
+    const refusal = detailFailure(
+      new GovernanceError('timeout', 'union.jd', 'synthetic governance failure'),
+      'jd:i_12345',
+    );
+    const outcome = await core.convert(request(refusal));
+    expect(openHttpResult(outcome, 'synthetic-trace').status).toBe(503);
+    expect(outcome.code).toBe(50303);
+    const logs = writes.filter((write) => write.table === 'link_logs');
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.values).toMatchObject({ event: 'convert', result_code: 50303 });
+    expect(writes.some((write) => write.table === 'link_open_attempts')).toBe(false);
+    expect(writes.some((write) => write.table === 'links')).toBe(false);
   });
 });
