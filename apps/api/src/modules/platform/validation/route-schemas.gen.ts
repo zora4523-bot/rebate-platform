@@ -2171,6 +2171,183 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "convertLink": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign",
+        "idempotency-key"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "description": "Either product_key (with the tapped card's item_ref) or url; neither, or both, is 20001.\nThe oneOf branches declare the property they require (strict Ajv2020, ADR-0001 §4.2 #15).\nA Taobao url is first resolved to an item_id and answered with a Baichuan open instruction\n(JumpStep.sdk); the pasted link or token itself is never passed on (BR-PRICE-21).\n",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "scene"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "product_key": {
+              "type": "string",
+              "description": "`<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02).\n",
+              "minLength": 3,
+              "maxLength": 128
+            }
+          },
+          "required": [
+            "product_key"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 2048
+            }
+          },
+          "required": [
+            "url"
+          ]
+        }
+      ],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        },
+        "product_key": {
+          "type": "string",
+          "description": "`<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02).\n",
+          "minLength": 3,
+          "maxLength": 128
+        },
+        "item_ref": {
+          "type": "string",
+          "description": "Server-signed opaque product reference; passed through unchanged (BR-PROD-11).",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        },
+        "scene": {
+          "type": "string",
+          "description": "Only the H5 entry (trade.convertAndOpen) uses convert (拍板第二批 TRADE-03); other\nscenes are rejected with 20001 so that the client cannot pick an attribution scene\nsuch as share (BR-ATTR-05, BR-ATTR-08).\n",
+          "enum": [
+            "h5"
+          ]
+        },
+        "spm": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "installed": {
+          "description": "Default unknown; H5 always sends unknown (BR-ATTR-27 ①).",
+          "type": "string",
+          "enum": [
+            "true",
+            "false",
+            "unknown"
+          ]
+        }
+      }
+    }
+  },
   "getLink": {
     "headers": {
       "type": "object",

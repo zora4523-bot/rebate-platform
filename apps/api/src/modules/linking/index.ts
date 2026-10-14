@@ -113,3 +113,13 @@ export type {
   UnionBindingExchangeInput,
   UnionBindingExchangeResult,
 } from './application/union-binding-exchanger.ts';
+// Task B1-06i: POST /v1/links/convert, register and open in one request for entries without a
+// link_id (H5 trade.convertAndOpen; BR-PROD-03 / 11, BR-ATTR-08 / 14). Rule tests:
+// test/spec/linking/convert/**.
+export { LinkConvertService, createLinkConvert } from './application/link-convert.ts';
+export type {
+  LinkConvertInput,
+  LinkConvertOptions,
+  LinkConvertUrlParser,
+} from './application/link-convert.ts';
+export type { LinkConvertPorts } from './linking.module.ts';

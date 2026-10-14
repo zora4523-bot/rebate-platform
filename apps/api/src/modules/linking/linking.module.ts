@@ -6,6 +6,7 @@ import {
   SourceLinkReader,
   createCatalogCardEntry,
   type CardRebateQuoter,
+  type Catalog,
   type CatalogProductReader,
   type CatalogProductSummary,
   type ItemRefService,
@@ -32,8 +33,17 @@ import {
   type UnionPidService,
 } from '../union/index.ts';
 import { LinkOpenService, type LinkOpenInput } from './application/link-open.ts';
+import {
+  LinkConvertService,
+  createLinkConvert,
+  type LinkConvertInput,
+  type LinkConvertUrlParser,
+} from './application/link-convert.ts';
 import { createLinkOpenPrices } from './application/link-open-prices.ts';
-import { createTaobaoLinkOpen } from './application/link-open-taobao.ts';
+import {
+  createTaobaoLinkOpen,
+  type TaobaoLinkOpenOptions,
+} from './application/link-open-taobao.ts';
 import { createLinkOpenFlights, type LinkOpenFlights } from './application/link-open-requote.ts';
 // Through the module namespace, so the composition is observable where it is built.
 import {
@@ -61,6 +71,7 @@ import {
 } from './application/link-landing.ts';
 import { LinkLandingController } from './http/public/landing.controller.ts';
 import { LinkOpenController } from './http/public/open.controller.ts';
+import { LinkConvertController } from './http/public/convert.controller.ts';
 import { UNION_AUTH_URL, UnionAuthUrlController } from './http/public/auth-url.controller.ts';
 import { createUnionAuthUrl, type UnionAuthUrlService } from './application/union-auth-url.ts';
 import { createDemoUnionAuthApps, type UnionAuthApps } from './infra/auth-apps.ts';
@@ -121,6 +132,19 @@ export interface LinkOpenPorts {
   readonly apps: LinkOpenApps;
   /** Jump paths verified per platform and client (CAP-JD-11 / CAP-PDD-11). */
   readonly verifiedPaths: LinkOpenEnvironment['verifiedPaths'];
+  /**
+   * B1-06i: what POST /v1/links/convert resolves products with — catalog (platforms,
+   * product_refs, the raw-ID order), the item_ref verifier and parsing's by-URL port. Absent (no
+   * database handle) every convert fails closed with 50301.
+   */
+  readonly convert?: LinkConvertPorts;
+}
+
+/** B1-06i: the convert's ports outside linking, assembled by app.module.ts. */
+export interface LinkConvertPorts {
+  readonly products: Catalog;
+  readonly itemRefs: ItemRefService;
+  readonly urlParser: LinkConvertUrlParser;
 }
 
 /** B1-06j: what the landing card reads from other modules (catalog's read-only product port). */
@@ -217,6 +241,146 @@ class PausedLinkOpen extends LinkOpenService {
   }
 }
 
+/** The convert of a process without its ports: 50301 like the open, nothing registered. */
+class PausedLinkConvert extends LinkConvertService {
+  override convert(input: LinkConvertInput): Promise<HandlerResult> {
+    return Promise.resolve({
+      status: 503,
+      envelope: {
+        code: 50301,
+        msg: '该平台暂时无法购买，请稍后再试',
+        trace_id: input.traceId,
+      },
+    });
+  }
+}
+
+/** The per-request dependencies the open and the convert are both composed from. */
+interface LinkOpenParts {
+  readonly db: Kysely<Database>;
+  readonly idempotency: Idempotency;
+  readonly ports: LinkOpenPorts;
+  readonly process: LinkOpenProcess;
+  readonly appConfig: AppConfig;
+  readonly clock: Clock;
+  readonly logger: RootLogger;
+  readonly callerContext: CallerContext;
+  readonly attrCodes: AttrCodeReader;
+  readonly config: LinkingConfigReader;
+  readonly pids: PidReader;
+  readonly sourceLinks: SourceLinkReader;
+  readonly authApps: UnionAuthApps | undefined;
+}
+
+/** The open's options (B1-06w / B1-06f), shared by the convert (B1-06i). */
+function openOptions(parts: LinkOpenParts): TaobaoLinkOpenOptions {
+  const { db, idempotency, ports, process, appConfig, clock, logger } = parts;
+  const { callerContext, attrCodes, config, pids, sourceLinks, authApps } = parts;
+  // The card's viewer is the opener; inside the open the registrar only reserves the
+  // renewed snapshot with the opened link's identity (openRegistrationScope).
+  const viewerContext: ViewerContext = {
+    current: async () => {
+      const caller = await callerContext.current();
+      return { appId: caller.appId, userId: caller.userId, deviceId: caller.deviceId };
+    },
+  };
+  const registrar = createLinkRegistration({
+    db,
+    clock,
+    callerContext,
+    attrCodes,
+    config,
+    pids,
+    context: { scene: 'search' },
+  });
+  return {
+    db,
+    clock,
+    callerContext,
+    attrCodes,
+    config,
+    pids,
+    catalog: createCatalogCardEntry({
+      clock,
+      viewerContext,
+      quoter: ports.quoter,
+      registrar,
+      sourceLinks,
+      itemRefs: ports.itemRefs,
+      logger,
+    }),
+    prices: createLinkOpenPrices({ clock, union: ports.union }),
+    cache: process.cache,
+    idempotency,
+    flights: process.flights,
+    registry: { get: (platform) => ports.union.adapter(platform) },
+    logger,
+    quoteReads: ports.quoteReads,
+    environment: {
+      appEnv: appConfig.appEnv,
+      apps: ports.apps,
+      verifiedPaths: ports.verifiedPaths,
+    },
+    appEnv: appConfig.appEnv,
+    authApps: authApps ?? createDemoUnionAuthApps(),
+  };
+}
+
+/** The open's injection list, in the order openParts reads it. */
+const OPEN_INJECT = [
+  { token: DB, optional: true },
+  { token: IDEMPOTENCY, optional: true },
+  { token: LINK_OPEN_PORTS, optional: true },
+  LINK_OPEN_PROCESS,
+  APP_CONFIG,
+  CLOCK,
+  ROOT_LOGGER,
+  CallerContext,
+  AttrCodeReader,
+  LinkingConfigReader,
+  LINKING_PIDS,
+  SourceLinkReader,
+  { token: LINKING_AUTH_APPS, optional: true },
+];
+
+type OpenFactoryArgs = [
+  Kysely<Database> | undefined,
+  Idempotency | undefined,
+  LinkOpenPorts | undefined,
+  LinkOpenProcess,
+  AppConfig,
+  Clock,
+  RootLogger,
+  CallerContext,
+  AttrCodeReader,
+  LinkingConfigReader,
+  PidReader,
+  SourceLinkReader,
+  UnionAuthApps | undefined,
+];
+
+/** null when a database, idempotency or LINK_OPEN_PORTS handle is missing. */
+function openParts(...args: OpenFactoryArgs): LinkOpenParts | null {
+  const [db, idempotency, ports, process, appConfig, clock, logger, ...rest] = args;
+  const [callerContext, attrCodes, config, pids, sourceLinks, authApps] = rest;
+  if (db === undefined || idempotency === undefined || ports === undefined) return null;
+  return {
+    db,
+    idempotency,
+    ports,
+    process,
+    appConfig,
+    clock,
+    logger,
+    callerContext,
+    attrCodes,
+    config,
+    pids,
+    sourceLinks,
+    authApps,
+  };
+}
+
 /**
  * Linking (规划/02 §4.1), B1-06c: card-time link registration (catalog's LinkRegistrar) and the
  * read-only entry_source of a link (catalog's SourceLinkReader). Ports:
@@ -246,6 +410,7 @@ export class LinkingModule {
       module: LinkingModule,
       controllers: [
         LinkOpenController,
+        LinkConvertController,
         LinkLandingController,
         UnionAuthUrlController,
         UnionBindingsController,
@@ -266,87 +431,30 @@ export class LinkingModule {
           // Per request, like its CallerContext; the flights and the cache are the process's.
           provide: LinkOpenService,
           scope: Scope.REQUEST,
-          inject: [
-            { token: DB, optional: true },
-            { token: IDEMPOTENCY, optional: true },
-            { token: LINK_OPEN_PORTS, optional: true },
-            LINK_OPEN_PROCESS,
-            APP_CONFIG,
-            CLOCK,
-            ROOT_LOGGER,
-            CallerContext,
-            AttrCodeReader,
-            LinkingConfigReader,
-            LINKING_PIDS,
-            SourceLinkReader,
-            { token: LINKING_AUTH_APPS, optional: true },
-          ],
-          useFactory: (
-            db: Kysely<Database> | undefined,
-            idempotency: Idempotency | undefined,
-            ports: LinkOpenPorts | undefined,
-            process: LinkOpenProcess,
-            appConfig: AppConfig,
-            clock: Clock,
-            logger: RootLogger,
-            callerContext: CallerContext,
-            attrCodes: AttrCodeReader,
-            config: LinkingConfigReader,
-            pids: PidReader,
-            sourceLinks: SourceLinkReader,
-            authApps: UnionAuthApps | undefined,
-          ): LinkOpenService => {
-            if (db === undefined || idempotency === undefined || ports === undefined) {
-              return new PausedLinkOpen();
-            }
-            // The card's viewer is the opener; inside the open the registrar only reserves the
-            // renewed snapshot with the opened link's identity (openRegistrationScope).
-            const viewerContext: ViewerContext = {
-              current: async () => {
-                const caller = await callerContext.current();
-                return { appId: caller.appId, userId: caller.userId, deviceId: caller.deviceId };
-              },
-            };
-            const registrar = createLinkRegistration({
-              db,
-              clock,
-              callerContext,
-              attrCodes,
-              config,
-              pids,
-              context: { scene: 'search' },
-            });
+          inject: OPEN_INJECT,
+          useFactory: (...args: OpenFactoryArgs): LinkOpenService => {
+            const parts = openParts(...args);
+            if (parts === null) return new PausedLinkOpen();
             // B1-06f: the wired open (createWiredLinkOpen) with the Taobao conversion port.
-            return createTaobaoLinkOpen({
-              db,
-              clock,
-              callerContext,
-              attrCodes,
-              config,
-              pids,
-              catalog: createCatalogCardEntry({
-                clock,
-                viewerContext,
-                quoter: ports.quoter,
-                registrar,
-                sourceLinks,
-                itemRefs: ports.itemRefs,
-                logger,
-              }),
-              prices: createLinkOpenPrices({ clock, union: ports.union }),
-              cache: process.cache,
-              idempotency,
-              flights: process.flights,
-              registry: { get: (platform) => ports.union.adapter(platform) },
-              logger,
-              quoteReads: ports.quoteReads,
-              environment: {
-                appEnv: appConfig.appEnv,
-                apps: ports.apps,
-                verifiedPaths: ports.verifiedPaths,
-              },
-              appEnv: appConfig.appEnv,
-              authApps: authApps ?? createDemoUnionAuthApps(),
+            return createTaobaoLinkOpen(openOptions(parts));
+          },
+        },
+        {
+          // B1-06i: POST /v1/links/convert, per request like the open, over the same parts and the
+          // convert ports of LINK_OPEN_PORTS (catalog, item_ref verifier, parsing's by-URL port).
+          provide: LinkConvertService,
+          scope: Scope.REQUEST,
+          inject: OPEN_INJECT,
+          useFactory: (...args: OpenFactoryArgs): LinkConvertService => {
+            const parts = openParts(...args);
+            const convert = parts?.ports.convert;
+            if (parts === null || convert === undefined) return new PausedLinkConvert();
+            return createLinkConvert({
+              ...openOptions(parts),
+              products: convert.products,
+              itemRefs: convert.itemRefs,
+              quoter: parts.ports.quoter,
+              urlParser: convert.urlParser,
             });
           },
         },

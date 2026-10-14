@@ -44,6 +44,7 @@ import type {
   LinkOpenAuthorization,
   LinkOpenAuthorizationInput,
   LinkOpenConversionInput,
+  LinkOpenConversionPort,
   LinkOpenJump,
 } from './link-open-requote.ts';
 import {
@@ -441,29 +442,38 @@ function createTaobaoConversion(
   return { prepare, admit, authorize, cacheTag, convert };
 }
 
+/**
+ * The open's conversion port over the wired jd / pdd one: Taobao's instruction and
+ * authorization, Pinduoduo's filing check. Shared by the open and the convert (B1-06i), so the
+ * two never judge differently.
+ */
+export function composeTaobaoConversion(
+  options: TaobaoLinkOpenOptions,
+  wired: WiredConversion,
+): LinkOpenConversionPort {
+  const taobao = createTaobaoConversion(options, wired.admission);
+  // B1-06v (ruling D7-11 ⑨): Pinduoduo opens get the Pinduoduo filing check; jd passes.
+  const pdd = createPddAuthorization(options);
+  const isTaobao = (owner: LinkOpenOwnerResult) => owner.link.platform === PLATFORM;
+  return {
+    variant: wired.conversion.variant,
+    async prepare(plan) {
+      await Promise.allSettled([
+        wired.conversion.prepare(plan),
+        pdd.prepare(plan),
+        ...(plan.platform === PLATFORM ? [taobao.prepare(plan)] : []),
+      ]);
+    },
+    admit: (owner, client) =>
+      isTaobao(owner) ? taobao.admit(owner, client) : wired.conversion.admit(owner, client),
+    authorize: (input) => (isTaobao(input.owner) ? taobao.authorize(input) : pdd.authorize(input)),
+    cacheTag: (owner, noRebate) =>
+      isTaobao(owner) ? taobao.cacheTag(owner, noRebate) : pdd.cacheTag(owner, noRebate),
+    convert: (input) =>
+      isTaobao(input.owner) ? taobao.convert(input) : wired.conversion.convert(input),
+  };
+}
+
 export function createTaobaoLinkOpen(options: TaobaoLinkOpenOptions): LinkOpenService {
-  return createWiredLinkOpen(options, (wired) => {
-    const taobao = createTaobaoConversion(options, wired.admission);
-    // B1-06v (ruling D7-11 ⑨): Pinduoduo opens get the Pinduoduo filing check; jd passes.
-    const pdd = createPddAuthorization(options);
-    const isTaobao = (owner: LinkOpenOwnerResult) => owner.link.platform === PLATFORM;
-    return {
-      variant: wired.conversion.variant,
-      async prepare(plan) {
-        await Promise.allSettled([
-          wired.conversion.prepare(plan),
-          pdd.prepare(plan),
-          ...(plan.platform === PLATFORM ? [taobao.prepare(plan)] : []),
-        ]);
-      },
-      admit: (owner, client) =>
-        isTaobao(owner) ? taobao.admit(owner, client) : wired.conversion.admit(owner, client),
-      authorize: (input) =>
-        isTaobao(input.owner) ? taobao.authorize(input) : pdd.authorize(input),
-      cacheTag: (owner, noRebate) =>
-        isTaobao(owner) ? taobao.cacheTag(owner, noRebate) : pdd.cacheTag(owner, noRebate),
-      convert: (input) =>
-        isTaobao(input.owner) ? taobao.convert(input) : wired.conversion.convert(input),
-    };
-  });
+  return createWiredLinkOpen(options, (wired) => composeTaobaoConversion(options, wired));
 }

@@ -40,7 +40,9 @@ const STATUS: Readonly<Record<number, number>> = {
   30101: 422,
   30102: 422,
   30111: 422,
+  30131: 422,
   30141: 422,
+  30143: 422,
   30144: 404,
   30153: 422,
   30602: 422,
@@ -60,6 +62,8 @@ const MESSAGES: Readonly<Record<number, string>> = {
   30101: '请先授权淘宝',
   30102: '淘宝授权已失效，请重新授权',
   30111: '购买前需完成拼多多授权',
+  30131: '不支持该链接或平台',
+  30143: '商品信息已失效',
   30141: '商品已下架',
   30144: '链接不存在',
   30153: '该平台返利已被停用，请联系客服',
@@ -114,7 +118,9 @@ export function openHttpResult(outcome: LinkOpenRequoteOutcome, traceId: string)
   // Error envelopes carry data only for codes that define it (ErrorEnvelope): 20001, which only
   // the idempotency layer answers, for the Idempotency-Key header; 30101 / 30102 / 30153 with the
   // authorization's data (B1-06f: auth_url, state, auth_methods, or reason); 30111 with auth_jump
-  // or reason and 50301 with reason=maintenance (B1-06v).
+  // or reason and 50301 with reason=maintenance (B1-06v). B1-06i: a convert's own 20001 (item_ref
+  // of another product, platform mismatch) carries its fields as the error data, which wins.
+  // A convert's success data keeps its link_id through wire().
   const error = 'error' in outcome ? outcome.error : undefined;
   return {
     status: STATUS[outcome.code] ?? 500,

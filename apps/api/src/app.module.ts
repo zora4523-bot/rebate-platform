@@ -9,11 +9,14 @@ import {
   PRODUCT_CACHE_NAMESPACE,
   LinkRegistrar,
   RebateQuoter,
+  createCatalog,
   createDbCatalogProductReader,
   createDemoRebateQuoter,
   createItemRefService,
   processItemRefCipher,
+  type CatalogCardEntry,
   type CatalogConfigReader,
+  type CatalogWarning,
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
 import { createContentReader } from './modules/content/index.ts';
@@ -41,6 +44,7 @@ import {
   createUnavailableAttrCodeReader,
   loadLinkOpenApps,
   openScopedConfig,
+  type LinkConvertPorts,
   type LinkLandingPorts,
   type LinkOpenPorts,
   type LinkRegistrations,
@@ -53,6 +57,7 @@ import {
   ParsingLinkRegistrars,
   ParsingModule,
   createParsing,
+  parseUrl,
   type ParseScene,
 } from './modules/parsing/index.ts';
 import {
@@ -328,6 +333,55 @@ const DEMO_QUOTE_KEYS = [
  */
 const VERIFIED_JUMP_PATHS: LinkOpenPorts['verifiedPaths'] = {};
 
+/** parseUrl resolves and derives only; it never assembles a card (B1-07a), so none is given. */
+const NO_PARSE_CARDS: CatalogCardEntry = {
+  assemble: () => Promise.reject(new Error('linking: the by-URL port assembles no card')),
+};
+
+/**
+ * B1-06i: the convert's ports — catalog over the database handle, the item_ref service of the
+ * open, and parsing's by-URL port (parseUrl over content's configuration reader and the same
+ * governed adapters), so linking imports neither catalog's providers nor parsing.
+ */
+function convertPorts(
+  db: Kysely<Database>,
+  clock: Clock,
+  logger: RootLogger,
+  union: GovernedUnion,
+  itemRefs: LinkConvertPorts['itemRefs'],
+): LinkConvertPorts {
+  const products = createCatalog({
+    db,
+    clock,
+    warn: (event: CatalogWarning) => {
+      logger.warn(
+        { event: `catalog_${event.kind}`, product_key: event.key },
+        'product_key alias chain not resolved',
+      );
+    },
+  });
+  const config = createContentReader({ db, clock });
+  return {
+    products,
+    itemRefs,
+    urlParser: {
+      parseUrl: (url, context) =>
+        parseUrl(
+          {
+            config,
+            catalog: products,
+            cards: NO_PARSE_CARDS,
+            clock,
+            getGovernedAdapter: (platform) => union.adapter(platform),
+            logger,
+          },
+          url,
+          context,
+        ),
+    },
+  };
+}
+
 @Module({})
 class CatalogPortsModule {}
 
@@ -340,7 +394,8 @@ class CatalogPortsModule {}
  *   live union endpoints, so such an entry does not start;
  *   TODO(规划/11 §4.5): 真实报价器 — blocked on B2-03（佣金规则与用户等级）
  * - LINK_OPEN_PORTS: linking's open (B1-06w) — the same governed adapters and quoter, an
- *   item_ref issuer, contracts/apps.json and the prod-verified jump paths;
+ *   item_ref issuer, contracts/apps.json and the prod-verified jump paths; and the convert's
+ *   catalog, item_ref verifier and parsing's by-URL port (B1-06i);
  * - LINK_LANDING_PORTS: linking's landing card (B1-06j) — catalog's read-only product port
  *   (product_refs, else one detail on the same governed adapters; never a write or conversion);
  * - the linking module itself is re-exported, so its SourceLinkReader is visible to catalog.
@@ -395,23 +450,31 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
           RebateQuoter,
           QUOTE_CONFIG,
           APP_CONFIG,
+          CLOCK,
+          ROOT_LOGGER,
           { token: FIELD_CRYPTO, optional: true },
+          { token: DB, optional: true },
         ],
         useFactory: (
           union: GovernedUnion,
           quoter: RebateQuoter,
           quoteConfig: CatalogConfigReader,
           config: AppConfig,
+          clock: Clock,
+          logger: RootLogger,
           crypto?: FieldCrypto,
+          db?: Kysely<Database>,
         ): LinkOpenPorts => {
           if (crypto === undefined && config.appEnv !== 'local' && config.appEnv !== 'test') {
             throw new Error('linking: item_ref needs the field keyring outside local / test');
           }
+          // The re-checked card's item_ref is never sent by an open; it is issued as for any card.
+          // The convert verifies the tapped card's token with the same keyring (BR-PROD-11).
+          const itemRefs = createItemRefService({ crypto: crypto ?? processItemRefCipher() });
           return {
             union,
             quoter,
-            // The re-checked card's item_ref is never sent by an open; it is issued as for any card.
-            itemRefs: createItemRefService({ crypto: crypto ?? processItemRefCipher() }),
+            itemRefs,
             quoteReads: {
               prepare: async (appId) => {
                 await Promise.allSettled(
@@ -421,6 +484,9 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
             },
             apps: loadLinkOpenApps(),
             verifiedPaths: VERIFIED_JUMP_PATHS,
+            ...(db === undefined
+              ? {}
+              : { convert: convertPorts(db, clock, logger, union, itemRefs) }),
           };
         },
       },

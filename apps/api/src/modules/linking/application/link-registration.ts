@@ -311,6 +311,42 @@ export async function insertPendingOpenLink(
   }
 }
 
+/**
+ * B1-06i: the caller's own link of POST /v1/links/convert, through the module's single links
+ * insert inside the convert's transaction, with the register log of the scenes that log
+ * registration (BR-ATTR-14). Returns the row as stored.
+ */
+export async function insertConvertLink(
+  executor: Kysely<DB>,
+  pending: PendingOpenLink,
+): Promise<Selectable<DB['links']>> {
+  const { now, caller, linkId, snapshot, values } = pending;
+  const row = await insertLinkRow(executor, { now, caller, linkId, snapshot, values });
+  if (logsRegistration(values.scene, pidSceneOf(values.scene))) {
+    await executor
+      .insertInto('link_logs')
+      .values({
+        app_id: caller.appId,
+        link_id: linkId,
+        event: 'register',
+        user_id: snapshot.user_id,
+        platform: values.platform,
+        product_key: values.productKey,
+        raw_item_id: values.rawItemId,
+        shop_id: pending.shopId,
+        scene: values.scene,
+        pid_scene: snapshot.pid_scene,
+        pid: snapshot.pid,
+        quoted_price_fen: values.quotedFinalPriceFen,
+        agent_session_id: snapshot.agent_session_id,
+        result_code: 0,
+        created_at: now,
+      })
+      .execute();
+  }
+  return row;
+}
+
 /** The card fields a links row is registered with; identity is never among them. */
 export interface LinkRowValues {
   readonly platform: Platform;
