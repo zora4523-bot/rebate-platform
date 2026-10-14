@@ -1,6 +1,6 @@
 id: CT-08e
 repo: rebate-platform
-title: 契约——openapi.yaml 补 Agent 会话历史、反馈、举报（04 §6.5）：历史按轮游标，回复带完成状态与内容可读状态（12 §9.1 X-10 余项），卡片外壳去 seq、收益卡只取历史形状；反馈与举报的请求体与目标检查；ops.yaml 三个新枚举
+title: 契约——openapi.yaml 补 Agent 会话历史、反馈、举报（04 §6.5）：历史按 04 §6.5「会话历史响应的形状」（2026-10-14）——items[] 正序逐条消息、cards[] 与当时下发一致（收益卡只回 as_of 与按钮）、finish_reason、next_cursor 游标；反馈与举报的请求体与目标检查
 type: contract
 # 2026-10-06 草稿（会话「Agent 落地方案」契约规划子代理，couli-runs/CT-08d/plan.md §10；编排者定 D1 拆分，本段接 CT-08d）。
 # 片段 openapi-fragment-CT-08e.yaml 已在 f118031 导出副本上叠加 CT-08d 后并入试跑：conformance + codegen、redocly lint、contracts-ts、test/spec/contracts、platform/validation 全过，例子逐卡过流协议 schema。
@@ -13,6 +13,9 @@ type: contract
 # 新枚举 agent_reply_status、agent_reply_content_status、agent_report_reason（ops.yaml），ENUM_BINDINGS 加 4 个（含 agent_finish_reason）；signing-routes.gen.ts 重新生成。体量 openapi +547 行。
 # D4：本段接口的路由随 B3-09 后续段实现；B3-03d 合并后另起的小契约任务去 planned 标记时，本段已挂路由的接口一并处理。
 # 契约槽全局 1 个（11 §3.4），排在 CT-08d 之后；分工按规划/11 §1.1：Codex 先写规则测试（test/spec/contracts/agent-history/**，先红），Claude 新子代理过审，Opus 5.5 实现。
+# 2026-10-14 编排者（staging-b3-term）：规划 couli#109（docs/changes/20261014-问一问深挖更正.md）在 04 §6.5 写定历史响应形状，SPEC_REF 推进到 7c268cb（#433）。
+#   以 04 新段为准：上面 10-06 草稿中的「按轮分页」「reply.status / content_status」「ops.yaml 三个新枚举」作废（04 未写），不回放 tool.status / ping / suggestions / meta；
+#   片段 openapi-fragment-CT-08e.yaml 需按新形状改写后再用。反馈、举报部分照旧。
 refs: [BR-AI-23, BR-AI-20]
 refs_hash:
   BR-AI-23: 5ebdbaff580d
