@@ -5,10 +5,12 @@ type: impl
 # 草稿 2026-10-14（拼多多接入线 pdd-lane，账号 4）。依据：approvals 第 28 条 ②（staging 的 client_secret 放节点上只有服务账号可读的文件，prod 只认 KMS，local / test 不加载真实凭据）、规划/11 §8「真实密钥被本地栈加载」、02 §12.6、4_PDD_附 §5 第 1 项红线，由编排者摘入任务书。
 # 带入 #306 r1 评审 S1-6/7/8、S2-6/10（PDD-lane/review-ledger-306.md）：
 # ① 两个变量名登记进 platform/config/credential-env.ts 的已声明名单；APP_ENV=local / test 时任一设置即拒绝启动；local / test 下 pdd 端点 mode=live 也拒绝（02 §12.6 的「本机联调」不在服务进程里做，探测只走负责人终端脚本，编排裁定）。
-# ② staging：两个变量都设才装配；secret 文件启动时读一次（去掉末尾换行），文件不存在 / 不可读 / 为空 → ConfigError，问题文本不含任何值或文件内容；secret 只经凭据提供者交给适配器，不进 AppConfig 的可序列化部分、日志与错误。
+# ② staging：两个变量都设才装配；secret 文件启动时读一次（去掉末尾换行），文件不存在 / 不可读 / 为空 → 启动失败，错误文本不含任何值、路径或文件内容；secret 只经凭据提供者交给适配器，不进 AppConfig 的可序列化部分、日志与错误。
 # ③ prod：一律拒绝文件来源（与 FIELD_KEY_PROVIDER 无关）；pdd 为 live 时拒绝启动，TODO(规划/11 §4.5): KMS 取用 — blocked on 云 KMS 选型。
 # ④ pdd mode=live 而凭据缺 → 启动失败；mode=replay 仍为 adapter_unimplemented（带签名请求的回放匹配另开）；demo 不变；jd / taobao 不变；不改 config/union-endpoints/pdd.json（切 live 只在 staging 部署配置做）。live 装配用 createGovernedAdapter 同既有口径（registry 调用方不变）。
 # ⑤ .env.example 只加注释掉的变量名与说明，不放值。staging 节点上的文件与挂载由负责人 / 编排在部署侧做，不在本任务。
+# 分层（#463 评审 S1-1、S2-1/2/4）：createUnionRegistry 只在调用方传入新的显式选项（如 pddLive: { credentials, transport }）时才装配真实 pdd，不传保持现行为（受保护测试 AC-B1-04o-ASSEMBLY#4/#5 依赖：test 下 pdd live 无凭据、prod 三家 live 无凭据都不报错、返回 adapter_unimplemented）；三种拒绝（local/test 下 pdd live、prod 下 pdd live、staging 下 pdd live 缺凭据）放在 union.module.ts 的工厂里判；local/test 设了变量即拒绝放在 loadConfig（startupViolations）。
+# loadConfig 保持纯函数：只校验变量（staging 只设了两个中的一个 → ConfigError，问题文本只写变量名）并保留路径；secret 文件由 union.module.ts 的异步工厂启动时读一次（同 keyring-startup 做法），生成凭据闭包交给适配器，读不出时报不含路径与内容的固定文本错误。真实 pdd 装配后 registrations() 的 implemented 取 true（可改 registry.ts 相应注释）。与 B1-04p 串行：本段先，B1-04p 把归档包在本段构造的传输外层。
 # 切 live 前还须 B1-04u / h / i 合并（否则 convert、listOrders 为 adapter_unimplemented，linking 会走 50303）；本段只保证装配正确。风险：platform/config 与 union 装配 → RV2。
 refs: []
 refs_hash: {}
