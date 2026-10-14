@@ -209,6 +209,8 @@ export function createAgentHttp(deps: AgentHttpDeps): AgentHttp {
   ) {
     throw new RangeError('Invalid agent text limit');
   }
+  // Prepare the contract before accepting requests; manual clocks must never wait on file I/O.
+  const validate = messageValidator();
   function refuse(
     caller: AgentCaller,
     reply: AgentHttpReply,
@@ -308,7 +310,6 @@ export function createAgentHttp(deps: AgentHttpDeps): AgentHttp {
       let streaming = false;
       let sink: AgentStreamSink | undefined;
       try {
-        const validate = await messageValidator();
         if (!validate(input)) {
           refuse(caller, reply, 20001, { fields: invalidFields(validate.errors ?? []) });
           return;
