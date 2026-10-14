@@ -157,24 +157,27 @@ export async function withHttp(
   }
   common.Controller('v1')(PlannedEndpoints);
   // Once convertLink is implemented (B1-06i) its controller owns POST /v1/links/convert: keep the
-  // real route, guards and idempotency wiring, and only swap the handler body for the fixture one
-  // (a second registration of the same route would make Fastify refuse to start).
-  const convertController = await import(
+  // real route, guards, request schema and idempotency wiring, and only swap the handler body for
+  // the fixture one (a second registration of the same route would make Fastify refuse to start).
+  // The route decorators keep their metadata on the method function, so the replacement carries a
+  // copy of it; the original method is put back in the finally below.
+  const convertProto = await import(
     new URL('apps/api/src/modules/linking/http/public/convert.controller.ts', ROOT).href
   ).then(
     (module: Record<string, unknown>) =>
-      module['LinkConvertController'] as { prototype: { convert(req: Request): unknown } },
+      (module['LinkConvertController'] as { prototype: { convert(req: Request): unknown } })
+        .prototype,
     () => undefined,
   );
-  const convertSpy =
-    convertController === undefined
-      ? undefined
-      : vi
-          .spyOn(convertController.prototype, 'convert')
-          .mockImplementation((req: Request) => PlannedEndpoints.prototype.convert(req));
+  const realConvert = convertProto?.convert;
+  const metadata = Reflect as unknown as {
+    getMetadataKeys(target: object): unknown[];
+    getMetadata(key: unknown, target: object): unknown;
+    defineMetadata(key: unknown, value: unknown, target: object): void;
+  };
   for (const [name, path] of [
     ['tip', 'me/tips/:tip_key/read'],
-    ...(convertSpy === undefined ? ([['convert', 'links/convert']] as const) : []),
+    ...(convertProto === undefined ? ([['convert', 'links/convert']] as const) : []),
   ] as const) {
     const descriptor = Object.getOwnPropertyDescriptor(PlannedEndpoints.prototype, name)!;
     common.Req()(PlannedEndpoints.prototype, name, 0);
@@ -198,6 +201,13 @@ export async function withHttp(
   const dir = mkdtempSync(join(base, 'rate-limit-'));
   let app: HttpApp | undefined;
   try {
+    if (convertProto !== undefined && realConvert !== undefined) {
+      const fixtureConvert = (req: Request) => PlannedEndpoints.prototype.convert(req);
+      for (const key of metadata.getMetadataKeys(realConvert)) {
+        metadata.defineMetadata(key, metadata.getMetadata(key, realConvert), fixtureConvert);
+      }
+      convertProto.convert = fixtureConvert;
+    }
     app = (await buildApp(db, dir, suite.server.url, clock, logger)) as HttpApp;
     await app.init();
     idem = app.get<Idempotency>(IDEMPOTENCY);
@@ -270,7 +280,7 @@ export async function withHttp(
     });
   } finally {
     spy.mockRestore();
-    convertSpy?.mockRestore();
+    if (convertProto !== undefined && realConvert !== undefined) convertProto.convert = realConvert;
     try {
       await app?.close();
     } finally {
