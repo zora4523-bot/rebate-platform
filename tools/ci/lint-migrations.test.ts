@@ -160,6 +160,8 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'union_bindings',
     'union_auth_sessions',
     'union_binding_conflicts',
+    'union_raw_payloads',
+    'union_raw_payloads_default',
     'links',
     'link_logs',
     'link_logs_default',
@@ -168,7 +170,12 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'idempotency_keys',
     'appeals',
   ]);
-  for (const name of funds) expect(tables, name).toContain(name);
+  // B1-04a（迁移 0029）合并前 main 的 schema.sql 还没有这两张表；B1-04a 合并后由后续去掉这个例外。
+  const notYetInSchema = new Set(['union_raw_payloads', 'union_raw_payloads_default']);
+  for (const name of funds) {
+    if (notYetInSchema.has(name)) continue;
+    expect(tables, name).toContain(name);
+  }
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
 });
 

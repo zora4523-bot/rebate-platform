@@ -4,7 +4,7 @@
 // 项 (每进程连接池), 第 3 项 (int8 → BigInt); ADR-0002 §5 (强制 SSL; 出错后重建连接); 规划/02 §15.1 PG
 // 一行. One clone of the migrated template for this file; sessions are observed through
 // pg_stat_activity from a connection of the same role. Top-level it() only (规划/11 §4.3).
-import { createDb, destroyDb, type DB } from '@couli/db';
+import { createDb, destroyDb, MONTH_PARTITIONED_TABLES, MONTHS_AHEAD, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -108,7 +108,7 @@ async function poolFacts(db: Kysely<DB>, count: number): Promise<Facts> {
 
 const BIG = 9007199254740993n;
 
-it('[ADR-0001 §4.2 #4、#8、#11、#3] 维护池确切为 1 个连接、以 couli_maint 连接、会话名 couli-worker-maint、可写、int8 为 BigInt；能以它跑一轮分区维护（预建 8 个分区、无失败）；同时 worker 的主库池照旧是 couli_app / couli-worker、上限 10；close() 后维护会话消失，全程不写日志', async () => {
+it('[ADR-0001 §4.2 #4、#8、#11、#3] 维护池确切为 1 个连接、以 couli_maint 连接、会话名 couli-worker-maint、可写、int8 为 BigInt；能以它跑一轮分区维护（预建 月分区名单 × (MONTHS_AHEAD + 1) 个分区、无失败）；同时 worker 的主库池照旧是 couli_app / couli-worker、上限 10；close() 后维护会话消失，全程不写日志', async () => {
   let seen: unknown;
   const maintObserver = observer('couli_maint');
   try {
@@ -160,7 +160,7 @@ it('[ADR-0001 §4.2 #4、#8、#11、#3] 维护池确切为 1 个连接、以 cou
     },
     mainFacts: { connections: 10, apps: ['couli-worker'], users: ['couli_app'], readOnly: ['off'] },
     int8: { big: BIG, list: [1n, BIG] },
-    report: { ensured: 8, failed: 0 },
+    report: { ensured: MONTH_PARTITIONED_TABLES.length * (MONTHS_AHEAD + 1), failed: 0 },
     closed: undefined,
     gone: true,
     lines: [],
