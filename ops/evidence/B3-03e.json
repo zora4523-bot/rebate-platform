@@ -1,0 +1,136 @@
+{
+  "task": "B3-03e",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "55533a1714a13df80d7d3e396daeaf2cb9d4b523",
+  "red_tests": [
+    "test/spec/agent/stream-sweeper/completeness.int.test.ts > [AC-B3-03e#19] 完备性：游标停在 A 之后，此后才合格的行（锁期更晚）与 A 所在会话新出现的遗留 run 都在游标之后，下一轮全部扫到并收尾，finalize 用的是会话当前持锁的 run",
+    "test/spec/agent/stream-sweeper/completeness.int.test.ts > [AC-B3-03e#20] 不越界：sweeper 自己不写 agent_sessions / agent_runs / agent_messages，只调用 finalizer.finalize(runId)（一个参数，值为会话的 run_lock_run_id）；替身返回 final / running / held 或抛错时表都逐行不变",
+    "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#8] 连续多轮：同一遗留 run 第一轮收尾后，第二轮（从返回的游标或从起点、时钟再推进）不再调用 finalize，表与额度计数不变",
+    "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#9] 收尾已提交但回包丢失（finalize 抛错）：本轮计 failed，下一轮该会话已不合格、不再调用，结算只有一次",
+    "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#10] 两个 sweeper 实例并发：A 持第一条的收尾事务未提交时 B 排在其后，放行后 B 读到同一终态；每条只写一次终态、只退一次，两边都不计 failed",
+    "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#11] 两个 sweeper 实例同时从起点开跑（无人为编排）：每条只写一次终态、只退一次，两边 failed 均为 0",
+    "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#12] finalize 返回 running / held 时跳过：分别计入 skipped.running / skipped.held，不计 failed、不计 finalized，游标照常推进",
+    "test/spec/agent/stream-sweeper/config.test.ts > [AC-B3-03e#1] 默认参数：余量 10 s、每页 100、单轮 500；游标起点为 (-infinity, 全零 UUID)",
+    "test/spec/agent/stream-sweeper/config.test.ts > [AC-B3-03e#2] 参数校验：marginMs 须为 ≥ 0 的安全整数、pageSize / maxPerTick 须为 ≥ 1 的安全整数，否则 createSweeper 抛 RangeError；余量 0 合法",
+    "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#13] 分页与跨轮：按 (锁期, 会话 id) 升序；单轮满 maxPerTick 停在最后一条（wrapped=false），下一轮从游标之后继续，取不满一页回到起点（wrapped=true），再下一轮从头开始",
+    "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#14] 单轮不超过 maxPerTick（页 3、单轮 5：两页共 5 条）；锁期相同的按会话 id 排序；剩余的下一轮处理",
+    "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#15] 排序键是锁期而非 id：100 个 id 小、到期晚的会话 + 1 个 id 大、到期早的会话，默认参数下第一条是到期早的那个，整轮按 (锁期, id) 顺序处理完 101 条",
+    "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#16] finalize 抛可重试错误（AdmissionUnavailableError）或任意异常：记日志（含 run id）、计入 failed、游标照样推进并继续下一条；失败的条目绕回起点后重试",
+    "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#17] 默认参数下最早 500 条中 499 条可重试失败：本轮恰处理 500 条（failed 499）停在第 500 条，第 501 条在下一轮被处理",
+    "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#18] 没有合格行：从起点或任意游标出发都是 processed 0、wrapped=true、游标回到起点，finalize 零调用",
+    "test/spec/agent/stream-sweeper/discovery.int.test.ts > [AC-B3-03e#3] 发现条件：只收尾「有锁、锁期 ≤ now − 余量、run 无 hold」的会话（与 end_reason 是否已写无关：S4 已提交、未结算即崩溃的也收尾）；锁未到期、在余量内、已 hold、无锁（含已收尾）的一律不碰，finalize 零调用",
+    "test/spec/agent/stream-sweeper/discovery.int.test.ts > [AC-B3-03e#4] 时钟：只用注入的 clock；锁期恰为 now − 余量的合格（<=），晚 1 ms 的不合格；余量 0 与默认余量、2026 与 2099 两个时代都成立",
+    "test/spec/agent/stream-sweeper/outcome.int.test.ts > [AC-B3-03e#5] 遗留 run（无终止原因、未出卡、无取消记录）一轮收尾：server_error、终态为 50001 帧、锁释放；受理日 23:59 受理、次日收尾，退还记在受理日",
+    "test/spec/agent/stream-sweeper/outcome.int.test.ts > [AC-B3-03e#6] 遗留 run 出过卡（S3 已提交）：一轮收尾为 server_error 50001、card_delivered 保持 true、照常计数不退",
+    "test/spec/agent/stream-sweeper/outcome.int.test.ts > [AC-B3-03e#7] 已有取消记录（cancel_requested_at 非空）的遗留 run：一轮收尾按 cancelled 结束、done(finish_reason=cancelled)、照常计数、锁释放（以落库为准）",
+    "test/spec/agent/stream-sweeper/outcome.int.test.ts > [AC-B3-03e#21] 已有终止原因未结算的遗留 run（活进程 S4 已提交 end_reason，未 settle / finish 即崩溃，锁已过期、无 hold）：一轮被发现并按已落库的原因收尾（不改成 server_error）、写终态、释放锁；timeout 未出卡退 1 条，consent_withdrawn 未出卡与 stop 出卡照常计数；再扫不重复结算"
+  ],
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/stream/sweeper/** is RV1 and only calls finalizeRun, which settles the Agent daily quota). Codex-first implementation (ops/approvals.yaml id 23). Design couli-runs/B3-03g/design.md §5.3 (sweepOnce, cursor, fairness); owner decisions 2026-10-08 (couli#88). Rule tests by a Claude subagent in 2 attempts (the orchestrator aligned the skeleton's error prefix with red-check before the red run; container red 21 tests); Codex spec-test review round 1 S1 (left-over runs with a committed but unsettled ending), round 2 pass. Codex implemented once (sweeper/index.ts +71/−3); full pnpm verify passed in the isolated container on the AWS test machine. Claude money-checklist review round 1 pass (the reviewer other than the implementer, ops/approvals.yaml id 27). Full verification is the required CI checks (ops/approvals.yaml id 21). After the first CI run, path-guard-author refused the rule-test commits because the skeleton exported a SWEEP_START constant (executable top-level code): the orchestrator squashed the two test(spec) commits into 55533a1 with the start cursor exported as sweepStart() and the call sites renamed (no assertion change; container red 21 tests again), and renamed the same symbol in Codex's implementation (059ed08); the review's subject is otherwise unchanged.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "55533a1714a13df80d7d3e396daeaf2cb9d4b523",
+      "tree": "a77d11729b52275a6e6a9939849df3bc04c443d7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T12:58:08Z",
+      "finished_at": "2026-10-14T12:58:19Z",
+      "red_tests": [
+        "test/spec/agent/stream-sweeper/completeness.int.test.ts > [AC-B3-03e#19] 完备性：游标停在 A 之后，此后才合格的行（锁期更晚）与 A 所在会话新出现的遗留 run 都在游标之后，下一轮全部扫到并收尾，finalize 用的是会话当前持锁的 run",
+        "test/spec/agent/stream-sweeper/completeness.int.test.ts > [AC-B3-03e#20] 不越界：sweeper 自己不写 agent_sessions / agent_runs / agent_messages，只调用 finalizer.finalize(runId)（一个参数，值为会话的 run_lock_run_id）；替身返回 final / running / held 或抛错时表都逐行不变",
+        "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#8] 连续多轮：同一遗留 run 第一轮收尾后，第二轮（从返回的游标或从起点、时钟再推进）不再调用 finalize，表与额度计数不变",
+        "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#9] 收尾已提交但回包丢失（finalize 抛错）：本轮计 failed，下一轮该会话已不合格、不再调用，结算只有一次",
+        "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#10] 两个 sweeper 实例并发：A 持第一条的收尾事务未提交时 B 排在其后，放行后 B 读到同一终态；每条只写一次终态、只退一次，两边都不计 failed",
+        "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#11] 两个 sweeper 实例同时从起点开跑（无人为编排）：每条只写一次终态、只退一次，两边 failed 均为 0",
+        "test/spec/agent/stream-sweeper/concurrency.int.test.ts > [AC-B3-03e#12] finalize 返回 running / held 时跳过：分别计入 skipped.running / skipped.held，不计 failed、不计 finalized，游标照常推进",
+        "test/spec/agent/stream-sweeper/config.test.ts > [AC-B3-03e#1] 默认参数：余量 10 s、每页 100、单轮 500；游标起点为 (-infinity, 全零 UUID)",
+        "test/spec/agent/stream-sweeper/config.test.ts > [AC-B3-03e#2] 参数校验：marginMs 须为 ≥ 0 的安全整数、pageSize / maxPerTick 须为 ≥ 1 的安全整数，否则 createSweeper 抛 RangeError；余量 0 合法",
+        "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#13] 分页与跨轮：按 (锁期, 会话 id) 升序；单轮满 maxPerTick 停在最后一条（wrapped=false），下一轮从游标之后继续，取不满一页回到起点（wrapped=true），再下一轮从头开始",
+        "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#14] 单轮不超过 maxPerTick（页 3、单轮 5：两页共 5 条）；锁期相同的按会话 id 排序；剩余的下一轮处理",
+        "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#15] 排序键是锁期而非 id：100 个 id 小、到期晚的会话 + 1 个 id 大、到期早的会话，默认参数下第一条是到期早的那个，整轮按 (锁期, id) 顺序处理完 101 条",
+        "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#16] finalize 抛可重试错误（AdmissionUnavailableError）或任意异常：记日志（含 run id）、计入 failed、游标照样推进并继续下一条；失败的条目绕回起点后重试",
+        "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#17] 默认参数下最早 500 条中 499 条可重试失败：本轮恰处理 500 条（failed 499）停在第 500 条，第 501 条在下一轮被处理",
+        "test/spec/agent/stream-sweeper/cursor.int.test.ts > [AC-B3-03e#18] 没有合格行：从起点或任意游标出发都是 processed 0、wrapped=true、游标回到起点，finalize 零调用",
+        "test/spec/agent/stream-sweeper/discovery.int.test.ts > [AC-B3-03e#3] 发现条件：只收尾「有锁、锁期 ≤ now − 余量、run 无 hold」的会话（与 end_reason 是否已写无关：S4 已提交、未结算即崩溃的也收尾）；锁未到期、在余量内、已 hold、无锁（含已收尾）的一律不碰，finalize 零调用",
+        "test/spec/agent/stream-sweeper/discovery.int.test.ts > [AC-B3-03e#4] 时钟：只用注入的 clock；锁期恰为 now − 余量的合格（<=），晚 1 ms 的不合格；余量 0 与默认余量、2026 与 2099 两个时代都成立",
+        "test/spec/agent/stream-sweeper/outcome.int.test.ts > [AC-B3-03e#5] 遗留 run（无终止原因、未出卡、无取消记录）一轮收尾：server_error、终态为 50001 帧、锁释放；受理日 23:59 受理、次日收尾，退还记在受理日",
+        "test/spec/agent/stream-sweeper/outcome.int.test.ts > [AC-B3-03e#6] 遗留 run 出过卡（S3 已提交）：一轮收尾为 server_error 50001、card_delivered 保持 true、照常计数不退",
+        "test/spec/agent/stream-sweeper/outcome.int.test.ts > [AC-B3-03e#7] 已有取消记录（cancel_requested_at 非空）的遗留 run：一轮收尾按 cancelled 结束、done(finish_reason=cancelled)、照常计数、锁释放（以落库为准）",
+        "test/spec/agent/stream-sweeper/outcome.int.test.ts > [AC-B3-03e#21] 已有终止原因未结算的遗留 run（活进程 S4 已提交 end_reason，未 settle / finish 即崩溃，锁已过期、无 hold）：一轮被发现并按已落库的原因收尾（不改成 server_error）、写终态、释放锁；timeout 未出卡退 1 条，consent_withdrawn 未出卡与 stop 出卡照常计数；再扫不重复结算"
+      ],
+      "expected": [
+        "test/spec/agent/stream-sweeper/completeness.int.test.ts",
+        "test/spec/agent/stream-sweeper/concurrency.int.test.ts",
+        "test/spec/agent/stream-sweeper/config.test.ts",
+        "test/spec/agent/stream-sweeper/cursor.int.test.ts",
+        "test/spec/agent/stream-sweeper/discovery.int.test.ts",
+        "test/spec/agent/stream-sweeper/outcome.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "aaef029e4f9905e2ef0f84986ec5f493d179fc1dad13754dcfd4e722437b15bb"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f6c34f07868dc1603774e0f6355217ff22073995d693a357dc7a7344deb3007d"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "48c116eb2dcf35b121d2f1fa55f1d7e346c2fa11",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      }
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "059ed08b2bcff39ff51a8984d2676520b1267f53",
+      "tree": "63b3a7a6a89bd94b1b024970a7a88bf122939590",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T13:00:27Z",
+      "finished_at": "2026-10-14T13:07:34Z",
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "48c116eb2dcf35b121d2f1fa55f1d7e346c2fa11",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagent on 6d8eb7c, round 1 pass; one S2 (the cursor time is truncated to milliseconds, unreachable while admit writes millisecond lock expiries) recorded as a follow-up (couli-runs/B3-03e/review-claude-money.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "round 1 one S1 fixed by the test author in attempt 2, round 2 pass (couli-runs/B3-03e/review-codex-spec-test-r1.json, r2.json)"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "206bb4681eacb7c738dccd582c9f7a4ef575bcdd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
