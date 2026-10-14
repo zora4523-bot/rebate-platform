@@ -33,6 +33,7 @@
 // access only through Kysely on deps.db.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
 
 export type AgentOwner =
@@ -72,10 +73,124 @@ export interface PgAgentSessionStoreDeps {
 
 /** BR-AI-20: idleMs is 24 hours. */
 export function agentSessionDefaults(): { readonly idleMs: number } {
-  throw new Error('NotImplemented: agentSessionDefaults');
+  return { idleMs: 86_400_000 };
 }
 
 export function createPgAgentSessionStore(deps: PgAgentSessionStoreDeps): AgentSessionStore {
-  void deps;
-  throw new Error('NotImplemented: createPgAgentSessionStore');
+  if (!Number.isSafeInteger(deps.idleMs) || deps.idleMs <= 0) {
+    throw new RangeError('Invalid session idle duration');
+  }
+  const db = deps.db.withSchema('app');
+  function sessions(connection: Kysely<DB>, owner: AgentOwner) {
+    const query = connection.selectFrom('agent_sessions').where('app_id', '=', owner.appId);
+    return owner.kind === 'user'
+      ? query.where('user_id', '=', owner.userId)
+      : query.where('user_id', 'is', null).where('device_id', '=', owner.deviceId);
+  }
+  function live(connection: Kysely<DB>, owner: AgentOwner, now: Date) {
+    const cutoff = structuredClone(now);
+    cutoff.setTime(now.getTime() - deps.idleMs);
+    return sessions(connection, owner)
+      .where('last_active_at', '>', cutoff)
+      .where((eb) => eb.or([eb('expired_at', 'is', null), eb('expired_at', '>', now)]));
+  }
+  return {
+    async open(owner, newId) {
+      return db.transaction().execute(async (tx) => {
+        // Serialize even the first creation, when there is no session row to lock yet.
+        const key = JSON.stringify([
+          'agent.session.open',
+          owner.appId,
+          owner.kind,
+          owner.kind === 'user' ? owner.userId : owner.deviceId,
+        ]);
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`.execute(tx);
+        const now = deps.clock.now();
+        const latest = await live(tx, owner, now)
+          .selectAll()
+          .orderBy('started_at', 'desc')
+          .orderBy('id', 'desc')
+          .limit(1)
+          .forUpdate()
+          .executeTakeFirst();
+        if (latest) {
+          // Locking the session also serializes this check with PG admission.
+          const run = await tx
+            .selectFrom('agent_runs')
+            .select('id')
+            .where('app_id', '=', owner.appId)
+            .where('session_id', '=', latest.id)
+            .limit(1)
+            .executeTakeFirst();
+          if (!run) return sessionRow(latest);
+        }
+        const created = await tx
+          .insertInto('agent_sessions')
+          .values({
+            id: newId,
+            app_id: owner.appId,
+            user_id: owner.kind === 'user' ? owner.userId : null,
+            device_id: owner.deviceId,
+            started_at: now,
+            last_active_at: now,
+            created_at: now,
+            updated_at: now,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        return sessionRow(created);
+      });
+    },
+    async current(owner) {
+      const now = deps.clock.now();
+      const row = await live(db, owner, now)
+        .selectAll()
+        .orderBy('last_active_at', 'desc')
+        .orderBy('id', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      return row ? sessionRow(row) : null;
+    },
+    async owned(owner, sessionId) {
+      const now = deps.clock.now();
+      if (!isUuid(sessionId)) return null;
+      const row = await sessions(db, owner)
+        .selectAll()
+        .where('id', '=', sessionId)
+        .executeTakeFirst();
+      if (!row) return null;
+      return {
+        session: sessionRow(row),
+        expired:
+          row.last_active_at.getTime() + deps.idleMs <= now.getTime() ||
+          (row.expired_at !== null && row.expired_at.getTime() <= now.getTime()),
+      };
+    },
+    async ownsRun(owner, runId) {
+      if (!isUuid(runId)) return false;
+      const row = await sessions(db, owner)
+        .select('id')
+        .where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('agent_runs as r')
+              .select('r.id')
+              .whereRef('r.app_id', '=', 'agent_sessions.app_id')
+              .whereRef('r.session_id', '=', 'agent_sessions.id')
+              .where('r.id', '=', runId),
+          ),
+        )
+        .executeTakeFirst();
+      return row !== undefined;
+    },
+  };
+}
+
+function sessionRow(row: { id: string; started_at: Date; last_active_at: Date }): AgentSessionRow {
+  return { id: row.id, startedAt: row.started_at, lastActiveAt: row.last_active_at };
+}
+
+/** Accept canonical UUIDs of any version; malformed external ids behave as missing rows. */
+export function isUuid(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 }

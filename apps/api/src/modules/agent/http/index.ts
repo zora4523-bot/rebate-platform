@@ -71,10 +71,17 @@
 // Rules for the implementation: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`, no NestJS, no process.env, time only from an injected Clock.
 import type { Clock, RootLogger } from '../../platform/index.ts';
+import { errorCodes } from '@couli/contracts-ts';
+import type { Schema } from '@couli/contracts-ts';
+import { AdmissionUnavailableError } from '../stream/admission/index.ts';
 import type { Admission, AdmissionLimits, RedactedText } from '../stream/admission/index.ts';
 import type { CancelQuery, QuotaLimitsSource } from '../stream/pg/index.ts';
 import type { RunBody, RunManager, RunRegistry, RunSink, RunTexts } from '../stream/run/index.ts';
-import type { AgentSessionStore } from '../store/index.ts';
+import { isUuid } from '../store/index.ts';
+import type { AgentOwner, AgentSessionRow, AgentSessionStore } from '../store/index.ts';
+import { encodeFrame } from '../stream/writer/index.ts';
+import { invalidFields, messageValidator } from './message-schema.ts';
+import { trackSink } from './sink.ts';
 
 export interface AgentCaller {
   readonly appId: string;
@@ -192,10 +199,297 @@ export interface AgentHttp {
 
 /** BR-AI-23 ⑤: 500 Unicode code points. */
 export function agentHttpDefaults(): AgentHttpSettings {
-  throw new Error('NotImplemented: agentHttpDefaults');
+  return { textMaxCodePoints: 500 };
 }
 
 export function createAgentHttp(deps: AgentHttpDeps): AgentHttp {
-  void deps;
-  throw new Error('NotImplemented: createAgentHttp');
+  if (
+    !Number.isSafeInteger(deps.settings.textMaxCodePoints) ||
+    deps.settings.textMaxCodePoints < 1
+  ) {
+    throw new RangeError('Invalid agent text limit');
+  }
+  function refuse(
+    caller: AgentCaller,
+    reply: AgentHttpReply,
+    code: keyof typeof errorCodes,
+    data?: Schema<'ErrorEnvelope'>['data'],
+    headers: Readonly<Record<string, string>> = {},
+  ): void {
+    const body: Schema<'ErrorEnvelope'> = {
+      code,
+      msg: deps.texts.errorMsg(code),
+      trace_id: caller.traceId,
+      ...(data === undefined ? {} : { data }),
+    };
+    reply.json(errorCodes[code].http, { 'content-type': 'application/json', ...headers }, body);
+  }
+
+  async function allowed(caller: AgentCaller, reply: AgentHttpReply): Promise<boolean> {
+    const access = await deps.access.check(caller);
+    if (access) {
+      refuse(caller, reply, access.code);
+      return false;
+    }
+    const identity = await deps.identity.check(caller);
+    if (identity) {
+      refuse(caller, reply, identity.code);
+      return false;
+    }
+    const consent = await deps.consent.check(caller);
+    if (consent) {
+      refuse(caller, reply, consent.code, { consent_type: 'ai_third_party' });
+      return false;
+    }
+    return true;
+  }
+
+  return {
+    async createSession(caller, reply) {
+      try {
+        if (!(await allowed(caller, reply))) return;
+        const row = await deps.sessions.open(ownerOf(caller), deps.ids());
+        const body: Schema<'AgentSessionResponse'> = {
+          code: 0,
+          msg: '',
+          data: sessionData(row),
+          trace_id: caller.traceId,
+        };
+        reply.json(200, JSON_HEADERS, body);
+      } catch {
+        refuse(caller, reply, 50001);
+      }
+    },
+    async currentSession(caller, reply) {
+      try {
+        if (!(await allowed(caller, reply))) return;
+        const row = await deps.sessions.current(ownerOf(caller));
+        const body: Schema<'AgentCurrentSessionResponse'> = {
+          code: 0,
+          msg: '',
+          data: { session: row ? sessionData(row) : null },
+          trace_id: caller.traceId,
+        };
+        reply.json(200, JSON_HEADERS, body);
+      } catch {
+        refuse(caller, reply, 50001);
+      }
+    },
+    async cancelRun(caller, runId, reply) {
+      try {
+        if (!(await allowed(caller, reply))) return;
+        if (!isUuid(runId) || !(await deps.sessions.ownsRun(ownerOf(caller), runId))) {
+          refuse(caller, reply, 30505);
+          return;
+        }
+        if ((await deps.cancel({ appId: caller.appId, runId })) !== 'accepted') {
+          refuse(caller, reply, 30505);
+          return;
+        }
+        const body: Schema<'EmptyResponse'> = {
+          code: 0,
+          msg: '',
+          data: {},
+          trace_id: caller.traceId,
+        };
+        reply.json(200, JSON_HEADERS, body);
+      } catch {
+        refuse(caller, reply, 50001);
+        return;
+      }
+      // The committed PG cancellation is authoritative; this signal is only a fast path.
+      try {
+        void deps.signals?.requestCancel(runId, ownerKeyOf(caller)).catch(() => undefined);
+      } catch {
+        /* A synchronously failed signal cannot change the successful answer. */
+      }
+    },
+    async sendMessage(caller, sessionId, input, reply) {
+      let streaming = false;
+      let sink: AgentStreamSink | undefined;
+      try {
+        const validate = await messageValidator();
+        if (!validate(input)) {
+          refuse(caller, reply, 20001, { fields: invalidFields(validate.errors ?? []) });
+          return;
+        }
+        const body = input as AgentMessageBody;
+        if (!(await allowed(caller, reply))) return;
+        const owned = isUuid(sessionId)
+          ? await deps.sessions.owned(ownerOf(caller), sessionId)
+          : null;
+        if (!owned || owned.expired) {
+          refuse(caller, reply, 30504);
+          return;
+        }
+        if ([...body.text].length > deps.settings.textMaxCodePoints) {
+          refuse(caller, reply, 20001, { fields: ['text'] });
+          return;
+        }
+        const runId = deps.ids();
+        const messageId = deps.ids();
+        const assistantMessageId = deps.ids();
+        if (new Set([runId, messageId, assistantMessageId]).size !== 3) {
+          throw new Error('Agent id generator returned duplicate ids');
+        }
+        const redactedText = await deps.redactor.redact(caller.appId, body.text);
+        let limits: AdmissionLimits;
+        try {
+          limits = await deps.limits.current(caller.appId);
+        } catch {
+          refuse(caller, reply, 50401);
+          return;
+        }
+        const labels = await deps.labels.current(caller);
+        // Resolve display labels before acceptance too: a label outage must not charge a turn.
+        const modelLabel = await deps.labels.modelLabel(caller.appId, labels.modelSnapshot);
+        const aiLabel = await deps.labels.aiLabel(caller.appId);
+        let result;
+        try {
+          result = await deps.admission.admit(
+            {
+              sessionId,
+              clientMsgId: body.client_msg_id,
+              runId,
+              messageId,
+              subject:
+                caller.userId !== null && caller.phoneBound
+                  ? { tier: 'member', userId: caller.userId }
+                  : {
+                      tier: 'guest',
+                      loggedIn: caller.userId !== null,
+                      deviceHash: caller.deviceHash,
+                      ipKey: caller.ipKey,
+                    },
+              reply: {
+                assistantMessageId,
+                promptVersion: labels.promptVersion,
+                modelSnapshot: labels.modelSnapshot,
+                runUserText: redactedText,
+                messageText: redactedText,
+              },
+            },
+            limits,
+          );
+        } catch (error) {
+          refuse(caller, reply, error instanceof AdmissionUnavailableError ? 50401 : 50001);
+          return;
+        }
+        if (result.kind === 'rejected') {
+          switch (result.code) {
+            case 42901:
+              refuse(caller, reply, result.code, undefined, {
+                'retry-after': String(result.retryAfterSeconds),
+              });
+              break;
+            case 30504:
+              refuse(
+                caller,
+                reply,
+                result.code,
+                result.reason === 'round_limit' ? { reason: 'round_limit' } : undefined,
+              );
+              break;
+            case 30502:
+              refuse(caller, reply, result.code, { reset_at: result.resetAt, next: result.next });
+              break;
+            case 30506:
+              refuse(caller, reply, result.code);
+              break;
+          }
+          return;
+        }
+        if (result.kind === 'duplicate') {
+          const original = result.original;
+          const originalLabel = await deps.labels.modelLabel(caller.appId, original.modelSnapshot);
+          streaming = true;
+          sink = trackSink(reply.stream(SSE_HEADERS));
+          sink.write(
+            encodeFrame({
+              event: 'meta',
+              id: 1,
+              data: {
+                session_id: sessionId,
+                run_id: original.runId,
+                message_id: original.assistantMessageId,
+                prompt_version: original.promptVersion,
+                model_label: originalLabel,
+                ai_label: aiLabel,
+                duplicate: true,
+              },
+            }),
+          );
+          const terminal =
+            result.reply.kind === 'final'
+              ? result.reply.frame
+              : {
+                  event: 'error' as const,
+                  data: {
+                    code: 30506,
+                    msg: deps.texts.errorMsg(30506),
+                    retryable: true,
+                    fallback: null,
+                    fallback_q: null,
+                  },
+                };
+          sink.write(encodeFrame({ event: terminal.event, data: { ...terminal.data }, id: 2 }));
+          return;
+        }
+        streaming = true;
+        sink = trackSink(reply.stream(SSE_HEADERS));
+        const runInput: RunBodyInput = {
+          caller,
+          sessionId,
+          runId,
+          userMessageId: messageId,
+          assistantMessageId,
+          text: body.text,
+          redactedText,
+          limits,
+          ...(body.context === undefined ? {} : { context: body.context }),
+        };
+        await deps.runs.start(
+          {
+            ticket: result.ticket,
+            ownerKey: ownerKeyOf(caller),
+            limits,
+            meta: {
+              message_id: assistantMessageId,
+              prompt_version: labels.promptVersion,
+              model_label: modelLabel,
+              ai_label: aiLabel,
+            },
+            sink,
+          },
+          async (ctx) => deps.body(runInput)(ctx),
+        );
+      } catch {
+        // Once SSE starts, never send JSON or invent an unpersisted terminal frame.
+        if (!streaming) refuse(caller, reply, 50001);
+      } finally {
+        sink?.end();
+      }
+    },
+  };
+}
+
+const JSON_HEADERS = { 'content-type': 'application/json' } as const;
+const SSE_HEADERS = { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' } as const;
+
+function ownerOf(caller: AgentCaller): AgentOwner {
+  return caller.userId === null
+    ? { kind: 'device', appId: caller.appId, deviceId: caller.deviceId }
+    : { kind: 'user', appId: caller.appId, deviceId: caller.deviceId, userId: caller.userId };
+}
+
+function ownerKeyOf(caller: AgentCaller): string {
+  return caller.userId === null ? `d:${caller.deviceId}` : `u:${caller.userId}`;
+}
+
+function sessionData(row: AgentSessionRow): Schema<'AgentSession'> {
+  return {
+    session_id: row.id,
+    started_at: row.startedAt.toISOString(),
+    last_active_at: row.lastActiveAt.toISOString(),
+  };
 }
