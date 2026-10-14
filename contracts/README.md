@@ -56,7 +56,7 @@ TODO(规划/11 §4.1): Prism mock（prism-cli 要 Node ≥24.18，ADR-0001 §7�
 9. 关掉任何 lint 规则都要在 `redocly.yaml` 或 `.redocly.lint-ignore.yaml` 里写原因；这两个文件的改动按契约评审。
 10. `/v1` 接口的 operation 上必须写 `x-auth`、`x-signed`、`x-idempotent`（04 §6 标 I）与 `x-error-codes`（本接口特有的业务码，公共码见 `info.description`）。`x-signed: true` 时三个签名头参数都要列，`x-idempotent: true` 时要列 `Idempotency-Key`；`security` 与 `x-auth` 对应（none → `[]`，optional → `[{}, bearerAuth]`，其余 → `bearerAuth`）。每个 `/v1` 接口声明 `429`（`TooManyRequests`，带必填 `Retry-After`）。还没有路由的接口标 `x-implementation: planned`；`apps/api/src/contract.test.ts` 要求带标记的接口没有路由、不带标记的恰好有一个，实现路由的任务同时去掉标记。
 11. 与 `enums/` 同名同义的枚举（平台、场景、排序、rebate_basis 等）取值必须与 `enums/` 完全一致，对应关系登记在 `packages/contracts-ts/scripts/conformance.ts` 的 `ENUM_BINDINGS`；只允许子集的字段（如 parse、convert 的 `scene`，客户端不能自选归因场景）登记在 `ENUM_SUBSETS`。新增枚举字段时一并登记。
-12. 第 4 条的两处例外：错误外壳的 `data`（各码字段见 `error-codes.yaml`）和 `/v1/config` 里形状未定的块（`FreeForm`），由用到它们的任务补形状。
+12. 第 4 条的例外：错误外壳的 `data`（各码字段见 `error-codes.yaml`）和 `/v1/config` 里形状未定的块（`FreeForm`），由用到它们的任务补形状；Agent 会话历史卡片的 `data`（`AgentHistoryCard`，CT-08e）写 `additionalProperties: true`，形状按 `type` 取 `agent-stream.schema.json` 的 `card_<type>`（收益卡只取 `earnings_summary_history`），未知类型照常通过、由客户端按 `fallback_text` 降级。
 
 13. 需要二次验证的操作在 operation 上写 `x-step-up: <step_up_action>`（04 §5 step-up 行；名称由契约自定，规划侧补登）。只有 04 §5 那四个接口能带，取值按该行的对应关系（`conformance.ts` 的 `STEP_UP_OPERATIONS`）；带它的接口必须 `x-idempotent: true`、列 `components/parameters/StepUpToken` 参数（`X-Step-Up-Token` 请求头，`required: false`、字符串 1–2048 字符：缺少、过期或 action 不符是业务码 10003，写成必填会被请求校验先拦成 20001）、`x-error-codes` 含 10003 与 20903；不带它的接口不列这个参数，也不列 20903。只对部分请求生效时把条件写在 operation 说明里（`POST /v1/me/phone` 只在更换时要求，首次绑定不要求）。这个参数组件由第一个挂 x-step-up 的任务（CT-15j / CT-16c）按上面的形状新建（现在建会成为未使用组件，lint 不过）。
 

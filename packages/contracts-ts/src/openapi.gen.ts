@@ -2031,7 +2031,34 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Conversation history
+         * @description The messages of one session (04 §6.5 会话历史响应的形状, 2026-10-14). After BR-ID-01 ①–⑦
+         *     the checks of BR-AI-23 ①–④ apply in order: 30501 (agent.enabled / whitelist, BR-AI-12) →
+         *     10001 / 10005 (BR-ID-03) → 10004 consent_type=ai_third_party (BR-AI-13) → 30504 without
+         *     data when the session does not exist or the caller is not its owner (never told apart,
+         *     BR-AI-20; owner as in createAgentSession).
+         *     An expired session (BR-AI-20) is not an error here: its owner still gets 200 with
+         *     data.expired=true and the history is read-only (sending to it is 30504 on POST); an
+         *     unexpired session has data.expired=false.
+         *     Paging: the first page holds the newest `limit` messages; items[] inside a page are in time
+         *     order, oldest first. next_cursor fetches the page of earlier (older) messages; null means
+         *     there are no earlier messages.
+         *     Each item is one agent_messages row: role user (the text as the user sent it, cards [] and
+         *     finish_reason null) or assistant (the text after OutputGuard, possibly '' while nothing
+         *     has been written yet; finish_reason as in the done frame, contracts/enums agent_finish_reason,
+         *     null while the run has not ended). cards[] are the card frames as they were sent (card_id,
+         *     type, schema_version, data, fallback_text; the frame's seq is not kept); data follows
+         *     contracts/agent-stream.schema.json card_<type>, and a client that does not know the type
+         *     shows fallback_text (03 §7.4). One exception: earnings_summary keeps no amounts (BR-AI-19,
+         *     BR-AI-01 细则「收益查询」), so its data is only the earnings_summary_history shape, as_of and
+         *     the two action buttons (actions), and the client shows the history note instead of
+         *     reloading amounts. Not replayed: tool.status, ping, suggestions and meta frames. Product
+         *     cards keep quoted_at / age_sec and are aged by BR-PRICE-11; there is no extra field.
+         *     After a duplicate client_msg_id response or a disconnect the client reloads this list
+         *     (04 §8.1, 03 §7.2).
+         */
+        get: operations["listAgentSessionMessages"];
         put?: never;
         /**
          * Send a message; the reply is an SSE stream
@@ -2084,6 +2111,55 @@ export interface paths {
          *     counted (BR-AI-15). Repeating the call while it runs is harmless. Version gate: applied.
          */
         post: operations["cancelAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent/messages/{message_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Thumbs up or down on a reply
+         * @description Writes agent_messages.feedback of the message (04 §6.5); down marks the run as a badcase
+         *     (BR-AI-19). A malformed body (feedback missing or not up / down, unknown fields) is 20001.
+         *     After BR-ID-01 ①–⑦ the checks of BR-AI-23 ①–③ apply: 30501 → 10001 / 10005 → 10004; then
+         *     30504 without data when the message does not exist or its session is not the caller's
+         *     (never told apart, BR-AI-20). Version gate: applied.
+         */
+        post: operations["setAgentMessageFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent/messages/{message_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report a reply
+         * @description Writes agent_messages.reported and report_reason (04 §6.5, BR-AI-19). reason is free text
+         *     of 1–200 characters: 08 has not fixed a set of report reasons, so the contract has no enum
+         *     for it. A malformed body (reason missing, empty or too long, unknown fields) is 20001.
+         *     After BR-ID-01 ①–⑦ the checks of BR-AI-23 ①–③ apply: 30501 → 10001 / 10005 → 10004; then
+         *     30504 without data when the message does not exist or its session is not the caller's
+         *     (never told apart, BR-AI-20). Version gate: applied.
+         */
+        post: operations["reportAgentMessage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4589,6 +4665,71 @@ export interface components {
             /** @description Clipboard text, untrusted (BR-AI-05). */
             text: string;
         };
+        /**
+         * @description finish_reason of the done frame (contracts/enums agent_finish_reason, 04 §8.2).
+         * @enum {string}
+         */
+        AgentFinishReason: "stop" | "cancelled" | "limit" | "budget" | "error" | "auth_required" | "safety" | "fallback" | "timeout";
+        /**
+         * @description A card frame as it was sent, without seq (04 §6.5). data follows
+         *     contracts/agent-stream.schema.json card_<type> (earnings_summary: earnings_summary_history
+         *     only); an unknown type is shown as fallback_text (03 §7.4).
+         */
+        AgentHistoryCard: {
+            /** @description Card id inside the session (c1, c2…, BR-AI-05). */
+            card_id: string;
+            /** @description Card type (contracts/enums agent_card_type); a newer type stays valid for an older client. */
+            type: string;
+            /** Format: int32 */
+            schema_version: number;
+            /** @description Shape per type in contracts/agent-stream.schema.json (contracts/README.md 书写规则第 12 条). */
+            data: {
+                [key: string]: unknown;
+            };
+            fallback_text: string;
+        };
+        /** @description One agent_messages row (04 §6.5 会话历史响应的形状). */
+        AgentHistoryMessage: {
+            message_id: components["schemas"]["Id"];
+            /**
+             * @description agent_messages.role (04 §3.2).
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Format: date-time */
+            created_at: string;
+            /** @description user, the text as sent; assistant, the text after OutputGuard ('' while nothing has been written). */
+            text: string;
+            /** @description Always empty for user. */
+            cards: components["schemas"]["AgentHistoryCard"][];
+            /** @description assistant once the run has ended; null for user and for a run still going. */
+            finish_reason: components["schemas"]["AgentFinishReason"] | null;
+        };
+        AgentHistoryData: {
+            /** @description Oldest first within the page. */
+            items: components["schemas"]["AgentHistoryMessage"][];
+            /** @description Cursor of the earlier page; null when there are no earlier messages. */
+            next_cursor: string | null;
+            /** @description true when the session has expired; the history is then read-only (BR-AI-20). */
+            expired: boolean;
+        };
+        AgentHistoryResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AgentHistoryData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AgentFeedbackRequest: {
+            /**
+             * @description agent_messages.feedback (04 §3.2); down marks a badcase (BR-AI-19).
+             * @enum {string}
+             */
+            feedback: "up" | "down";
+        };
+        AgentReportRequest: {
+            /** @description Free text kept in agent_messages.report_reason; 08 has no reason set yet, so no enum. */
+            reason: string;
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -4744,6 +4885,11 @@ export interface components {
         AgentSessionId: components["schemas"]["Id"];
         /** @description run_id from meta.run_id or a history turn. */
         AgentRunId: components["schemas"]["Id"];
+        /**
+         * @description message_id from meta.message_id or a history item. A message that does not exist or whose
+         *     session is not the caller's is 30504 either way (BR-AI-20).
+         */
+        AgentMessageId: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: {
@@ -9703,6 +9849,53 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    listAgentSessionMessages: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /** @description session_id. A session that does not exist or is not the caller's is 30504 either way (BR-AI-20). */
+                id: components["parameters"]["AgentSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of messages, oldest first within the page. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentHistoryResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     sendAgentMessage: {
         parameters: {
             query?: never;
@@ -9784,6 +9977,130 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description The run is being stopped. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    setAgentMessageFeedback: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /**
+                 * @description message_id from meta.message_id or a history item. A message that does not exist or whose
+                 *     session is not the caller's is 30504 either way (BR-AI-20).
+                 */
+                message_id: components["parameters"]["AgentMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "feedback": "down"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AgentFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description The feedback is recorded. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    reportAgentMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /**
+                 * @description message_id from meta.message_id or a history item. A message that does not exist or whose
+                 *     session is not the caller's is 30504 either way (BR-AI-20).
+                 */
+                message_id: components["parameters"]["AgentMessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "回答内容与事实不符"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AgentReportRequest"];
+            };
+        };
+        responses: {
+            /** @description The report is recorded. */
             200: {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

@@ -59,6 +59,7 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminLoginStep: 'admin_login_step',
   AdminAccountStatus: 'admin_account_status',
   PlatformIconKey: 'platform_icon_key',
+  AgentFinishReason: 'agent_finish_reason',
 };
 
 /**
