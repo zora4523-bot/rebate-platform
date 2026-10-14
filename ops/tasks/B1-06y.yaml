@@ -27,5 +27,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/linking-relation-conflicts/**'
-status: todo
-pr: null
+status: done
+pr: 375

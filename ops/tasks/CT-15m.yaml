@@ -23,5 +23,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/specs/**'
-status: todo
-pr: null
+status: done
+pr: 127
