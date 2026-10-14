@@ -149,6 +149,8 @@ function keyOfOwner(owner: AgentOwner): string {
 /** A gate (①, ②, ③) whose answer the test sets; null lets the request pass. */
 export class Gate<C extends number> {
   answer: { code: C } | null = null;
+  /** When set, the answer depends on the caller of this request (overrides `answer`). */
+  decide: ((caller: AgentCaller) => { code: C } | null) | null = null;
   readonly calls: AgentCaller[] = [];
   readonly name: string;
   readonly log: string[];
@@ -159,8 +161,33 @@ export class Gate<C extends number> {
   check(caller: AgentCaller): Promise<null | { code: C }> {
     this.calls.push(structuredClone(caller));
     this.log.push(this.name);
-    return Promise.resolve(this.answer === null ? null : { ...this.answer });
+    const answer = this.decide === null ? this.answer : this.decide(structuredClone(caller));
+    return Promise.resolve(answer === null ? null : { ...answer });
   }
+}
+
+/** The same subject as `caller` with a fresh trace id (one request). */
+export function request(caller: AgentCaller, traceId: string): AgentCaller {
+  return { ...caller, traceId };
+}
+
+/** True when `a` is the subject `b` (every identity field; the trace id is per request). */
+export function sameSubject(a: AgentCaller, b: AgentCaller): boolean {
+  return (
+    a.appId === b.appId &&
+    a.userId === b.userId &&
+    a.deviceId === b.deviceId &&
+    a.deviceHash === b.deviceHash &&
+    a.ipKey === b.ipKey &&
+    a.phoneBound === b.phoneBound
+  );
+}
+
+/** The store owner BR-AI-20 derives from a caller. */
+export function ownerOf(caller: AgentCaller): AgentOwner {
+  return caller.userId === null
+    ? { kind: 'device', appId: caller.appId, deviceId: caller.deviceId }
+    : { kind: 'user', appId: caller.appId, userId: caller.userId, deviceId: caller.deviceId };
 }
 
 interface StoredSession {

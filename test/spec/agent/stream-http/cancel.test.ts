@@ -67,7 +67,22 @@ it('[AC-B3-03d#20] 取消：①→②→③ 按序，失败时不查 run 归属�
   }
 });
 
-it('[AC-B3-03d#21] run 不存在、属于别人的会话、属于同设备的游客会话（调用者已登录）：一律 30505，外壳相同，不调取消端口', async () => {
+it('[AC-B3-03d#34] 取消：② 身份先于 ③ AI 同意——access 放行、identity 返回 10001 / 10005 且 consent 返回 10004 时回身份错误，consent 不被调用', async () => {
+  for (const code of [10001, 10005] as const) {
+    const r = rig();
+    const caller = member({ phoneBound: false });
+    const runId = ownRun(r, caller);
+    r.identity.answer = { code };
+    r.consent.answer = { code: 10004 };
+    const reply = await cancel(r, caller, runId);
+    await expectRefusal(reply, caller, 'cancel', code);
+    expect(r.consent.calls, `${code}: consent not asked`).toHaveLength(0);
+    expect(r.log, `${code}: only ① and ② asked`).toEqual(['access', 'identity']);
+    expect(r.cancel.calls).toHaveLength(0);
+  }
+});
+
+it('[AC-B3-03d#21]run 不存在、属于别人的会话、属于同设备的游客会话（调用者已登录）：一律 30505，外壳相同，不调取消端口', async () => {
   const r = rig();
   const caller = member();
   const runs = [

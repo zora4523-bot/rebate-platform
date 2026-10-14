@@ -4,7 +4,17 @@
 import { expect, it } from 'vitest';
 
 import { agentSessionDefaults } from '../../../../apps/api/src/modules/agent/store/index.ts';
-import { FakeReply, IDLE_MS, START_MS, expectOk, guest, member, rig, type Row } from './kit.ts';
+import {
+  FakeReply,
+  IDLE_MS,
+  START_MS,
+  expectOk,
+  expectRefusal,
+  guest,
+  member,
+  rig,
+  type Row,
+} from './kit.ts';
 
 function instant(value: unknown): number {
   expect(value).toBeTypeOf('string');
@@ -63,6 +73,24 @@ it('[AC-B3-03d#26] getCurrentAgentSession：有未过期会话时返回最近活
   expect(currents.every((c) => c.owner.kind === 'user')).toBe(true);
 });
 
-it('[AC-B3-03d#33] 会话过期时长默认取 BR-AI-20 的 24 小时：agentSessionDefaults().idleMs', () => {
+it('[AC-B3-03d#35] 建会话、查当前会话：② 身份先于 ③ AI 同意——identity 返回 10001 / 10005 且 consent 返回 10004 时回身份错误，consent 不被调用、不碰会话存取', async () => {
+  for (const op of ['create', 'current'] as const) {
+    for (const code of [10001, 10005] as const) {
+      const r = rig();
+      const caller = op === 'create' ? guest() : member({ phoneBound: false });
+      r.identity.answer = { code };
+      r.consent.answer = { code: 10004 };
+      const reply = new FakeReply();
+      if (op === 'create') await r.http.createSession(caller, reply);
+      else await r.http.currentSession(caller, reply);
+      await expectRefusal(reply, caller, op, code);
+      expect(r.consent.calls, `${op} ${code}: consent not asked`).toHaveLength(0);
+      expect(r.log, `${op} ${code}`).toEqual(['access', 'identity']);
+      expect(r.sessions.calls).toHaveLength(0);
+    }
+  }
+});
+
+it('[AC-B3-03d#33]会话过期时长默认取 BR-AI-20 的 24 小时：agentSessionDefaults().idleMs', () => {
   expect(agentSessionDefaults().idleMs).toBe(IDLE_MS);
 });
