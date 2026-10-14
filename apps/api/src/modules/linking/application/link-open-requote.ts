@@ -79,9 +79,12 @@ import {
 } from '../domain/rules.ts';
 import { hasUnresolvedBindingConflict } from '../infra/binding-conflicts.ts';
 import type { Caller } from '../ports.ts';
+import type { Platform, UnionItem } from '../../union/index.ts';
 import {
   attrCodeOf,
+  insertConvertLink,
   insertPendingOpenLink,
+  resolveSnapshot,
   openRegistrationScope,
   type IdentitySnapshot,
   type OpenRegistrationScope,
@@ -297,6 +300,73 @@ export interface LinkOpenRequoteService {
   open(input: LinkOpenRequoteInput): Promise<LinkOpenRequoteOutcome>;
 }
 
+/**
+ * B1-06i: what POST /v1/links/convert registers, resolved before the transaction (item_ref or
+ * product_refs and one union detail, or the by-URL parse). Never carries the item_ref itself.
+ */
+export interface LinkConvertTarget {
+  readonly platform: Platform;
+  readonly productKey: string;
+  readonly rawItemId: string;
+  /** The union response's quote instant of rawItemId (BR-PROD-05 raw_fetched_at). */
+  readonly rawFetchedAt: string;
+  /** The quote snapshot the new link freezes (BR-PRICE-12). */
+  readonly item: UnionItem;
+  readonly shopId: string | null;
+  /** BR-PRICE-07 来源判定表: the entry the product came from. */
+  readonly entrySource: string;
+}
+
+/** The convert's resolution: a target, a refusal before registration, or an unexpected fault. */
+export type LinkConvertResolution =
+  | { readonly kind: 'target'; readonly target: LinkConvertTarget }
+  | {
+      readonly kind: 'refused';
+      readonly code: number;
+      readonly data?: Readonly<Record<string, unknown>>;
+      /** The requested product key, when one was given (for the failure log). */
+      readonly productKey: string | null;
+    }
+  | { readonly kind: 'fault'; readonly error: unknown };
+
+export interface LinkConvertRequoteInput {
+  /** The request's platform, for the log of a refusal before registration. */
+  readonly platform: string;
+  readonly idempotencyKey: string;
+  readonly traceId: string;
+  readonly client: LinkOpenRequoteInput['client'];
+  readonly installed: components['schemas']['InstalledState'];
+  readonly spm?: string;
+  /** The idempotent request body: the whole contract body, defaults applied. */
+  readonly body: Readonly<Record<string, unknown>>;
+  /**
+   * Called once per request before the transaction, after the login check (no database
+   * connection is held then). Never rejects: a fault is returned and rethrown inside the handler,
+   * so a replayed key still answers its stored result.
+   */
+  resolve(caller: Caller): Promise<LinkConvertResolution>;
+}
+
+export type LinkConvertRequoteOutcome = (
+  | {
+      readonly code: 0;
+      readonly data: LinkOpenRequoteResult & { readonly link_id: string };
+    }
+  | {
+      readonly code: number;
+      readonly data: null;
+      readonly error?: Readonly<Record<string, unknown>>;
+    }
+) & {
+  /** The answered envelope's trace_id: a replay keeps the first request's (stored as it was). */
+  readonly traceId?: string;
+};
+
+/** B1-06i: the open core with the convert entry (link-convert.ts). */
+export interface LinkOpenConvertingService extends LinkOpenRequoteService {
+  convert(input: LinkConvertRequoteInput): Promise<LinkConvertRequoteOutcome>;
+}
+
 type LinkRow = Selectable<DB['links']>;
 type Availability = components['schemas']['Availability'];
 
@@ -376,7 +446,9 @@ const MESSAGES: Readonly<Record<number, string>> = {
   30102: 'auth_invalid',
   30111: 'auth_required',
   30153: 'binding_blocked',
+  30131: 'unsupported',
   30141: 'off_shelf',
+  30143: 'ref_expired',
   30602: 'tlj_claimed_out',
   50303: 'requote_failed',
 };
@@ -391,7 +463,9 @@ const STATUS: Readonly<Record<number, number>> = {
   30101: 422,
   30102: 422,
   30111: 422,
+  30131: 422,
   30141: 422,
+  30143: 422,
   30144: 404,
   30153: 422,
   30602: 422,
@@ -449,7 +523,7 @@ function openerKey(caller: Caller): string {
   return caller.userId !== null ? `u:${caller.userId}` : `d:${caller.deviceId ?? ''}`;
 }
 
-export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpenRequoteService {
+export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpenConvertingService {
   const { db, clock, callerContext, catalog, prices, conversion, cache, idempotency } = options;
   // B1-06m: inside the open's transaction these readers answer only from the pre-reads.
   const config = openScopedConfig(options.config);
@@ -1011,6 +1085,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
   /**
    * BR-ATTR-14 open log, and on success the renewed link and the attempt, through `executor`:
    * the open's transaction for a stored result, the db handle for the log of one that is not.
+   * B1-06i: a convert writes its own event (event=convert, with the request's spm) instead of
+   * open; logLinkId null is the log of a convert whose registered link was rolled back.
    */
   async function record(
     executor: Kysely<DB>,
@@ -1019,7 +1095,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     input: LinkOpenRequoteInput,
     settled: Settled,
     startMs: number,
-    logLinkId: string,
+    logLinkId: string | null,
+    event: 'open' | 'convert' = 'open',
   ): Promise<string | null> {
     const now = clock.now();
     const { link, identitySnapshot } = subject;
@@ -1031,7 +1108,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       .values({
         app_id: link.app_id,
         link_id: logLinkId,
-        event: 'open',
+        event,
+        ...(event === 'convert' ? { spm: input.spm ?? null } : {}),
         user_id: identitySnapshot.user_id,
         opener_user_id: caller.userId,
         platform: link.platform,
@@ -1314,5 +1392,270 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     return { code: parsed.code, data: null };
   }
 
-  return { open };
+  // ---- B1-06i: POST /v1/links/convert — register the caller's H5 link, then open it ----
+
+  /** What the convert prepared before its transaction. */
+  interface ConvertPrepared {
+    resolution: LinkConvertResolution;
+    snapshot:
+      | { readonly ok: true; readonly value: IdentitySnapshot }
+      | { readonly ok: false; readonly error: unknown }
+      | null;
+  }
+
+  const CONVERT_SCENE: Scene = 'h5';
+
+  /**
+   * Before the transaction: the resolution (catalog, item_ref, union, parsing — none of them on
+   * the open's connection), the new link's identity (BR-ATTR-05/08: the caller, scene h5 →
+   * self_buy) and every read the open stages may need for it (B1-06m).
+   */
+  async function prepareConvert(
+    caller: Caller,
+    input: LinkConvertRequoteInput,
+    prepared: ConvertPrepared,
+  ): Promise<void> {
+    const appId = caller.appId;
+    const settings = Promise.allSettled(
+      [
+        REQUOTE_AFTER_SEC,
+        PRICE_CHANGE_MIN_FEN,
+        PRICE_CHANGE_RATIO_BP,
+        CONVERT_CACHE_TTL_SEC,
+        PDD_PRECHECK_SWITCH,
+      ].map((key) => config.configValue(appId, key)),
+    );
+    try {
+      prepared.resolution = await input.resolve(caller);
+    } catch (error) {
+      prepared.resolution = { kind: 'fault', error };
+    }
+    const { resolution } = prepared;
+    if (resolution.kind === 'target') {
+      const { platform } = resolution.target;
+      try {
+        prepared.snapshot = {
+          ok: true,
+          value: await resolveSnapshot({
+            caller,
+            attrCodes,
+            pids,
+            platform,
+            scene: CONVERT_SCENE,
+            agentSessionId: null,
+          }),
+        };
+      } catch (error) {
+        prepared.snapshot = { ok: false, error };
+      }
+      if (conversion.prepare !== undefined) {
+        await Promise.allSettled([
+          conversion.prepare({
+            appId,
+            platform,
+            identities: [
+              { userId: caller.userId, pidScene: pidSceneOf(CONVERT_SCENE), noRebate: false },
+            ],
+          }),
+        ]);
+      }
+    }
+    await settings;
+  }
+
+  /** The convert log of a refusal before any link exists (BR-ATTR-14: failures are logged). */
+  async function logUnregistered(
+    executor: Kysely<DB>,
+    caller: Caller,
+    input: LinkConvertRequoteInput,
+    code: number,
+    productKey: string | null,
+    startMs: number,
+  ): Promise<void> {
+    const now = clock.now();
+    await executor
+      .insertInto('link_logs')
+      .values({
+        app_id: caller.appId,
+        link_id: null,
+        event: 'convert',
+        user_id: caller.userId,
+        opener_user_id: caller.userId,
+        platform: input.platform,
+        product_key: productKey,
+        scene: CONVERT_SCENE,
+        pid_scene: pidSceneOf(CONVERT_SCENE),
+        spm: input.spm ?? null,
+        client: input.client,
+        result_code: code,
+        latency_ms: Math.max(0, now.getTime() - startMs),
+        created_at: now,
+      })
+      .execute();
+  }
+
+  async function handleConvert(
+    caller: Caller,
+    input: LinkConvertRequoteInput,
+    prepared: ConvertPrepared,
+    trx: Transaction<DB>,
+    afterRollback: { log?: () => Promise<unknown> },
+  ): Promise<HandlerResult> {
+    const start = clock.now().getTime();
+    const envelope = (code: number, data: unknown = null): HandlerResult => ({
+      status: STATUS[code] ?? 500,
+      envelope: { code, msg: MESSAGES[code] ?? 'error', data, trace_id: input.traceId },
+    });
+    const { resolution, snapshot } = prepared;
+    if (resolution.kind === 'fault') throw resolution.error;
+    if (resolution.kind === 'refused') {
+      const { code, productKey } = resolution;
+      if (stored(code)) await logUnregistered(trx, caller, input, code, productKey, start);
+      else afterRollback.log = () => logUnregistered(db, caller, input, code, productKey, start);
+      return envelope(code, resolution.data ?? null);
+    }
+    if (snapshot === null) throw new Error('linking: convert identity was not prepared');
+    if (!snapshot.ok) throw snapshot.error;
+    const { target } = resolution;
+    const { item } = target;
+    const now = clock.now();
+    // The caller's own H5 link (BR-ATTR-08: scene h5 → self_buy), through the module's single
+    // links insert, in this transaction: it commits with the convert's log and attempt or not at all.
+    const linkId = newUuidV7(now);
+    await insertConvertLink(trx, {
+      now,
+      caller,
+      linkId,
+      snapshot: snapshot.value,
+      shopId: target.shopId,
+      values: {
+        platform: target.platform,
+        productKey: target.productKey,
+        rawItemId: target.rawItemId,
+        rawFetchedAt: target.rawFetchedAt,
+        scene: CONVERT_SCENE,
+        subScene: null,
+        entrySource: target.entrySource,
+        quotedFinalPriceFen: item.final_price_fen,
+        quotedCouponFen: item.coupon_fen,
+        quotedCouponId:
+          item.coupon_ids === undefined || item.coupon_ids === '' ? null : item.coupon_ids,
+        quotedAt: item.quoted_at,
+        agentCardId: null,
+      },
+    });
+    let owner: LinkOpenOwnerResult;
+    try {
+      owner = await owners.open({ linkId, noRebate: false }, trx);
+    } catch (error) {
+      if (error instanceof LinkingError) {
+        const code = error.code;
+        afterRollback.log = () =>
+          logUnregistered(db, caller, input, code, target.productKey, start);
+        return envelope(code);
+      }
+      throw error;
+    }
+    const openInput: LinkOpenRequoteInput = {
+      linkId,
+      idempotencyKey: input.idempotencyKey,
+      traceId: input.traceId,
+      client: input.client,
+      installed: input.installed,
+      noRebate: false,
+      ...(input.spm === undefined ? {} : { spm: input.spm }),
+    };
+    const settled = await settle(caller, owner, openInput, start, trx);
+    if (!stored(settled.code)) {
+      // The registered link rolls back with the transaction: the log keeps its product and
+      // identity, with no link_id (nothing to refer to).
+      const failed: Settled = {
+        code: settled.code,
+        linkId,
+        quotedPriceFen: owner.link.quoted_final_price_fen,
+        cacheHit: settled.cacheHit,
+        data: null,
+      };
+      afterRollback.log = () =>
+        record(db, caller, owner, openInput, failed, start, null, 'convert');
+      return envelope(settled.code, settled.error ?? null);
+    }
+    const attemptId = await record(
+      trx,
+      caller,
+      owner,
+      openInput,
+      settled,
+      start,
+      settled.linkId,
+      'convert',
+    );
+    if (settled.code !== 0 || settled.data === null || attemptId === null) {
+      return envelope(settled.code, settled.error ?? null);
+    }
+    return envelope(0, { link_id: linkId, attempt_id: attemptId, ...settled.data });
+  }
+
+  async function convert(input: LinkConvertRequoteInput): Promise<LinkConvertRequoteOutcome> {
+    const caller = await callerContext.current();
+    // x-auth login: no guest registers or converts (BR-ATTR-05 ④), nothing is read or logged.
+    if (caller.userId === null) return { code: 10001, data: null };
+    const afterRollback: { log?: () => Promise<unknown> } = {};
+    const prepared: ConvertPrepared = {
+      resolution: { kind: 'fault', error: new Error('linking: convert was not resolved') },
+      snapshot: null,
+    };
+    const response = await withOpenReads(
+      () => prepareConvert(caller, input, prepared),
+      () =>
+        idempotency.executeInTransaction(
+          {
+            appId: caller.appId,
+            actor: { userId: caller.userId, deviceId: caller.deviceId, phoneHmac: null },
+            method: 'POST',
+            path: '/v1/links/convert',
+            key: input.idempotencyKey,
+            body: input.body,
+            traceId: input.traceId,
+          },
+          (trx) => {
+            delete afterRollback.log;
+            return handleConvert(caller, input, prepared, trx, afterRollback);
+          },
+        ),
+    );
+    const parsed = JSON.parse(response.body) as {
+      code: number;
+      data?: unknown;
+      trace_id?: unknown;
+    };
+    if (response.source === 'handler' && !stored(parsed.code) && afterRollback.log !== undefined) {
+      await afterRollback.log();
+    }
+    // A replay answers the stored response as it was, its trace_id included.
+    const traceId = typeof parsed.trace_id === 'string' ? parsed.trace_id : input.traceId;
+    if (parsed.code === 0 && parsed.data !== null && parsed.data !== undefined) {
+      return {
+        code: 0,
+        data: parsed.data as LinkOpenRequoteResult & { link_id: string },
+        traceId,
+      };
+    }
+    if (
+      (ERROR_DATA_CODES.has(parsed.code) || parsed.code === 20001) &&
+      typeof parsed.data === 'object' &&
+      parsed.data !== null &&
+      !Array.isArray(parsed.data)
+    ) {
+      return {
+        code: parsed.code,
+        data: null,
+        error: parsed.data as Record<string, unknown>,
+        traceId,
+      };
+    }
+    return { code: parsed.code, data: null, traceId };
+  }
+
+  return { open, convert };
 }
