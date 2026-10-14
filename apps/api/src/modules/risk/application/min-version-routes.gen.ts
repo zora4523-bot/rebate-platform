@@ -772,6 +772,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listAgentSessionMessages",
+    "method": "GET",
+    "path": "/v1/agent/sessions/:id/messages",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "sendAgentMessage",
     "method": "POST",
     "path": "/v1/agent/sessions/:id/messages",
@@ -785,6 +795,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "operationId": "cancelAgentRun",
     "method": "POST",
     "path": "/v1/agent/runs/:run_id/cancel",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "setAgentMessageFeedback",
+    "method": "POST",
+    "path": "/v1/agent/messages/:message_id/feedback",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "reportAgentMessage",
+    "method": "POST",
+    "path": "/v1/agent/messages/:message_id/report",
     "gate": true,
     "sessionScopes": [
       "full"
