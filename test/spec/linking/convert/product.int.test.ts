@@ -45,7 +45,11 @@ it.each(['jd', 'pdd', 'taobao'] as const)(
         f.convert.mock.invocationCallOrder[0]!,
       );
     }
-    expect(JSON.stringify(await f.logs())).not.toContain(itemRef);
+    expect(
+      JSON.stringify(await f.logs(), (_key, value: unknown) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      ),
+    ).not.toContain(itemRef);
     expect(JSON.stringify(f.warn.mock.calls)).not.toContain(itemRef);
   },
   60_000,
