@@ -170,12 +170,7 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'idempotency_keys',
     'appeals',
   ]);
-  // B1-04a（迁移 0029）合并前 main 的 schema.sql 还没有这两张表；B1-04a 合并后由后续去掉这个例外。
-  const notYetInSchema = new Set(['union_raw_payloads', 'union_raw_payloads_default']);
-  for (const name of funds) {
-    if (notYetInSchema.has(name)) continue;
-    expect(tables, name).toContain(name);
-  }
+  for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
 });
 
