@@ -23,7 +23,7 @@ type: migration
 # 分工与两段式同 B1-19a；迁移全局串行，排在 F1-06a 之后（B1-04b 骨架不等本任务，B1-04c 的归档要等）。test_paths：test/spec/db/union-raw/**。
 refs: []
 refs_hash: {}
-deps: [F1-06a, B1-04n]
+deps: [F1-06a, B1-04n, B1-04v]
 paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
