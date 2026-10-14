@@ -14,7 +14,7 @@ type: impl
 refs: [BR-AI-21, BR-AI-06]
 refs_hash:
   BR-AI-21: 7e5eb4e48745
-  BR-AI-06: ab16403edda2
+  BR-AI-06: 3912ea460436
 deps: [B3-01b]
 paths:
   - 'packages/evals/**'
