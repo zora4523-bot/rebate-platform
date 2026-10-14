@@ -176,3 +176,9 @@ approvals:
     granted: true
     date: '2026-10-09'
     note: '负责人原话「对抗codex 使用 gpt6 astra 轻度 对抗review 就可以了 为什么还需要Claude 对抗 Claude 写的 就不要评审了 给chatgpt 对抗review 评审」（对话中给编排会话，经编排会话转达）；规划依据：规划仓库 PR couli#104、docs/changes/20261009-评审只用Codex对抗.md、11 §1.1 / §2.4 / §3.2 / §3.3 / §4.1 / §7.3 第 12 项、05 §2；「实现方之外的那一家评审」（台账 impl: claude / 空 → codex 条目必须、claude 可选；impl: codex → claude 条目必须、codex 可选）是编排会话按规划 PR 审查结果给的落实口径，「台账读不到两家都要」「PR 上有换家标记提交而证据没写 handover 时按 Codex 实现论」是本分支按 Codex 审查补的兜底，都不是负责人原话；落在分支 chore/review-codex-only（tools/agent/codex-run.sh 与其测试、tools/ci/evidence-check.ts 与其测试、tools/agent/README.md、AGENTS.md、packages/{money,domain}/AGENTS.md、db/AGENTS.md、ops/evidence/README.md）'
+  - id: 28
+    row: 4
+    title: '拼多多接入线两项：① 真实录制——负责人本人在终端运行 couli-runs/probes/pdd_probe.py（只读接口、≤40 次调用、产物只留字段名 / JSON 类型 / 掩码形状，进程内读 ~/.couli/pdd.env、不显示），产物存 rebate-private/cap-tests/ 并在 rebate-private/probe-runs.log 追加一行，在 tools/probe/run.sh（B1-04d）落地之前认定为本线的 probe 依据（规划/11 §4.5），覆盖 CAP-PDD-01～08、10，供 B1-04u / B1-04h / B1-04i 写字段映射；公开仓库只放按字段清单自拟的合成样例。② staging 的拼多多 client_secret 放 staging 节点上只有服务账号可读的文件（与字段加密主密钥同做法，ADR-0003），作 4_PDD_附 §5 第 1 项红线③与 02 §12.6「联盟 secret 只放 KMS」的登记例外；prod 仍只认 KMS；local / test 不加载真实凭据（规划/11 §8）'
+    granted: true
+    date: '2026-10-14'
+    note: '负责人在对话里直接对拼多多接入线编排会话（pdd-lane，账号 4）作答：问「录制由谁、在哪跑」选「你在本机跑一条命令（推荐）」，问「staging 服务端 client_secret 放在哪」选「staging 节点文件（推荐）」；两问的选项说明由编排会话拟写（含 IP 白名单只加不删、prod 仍 KMS），不是负责人原话；起因台账 PR #306 评审 r1 S1-2 / S1-7、r2 S1-A；本条所在的 PR 按第 24 条由编排会话或规划会话加标签'
