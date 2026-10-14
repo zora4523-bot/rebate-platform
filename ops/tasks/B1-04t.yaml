@@ -28,5 +28,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/union/pdd-live-wiring/**'
-status: todo
-pr: null
+status: done
+pr: 467
