@@ -23,6 +23,11 @@
 // job, whose key stays reserved); a failed enqueue after a successful scan is logged as warn and
 // the job still succeeds.
 //
+// Self-heal (B1-03u): heal() enqueues the next slot of both jobs, computed exactly as handle()
+// continues the chain. A healthy chain already holds that key (exclusive: the send is dropped);
+// a broken chain resumes from it. The current slot is never healed (a completed daily-alerts of
+// today is outside the dedup and would repeat its alerts). See ./risk-scan-heal.ts for the timer.
+//
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -50,6 +55,11 @@ export interface RiskScan {
   seed(): Promise<void>;
   /** Scan, then enqueue the next slot; its key differs from this still-active job's key. */
   handle(job: ReceivedJob): Promise<void>;
+  /**
+   * Next-slot sends of both jobs with handle()'s own keys; a failed send is a warn line
+   * (`risk_scan_heal_failed`) and never stops the other job. Never rejects; logs nothing on success.
+   */
+  heal(): Promise<void>;
 }
 
 /** The queue of the chain (platform/queue/catalog.ts: exclusive, worker only). */
@@ -264,9 +274,30 @@ export function createRiskScan(options: RiskScanOptions): RiskScan {
     }
   }
 
+  async function healNext(name: RiskScanJobName, now: Date): Promise<void> {
+    const slot = nextRiskScanSlot(name, now);
+    try {
+      await queue.send(RISK_SCAN_QUEUE, name, {}, { trx: null, ...slot });
+    } catch (error) {
+      logger.warn(
+        {
+          queue: RISK_SCAN_QUEUE,
+          job_name: name,
+          singleton_key: slot.singletonKey,
+          error_name: errorName(error),
+        },
+        'risk_scan_heal_failed',
+      );
+    }
+  }
+
   return {
     expireFrozen,
     dailyAlerts,
+    async heal() {
+      const now = clock.now();
+      for (const name of JOB_NAMES) await healNext(name, now);
+    },
     async seed() {
       const now = clock.now();
       let failure: { readonly error: unknown } | null = null;

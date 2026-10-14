@@ -23,7 +23,7 @@ import {
   loadConfig,
   loadConnectionConfig,
 } from './modules/platform/index.ts';
-import { riskScanToken, seedRiskScan } from './modules/risk/index.ts';
+import { riskScanToken, seedRiskScan, startRiskScanHeal } from './modules/risk/index.ts';
 
 // Keeps a worker process alive until a signal arrives; longer than any deployment lives.
 const KEEP_ALIVE_INTERVAL_MS = 2 ** 30;
@@ -203,15 +203,17 @@ async function start(
       }
       // The risk-scan chain (B1-03j): its current-slot seeds, now that the queue runs. A failed
       // seed is a warn line only; a signal that arrived meanwhile sends nothing.
-      await seedRiskScan(
-        () => context.get<unknown>(riskScanToken(), { strict: false }),
-        logger,
-        () => signals.stopping(),
-      );
+      const resolveScan = (): unknown => context.get<unknown>(riskScanToken(), { strict: false });
+      await seedRiskScan(resolveScan, logger, () => signals.stopping());
+      // The chain's self-heal (B1-03u): re-sends both next slots every five minutes, so a failed
+      // continuation does not stop the scans until the next worker start. Started even after a
+      // failed seed; stopped first on shutdown, before the services.
+      const heal = startRiskScanHeal(resolveScan, logger, () => signals.stopping());
       const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
       await signals.serve(
         async () => {
           try {
+            heal.stop();
             await services.stop();
           } finally {
             clearInterval(keepAlive);
