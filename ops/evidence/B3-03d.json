@@ -1,0 +1,181 @@
+{
+  "task": "B3-03d",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "8359e091fe214067c149f907be191b7627922a2f",
+  "red_tests": [
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#8] accepted → 200 text/event-stream：首帧 meta（本 run 的 id、回复消息 id、标签，duplicate 为 false），随后是运行体的帧，终止帧恰一个且在最后",
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#9] duplicate + final → 恰两帧：meta(duplicate=true，原 run 的 id 与 prompt_version，按原快照取展示名) 与原终止帧原样重放；不起新 run",
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#10] duplicate + running → meta(duplicate=true) 与 error 30506（retryable，fallback / fallback_q 为 null），不起新 run",
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#11] rejected → JSON：30506 无 data；42901 带 Retry-After（秒，取自结果）；30504 round_limit 带 data.reason；30504 expired 与 ④ 相同不带 data；30502 带 reset_at 与 next",
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#12] 受理前错误：AdmissionUnavailableError(rolled_back / unknown) → JSON 50401；AdmissionHeldError → JSON 50001；其他异常 → JSON 50001，响应里没有异常的任何内容",
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#13] 上限来源读取失败 → JSON 50401 且不调 admit；脱敏或标签端口失败 → JSON 50001 且不调 admit",
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#14] admit 入参：文本先经脱敏端口（一次），runUserText 与 messageText 都是脱敏结果，原文不出现在入参里；上限是注入来源按 app 取到的值",
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#15] runId、messageId、assistantMessageId 由服务端 ids() 生成、互不相同、每次请求都新；运行体与 RunStart 用同一组 id",
+    "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#16] 计数主体：已绑手机的登录用户按 user_id；登录未绑手机与游客按 device_hash 与 IP 键（loggedIn 区分）；RunStart 的 ownerKey 是 u:<user_id> 或 d:<device_id>",
+    "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#20] 取消：①→②→③ 按序，失败时不查 run 归属、不调取消端口、不发信号",
+    "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#34] 取消：② 身份先于 ③ AI 同意——access 放行、identity 返回 10001 / 10005 且 consent 返回 10004 时回身份错误，consent 不被调用",
+    "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#21]run 不存在、属于别人的会话、属于同设备的游客会话（调用者已登录）：一律 30505，外壳相同，不调取消端口",
+    "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#22] cancel() 返回 accepted → 200 EmptyResponse（data 为空对象），取消端口收到 {appId, runId}，随后发信号 (runId, ownerKey)",
+    "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#23] Redis 信号失败（拒绝、同步抛错、永不返回）或没有信号端口：仍是 200，不抛未捕获异常",
+    "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#24] cancel() 返回 not_running → 30505 不发信号；取消端口报错 → JSON 50001 不发信号",
+    "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#1] ①–⑤ 任意组合：返回第一个失败步骤的码与 JSON 外壳；被拒时不调 admit、不脱敏、不取上限，后续端口不被询问",
+    "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#2] ④ BR-AI-20：别人的会话、不存在的会话、已过期的会话都是 30504 且不带 data，三者外壳完全相同",
+    "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#3] ④ 有登录态时只按 user_id 判定：同一设备上的游客会话对登录用户是 30504，存取端口收到的所有者是 user 而不是 device",
+    "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#4] ⑤ 文本长度按 Unicode 码点计：上限内（含四字节字符）进入受理，超过一个码点即 20001 data.fields=[text]",
+    "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#5] ⑤ 的上限默认取 BR-AI-23 的值：agentHttpDefaults().textMaxCodePoints 等于 08 的上限",
+    "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#6] 请求体格式错是 20001（data.fields 指出字段），先于 ①：即使 ①–⑤ 全部会失败，也不询问任何端口",
+    "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#7] createAgentSession、getCurrentAgentSession 也按 ①→②→③ 判定（不碰会话存取），③ 带 consent_type=ai_third_party",
+    "test/spec/agent/stream-http/sessions.test.ts > [AC-B3-03d#25] createAgentSession：所有者交给存取端口（登录用户 user，游客 device），新 id 来自 ids()，200 过契约 AgentSessionResponse",
+    "test/spec/agent/stream-http/sessions.test.ts > [AC-B3-03d#26] getCurrentAgentSession：有未过期会话时返回最近活跃的那个，没有时 data.session 为 null；两种都过契约 AgentCurrentSessionResponse",
+    "test/spec/agent/stream-http/sessions.test.ts > [AC-B3-03d#35] 建会话、查当前会话：② 身份先于 ③ AI 同意——identity 返回 10001 / 10005 且 consent 返回 10004 时回身份错误，consent 不被调用、不碰会话存取",
+    "test/spec/agent/stream-http/sessions.test.ts > [AC-B3-03d#33]会话过期时长默认取 BR-AI-20 的 24 小时：agentSessionDefaults().idleMs",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#27] open：游客写 user_id 为空、device_id 为本设备；登录用户写 user_id 与本次设备；started_at = last_active_at = 注入时钟的 now；不写 run 与消息",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#28] open 重复调用：最新的未过期会话还没有任何 run 时原样返回、不新建；有了 run 或已过期才新建",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#29] current：返回本人最近活跃的未过期会话；last_active_at + 24 小时 ≤ now 即过期；没有则 null；只读不改 last_active_at",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#30] BR-AI-20 所有者：登录后看不到本设备的游客会话；游客看不到同设备上登录用户的会话；别的设备、别的用户互不可见",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#31] owned（④）：本人的会话给出 {session, expired}，过期边界同 current；不存在、别人的、非 UUID 的 id 一律 null 且不报错",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#32] ownsRun（取消接口）：run 在本人会话里为 true（会话过期也算）；不存在、在别人会话里、非 UUID 一律 false",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#40] open 不跨所有者复用空会话（BR-AI-20 登录后不迁移）：同一设备上游客的空会话不会给登录用户，反向亦然；原会话仍归原所有者",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#41] current 按最近活跃（last_active_at）选，不按创建先后：先建但刚受理过消息的会话胜过后建但较早活跃的会话",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#42] 只读方法 current、owned、ownsRun 不写库：调用前后 agent_sessions 与 agent_runs 的每一行（含 last_active_at、updated_at、row_version）完全相同",
+    "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#43] 过期会话上的 ownsRun 不续期：调用后该会话 last_active_at 不变，current 仍看不到它，owned 仍报 expired",
+    "test/spec/agent/stream-http/stream.test.ts > [AC-B3-03d#17] 受理与重复两种流：响应头 text/event-stream + no-cache；每个事件三行、id 从 1 连续；每帧过 agent-stream.schema.json",
+    "test/spec/agent/stream-http/stream.test.ts > [AC-B3-03d#18] 重复消息的流里客户端已断开（打开即断、写第一帧后断）：之后不再写出，至多一次失败的写入即停，sendMessage 正常结束不抛错",
+    "test/spec/agent/stream-http/stream.test.ts > [AC-B3-03d#19] 受理后的流里客户端断开：断开后不再写出任何帧，sendMessage 在 run 结束后正常结束、不抛错",
+    "test/spec/agent/stream-http/subjects.test.ts > [AC-B3-03d#36] 发消息：同一实例交替处理 A、B，①/②/③ 只拒 B；各门禁每次收到的都是本次请求的完整主体，④ 与 admit 也只见到当前主体",
+    "test/spec/agent/stream-http/subjects.test.ts > [AC-B3-03d#37] 发消息 ④：同一实例交替 A、B 访问彼此的会话——存取端口每次收到当前主体的所有者，本人的会话受理、对方的会话 30504，受理的计数主体与 ownerKey 属于当前主体",
+    "test/spec/agent/stream-http/subjects.test.ts > [AC-B3-03d#38] 建会话、查当前会话：同一实例交替处理 B、A，①/②/③ 只拒 A；门禁收到本次请求的完整主体，存取端口只以当前通过者 B 的所有者被调用",
+    "test/spec/agent/stream-http/subjects.test.ts > [AC-B3-03d#39] 取消：同一实例交替处理 A、B——①/②/③ 只拒 B 时门禁收到本次请求的完整主体；归属检查、取消端口的 app_id 与信号的 ownerKey 每次都属于当前主体"
+  ],
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/{http,store}/** is RV1: the HTTP layer and PG session store in front of the B3-03g admission and finalize ports, not mounted). Codex-first implementation (ops/approvals.yaml id 23). Owner decisions 2026-10-08 (couli#88; couli-runs/B3-03d/decision-recovery-redesign.md item 5): the task was narrowed to the HTTP layer and its test / spec-test rounds restarted (old state and runs archived in couli-runs/B3-03d/pre-redesign/). Rule tests by a Claude subagent in 3 attempts (container red 33, 39, 43 tests); Codex spec-test reviews round 1 (2 S1) and round 2 (3 S1), each fixed by the next attempt; a fresh Claude subagent closed the review (pass, couli-runs/B3-03d/v2/review-claude-spec-test-close.json; precedent B3-03c). Codex implemented in 3 attempts (attempt 1 read the contract file on the request path, attempt 2 rebuilt the validator per instance; attempt 3 builds it once at module load); full pnpm verify passed in the isolated container on the AWS test machine. Claude money-checklist review round 1 pass (ops/approvals.yaml id 27). Full verification is the required CI checks (ops/approvals.yaml id 21). At landing, [AC-B3-03d#1] (96 combinations in one test) timed out at vitest's default 5 s on the loaded test machine in 2 of 3 runs (passing in the third): the orchestrator gave that test an explicit 60 s timeout in the last test(spec) commit (no assertion change) and replayed the three implementation commits on top.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "8359e091fe214067c149f907be191b7627922a2f",
+      "tree": "25b239234a0e6df63a42a24fa3d4070ecd2d1489",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T14:07:44Z",
+      "finished_at": "2026-10-14T14:07:55Z",
+      "red_tests": [
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#8] accepted → 200 text/event-stream：首帧 meta（本 run 的 id、回复消息 id、标签，duplicate 为 false），随后是运行体的帧，终止帧恰一个且在最后",
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#9] duplicate + final → 恰两帧：meta(duplicate=true，原 run 的 id 与 prompt_version，按原快照取展示名) 与原终止帧原样重放；不起新 run",
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#10] duplicate + running → meta(duplicate=true) 与 error 30506（retryable，fallback / fallback_q 为 null），不起新 run",
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#11] rejected → JSON：30506 无 data；42901 带 Retry-After（秒，取自结果）；30504 round_limit 带 data.reason；30504 expired 与 ④ 相同不带 data；30502 带 reset_at 与 next",
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#12] 受理前错误：AdmissionUnavailableError(rolled_back / unknown) → JSON 50401；AdmissionHeldError → JSON 50001；其他异常 → JSON 50001，响应里没有异常的任何内容",
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#13] 上限来源读取失败 → JSON 50401 且不调 admit；脱敏或标签端口失败 → JSON 50001 且不调 admit",
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#14] admit 入参：文本先经脱敏端口（一次），runUserText 与 messageText 都是脱敏结果，原文不出现在入参里；上限是注入来源按 app 取到的值",
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#15] runId、messageId、assistantMessageId 由服务端 ids() 生成、互不相同、每次请求都新；运行体与 RunStart 用同一组 id",
+        "test/spec/agent/stream-http/admission.test.ts > [AC-B3-03d#16] 计数主体：已绑手机的登录用户按 user_id；登录未绑手机与游客按 device_hash 与 IP 键（loggedIn 区分）；RunStart 的 ownerKey 是 u:<user_id> 或 d:<device_id>",
+        "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#20] 取消：①→②→③ 按序，失败时不查 run 归属、不调取消端口、不发信号",
+        "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#34] 取消：② 身份先于 ③ AI 同意——access 放行、identity 返回 10001 / 10005 且 consent 返回 10004 时回身份错误，consent 不被调用",
+        "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#21]run 不存在、属于别人的会话、属于同设备的游客会话（调用者已登录）：一律 30505，外壳相同，不调取消端口",
+        "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#22] cancel() 返回 accepted → 200 EmptyResponse（data 为空对象），取消端口收到 {appId, runId}，随后发信号 (runId, ownerKey)",
+        "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#23] Redis 信号失败（拒绝、同步抛错、永不返回）或没有信号端口：仍是 200，不抛未捕获异常",
+        "test/spec/agent/stream-http/cancel.test.ts > [AC-B3-03d#24] cancel() 返回 not_running → 30505 不发信号；取消端口报错 → JSON 50001 不发信号",
+        "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#1] ①–⑤ 任意组合：返回第一个失败步骤的码与 JSON 外壳；被拒时不调 admit、不脱敏、不取上限，后续端口不被询问",
+        "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#2] ④ BR-AI-20：别人的会话、不存在的会话、已过期的会话都是 30504 且不带 data，三者外壳完全相同",
+        "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#3] ④ 有登录态时只按 user_id 判定：同一设备上的游客会话对登录用户是 30504，存取端口收到的所有者是 user 而不是 device",
+        "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#4] ⑤ 文本长度按 Unicode 码点计：上限内（含四字节字符）进入受理，超过一个码点即 20001 data.fields=[text]",
+        "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#5] ⑤ 的上限默认取 BR-AI-23 的值：agentHttpDefaults().textMaxCodePoints 等于 08 的上限",
+        "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#6] 请求体格式错是 20001（data.fields 指出字段），先于 ①：即使 ①–⑤ 全部会失败，也不询问任何端口",
+        "test/spec/agent/stream-http/order.test.ts > [AC-B3-03d#7] createAgentSession、getCurrentAgentSession 也按 ①→②→③ 判定（不碰会话存取），③ 带 consent_type=ai_third_party",
+        "test/spec/agent/stream-http/sessions.test.ts > [AC-B3-03d#25] createAgentSession：所有者交给存取端口（登录用户 user，游客 device），新 id 来自 ids()，200 过契约 AgentSessionResponse",
+        "test/spec/agent/stream-http/sessions.test.ts > [AC-B3-03d#26] getCurrentAgentSession：有未过期会话时返回最近活跃的那个，没有时 data.session 为 null；两种都过契约 AgentCurrentSessionResponse",
+        "test/spec/agent/stream-http/sessions.test.ts > [AC-B3-03d#35] 建会话、查当前会话：② 身份先于 ③ AI 同意——identity 返回 10001 / 10005 且 consent 返回 10004 时回身份错误，consent 不被调用、不碰会话存取",
+        "test/spec/agent/stream-http/sessions.test.ts > [AC-B3-03d#33]会话过期时长默认取 BR-AI-20 的 24 小时：agentSessionDefaults().idleMs",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#27] open：游客写 user_id 为空、device_id 为本设备；登录用户写 user_id 与本次设备；started_at = last_active_at = 注入时钟的 now；不写 run 与消息",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#28] open 重复调用：最新的未过期会话还没有任何 run 时原样返回、不新建；有了 run 或已过期才新建",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#29] current：返回本人最近活跃的未过期会话；last_active_at + 24 小时 ≤ now 即过期；没有则 null；只读不改 last_active_at",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#30] BR-AI-20 所有者：登录后看不到本设备的游客会话；游客看不到同设备上登录用户的会话；别的设备、别的用户互不可见",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#31] owned（④）：本人的会话给出 {session, expired}，过期边界同 current；不存在、别人的、非 UUID 的 id 一律 null 且不报错",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#32] ownsRun（取消接口）：run 在本人会话里为 true（会话过期也算）；不存在、在别人会话里、非 UUID 一律 false",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#40] open 不跨所有者复用空会话（BR-AI-20 登录后不迁移）：同一设备上游客的空会话不会给登录用户，反向亦然；原会话仍归原所有者",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#41] current 按最近活跃（last_active_at）选，不按创建先后：先建但刚受理过消息的会话胜过后建但较早活跃的会话",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#42] 只读方法 current、owned、ownsRun 不写库：调用前后 agent_sessions 与 agent_runs 的每一行（含 last_active_at、updated_at、row_version）完全相同",
+        "test/spec/agent/stream-http/store.int.test.ts > [AC-B3-03d#43] 过期会话上的 ownsRun 不续期：调用后该会话 last_active_at 不变，current 仍看不到它，owned 仍报 expired",
+        "test/spec/agent/stream-http/stream.test.ts > [AC-B3-03d#17] 受理与重复两种流：响应头 text/event-stream + no-cache；每个事件三行、id 从 1 连续；每帧过 agent-stream.schema.json",
+        "test/spec/agent/stream-http/stream.test.ts > [AC-B3-03d#18] 重复消息的流里客户端已断开（打开即断、写第一帧后断）：之后不再写出，至多一次失败的写入即停，sendMessage 正常结束不抛错",
+        "test/spec/agent/stream-http/stream.test.ts > [AC-B3-03d#19] 受理后的流里客户端断开：断开后不再写出任何帧，sendMessage 在 run 结束后正常结束、不抛错",
+        "test/spec/agent/stream-http/subjects.test.ts > [AC-B3-03d#36] 发消息：同一实例交替处理 A、B，①/②/③ 只拒 B；各门禁每次收到的都是本次请求的完整主体，④ 与 admit 也只见到当前主体",
+        "test/spec/agent/stream-http/subjects.test.ts > [AC-B3-03d#37] 发消息 ④：同一实例交替 A、B 访问彼此的会话——存取端口每次收到当前主体的所有者，本人的会话受理、对方的会话 30504，受理的计数主体与 ownerKey 属于当前主体",
+        "test/spec/agent/stream-http/subjects.test.ts > [AC-B3-03d#38] 建会话、查当前会话：同一实例交替处理 B、A，①/②/③ 只拒 A；门禁收到本次请求的完整主体，存取端口只以当前通过者 B 的所有者被调用",
+        "test/spec/agent/stream-http/subjects.test.ts > [AC-B3-03d#39] 取消：同一实例交替处理 A、B——①/②/③ 只拒 B 时门禁收到本次请求的完整主体；归属检查、取消端口的 app_id 与信号的 ownerKey 每次都属于当前主体"
+      ],
+      "expected": [
+        "test/spec/agent/stream-http/admission.test.ts",
+        "test/spec/agent/stream-http/cancel.test.ts",
+        "test/spec/agent/stream-http/order.test.ts",
+        "test/spec/agent/stream-http/sessions.test.ts",
+        "test/spec/agent/stream-http/store.int.test.ts",
+        "test/spec/agent/stream-http/stream.test.ts",
+        "test/spec/agent/stream-http/subjects.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "794ec5a4acf22b33a549a18db64d521c399dc76f4550d5b3fca71fe8278b8f6d"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "5bc6e1a66218e2ed57b86c3d6c2835fd690351b88f944b91cc113605b0ce1a83"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "c00645cdd207393b2847ab453242be1da2911aaa",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      }
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "b7013b6d5bd88c23b73d9b5b5217baa051741c75",
+      "tree": "3f37bed1b8d21c8d4b47010dc66c5465f7532d28",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T14:09:56Z",
+      "finished_at": "2026-10-14T14:17:06Z",
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "c00645cdd207393b2847ab453242be1da2911aaa",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagent on 9798d3c, round 1 pass; one S2 (several catch blocks answer 50001 without logging the cause) recorded as a follow-up; reminder for B3-03f that the runtime reads tools/lib/yaml-lite.ts and contracts/ (couli-runs/B3-03d/v2/review-claude-money.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "round 1 (2 S1) and round 2 (3 S1) by fresh Codex sessions, each fixed by the test author; a fresh Claude subagent closed it with pass and two S2 (couli-runs/B3-03d/v2/review-codex-spec-test-r1.json, r2.json, review-claude-spec-test-close.json). The frozen rule tests were not changed after 37bd46f"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "c8da1836cc23d7de90967700a79b9274af1aa537"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
