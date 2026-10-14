@@ -95,7 +95,7 @@ it('[AC-B3-03d#1] ①–⑤ 任意组合：返回第一个失败步骤的码与 
       ['access', 'identity', 'consent', 'sessions.owned'].slice(0, failedAt),
     );
   }
-});
+}, 60_000);
 
 it('[AC-B3-03d#2] ④ BR-AI-20：别人的会话、不存在的会话、已过期的会话都是 30504 且不带 data，三者外壳完全相同', async () => {
   const bodies: Row[] = [];

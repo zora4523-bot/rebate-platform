@@ -74,14 +74,33 @@ async function userOwner(deviceId?: string): Promise<AgentOwner> {
   };
 }
 
-/** A session row written directly for `owner`, last active at `lastActiveMs`. */
-async function seedSession(owner: AgentOwner, lastActiveMs: number): Promise<string> {
+/**
+ * A session row written directly for `owner`, last active at `lastActiveMs` and started at
+ * `startedMs` (default one minute earlier; creation order and activity order can differ).
+ */
+async function seedSession(
+  owner: AgentOwner,
+  lastActiveMs: number,
+  startedMs: number = lastActiveMs - 60_000,
+): Promise<string> {
   const id = randomUUID();
-  const at = new Date(lastActiveMs);
   await sql`INSERT INTO app.agent_sessions (id, app_id, user_id, device_id, started_at, last_active_at)
     VALUES (${id}, ${APP}, ${owner.kind === 'user' ? owner.userId : null}, ${owner.deviceId},
-      ${new Date(lastActiveMs - 60_000)}, ${at})`.execute(db());
+      ${new Date(startedMs)}, ${new Date(lastActiveMs)})`.execute(db());
   return id;
+}
+
+/** Every row of agent_sessions and agent_runs, whole (to prove a read wrote nothing). */
+async function snapshot(): Promise<{ sessions: Row[]; runs: Row[] }> {
+  const sessions = await sql<Row>`SELECT * FROM app.agent_sessions ORDER BY id`.execute(db());
+  const runs = await sql<Row>`SELECT * FROM app.agent_runs ORDER BY id`.execute(db());
+  return { sessions: sessions.rows, runs: runs.rows };
+}
+
+async function sessionRow(id: string): Promise<Row> {
+  const r = await sql<Row>`SELECT * FROM app.agent_sessions WHERE id = ${id}`.execute(db());
+  expect(r.rows, `agent_sessions ${id}`).toHaveLength(1);
+  return r.rows[0]!;
 }
 
 async function seedRun(sessionId: string, acceptedMs: number): Promise<string> {
@@ -238,4 +257,102 @@ it('[AC-B3-03d#32] ownsRun（取消接口）：run 在本人会话里为 true（
   expect(await s.ownsRun(owner, 'run-1')).toBe(false);
   // A user does not own the runs of its device's guest session.
   expect(await s.ownsRun(await userOwner(owner.deviceId), runId)).toBe(false);
+});
+
+it('[AC-B3-03d#40] open 不跨所有者复用空会话（BR-AI-20 登录后不迁移）：同一设备上游客的空会话不会给登录用户，反向亦然；原会话仍归原所有者', async () => {
+  const s = store(new TestClock());
+
+  // Guest first on device D, then user U signs in on D.
+  const guestOnD = await deviceOwner();
+  const g = await s.open(guestOnD, randomUUID());
+  const userOnD = await userOwner(guestOnD.deviceId);
+  const u = await s.open(userOnD, randomUUID());
+  expect(u.id, 'the user gets a new session, not the guest one').not.toBe(g.id);
+  expect(await sessionRow(u.id)).toMatchObject({
+    user_id: (userOnD as { userId: string }).userId,
+    device_id: guestOnD.deviceId,
+  });
+  expect(await sessionRow(g.id)).toMatchObject({ user_id: null, device_id: guestOnD.deviceId });
+  expect((await s.current(userOnD))?.id).toBe(u.id);
+  expect(await s.owned(userOnD, g.id)).toBeNull();
+  expect((await s.current(guestOnD))?.id).toBe(g.id);
+  expect(await s.owned(guestOnD, u.id)).toBeNull();
+  // Opening again keeps each owner on its own empty session.
+  expect((await s.open(userOnD, randomUUID())).id).toBe(u.id);
+  expect((await s.open(guestOnD, randomUUID())).id).toBe(g.id);
+
+  // User first on device E, then a guest on E.
+  const userOnE = await userOwner();
+  const first = await s.open(userOnE, randomUUID());
+  const guestOnE: AgentOwner = { kind: 'device', appId: APP, deviceId: userOnE.deviceId };
+  const second = await s.open(guestOnE, randomUUID());
+  expect(second.id, 'the guest gets a new session, not the user one').not.toBe(first.id);
+  expect(await sessionRow(second.id)).toMatchObject({
+    user_id: null,
+    device_id: userOnE.deviceId,
+  });
+  expect(await sessionRow(first.id)).toMatchObject({
+    user_id: (userOnE as { userId: string }).userId,
+  });
+  expect(await s.owned(guestOnE, first.id)).toBeNull();
+  expect((await s.current(guestOnE))?.id).toBe(second.id);
+  expect((await s.current(userOnE))?.id).toBe(first.id);
+});
+
+it('[AC-B3-03d#41] current 按最近活跃（last_active_at）选，不按创建先后：先建但刚受理过消息的会话胜过后建但较早活跃的会话', async () => {
+  const s = store(new TestClock());
+  const owner = await userOwner();
+  // A: started 2 h ago, last active 1 min ago. B: started 30 min ago, last active 20 min ago.
+  const a = await seedSession(owner, START_MS - 60_000, START_MS - 7_200_000);
+  const b = await seedSession(owner, START_MS - 1_200_000, START_MS - 1_800_000);
+  expect((await s.current(owner))?.id).toBe(a);
+  expect(b).not.toBe(a);
+
+  // The same for a guest owner.
+  const guestOwner = await deviceOwner();
+  const ga = await seedSession(guestOwner, START_MS - 60_000, START_MS - 7_200_000);
+  await seedSession(guestOwner, START_MS - 1_200_000, START_MS - 1_800_000);
+  expect((await s.current(guestOwner))?.id).toBe(ga);
+});
+
+it('[AC-B3-03d#42] 只读方法 current、owned、ownsRun 不写库：调用前后 agent_sessions 与 agent_runs 的每一行（含 last_active_at、updated_at、row_version）完全相同', async () => {
+  const clock = new TestClock();
+  const s = store(clock);
+  const owner = await userOwner();
+  const live = await seedSession(owner, START_MS - 60_000);
+  const liveRun = await seedRun(live, START_MS - 60_000);
+  const old = await seedSession(owner, START_MS - IDLE_MS - 5_000);
+  const oldRun = await seedRun(old, START_MS - IDLE_MS - 5_000);
+  const stranger = await deviceOwner();
+  const theirs = await seedSession(stranger, START_MS - 30_000);
+  const theirRun = await seedRun(theirs, START_MS - 30_000);
+  clock.ms = START_MS + 10_000;
+
+  const before = await snapshot();
+  expect((await s.current(owner))?.id).toBe(live);
+  expect((await s.owned(owner, live))?.expired).toBe(false);
+  expect((await s.owned(owner, old))?.expired).toBe(true);
+  expect(await s.owned(owner, theirs)).toBeNull();
+  expect(await s.ownsRun(owner, liveRun)).toBe(true);
+  expect(await s.ownsRun(owner, oldRun)).toBe(true);
+  expect(await s.ownsRun(owner, theirRun)).toBe(false);
+  expect(await s.ownsRun(stranger, liveRun)).toBe(false);
+  expect(await snapshot()).toEqual(before);
+});
+
+it('[AC-B3-03d#43] 过期会话上的 ownsRun 不续期：调用后该会话 last_active_at 不变，current 仍看不到它，owned 仍报 expired', async () => {
+  const clock = new TestClock();
+  const s = store(clock);
+  const owner = await deviceOwner();
+  const lastActive = START_MS - IDLE_MS;
+  const expired = await seedSession(owner, lastActive);
+  const runId = await seedRun(expired, lastActive);
+  expect(await s.current(owner)).toBeNull();
+  const before = await sessionRow(expired);
+
+  expect(await s.ownsRun(owner, runId)).toBe(true);
+  expect(await sessionRow(expired)).toEqual(before);
+  expect((before['last_active_at'] as Date).getTime()).toBe(lastActive);
+  expect(await s.current(owner)).toBeNull();
+  expect((await s.owned(owner, expired))?.expired).toBe(true);
 });
