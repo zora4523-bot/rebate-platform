@@ -5898,6 +5898,151 @@ paths:
         5XX:
           $ref: '#/components/responses/ServerError'
   /v1/agent/sessions/{id}/messages:
+    get:
+      operationId: listAgentSessionMessages
+      tags:
+        - agent
+      summary: Conversation history
+      description: |
+        The messages of one session (04 §6.5 会话历史响应的形状, 2026-10-14). After BR-ID-01 ①–⑦
+        the checks of BR-AI-23 ①–④ apply in order: 30501 (agent.enabled / whitelist, BR-AI-12) →
+        10001 / 10005 (BR-ID-03) → 10004 consent_type=ai_third_party (BR-AI-13) → 30504 without
+        data when the session does not exist or the caller is not its owner (never told apart,
+        BR-AI-20; owner as in createAgentSession).
+        An expired session (BR-AI-20) is not an error here: its owner still gets 200 with
+        data.expired=true and the history is read-only (sending to it is 30504 on POST); an
+        unexpired session has data.expired=false.
+        Paging: the first page holds the newest `limit` messages; items[] inside a page are in time
+        order, oldest first. next_cursor fetches the page of earlier (older) messages; null means
+        there are no earlier messages.
+        Each item is one agent_messages row: role user (the text as the user sent it, cards [] and
+        finish_reason null) or assistant (the text after OutputGuard, possibly '' while nothing
+        has been written yet; finish_reason as in the done frame, contracts/enums agent_finish_reason,
+        null while the run has not ended). cards[] are the card frames as they were sent (card_id,
+        type, schema_version, data, fallback_text; the frame's seq is not kept); data follows
+        contracts/agent-stream.schema.json card_<type>, and a client that does not know the type
+        shows fallback_text (03 §7.4). One exception: earnings_summary keeps no amounts (BR-AI-19,
+        BR-AI-01 细则「收益查询」), so its data is only the earnings_summary_history shape, as_of and
+        the two action buttons (actions), and the client shows the history note instead of
+        reloading amounts. Not replayed: tool.status, ping, suggestions and meta frames. Product
+        cards keep quoted_at / age_sec and are aged by BR-PRICE-11; there is no extra field.
+        After a duplicate client_msg_id response or a disconnect the client reloads this list
+        (04 §8.1, 03 §7.2).
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30501
+        - 10001
+        - 10005
+        - 10004
+        - 30504
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/AgentSessionId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of messages, oldest first within the page.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentHistoryResponse'
+              examples:
+                active:
+                  summary: An unexpired session with earlier messages; a page guide and an earnings card
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      items:
+                        - message_id: 019a0000-0000-7000-8000-000000000221
+                          role: user
+                          created_at: '2026-10-14T10:00:00+08:00'
+                          text: 提现记录在哪看
+                          cards: []
+                          finish_reason: null
+                        - message_id: 019a0000-0000-7000-8000-000000000222
+                          role: assistant
+                          created_at: '2026-10-14T10:00:03+08:00'
+                          text: 提现进度在提现记录里查看。
+                          cards:
+                            - card_id: c1
+                              type: page_guide
+                              schema_version: 1
+                              data:
+                                route: WithdrawRecords
+                                text_key: agent.guide.WithdrawRecords
+                              fallback_text: 提现进度在提现记录里查看。
+                          finish_reason: stop
+                        - message_id: 019a0000-0000-7000-8000-000000000223
+                          role: user
+                          created_at: '2026-10-14T10:01:00+08:00'
+                          text: 我现在有多少收益
+                          cards: []
+                          finish_reason: null
+                        - message_id: 019a0000-0000-7000-8000-000000000224
+                          role: assistant
+                          created_at: '2026-10-14T10:01:04+08:00'
+                          text: 这是你当时的收益概况，以钱包页为准。
+                          cards:
+                            - card_id: c2
+                              type: earnings_summary
+                              schema_version: 1
+                              data:
+                                as_of: '2026-10-14T10:01:03+08:00'
+                                actions:
+                                  - route: Wallet
+                                    text_key: agent.earnings.open_wallet
+                                  - route: WithdrawRecords
+                                    text_key: agent.earnings.open_records
+                              fallback_text: 收益以钱包页显示为准。
+                          finish_reason: stop
+                      next_cursor: opaque-cursor-older-page
+                      expired: false
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                expired:
+                  summary: An expired session read back by its owner (read-only, BR-AI-20)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      items:
+                        - message_id: 019a0000-0000-7000-8000-000000000231
+                          role: user
+                          created_at: '2026-10-12T21:00:00+08:00'
+                          text: 返利什么时候到账
+                          cards: []
+                          finish_reason: null
+                        - message_id: 019a0000-0000-7000-8000-000000000232
+                          role: assistant
+                          created_at: '2026-10-12T21:00:05+08:00'
+                          text: ''
+                          cards: []
+                          finish_reason: cancelled
+                      next_cursor: null
+                      expired: true
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
     post:
       operationId: sendAgentMessage
       tags:
@@ -6032,6 +6177,139 @@ paths:
       responses:
         '200':
           description: The run is being stopped.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              example:
+                code: 0
+                msg: ''
+                data: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/messages/{message_id}/feedback:
+    post:
+      operationId: setAgentMessageFeedback
+      tags:
+        - agent
+      summary: Thumbs up or down on a reply
+      description: |
+        Writes agent_messages.feedback of the message (04 §6.5); down marks the run as a badcase
+        (BR-AI-19). A malformed body (feedback missing or not up / down, unknown fields) is 20001.
+        After BR-ID-01 ①–⑦ the checks of BR-AI-23 ①–③ apply: 30501 → 10001 / 10005 → 10004; then
+        30504 without data when the message does not exist or its session is not the caller's
+        (never told apart, BR-AI-20). Version gate: applied.
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 30501
+        - 10001
+        - 10005
+        - 10004
+        - 30504
+        - 20001
+        - 10405
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/AgentMessageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentFeedbackRequest'
+            example:
+              feedback: down
+      responses:
+        '200':
+          description: The feedback is recorded.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              example:
+                code: 0
+                msg: ''
+                data: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/messages/{message_id}/report:
+    post:
+      operationId: reportAgentMessage
+      tags:
+        - agent
+      summary: Report a reply
+      description: |
+        Writes agent_messages.reported and report_reason (04 §6.5, BR-AI-19). reason is free text
+        of 1–200 characters: 08 has not fixed a set of report reasons, so the contract has no enum
+        for it. A malformed body (reason missing, empty or too long, unknown fields) is 20001.
+        After BR-ID-01 ①–⑦ the checks of BR-AI-23 ①–③ apply: 30501 → 10001 / 10005 → 10004; then
+        30504 without data when the message does not exist or its session is not the caller's
+        (never told apart, BR-AI-20). Version gate: applied.
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 30501
+        - 10001
+        - 10005
+        - 10004
+        - 30504
+        - 20001
+        - 10405
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/AgentMessageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentReportRequest'
+            example:
+              reason: 回答内容与事实不符
+      responses:
+        '200':
+          description: The report is recorded.
           headers:
             X-Trace-Id:
               $ref: '#/components/headers/TraceId'
@@ -6293,6 +6571,15 @@ components:
       in: path
       required: true
       description: run_id from meta.run_id or a history turn.
+      schema:
+        $ref: '#/components/schemas/Id'
+    AgentMessageId:
+      name: message_id
+      in: path
+      required: true
+      description: |
+        message_id from meta.message_id or a history item. A message that does not exist or whose
+        session is not the caller's is 30504 either way (BR-AI-20).
       schema:
         $ref: '#/components/schemas/Id'
   responses:
@@ -12575,3 +12862,146 @@ components:
           description: Clipboard text, untrusted (BR-AI-05).
           minLength: 1
           maxLength: 2000
+    AgentFinishReason:
+      type: string
+      description: finish_reason of the done frame (contracts/enums agent_finish_reason, 04 §8.2).
+      enum:
+        - stop
+        - cancelled
+        - limit
+        - budget
+        - error
+        - auth_required
+        - safety
+        - fallback
+        - timeout
+    AgentHistoryCard:
+      type: object
+      description: |
+        A card frame as it was sent, without seq (04 §6.5). data follows
+        contracts/agent-stream.schema.json card_<type> (earnings_summary: earnings_summary_history
+        only); an unknown type is shown as fallback_text (03 §7.4).
+      additionalProperties: false
+      required:
+        - card_id
+        - type
+        - schema_version
+        - data
+        - fallback_text
+      properties:
+        card_id:
+          type: string
+          description: Card id inside the session (c1, c2…, BR-AI-05).
+          pattern: '^c[1-9][0-9]*$'
+        type:
+          type: string
+          description: Card type (contracts/enums agent_card_type); a newer type stays valid for an older client.
+          minLength: 1
+        schema_version:
+          type: integer
+          format: int32
+          minimum: 1
+        data:
+          type: object
+          description: Shape per type in contracts/agent-stream.schema.json (contracts/README.md 书写规则第 12 条).
+          additionalProperties: true
+        fallback_text:
+          type: string
+          minLength: 1
+    AgentHistoryMessage:
+      type: object
+      description: One agent_messages row (04 §6.5 会话历史响应的形状).
+      additionalProperties: false
+      required:
+        - message_id
+        - role
+        - created_at
+        - text
+        - cards
+        - finish_reason
+      properties:
+        message_id:
+          $ref: '#/components/schemas/Id'
+        role:
+          type: string
+          description: agent_messages.role (04 §3.2).
+          enum:
+            - user
+            - assistant
+        created_at:
+          type: string
+          format: date-time
+        text:
+          type: string
+          description: user, the text as sent; assistant, the text after OutputGuard ('' while nothing has been written).
+        cards:
+          type: array
+          description: Always empty for user.
+          items:
+            $ref: '#/components/schemas/AgentHistoryCard'
+        finish_reason:
+          description: assistant once the run has ended; null for user and for a run still going.
+          anyOf:
+            - $ref: '#/components/schemas/AgentFinishReason'
+            - type: 'null'
+    AgentHistoryData:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+        - expired
+      properties:
+        items:
+          type: array
+          description: Oldest first within the page.
+          items:
+            $ref: '#/components/schemas/AgentHistoryMessage'
+        next_cursor:
+          description: Cursor of the earlier page; null when there are no earlier messages.
+          type:
+            - string
+            - 'null'
+        expired:
+          type: boolean
+          description: true when the session has expired; the history is then read-only (BR-AI-20).
+    AgentHistoryResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AgentHistoryData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AgentFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - feedback
+      properties:
+        feedback:
+          type: string
+          description: agent_messages.feedback (04 §3.2); down marks a badcase (BR-AI-19).
+          enum:
+            - up
+            - down
+    AgentReportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          description: Free text kept in agent_messages.report_reason; 08 has no reason set yet, so no enum.
+          minLength: 1
+          maxLength: 200

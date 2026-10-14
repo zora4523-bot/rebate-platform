@@ -377,6 +377,11 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "optional"
   },
   {
+    "method": "GET",
+    "path": "/v1/agent/sessions/:id/messages",
+    "auth": "optional"
+  },
+  {
     "method": "POST",
     "path": "/v1/agent/sessions/:id/messages",
     "auth": "optional"
@@ -384,6 +389,16 @@ export const CONTRACT_AUTH_ROUTES = [
   {
     "method": "POST",
     "path": "/v1/agent/runs/:run_id/cancel",
+    "auth": "optional"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/agent/messages/:message_id/feedback",
+    "auth": "optional"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/agent/messages/:message_id/report",
     "auth": "optional"
   }
 ] as const;

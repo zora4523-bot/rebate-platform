@@ -377,6 +377,11 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "GET",
+    "path": "/v1/agent/sessions/:id/messages",
+    "signed": false
+  },
+  {
     "method": "POST",
     "path": "/v1/agent/sessions/:id/messages",
     "signed": false
@@ -384,6 +389,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   {
     "method": "POST",
     "path": "/v1/agent/runs/:run_id/cancel",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/agent/messages/:message_id/feedback",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/agent/messages/:message_id/report",
     "signed": false
   }
 ] as const;
