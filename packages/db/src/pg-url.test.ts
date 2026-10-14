@@ -197,11 +197,9 @@ it('redactCredentials masks a secret up to the next certain parameter start, wha
       String.raw`host=db password='ExampleHead\'&sslpassword=''ExampleTail' dbname=couli`,
       'host=db password=*** dbname=couli',
     ],
-    // Review round 2: a well-formed password that merely contains `sslpassword=`.
-    [
-      "password='ExampleHead&sslpassword=' host=db.invalid dbname=couli",
-      'password=*** host=db.invalid dbname=couli',
-    ],
+    // A password that ends in `sslpassword=`: the `sslpassword` assignment is scanned from its own
+    // value start too (its quote opens a value that never closes), so the rest is masked.
+    ["password='ExampleHead&sslpassword=' host=db.invalid dbname=couli", 'password=***'],
     // Review round 3: a space and more secret text after the glued quote.
     [
       String.raw`host=db password='ExampleHead\'&sslpassword='ExampleTail ExampleSuffix' dbname=couli`,
@@ -234,4 +232,116 @@ it('redactCredentials masks a secret up to the next certain parameter start, wha
   for (const [input, expected] of cases) {
     expect(redactCredentials(input)).toBe(expected);
   }
+});
+
+it('redactCredentials keeps masking when a closing quote is glued to another secret assignment', () => {
+  const cases: [string, string][] = [
+    // The quote right after `sslpassword=` closes the first value and opens the glued one.
+    [
+      String.raw`password='ExampleHead\'&sslpassword='ExampleTail host=ExampleSuffix' dbname=couli`,
+      'password=*** dbname=couli',
+    ],
+    // An even backslash run closes the first value; the glued assignment opens a new one.
+    [
+      String.raw`password='ExampleHead\\'&SSLPassword = 'ExampleTail host=ExampleSuffix\' port=ExamplePort' dbname=couli`,
+      'password=*** dbname=couli',
+    ],
+    // Only the same kind of quote closes a value.
+    [
+      `password="ExampleHead' host=ExampleInner"&sslpassword='ExampleTail" host=ExampleSuffix' dbname=couli`,
+      'password=*** dbname=couli',
+    ],
+    // An empty quoted part glued to more text: the text is masked as a quoted part as well.
+    ["password=''ExampleTail host=ExampleSuffix' dbname=couli", 'password=*** dbname=couli'],
+    // A URL query: the glued assignment is masked in the same way.
+    [
+      String.raw`postgres://u@h/db?password='ExampleHead\'&oauth_client_secret='ExampleTail host=ExampleSuffix' dbname=couli`,
+      'postgres://u@h/db?password=*** dbname=couli',
+    ],
+  ];
+  for (const [input, expected] of cases) {
+    expect(redactCredentials(input)).toBe(expected);
+  }
+});
+
+it('redactCredentials and redactPgUrl mask the OAuth client secret and the SCRAM keys', () => {
+  expect(
+    redactCredentials(
+      'host=db oauth_client_secret=ExampleO1 OAUTH_CLIENT_SECRET=ExampleO2 ' +
+        "scram_client_key=ExampleS1== scram%5Fserver%5Fkey='ExampleS2' oauth_client_id=public dbname=couli",
+    ),
+  ).toBe(
+    'host=db oauth_client_secret=*** OAUTH_CLIENT_SECRET=*** scram_client_key=*** ' +
+      'scram%5Fserver%5Fkey=*** oauth_client_id=public dbname=couli',
+  );
+  expect(
+    redactPgUrl(
+      'postgres://u@db/couli?oauth_client_secret=ExampleO3&SCRAM_CLIENT_KEY=ExampleS3&oauth_scope=openid',
+    ),
+  ).toBe('postgres://u@db/couli?oauth_client_secret=***&SCRAM_CLIENT_KEY=***&oauth_scope=openid');
+  expect(redactCredentials('oauth_client_secrets=kept myscram_client_key=kept')).toBe(
+    'oauth_client_secrets=kept myscram_client_key=kept',
+  );
+});
+
+it('redactCredentials ends a secret at the PostgreSQL 18 keywords and at any secret name', () => {
+  for (const field of [
+    'servicefile=/x/pg_service.conf',
+    'oauth_issuer=https://issuer.invalid',
+    'oauth_client_id=public',
+    'oauth_scope=openid',
+    'requiressl=1',
+    'uselibpqcompat=1',
+    'PASSWORD=ExampleNext',
+  ]) {
+    const masked = redactCredentials(`host=db password=ExampleSecret ${field} port=5432`);
+    expect(masked).not.toContain('ExampleSecret');
+    expect(masked).toContain('port=5432');
+    if (!field.startsWith('PASSWORD')) expect(masked).toContain(field);
+  }
+  expect(redactCredentials('password=ExampleSecret PASSWORD=ExampleNext port=5432')).toBe(
+    'password=*** PASSWORD=*** port=5432',
+  );
+  // Inside a quoted value a known name is not a boundary.
+  expect(redactCredentials("password='ExampleSecret requiressl=1' host=db")).toBe(
+    'password=*** host=db',
+  );
+});
+
+it('redactCredentials keeps masking when whitespace and & separate a closing quote from a secret', () => {
+  for (const separator of [' &', '& ', ' & ', '\t&& ', '&&', '&']) {
+    for (const prefix of ['', 'host=db ', 'postgres://u@h/db?']) {
+      const input =
+        `${prefix}password='ExampleHead'${separator}` +
+        "sslpassword='ExampleTail host=ExampleSuffix' dbname=couli";
+      const masked = redactCredentials(input);
+      for (const part of ['ExampleHead', 'ExampleTail', 'ExampleSuffix']) {
+        expect(masked).not.toContain(part);
+      }
+      expect(masked).toMatch(/password=\*\*\* dbname=couli$/);
+      expect(masked.startsWith(`${prefix}password=***`)).toBe(true);
+    }
+  }
+  expect(
+    redactCredentials(
+      "password='ExampleHead' &sslpassword='ExampleTail host=ExampleSuffix' dbname=couli",
+    ),
+  ).toBe('password=*** dbname=couli');
+  // A plain space before the next secret is an ordinary boundary.
+  expect(
+    redactCredentials(
+      "password='ExampleHead' sslpassword='ExampleTail host=ExampleSuffix' dbname=couli",
+    ),
+  ).toBe('password=*** sslpassword=*** dbname=couli');
+});
+
+it('redactCredentials scans a secret assignment inside an already masked value from its own start', () => {
+  // The unquoted first value ends before ` host=`; the `sslpassword` value inside it is quoted and
+  // runs past that place, so the masked stretch runs to its closing quote.
+  expect(
+    redactCredentials("password=ExampleA&sslpassword='ExampleB host=ExampleC' dbname=couli"),
+  ).toBe('password=*** dbname=couli');
+  expect(
+    redactCredentials('password=ExampleA &SSLPASSWORD = "ExampleB host=ExampleC" dbname=couli'),
+  ).toBe('password=*** dbname=couli');
 });

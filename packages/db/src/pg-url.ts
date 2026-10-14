@@ -52,12 +52,19 @@ export function parsePgUrl(value: string): PgUrlParts {
 
 const MASK = '***';
 
-// Parameter names whose value is a secret: the connection password and the client-key passphrase
-// (`sslpassword`), both accepted by libpq and by the pg driver.
-const SECRET_NAMES = new Set(['password', 'sslpassword']);
+// Parameter names whose value is a secret: the connection password, the client-key passphrase
+// (`sslpassword`), the OAuth client secret and the PostgreSQL 18 pass-through SCRAM keys (libpq);
+// the pg driver also accepts `password` and `sslpassword`.
+const SECRET_NAMES = new Set([
+  'password',
+  'sslpassword',
+  'oauth_client_secret',
+  'scram_client_key',
+  'scram_server_key',
+]);
 
 /**
- * True when a query or keyword parameter name is `password` or `sslpassword` (any case,
+ * True when a query or keyword parameter name is one of `SECRET_NAMES` (any case,
  * percent-encoded).
  */
 function isSecretName(raw: string): boolean {
@@ -72,7 +79,7 @@ function isSecretName(raw: string): boolean {
 
 /**
  * The same URL with every secret replaced by `***`, for log and error messages: the userinfo
- * password and each `password` / `sslpassword` query parameter (any case, percent-encoded name,
+ * password and each secret query parameter (`SECRET_NAMES`; any case, percent-encoded name,
  * repeated), which the pg driver also accepts. Other query parameters are kept as written.
  */
 export function redactPgUrl(value: string): string {
@@ -98,15 +105,18 @@ export function redactPgUrl(value: string): string {
 // to the LAST `@` of the same whitespace-free stretch, so a password with unencoded `@ / ? #` is
 // masked whole (at worst the host part is masked too, never a piece of the password left).
 const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]*):\S*@/gi;
-// A parameter name (letters or percent escapes) not glued to a preceding name character, then `=`:
-// query parameters of an embedded URL and libpq keyword/value strings (`host=… password=…`).
-const PARAMETER = /(?<![A-Za-z0-9_%])((?:[A-Za-z]|%[0-9A-Fa-f]{2})+)\s*=\s*/g;
+// A parameter name: letters, `_` or percent escapes.
+const NAME = '(?:[A-Za-z_]|%[0-9A-Fa-f]{2})+';
+// A parameter name not glued to a preceding name character, then `=`: query parameters of an
+// embedded URL and libpq keyword/value strings (`host=… password=…`).
+const PARAMETER = new RegExp(`(?<![A-Za-z0-9_%])(${NAME})\\s*=\\s*`, 'g');
 // Where a plain (unquoted) URL query value ends: whitespace, `&` or `#`.
 const QUERY_VALUE_END = /[\s&#]/;
-// libpq connection keywords (lowercase, as libpq accepts them). A secret value is masked up to a
-// place that is certainly the start of a new parameter: whitespace followed by one of these and
-// `=` (in a URL query also `&` followed by one), or the end of the text.
-const LIBPQ_KEYWORDS = [
+// libpq connection keywords (lowercase, as libpq accepts them; PostgreSQL 18). A secret value is
+// masked up to a place that is certainly the start of a new parameter: whitespace followed by one
+// of these or a secret name and `=` (in a URL query also `&` followed by one), or the end of the
+// text.
+const LIBPQ_KEYWORDS = new Set([
   'application_name',
   'channel_binding',
   'client_encoding',
@@ -126,6 +136,10 @@ const LIBPQ_KEYWORDS = [
   'load_balance_hosts',
   'max_protocol_version',
   'min_protocol_version',
+  'oauth_client_id',
+  'oauth_client_secret',
+  'oauth_issuer',
+  'oauth_scope',
   'options',
   'passfile',
   'password',
@@ -133,7 +147,11 @@ const LIBPQ_KEYWORDS = [
   'replication',
   'require_auth',
   'requirepeer',
+  'requiressl',
+  'scram_client_key',
+  'scram_server_key',
   'service',
+  'servicefile',
   'ssl_max_protocol_version',
   'ssl_min_protocol_version',
   'sslcert',
@@ -151,39 +169,64 @@ const LIBPQ_KEYWORDS = [
   'target_session_attrs',
   'tcp_user_timeout',
   'user',
-];
-const KEYWORDS = LIBPQ_KEYWORDS.join('|');
-const NEXT_AFTER_SPACE = new RegExp(`\\s+(?:${KEYWORDS})\\s*=`, 'y');
-const NEXT_AFTER_AMPERSAND = new RegExp(`&(?:${KEYWORDS})\\s*=`, 'y');
+  'uselibpqcompat',
+]);
+const NEXT_AFTER_SPACE = new RegExp(`\\s+(${NAME})\\s*=`, 'y');
+const NEXT_AFTER_AMPERSAND = new RegExp(`&(${NAME})\\s*=`, 'y');
+// A secret assignment right after a closing quote, separated by any run of whitespace and `&`
+// (`'…'&sslpassword='…`, `'…' &password=…`, `'…'password=…`).
+const GLUED_SECRET = new RegExp(`[\\s&]*(${NAME})\\s*=\\s*`, 'y');
+// Text ending in a parameter assignment (`…&sslpassword=`), name not glued to a name character.
+const ENDS_IN_ASSIGNMENT = new RegExp(`(?<![A-Za-z0-9_%])(${NAME})\\s*=\\s*$`);
 
-/** True when a new libpq parameter certainly starts at `index` (see `LIBPQ_KEYWORDS`). */
+function isQuote(char: string | undefined): boolean {
+  return char === "'" || char === '"';
+}
+
+/**
+ * True when a new parameter certainly starts at `index`: whitespace (in a URL query also `&`), then
+ * a libpq keyword (`LIBPQ_KEYWORDS`, exact) or a secret name (`isSecretName`), then `=`.
+ */
 function parameterStartsAt(text: string, index: number, query: boolean): boolean {
   for (const next of query ? [NEXT_AFTER_SPACE, NEXT_AFTER_AMPERSAND] : [NEXT_AFTER_SPACE]) {
     next.lastIndex = index;
-    if (next.test(text)) {
+    const name = next.exec(text)?.[1];
+    if (name !== undefined && (LIBPQ_KEYWORDS.has(name) || isSecretName(name))) {
       return true;
     }
   }
   return false;
 }
 
+/** True when `segment` (text inside quotes) ends in a secret assignment such as `&sslpassword=`. */
+function endsInSecretAssignment(segment: string): boolean {
+  const name = ENDS_IN_ASSIGNMENT.exec(segment)?.[1];
+  return name !== undefined && isSecretName(name);
+}
+
 /**
  * Index just past the secret value that starts at `start`.
  *
  * A plain value in a URL query (parameter right after `?` or `&`, not quoted) ends at whitespace,
- * `&` or `#`, as URL parameters do. Every other value (libpq keyword/value form, or quoted) is
- * masked up to the next place where a new parameter certainly starts (`parameterStartsAt`) or the
- * end of the text, so that no malformed or adversarial construction (escaped quotes, a second
- * password assignment glued into the value, text glued to the closing quote) leaves a piece of the
- * secret readable; at worst some text between the secret and the next parameter is masked too.
- * Within that: a backslash escapes the next character (an escaped space never ends the value),
- * and nothing inside the opening quoted part (up to its first unescaped closing quote) can end it.
+ * `&` or `#`, as URL parameters do. Every other value (libpq keyword/value form, or quoted) is read
+ * by one scanner with two states:
+ *
+ * - unquoted: a backslash escapes the next character; the value ends only where a new parameter
+ *   certainly starts (`parameterStartsAt`) or at the end of the text;
+ * - quoted (remembering `'` or `"`): a backslash escapes the next character; only the same quote
+ *   closes it, and nothing inside it ends the value.
+ *
+ * After a closing quote the value ends if a new parameter certainly starts there. Otherwise the
+ * scanner stays inside the secret: a secret assignment after the quote, separated by nothing or
+ * by any run of whitespace and `&` (`'…'&sslpassword='…`, `'…' &password=…`), is masked with it; a closing quote that really is the opening quote of such a glued assignment
+ * (`'…\'&sslpassword='Tail …'`: the quote right after `sslpassword=`, or an empty `''`) opens a
+ * new quoted part; any other glued text continues unquoted. So no malformed or adversarial
+ * construction leaves a piece of a secret readable; at worst some text between the secret and the
+ * next parameter is masked too.
  */
 function valueEnd(text: string, start: number, query: boolean): number {
-  const quote = text[start];
-  const quoted = quote === "'" || quote === '"';
   let index = start;
-  if (query && !quoted) {
+  if (query && !isQuote(text[start])) {
     while (index < text.length) {
       const char = text[index] ?? '';
       if (char === '\\') {
@@ -197,57 +240,91 @@ function valueEnd(text: string, start: number, query: boolean): number {
     }
     return text.length;
   }
-  if (quoted) {
-    index = start + 1;
-    for (;;) {
-      if (index >= text.length) {
-        return text.length;
-      }
-      const char = text[index];
-      index += char === '\\' ? 2 : 1;
-      if (char === quote) {
-        break;
-      }
-    }
+  let quote = '';
+  let segment = index;
+  const open = (at: number): void => {
+    quote = text[at] ?? '';
+    index = at + 1;
+    segment = index;
+  };
+  if (isQuote(text[index])) {
+    open(index);
   }
   while (index < text.length) {
-    if (text[index] === '\\') {
+    const char = text[index];
+    if (char === '\\') {
       index += 2;
       continue;
     }
-    if (parameterStartsAt(text, index, query)) {
+    if (quote === '') {
+      if (parameterStartsAt(text, index, query)) {
+        return index;
+      }
+      index++;
+      continue;
+    }
+    if (char !== quote) {
+      index++;
+      continue;
+    }
+    // A closing quote.
+    const closing = index;
+    index++;
+    if (index >= text.length || parameterStartsAt(text, index, query)) {
       return index;
     }
-    index++;
+    GLUED_SECRET.lastIndex = index;
+    const glued = GLUED_SECRET.exec(text);
+    if (glued !== null && isSecretName(glued[1] ?? '')) {
+      index = GLUED_SECRET.lastIndex;
+      if (isQuote(text[index])) {
+        open(index);
+      } else {
+        quote = '';
+      }
+      continue;
+    }
+    if (closing === segment || endsInSecretAssignment(text.slice(segment, closing))) {
+      open(closing);
+      continue;
+    }
+    quote = '';
   }
   return text.length;
 }
 
 /**
- * `text` with the value of every `password=` / `sslpassword=` parameter replaced by `***` (see
- * `valueEnd` for where a value ends). A password-looking assignment inside a masked value is
- * masked with it.
+ * `text` with the value of every secret parameter (`SECRET_NAMES`) replaced by `***` (see
+ * `valueEnd` for where a value ends). Every secret assignment is scanned from its own value start,
+ * also one that lies inside an already masked value: the masked stretch then runs to the farther
+ * of the two ends, so no reading of where a value ends leaves a piece of either secret readable.
  */
 function maskPasswordParameters(text: string): string {
   let result = '';
   let done = 0;
   for (const match of text.matchAll(PARAMETER)) {
-    if (match.index < done || !isSecretName(match[1] ?? '')) {
+    if (!isSecretName(match[1] ?? '')) {
       continue;
     }
     const before = match.index > 0 ? text[match.index - 1] : '';
     const start = match.index + match[0].length;
+    const end = valueEnd(text, start, before === '?' || before === '&');
+    if (match.index < done) {
+      done = Math.max(done, end);
+      continue;
+    }
     result += text.slice(done, start) + MASK;
-    done = valueEnd(text, start, before === '?' || before === '&');
+    done = end;
   }
   return result + text.slice(done);
 }
 
 /**
  * `text` with every connection password masked: the password of each embedded
- * `scheme://user:password@host` URL, and the value of every `password=` and `sslpassword=`
- * parameter (query string or keyword form; any case, percent-encoded name, repeated; quoted
- * and backslash-escaped values masked whole). For log lines and error messages.
+ * `scheme://user:password@host` URL, and the value of every secret parameter (`password`,
+ * `sslpassword`, `oauth_client_secret`, `scram_client_key`, `scram_server_key`; query string or
+ * keyword form; any case, percent-encoded name, repeated; quoted and backslash-escaped values
+ * masked whole). For log lines and error messages.
  */
 export function redactCredentials(text: string): string {
   return maskPasswordParameters(text.replace(URL_CREDENTIALS, `$1:${MASK}@`));
