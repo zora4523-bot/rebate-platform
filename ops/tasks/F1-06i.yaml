@@ -1,0 +1,24 @@
+id: F1-06i
+repo: rebate-platform
+title: 后台账号列表页（admins，只限超管，只读）：antd Table 按 adminListAdmins 服务端分页列出账号、类型、权限点数、动态码、验证手机号、状态（含锁定至）、创建时间；加载 / 空 / 出错三态
+type: impl
+# 2026-10-10 入账（前端线 f1-frontend-6）。规划 11 §2.6 页面任务试行的后台试点页（最小骨架：只限超管，不演示按权限点裁剪、导出、批量操作）。
+# 后端 GET /admin/v1/admins、/admins/{admin_id} 已合并（F1-06m #391）。页面规格 couli-runs/F1-06i/page-spec.md（规划回写到 design/specs/ 另提），画板 AdmAdmins。
+# 用 antd 组件（Table、Typography、Alert、Result、Button；03 §9.1 硬规则，手写替代记 S1），经 F1-06g 的 data provider getList（resource admins）取数，
+# App 的 renderPage 缺省时把菜单 admins 接到本页；文案放 texts/admins.ts（08 无键，用画板文案并登记 needs）。
+# 画板与契约对不上的（名称列、最近登录列、筛选条：契约无字段 / 参数）与新建 / 权限设置 / 停用（契约写明后续任务）本任务不做，规格第 7 节已列。
+refs: []
+refs_hash: {}
+deps: [F1-06p, F1-06m]
+paths:
+  - 'apps/admin/src/pages/admins/**'
+  - 'apps/admin/src/App.tsx'
+  - 'apps/admin/src/texts/admins.ts'
+test_paths:
+  - 'test/spec/frontend/admin-admins/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-admins/**'
+status: todo

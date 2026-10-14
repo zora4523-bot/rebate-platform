@@ -389,8 +389,11 @@ export function encodeBase32(bytes: Uint8Array): string {
   return out;
 }
 
-/** Key URI of the binding (Google Authenticator key-URI format; SHA1, 6 digits, 30 s). */
-function otpauthUri(issuer: string, loginName: string, secret: string): string {
+/**
+ * Key URI of the binding (Google Authenticator key-URI format; SHA1, 6 digits, 30 s). Also the
+ * URI of the console's first binding (F1-06k).
+ */
+export function otpauthUri(issuer: string, loginName: string, secret: string): string {
   const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(loginName)}`;
   const query = new URLSearchParams({
     secret,

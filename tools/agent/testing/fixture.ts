@@ -41,7 +41,7 @@ function baseEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (key.startsWith('COULI_') || key.startsWith('FAKE_') || key.startsWith('GIT_')) continue;
-    if (key === 'CODEX_HOME') continue;
+    if (key === 'CODEX_HOME' || key === 'CODEX_REVIEW_EFFORT') continue;
     env[key] = value;
   }
   env['GIT_CONFIG_GLOBAL'] = '/dev/null';

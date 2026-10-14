@@ -1,0 +1,27 @@
+id: F1-06u
+repo: rebate-platform
+title: admin：业务模块后台接口的权限守卫挂载——platform 立 ADMIN_OPERATION_GUARD 端口（按权限点与 step-up 档位判，交出带登录名的后台身份），admin 实现并在 admin 入口提供
+type: impl
+# 2026-10-10 入账（后台后端线 admin-backend，任务书 briefs/ADMIN-backend-lane.md §2 第 4 项「平台标识后端」；content 线收件箱提问 20 小时无回复、无人认领，由本线做）。
+# 依据 BR-TEXT-24 正文与细则、04 §10.1 platform_icons、§11.2 content.platform_icon、05 F1-02 末尾、contracts/openapi.yaml /admin/v1/platform-icons 七个操作（CT-17g）；
+# 规划与契约未定处的编排者裁定见 couli-runs/F1-06n/decision-orchestrator.md（编号即下文「裁定 N」），由编排者摘入任务书第 2 节。
+# 依据另加 02 §4.1「各业务模块的后台接口在各自模块的 http/admin/ 下，由本模块统一挂载守卫」、04 §11、BR-ID-34 档位表。业务模块不得 import admin（admin/index.ts 注释），故同审计端口先例在 platform 立端口（裁定 13）。
+# 要点：run({request, permission, operation?}, business)：读 admin_permissions 与 admin_users（login_name、是否登记验证手机号），复用 F1-06l 的 createAdminPermissionGuard 判 10403 admin_permission_denied / 10003；
+# business 回调拿到 {adminId, appId, isSuper, loginName}；超管放行；step_up_tier 为 null 的权限点不碰令牌；没有库或 Redis 按请求 50001。本任务不改 openapi.yaml、不挂业务路由（由 F1-06w 起首用）。
+refs: []
+refs_hash: {}
+deps: [F1-06l]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/modules/platform/http/**'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/admin/guard-mount/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/guard-mount/**'
+status: todo
+pr: null

@@ -1,0 +1,130 @@
+{
+  "task": "F1-06m",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "1ed13740ad37b03b8ff7411b348bea542f30d7d1",
+  "red_tests": [
+    "test/spec/admin/accounts/contract.test.ts > [AC-F1-06m#15] /admin/v1/admins 保持 super 鉴权并移除 planned 标记",
+    "test/spec/admin/accounts/contract.test.ts > [AC-F1-06m#15] /admin/v1/admins/{admin_id} 保持 super 鉴权并移除 planned 标记",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#1] 超管默认读取第一页、每页 20 条，列表与详情字段完整一致",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#2] 勾选全部权限和伪造账号管理权限也不能让普通账号读取列表或详情",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page=0 返回 20001 并指出 page",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page=-1 返回 20001 并指出 page",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page=1.5 返回 20001 并指出 page",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page=abc 返回 20001 并指出 page",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=0 返回 20001 并指出 page_size",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=-1 返回 20001 并指出 page_size",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=201 返回 20001 并指出 page_size",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=1.5 返回 20001 并指出 page_size",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=abc 返回 20001 并指出 page_size",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#4] 分页按 created_at 再按 id 升序，total 含停用账号且不随页码变化",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#5] page_size 允许 1 与 200，默认 20 真正截断，最后一页保留 total",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#6] 只返回令牌所属 app 的账号与 total，他 app 的详情视同不存在",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#7] 列表和详情只暴露脱敏手机号，不泄露密码、哈希、动态码密钥或密文",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#8] 未登记手机号返回 null，绑定标志只由 totp_bound_at 决定",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#9] 超管权限恒为空数组，即使数据库有勾选项",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#10] 普通账号只返回已勾选且仍在枚举中的权限，并按枚举顺序排列",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#11] 锁定状态按注入时钟计算，到期瞬间及过期都返回 null，读取不改库",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#12] 未知或非法 admin_id（unknown）返回 20001 fields=[admin_id]",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#12] 未知或非法 admin_id（not-a-uuid）返回 20001 fields=[admin_id]",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#12] 未知或非法 admin_id（123）返回 20001 fields=[admin_id]",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#12] 未知或非法 admin_id（00000000-0000-4000-8000-zzzzzzzzzzzz）返回 20001 fields=[admin_id]",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#13] 配置独立 dbRead 时列表、计数、详情仍只查询 couli_app 主库",
+    "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#14] 列表与详情读取前后，账号、权限和审计记录均不改变"
+  ],
+  "risk_note": "RV2 (admin console read-only accounts). GET /admin/v1/admins (page / page_size 1..200) and GET /admin/v1/admins/{admin_id}, x-auth super enforced by the F1-06k admin token check (10403 admin_permission_denied); reads app.admin_users / admin_permissions through couli_app on the primary, ordered by created_at then id, same app_id only; returns admin_id, username, is_super, status, totp_bound, verify_phone_masked (BR-ID-33), locked_until (null when not locked by the injected Clock) and permissions ([] for a super admin); never returns password hashes, TOTP secrets or full phone numbers; read-only, no audit. Two contract operations leave planned. Rebuilt on main after F1-06l (#387); BR-ID-33 masking and the verify-phone decryption context are shared with step-up-policy. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1ed13740ad37b03b8ff7411b348bea542f30d7d1",
+      "tree": "0e9768dd0c46ee384160a85fd2e463dee6ef4c94",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T03:24:32Z",
+      "finished_at": "2026-10-10T03:24:50Z",
+      "red_tests": [
+        "test/spec/admin/accounts/contract.test.ts > [AC-F1-06m#15] /admin/v1/admins 保持 super 鉴权并移除 planned 标记",
+        "test/spec/admin/accounts/contract.test.ts > [AC-F1-06m#15] /admin/v1/admins/{admin_id} 保持 super 鉴权并移除 planned 标记",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#1] 超管默认读取第一页、每页 20 条，列表与详情字段完整一致",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#2] 勾选全部权限和伪造账号管理权限也不能让普通账号读取列表或详情",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page=0 返回 20001 并指出 page",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page=-1 返回 20001 并指出 page",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page=1.5 返回 20001 并指出 page",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page=abc 返回 20001 并指出 page",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=0 返回 20001 并指出 page_size",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=-1 返回 20001 并指出 page_size",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=201 返回 20001 并指出 page_size",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=1.5 返回 20001 并指出 page_size",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#3] 分页参数 page_size=abc 返回 20001 并指出 page_size",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#4] 分页按 created_at 再按 id 升序，total 含停用账号且不随页码变化",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#5] page_size 允许 1 与 200，默认 20 真正截断，最后一页保留 total",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#6] 只返回令牌所属 app 的账号与 total，他 app 的详情视同不存在",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#7] 列表和详情只暴露脱敏手机号，不泄露密码、哈希、动态码密钥或密文",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#8] 未登记手机号返回 null，绑定标志只由 totp_bound_at 决定",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#9] 超管权限恒为空数组，即使数据库有勾选项",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#10] 普通账号只返回已勾选且仍在枚举中的权限，并按枚举顺序排列",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#11] 锁定状态按注入时钟计算，到期瞬间及过期都返回 null，读取不改库",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#12] 未知或非法 admin_id（unknown）返回 20001 fields=[admin_id]",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#12] 未知或非法 admin_id（not-a-uuid）返回 20001 fields=[admin_id]",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#12] 未知或非法 admin_id（123）返回 20001 fields=[admin_id]",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#12] 未知或非法 admin_id（00000000-0000-4000-8000-zzzzzzzzzzzz）返回 20001 fields=[admin_id]",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#13] 配置独立 dbRead 时列表、计数、详情仍只查询 couli_app 主库",
+        "test/spec/admin/accounts/read.int.test.ts > [AC-F1-06m#14] 列表与详情读取前后，账号、权限和审计记录均不改变"
+      ],
+      "expected": [
+        "test/spec/admin/accounts/contract.test.ts",
+        "test/spec/admin/accounts/read.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "66e4db3d289f3f3f3422e9a9d5bb943d0600030478439107fa7b3d85b5b01bf2"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "cce2c0526fab0d3580b5b77bfb88806761495f380ac3a8ebd403d039d36f5658"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "scope": "independent read-only Claude subagent, money checklist: round 1 pass; round 2 (after rebasing onto F1-06l #387: conflict resolution, shared BR-ID-33 masking, F1-06l unit-test wrong-code fix) pass (S2 unchanged: one undecryptable verify phone fails the whole page with 50001 without leaking; tracked in followups)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass with no findings; round 2 after the rebase onto F1-06l (#387) pass with no findings; checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run) reviewed by a fresh Claude subagent: round 1 pass (S2: tie order not distinguishable from username ordering, required created_at then id in the brief; reads write no audit, adopted as an orchestrator ruling)"
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "c83c8b0fc95c5b28f55da054465fd610575a9917",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

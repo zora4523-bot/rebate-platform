@@ -1,0 +1,287 @@
+// Generated from specs/permissions.yaml by admin/scripts/generate-permissions.ts.
+// Do not edit by hand. Regenerate after changing the specification.
+export const ADMIN_PERMISSIONS = {
+  "version": "1",
+  "permissions": [
+    {
+      "key": "user.list",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "user.lookup",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "pii.reveal_phone",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "pii.reveal_identity",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "fund.view",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "audit.view_all",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "export",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "content.page",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "content.pool",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "content.article",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "content.agreement",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "content.poster",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "content.app_version",
+      "step_up_tier": null,
+      "operations": [
+        {
+          "operation": "content.app_version.raise_min_supported_version",
+          "tier": "totp"
+        }
+      ]
+    },
+    {
+      "key": "content.fund_terms",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "content.platform_icon",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "config.general",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "config.risk",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "config.business",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "switch.all",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "switch.payout",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "switch.pay",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "risk.freeze",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "risk.ban",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "risk.blocklist",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "risk.appeal",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "union.binding_reset",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "union.binding_disable",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "union.account_auth",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "union.pid",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "user.level",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "user.inviter",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "user.realname_fix",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "user.phone_change",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "user.data_export",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "order.view",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "order.claim",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "order.assign",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "order.hold",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "order.restore",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "withdraw.review",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "payout.execute",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "pay.view",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "pay.refund",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "pay.resolve",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "payout.manual_entry",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "settle.bill",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "settle.statement_upload",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "fund.adjust",
+      "step_up_tier": "sms",
+      "operations": []
+    },
+    {
+      "key": "fund.writeoff",
+      "step_up_tier": "sms",
+      "operations": []
+    },
+    {
+      "key": "fund.settle_adjust",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "fund.recon",
+      "step_up_tier": null,
+      "operations": [
+        {
+          "operation": "fund.recon.balance_recalc",
+          "tier": "sms"
+        }
+      ]
+    },
+    {
+      "key": "fund.cash_entry",
+      "step_up_tier": "totp",
+      "operations": []
+    },
+    {
+      "key": "agent.trace",
+      "step_up_tier": null,
+      "operations": []
+    },
+    {
+      "key": "agent.report",
+      "step_up_tier": null,
+      "operations": []
+    }
+  ]
+} as const;

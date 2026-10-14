@@ -126,7 +126,8 @@ it('[AC-B1-03g#10] 预算 10：第 8/10 条各一次，11 条不停发；+08 日
     const firstDay = alerts(f.lines, f.app);
     expect(warn).toHaveBeenCalledTimes(2);
     expect(firstDay.map((line) => line['count'])).toEqual([8, 10]);
-    expect(new Set(firstDay.map((line) => line['level'])).size).toBe(2);
+    expect(firstDay.map((line) => line['budget_level'])).toEqual(['ratio', 'full']);
+    expect(firstDay.every((line) => line['level'] === 40)).toBe(true);
     for (const line of firstDay) {
       expect(line).toMatchObject({ app_id: f.app, day: '2031-05-06', budget: 10 });
       expect(Object.values(line).every((v) => v === null || typeof v !== 'object')).toBe(true);

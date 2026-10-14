@@ -108,8 +108,19 @@ it('[ADR-0001 §4.2 #14] 常量：pg-boss schema 名 pgboss、期望 schema 版�
   }
 });
 
-it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive，其余 standard，死信队列 dead-letter', () => {
-  expect(QUEUE_CATALOG).toStrictEqual([
+it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive（risk-scan 若有亦然），其余 standard，死信队列 dead-letter', () => {
+  // B1-03s: B1-03j adds risk-scan; when present it must be exactly this entry, right after
+  // agent-trace (its existence is pinned by [AC-B1-03j#12]). Everything else stays exact.
+  const riskScan = QUEUE_CATALOG.findIndex((queue) => queue.name === 'risk-scan');
+  if (riskScan !== -1) {
+    expect(QUEUE_CATALOG[riskScan]).toStrictEqual({
+      name: 'risk-scan',
+      ...DEFAULT,
+      policy: 'exclusive',
+    });
+    expect(QUEUE_CATALOG[riskScan - 1]?.name).toBe('agent-trace');
+  }
+  expect(QUEUE_CATALOG.filter((queue) => queue.name !== 'risk-scan')).toStrictEqual([
     { name: 'order-rescan', ...DEFAULT },
     { name: 'settle', ...DEFAULT, policy: 'exclusive' },
     { name: 'payout', ...DEFAULT, policy: 'exclusive' },
@@ -138,7 +149,16 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
     concurrency,
     pollingIntervalSeconds,
   });
-  expect(ENTRY_PLAN).toStrictEqual({
+  // B1-03s: risk-scan (B1-03j), when planned, is worker-only with concurrency 1, after agent-trace.
+  const scans = ENTRY_PLAN.worker.filter((work) => work.queue === 'risk-scan');
+  if (scans.length > 0) {
+    expect(scans).toStrictEqual([w('risk-scan', 1)]);
+    expect(ENTRY_PLAN.worker.at(-1)).toStrictEqual(w('risk-scan', 1));
+  }
+  expect({
+    ...ENTRY_PLAN,
+    worker: ENTRY_PLAN.worker.filter((work) => work.queue !== 'risk-scan'),
+  }).toStrictEqual({
     api: [],
     stream: [],
     admin: [],

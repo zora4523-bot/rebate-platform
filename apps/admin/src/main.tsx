@@ -1,6 +1,9 @@
 // Browser entry (index.html). /admin/v1/me/permissions is not in the contract yet (CT-02f), so
 // development builds preview the shell with fixed accounts (`?preview=none` shows an account
 // without permission keys) and other builds report that permissions cannot be loaded.
+// antd v5 officially supports React 16-18; this patch (F1-06t) must load before antd renders so
+// that Modal / message / notification work under React 19.
+import '@ant-design/v5-patch-for-react-19';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { PermissionSnapshot, PermissionsProvider } from './providers/access-control/index.ts';

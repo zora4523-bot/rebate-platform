@@ -2,9 +2,11 @@
 // `loadConfig` is pure: it only looks at the object it is given.
 import { z } from 'zod';
 import { APP_ENVS, type AppEnv } from './app-env.ts';
+import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
 import { JWT_ENV_NAMES, readJwtKeyConfig, type JwtKeyConfig } from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
+import { readMediaConfig } from './media.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 
 export { APP_ENVS, type AppEnv } from './app-env.ts';
@@ -36,6 +38,12 @@ type EnvKey = keyof z.input<typeof envSchema>;
 const ENV_KEYS = Object.keys(envSchema.shape) as EnvKey[];
 
 export interface AppConfig {
+  /**
+   * MEDIA_PUBLIC_BASE_URL (./media.ts, F1-06z): https base of stored media files. loadConfig gives
+   * the local / test default when unset there; undefined in staging / prod when unset (media writes
+   * and URLs then fail per request). A hand-built config without it counts as unset.
+   */
+  readonly mediaPublicBaseUrl?: string | undefined;
   readonly appEnv: AppEnv;
   readonly logLevel: LogLevel;
   /** Validated CLOCK_NOW text; parsed into an instant only inside platform/clock. */
@@ -58,6 +66,13 @@ export interface AppConfig {
    * trusts no forwarded header; a hand-built config without it counts as empty.
    */
   readonly trustedProxies?: readonly string[];
+  /**
+   * ADMIN_TOKEN_SIGNING_KEY / ADMIN_IP_ALLOWLIST / ADMIN_CORS_ORIGIN (./admin-auth.ts, F1-06k).
+   * Null when none is set: local / test sign admin tokens with a per-process random key and allow
+   * loopback sources only; staging / prod refuse to start the admin entry. A hand-built config
+   * without it counts as null.
+   */
+  readonly adminAuth?: AdminAuthConfig | null;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -132,6 +147,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
       problems.push(...readJwt(appEnv.data, env).problems);
     }
     problems.push(...readTrustedProxies(env).problems);
+    problems.push(...readAdminAuthConfig(appEnv.success ? appEnv.data : undefined, env).problems);
+    problems.push(...readMediaConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     throw new ConfigError(problems);
   }
 
@@ -143,6 +160,10 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...jwtProblems);
   const { trustedProxies, problems: proxyProblems } = readTrustedProxies(env);
   violations.push(...proxyProblems);
+  const { adminAuth, problems: adminProblems } = readAdminAuthConfig(values.APP_ENV, env);
+  violations.push(...adminProblems);
+  const { mediaPublicBaseUrl, problems: mediaProblems } = readMediaConfig(values.APP_ENV, env);
+  violations.push(...mediaProblems);
   if (violations.length > 0) throw new ConfigError(violations);
 
   return {
@@ -157,5 +178,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     keyring,
     jwt,
     trustedProxies,
+    adminAuth,
+    mediaPublicBaseUrl,
   };
 }

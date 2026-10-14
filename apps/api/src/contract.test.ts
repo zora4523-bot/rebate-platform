@@ -1,6 +1,7 @@
 // Contract conformance of the HTTP entries (规划/11 §4.1 契约行, ADR-0001 §4.2 #15, §7):
-// - every implemented operationId maps to exactly one api route; planned operations have
-//   no registered routes, and every registered route is declared in the contract;
+// - every implemented operationId maps to exactly one route of its entry (an /admin/v1 operation
+//   to the admin entry, F1-06k; any other to the api entry); planned operations have no
+//   registered routes, and every registered route is declared in the contract;
 // - real responses validate against the dereferenced response schema with a strict Ajv2020.
 import { fileURLToPath } from 'node:url';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -114,15 +115,21 @@ function routeConformanceErrors(
     }
   }
   const apiRoutes = withoutImplicitHead(entries.get('api') ?? [], declared);
+  const adminRoutes = withoutImplicitHead(entries.get('admin') ?? [], declared);
   for (const { operationId, route, operation } of operations) {
+    const admin = route.split(' ')[1]?.startsWith('/admin/') === true;
+    const owner = admin ? 'admin' : 'api';
+    const ownerRoutes = admin ? adminRoutes : apiRoutes;
     if ('x-implementation' in operation) {
       if (operation['x-implementation'] !== 'planned') {
         errors.push(`${operationId}: x-implementation must be planned`);
       } else if (registered.has(route)) {
         errors.push(`${operationId}: planned route is registered`);
       }
-    } else if (apiRoutes.filter((registeredRoute) => registeredRoute === route).length !== 1) {
-      errors.push(`${operationId}: expected exactly one api route`);
+    } else if (ownerRoutes.filter((registeredRoute) => registeredRoute === route).length !== 1) {
+      errors.push(`${operationId}: expected exactly one ${owner} route`);
+    } else if (admin && apiRoutes.includes(route)) {
+      errors.push(`${operationId}: admin route is registered on the api entry`);
     }
   }
   return errors;
@@ -168,6 +175,32 @@ it('[AC-CT-02a#1] accepts implemented or planned operations and rejects register
   expect(routeConformanceErrors(planned, new Map([['stream', ['POST /undeclared']]]))).toEqual([
     'stream: undeclared route POST /undeclared',
   ]);
+});
+
+it('[AC-F1-06k] an implemented /admin/v1 operation maps to exactly one admin route and none on api', () => {
+  const implemented = operationsOf({
+    openapi: '3.1.0',
+    info: { title: 'Admin route fixture', version: '1.0.0' },
+    paths: {
+      '/admin/v1/things': {
+        post: { operationId: 'adminThing', responses: { '200': { description: 'OK' } } },
+      },
+    },
+  });
+  const route = 'POST /admin/v1/things';
+  expect(routeConformanceErrors(implemented, new Map([['admin', [route]]]))).toEqual([]);
+  expect(routeConformanceErrors(implemented, new Map([['api', [route]]]))).toEqual([
+    'adminThing: expected exactly one admin route',
+  ]);
+  expect(
+    routeConformanceErrors(
+      implemented,
+      new Map([
+        ['admin', [route]],
+        ['api', [route]],
+      ]),
+    ),
+  ).toEqual(['adminThing: admin route is registered on the api entry']);
 });
 
 describe('contracts/openapi.yaml', () => {

@@ -1,0 +1,100 @@
+{
+  "task": "F1-06n",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "33a5e6641e02bdaf0073a2bca156c5dc288c5bd8",
+  "red_tests": [
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#1] all three tables have the specified types, nullability and defaults",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#2] omitted defaults produce revision 0/1, false and transaction time",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#3] icon key CHECK enforces lowercase/underscore length 1 through 32",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#4] icon revision CHECK rejects negatives and accepts zero and positive values",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#5] version and version revision CHECKs have lower bound one",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#6] both media tables enforce named SHA-256, format and positive bytes CHECKs",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#7] expiry is mandatory and strictly later than creation with no default",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#8] declared primary keys and global upload id uniqueness have exact columns",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#9] duplicate primary keys and reuse of any upload are rejected with 23505",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#10] separate tenants, keys and version numbers can reuse their local identity",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#11] foreign keys target the specified columns without cascading actions",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#12] missing admins or uploads fail with 23503 and valid references succeed",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#13] current version cannot reference a missing, foreign-tenant or foreign-key version",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#14] app can read all tables and update icon publication and version registration columns",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#15] app cannot update immutable version columns, any upload column, or delete rows",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#16] readonly can SELECT every column and cannot INSERT, UPDATE or DELETE",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#17] payout and maintenance have no access to any platform icon table",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#18] effective grants are exact, including every column and non-DML privileges",
+    "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#19] platform icon tables have no application triggers"
+  ],
+  "risk_note": "RV2 (db/migrations; platform-icons backend for BR-TEXT-24). Migration 0028 creates app.platform_icons (per-mark current_version and revision), app.platform_icon_versions (versions with source registration, upload_id UNIQUE) and app.platform_icon_uploads (24-hour staging rows) with named CHECKs (key shape, sha256 hex, format svg|png, bytes > 0, version >= 1, revision bounds, expiry after creation), primary keys and foreign keys (admins, uploads, current_version → versions MATCH SIMPLE, no cascades); grants: couli_app SELECT/INSERT/UPDATE on platform_icons, SELECT/INSERT plus column UPDATE (source_url, downloaded_on, revision, ever_published) on versions, SELECT/INSERT on uploads, no DELETE anywhere; couli_readonly SELECT only; no other role; no triggers. Generated schema.sql and db.gen.ts from pnpm db:snapshot on the test machine. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "33a5e6641e02bdaf0073a2bca156c5dc288c5bd8",
+      "tree": "1d0169d75d85cfab8e36652cc619a3a9f554d235",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T05:53:39Z",
+      "finished_at": "2026-10-10T05:53:44Z",
+      "red_tests": [
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#1] all three tables have the specified types, nullability and defaults",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#2] omitted defaults produce revision 0/1, false and transaction time",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#3] icon key CHECK enforces lowercase/underscore length 1 through 32",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#4] icon revision CHECK rejects negatives and accepts zero and positive values",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#5] version and version revision CHECKs have lower bound one",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#6] both media tables enforce named SHA-256, format and positive bytes CHECKs",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#7] expiry is mandatory and strictly later than creation with no default",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#8] declared primary keys and global upload id uniqueness have exact columns",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#9] duplicate primary keys and reuse of any upload are rejected with 23505",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#10] separate tenants, keys and version numbers can reuse their local identity",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#11] foreign keys target the specified columns without cascading actions",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#12] missing admins or uploads fail with 23503 and valid references succeed",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#13] current version cannot reference a missing, foreign-tenant or foreign-key version",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#14] app can read all tables and update icon publication and version registration columns",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#15] app cannot update immutable version columns, any upload column, or delete rows",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#16] readonly can SELECT every column and cannot INSERT, UPDATE or DELETE",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#17] payout and maintenance have no access to any platform icon table",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#18] effective grants are exact, including every column and non-DML privileges",
+        "test/spec/db/content/platform-icons/platform-icons.int.test.ts > [AC-F1-06n#19] platform icon tables have no application triggers"
+      ],
+      "expected": ["test/spec/db/content/platform-icons/platform-icons.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "3461694709796be32cb17cf7b774481597356c47ab8c1ae79c0bf0dae9c61e85"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (the upload_id foreign key does not bind app_id and key, so a direct database write could reference another app's upload) tracked in followups for the upload API (F1-06x checks app and key in the application)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "19 rule tests by Codex (1 run) reviewed by a fresh Claude subagent: round 1 pass with no findings (the migration header timeouts are left to lint:migrations)"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "837cd11ddc6a0c8dce9be8585458dbbef5204a40",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

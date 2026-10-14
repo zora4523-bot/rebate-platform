@@ -1,0 +1,147 @@
+{
+  "task": "B1-03j",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "7f391747c86f4cc0a6765a14b8daf3f41f42174f",
+  "red_tests": [
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#1][AC-S1-60 ③] 到期前一毫秒不解冻，等于到期时跨 app 恢复 normal，经唯一写者留痕并发事件",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#2] appealing 即使已过期、banned、normal、无期限冻结及未到期冻结均不动",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#3] 重复及并发扫描至多一次迁移、一次事件，不追加版本",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#4] CAS 冲突跳过该用户，继续其他用户；下一轮重新判定",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#5] 单用户事件写入失败回滚其状态，其余用户在独立事务成功并可重扫",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 候选已读但事务尚未开始时人工改为 extended，必须重查条件且不覆盖人工决定",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 候选已读但事务尚未开始时人工改为 indefinite，必须重查条件且不覆盖人工决定",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 候选已读但事务尚未开始时人工改为 appealing，必须重查条件且不覆盖人工决定",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 候选已读但事务尚未开始时人工改为 banned，必须重查条件且不覆盖人工决定",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 事务内重查后、写状态前并发 extended，行锁或重新判定必须保护人工结果",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 事务内重查后、写状态前并发 indefinite，行锁或重新判定必须保护人工结果",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 事务内重查后、写状态前并发 appealing，行锁或重新判定必须保护人工结果",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#7] 分批扫描不会因前批被解冻移出结果集而漏掉后批，查询有批量上限",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#8][AC-S1-60 ④] 不定期冻结恰满 30×24 小时才告警，每天继续提醒，状态不变且日志不含原因",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#9] 申诉恰到第 3 个工作日 24:00 不告警，晚一毫秒才告警；已结案不告警",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#10] 同一次 daily-alerts 同时扫描跨 app 的不定期冻结和超时申诉",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#11] 候选查询失败向上抛错，不能伪装成成功空扫描",
+    "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#18] handler 按任务名实际执行对应扫描，解冻不跑告警，告警不做解冻",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#22] AppModule 只给 worker 装配 risk-scan handler，队列启动后投两类种子",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#12] risk-scan 队列为 exclusive，只由 worker 单并发消费",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#13] 启动按 UTC 分钟和 +08 日期投两类种子，同槽重复启动保持相同 key",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#14] 2026-10-15T00:00:00+08:00 完成到期扫描，按下一 UTC 分钟续投，延迟 60 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#14] 2026-10-15T00:00:23+08:00 完成到期扫描，按下一 UTC 分钟续投，延迟 37 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#14] 2026-10-15T00:00:59.999+08:00 完成到期扫描，按下一 UTC 分钟续投，延迟 1 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#14] 2026-12-31T23:59:59+00:00 完成到期扫描，按下一 UTC 分钟续投，延迟 1 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-10-15T00:00:00+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 86700 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-10-15T00:04:59+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 86401 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-10-15T00:05:00+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 86400 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-10-15T23:59:59+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 301 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-12-31T23:59:59+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 301 秒",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#19] 跨 +08 午夜重新启动：种子使用新 UTC 分钟、新本地日期",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#20] freeze-expiry 当前任务仍 active 时能投下一槽；重复 worker 与下一槽启动种子不会分叉",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#20] daily-alerts 当前任务仍 active 时能投下一槽；重复 worker 与下一槽启动种子不会分叉",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#21] 扫描跨分钟完成，按完成时 Clock 选择未来时间槽，不补投已经过去的分钟",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#16] freeze-expiry 扫描失败交队列重试，不再投一条任务链",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#17] freeze-expiry 续投失败记录 warn，当前成功扫描仍返回成功",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#16] daily-alerts 扫描失败交队列重试，不再投一条任务链",
+    "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#17] daily-alerts 续投失败记录 warn，当前成功扫描仍返回成功"
+  ],
+  "risk_note": "RV2 (freeze expiry and daily alerts, BR-ID-36; no migration). New risk-scan queue (exclusive, worker only) in the platform catalog; platform/queue has no cron, so a job chain keyed by time slot (freeze-expiry per UTC minute, daily-alerts per +08:00 date) is seeded by the worker right after the queue runtime starts (entry.ts). frozen_until reached -> normal per user in its own transaction (FOR UPDATE re-check, keyset batches of 100) through the single-writer risk state service; appealing, banned and indefinite freezes untouched; indefinite freezes over 30 days and overdue processing appeals warned daily. The frozen platform queue contract test is made tolerant of the risk-scan entry by the separate test-change B1-03s (#428), merged first. Audit row deferred (audit_logs is admin-only; same ruling as B1-03i). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "7f391747c86f4cc0a6765a14b8daf3f41f42174f",
+      "tree": "aa1ffee15206ad2327d9d29b9de5a271454b9a78",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T14:15:50Z",
+      "finished_at": "2026-10-10T14:15:59Z",
+      "red_tests": [
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#1][AC-S1-60 ③] 到期前一毫秒不解冻，等于到期时跨 app 恢复 normal，经唯一写者留痕并发事件",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#2] appealing 即使已过期、banned、normal、无期限冻结及未到期冻结均不动",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#3] 重复及并发扫描至多一次迁移、一次事件，不追加版本",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#4] CAS 冲突跳过该用户，继续其他用户；下一轮重新判定",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#5] 单用户事件写入失败回滚其状态，其余用户在独立事务成功并可重扫",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 候选已读但事务尚未开始时人工改为 extended，必须重查条件且不覆盖人工决定",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 候选已读但事务尚未开始时人工改为 indefinite，必须重查条件且不覆盖人工决定",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 候选已读但事务尚未开始时人工改为 appealing，必须重查条件且不覆盖人工决定",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 候选已读但事务尚未开始时人工改为 banned，必须重查条件且不覆盖人工决定",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 事务内重查后、写状态前并发 extended，行锁或重新判定必须保护人工结果",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 事务内重查后、写状态前并发 indefinite，行锁或重新判定必须保护人工结果",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#6] 事务内重查后、写状态前并发 appealing，行锁或重新判定必须保护人工结果",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#7] 分批扫描不会因前批被解冻移出结果集而漏掉后批，查询有批量上限",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#8][AC-S1-60 ④] 不定期冻结恰满 30×24 小时才告警，每天继续提醒，状态不变且日志不含原因",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#9] 申诉恰到第 3 个工作日 24:00 不告警，晚一毫秒才告警；已结案不告警",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#10] 同一次 daily-alerts 同时扫描跨 app 的不定期冻结和超时申诉",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#11] 候选查询失败向上抛错，不能伪装成成功空扫描",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts > [AC-B1-03j#18] handler 按任务名实际执行对应扫描，解冻不跑告警，告警不做解冻",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#22] AppModule 只给 worker 装配 risk-scan handler，队列启动后投两类种子",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#12] risk-scan 队列为 exclusive，只由 worker 单并发消费",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#13] 启动按 UTC 分钟和 +08 日期投两类种子，同槽重复启动保持相同 key",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#14] 2026-10-15T00:00:00+08:00 完成到期扫描，按下一 UTC 分钟续投，延迟 60 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#14] 2026-10-15T00:00:23+08:00 完成到期扫描，按下一 UTC 分钟续投，延迟 37 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#14] 2026-10-15T00:00:59.999+08:00 完成到期扫描，按下一 UTC 分钟续投，延迟 1 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#14] 2026-12-31T23:59:59+00:00 完成到期扫描，按下一 UTC 分钟续投，延迟 1 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-10-15T00:00:00+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 86700 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-10-15T00:04:59+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 86401 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-10-15T00:05:00+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 86400 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-10-15T23:59:59+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 301 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#15] daily-alerts 在 2026-12-31T23:59:59+08:00 完成，续投距下一个 +08:00 自然日 00:05 的 301 秒",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#19] 跨 +08 午夜重新启动：种子使用新 UTC 分钟、新本地日期",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#20] freeze-expiry 当前任务仍 active 时能投下一槽；重复 worker 与下一槽启动种子不会分叉",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#20] daily-alerts 当前任务仍 active 时能投下一槽；重复 worker 与下一槽启动种子不会分叉",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#21] 扫描跨分钟完成，按完成时 Clock 选择未来时间槽，不补投已经过去的分钟",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#16] freeze-expiry 扫描失败交队列重试，不再投一条任务链",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#17] freeze-expiry 续投失败记录 warn，当前成功扫描仍返回成功",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#16] daily-alerts 扫描失败交队列重试，不再投一条任务链",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts > [AC-B1-03j#17] daily-alerts 续投失败记录 warn，当前成功扫描仍返回成功"
+      ],
+      "expected": [
+        "test/spec/risk/freeze-expiry/scans.int.test.ts",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "347832d432fcfcd13bc3ef52fda63502536e8601c5445525a651e8edb8adbeae"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "063d1073966d17dcaf894ae86c3c965551b0412eabcd86fd3b7a8d9b93065408"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass (0 findings; out of scope: a failed re-enqueue stops the chain until the worker restarts, follow-up); checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 runs: run 1 blocked correctly on the same-key re-enqueue vs the exclusive index, run 3 after review; 38 tests in 2 files red for the right reason on the test runner) reviewed by fresh Claude subagents: round 1 fail (S1 no deterministic test for a manual change between the scan's re-read and setRiskState), round 2 pass"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "bc30128e99686fb9c2aba74f6a4b051eec46c1f3",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}

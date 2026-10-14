@@ -2,7 +2,7 @@ import { type DynamicModule, type Provider, Module, Scope } from '@nestjs/common
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { AdminModule } from './modules/admin/index.ts';
+import { ADMIN_CHECK, AdminAuthModule, AdminModule } from './modules/admin/index.ts';
 import {
   CatalogModule,
   GovernedUnion,
@@ -21,6 +21,8 @@ import { HealthModule } from './modules/health/index.ts';
 import {
   IdentityModule,
   TOKEN_CHECK,
+  createSmsSender,
+  smsSenderToken,
   createIdentityAttrCodeReader,
   createIdentityCallerContext,
   createIdentityViewerContext,
@@ -29,6 +31,7 @@ import {
   type IdentityConfigReader,
   type IdentityContext,
   type IdentityRequest,
+  type SessionPushTokens,
 } from './modules/identity/index.ts';
 import {
   LINK_LANDING_PORTS,
@@ -42,6 +45,10 @@ import {
   type LinkOpenPorts,
   type LinkRegistrations,
 } from './modules/linking/index.ts';
+import {
+  bindPushTokensForSession,
+  unbindPushTokensForSession,
+} from './modules/notification/index.ts';
 import {
   ParsingLinkRegistrars,
   ParsingModule,
@@ -73,6 +80,7 @@ import {
 } from './modules/platform/index.ts';
 import {
   RiskModule,
+  RiskScanModule,
   SIGNATURE_CHECK,
   createBlocklistService,
   createDeviceRegistrationRisk,
@@ -108,20 +116,35 @@ import {
  * body is read or validated, and its body keeps Fastify's own handling. ① skips unsigned routes;
  * ② ③ act by the route's contract x-auth and leave routes outside the contract alone.
  * The factory stays synchronous (its async dependencies are providers of their own).
- * The other HTTP entries have no check yet, so bootstrap refuses on them an x-signed route and a
- * route that takes a token (contract x-auth other than none).
+ * On the `admin` entry (F1-06k) the only check is admin's: the whitelist on every /admin/v1
+ * route, then the admin_token on the contract admin / super routes (BR-ID-34); it reads headers
+ * and the client address only, so no body is buffered.
+ * The stream entry has no check, so bootstrap refuses on it an x-signed route and a route that
+ * takes a token (contract x-auth other than none); the admin entry refuses those too, except the
+ * admin levels its check covers.
  */
 function requestChecks(options: PlatformOptions): Provider {
-  return options.entry === 'api'
-    ? {
-        provide: REQUEST_CHECKS,
-        inject: [SIGNATURE_CHECK, TOKEN_CHECK],
-        useFactory: (signature: RequestCheck, token: RequestCheck): RequestCheckPlan => ({
-          checks: [signature, token],
-          bufferWhen: isContractSignedRoute,
-        }),
-      }
-    : { provide: REQUEST_CHECKS, useValue: { checks: [] } satisfies RequestCheckPlan };
+  if (options.entry === 'api') {
+    return {
+      provide: REQUEST_CHECKS,
+      inject: [SIGNATURE_CHECK, TOKEN_CHECK],
+      useFactory: (signature: RequestCheck, token: RequestCheck): RequestCheckPlan => ({
+        checks: [signature, token],
+        bufferWhen: isContractSignedRoute,
+      }),
+    };
+  }
+  if (options.entry === 'admin') {
+    return {
+      provide: REQUEST_CHECKS,
+      inject: [ADMIN_CHECK],
+      useFactory: (admin: RequestCheck): RequestCheckPlan => ({
+        checks: [admin],
+        bufferWhen: () => false,
+      }),
+    };
+  }
+  return { provide: REQUEST_CHECKS, useValue: { checks: [] } satisfies RequestCheckPlan };
 }
 
 /**
@@ -141,6 +164,10 @@ function requestChecks(options: PlatformOptions): Provider {
  * the per-IP new-account limit and the daily budget alert through content's configValue; phones and
  * IPs as the field cipher's blind index, a process-local key in local / test without a keyring);
  * without Redis every send is refused (42901).
+ * Its push token port is notification's binding and conditional unbinding commands (B1-12b,
+ * BR-ID-07 细则「推送令牌与会话」), assembled here over the Clock so identity never imports
+ * notification (and notification nothing of identity): login binds, logout, the refresh reuse
+ * revocation and the revocation entries by user / by device unbind, in the session's transaction.
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
@@ -217,6 +244,13 @@ function identityModule(): DynamicModule {
               : createContentReader({ db, clock }),
           crypto: crypto ?? ephemeralSmsRiskIndex(),
         }),
+    },
+    pushTokens: {
+      inject: [CLOCK],
+      useFactory: (clock: Clock): SessionPushTokens => ({
+        bind: (trx, session) => bindPushTokensForSession(trx, session, clock),
+        unbind: (trx, session) => unbindPushTokensForSession(trx, session, clock),
+      }),
     },
   });
 }
@@ -474,6 +508,8 @@ function parsingPorts(): DynamicModule {
  * defaults only. Its buckets use REDIS (none: stage ⑬ is not installed).
  * Same-device multi-account check (BR-ID-37, B1-03k): sameDeviceAccountsCheckToken(), over
  * identity's login reader and content's configuration reader bound to the caller's handle.
+ * Appeals (POST / GET /v1/me/appeals, B1-03i): the deadline calendar through content's reader
+ * bound to the submission's transaction.
  */
 function riskModule(identity: DynamicModule): DynamicModule {
   return RiskModule.forRoot({
@@ -514,6 +550,31 @@ function riskModule(identity: DynamicModule): DynamicModule {
         useFactory: (clock: Clock) => (handle: Kysely<Database>) =>
           createContentReader({ db: handle, clock }),
       },
+    },
+    // Appeals (BR-ID-36, B1-03i): the deadline's working-day calendar (calendar.cn_holidays.<year>,
+    // calendar.cn_makeup_workdays.<year>) through content's reader over the submission's handle.
+    appeals: {
+      config: {
+        inject: [CLOCK],
+        useFactory: (clock: Clock) => (handle: Kysely<Database>) =>
+          createContentReader({ db: handle, clock }),
+      },
+    },
+  });
+}
+
+/**
+ * The admin entry's console module (F1-06k, F1-06l). The sms step-up tier sends through identity's
+ * SmsSender port, provided here under identity's sender token as identity provides it on the api
+ * entry (the fake adapter in local / test, whose outbox tests read), so admin never imports
+ * identity.
+ */
+function adminAuthModule(): DynamicModule {
+  return AdminAuthModule.forRoot({
+    smsSender: {
+      provide: smsSenderToken(),
+      inject: [APP_CONFIG, ROOT_LOGGER],
+      useFactory: (config: AppConfig, logger: RootLogger) => createSmsSender(config.appEnv, logger),
     },
   });
 }
@@ -582,8 +643,14 @@ export class AppModule {
         // Provides the platform AUDIT_PORT globally on every entry (F1-06b).
         AdminModule,
         ...(isHttpEntry(options.entry) ? [HealthModule] : []),
+        // The /admin/v1 login routes, the admin request check and CORS policy (F1-06k); step-up
+        // and me/permissions (F1-06l), whose sms tier sends through identity's SMS sender.
+        ...(options.entry === 'admin' ? [adminAuthModule()] : []),
         ...(identity === undefined ? [] : [identity, riskModule(identity)]),
         ...(union === undefined ? [] : [union]),
+        // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
+        // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
+        ...(options.entry === 'worker' ? [RiskScanModule.forWorker()] : []),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [
               catalogPorts(union, linking),

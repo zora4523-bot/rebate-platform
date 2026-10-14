@@ -46,6 +46,10 @@
 // B1-06f: authorization stays out of this core. A conversion port may decide it (authorize, after
 // admit and before any cache or price work, inside the open's transaction); a refusal (30101 /
 // 30102 / 30153) is stored and logged like any 3xxxx result and carries the port's error data.
+// B1-06v: the Pinduoduo filing check (link-open-pdd-auth.ts) refuses with 30111 (stored, data
+// auth_jump or reason), 50301 (data reason=maintenance when the site authorization this open
+// depends on has expired) or 50303 (its authority query failed); the last two are not stored, roll
+// the open back and still carry their error data.
 import type { components, Scene } from '@couli/contracts-ts';
 import { scene as SCENES } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
@@ -73,6 +77,7 @@ import {
   priceChanged,
   quoteSnapshotChanged,
 } from '../domain/rules.ts';
+import { hasUnresolvedBindingConflict } from '../infra/binding-conflicts.ts';
 import type { Caller } from '../ports.ts';
 import {
   attrCodeOf,
@@ -156,9 +161,14 @@ export type LinkOpenAuthorization =
   | {
       readonly kind: 'refused';
       /** 10001: the state cannot be bound to the caller's user and device (rolled back). */
-      readonly code: 10001 | 30101 | 30102 | 30153;
+      readonly code: 10001 | 30101 | 30102 | 30111 | 30153 | 50301 | 50303;
       /** The error envelope's data (contracts/error-codes.yaml); absent when it defines none. */
       readonly data?: Readonly<Record<string, unknown>>;
+      /**
+       * B1-06z: present when the refusal still lies on the server's no-rebate path (a blocked
+       * user's no_rebate purchase): the failure log carries the server's reason, not the client's.
+       */
+      readonly noRebateReason?: LinkOpenServerNoRebateReason;
     };
 
 export interface LinkOpenAuthorizationInput {
@@ -167,6 +177,10 @@ export interface LinkOpenAuthorizationInput {
   /** The effective no_rebate (BR-ATTR-05 ①: ignored on another user's share link). */
   readonly noRebate: boolean;
   readonly client: LinkOpenRequoteInput['client'];
+  /** B1-06v: the request's installed (default unknown), for an authorization jump plan. */
+  readonly installed: components['schemas']['InstalledState'];
+  /** B1-06v: the request's trace id (the request id of an upstream query). */
+  readonly traceId: string;
   /** The open's transaction: a state issued here commits or rolls back with the open. */
   readonly executor: Kysely<DB>;
 }
@@ -277,7 +291,7 @@ export type LinkOpenRequoteOutcome =
     };
 
 /** Codes whose error envelope carries data from the open (contracts/error-codes.yaml). */
-const ERROR_DATA_CODES: ReadonlySet<number> = new Set([30101, 30102, 30153]);
+const ERROR_DATA_CODES: ReadonlySet<number> = new Set([30101, 30102, 30111, 30153, 50301]);
 
 export interface LinkOpenRequoteService {
   open(input: LinkOpenRequoteInput): Promise<LinkOpenRequoteOutcome>;
@@ -360,6 +374,7 @@ const MESSAGES: Readonly<Record<number, string>> = {
   50301: 'convert_paused',
   30101: 'auth_required',
   30102: 'auth_invalid',
+  30111: 'auth_required',
   30153: 'binding_blocked',
   30141: 'off_shelf',
   30602: 'tlj_claimed_out',
@@ -375,6 +390,7 @@ const STATUS: Readonly<Record<number, number>> = {
   20903: 409,
   30101: 422,
   30102: 422,
+  30111: 422,
   30141: 422,
   30144: 404,
   30153: 422,
@@ -775,6 +791,30 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     };
   }
 
+  /**
+   * BR-ID-18: the server's no_rebate_reason of an open on the no-rebate path — relation_conflict
+   * while the requesting user (never the snapshot user) has an unresolved 30151 conflict on the
+   * link's platform, ahead of the port's own reason (binding_blocked). Read on the open's
+   * transaction; only the log takes it, never the idempotent request body.
+   */
+  async function serverNoRebateReason(
+    caller: Caller,
+    owner: LinkOpenOwnerResult,
+    input: LinkOpenRequoteInput,
+    executor: Kysely<DB>,
+    portReason: LinkOpenServerNoRebateReason | undefined,
+  ): Promise<LinkOpenServerNoRebateReason | undefined> {
+    if (input.noRebate !== true || caller.userId === null) return portReason;
+    const { link } = owner;
+    const conflicted = await hasUnresolvedBindingConflict(
+      executor,
+      link.app_id,
+      caller.userId,
+      link.platform,
+    );
+    return conflicted ? 'relation_conflict' : portReason;
+  }
+
   async function settle(
     caller: Caller,
     owner: LinkOpenOwnerResult,
@@ -801,6 +841,8 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
           owner,
           noRebate: input.noRebate === true,
           client: input.client,
+          installed: input.installed ?? 'unknown',
+          traceId: input.traceId,
           executor,
         });
       } catch (error) {
@@ -808,13 +850,19 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         throw error;
       }
       if (decided.kind === 'refused') {
+        const refusedReason =
+          decided.noRebateReason === undefined
+            ? undefined
+            : await serverNoRebateReason(caller, owner, input, executor, decided.noRebateReason);
         return {
           ...failure(decided.code, owner),
           ...(decided.data === undefined ? {} : { error: decided.data }),
+          ...(refusedReason === undefined ? {} : { noRebateReason: refusedReason }),
         };
       }
       reason = decided.noRebateReason;
     }
+    reason = await serverNoRebateReason(caller, owner, input, executor, reason);
     const settled = await settleAuthorized(caller, owner, input, nowMs);
     return reason === undefined ? settled : { ...settled, noRebateReason: reason };
   }
@@ -1208,7 +1256,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       // as committed — its identity, pid and expiry, never those of a rolled-back new link — with
       // the opener as opener_user_id.
       afterRollback.log = () => logOpened(caller, input, settled, start);
-      return envelope(settled.code);
+      return envelope(settled.code, settled.error ?? null);
     }
     const attemptId = await record(trx, caller, owner, input, settled, start, settled.linkId);
     if (settled.code !== 0 || settled.data === null || attemptId === null) {

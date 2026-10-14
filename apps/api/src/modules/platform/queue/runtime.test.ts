@@ -6,12 +6,21 @@ import { createQueueRuntime } from './runtime.ts';
 import type { JobPayload, QueueRuntime, QueueSpec } from './types.ts';
 
 // No database runs: fetch is observed independently from business handler calls.
+// Each statement records its text and the executor it ran on (B1-01zs: the version read).
+const statements = vi.hoisted(() => [] as { text: string; executor: unknown }[]);
+// A statement text that rejects with `error` (B1-01zs: a lock timeout during start).
+const failing = vi.hoisted(() => ({ text: '', error: undefined as unknown }));
 vi.mock('kysely', async (original) => ({
   ...(await original<typeof import('kysely')>()),
-  sql: () => ({
-    execute: async () => ({
-      rows: [{ version: 42, id: 'claimed', startedOnExact: '2026-10-04 00:00:00.123456+00' }],
-    }),
+  sql: (strings: TemplateStringsArray) => ({
+    execute: async (executor: unknown) => {
+      const text = strings.join('$');
+      statements.push({ text, executor });
+      if (failing.error !== undefined && text === failing.text) throw failing.error;
+      return {
+        rows: [{ version: 42, id: 'claimed', startedOnExact: '2026-10-04 00:00:00.123456+00' }],
+      };
+    },
   }),
 }));
 
@@ -24,19 +33,27 @@ interface FetchedJob {
   signal?: AbortSignal;
 }
 const fake = vi.hoisted(() => ({
+  // pg-boss's fromKysely, reached only through the module mock below (no import of pg-boss here).
+  fromKysely: vi.fn<(db: unknown) => unknown>(() => ({})),
   fetch: vi.fn<(queue: string) => Promise<FetchedJob[]>>(),
   complete: vi.fn(async (): Promise<void> => undefined),
   fail: vi.fn(async () => undefined),
   stop: vi.fn(async () => undefined),
+  getQueues: vi.fn(async (): Promise<unknown[]> => []),
+  bossStart: vi.fn(async (): Promise<void> => undefined),
+  options: undefined as
+    | { db: { executeSql(text: string, values?: unknown[]): Promise<{ rows: unknown[] }> } }
+    | undefined,
 }));
 vi.mock('pg-boss', () => ({
-  fromKysely: () => ({}),
+  fromKysely: fake.fromKysely,
   PgBoss: class {
-    on() {}
-    async getQueues() {
-      return [];
+    constructor(options: typeof fake.options) {
+      fake.options = options;
     }
-    async start() {}
+    on() {}
+    getQueues = fake.getQueues;
+    start = fake.bossStart;
     async createQueue() {}
     async findJobs() {
       return [];
@@ -50,6 +67,7 @@ vi.mock('pg-boss', () => ({
 const runtimes: QueueRuntime[] = [];
 
 afterEach(async () => {
+  failing.error = undefined;
   const stopping = Promise.all(runtimes.splice(0).map((runtime) => runtime.stop()));
   await vi.advanceTimersByTimeAsync(100);
   await stopping;
@@ -271,4 +289,144 @@ it('[AC-B1-01g#8] 优雅关闭等处理器及完成写入；未领取任务不�
   expect(fake.fail).not.toHaveBeenCalled();
   expect(pending.get('payout')).toEqual([job('waiting')]);
   expect(logger.warn).not.toHaveBeenCalled();
+});
+
+type FakeTransaction = { execute: (run: (trx: unknown) => Promise<unknown>) => Promise<unknown> };
+
+function boundedFixture(transaction: () => FakeTransaction) {
+  vi.useFakeTimers();
+  fake.fetch.mockReset();
+  fake.fetch.mockResolvedValue([]);
+  fake.stop.mockClear();
+  statements.length = 0;
+  failing.text = '';
+  failing.error = undefined;
+  const plain = { executeSql: vi.fn(async () => ({ rows: [{ plain: true }] })) };
+  fake.fromKysely.mockReturnValueOnce(plain);
+  const logger = { warn: vi.fn(), error: vi.fn() };
+  const spec: QueueSpec = {
+    name: 'payout',
+    policy: 'exclusive',
+    retryLimit: 0,
+    retryDelaySeconds: 1,
+    retryBackoff: false,
+    retryDelayMaxSeconds: null,
+    expireInSeconds: 1,
+    retentionSeconds: 60,
+    deleteAfterSeconds: 60,
+    deadLetter: null,
+  };
+  const runtime = createQueueRuntime({
+    entry: 'payout',
+    db: { executeQuery: vi.fn(), transaction } as unknown as Kysely<DB>,
+    logger: logger as unknown as RootLogger,
+    catalog: [spec],
+    plan: {
+      api: [],
+      stream: [],
+      admin: [],
+      worker: [],
+      payout: [{ queue: 'payout', concurrency: 1, pollingIntervalSeconds: 0.5 }],
+    },
+    stopTimeoutMs: 100,
+  });
+  runtimes.push(runtime);
+  return { runtime, logger, plain };
+}
+
+/** Transaction-local limits (is_local = true): nothing to reset on the pooled connection. */
+const LIMIT =
+  /^SELECT set_config\('lock_timeout', \$, true\),\s+set_config\('statement_timeout', \$, true\)$/;
+const OWN = '\n    BEGIN;\n    SET LOCAL lock_timeout = 30000;\n    SELECT 1;\n    COMMIT;\n  ';
+
+it('[AC-B1-01zs#3] 版本读取与 boss.start() 返回前 pg-boss 的单条语句各在自己的事务里先设事务内上限；pg-boss 自带事务的文本、boss.start() 之后的语句走共享池，不设上限也无需复原', async () => {
+  const trxs: { executeQuery: ReturnType<typeof vi.fn> }[] = [];
+  const transaction = vi.fn(() => ({
+    execute: async (run: (inner: unknown) => Promise<unknown>) => {
+      const trx = { executeQuery: vi.fn(async () => ({ rows: [{ queue: 'row' }] })) };
+      trxs.push(trx);
+      return run(trx);
+    },
+  }));
+  const { runtime, plain } = boundedFixture(transaction);
+  const seen: unknown[] = [];
+  fake.getQueues.mockImplementationOnce(async () => {
+    seen.push(await fake.options?.db.executeSql('SELECT name FROM pgboss.queue', ['a']));
+    seen.push(await fake.options?.db.executeSql(OWN));
+    return [];
+  });
+  fake.bossStart.mockImplementationOnce(async () => {
+    seen.push(await fake.options?.db.executeSql('SELECT version FROM pgboss.version', []));
+  });
+  // No handler is registered: a consumer lane would open its fetch transaction right after
+  // boss.start() returned, racing the counts below. Every transaction counted here is start()'s.
+  await runtime.start();
+  expect(seen).toEqual([
+    { rows: [{ queue: 'row' }] },
+    { rows: [{ plain: true }] },
+    { rows: [{ queue: 'row' }] },
+  ]);
+  // Runtime read, pg-boss queue read, pg-boss's own version read inside boss.start().
+  expect(transaction).toHaveBeenCalledTimes(3);
+  expect(
+    statements.map((statement) => [statement.text, trxs.indexOf(statement.executor as never)]),
+  ).toEqual([
+    [expect.stringMatching(LIMIT), 0],
+    ['SELECT version FROM pgboss.version', 0],
+    [expect.stringMatching(LIMIT), 1],
+    [expect.stringMatching(LIMIT), 2],
+  ]);
+  expect(trxs[1]?.executeQuery.mock.calls).toMatchObject([
+    [{ sql: 'SELECT name FROM pgboss.queue', parameters: ['a'] }],
+  ]);
+  expect(trxs[2]?.executeQuery.mock.calls).toMatchObject([
+    [{ sql: 'SELECT version FROM pgboss.version', parameters: [] }],
+  ]);
+  expect(plain.executeSql.mock.calls).toEqual([[OWN, undefined]]);
+  expect(await fake.options?.db.executeSql('SELECT 1', [])).toEqual({ rows: [{ plain: true }] });
+  expect(plain.executeSql).toHaveBeenLastCalledWith('SELECT 1', []);
+  expect(transaction).toHaveBeenCalledTimes(3);
+});
+
+it('[AC-B1-01zs#3] 版本读取等锁超时：start 立即以同一错误拒绝，不等回滚；stop 等回滚结束才继续；不领任务、不写日志', async () => {
+  const rollback = Promise.withResolvers<void>();
+  let rolledBack = false;
+  const { runtime, logger } = boundedFixture(() => ({
+    execute: async (run: (inner: unknown) => Promise<unknown>) => {
+      try {
+        return await run({});
+      } catch (error) {
+        await rollback.promise;
+        rolledBack = true;
+        throw error;
+      }
+    },
+  }));
+  const timeout = Object.assign(new Error('canceling statement due to lock timeout'), {
+    code: '55P03',
+  });
+  failing.text = 'SELECT version FROM pgboss.version';
+  failing.error = timeout;
+  runtime.register('payout', async () => undefined);
+  await expect(runtime.start()).rejects.toBe(timeout);
+  expect(rolledBack).toBe(false);
+  let stopped = false;
+  const stopping = runtime.stop().then(() => {
+    stopped = true;
+  });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(stopped).toBe(false);
+  // Only start()'s own failure cleanup has stopped pg-boss so far.
+  expect(fake.stop).toHaveBeenCalledTimes(1);
+  rollback.resolve();
+  await stopping;
+  expect(rolledBack).toBe(true);
+  expect(fake.stop).toHaveBeenCalledTimes(2);
+  expect(statements.map((statement) => statement.text)).toEqual([
+    expect.stringMatching(LIMIT),
+    'SELECT version FROM pgboss.version',
+  ]);
+  expect(fake.fetch).not.toHaveBeenCalled();
+  expect(logger.warn).not.toHaveBeenCalled();
+  expect(logger.error).not.toHaveBeenCalled();
 });

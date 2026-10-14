@@ -22,7 +22,7 @@
 //
 // recordAccepted() runs after the provider accepted or the outcome is unknown: one record for the
 // IP's send count and one for the app's daily budget (+08:00 natural day). The budget alert
-// `sms_daily_budget_alert` (warn, flat: app_id, day, count, budget, level) fires once per day and
+// `sms_daily_budget_alert` (warn, flat: app_id, day, count, budget, budget_level) fires once per day and
 // tier — `ratio` when count × 10000 ≥ budget × sms.daily_budget_alert_ratio_bp, `full` when
 // count ≥ budget — decided in the same script as the count, so concurrent processes alert once.
 // Sending never stops on the budget. recordRegistered() records one new account for the IP.
@@ -360,12 +360,15 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       const [count, ratioAlert, fullAlert] = integers(reply, 3) as [number, number, number];
       if (ratioAlert === 1) {
         logger.warn(
-          { app_id: appId, day, count, budget, level: 'ratio' },
+          { app_id: appId, day, count, budget, budget_level: 'ratio' },
           'sms_daily_budget_alert',
         );
       }
       if (fullAlert === 1) {
-        logger.warn({ app_id: appId, day, count, budget, level: 'full' }, 'sms_daily_budget_alert');
+        logger.warn(
+          { app_id: appId, day, count, budget, budget_level: 'full' },
+          'sms_daily_budget_alert',
+        );
       }
     } catch (error) {
       logger.warn(

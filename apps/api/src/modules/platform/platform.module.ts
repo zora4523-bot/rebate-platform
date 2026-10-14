@@ -9,6 +9,7 @@ import { AbandonController } from './http/public/abandon.controller.ts';
 import { createIdempotency } from './idempotency/index.ts';
 import { IDEMPOTENCY } from './idempotency/token.ts';
 import type { RootLogger } from './logging/index.ts';
+import { createMediaStore, MEDIA_STORE } from './media/index.ts';
 import { createQueueRuntime, type JobQueue } from './queue/index.ts';
 import { createRedisHandle } from './redis/index.ts';
 
@@ -134,6 +135,17 @@ export class PlatformModule {
         { provide: APP_ENTRY, useValue: options.entry },
         { provide: CLOCK, useValue: options.clock },
         { provide: ROOT_LOGGER, useValue: options.logger },
+        // Content-addressed media store (F1-06z): memory stand-in in local / test; staging / prod
+        // fail every put per request until the OSS adapter lands (never a startup refusal).
+        {
+          provide: MEDIA_STORE,
+          useFactory: () =>
+            createMediaStore(
+              options.config.appEnv,
+              options.config.mediaPublicBaseUrl,
+              options.logger,
+            ),
+        },
         ...databaseProviders,
         ...redisProviders,
         ...cryptoProviders,
@@ -143,6 +155,7 @@ export class PlatformModule {
         APP_ENTRY,
         CLOCK,
         ROOT_LOGGER,
+        MEDIA_STORE,
         ...(keyring === null ? [] : [FIELD_CRYPTO]),
         ...(redisUrl === null ? [] : [REDIS]),
         ...(handles === undefined ? [] : [DB, IDEMPOTENCY, JOB_QUEUE, EVENT_BUS]),

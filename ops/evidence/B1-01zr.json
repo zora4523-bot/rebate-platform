@@ -1,0 +1,85 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (infra/staging, packages/db). deploy.sh keeps the switch record uncertain until a deploy or automatic rollback settles; an uncertain site without saved copies has an explicit way out (--with-current-compose for the last successful tag); copies are written atomically before the tag is recorded; pg-url masks a password value up to the next known libpq parameter. Full verification by the required CI checks (approvals id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "scope": "fresh read-only Claude subagents: round 1 pass (2 S2), round 2 pass (1 S2), round 3 pass (1 S2, follow-up)"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail (S1: recovery failure lost the uncertain mark) fixed; round 2 pass (S2s fixed in the last implementation at the orchestrator request); round 3 pass, checklist complete (3 S2 follow-ups)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "Codex rule tests reviewed by a fresh Claude subagent: round 1 pass, S2 items turned into implementation guidance (impl-notes.md)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main (tree fcc1221)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zr",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "f12d1cfdd161bdcd11805201db3a799125c4bb56",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f12d1cfdd161bdcd11805201db3a799125c4bb56",
+      "tree": "cd7fcc9d49287bea6801fcb48f388cbd902574f4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T03:28:56Z",
+      "finished_at": "2026-10-10T03:28:59Z",
+      "gate": {
+        "commit": "30976e1e961f412a72b303e48292e0dd2c87c82b",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/db/pg-url-quoted-boundaries.test.ts > [AC-B1-01zr#5] 转义单引号后紧接另一个口令参数时两个值都不泄露",
+        "test/spec/db/pg-url-quoted-boundaries.test.ts > [AC-B1-01zr#6] 引号内奇数反斜杠与多个重复大小写口令参数均完整打码",
+        "test/spec/db/pg-url-quoted-boundaries.test.ts > [AC-B1-01zr#7] 偶数反斜杠结束值后继续识别口令且不吞掉正常参数",
+        "test/spec/infra/staging/dirty-recovery.test.ts > [AC-B1-01zr#1] 当前标签重启失败标记不确定并提示显式回退，全新环境仍能重试",
+        "test/spec/infra/staging/dirty-recovery.test.ts > [AC-B1-01zr#2] dirty 后同标签部署使用保存副本，恢复成功后才允许采用新 compose",
+        "test/spec/infra/staging/dirty-recovery.test.ts > [AC-B1-01zr#3] dirty 后请求标签缺少保存副本时说明原因，在迁移和切换之前拒绝",
+        "test/spec/infra/staging/dirty-recovery.test.ts > [AC-B1-01zr#4] 旧版现场没有切换记录时不假定上一成功标签仍在跑，选择保存副本"
+      ],
+      "expected": [
+        "test/spec/db/pg-url-quoted-boundaries.test.ts",
+        "test/spec/infra/staging/dirty-recovery.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2eb01d7f6c8838fe403c471267d6b4a653c1677d8786afb8178fde2b63e19b21"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "b69b81eb6301f52a8b6108047623aaa4233cb1e9",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}

@@ -27,12 +27,14 @@ import {
   clockFromConfig,
   contractAuthOf,
   createRootLogger,
+  installAdminCors,
   installRequestChecks,
   isContractSignedRoute,
   loadConfig,
   refuseRoutes,
   resolveTraceId,
 } from './modules/platform/index.ts';
+import { ADMIN_HTTP_POLICY, isAdminCheck, type AdminHttpPolicy } from './modules/admin/index.ts';
 import { isTokenCheck } from './modules/identity/index.ts';
 import { isSignatureCheck } from './modules/risk/index.ts';
 
@@ -73,9 +75,11 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
  * The request check plan of REQUEST_CHECKS is installed (before body parsing) on every HTTP entry;
  * a plan whose signature check is not its first check, or whose token check comes before its
  * signature check, is refused (the entry does not start); a contract x-signed route that the
- * plan's signature check does not cover, a contract route that needs a token (x-auth other
- * than none) on an entry whose plan has no token check, and a contract route at an admin level
- * (x-auth admin / super) on any entry, cannot be registered (the entry does not start).
+ * plan's signature check does not cover, a contract route that needs an app token (x-auth
+ * optional / login / phone / realname) on an entry whose plan has no token check, and a contract
+ * route at an admin level (x-auth admin / super) on an entry whose plan has no admin check (api
+ * and stream), cannot be registered (the entry does not start). The admin entry also answers the
+ * console's CORS requests (exact origin only, F1-06k).
  */
 export async function createHttpApp(
   entry: HttpEntry,
@@ -142,29 +146,39 @@ export async function createHttpApp(
       `the ${entry} entry does not run the request signature check (BR-ID-09 ①) on this contract x-signed route`,
     );
     // A contract route at an admin level (x-auth admin / super, admin_auth_level) needs the admin
-    // token check, which no entry runs yet: refused at registration on every entry (registered
-    // before the refusal below, so this is the reason given). They are all planned today.
-    refuseRoutes(
-      server,
-      (method, template) => {
-        const auth = contractAuthOf(method, template);
-        return auth === 'admin' || auth === 'super';
-      },
-      `no entry runs the admin token check (admin_auth_level) yet; the ${entry} entry refuses this contract admin route`,
-    );
-    // Every contract route that takes a token (x-auth optional / login / phone / realname) must
-    // reach stages ② ③ (BR-ID-01): refused at registration when the plan has no token check
-    // (stream and admin today), so such a route never serves a request no token was checked on.
-    // Routes outside the contract (undefined) and x-auth none register as before.
+    // token check (F1-06k), which only the admin entry's plan runs: refused at registration on
+    // the other entries (registered before the refusal below, so this is the reason given).
+    const adminChecked = plan.checks.some(isAdminCheck);
+    const adminLevel = (method: string, template: string): boolean => {
+      const auth = contractAuthOf(method, template);
+      return auth === 'admin' || auth === 'super';
+    };
+    if (!adminChecked) {
+      refuseRoutes(
+        server,
+        adminLevel,
+        `the ${entry} entry does not run the admin token check (admin_auth_level); it refuses this contract admin route`,
+      );
+    }
+    // Every contract route that takes an app token (x-auth optional / login / phone / realname)
+    // must reach stages ② ③ (BR-ID-01): refused at registration when the plan has no token check
+    // (stream and admin), so such a route never serves a request no token was checked on.
+    // Routes outside the contract (undefined), x-auth none and, where the admin check runs, the
+    // admin levels register as before.
     if (firstToken === -1) {
       refuseRoutes(
         server,
         (method, template) => {
           const auth = contractAuthOf(method, template);
+          if (adminChecked && adminLevel(method, template)) return false;
           return auth !== undefined && auth !== 'none';
         },
         `the ${entry} entry does not run the token check (BR-ID-01 ②) on this contract route that takes a token`,
       );
+    }
+    // The console's CORS (02 §3.4): before the checks, so a preflight is answered by origin.
+    if (entry === 'admin') {
+      installAdminCors(server, app.get<AdminHttpPolicy>(ADMIN_HTTP_POLICY));
     }
     installRequestChecks(server, plan.checks, plan.bufferWhen);
     return app;

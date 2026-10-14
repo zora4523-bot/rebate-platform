@@ -15,6 +15,11 @@
 // runs ④a, ⑤, ⑬, and ⑤'s post-miss hook is registered after ④a's and before ⑬'s. Its service
 // (riskStateServiceToken(), the single writer of user_risk_state) needs DB and EVENT_BUS; without
 // them stage ⑤ is not installed (one info line `risk_state_gate_disabled` at startup).
+// Appeals (BR-ID-36, B1-03i): POST / GET /v1/me/appeals, always registered on the entry. Their
+// service needs DB and stage ⑤'s service (the single writer of user_risk_state); the calendar is
+// read through the configuration port over a handle (content's reader, assembled by app.module).
+// Without them the service is not installed (one info line `appeals_disabled` at startup) and both
+// routes answer 50001.
 //
 // Also compiled by the `test` project (through ./index.ts): a class decorator only (no parameter
 // decorators or parameter properties; dependencies are injected through a factory), as in
@@ -83,6 +88,8 @@ import {
   riskStateServiceToken,
   type RiskStateService,
 } from './application/risk-state.ts';
+import { createAppealsService, type AppealsService } from './application/appeals.ts';
+import { APPEALS_SERVICE, AppealsController } from './http/public/appeals.controller.ts';
 import {
   createSameDeviceAccountsCheck,
   sameDeviceAccountsCheckToken,
@@ -114,6 +121,7 @@ const RATE_LIMIT_SERVICE = Symbol('RATE_LIMIT_SERVICE');
 const SAME_DEVICE_ACCOUNTS_CHECK = sameDeviceAccountsCheckToken();
 const SAME_DEVICE_LOGIN_READER = sameDeviceLoginReaderToken();
 const SAME_DEVICE_CONFIG = Symbol('SAME_DEVICE_CONFIG');
+const APPEALS_CONFIG = Symbol('APPEALS_CONFIG');
 
 /** The minimum supported version port as app.module supplies it (content's reader). */
 export interface MinimumVersionReaders {
@@ -178,7 +186,21 @@ export interface RiskModuleOptions {
       'inject' | 'useFactory'
     >;
   };
+  /**
+   * Appeals (BR-ID-36, B1-03i): the configuration port bound to a handle (content's reader), for
+   * the working-day calendar of the deadline, read on the submission's transaction. Absent: the
+   * calendar reads nothing and counts weekends only.
+   */
+  readonly appeals?: {
+    readonly config: Pick<
+      FactoryProvider<(handle: Kysely<Database>) => RateLimitConfigReader>,
+      'inject' | 'useFactory'
+    >;
+  };
 }
+
+/** No calendar configuration: every year counts weekends only. */
+const NO_APPEALS_CONFIG = (): RateLimitConfigReader => DEFAULT_THRESHOLDS_CONFIG;
 
 /** No configuration reader: the code defaults only. */
 const DEFAULT_THRESHOLDS_CONFIG = { configValue: () => Promise.resolve(null) };
@@ -308,11 +330,17 @@ export class RiskModule {
                 createSameDeviceAccountsCheck({ clock, logger, logins, config }),
             },
           ];
+    const appealsConfig: FactoryProvider<(handle: Kysely<Database>) => RateLimitConfigReader> =
+      options.appeals === undefined
+        ? { provide: APPEALS_CONFIG, useFactory: () => NO_APPEALS_CONFIG }
+        : { provide: APPEALS_CONFIG, ...options.appeals.config };
     return {
       module: RiskModule,
       imports: [...options.imports],
+      controllers: [AppealsController],
       providers: [
         ...sameDeviceProviders,
+        appealsConfig,
         {
           provide: SIGNATURE_CHECK,
           inject: [DEVICE_SIGNING_KEYS, CLOCK, { token: REDIS, optional: true }],
@@ -387,6 +415,37 @@ export class RiskModule {
               return null;
             }
             return createRiskStateService({ db, clock, events });
+          },
+        },
+        {
+          // Appeals: the riskState service is the same instance the guard and hooks use.
+          provide: APPEALS_SERVICE,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            RISK_STATE_SERVICE,
+            APPEALS_CONFIG,
+            { token: DB, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            riskState: RiskStateService | null,
+            configOn: (handle: Kysely<Database>) => RateLimitConfigReader,
+            db?: Kysely<Database>,
+          ): AppealsService | null => {
+            if (db === undefined || riskState === null) {
+              logger.info({ route: '/v1/me/appeals' }, 'appeals_disabled');
+              return null;
+            }
+            return createAppealsService({
+              db,
+              clock,
+              riskState,
+              logger,
+              config: configOn(db),
+              configOn,
+            });
           },
         },
         {

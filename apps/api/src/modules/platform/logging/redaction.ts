@@ -132,6 +132,14 @@ function isBoxed(value: unknown): value is { valueOf(): string | number | boolea
   );
 }
 
+/** Read the wrapped primitive with the intrinsic valueOf: an own or overridden valueOf is ignored. */
+function unbox(value: object): string | number | boolean | bigint {
+  if (isStringObject(value)) return String.prototype.valueOf.call(value);
+  if (isNumberObject(value)) return Number.prototype.valueOf.call(value);
+  if (isBooleanObject(value)) return Boolean.prototype.valueOf.call(value);
+  return BigInt.prototype.valueOf.call(value);
+}
+
 function isBinary(value: unknown): value is ArrayBufferLike | ArrayBufferView {
   return isAnyArrayBuffer(value) || ArrayBuffer.isView(value);
 }
@@ -139,6 +147,58 @@ function isBinary(value: unknown): value is ArrayBufferLike | ArrayBufferView {
 // Pino's hook and formatters may copy a record more than once. Preserve Error provenance
 // without adding output fields, so an Error's numeric code never becomes free text under err.
 const errorCopies = new WeakSet<object>();
+
+/** Collect objects at every depth (bounded), without invoking getters. */
+function collectObjects(root: unknown, visit: (item: object) => void): void {
+  const seen = new Set<object>();
+  const stack: Array<{ item: unknown; depth: number }> = [{ item: root, depth: 0 }];
+  while (stack.length > 0) {
+    const { item, depth } = stack.pop()!;
+    if (item === null || typeof item !== 'object' || seen.has(item) || depth > 100) continue;
+    seen.add(item);
+    visit(item);
+    for (const name of Object.keys(item)) {
+      const descriptor = Object.getOwnPropertyDescriptor(item, name);
+      if (descriptor && 'value' in descriptor)
+        stack.push({ item: descriptor.value, depth: depth + 1 });
+    }
+  }
+}
+
+function sameFields(left: object, right: object): boolean {
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((name) => {
+    const a = Object.getOwnPropertyDescriptor(left, name);
+    const b = Object.getOwnPropertyDescriptor(right, name);
+    return !!a && !!b && 'value' in a && 'value' in b && Object.is(a.value, b.value);
+  });
+}
+
+/**
+ * A caller formatter may rebuild an Error copy ({ ...err }). A plain object in its output that
+ * holds exactly the fields of an Error copy from its input keeps the Error provenance; any other
+ * object (including an Error lookalike that never came from an Error) does not.
+ */
+export function retainErrorCopies(input: unknown, output: unknown): void {
+  if (input === output) return;
+  const copies: object[] = [];
+  collectObjects(input, (item) => {
+    if (errorCopies.has(item)) copies.push(item);
+  });
+  if (copies.length === 0) return;
+  collectObjects(output, (item) => {
+    if (errorCopies.has(item) || Object.getPrototypeOf(item) !== Object.prototype) return;
+    if (copies.some((copy) => sameFields(item, copy))) errorCopies.add(item);
+  });
+}
+
+/** Under an Error's own properties: personal data in text is replaced, other types are kept. */
+function redactErrorScalar(value: string | number | bigint): string | number | bigint {
+  if (typeof value === 'string') return redactText(value);
+  const text = String(value);
+  return redactText(text) === text ? value : REDACTED;
+}
 
 /** Resolve replacements at the same field depth; bound non-terminating toJSON chains too. */
 function resolveJSON(value: unknown, chain: Set<object>, ancestors = new Set<object>()): unknown {
@@ -166,16 +226,17 @@ export function redactValue(
   ancestors = new Set<object>(),
   depth = 0,
   freeText = false,
+  errorText = false,
 ): unknown {
   if (sensitiveNames.has(normalizedKey(key))) return REDACTED;
   if (depth > 100) return '[Truncated]';
   const chain = new Set<object>();
-  const visit = (item: unknown, name = '') =>
-    redactValue(item, name, ancestors, depth + 1, freeText);
-  const field = (name: string) => {
+  const visit = (item: unknown, name = '', inError = errorText) =>
+    redactValue(item, name, ancestors, depth + 1, freeText, inError);
+  const field = (name: string, inError = errorText) => {
     // Do not even invoke a getter for a sensitive field.
     if (sensitiveNames.has(normalizedKey(name))) return REDACTED;
-    return attempt(() => visit(Reflect.get(value as object, name), name));
+    return attempt(() => visit(Reflect.get(value as object, name), name, inError));
   };
   try {
     value = resolveJSON(value, chain, ancestors);
@@ -186,12 +247,12 @@ export function redactValue(
     freeText ||= freeTextKeys.has(key) || (key === 'err' && !error);
     if (isBinary(value)) return `[Binary ${String(value.byteLength)} bytes]`;
     if (value instanceof URL) value = redactURL(value);
-    if (isBoxed(value)) value = value.valueOf();
-    if (
-      freeText &&
-      (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint')
-    ) {
-      return redactText(String(value));
+    if (isBoxed(value)) value = unbox(value);
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+      if (freeText) return redactText(String(value));
+      // Error properties (e.g. an HTTP client's response.data) keep their types but never
+      // write personal data found by the free-text net.
+      if (errorText) return redactErrorScalar(value);
     }
     if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value;
     if (value instanceof Error) {
@@ -200,14 +261,14 @@ export function redactValue(
         type: attempt(() => visit(original.constructor.name, 'type')),
         message: field('message'),
         stack: field('stack'),
-        ...Object.fromEntries(Object.keys(value).map((name) => [name, field(name)])),
+        ...Object.fromEntries(Object.keys(value).map((name) => [name, field(name, true)])),
       };
       if ('errors' in value) {
         const errors = attempt(() => Reflect.get(original, 'errors') as unknown);
-        if (Array.isArray(errors)) fields['aggregateErrors'] = visit(errors);
+        if (Array.isArray(errors)) fields['aggregateErrors'] = visit(errors, '', true);
         else if (errors === UNSERIALIZABLE) fields['aggregateErrors'] = UNSERIALIZABLE;
       }
-      if (Object.hasOwn(value, 'cause')) fields['cause'] = field('cause');
+      if (Object.hasOwn(value, 'cause')) fields['cause'] = field('cause', true);
       errorCopies.add(fields);
       return fields;
     }

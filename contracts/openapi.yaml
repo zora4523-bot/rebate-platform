@@ -3208,7 +3208,6 @@ paths:
       x-auth: login
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes: []
       security:
         - bearerAuth: []
@@ -3283,7 +3282,6 @@ paths:
       x-signed: false
       x-idempotent: true
       x-min-version-gate: true
-      x-implementation: planned
       x-error-codes:
         - 20001
         - 30701
@@ -4061,13 +4059,21 @@ paths:
         adapt the page, not a guarantee of content isolation (BR-ATTR-10 细则). open_in_app_url
         is the LinkLanding deep link, null while share.open_in_app.enabled is off (BR-ATTR-05
         细则「App 内打开链接的入口」). Only links with pid_scene=share are answered; any other,
-        unknown or of another app → 30144. The response carries Cache-Control: no-store (not
-        cached by the CDN). Not signed; no X-Device-Id required.
+        unknown or of another app → 30144. When the sharer's own authorization is no longer
+        valid (Taobao binding not active, or Pinduoduo filing invalid; JD is not checked) →
+        30102 (Taobao) or 30111 (Pinduoduo) with data.reason=sharer_auth_invalid and no
+        auth_url, state or auth_jump; this holds during a site-owner authorization outage too
+        (never auth_unavailable here). The share page shows 「分享链接已失效，请联系分享者重新分享」
+        and offers no authorization, replay or no-rebate purchase (BR-ATTR-05 细则「别人的分享
+        link 不可用」). The response carries Cache-Control: no-store (not cached by the CDN). Not
+        signed; no X-Device-Id required.
       x-auth: none
       x-signed: false
       x-idempotent: false
       x-implementation: planned
       x-error-codes:
+        - 30102
+        - 30111
         - 30144
       security: []
       parameters:
@@ -4213,7 +4219,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10008
         - 10009
@@ -4310,7 +4315,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10009
@@ -4386,7 +4390,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10009
@@ -4459,7 +4462,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10009
@@ -4534,7 +4536,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10009
@@ -4606,7 +4607,6 @@ paths:
       x-auth: admin
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -4663,7 +4663,6 @@ paths:
       x-auth: admin
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -4732,7 +4731,6 @@ paths:
       x-auth: admin
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -4836,7 +4834,6 @@ paths:
         (B1-18). `verify_phone_masked` is null when no verify phone is registered: sms-tier
         buttons are greyed out with a prompt to register one (03 §9.2).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -4930,7 +4927,6 @@ paths:
         or the full verify phone. Creating, disabling and ticking permission points (super admin,
         step-up, audit) come with a later task.
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -5013,7 +5009,6 @@ paths:
         otherwise). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`. Never returns the
         password, its hash, the TOTP secret or the full verify phone.
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

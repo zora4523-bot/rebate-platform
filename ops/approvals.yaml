@@ -3,6 +3,7 @@
 # id 0–9 与 row 都是 §7.3 表格的 # 列；title 是「改为」列的摘要，原文以规划仓库 spec_ref 版本为准。
 # id 10 起是负责人在对话里逐次给出的批准（不是 §7.3 的行），row 填它所依据的 §7.3 行（4 = 命中保护路径先问负责人）。
 # id 19 本身就是 §7.3 的第 12 行（2026-10-05 的默认分工），row 填 12；spec_ref 随之推进到含该行的规划提交（第 0–9 行不变）。
+# id 27 是同一第 12 行的修订（2026-10-09 评审只用 Codex），row 同样填 12。
 # 保护路径（规划/11 §4.4 第三类）：改动须负责人确认。
 source: '规划/11_开发协作与自主推进.md §7.3'
 spec_ref: 'b89ca4e745ae935d30f9b850e4c99cc6d6f19b7e'
@@ -169,3 +170,9 @@ approvals:
     granted: true
     date: '2026-10-09'
     note: '负责人 2026-10-09 在对话里选「A」（经编排会话「Couli-runs handoff」转达；W1 搜索转链线事先在 couli-runs B1-06h/blocked.md 列了 A 扩例外、B 先做 CT-04 → CT-10、C 生成器最小子集三项）；起因 B1-06h（POST /v1/unions/{platform}/bindings）代码评审第 2 轮 Codex 判 S1「invalid → active、冷却中 released 恢复直接改状态，未经生成的 transition()」，而仓库尚无状态机生成器；B1-06v（拼多多授权查询后置 active）也走同一入口；本条所在的 PR 由编排会话按负责人同一句授权加标签（先例第 20、25 条）'
+  - id: 27
+    row: 12
+    title: 'RV2 不再要求 Claude 新子代理第二家评审，证据只要求实现方之外的那一家评审；所有风险级的代码评审只跑 Codex 新只读会话（gpt-6-astra，model_reasoning_effort 默认 low；环境变量 CODEX_REVIEW_EFFORT 保留为开关，只在负责人另有决定时改）；Codex 写的规则测试仍由 Claude 新子代理过审；其余不变（先红、spec_commit、CI 必过检查、证据文件、长跑；Codex 实现的代码——换家与第 23 条首发——仍由 Claude 评审，实现方不评审自己）。本仓库保护路径第三类的相应改动（ops/approvals.yaml、各级 AGENTS.md、ops/evidence/README.md、tools/**）'
+    granted: true
+    date: '2026-10-09'
+    note: '负责人原话「对抗codex 使用 gpt6 astra 轻度 对抗review 就可以了 为什么还需要Claude 对抗 Claude 写的 就不要评审了 给chatgpt 对抗review 评审」（对话中给编排会话，经编排会话转达）；规划依据：规划仓库 PR couli#104、docs/changes/20261009-评审只用Codex对抗.md、11 §1.1 / §2.4 / §3.2 / §3.3 / §4.1 / §7.3 第 12 项、05 §2；「实现方之外的那一家评审」（台账 impl: claude / 空 → codex 条目必须、claude 可选；impl: codex → claude 条目必须、codex 可选）是编排会话按规划 PR 审查结果给的落实口径，「台账读不到两家都要」「PR 上有换家标记提交而证据没写 handover 时按 Codex 实现论」是本分支按 Codex 审查补的兜底，都不是负责人原话；落在分支 chore/review-codex-only（tools/agent/codex-run.sh 与其测试、tools/ci/evidence-check.ts 与其测试、tools/agent/README.md、AGENTS.md、packages/{money,domain}/AGENTS.md、db/AGENTS.md、ops/evidence/README.md）'

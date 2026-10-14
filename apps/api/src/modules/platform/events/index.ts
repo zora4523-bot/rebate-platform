@@ -62,7 +62,7 @@
 //      - UTF-8 bytes of JSON.stringify(payload) ≤ MAX_EVENT_PAYLOAD_BYTES (4 096).
 //                                                                     else 'payload_too_large'
 //    Check order of publish: transaction, event shape, appId, name, version, eventId, then the
-//    payload checks in the order above. Every check runs before anything else: a failing check
+//    payload checks in the order above. Every check of this section runs before anything else: a failing check
 //    reads no clock, runs no statement and touches nothing of `trx` but its `isTransaction`
 //    property, so the business transaction stays usable.
 //
@@ -83,6 +83,16 @@
 //      that is not a valid Date of 0..2^48−1 ms → 'invalid_option' with no statement run. eventId =
 //      the given one, else newEventId(that instant).
 //    - Then, all on `trx`:
+//        0. Publishes on one `trx` run one after another in this process, in call order (a second
+//           publish on the same transaction — e.g. under Promise.all — starts when the first has
+//           settled), so the same event_id published twice on one transaction ends with one
+//           event_log row and one job per consumer: the second resolves { duplicate: true }.
+//           The first publish on a transaction reads its isolation level
+//           (current_setting('transaction_isolation')); anything but 'read committed' (REPEATABLE
+//           READ, SERIALIZABLE) rejects EventError('invalid_transaction') with nothing written or
+//           sent and the transaction still usable — under a snapshot the lookup of b would miss a
+//           row committed by a concurrent publish. Business transactions that publish run at
+//           READ COMMITTED (the PostgreSQL default).
 //        a. Serialises publishes of the same event_id across transactions (suggested: a
 //           transaction-level advisory lock on a key derived from the event_id), so that two
 //           concurrent publishes of one event_id end with one event_log row and one job per consumer.
@@ -157,14 +167,24 @@
 //           call and no log line (the queue then retries and finally dead-letters it): job.id a
 //           lower-case canonical UUID; job.name one of the events this consumer subscribes to;
 //           job.payload exactly the four keys of the envelope (section 4d) with app_id per section 2,
-//           v an integer 1..999, occurred_at matching /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+//           v an integer 1..999, occurred_at exactly a string that publish can produce: the
+//           Date#toISOString() text of an instant of 0..2^48−1 ms (section 4), i.e.
+//           /^(\d{4}|\+0\d{5})-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/ with a four-digit year up to
+//           9999 or `+` and six digits from year 10000 on (never a sign before a smaller year, never
+//           `-`), a real calendar date and time (month 01–12, day within the month, hour ≤ 23,
+//           minute and second ≤ 59), and the instant 0..2^48−1 ms (so years 1970..10889);
 //           data a plain object.
 //        2. In ONE transaction of `options.db`: inserts (consumer, job.id) into app.processed_events
 //           unless that pair exists (ON CONFLICT DO NOTHING — a concurrent delivery of the same pair
 //           waits on the primary key until the first transaction ends). Inserted: calls
 //           handler(event, trx) and the transaction commits when it resolves; its effects written
-//           with that `trx` commit together with the processed_events row. Not inserted (already
-//           processed): the handler is not called.
+//           with that `trx` commit together with the processed_events row. After the handler
+//           resolves, one statement (`select 1`) runs on `trx`: when the handler caught a database
+//           error and returned anyway, the transaction is aborted, that statement fails (25P02) and
+//           the delivery is handled as in step 3 (rollback, jobHandler rejects with that error, the
+//           queue retries) instead of a commit that silently rolls back. A handler that rolled
+//           back to its own savepoint leaves a usable transaction, which commits normally. Not
+//           inserted (already processed): the handler is not called.
 //        3. Handler rejects (or throws): the transaction rolls back — the processed_events row and
 //           every effect written with `trx` disappear — and jobHandler rejects with that same error
 //           unchanged, so the queue retries it per the queue settings and logs per the queue contract

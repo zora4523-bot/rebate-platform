@@ -101,37 +101,133 @@ const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]*):\S*@/gi;
 // A parameter name (letters or percent escapes) not glued to a preceding name character, then `=`:
 // query parameters of an embedded URL and libpq keyword/value strings (`host=… password=…`).
 const PARAMETER = /(?<![A-Za-z0-9_%])((?:[A-Za-z]|%[0-9A-Fa-f]{2})+)\s*=\s*/g;
-// Where an unquoted value ends. In a URL query (parameter right after `?` or `&`) the value ends
-// at whitespace, `&` or `#`. In a libpq keyword/value string it ends only at unescaped whitespace:
-// `;`, `&` and `#` are ordinary characters there (`password=a;b` is the password `a;b`).
+// Where a plain (unquoted) URL query value ends: whitespace, `&` or `#`.
 const QUERY_VALUE_END = /[\s&#]/;
-const KEYWORD_VALUE_END = /\s/;
+// libpq connection keywords (lowercase, as libpq accepts them). A secret value is masked up to a
+// place that is certainly the start of a new parameter: whitespace followed by one of these and
+// `=` (in a URL query also `&` followed by one), or the end of the text.
+const LIBPQ_KEYWORDS = [
+  'application_name',
+  'channel_binding',
+  'client_encoding',
+  'connect_timeout',
+  'dbname',
+  'fallback_application_name',
+  'gssdelegation',
+  'gssencmode',
+  'gsslib',
+  'host',
+  'hostaddr',
+  'keepalives',
+  'keepalives_count',
+  'keepalives_idle',
+  'keepalives_interval',
+  'krbsrvname',
+  'load_balance_hosts',
+  'max_protocol_version',
+  'min_protocol_version',
+  'options',
+  'passfile',
+  'password',
+  'port',
+  'replication',
+  'require_auth',
+  'requirepeer',
+  'service',
+  'ssl_max_protocol_version',
+  'ssl_min_protocol_version',
+  'sslcert',
+  'sslcertmode',
+  'sslcompression',
+  'sslcrl',
+  'sslcrldir',
+  'sslkey',
+  'sslkeylogfile',
+  'sslmode',
+  'sslnegotiation',
+  'sslpassword',
+  'sslrootcert',
+  'sslsni',
+  'target_session_attrs',
+  'tcp_user_timeout',
+  'user',
+];
+const KEYWORDS = LIBPQ_KEYWORDS.join('|');
+const NEXT_AFTER_SPACE = new RegExp(`\\s+(?:${KEYWORDS})\\s*=`, 'y');
+const NEXT_AFTER_AMPERSAND = new RegExp(`&(?:${KEYWORDS})\\s*=`, 'y');
+
+/** True when a new libpq parameter certainly starts at `index` (see `LIBPQ_KEYWORDS`). */
+function parameterStartsAt(text: string, index: number, query: boolean): boolean {
+  for (const next of query ? [NEXT_AFTER_SPACE, NEXT_AFTER_AMPERSAND] : [NEXT_AFTER_SPACE]) {
+    next.lastIndex = index;
+    if (next.test(text)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
- * Index just past the parameter value that starts at `start`, following libpq's keyword/value
- * rules: a backslash escapes the next character both inside a quoted value (`'a\'b c'`) and in
- * an unquoted one (`a\ b`), so an escaped quote or space never ends the value. An unterminated
- * quote runs to the end of the text. `end` says which characters end an unquoted value.
+ * Index just past the secret value that starts at `start`.
+ *
+ * A plain value in a URL query (parameter right after `?` or `&`, not quoted) ends at whitespace,
+ * `&` or `#`, as URL parameters do. Every other value (libpq keyword/value form, or quoted) is
+ * masked up to the next place where a new parameter certainly starts (`parameterStartsAt`) or the
+ * end of the text, so that no malformed or adversarial construction (escaped quotes, a second
+ * password assignment glued into the value, text glued to the closing quote) leaves a piece of the
+ * secret readable; at worst some text between the secret and the next parameter is masked too.
+ * Within that: a backslash escapes the next character (an escaped space never ends the value),
+ * and nothing inside the opening quoted part (up to its first unescaped closing quote) can end it.
  */
-function valueEnd(text: string, start: number, end: RegExp): number {
+function valueEnd(text: string, start: number, query: boolean): number {
   const quote = text[start];
   const quoted = quote === "'" || quote === '"';
-  let index = quoted ? start + 1 : start;
+  let index = start;
+  if (query && !quoted) {
+    while (index < text.length) {
+      const char = text[index] ?? '';
+      if (char === '\\') {
+        index += 2;
+        continue;
+      }
+      if (QUERY_VALUE_END.test(char)) {
+        return index;
+      }
+      index++;
+    }
+    return text.length;
+  }
+  if (quoted) {
+    index = start + 1;
+    for (;;) {
+      if (index >= text.length) {
+        return text.length;
+      }
+      const char = text[index];
+      index += char === '\\' ? 2 : 1;
+      if (char === quote) {
+        break;
+      }
+    }
+  }
   while (index < text.length) {
-    const char = text[index] ?? '';
-    if (char === '\\') {
+    if (text[index] === '\\') {
       index += 2;
       continue;
     }
-    if (quoted ? char === quote : end.test(char)) {
-      return quoted ? index + 1 : index;
+    if (parameterStartsAt(text, index, query)) {
+      return index;
     }
     index++;
   }
   return text.length;
 }
 
-/** `text` with the value of every `password=` / `sslpassword=` parameter replaced by `***`. */
+/**
+ * `text` with the value of every `password=` / `sslpassword=` parameter replaced by `***` (see
+ * `valueEnd` for where a value ends). A password-looking assignment inside a masked value is
+ * masked with it.
+ */
 function maskPasswordParameters(text: string): string {
   let result = '';
   let done = 0;
@@ -140,10 +236,9 @@ function maskPasswordParameters(text: string): string {
       continue;
     }
     const before = match.index > 0 ? text[match.index - 1] : '';
-    const end = before === '?' || before === '&' ? QUERY_VALUE_END : KEYWORD_VALUE_END;
     const start = match.index + match[0].length;
     result += text.slice(done, start) + MASK;
-    done = valueEnd(text, start, end);
+    done = valueEnd(text, start, before === '?' || before === '&');
   }
   return result + text.slice(done);
 }

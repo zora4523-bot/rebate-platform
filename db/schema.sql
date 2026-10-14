@@ -2243,6 +2243,73 @@ CREATE TABLE app.payout_accounts (
 
 
 --
+-- Name: platform_icon_uploads; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.platform_icon_uploads (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    key text NOT NULL,
+    sha256 text NOT NULL,
+    format text NOT NULL,
+    bytes integer NOT NULL,
+    sanitized boolean NOT NULL,
+    created_by_admin_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT platform_icon_uploads_bytes_check CHECK ((bytes > 0)),
+    CONSTRAINT platform_icon_uploads_expiry_check CHECK ((expires_at > created_at)),
+    CONSTRAINT platform_icon_uploads_format_check CHECK ((format = ANY (ARRAY['svg'::text, 'png'::text]))),
+    CONSTRAINT platform_icon_uploads_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: platform_icon_versions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.platform_icon_versions (
+    app_id text NOT NULL,
+    key text NOT NULL,
+    version integer NOT NULL,
+    upload_id uuid NOT NULL,
+    sha256 text NOT NULL,
+    format text NOT NULL,
+    bytes integer NOT NULL,
+    sanitized boolean NOT NULL,
+    source_url text,
+    downloaded_on date,
+    ever_published boolean DEFAULT false NOT NULL,
+    revision integer DEFAULT 1 NOT NULL,
+    created_by text NOT NULL,
+    created_by_admin_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_icon_versions_bytes_check CHECK ((bytes > 0)),
+    CONSTRAINT platform_icon_versions_format_check CHECK ((format = ANY (ARRAY['svg'::text, 'png'::text]))),
+    CONSTRAINT platform_icon_versions_revision_check CHECK ((revision >= 1)),
+    CONSTRAINT platform_icon_versions_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT platform_icon_versions_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: platform_icons; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.platform_icons (
+    app_id text NOT NULL,
+    key text NOT NULL,
+    current_version integer,
+    revision integer DEFAULT 0 NOT NULL,
+    updated_by text,
+    updated_by_admin_id uuid,
+    updated_at timestamp with time zone,
+    CONSTRAINT platform_icons_key_check CHECK ((key ~ '^[a-z_]{1,32}$'::text)),
+    CONSTRAINT platform_icons_revision_check CHECK ((revision >= 0))
+);
+
+
+--
 -- Name: platforms; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -2407,6 +2474,40 @@ END)
 
 ALTER TABLE app.risk_hits ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME app.risk_hits_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: risk_judgements; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.risk_judgements (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    rule_id text NOT NULL,
+    ref_type text NOT NULL,
+    ref_id text NOT NULL,
+    user_id uuid NOT NULL,
+    marked boolean NOT NULL,
+    result jsonb NOT NULL,
+    judged_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT risk_judgements_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text]))),
+    CONSTRAINT risk_judgements_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND ((result -> 'marked'::text) = to_jsonb(marked))))
+);
+
+
+--
+-- Name: risk_judgements_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.risk_judgements ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.risk_judgements_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -3408,6 +3509,38 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: platform_icon_uploads platform_icon_uploads_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_uploads
+    ADD CONSTRAINT platform_icon_uploads_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: platform_icon_versions platform_icon_versions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_versions
+    ADD CONSTRAINT platform_icon_versions_pkey PRIMARY KEY (app_id, key, version);
+
+
+--
+-- Name: platform_icon_versions platform_icon_versions_upload_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_versions
+    ADD CONSTRAINT platform_icon_versions_upload_id_key UNIQUE (upload_id);
+
+
+--
+-- Name: platform_icons platform_icons_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icons
+    ADD CONSTRAINT platform_icons_pkey PRIMARY KEY (app_id, key);
+
+
+--
 -- Name: platforms platforms_key_prefix_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -3501,6 +3634,22 @@ ALTER TABLE ONLY app.refresh_tokens
 
 ALTER TABLE ONLY app.risk_hits
     ADD CONSTRAINT risk_hits_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: risk_judgements risk_judgements_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_judgements
+    ADD CONSTRAINT risk_judgements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: risk_judgements risk_judgements_ref_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_judgements
+    ADD CONSTRAINT risk_judgements_ref_key UNIQUE (app_id, rule_id, ref_type, ref_id);
 
 
 --
@@ -4910,6 +5059,46 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: platform_icon_uploads platform_icon_uploads_created_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_uploads
+    ADD CONSTRAINT platform_icon_uploads_created_by_admin_id_fkey FOREIGN KEY (created_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: platform_icon_versions platform_icon_versions_created_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_versions
+    ADD CONSTRAINT platform_icon_versions_created_by_admin_id_fkey FOREIGN KEY (created_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: platform_icon_versions platform_icon_versions_upload_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icon_versions
+    ADD CONSTRAINT platform_icon_versions_upload_id_fkey FOREIGN KEY (upload_id) REFERENCES app.platform_icon_uploads(id);
+
+
+--
+-- Name: platform_icons platform_icons_current_version_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icons
+    ADD CONSTRAINT platform_icons_current_version_fkey FOREIGN KEY (app_id, key, current_version) REFERENCES app.platform_icon_versions(app_id, key, version);
+
+
+--
+-- Name: platform_icons platform_icons_updated_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.platform_icons
+    ADD CONSTRAINT platform_icons_updated_by_admin_id_fkey FOREIGN KEY (updated_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
 -- Name: product_refs product_refs_platform_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4963,6 +5152,22 @@ ALTER TABLE ONLY app.risk_hits
 
 ALTER TABLE ONLY app.risk_hits
     ADD CONSTRAINT risk_hits_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: risk_judgements risk_judgements_rule_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_judgements
+    ADD CONSTRAINT risk_judgements_rule_fkey FOREIGN KEY (app_id, rule_id) REFERENCES app.risk_rules(app_id, rule_id);
+
+
+--
+-- Name: risk_judgements risk_judgements_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.risk_judgements
+    ADD CONSTRAINT risk_judgements_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -6648,6 +6853,58 @@ GRANT UPDATE(updated_at) ON TABLE app.payout_accounts TO couli_app;
 
 
 --
+-- Name: TABLE platform_icon_uploads; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.platform_icon_uploads TO couli_app;
+GRANT SELECT ON TABLE app.platform_icon_uploads TO couli_readonly;
+
+
+--
+-- Name: TABLE platform_icon_versions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.platform_icon_versions TO couli_app;
+GRANT SELECT ON TABLE app.platform_icon_versions TO couli_readonly;
+
+
+--
+-- Name: COLUMN platform_icon_versions.source_url; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(source_url) ON TABLE app.platform_icon_versions TO couli_app;
+
+
+--
+-- Name: COLUMN platform_icon_versions.downloaded_on; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(downloaded_on) ON TABLE app.platform_icon_versions TO couli_app;
+
+
+--
+-- Name: COLUMN platform_icon_versions.ever_published; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(ever_published) ON TABLE app.platform_icon_versions TO couli_app;
+
+
+--
+-- Name: COLUMN platform_icon_versions.revision; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(revision) ON TABLE app.platform_icon_versions TO couli_app;
+
+
+--
+-- Name: TABLE platform_icons; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.platform_icons TO couli_app;
+GRANT SELECT ON TABLE app.platform_icons TO couli_readonly;
+
+
+--
 -- Name: TABLE platforms; Type: ACL; Schema: app; Owner: -
 --
 
@@ -6975,6 +7232,77 @@ GRANT INSERT(amount_fen) ON TABLE app.risk_hits TO couli_app;
 --
 
 GRANT INSERT(created_at) ON TABLE app.risk_hits TO couli_app;
+
+
+--
+-- Name: TABLE risk_judgements; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT ON TABLE app.risk_judgements TO couli_app;
+GRANT SELECT ON TABLE app.risk_judgements TO couli_readonly;
+
+
+--
+-- Name: COLUMN risk_judgements.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(app_id) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.rule_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(rule_id) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.ref_type; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(ref_type) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.ref_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(ref_id) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(user_id) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.marked; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(marked) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(result) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.judged_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(judged_at) ON TABLE app.risk_judgements TO couli_app;
+
+
+--
+-- Name: COLUMN risk_judgements.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT(created_at) ON TABLE app.risk_judgements TO couli_app;
 
 
 --

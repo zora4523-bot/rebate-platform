@@ -26,6 +26,8 @@ describe('loadConfig', () => {
       keyring: null,
       jwt: null,
       trustedProxies: [],
+      adminAuth: null,
+      mediaPublicBaseUrl: 'https://media.local.invalid',
     });
   });
 
@@ -59,6 +61,7 @@ describe('loadConfig', () => {
       keyring: { provider: 'kms', keyringFile: '/srv/couli/keyring.json' },
       jwt: null,
       trustedProxies: ['198.51.100.0/24', '2001:db8::1'],
+      adminAuth: null,
     });
   });
 

@@ -376,7 +376,8 @@ it('[AC-B1-01c#11] boxed primitives are unboxed before free-text redaction', () 
   );
   expect(records()[0]).toMatchObject({
     message: `手机号${REDACTED}`,
-    nested: { stack: [REDACTED, REDACTED, true, '[Unserializable]'] },
+    // An overridden valueOf is ignored: the intrinsic primitive is written by the rules.
+    nested: { stack: [REDACTED, REDACTED, true, REDACTED] },
     amount_fen: 123,
     enabled: false,
   });
@@ -565,4 +566,80 @@ it('[AC-B1-01c#18] err text propagates to descendants while actual Error codes r
   expect(records()[0]?.['err']).toEqual({ status: '500', detail: [REDACTED, true] });
   expect(records()[1]).toMatchObject({ err: { code: 500 }, nested: { err: REDACTED } });
   expect(records()[2]?.['err']).toEqual({ type: 'Error', message: 'failure', code: '500' });
+});
+
+it('[AC-B1-01zu#1] an overridden valueOf on a boxed primitive cannot expose its returned object', () => {
+  const { logger, lines, records } = capture();
+  const boxed = Object(7) as object;
+  Object.defineProperty(boxed, 'valueOf', {
+    value: () => ({ contact: '13987654321', toJSON: () => ({ hidden: '13987654321' }) }),
+  });
+  logger.info({ payload: boxed, list: [boxed], message: Object('手机号13987654321') }, 'event');
+  logger.child({ payload: boxed }).info('bound');
+  expect(records()[0]).toMatchObject({ payload: 7, list: [7], message: `手机号${REDACTED}` });
+  expect(records()[1]).toMatchObject({ payload: 7 });
+  expect(lines.join('')).not.toContain('13987654321');
+});
+
+it('[AC-B1-01zu#2] Error properties keep types but never write personal data, ignoring Error toJSON', () => {
+  const { logger, lines, records } = capture();
+  class ResponseError extends Error {
+    readonly code = 502;
+    readonly response = {
+      status: 400,
+      data: { contact: '13987654321', mail: 'a.b@example.cn', n: 13987654321, id: 'order-1' },
+    };
+    toJSON() {
+      return { message: this.message };
+    }
+  }
+  const failure = new ResponseError('failed');
+  logger.error({ err: failure }, 'error');
+  logger.child({ ctx: { failure } }).error('bound');
+  const expected = {
+    type: 'ResponseError',
+    message: 'failed',
+    code: 502,
+    response: {
+      status: 400,
+      data: { contact: REDACTED, mail: REDACTED, n: REDACTED, id: 'order-1' },
+    },
+  };
+  expect(records()[0]?.['err']).toMatchObject(expected);
+  expect(records()[1]).toMatchObject({ ctx: { failure: expected } });
+  expect(lines.join('')).not.toContain('13987654321');
+  expect(lines.join('')).not.toContain('a.b@example.cn');
+});
+
+it('[AC-B1-01zu#3] a formatter rebuilding an Error copy keeps numeric codes; changed copies are free text', () => {
+  const { logger, records } = capture();
+  const error = Object.assign(new Error('failure'), { code: 503 });
+  const rebuild = logger.child(
+    {},
+    {
+      formatters: {
+        log: (record) => ({
+          ...record,
+          err: { ...((record as Record<string, unknown>)['err'] as object) },
+        }),
+      },
+    },
+  );
+  const extend = logger.child(
+    {},
+    {
+      formatters: {
+        log: (record) => ({
+          ...record,
+          err: { ...((record as Record<string, unknown>)['err'] as object), extra: 1 },
+        }),
+      },
+    },
+  );
+  rebuild.error({ err: error }, 'rebuilt');
+  rebuild.child({}).error({ err: error }, 'inherited');
+  extend.error({ err: error }, 'extended');
+  expect(records()[0]?.['err']).toMatchObject({ type: 'Error', code: 503 });
+  expect(records()[1]?.['err']).toMatchObject({ type: 'Error', code: 503 });
+  expect(records()[2]?.['err']).toMatchObject({ code: '503', extra: '1' });
 });

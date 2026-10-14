@@ -1,41 +1,42 @@
-// BR-ID-37 同设备多账号 (task B1-03k §9.2, §9.4): judged when a withdrawal is accepted (and, later,
-// when a reward is granted). Identity implements SameDeviceLoginReader (login_logs, users,
-// user_oauth are its tables); the ranking, the merge tombstone dedupe, the threshold and the
-// configuration fallbacks are risk's (../domain/same-device-ranking.ts).
+// BR-ID-37 同设备多账号 (tasks B1-03k, B1-03n): judged when a withdrawal is accepted (and, later,
+// when a reward is granted), once per judged object. Identity implements SameDeviceLoginReader
+// (login_logs, users, user_oauth are its tables); the ranking, the merge tombstone dedupe, the
+// threshold and the configuration fallbacks are risk's (../domain/same-device-ranking.ts).
 //
-// judge(handle, input): the window is [at − 720 h, at], both ends closed, where `at` is the
-// judgement instant. Every read (configuration included) and every write goes through the caller's
-// handle, so the hit rows commit or roll back with the caller's transaction and no pooled
-// connection is borrowed. A rank ≥ risk.device_login_accounts_limit (default 3) on any device marks
-// the subject; each marked device gets one risk_hits row (rule SAME_DEVICE_MULTI_ACCOUNT,
-// manual_review, dimension device, value_hmac = the device_hash, ref = the withdrawal). The rule row
-// is created first (ON CONFLICT DO NOTHING). Nothing else is written: no user state, no session, no
-// ban (BR-ID-37: marking only).
+// judge(handle, input): the window is [at − 720 h, at], both ends closed, where `at` is the Clock's
+// now at the first judgement. A rank ≥ risk.device_login_accounts_limit (default 3) on any device
+// marks the subject; each marked device gets one risk_hits row (rule SAME_DEVICE_MULTI_ACCOUNT,
+// manual_review, dimension device, value_hmac = the device_hash, ref = the withdrawal). Nothing
+// else is written: no user state, no session, no ban (BR-ID-37: marking only).
 //
-// Serialisation: inside the caller's transaction judge() first takes a transaction-level advisory
-// lock on (app_id, ref_type, ref_id) (pg_advisory_xact_lock, the B1-03f identity devices pattern),
-// then looks for prior hits, ranks and writes. Two judgements of one withdrawal therefore run one
-// after the other: the later one starts after the earlier one's transaction ended, so it sees the
-// committed hit rows and replays instead of ranking at a newer instant (which could add a device
-// that only became a hit later). Other withdrawals are never blocked. Outside a transaction (no
-// transactional entry point) the lock would be released at the end of its own statement, so it is
-// not taken; that path relies on the unique index and the re-read below.
+// One conclusion per judged object (B1-03n): the first judgement, marked or not, inserts one
+// app.risk_judgements row keyed by (app_id, rule_id, ref_type, ref_id) (unique constraint
+// risk_judgements_ref_key) whose `result` is the full answer, devices and ranks included. Every
+// later judgement of the same object returns that stored `result` verbatim: no configuration read,
+// no login read, no ranking, no write. So a configuration read that failed (and fell back to the
+// defaults) at the first judgement cannot be contradicted by a retry that reads the real values,
+// and a window that slid or accounts merged since do not change the answer. B1-03k risk_hits rows
+// without a judgement row are not replayed (and not backfilled): such a ref is judged afresh.
 //
-// Replays: a withdrawal judged and marked once keeps its answer. judge() first looks for this
-// rule's risk_hits rows on the same ref; when there are some, `at` is their created_at (the Clock
-// instant of the first judgement) instead of the Clock's now, nothing is written and the answer is
-// marked (login_logs is insert-only and the window's upper end is fixed, so the ranking is the
-// first one even after the window has slid). Otherwise `at` is the Clock's now. A concurrent
-// judgement that loses the insert race (risk_hits_same_device_once_key, ON CONFLICT DO NOTHING)
-// re-reads the winner's instant the same way (a fallback for the unlocked path). An unmarked first
-// judgement leaves no record.
+// Transactions: every read (configuration included) and write runs in one transaction. A
+// transaction handle is used as is, so the rows commit or roll back with the caller's work; any
+// other handle gets its own read committed transaction around the whole judgement. Inside it,
+// judge() first refuses repeatable read and serializable (SameDeviceIsolationError: a snapshot
+// taken before the lock would miss a judgement committed while waiting for it), then takes a
+// transaction-level advisory lock on (app_id, ref_type, ref_id), then looks up the stored
+// judgement. Two judgements of one object therefore run one after the other and the later one
+// replays. The rule row is registered first (ON CONFLICT DO NOTHING; the judgement row references
+// it), then the judgement row is inserted ON CONFLICT DO NOTHING before any hit row: when a
+// concurrent writer that bypassed the lock committed the judgement first, nothing is inserted, no
+// hit row is written and the stored result is re-read and returned.
 //
 // Configuration: risk.device_login_accounts_limit is a safe positive integer, else 3;
 // risk.merge_tombstone_dedupe is a JSON boolean, else on. A malformed value or a failed read logs
-// one warn line (key only, no value). Inside the caller's transaction each read runs under a
-// savepoint, so a statement-level failure (a statement timeout, say) is rolled back to it and the
-// transaction stays usable for the default; connection-level failures (SQLSTATE classes 08 and
-// 57P) are rethrown.
+// one warn line (key only, no value) and uses the default (BR: unconfigured means the default; the
+// conclusion is persisted, so a retry replays it). Each read runs under a savepoint, so a
+// statement-level failure (a statement timeout, say) is rolled back to it and the transaction
+// stays usable for the default; connection-level failures (SQLSTATE classes 08 and 57P) are
+// rethrown.
 //
 // Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
 // for type-only imports, relative imports with `.ts`.
@@ -94,7 +95,7 @@ export interface SameDeviceAccountsOptions {
   readonly clock: Clock;
   readonly logger: RootLogger;
   readonly logins: SameDeviceLoginReader;
-  /** Bind the existing configuration port to the caller's handle; no pooled reads. */
+  /** Bind the existing configuration port to the judging transaction; no pooled reads. */
   readonly config: (handle: Kysely<DB>) => RateLimitConfigReader;
 }
 
@@ -125,6 +126,37 @@ function unrecoverable(error: unknown): boolean {
 
 const CONFIG_SAVEPOINT = sql.raw('same_device_config');
 
+/** Snapshot isolation levels under which the lookup after the lock could miss a commit. */
+const SNAPSHOT_ISOLATION: ReadonlySet<string> = new Set(['repeatable read', 'serializable']);
+
+/** judge() was called inside a repeatable read or serializable transaction. */
+export class SameDeviceIsolationError extends Error {
+  constructor(isolation: string) {
+    super(`same-device judgement needs read committed, not ${isolation}`);
+    this.name = 'SameDeviceIsolationError';
+  }
+}
+
+/** A stored risk_judgements.result as the judge's answer; throws on a malformed value. */
+function storedResult(value: unknown): SameDeviceAccountsResult {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const { marked, devices } = value as { marked?: unknown; devices?: unknown };
+    if (typeof marked === 'boolean' && Array.isArray(devices)) {
+      const parsed: { device_hash: string; rank: number }[] = [];
+      for (const device of devices as unknown[]) {
+        if (typeof device !== 'object' || device === null) break;
+        const { device_hash: hash, rank } = device as { device_hash?: unknown; rank?: unknown };
+        if (typeof hash !== 'string' || typeof rank !== 'number' || !Number.isSafeInteger(rank)) {
+          break;
+        }
+        parsed.push({ device_hash: hash, rank });
+      }
+      if (parsed.length === devices.length) return { marked, devices: parsed };
+    }
+  }
+  throw new Error('same-device judgement: stored result malformed');
+}
+
 export function createSameDeviceAccountsCheck(
   options: SameDeviceAccountsOptions,
 ): SameDeviceAccountsCheck {
@@ -132,30 +164,27 @@ export function createSameDeviceAccountsCheck(
 
   /**
    * The stored value of one key; undefined when missing. A failed read logs and is undefined,
-   * except a connection-level failure, which is rethrown. Inside a transaction the read runs under
-   * a savepoint so that a failed statement does not abort the caller's transaction.
+   * except a connection-level failure, which is rethrown. The read runs under a savepoint (judge
+   * always runs in a transaction) so that a failed statement does not abort the transaction.
    */
   async function configured(
-    handle: Kysely<DB>,
+    trx: Kysely<DB>,
     reader: RateLimitConfigReader,
     appId: string,
     key: string,
   ): Promise<{ readonly found: boolean; readonly value: unknown }> {
-    const guarded = handle.isTransaction;
-    if (guarded) await sql`SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(handle);
+    await sql`SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(trx);
     let found: Awaited<ReturnType<RateLimitConfigReader['configValue']>>;
     try {
       found = await reader.configValue(appId, key);
     } catch (error) {
       if (unrecoverable(error)) throw error;
-      if (guarded) {
-        await sql`ROLLBACK TO SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(handle);
-        await sql`RELEASE SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(handle);
-      }
+      await sql`ROLLBACK TO SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(trx);
+      await sql`RELEASE SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(trx);
       logger.warn({ app_id: appId, key }, 'same_device_config_unavailable');
       return { found: false, value: undefined };
     }
-    if (guarded) await sql`RELEASE SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(handle);
+    await sql`RELEASE SAVEPOINT ${CONFIG_SAVEPOINT}`.execute(trx);
     return found === null
       ? { found: false, value: undefined }
       : { found: true, value: found.value };
@@ -184,43 +213,53 @@ export function createSameDeviceAccountsCheck(
     return { limit, dedupe };
   }
 
-  /** Transaction-level lock of one judged ref; held until the caller's transaction ends. */
-  async function lockRef(handle: Kysely<DB>, input: SameDeviceAccountsInput): Promise<void> {
+  /** Transaction-level lock of one judged ref; held until the transaction ends. */
+  async function lockRef(trx: Kysely<DB>, input: SameDeviceAccountsInput): Promise<void> {
     await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`risk.same_device:${input.app_id}:${input.ref.type}:${input.ref.id}`}, 0))`.execute(
-      handle,
+      trx,
     );
   }
 
-  /** The instant of an earlier judgement of this ref that wrote hit rows; null when none. */
-  async function judgedAt(
-    handle: Kysely<DB>,
+  /** Refuses the snapshot isolation levels, before the lock (as identity's registration does). */
+  async function requireReadCommitted(trx: Kysely<DB>): Promise<void> {
+    const { rows } = await sql<{
+      isolation: string;
+    }>`SELECT current_setting('transaction_isolation') AS isolation`.execute(trx);
+    const isolation = rows[0]?.isolation;
+    if (typeof isolation !== 'string') {
+      throw new Error('same-device judgement: transaction_isolation unread');
+    }
+    if (SNAPSHOT_ISOLATION.has(isolation)) throw new SameDeviceIsolationError(isolation);
+  }
+
+  /** The stored conclusion of this ref; null when it was never judged. */
+  async function stored(
+    trx: Kysely<DB>,
     input: SameDeviceAccountsInput,
-  ): Promise<Date | null> {
-    const prior = await handle
+  ): Promise<SameDeviceAccountsResult | null> {
+    const row = await trx
       .withSchema('app')
-      .selectFrom('risk_hits')
-      .select('created_at')
+      .selectFrom('risk_judgements')
+      .select('result')
       .where('app_id', '=', input.app_id)
       .where('rule_id', '=', RULE_ID)
       .where('ref_type', '=', input.ref.type)
       .where('ref_id', '=', input.ref.id)
-      .orderBy('created_at')
-      .limit(1)
       .executeTakeFirst();
-    return prior === undefined ? null : prior.created_at;
+    return row === undefined ? null : storedResult(row.result);
   }
 
   /** Ranks every device the subject used in the window [at − 720 h, at]. */
   async function rank(
-    handle: Kysely<DB>,
+    trx: Kysely<DB>,
     input: SameDeviceAccountsInput,
     at: Date,
   ): Promise<{
     readonly devices: SameDeviceAccountsResult['devices'];
     readonly hit: SameDeviceAccountsResult['devices'];
   }> {
-    const { limit, dedupe } = await settings(handle, input.app_id);
-    const rows = await logins.read(handle, {
+    const { limit, dedupe } = await settings(trx, input.app_id);
+    const rows = await logins.read(trx, {
       app_id: input.app_id,
       user_id: input.user_id,
       window_start: earlierBy(at, WINDOW_MS),
@@ -230,81 +269,99 @@ export function createSameDeviceAccountsCheck(
     return { devices, hit: devices.filter((device) => device.rank >= limit) };
   }
 
-  /** Answer of a ref already marked at `at`: the first ranking, no write. */
-  async function replay(
-    handle: Kysely<DB>,
+  /** The whole judgement inside one transaction (the caller's or judge's own). */
+  async function judgeIn(
+    trx: Kysely<DB>,
     input: SameDeviceAccountsInput,
-    at: Date,
   ): Promise<SameDeviceAccountsResult> {
-    const { devices } = await rank(handle, input, at);
-    return { marked: true, devices };
+    await requireReadCommitted(trx);
+    await lockRef(trx, input);
+    const prior = await stored(trx, input);
+    if (prior !== null) return prior;
+    const now = clock.now();
+    const { devices, hit } = await rank(trx, input, now);
+    const result: SameDeviceAccountsResult = { marked: hit.length > 0, devices };
+    const app = trx.withSchema('app');
+    // The judgement row references the rule row, so it is registered whatever the conclusion.
+    await app
+      .insertInto('risk_rules')
+      .values({
+        id: newUuidV7(now),
+        app_id: input.app_id,
+        rule_id: RULE_ID,
+        scene: 'withdrawal',
+        conditions: sql`'{}'::jsonb`,
+        risk_action: RISK_ACTION,
+        status: 'active',
+        version: 1,
+        created_at: now,
+        updated_at: now,
+      })
+      .onConflict((oc) => oc.columns(['app_id', 'rule_id']).doNothing())
+      .execute();
+    // The judgement row first: a loser of the unique constraint writes no hit row.
+    const judged = await app
+      .insertInto('risk_judgements')
+      .values({
+        app_id: input.app_id,
+        rule_id: RULE_ID,
+        ref_type: input.ref.type,
+        ref_id: input.ref.id,
+        user_id: input.user_id,
+        marked: result.marked,
+        result: sql`CAST(${JSON.stringify(result)} AS jsonb)`,
+        judged_at: now,
+      })
+      .onConflict((oc) => oc.columns(['app_id', 'rule_id', 'ref_type', 'ref_id']).doNothing())
+      .returning('id')
+      .execute();
+    if (judged.length === 0) {
+      // Another writer committed this ref's judgement first: its conclusion is the answer.
+      const winner = await stored(trx, input);
+      if (winner === null) throw new Error('same-device judgement: conflicting row unread');
+      return winner;
+    }
+    if (hit.length === 0) return result;
+    // One statement, rows in device_hash order: concurrent judgements lock keys in one order.
+    await app
+      .insertInto('risk_hits')
+      .values(
+        hit.map((device) => ({
+          app_id: input.app_id,
+          user_id: input.user_id,
+          rule_id: RULE_ID,
+          risk_action: RISK_ACTION,
+          dimension: 'device',
+          value_hmac: device.device_hash,
+          ref_type: input.ref.type,
+          ref_id: input.ref.id,
+          created_at: now,
+        })),
+      )
+      // No conflict target: the only unique index a same-device row can meet besides the
+      // identity key is the partial risk_hits_same_device_once_key (a B1-03k row of this ref).
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+    logger.info(
+      {
+        app_id: input.app_id,
+        rule_id: RULE_ID,
+        ref_type: input.ref.type,
+        ref_id: input.ref.id,
+        devices: hit.length,
+      },
+      'risk_same_device_multi_account',
+    );
+    return result;
   }
 
   return {
     async judge(handle, input) {
-      if (handle.isTransaction) await lockRef(handle, input);
-      const prior = await judgedAt(handle, input);
-      if (prior !== null) return replay(handle, input, prior);
-      const now = clock.now();
-      const { devices, hit } = await rank(handle, input, now);
-      if (hit.length === 0) return { marked: false, devices };
-      const app = handle.withSchema('app');
-      await app
-        .insertInto('risk_rules')
-        .values({
-          id: newUuidV7(now),
-          app_id: input.app_id,
-          rule_id: RULE_ID,
-          scene: 'withdrawal',
-          conditions: sql`'{}'::jsonb`,
-          risk_action: RISK_ACTION,
-          status: 'active',
-          version: 1,
-          created_at: now,
-          updated_at: now,
-        })
-        .onConflict((oc) => oc.columns(['app_id', 'rule_id']).doNothing())
-        .execute();
-      // One statement, rows in device_hash order: concurrent judgements lock keys in one order.
-      const inserted = await app
-        .insertInto('risk_hits')
-        .values(
-          hit.map((device) => ({
-            app_id: input.app_id,
-            user_id: input.user_id,
-            rule_id: RULE_ID,
-            risk_action: RISK_ACTION,
-            dimension: 'device',
-            value_hmac: device.device_hash,
-            ref_type: input.ref.type,
-            ref_id: input.ref.id,
-            created_at: now,
-          })),
-        )
-        // No conflict target: the only unique index a same-device row can meet besides the
-        // identity key is the partial risk_hits_same_device_once_key (inferring a partial index
-        // from a parameterised predicate is not reliable).
-        .onConflict((oc) => oc.doNothing())
-        .returning('id')
-        .execute();
-      if (inserted.length < hit.length) {
-        // A concurrent judgement of this ref committed first: answer with its instant.
-        const winner = await judgedAt(handle, input);
-        if (winner !== null && winner.getTime() !== now.getTime()) {
-          return replay(handle, input, winner);
-        }
-      }
-      logger.info(
-        {
-          app_id: input.app_id,
-          rule_id: RULE_ID,
-          ref_type: input.ref.type,
-          ref_id: input.ref.id,
-          devices: hit.length,
-        },
-        'risk_same_device_multi_account',
-      );
-      return { marked: true, devices };
+      if (handle.isTransaction) return judgeIn(handle, input);
+      return handle
+        .transaction()
+        .setIsolationLevel('read committed')
+        .execute((trx) => judgeIn(trx, input));
     },
   };
 }

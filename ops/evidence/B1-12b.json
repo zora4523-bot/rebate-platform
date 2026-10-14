@@ -1,0 +1,125 @@
+{
+  "risk_note": "RV2 by the PR (app.module.ts and the new apps/api/src/modules/notification/** are not yet listed until gate PR #365 registers notification as RV1; identity/** is RV1; rule tests under test/**). Default split (ops/approvals.yaml id 19): rule tests by Codex (3 attempts: round 1 failed the Claude spec review with 2 S1 for fixture-injected hooks; round 3 only fixed logout-http.int.test.ts, whose 4 cases had been rejected with 400/20001 before reaching logout because the fixture's random app id went into x-app-id, found by CI; red run re-done and reviewed), implementation by a Claude Opus subagent (1 attempt, cherry-picked unchanged onto the fixed spec commit). Push tokens are bound in the session-creating transaction and unbound by a conditional (app_id, user_id, bound_sid) update in the same transaction as logout, refresh-reuse revocation and revocation by user / device; identity defines a port and app.module wires notification into it (no identity -> notification import). Local container verify:fast could not finish (host load 40-600, timeouts in unrelated tests); full verification by the required CI checks (approvals id 21). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist (rounding / sign / partial_refund n/a; idempotency, concurrency, clock, app_id ok): conditional bind / unbind, same-transaction rollback, all session-creating and session-ending paths wired, dependency direction, Nest function-object provider tokens, row_version CAS; 1 S2 (forRoot without pushTokens is silently a no-op) and 3 out-of-scope items to follow-ups"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh read-only Codex session, not the implementer: pass with no findings; the implementation reviewed (53025e1) is byte-identical under apps/ to the landed one (cherry-picked onto the fixed spec commit)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by fresh Claude subagents: round 1 fail (2 S1: login binding and refresh-reuse unbinding were driven by fixture-supplied hooks, not the real assembly), round 2 pass (2 S2 turned into implementation requirements), round 3 pass on the logout-http fix (requests now reach logout; red for asserted reasons)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-12b",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "cacbef0f9c81f5dba641a09bcb10bb86bc99cd5b",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "cacbef0f9c81f5dba641a09bcb10bb86bc99cd5b",
+      "tree": "c83effddc30c4c1535853c424b97f3b0bd77df46",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-10T02:27:04Z",
+      "finished_at": "2026-10-10T02:27:27Z",
+      "red_tests": [
+        "test/spec/notification/session-binding/assembled-login.int.test.ts > [BR-ID-07][AC-S1-76#6] 真实短信new账号登录绑定已有令牌，同设备换账号更新代际",
+        "test/spec/notification/session-binding/assembled-login.int.test.ts > [BR-ID-07][AC-S1-76#6] 真实短信existing账号登录绑定已有令牌，同设备换账号更新代际",
+        "test/spec/notification/session-binding/assembled-login.int.test.ts > [BR-ID-07][AC-S1-76#15] 真实登录在冻结期内不绑定，到冻结边界的新登录才绑定",
+        "test/spec/notification/session-binding/assembled-login.int.test.ts > [BR-ID-07][AC-S1-76#6] S1登录后S2再次登录，S1正常HTTP刷新不得抢回S2绑定",
+        "test/spec/notification/session-binding/assembled-login.int.test.ts > [BR-ID-07][AC-S1-76#6] 真实登录绑定遇到PG写失败，设备代际、会话、refresh一起回滚",
+        "test/spec/notification/session-binding/assembled-refresh.int.test.ts > [BR-ID-07][AC-S1-76#2] HTTP复用检测10404解绑当前设备，其他设备不变，重新登录恢复",
+        "test/spec/notification/session-binding/assembled-refresh.int.test.ts > [BR-ID-07][AC-S1-76#6] same账号真实新登录后，旧会话HTTP复用吊销保留新绑定",
+        "test/spec/notification/session-binding/assembled-refresh.int.test.ts > [BR-ID-07][AC-S1-76#6] other账号真实新登录后，旧会话HTTP复用吊销保留新绑定",
+        "test/spec/notification/session-binding/assembled-refresh.int.test.ts > [BR-ID-07][AC-S1-76#2] HTTP logout解绑的PG写失败使吊销回滚，解除故障后才吊销",
+        "test/spec/notification/session-binding/assembled-refresh.int.test.ts > [BR-ID-07][AC-S1-76#2] HTTP reuse解绑的PG写失败使吊销回滚，解除故障后才吊销",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts > [BR-ID-07][AC-S1-76#3][AC-S1-76#5] 装配后的按用户banned入口解绑全部设备，保留换账号后的新绑定",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts > [BR-ID-07][AC-S1-76#3][AC-S1-76#5] 装配后的按用户merged入口解绑全部设备，保留换账号后的新绑定",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts > [BR-ID-07][AC-S1-76#3][AC-S1-76#5] 装配后的按用户admin_revoked入口解绑全部设备，保留换账号后的新绑定",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts > [BR-ID-07][AC-S1-76#2] 装配后的按设备入口吊销该设备历史账号sid，另一设备保持绑定",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts > [BR-ID-07][AC-S1-76#3] 装配后的按user吊销遇到PG写失败，所有会话和令牌一起回滚",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts > [BR-ID-07][AC-S1-76#3] 装配后的按user吊销在调用方事务内可见，调用方失败则解绑一并回滚",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts > [BR-ID-07][AC-S1-76#3] 装配后的按device吊销遇到PG写失败，所有会话和令牌一起回滚",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts > [BR-ID-07][AC-S1-76#3] 装配后的按device吊销在调用方事务内可见，调用方失败则解绑一并回滚",
+        "test/spec/notification/session-binding/binding.int.test.ts > [AC-S1-76#6][BR-ID-07] same账号重新登录绑定已有令牌，其他设备保持原样",
+        "test/spec/notification/session-binding/binding.int.test.ts > [AC-S1-76#6][BR-ID-07] other账号重新登录绑定已有令牌，其他设备保持原样",
+        "test/spec/notification/session-binding/binding.int.test.ts > [AC-S1-76#15][BR-ID-07] 登录绑定使用Clock判断冻结期：future",
+        "test/spec/notification/session-binding/binding.int.test.ts > [AC-S1-76#15][BR-ID-07] 登录绑定使用Clock判断冻结期：equal",
+        "test/spec/notification/session-binding/binding.int.test.ts > [AC-S1-76#15][BR-ID-07] 登录绑定使用Clock判断冻结期：past",
+        "test/spec/notification/session-binding/binding.int.test.ts > [BR-ID-07][AC-S1-76#6] 没有令牌行时不创建；已作废行不恢复也不绑定",
+        "test/spec/notification/session-binding/binding.int.test.ts > [BR-ID-07][AC-S1-76#6] 同设备不同provider的有效令牌都绑定；其他app不受影响",
+        "test/spec/notification/session-binding/binding.int.test.ts > [BR-ID-07][AC-S1-76#6] 绑定在创建会话的同一事务可见，调用方失败则四处写入一起回滚",
+        "test/spec/notification/session-binding/binding.int.test.ts > [BR-ID-07][AC-S1-76#6] 真实PG同设备并发登录完成后，绑定属于最后一次登录",
+        "test/spec/notification/session-binding/binding.int.test.ts > [BR-ID-07][AC-S1-76#6] 登录绑定写失败时，设备代际、会话和refresh全部回滚",
+        "test/spec/notification/session-binding/logout-http.int.test.ts > [BR-ID-07][AC-S1-76#2] 真实HTTP退出经AppModule解绑当前sid，另一设备不受影响",
+        "test/spec/notification/session-binding/logout-http.int.test.ts > [BR-ID-07][AC-S1-76#6] same账号新登录后，HTTP退出旧sid保留新绑定，退出新sid才清空",
+        "test/spec/notification/session-binding/logout-http.int.test.ts > [BR-ID-07][AC-S1-76#6] other账号新登录后，HTTP退出旧sid保留新绑定，退出新sid才清空",
+        "test/spec/notification/session-binding/logout-http.int.test.ts > [BR-ID-07][AC-S1-76#2] 真实HTTP退出遇到令牌写失败时，会话吊销必须回滚",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#2] 正常刷新不换sid、不重绑；复用吊销后解绑，再登录恢复",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#6] same账号新登录后才检测到旧refresh复用，新会话绑定保留",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#6] other账号新登录后才检测到旧refresh复用，新会话绑定保留",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#2] 复用检测解绑写失败时吊销回滚，修复后可再次吊销并解绑",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#3][AC-S1-76#5] 按用户banned吊销全部sid，解绑全部设备，保留其他用户",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#3][AC-S1-76#5] 按用户merged吊销全部sid，解绑全部设备，保留其他用户",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#3][AC-S1-76#5] 按用户admin_revoked吊销全部sid，解绑全部设备，保留其他用户",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#2] 按设备吊销该设备全部历史账号sid，另一台设备仍绑定",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#3] 按user吊销时解绑失败，全部会话与令牌修改回滚",
+        "test/spec/notification/session-binding/revocation.int.test.ts > [BR-ID-07][AC-S1-76#3] 按device吊销时解绑失败，全部会话与令牌修改回滚",
+        "test/spec/notification/session-binding/unbinding.int.test.ts > [BR-ID-07][AC-S1-76#2] 匹配用户与sid时清空两列，保留令牌行和值；重复命令无副作用",
+        "test/spec/notification/session-binding/unbinding.int.test.ts > [BR-ID-07][AC-S1-76#6] 条件解绑的user不匹配时整行不变",
+        "test/spec/notification/session-binding/unbinding.int.test.ts > [BR-ID-07][AC-S1-76#6] 条件解绑的sid不匹配时整行不变",
+        "test/spec/notification/session-binding/unbinding.int.test.ts > [BR-ID-07][AC-S1-76#6] 条件解绑的app不匹配时整行不变",
+        "test/spec/notification/session-binding/unbinding.int.test.ts > [BR-ID-07][AC-S1-76#6] same账号新登录后旧会话迟到解绑不影响新绑定",
+        "test/spec/notification/session-binding/unbinding.int.test.ts > [BR-ID-07][AC-S1-76#6] other账号新登录后旧会话迟到解绑不影响新绑定",
+        "test/spec/notification/session-binding/unbinding.int.test.ts > [BR-ID-07][AC-S1-76#2] 同用户另一台设备的绑定不被当前会话解绑清除",
+        "test/spec/notification/session-binding/unbinding.int.test.ts > [BR-ID-07][AC-S1-76#2] 条件解绑服从调用方事务，失败回滚保留原绑定"
+      ],
+      "expected": [
+        "test/spec/notification/session-binding/assembled-login.int.test.ts",
+        "test/spec/notification/session-binding/assembled-refresh.int.test.ts",
+        "test/spec/notification/session-binding/assembled-revocations.int.test.ts",
+        "test/spec/notification/session-binding/binding.int.test.ts",
+        "test/spec/notification/session-binding/logout-http.int.test.ts",
+        "test/spec/notification/session-binding/revocation.int.test.ts",
+        "test/spec/notification/session-binding/unbinding.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e03f8ac92725ce1b98d443dad93c0fd4b6f4da46e05b0babfa95910bb1bc0c36"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "09b78508a2c074318a74781bb8e73c2b43ca2096",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  }
+}

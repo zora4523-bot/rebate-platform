@@ -16,6 +16,7 @@ import {
   redactPath,
   redactRecord,
   redactValue,
+  retainErrorCopies,
   stringifyValue,
   type FieldSerializers,
 } from './redaction.ts';
@@ -163,7 +164,13 @@ export function createRootLogger(
             bindingFormatter ? bindingFormatter(value) : value,
             withoutMessage(serializers),
           ),
-        log: (value) => redactRecord(logFormatter ? logFormatter(value) : value),
+        log: (value) => {
+          if (!logFormatter) return redactRecord(value);
+          const formatted = logFormatter(value);
+          // A rebuilt copy of an Error copy keeps its numeric code (addenda I/L).
+          attempt(() => retainErrorCopies(value, formatted));
+          return redactRecord(formatted);
+        },
       },
     });
     configurations.set(result, serializers);
