@@ -1,0 +1,160 @@
+{
+  "task": "B1-06i",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "cfb0d10ccf56673d094ead4781b9ab5c7544d475",
+  "red_tests": [
+    "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#7] 淘宝 absent → 30101，返回完整授权数据，失败只写 convert 日志",
+    "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#7] 淘宝 invalid → 30102，返回完整授权数据，失败只写 convert 日志",
+    "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#8] 拼多多未备案 → 30111，携带 auth_jump，不转链且不创建 attempt",
+    "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#9] taobao blocked → 30153，不能通过 convert 绕过 open 的停用判定",
+    "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#9] pdd blocked → 30153，不能通过 convert 绕过 open 的停用判定",
+    "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#10] 复核依赖失败 → 50303，不能把刚登记的价格当作成功",
+    "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#11] 平台转链开关关闭 → 50301，同 open 拒绝并记录 convert 失败",
+    "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#12] 游客 → 10001，不登记、不解析、不转链",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#16] POST convert 已注册并传递契约参数，完整响应通过契约校验",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#17] URL 入口合法；installed 缺省按 unknown 传递",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"h5\",\"url\":\"https://jd.example.test/product/12345\"} → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"scene\":\"h5\"} → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"share\"} → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"search\"} → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\"} → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"h5\",\"installed\":true} → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"h5\",\"user_id\":\"synthetic-attacker\"} → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"h5\",\"pid\":\"synthetic-attacker-pid\"} → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#19] 未登录 10001，真实 token 检查阻止请求进入 convert",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#20] 缺失 Idempotency-Key → 20001，不进入用例",
+    "test/spec/linking/convert/http.test.ts > [AC-B1-06i#21] 签名缺失不得进入 convert",
+    "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#13] 相同键重放保留 link_id、attempt_id 和原响应，不再登记、记日志或转链",
+    "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#14] 相同幂等键但请求体改变 {\"product_key\":\"jd:i_other\"} → 20901，无新增副作用",
+    "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#14] 相同幂等键但请求体改变 {\"spm\":\"synthetic.second.entry\"} → 20901，无新增副作用",
+    "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#14] 相同幂等键但请求体改变 {\"installed\":\"false\"} → 20901，无新增副作用",
+    "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#14] 相同幂等键但请求体改变 {\"item_ref\":\"synthetic-different-item-ref\"} → 20901，无新增副作用",
+    "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#15] 授权失败的旧键仍重放原状态；授权后新键才成功",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#1] jd 有效 item_ref：登记本人 H5 link、复核、convert 日志与同事务 attempt",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#1] pdd 有效 item_ref：登记本人 H5 link、复核、convert 日志与同事务 attempt",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#1] taobao 有效 item_ref：登记本人 H5 link、复核、convert 日志与同事务 attempt",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#2] item_ref missing 被忽略，从 product_refs 取原串，仍成功登记转链",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#2] item_ref invalid 被忽略，从 product_refs 取原串，仍成功登记转链",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#2] item_ref undecryptable 被忽略，从 product_refs 取原串，仍成功登记转链",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#2] item_ref foreign_app 被忽略，从 product_refs 取原串，仍成功登记转链",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#3] 同 app 签名有效但 product_key 不一致：20001，登记前拒绝",
+    "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#4] item_ref 原串优先于字典，用户归属仍取调用者",
+    "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#5] jd URL 经 parsing 派生登记；淘宝只回解析后的百川商品指令",
+    "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#5] pdd URL 经 parsing 派生登记；淘宝只回解析后的百川商品指令",
+    "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#5] taobao URL 经 parsing 派生登记；淘宝只回解析后的百川商品指令",
+    "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#6] URL unsupported → 30131，未登记 link、未生成 attempt、未转链",
+    "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#6] URL underivable → 30131，未登记 link、未生成 attempt、未转链"
+  ],
+  "risk_note": "RV2 (linking/**, app.module, openapi planned flag, route schemas; order attribution and user authorization through the shared open pipeline). POST /v1/links/convert (H5 entry without a link_id): inside one idempotent transaction registers the caller's own h5 link (pid_scene self_buy) and runs the same owner / authorization (Taobao, PDD filing, conflict log) / requote / conversion / Baichuan instruction path as open, returning link_id plus the open result. item_ref per BR-PROD-11 (missing / bad signature / undecryptable / foreign app ignored; product_key mismatch 20001); url through a linking-defined parse port satisfied by parsing and wired in app.module (unsupported or underivable 30131, nothing registered). link_logs event=convert for success and failure (link_id null when nothing was registered), attempt row only on success in the same transaction; upstream governance timeout / quota / circuit -> 50303 with a failure log. convertLink loses x-implementation: planned (route schemas regenerated, no shape change). Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "cfb0d10ccf56673d094ead4781b9ab5c7544d475",
+      "tree": "a80cc99f0fe152eac4f9fc8437f7e8989c7391d2",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T05:37:59Z",
+      "finished_at": "2026-10-14T05:38:13Z",
+      "gate": {
+        "commit": "248d431dffdbf2cb4341a8264159028d88701236",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#7] 淘宝 absent → 30101，返回完整授权数据，失败只写 convert 日志",
+        "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#7] 淘宝 invalid → 30102，返回完整授权数据，失败只写 convert 日志",
+        "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#8] 拼多多未备案 → 30111，携带 auth_jump，不转链且不创建 attempt",
+        "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#9] taobao blocked → 30153，不能通过 convert 绕过 open 的停用判定",
+        "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#9] pdd blocked → 30153，不能通过 convert 绕过 open 的停用判定",
+        "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#10] 复核依赖失败 → 50303，不能把刚登记的价格当作成功",
+        "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#11] 平台转链开关关闭 → 50301，同 open 拒绝并记录 convert 失败",
+        "test/spec/linking/convert/failures.int.test.ts > [AC-B1-06i#12] 游客 → 10001，不登记、不解析、不转链",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#16] POST convert 已注册并传递契约参数，完整响应通过契约校验",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#17] URL 入口合法；installed 缺省按 unknown 传递",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"h5\",\"url\":\"https://jd.example.test/product/12345\"} → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"scene\":\"h5\"} → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"share\"} → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"search\"} → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\"} → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"h5\",\"installed\":true} → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"h5\",\"user_id\":\"synthetic-attacker\"} → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#18] 非法请求 {\"platform\":\"jd\",\"product_key\":\"jd:i_12345\",\"scene\":\"h5\",\"pid\":\"synthetic-attacker-pid\"} → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#19] 未登录 10001，真实 token 检查阻止请求进入 convert",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#20] 缺失 Idempotency-Key → 20001，不进入用例",
+        "test/spec/linking/convert/http.test.ts > [AC-B1-06i#21] 签名缺失不得进入 convert",
+        "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#13] 相同键重放保留 link_id、attempt_id 和原响应，不再登记、记日志或转链",
+        "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#14] 相同幂等键但请求体改变 {\"product_key\":\"jd:i_other\"} → 20901，无新增副作用",
+        "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#14] 相同幂等键但请求体改变 {\"spm\":\"synthetic.second.entry\"} → 20901，无新增副作用",
+        "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#14] 相同幂等键但请求体改变 {\"installed\":\"false\"} → 20901，无新增副作用",
+        "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#14] 相同幂等键但请求体改变 {\"item_ref\":\"synthetic-different-item-ref\"} → 20901，无新增副作用",
+        "test/spec/linking/convert/idempotency.int.test.ts > [AC-B1-06i#15] 授权失败的旧键仍重放原状态；授权后新键才成功",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#1] jd 有效 item_ref：登记本人 H5 link、复核、convert 日志与同事务 attempt",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#1] pdd 有效 item_ref：登记本人 H5 link、复核、convert 日志与同事务 attempt",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#1] taobao 有效 item_ref：登记本人 H5 link、复核、convert 日志与同事务 attempt",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#2] item_ref missing 被忽略，从 product_refs 取原串，仍成功登记转链",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#2] item_ref invalid 被忽略，从 product_refs 取原串，仍成功登记转链",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#2] item_ref undecryptable 被忽略，从 product_refs 取原串，仍成功登记转链",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#2] item_ref foreign_app 被忽略，从 product_refs 取原串，仍成功登记转链",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#3] 同 app 签名有效但 product_key 不一致：20001，登记前拒绝",
+        "test/spec/linking/convert/product.int.test.ts > [AC-B1-06i#4] item_ref 原串优先于字典，用户归属仍取调用者",
+        "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#5] jd URL 经 parsing 派生登记；淘宝只回解析后的百川商品指令",
+        "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#5] pdd URL 经 parsing 派生登记；淘宝只回解析后的百川商品指令",
+        "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#5] taobao URL 经 parsing 派生登记；淘宝只回解析后的百川商品指令",
+        "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#6] URL unsupported → 30131，未登记 link、未生成 attempt、未转链",
+        "test/spec/linking/convert/url.int.test.ts > [AC-B1-06i#6] URL underivable → 30131，未登记 link、未生成 attempt、未转链"
+      ],
+      "expected": [
+        "test/spec/linking/convert/failures.int.test.ts",
+        "test/spec/linking/convert/http.test.ts",
+        "test/spec/linking/convert/idempotency.int.test.ts",
+        "test/spec/linking/convert/product.int.test.ts",
+        "test/spec/linking/convert/url.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a09e63ed61c5dcbf40bb6fd4f934658baa1a9498c7a9cd947284c6e8270f9ea2"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "a99c31cf88e08d4504dac820ad025ddee49e6f5d07354cbb5a691cc7c323b95c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail with one S1 (governance timeout / quota / circuit mapped to 500 instead of 50303), fixed in the second implementation run; round 2 'S1' was a stale-base artefact (main gained B1-01zt #401 during the review), rebased; round 3 pass with no findings (approvals 27: Codex only)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, 5 files, 41 tests). Orchestrator edits only to fixture preconditions: the tampered item_ref is split at the last dot (two-part cipher), and a later test(spec) commit serializes link_logs rows with a bigint-safe replacer (int8 columns read as BigInt); expectations unchanged."
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "c16d2c5dfc95142caa1b2e2a90d43361d83da204",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  }
+}
