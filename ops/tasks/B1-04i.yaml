@@ -10,7 +10,7 @@ type: impl
 # 状态映射 specs/order-status-map/pdd.csv 归 order-sync 任务。订单接口不压测（09 README §0.2 硬规则 5）。报文样例由规则测试作者按任务书附的字段清单自拟，值全部合成，不标 doc-derived，不拷贝私有录制的原文或掩码值（AGENTS §6）；经注入的内存传输喂给适配器；不新增 fixtures/union-recordings/ 场景。test_paths：test/spec/union/pdd-orders/**。整体 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-04h]
+deps: [B1-04g]
 paths:
   - 'apps/api/src/modules/union/infra/pdd/**'
   - 'apps/api/src/modules/union/domain/types.ts'

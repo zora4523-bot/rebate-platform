@@ -10,7 +10,7 @@ type: impl
 # 报文样例由规则测试作者按任务书附的字段清单自拟，值全部合成，不标 doc-derived，不拷贝私有录制的原文或掩码值（AGENTS §6）；经注入的内存传输喂给适配器；不新增 fixtures/union-recordings/ 场景。目录如 paths。test_paths：test/spec/union/pdd-convert/**。整体 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-04u]
+deps: [B1-04u, B1-04i]
 paths:
   - 'apps/api/src/modules/union/infra/pdd/**'
   - 'apps/api/src/modules/union/domain/types.ts'
