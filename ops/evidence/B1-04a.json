@@ -1,0 +1,80 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (db/**, packages/db). Migration 0029 adds app.union_raw_payloads (raw union payload archive: RANGE(fetched_at) month partitions, DEFAULT partition only, PK (id, fetched_at), bigint identity id for orders.raw_payload_id as a logical reference without FK); couli_app gets INSERT/SELECT only. app.ensure_month_partition allow-list and packages/db MONTH_PARTITIONED_TABLES gain the table; retention (180 days) is split out (follow-up), so drop_expired_month_partitions still rejects it and DROPPABLE_TABLES is unchanged. The maintenance unit test derives its rolled-back count from the list. No writer yet (B1-04p). Generated db/schema.sql and db.gen.ts from the test machine snapshot.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings (approvals id 27: code review by Codex only)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (test/spec/db/union-raw, 10 tests); fresh Claude subagent round 1 pass with two S2 (column shapes fixed by the tests, grant test covers couli_app only) folded into the implementation brief."
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-04a",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "5f263f7d39dfe1a7fb25bb9fbfefb83f1827d5a4",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "5f263f7d39dfe1a7fb25bb9fbfefb83f1827d5a4",
+      "tree": "6471efe13779d2afb5a315bfa18595b9766d83e3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T18:24:46Z",
+      "finished_at": "2026-10-14T18:24:53Z",
+      "gate": {
+        "commit": "f07b3ab6cd1100c82eae98c63232b8351015216b",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/union-raw/partitions-and-access.int.test.ts > [AC-B1-04a#7] couli_maint creates an idempotent month partition and fetched_at routes at UTC boundaries",
+        "test/spec/db/union-raw/partitions-and-access.int.test.ts > [AC-B1-04a#8] no retention rule is enabled: old archive partitions and rows survive rejected deletion",
+        "test/spec/db/union-raw/partitions-and-access.int.test.ts > [AC-B1-04a#9] couli_app inserts and reads compressed bytes, bigint ids, success and failure metadata",
+        "test/spec/db/union-raw/partitions-and-access.int.test.ts > [AC-B1-04a#10] app grants allow only INSERT and SELECT; parent and direct partition mutations are denied",
+        "test/spec/db/union-raw/shape.int.test.ts > [AC-B1-04a#1] raw payload columns preserve compressed bytes and call metadata",
+        "test/spec/db/union-raw/shape.int.test.ts > [AC-B1-04a#2] RANGE(fetched_at) uses a primary key containing id and fetched_at",
+        "test/spec/db/union-raw/shape.int.test.ts > [AC-B1-04a#3] migrations create only a DEFAULT partition, with no calendar partitions",
+        "test/spec/db/union-raw/shape.int.test.ts > [AC-B1-04a#4] required metadata rejects explicit NULL and repeated primary keys are rejected",
+        "test/spec/db/union-raw/shape.int.test.ts > [AC-B1-04a#5] defaults never generate UUIDv7 or read SQL clocks outside created_at",
+        "test/spec/db/union-raw/shape.int.test.ts > [AC-B1-04a#6] orders keeps a bigint logical reference and no FK targets the archive or its children"
+      ],
+      "expected": [
+        "test/spec/db/union-raw/partitions-and-access.int.test.ts",
+        "test/spec/db/union-raw/shape.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "47341d8d34047afeaafe0191baf8d4f2b37be906d0f6c61aaaa2c4ddfb80fa3f"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "83f355cdf59c07ad6487c66482307708c1997d33",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
