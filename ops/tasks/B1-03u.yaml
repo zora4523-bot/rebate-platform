@@ -1,0 +1,24 @@
+id: B1-03u
+repo: rebate-platform
+title: 风控扫描任务链自愈：worker 运行期间定时补投两条任务链「下一个时间槽」的任务（与链上已排队任务同 singletonKey，exclusive 去重；链断了就由补投接上），续投失败不再让解冻与每日告警停到 worker 重启
+type: impl
+# 草稿 2026-10-14（身份与风控线 identity-lane）。B1-03j（#425）的 Codex money 评审 r1 范围外项：handle() 扫描后续投下一时间槽失败只记 warn（冻结测试 [AC-B1-03j#17] 钉住），任务链随之中断，到期解冻与每日告警停到 worker 重启（重启时 seed 才补）。
+# 依据：BR-ID-36（到期由任务自动恢复 normal；不定期冻结满 30 天与申诉超时告警），由编排者摘入；不改 B1-03j 的冻结测试（#17 的「续投失败只记 warn、当前扫描成功」保持）。
+# 裁定（编排者）：worker 在 seed() 之后按固定间隔（建议 5 分钟，常量）补投两条链各自的「下一个时间槽」任务（freeze-expiry：下一 UTC 分钟，delay 到该分钟；daily-alerts：下一个 +08:00 自然日 00:05），singletonKey 与链自身续投的完全相同，
+# 链健康时被 exclusive 唯一索引去重（不产生重复扫描、不重复告警）；不补投「当前时间槽」（daily-alerts 当天已完成的任务不在 exclusive 去重范围内，会重复告警）。补投失败只记 warn；worker 停止时停定时器；只在 worker 入口；时间只读注入的 Clock。
+# 留作后续（不在本任务）：审计行（规格同步）、appealing 行 frozen_until 过期的处理。
+refs: []
+refs_hash: {}
+deps: [B1-03j]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/risk/freeze-expiry-heal/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/freeze-expiry-heal/**'
+status: todo
+pr: null
