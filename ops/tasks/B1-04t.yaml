@@ -1,0 +1,30 @@
+id: B1-04t
+repo: rebate-platform
+title: 拼多多真实适配器装配：loadConfig 读 PDD_CLIENT_ID 与 PDD_CLIENT_SECRET_FILE（只 staging 认文件来源；prod 只认 KMS、未实现前拒绝启动；local / test 设了即拒绝启动），注册表对 mode=live 的 pdd 装配 B1-04g 的适配器（https 传输 + 注入凭据），replay 不装配
+type: impl
+# 草稿 2026-10-14（拼多多接入线 pdd-lane，账号 4）。依据：approvals 第 28 条 ②（staging 的 client_secret 放节点上只有服务账号可读的文件，prod 只认 KMS，local / test 不加载真实凭据）、规划/11 §8「真实密钥被本地栈加载」、02 §12.6、4_PDD_附 §5 第 1 项红线，由编排者摘入任务书。
+# 带入 #306 r1 评审 S1-6/7/8、S2-6/10（PDD-lane/review-ledger-306.md）：
+# ① 两个变量名登记进 platform/config/credential-env.ts 的已声明名单；APP_ENV=local / test 时任一设置即拒绝启动；local / test 下 pdd 端点 mode=live 也拒绝（02 §12.6 的「本机联调」不在服务进程里做，探测只走负责人终端脚本，编排裁定）。
+# ② staging：两个变量都设才装配；secret 文件启动时读一次（去掉末尾换行），文件不存在 / 不可读 / 为空 → ConfigError，问题文本不含任何值或文件内容；secret 只经凭据提供者交给适配器，不进 AppConfig 的可序列化部分、日志与错误。
+# ③ prod：一律拒绝文件来源（与 FIELD_KEY_PROVIDER 无关）；pdd 为 live 时拒绝启动，TODO(规划/11 §4.5): KMS 取用 — blocked on 云 KMS 选型。
+# ④ pdd mode=live 而凭据缺 → 启动失败；mode=replay 仍为 adapter_unimplemented（带签名请求的回放匹配另开）；demo 不变；jd / taobao 不变；不改 config/union-endpoints/pdd.json（切 live 只在 staging 部署配置做）。live 装配用 createGovernedAdapter 同既有口径（registry 调用方不变）。
+# ⑤ .env.example 只加注释掉的变量名与说明，不放值。staging 节点上的文件与挂载由负责人 / 编排在部署侧做，不在本任务。
+# 切 live 前还须 B1-04u / h / i 合并（否则 convert、listOrders 为 adapter_unimplemented，linking 会走 50303）；本段只保证装配正确。风险：platform/config 与 union 装配 → RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04g]
+paths:
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/union/infra/registry.ts'
+  - 'apps/api/src/modules/union/infra/registry.test.ts'
+  - 'apps/api/src/modules/union/union.module.ts'
+  - '.env.example'
+test_paths:
+  - 'test/spec/union/pdd-live-wiring/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-live-wiring/**'
+status: todo
+pr: null
