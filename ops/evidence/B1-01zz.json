@@ -1,0 +1,72 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 (platform/logging, platform/masking). A child logger formatter that mutates an Error copy or replaces record.err with a copy of it keeps the Error redaction: copies are collected with a field snapshot before the formatter runs and matched by fields afterwards (no identity short-cut), and the second pass sends Error-copy fields through the Error scalar safety net (idempotent). The masking header now states the Error own-property rule. No business code passes custom formatters today (BR-ID-33 contract gap only).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one contrived S2 (a plain object field-identical to a real Error in the same record, moved into err by the formatter, is taken for the copy) logged as a follow-up (approvals id 27: code review by Codex only)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (test/spec/platform/masking/log-redaction-formatter-error-copies.test.ts, 6 cases); fresh Claude subagent round 1 pass with no findings."
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348"
+  },
+  "task": "B1-01zz",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "743b94bf488a4d9aecc6fcfdf9f5c7a598b7cd0e",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "743b94bf488a4d9aecc6fcfdf9f5c7a598b7cd0e",
+      "tree": "f30b2ee4867097f0ca195e30d59423919245f9df",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-14T19:54:48Z",
+      "finished_at": "2026-10-14T19:54:51Z",
+      "gate": {
+        "commit": "9c281fda66e1063b581df8c1db7af1d585c1cdf7",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/platform/masking/log-redaction-formatter-error-copies.test.ts > [AC-B1-01zz#1] formatter 改写 Error 自有字段后 return spread：string 手机号仍脱敏",
+        "test/spec/platform/masking/log-redaction-formatter-error-copies.test.ts > [AC-B1-01zz#1] formatter 改写 Error 自有字段后 return same：string 手机号仍脱敏",
+        "test/spec/platform/masking/log-redaction-formatter-error-copies.test.ts > [AC-B1-01zz#1] formatter 改写 Error 自有字段后 return spread：number 手机号仍脱敏",
+        "test/spec/platform/masking/log-redaction-formatter-error-copies.test.ts > [AC-B1-01zz#1] formatter 改写 Error 自有字段后 return same：number 手机号仍脱敏",
+        "test/spec/platform/masking/log-redaction-formatter-error-copies.test.ts > [AC-B1-01zz#2] child formatter 原地替换 Error 副本保留数字，仿冒 err 仍按自由文本处理",
+        "test/spec/platform/masking/log-redaction-formatter-error-copies.test.ts > [AC-B1-01zz#2] grandchild formatter 原地替换 Error 副本保留数字，仿冒 err 仍按自由文本处理"
+      ],
+      "expected": ["test/spec/platform/masking/log-redaction-formatter-error-copies.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "abeb8df750bb77f7e35b9fa77886817488352cbb5f229b68a226e1de8eb818bf"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "5243e5e39cc14bcad03bc22a844fcfdabb9aaf99",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
