@@ -9,7 +9,7 @@ type: impl
 # 这一点 02 没写，写进实现说明并在 PR 里列出（同类判断见 02 §14「Redis 不可用」行的降级思路）。整体 RV2。
 refs: []
 refs_hash: {}
-deps: [B1-04c, B1-04a]
+deps: [B1-04c, B1-04a, B1-04t]
 paths:
   - 'apps/api/src/modules/union/**'
 test_paths:
