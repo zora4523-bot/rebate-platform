@@ -27,7 +27,8 @@ it.each(['new', 'invalid', 'cooling', 'cooldown_elapsed'] as const)(
     for (const kind of ['occupied', 'cooling', 'rebind']) {
       target.push(await conflict(f.db, subject, old, { kind }));
     }
-    const secondAccount = await newAccount(f.db, c.appId, 'taobao', now);
+    // Created after the scenario's account so the account fallback (oldest first) stays on it.
+    const secondAccount = await newAccount(f.db, c.appId, 'taobao', new Date(now.getTime() + 1));
     target.push(await conflict(f.db, { ...subject, accountId: secondAccount }, old));
     const historical = await conflict(f.db, subject, old, {
       resolved_at: old,
