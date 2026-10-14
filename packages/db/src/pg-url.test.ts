@@ -235,3 +235,77 @@ it('redactCredentials masks a secret up to the next certain parameter start, wha
     expect(redactCredentials(input)).toBe(expected);
   }
 });
+
+it('redactCredentials keeps masking when a closing quote is glued to another secret assignment', () => {
+  const cases: [string, string][] = [
+    // The quote right after `sslpassword=` closes the first value and opens the glued one.
+    [
+      String.raw`password='ExampleHead\'&sslpassword='ExampleTail host=ExampleSuffix' dbname=couli`,
+      'password=*** dbname=couli',
+    ],
+    // An even backslash run closes the first value; the glued assignment opens a new one.
+    [
+      String.raw`password='ExampleHead\\'&SSLPassword = 'ExampleTail host=ExampleSuffix\' port=ExamplePort' dbname=couli`,
+      'password=*** dbname=couli',
+    ],
+    // Only the same kind of quote closes a value.
+    [
+      `password="ExampleHead' host=ExampleInner"&sslpassword='ExampleTail" host=ExampleSuffix' dbname=couli`,
+      'password=*** dbname=couli',
+    ],
+    // An empty quoted part glued to more text: the text is masked as a quoted part as well.
+    ["password=''ExampleTail host=ExampleSuffix' dbname=couli", 'password=*** dbname=couli'],
+    // A URL query: the glued assignment is masked in the same way.
+    [
+      String.raw`postgres://u@h/db?password='ExampleHead\'&oauth_client_secret='ExampleTail host=ExampleSuffix' dbname=couli`,
+      'postgres://u@h/db?password=*** dbname=couli',
+    ],
+  ];
+  for (const [input, expected] of cases) {
+    expect(redactCredentials(input)).toBe(expected);
+  }
+});
+
+it('redactCredentials and redactPgUrl mask the OAuth client secret and the SCRAM keys', () => {
+  expect(
+    redactCredentials(
+      'host=db oauth_client_secret=ExampleO1 OAUTH_CLIENT_SECRET=ExampleO2 ' +
+        "scram_client_key=ExampleS1== scram%5Fserver%5Fkey='ExampleS2' oauth_client_id=public dbname=couli",
+    ),
+  ).toBe(
+    'host=db oauth_client_secret=*** OAUTH_CLIENT_SECRET=*** scram_client_key=*** ' +
+      'scram%5Fserver%5Fkey=*** oauth_client_id=public dbname=couli',
+  );
+  expect(
+    redactPgUrl(
+      'postgres://u@db/couli?oauth_client_secret=ExampleO3&SCRAM_CLIENT_KEY=ExampleS3&oauth_scope=openid',
+    ),
+  ).toBe('postgres://u@db/couli?oauth_client_secret=***&SCRAM_CLIENT_KEY=***&oauth_scope=openid');
+  expect(redactCredentials('oauth_client_secrets=kept myscram_client_key=kept')).toBe(
+    'oauth_client_secrets=kept myscram_client_key=kept',
+  );
+});
+
+it('redactCredentials ends a secret at the PostgreSQL 18 keywords and at any secret name', () => {
+  for (const field of [
+    'servicefile=/x/pg_service.conf',
+    'oauth_issuer=https://issuer.invalid',
+    'oauth_client_id=public',
+    'oauth_scope=openid',
+    'requiressl=1',
+    'uselibpqcompat=1',
+    'PASSWORD=ExampleNext',
+  ]) {
+    const masked = redactCredentials(`host=db password=ExampleSecret ${field} port=5432`);
+    expect(masked).not.toContain('ExampleSecret');
+    expect(masked).toContain('port=5432');
+    if (!field.startsWith('PASSWORD')) expect(masked).toContain(field);
+  }
+  expect(redactCredentials('password=ExampleSecret PASSWORD=ExampleNext port=5432')).toBe(
+    'password=*** PASSWORD=*** port=5432',
+  );
+  // Inside a quoted value a known name is not a boundary.
+  expect(redactCredentials("password='ExampleSecret requiressl=1' host=db")).toBe(
+    'password=*** host=db',
+  );
+});
