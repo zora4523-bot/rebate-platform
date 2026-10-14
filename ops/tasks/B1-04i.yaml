@@ -1,0 +1,29 @@
+id: B1-04i
+repo: rebate-platform
+title: 拼多多 Adapter 订单：order.list.increment.get（listOrders 增量，窗口按更新时间 ≤24 小时、近 90 天、倒序翻页、return_count=false）、order.list.range.get（按支付时间补拉，last_order_id 迭代）、order.detail.get（新可选端口 getPddOrderDetail，补售后状态）、拼多多订单 DTO 扩展字段
+type: impl
+# 草稿 2026-10-05；2026-10-08 按 4_PDD_附 §6 与 §7A 修订；2026-10-14 按台账 #306 评审（S1-1/2/5、S2-8/9）改。开工前提：ops/approvals.yaml 第 28 条已登记（负责人 2026-10-14：本人在终端运行 couli-runs/probes/pdd_probe.py 的产物 + rebate-private/probe-runs.log 一行，认定为本线的 probe 依据，覆盖 CAP-PDD-04/07/08），且该次探测产物已在 rebate-private/cap-tests/；登记前不派工。映射只用任务书附的 probe 字段清单。
+# 依据：09 4_PDD CAP-PDD-04、07、08 行，4_PDD_附 §3.4（两个列表接口外层键 order_list_get_response，详情 order_detail_response）、§6、§7A，BR-CALC-03、BR-CALC-17，02 §7.1，由编排者摘入任务书。
+# 端口：OrderQueryOpt 加可选查询方式（increment 按更新时间 / pay_time 按支付时间，不传 = increment，兼容现有调用）；加可选 getPddOrderDetail(orderSn, ctx)，在 governed-adapter 按幂等读包一层并从 index 导出；UnionOrder 加拼多多可选扩展字段（platform_order_id、pid、custom_parameters、order_status、各时间、service_fee_fen、subsidy_* 等，以 probe 字段为准）。
+# 时间窗：increment 的 TimeWindow 超过 24 小时或早于 90 天报 invalid_dto（拆分是 order-sync 的事）；倒序翻页、page_size 40–50。
+# 字段：DTO order_id 取 order_sn，platform_order_id=order_id，都按字符串；return_status 等只在详情接口；列表 p_id / 详情 pid 统一。commission_fen=promotion_amount 含软件服务费，DTO 注释写明不是可分配基数（4 附 §7A：基数 = promotion_amount − duo_id_service_fee，在 orders / 分账层扣）；subsidy_* 不进任何用户可见字段。
+# 状态映射 specs/order-status-map/pdd.csv 归 order-sync 任务。订单接口不压测（09 README §0.2 硬规则 5）。报文样例由规则测试作者按任务书附的字段清单自拟，值全部合成，不标 doc-derived，不拷贝私有录制的原文或掩码值（AGENTS §6）；经注入的内存传输喂给适配器；不新增 fixtures/union-recordings/ 场景。test_paths：test/spec/union/pdd-orders/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04h]
+paths:
+  - 'apps/api/src/modules/union/infra/pdd/**'
+  - 'apps/api/src/modules/union/domain/types.ts'
+  - 'apps/api/src/modules/union/domain/dto.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
+  - 'apps/api/src/modules/union/index.ts'
+test_paths:
+  - 'test/spec/union/pdd-orders/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-orders/**'
+status: todo
+pr: null

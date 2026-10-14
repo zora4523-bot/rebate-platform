@@ -1,0 +1,28 @@
+id: B1-04h
+repo: rebate-platform
+title: 拼多多 Adapter 转链与授权备案：goods.promotion.url.generate（convert：p_id + custom_parameters ≤64 字节，url 取 mobile_url，schema_url 等作可选附加字段）、member.authority.query（实现 B1-06v 的 queryPddAuthority）、rp.prom.url.generate channel_type=10（新可选端口 pddAuthorityUrl）
+type: impl
+# 草稿 2026-10-05；2026-10-08 按 09 4_PDD_附 §6 修订；2026-10-14 按主干现状与台账 #306 评审（S1-1/2/4、S2-1/5）改。开工前提：ops/approvals.yaml 第 28 条已登记（负责人 2026-10-14：本人在终端运行 couli-runs/probes/pdd_probe.py 的产物 + rebate-private/probe-runs.log 一行，认定为本线的 probe 依据，覆盖 CAP-PDD-05/06），且该次探测产物已在 rebate-private/cap-tests/；登记前不派工。映射只用任务书附的 probe 字段清单。
+# 依据：BR-PRICE-02 细则 G-48（单人团）、BR-ID-22（授权查询与备案链接、custom_parameters 结构与长度、只传 attr_code 不传内部 user_id）、BR-ATTR-03/05/06、09 4_PDD CAP-PDD-05、06、11 行与 4_PDD_附 §6，02 §6.2（转链不自动重试），由编排者摘入任务书。
+# 转链：ConvertResult 的 url 取 mobile_url（https；缺失用 mobile_short_url），不放 schema_url（linking 的 pathsOf 把 url 当 universal link 与 h5 用）；schema_url、we_app_info、weixin_short_link 作为 ConvertResult 的可选附加字段（types.ts）；linking 改用 schema_url 归 CAP-PDD-11 后另开。
+# custom_parameters：按结构读 identity.custom_parameters（linking 的 LinkingUnionIdentity 构造；可能带 lk，no_rebate 时不带 uid，BR-ATTR-06），按原对象序列化，不重排、不补键、不删键，>64 字节报 invalid_dto、不截断（union 侧声明局部类型，不 import linking）；转链固定单人团（multi_group=false，BR-PRICE-02 细则 G-48、CAP-PDD-02 步骤 3）；p_id 取 identity.promotionSlot（凑狸媒体下 active 的推广位，不得用优券汇的推广位）。search_id、sku_id_code_list 本段不传（来源另开）；一次 1 个 goods_sign。
+# 备案：queryPddAuthority 调 member.authority.query（pid + custom_parameters），bind=1 → authorized=true，其他 → false；pddAuthorityUrl(identity, ctx) 调 rp.prom.url.generate（channel_type=10，p_id_list 长度 1），在 governed-adapter 按幂等读包一层，结果类型从 union/index.ts 导出；linking 用它替换 syntheticAuthUrl 另开。bindPublisher 不用于拼多多。
+# 报文样例由规则测试作者按任务书附的字段清单自拟，值全部合成，不标 doc-derived，不拷贝私有录制的原文或掩码值（AGENTS §6）；经注入的内存传输喂给适配器；不新增 fixtures/union-recordings/ 场景。目录如 paths。test_paths：test/spec/union/pdd-convert/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04u]
+paths:
+  - 'apps/api/src/modules/union/infra/pdd/**'
+  - 'apps/api/src/modules/union/domain/types.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
+  - 'apps/api/src/modules/union/index.ts'
+test_paths:
+  - 'test/spec/union/pdd-convert/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-convert/**'
+status: todo
+pr: null
