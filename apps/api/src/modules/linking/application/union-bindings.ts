@@ -45,6 +45,11 @@
 // Each submission holds its transaction's connection while it takes a second one for the
 // consumption and the shared reads; BIND_CONCURRENCY keeps those holders below the pool size so
 // they can never wait on each other for the last connection.
+// B1-06za (规划/02 §18; D9-4): the submissions over BIND_CONCURRENCY wait in the process's bounded
+// admission queue (upstream-limits.ts getBindingAdmission: 16 waiting, 2 s each, FIFO). A full
+// queue or an expired wait answers 42901 with Retry-After before the idempotent transaction opens:
+// the state is not consumed, the upstream is not called and no key record is stored, so the same
+// state and key can be submitted again.
 //
 // The credential (code / access_token) lives only in this process: never stored, logged or
 // echoed. Responses carry only {platform, status}: no account name, relation id or other user.
@@ -79,6 +84,7 @@ import type {
   UnionBindingExchangeInput,
   UnionBindingExchanger,
 } from './union-binding-exchanger.ts';
+import { BIND_RETRY_AFTER_SEC, getBindingAdmission } from './upstream-limits.ts';
 
 type BindUnionRequest = components['schemas']['BindUnionRequest'];
 type BindingRow = Selectable<DB['union_bindings']>;
@@ -95,8 +101,13 @@ export interface UnionBindingsListInput {
   readonly traceId: string;
 }
 
+/** A bind answer; a 42901 refusal also carries its Retry-After (whole seconds). */
+export interface UnionBindResult extends HandlerResult {
+  readonly retryAfterSec?: number;
+}
+
 export interface UnionBindingsService {
-  bind(input: UnionBindInput): Promise<HandlerResult>;
+  bind(input: UnionBindInput): Promise<UnionBindResult>;
   list(input: UnionBindingsListInput): Promise<HandlerResult>;
 }
 
@@ -122,30 +133,6 @@ const OCCUPYING: readonly string[] = Object.freeze([
 ]);
 /** Unique-violation retries before giving up (each one re-reads and decides again). */
 const DECIDE_ATTEMPTS = 4;
-/**
- * Submissions of one process that may hold their transaction's connection at once (the api pool
- * has 10, POOL_SIZES.api.db). Each one needs a second connection for the consumption and the
- * shared reads, so this stays well below the pool size; the others wait without a connection.
- */
-const BIND_CONCURRENCY = 4;
-let bindsRunning = 0;
-const bindWaiters: (() => void)[] = [];
-
-async function withBindSlot<T>(run: () => Promise<T>): Promise<T> {
-  if (bindsRunning >= BIND_CONCURRENCY) {
-    await new Promise<void>((resolve) => bindWaiters.push(resolve));
-  } else {
-    bindsRunning += 1;
-  }
-  try {
-    return await run();
-  } finally {
-    // The slot passes straight to the next waiter; the count drops only when nobody waits.
-    const next = bindWaiters.shift();
-    if (next === undefined) bindsRunning -= 1;
-    else next();
-  }
-}
 
 const STATUS: Readonly<Record<number, number>> = {
   0: 200,
@@ -156,6 +143,7 @@ const STATUS: Readonly<Record<number, number>> = {
   30104: 422,
   30151: 422,
   30153: 422,
+  42901: 429,
   50001: 500,
 };
 
@@ -169,6 +157,7 @@ const MESSAGES: Readonly<Record<number, string>> = {
   30104: '授权已过期，请重新授权',
   30151: '该淘宝账号已绑定本 App 其他用户',
   30153: '该平台返利已被停用，请联系客服',
+  42901: '操作太频繁，请稍后再试',
   50001: '服务端错误',
 };
 
@@ -521,7 +510,10 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       if (!CLIENTS.has(device.platform)) return result(50001, traceId);
       const client = device.platform as AuthClient;
 
-      const response = await withBindSlot(() =>
+      // Submissions of one process that may hold their transaction's connection at once (the api
+      // pool has 10, POOL_SIZES.api.db): each needs a second connection for the consumption and
+      // the shared reads, so the cap stays well below the pool size; the others wait without one.
+      const admitted = await getBindingAdmission().run(() =>
         idempotency.executeInTransaction(
           {
             appId,
@@ -538,6 +530,21 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
             ),
         ),
       );
+      if (admitted.kind !== 'completed') {
+        // Refused before the transaction: nothing consumed, called or stored (data: none).
+        logger.warn(
+          {
+            event: 'linking.union_bind_admission_refused',
+            app_id: appId,
+            platform: input.platform,
+            trace_id: traceId,
+            error_code: admitted.kind,
+          },
+          'linking: union binding submission refused by the admission queue',
+        );
+        return { ...result(42901, traceId), retryAfterSec: BIND_RETRY_AFTER_SEC };
+      }
+      const response = admitted.value;
       // Handler and replay alike: the stored body is the answer, so a replay equals the first.
       return {
         status: response.status,
