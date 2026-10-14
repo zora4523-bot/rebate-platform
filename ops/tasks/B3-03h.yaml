@@ -5,6 +5,9 @@ type: impl
 # 设计 couli-runs/B3-03g/design.md（定稿，Codex 三轮完整对抗评审加两次修改点核对）；负责人 2026-10-08 决定：受理与额度改用 PG、终止原因以落库为准（规划 docs/changes/20261008-Agent受理与额度改用PG.md，couli#88）。
 # 做法见设计 §5.3（不新增队列，不改受保护的 test/spec/platform/queue/contract.test.ts）；验收含真 HTTP + 真 PG + worker 集成（崩溃后无人重试由扫描收尾、两 worker 并发只退一次、取消 200 后杀实例收尾为 cancelled）。
 # 与 B3-03f 都改 app.module.ts、agent.module.ts：二者无在途占用、先到先做；派发前重新评审本台账。风险级 RV2（app.module.ts 不在 risk-map），两家评审。属 B3-03 整行（approvals 第 23 条）。
+# 2026-10-14 编排者（staging-b3-term）派发前重审：worker 的装配点 = app.module.ts（worker 入口导入 AgentModule.forWorker()，仿 RiskScanModule）+ entry.ts（服务启动后起循环、停机时先停，仿 B1-03u 的 startRiskScanHeal；先例 #443 的 paths 含 entry.ts）；
+#   agent.module.ts 尚不存在，本任务新建并经 agent/index.ts 导出（B3-03f 也列该文件，先到先做）。生产尚无 RunTexts 实现：本任务在 agent.module 里从 contracts/texts.default.json 的 error.<code> 建默认 errorMsg（BR-TEXT-14 默认文案）；
+#   平台无指标端口：agent.sweeper_last_tick_at 先以每轮一条日志代替，告警归运维后续。RunTimings 用 pg/index.ts 的 runTimingsDefaults()，B3-03f 装配 stream 时须取同一来源（设计 T14）。
 refs: [BR-AI-23]
 refs_hash:
   BR-AI-23: 5ebdbaff580d
@@ -12,7 +15,9 @@ deps: [B3-03d, B3-03e]
 paths:
   - 'apps/api/src/modules/agent/stream/sweeper/loop.ts'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
   - 'apps/api/src/modules/agent/agent.module.ts'
+  - 'apps/api/src/modules/agent/index.ts'
 test_paths:
   - 'test/spec/agent/stream-recovery/**'
 impl: codex
