@@ -2068,10 +2068,22 @@ export interface paths {
          *     consent_type=ai_third_party (BR-AI-13) → ④ 30504 without data (session missing, not the
          *     caller's, or expired; BR-AI-20) → ⑤ 20001 data.fields=[text] when text is too long
          *     (BR-AI-23 ⑤, counted in Unicode code points; checked here, not by the schema) → ⑥ repeated
-         *     client_msg_id: the two-frame stream below, nothing else is checked → ⑦ 30506 (a run of this
-         *     session is in progress) → ⑧ 42901 with Retry-After → ⑨ 30504 data.reason=round_limit →
-         *     ⑩ 30502 data.reset_at, data.next (BR-AI-15). Only a request passing ⑩ is counted.
+         *     client_msg_id: the two-frame stream below; ⑦–⑩ are not checked (only finishing a leftover
+         *     run of this session can still end it with JSON 50401 or 50001, see below) → ⑦ 30506 (a run
+         *     of this session is in progress) → ⑧ 42901 with Retry-After → ⑨ 30504
+         *     data.reason=round_limit → ⑩ 30502 data.reset_at, data.next (BR-AI-15). Only a request
+         *     passing ⑩ is counted.
          *     A malformed body (types, client_msg_id format, unknown fields) is 20001 before ①.
+         *     Before acceptance (BR-AI-23 细则 受理结果不明 / 谁来收尾, 2026-10-08), two more JSON errors:
+         *     JSON 50401 when the store is unavailable or the outcome of the acceptance transaction is
+         *     unknown (the lookup by client_msg_id is still unclear); not counting the message is not
+         *     guaranteed, so the client retries with the same client_msg_id and ⑥ gives the definite
+         *     result. JSON 50001 when a leftover run of this session is pending manual handling (its data
+         *     cannot be finished automatically); this is decided before ⑦ (before "a run is in progress")
+         *     and the client guides the user to a new session. Both ⑥ and ⑦ first finish (settle and
+         *     write the terminal state of) a leftover run of this session in their own acceptance
+         *     transaction; when that finishing hits an unavailable store or an unknown outcome the answer
+         *     is JSON 50401, and when the leftover run is pending manual handling it is JSON 50001.
          *     Accepted: 200 text/event-stream; each event is one frame of
          *     contracts/agent-stream.schema.json (`event:` / `id:` / `data:` lines, a `: ping` comment
          *     every 15 s); meta first, exactly one terminal frame (done or error) last. Failures after
@@ -2079,10 +2091,14 @@ export interface paths {
          *     withdrawn, 50302 with fallback_q, 50001, 50401). No resume (02 §9): after a disconnect the
          *     client reloads GET .../messages (03 §7.2). The client tells the two kinds of answer apart by
          *     Content-Type.
-         *     Repeated client_msg_id (⑥, 04 §8.1 重复消息; the body is not compared): 200
-         *     text/event-stream with exactly two frames, ids from 1: meta (the original run's ids,
-         *     duplicate=true) and the original terminal frame replayed, or error 30506 (retryable,
-         *     fallback and fallback_q null) while the original run is still running.
+         *     Repeated client_msg_id (⑥, 04 §8.1 重复消息; the body is not compared): when it is answered
+         *     with a stream, 200 text/event-stream with two frames, ids from 1: meta (the original run's
+         *     ids, duplicate=true) and the original terminal frame replayed (an original run with no
+         *     terminal state that is not running is finished first, then replayed), or error 30506
+         *     (retryable, fallback and fallback_q null) while the original run is still running. If
+         *     finishing the original run hits an unavailable store or an unknown outcome, ⑥ returns
+         *     JSON 50401 instead (retry with the same client_msg_id); if the original run is pending
+         *     manual handling, JSON 50001, decided before the still-running check.
          *     context comes from the entry points of 01 §4 (商品详情、剪贴板提示条、订单详情) and is
          *     handled like tool input (an order_id that is not the caller's is not found, BR-AI-07).
          *     Version gate: applied.
@@ -2105,10 +2121,15 @@ export interface paths {
         put?: never;
         /**
          * Stop generating
-         * @description Stops a running reply. Checks BR-AI-23 ①–③, then 30505 when the run does not exist, is not
-         *     in a session of the caller (never told apart) or is not running (ended or interrupted).
-         *     Otherwise 200 at once; that run's stream ends with done finish_reason=cancelled, which is
-         *     counted (BR-AI-15). Repeating the call while it runs is harmless. Version gate: applied.
+         * @description Stops a running reply (BR-AI-23 细则 取消, 2026-10-08). Checks BR-AI-23 ①–③. A repeated call
+         *     for a run already cancelled by this endpoint (its cancel recorded; the run not yet ended or
+         *     ended as cancelled) returns 200 again and writes nothing. Otherwise 30505 when the run does
+         *     not exist, is not in a session of the caller (never told apart), has ended, already has an
+         *     end reason written on the run row, or is past its deadline (accepted time + the longest run
+         *     duration, BR-AI-14); the deadline is judged by the server time after the run row is locked.
+         *     Otherwise the cancel is written on the run row and the call returns 200; a 200 guarantees
+         *     that the run ends with finish_reason=cancelled, which is counted (BR-AI-15). Version gate:
+         *     applied.
          */
         post: operations["cancelAgentRun"];
         delete?: never;
