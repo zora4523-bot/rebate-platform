@@ -31,19 +31,21 @@
 // B1-06z (BR-ID-18): a write that makes the binding active resolves the user's unresolved pdd
 // conflict rows in the same savepoint (bound_active); a row found already active resolves nothing.
 // An own blocked user's no_rebate refused for maintenance carries the server's no_rebate_reason.
-import type { DB } from '@couli/db';
-import { sql, type Kysely } from 'kysely';
-import { newUuidV7 } from '../../platform/index.ts';
+// B1-06x: the identity, the authority query and the activation are pdd-authority.ts's, shared with
+// the authorization page refresh (union-bindings-pdd.ts); behaviour here is unchanged.
 import type { UnionPidRow } from '../../union/index.ts';
-import { canTransitionBinding } from '../domain/binding-status-transitions.ts';
-import { resolveBindingConflictsOnActive } from '../infra/binding-conflicts.ts';
 import type { LinkOpenService } from './link-open.ts';
-import { LinkingUnionIdentity } from './link-open-conversion.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
 import { openScopedAttrCodes, openScopedPids, type LinkOpenReadPlan } from './link-open-reads.ts';
 import type { LinkOpenAuthorization, LinkOpenAuthorizationInput } from './link-open-requote.ts';
-import { attrCodeOf } from './link-registration.ts';
 import { createWiredLinkOpen, type WiredLinkOpenOptions } from './link-open-wiring.ts';
+import {
+  PDD,
+  activatePddBinding,
+  pddAuthorityIdentity,
+  pddBindingRows,
+  queryPddAuthority,
+} from './pdd-authority.ts';
 import {
   AuthConfigError,
   UNRELEASED,
@@ -63,9 +65,7 @@ export type PddAuthLinkOpenOptions = WiredLinkOpenOptions & Pick<UnionAuthUrlOpt
 
 type PidScene = Parameters<WiredLinkOpenOptions['pids']['getActivePid']>[0]['pidScene'];
 
-const PLATFORM = 'pdd';
-const ATTR_CODE = /^[0-9a-z]{8}$/;
-const ACTIVATE_ATTEMPTS = 3;
+const PLATFORM = PDD;
 
 const SHARER_INVALID: LinkOpenAuthorization = {
   kind: 'refused',
@@ -82,26 +82,6 @@ const QUERY_FAILED: LinkOpenAuthorization = { kind: 'refused', code: 50303 };
 function paused(message: string): Error & { readonly code: 50301 } {
   return Object.assign(new Error(message), { code: 50301 as const });
 }
-
-function uniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { readonly code?: unknown }).code === '23505'
-  );
-}
-
-interface BindingRow {
-  readonly id: string;
-  readonly status: string;
-  readonly union_account_id: string;
-  readonly row_version: number;
-}
-
-type Activation =
-  | { readonly kind: 'active'; readonly id: string; readonly accountId: string }
-  | { readonly kind: 'blocked' }
-  | { readonly kind: 'retry' };
 
 /**
  * The cache tag of a Pinduoduo open (link-open-requote.ts cacheTag): a cached jump is reused only
@@ -146,16 +126,6 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     ]);
   }
 
-  async function bindingRows(executor: Kysely<DB>, appId: string, userId: string) {
-    return executor
-      .selectFrom('union_bindings')
-      .select(['id', 'status', 'union_account_id', 'row_version'])
-      .where('app_id', '=', appId)
-      .where('user_id', '=', userId)
-      .where('platform', '=', PLATFORM)
-      .execute();
-  }
-
   /** The slot the conversion will use (validated again there); null when there is none. */
   async function slotOf(appId: string, pidScene: string) {
     try {
@@ -181,151 +151,6 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     const slot = await slotOf(link.app_id, noRebate ? 'self_buy' : identitySnapshot.pid_scene);
     decisions.set(owner, { binding, slot });
     return blocked ? { kind: 'allowed', noRebateReason: 'binding_blocked' } : { kind: 'allowed' };
-  }
-
-  /** The identity the conversion builds for this snapshot (link-open-conversion.ts identityFor). */
-  async function identityOf(owner: LinkOpenOwnerResult, traceId: string) {
-    const { link, identitySnapshot } = owner;
-    const appId = link.app_id;
-    const pidScene = identitySnapshot.pid_scene;
-    const row = await pids.getActivePid({
-      appId,
-      platform: PLATFORM,
-      pidScene: pidScene as PidScene,
-      purpose: 'convert',
-    });
-    if (
-      row === null ||
-      row.status !== 'active' ||
-      row.app_id !== appId ||
-      row.platform !== PLATFORM ||
-      row.pid_scene !== pidScene ||
-      row.pid === ''
-    ) {
-      logger.warn(
-        {
-          event: 'linking.open.no_active_pid',
-          app_id: appId,
-          platform: PLATFORM,
-          pid_scene: pidScene,
-        },
-        'linking: no active promotion slot for the pdd authority query',
-      );
-      throw paused('linking: no active promotion slot');
-    }
-    const attrCode = await attrCodeOf(attrCodes, appId, identitySnapshot.user_id);
-    if (attrCode === null || !ATTR_CODE.test(attrCode)) {
-      logger.warn(
-        {
-          event: 'linking.open.attr_code_unavailable',
-          app_id: appId,
-          platform: PLATFORM,
-          trace_id: traceId,
-        },
-        'linking: attr_code unavailable for the pdd authority query',
-      );
-      throw paused('linking: attr_code unavailable');
-    }
-    return new LinkingUnionIdentity({
-      appId,
-      platform: PLATFORM,
-      promotionSlot: row.pid,
-      userKey: attrCode,
-      customParameters: { app: 'n', uid: attrCode, sc: pidScene },
-    });
-  }
-
-  /** One decision on the rows as read now; writes are conditional (canTransition + CAS). */
-  async function activateOnce(
-    executor: Kysely<DB>,
-    appId: string,
-    userId: string,
-    accountId: string,
-    custom: string,
-  ): Promise<Activation> {
-    const now = clock.now();
-    const rows: BindingRow[] = await bindingRows(executor, appId, userId);
-    const unreleased = rows.find((row) => UNRELEASED.includes(row.status));
-    const stored = unreleased ?? rows.find((row) => row.status === 'unbound');
-    if (stored?.status === 'active') {
-      return { kind: 'active', id: stored.id, accountId: stored.union_account_id };
-    }
-    if (stored?.status === 'blocked') return { kind: 'blocked' };
-    if (stored !== undefined) {
-      // A stored `unbound` row goes through the same single entry (unbound → active).
-      if (!canTransitionBinding(stored.status, 'active')) {
-        throw new Error(`union_bindings: illegal status transition ${stored.status} → active`);
-      }
-      // The unreleased row keeps its account (the one this authorization used).
-      const account = unreleased === undefined ? accountId : stored.union_account_id;
-      const updated = await executor
-        .updateTable('union_bindings')
-        .set((eb) => ({
-          status: 'active',
-          union_account_id: account,
-          pdd_custom: custom,
-          bound_at: eb.fn.coalesce('bound_at', eb.val(now)),
-          updated_at: now,
-          row_version: eb('row_version', '+', 1),
-        }))
-        .where('id', '=', stored.id)
-        .where('status', '=', stored.status)
-        .where('row_version', '=', stored.row_version)
-        .executeTakeFirst();
-      if (updated.numUpdatedRows !== 1n) return { kind: 'retry' };
-      await resolveBindingConflictsOnActive(executor, appId, userId, PLATFORM, now);
-      return { kind: 'active', id: stored.id, accountId: account };
-    }
-    if (!canTransitionBinding(null, 'active')) {
-      throw new Error('union_bindings: illegal status transition (none) → active');
-    }
-    const id = newUuidV7(now);
-    await executor
-      .insertInto('union_bindings')
-      .values({
-        id,
-        app_id: appId,
-        user_id: userId,
-        platform: PLATFORM,
-        union_account_id: accountId,
-        relation_id: null,
-        pdd_custom: custom,
-        status: 'active',
-        bound_at: now,
-        released_at: null,
-        cooldown_until: null,
-        blocked_reason: null,
-        created_at: now,
-        updated_at: now,
-      })
-      .execute();
-    await resolveBindingConflictsOnActive(executor, appId, userId, PLATFORM, now);
-    return { kind: 'active', id, accountId };
-  }
-
-  async function activate(
-    executor: Kysely<DB>,
-    appId: string,
-    userId: string,
-    accountId: string,
-    custom: string,
-  ): Promise<Activation> {
-    for (let attempt = 1; ; attempt += 1) {
-      let decision: Activation;
-      // A failed statement aborts the transaction: each attempt runs under its own savepoint, so a
-      // lost unique race undoes only that attempt and the next one reads what won.
-      await sql`SAVEPOINT pdd_binding_activate`.execute(executor);
-      try {
-        decision = await activateOnce(executor, appId, userId, accountId, custom);
-        await sql`RELEASE SAVEPOINT pdd_binding_activate`.execute(executor);
-      } catch (error) {
-        await sql`ROLLBACK TO SAVEPOINT pdd_binding_activate`.execute(executor);
-        if (!uniqueViolation(error) || attempt >= ACTIVATE_ATTEMPTS) throw error;
-        continue;
-      }
-      if (decision.kind !== 'retry') return decision;
-      if (attempt >= ACTIVATE_ATTEMPTS) throw new Error('union_bindings: activation kept losing');
-    }
   }
 
   /** 30111 with an auth_jump whose state is bound to uid + device record + the served link. */
@@ -381,39 +206,6 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     return { kind: 'refused', code: 30111, data: { auth_jump: authJump } };
   }
 
-  /** The union authority port; missing or failing → null (50303, nothing written). */
-  async function queried(
-    owner: LinkOpenOwnerResult,
-    identity: LinkingUnionIdentity,
-    traceId: string,
-  ): Promise<boolean | null> {
-    const appId = owner.link.app_id;
-    try {
-      const adapter = registry.get(PLATFORM);
-      const query = adapter.queryPddAuthority;
-      if (typeof query !== 'function') throw new Error('linking: no pdd authority query');
-      const answer = await query.call(adapter, identity, {
-        appId,
-        requestId: traceId,
-        purpose: 'online',
-      });
-      if (typeof answer?.authorized !== 'boolean') throw new Error('linking: malformed answer');
-      return answer.authorized;
-    } catch (error) {
-      logger.warn(
-        {
-          event: 'linking.open.pdd_authority_query_failed',
-          app_id: appId,
-          platform: PLATFORM,
-          trace_id: traceId,
-          error_code: String((error as { code?: unknown } | null)?.code ?? 'unknown'),
-        },
-        'linking: pdd authority query failed; binding left unchanged',
-      );
-      return null;
-    }
-  }
-
   async function authorize(input: LinkOpenAuthorizationInput): Promise<LinkOpenAuthorization> {
     const { caller, owner, noRebate, executor } = input;
     if (owner.link.platform !== PLATFORM) return { kind: 'allowed' };
@@ -427,7 +219,7 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
       if (sharedByOther) return SHARER_INVALID;
       throw new Error('linking: an own pdd open without a snapshot user');
     }
-    const rows = await bindingRows(executor, appId, subject);
+    const rows = await pddBindingRows(executor, appId, subject);
     const unreleased = rows.find((row) => UNRELEASED.includes(row.status));
     const status = unreleased?.status ?? 'unbound';
     const bound = unreleased === undefined ? null : unreleased.union_account_id;
@@ -452,14 +244,32 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     if (noRebate) return allow(owner, true, null, status === 'blocked');
     if (active !== null) return allow(owner, false, active);
 
-    const identity = await identityOf(owner, input.traceId);
-    const authorized = await queried(owner, identity, input.traceId);
+    const identity = await pddAuthorityIdentity(
+      { pids, attrCodes, logger },
+      {
+        appId,
+        userId: subject,
+        pidScene: snapshot.pid_scene,
+        traceId: input.traceId,
+        events: 'linking.open',
+      },
+    );
+    if (identity === 'no_pid') throw paused('linking: no active promotion slot');
+    if (identity === 'no_attr_code') throw paused('linking: attr_code unavailable');
+    const authorized = await queryPddAuthority(
+      { registry, logger },
+      { appId, identity, traceId: input.traceId, events: 'linking.open' },
+    );
     if (authorized === null) return QUERY_FAILED;
     if (!authorized) return issue(input, subject);
     const custom = JSON.stringify(identity.custom_parameters);
-    const written = await activate(executor, appId, subject, accountId, custom);
+    const written = await activatePddBinding(executor, clock, {
+      appId,
+      userId: subject,
+      accountId,
+      custom,
+    });
     if (written.kind === 'blocked') return { kind: 'refused', code: 30153 };
-    if (written.kind !== 'active') throw new Error('linking: pdd binding not activated');
     return allow(owner, false, { id: written.id, accountId: written.accountId });
   }
 

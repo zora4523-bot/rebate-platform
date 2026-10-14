@@ -77,6 +77,7 @@ import { createUnionAuthUrl, type UnionAuthUrlService } from './application/unio
 import { createDemoUnionAuthApps, type UnionAuthApps } from './infra/auth-apps.ts';
 import { UNION_BINDINGS, UnionBindingsController } from './http/public/bindings.controller.ts';
 import { createUnionBindings, type UnionBindingsService } from './application/union-bindings.ts';
+import { createUnionBindingsWithPddQuery } from './application/union-bindings-pdd.ts';
 import { createUnionAuthReads } from './application/union-auth-reads.ts';
 import { UnionBindingExchanger } from './application/union-binding-exchanger.ts';
 import { createLinkingPidReader } from './infra/pid-reader.ts';
@@ -572,6 +573,8 @@ export class LinkingModule {
             LinkingConfigReader,
             LINKING_PIDS,
             UnionBindingExchanger,
+            AttrCodeReader,
+            { token: LINK_OPEN_PORTS, optional: true },
           ],
           useFactory: (
             db: Kysely<Database> | undefined,
@@ -583,18 +586,34 @@ export class LinkingModule {
             config: LinkingConfigReader,
             pids: PidReader,
             exchanger: UnionBindingExchanger,
-          ): UnionBindingsService =>
-            db === undefined || idempotency === undefined
-              ? { bind: unavailable, list: unavailable }
-              : createUnionBindings({
-                  db,
-                  clock,
-                  callerContext,
-                  reads: createUnionAuthReads({ db, config, appEnv: appConfig.appEnv, pids }),
-                  idempotency,
-                  exchanger,
-                  logger,
-                }),
+            attrCodes: AttrCodeReader,
+            ports: LinkOpenPorts | undefined,
+          ): UnionBindingsService => {
+            if (db === undefined || idempotency === undefined) {
+              return { bind: unavailable, list: unavailable };
+            }
+            const options = {
+              db,
+              clock,
+              callerContext,
+              reads: createUnionAuthReads({ db, config, appEnv: appConfig.appEnv, pids }),
+              idempotency,
+              exchanger,
+              logger,
+            };
+            // B1-06x: the page refreshes the pdd filing through the same union registry, pid
+            // reader and attr_codes the open uses; without LINK_OPEN_PORTS it only reads.
+            return ports === undefined
+              ? createUnionBindings(options)
+              : createUnionBindingsWithPddQuery({
+                  ...options,
+                  registry: { get: (platform) => ports.union.adapter(platform) },
+                  pids,
+                  attrCodes,
+                  config,
+                  appEnv: appConfig.appEnv,
+                });
+          },
         },
         {
           provide: LinkingConfigReader,
