@@ -117,3 +117,25 @@ it('[AC-B1-04b-UNIT#4] 依赖故障计入熔断：达到阈值后熔断', async 
   });
   expect(attempts()).toBe(before);
 });
+
+it('[AC-B1-04i-UNIT#1] 详情端口按幂等读包装：依赖故障重试，缺省时不出现', async () => {
+  let attempts = 0;
+  const { adapter } = failingAdapter('upstream_unavailable');
+  const order = { platform: 'jd' as const, order_id: 'o-1', paid_fen: 1n, commission_fen: 0n };
+  const port = createGovernedAdapter(
+    {
+      ...adapter,
+      getPddOrderDetail: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new UnionError('rate_limited', 'synthetic', 'jd');
+        return order;
+      },
+    },
+    { endpoint, scheduler, quota },
+  );
+  expect(await port.getPddOrderDetail!('o-1', online)).toBe(order);
+  expect(attempts).toBe(2);
+  expect(createGovernedAdapter(adapter, { endpoint, scheduler, quota }).getPddOrderDetail).toBe(
+    undefined,
+  );
+});

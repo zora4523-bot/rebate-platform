@@ -89,6 +89,7 @@ export function createGovernedAdapter(
     listPunishments,
     materialFeed,
     createTaolijin,
+    getPddOrderDetail,
     queryPddAuthority,
   } = adapter;
 
@@ -146,6 +147,13 @@ export function createGovernedAdapter(
       : {
           createTaolijin: (req, ctx) =>
             run('write', ctx, (c) => createTaolijin.call(adapter, req, c)),
+        }),
+    // B1-04i: the Pinduoduo order detail (after-sales status) is an idempotent read.
+    ...(getPddOrderDetail === undefined
+      ? {}
+      : {
+          getPddOrderDetail: (orderSn: string, ctx: CallCtx) =>
+            run('idempotent_read', ctx, (c) => getPddOrderDetail.call(adapter, orderSn, c)),
         }),
     // B1-06v: the Pinduoduo authority query is an idempotent read of a server-built identity.
     ...(queryPddAuthority === undefined

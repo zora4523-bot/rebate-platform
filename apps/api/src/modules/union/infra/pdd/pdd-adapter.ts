@@ -1,6 +1,7 @@
 // 拼多多联盟适配器的请求底座（4_PDD_附 §3.1–§3.4）：公共参数 + MD5 签名、凭据经构造参数注入、
 // 经注入的 UnionTransport 发 POST JSON、按登记的外层键解包、error_response 分类到 UnionError。
-// 端口方法的字段映射另开任务，目前一律 adapter_unimplemented（规划/11 §4.5）。
+// 订单端口（listOrders 的 increment / pay_time、getPddOrderDetail）的参数与映射在 orders.ts（B1-04i）；
+// 其余端口的字段映射另开任务，目前一律 adapter_unimplemented（规划/11 §4.5）。
 // 不读 process.env、不读文件；client_secret 只在内存里参与签名。
 import type { Clock } from '../../../platform/index.ts';
 import {
@@ -24,6 +25,22 @@ import {
 import type { UnionTransport, UnionTransportResponse } from '../replay.ts';
 import { pddParameterText, signPddParameters, type PddParameters } from './sign.ts';
 import { pddEnvelopeKey, unwrapPddResponse, type PddWarning } from './response.ts';
+import {
+  incrementCursor,
+  incrementWindow,
+  lastOrderId,
+  mapPddOrder,
+  orderList,
+  parseIncrementCursor,
+  parseRangeCursor,
+  PDD_INCREMENT_MAX_PAGE,
+  PDD_INCREMENT_PAGE_SIZE,
+  PDD_ORDER_DETAIL,
+  PDD_ORDER_INCREMENT,
+  PDD_ORDER_RANGE,
+  rangeCursor,
+  rangeWindow,
+} from './orders.ts';
 
 export interface PddCredentials {
   readonly clientId: string;
@@ -160,16 +177,103 @@ export class PddUnionAdapter implements UnionAdapter {
     throw unimplemented('convert');
   }
 
+  /**
+   * 不传 queryMode = increment（按更新时间，倒序翻页）；pay_time 按支付时间用 last_order_id 迭代。
+   * 时间窗与游标在取凭据、发请求之前校验，不合法报 invalid_dto。游标编码见 orders.ts。
+   */
   async listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>> {
-    void win;
-    void opt;
-    void ctx;
-    throw new Error('NotImplemented: listOrders');
+    const mode = opt?.queryMode ?? 'increment';
+    if (mode === 'pay_time') return await this.#listByPayTime(win, opt.cursor, ctx.signal);
+    if (mode !== 'increment') {
+      throw new UnionError('invalid_dto', 'pdd listOrders: unknown queryMode', 'pdd');
+    }
+    return await this.#listIncrement(win, opt?.cursor, ctx.signal);
   }
 
+  async #listIncrement(
+    win: TimeWindow,
+    cursor: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<Page<UnionOrder>> {
+    const window = incrementWindow(win, this.#clock.now().getTime());
+    const fetched = new Map<number, readonly unknown[]>();
+    const fetchPage = async (page: number): Promise<readonly unknown[]> => {
+      const cached = fetched.get(page);
+      if (cached !== undefined) return cached;
+      const envelope = await this.request(
+        PDD_ORDER_INCREMENT,
+        { ...window, page, page_size: PDD_INCREMENT_PAGE_SIZE, return_count: false },
+        signal,
+      );
+      const rows = orderList(envelope);
+      fetched.set(page, rows);
+      return rows;
+    };
+    const pageOf = (page: number, rows: readonly unknown[]): Page<UnionOrder> => ({
+      items: rows.map((row) => mapPddOrder(row, 'increment')),
+      nextCursor: page > 1 ? incrementCursor(page - 1) : null,
+    });
+
+    if (cursor !== undefined) {
+      const page = parseIncrementCursor(cursor);
+      return pageOf(page, await fetchPage(page));
+    }
+    // 首次调用：不依赖 total_count，先倍增再二分探出最后一个非空页，从它开始往回取。
+    const full = async (page: number): Promise<boolean> =>
+      (await fetchPage(page)).length >= PDD_INCREMENT_PAGE_SIZE;
+    if (!(await full(1))) return pageOf(1, await fetchPage(1));
+    let lo = 1; // 已知满页
+    let hi: number; // 已知不满（含空）的页
+    for (;;) {
+      if (lo >= PDD_INCREMENT_MAX_PAGE) {
+        throw new UnionError(
+          'invalid_dto',
+          'pdd listOrders: increment window exceeds the page limit; split it',
+          'pdd',
+        );
+      }
+      const probe = Math.min(lo * 2, PDD_INCREMENT_MAX_PAGE);
+      if (await full(probe)) {
+        lo = probe;
+      } else {
+        hi = probe;
+        break;
+      }
+    }
+    while (hi - lo > 1) {
+      const mid = lo + Math.floor((hi - lo) / 2);
+      if (await full(mid)) lo = mid;
+      else hi = mid;
+    }
+    const tail = (await fetchPage(hi)).length > 0 ? hi : lo;
+    return pageOf(tail, await fetchPage(tail));
+  }
+
+  async #listByPayTime(
+    win: TimeWindow,
+    cursor: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<Page<UnionOrder>> {
+    const window = rangeWindow(win);
+    const token = cursor === undefined ? undefined : parseRangeCursor(cursor);
+    const envelope = await this.request(
+      PDD_ORDER_RANGE,
+      { ...window, ...(token === undefined ? {} : { last_order_id: token }) },
+      signal,
+    );
+    const items = orderList(envelope).map((row) => mapPddOrder(row, 'range'));
+    const next = lastOrderId(envelope);
+    // 空批、没有迭代器、或迭代器原样不变都结束，避免死循环。
+    const done = items.length === 0 || next === null || next === token;
+    return { items, nextCursor: done ? null : rangeCursor(next) };
+  }
+
+  /** order.detail.get：按 order_sn 查一单，补售后状态 return_status；空白订单号不发请求。 */
   async getPddOrderDetail(orderSn: string, ctx: CallCtx): Promise<UnionOrder> {
-    void orderSn;
-    void ctx;
-    throw new Error('NotImplemented: getPddOrderDetail');
+    if (typeof orderSn !== 'string' || orderSn.trim() === '') {
+      throw new UnionError('invalid_dto', 'pdd getPddOrderDetail: order_sn is blank', 'pdd');
+    }
+    const envelope = await this.request(PDD_ORDER_DETAIL, { order_sn: orderSn }, ctx.signal);
+    return mapPddOrder(envelope, 'detail');
   }
 }
