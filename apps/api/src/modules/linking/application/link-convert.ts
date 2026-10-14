@@ -20,7 +20,7 @@
 import type { components } from '@couli/contracts-ts';
 import { ProductKeyInvalid, ProductKeyPlatformUnsupported, splitProductKey } from '@couli/domain';
 import type { Catalog, CardRebateQuoter, ItemRefService, ProductRef } from '../../catalog/index.ts';
-import { newUuidV7, type HandlerResult } from '../../platform/index.ts';
+import { GovernanceError, newUuidV7, type HandlerResult } from '../../platform/index.ts';
 import {
   DemoUnionError,
   UnionError,
@@ -99,11 +99,24 @@ function refused(
 }
 
 /**
- * A union detail failure → convert code: off shelf 30141 (BR-PRICE-14); the union refusing the
- * raw ID itself 30143 (BR-PROD-05 引用失效); a dependency failure 50303 (no price can be
- * confirmed, BR-PRICE-13). Anything else is a fault.
+ * A governed upstream call (catalog / parsing / union) that timed out, ran out of quota or met an
+ * open breaker: the dependency is unavailable, so no price can be confirmed (50303, BR-PRICE-13).
+ * invalid_policy is a configuration fault and stays one.
  */
-function detailFailure(error: unknown, productKey: string): LinkConvertResolution {
+function isGovernedDependencyDown(error: unknown): boolean {
+  return (
+    error instanceof GovernanceError &&
+    (error.code === 'timeout' || error.code === 'quota_exceeded' || error.code === 'circuit_open')
+  );
+}
+
+/**
+ * A union detail failure → convert code: off shelf 30141 (BR-PRICE-14); the union refusing the
+ * raw ID itself 30143 (BR-PROD-05 引用失效); a dependency failure — union or governance timeout,
+ * quota, breaker — 50303 (no price can be confirmed, BR-PRICE-13). Anything else is a fault.
+ */
+export function detailFailure(error: unknown, productKey: string): LinkConvertResolution {
+  if (isGovernedDependencyDown(error)) return refused(50303, productKey);
   if (
     (error instanceof UnionError && error.code === 'item_unavailable') ||
     (error instanceof DemoUnionError && error.code === 'demo_delisted')
@@ -125,6 +138,24 @@ function detailFailure(error: unknown, productKey: string): LinkConvertResolutio
   // catalog's raw-ID order (CatalogError) and governance refusals with a contract code.
   if (code === 30141 || code === 30143) return refused(code, productKey);
   if (code === 50401) return refused(50303, productKey);
+  return { kind: 'fault', error };
+}
+
+/**
+ * A by-URL parse failure → convert code. BR-PROD-03: unsupported, or recognized without a
+ * concrete derivable product → 30131; delisted 30141. parsing's 50301 is only ever a union
+ * dependency failure (upstream down, throttled, governor timeout / quota / breaker), so for the
+ * convert it is the same 50303 as the by-product path; a governance error that escapes the port
+ * unmapped is too. Anything else is a fault.
+ */
+export function parseFailure(error: unknown): LinkConvertResolution {
+  if (isGovernedDependencyDown(error)) return refused(50303, null);
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === 'number' && PARSE_CODES.has(code)) {
+    if (code === 30132) return refused(30131, null);
+    if (code === 50301) return refused(50303, null);
+    return refused(code, null);
+  }
   return { kind: 'fault', error };
 }
 
@@ -261,12 +292,7 @@ class ComposedLinkConvert extends LinkConvertService {
     try {
       parsed = await this.#options.urlParser.parseUrl(url, context);
     } catch (error) {
-      const code = (error as { code?: unknown } | null)?.code;
-      if (typeof code === 'number' && PARSE_CODES.has(code)) {
-        // BR-PROD-03: unsupported, or recognized without a concrete derivable product → 30131.
-        return refused(code === 30132 ? 30131 : code, null);
-      }
-      return { kind: 'fault', error };
+      return parseFailure(error);
     }
     const { item, ref } = parsed;
     if (ref.platform !== body.platform || item.platform !== ref.platform) {
