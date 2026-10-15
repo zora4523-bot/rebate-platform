@@ -1,0 +1,175 @@
+{
+  "task": "B3-03h",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "c2116cae071fcca36f16973cd494d859fc001af5",
+  "red_tests": [
+    "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#20] worker 入口：startWorkerServices 解决之后、started 之前起一次循环（不带测试缝）；SIGTERM 时先等循环 stop 完成（它 resolve 之前 services.stop 不被调用），之后才 services.stop，不留定时器",
+    "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#21] api / stream / admin / payout 入口不起循环",
+    "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#22] COULI_EXIT_AFTER_INIT=1：worker 初始化后退出，不起循环",
+    "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#23] 启动期间已收到停止信号：服务直接停下，不起循环",
+    "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#24] 上下文里没有可用的循环运行体（get 抛错、null、undefined、没有 start）：worker 照常 started 与停机，不起、不崩",
+    "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#25] 循环 stop 拒绝时 services.stop 仍被调用（在拒绝之后，不在之前）、keep-alive 清掉，不留定时器",
+    "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#34] 循环 stop 立即拒绝（同步就失败的停止）：services.stop 仍被调用，不留定时器",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#8] 连续两轮周期：每次延迟为 interval ×(1 ± 抖动)，tick 先排下一轮再干活；一轮逐行调用 step，到本轮上限即停、记一条 agent_sweep_tick（行数合计与 Clock 计的耗时）；下一轮从上一轮停下的游标接着走，wrapped 时本轮结束；每轮结束锁已释放",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#9] step 抛错：本轮不再派发、记 error agent_sweep_failed（只记错误名，不记消息）、锁照样释放、游标停在最后一次成功处；下一轮从那里照常",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#10] 按 Clock 的单轮时限：一行处理完时 Clock 已过 tickTimeoutMs → 不再派发下一行，记 warn agent_sweep_tick_timeout、锁释放；已完成那一行的游标保留，下一轮从它之后接着走",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#11] running 期间再次触发不并发：第二次 tick 记 agent_sweep_skipped busy 后立即结束，不借连接、不调 step；前一轮照常结束并释放锁",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#12] 按定时器的单轮时限：一行挂起时 tick_timeout 触发 → 本轮立即结束（warn agent_sweep_tick_timeout）、锁释放；挂起的那一行稍后成功或失败都被忽略，旧轮此后一行都不再派发；下一轮从旧游标照常",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#13] 迟到的拒绝：被定时器放弃的那一行稍后拒绝，不成为未处理的拒绝、不记 agent_sweep_failed、不派发",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#14] stop：进行中的一行做完后不再派发下一行，解锁后 stop 才 resolve；取消已排的 tick，停后迟到的 tick 什么都不做；重复调用都 resolve",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#33] stop 的等待有上限：进行中的一行挂起时 stop_timeout 触发即 resolve；之后不再起新一轮，挂起的一行结束后也不再派发",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#37] 借连接失败（db.connection().execute 在回调前就拒绝）：这一轮的 promise 正常结束（不拒绝、无未处理的拒绝），恰一条 error agent_sweep_lock_failed {stage: acquire}，step 未被调用；running 已复位，下一轮照常取锁、记 agent_sweep_tick、锁已释放",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#38] 取锁语句抛错（pg_try_advisory_lock 失败、连接本身完好）：这一轮正常结束不拒绝，恰一条 agent_sweep_lock_failed {stage: acquire}，step 未被调用，锁未被持有；下一轮照常",
+    "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#39] 解锁失败（最后一行之后锁连接的后端被杀，unlock 报错）：这一轮正常结束不拒绝，记本轮的 agent_sweep_tick 外加恰一条 agent_sweep_lock_failed {stage: unlock}；running 已复位，下一轮照常取锁、记 agent_sweep_tick、锁已释放",
+    "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#15] 默认参数：周期 60 s、抖动 ±10 %、单轮时限 60 s、单轮至多 sweeperDefaults().maxPerTick 条，stop 等待上限为正的安全整数；每次调用返回新对象",
+    "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#16] 参数校验：interval / tickTimeout / maxPerTick / stopTimeout 须为 ≥ 1 的安全整数、0 ≤ jitterRatio < 1，否则 startAgentSweeper 抛 RangeError 且不排任何定时器；抖动 0 合法",
+    "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#17] 启动只排第一轮 tick：不同步借连接、不调 sweepOnce；抖动边界内（random 取 0 与接近 1）",
+    "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#18] 默认 schedule：一个 unref 的 setTimeout（不单独撑住进程）；stop 后不留定时器",
+    "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#19] stop 幂等：没有进行中的一轮时立即 resolve、取消已排的 tick；多次调用都 resolve；停后迟到触发的 tick 不借连接、不调 sweepOnce、不再排下一轮",
+    "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#26] worker 入口（有库）：agentSweeperToken() 提供运行体；参数为 runTimingsDefaults / sweeperDefaults / agentSweepLoopDefaults，assertRunTimings 成立；装配不发查询、不调队列",
+    "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#36] 真实 provider 的 start() 接到了真循环：AppModule worker 上下文取出的运行体 start({schedule}) 排一个 tick；触发后在库句柄上发 advisory lock 查询并记一条循环结束日志（只编译不连库：锁拿不到即跳过或记锁失败）；stop 后已排的 tick 被取消、迟到触发也不再查询",
+    "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#27] 运行体的 texts.errorMsg 取 contracts/texts.default.json 的 error.<code>（变量缺失时写法优先、缺键回落 error.50001），不含占位符",
+    "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#28] worker 入口没有库：token 提供 null，恰一条 info agent_sweeper_disabled",
+    "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#29] api / stream / admin / payout 入口不装 AgentModule.forWorker：没有该 token、也不记 agent_sweeper_disabled",
+    "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#30] AgentModule.forWorker() 提供并导出 agentSweeperToken()（同一个 symbol）",
+    "test/spec/agent/stream-recovery/provider.int.test.ts > [AC-B3-03h#35] 真实 provider（AgentModule.forWorker）：运行体与 createAgentSweeperRuntime 同形同参；start({schedule}) 触发一次 tick 即收尾遗留 run（50001、退还、会话锁与 advisory lock 释放）并记 agent_sweep_tick；stop 后迟到的 tick 不再收尾",
+    "test/spec/agent/stream-recovery/provider.int.test.ts > [AC-B3-03h#40] 真实 provider 的 step 每次只处理一行：两条遗留 run 时 step.sweepOnce(sweepStart()) 只收尾第一条（processed 1、wrapped false、游标停在它上），第二条要下一次调用；本轮上限在 loopConfig（= sweeperConfig.maxPerTick）而不在 step",
+    "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#1] 受理后进程死亡、无人重试：锁期 + 余量之后 worker 一轮 tick 把它收尾为 50001 / server_error，未出卡退还 1 条，会话锁与 advisory lock 都已释放；同键重放得到两帧（meta duplicate=true + 原终止帧），不起新 run",
+    "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#2] 崩溃后同会话来了新消息（未跑 sweeper）：受理事务先收尾遗留 run 再受理，新 run 正常结束、旧 run 已有终态且只退一次；之后一轮 tick 对该会话无事可做（零次收尾、表不变）",
+    "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#3] 两个 worker（各自的连接池、同一库）同时 tick：一个持 advisory lock 处理时另一个记 locked 跳过、不调 sweepOnce；每条只收尾一次、只退一次（额度计数前后对比）",
+    "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#4] 两个 worker 不加编排同时 tick：两边 tick 都正常结束（不记 failed），收尾合计恰为遗留数，每条只退一次",
+    "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#5] 停 Redis：signals 缺省或替身全抛时，受理、取消（200）、活进程正常收尾、worker 收尾全部照常",
+    "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#6] 取消返回 200（cancel 已写入 PG）后进程死亡：锁期 + 余量之后一轮 tick 收尾为 cancelled（done cancelled、照常计数、不退）",
+    "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#7] worker 运行体的收尾文案来自契约文件：遗留 run 的 50001 终止帧 msg 等于 contracts/texts.default.json 的 error.50001（变量缺失时写法），不含占位符",
+    "test/spec/agent/stream-recovery/takeover.int.test.ts > [AC-B3-03h#31] 单轮时限（S1-1）：第一条 finalize 挂起超过时限 → 本轮记 agent_sweep_tick_timeout 结束、锁释放、下一轮可以开始并处理两条；挂起的 finalize 稍后恢复时，旧轮不再派发第二条（r2 只在新一轮派发一次），新旧两轮的派发不重叠",
+    "test/spec/agent/stream-recovery/takeover.int.test.ts > [AC-B3-03h#32] 失锁（S1-2）：A 持锁处理第一条时 finalize 挂起，外部 pg_terminate_backend 杀掉 A 的锁连接 → B 下一轮拿到锁并接管两条；放开 A 后 A 不再派发本轮剩余的 run（A 的派发只有挂起那一条），记 agent_sweep_lock_lost；A 的下一轮重新取锁照常"
+  ],
+  "risk_note": "RV2 by the PR (rule tests under test/**; apps/api/src/modules/agent/stream/sweeper/loop.ts drives finalizeRun, which settles the Agent daily quota; app.module.ts and entry.ts wire the worker). Codex-first implementation (ops/approvals.yaml id 23). Design couli-runs/B3-03g/design.md §5.1, §5.3, §7.4, §10.1 T10 / T14. Rule tests by Claude subagents in 3 attempts plus an owner-approved extra round (couli-runs/B3-03h/owner-extra-spec-round.md: one row per step; connection, lock and unlock failures end the tick without a rejection). Codex implemented in 2 attempts (attempt 2: the entry ignores a sweeper token that resolves to the queue object of a context stub) plus one orchestrator formatting commit (prettier on entry.ts). Frozen test #39 exposed a dead pooled client in packages/db, fixed by B1-01zzc (#497); rebased onto main 610ab26, full pnpm verify passed in the isolated container on the AWS test machine (host-ephemeral PostgreSQL). Claude money-checklist review round 1 pass (the reviewer other than the implementer, ops/approvals.yaml id 27). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c2116cae071fcca36f16973cd494d859fc001af5",
+      "tree": "af089560e79527e41905b85ce7cbd1cd9dc44be3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-15T13:53:21Z",
+      "finished_at": "2026-10-15T13:53:34Z",
+      "red_tests": [
+        "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#20] worker 入口：startWorkerServices 解决之后、started 之前起一次循环（不带测试缝）；SIGTERM 时先等循环 stop 完成（它 resolve 之前 services.stop 不被调用），之后才 services.stop，不留定时器",
+        "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#21] api / stream / admin / payout 入口不起循环",
+        "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#22] COULI_EXIT_AFTER_INIT=1：worker 初始化后退出，不起循环",
+        "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#23] 启动期间已收到停止信号：服务直接停下，不起循环",
+        "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#24] 上下文里没有可用的循环运行体（get 抛错、null、undefined、没有 start）：worker 照常 started 与停机，不起、不崩",
+        "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#25] 循环 stop 拒绝时 services.stop 仍被调用（在拒绝之后，不在之前）、keep-alive 清掉，不留定时器",
+        "test/spec/agent/stream-recovery/entry.test.ts > [AC-B3-03h#34] 循环 stop 立即拒绝（同步就失败的停止）：services.stop 仍被调用，不留定时器",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#8] 连续两轮周期：每次延迟为 interval ×(1 ± 抖动)，tick 先排下一轮再干活；一轮逐行调用 step，到本轮上限即停、记一条 agent_sweep_tick（行数合计与 Clock 计的耗时）；下一轮从上一轮停下的游标接着走，wrapped 时本轮结束；每轮结束锁已释放",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#9] step 抛错：本轮不再派发、记 error agent_sweep_failed（只记错误名，不记消息）、锁照样释放、游标停在最后一次成功处；下一轮从那里照常",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#10] 按 Clock 的单轮时限：一行处理完时 Clock 已过 tickTimeoutMs → 不再派发下一行，记 warn agent_sweep_tick_timeout、锁释放；已完成那一行的游标保留，下一轮从它之后接着走",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#11] running 期间再次触发不并发：第二次 tick 记 agent_sweep_skipped busy 后立即结束，不借连接、不调 step；前一轮照常结束并释放锁",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#12] 按定时器的单轮时限：一行挂起时 tick_timeout 触发 → 本轮立即结束（warn agent_sweep_tick_timeout）、锁释放；挂起的那一行稍后成功或失败都被忽略，旧轮此后一行都不再派发；下一轮从旧游标照常",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#13] 迟到的拒绝：被定时器放弃的那一行稍后拒绝，不成为未处理的拒绝、不记 agent_sweep_failed、不派发",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#14] stop：进行中的一行做完后不再派发下一行，解锁后 stop 才 resolve；取消已排的 tick，停后迟到的 tick 什么都不做；重复调用都 resolve",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#33] stop 的等待有上限：进行中的一行挂起时 stop_timeout 触发即 resolve；之后不再起新一轮，挂起的一行结束后也不再派发",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#37] 借连接失败（db.connection().execute 在回调前就拒绝）：这一轮的 promise 正常结束（不拒绝、无未处理的拒绝），恰一条 error agent_sweep_lock_failed {stage: acquire}，step 未被调用；running 已复位，下一轮照常取锁、记 agent_sweep_tick、锁已释放",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#38] 取锁语句抛错（pg_try_advisory_lock 失败、连接本身完好）：这一轮正常结束不拒绝，恰一条 agent_sweep_lock_failed {stage: acquire}，step 未被调用，锁未被持有；下一轮照常",
+        "test/spec/agent/stream-recovery/loop.int.test.ts > [AC-B3-03h#39] 解锁失败（最后一行之后锁连接的后端被杀，unlock 报错）：这一轮正常结束不拒绝，记本轮的 agent_sweep_tick 外加恰一条 agent_sweep_lock_failed {stage: unlock}；running 已复位，下一轮照常取锁、记 agent_sweep_tick、锁已释放",
+        "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#15] 默认参数：周期 60 s、抖动 ±10 %、单轮时限 60 s、单轮至多 sweeperDefaults().maxPerTick 条，stop 等待上限为正的安全整数；每次调用返回新对象",
+        "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#16] 参数校验：interval / tickTimeout / maxPerTick / stopTimeout 须为 ≥ 1 的安全整数、0 ≤ jitterRatio < 1，否则 startAgentSweeper 抛 RangeError 且不排任何定时器；抖动 0 合法",
+        "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#17] 启动只排第一轮 tick：不同步借连接、不调 sweepOnce；抖动边界内（random 取 0 与接近 1）",
+        "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#18] 默认 schedule：一个 unref 的 setTimeout（不单独撑住进程）；stop 后不留定时器",
+        "test/spec/agent/stream-recovery/loop.test.ts > [AC-B3-03h#19] stop 幂等：没有进行中的一轮时立即 resolve、取消已排的 tick；多次调用都 resolve；停后迟到触发的 tick 不借连接、不调 sweepOnce、不再排下一轮",
+        "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#26] worker 入口（有库）：agentSweeperToken() 提供运行体；参数为 runTimingsDefaults / sweeperDefaults / agentSweepLoopDefaults，assertRunTimings 成立；装配不发查询、不调队列",
+        "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#36] 真实 provider 的 start() 接到了真循环：AppModule worker 上下文取出的运行体 start({schedule}) 排一个 tick；触发后在库句柄上发 advisory lock 查询并记一条循环结束日志（只编译不连库：锁拿不到即跳过或记锁失败）；stop 后已排的 tick 被取消、迟到触发也不再查询",
+        "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#27] 运行体的 texts.errorMsg 取 contracts/texts.default.json 的 error.<code>（变量缺失时写法优先、缺键回落 error.50001），不含占位符",
+        "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#28] worker 入口没有库：token 提供 null，恰一条 info agent_sweeper_disabled",
+        "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#29] api / stream / admin / payout 入口不装 AgentModule.forWorker：没有该 token、也不记 agent_sweeper_disabled",
+        "test/spec/agent/stream-recovery/module.test.ts > [AC-B3-03h#30] AgentModule.forWorker() 提供并导出 agentSweeperToken()（同一个 symbol）",
+        "test/spec/agent/stream-recovery/provider.int.test.ts > [AC-B3-03h#35] 真实 provider（AgentModule.forWorker）：运行体与 createAgentSweeperRuntime 同形同参；start({schedule}) 触发一次 tick 即收尾遗留 run（50001、退还、会话锁与 advisory lock 释放）并记 agent_sweep_tick；stop 后迟到的 tick 不再收尾",
+        "test/spec/agent/stream-recovery/provider.int.test.ts > [AC-B3-03h#40] 真实 provider 的 step 每次只处理一行：两条遗留 run 时 step.sweepOnce(sweepStart()) 只收尾第一条（processed 1、wrapped false、游标停在它上），第二条要下一次调用；本轮上限在 loopConfig（= sweeperConfig.maxPerTick）而不在 step",
+        "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#1] 受理后进程死亡、无人重试：锁期 + 余量之后 worker 一轮 tick 把它收尾为 50001 / server_error，未出卡退还 1 条，会话锁与 advisory lock 都已释放；同键重放得到两帧（meta duplicate=true + 原终止帧），不起新 run",
+        "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#2] 崩溃后同会话来了新消息（未跑 sweeper）：受理事务先收尾遗留 run 再受理，新 run 正常结束、旧 run 已有终态且只退一次；之后一轮 tick 对该会话无事可做（零次收尾、表不变）",
+        "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#3] 两个 worker（各自的连接池、同一库）同时 tick：一个持 advisory lock 处理时另一个记 locked 跳过、不调 sweepOnce；每条只收尾一次、只退一次（额度计数前后对比）",
+        "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#4] 两个 worker 不加编排同时 tick：两边 tick 都正常结束（不记 failed），收尾合计恰为遗留数，每条只退一次",
+        "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#5] 停 Redis：signals 缺省或替身全抛时，受理、取消（200）、活进程正常收尾、worker 收尾全部照常",
+        "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#6] 取消返回 200（cancel 已写入 PG）后进程死亡：锁期 + 余量之后一轮 tick 收尾为 cancelled（done cancelled、照常计数、不退）",
+        "test/spec/agent/stream-recovery/recovery.int.test.ts > [AC-B3-03h#7] worker 运行体的收尾文案来自契约文件：遗留 run 的 50001 终止帧 msg 等于 contracts/texts.default.json 的 error.50001（变量缺失时写法），不含占位符",
+        "test/spec/agent/stream-recovery/takeover.int.test.ts > [AC-B3-03h#31] 单轮时限（S1-1）：第一条 finalize 挂起超过时限 → 本轮记 agent_sweep_tick_timeout 结束、锁释放、下一轮可以开始并处理两条；挂起的 finalize 稍后恢复时，旧轮不再派发第二条（r2 只在新一轮派发一次），新旧两轮的派发不重叠",
+        "test/spec/agent/stream-recovery/takeover.int.test.ts > [AC-B3-03h#32] 失锁（S1-2）：A 持锁处理第一条时 finalize 挂起，外部 pg_terminate_backend 杀掉 A 的锁连接 → B 下一轮拿到锁并接管两条；放开 A 后 A 不再派发本轮剩余的 run（A 的派发只有挂起那一条），记 agent_sweep_lock_lost；A 的下一轮重新取锁照常"
+      ],
+      "expected": [
+        "test/spec/agent/stream-recovery/entry.test.ts",
+        "test/spec/agent/stream-recovery/loop.int.test.ts",
+        "test/spec/agent/stream-recovery/loop.test.ts",
+        "test/spec/agent/stream-recovery/module.test.ts",
+        "test/spec/agent/stream-recovery/provider.int.test.ts",
+        "test/spec/agent/stream-recovery/recovery.int.test.ts",
+        "test/spec/agent/stream-recovery/takeover.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "f5240c9f94ee0b732eb2866913e4c5f5f0d32dc7a9981b127598da52485e59fc"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "13645540758c3667d9b6e4a892ae90d82de516fe18aa9aad893481585f35f2f9"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "91a0c8dccae14b1f17f726f02d4db95bb2926bec",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      }
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "751b32d20cf10b264a6034609f691081952cb718",
+      "tree": "66a5b4cf9fa90e4e9ea183cc2f816815e333f8bc",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-15T14:02:59Z",
+      "finished_at": "2026-10-15T14:10:29Z",
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "91a0c8dccae14b1f17f726f02d4db95bb2926bec",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagent on the rebased branch, round 1 pass; one S2 (a SELECT 1 hanging on a half-open lock connection keeps the tick and the running flag until the TCP timeout, about 15 minutes; no double settlement) recorded as a follow-up (couli-runs/B3-03h/review-claude-money.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "fail",
+    "note": "Codex spec-test reviews round 1 (3 S1) and round 2 (1 S1), each fixed by the test author; a fresh Claude closing review found 2 S1 (one row per step; lock-connection failures), addressed in the owner-approved extra round and re-reviewed by a fresh Claude subagent: pass with two S2 (couli-runs/B3-03h/review-codex-spec-test-r1.json, r2.json, review-claude-spec-test-close.json, review-claude-spec-test-extra.json, owner-extra-spec-round.md). The frozen rule tests were not changed after the extra round's commit"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "599bc476dfd04c1c69145147c2a7812f30229d41"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  }
+}
