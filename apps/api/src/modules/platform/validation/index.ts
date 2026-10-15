@@ -96,6 +96,8 @@ export interface ContractOperation {
 
 /** Fastify route schema: only the request parts, never `response`. */
 export interface RouteSchema {
+  /** Request-body metadata, not an Ajv schema; the handler consumes the multipart stream. */
+  readonly multipart?: true;
   readonly params?: JsonSchema;
   readonly querystring?: JsonSchema;
   readonly headers?: JsonSchema;
