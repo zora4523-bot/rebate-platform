@@ -9,6 +9,7 @@
 # Every service mounts read-only: the database CA (/etc/pki/ca.crt) and the field-encryption
 # key ring directory (/etc/couli-keys -> /run/couli-keys); api also mounts its access-token
 # signing key directory (/etc/couli-jwt -> /run/couli-jwt), loaded by infra/staging/boot.mjs.
+# api and worker also mount the optional Pinduoduo directory (/etc/couli-pdd -> /run/couli-pdd).
 # Every process starts through boot.mjs (node --import), which also counts container starts.
 # All five health checks require 30s of uptime and a single start until deploy.sh marks the
 # deployment settled, so `up --wait` fails when any process crashed or restarted during it.
@@ -58,6 +59,16 @@ services:
         source: /etc/couli-jwt
         target: /run/couli-jwt
         read_only: true
+      # Pinduoduo preparation (B1-04y): node /etc/couli-pdd (client_secret file and the
+      # union-endpoints/ override directory; owned by uid 1000, directories 500, files 400).
+      # Optional: create_host_path lets the deployment start when the node has no such
+      # directory yet. Mounted on api and worker only (the entries that assemble UnionModule).
+      - type: bind
+        source: /etc/couli-pdd
+        target: /run/couli-pdd
+        read_only: true
+        bind:
+          create_host_path: true
     healthcheck:
       # Healthy only when this process own /healthz on API_PORT answers 2xx AND the
       # container has run for 30s AND (before its first healthy check) started only once:
@@ -174,6 +185,16 @@ services:
         source: /etc/couli-keys
         target: /run/couli-keys
         read_only: true
+      # Pinduoduo preparation (B1-04y): node /etc/couli-pdd (client_secret file and the
+      # union-endpoints/ override directory; owned by uid 1000, directories 500, files 400).
+      # Optional: create_host_path lets the deployment start when the node has no such
+      # directory yet. Mounted on api and worker only (the entries that assemble UnionModule).
+      - type: bind
+        source: /etc/couli-pdd
+        target: /run/couli-pdd
+        read_only: true
+        bind:
+          create_host_path: true
     healthcheck:
       # No port: healthy once the process has run for 30s AND (before its first healthy check)
       # started only once (/tmp/couli-starts, written by boot.mjs; kept across a restart,

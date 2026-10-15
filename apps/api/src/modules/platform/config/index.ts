@@ -42,3 +42,8 @@ export {
   openPddCredentials,
 } from './pdd-startup.ts';
 export type { PddClientCredentials, PddStartupErrorCode } from './pdd-startup.ts';
+// Union endpoint override directory (B1-04y): staging reads the endpoints from a mounted directory.
+export {
+  UNION_ENDPOINT_OVERRIDE_DIR_ENV,
+  readUnionEndpointOverrideConfig,
+} from './union-endpoint-override.ts';

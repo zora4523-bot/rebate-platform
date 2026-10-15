@@ -94,7 +94,49 @@ chmod 500 /etc/couli-jwt
 
 `openssl pkcs8 -topk8` 对 SEC1 与 PKCS#8 输入都输出 PKCS#8。核对曲线用 `openssl pkey -in /etc/couli-jwt/es256.pem -noout -text_pub`（只打印公钥，应看到 `prime256v1` 或 `P-256`），不要用会打印私钥的 `-text`。
 
-### 1.5 B1-01zd 之前
+### 1.5 拼多多（准备，不切 live）
+
+本节只做接线准备，不切 live：**pdd 切 live 暂不可用 — blocked on 真实返利报价器（B2-03）**。api 入口只要有一个联盟端点是 live，就按 live 装配，而演示返利报价器在 live 下拒绝启动（资金安全设计），真实报价器由 B2-03 提供。所以下面三个端点文件现在都保持 demo，pdd.json 也不例外；本节不提供切换步骤。
+
+compose 给 api 与 worker（装配联盟模块的两个入口）只读挂载节点目录 `/etc/couli-pdd`（容器内 `/run/couli-pdd`）。这个挂载可缺：节点没有该目录时部署照常进行，`deploy.sh` 也不检查它。
+
+节点文件由负责人放入（容器以 uid 1000 运行）：
+
+| 节点路径 | 内容 | 属主与权限 |
+| --- | --- | --- |
+| `/etc/couli-pdd/` | 目录 | 属主 1000，目录 500 |
+| `/etc/couli-pdd/client_secret` | 拼多多开放平台应用的密钥原文，文件里只放这一个值 | 属主 1000，文件 400 |
+| `/etc/couli-pdd/union-endpoints/` | 子目录，放三平台端点文件 | 属主 1000，目录 500 |
+| `/etc/couli-pdd/union-endpoints/jd.json`、`pdd.json`、`taobao.json` | 三个端点文件，现在都是 demo，与镜像内 `config/union-endpoints/` 相同 | 属主 1000，文件 400 |
+
+密钥内容不得出现在命令行里（会进 shell 历史和进程列表），也不得放进环境变量或 `staging.env`；用编辑器打开文件粘贴后保存，不要用 `echo` / `printf` 写入密钥。准备步骤（root 执行）：
+
+```sh
+install -d -m 700 /etc/couli-pdd /etc/couli-pdd/union-endpoints
+vi /etc/couli-pdd/client_secret
+for platform in jd pdd taobao; do
+  printf '{"platform":"%s","mode":"demo","baseUrl":null,"quotaKey":"account:%s"}\n' \
+    "$platform" "$platform" > "/etc/couli-pdd/union-endpoints/$platform.json"
+done
+chown -R 1000:1000 /etc/couli-pdd
+chmod 400 /etc/couli-pdd/client_secret /etc/couli-pdd/union-endpoints/*.json
+chmod 500 /etc/couli-pdd/union-endpoints /etc/couli-pdd
+```
+
+先放好上面的文件，再在 `/etc/couli/staging.env` 设下面四个变量（顺序不能反：设了 UNION_ENDPOINT_OVERRIDE_DIR 而目录缺文件时，api 与 worker 启动即失败，不会退回镜像内的端点）：
+
+| 变量 | 取值 |
+| --- | --- |
+| `PDD_CLIENT_ID` | 拼多多开放平台应用的 client_id（不是密钥） |
+| `PDD_CLIENT_SECRET_FILE` | `/run/couli-pdd/client_secret`（容器内路径；只写路径，不写密钥内容） |
+| `PDD_QUERY_CUSTOM_PARAMETERS` | 商品查询带的 custom_parameters，JSON 对象文本，按 UTF-8 不超过 64 字节 |
+| `UNION_ENDPOINT_OVERRIDE_DIR` | `/run/couli-pdd/union-endpoints`（容器内路径；只有 staging 认，必须是绝对路径） |
+
+`staging.env` 由 api、stream、worker、admin 共用；stream 与 admin 没有这个挂载，但它们不读端点目录，配置校验也只检查路径是否绝对，不检查目录是否存在，所以照常启动。
+
+拼多多开放平台应用的 IP 白名单只加不删：把 staging 节点的出口 IP 加进去，已有的地址一律保留。
+
+### 1.6 B1-01zd 之前
 
 **B1-01zd 合并之前**，应用在 `APP_ENV=staging` 下仍拒绝 `FIELD_KEY_PROVIDER=local`，五个进程都会启动失败，部署会走失败分支。
 
