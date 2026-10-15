@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import type { AgentRunBodyDeps } from '../../../../apps/api/src/modules/agent/orchestrator/index.ts';
 import { filteredText } from './fixtures/recordings.ts';
 import { input, notice, proceed, referenceView, setup, toolCall } from './kit.ts';
 
@@ -127,20 +128,24 @@ it('[AC-B3-05b#5][BR-AI-03][BR-AI-06] 身份字段原样交注册端口拒绝，
   r.replayed();
 });
 
-it('[AC-B3-05b#6][BR-AI-14][BR-AI-06] 工具收到原值占位表，trace 参数存储形态只保留后四位', async () => {
+it('[AC-B3-05b#6][BR-AI-14][BR-AI-06] 原参数与本轮占位表交脱敏端口，trace 原样记录其返回值', async () => {
   const value = input();
   const raw = '987654321012345678';
   const args = { q: '合成订单<num_1>', extra: ['<num_1>'] };
+  const placeholders = { '<num_1>': raw };
+  // The core only wires this opaque storage result; masking semantics belong to the port.
+  const maskedArgs = { q: '合成脱敏结果', extra: ['***5678'] };
+  const traceMask = vi.fn<AgentRunBodyDeps['traceMask']>(() => maskedArgs);
   const r = setup(
     [
       { calls: [toolCall('synthetic-trace-call', args)], views: [{}] },
       { parts: ['{"agent_intent":"out_of_scope"}'] },
     ],
     {
-      proceed: proceed({ modelText: '合成订单<num_1>', placeholders: { '<num_1>': raw } }),
+      proceed: proceed({ modelText: '合成订单<num_1>', placeholders }),
     },
   );
-  expect(await r.run({}, { ...value, text: `合成订单${raw}` })).toEqual({
+  expect(await r.run({ traceMask }, { ...value, text: `合成订单${raw}` })).toEqual({
     kind: 'done',
     finishReason: 'stop',
   });
@@ -149,14 +154,13 @@ it('[AC-B3-05b#6][BR-AI-14][BR-AI-06] 工具收到原值占位表，trace 参数
     tool_calls: [
       {
         name: 'search_products',
-        args: {
-          q: expect.stringMatching(/^合成订单[^0-9<>]+5678$/u),
-          extra: [expect.stringMatching(/^[^0-9<>]+5678$/u)],
-        },
+        args: maskedArgs,
         status: 'ok',
       },
     ],
   });
+  expect(traceMask).toHaveBeenCalledExactlyOnceWith(args, placeholders);
+  expect(r.traces.at(-1)?.tool_calls[0]?.args).toEqual(maskedArgs);
   expect(r.execute.mock.calls[0]?.[0].args).toEqual(args);
   expect(r.execute.mock.calls[0]?.[1].placeholders).toEqual({ '<num_1>': raw });
   expect(JSON.stringify(r.traces)).not.toContain('<num_1>');

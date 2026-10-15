@@ -74,9 +74,13 @@ it.each([
     expect(r.execute.mock.calls[0]?.[1].context).toEqual(entryContext);
     expect(r.execute.mock.calls[0]?.[0].args).toEqual(args);
     const lastPhase = rejected ? 'failed' : 'end';
-    expect(toolDisplay.mock.calls).toEqual([
-      ['synthetic-other-app', 'search_products', 'start', templatePlatform],
-      ['synthetic-other-app', 'search_products', lastPhase, templatePlatform],
+    expect(toolDisplay.mock.calls.map((call) => call.slice(0, 3))).toEqual([
+      ['synthetic-other-app', 'search_products', 'start'],
+      ['synthetic-other-app', 'search_products', lastPhase],
+    ]);
+    expect(toolDisplay.mock.calls.map((call) => call[3])).toEqual([
+      templatePlatform,
+      templatePlatform,
     ]);
     expect(r.events.filter((event) => event.kind === 'status')).toEqual([
       {

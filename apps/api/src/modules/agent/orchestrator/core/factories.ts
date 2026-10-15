@@ -25,11 +25,13 @@ import type {
  * One ctx.text per GuardEmit (including the final end flush), preserving guard order.
  * Fixed keys use awaited texts.text(appId, key), including guard replacement keys.
  * Core alone emits proceed.notices once before model/path output, through the same caps.
+ * Those notices do NOT count as delivered content for the no-degrade rule (plan U-11):
+ * notices alone still allow budget/models_failed degradation; paths must not re-emit them.
  * A blocked output stops tools/cards not yet emitted; timeout replacement keeps cards.
  * Output limits guard all paths. tool.status is not a content frame. Embedded cards count
  * toward cards but not frames; never emit a partial structured card to fit the limit.
  * Tool/round exhaustion returns done limit; output caps stop at the boundary, without any
- * later content. Degraded results are returned unchanged only before text/card delivery;
+ * later content. Degraded results are returned unchanged only before model/tool text/card delivery;
  * after delivery a router degradation ends done stop (plan U-11), without duplicate fallback.
  * A pre-aborted signal or an abort during any await suppresses all later output; late results
  * are discarded. RunManager owns the actual cancellation terminal; the body returns done stop.
@@ -38,8 +40,9 @@ import type {
  * Router refused => agent.refuse.unsafe, done safety. No prompt => degraded route_no_model,
  * without complete() or tool execution. Read the shared immutable PromptSource once per run;
  * trace records that version, the actual last responding model and all attempts in order.
- * Trace tool args are a storage-masked copy after placeholder restoration (B3-05a),
- * while execute and model messages retain their model-form placeholders unchanged.
+ * For each traced tool call, pass unchanged args and this run's placeholders to traceMask
+ * and record its return value unchanged. Core owns neither restoration nor masking semantics;
+ * execute and model messages retain their model-form placeholders unchanged.
  */
 export function createAgentRunBody(deps: AgentRunBodyDeps): (input: RunBodyInput) => RunBody {
   void deps;

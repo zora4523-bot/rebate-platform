@@ -34,7 +34,8 @@ export interface InputProceed {
   /** Run-local only; never sent to the model or trace. */
   readonly placeholders: Readonly<Record<string, string>>;
   readonly links: readonly Candidate[];
-  /** Core emits once, in order, before model/path output; counted against run limits.
+  /** Core emits once, in order, before model/path output; counted against run limits,
+   * but NOT as delivered model/tool content for the no-degrade rule (plan U-11).
    * Downstream paths receive these for context only and MUST NOT re-emit them. */
   readonly notices: readonly UnnumberedCard[];
   readonly untrustedInput: boolean;
@@ -160,9 +161,8 @@ export interface OrchestratorTrace extends ToolTraceFragment {
   readonly prompt_version: string;
   readonly tool_calls: readonly {
     readonly name: string;
-    /** Storage form: restore placeholders on a copy, then B3-05a maskForTrace.
-     * Long numbers retain only their last four digits, including nested args.
-     * Neither raw values nor unresolved known placeholders go to the sink. */
+    /** Exact storage-safe result from the injected traceMask port.
+     * Core does not restore placeholders or implement masking rules. */
     readonly args: unknown;
     readonly status: 'ok' | 'failed' | 'rejected';
   }[];
@@ -189,6 +189,10 @@ export interface AgentRunBodyDeps {
   /** Same immutable source passed to createRunLabels. Read once per run, not per round. */
   readonly prompt: PromptSource;
   readonly limits: OrchestratorLimits;
+  /** Given unchanged model args and this run's placeholder table, return storage-safe args.
+   * The port owns masking semantics; core records its result unchanged and never records
+   * the placeholder table or raw values. Must not mutate the args or table. */
+  readonly traceMask: (args: unknown, placeholders: Readonly<Record<string, string>>) => unknown;
   readonly trace?: RunTraceSink;
 }
 

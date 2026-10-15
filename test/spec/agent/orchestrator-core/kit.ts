@@ -287,6 +287,8 @@ export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions =
     prompt: { current: vi.fn(async () => ({ version: 'synthetic-v1', system: '合成系统前缀' })) },
     // Expected defaults are literals from 02 §9.1–9.2, never taken from the SUT.
     limits: { toolCalls: 4, modelRounds: 3, textCodePoints: 20000, cards: 12, contentFrames: 400 },
+    // Synthetic non-sensitive args only; the masking wiring case injects its own result.
+    traceMask: vi.fn((args) => args),
     trace: {
       record: (_runId, trace) => {
         traces.push(trace);
