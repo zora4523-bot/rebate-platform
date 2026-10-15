@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { PostgresDriver } from 'kysely';
 import { expect, it, vi } from 'vitest';
 import * as redisModule from '../../../../apps/api/src/modules/platform/redis/index.ts';
 import { signedIn, useHarness } from '../auth/kit.ts';
-import { allowed, PROBE, rejected, setup, TRACE } from './kit.ts';
+import { allowed, rejected, setup, TRACE } from './kit.ts';
 
 const h = useHarness();
 
@@ -208,15 +209,21 @@ it.each(['missing', 'other-app'] as const)(
 
 it('[AC-F1-06u#14] 后台鉴权之后数据库读取失败，按请求返回 50001', async () => {
   const s = await setup(h);
+  const unavailable = vi
+    .fn<() => Promise<never>>()
+    .mockRejectedValue(new Error('profile database unavailable'));
   let restore: (() => void) | undefined;
   s.hooks.beforeRun = async () => {
+    // Queries, withSchema clones and transactions all acquire from the same driver layer.
+    // Fail only after the real token check, and restore before harness cleanup.
     const spy = vi
-      .spyOn(h.db.getExecutor(), 'executeQuery')
-      .mockRejectedValue(new Error('profile database unavailable'));
+      .spyOn(PostgresDriver.prototype, 'acquireConnection')
+      .mockImplementation(unavailable);
     restore = () => spy.mockRestore();
   };
   try {
     await rejected(await s.read(), 50001);
+    expect(unavailable).toHaveBeenCalled();
     expect(s.requests).toHaveLength(1);
     expect(s.business).not.toHaveBeenCalled();
   } finally {
@@ -241,7 +248,10 @@ it('[AC-F1-06u#16] 同账号的另一登录会话不能使用原会话签发的�
   s.f.clock.advanceMs(30_000);
   const other = await signedIn(s.f, s.a);
   await rejected(
-    await s.f.read(other.admin_token, PROBE, { 'x-trace-id': TRACE, 'x-step-up-token': token }),
+    await s.f.read(other.admin_token, s.probePath, {
+      'x-trace-id': TRACE,
+      'x-step-up-token': token,
+    }),
     10003,
     { tier: 'totp' },
   );

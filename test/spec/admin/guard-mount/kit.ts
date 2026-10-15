@@ -5,6 +5,12 @@ import {
   type AdminOperationResponse,
 } from '../../../../apps/api/src/modules/platform/http/admin-guard.ts';
 import type { AdminPrincipalCarrier } from '../../../../apps/api/src/modules/platform/http/admin-context.ts';
+import { contractAuthRoutes } from '../../../../apps/api/src/modules/platform/http/auth-routes.ts';
+import {
+  REQUEST_CHECKS,
+  type RequestCheckInput,
+  type RequestCheckPlan,
+} from '../../../../apps/api/src/modules/platform/http/request-checks.ts';
 import {
   account,
   fixture,
@@ -17,11 +23,12 @@ import {
 import { ROOT } from '../permissions/expected.ts';
 import { lastCode, ok, registered, SEND, STEP, validate, type Grant } from '../step-up/kit.ts';
 
-export const PROBE = '/admin/v1/platform-icons';
 export const TRACE = '8f268c53-b3c8-4bfd-87dd-61e8a7f16aa1';
 
 export interface ProbeRequest extends AdminPrincipalCarrier {
   readonly id: string;
+  readonly ip: string;
+  readonly url: string;
   readonly headers: Record<string, string | string[] | undefined>;
 }
 
@@ -102,9 +109,33 @@ export async function setup(
   const requests: ProbeRequest[] = [];
   const hooks: { beforeRun?: (request: ProbeRequest) => Promise<void> } = {};
   const server = f.app.getHttpAdapter().getInstance() as unknown as ProbeServer;
-  expect(server.hasRoute({ method: 'GET', url: PROBE }), 'F1-06u 不挂真实业务路由').toBe(false);
-  // This contract path has x-auth admin. The real F1-06k preParsing check attaches the principal.
-  server.get(PROBE, async (request, reply) => {
+  // A super-only route would reject the non-super scenarios before reaching this guard.
+  const adminRoutes = contractAuthRoutes().filter(
+    (route) => route.method === 'GET' && route.auth === 'admin',
+  );
+  const planned = adminRoutes.find((route) => !server.hasRoute({ method: 'GET', url: route.path }));
+  const probeTemplate = planned?.path ?? '/__guard_mount_probe';
+  const probePath = probeTemplate.replace(/:[^/]+/g, '8abc2f42-4e40-40b2-ae38-df9ed48835bf');
+  // Planned routes use the real preParsing check. Once all routes are implemented, the
+  // private probe runs the entry's same F1-06k check with an existing admin contract template;
+  // it neither calls that business route nor fabricates a principal from client input.
+  server.get(probeTemplate, async (request, reply) => {
+    if (planned === undefined) {
+      expect(adminRoutes[0], '契约必须包含 x-auth admin 的 GET 接口').toBeDefined();
+      const input: RequestCheckInput = {
+        id: request.id,
+        method: 'GET',
+        url: request.url,
+        ip: request.ip,
+        routeTemplate: adminRoutes[0]!.path,
+        headers: request.headers,
+        rawBody: Buffer.alloc(0),
+      };
+      const plan = f.app.get<RequestCheckPlan>(REQUEST_CHECKS);
+      for (const check of plan.checks) await check(input);
+      expect(input.adminPrincipal).toBeDefined();
+      request.adminPrincipal = input.adminPrincipal!;
+    }
     requests.push(request);
     await hooks.beforeRun?.(request);
     const response = await guard.run({ request, ...selection }, business);
@@ -113,7 +144,7 @@ export async function setup(
   const session = await signedIn(f, a);
   const headers = { authorization: `Bearer ${session.admin_token}` };
   const read = (token?: string, extra: Record<string, string> = {}) =>
-    f.read(session.admin_token, PROBE, {
+    f.read(session.admin_token, probePath, {
       'x-trace-id': TRACE,
       ...(token === undefined ? {} : { 'x-step-up-token': token }),
       ...extra,
@@ -129,7 +160,20 @@ export async function setup(
     }
     return ok<Grant>(await f.post('/step-up', { tier, code }, headers), STEP);
   };
-  return { f, a, guard, selection, business, requests, hooks, session, read, issue, grant };
+  return {
+    f,
+    a,
+    guard,
+    selection,
+    business,
+    requests,
+    hooks,
+    session,
+    probePath,
+    read,
+    issue,
+    grant,
+  };
 }
 
 export async function rejected(response: Response, code: number, data?: object) {
