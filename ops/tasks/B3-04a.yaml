@@ -9,7 +9,7 @@ type: impl
 # 身份上下文（app_id、user_id、device_id、scene 推广位等）只从 RunBodyInput.caller 构造，handler 签名里不出现模型参数中的身份字段；拒绝判定复用 guard 的 decideToolCall、IDENTITY_FIELDS。
 # CI 门禁四项（allowlist / denylist / dependency-cruiser / 只读入口导出检查）改 tools/** 与依赖规则配置，属保护路径第三类要负责人标签，另开门禁任务；本段只交 allowlist 文件与「注册表导出 = allowlist」「schema 不含身份字段」的单测。
 # 风险 RV2（specs/** 不在 risk-map）。分工：清单外新台账，Codex 先写规则测试，Opus 实现，Codex 评审。refs 连一跳超 24KB 时编排者手工生成任务书。
-# 
+#
 refs: [BR-AI-02, BR-AI-03, BR-AI-11]
 refs_hash:
   BR-AI-02: 61014cc4d222

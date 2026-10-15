@@ -10,7 +10,7 @@ type: impl
 #   运行时不读文件：词表在本段代码里以函数返回，规则测试把它与 specs 文件比对（B3-06a IDENTITY_FIELDS 先例的变体：不导出 const 值）。
 # 模型抽取的 q 命中禁售词的拦截在工具层（B3-04b），本段只管用户原文。
 # 风险 RV2（specs/** 不在 risk-map），评审 Codex（approvals 第 27 条后只跑 Codex 一家）。refs 连一跳引用超 24KB，编排者手工生成任务书。
-# 
+#
 refs: [BR-AI-18, BR-AI-01, BR-AI-05]
 refs_hash:
   BR-AI-18: 01b60e6ca170
