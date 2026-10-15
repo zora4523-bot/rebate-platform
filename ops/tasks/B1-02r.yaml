@@ -1,0 +1,29 @@
+id: B1-02r
+repo: rebate-platform
+title: identity 导出 AI 同意读取入口：按主体取最新一条 ai_third_party（登录用户只看用户级、游客只看设备级），与注入的当前 AgentConsent 版本比对，给出放行或 missing / withdrawn / outdated；只读
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，couli-runs/B3-05-plan/plan.md §2）。B3-03f 开工条件 ②（BR-AI-13：最新一条 ai_third_party、当前版本、accepted=true 才放行，撤回即 10004）。
+# 现状：consents.ts 只写；infra/consent-records.ts 的 user/deviceConsentRecords 取全部类型、要事务句柄；domain/login.ts currentStates 已是「server_at 最新、同时刻 id 大者」口径；index.ts 未导出读取入口。
+# 形状：createAiConsentReader({db, currentVersion}) → check({appId, userId|null, deviceId}) → {allowed:true, version} | {allowed:false, reason}。currentVersion 由调用方注入（identity 不读配置、不认识 agent）；
+#   生产由 B3-03i 接配置键 legal.ai_third_party.version（plan.md G-2，规划 04 §10.1 另行同步）。版本源拒绝或返回非正安全整数 → check 拒绝，不放行。
+# 版本按 BR-AI-13 原文「等于」比较（高于、低于都 outdated）。单条查询走 04 §3.2 的索引；不写任何表、不改 POST /v1/consents 与 login_merge。
+# 放 ports/（createSameDeviceLoginReader 先例：identity 对外的只读端口）；agent 依 BR-AI-02 ③ 只 import identity index 的只读查询。
+# 分工：清单外新台账（CR3-03），Codex 先写规则测试与只抛 NotImplemented 的骨架，Opus 子代理实现，Codex 新只读会话评审。风险 RV1（identity）。
+# refs_hash 入账前用 node tools/ops/task.ts hash B1-02r 生成并替换下行。
+# BR-ID-12（同意记录的写入与版本口径）只作指针，不嵌入任务书（任务书 24KB 上限）；规则测试作者按需读 08 原文。
+refs: [BR-AI-13]
+refs_hash:
+  BR-AI-13: 870069e3ab76
+deps: [B1-02f]
+paths:
+  - 'apps/api/src/modules/identity/ports/ai-consent.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+test_paths:
+  - 'test/spec/identity/ai-consent/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/ai-consent/**'
+status: todo
+pr: null

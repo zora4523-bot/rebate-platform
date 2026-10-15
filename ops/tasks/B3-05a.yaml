@@ -1,0 +1,31 @@
+id: B3-05a
+repo: rebate-platform
+title: Orchestrator 第一段（Preprocessor 一，纯函数）：脱敏表、<num_k> 占位符与工具参数还原、存储形态脱敏（AgentRedactor）、统一的 AgentRedactedText；parsing 加不截断的候选位置导出
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，couli-runs/B3-05-plan/plan.md §3）。05 B3-05 的 Preprocessor 脱敏部分；B3-02 计划 §5「脱敏函数与占位符还原」归这里。
+# 依据：BR-AI-14 细则脱敏表（只作用于 parse_input 取出链接与口令之后的自由文本；URL 内数字不处理；≥11 位数字换占位符、原值只在本 run 服务端保存、工具参数可引用并由服务端还原）；
+#   BR-AI-19（落库前对 user_text 与工具参数脱敏，trace 存保留后 4 位的形态）。取值与模式只在 08，任务书 §2 摘原文。
+# 两种形态：存储形态（AgentHttpDeps.redactor → runUserText / messageText）；模型形态（占位符 + 占位表，供 B3-05b 的 ModelTextPreparer 端口与 B3-05c 降级取词）。
+# G-3：admission 与 degraded 各有一个 RedactedText 品牌且互不兼容；本段导出两者交集 AgentRedactedText，并是它唯一的产出点；不改那两个已合并文件。
+# G-4：extractCandidates 截断到 3 个；本段在 parsing 加同一组正则、不截断的 findCandidateSpans 并从 parsing/index.ts 导出，脱敏据此跳过全部链接与口令。B1-07a 的冻结测试保持全绿。
+# 不在本段：输入审核、关键词预判、page_guide 输入来源（B3-05d）；不可信文本定界（用 guard 的 wrapUntrusted，B3-05b 调）；trace 落库（B3-09）。
+# 分工：清单外新台账，Codex 先写规则测试与骨架，Opus 子代理实现，Codex 新只读会话评审。风险 RV1（agent、parsing 均 RV1）。
+# refs_hash 入账前用 node tools/ops/task.ts hash B3-05a 生成并替换下行。
+refs: [BR-AI-14, BR-AI-19]
+refs_hash:
+  BR-AI-14: e8ed6052e898
+  BR-AI-19: f2aa4c7770c8
+deps: [B1-07a]
+paths:
+  - 'apps/api/src/modules/agent/preprocess/redact/**'
+  - 'apps/api/src/modules/parsing/domain/candidates.ts'
+  - 'apps/api/src/modules/parsing/index.ts'
+test_paths:
+  - 'test/spec/agent/preprocess-redact/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/preprocess-redact/**'
+status: todo
+pr: null

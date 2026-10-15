@@ -1,0 +1,32 @@
+id: B3-05b
+repo: rebate-platform
+title: Orchestrator 第二段（编排核心，回放驱动）：createAgentRunBody 工厂（RunBody 定稿）、单循环 function calling 与上限、OutputGuard 接线、tool.status 与出卡、输出上限、路由结果映射、createRunLabels；定义全部下游端口
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，plan.md §3.2–3.3）。B3-03f 开工条件 ③ 的主体：AgentHttpDeps.body = createAgentRunBody(deps)，AgentHttpDeps.labels = createRunLabels(...)。
+# 端口（本段定义，后续段实现，核心签名此后不改）：model（Pick<ModelRouter,'complete'> + 本 run 模型时限）、tools（OrchestratorTools：definitions / execute / enabledSearchPlatforms / searchKeyword，B3-04a 实现）、
+#   inputCheck（B3-05d；proceed 结果带模型形态文本与占位表，由 B3-05a 产出）、degraded（B3-05c）、deterministic（可选，B3-05e；未接时含链接的消息不调模型、出空结果 notice）、
+#   intents（可选，B3-05f；未接时意图输出一律按 out_of_scope）、review（SentenceReviewPort，B3-06b）、texts、prompt、trace（可选 RunTraceSink）。
+#   另导出收紧实现 emptyOrchestratorTools()、failClosedInputCheck()（供 B3-03f 在后续段合并前装配；不设放行默认）。
+# 依据：02 §9.1（工具与模型往返上限）、§9.2「输出上限」三项（RunManager 未做，G-6）与「终止帧之后不再有内容帧」；BR-AI-06（text.delta 只经 OutputGuard，命中固定话术）；BR-AI-14 细则（路由失败 → 降级、
+#   单轮时限由 RunManager 管）；BR-AI-03（decideToolCall 拒绝、不丢字段）、BR-AI-05（模型只见卡片引用与 <untrusted> 定界）、BR-AI-18 输出侧由编排者摘入任务书 §2。
+# 回放：规则测试用 evals 格式的合成录制 + 真路由器 + createPortTransport，工具用测试替身；不依赖真实模型、不连库。录制只放 test/spec 下的合成样例（02 §12.7）。
+# 不在本段：降级出卡（B3-05c）、输入检查（B3-05d）、确定性路径（B3-05e）、意图与模板（B3-05f）、结果集与放宽（B3-05g）、工具实现（B3-04）、trace 落库（B3-09）。
+# 不改 agent/index.ts、agent.module.ts（B3-03f / B3-03h 的 path）；对外经 orchestrator/index.ts。实现若超 400 行，按「循环与上限」与「标签与收紧实现」拆两段。
+# refs 连一跳引用超 24KB，编排者手工生成任务书（B3-03c、B3-06a 先例）。refs_hash 入账前用 node tools/ops/task.ts hash B3-05b 生成并替换下行。
+refs: [BR-AI-06, BR-AI-14]
+refs_hash:
+  BR-AI-06: 3912ea460436
+  BR-AI-14: e8ed6052e898
+deps: [B3-02c, B3-03b, B3-06a]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/core/**'
+  - 'apps/api/src/modules/agent/orchestrator/index.ts'
+test_paths:
+  - 'test/spec/agent/orchestrator-core/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/orchestrator-core/**'
+status: todo
+pr: null
