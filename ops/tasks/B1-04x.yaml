@@ -1,0 +1,27 @@
+id: B1-04x
+repo: rebate-platform
+title: 拼多多「查询身份」装配与告警日志分流：loadConfig 读 PDD_QUERY_CUSTOM_PARAMETERS（非密钥，JSON 字符串 ≤64 字节，staging 在 pdd live 时必填），union.module 用 union_pids 的 pdd 查询场景 active 推广位 + 该配置构造 B1-04u 的 queryIdentity 提供者交给真实适配器；logPddWarning 按 event 分流（PRICE_ANOMALY 不再记成 PDD_ERROR_CODE_UNKNOWN）
+type: impl
+# 草稿 2026-10-15（拼多多接入线 pdd-lane）。来源：B1-04u 裁定 D-u2（商品接口要求已备案的 pid + custom_parameters，适配器构造时注入 queryIdentity，装配另开）与 B1-04u 实现 notes（价格异常经 warn 钩子发 event=PRICE_ANOMALY，union.module.ts 的 logPddWarning 记错类型）。
+# 依据：probe（approvals 28 / 29；cap-tests/2026-10-15/pdd/）：商品接口缺已备案参数 → 50001 / sub_code 60001；备案按推广位分开（查询位备案与自购位无关）；BR-ATTR-08（按 scene 取 active 推广位，找不到不改用其他场景）。
+# 做法：① PDD_QUERY_CUSTOM_PARAMETERS 是服务端配置的查询身份（不是密钥，不登记进 credential-env），必须是合法 JSON 对象字符串、≤64 字节，问题文本只写变量名；local / test 照常允许设置（不是凭据）。staging 下 pdd 为 live 时缺它 → 启动失败（固定文本）。② queryIdentity 提供者每次调用经 union 的 pid 读取取 pdd + 查询场景（pid_scene 查询值以契约枚举为准）的 active 推广位，取不到 → 抛 UnionError('upstream_rejected')，不改用其他场景；customParameters 原样用配置值。③ logPddWarning：有 event 字段时按 event 记（PRICE_ANOMALY 记为价格异常、不带金额），否则维持现有错误码告警。
+# 不改 config/union-endpoints/pdd.json；该 uid 的备案由负责人用本人拼多多账号一次性授权（编排会话用探测脚本生成备案链接），不在本任务。
+# 风险：platform/config 与 union 装配 → RV2。与 B1-04w 同改 union/**，派工串行。
+refs: []
+refs_hash: {}
+deps: [B1-04u, B1-04t]
+paths:
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/union/union.module.ts'
+  - 'apps/api/src/modules/union/infra/registry.ts'
+  - 'apps/api/src/modules/union/infra/registry.test.ts'
+  - '.env.example'
+test_paths:
+  - 'test/spec/union/pdd-query-identity/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-query-identity/**'
+status: todo
+pr: null
