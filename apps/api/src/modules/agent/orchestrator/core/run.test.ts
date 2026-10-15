@@ -28,8 +28,9 @@ function input(): RunBodyInput {
   };
 }
 
-function context(): { ctx: RunContext; texts: string[] } {
+function context(): { ctx: RunContext; texts: string[]; suggestions: unknown[][] } {
   const texts: string[] = [];
+  const suggestions: unknown[][] = [];
   const ctx: RunContext = {
     runId: 'synthetic-run',
     sessionId: 'synthetic-session',
@@ -40,9 +41,47 @@ function context(): { ctx: RunContext; texts: string[] } {
     },
     toolStatus: () => undefined,
     card: async () => undefined,
-    suggestions: () => undefined,
+    suggestions: (items) => {
+      suggestions.push([...items]);
+    },
   };
-  return { ctx, texts };
+  return { ctx, texts, suggestions };
+}
+
+function baseDeps(
+  rounds: ModelOutcome[],
+  execute: AgentRunBodyDeps['tools']['execute'],
+  placeholders: Readonly<Record<string, string>> = {},
+): AgentRunBodyDeps {
+  return {
+    model: { complete: vi.fn(async () => rounds.shift()!) },
+    modelClock: () => ({ remainingMs: () => 1000, charge: () => undefined }),
+    tools: {
+      definitions: async () => [
+        { name: 'search_products', description: 'synthetic', parameters: { type: 'object' } },
+      ],
+      execute,
+      enabledSearchPlatforms: async () => [],
+      searchKeyword: async () => ({ results: [], cards: [] }),
+    },
+    inputCheck: {
+      check: async () => ({
+        kind: 'proceed',
+        modelText: '合成订单 <num_1>',
+        placeholders,
+        links: [],
+        notices: [],
+        untrustedInput: false,
+        paramsRequested: false,
+      }),
+    },
+    degraded: { run: async () => ({ kind: 'done', finishReason: 'fallback' }) },
+    review: { review: async () => 'pass' },
+    texts: { text: async (_app, key) => key, toolDisplay: async () => 'synthetic' },
+    prompt: { current: async () => ({ version: 'synthetic-v1', system: 'synthetic' }) },
+    limits: orchestratorLimitsDefaults(),
+    traceMask: (args) => args,
+  };
 }
 
 function call(id: string, name: string, args: string) {
@@ -86,32 +125,7 @@ it('[B3-05b review S2] every traced tool call goes through traceMask, whatever i
   const placeholders = { '<num_1>': '987654321012' };
   const traceMask = vi.fn(() => 'masked');
   const deps: AgentRunBodyDeps = {
-    model: { complete: vi.fn(async () => rounds.shift()!) },
-    modelClock: () => ({ remainingMs: () => 1000, charge: () => undefined }),
-    tools: {
-      definitions: async () => [
-        { name: 'search_products', description: 'synthetic', parameters: { type: 'object' } },
-      ],
-      execute,
-      enabledSearchPlatforms: async () => [],
-      searchKeyword: async () => ({ results: [], cards: [] }),
-    },
-    inputCheck: {
-      check: async () => ({
-        kind: 'proceed',
-        modelText: '合成订单 <num_1>',
-        placeholders,
-        links: [],
-        notices: [],
-        untrustedInput: false,
-        paramsRequested: false,
-      }),
-    },
-    degraded: { run: async () => ({ kind: 'done', finishReason: 'fallback' }) },
-    review: { review: async () => 'pass' },
-    texts: { text: async (_app, key) => key, toolDisplay: async () => 'synthetic' },
-    prompt: { current: async () => ({ version: 'synthetic-v1', system: 'synthetic' }) },
-    limits: orchestratorLimitsDefaults(),
+    ...baseDeps(rounds, execute, placeholders),
     traceMask,
     trace: { record: (_runId, trace) => traces.push(trace) },
   };
@@ -135,6 +149,90 @@ it('[B3-05b review S2] every traced tool call goes through traceMask, whatever i
   ]);
   expect(JSON.stringify(traces)).not.toContain('<num_1>');
   expect(out.texts.join('')).toBe('合成说明。');
+});
+
+it.each(['same round', 'across rounds'] as const)(
+  '[B3-05b review-codex-r1 S1][BR-AI-06] suggestions are capped at 3 per run, %s',
+  async (mode) => {
+    const toolA = call('a', 'search_products', '{"q":"合成甲"}');
+    const toolB = call('b', 'search_products', '{"q":"合成乙"}');
+    const finalRound = modelRound([
+      { t: 'text_delta', text: '合成说明。' },
+      { t: 'done', reason: 'stop' },
+    ]);
+    const rounds =
+      mode === 'same round'
+        ? [
+            modelRound([
+              { t: 'tool_call', index: 0, call: toolA },
+              { t: 'tool_call', index: 1, call: toolB },
+              { t: 'done', reason: 'tool_calls' },
+            ]),
+            finalRound,
+          ]
+        : [
+            modelRound([
+              { t: 'tool_call', index: 0, call: toolA },
+              { t: 'done', reason: 'tool_calls' },
+            ]),
+            modelRound([
+              { t: 'tool_call', index: 0, call: toolB },
+              { t: 'done', reason: 'tool_calls' },
+            ]),
+            finalRound,
+          ];
+    const batch = (tag: string) =>
+      [1, 2, 3].map((i) => ({ text: `合成建议${tag}${i}`, send_text: `合成后续${tag}${i}` }));
+    const first = batch('甲');
+    const second = batch('乙');
+    const results = [first, second];
+    const execute = vi.fn(async (): Promise<ToolOutcome> => ({
+      kind: 'ok',
+      modelView: {},
+      cards: [],
+      suggestions: results.shift() ?? [],
+    }));
+    const out = context();
+    expect(await createAgentRunBody(baseDeps(rounds, execute))(input())(out.ctx)).toEqual({
+      kind: 'done',
+      finishReason: 'stop',
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
+    // 3 in total for the run; the second tool's suggestions find no room and are dropped.
+    expect(out.suggestions).toEqual([first]);
+    expect(out.suggestions.flat()).toHaveLength(3);
+    expect(out.texts.join('')).toBe('合成说明。');
+  },
+);
+
+it('[B3-05b review-codex-r1 S1][BR-AI-06] a partial batch only uses the room left in the run', async () => {
+  const rounds = [
+    modelRound([
+      { t: 'tool_call', index: 0, call: call('a', 'search_products', '{}') },
+      { t: 'tool_call', index: 1, call: call('b', 'search_products', '{}') },
+      { t: 'done', reason: 'tool_calls' },
+    ]),
+    modelRound([{ t: 'done', reason: 'stop' }]),
+  ];
+  const results = [
+    [{ text: '合成一', send_text: '合成一' }],
+    [1, 2, 3].map((i) => ({ text: `合成${i}`, send_text: `合成${i}` })),
+  ];
+  const execute = vi.fn(async (): Promise<ToolOutcome> => ({
+    kind: 'ok',
+    modelView: {},
+    cards: [],
+    suggestions: results.shift() ?? [],
+  }));
+  const out = context();
+  await createAgentRunBody(baseDeps(rounds, execute))(input())(out.ctx);
+  expect(out.suggestions).toEqual([
+    [{ text: '合成一', send_text: '合成一' }],
+    [
+      { text: '合成1', send_text: '合成1' },
+      { text: '合成2', send_text: '合成2' },
+    ],
+  ]);
 });
 
 it('[B3-05b] invalid limits are rejected when the body factory is built', () => {

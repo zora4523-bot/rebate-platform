@@ -1,4 +1,4 @@
-// B3-05b: per-run output gate (02 §9.2 「输出上限」「取消与断线」; BR-AI-06 suggestions ≤ 3).
+// B3-05b: per-run output gate (02 §9.2 「输出上限」「取消与断线」; BR-AI-06 suggestions ≤ 3 per run).
 // Every write of the core and of downstream paths goes through one RunOutput, so cancellation
 // and the three output caps (text code points, cards incl. embedded products, content frames)
 // hold on all paths. Reaching a cap exactly counts as hitting it: nothing is written afterwards.
@@ -36,6 +36,7 @@ export class RunOutput {
   private frames = 0;
   private cards = 0;
   private textUsed = 0;
+  private suggestionsSent = 0;
   private hit = false;
   private readonly ctx: RunContext;
   private readonly limits: OrchestratorLimits;
@@ -108,9 +109,13 @@ export class RunOutput {
     return true;
   }
 
+  /** BR-AI-06 ≤ 3 per run, across tools and rounds: items beyond the run's room are dropped. */
   suggestions(items: SuggestionsData['items']): boolean {
-    if (this.closed || items.length === 0 || !this.frameRoom()) return false;
-    this.ctx.suggestions(items.slice(0, MAX_SUGGESTIONS));
+    const room = MAX_SUGGESTIONS - this.suggestionsSent;
+    if (this.closed || items.length === 0 || room <= 0 || !this.frameRoom()) return false;
+    const kept = items.slice(0, room);
+    this.ctx.suggestions(kept);
+    this.suggestionsSent += kept.length;
     this.frames += 1;
     this.settle();
     return true;
