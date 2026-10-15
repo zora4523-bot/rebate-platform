@@ -1,0 +1,131 @@
+{
+  "task": "B1-04w",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "f7717ea9cc95b3249e4b074acd60f64fdef4424c",
+  "red_tests": [
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#1] increment 从原始 JSON 区分 2^53 与 2^53+1，既有边界仍接受",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#1] pay_time 从原始 JSON 区分 2^53 与 2^53+1，既有边界仍接受",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#1] detail 从原始 JSON 区分 2^53 与 2^53+1，既有边界仍接受",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#2] increment 转义字段名和指数形式不能绕过无损整数边界",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#2] pay_time 转义字段名和指数形式不能绕过无损整数边界",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#2] detail 转义字段名和指数形式不能绕过无损整数边界",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#3] increment 只处理订单本层 goods_id，字符串、嵌套字段及全局解包不受影响",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#3] pay_time 只处理订单本层 goods_id，字符串、嵌套字段及全局解包不受影响",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#3] detail 只处理订单本层 goods_id，字符串、嵌套字段及全局解包不受影响",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#4] increment 每一行独立校验，合法首行不能掩盖后续行的超界商品号",
+    "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#4] pay_time 每一行独立校验，合法首行不能掩盖后续行的超界商品号",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#1] 尾页探测和倒序每次真实请求前恰扣一次，缓存命中不重复扣",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#2] 配额只够 1 次时恰好发送该次数，中途拒绝不重试、不重走首页",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#2] 配额只够 2 次时恰好发送该次数，中途拒绝不重试、不重走首页",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#2] 配额只够 3 次时恰好发送该次数，中途拒绝不重试、不重走首页",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#3] 第 2 页限流 52101 后恢复，只重试该页，每次尝试计量",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#3] 第 2 页限流 70031 后恢复，只重试该页，每次尝试计量",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#4] 第 2 页持续限流 52101 最终仍报 rate_limited，外层不再重试遍历",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#4] 第 2 页持续限流 70031 最终仍报 rate_limited，外层不再重试遍历",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#5] 单页超时取消信号到达传输层，重试该页且不重放已成功页",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#6] 逐请求能力不能仅看平台，未声明者和详情保留外层计量",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#7] 若治理回调放在 CallCtx，包装层覆盖调用方同名字段",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#8] 单页未超时的长遍历可完成，整次时长留给 order-sync 控制",
+    "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#9] 当前页限流后配额耗尽，以本地 quota_exceeded 结束而不重放遍历",
+    "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#1] 完整 24 小时 按毫秒接受，发给上游的整秒边界仍受双限约束",
+    "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#1] 不足 24 小时但外扩成 86401 秒 按毫秒接受，发给上游的整秒边界仍受双限约束",
+    "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#1] 恰好 90 天且完整 24 小时 按毫秒接受，发给上游的整秒边界仍受双限约束",
+    "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#1] 90 天界内一毫秒 按毫秒接受，发给上游的整秒边界仍受双限约束",
+    "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#2] 相等 不能被向外取整变成合法窗口，在凭据与传输前拒绝",
+    "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#2] 同秒内逆序 不能被向外取整变成合法窗口，在凭据与传输前拒绝"
+  ],
+  "risk_note": "RV2 (union/** governance; shared Pinduoduo account quota). Per-request quota for the declared pdd listOrders (one token per upstream request, per-page retry / timeout, mid-pagination quota refusal ends with quota_exceeded, no retry, no breaker), other platforms / demo / undeclared adapters / detail keep one outer token per attempt, caller-supplied metering hooks overridden; millisecond window checks with bounds kept inside 24 h / 90 d; lossless order goods_id. Orchestrator ruling D-w1 corrected one rule-test premise (demo listOrders is adapter_unimplemented by design) and added a per-request assertion, amended into the spec commit. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f7717ea9cc95b3249e4b074acd60f64fdef4424c",
+      "tree": "0cbf229c5098524972479e81a585a4933ce98155",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-15T06:55:51Z",
+      "finished_at": "2026-10-15T06:55:56Z",
+      "gate": {
+        "commit": "a29043ecdcca8ed293dd957381f3e9e24c55f021",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#1] increment 从原始 JSON 区分 2^53 与 2^53+1，既有边界仍接受",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#1] pay_time 从原始 JSON 区分 2^53 与 2^53+1，既有边界仍接受",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#1] detail 从原始 JSON 区分 2^53 与 2^53+1，既有边界仍接受",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#2] increment 转义字段名和指数形式不能绕过无损整数边界",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#2] pay_time 转义字段名和指数形式不能绕过无损整数边界",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#2] detail 转义字段名和指数形式不能绕过无损整数边界",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#3] increment 只处理订单本层 goods_id，字符串、嵌套字段及全局解包不受影响",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#3] pay_time 只处理订单本层 goods_id，字符串、嵌套字段及全局解包不受影响",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#3] detail 只处理订单本层 goods_id，字符串、嵌套字段及全局解包不受影响",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#4] increment 每一行独立校验，合法首行不能掩盖后续行的超界商品号",
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts > [AC-B1-04w-ID#4] pay_time 每一行独立校验，合法首行不能掩盖后续行的超界商品号",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#1] 尾页探测和倒序每次真实请求前恰扣一次，缓存命中不重复扣",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#2] 配额只够 1 次时恰好发送该次数，中途拒绝不重试、不重走首页",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#2] 配额只够 2 次时恰好发送该次数，中途拒绝不重试、不重走首页",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#2] 配额只够 3 次时恰好发送该次数，中途拒绝不重试、不重走首页",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#3] 第 2 页限流 52101 后恢复，只重试该页，每次尝试计量",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#3] 第 2 页限流 70031 后恢复，只重试该页，每次尝试计量",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#4] 第 2 页持续限流 52101 最终仍报 rate_limited，外层不再重试遍历",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#4] 第 2 页持续限流 70031 最终仍报 rate_limited，外层不再重试遍历",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#5] 单页超时取消信号到达传输层，重试该页且不重放已成功页",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#6] 逐请求能力不能仅看平台，未声明者和详情保留外层计量",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#7] 若治理回调放在 CallCtx，包装层覆盖调用方同名字段",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#8] 单页未超时的长遍历可完成，整次时长留给 order-sync 控制",
+        "test/spec/union/pdd-orders-quota/governance.test.ts > [AC-B1-04w-GOV#9] 当前页限流后配额耗尽，以本地 quota_exceeded 结束而不重放遍历",
+        "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#1] 完整 24 小时 按毫秒接受，发给上游的整秒边界仍受双限约束",
+        "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#1] 不足 24 小时但外扩成 86401 秒 按毫秒接受，发给上游的整秒边界仍受双限约束",
+        "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#1] 恰好 90 天且完整 24 小时 按毫秒接受，发给上游的整秒边界仍受双限约束",
+        "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#1] 90 天界内一毫秒 按毫秒接受，发给上游的整秒边界仍受双限约束",
+        "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#2] 相等 不能被向外取整变成合法窗口，在凭据与传输前拒绝",
+        "test/spec/union/pdd-orders-quota/window.test.ts > [AC-B1-04w-WIN#2] 同秒内逆序 不能被向外取整变成合法窗口，在凭据与传输前拒绝"
+      ],
+      "expected": [
+        "test/spec/union/pdd-orders-quota/goods-id.test.ts",
+        "test/spec/union/pdd-orders-quota/governance.test.ts",
+        "test/spec/union/pdd-orders-quota/window.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "beef5dfef517d2df2f3b546996be2d6b10097a6bdab9094f60e870b82a9327e7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with one S2 (in-page cancellation waits for the page timeout) recorded as a follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 runs, test/spec/union/pdd-orders-quota; runs 1-2 failed the red check because a UnionError was the innermost cause); round 1 pass with three S2 folded into the brief. Ruling D-w1 adjusted GOV#6 after the review (demo premise + per-request assertion)."
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "db80ece24a8c10c454d30be0b49ce38a896a06fc",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  }
+}
