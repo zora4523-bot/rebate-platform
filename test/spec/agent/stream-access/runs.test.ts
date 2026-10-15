@@ -6,6 +6,7 @@
 import { expect, it } from 'vitest';
 
 import { createRunGuardFactory } from '../../../../apps/api/src/modules/agent/stream/access/index.ts';
+import { shouldRefund } from '../../../../apps/api/src/modules/agent/stream/admission/index.ts';
 import {
   APP,
   CONFIG,
@@ -21,6 +22,7 @@ import {
   openConfig,
   type Live,
   type MultiRig,
+  type Step,
 } from './kit.ts';
 
 /** BR-AI-12 / BR-AI-13: a live run ends within 10 seconds of the switch or the withdrawal. */
@@ -213,3 +215,94 @@ it('[AC-B3-03i#33][BR-AI-13] G-1 跨应用：同一用户在应用 A 撤回同�
   expect(consent.calls.some((s) => s.appId === OTHER_APP && s.userId === userId)).toBe(true);
   expect(r.guardForCalls).toHaveLength(2);
 });
+
+type Ending = { code: 30501 | 10004; ending: 'disabled' | 'consent_withdrawn'; refund: boolean };
+/**
+ * BR-AI-12: agent.enabled off ends a run with 30501 and a run without cards gets its quota back
+ * (BR-AI-15; B3-03b ending 'disabled'); BR-AI-13: a withdrawal ends it with 10004 and returns no
+ * quota (ending 'consent_withdrawn').
+ */
+const ENDINGS: Ending[] = [
+  { code: 30501, ending: 'disabled', refund: true },
+  { code: 10004, ending: 'consent_withdrawn', refund: false },
+];
+
+/**
+ * One run ended by `c` without cards: through the shared guard (B3-03b) or through guardFor with
+ * the real factory, next to a run of another subject that stays live. Returns the ended run's
+ * steps and the rig.
+ */
+async function endOne(c: Ending, path: 'shared' | 'guardFor'): Promise<{ r: MultiRig; a: Live }> {
+  const version = new FakeVersion();
+  const consent = new FakeConsent(version.source);
+  const config = openConfig(APP);
+  const r =
+    path === 'shared'
+      ? multiRig({})
+      : multiRig({
+          guardFor: createRunGuardFactory({ reader: config, consent, version: version.source }),
+        });
+  const userA = newId();
+  const a = r.start(`u:${userA}`, APP);
+  const b = r.start(`d:${newId()}`, APP);
+  await r.time.to(1_000);
+  if (path === 'shared') r.guard.answer = { code: c.code };
+  else if (c.code === 30501) config.set(APP, 'agent.enabled', false);
+  else consent.refuseUser(APP, userA, 'withdrawn');
+  // agent.enabled is per app: B (same app) may end too; only A's steps are compared.
+  await r.time.to(1_000 + DEADLINE_MS);
+  expect(a.settled(), `${path}: A ended within 10 s`).toBe(true);
+  if (!b.settled()) {
+    b.finish();
+    expect(await r.time.drive(b.promise, r.time.t + 5_000)).toBe(true);
+  }
+  return { r, a };
+}
+
+it.each(ENDINGS)(
+  '[AC-B3-03i#35][BR-AI-12][BR-AI-13][BR-AI-15] guardFor 路径以 $code 终止（未出卡）：admission.settle 对该 run 恰调用一次，RunOutcome = {$ending, 0}（退还 = $refund），与共用 guard 路径相同',
+  async (c) => {
+    const outcome = { ending: c.ending, cardsDelivered: 0 };
+    for (const path of ['shared', 'guardFor'] as const) {
+      const { r, a } = await endOne(c, path);
+      const settles = r.steps(a.ticket.runId).filter((s) => s.kind === 'settle');
+      expect(settles, `${path}: one settle`).toEqual([{ kind: 'settle', outcome }]);
+      expect(
+        r.admission.calls.filter((x) => x.ticket.runId === a.ticket.runId).map((x) => x.outcome),
+        path,
+      ).toEqual([outcome]);
+      expect(shouldRefund(outcome), `${path}: refund per BR-AI-12 / BR-AI-13`).toBe(c.refund);
+      const final = await a.promise;
+      expect([final.ending, final.cardsDelivered], path).toEqual([c.ending, 0]);
+    }
+  },
+);
+
+it.each(ENDINGS)(
+  '[AC-B3-03i#36][BR-AI-12][BR-AI-13][BR-AI-23] guardFor 路径以 $code 终止：终止原因先持久化（recordEnding 与带终态草稿的事实快照 {$ending, 0}），再 settle，再 finish 保存 error 终态；步骤与写入内容同共用 guard 路径逐项相同',
+  async (c) => {
+    const error = { code: c.code, msg: `错误提示-${c.code}`, retryable: false, fallback: null };
+    const draft = { event: 'error' as const, data: error };
+    const facts = { ending: c.ending, cardsDelivered: 0 };
+    const expected: Step[] = [
+      { kind: 'recordEnding', facts, draft },
+      { kind: 'recordFacts', facts, draft },
+      { kind: 'settle', outcome: facts },
+      { kind: 'finish', terminal: draft },
+    ];
+    const seen: Record<string, Step[]> = {};
+    for (const path of ['shared', 'guardFor'] as const) {
+      const { r, a } = await endOne(c, path);
+      const runId = a.ticket.runId;
+      seen[path] = r.steps(runId);
+      expect(seen[path], path).toEqual(expected);
+      expect(await r.registry.facts(runId), `${path}: saved facts`).toEqual(facts);
+      const saved = await r.registry.final(runId);
+      expect(
+        saved === null ? null : { event: saved.event, data: errorData({ ...saved.data }) },
+        `${path}: saved terminal`,
+      ).toEqual(draft);
+    }
+    expect(seen['guardFor']).toEqual(seen['shared']);
+  },
+);

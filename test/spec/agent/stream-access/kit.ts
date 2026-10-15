@@ -7,17 +7,24 @@
 import type { AgentCaller } from '../../../../apps/api/src/modules/agent/http/index.ts';
 import type { ContentConfig } from '../../../../apps/api/src/modules/content/index.ts';
 import type { AgentConsentReader } from '../../../../apps/api/src/modules/agent/stream/access/index.ts';
-import type { AdmissionTicket } from '../../../../apps/api/src/modules/agent/stream/admission/index.ts';
+import type {
+  AdmissionLimits,
+  AdmissionTicket,
+  RunOutcome,
+} from '../../../../apps/api/src/modules/agent/stream/admission/index.ts';
 import {
   createRunManager,
   type RunBody,
   type RunBodyResult,
   type RunConfig,
+  type RunFacts,
   type RunFinal,
   type RunGuard,
   type RunGuardTarget,
   type RunManager,
   type RunStart,
+  type TerminalDraft,
+  type TerminalFrame,
 } from '../../../../apps/api/src/modules/agent/stream/run/index.ts';
 import {
   FakeAdmission,
@@ -198,11 +205,67 @@ export interface Live {
   settled: () => boolean;
 }
 
+/** One persistence or settlement step of a run, in the order the manager made it. */
+export type Step =
+  | { kind: 'recordEnding'; facts: RunFacts; draft: TerminalDraft }
+  | { kind: 'recordFacts'; facts: RunFacts; draft: TerminalDraft | null }
+  | { kind: 'settle'; outcome: RunOutcome }
+  | { kind: 'finish'; terminal: TerminalFrame };
+
+/** The B3-03b in-memory registry that also records each step (and the PG ending write). */
+export class TrailRegistry extends FakeRegistry {
+  readonly trail: { runId: string; step: Step }[];
+  constructor(trail: { runId: string; step: Step }[]) {
+    super([]);
+    this.trail = trail;
+  }
+  override async recordFacts(runId: string, facts: RunFacts, draft?: TerminalDraft): Promise<void> {
+    this.trail.push({
+      runId,
+      step: { kind: 'recordFacts', facts: structuredClone(facts), draft: draft ?? null },
+    });
+    await super.recordFacts(runId, facts);
+  }
+  /** B3-03g S4: the ending written with the decision (optional on RunRegistry). */
+  recordEnding(runId: string, facts: RunFacts, draft: TerminalDraft): Promise<void> {
+    this.trail.push({
+      runId,
+      step: { kind: 'recordEnding', facts: structuredClone(facts), draft: structuredClone(draft) },
+    });
+    return Promise.resolve();
+  }
+  override async finish(runId: string, terminal: TerminalFrame): Promise<void> {
+    this.trail.push({ runId, step: { kind: 'finish', terminal: structuredClone(terminal) } });
+    await super.finish(runId, terminal);
+  }
+}
+
+export class TrailAdmission extends FakeAdmission {
+  readonly trail: { runId: string; step: Step }[];
+  constructor(trail: { runId: string; step: Step }[], quotaLeft: number) {
+    super([], quotaLeft);
+    this.trail = trail;
+  }
+  override settle(
+    ticket: AdmissionTicket,
+    outcome: RunOutcome,
+    limits: AdmissionLimits,
+  ): Promise<{ refunded: boolean; quotaLeft: number }> {
+    this.trail.push({
+      runId: ticket.runId,
+      step: { kind: 'settle', outcome: structuredClone(outcome) },
+    });
+    return super.settle(ticket, outcome, limits);
+  }
+}
+
 export interface MultiRig {
   time: ManualTime;
   manager: RunManager;
-  admission: FakeAdmission;
-  registry: FakeRegistry;
+  admission: TrailAdmission;
+  registry: TrailRegistry;
+  /** The persistence and settlement steps of one run, in order (error data without a null fallback_q). */
+  steps(runId: string): Step[];
   /** The shared RunManagerDeps.guard. */
   guard: FakeGuard;
   /** Every argument guardFor was called with. */
@@ -217,8 +280,9 @@ export function multiRig(options: {
 }): MultiRig {
   const time = new ManualTime();
   const log: string[] = [];
-  const admission = new FakeAdmission(log, 11);
-  const registry = new FakeRegistry(log);
+  const trail: { runId: string; step: Step }[] = [];
+  const admission = new TrailAdmission(trail, 11);
+  const registry = new TrailRegistry(trail);
   const guard = new FakeGuard();
   const guardForCalls: RunGuardTarget[] = [];
   const config = options.config ?? CONFIG;
@@ -248,6 +312,8 @@ export function multiRig(options: {
     registry,
     guard,
     guardForCalls,
+    steps: (runId) =>
+      trail.filter((t) => t.runId === runId).map((t) => withoutNullFallbackQ(t.step)),
     start(ownerKey, appId) {
       const runId = newId();
       const ticket: AdmissionTicket = {
@@ -308,4 +374,17 @@ export class GuardsByOwner {
     return guard;
   }
   readonly guardFor = (run: RunGuardTarget): RunGuard => this.of(run.ownerKey);
+}
+
+/** fallback_q absent and null mean the same (schema): compare without a null one. */
+function withoutNullFallbackQ(step: Step): Step {
+  const copy = structuredClone(step);
+  const strip = (frame: TerminalDraft | TerminalFrame | null): void => {
+    if (frame?.event !== 'error') return;
+    const data = frame.data as unknown as Record<string, unknown>;
+    if (data['fallback_q'] === null) delete data['fallback_q'];
+  };
+  if (copy.kind === 'recordEnding' || copy.kind === 'recordFacts') strip(copy.draft);
+  if (copy.kind === 'finish') strip(copy.terminal);
+  return copy;
 }
