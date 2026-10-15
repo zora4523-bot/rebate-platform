@@ -1,0 +1,100 @@
+{
+  "task": "F1-06s",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "fe03bf8e6dfbf702d2ab2e7e36348cb59581d7b7",
+  "red_tests": [
+    "test/spec/platform/multipart/generation.test.ts > [AC-F1-06s#3] 生成器接纳实际上传契约且不把 multipart 标记当作 Ajv schema 编译",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#4] admin 通过 platform 公共出口读回单文件原始字节、文件名和 MIME，不附加 body",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 没有 part 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin file 名错误 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 两个文件 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 先文件再普通字段 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 先普通字段再文件 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 只有普通字段 file 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#6] 非 multipart JSON 请求调用读取函数返回 file 字段错误",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#7] 文件超过 1 MiB（chunked=false）返回 413 / 20001 / fields=[body]",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#7] 文件超过 1 MiB（chunked=true）返回 413 / 20001 / fields=[body]",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#8] 整体请求体的 1 MiB 边界（chunked=false）包含 multipart 开销",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#8] 整体请求体的 1 MiB 边界（chunked=true）包含 multipart 开销",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#9] 只有 admin 接受 multipart，api 与 stream 对同样请求保持 415 契约错误",
+    "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#10] multipart 流留给 handler，守卫拒绝时不预读或挂载文件到 body",
+    "test/spec/platform/multipart/schema.test.ts > [AC-F1-06s#1] 必填且仅 multipart 的操作保留参数校验和 multipart 标记，不生成 body",
+    "test/spec/platform/multipart/schema.test.ts > [AC-F1-06s#2] 新增 multipart 支持不放行混合类型、可选体或表单编码，错误指出 operationId"
+  ],
+  "risk_note": "RV2 (platform/validation, platform/http, bootstrap; shared request pipeline). Multipart uploads for the admin entry only: the route schema generator accepts a required request body whose only content type is multipart/form-data (no body schema, a multipart marker; other non-JSON shapes still fail generation); @fastify/multipart registered on the admin entry only (attachFieldsToBody false; files 1, fields 0, parts 1, fileSize = Fastify bodyLimit 1 MiB); readSingleUpload (exported from platform/index.ts only; platform/http/index.ts runtime exports unchanged) reads one part named file after the guard, bounds the whole body (Content-Length pre-check and counting for chunked) and stops reading on overflow; bad parts 400 / 20001 fields=[file], oversize 413 / 20001 fields=[body], envelopes without the file name or content; api / stream still answer 415. No contract change. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fe03bf8e6dfbf702d2ab2e7e36348cb59581d7b7",
+      "tree": "13f294beb0a1bfc473e9e403f4d19cc82328c370",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-15T13:55:20Z",
+      "finished_at": "2026-10-15T13:55:26Z",
+      "red_tests": [
+        "test/spec/platform/multipart/generation.test.ts > [AC-F1-06s#3] 生成器接纳实际上传契约且不把 multipart 标记当作 Ajv schema 编译",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#4] admin 通过 platform 公共出口读回单文件原始字节、文件名和 MIME，不附加 body",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 没有 part 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin file 名错误 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 两个文件 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 先文件再普通字段 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 先普通字段再文件 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#5] admin 只有普通字段 file 返回 400 / 20001 / fields=[file] 且不泄露上传信息",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#6] 非 multipart JSON 请求调用读取函数返回 file 字段错误",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#7] 文件超过 1 MiB（chunked=false）返回 413 / 20001 / fields=[body]",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#7] 文件超过 1 MiB（chunked=true）返回 413 / 20001 / fields=[body]",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#8] 整体请求体的 1 MiB 边界（chunked=false）包含 multipart 开销",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#8] 整体请求体的 1 MiB 边界（chunked=true）包含 multipart 开销",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#9] 只有 admin 接受 multipart，api 与 stream 对同样请求保持 415 契约错误",
+        "test/spec/platform/multipart/http.test.ts > [AC-F1-06s#10] multipart 流留给 handler，守卫拒绝时不预读或挂载文件到 body",
+        "test/spec/platform/multipart/schema.test.ts > [AC-F1-06s#1] 必填且仅 multipart 的操作保留参数校验和 multipart 标记，不生成 body",
+        "test/spec/platform/multipart/schema.test.ts > [AC-F1-06s#2] 新增 multipart 支持不放行混合类型、可选体或表单编码，错误指出 operationId"
+      ],
+      "expected": [
+        "test/spec/platform/multipart/generation.test.ts",
+        "test/spec/platform/multipart/http.test.ts",
+        "test/spec/platform/multipart/schema.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "9a271bc938b00f2eed90d89e59c1d36ac8a988e7df7591f0dddb7c8717d05667"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "17 rule tests by Codex (2 runs) reviewed by fresh Claude subagents: round 1 fail (S1: the generator test mocked the CJS entry while the generator loads the ESM entry, so no implementation could pass; S2: default 5 s timeouts on multi-entry and 1 MiB cases), round 2 pass with no findings"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "f8e5ab876c9f93a07af4e9b8591d86b91bf787ba",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  }
+}
