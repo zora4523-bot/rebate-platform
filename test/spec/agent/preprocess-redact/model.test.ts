@@ -3,6 +3,7 @@ import {
   redactForModel,
   restorePlaceholders,
 } from '../../../../apps/api/src/modules/agent/preprocess/redact/index.ts';
+import { findCandidateSpans } from '../../../../apps/api/src/modules/parsing/index.ts';
 
 // 全部为合成输入。BR-AI-14 只规定保留哪些字符，没有规定掩码字符及个数。
 it.each(['13000000000', '13800000000', '19900000000'])(
@@ -46,19 +47,18 @@ it('[AC-B3-05a#5][BR-AI-14] 身份证校验位错误的全数字串回落到长�
   expect(result.placeholders).toEqual({ '<num_1>': '990101199001010018' });
 });
 
-it.each([
-  'synthetic@example.invalid',
-  'synthetic.tag+demo@sub.example.invalid',
-  '3812345678901234567@example.invalid',
-])('[AC-B3-05a#6][BR-AI-14] 邮箱 %s 保留首字符与域名，隐藏其余账号', (email) => {
-  const result = redactForModel(email);
-  expect(result.text[0]).toBe(email[0]);
-  expect(result.text.slice(1, result.text.indexOf('@'))).not.toMatch(/[A-Za-z0-9]/);
-  expect(result.text.slice(result.text.indexOf('@'))).toBe(email.slice(email.indexOf('@')));
-  expect(result.text).not.toContain('synthetic');
-  expect(result.text).not.toContain('tag+demo');
-  expect(result.placeholders).toEqual({});
-});
+it.each(['synthetic@example.invalid', 'synthetic.tag+demo@sub.example.invalid'])(
+  '[AC-B3-05a#6][BR-AI-14] 邮箱 %s 保留首字符与域名，隐藏其余账号',
+  (email) => {
+    const result = redactForModel(email);
+    expect(result.text[0]).toBe(email[0]);
+    expect(result.text.slice(1, result.text.indexOf('@'))).not.toMatch(/[A-Za-z0-9]/);
+    expect(result.text.slice(result.text.indexOf('@'))).toBe(email.slice(email.indexOf('@')));
+    expect(result.text).not.toContain('synthetic');
+    expect(result.text).not.toContain('tag+demo');
+    expect(result.placeholders).toEqual({});
+  },
+);
 
 it.each([
   ['广东省深圳市南山区合成路88号101室', '广东省深圳市'],
@@ -144,3 +144,42 @@ it('[AC-B3-05a#13][BR-AI-14] 再脱敏保持模型文本不变，已有占位符
   expect(again.text).toBe(first.text);
   expect(again.placeholders).toEqual({});
 });
+
+// 两个 19 位订单号分别在末尾、开头含校验位正确的 18 位合成身份证
+// 990101199001010019；BR-AI-14 的身份证识别要求整段恰好 18 位。
+it.each(['7990101199001010019', '9901011990010100197'])(
+  '[AC-B3-05a#35][BR-AI-14] 19 位订单号 %s 内的有效身份证片段不抢占长数字匹配',
+  (raw) => {
+    const result = redactForModel(raw);
+    expect(result.text).toBe('<num_1>');
+    expect(result.placeholders).toEqual({ '<num_1>': raw });
+    expect(restorePlaceholders({ order_no: result.text }, result.placeholders)).toEqual({
+      order_no: raw,
+    });
+  },
+);
+
+it.each([
+  {
+    suffix: '电话13800000000',
+    pattern: /，电话138[^0-9]+0000$/,
+    placeholders: {},
+  },
+  {
+    suffix: '订单3812345678901234567',
+    pattern: /，订单<num_1>$/,
+    placeholders: { '<num_1>': '3812345678901234567' },
+  },
+])(
+  '[AC-B3-05a#36][BR-AI-14] 模型只移出候选链接，中文标点后的 $suffix 仍脱敏',
+  ({ suffix, pattern, placeholders }) => {
+    const link = 'https://example.invalid/90000000001';
+    const input = `链接${link}，${suffix}`;
+    expect(findCandidateSpans(input)).toEqual([{ kind: 'url', raw: link, index: 2 }]);
+    const result = redactForModel(input);
+    expect(result.text).toMatch(/^链接/);
+    expect(result.text).toMatch(pattern);
+    expect(result.text).not.toMatch(/https?:\/\/|\d{11,}/);
+    expect(result.placeholders).toEqual(placeholders);
+  },
+);

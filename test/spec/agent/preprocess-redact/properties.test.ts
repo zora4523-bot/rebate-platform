@@ -8,7 +8,10 @@ import {
 } from '../../../../apps/api/src/modules/agent/preprocess/redact/index.ts';
 
 // 合成长数字以 28 开头，长度 >=11，避开手机号和 18 位身份证以便单独验证占位规则。
-const digits = fc.array(fc.integer({ min: 0, max: 9 }), { minLength: 9, maxLength: 14 });
+const digits = fc.oneof(
+  fc.array(fc.integer({ min: 0, max: 9 }), { minLength: 9, maxLength: 15 }),
+  fc.array(fc.integer({ min: 0, max: 9 }), { minLength: 17, maxLength: 18 }),
+);
 const longNumber = digits.map((rest) => `28${rest.join('')}`);
 const freeText = fc
   .array(fc.constantFrom('合成', '耳机', '比较', '蓝色', ' ', '🧪'), { maxLength: 12 })

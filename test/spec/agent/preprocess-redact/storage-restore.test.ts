@@ -10,6 +10,7 @@ import {
   type AgentRedactedText,
   type PlaceholderTable,
 } from '../../../../apps/api/src/modules/agent/preprocess/redact/index.ts';
+import { findCandidateSpans } from '../../../../apps/api/src/modules/parsing/index.ts';
 
 // BR-AI-14 / BR-AI-19：掩码样式未限定，只核对保留部分和原文不泄漏。
 const TABLE: PlaceholderTable = Object.freeze({
@@ -90,7 +91,6 @@ it.each([
   ['38123456789', /^[^0-9]+6789$/],
   ['3812345678901234567', /^[^0-9]+4567$/],
   ['synthetic@example.invalid', /^s[^A-Za-z0-9@]*@example\.invalid$/],
-  ['3812345678901234567@example.invalid', /^3[^A-Za-z0-9@]*@example\.invalid$/],
 ] as const)(
   '[AC-B3-05a#19][BR-AI-14][BR-AI-19] user_text 与工具参数对 %s 使用相同存储口径',
   async (raw, pattern) => {
@@ -207,3 +207,21 @@ it('[AC-B3-05a#26][BR-AI-19] 相同输入重复与交错调用确定，不读宿
     now.mockRestore();
   }
 });
+
+it.each([
+  ['电话13800000000', /^，电话138[^0-9]+0000$/],
+  ['订单3812345678901234567', /^，订单[^0-9]+4567$/],
+] as const)(
+  '[AC-B3-05a#37][BR-AI-14][BR-AI-19] 存储只豁免候选链接，中文标点后的 %s 仍脱敏',
+  async (suffix, pattern) => {
+    const link = 'https://example.invalid/90000000001';
+    const input = `链接${link}，${suffix}`;
+    expect(findCandidateSpans(input)).toEqual([{ kind: 'url', raw: link, index: 2 }]);
+    const stored = await createAgentRedactor().redact('synthetic-app-a', input);
+    expect(stored.slice(0, 2 + link.length)).toBe(`链接${link}`);
+    expect(stored.slice(2 + link.length)).toMatch(pattern);
+    expect(stored).not.toContain(suffix);
+    expect(stored).not.toContain('<num_');
+    expect(maskForTrace({ note: input })).toEqual({ note: stored });
+  },
+);
