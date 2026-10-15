@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { useHarness } from '../../../admin/auth/kit.ts';
+import { orderedRace } from './ordered-race.ts';
 import {
   conflict,
   DATE,
@@ -188,27 +189,29 @@ it('[AC-F1-06y#12] 恢复后旧恢复请求和旧发布请求都冲突，revisio
   expect(await snapshot(h, f.appId)).toEqual(before);
 });
 
-it.each([false, true])(
-  '[AC-F1-06y#13] 两个发布同时争用 expected_revision 只有一个成功（已有行=%s）',
-  async (existing) => {
+it.each([
+  { existing: false, first: 1, second: 2 },
+  { existing: false, first: 2, second: 1 },
+  { existing: true, first: 1, second: 2 },
+  { existing: true, first: 2, second: 1 },
+])(
+  '[AC-F1-06y#13] 发布 $first 暂停，发布 $second 先完成，前者必冲突（已有行=$existing）',
+  async ({ existing, first, second }) => {
     const f = await setup(h);
     await version(h, f.actor, 'jd', 1, REGISTERED);
     await version(h, f.actor, 'jd', 2, REGISTERED);
     if (existing) await icon(h, f.actor, 'jd', null, 8);
     const revision = existing ? 8 : 0;
     const before = await snapshot(h, f.appId);
-    const responses = await Promise.all(
-      [1, 2].map((v) => write(f, 'publish', { expected_revision: revision, version: v })),
+    const responses = await orderedRace(
+      h,
+      f,
+      { op: 'publish', body: { expected_revision: revision, version: first } },
+      { op: 'publish', body: { expected_revision: revision, version: second } },
     );
-    expect(responses.map((r) => r.statusCode).sort()).toEqual([200, 409]);
-    const winner = await success(
-      responses.find((r) => r.statusCode === 200)!,
-      'publish',
-    );
-    await conflict(
-      responses.find((r) => r.statusCode === 409)!,
-      'publish',
-    );
+    const winner = await success(responses.second, 'publish');
+    await conflict(responses.first, 'publish');
+    expect(winner).toMatchObject({ current_version: second, revision: revision + 1 });
     expect(await mark(h, f.appId)).toMatchObject({
       revision: revision + 1,
       current_version: winner.current_version,
@@ -221,34 +224,40 @@ it.each([false, true])(
   },
 );
 
-it('[AC-F1-06y#14] 发布与恢复内置并发共享同一 CAS，败方不写审计或 ever_published', async () => {
-  const f = await setup(h);
-  await version(h, f.actor, 'jd', 1, { ...REGISTERED, ever_published: true });
-  await version(h, f.actor, 'jd', 2, REGISTERED);
-  await icon(h, f.actor, 'jd', 1, 4);
-  const before = await snapshot(h, f.appId);
-  const responses = await Promise.all([
-    write(f, 'publish', { version: 2, expected_revision: 4 }),
-    write(f, 'restore', { expected_revision: 4 }),
-  ]);
-  expect(responses.map((r) => r.statusCode).sort()).toEqual([200, 409]);
-  for (const [i, op] of ['publish', 'restore'].entries()) {
-    const operation = op as 'publish' | 'restore';
-    if (responses[i]!.statusCode === 200) await success(responses[i]!, operation);
-    else await conflict(responses[i]!, operation);
-  }
-  const published = responses[0]!.statusCode === 200;
-  expect(await mark(h, f.appId)).toMatchObject({
-    current_version: published ? 2 : null,
-    revision: 5,
-  });
-  expect(await saved(h, f.appId, 'jd', 2)).toMatchObject({ ever_published: published });
-  await transitionAudit(
-    h,
-    f,
-    before,
-    published ? 'publish' : 'restore_builtin',
-    1,
-    published ? 2 : null,
-  );
-});
+it.each(['publish', 'restore'] as const)(
+  '[AC-F1-06y#14] %s 暂停、另一操作先完成，共享 CAS 且败方无副作用',
+  async (first) => {
+    const f = await setup(h);
+    await version(h, f.actor, 'jd', 1, { ...REGISTERED, ever_published: true });
+    await version(h, f.actor, 'jd', 2, REGISTERED);
+    await icon(h, f.actor, 'jd', 1, 4);
+    const before = await snapshot(h, f.appId);
+    const second = first === 'publish' ? 'restore' : 'publish';
+    const bodies = {
+      publish: { version: 2, expected_revision: 4 },
+      restore: { expected_revision: 4 },
+    };
+    const responses = await orderedRace(
+      h,
+      f,
+      { op: first, body: bodies[first] },
+      { op: second, body: bodies[second] },
+    );
+    await success(responses.second, second);
+    await conflict(responses.first, first);
+    const published = second === 'publish';
+    expect(await mark(h, f.appId)).toMatchObject({
+      current_version: published ? 2 : null,
+      revision: 5,
+    });
+    expect(await saved(h, f.appId, 'jd', 2)).toMatchObject({ ever_published: published });
+    await transitionAudit(
+      h,
+      f,
+      before,
+      published ? 'publish' : 'restore_builtin',
+      1,
+      published ? 2 : null,
+    );
+  },
+);

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { useHarness } from '../../../admin/auth/kit.ts';
+import { orderedRace } from './ordered-race.ts';
 import {
   auditDelta,
   conflict,
@@ -123,31 +124,31 @@ it.each(['unknown', 'current', 'restored'] as const)(
   },
 );
 
-it('[AC-F1-06y#4] 两个登记请求争用同一版本 revision，只有一个成功，另一个 20902', async () => {
-  const f = await setup(h);
-  await version(h, f.actor, 'jd', 1);
-  const before = await snapshot(h, f.appId);
-  const responses = await Promise.all([
-    write(f, 'source', { expected_revision: 1, source_url: `${SOURCE}/a` }),
-    write(f, 'source', { expected_revision: 1, source_url: `${SOURCE}/b` }),
-  ]);
-  expect(responses.map((r) => r.statusCode).sort()).toEqual([200, 409]);
-  const winner = await success<Version>(
-    responses.find((r) => r.statusCode === 200)!,
-    'source',
-  );
-  await conflict(
-    responses.find((r) => r.statusCode === 409)!,
-    'source',
-  );
-  expect(await saved(h, f.appId)).toMatchObject({
-    revision: 2,
-    source_url: winner.source_url,
-    downloaded_on: null,
-  });
-  expect([`${SOURCE}/a`, `${SOURCE}/b`]).toContain(winner.source_url);
-  await auditDelta(h, f, before, 'version_source');
-});
+it.each(['a', 'b'] as const)(
+  '[AC-F1-06y#4] 登记 %s 先读后写必败，后发请求先完成，revision 只增一次',
+  async (first) => {
+    const f = await setup(h);
+    await version(h, f.actor, 'jd', 1);
+    const before = await snapshot(h, f.appId);
+    const second = first === 'a' ? 'b' : 'a';
+    const responses = await orderedRace(
+      h,
+      f,
+      { op: 'source', body: { expected_revision: 1, source_url: `${SOURCE}/${first}` } },
+      { op: 'source', body: { expected_revision: 1, source_url: `${SOURCE}/${second}` } },
+    );
+    const winner = await success<Version>(responses.second, 'source');
+    await conflict(responses.first, 'source');
+    expect(winner).toMatchObject({ revision: 2, source_url: `${SOURCE}/${second}` });
+    expect(await saved(h, f.appId)).toMatchObject({
+      revision: 2,
+      source_url: winner.source_url,
+      downloaded_on: null,
+    });
+    expect(await mark(h, f.appId)).toMatchObject({ revision: 0, current_version: null });
+    await auditDelta(h, f, before, 'version_source');
+  },
+);
 
 it.each([
   { expected_revision: 1 },

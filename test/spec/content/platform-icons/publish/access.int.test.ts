@@ -4,6 +4,7 @@ import { grant, seed } from '../../../admin/accounts/kit.ts';
 import { factory, signedIn, useHarness } from '../../../admin/auth/kit.ts';
 import { guardOf } from '../../../admin/guard-mount/kit.ts';
 import {
+  auditDelta,
   hasRoute,
   icon,
   mark,
@@ -107,43 +108,82 @@ it('[AC-F1-06y#17] 三个写接口仅挂 admin，api 与 stream 无这些路由'
   }
 });
 
-it('[AC-F1-06y#18] 三个写操作按已验证令牌 app_id 和 key 隔离，另一应用同名版本及审计保持不变', async () => {
-  const f = await setup(h);
-  const other = await seed(h, `f1-06y-other-${randomUUID()}`, { isSuper: true });
-  await version(h, other, 'jd', 1, { ...REGISTERED, ever_published: true });
-  await version(h, other, 'jd', 99, REGISTERED);
-  await icon(h, other, 'jd', 1, 12);
-  await version(h, f.actor, 'jd', 1);
-  await version(h, f.actor, 'tmall', 1, { ...REGISTERED, ever_published: true });
-  await icon(h, f.actor, 'tmall', 1, 7);
-  const foreign = await snapshot(h, other.appId);
-  const otherMark = await mark(h, f.appId, 'tmall');
-  const otherVersion = await saved(h, f.appId, 'tmall');
-  for (const op of ['source', 'publish'] as const) {
+it.each(OPERATIONS)(
+  '[AC-F1-06y#18] %s 按令牌 app_id 和 key 隔离，同形对照行及审计保持不变',
+  async (op) => {
+    const f = await setup(h);
+    const other = await seed(h, `f1-06y-other-${randomUUID()}`, { isSuper: true });
+    // All potential UPDATE matches have the same version, publication flag and both revisions.
+    // Restore deliberately also uses an unpublished version: the DB permits this fixture,
+    // and restore must leave every saved version untouched regardless of that flag.
+    for (const [actor, key] of [
+      [f.actor, 'jd'],
+      [other, 'jd'],
+      [f.actor, 'tmall'],
+    ] as const) {
+      await version(h, actor, key, 1, { ...REGISTERED, revision: 1, ever_published: false });
+      await icon(h, actor, key, op === 'restore' ? 1 : null, 1);
+    }
+    await version(h, other, 'jd', 99, REGISTERED);
+    const foreign = await snapshot(h, other.appId);
+    const before = await snapshot(h, f.appId);
+    for (const missingOp of ['source', 'publish'] as const) {
+      const body =
+        missingOp === 'source'
+          ? { expected_revision: 1, ...REGISTERED }
+          : { expected_revision: 1, version: 99 };
+      await rejected(await write(f, missingOp, body, 'jd', 99), missingOp, 20001, {
+        fields: ['version'],
+      });
+    }
+    expect(await snapshot(h, f.appId)).toEqual(before);
+    expect(await snapshot(h, other.appId)).toEqual(foreign);
     const body =
       op === 'source'
-        ? { expected_revision: 1, ...REGISTERED }
-        : { expected_revision: 0, version: 99 };
-    await rejected(await write(f, op, body, 'jd', 99), op, 20001, { fields: ['version'] });
-  }
-  await success(await write(f, 'source', { expected_revision: 1, ...REGISTERED }), 'source');
-  expect(
-    await success(await write(f, 'publish', { expected_revision: 0, version: 1 }), 'publish'),
-  ).toMatchObject({ revision: 1, current_version: 1 });
-  expect(
-    await success(await write(f, 'restore', { expected_revision: 1 }), 'restore'),
-  ).toMatchObject({ revision: 2, current_version: null });
-  expect(await snapshot(h, other.appId)).toEqual(foreign);
-  expect(await mark(h, f.appId, 'tmall')).toEqual(otherMark);
-  expect(await saved(h, f.appId, 'tmall')).toEqual(otherVersion);
-  const session = await signedIn(f, other);
-  await success(
-    await write({ ...f, token: session.admin_token }, 'restore', { expected_revision: 12 }),
-    'restore',
-  );
-  expect(await mark(h, f.appId)).toMatchObject({ revision: 2, current_version: null });
-  expect(await mark(h, other.appId)).toMatchObject({ revision: 13, current_version: null });
-});
+        ? { expected_revision: 1, source_url: `${SOURCE}/corrected`, downloaded_on: '2026-10-02' }
+        : op === 'publish'
+          ? { expected_revision: 1, version: 1 }
+          : { expected_revision: 1 };
+    const result = await success(await write(f, op, body), op);
+    expect(result).toMatchObject({ revision: 2 });
+    expect(await saved(h, f.appId)).toMatchObject({
+      revision: op === 'source' ? 2 : 1,
+      ever_published: op === 'publish',
+      source_url: op === 'source' ? `${SOURCE}/corrected` : SOURCE,
+    });
+    expect(await mark(h, f.appId)).toMatchObject({
+      revision: op === 'source' ? 1 : 2,
+      current_version: op === 'publish' ? 1 : null,
+    });
+    const after = await snapshot(h, f.appId);
+    expect(await snapshot(h, other.appId)).toEqual(foreign);
+    expect(after.icons.filter((row) => row.key !== 'jd')).toEqual(
+      before.icons.filter((row) => row.key !== 'jd'),
+    );
+    expect(after.versions.filter((row) => row.key !== 'jd')).toEqual(
+      before.versions.filter((row) => row.key !== 'jd'),
+    );
+    expect(after.uploads).toEqual(before.uploads);
+    const audit = await auditDelta(
+      h,
+      f,
+      before,
+      op === 'source' ? 'version_source' : op === 'publish' ? 'publish' : 'restore_builtin',
+    );
+    expect({ ...(audit.before as object | null), ...(audit.after as object | null) }).toMatchObject(
+      { key: 'jd' },
+    );
+    if (op === 'restore') {
+      const session = await signedIn(f, other);
+      await success(
+        await write({ ...f, token: session.admin_token }, 'restore', { expected_revision: 1 }),
+        'restore',
+      );
+      expect(await mark(h, f.appId)).toMatchObject({ revision: 2, current_version: null });
+      expect(await mark(h, other.appId)).toMatchObject({ revision: 2, current_version: null });
+    }
+  },
+);
 
 it.each(OPERATIONS)('[AC-F1-06y#19] %s 请求不能注入 app_id 或作者身份', async (op: Operation) => {
   const f = await setup(h);
