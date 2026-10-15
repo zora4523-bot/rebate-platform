@@ -7,6 +7,7 @@ import { afterEach, expect, it } from 'vitest';
 import { createHttpApp } from '../../../../bootstrap.ts';
 import {
   FixedClock,
+  contractAuthRoutes,
   contractRouteSchema,
   createRootLogger,
   loadConfig,
@@ -183,14 +184,35 @@ it('[AC-F1-06k] staging without the admin key or whitelist refuses to initialise
 it('[AC-F1-06k] a contract admin / super route added after init is behind the admin check', async () => {
   await build();
   const server = app!.getHttpAdapter().getInstance();
-  // me/permissions (F1-06l) and the admins reads (F1-06m) are real routes; a still-planned
-  // contract admin route added after init is behind the same check.
-  server.get('/admin/v1/platform-icons', () => ({ code: 0, data: {} }));
-  for (const url of ['/admin/v1/me/permissions', '/admin/v1/admins', '/admin/v1/platform-icons']) {
-    const response = await app!.inject({ method: 'GET', url, remoteAddress: '127.0.0.1' });
+  // me/permissions (F1-06l) and the admins reads (F1-06m) are real routes; a contract admin /
+  // super route not registered by any module yet, added after init, is behind the same check.
+  const probes: { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; url: string }[] = [
+    { method: 'GET', url: '/admin/v1/me/permissions' },
+    { method: 'GET', url: '/admin/v1/admins' },
+  ];
+  const unregistered = contractAuthRoutes().find(
+    (route) =>
+      (route.auth === 'admin' || route.auth === 'super') &&
+      ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(route.method) &&
+      !server.hasRoute({
+        method: route.method as 'GET',
+        url: route.path.replace(/\{([^}]+)\}/g, ':$1'),
+      }),
+  );
+  if (unregistered !== undefined) {
+    const method = unregistered.method as (typeof probes)[number]['method'];
+    server.route({
+      method,
+      url: unregistered.path.replace(/\{([^}]+)\}/g, ':$1'),
+      handler: () => ({ code: 0, data: {} }),
+    });
+    probes.push({ method, url: unregistered.path.replace(/\{[^}]+\}/g, 'probe') });
+  }
+  for (const { method, url } of probes) {
+    const response = await app!.inject({ method, url, remoteAddress: '127.0.0.1' });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ code: 10001 });
-    const outside = await app!.inject({ method: 'GET', url, remoteAddress: '198.51.100.4' });
+    const outside = await app!.inject({ method, url, remoteAddress: '198.51.100.4' });
     expect(outside.json()).toMatchObject({ code: 10403, data: { reason: 'admin_ip_not_allowed' } });
   }
 });

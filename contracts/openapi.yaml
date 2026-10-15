@@ -5079,7 +5079,6 @@ paths:
         `current.url` and every version url only as an image (`<img>`), never inlined into the
         page.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -5206,7 +5205,6 @@ paths:
         /admin/v1/platform-icons/{key}/publish). A key outside enum platform_icon_key is 20001 with
         `data.fields=[key]`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
