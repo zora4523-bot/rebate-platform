@@ -371,6 +371,8 @@ it('[AC-B1-02r#32][BR-AI-13] 连接池关闭后 check 拒绝，不能伪装成 m
   const closed = createDb({ connectionString: database!.urlFor('couli_app') });
   try {
     const service = reader({ db: closed });
+    // Initialize Kysely's lazy connection before destroy() so the pool really closes.
+    await sql`SELECT 1`.execute(closed);
     await destroyDb(closed);
     await expect(service.check(subject)).rejects.toThrow();
   } finally {
