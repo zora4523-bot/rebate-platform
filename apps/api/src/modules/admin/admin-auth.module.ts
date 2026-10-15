@@ -16,6 +16,7 @@ import { type DynamicModule, type FactoryProvider, Module } from '@nestjs/common
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import {
+  AdminOperationGuard,
   APP_CONFIG,
   CLOCK,
   DB,
@@ -34,6 +35,7 @@ import {
   createAdminAccountsReader,
   type AdminAccountsReader,
 } from './application/admin-accounts-read.ts';
+import { AdminOperationGuardImpl } from './application/admin-operation-guard.ts';
 import { createAdminRequestCheck } from './application/admin-check.ts';
 import { createAdminAuthService, type AdminAuthService } from './application/admin-login.ts';
 import {
@@ -45,6 +47,7 @@ import {
 import { adminTokenKey, createAdminTokens, type AdminTokens } from './application/admin-tokens.ts';
 import {
   ADMIN_STEP_UP_NAMESPACE,
+  createAdminPermissionGuard,
   createAdminStepUpTokens,
 } from './application/permission-guard.ts';
 import {
@@ -61,7 +64,7 @@ import { AdminAuthController } from './http/admin/auth.controller.ts';
 import { AdminStepUpController } from './http/admin/step-up.controller.ts';
 import { createAdminAccounts, type AdminAccounts } from './infra/admin-accounts.ts';
 import { createAdminDirectory } from './infra/admin-directory.ts';
-import { createAdminProfiles } from './infra/admin-profiles.ts';
+import { createAdminProfiles, type AdminProfiles } from './infra/admin-profiles.ts';
 import { createAdminSessions, type AdminSessions } from './infra/admin-sessions.ts';
 import { createLoginTickets } from './infra/login-tickets.ts';
 import { createPgTotpReplayStore } from './infra/totp-replay-pg.ts';
@@ -101,6 +104,8 @@ interface AdminStores {
   readonly sessions: () => AdminSessions;
   /** Namespace `admin-step-up`: step-up tokens and SMS codes. */
   readonly stepUp: () => RedisNamespace;
+  /** Account and permission reads (step-up, me/permissions, the operation guard). */
+  readonly profiles: () => AdminProfiles;
 }
 
 /** A namespace that is looked up at every command, so a missing Redis fails per request. */
@@ -136,6 +141,8 @@ export class AdminAuthModule {
     const sender = options.smsSender;
     return {
       module: AdminAuthModule,
+      // Global so business modules inject AdminOperationGuard without importing admin (F1-06u).
+      global: true,
       controllers: [AdminAuthController, AdminStepUpController, AdminAccountsController],
       providers: [
         ...(sender === undefined ? [] : [sender]),
@@ -187,9 +194,11 @@ export class AdminAuthModule {
             const stepUp = lazyNamespace(() =>
               redis === undefined ? unavailable('Redis') : redis.namespace(ADMIN_STEP_UP_NAMESPACE),
             );
+            const profiles = db === undefined ? undefined : createAdminProfiles({ db });
             return {
               redis: () => namespace,
               stepUp: () => stepUp,
+              profiles: () => profiles ?? unavailable('database'),
               accounts: () => accounts ?? unavailable('database'),
               sessions: () => sessions,
             };
@@ -321,6 +330,17 @@ export class AdminAuthModule {
             }),
         },
         {
+          // F1-06u: the platform port of every business module's admin operations. Global through
+          // this module (admin entry only): the api and stream entries do not provide it.
+          provide: AdminOperationGuard,
+          inject: [CLOCK, ADMIN_STORES],
+          useFactory: (clock: Clock, stores: AdminStores): AdminOperationGuard =>
+            new AdminOperationGuardImpl({
+              profiles: stores.profiles,
+              guard: createAdminPermissionGuard({ clock, redis: stores.stepUp() }),
+            }),
+        },
+        {
           provide: ADMIN_HTTP_POLICY,
           inject: [APP_CONFIG, ADMIN_ALLOWLIST],
           useFactory: (
@@ -329,7 +349,7 @@ export class AdminAuthModule {
           ): AdminHttpPolicy => ({ corsOrigin: config.adminAuth?.corsOrigin ?? null, allows }),
         },
       ],
-      exports: [ADMIN_CHECK, ADMIN_HTTP_POLICY],
+      exports: [ADMIN_CHECK, ADMIN_HTTP_POLICY, AdminOperationGuard],
     };
   }
 }
