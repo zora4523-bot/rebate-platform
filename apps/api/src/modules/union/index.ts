@@ -20,6 +20,8 @@ export type {
   OrderQueryOpt,
   Page,
   PddAuthority,
+  PddAuthorityUrl,
+  PddPromotionUrlExtras,
   PddOrderFields,
   Platform,
   RegisteredPlatform,

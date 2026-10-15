@@ -91,6 +91,7 @@ export function createGovernedAdapter(
     createTaolijin,
     getPddOrderDetail,
     queryPddAuthority,
+    pddAuthorityUrl,
   } = adapter;
 
   /** UnionIdentity is built only by linking on the server (BR-ATTR-05, BR-AI-03). */
@@ -163,6 +164,18 @@ export function createGovernedAdapter(
             assertIdentity(identity, ctx, 'queryPddAuthority');
             return await run('idempotent_read', ctx, (c) =>
               queryPddAuthority.call(adapter, identity, c),
+            );
+          },
+        }),
+    // B1-04h: generating the PDD filing (channel_type=10) link creates no state on our side and
+    // returns an equivalent link on repeat, so it is governed as an idempotent read.
+    ...(pddAuthorityUrl === undefined
+      ? {}
+      : {
+          async pddAuthorityUrl(identity: UnionIdentity, ctx: CallCtx) {
+            assertIdentity(identity, ctx, 'pddAuthorityUrl');
+            return await run('idempotent_read', ctx, (c) =>
+              pddAuthorityUrl.call(adapter, identity, c),
             );
           },
         }),
