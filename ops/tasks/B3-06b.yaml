@@ -1,0 +1,25 @@
+id: B3-06b
+repo: rebate-platform
+title: OutputGuard 第二段：按句审核与输入审核适配器——输入与输出两种审核（同为 guard 的 SentenceReviewPort 形状）的阿里云内容安全实现（注入传输与签名、agent.safety.timeout_ms 计时、超时与异常 fail-close）；真实调用等 Key
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，plan.md §3.5）。B3-06a 台账注释：「阿里云适配器与 agent.safety.timeout_ms 计时在 B3-06b」；规划会话 2026-10-14 建议「按句审核适配器（原 B3-06b）入账」。
+# 依据：BR-AI-18（输入先审、命中不调模型；输入超时 fail-close 不计配额；输出按句审核、命中替换并结束、超时整段缓冲再审、再超时替换剩余文本；决策人法务，取值只在 08）。
+# 时间只取注入的 Scheduler；传输注入（不加 SDK、不加依赖，仿 B3-02b 的 fetch 注入）；Key 从配置注入、值不进日志与错误。输入审核与按句审核同形（guard 已导出的 SentenceReviewPort：review(text) → pass / block / timeout），本段导出两个工厂（输入、输出各用对应的审核场景），不新增接口，与 B3-05d 无依赖。
+# 09 未验证：阿里云内容安全的接口形态与返回码不在 09 能力验证表（U-79「内容安全不在本表验证」），按官方文档写成差异表与开关，不写成承诺；
+#   TODO(规划/11 §6)：真实调用 — blocked on 负责人开通阿里云内容安全并提供 Key（06 Q-C21 账号范畴）；Key 的环境变量名加进 platform/config 属 B1 线（RV2），本段不改。
+# 分工：清单外新台账，Codex 先写规则测试，Opus 实现，Codex 评审。风险 RV1（agent/**）。refs_hash 入账前用 node tools/ops/task.ts hash B3-06b 生成并替换下行。
+refs: [BR-AI-18]
+refs_hash:
+  BR-AI-18: 01b60e6ca170
+deps: [B3-06a]
+paths:
+  - 'apps/api/src/modules/agent/guard/review/**'
+test_paths:
+  - 'test/spec/agent/guard-review/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/guard-review/**'
+status: todo
+pr: null
