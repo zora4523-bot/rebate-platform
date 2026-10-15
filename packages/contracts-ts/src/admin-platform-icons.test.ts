@@ -56,6 +56,9 @@ const OPERATIONS = [
   ['post', `${BASE}/{key}/restore-builtin`, [10001, 10403, 20001, 20902]],
 ] as const;
 
+/** Implemented by F1-06w (the two reads); the five writes stay planned. */
+const IMPLEMENTED = new Set<string>([BASE, `${BASE}/{key}/versions`].map((path) => `get ${path}`));
+
 /** Codes every admin operation may return without listing them (openapi info.description). */
 const ADMIN_COMMON = [10403, 20001, 42901, 50001];
 const MARK_KEYS = ['taobao', 'tmall', 'jd', 'pdd', 'wechat', 'wechat_pay', 'alipay', 'wecom'];
@@ -94,10 +97,11 @@ const compile = (name: string) => ajv.compile(contract.components.schemas[name]!
 
 describe('platform mark operations (04 §6.6, §11.2)', () => {
   it.each(OPERATIONS)(
-    '[CT-17g] %s %s is a planned admin operation of content.platform_icon',
+    '[CT-17g] %s %s is an admin operation of content.platform_icon (planned until implemented)',
     (method, path, codes) => {
       const op = operation(method, path);
-      expect(op['x-implementation']).toBe('planned');
+      if (IMPLEMENTED.has(`${method} ${path}`)) expect(op).not.toHaveProperty('x-implementation');
+      else expect(op['x-implementation']).toBe('planned');
       expect(op['x-auth']).toBe('admin');
       expect(op.security).toEqual([{ adminBearerAuth: [] }]);
       expect(op.description).toContain('Permission point `content.platform_icon`');

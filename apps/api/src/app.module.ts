@@ -20,7 +20,7 @@ import {
   type CatalogWarning,
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
-import { createContentReader } from './modules/content/index.ts';
+import { ContentAdminModule, createContentReader } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import {
   IdentityModule,
@@ -713,6 +713,9 @@ export class AppModule {
         // The /admin/v1 login routes, the admin request check and CORS policy (F1-06k); step-up
         // and me/permissions (F1-06l), whose sms tier sends through identity's SMS sender.
         ...(options.entry === 'admin' ? [adminAuthModule()] : []),
+        // content's /admin/v1 routes (platform marks, F1-06w), guarded through platform's
+        // AdminOperationGuard, which adminAuthModule provides on this entry only.
+        ...(options.entry === 'admin' ? [ContentAdminModule.forAdmin()] : []),
         ...(identity === undefined ? [] : [identity, riskModule(identity)]),
         ...(union === undefined ? [] : [union]),
         // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
