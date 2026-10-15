@@ -28,6 +28,8 @@ type Done = Extract<RunBodyResult, { kind: 'done' }>;
 const done = (finishReason: Done['finishReason']): Done => ({ kind: 'done', finishReason });
 
 const INVALID_ARGS = { error: 'invalid_args' } as const;
+/** Degrade reason for a model answer in an invalid format (see ports.ts header). */
+const INVALID_FORMAT_REASON: DegradeReason = 'models_failed';
 const PLATFORMS: readonly string[] = platformEnum;
 
 type ToolStatus = OrchestratorTrace['tool_calls'][number]['status'];
@@ -73,6 +75,33 @@ export function intentOf(text: string): { readonly name: string | null } | undef
   return { name: typeof name === 'string' ? name : null };
 }
 
+/** Whole text without surrounding white space and one ``` fence (closed or not). */
+function unfenced(text: string): string {
+  const body = text.trim();
+  const fence = /^```[\w-]*[^\S\r\n]*\r?\n?([\s\S]*?)\s*(?:```)?$/u.exec(body);
+  return fence === null ? body : (fence[1] ?? '').trim();
+}
+
+const ARRAY_LIKE = /^\[\s*(?:[{["\d\]-]|true\b|false\b|null\b)/u;
+
+/**
+ * BR-AI-06 (no card JSON from the model): a round whose whole text, unfenced, is structured
+ * data — anything opening with `{`, or a JSON array / array-looking text — is a format error and
+ * is never delivered. Prose that merely contains braces, or opens with a bracketed tag such as
+ * 「[提示]」, is ordinary text.
+ */
+export function isStructuredText(text: string): boolean {
+  const body = unfenced(text);
+  if (body.startsWith('{')) return true;
+  if (!body.startsWith('[')) return false;
+  try {
+    JSON.parse(body);
+    return true;
+  } catch {
+    return ARRAY_LIKE.test(body);
+  }
+}
+
 class AgentRun {
   private readonly deps: AgentRunBodyDeps;
   private readonly input: RunBodyInput;
@@ -86,6 +115,7 @@ class AgentRun {
   private guard: OutputGuard | null = null;
   private placeholders: Readonly<Record<string, string>> = {};
   private intent: string | null = null;
+  private formatInvalid = false;
   private model: string | null = null;
   private promptVersion = 'none';
   private readonly attempts: AttemptRecord[] = [];
@@ -252,6 +282,8 @@ class AgentRun {
       }
       const roundText = deltas.join('');
       if (calls.length === 0) return this.finalRound(proceed, deltas, roundText);
+      // Same format check as the final round, before any of this text reaches the guard.
+      if (isStructuredText(roundText)) return this.invalidFormat(proceed);
       const pushed = await this.pushText(deltas);
       if (pushed !== null) return pushed;
       // The last allowed round still asks for tools: its calls are not run (U-10).
@@ -289,8 +321,20 @@ class AgentRun {
       }
       return this.final(done('stop'));
     }
+    if (isStructuredText(text)) return this.invalidFormat(proceed);
     const pushed = await this.pushText(deltas);
     if (pushed !== null) return pushed;
+    return this.finishText('stop');
+  }
+
+  /**
+   * Model text that is structured data (card JSON etc.) is dropped as an invalid answer: before
+   * any model / tool content it degrades like "no usable model answer" (models_failed); after
+   * delivery it flushes the guard tail and ends normally (U-11). Trace records the deviation.
+   */
+  private async invalidFormat(proceed: InputProceed): Promise<RunBodyResult> {
+    this.formatInvalid = true;
+    if (!this.delivered) return this.degrade(proceed, INVALID_FORMAT_REASON);
     return this.finishText('stop');
   }
 
@@ -428,6 +472,7 @@ class AgentRun {
       output_filtered: summary?.outputFiltered ?? false,
       filter_hits: summary?.filterHits ?? [],
       output_truncated: summary?.outputTruncated ?? false,
+      model_format_invalid: this.formatInvalid,
       ...(this.cardSources.length > 0 ? { card_sources: [...this.cardSources] } : {}),
       ...(this.linkRegistrations.length > 0
         ? { link_registrations: [...this.linkRegistrations] }

@@ -37,6 +37,8 @@ import { runAgent } from './run.ts';
  * A pre-aborted signal or an abort during any await suppresses all later output; late results
  * are discarded. RunManager owns the actual cancellation terminal; the body returns done stop.
  * No IntentPort + final JSON object with agent_intent => out_of_scope fixed text, done stop.
+ * Other structured round text (card JSON, arrays; fenced or unparseable) is never delivered:
+ * degrade models_failed before delivery, else flush and done stop (ports.ts header).
  * No DeterministicPath + links => agent.degraded.empty notice, done fallback, no model call.
  * Router refused => agent.refuse.unsafe, done safety. No prompt => degraded route_no_model,
  * without complete() or tool execution. Read the shared immutable PromptSource once per run;

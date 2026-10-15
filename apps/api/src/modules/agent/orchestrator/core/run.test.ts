@@ -5,7 +5,7 @@ import type { ModelOutcome } from '../../model-gateway/routing/index.ts';
 import type { RunContext } from '../../stream/run/index.ts';
 import { createAgentRunBody, orchestratorLimitsDefaults } from './factories.ts';
 import type { AgentRunBodyDeps, OrchestratorTrace, ToolOutcome } from './ports.ts';
-import { intentOf } from './run.ts';
+import { intentOf, isStructuredText } from './run.ts';
 
 function input(): RunBodyInput {
   return {
@@ -250,4 +250,154 @@ it('[B3-05b] intentOf recognises intent objects only', () => {
   expect(intentOf('{"title":"合成"}')).toBeUndefined();
   expect(intentOf('合成说明 {"agent_intent":"x"}')).toBeUndefined();
   expect(intentOf('[1,2]')).toBeUndefined();
+});
+
+// review-codex-r2 S1: structured model text (card JSON etc.) is never delivered as text.delta.
+const CARD_JSON = '{"type":"product_card","data":{"price":2990}}';
+const STRUCTURED = [
+  { label: 'card JSON', parts: ['{"type":"product_card",', '"data":{"price":2990}}'] },
+  { label: 'fenced JSON', parts: ['```json\n', CARD_JSON, '\n```'] },
+  { label: 'JSON array', parts: ['[{"title":"合成","price":2990}]'] },
+  { label: 'unparseable object', parts: ['{"type":"product_card","data":{"pri'] },
+];
+
+function textRound(parts: readonly string[]): ModelOutcome {
+  return modelRound([
+    ...parts.map((text) => ({ t: 'text_delta' as const, text })),
+    { t: 'done', reason: 'stop' },
+  ]);
+}
+
+function formatDeps(rounds: ModelOutcome[], outcomes: ToolOutcome[] = []) {
+  const traces: OrchestratorTrace[] = [];
+  const degraded = vi.fn<AgentRunBodyDeps['degraded']['run']>(async () => ({
+    kind: 'done',
+    finishReason: 'fallback',
+  }));
+  const execute = vi.fn(
+    async (): Promise<ToolOutcome> => outcomes.shift() ?? { kind: 'ok', modelView: {}, cards: [] },
+  );
+  const deps: AgentRunBodyDeps = {
+    ...baseDeps(rounds, execute),
+    degraded: { run: degraded },
+    trace: { record: (_runId, trace) => traces.push(trace) },
+  };
+  return { deps, traces, degraded, execute };
+}
+
+it.each(STRUCTURED)(
+  '[B3-05b review-codex-r2 S1][BR-AI-06] final-round $label is not delivered; nothing sent yet => models_failed degrade',
+  async ({ parts }) => {
+    const r = formatDeps([textRound(parts)]);
+    const out = context();
+    expect(await createAgentRunBody(r.deps)(input())(out.ctx)).toEqual({
+      kind: 'done',
+      finishReason: 'fallback',
+    });
+    expect(out.texts).toEqual([]);
+    expect(r.degraded).toHaveBeenCalledTimes(1);
+    expect(r.degraded.mock.calls[0]?.[0].reason).toBe('models_failed');
+    expect(r.traces[0]?.model_format_invalid).toBe(true);
+  },
+);
+
+it.each(STRUCTURED)(
+  '[B3-05b review-codex-r2 S1][BR-AI-06] final-round $label after delivered content: flush and done stop',
+  async ({ parts }) => {
+    const card = {
+      type: 'notice',
+      schema_version: 1,
+      data: { level: 'info', text_key: 'agent.degraded.empty', actions: [] },
+      fallback_text: '合成卡',
+    } as const;
+    const r = formatDeps(
+      [
+        modelRound([
+          { t: 'text_delta', text: '合成第一句' },
+          { t: 'tool_call', index: 0, call: call('a', 'search_products', '{}') },
+          { t: 'done', reason: 'tool_calls' },
+        ]),
+        textRound(parts),
+      ],
+      [{ kind: 'ok', modelView: {}, cards: [card] }],
+    );
+    const out = context();
+    expect(await createAgentRunBody(r.deps)(input())(out.ctx)).toEqual({
+      kind: 'done',
+      finishReason: 'stop',
+    });
+    // The open sentence of the earlier round is flushed; the structured text never appears.
+    expect(out.texts).toEqual(['合成第一句']);
+    expect(r.degraded).not.toHaveBeenCalled();
+    expect(r.traces[0]?.model_format_invalid).toBe(true);
+  },
+);
+
+it('[B3-05b review-codex-r2 S1][BR-AI-06] structured text in a tool round is checked the same way', async () => {
+  const r = formatDeps([
+    modelRound([
+      { t: 'text_delta', text: CARD_JSON },
+      { t: 'tool_call', index: 0, call: call('a', 'search_products', '{}') },
+      { t: 'done', reason: 'tool_calls' },
+    ]),
+  ]);
+  const out = context();
+  expect(await createAgentRunBody(r.deps)(input())(out.ctx)).toEqual({
+    kind: 'done',
+    finishReason: 'fallback',
+  });
+  expect(out.texts).toEqual([]);
+  expect(r.execute).not.toHaveBeenCalled();
+  expect(r.degraded.mock.calls[0]?.[0].reason).toBe('models_failed');
+});
+
+it('[B3-05b review-codex-r2 S1][BR-AI-06] an IntentPort returning null does not let card JSON through', async () => {
+  const r = formatDeps([textRound([CARD_JSON])]);
+  const handle = vi.fn(async () => null);
+  const out = context();
+  expect(await createAgentRunBody({ ...r.deps, intents: { handle } })(input())(out.ctx)).toEqual({
+    kind: 'done',
+    finishReason: 'fallback',
+  });
+  expect(handle).toHaveBeenCalledTimes(1);
+  expect(out.texts).toEqual([]);
+});
+
+it.each(['合成说明{约}可看卡片。', '[提示] 合成说明可看卡片。'])(
+  '[B3-05b review-codex-r2 S1][BR-AI-06] ordinary prose with braces or a bracket tag is delivered: %s',
+  async (text) => {
+    const r = formatDeps([textRound([text])]);
+    const out = context();
+    expect(await createAgentRunBody(r.deps)(input())(out.ctx)).toEqual({
+      kind: 'done',
+      finishReason: 'stop',
+    });
+    expect(out.texts.join('')).toBe(text);
+    expect(r.degraded).not.toHaveBeenCalled();
+    expect(r.traces[0]?.model_format_invalid).toBe(false);
+  },
+);
+
+it('[B3-05b] the agent_intent rule still wins over the structured-text rule', async () => {
+  const r = formatDeps([textRound(['{"agent_intent":"page_guide"}'])]);
+  const out = context();
+  expect(await createAgentRunBody(r.deps)(input())(out.ctx)).toEqual({
+    kind: 'done',
+    finishReason: 'stop',
+  });
+  expect(out.texts).toEqual(['agent.refuse.out_of_scope']);
+  expect(r.degraded).not.toHaveBeenCalled();
+  expect(r.traces[0]?.model_format_invalid).toBe(false);
+});
+
+it('[B3-05b] isStructuredText', () => {
+  expect(isStructuredText(`  ${CARD_JSON}  `)).toBe(true);
+  expect(isStructuredText('```\n{"a":1}\n```')).toBe(true);
+  expect(isStructuredText('```json\n{"a":1')).toBe(true);
+  expect(isStructuredText('[1, 2]')).toBe(true);
+  expect(isStructuredText('[{"a":')).toBe(true);
+  expect(isStructuredText('{约}合成')).toBe(true);
+  expect(isStructuredText('[提示] 合成')).toBe(false);
+  expect(isStructuredText('合成说明 {"a":1}')).toBe(false);
+  expect(isStructuredText('')).toBe(false);
 });

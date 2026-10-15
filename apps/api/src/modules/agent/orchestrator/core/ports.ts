@@ -1,4 +1,13 @@
 // B3-05b: downstream contracts (ports). The core lives in factories.ts, run.ts and output.ts.
+//
+// Invalid model format (BR-AI-06: the model never outputs card JSON). When a round's whole text,
+// after trimming and removing one ``` fence, is structured data — it opens with `{`, or is a JSON
+// array / array-looking text, parseable or not — that text is never delivered (tool rounds and the
+// final round alike). The {"agent_intent": …} handling runs first and is unchanged. Before any
+// model / tool text, card or suggestions was delivered (input notices do not count, plan U-11) the
+// run degrades exactly like "no usable model answer": DegradedPath with reason `models_failed`
+// (done fallback, or whatever the path returns). After delivery the guard tail is flushed and the
+// run ends done stop. OrchestratorTrace.model_format_invalid records the deviation.
 import type { Platform } from '@couli/contracts-ts';
 import type { Candidate } from '../../../parsing/index.ts';
 import type { AgentCaller, RunBodyInput } from '../../http/index.ts';
@@ -169,6 +178,8 @@ export interface OrchestratorTrace extends ToolTraceFragment {
   readonly output_filtered: boolean;
   readonly filter_hits: readonly FilterHit[];
   readonly output_truncated: boolean;
+  /** A model round answered with structured text (card JSON etc.) that was not delivered. */
+  readonly model_format_invalid: boolean;
 }
 
 export interface RunTraceSink {
