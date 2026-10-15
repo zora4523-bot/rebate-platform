@@ -329,10 +329,13 @@ export interface UnionAdapter {
    * B1-06v: whether the user the server-built identity names (Pinduoduo custom_parameters
    * {app, uid=attr_code, sc}, never a user_id) is filed (备案) under the identity's promotion slot
    * (BR-ID-22: only an authorized answer turns a binding active). An idempotent read; Pinduoduo
-   * only. TODO(规划/11 §4.5): 真实查询 — blocked on CAP-PDD-05。
+   * only. The live adapter calls pdd.ddk.member.authority.query (B1-04h, CAP-PDD-05).
    */
   queryPddAuthority?(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthority>;
-  /** PDD channel_type=10 filing URL; governed as an idempotent read. */
+  /**
+   * B1-04h: PDD channel_type=10 filing URL for the identity's own promotion slot (the slot convert
+   * uses; filing is per slot). Governed as an idempotent read; Pinduoduo only.
+   */
   pddAuthorityUrl?(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthorityUrl>;
 }
 

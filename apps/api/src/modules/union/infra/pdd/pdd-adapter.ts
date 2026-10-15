@@ -2,7 +2,8 @@
 // 经注入的 UnionTransport 发 POST JSON、按登记的外层键解包、error_response 分类到 UnionError。
 // 订单端口（listOrders 的 increment / pay_time、getPddOrderDetail）的参数与映射在 orders.ts（B1-04i）；
 // 商品端口（searchItems / getItem / resolveLink / materialFeed）的参数、游标与映射在 goods.ts（B1-04u），
-// 每次调用都带服务端注入的查询身份（D-u2）；B1-04h 转链与备案端口当前仅为 NotImplemented 骨架。
+// 每次调用都带服务端注入的查询身份（D-u2）；转链、备案查询、备案链接（B1-04h）的参数与映射在 promotion.ts，
+// 它们只用调用方传入的服务端身份（推广位 + custom_parameters），不用查询身份。
 // 不读 process.env、不读文件；client_secret 只在内存里参与签名。
 import type { Clock } from '../../../platform/index.ts';
 import {
@@ -66,6 +67,17 @@ import {
   rangeCursor,
   rangeWindow,
 } from './orders.ts';
+import {
+  convertGoodsSign,
+  mapAuthorized,
+  mapAuthorityUrl,
+  mapConvertResult,
+  pddIdentityParameters,
+  PDD_AUTHORITY_CHANNEL,
+  PDD_AUTHORITY_QUERY,
+  PDD_PROMOTION_URL_GENERATE,
+  PDD_RP_PROM_URL_GENERATE,
+} from './promotion.ts';
 
 export interface PddCredentials {
   readonly clientId: string;
@@ -319,23 +331,62 @@ export class PddUnionAdapter implements UnionAdapter {
     return { items, nextCursor: more ? feedCursor(offset + PDD_FEED_LIMIT) : null };
   }
 
+  /**
+   * goods.promotion.url.generate：一次 1 个 goods_sign，p_id = identity.promotionSlot，固定单人团
+   * multi_group=false（BR-PRICE-02 细则 G-48），请求 scheme 与短链（与 probe 一致）。
+   * 这是写操作：治理层不重试，适配器也不重试（02 §6.2）；未备案 50001 / 60001 → upstream_rejected，
+   * 错误信息带 sub_code，由 linking 按「未备案」处理。
+   */
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {
-    void req;
-    void identity;
-    void ctx;
-    throw new Error('NotImplemented: PddUnionAdapter.convert');
+    const goodsSign = convertGoodsSign(req?.item);
+    const { promotionSlot, customParameters } = pddIdentityParameters(identity, 'convert');
+    const envelope = await this.request(
+      PDD_PROMOTION_URL_GENERATE,
+      {
+        p_id: promotionSlot,
+        goods_sign_list: [goodsSign],
+        custom_parameters: customParameters,
+        multi_group: false,
+        generate_schema_url: true,
+        generate_short_url: true,
+      },
+      ctx.signal,
+    );
+    return mapConvertResult(envelope);
   }
 
+  /** member.authority.query：pid = identity.promotionSlot（备案按推广位分开，D-u3）；bind 为整数 1 才算已备案。 */
   async queryPddAuthority(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthority> {
-    void identity;
-    void ctx;
-    throw new Error('NotImplemented: PddUnionAdapter.queryPddAuthority');
+    const { promotionSlot, customParameters } = pddIdentityParameters(
+      identity,
+      'queryPddAuthority',
+    );
+    const envelope = await this.request(
+      PDD_AUTHORITY_QUERY,
+      { pid: promotionSlot, custom_parameters: customParameters },
+      ctx.signal,
+    );
+    return { authorized: mapAuthorized(envelope) };
   }
 
+  /**
+   * rp.prom.url.generate channel_type=10：备案链接必须用转链所用的那个推广位生成
+   * （p_id_list 只含 identity.promotionSlot），否则用户备案后转链仍报 60001。只请求 scheme 版
+   * （probe 的 scheme 与短链是分开两次调用，未验证同时请求）；短链版字段若出现也照样映射。
+   */
   async pddAuthorityUrl(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthorityUrl> {
-    void identity;
-    void ctx;
-    throw new Error('NotImplemented: PddUnionAdapter.pddAuthorityUrl');
+    const { promotionSlot, customParameters } = pddIdentityParameters(identity, 'pddAuthorityUrl');
+    const envelope = await this.request(
+      PDD_RP_PROM_URL_GENERATE,
+      {
+        channel_type: PDD_AUTHORITY_CHANNEL,
+        p_id_list: [promotionSlot],
+        custom_parameters: customParameters,
+        generate_schema_url: true,
+      },
+      ctx.signal,
+    );
+    return mapAuthorityUrl(envelope);
   }
 
   /**

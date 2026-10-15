@@ -30,6 +30,8 @@ const ENVELOPES: ReadonlyMap<string, string> = new Map([
   ['pdd.ddk.goods.detail', 'goods_detail_response'],
   ['pdd.ddk.goods.recommend.get', 'goods_basic_detail_response'],
   ['pdd.ddk.url.short.parse', 'url'],
+  // B1-04h：转链的 probe 实测外层键（authority / rp 两个沿用上表 §3.4 的登记）。
+  ['pdd.ddk.goods.promotion.url.generate', 'goods_promotion_url_generate_response'],
 ]);
 
 const CLASSIFICATION: ReadonlyMap<string, UnionErrorCode> = new Map<string, UnionErrorCode>([
@@ -51,6 +53,15 @@ const CLASSIFICATION: ReadonlyMap<string, UnionErrorCode> = new Map<string, Unio
   ['50002', 'upstream_unavailable'],
   ['52001', 'upstream_unavailable'],
   ['52002', 'upstream_unavailable'],
+]);
+
+/**
+ * 按 error_code + sub_code 细分、优先于上表的分类。B1-04h probe：推广位未备案时转链报
+ * 50001 / sub_code 60001——这是业务拒绝（不重试、不计熔断），由上层按「未备案」处理；
+ * 不带该 sub_code 的 50001 仍按上表算上游故障。
+ */
+const SUB_CLASSIFICATION: ReadonlyMap<string, UnionErrorCode> = new Map<string, UnionErrorCode>([
+  ['50001/60001', 'upstream_rejected'],
 ]);
 
 /** 签名失败、IP 未登记、应用风险：除分类外另发一条只含 error_code 与接口名的告警事件。 */
@@ -104,7 +115,10 @@ export function unwrapPddResponse(
     const failure = isRecord(parsed.error_response) ? parsed.error_response : {};
     const errorCode = codeText(failure.error_code);
     const subCode = codeText(failure.sub_code);
-    const code = CLASSIFICATION.get(errorCode) ?? 'upstream_rejected';
+    const code =
+      SUB_CLASSIFICATION.get(`${errorCode}/${subCode}`) ??
+      CLASSIFICATION.get(errorCode) ??
+      'upstream_rejected';
     if (WARN_CODES.has(errorCode)) warn?.({ error_code: errorCode, type: method });
     throw new UnionError(code, `pdd ${method}: error_code=${errorCode} sub_code=${subCode}`, 'pdd');
   }
