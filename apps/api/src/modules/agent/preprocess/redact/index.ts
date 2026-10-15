@@ -114,15 +114,22 @@ const PROVINCE_NAMES =
 const PROVINCE =
   `(?:${PLACE_NAME}{0,4}(?:${PROVINCE_NAMES})省` +
   `|${PLACE_NAME}{2,6}省(?![钱錢心事力电電下了着掉时時多少几幾点點个個0-9０-９一二三四五六七八九十百千万<*])` +
-  `|${PLACE_NAME}{2,6}(?:自治区|特别行政区))`;
-const STRONG_PROVINCE_RE = new RegExp(`(?:(?:${PROVINCE_NAMES})省|自治区|特别行政区)$`, 'u');
+  `|${PLACE_NAME}{2,6}(?:自治区|特别行政区)` +
+  // 香港 / 澳门 are special administrative regions even when 特别行政区 is not written.
+  `|(?:香港|澳门)(?:特别行政区)?)`;
+const STRONG_PROVINCE_RE = new RegExp(
+  `(?:(?:${PROVINCE_NAMES})省|自治区|特别行政区|香港|澳门)$`,
+  'u',
+);
 /**
  * A city name; 超市, 菜市, 夜市, 市场, 市值 … are ordinary words, not cities (no city name ends
  * in them). 城市, 门市, 都市 and 花市 are weak anchors, because 盐城市, 江门市, 成都市 and
  * 攀枝花市 end the same way.
  */
 const CITY =
-  `${PLACE_NAME}{2,6}市` + `(?<!(?:超|菜|夜|股|上|黑|闹|集|早|楼|车|开|互|街|罢)市)(?![场值价面])`;
+  // 镇江市: a city name may start with 镇 / 乡 (marker characters), followed by one or more name characters.
+  `(?:${PLACE_NAME}{2,6}|[镇乡]${PLACE_NAME}{1,5})市` +
+  `(?<!(?:超|菜|夜|股|上|黑|闹|集|早|楼|车|开|互|街|罢)市)(?![场值价面])`;
 const WEAK_CITY_RE = /(?:城|门|都|花|本|该|全|我|各|此)市$/u;
 /** Province and / or city: the part that is kept. */
 const PROVINCE_CITY = `(?:(${PROVINCE})(?:${ADDRESS_SEP}(${CITY}))?|(${CITY}))`;
@@ -323,6 +330,27 @@ function maskEmails(text: string): string {
 }
 
 /**
+ * Traditional characters that the address patterns read as their simplified forms (區 → 区,
+ * 縣 → 县, 鎮 → 镇, 鄉 → 乡, 號 → 号 …). One UTF-16 unit each way, so a match on the mapped text
+ * has the same offsets in the original and the output keeps the user's own characters
+ * (owner decision 2026-10-15: traditional units are anchors like the simplified ones).
+ */
+const TRADITIONAL =
+  '區縣鎮鄉號樓棟層園莊門島灣廣東蘇遼龍雲貴臺開發業單寧陽環衛鳳興蘭錫爾齊烏魯濟漢長慶澤廈嶺灘橋鐵際別間塊劃級裏裡靜壓親組讓綠華滙匯鄭貿廠營碼頭場築廳車庫為爲詳細貨郵聯繫係訊撥遞寫驛鋪舖';
+const SIMPLIFIED =
+  '区县镇乡号楼栋层园庄门岛湾广东苏辽龙云贵台开发业单宁阳环卫凤兴兰锡尔齐乌鲁济汉长庆泽厦岭滩桥铁际别间块划级里里静压亲组让绿华汇汇郑贸厂营码头场筑厅车库为为详细货邮联系系讯拨递写驿铺铺';
+
+function simplifyForScan(text: string): string {
+  let out = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text.charAt(i);
+    const at = TRADITIONAL.indexOf(ch);
+    out += at === -1 ? ch : SIMPLIFIED.charAt(at);
+  }
+  return out;
+}
+
+/**
  * BR-AI-14 delivery addresses (owner decision 2026-10-15): from each anchor to the end of the
  * sentence everything is masked; only a written province / city (and a form label) stays. Strong
  * anchors (a real province, a city, a district-level unit) always mask what follows; weak anchors
@@ -330,7 +358,8 @@ function maskEmails(text: string): string {
  * looks like an address, so over-masking stays possible but no address is left out. Each region
  * is scanned once and the next search starts after it, so the whole pass is linear.
  */
-function maskAddresses(text: string, opaque?: string): string {
+function maskAddresses(original: string, opaque?: string): string {
+  const text = simplifyForScan(original);
   const isSeparator = (ch: string): boolean => SEPARATOR_CHARS.has(ch) || ch === opaque;
   let out = '';
   let cursor = 0;
@@ -377,11 +406,12 @@ function maskAddresses(text: string, opaque?: string): string {
       // second pass ("…/90000000001?x@y.cn" would otherwise read as one URL).
       if (carried !== '') carried += ' ';
     }
-    out += `${text.slice(cursor, match.index)}${kept}${ADDRESS_MASK}${carried}`;
+    const keptOriginal = original.slice(match.index, match.index + kept.length);
+    out += `${original.slice(cursor, match.index)}${keptOriginal}${ADDRESS_MASK}${carried}`;
     cursor = end;
     ANCHOR_RE.lastIndex = end;
   }
-  return out + text.slice(cursor);
+  return out + original.slice(cursor);
 }
 
 /** A real province, a city that is not an everyday word, or either one followed by units. */
