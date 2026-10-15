@@ -1,0 +1,128 @@
+{
+  "task": "F1-06w",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "d21aa69b80a81e115758f588ca628206e609ae00",
+  "red_tests": [
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=0 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=-1 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=1.5 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=no 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=0 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=-1 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=201 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=1.5 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=no 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=0&page_size=201 返回 20001，fields 指出所有非法参数",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#9] 枚举外的键 unknown 返回 20001 fields=[key]",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#9] 枚举外的键 TAOBAO 返回 20001 fields=[key]",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#9] 枚举外的键 wechat-pay 返回 20001 fields=[key]",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#9] 枚举外的键 constructor 返回 20001 fields=[key]",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#10] 两条路由未登录均返回 10001，登录后的超管无需勾权限或二次验证",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#11] 普通账号无权限或仅有无关权限被拒，勾 content.platform_icon 后无需 step-up",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#12] 两个处理函数调用平台守卫，权限通过之前不查询标识表",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#13] 两条路由只挂在 admin 入口，api 和 stream 不挂",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#14] 列表与历史只读主库，忽略 dbRead",
+    "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#15] 未配置媒体地址时可启动和读内置态，含版本响应按请求返回 50001",
+    "test/spec/content/platform-icons/read/contract.test.ts > [AC-F1-06w#16] /admin/v1/platform-icons 保持 admin 鉴权并移除 planned 标记",
+    "test/spec/content/platform-icons/read/contract.test.ts > [AC-F1-06w#16] /admin/v1/platform-icons/{key}/versions 保持 admin 鉴权并移除 planned 标记",
+    "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#1] 无行的八个键按枚举顺序返回内置态，列表不分页",
+    "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#2] 草稿、当前发布、回滚、恢复内置分别保留最新保存号和各自 revision",
+    "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#3] 历史按版本号降序，包含所有草稿，publishable 必须同时有来源和日期",
+    "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#4] 默认 20 条、上限 200、单条分页和末页都保持完整 total",
+    "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#5] 没有保存版本时返回空页；未保存的上传不计入历史或 latest_version",
+    "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#6] 列表、current、latest 和历史计数都按令牌 app_id 隔离，也按 key 隔离",
+    "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#7] 两个读接口不改三张平台标识表，也不写审计"
+  ],
+  "risk_note": "RV2 (content admin read APIs; contract). GET /admin/v1/platform-icons (every platform_icon_key in enum order with the published version, latest saved version, revision and last change) and GET /admin/v1/platform-icons/{key}/versions (newest first, page / page_size <= 200, unknown key 20001 fields=[key]) behind platform's AdminOperationGuard with permission content.platform_icon; ContentAdminModule on the admin entry only; primary-database reads scoped to the caller's app_id; url from mediaUrlOf(MEDIA_PUBLIC_BASE_URL); publishable when source_url and downloaded_on are both set; read-only, no audit. Contract: only the two operations leave x-implementation planned; route-schemas.gen.ts regenerated; contracts-ts test asserts these two implemented and the other five still planned. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d21aa69b80a81e115758f588ca628206e609ae00",
+      "tree": "772ae48cc864de42603fdbdc2f2b5c852aeebe66",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-15T14:21:28Z",
+      "finished_at": "2026-10-15T14:21:47Z",
+      "red_tests": [
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=0 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=-1 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=1.5 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=no 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=0 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=-1 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=201 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=1.5 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page_size=no 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#8] 非法分页 page=0&page_size=201 返回 20001，fields 指出所有非法参数",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#9] 枚举外的键 unknown 返回 20001 fields=[key]",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#9] 枚举外的键 TAOBAO 返回 20001 fields=[key]",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#9] 枚举外的键 wechat-pay 返回 20001 fields=[key]",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#9] 枚举外的键 constructor 返回 20001 fields=[key]",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#10] 两条路由未登录均返回 10001，登录后的超管无需勾权限或二次验证",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#11] 普通账号无权限或仅有无关权限被拒，勾 content.platform_icon 后无需 step-up",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#12] 两个处理函数调用平台守卫，权限通过之前不查询标识表",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#13] 两条路由只挂在 admin 入口，api 和 stream 不挂",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#14] 列表与历史只读主库，忽略 dbRead",
+        "test/spec/content/platform-icons/read/access.int.test.ts > [AC-F1-06w#15] 未配置媒体地址时可启动和读内置态，含版本响应按请求返回 50001",
+        "test/spec/content/platform-icons/read/contract.test.ts > [AC-F1-06w#16] /admin/v1/platform-icons 保持 admin 鉴权并移除 planned 标记",
+        "test/spec/content/platform-icons/read/contract.test.ts > [AC-F1-06w#16] /admin/v1/platform-icons/{key}/versions 保持 admin 鉴权并移除 planned 标记",
+        "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#1] 无行的八个键按枚举顺序返回内置态，列表不分页",
+        "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#2] 草稿、当前发布、回滚、恢复内置分别保留最新保存号和各自 revision",
+        "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#3] 历史按版本号降序，包含所有草稿，publishable 必须同时有来源和日期",
+        "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#4] 默认 20 条、上限 200、单条分页和末页都保持完整 total",
+        "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#5] 没有保存版本时返回空页；未保存的上传不计入历史或 latest_version",
+        "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#6] 列表、current、latest 和历史计数都按令牌 app_id 隔离，也按 key 隔离",
+        "test/spec/content/platform-icons/read/read.int.test.ts > [AC-F1-06w#7] 两个读接口不改三张平台标识表，也不写审计"
+      ],
+      "expected": [
+        "test/spec/content/platform-icons/read/access.int.test.ts",
+        "test/spec/content/platform-icons/read/contract.test.ts",
+        "test/spec/content/platform-icons/read/read.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "93d03f9d217d13e87d0fd16eb1c5ef7d0e1051937a38bd0884fddf657703af74"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2a88993552e4f6b2fd83f15fc85dfe91dde6cc0d21051b55074ce5a3df0c13e2"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (two reads of platform_icons can mix versions under a concurrent publish; no publish API yet) tracked in followups for F1-06y"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "29 rule tests by Codex (1 run) reviewed by a fresh Claude subagent: round 1 pass with no findings"
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "385c4ee4bf49c1fce8a64145ff21b790f9adc3ba",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  }
+}
