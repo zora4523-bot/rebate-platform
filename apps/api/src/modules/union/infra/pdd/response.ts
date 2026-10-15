@@ -1,16 +1,21 @@
 // 拼多多网关响应外层解包与 error_response 分类（4_PDD_附 §3.4）。外层键不能由接口名推导，
-// 只认下表逐个登记的接口；商品接口的外层键等 probe 录制后另行登记。这里只取外层，
+// 只认下表逐个登记的接口；商品接口的外层键按 probe 实测登记（B1-04u）。这里只取外层，
 // 不做任何商品 / 订单 / 转链字段映射。错误信息只带接口名与 error_code / sub_code。
 import { UnionError, type UnionErrorCode } from '../../domain/types.ts';
 import type { UnionTransportResponse } from '../replay.ts';
 
-/** Deliberately contains neither credentials nor upstream message/request contents. */
+/**
+ * Deliberately contains neither credentials nor upstream message/request contents.
+ * B1-04u：商品价格异常（BR-PRICE-01）也走这个钩子，error_code 为 'PRICE_ANOMALY'、event 同值、
+ * type 为接口名，不带商品信息。
+ */
 export interface PddWarning {
   readonly error_code: string;
   readonly type: string;
+  readonly event?: 'PRICE_ANOMALY';
 }
 
-/** 接口名 → 响应外层键；只放 4_PDD_附 §3.4 明确列出的接口。 */
+/** 接口名 → 响应外层键；4_PDD_附 §3.4 列出的接口，加 B1-04u probe 实测的商品接口。 */
 const ENVELOPES: ReadonlyMap<string, string> = new Map([
   ['pdd.ddk.order.list.increment.get', 'order_list_get_response'],
   ['pdd.ddk.order.list.range.get', 'order_list_get_response'],
@@ -20,6 +25,11 @@ const ENVELOPES: ReadonlyMap<string, string> = new Map([
   ['pdd.ddk.rp.prom.url.generate', 'rp_promotion_url_generate_response'],
   ['pdd.ddk.goods.pid.generate', 'p_id_generate_response'],
   ['pdd.ddk.pid.mediaid.bind', 'p_id_bind_response'],
+  // B1-04u：probe 实测外层键（approvals 28/29，cap-tests/2026-10-15/pdd/）。
+  ['pdd.ddk.goods.search', 'goods_search_response'],
+  ['pdd.ddk.goods.detail', 'goods_detail_response'],
+  ['pdd.ddk.goods.recommend.get', 'goods_basic_detail_response'],
+  ['pdd.ddk.url.short.parse', 'url'],
 ]);
 
 const CLASSIFICATION: ReadonlyMap<string, UnionErrorCode> = new Map<string, UnionErrorCode>([

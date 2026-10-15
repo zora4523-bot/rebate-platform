@@ -1,7 +1,8 @@
 // 拼多多联盟适配器的请求底座（4_PDD_附 §3.1–§3.4）：公共参数 + MD5 签名、凭据经构造参数注入、
 // 经注入的 UnionTransport 发 POST JSON、按登记的外层键解包、error_response 分类到 UnionError。
 // 订单端口（listOrders 的 increment / pay_time、getPddOrderDetail）的参数与映射在 orders.ts（B1-04i）；
-// 其余端口的字段映射另开任务，目前一律 adapter_unimplemented（规划/11 §4.5）。
+// 商品端口（searchItems / getItem / resolveLink / materialFeed）的参数、游标与映射在 goods.ts（B1-04u），
+// 每次调用都带服务端注入的查询身份（D-u2）；转链端口归 B1-04h，目前 adapter_unimplemented（规划/11 §4.5）。
 // 不读 process.env、不读文件；client_secret 只在内存里参与签名。
 import type { Clock } from '../../../platform/index.ts';
 import {
@@ -10,6 +11,7 @@ import {
   type ConvertReq,
   type ConvertResult,
   type ItemRef,
+  type MaterialReq,
   type OrderQueryOpt,
   type Page,
   type ResolvedLink,
@@ -25,6 +27,27 @@ import {
 import type { UnionTransport, UnionTransportResponse } from '../replay.ts';
 import { pddParameterText, signPddParameters, type PddParameters } from './sign.ts';
 import { pddEnvelopeKey, unwrapPddResponse, type PddWarning } from './response.ts';
+import {
+  checkQueryIdentity,
+  envelopeCount,
+  envelopeListId,
+  feedCursor,
+  goodsRows,
+  mapPddGoods,
+  parseFeedCursor,
+  parseSearchCursor,
+  pddGoodsRef,
+  PDD_FEED_CHANNEL,
+  PDD_FEED_LIMIT,
+  PDD_GOODS_DETAIL,
+  PDD_GOODS_RECOMMEND,
+  PDD_GOODS_SEARCH,
+  PDD_SEARCH_PAGE_SIZE,
+  PDD_URL_SHORT_PARSE,
+  searchCursor,
+  type PddGoodsSource,
+  type PddQueryIdentity,
+} from './goods.ts';
 import {
   incrementCursor,
   incrementWindow,
@@ -47,12 +70,15 @@ export interface PddCredentials {
   readonly clientSecret: string;
 }
 
+export type { PddQueryIdentity } from './goods.ts';
+
 export interface PddAdapterOptions {
   readonly credentials: () => Promise<PddCredentials>;
   readonly transport: UnionTransport;
   readonly clock: Clock;
   readonly endpoint: UnionEndpoint;
   readonly warn?: (event: PddWarning) => void;
+  readonly queryIdentity?: () => Promise<PddQueryIdentity>;
 }
 
 /** 公共参数名；业务参数不得占用（4_PDD_附 §3.2）。 */
@@ -67,7 +93,7 @@ const PUBLIC_PARAMETERS: ReadonlySet<string> = new Set([
 type WireValue = string | number | boolean;
 
 function unimplemented(port: string): UnionError {
-  // TODO(规划/11 §4.5): 拼多多端口字段映射 — blocked on CAP-PDD probe 录制（B1-04u / B1-04h / B1-04i）
+  // TODO(规划/11 §4.5): 拼多多转链端口 — blocked on B1-04h
   return new UnionError('adapter_unimplemented', `pdd adapter: ${port} not implemented`, 'pdd');
 }
 
@@ -78,6 +104,7 @@ export class PddUnionAdapter implements UnionAdapter {
   readonly #clock: Clock;
   readonly #endpoint: UnionEndpoint;
   readonly #warn: ((event: PddWarning) => void) | undefined;
+  readonly #queryIdentity: (() => Promise<PddQueryIdentity>) | undefined;
 
   constructor(options: PddAdapterOptions) {
     if (options.endpoint.platform !== 'pdd') {
@@ -88,6 +115,7 @@ export class PddUnionAdapter implements UnionAdapter {
     this.#clock = options.clock;
     this.#endpoint = options.endpoint;
     this.#warn = options.warn;
+    this.#queryIdentity = options.queryIdentity;
   }
 
   /** Internal request foundation; not exported through the union module's public port. */
@@ -152,22 +180,146 @@ export class PddUnionAdapter implements UnionAdapter {
     return wire;
   }
 
+  /**
+   * D-u2：每次商品调用读一次查询身份并校验；未注入报 upstream_rejected，非法报 invalid_identity，
+   * 两者都不取凭据、不发请求。身份只来自服务端提供者，不读 ctx（app_id、headers）。
+   */
+  async #identity(
+    port: string,
+  ): Promise<{ readonly pid: string; readonly custom_parameters: string }> {
+    if (this.#queryIdentity === undefined) {
+      throw new UnionError('upstream_rejected', `pdd ${port}: no query identity configured`, 'pdd');
+    }
+    return checkQueryIdentity(await this.#queryIdentity());
+  }
+
+  #onAnomaly(method: string): () => void {
+    return () =>
+      this.#warn?.({ error_code: 'PRICE_ANOMALY', event: 'PRICE_ANOMALY', type: method });
+  }
+
+  #mapRows(rows: readonly unknown[], source: PddGoodsSource, method: string): UnionItem[] {
+    const now = this.#clock.now();
+    return rows.map((row) => mapPddGoods(row, source, now, this.#onAnomaly(method)));
+  }
+
+  /**
+   * goods.search：keyword 原样传送，page 从 1 开始，page_size 固定 PDD_SEARCH_PAGE_SIZE。
+   * 游标 `pdd-search:<page>:<list_id base64url>`（见 goods.ts），续页带 list_id；满页且未到 total_count 才给下一页。
+   * 价格异常的商品照样返回（price_status='anomaly'），出不出卡由 catalog 决定。
+   */
   async searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>> {
-    void q;
-    void ctx;
-    throw unimplemented('searchItems');
+    if (typeof q?.keyword !== 'string' || q.keyword.trim() === '') {
+      throw new UnionError('invalid_dto', 'pdd searchItems: keyword is blank', 'pdd');
+    }
+    const cursor = q.cursor === undefined ? undefined : parseSearchCursor(q.cursor);
+    const identity = await this.#identity('searchItems');
+    const page = cursor?.page ?? 1;
+    const envelope = await this.request(
+      PDD_GOODS_SEARCH,
+      {
+        keyword: q.keyword,
+        page,
+        page_size: PDD_SEARCH_PAGE_SIZE,
+        ...(cursor?.listId == null ? {} : { list_id: cursor.listId }),
+        ...identity,
+      },
+      ctx.signal,
+    );
+    const rows = goodsRows(envelope, 'search');
+    const items = this.#mapRows(rows, 'search', PDD_GOODS_SEARCH);
+    const total = envelopeCount(envelope, 'total_count');
+    const more =
+      rows.length >= PDD_SEARCH_PAGE_SIZE &&
+      (total === null || page * PDD_SEARCH_PAGE_SIZE < total);
+    const listId = envelopeListId(envelope) ?? cursor?.listId ?? null;
+    return { items, nextCursor: more ? searchCursor(page + 1, listId) : null };
   }
 
+  /** goods.detail：只按 goods_sign 请求（不传 goods_id）；空 goods_details 报 item_unavailable。 */
   async getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail> {
-    void ref;
-    void ctx;
-    throw unimplemented('getItem');
+    const sign = ref?.goods_sign;
+    if (ref?.platform !== 'pdd' || typeof sign !== 'string' || sign.trim() === '') {
+      throw new UnionError('invalid_dto', 'pdd getItem: goods_sign is required', 'pdd');
+    }
+    const identity = await this.#identity('getItem');
+    const envelope = await this.request(
+      PDD_GOODS_DETAIL,
+      { goods_sign: sign, ...identity },
+      ctx.signal,
+    );
+    const rows = goodsRows(envelope, 'detail');
+    if (rows.length === 0) {
+      throw new UnionError('item_unavailable', 'pdd getItem: no goods detail returned', 'pdd');
+    }
+    return mapPddGoods(rows[0], 'detail', this.#clock.now(), this.#onAnomaly(PDD_GOODS_DETAIL));
   }
 
+  /**
+   * 链接识别：先以原链接作 goods.search keyword（probe：商品链接与进宝短链都能识别）；无结果且是
+   * http(s) 链接时，用 url.short.parse 展开一次（参数 original_url，与 probe 一致；不带查询身份），
+   * 展开结果非空且不同于原链接才再搜一次。最多 3 次请求。身份只取响应的 goods_id + goods_sign，
+   * 不从 URL 数字补出。网关错误原样上抛；只有短链展开被平台拒绝（upstream_rejected）时视为识别不了。
+   */
   async resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink> {
-    void raw;
-    void ctx;
-    throw unimplemented('resolveLink');
+    if (typeof raw !== 'string' || raw.trim() === '') {
+      throw new UnionError('link_unrecognized', 'pdd resolveLink: empty link', 'pdd');
+    }
+    const link = raw.trim();
+    const identity = await this.#identity('resolveLink');
+    const find = async (keyword: string): Promise<ResolvedLink | null> => {
+      const envelope = await this.request(
+        PDD_GOODS_SEARCH,
+        { keyword, page: 1, page_size: PDD_SEARCH_PAGE_SIZE, ...identity },
+        ctx.signal,
+      );
+      const rows = goodsRows(envelope, 'search');
+      return rows.length === 0 ? null : { item: pddGoodsRef(rows[0]) };
+    };
+    const direct = await find(link);
+    if (direct !== null) return direct;
+    if (/^https?:\/\//i.test(link)) {
+      let expanded: string | null = null;
+      try {
+        const envelope = await this.request(
+          PDD_URL_SHORT_PARSE,
+          { original_url: link },
+          ctx.signal,
+        );
+        const value =
+          typeof envelope === 'object' && envelope !== null
+            ? (envelope as Record<string, unknown>).url
+            : undefined;
+        expanded = typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+      } catch (error) {
+        if (!(error instanceof UnionError) || error.code !== 'upstream_rejected') throw error;
+      }
+      if (expanded !== null && expanded !== link) {
+        const second = await find(expanded);
+        if (second !== null) return second;
+      }
+    }
+    throw new UnionError('link_unrecognized', 'pdd resolveLink: no goods recognized', 'pdd');
+  }
+
+  /**
+   * goods.recommend.get：固定精选 channel_type=4（PDD_FEED_CHANNEL），offset / limit 分页；
+   * 游标 `pdd-feed:<offset>`（recommend 的 probe 响应没有 list_id）。满页且未到 total 才给下一页。
+   */
+  async materialFeed(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>> {
+    const offset = req?.cursor === undefined ? 0 : parseFeedCursor(req.cursor);
+    const identity = await this.#identity('materialFeed');
+    const envelope = await this.request(
+      PDD_GOODS_RECOMMEND,
+      { channel_type: PDD_FEED_CHANNEL, offset, limit: PDD_FEED_LIMIT, ...identity },
+      ctx.signal,
+    );
+    const rows = goodsRows(envelope, 'feed');
+    const items = this.#mapRows(rows, 'feed', PDD_GOODS_RECOMMEND);
+    const total = envelopeCount(envelope, 'total');
+    const more =
+      rows.length >= PDD_FEED_LIMIT && (total === null || offset + PDD_FEED_LIMIT < total);
+    return { items, nextCursor: more ? feedCursor(offset + PDD_FEED_LIMIT) : null };
   }
 
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {

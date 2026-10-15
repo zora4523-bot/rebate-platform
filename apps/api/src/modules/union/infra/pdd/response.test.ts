@@ -26,7 +26,7 @@ it('[AC-B1-04g-UNIT#4] 按登记的外层键解包，不看别的键', () => {
 });
 
 it('[AC-B1-04g-UNIT#5] 未登记接口与原型链上的名字都是 adapter_unimplemented', () => {
-  for (const name of ['pdd.ddk.goods.search', 'constructor', '__proto__']) {
+  for (const name of ['pdd.ddk.goods.unregistered.example', 'constructor', '__proto__']) {
     expect(failure(() => unwrapPddResponse(name, wire({}))).code).toBe('adapter_unimplemented');
   }
 });
