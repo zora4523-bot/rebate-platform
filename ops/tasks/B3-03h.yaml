@@ -11,7 +11,7 @@ type: impl
 refs: [BR-AI-23]
 refs_hash:
   BR-AI-23: 5ebdbaff580d
-deps: [B3-03d, B3-03e]
+deps: [B3-03d, B3-03e, B1-01zzc]
 paths:
   - 'apps/api/src/modules/agent/stream/sweeper/loop.ts'
   - 'apps/api/src/app.module.ts'
