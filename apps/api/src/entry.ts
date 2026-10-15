@@ -222,7 +222,9 @@ async function start(
         }
       }
       const loop =
-        !signals.stopping() && runtime !== (queue as unknown) && typeof runtime?.start === 'function'
+        !signals.stopping() &&
+        runtime !== (queue as unknown) &&
+        typeof runtime?.start === 'function'
           ? runtime.start()
           : undefined;
       const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
