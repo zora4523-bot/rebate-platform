@@ -7,6 +7,7 @@ import type {
   OrchestratorTools,
   RunLabelsDeps,
 } from './ports.ts';
+import { runAgent } from './run.ts';
 
 /**
  * B3-05b / 02 §9.1–9.2. ChatInput is prompt.system + awaited
@@ -45,27 +46,53 @@ import type {
  * execute and model messages retain their model-form placeholders unchanged.
  */
 export function createAgentRunBody(deps: AgentRunBodyDeps): (input: RunBodyInput) => RunBody {
-  void deps;
-  throw new Error('NotImplemented: createAgentRunBody');
+  for (const [name, value] of Object.entries(deps.limits)) {
+    if (!Number.isSafeInteger(value) || (value as number) < 1) {
+      throw new RangeError(`Invalid orchestrator limit: ${name}`);
+    }
+  }
+  // Only immutable deps are captured here; every run builds its own state in runAgent.
+  return (input) => (ctx) => runAgent(deps, input, ctx);
 }
 
 /** No route => none/null. Missing prompt => none, retaining the first resolved model if any. */
 export function createRunLabels(deps: RunLabelsDeps): AgentRunLabels {
-  void deps;
-  throw new Error('NotImplemented: createRunLabels');
+  return {
+    async current(caller) {
+      const route = await deps.route(caller.appId);
+      const modelSnapshot = route.mode === 'models' ? (route.attempts[0]?.model ?? null) : null;
+      if (modelSnapshot === null) return { promptVersion: 'none', modelSnapshot };
+      const prompt = await deps.prompt.current(caller.appId);
+      return { promptVersion: prompt === null ? 'none' : prompt.version, modelSnapshot };
+    },
+    modelLabel: (appId, modelSnapshot) => deps.modelLabel(appId, modelSnapshot),
+    aiLabel: (appId) => deps.aiLabel(appId),
+  };
 }
 
 /** Defaults from SPEC_REF 02 §9.1–9.2: 4 tools, 3 rounds, 20000 code points, 12 cards, 400 frames. */
 export function orchestratorLimitsDefaults(): OrchestratorLimits {
-  throw new Error('NotImplemented: orchestratorLimitsDefaults');
+  return { toolCalls: 4, modelRounds: 3, textCodePoints: 20_000, cards: 12, contentFrames: 400 };
 }
 
 /** No definitions/platforms/results/cards; every execute is rejected invalid_args. */
 export function emptyOrchestratorTools(): OrchestratorTools {
-  throw new Error('NotImplemented: emptyOrchestratorTools');
+  return {
+    definitions: async () => [],
+    execute: async () => ({ kind: 'rejected', modelView: { error: 'invalid_args' } }),
+    enabledSearchPlatforms: async () => [],
+    searchKeyword: async () => ({ results: [], cards: [] }),
+  };
 }
 
 /** Always refuse safety_unavailable, finishReason safety, ending input_review_timeout. */
 export function failClosedInputCheck(): InputCheckPort {
-  throw new Error('NotImplemented: failClosedInputCheck');
+  return {
+    check: async () => ({
+      kind: 'refuse',
+      textKey: 'agent.refuse.safety_unavailable',
+      finishReason: 'safety',
+      ending: 'input_review_timeout',
+    }),
+  };
 }

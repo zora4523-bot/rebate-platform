@@ -1,4 +1,4 @@
-// B3-05b: downstream contracts; no runtime defaults in the test-stage skeleton.
+// B3-05b: downstream contracts (ports). The core lives in factories.ts, run.ts and output.ts.
 import type { Platform } from '@couli/contracts-ts';
 import type { Candidate } from '../../../parsing/index.ts';
 import type { AgentCaller, RunBodyInput } from '../../http/index.ts';
