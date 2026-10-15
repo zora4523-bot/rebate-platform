@@ -10,6 +10,7 @@ import {
   type ConvertReq,
   type ConvertResult,
   type ItemRef,
+  type MaterialReq,
   type OrderQueryOpt,
   type Page,
   type ResolvedLink,
@@ -47,12 +48,19 @@ export interface PddCredentials {
   readonly clientSecret: string;
 }
 
+/** D-u2：服务端提供已备案的查询身份；customParameters 是不超过 64 字节的 JSON。 */
+export interface PddQueryIdentity {
+  readonly pid: string;
+  readonly customParameters: string;
+}
+
 export interface PddAdapterOptions {
   readonly credentials: () => Promise<PddCredentials>;
   readonly transport: UnionTransport;
   readonly clock: Clock;
   readonly endpoint: UnionEndpoint;
   readonly warn?: (event: PddWarning) => void;
+  readonly queryIdentity?: () => Promise<PddQueryIdentity>;
 }
 
 /** 公共参数名；业务参数不得占用（4_PDD_附 §3.2）。 */
@@ -155,19 +163,26 @@ export class PddUnionAdapter implements UnionAdapter {
   async searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>> {
     void q;
     void ctx;
-    throw unimplemented('searchItems');
+    throw new Error('NotImplemented: searchItems');
   }
 
   async getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail> {
     void ref;
     void ctx;
-    throw unimplemented('getItem');
+    throw new Error('NotImplemented: getItem');
   }
 
   async resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink> {
     void raw;
     void ctx;
-    throw unimplemented('resolveLink');
+    throw new Error('NotImplemented: resolveLink');
+  }
+
+  /** B1-04u：精选频道固定为 4；分页游标的编码由实现阶段记录在此。 */
+  async materialFeed(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>> {
+    void req;
+    void ctx;
+    throw new Error('NotImplemented: materialFeed');
   }
 
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {
