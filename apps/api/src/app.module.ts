@@ -3,6 +3,7 @@ import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { ADMIN_CHECK, AdminAuthModule, AdminModule } from './modules/admin/index.ts';
+import { AgentModule } from './modules/agent/index.ts';
 import {
   CatalogModule,
   GovernedUnion,
@@ -716,7 +717,9 @@ export class AppModule {
         ...(union === undefined ? [] : [union]),
         // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
-        ...(options.entry === 'worker' ? [RiskScanModule.forWorker()] : []),
+        ...(options.entry === 'worker'
+          ? [RiskScanModule.forWorker(), AgentModule.forWorker()]
+          : []),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [
               catalogPorts(union, linking),

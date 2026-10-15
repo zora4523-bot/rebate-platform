@@ -1,5 +1,6 @@
 // Shared runner behind the five `main.<entry>.ts` files.
 import { createHttpApp, createWorkerContext } from './bootstrap.ts';
+import { agentSweeperToken, type AgentSweeperRuntime } from './modules/agent/index.ts';
 import {
   type AppConfig,
   type ConnectionConfig,
@@ -209,12 +210,29 @@ async function start(
       // continuation does not stop the scans until the next worker start. Started even after a
       // failed seed; stopped first on shutdown, before the services.
       const heal = startRiskScanHeal(resolveScan, logger, () => signals.stopping());
+      let runtime: Partial<AgentSweeperRuntime> | null | undefined;
+      if (!signals.stopping()) {
+        try {
+          runtime = context.get<Partial<AgentSweeperRuntime> | null | undefined>(
+            agentSweeperToken(),
+            { strict: false },
+          );
+        } catch {
+          // Older or isolated worker contexts may not provide the optional runtime.
+        }
+      }
+      const loop =
+        !signals.stopping() && typeof runtime?.start === 'function' ? runtime.start() : undefined;
       const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
       await signals.serve(
         async () => {
           try {
             heal.stop();
-            await services.stop();
+            try {
+              await loop?.stop();
+            } finally {
+              await services.stop();
+            }
           } finally {
             clearInterval(keepAlive);
           }

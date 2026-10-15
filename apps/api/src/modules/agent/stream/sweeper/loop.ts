@@ -78,9 +78,10 @@
 // the injected schedule, data access only through Kysely on deps.db (the lock statements and the
 // `SELECT 1` check only).
 import type { DB } from '@couli/db';
+import { sql } from 'kysely';
 import type { Kysely } from 'kysely';
 import type { Clock, RootLogger } from '../../../platform/index.ts';
-import type { Sweeper } from './index.ts';
+import { sweeperDefaults, sweepStart, type Sweeper } from './index.ts';
 
 export interface AgentSweepLoopConfig {
   /** Mean period between two ticks (T10: 60 s). */
@@ -131,10 +132,207 @@ export interface AgentSweepLoop {
 }
 
 export function agentSweepLoopDefaults(): AgentSweepLoopConfig {
-  throw new Error('NotImplemented: agentSweepLoopDefaults (B3-03h)');
+  return {
+    intervalMs: 60_000,
+    jitterRatio: 0.1,
+    tickTimeoutMs: 60_000,
+    maxPerTick: sweeperDefaults().maxPerTick,
+    stopTimeoutMs: 5_000,
+  };
+}
+
+const defaultSchedule: AgentSweepSchedule = (run, delayMs) => {
+  const handle = setTimeout(() => void run(), delayMs);
+  handle.unref();
+  return { cancel: () => clearTimeout(handle) };
+};
+
+type TickEnd =
+  { kind: 'normal' } | { kind: 'timeout' } | { kind: 'lost' | 'failed'; error: unknown };
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : 'UnknownError';
 }
 
 export function startAgentSweeper(deps: AgentSweepLoopDeps): AgentSweepLoop {
-  void deps;
-  throw new Error('NotImplemented: startAgentSweeper (B3-03h)');
+  const { db, step, clock, logger } = deps;
+  const { intervalMs, jitterRatio, tickTimeoutMs, maxPerTick, stopTimeoutMs } = deps.config;
+  if (
+    [intervalMs, tickTimeoutMs, maxPerTick, stopTimeoutMs].some(
+      (value) => !Number.isSafeInteger(value) || value < 1,
+    ) ||
+    !Number.isFinite(jitterRatio) ||
+    jitterRatio < 0 ||
+    jitterRatio >= 1
+  ) {
+    throw new RangeError('Invalid agent sweep loop configuration');
+  }
+  const schedule = deps.schedule ?? defaultSchedule;
+  const random = deps.random ?? Math.random;
+  let stopped = false;
+  let pendingTick: AgentSweepTimerHandle;
+  let running: Promise<void> | undefined;
+  let stopping: Promise<void> | undefined;
+  let cursor = sweepStart();
+
+  async function tick(): Promise<void> {
+    let endLogged = false;
+    try {
+      await db.connection().execute(async (connection) => {
+        const { rows } = await sql<{
+          pg_try_advisory_lock: boolean;
+        }>`SELECT pg_try_advisory_lock(hashtextextended('agent.sweep', 0))`.execute(connection);
+        if (rows[0]?.pg_try_advisory_lock !== true) {
+          endLogged = true;
+          logger.info({ reason: 'locked' }, 'agent_sweep_skipped');
+          return;
+        }
+
+        const t0 = clock.now().getTime();
+        const counts = {
+          processed: 0,
+          finalized: 0,
+          skipped_running: 0,
+          skipped_held: 0,
+          failed: 0,
+          wrapped: false,
+        };
+        let ended = false;
+        let lockLost = false;
+        let timeout: AgentSweepTimerHandle | undefined;
+        const timedOut = new Promise<TickEnd>((resolve) => {
+          timeout = schedule(
+            async () => {
+              if (ended) return;
+              ended = true;
+              resolve({ kind: 'timeout' });
+            },
+            tickTimeoutMs,
+            'tick_timeout',
+          );
+        });
+
+        // Only this function advances the shared cursor. After a timer wins the race, every
+        // continuation observes ended before dispatching or accepting a late step result.
+        async function dispatch(): Promise<TickEnd> {
+          while (!ended) {
+            if (stopped || counts.processed >= maxPerTick) return { kind: 'normal' };
+            if (clock.now().getTime() - t0 >= tickTimeoutMs) return { kind: 'timeout' };
+            try {
+              await sql`SELECT 1`.execute(connection);
+            } catch (error) {
+              return { kind: 'lost', error };
+            }
+            if (ended) return { kind: 'timeout' };
+            // A signal or the deadline may have arrived while the connection was checked.
+            if (stopped) return { kind: 'normal' };
+            if (clock.now().getTime() - t0 >= tickTimeoutMs) return { kind: 'timeout' };
+            try {
+              const result = await step.sweepOnce(cursor);
+              if (ended) return { kind: 'timeout' };
+              counts.processed += result.processed;
+              counts.finalized += result.finalized;
+              counts.skipped_running += result.skipped.running;
+              counts.skipped_held += result.skipped.held;
+              counts.failed += result.failed;
+              counts.wrapped = result.wrapped;
+              cursor = result.wrapped ? sweepStart() : result.nextCursor;
+              if (result.wrapped) return { kind: 'normal' };
+            } catch (error) {
+              return { kind: 'failed', error };
+            }
+          }
+          return { kind: 'timeout' };
+        }
+
+        try {
+          const end = await Promise.race([dispatch(), timedOut]);
+          ended = true;
+          timeout?.cancel();
+          lockLost = end.kind === 'lost';
+          endLogged = true;
+          if (end.kind === 'normal') {
+            logger.info({ ...counts, duration_ms: clock.now().getTime() - t0 }, 'agent_sweep_tick');
+          } else if (end.kind === 'timeout') {
+            logger.warn(
+              { timeout_ms: tickTimeoutMs, processed: counts.processed },
+              'agent_sweep_tick_timeout',
+            );
+          } else {
+            logger.error(
+              { error_name: errorName(end.error) },
+              end.kind === 'lost' ? 'agent_sweep_lock_lost' : 'agent_sweep_failed',
+            );
+          }
+        } finally {
+          ended = true;
+          timeout?.cancel();
+          if (!lockLost) {
+            try {
+              await sql`SELECT pg_advisory_unlock(hashtextextended('agent.sweep', 0))`.execute(
+                connection,
+              );
+            } catch (error) {
+              logger.error(
+                { stage: 'unlock', error_name: errorName(error) },
+                'agent_sweep_lock_failed',
+              );
+            }
+          }
+        }
+      });
+    } catch (error) {
+      if (!endLogged) {
+        logger.error({ stage: 'acquire', error_name: errorName(error) }, 'agent_sweep_lock_failed');
+      }
+    }
+  }
+
+  function armTick(): void {
+    const delay = Math.round(intervalMs * (1 + jitterRatio * (2 * random() - 1)));
+    pendingTick = schedule(
+      async () => {
+        if (stopped) return;
+        armTick();
+        if (running !== undefined) {
+          logger.info({ reason: 'busy' }, 'agent_sweep_skipped');
+          return;
+        }
+        running = tick();
+        try {
+          await running;
+        } finally {
+          running = undefined;
+        }
+      },
+      delay,
+      'tick',
+    );
+  }
+
+  armTick();
+  return {
+    stop(): Promise<void> {
+      if (stopping !== undefined) return stopping;
+      stopped = true;
+      pendingTick.cancel();
+      if (running === undefined) {
+        stopping = Promise.resolve();
+      } else {
+        const active = running;
+        stopping = (async () => {
+          let timeout: AgentSweepTimerHandle | undefined;
+          const deadline = new Promise<void>((resolve) => {
+            timeout = schedule(async () => resolve(), stopTimeoutMs, 'stop_timeout');
+          });
+          try {
+            await Promise.race([active, deadline]);
+          } finally {
+            timeout?.cancel();
+          }
+        })();
+      }
+      return stopping;
+    },
+  };
 }

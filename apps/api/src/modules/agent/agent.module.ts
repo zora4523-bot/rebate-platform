@@ -42,13 +42,27 @@
 // Also compiled by the `test` project: a class decorator only (no parameter decorators or
 // parameter properties; dependencies are injected through factories); erasable syntax only,
 // `import type` for type-only imports, relative imports with `.ts`, no process.env.
-import type { DynamicModule } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { type DynamicModule, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { Clock, RootLogger } from '../platform/index.ts';
-import type { RunTimings } from './stream/pg/index.ts';
+import { createContentReader } from '../content/index.ts';
+import { CLOCK, DB, ROOT_LOGGER, type Clock, type RootLogger } from '../platform/index.ts';
+import {
+  assertRunTimings,
+  createPgRunPorts,
+  createQuotaLimitsSource,
+  runTimingsDefaults,
+  type RunTimings,
+} from './stream/pg/index.ts';
 import type { RunTexts } from './stream/run/index.ts';
-import type { Sweeper, SweeperConfig } from './stream/sweeper/index.ts';
+import {
+  createSweeper,
+  sweeperDefaults,
+  type Sweeper,
+  type SweeperConfig,
+} from './stream/sweeper/index.ts';
+import { agentSweepLoopDefaults, startAgentSweeper } from './stream/sweeper/loop.ts';
 import type {
   AgentSweepLoop,
   AgentSweepLoopConfig,
@@ -86,21 +100,88 @@ export interface AgentSweeperRuntime {
   start(options?: AgentSweeperStartOptions): AgentSweepLoop;
 }
 
+const AGENT_SWEEPER = Symbol('AGENT_SWEEPER');
+
 export function agentSweeperToken(): symbol {
-  throw new Error('NotImplemented: agentSweeperToken (B3-03h)');
+  return AGENT_SWEEPER;
 }
 
+const textDocument = JSON.parse(
+  readFileSync(new URL('../../../../../contracts/texts.default.json', import.meta.url), 'utf8'),
+) as { texts: Record<string, string>; fallbacks: Record<string, string> };
+
+function defaultErrorText(code: number): string | undefined {
+  const key = `error.${String(code)}`;
+  const text = textDocument.fallbacks[key] ?? textDocument.texts[key];
+  return typeof text === 'string' && !/\{[^{}]+\}/u.test(text) ? text : undefined;
+}
+
+const serverErrorText = defaultErrorText(50001);
+if (serverErrorText === undefined) {
+  throw new Error('contracts/texts.default.json: missing placeholder-free error.50001');
+}
+const defaultTexts: Pick<RunTexts, 'errorMsg'> = Object.freeze({
+  errorMsg: (code: number): string => defaultErrorText(code) ?? serverErrorText,
+});
+
 export function agentDefaultTexts(): Pick<RunTexts, 'errorMsg'> {
-  throw new Error('NotImplemented: agentDefaultTexts (B3-03h)');
+  return defaultTexts;
 }
 
 export function createAgentSweeperRuntime(deps: AgentSweeperRuntimeDeps): AgentSweeperRuntime {
-  void deps;
-  throw new Error('NotImplemented: createAgentSweeperRuntime (B3-03h)');
+  const { db, clock, logger } = deps;
+  const texts = agentDefaultTexts();
+  const timings = Object.freeze(runTimingsDefaults());
+  const sweeperConfig = sweeperDefaults();
+  const loopConfig = { ...agentSweepLoopDefaults(), maxPerTick: sweeperConfig.maxPerTick };
+  assertRunTimings({
+    ...timings,
+    admissionRunMaxMs: timings.runMaxMs,
+    sweepMarginMs: sweeperConfig.marginMs,
+  });
+  const limits = createQuotaLimitsSource({ reader: createContentReader({ db, clock }), logger });
+  const { finalizer } = createPgRunPorts({ db, clock, timings, limits, texts, logger });
+  const step = createSweeper({
+    db,
+    finalizer,
+    clock,
+    config: { ...sweeperConfig, maxPerTick: 1 },
+    logger,
+  });
+  return {
+    texts,
+    timings,
+    sweeperConfig,
+    loopConfig,
+    step,
+    start: (options) =>
+      startAgentSweeper({ step, db, clock, logger, config: loopConfig, ...options }),
+  };
 }
 
+@Module({})
 export class AgentModule {
   static forWorker(): DynamicModule {
-    throw new Error('NotImplemented: AgentModule.forWorker (B3-03h)');
+    return {
+      module: AgentModule,
+      providers: [
+        {
+          provide: agentSweeperToken(),
+          inject: [CLOCK, ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+          ): AgentSweeperRuntime | null => {
+            if (db == null) {
+              logger.info('agent_sweeper_disabled');
+              return null;
+            }
+            return createAgentSweeperRuntime({ db, clock, logger });
+          },
+        },
+      ],
+      exports: [agentSweeperToken()],
+    };
   }
 }
