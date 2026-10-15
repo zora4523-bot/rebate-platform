@@ -432,3 +432,5 @@ export function createGovernor(
     },
   };
 }
+export { AdminOperationGuard } from './admin-guard.ts';
+export type { AdminActor, AdminOperationInput, AdminOperationResponse } from './admin-guard.ts';
