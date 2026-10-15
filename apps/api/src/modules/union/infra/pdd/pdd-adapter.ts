@@ -2,7 +2,7 @@
 // 经注入的 UnionTransport 发 POST JSON、按登记的外层键解包、error_response 分类到 UnionError。
 // 订单端口（listOrders 的 increment / pay_time、getPddOrderDetail）的参数与映射在 orders.ts（B1-04i）；
 // 商品端口（searchItems / getItem / resolveLink / materialFeed）的参数、游标与映射在 goods.ts（B1-04u），
-// 每次调用都带服务端注入的查询身份（D-u2）；转链端口归 B1-04h，目前 adapter_unimplemented（规划/11 §4.5）。
+// 每次调用都带服务端注入的查询身份（D-u2）；B1-04h 转链与备案端口当前仅为 NotImplemented 骨架。
 // 不读 process.env、不读文件；client_secret 只在内存里参与签名。
 import type { Clock } from '../../../platform/index.ts';
 import {
@@ -14,6 +14,8 @@ import {
   type MaterialReq,
   type OrderQueryOpt,
   type Page,
+  type PddAuthority,
+  type PddAuthorityUrl,
   type ResolvedLink,
   type SearchQuery,
   type TimeWindow,
@@ -91,11 +93,6 @@ const PUBLIC_PARAMETERS: ReadonlySet<string> = new Set([
 ]);
 
 type WireValue = string | number | boolean;
-
-function unimplemented(port: string): UnionError {
-  // TODO(规划/11 §4.5): 拼多多转链端口 — blocked on B1-04h
-  return new UnionError('adapter_unimplemented', `pdd adapter: ${port} not implemented`, 'pdd');
-}
 
 export class PddUnionAdapter implements UnionAdapter {
   readonly platform = 'pdd' as const;
@@ -326,7 +323,19 @@ export class PddUnionAdapter implements UnionAdapter {
     void req;
     void identity;
     void ctx;
-    throw unimplemented('convert');
+    throw new Error('NotImplemented: PddUnionAdapter.convert');
+  }
+
+  async queryPddAuthority(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthority> {
+    void identity;
+    void ctx;
+    throw new Error('NotImplemented: PddUnionAdapter.queryPddAuthority');
+  }
+
+  async pddAuthorityUrl(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthorityUrl> {
+    void identity;
+    void ctx;
+    throw new Error('NotImplemented: PddUnionAdapter.pddAuthorityUrl');
   }
 
   /**

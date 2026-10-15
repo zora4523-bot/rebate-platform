@@ -255,13 +255,35 @@ export function isServerIdentity(value: unknown): value is UnionIdentity {
 }
 
 export type ConvertResult =
-  | { readonly kind: 'url'; readonly url: string }
+  | ({ readonly kind: 'url'; readonly url: string } & PddPromotionUrlExtras)
   | {
       readonly kind: 'baichuan';
       readonly item: ItemRef;
       readonly promotionSlot: string;
       readonly relationId: string;
     };
+
+/** Optional PDD fields confirmed by the B1-04h probe; absent on other platforms. */
+export interface PddPromotionUrlExtras {
+  readonly schema_url?: string;
+  readonly tz_schema_url?: string;
+  readonly short_url?: string;
+  readonly mobile_short_url?: string;
+  /** Upstream `url`: browser entry preferring WeChat; never replaces the mobile URL. */
+  readonly browser_url?: string;
+  readonly we_app_web_view_url?: string;
+  readonly we_app_web_view_short_url?: string;
+}
+
+/** Filing page generated for the same promotion slot used by convert. */
+export interface PddAuthorityUrl {
+  readonly url: string;
+  readonly schema_url?: string;
+  readonly mobile_short_url?: string;
+  readonly short_url?: string;
+  /** Upstream `url`, kept separate from the mobile landing page. */
+  readonly browser_url?: string;
+}
 export interface BindReq {
   readonly authorizationCode: string;
 }
@@ -310,6 +332,8 @@ export interface UnionAdapter {
    * only. TODO(规划/11 §4.5): 真实查询 — blocked on CAP-PDD-05。
    */
   queryPddAuthority?(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthority>;
+  /** PDD channel_type=10 filing URL; governed as an idempotent read. */
+  pddAuthorityUrl?(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthorityUrl>;
 }
 
 /** B1-06v: the answer of UnionAdapter.queryPddAuthority. */
