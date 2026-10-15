@@ -82,10 +82,18 @@ const PLACEHOLDER_RE = /^<num_[1-9]\d*>$/;
 const LITERAL_PLACEHOLDER_RE = /<num_[1-9]\d*>/g;
 /**
  * Email (including Alipay accounts that are email addresses). The local part is the whole run of
- * RFC 5322 atext characters and dots, a superset of dot-atom, so an account such as
- * "synthetic'o" is never split and partly left in clear; then @ and a dotted domain.
+ * RFC 5322 atext characters and dots before an @, a superset of dot-atom, so an account such as
+ * "synthetic'o" is never split and partly left in clear; then a dotted domain. maskEmails finds
+ * each @ and extends left over this run, so a long run without @ is scanned once.
  */
-const EMAIL_RE = /[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+const EMAIL_ATEXT_RE = /[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]/;
+/**
+ * The domain ends with an alphabetic top-level label and no label holds a run of 11 or more digits,
+ * so digits glued after it ("x@y.cn13800000000") stay outside the kept domain and are redacted by
+ * the number rules, and the domain reads the same on every pass.
+ */
+const EMAIL_LABEL = '(?:[A-Za-z-]|\\d{1,10}(?!\\d))+';
+const EMAIL_DOMAIN_RE = new RegExp(`${EMAIL_LABEL}(?:\\.${EMAIL_LABEL})*\\.[A-Za-z]+`, 'y');
 const HAN = '\\p{Script=Han}';
 /** Shared separators between address parts; CRLF counts as two of at most three characters. */
 const ADDRESS_SEPARATOR = '[ \\t\\r\\n\\u3000,，、;；:：/／\\-－—|｜()（）]';
@@ -94,55 +102,138 @@ const ADDRESS_SEP = `${ADDRESS_SEPARATOR}{0,3}`;
  * A place name: Han characters that are not themselves administrative markers, so a run such as
  * "区县区县" splits into parts exactly one way and matching cannot backtrack exponentially.
  */
-const PLACE_NAME = `(?:(?![省市区县旗镇乡]|街道|自治区)${HAN})`;
+const PLACE_NAME = `(?:(?![省市区县旗镇乡村盟]|街道|自治区)${HAN})`;
+/** The provinces; any other "X省" is only a weak anchor (这个能省, 最省 …). */
+const PROVINCE_NAMES =
+  '河北|山西|辽宁|遼寧|吉林|黑龙江|黑龍江|江苏|江蘇|浙江|安徽|福建|江西|山东|山東|河南|湖北|' +
+  '湖南|广东|廣東|海南|四川|贵州|貴州|云南|雲南|陕西|陝西|甘肃|甘肅|青海|台湾|台灣|臺灣';
 /**
- * A city name; 超市, 菜市, 夜市, 市场, 市值 … are ordinary words, not cities. 城市, 门市, 都市 and
- * 花市 are not excluded because 盐城市, 江门市, 成都市 and 攀枝花市 end the same way.
+ * Province level: a named province, any other "X省" not followed by an everyday word or a number
+ * (能省10元; "<" and "*" are where number masking leaves such a digit), 自治区, SAR.
+ */
+const PROVINCE =
+  `(?:${PLACE_NAME}{0,4}(?:${PROVINCE_NAMES})省` +
+  `|${PLACE_NAME}{2,6}省(?![钱錢心事力电電下了着掉时時多少几幾点點个個0-9０-９一二三四五六七八九十百千万<*])` +
+  `|${PLACE_NAME}{2,6}(?:自治区|特别行政区))`;
+const STRONG_PROVINCE_RE = new RegExp(`(?:(?:${PROVINCE_NAMES})省|自治区|特别行政区)$`, 'u');
+/**
+ * A city name; 超市, 菜市, 夜市, 市场, 市值 … are ordinary words, not cities (no city name ends
+ * in them). 城市, 门市, 都市 and 花市 are weak anchors, because 盐城市, 江门市, 成都市 and
+ * 攀枝花市 end the same way.
  */
 const CITY =
   `${PLACE_NAME}{2,6}市` + `(?<!(?:超|菜|夜|股|上|黑|闹|集|早|楼|车|开|互|街|罢)市)(?![场值价面])`;
+const WEAK_CITY_RE = /(?:城|门|都|花|本|该|全|我|各|此)市$/u;
 /** Province and / or city: the part that is kept. */
-const PROVINCE_CITY = `(?:${PLACE_NAME}{2,6}(?:省|自治区)(?:${ADDRESS_SEP}${CITY})?` + `|${CITY})`;
+const PROVINCE_CITY = `(?:(${PROVINCE})(?:${ADDRESS_SEP}(${CITY}))?|(${CITY}))`;
 /**
- * One district-level part (district, county, banner, town, township, subdistrict). Common words
- * that end in a marker but are not administrative names (地区, 小区, 社区, 家乡, 旗舰, 城镇 …) are
- * not anchors, so a form label such as "所在地区：" does not swallow the province after it.
+ * One unit below the city (district, county, banner, league, autonomous prefecture, town,
+ * township, subdistrict, village). 联盟 / 加盟 / 同盟 / 结盟 are never leagues (the three leagues
+ * are 兴安盟, 锡林郭勒盟 and 阿拉善盟); every other everyday word that ends in a marker (地区,
+ * 小区, 家乡, 锦旗, 城镇 …) is a weak anchor, decided by what follows it (isWeakDistrict).
  */
-const DISTRICT =
-  `${PLACE_NAME}{1,8}(?:区(?<!(?:地|小|社|园|景|校|片|街|专|赛|灾|展|禁|误|雷|学|病|营)区)` +
-  `|县|旗(?<!(?:国|红|锦|彩|军|队|令)旗)(?![舰下袍帜号])|镇(?<!城镇)` +
-  `|乡(?<!(?:家|老|故|同|他|城|下|思|异|梦)乡)|街道)`;
+const DISTRICT = `${PLACE_NAME}{1,8}(?:区|县|旗|镇|乡|村|街道|自治州|盟(?<![联加同结]盟))`;
 /**
- * An administrative anchor (BR-AI-14: 省 / 市 / 区县, any level). Names exclude the marker
- * characters, so every run splits one way and the pattern stays linear. Groups:
- *   1. province and / or city (kept), 2. district parts that follow it (masked);
- *   3. district parts with no province or city before them (masked).
+ * A form label in front of the detail ("详细地址：", "楼号:"). Every label contains a character of
+ * ADDRESS_LIKE_RE, so a later weak anchor never sees an unmasked label as plain text.
+ */
+const LABEL =
+  '(?:(?:详细|收货|收件|所在|街道|家庭|公司|单位|配送|邮寄|寄件|发货|联系|通讯)?地址' +
+  '|所在地区|地区|门牌号?|楼栋号?|楼号|房间号|房号|单元号|小区|街道|村组|乡镇)(?:[ \\t\\u3000]*[:：]|是|为|在)';
+/**
+ * An administrative anchor (BR-AI-14: 省 / 市 / 区县, any level) or a form label. Names exclude
+ * the marker characters, so every run splits one way and the pattern stays linear. Groups:
+ *   1. form label;  2. province and / or city (kept): 3. province, 4. city after it, 5. city alone;
+ *   6. units that follow the province or city;  7. first unit with no province or city before it,
+ *   8. units that follow it.
  */
 const ANCHOR_RE = new RegExp(
-  `(${PROVINCE_CITY})((?:${ADDRESS_SEP}${DISTRICT}){0,3})` +
-    `|(${DISTRICT}(?:${ADDRESS_SEP}${DISTRICT}){0,2})`,
+  `(${LABEL})` +
+    `|(${PROVINCE_CITY})((?:${ADDRESS_SEP}${DISTRICT}){0,3})` +
+    `|(${DISTRICT})((?:${ADDRESS_SEP}${DISTRICT}){0,2})`,
   'gu',
 );
+/** A strong province or city right after a label: the label yields to it, so the city is kept. */
+const PROVINCE_CITY_AHEAD_RE = new RegExp(
+  `[ \\t\\u3000]*(${PROVINCE_CITY})((?:${ADDRESS_SEP}${DISTRICT}){0,3})`,
+  'uy',
+);
+/** Everyday words that end in a unit marker; the anchor is weak (see maskAddresses). */
+const WEAK_UNIT_RE = new RegExp(
+  '(?:' +
+    [
+      '(?:地|小|社|园|景|校|片|街|专|赛|灾|展|禁|误|雷|学|病|营|城|郊|山|牧|产|厂|矿|院|林|老|库|辖|分|商|' +
+        '服务|保税|功能|试验|示范|风景|保护|核心)区',
+      '(?:国|红|锦|彩|军|队|令|党|团|战|白|黑|大|升|旌)旗',
+      '(?:城|小|古|重|乡|集|冰|名|市)镇',
+      '(?:家|老|故|同|他|城|下|思|异|梦|回|水|返|还|原|本|外)乡',
+      '(?:农|乡|山|渔|度假|地球)村',
+    ].join('|') +
+    ')$',
+  'u',
+);
+/** The character after the marker that turns it into an everyday word (区别, 县城, 旗舰 …). */
+const WEAK_UNIT_NEXT: Readonly<Record<string, RegExp>> = {
+  区: /^[别分域间块位划]/u,
+  县: /^[城级长委里份]/u,
+  旗: /^[舰下袍帜号鼓手杆]/u,
+  镇: /^[定静压痛住守]/u,
+  乡: /^[村下亲音愁土情]/u,
+  村: /^[民里长委干子]/u,
+  道: /^[办口]/u,
+};
 /**
- * Owner decision 2026-10-15 (B3-05a extra round): after an anchor everything is masked up to
- * the end of the sentence or paragraph. Sentence ends and line breaks only count once detail
- * has appeared ("南山区。合成路88号" and "南山区\n\n合成路88号" keep going). A comma-like
- * separator ends the address only when the clause after it does not look like an address
- * ("88号101室，谢谢" stops; "南山区，科技园，科苑路15号，A栋1201" continues).
+ * Something only addresses usually carry: a number, a numbered unit, an address word or any unit
+ * marker. A weak anchor is masked only when its region contains one.
+ */
+const ADDRESS_LIKE_RE =
+  /[0-9０-９]|[一二三四五六七八九十百千零〇两]+[号室栋幢楼层组弄座]|[省市区县旗盟镇乡村屯庄路街巷弄组苑园栋座幢楼层室号院]|大道|胡同|社区|小区|大厦|花园|公寓|广场|单元|地址|门牌/u;
+/**
+ * Owner decision 2026-10-15 (B3-05a second extra round): after an anchor everything is masked up
+ * to the end of the sentence — 。！？ or a half-width . ! ? that ends a sentence — or the end of
+ * the text. Commas, enumeration commas, semicolons, spaces and line breaks never end it.
  */
 const SENTENCE_END = new Set(['。', '！', '？', '!', '?']);
-const LINE_BREAK = new Set(['\n', '\r']);
-const CLAUSE_SEPARATOR = new Set([' ', '\t', '　', '，', ',', '、', '；', ';', '：', ':']);
-/** Something only addresses usually carry: a number, a numbered unit or an address word. */
-const ADDRESS_LIKE_RE =
-  /[0-9０-９]|[一二三四五六七八九十百千零〇两]+[号室栋幢楼层组弄座]|路|街|大道|巷|弄|胡同|村|组|社区|小区|大厦|大楼|花园|公寓|广场|苑|园|栋|座|幢|楼|单元|层|室|号|院|地址|区|县|镇|乡|屯|庄/u;
-/** A form line that carries the detail part ("详细地址：科技园A栋1201"). */
-const ADDRESS_LABEL_RE =
-  /^(?:详细地址|收货地址|收件地址|所在地址|街道地址|地址|门牌号?|楼栋号?)[ \t　]*[:：]/u;
-/** Upper bounds that keep the scan linear and stop a runaway mask. */
-const ADDRESS_MAX_REGION = 200;
-const ADDRESS_MAX_CLAUSE = 40;
-const ADDRESS_MAX_LABEL = 12;
+/** Abbreviations whose dot does not end the sentence ("No. 15", "Rd. 8"). */
+const ABBREVIATIONS = new Set([
+  'no',
+  'rd',
+  'st',
+  'ave',
+  'blvd',
+  'bldg',
+  'apt',
+  'rm',
+  'fl',
+  'flr',
+  'blk',
+  'dist',
+  'ste',
+  'tel',
+  'mr',
+  'mrs',
+  'ms',
+  'dr',
+  'nr',
+  'prov',
+]);
+/** Characters that separate address parts but are not detail themselves. */
+const SEPARATOR_CHARS = new Set([
+  ' ',
+  '\t',
+  '　',
+  '\r',
+  '\n',
+  ',',
+  '，',
+  '、',
+  ';',
+  '；',
+  ':',
+  '：',
+]);
+/** The address mask; full-width so it never joins an e-mail local part on a second pass. */
+const ADDRESS_MASK = '＊＊＊';
 /** A maximal run of ASCII digits, optionally closed by the ID-card check letter. */
 const DIGIT_RUN_RE = /\d+[Xx]?/g;
 const PHONE_RE = /^1[3-9]\d{9}$/;
@@ -204,92 +295,147 @@ function redactFreeText(
   opaque?: string,
 ): string {
   if (text === '') return text;
-  const withoutEmails = text.replace(
-    EMAIL_RE,
-    (email) => `${email[0] ?? ''}***${email.slice(email.indexOf('@'))}`,
-  );
+  const withoutEmails = maskEmails(text);
   return maskAddresses(withoutEmails, opaque).replace(DIGIT_RUN_RE, (run) =>
     redactDigitRun(run, longNumber),
   );
 }
 
-/**
- * BR-AI-14 delivery addresses: keep the province / city of each anchor and mask the district and
- * everything after it to the end of the address (see SENTENCE_END above). An anchor with only a
- * province or city is masked only when what follows looks like an address, so "深圳市的天气"
- * stays; any district-level anchor is masked (over-masking is accepted, leaking is not).
- */
-function maskAddresses(text: string, opaque?: string): string {
-  const isSeparator = (ch: string): boolean => CLAUSE_SEPARATOR.has(ch) || ch === opaque;
+/** Keeps the first character and the domain of every e-mail address. */
+function maskEmails(text: string): string {
   let out = '';
   let cursor = 0;
-  ANCHOR_RE.lastIndex = 0;
-  for (let match = ANCHOR_RE.exec(text); match !== null; match = ANCHOR_RE.exec(text)) {
-    const kept = match[1] ?? '';
-    const hasDistrict = (match[2] ?? '') !== '' || match[3] !== undefined;
-    const anchorEnd = match.index + match[0].length;
-    const end = addressEnd(text, anchorEnd, isSeparator);
-    if (hasDistrict || ADDRESS_LIKE_RE.test(text.slice(anchorEnd, end))) {
-      // Links and passwords inside the masked span survive (storage form keeps them verbatim).
-      let carried = '';
-      if (opaque !== undefined) {
-        for (const ch of text.slice(anchorEnd, end)) if (ch === opaque) carried += ` ${ch}`;
-      }
-      out += `${text.slice(cursor, match.index)}${kept}***${carried}`;
-      cursor = end;
-      ANCHOR_RE.lastIndex = end;
+  let at = text.indexOf('@');
+  while (at !== -1) {
+    let start = at;
+    while (start > cursor && EMAIL_ATEXT_RE.test(text.charAt(start - 1))) start -= 1;
+    EMAIL_DOMAIN_RE.lastIndex = at + 1;
+    const domain = start < at ? EMAIL_DOMAIN_RE.exec(text)?.[0] : undefined;
+    if (domain === undefined) {
+      at = text.indexOf('@', at + 1);
+      continue;
     }
+    out += `${text.slice(cursor, start)}${text.charAt(start)}***@${domain}`;
+    cursor = at + 1 + domain.length;
+    at = text.indexOf('@', cursor);
   }
   return out + text.slice(cursor);
 }
 
-/** Where the address that follows an anchor ending at `start` ends (exclusive). */
-function addressEnd(text: string, start: number, isSeparator: (ch: string) => boolean): number {
-  const limit = Math.min(text.length, start + ADDRESS_MAX_REGION);
-  const endsClause = (ch: string): boolean =>
-    isSeparator(ch) || SENTENCE_END.has(ch) || LINE_BREAK.has(ch);
-  let seenDetail = false;
-  let end = start;
-  let i = start;
-  while (i < limit) {
-    const ch = text.charAt(i);
-    if (LINE_BREAK.has(ch)) {
-      if (seenDetail) {
-        // A following form line labelled as the detail address belongs to the same address.
-        let next = i;
-        while (next < limit && isBlank(text.charAt(next))) next += 1;
-        if (!ADDRESS_LABEL_RE.test(text.slice(next, next + ADDRESS_MAX_LABEL))) break;
-        seenDetail = false;
-        i = next;
-      } else {
-        i += 1;
+/**
+ * BR-AI-14 delivery addresses (owner decision 2026-10-15): from each anchor to the end of the
+ * sentence everything is masked; only a written province / city (and a form label) stays. Strong
+ * anchors (a real province, a city, a district-level unit) always mask what follows; weak anchors
+ * (everyday words such as 地区, 家乡, 城市, 能省, and form labels) mask only when what follows
+ * looks like an address, so over-masking stays possible but no address is left out. Each region
+ * is scanned once and the next search starts after it, so the whole pass is linear.
+ */
+function maskAddresses(text: string, opaque?: string): string {
+  const isSeparator = (ch: string): boolean => SEPARATOR_CHARS.has(ch) || ch === opaque;
+  let out = '';
+  let cursor = 0;
+  ANCHOR_RE.lastIndex = 0;
+  for (let match = ANCHOR_RE.exec(text); match !== null; match = ANCHOR_RE.exec(text)) {
+    const [whole, label, provinceCity, province, cityAfter, cityAlone] = match;
+    let unitsAfter = match[6] ?? '';
+    let anchorEnd = match.index + whole.length;
+    let kept = '';
+    let weak: boolean;
+    if (label !== undefined) {
+      kept = label;
+      weak = true;
+      // A label right before a strong province / city yields to it: the label and the province /
+      // city are kept and the units after them are masked, as if the label were not there.
+      PROVINCE_CITY_AHEAD_RE.lastIndex = anchorEnd;
+      const ahead = PROVINCE_CITY_AHEAD_RE.exec(text);
+      if (ahead !== null && isStrongProvinceCity(ahead[2], ahead[3] ?? ahead[4], '')) {
+        unitsAfter = ahead[5] ?? '';
+        kept = text.slice(match.index, PROVINCE_CITY_AHEAD_RE.lastIndex - unitsAfter.length);
+        anchorEnd = PROVINCE_CITY_AHEAD_RE.lastIndex;
+        weak = false;
       }
-    } else if (SENTENCE_END.has(ch)) {
-      if (seenDetail) break;
-      i += 1;
-    } else if (isSeparator(ch)) {
-      if (!seenDetail) {
-        i += 1;
-        continue;
-      }
-      let from = i;
-      while (from < limit && isSeparator(text.charAt(from))) from += 1;
-      let to = from;
-      while (to < limit && to - from < ADDRESS_MAX_CLAUSE && !endsClause(text.charAt(to))) to += 1;
-      if (to === from || !ADDRESS_LIKE_RE.test(text.slice(from, to))) break;
-      i = to;
-      end = to;
+    } else if (provinceCity !== undefined) {
+      kept = provinceCity;
+      weak = !isStrongProvinceCity(province, cityAfter ?? cityAlone, unitsAfter);
     } else {
-      seenDetail = true;
-      i += 1;
-      end = i;
+      weak = (match[8] ?? '') === '' && isWeakUnit(match[7] ?? '', text.charAt(anchorEnd));
     }
+    const end = regionEnd(text, anchorEnd, isSeparator);
+    const region = text.slice(anchorEnd, end);
+    const masked = weak
+      ? ADDRESS_LIKE_RE.test(region)
+      : kept === '' || unitsAfter !== '' || [...region].some((ch) => !isSeparator(ch));
+    if (!masked) {
+      ANCHOR_RE.lastIndex = anchorEnd;
+      continue;
+    }
+    // Links and passwords inside the masked span survive (storage form keeps them verbatim).
+    let carried = '';
+    if (opaque !== undefined) {
+      for (const ch of region) if (ch === opaque) carried += ` ${ch}`;
+      // A space after the last one, so a link never runs into the text after the region on a
+      // second pass ("…/90000000001?x@y.cn" would otherwise read as one URL).
+      if (carried !== '') carried += ' ';
+    }
+    out += `${text.slice(cursor, match.index)}${kept}${ADDRESS_MASK}${carried}`;
+    cursor = end;
+    ANCHOR_RE.lastIndex = end;
   }
-  return end;
+  return out + text.slice(cursor);
 }
 
-function isBlank(ch: string): boolean {
-  return LINE_BREAK.has(ch) || ch === ' ' || ch === '\t' || ch === '　';
+/** A real province, a city that is not an everyday word, or either one followed by units. */
+function isStrongProvinceCity(
+  province: string | undefined,
+  city: string | undefined,
+  unitsAfter: string,
+): boolean {
+  return (
+    (province !== undefined && STRONG_PROVINCE_RE.test(province)) ||
+    (city !== undefined && !WEAK_CITY_RE.test(city)) ||
+    unitsAfter !== ''
+  );
+}
+
+/** An everyday word ending in a unit marker (小区, 家乡, 锦旗, 区别 …), not an administrative name. */
+function isWeakUnit(unit: string, next: string): boolean {
+  if (WEAK_UNIT_RE.test(unit)) return true;
+  const marker = unit.at(-1) ?? '';
+  return WEAK_UNIT_NEXT[marker]?.test(next) ?? false;
+}
+
+/**
+ * Where the region after an anchor ending at `start` ends (exclusive): the first sentence end
+ * after some detail, or the end of the text. A sentence end right after the anchor ("南山区。合成
+ * 路88号") ends it only when the next sentence does not look like an address.
+ */
+function regionEnd(text: string, start: number, isSeparator: (ch: string) => boolean): number {
+  let i = start;
+  while (i < text.length) {
+    if (isSentenceEnd(text, i)) {
+      let from = i;
+      while (from < text.length && (isSentenceEnd(text, from) || isSeparator(text.charAt(from)))) {
+        from += 1;
+      }
+      let to = from;
+      while (to < text.length && !isSentenceEnd(text, to)) to += 1;
+      return ADDRESS_LIKE_RE.test(text.slice(from, to)) ? to : i;
+    }
+    if (!isSeparator(text.charAt(i))) break;
+    i += 1;
+  }
+  while (i < text.length && !isSentenceEnd(text, i)) i += 1;
+  return i;
+}
+
+/** 。！？ and half-width ! ?; a half-width dot only when it ends a sentence (not "No.15"). */
+function isSentenceEnd(text: string, i: number): boolean {
+  const ch = text.charAt(i);
+  if (SENTENCE_END.has(ch)) return true;
+  if (ch !== '.') return false;
+  if (/[A-Za-z0-9]/.test(text.charAt(i + 1))) return false;
+  const word = /[A-Za-z]+$/.exec(text.slice(Math.max(0, i - 5), i))?.[0];
+  return word === undefined || !ABBREVIATIONS.has(word.toLowerCase());
 }
 
 function redactDigitRun(run: string, longNumber: (raw: string) => string): string {
