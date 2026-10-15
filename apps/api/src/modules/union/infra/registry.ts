@@ -7,17 +7,19 @@
 // endpoint with mode=live get the real PddUnionAdapter of B1-04g, returned as is: governance is
 // wrapped once by the existing caller (app.module.ts governedUnion), not here. Without `pddLive`,
 // pdd live / replay stay `adapter_unimplemented`; which environments may pass `pddLive` is decided
-// by union.module.ts. Real jd / taobao adapters replace their entries in later tasks.
+// by union.module.ts. B1-04x: `pddLive.queryIdentity` (assembled by union.module.ts) is handed to
+// the adapter as is; without it every goods call is refused `upstream_rejected` by the adapter. Real jd / taobao adapters replace their entries in later tasks.
 // TODO(规划/11 §4.5): jd / taobao 凭据读取 — blocked on 推广位 / siteId
 import {
   REGISTERED_PLATFORMS,
   UnionError,
+  type CallCtx,
   type RegisteredPlatform,
   type UnionAdapter,
 } from '../domain/types.ts';
 import { DemoUnionAdapter, type DemoUnionRegistryOptions } from './demo/demo-adapter.ts';
 import { parseUnionEndpoints } from './endpoints.ts';
-import { PddUnionAdapter, type PddCredentials } from './pdd/pdd-adapter.ts';
+import { PddUnionAdapter, type PddCredentials, type PddQueryIdentity } from './pdd/pdd-adapter.ts';
 import type { PddWarning } from './pdd/response.ts';
 import type { UnionTransport } from './replay.ts';
 
@@ -27,6 +29,8 @@ export interface PddLiveOptions {
   readonly credentials: () => Promise<PddCredentials>;
   readonly transport: UnionTransport;
   readonly warn?: (event: PddWarning) => void;
+  /** Query identity provider of the goods ports (B1-04x), called with the CallCtx of each call. */
+  readonly queryIdentity?: (ctx: CallCtx) => Promise<PddQueryIdentity>;
 }
 
 export interface UnionRegistryOptions extends DemoUnionRegistryOptions {
@@ -86,6 +90,7 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           clock: options.clock,
           endpoint,
           ...(live.warn === undefined ? {} : { warn: live.warn }),
+          ...(live.queryIdentity === undefined ? {} : { queryIdentity: live.queryIdentity }),
         });
       }
     }

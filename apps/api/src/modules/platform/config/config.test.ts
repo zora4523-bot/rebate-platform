@@ -29,6 +29,7 @@ describe('loadConfig', () => {
       adminAuth: null,
       mediaPublicBaseUrl: 'https://media.local.invalid',
       pdd: null,
+      pddQueryCustomParameters: null,
     });
   });
 
@@ -64,6 +65,7 @@ describe('loadConfig', () => {
       trustedProxies: ['198.51.100.0/24', '2001:db8::1'],
       adminAuth: null,
       pdd: null,
+      pddQueryCustomParameters: null,
     });
   });
 

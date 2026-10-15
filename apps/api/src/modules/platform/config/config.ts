@@ -8,6 +8,7 @@ import { JWT_ENV_NAMES, readJwtKeyConfig, type JwtKeyConfig } from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
 import { readMediaConfig } from './media.ts';
 import { readPddConfig, type PddClientConfig } from './pdd.ts';
+import { readPddQueryConfig } from './pdd-query.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 
 export { APP_ENVS, type AppEnv } from './app-env.ts';
@@ -80,6 +81,12 @@ export interface AppConfig {
    * path. A hand-built config without it counts as null.
    */
   readonly pdd?: PddClientConfig | null;
+  /**
+   * PDD_QUERY_CUSTOM_PARAMETERS (./pdd-query.ts, B1-04x): the custom_parameters JSON text of the
+   * Pinduoduo query identity, a server setting (not a credential), kept verbatim. Null when unset
+   * in any environment; a hand-built config without it counts as null.
+   */
+  readonly pddQueryCustomParameters?: string | null;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -157,6 +164,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     problems.push(...readAdminAuthConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     problems.push(...readMediaConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     if (appEnv.success) problems.push(...readPddConfig(appEnv.data, env).problems);
+    problems.push(...readPddQueryConfig(env).problems);
     throw new ConfigError(problems);
   }
 
@@ -174,6 +182,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...mediaProblems);
   const { pdd, problems: pddProblems } = readPddConfig(values.APP_ENV, env);
   violations.push(...pddProblems);
+  const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
+  violations.push(...pddQueryProblems);
   if (violations.length > 0) throw new ConfigError(violations);
 
   return {
@@ -191,5 +201,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     adminAuth,
     mediaPublicBaseUrl,
     pdd,
+    pddQueryCustomParameters,
   };
 }
