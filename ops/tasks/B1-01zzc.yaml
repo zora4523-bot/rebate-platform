@@ -1,0 +1,25 @@
+id: B1-01zzc
+repo: rebate-platform
+title: packages/db 默认连接池：借出中的连接被服务端断开（socket end，pg 只发 error、不置不可查询）后，归还时必须被池丢弃，不得再借给下一个查询
+type: impl
+# 2026-10-15 编排者（staging-b3-term）：B3-03h 冻结测试 [AC-B3-03h#39] 在 AWS 测试机稳定复现——锁连接的后端被 pg_terminate_backend 杀掉后，
+#   解锁失败、连接正常归还，同一池的下一个查询拿到这条死连接报 Connection terminated unexpectedly。根因：pg 8.23 Client 在 socket 'end'（非 _ending）时
+#   只 emit('error')、不置 _queryable=false；pg-pool 归还时只看 _queryable / _ending，于是把死连接留在池里。B1-01zp（#445）的 DefaultClient 只吸收 error，
+#   注释里「借出的坏连接归还时因不可查询被丢弃」的假设不成立。平台句柄（platform/db TrackedClient）另有处理，不在本任务。
+# 做法：DefaultClient 的 error 监听（及 'end' 非主动结束时）把该客户端标为归还即丢弃（不手动 release / destroy、不重建池），poolFactory 路径不变；更正注释。
+# 测试：一次性库上借出连接后 pg_terminate_backend 其后端，不在该连接上发查询直接归还（或发一次失败后归还），随后同池并发查询全部成功、池里不再出现该后端；
+#   空闲断开与 B1-01zp 的冻结测试 test/spec/db/pool-errors/** 保持绿。
+refs: []
+refs_hash: {}
+deps: [B1-01zp]
+paths:
+  - 'packages/db/src/index.ts'
+test_paths:
+  - 'test/spec/db/pool-dead-lease/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/pool-dead-lease/**'
+status: todo
+pr: null
