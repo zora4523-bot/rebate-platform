@@ -26,21 +26,21 @@ it.each(envelopes)(
   },
 );
 
-it.each([
-  'pdd.ddk.goods.search',
-  'pdd.ddk.goods.detail',
-  'pdd.ddk.goods.recommend.get',
-  'pdd.ddk.goods.promotion.url.generate',
-  'pdd.unknown',
-  'toString',
-  '__proto__',
-])('[AC-B1-04g-RESPONSE#2] never infers an envelope for unregistered %s', async (api) => {
-  await unionFailure(
-    () =>
-      unwrapPddResponse(api, response({ goods_search_response: {}, order_list_get_response: {} })),
-    'adapter_unimplemented',
-  );
-});
+// test-change 2026-10-15 (pdd-lane): the goods / convert envelopes are registered by B1-04u / B1-04h
+// (probe-confirmed keys); names that are never registered stay here.
+it.each(['pdd.unknown', 'toString', '__proto__'])(
+  '[AC-B1-04g-RESPONSE#2] never infers an envelope for unregistered %s',
+  async (api) => {
+    await unionFailure(
+      () =>
+        unwrapPddResponse(
+          api,
+          response({ goods_search_response: {}, order_list_get_response: {} }),
+        ),
+      'adapter_unimplemented',
+    );
+  },
+);
 
 it.each([
   '{}',
