@@ -2,7 +2,7 @@
 // 经注入的 UnionTransport 发 POST JSON、按登记的外层键解包、error_response 分类到 UnionError。
 // 订单端口（listOrders 的 increment / pay_time、getPddOrderDetail）的参数与映射在 orders.ts（B1-04i）；
 // 商品端口（searchItems / getItem / resolveLink / materialFeed）的参数、游标与映射在 goods.ts（B1-04u），
-// 每次调用都带服务端注入的查询身份（D-u2）；转链、备案查询、备案链接（B1-04h）的参数与映射在 promotion.ts，
+// 每次调用都带服务端注入的查询身份（D-u2；B1-04x 起提供者按调用上下文的 app 取查询推广位）；转链、备案查询、备案链接（B1-04h）的参数与映射在 promotion.ts，
 // 它们只用调用方传入的服务端身份（推广位 + custom_parameters），不用查询身份。
 // 不读 process.env、不读文件；client_secret 只在内存里参与签名。
 import type { Clock } from '../../../platform/index.ts';
@@ -94,7 +94,11 @@ export interface PddAdapterOptions {
   readonly clock: Clock;
   readonly endpoint: UnionEndpoint;
   readonly warn?: (event: PddWarning) => void;
-  readonly queryIdentity?: () => Promise<PddQueryIdentity>;
+  /**
+   * 查询身份提供者（D-u2 / B1-04x）：每次商品调用以当前 CallCtx 调用一次；装配方
+   * （union.module.ts）只读 ctx.appId 取该 app 的 active 查询推广位，custom_parameters 来自服务端配置。
+   */
+  readonly queryIdentity?: (ctx: CallCtx) => Promise<PddQueryIdentity>;
 }
 
 /** 公共参数名；业务参数不得占用（4_PDD_附 §3.2）。 */
@@ -123,7 +127,7 @@ export class PddUnionAdapter implements UnionAdapter {
   readonly #clock: Clock;
   readonly #endpoint: UnionEndpoint;
   readonly #warn: ((event: PddWarning) => void) | undefined;
-  readonly #queryIdentity: (() => Promise<PddQueryIdentity>) | undefined;
+  readonly #queryIdentity: ((ctx: CallCtx) => Promise<PddQueryIdentity>) | undefined;
 
   constructor(options: PddAdapterOptions) {
     if (options.endpoint.platform !== 'pdd') {
@@ -222,15 +226,17 @@ export class PddUnionAdapter implements UnionAdapter {
 
   /**
    * D-u2：每次商品调用读一次查询身份并校验；未注入报 upstream_rejected，非法报 invalid_identity，
-   * 两者都不取凭据、不发请求。身份只来自服务端提供者，不读 ctx（app_id、headers）。
+   * 两者都不取凭据、不发请求。身份只来自服务端提供者：适配器只把 ctx 原样交给提供者（B1-04x，
+   * 提供者只用 ctx.appId 选推广位），自己不从 ctx（headers 等）取 pid 或 custom_parameters。
    */
   async #identity(
     port: string,
+    ctx: CallCtx,
   ): Promise<{ readonly pid: string; readonly custom_parameters: string }> {
     if (this.#queryIdentity === undefined) {
       throw new UnionError('upstream_rejected', `pdd ${port}: no query identity configured`, 'pdd');
     }
-    return checkQueryIdentity(await this.#queryIdentity());
+    return checkQueryIdentity(await this.#queryIdentity(ctx));
   }
 
   #onAnomaly(method: string): () => void {
@@ -253,7 +259,7 @@ export class PddUnionAdapter implements UnionAdapter {
       throw new UnionError('invalid_dto', 'pdd searchItems: keyword is blank', 'pdd');
     }
     const cursor = q.cursor === undefined ? undefined : parseSearchCursor(q.cursor);
-    const identity = await this.#identity('searchItems');
+    const identity = await this.#identity('searchItems', ctx);
     const page = cursor?.page ?? 1;
     const envelope = await this.request(
       PDD_GOODS_SEARCH,
@@ -282,7 +288,7 @@ export class PddUnionAdapter implements UnionAdapter {
     if (ref?.platform !== 'pdd' || typeof sign !== 'string' || sign.trim() === '') {
       throw new UnionError('invalid_dto', 'pdd getItem: goods_sign is required', 'pdd');
     }
-    const identity = await this.#identity('getItem');
+    const identity = await this.#identity('getItem', ctx);
     const envelope = await this.request(
       PDD_GOODS_DETAIL,
       { goods_sign: sign, ...identity },
@@ -306,7 +312,7 @@ export class PddUnionAdapter implements UnionAdapter {
       throw new UnionError('link_unrecognized', 'pdd resolveLink: empty link', 'pdd');
     }
     const link = raw.trim();
-    const identity = await this.#identity('resolveLink');
+    const identity = await this.#identity('resolveLink', ctx);
     const find = async (keyword: string): Promise<ResolvedLink | null> => {
       const envelope = await this.request(
         PDD_GOODS_SEARCH,
@@ -348,7 +354,7 @@ export class PddUnionAdapter implements UnionAdapter {
    */
   async materialFeed(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>> {
     const offset = req?.cursor === undefined ? 0 : parseFeedCursor(req.cursor);
-    const identity = await this.#identity('materialFeed');
+    const identity = await this.#identity('materialFeed', ctx);
     const envelope = await this.request(
       PDD_GOODS_RECOMMEND,
       { channel_type: PDD_FEED_CHANNEL, offset, limit: PDD_FEED_LIMIT, ...identity },

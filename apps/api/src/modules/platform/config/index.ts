@@ -29,6 +29,12 @@ export { MEDIA_DEFAULT_LOCAL_BASE_URL, MEDIA_ENV_NAME, readMediaConfig } from '.
 // Pinduoduo live adapter credentials (B1-04t): staging reads the secret file once at startup.
 export { readPddConfig } from './pdd.ts';
 export type { PddClientConfig } from './pdd.ts';
+// Pinduoduo query identity custom_parameters (B1-04x): optional server setting, not a credential.
+export {
+  PDD_QUERY_CUSTOM_PARAMETERS_ENV,
+  PDD_QUERY_CUSTOM_PARAMETERS_MAX_BYTES,
+  readPddQueryConfig,
+} from './pdd-query.ts';
 export {
   PDD_SECRET_FILE_MAX_BYTES,
   PDD_STARTUP_MESSAGES,
