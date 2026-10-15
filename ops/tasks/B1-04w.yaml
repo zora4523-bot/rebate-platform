@@ -24,5 +24,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/union/pdd-orders-quota/**'
-status: todo
-pr: null
+status: done
+pr: 495
