@@ -48,14 +48,16 @@ export function redactForModel(text: string): {
     }
     return token;
   };
-  let out = '';
+  let free = '';
   for (const segment of freeSegments(text)) {
-    const redacted = redactFreeText(segment, longNumber);
     // A removed link or password leaves a single space when both sides would otherwise touch,
-    // so two digit runs never merge into a new long number.
-    if (out !== '' && redacted !== '' && !/\s$/u.test(out) && !/^\s/u.test(redacted)) out += ' ';
-    out += redacted;
+    // so two digit runs never merge into a new long number. The remaining free text is then
+    // redacted in one pass, so an address split by a link is masked as one address and a
+    // second pass over the model text finds nothing new.
+    if (free !== '' && segment !== '' && !/\s$/u.test(free) && !/^\s/u.test(segment)) free += ' ';
+    free += segment;
   }
+  const out = redactFreeText(free, longNumber);
   const placeholders: Record<string, string> = {};
   for (const [raw, token] of tokens) placeholders[token] = raw;
   return { text: out as AgentRedactedText, placeholders };
@@ -88,59 +90,59 @@ const HAN = '\\p{Script=Han}';
 /** Shared separators between address parts; CRLF counts as two of at most three characters. */
 const ADDRESS_SEPARATOR = '[ \\t\\r\\n\\u3000,，、;；:：/／\\-－—|｜()（）]';
 const ADDRESS_SEP = `${ADDRESS_SEPARATOR}{0,3}`;
-const ADDRESS_DIGITS = '[0-9０-９]+';
-const ADDRESS_ALNUM = '[A-Za-z0-9０-９Ａ-Ｚａ-ｚ]';
-const NUMBER_MARKER = '(?:号|室|栋|幢|楼|单元|层|座|弄)';
-const ROAD_MARKER = '(?:路|街|道|巷|弄|胡同)';
-/**
- * Inside details, cross a separator only before a number, letter or address marker. In
- * particular, "88号，麻烦送到门口" must not absorb the following sentence. Separators are
- * excluded from the single-character branch, so separator runs cannot be partitioned in
- * multiple ways during backtracking; all detail segments remain bounded to 24 units.
- */
-const ADDRESS_CHAR =
-  `(?:[${HAN}A-Za-z0-9０-９Ａ-Ｚａ-ｚ#＃]` +
-  `|${ADDRESS_SEPARATOR}{1,3}(?=${ADDRESS_ALNUM}|${NUMBER_MARKER}|${ROAD_MARKER}))`;
-/** Room numbers after the last marker, including separated rooms ("8号/303", "3栋A-201"). */
-const ADDRESS_TRAIL =
-  `(?:[A-Za-z0-9０-９Ａ-Ｚａ-ｚ#＃]` + `|${ADDRESS_SEPARATOR}{1,3}(?=${ADDRESS_ALNUM})){0,24}`;
-/** Further detail up to the last number marker ("88号101室"); bounded to keep matching linear. */
-const ADDRESS_TAIL = `(?:${ADDRESS_CHAR}{0,24}${NUMBER_MARKER}${ADDRESS_TRAIL})?`;
-/** Detail with a number right before a number marker: "合成路88号", "3栋201室", "90 号". */
-const DETAIL_NUMBERED =
-  `${ADDRESS_CHAR}{0,24}?${ADDRESS_DIGITS}${ADDRESS_SEP}${NUMBER_MARKER}` +
-  `${ADDRESS_TRAIL}${ADDRESS_TAIL}`;
-/** Detail with a road marker directly followed by a house number: "朝阳路12号", "文三路 90 号". */
-const DETAIL_ROAD =
-  `${ADDRESS_CHAR}{0,24}?${ROAD_MARKER}${ADDRESS_SEP}${ADDRESS_DIGITS}${ADDRESS_SEP}` +
-  `(?:号|弄)${ADDRESS_TRAIL}${ADDRESS_TAIL}`;
 /**
  * A place name: Han characters that are not themselves administrative markers, so a run such as
  * "区县区县" splits into parts exactly one way and matching cannot backtrack exponentially.
  */
 const PLACE_NAME = `(?:(?![省市区县旗镇乡]|街道|自治区)${HAN})`;
-/** Province and / or city: the part that is kept. */
-const PROVINCE_CITY =
-  `(?:${PLACE_NAME}{2,6}(?:省|自治区)(?:${ADDRESS_SEP}${PLACE_NAME}{2,6}市)?` +
-  `|${PLACE_NAME}{2,6}市)`;
-/** One to three district-level parts (district, county, banner, town, township, subdistrict). */
-const DISTRICTS = `(?:${PLACE_NAME}{1,8}(?:区|县|旗|镇|乡|街道)${ADDRESS_SEP}){1,3}`;
 /**
- * Delivery address (BR-AI-14: province / city / district + road, street, number, room style
- * detail). At least one administrative part must come first, and the detail must carry a number
- * at a marker, so ordinary sentences such as "去超市买的7号电池" or "我住市中心附近" stay as they
- * are. Alternatives, tried in order at each position:
- *   1. province / city, district parts, numbered detail      → keep group 1
- *   2. province / city, road + house number (no district)    → keep group 2
- *   3. district parts, numbered detail (no province or city) → keep nothing
- * Everything after the kept province / city is masked.
+ * A city name; 超市, 菜市, 夜市, 市场, 市值 … are ordinary words, not cities. 城市, 门市, 都市 and
+ * 花市 are not excluded because 盐城市, 江门市, 成都市 and 攀枝花市 end the same way.
  */
-const ADDRESS_RE = new RegExp(
-  `(${PROVINCE_CITY})${ADDRESS_SEP}${DISTRICTS}${DETAIL_NUMBERED}` +
-    `|(${PROVINCE_CITY})${ADDRESS_SEP}${DETAIL_ROAD}` +
-    `|${DISTRICTS}${DETAIL_NUMBERED}`,
+const CITY =
+  `${PLACE_NAME}{2,6}市` + `(?<!(?:超|菜|夜|股|上|黑|闹|集|早|楼|车|开|互|街|罢)市)(?![场值价面])`;
+/** Province and / or city: the part that is kept. */
+const PROVINCE_CITY = `(?:${PLACE_NAME}{2,6}(?:省|自治区)(?:${ADDRESS_SEP}${CITY})?` + `|${CITY})`;
+/**
+ * One district-level part (district, county, banner, town, township, subdistrict). Common words
+ * that end in a marker but are not administrative names (地区, 小区, 社区, 家乡, 旗舰, 城镇 …) are
+ * not anchors, so a form label such as "所在地区：" does not swallow the province after it.
+ */
+const DISTRICT =
+  `${PLACE_NAME}{1,8}(?:区(?<!(?:地|小|社|园|景|校|片|街|专|赛|灾|展|禁|误|雷|学|病|营)区)` +
+  `|县|旗(?<!(?:国|红|锦|彩|军|队|令)旗)(?![舰下袍帜号])|镇(?<!城镇)` +
+  `|乡(?<!(?:家|老|故|同|他|城|下|思|异|梦)乡)|街道)`;
+/**
+ * An administrative anchor (BR-AI-14: 省 / 市 / 区县, any level). Names exclude the marker
+ * characters, so every run splits one way and the pattern stays linear. Groups:
+ *   1. province and / or city (kept), 2. district parts that follow it (masked);
+ *   3. district parts with no province or city before them (masked).
+ */
+const ANCHOR_RE = new RegExp(
+  `(${PROVINCE_CITY})((?:${ADDRESS_SEP}${DISTRICT}){0,3})` +
+    `|(${DISTRICT}(?:${ADDRESS_SEP}${DISTRICT}){0,2})`,
   'gu',
 );
+/**
+ * Owner decision 2026-10-15 (B3-05a extra round): after an anchor everything is masked up to
+ * the end of the sentence or paragraph. Sentence ends and line breaks only count once detail
+ * has appeared ("南山区。合成路88号" and "南山区\n\n合成路88号" keep going). A comma-like
+ * separator ends the address only when the clause after it does not look like an address
+ * ("88号101室，谢谢" stops; "南山区，科技园，科苑路15号，A栋1201" continues).
+ */
+const SENTENCE_END = new Set(['。', '！', '？', '!', '?']);
+const LINE_BREAK = new Set(['\n', '\r']);
+const CLAUSE_SEPARATOR = new Set([' ', '\t', '　', '，', ',', '、', '；', ';', '：', ':']);
+/** Something only addresses usually carry: a number, a numbered unit or an address word. */
+const ADDRESS_LIKE_RE =
+  /[0-9０-９]|[一二三四五六七八九十百千零〇两]+[号室栋幢楼层组弄座]|路|街|大道|巷|弄|胡同|村|组|社区|小区|大厦|大楼|花园|公寓|广场|苑|园|栋|座|幢|楼|单元|层|室|号|院|地址|区|县|镇|乡|屯|庄/u;
+/** A form line that carries the detail part ("详细地址：科技园A栋1201"). */
+const ADDRESS_LABEL_RE =
+  /^(?:详细地址|收货地址|收件地址|所在地址|街道地址|地址|门牌号?|楼栋号?)[ \t　]*[:：]/u;
+/** Upper bounds that keep the scan linear and stop a runaway mask. */
+const ADDRESS_MAX_REGION = 200;
+const ADDRESS_MAX_CLAUSE = 40;
+const ADDRESS_MAX_LABEL = 12;
 /** A maximal run of ASCII digits, optionally closed by the ID-card check letter. */
 const DIGIT_RUN_RE = /\d+[Xx]?/g;
 const PHONE_RE = /^1[3-9]\d{9}$/;
@@ -151,15 +153,36 @@ const MASK = '****';
 
 /** Storage form: candidates verbatim, free text redacted, long numbers keep the last four. */
 function redactForStorage(text: string): AgentRedactedText {
-  let out = '';
+  const spans = findCandidateSpans(text);
+  if (spans.length === 0) return redactFreeText(text, keepLastFour) as AgentRedactedText;
+  // Each link or password becomes one opaque character that no rule matches and that an
+  // address mask carries through, so the free text is redacted in one pass (an address split by
+  // a link is still one address) and every candidate is put back verbatim afterwards.
+  const opaque = opaqueChar(text);
+  let view = '';
   let cursor = 0;
-  for (const span of findCandidateSpans(text)) {
-    out += redactFreeText(text.slice(cursor, span.index), keepLastFour);
-    out += span.raw;
+  for (const span of spans) {
+    view += `${text.slice(cursor, span.index)}${opaque}`;
     cursor = span.index + span.raw.length;
   }
-  out += redactFreeText(text.slice(cursor), keepLastFour);
+  view += text.slice(cursor);
+  let k = 0;
+  const out = redactFreeText(view, keepLastFour, opaque).replaceAll(opaque, () => {
+    const raw = spans[k]?.raw ?? '';
+    k += 1;
+    return raw;
+  });
   return out as AgentRedactedText;
+}
+
+/** A private-use character that does not occur in `text`. */
+function opaqueChar(text: string): string {
+  for (let code = 0xe000; code <= 0xf8ff; code += 1) {
+    const ch = String.fromCharCode(code);
+    if (!text.includes(ch)) return ch;
+  }
+  // Unreachable for any text the API accepts (6400 distinct private-use characters).
+  throw new Error('redact: no free private-use character');
 }
 
 /** The free-text pieces around every link and password candidate, in text order. */
@@ -175,16 +198,98 @@ function freeSegments(text: string): string[] {
 }
 
 /** Applies the BR-AI-14 table to one piece of free text; long numbers go to `longNumber`. */
-function redactFreeText(text: string, longNumber: (raw: string) => string): string {
+function redactFreeText(
+  text: string,
+  longNumber: (raw: string) => string,
+  opaque?: string,
+): string {
   if (text === '') return text;
-  return text
-    .replace(EMAIL_RE, (email) => `${email[0] ?? ''}***${email.slice(email.indexOf('@'))}`)
-    .replace(
-      ADDRESS_RE,
-      (_match, withDistrict: string | undefined, withRoad: string | undefined) =>
-        `${withDistrict ?? withRoad ?? ''}***`,
-    )
-    .replace(DIGIT_RUN_RE, (run) => redactDigitRun(run, longNumber));
+  const withoutEmails = text.replace(
+    EMAIL_RE,
+    (email) => `${email[0] ?? ''}***${email.slice(email.indexOf('@'))}`,
+  );
+  return maskAddresses(withoutEmails, opaque).replace(DIGIT_RUN_RE, (run) =>
+    redactDigitRun(run, longNumber),
+  );
+}
+
+/**
+ * BR-AI-14 delivery addresses: keep the province / city of each anchor and mask the district and
+ * everything after it to the end of the address (see SENTENCE_END above). An anchor with only a
+ * province or city is masked only when what follows looks like an address, so "深圳市的天气"
+ * stays; any district-level anchor is masked (over-masking is accepted, leaking is not).
+ */
+function maskAddresses(text: string, opaque?: string): string {
+  const isSeparator = (ch: string): boolean => CLAUSE_SEPARATOR.has(ch) || ch === opaque;
+  let out = '';
+  let cursor = 0;
+  ANCHOR_RE.lastIndex = 0;
+  for (let match = ANCHOR_RE.exec(text); match !== null; match = ANCHOR_RE.exec(text)) {
+    const kept = match[1] ?? '';
+    const hasDistrict = (match[2] ?? '') !== '' || match[3] !== undefined;
+    const anchorEnd = match.index + match[0].length;
+    const end = addressEnd(text, anchorEnd, isSeparator);
+    if (hasDistrict || ADDRESS_LIKE_RE.test(text.slice(anchorEnd, end))) {
+      // Links and passwords inside the masked span survive (storage form keeps them verbatim).
+      let carried = '';
+      if (opaque !== undefined) {
+        for (const ch of text.slice(anchorEnd, end)) if (ch === opaque) carried += ` ${ch}`;
+      }
+      out += `${text.slice(cursor, match.index)}${kept}***${carried}`;
+      cursor = end;
+      ANCHOR_RE.lastIndex = end;
+    }
+  }
+  return out + text.slice(cursor);
+}
+
+/** Where the address that follows an anchor ending at `start` ends (exclusive). */
+function addressEnd(text: string, start: number, isSeparator: (ch: string) => boolean): number {
+  const limit = Math.min(text.length, start + ADDRESS_MAX_REGION);
+  const endsClause = (ch: string): boolean =>
+    isSeparator(ch) || SENTENCE_END.has(ch) || LINE_BREAK.has(ch);
+  let seenDetail = false;
+  let end = start;
+  let i = start;
+  while (i < limit) {
+    const ch = text.charAt(i);
+    if (LINE_BREAK.has(ch)) {
+      if (seenDetail) {
+        // A following form line labelled as the detail address belongs to the same address.
+        let next = i;
+        while (next < limit && isBlank(text.charAt(next))) next += 1;
+        if (!ADDRESS_LABEL_RE.test(text.slice(next, next + ADDRESS_MAX_LABEL))) break;
+        seenDetail = false;
+        i = next;
+      } else {
+        i += 1;
+      }
+    } else if (SENTENCE_END.has(ch)) {
+      if (seenDetail) break;
+      i += 1;
+    } else if (isSeparator(ch)) {
+      if (!seenDetail) {
+        i += 1;
+        continue;
+      }
+      let from = i;
+      while (from < limit && isSeparator(text.charAt(from))) from += 1;
+      let to = from;
+      while (to < limit && to - from < ADDRESS_MAX_CLAUSE && !endsClause(text.charAt(to))) to += 1;
+      if (to === from || !ADDRESS_LIKE_RE.test(text.slice(from, to))) break;
+      i = to;
+      end = to;
+    } else {
+      seenDetail = true;
+      i += 1;
+      end = i;
+    }
+  }
+  return end;
+}
+
+function isBlank(ch: string): boolean {
+  return LINE_BREAK.has(ch) || ch === ' ' || ch === '\t' || ch === '　';
 }
 
 function redactDigitRun(run: string, longNumber: (raw: string) => string): string {
