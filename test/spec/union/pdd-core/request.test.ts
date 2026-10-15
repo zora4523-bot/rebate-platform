@@ -119,13 +119,9 @@ it('[AC-B1-04g-REQUEST#4] submits structured business parameters as the same com
   expect(parameters).toEqual({ goods_sign_list: ['例子', 'a&b'], range_list: { min: 0, max: 10 } });
 });
 
-it.each([
-  'pdd.ddk.goods.search',
-  'pdd.ddk.goods.detail',
-  'pdd.ddk.goods.promotion.url.generate',
-  'pdd.ddk.goods.recommend.get',
-  'pdd.unknown',
-])(
+// test-change 2026-10-15 (pdd-lane): goods.search / detail / recommend.get / promotion.url.generate were
+// unregistered only until B1-04u / B1-04h register their probe-confirmed envelopes.
+it.each(['pdd.unknown'])(
   '[AC-B1-04g-REQUEST#5] unregistered method %s fails before credentials or transport',
   async (unregistered) => {
     const { adapter, credentials, transport } = setup();
