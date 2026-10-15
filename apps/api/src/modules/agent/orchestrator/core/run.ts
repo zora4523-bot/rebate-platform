@@ -83,15 +83,9 @@ function unfenced(text: string): string {
 }
 
 const ARRAY_LIKE = /^\[\s*(?:[{["\d\]-]|true\b|false\b|null\b)/u;
+const OBJECT_MEMBER = /\{\s*"(?:[^"\\]|\\[\s\S])*"\s*:/u;
 
-/**
- * BR-AI-06 (no card JSON from the model): a round whose whole text, unfenced, is structured
- * data — anything opening with `{`, or a JSON array / array-looking text — is a format error and
- * is never delivered. Prose that merely contains braces, or opens with a bracketed tag such as
- * 「[提示]」, is ordinary text.
- */
-export function isStructuredText(text: string): boolean {
-  const body = unfenced(text);
+function hasStructuredStart(body: string): boolean {
   if (body.startsWith('{')) return true;
   if (!body.startsWith('[')) return false;
   try {
@@ -100,6 +94,20 @@ export function isStructuredText(text: string): boolean {
   } catch {
     return ARRAY_LIKE.test(body);
   }
+}
+
+/**
+ * BR-AI-06: inspect the whole round before any delta is delivered, including JSON objects
+ * embedded in prose or code fences. Keep rejecting malformed structured starts; ordinary
+ * inline braces and bracketed tags without a JSON member remain explanation text.
+ */
+export function isStructuredText(text: string): boolean {
+  if (OBJECT_MEMBER.test(text) || hasStructuredStart(unfenced(text))) return true;
+  // Fences may follow prose and contain arrays without object members, or incomplete JSON.
+  for (const fence of text.matchAll(/```[\w-]*[^\S\r\n]*\r?\n?([\s\S]*?)(?:```|$)/gu)) {
+    if (hasStructuredStart((fence[1] ?? '').trim())) return true;
+  }
+  return false;
 }
 
 class AgentRun {

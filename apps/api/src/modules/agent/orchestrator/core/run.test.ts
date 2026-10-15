@@ -259,6 +259,21 @@ const STRUCTURED = [
   { label: 'fenced JSON', parts: ['```json\n', CARD_JSON, '\n```'] },
   { label: 'JSON array', parts: ['[{"title":"合成","price":2990}]'] },
   { label: 'unparseable object', parts: ['{"type":"product_card","data":{"pri'] },
+  {
+    label: 'prefixed card JSON',
+    parts: ['推荐如下：', '{"ty', 'pe":', '"product_card","data":{"price":2990}}'],
+  },
+  { label: 'prefixed JSON fence', parts: ['推荐如下：```json\n', CARD_JSON, '\n```'] },
+  { label: 'prefixed unlabelled fence', parts: ['推荐如下：```\n', CARD_JSON, '\n```'] },
+  {
+    label: 'prefixed other-language fence',
+    parts: ['推荐如下：```javascript\n', CARD_JSON, '\n```'],
+  },
+  { label: 'prefixed object array', parts: ['推荐如下：[', CARD_JSON, ']'] },
+  { label: 'prefixed spaced key', parts: ['推荐如下：{ \n " price " \t', ': 2990}'] },
+  { label: 'prefixed escaped key', parts: ['推荐如下：{"a\\"b":2990}'] },
+  { label: 'prefixed fenced scalar array', parts: ['推荐如下：```json\n[2990, 3000]\n```'] },
+  { label: 'prefixed incomplete fenced array', parts: ['推荐如下：```\n[2990,'] },
 ];
 
 function textRound(parts: readonly string[]): ModelOutcome {
@@ -286,7 +301,7 @@ function formatDeps(rounds: ModelOutcome[], outcomes: ToolOutcome[] = []) {
 }
 
 it.each(STRUCTURED)(
-  '[B3-05b review-codex-r2 S1][BR-AI-06] final-round $label is not delivered; nothing sent yet => models_failed degrade',
+  '[AC-B3-05b-format#1][BR-AI-06] final-round $label is not delivered; nothing sent yet => models_failed degrade',
   async ({ parts }) => {
     const r = formatDeps([textRound(parts)]);
     const out = context();
@@ -302,7 +317,7 @@ it.each(STRUCTURED)(
 );
 
 it.each(STRUCTURED)(
-  '[B3-05b review-codex-r2 S1][BR-AI-06] final-round $label after delivered content: flush and done stop',
+  '[AC-B3-05b-format#2][BR-AI-06] final-round $label after delivered content: flush and done stop',
   async ({ parts }) => {
     const card = {
       type: 'notice',
@@ -333,23 +348,27 @@ it.each(STRUCTURED)(
   },
 );
 
-it('[B3-05b review-codex-r2 S1][BR-AI-06] structured text in a tool round is checked the same way', async () => {
-  const r = formatDeps([
-    modelRound([
-      { t: 'text_delta', text: CARD_JSON },
-      { t: 'tool_call', index: 0, call: call('a', 'search_products', '{}') },
-      { t: 'done', reason: 'tool_calls' },
-    ]),
-  ]);
-  const out = context();
-  expect(await createAgentRunBody(r.deps)(input())(out.ctx)).toEqual({
-    kind: 'done',
-    finishReason: 'fallback',
-  });
-  expect(out.texts).toEqual([]);
-  expect(r.execute).not.toHaveBeenCalled();
-  expect(r.degraded.mock.calls[0]?.[0].reason).toBe('models_failed');
-});
+it.each(STRUCTURED)(
+  '[AC-B3-05b-format#3][BR-AI-06] tool-round $label is rejected before executing tools',
+  async ({ parts }) => {
+    const r = formatDeps([
+      modelRound([
+        ...parts.map((text) => ({ t: 'text_delta' as const, text })),
+        { t: 'tool_call', index: 0, call: call('a', 'search_products', '{}') },
+        { t: 'done', reason: 'tool_calls' },
+      ]),
+    ]);
+    const out = context();
+    expect(await createAgentRunBody(r.deps)(input())(out.ctx)).toEqual({
+      kind: 'done',
+      finishReason: 'fallback',
+    });
+    expect(out.texts).toEqual([]);
+    expect(r.execute).not.toHaveBeenCalled();
+    expect(r.degraded.mock.calls[0]?.[0].reason).toBe('models_failed');
+    expect(r.traces[0]?.model_format_invalid).toBe(true);
+  },
+);
 
 it('[B3-05b review-codex-r2 S1][BR-AI-06] an IntentPort returning null does not let card JSON through', async () => {
   const r = formatDeps([textRound([CARD_JSON])]);
@@ -363,8 +382,12 @@ it('[B3-05b review-codex-r2 S1][BR-AI-06] an IntentPort returning null does not 
   expect(out.texts).toEqual([]);
 });
 
-it.each(['合成说明{约}可看卡片。', '[提示] 合成说明可看卡片。'])(
-  '[B3-05b review-codex-r2 S1][BR-AI-06] ordinary prose with braces or a bracket tag is delivered: %s',
+it.each([
+  '合成说明{约}可看卡片。',
+  '[提示] 合成说明可看卡片。',
+  '合成说明(含税)，{尺码}与[推荐]请看卡片。',
+])(
+  '[AC-B3-05b-format#4][BR-AI-06] ordinary prose with braces or a bracket tag is delivered: %s',
   async (text) => {
     const r = formatDeps([textRound([text])]);
     const out = context();
@@ -390,7 +413,7 @@ it('[B3-05b] the agent_intent rule still wins over the structured-text rule', as
   expect(r.traces[0]?.model_format_invalid).toBe(false);
 });
 
-it('[B3-05b] isStructuredText', () => {
+it('[AC-B3-05b-format#5] isStructuredText', () => {
   expect(isStructuredText(`  ${CARD_JSON}  `)).toBe(true);
   expect(isStructuredText('```\n{"a":1}\n```')).toBe(true);
   expect(isStructuredText('```json\n{"a":1')).toBe(true);
@@ -398,6 +421,6 @@ it('[B3-05b] isStructuredText', () => {
   expect(isStructuredText('[{"a":')).toBe(true);
   expect(isStructuredText('{约}合成')).toBe(true);
   expect(isStructuredText('[提示] 合成')).toBe(false);
-  expect(isStructuredText('合成说明 {"a":1}')).toBe(false);
+  expect(isStructuredText('合成说明 {"a":1}')).toBe(true);
   expect(isStructuredText('')).toBe(false);
 });
