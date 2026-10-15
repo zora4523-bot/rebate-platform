@@ -10,10 +10,10 @@ type: impl
 # 放 ports/（createSameDeviceLoginReader 先例：identity 对外的只读端口）；agent 依 BR-AI-02 ③ 只 import identity index 的只读查询。
 # 分工：清单外新台账（CR3-03），Codex 先写规则测试与只抛 NotImplemented 的骨架，Opus 子代理实现，Codex 新只读会话评审。风险 RV1（identity）。
 # refs_hash 入账前用 node tools/ops/task.ts hash B1-02r 生成并替换下行。
-refs: [BR-AI-13, BR-ID-12]
+# BR-ID-12（同意记录的写入与版本口径）只作指针，不嵌入任务书（任务书 24KB 上限）；规则测试作者按需读 08 原文。
+refs: [BR-AI-13]
 refs_hash:
   BR-AI-13: 870069e3ab76
-  BR-ID-12: 6b0f32dca296
 deps: [B1-02f]
 paths:
   - 'apps/api/src/modules/identity/ports/ai-consent.ts'
