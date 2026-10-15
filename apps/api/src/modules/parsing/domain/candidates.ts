@@ -11,6 +11,12 @@ export interface Candidate {
   readonly index: number;
 }
 
+/** BR-AI-14：与 extractCandidates 同一识别口径，但不截断，供脱敏移出所有候选。 */
+export function findCandidateSpans(text: string): readonly Candidate[] {
+  void text;
+  throw new Error('NotImplemented: findCandidateSpans');
+}
+
 // A URL runs over printable ASCII (0x21-0x7E) minus quotes, backtick and angle brackets, so CJK
 // punctuation, any other non-ASCII character and whitespace end it. A nested "https://" inside a
 // query string stays part of the outer URL (the scan consumes it).
