@@ -134,3 +134,5 @@ export type {
   AdminOperationInput,
   AdminOperationResponse,
 } from './http/admin-guard.ts';
+export { readSingleUpload } from './http/single-upload.ts';
+export type { SingleUpload, SingleUploadRequest } from './http/single-upload.ts';

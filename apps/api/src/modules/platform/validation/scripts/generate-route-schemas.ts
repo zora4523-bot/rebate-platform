@@ -41,8 +41,10 @@ export async function routeSchemasSource(): Promise<string> {
         pathItem?.parameters as readonly ContractParameter[] | undefined,
       );
       // Fail here, not at application start, when a part does not compile in strict mode.
-      for (const [httpPart, partSchema] of Object.entries(schema)) {
-        compiler({ schema: partSchema, httpPart });
+      // `multipart` is a marker (the handler reads the stream), not a schema.
+      for (const httpPart of ['params', 'querystring', 'headers', 'body'] as const) {
+        const partSchema = schema[httpPart];
+        if (partSchema !== undefined) compiler({ schema: partSchema, httpPart });
       }
       schemas[operationId] = schema;
     }

@@ -16,12 +16,16 @@
 //                  properties, required: [the required ones] } (other headers stay allowed:
 //                  no additionalProperties keyword)
 //   - body         `requestBody.content['application/json'].schema`, unchanged
+//   - multipart    `true` when the request body is `required: true` and its content is exactly
+//                  `multipart/form-data` (task F1-06s): no `body` part then, the handler reads
+//                  the stream (platform `readSingleUpload`); a marker, never an Ajv schema
 //   `properties` maps each name to the parameter's `schema`, unchanged; `required` is always
 //   present (possibly empty) and keeps the declaration order, path-item parameters first. There is never a `response` part (it would
 //   silently drop fields; responses are checked in tests). Shapes this module does not support
 //   throw an Error naming the operation: a `cookie` parameter, a parameter whose schema is an
 //   array or an object, a `style` / `explode` / `content` on a parameter, a request body that is
-//   not `required: true`, and request content other than exactly `application/json`.
+//   not `required: true`, and request content other than exactly `application/json` or exactly
+//   `multipart/form-data`.
 //
 // createValidatorCompiler() → the Fastify `validatorCompiler`
 //   Called with { schema, httpPart } (also method and url, unused); returns the compiled
@@ -96,6 +100,8 @@ export interface ContractOperation {
 
 /** Fastify route schema: only the request parts, never `response`. */
 export interface RouteSchema {
+  /** Request-body metadata, not an Ajv schema; the handler consumes the multipart stream. */
+  readonly multipart?: true;
   readonly params?: JsonSchema;
   readonly querystring?: JsonSchema;
   readonly headers?: JsonSchema;
@@ -166,6 +172,7 @@ export function routeSchemaOf(
     groups.set(part, group);
   }
   const result: {
+    multipart?: true;
     params?: JsonSchema;
     querystring?: JsonSchema;
     headers?: JsonSchema;
@@ -183,9 +190,16 @@ export function routeSchemaOf(
   }
   if (operation.requestBody !== undefined) {
     const { required, content } = operation.requestBody;
+    const mediaTypes = Object.keys(content ?? {});
+    if (required === true && mediaTypes.length === 1 && mediaTypes[0] === 'multipart/form-data') {
+      result.multipart = true;
+      return result;
+    }
     const schema = content?.['application/json']?.schema;
     if (required !== true || Object.keys(content ?? {}).length !== 1 || schema === undefined) {
-      return fail('request body must be required and contain only application/json with a schema');
+      return fail(
+        'request body must be required and contain only application/json with a schema, or only multipart/form-data',
+      );
     }
     result.body = schema;
   }

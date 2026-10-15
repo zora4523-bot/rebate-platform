@@ -29,6 +29,12 @@
 //   the HTTP 400 that error-codes.yaml gives 20001; contract task CT-01d declares them in its new
 //   `http_also` field (20001: [413, 415]). Neither the request body nor Fastify's message is
 //   written back or logged.
+// - A refused multipart upload (task F1-06s): UploadRejection of ./single-upload.ts (raised by
+//   readSingleUpload on the admin entry) and the client errors of @fastify/multipart itself
+//   (uploadRejectionOf): 20001 with data.fields ['file'] and HTTP 400 for a bad upload (not
+//   multipart, no part, a part other than one file named `file`, a limit on parts / files / fields),
+//   data.fields ['body'] and HTTP 413 for a file or a whole body above the limit. Neither the
+//   filename nor the content is written back; not logged.
 // - Anything else (any other Error, also one carrying statusCode / status / expose, a thrown string,
 //   object or null, other IdempotencyErrors, Fastify server errors, a reply that cannot be
 //   serialized): one pino `error` line 'unhandled_error' with trace_id, error_class and stack (never
@@ -37,8 +43,9 @@
 //
 // Known exceptions: any other Fastify 4xx error goes through `super.mapException` and becomes an
 // HttpException written back as Nest's { statusCode, message }; with the current code none is raised
-// while a request is handled, so recheck this when adding a Fastify plugin (rate limiting,
-// multipart, ...). If `handlerTimeout` is ever configured, FST_ERR_HANDLER_TIMEOUT (503) lands on
+// while a request is handled (the multipart plugin's client errors are kept by
+// PlatformFastifyAdapter and mapped above), so recheck this when adding a Fastify plugin (rate
+// limiting, ...). If `handlerTimeout` is ever configured, FST_ERR_HANDLER_TIMEOUT (503) lands on
 // 500 / 50001, not 50301.
 //
 // Not imported by ./index.ts: this file uses NestJS, and the `test` project compiles only what the
@@ -50,6 +57,7 @@ import { IdempotencyError, isNestingTooDeep } from '../idempotency/index.ts';
 import type { RootLogger } from '../logging/index.ts';
 import { fieldsErrorEnvelope, validationErrorEnvelope } from '../validation/index.ts';
 import { RequestRejection } from './request-checks.ts';
+import { uploadRejectionOf } from './single-upload.ts';
 
 /** The contract ErrorEnvelope as this filter writes it. */
 export interface ErrorEnvelopeBody {
@@ -115,6 +123,19 @@ export function requestBodyErrorEnvelope(
 }
 
 /**
+ * 20001 naming `file` (HTTP 400) or `body` (HTTP 413) for a refused multipart upload
+ * (uploadRejectionOf of ./single-upload.ts); undefined for any other value.
+ */
+export function uploadErrorEnvelope(error: unknown, traceId: string): ErrorResponse | undefined {
+  const rejection = uploadRejectionOf(error);
+  if (rejection === undefined) return undefined;
+  return {
+    statusCode: rejection.statusCode,
+    body: fieldsErrorEnvelope([rejection.field], traceId).body,
+  };
+}
+
+/**
  * The status and the envelope { code, msg, trace_id } of a RequestRejection with a client status
  * (400–499) and a contract code (10000–99999); undefined for any other value.
  */
@@ -139,14 +160,19 @@ export function errorClass(error: unknown): string {
  * The Fastify adapter of the HTTP entries. Nest's FastifyAdapter turns every Fastify error carrying a
  * status into `HttpException(message, status)` before any filter sees it: the Fastify code would be
  * lost and the message written back as `{ statusCode, message }`. This adapter keeps request body
- * errors (FST_ERR_CTP_*, 4xx) and Fastify errors with a status of 500 or above as they are, so that
+ * errors (FST_ERR_CTP_*, 4xx), the multipart plugin's client errors and Fastify errors with a status of 500 or above as they are, so that
  * `GlobalErrorFilter` answers them with the contract envelope; any other Fastify error is mapped as
  * Nest does.
  */
 export class PlatformFastifyAdapter extends FastifyAdapter {
   override mapException(error: unknown): unknown {
     const fastify = asFastifyError(error);
-    if (fastify === undefined || isRequestBodyError(fastify) || fastify.statusCode >= 500) {
+    if (
+      fastify === undefined ||
+      isRequestBodyError(fastify) ||
+      uploadRejectionOf(fastify) !== undefined ||
+      fastify.statusCode >= 500
+    ) {
       return error;
     }
     return super.mapException(error);
@@ -196,6 +222,7 @@ export class GlobalErrorFilter extends BaseExceptionFilter<unknown> {
       requestRejectionEnvelope(error, traceId) ??
       validationErrorEnvelope(error, traceId) ??
       requestBodyErrorEnvelope(error, traceId) ??
+      uploadErrorEnvelope(error, traceId) ??
       this.#unhandled(error, traceId);
     const reply = http.getResponse<unknown>();
     if (this.#adapter.isHeadersSent(reply)) {
