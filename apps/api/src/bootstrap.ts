@@ -2,6 +2,7 @@
 // files decide whether to listen, and tests drive HTTP entries through Fastify `inject`.
 import 'reflect-metadata';
 import type { IncomingMessage } from 'node:http';
+import { fastifyMultipart } from '@fastify/multipart';
 import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -79,7 +80,8 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
  * optional / login / phone / realname) on an entry whose plan has no token check, and a contract
  * route at an admin level (x-auth admin / super) on an entry whose plan has no admin check (api
  * and stream), cannot be registered (the entry does not start). The admin entry also answers the
- * console's CORS requests (exact origin only, F1-06k).
+ * console's CORS requests (exact origin only, F1-06k) and accepts multipart/form-data bodies
+ * (F1-06s): see `installAdminMultipart`; api and stream keep refusing them (415 / 20001).
  */
 export async function createHttpApp(
   entry: HttpEntry,
@@ -179,6 +181,7 @@ export async function createHttpApp(
     // The console's CORS (02 §3.4): before the checks, so a preflight is answered by origin.
     if (entry === 'admin') {
       installAdminCors(server, app.get<AdminHttpPolicy>(ADMIN_HTTP_POLICY));
+      await installAdminMultipart(app);
     }
     installRequestChecks(server, plan.checks, plan.bufferWhen);
     return app;
@@ -190,6 +193,23 @@ export async function createHttpApp(
     await overrides.dbHandles?.close();
     throw error;
   }
+}
+
+/**
+ * The admin entry's multipart/form-data support (F1-06s): @fastify/multipart only marks the request
+ * as multipart while the body is "parsed" (nothing is read, `request.body` stays undefined), so the
+ * route's guards run before any upload byte is consumed; the handler then reads the one file with
+ * platform `readSingleUpload`, which also enforces the whole-body limit. Limits: one file, no
+ * ordinary field, one part, and a file no larger than Fastify's bodyLimit (the default 1 MiB,
+ * unchanged), set explicitly.
+ */
+async function installAdminMultipart(app: NestFastifyApplication): Promise<void> {
+  const bodyLimit = app.getHttpAdapter().getInstance().initialConfig.bodyLimit;
+  if (bodyLimit === undefined) throw new Error('Fastify reports no bodyLimit');
+  await app.register(fastifyMultipart, {
+    attachFieldsToBody: false,
+    limits: { files: 1, fields: 0, parts: 1, fileSize: bodyLimit },
+  });
 }
 
 /**

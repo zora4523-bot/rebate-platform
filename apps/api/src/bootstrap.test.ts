@@ -60,6 +60,18 @@ describe('createHttpApp', () => {
     expect(app.get(ROOT_LOGGER)).toBe(given.logger);
     await app.close();
   });
+
+  it.each(HTTP_ENTRIES)(
+    '[AC-F1-06s] only the admin entry parses multipart/form-data (%s)',
+    async (entry) => {
+      const app = await createHttpApp(entry, overrides(entry));
+      await app.init();
+      const server = app.getHttpAdapter().getInstance();
+      expect(server.hasContentTypeParser('multipart/form-data')).toBe(entry === 'admin');
+      expect(server.initialConfig.bodyLimit).toBe(1_048_576);
+      await app.close();
+    },
+  );
 });
 
 describe('createWorkerContext', () => {
