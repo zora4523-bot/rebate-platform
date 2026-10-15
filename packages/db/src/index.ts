@@ -44,20 +44,53 @@ function int8AsBigInt(): pg.TypeOverrides {
   return overrides;
 }
 
-// A disconnected backend surfaces as an 'error' event: on the pool while the client is idle,
-// and on the client itself while it is checked out (pg-pool only listens to idle clients).
-// Neither emitter may be left without a listener, or Node turns the event into an uncaught
-// exception. The listeners only absorb the event: pg-pool already drops an idle client that
-// errors, and drops a checked-out one on release because it is no longer queryable, so
-// releasing, destroying or rebuilding anything here would double-handle it. The query that
-// was running, or the next one on that lease, still rejects through its own promise.
-// This package has no logger, so nothing is reported here.
+// pg-pool keeps a released client unless it is `!_queryable` or `_ending`, so a dead backend
+// must leave the default client unqueryable before it goes back. It reaches the client in one
+// of two ways:
+// - As an 'error' event: the socket failed or closed, or a FATAL arrived with no query running.
+//   pg marks the client unqueryable before emitting. pg-pool only listens to idle clients, so a
+//   checked-out client needs its own listener, or Node turns the event into an uncaught
+//   exception; the pool listener covers idle clients, which pg-pool already drops.
+// - As the error of the query that was running when the server sent FATAL (for example
+//   pg_terminate_backend while a statement is in flight). pg rejects that query but leaves the
+//   client queryable until the socket closes later, so a caller that catches the error and
+//   releases normally would hand the dead connection to the next borrower. Such errors are
+//   recognised from the ErrorResponse itself (isConnectionLevel) and mark the client before the
+//   query rejects.
+// Ordinary statement errors (unique violation, division by zero, serialization failure) leave
+// the session usable: the client stays queryable for the rest of the lease and is reused after
+// release. Nothing here releases, destroys or rebuilds anything, which would double-handle
+// pg-pool's own cleanup; the failing query, or the next one on that lease, still rejects
+// through its own promise. This package has no logger, so nothing is reported here.
+const CONNECTION_LEVEL_SQLSTATES = new Set(['57P01', '57P02', '57P03']);
+
+type ErrorResponse = { severity?: string; code?: string };
+
+function isConnectionLevel(message: ErrorResponse): boolean {
+  // `severity` is the localized S field; the SQLSTATE also covers non-English server messages.
+  if (message.severity === 'FATAL' || message.severity === 'PANIC') return true;
+  const code = message.code ?? '';
+  return code.startsWith('08') || CONNECTION_LEVEL_SQLSTATES.has(code);
+}
+
 function ignoreConnectionError(): void {}
 
 class DefaultClient extends pg.Client {
   constructor(clientConfig?: pg.ClientConfig) {
     super(clientConfig);
-    this.on('error', ignoreConnectionError);
+    // Registered before pg attaches its own handler on connect, so the client is already
+    // unqueryable when the running query's callback rejects.
+    this.connection.on('errorMessage', (message: ErrorResponse) => {
+      if (isConnectionLevel(message)) this.discardOnRelease();
+    });
+    this.on('error', () => {
+      this.discardOnRelease();
+    });
+  }
+
+  /** pg-pool removes a client that is not queryable when it is released. */
+  private discardOnRelease(): void {
+    (this as unknown as { _queryable: boolean })._queryable = false;
   }
 }
 
