@@ -110,3 +110,23 @@ it('[AC-B3-03i#6][BR-AI-12] 按调用方的 app_id 读配置：另一品牌关�
   expect(await port.check(guest(APP)), 'disabled app').toEqual({ code: 30501 });
   expect(await port.check(listed), 'other app unaffected').toBeNull();
 });
+
+it('[AC-B3-03i#30][BR-AI-12] 同一端口实例：配置在两次调用之间变化 → 第二次按新值（开 → 关 → 开、全开放 → 名单、名单增删），不缓存上一次的结论', async () => {
+  const config = openConfig();
+  const port = createAgentAccessPort({ reader: config });
+  const user = member({ phoneBound: true });
+  const visitor = guest();
+  expect(await port.check(user), 'open').toBeNull();
+  config.set(APP, 'agent.enabled', false);
+  expect(await port.check(user), 'switched off').toEqual({ code: 30501 });
+  config.set(APP, 'agent.enabled', true);
+  expect(await port.check(user), 'switched on again').toBeNull();
+  expect(await port.check(visitor), 'guest while open').toBeNull();
+  config.set(APP, 'agent.whitelist_only', true);
+  expect(await port.check(visitor), 'guest under whitelist').toEqual({ code: 30501 });
+  expect(await port.check(user), 'not listed yet').toEqual({ code: 30501 });
+  config.set(APP, 'agent.whitelist_user_ids', [user.userId]);
+  expect(await port.check(user), 'listed').toBeNull();
+  config.set(APP, 'agent.whitelist_user_ids', []);
+  expect(await port.check(user), 'removed from the list').toEqual({ code: 30501 });
+});

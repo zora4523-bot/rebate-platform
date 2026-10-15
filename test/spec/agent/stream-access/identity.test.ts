@@ -78,3 +78,24 @@ it('[AC-B3-03i#10][BR-AI-11] 按调用方的 app_id 读开关；读取失败时�
     expect({ who, rejected, answer }).toEqual({ who, rejected: true, answer: 'not settled' });
   }
 });
+
+it('[AC-B3-03i#31][BR-AI-11][BR-ID-03] 同一端口实例：开关在两次调用之间变化 → 第二次按新值（require_phone 关 → 开 → 关；guest_daily_quota 3 → 0 → 3），不缓存上一次的结论', async () => {
+  const config = new FakeConfig()
+    .set(APP, 'agent.require_phone', false)
+    .set(APP, 'agent.guest_daily_quota', 3);
+  const port = createAgentIdentityPort({ reader: config });
+  const unbound = caller('unbound');
+  const visitor = caller('guest');
+  expect(await port.check(unbound), 'off').toBeNull();
+  expect(await port.check(visitor), 'off, guest').toBeNull();
+  config.set(APP, 'agent.require_phone', true);
+  expect(await port.check(unbound), 'on').toEqual({ code: 10005 });
+  expect(await port.check(visitor), 'on, guest').toEqual({ code: 10001 });
+  config.set(APP, 'agent.require_phone', false);
+  expect(await port.check(unbound), 'off again').toBeNull();
+  expect(await port.check(visitor), 'off again, guest').toBeNull();
+  config.set(APP, 'agent.guest_daily_quota', 0);
+  expect(await port.check(visitor), 'quota 0').toEqual({ code: 10001 });
+  config.set(APP, 'agent.guest_daily_quota', 3);
+  expect(await port.check(visitor), 'quota 3 again').toBeNull();
+});

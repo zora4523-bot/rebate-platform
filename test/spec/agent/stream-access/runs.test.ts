@@ -159,3 +159,57 @@ it('[AC-B3-03i#26][BR-AI-12][BR-AI-13] 只增不改：不传 guardFor（或 RunS
   expect(fresh.guard.checks, 'the shared guard is not consulted').toBe(0);
   await finishNormally(fresh, withApp);
 });
+
+it('[AC-B3-03i#32][BR-AI-12][BR-AI-13] G-1 跨应用：同一 RunManager、同一守卫工厂，应用 A、B 的 run 并发（同一 ownerKey）；A 关 agent.enabled → A 10 秒内以 30501 结束，B 正常结束；guardFor 每个 run 恰调用一次，收到各自的 appId 与 ownerKey', async () => {
+  const version = new FakeVersion();
+  const consent = new FakeConsent(version.source);
+  const config = openConfig(APP)
+    .set(OTHER_APP, 'agent.enabled', true)
+    .set(OTHER_APP, 'agent.whitelist_only', false)
+    .set(OTHER_APP, 'agent.whitelist_user_ids', []);
+  const r = multiRig({
+    guardFor: createRunGuardFactory({ reader: config, consent, version: version.source }),
+  });
+  const ownerKey = `u:${newId()}`;
+  const a = r.start(ownerKey, APP);
+  const b = r.start(ownerKey, OTHER_APP);
+  await r.time.to(1_000);
+  expect([a.settled(), b.settled()]).toEqual([false, false]);
+  config.set(APP, 'agent.enabled', false);
+  await r.time.to(1_000 + DEADLINE_MS);
+  expect(a.settled(), 'A ended within 10 s').toBe(true);
+  expect((await a.promise).ending).toBe('disabled');
+  expect(lastFrame(a)).toEqual(refusal(30501));
+  await finishNormally(r, b);
+  expect(r.guardForCalls).toHaveLength(2);
+  expect(r.guardForCalls).toEqual(
+    expect.arrayContaining([
+      { appId: APP, ownerKey, runId: a.ticket.runId },
+      { appId: OTHER_APP, ownerKey, runId: b.ticket.runId },
+    ]),
+  );
+  expect(r.guard.checks).toBe(0);
+});
+
+it('[AC-B3-03i#33][BR-AI-13] G-1 跨应用：同一用户在应用 A 撤回同意、在 B 仍同意 → 只有 A 的 run 10 秒内以 10004 结束，B 的 run 正常结束（守卫按各自 app 查同意）', async () => {
+  const version = new FakeVersion();
+  const consent = new FakeConsent(version.source);
+  const config = openConfig(APP)
+    .set(OTHER_APP, 'agent.enabled', true)
+    .set(OTHER_APP, 'agent.whitelist_only', false);
+  const r = multiRig({
+    guardFor: createRunGuardFactory({ reader: config, consent, version: version.source }),
+  });
+  const userId = newId();
+  const b = r.start(`u:${userId}`, OTHER_APP);
+  const a = r.start(`u:${userId}`, APP);
+  await r.time.to(1_000);
+  consent.refuseUser(APP, userId, 'withdrawn');
+  await r.time.to(1_000 + DEADLINE_MS);
+  expect(a.settled(), 'A ended within 10 s').toBe(true);
+  expect((await a.promise).ending).toBe('consent_withdrawn');
+  expect(lastFrame(a)).toEqual(refusal(10004));
+  await finishNormally(r, b);
+  expect(consent.calls.some((s) => s.appId === OTHER_APP && s.userId === userId)).toBe(true);
+  expect(r.guardForCalls).toHaveLength(2);
+});

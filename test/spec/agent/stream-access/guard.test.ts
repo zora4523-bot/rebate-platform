@@ -118,3 +118,40 @@ it('[AC-B3-03i#22][BR-AI-13] 每个守卫只查自己 run 的主体：A 撤回�
     null,
   ]);
 });
+
+it('[AC-B3-03i#34][BR-AI-12][BR-AI-13] 同一工厂实例交替为两个应用造守卫：各自读自己 app 的配置与同意（A 关、B 开；随后 A 开、B 关），不绑定第一次调用的 appId', async () => {
+  const s = setup(
+    openConfig(APP)
+      .set(OTHER_APP, 'agent.enabled', true)
+      .set(OTHER_APP, 'agent.whitelist_only', false),
+  );
+  s.config.set(APP, 'agent.enabled', false);
+  const ownerKey = `u:${newId()}`;
+  const a1 = s.guardFor({ appId: APP, ownerKey, runId: newId() });
+  const b1 = s.guardFor({ appId: OTHER_APP, ownerKey, runId: newId() });
+  const a2 = s.guardFor({ appId: APP, ownerKey: `d:${newId()}`, runId: newId() });
+  const b2 = s.guardFor({ appId: OTHER_APP, ownerKey: `d:${newId()}`, runId: newId() });
+  for (const [name, guard, app, expected] of [
+    ['a1', a1, APP, { code: 30501 }],
+    ['b1', b1, OTHER_APP, null],
+    ['a2', a2, APP, { code: 30501 }],
+    ['b2', b2, OTHER_APP, null],
+  ] as const) {
+    const asked = s.config.asked.length;
+    const consulted = s.consent.calls.length;
+    expect(await guard.check(), name).toEqual(expected);
+    const reads = s.config.asked.slice(asked);
+    expect(reads.length, `${name} reads its configuration`).toBeGreaterThan(0);
+    for (const read of reads) expect(read.startsWith(`${app}:`), `${name}: ${read}`).toBe(true);
+    for (const subject of s.consent.calls.slice(consulted)) {
+      expect(subject.appId, `${name} consent app`).toBe(app);
+    }
+  }
+  s.config.set(APP, 'agent.enabled', true).set(OTHER_APP, 'agent.enabled', false);
+  expect([await a1.check(), await b1.check(), await a2.check(), await b2.check()]).toEqual([
+    null,
+    { code: 30501 },
+    null,
+    { code: 30501 },
+  ]);
+});

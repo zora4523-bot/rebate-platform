@@ -131,6 +131,13 @@ export class FakeConsent implements AgentConsentReader {
   refuseDevice(appId: string, deviceId: string, reason: Reason): void {
     this.#refused.set(`${appId}|d:${deviceId}`, reason);
   }
+  /** The subject's latest record becomes a valid consent again (e.g. consented once more). */
+  allowUser(appId: string, userId: string): void {
+    this.#refused.delete(`${appId}|u:${userId}`);
+  }
+  allowDevice(appId: string, deviceId: string): void {
+    this.#refused.delete(`${appId}|d:${deviceId}`);
+  }
   async check(subject: AiConsentSubject): Promise<AiConsentVerdict> {
     this.calls.push(structuredClone(subject));
     const version = await this.currentVersion(subject.appId);
