@@ -1,0 +1,117 @@
+{
+  "task": "F1-06u",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "8dbc8b47558c78d11c152ae0bec1f8109f80eeaa",
+  "red_tests": [
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#2] 未勾权限优先返回 10403，不执行业务也不核销所带令牌",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#3] 使用已验证身份与账号表登录名，忽略客户端伪造身份",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#4] 超管未勾任何点也能执行，但不能绕过二次验证",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#5] totp 权限缺少令牌时按实际请求 trace_id 返回 10003",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#6] HTTP 签发的 totp 令牌可执行一次成功业务，成功后不能重用",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#6] HTTP 签发的 sms 令牌可执行一次成功业务，成功后不能重用",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#7] null 档忽略无效令牌，也不核销所带有效令牌",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#8] 短信档读取验证手机号登记状态，超管=false 也不能省略",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#8] 短信档读取验证手机号登记状态，超管=true 也不能省略",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#9] 传递操作 content.app_version / content.app_version.raise_min_supported_version 的例外档位 totp",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#9] 传递操作 fund.recon / fund.recon.balance_recalc 的例外档位 sms",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#10] 后台令牌检查通过后账号被停用，端口重新读取并拒绝",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#11] 每次重新读勾选权限，撤销权限后同一登录会话不能继续执行",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#12] 缺少服务端后台身份是编程错误，即使携带合法 Authorization 也不自行补鉴权",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#13] 身份对应账号 missing 时返回 10001，不能跨 app_id 读取账号",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#13] 身份对应账号 other-app 时返回 10001，不能跨 app_id 读取账号",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#14] 后台鉴权之后数据库读取失败，按请求返回 50001",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#15] 后台鉴权之后 Redis 不可用，需 step-up 的请求不能执行",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#16] 同账号的另一登录会话不能使用原会话签发的令牌，拒绝不核销",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#17] 原样传回业务 HTTP 200 / code 20001，失败响应不核销令牌",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#17] 原样传回业务 HTTP 409 / code 0，失败响应不核销令牌",
+    "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#18] 业务抛错由全局错误处理返回 50001，令牌仍能用于一次成功业务",
+    "test/spec/admin/guard-mount/mount.test.ts > [AC-F1-06u#1] platform 类令牌全局注入到独立业务模块，仅 admin 入口提供",
+    "test/spec/admin/guard-mount/mount.test.ts > [AC-F1-06u#19] 没有数据库和 Redis 也能启动 admin，但依赖它们的请求返回 50001"
+  ],
+  "risk_note": "RV2 (admin authorization boundary). Platform port AdminOperationGuard (abstract class, also the Nest token; exported from platform/index.ts only, platform/http/index.ts keeps type exports because its runtime exports are frozen by wiring-nest) for the admin operations of business modules (02 §4.1), implemented by admin and provided on the admin entry only (AdminAuthModule global there; api / stream do not provide it). Each call re-reads admin_users and admin_permissions (no caching), runs F1-06l's createAdminPermissionGuard (10403 admin_permission_denied, step-up tier 10003, token claim and consume), then business(actor) with isSuper and loginName from the fresh row; missing or inactive account 10001; no admin principal, database or Redis failure 50001 (never allows). No contract change, no business route mounted yet (F1-06w first). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "8dbc8b47558c78d11c152ae0bec1f8109f80eeaa",
+      "tree": "91796f219e505ebbe5b7216684d76389086b63ea",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-15T12:26:47Z",
+      "finished_at": "2026-10-15T12:27:10Z",
+      "red_tests": [
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#2] 未勾权限优先返回 10403，不执行业务也不核销所带令牌",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#3] 使用已验证身份与账号表登录名，忽略客户端伪造身份",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#4] 超管未勾任何点也能执行，但不能绕过二次验证",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#5] totp 权限缺少令牌时按实际请求 trace_id 返回 10003",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#6] HTTP 签发的 totp 令牌可执行一次成功业务，成功后不能重用",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#6] HTTP 签发的 sms 令牌可执行一次成功业务，成功后不能重用",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#7] null 档忽略无效令牌，也不核销所带有效令牌",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#8] 短信档读取验证手机号登记状态，超管=false 也不能省略",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#8] 短信档读取验证手机号登记状态，超管=true 也不能省略",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#9] 传递操作 content.app_version / content.app_version.raise_min_supported_version 的例外档位 totp",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#9] 传递操作 fund.recon / fund.recon.balance_recalc 的例外档位 sms",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#10] 后台令牌检查通过后账号被停用，端口重新读取并拒绝",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#11] 每次重新读勾选权限，撤销权限后同一登录会话不能继续执行",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#12] 缺少服务端后台身份是编程错误，即使携带合法 Authorization 也不自行补鉴权",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#13] 身份对应账号 missing 时返回 10001，不能跨 app_id 读取账号",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#13] 身份对应账号 other-app 时返回 10001，不能跨 app_id 读取账号",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#14] 后台鉴权之后数据库读取失败，按请求返回 50001",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#15] 后台鉴权之后 Redis 不可用，需 step-up 的请求不能执行",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#16] 同账号的另一登录会话不能使用原会话签发的令牌，拒绝不核销",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#17] 原样传回业务 HTTP 200 / code 20001，失败响应不核销令牌",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#17] 原样传回业务 HTTP 409 / code 0，失败响应不核销令牌",
+        "test/spec/admin/guard-mount/guard.int.test.ts > [AC-F1-06u#18] 业务抛错由全局错误处理返回 50001，令牌仍能用于一次成功业务",
+        "test/spec/admin/guard-mount/mount.test.ts > [AC-F1-06u#1] platform 类令牌全局注入到独立业务模块，仅 admin 入口提供",
+        "test/spec/admin/guard-mount/mount.test.ts > [AC-F1-06u#19] 没有数据库和 Redis 也能启动 admin，但依赖它们的请求返回 50001"
+      ],
+      "expected": [
+        "test/spec/admin/guard-mount/guard.int.test.ts",
+        "test/spec/admin/guard-mount/mount.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "d819341e1b9c04d74c516275153dbd906dfefabd138055264102fb784aed25c7"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "46ff3264b3132b6da8133d9e6b05183e64b26928d11109d2fdbe381e36faf6a7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass with no findings (ce764a5); round 2 pass with no findings after the test-fix commit and dropping the runtime re-export from platform/http/index.ts"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "24 rule tests by Codex (3 runs: run 1 rejected by the skeleton guard for a top-level Symbol constant the brief had allowed; run 2 written; run 3 fixed review S2s before freezing: the probe picks an unregistered contract admin route instead of platform-icons, DB outage at the pool). Fresh Claude subagents: round 1 pass (S2x3; its JSON failed validation on one key format, not used as evidence), round 2 pass (S2x1 tracked in followups). The orchestrator then dropped one kit assertion that conflicted with frozen test/spec/platform/crypto/wiring-nest.test.ts (platform/http/index.ts re-export), reviewed by a fresh Claude subagent: pass."
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "699bfd51ece956aacadc2457033d46a5ec3e1f17",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  }
+}
