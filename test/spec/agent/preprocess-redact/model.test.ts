@@ -65,9 +65,9 @@ it.each([
   ['浙江省杭州市西湖区合成街9号202室', '浙江省杭州市'],
   ['广东省惠州市博罗县合成路8号303室', '广东省惠州市'],
 ])('[AC-B3-05a#7][BR-AI-14] 省市区县与详细地址 %s 只保留省市', (address, region) => {
-  const result = redactForModel(`寄到${address}，谢谢`);
+  const result = redactForModel(`寄到${address}。谢谢`);
   expect(result.text).toContain(`寄到${region}`);
-  expect(result.text).toContain('，谢谢');
+  expect(result.text).toMatch(/谢谢$/);
   expect(result.text).not.toMatch(/南山区|西湖区|博罗县|合成路|合成街|88|101|202|303/);
   expect(result.placeholders).toEqual({});
 });

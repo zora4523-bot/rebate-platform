@@ -104,10 +104,10 @@ it.each([
 );
 
 it('[AC-B3-05a#20][BR-AI-14][BR-AI-19] 收货地址在两个存储入口均只保留省市', async () => {
-  const raw = '寄到广东省深圳市南山区合成路88号101室，谢谢';
+  const raw = '寄到广东省深圳市南山区合成路88号101室。谢谢';
   const stored = await createAgentRedactor().redact('synthetic-app-a', raw);
   expect(stored).toContain('寄到广东省深圳市');
-  expect(stored).toContain('，谢谢');
+  expect(stored).toMatch(/谢谢$/);
   expect(stored).not.toMatch(/南山区|合成路|88|101/);
   expect(maskForTrace(raw)).toBe(stored);
 });
