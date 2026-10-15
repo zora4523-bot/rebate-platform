@@ -1,4 +1,11 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { createAiConsentReader } from './ports/ai-consent.ts';
+export type {
+  AiConsentSubject,
+  AiConsentVerdict,
+  AiConsentReader,
+  AiConsentReaderOptions,
+} from './ports/ai-consent.ts';
 export { createSameDeviceLoginReader } from './ports/same-device-logins.ts';
 export {
   createIdentityViewerContext,
