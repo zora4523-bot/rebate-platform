@@ -1,0 +1,28 @@
+id: B1-04y
+repo: rebate-platform
+title: 拼多多 staging 接线（不切 live）：compose 给 api、worker 只读挂载节点 /etc/couli-pdd（create_host_path，可缺）；loadConfig 增可选 UNION_ENDPOINT_OVERRIDE_DIR（绝对路径，只 staging 认）让 UNION_ENDPOINTS 工厂改从该目录读端点；README 写明节点准备步骤，并写明「pdd 切 live 暂不可用 — blocked on 真实返利报价器（B2-03）」
+type: impl
+# 草稿 2026-10-15，按 #499 评审（PDD-lane/review-ledger-b104y.md：2 S1、5 S2）改写。来源：B1-04t 只做应用侧装配；镜像内 config/union-endpoints/pdd.json 为 demo，staging 没有改端点模式的入口；compose 现只挂 /etc/pki、/etc/couli-keys、/etc/couli-jwt。
+# 关键约束（评审 S1-1）：api 入口只要任一联盟端点为 live 就按 live 装配，演示返利报价器在 live 下拒绝（catalog/application/card-assembler.ts；受保护测试 test/spec/catalog/card/demo-quote.test.ts 要求 staging + live 必须抛错）——这是资金安全设计，真实报价器归 B2-03。所以本任务只接线、不切 live，README 不写让负责人照做的切换步骤。
+# 做法：① infra/staging/compose.yaml：只 api 与 worker（app.module 里装配 UnionModule 的入口）加一个只读挂载：节点 /etc/couli-pdd → 容器 /run/couli-pdd，长语法加 bind.create_host_path: true，必须用块状写法（`bind:` 换行缩进写 `create_host_path: true`；流式 `{ … }` 会让受保护测试的 yaml-lite 解析器报错）（节点没有该目录时部署照常；不改 deploy.sh 存在性检查——受保护的 current-compose-validation / dirty-recovery 夹具只替换固定 8 个节点路径）；挂载源不得落在 /etc/couli/ 下；不加 environment 里的凭据变量（PDD_CLIENT_SECRET_FILE 只放 staging.env）。② loadConfig：可选 UNION_ENDPOINT_OVERRIDE_DIR（绝对路径；只 APP_ENV=staging 认，其他环境设了即 ConfigError；只检查是否绝对路径，不检查目录或文件是否存在——staging.env 四个进程共用，stream、admin 没有该挂载；只在设了值时产生问题项，wiring-config 对问题清单精确比对）；UNION_ENDPOINTS 工厂在设了它时从该目录读三平台端点（jd、pdd、taobao 同样校验；prod 仍拒 demo / replay），否则用镜像内目录；UNION_REGISTRY 的 4 个注入不变。③ infra/staging/README.md 补「拼多多（准备，不切 live）」一节：节点 /etc/couli-pdd/client_secret（属主 1000、文件 400、目录 500，由负责人放入，内容不进命令行与环境变量，文档里不出现「client_secret: / = 值」写法）、/etc/couli-pdd/union-endpoints/{jd,pdd,taobao}.json（子目录与文件属主 1000、目录 500、文件 400；三个文件现在都保持 demo，pdd.json 也不例外）；先放好文件再在 staging.env 设变量；staging.env 变量名 PDD_CLIENT_ID、PDD_CLIENT_SECRET_FILE=/run/couli-pdd/client_secret、PDD_QUERY_CUSTOM_PARAMETERS、UNION_ENDPOINT_OVERRIDE_DIR=/run/couli-pdd/union-endpoints；写明「pdd 切 live 暂不可用 — blocked on 真实返利报价器（B2-03）」；IP 白名单只加不删。
+# 不在本任务：节点上放文件、切 live、推广位登记（union-pids.ts，需 super + TOTP）。
+# 风险：infra/staging 与 platform/config → RV2。与 B1-04x（platform/config、union.module.ts）串行。
+refs: []
+refs_hash: {}
+deps: [B1-04x]
+paths:
+  - 'infra/staging/compose.yaml'
+  - 'infra/staging/README.md'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/union/union.module.ts'
+  - 'apps/api/src/modules/union/union.module.test.ts'
+  - '.env.example'
+test_paths:
+  - 'test/spec/infra/staging-pdd/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/infra/staging-pdd/**'
+status: todo
+pr: null
