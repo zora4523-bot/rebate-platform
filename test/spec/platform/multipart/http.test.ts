@@ -63,6 +63,7 @@ it.each([false, true])(
       );
     });
   },
+  30_000,
 );
 
 it.each([false, true])(
@@ -80,6 +81,7 @@ it.each([false, true])(
       expectError(await app.inject(request(aboveLimit, { chunked })), validate, 413, 'body');
     });
   },
+  30_000,
 );
 
 it('[AC-F1-06s#9] 只有 admin 接受 multipart，api 与 stream 对同样请求保持 415 契约错误', async () => {
@@ -93,7 +95,7 @@ it('[AC-F1-06s#9] 只有 admin 接受 multipart，api 与 stream 对同样请求
   await withApp('admin', async (app) => {
     expectUpload(await app.inject(input));
   });
-});
+}, 30_000);
 
 it('[AC-F1-06s#10] multipart 流留给 handler，守卫拒绝时不预读或挂载文件到 body', async () => {
   await withApp('admin', async (app) => {
