@@ -1,0 +1,150 @@
+{
+  "task": "B1-04y",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "8d8dae39de7be9854e666aa1b1cddae7a31a719d",
+  "red_tests": [
+    "test/spec/infra/staging-pdd/compose.test.ts > [AC-B1-04y-COMPOSE#1] api 只读挂载可缺的节点拼多多目录，bind 使用块状长语法",
+    "test/spec/infra/staging-pdd/compose.test.ts > [AC-B1-04y-COMPOSE#1] worker 只读挂载可缺的节点拼多多目录，bind 使用块状长语法",
+    "test/spec/infra/staging-pdd/compose.test.ts > [AC-B1-04y-COMPOSE#2] 拼多多目录只给 api/worker，不在 compose 注入凭据或新增部署文件存在性门槛",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#1] staging 保留绝对路径，不检查目录或端点文件是否存在",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#2] local 设置覆盖目录即拒绝，未设置或空字符串保持可选",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#2] test 设置覆盖目录即拒绝，未设置或空字符串保持可选",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#2] prod 设置覆盖目录即拒绝，未设置或空字符串保持可选",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"relative/endpoints\"",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"./endpoints\"",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"../endpoints\"",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"~/endpoints\"",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"   \"",
+    "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#4] 其他字段出错仍汇总覆盖目录问题；未设值不增添问题项",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#1] 覆盖目录的三个 demo 端点被实际读取，缺省仍读镜像目录且注册表注入不变",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#2] 两个配置各读自己的目录，不缓存首个目录或合并镜像端点",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#3] loadConfig 接受缺目录，但联盟启动必须失败，不能静默退回镜像 demo",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 missing 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 bad-json 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 wrong-platform 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 bad-mode 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 bad-url 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 extra-key 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 missing 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 bad-json 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 wrong-platform 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 bad-mode 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 bad-url 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 extra-key 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 missing 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 bad-json 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 wrong-platform 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 bad-mode 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 bad-url 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 extra-key 必须通过同样的端点校验",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#5] staging 覆盖读取 demo 不绕过校验，prod 原目录入口仍拒绝该模式",
+    "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#5] staging 覆盖读取 replay 不绕过校验，prod 原目录入口仍拒绝该模式",
+    "test/spec/infra/staging-pdd/readme.test.ts > [AC-B1-04y-README#1] 明示准备而不切 live，三个端点保持 demo，IP 白名单只加不删",
+    "test/spec/infra/staging-pdd/readme.test.ts > [AC-B1-04y-README#2] 节点文件由负责人准备，说明属主及目录/文件权限，不把内容放进命令行或环境变量",
+    "test/spec/infra/staging-pdd/readme.test.ts > [AC-B1-04y-README#3] 先备齐文件再配置共享 staging.env，给出四项变量及容器内路径"
+  ],
+  "risk_note": "RV2 (infra/staging and platform/config). Pinduoduo staging wiring without switching to live: api / worker read-only mount of /etc/couli-pdd (block-style create_host_path), staging-only UNION_ENDPOINT_OVERRIDE_DIR (absolute path only) read by the UNION_ENDPOINTS factory for jd / pdd / taobao with the same validation (prod still refuses demo / replay), registry injections unchanged; README node preparation with live blocked on the real rebate quoter (B2-03), all endpoints kept demo. approvals 28. Written by hand.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "8d8dae39de7be9854e666aa1b1cddae7a31a719d",
+      "tree": "9924e4a45002a84a9f320e2cc9b4ac8c03015b8c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-15T12:37:54Z",
+      "finished_at": "2026-10-15T12:37:58Z",
+      "gate": {
+        "commit": "610ab26705bea949eeef908b6044ede1a225323e",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/infra/staging-pdd/compose.test.ts > [AC-B1-04y-COMPOSE#1] api 只读挂载可缺的节点拼多多目录，bind 使用块状长语法",
+        "test/spec/infra/staging-pdd/compose.test.ts > [AC-B1-04y-COMPOSE#1] worker 只读挂载可缺的节点拼多多目录，bind 使用块状长语法",
+        "test/spec/infra/staging-pdd/compose.test.ts > [AC-B1-04y-COMPOSE#2] 拼多多目录只给 api/worker，不在 compose 注入凭据或新增部署文件存在性门槛",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#1] staging 保留绝对路径，不检查目录或端点文件是否存在",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#2] local 设置覆盖目录即拒绝，未设置或空字符串保持可选",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#2] test 设置覆盖目录即拒绝，未设置或空字符串保持可选",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#2] prod 设置覆盖目录即拒绝，未设置或空字符串保持可选",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"relative/endpoints\"",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"./endpoints\"",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"../endpoints\"",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"~/endpoints\"",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#3] staging 拒绝非绝对路径 \"   \"",
+        "test/spec/infra/staging-pdd/config.test.ts > [AC-B1-04y-CONFIG#4] 其他字段出错仍汇总覆盖目录问题；未设值不增添问题项",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#1] 覆盖目录的三个 demo 端点被实际读取，缺省仍读镜像目录且注册表注入不变",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#2] 两个配置各读自己的目录，不缓存首个目录或合并镜像端点",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#3] loadConfig 接受缺目录，但联盟启动必须失败，不能静默退回镜像 demo",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 missing 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 bad-json 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 wrong-platform 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 bad-mode 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 bad-url 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 jd 的 extra-key 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 missing 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 bad-json 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 wrong-platform 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 bad-mode 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 bad-url 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 pdd 的 extra-key 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 missing 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 bad-json 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 wrong-platform 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 bad-mode 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 bad-url 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#4] 覆盖目录 taobao 的 extra-key 必须通过同样的端点校验",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#5] staging 覆盖读取 demo 不绕过校验，prod 原目录入口仍拒绝该模式",
+        "test/spec/infra/staging-pdd/endpoints.test.ts > [AC-B1-04y-ENDPOINTS#5] staging 覆盖读取 replay 不绕过校验，prod 原目录入口仍拒绝该模式",
+        "test/spec/infra/staging-pdd/readme.test.ts > [AC-B1-04y-README#1] 明示准备而不切 live，三个端点保持 demo，IP 白名单只加不删",
+        "test/spec/infra/staging-pdd/readme.test.ts > [AC-B1-04y-README#2] 节点文件由负责人准备，说明属主及目录/文件权限，不把内容放进命令行或环境变量",
+        "test/spec/infra/staging-pdd/readme.test.ts > [AC-B1-04y-README#3] 先备齐文件再配置共享 staging.env，给出四项变量及容器内路径"
+      ],
+      "expected": [
+        "test/spec/infra/staging-pdd/compose.test.ts",
+        "test/spec/infra/staging-pdd/config.test.ts",
+        "test/spec/infra/staging-pdd/endpoints.test.ts",
+        "test/spec/infra/staging-pdd/readme.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "0f949055da4b6a062b565ed506a658c13ade0503de3bf9a536412c7b6671c145"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, test/spec/infra/staging-pdd, 39 red); round 1 pass with one S2 (loose file-mode assertion for the endpoints subdirectory, folded into the brief)."
+  },
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "012488eb5fc732e40f1a1b7118ed41d55af0a72f",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  }
+}
