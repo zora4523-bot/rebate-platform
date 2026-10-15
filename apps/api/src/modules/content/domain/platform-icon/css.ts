@@ -1,10 +1,11 @@
 // Step ①, style part: parse `<style>` text and `style` attributes into declarations that can be
 // rewritten faithfully as presentation attributes. Anything outside the narrow grammar below
-// (other properties, complex selectors, @ rules, !important, escapes, non-local url()) cannot be
-// converted faithfully and rejects the whole document.
+// (other properties, complex selectors, @ rules, !important, escapes, non-local url(), values SVG
+// attributes read differently) cannot be converted faithfully and rejects the whole document.
 import { STYLE_FUNCTIONS, STYLE_PROPERTIES } from './policy.ts';
 import { normalizeUrls, withoutUrls } from './references.ts';
 import { unconvertible } from './rejection.ts';
+import { presentationValue } from './values.ts';
 
 export type Declaration = readonly [property: string, value: string];
 
@@ -32,14 +33,17 @@ function stripComments(text: string): string {
   return stripped;
 }
 
-function validateValue(value: string): void {
+/** Checks the CSS value and returns its presentation-attribute form (see values.ts). */
+function convertValue(property: string, value: string): string {
   if (value === '') unconvertible('empty declaration value');
   if (/[{}<>;!@\\]/.test(value)) unconvertible('unsupported character in declaration value');
   for (const match of value.matchAll(FUNCTION_CALL)) {
     if (!STYLE_FUNCTIONS.has(match[1]!.toLowerCase())) unconvertible('unsupported function');
   }
-  if (normalizeUrls(value) === null) unconvertible('non-local url()');
+  const normalized = normalizeUrls(value);
+  if (normalized === null) unconvertible('non-local url()');
   if (/["']/.test(withoutUrls(value))) unconvertible('quoted text outside url()');
+  return presentationValue(property, normalized);
 }
 
 /** Parses a declaration block (inline `style` or a rule body); last declaration wins later. */
@@ -54,9 +58,7 @@ export function parseDeclarations(text: string): Declaration[] {
     if (!PROPERTY_NAME.test(property)) unconvertible('malformed property name');
     const name = property.toLowerCase();
     if (!STYLE_PROPERTIES.has(name)) unconvertible(`unsupported property ${name}`);
-    const value = declaration.slice(colon + 1).trim();
-    validateValue(value);
-    declarations.push([name, value]);
+    declarations.push([name, convertValue(name, declaration.slice(colon + 1).trim())]);
   }
   return declarations;
 }

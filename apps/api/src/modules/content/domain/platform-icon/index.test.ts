@@ -4,6 +4,7 @@ import { DOMParser, type Document, type Element } from '@xmldom/xmldom';
 import pngjs from 'pngjs';
 import { expect, it, vi } from 'vitest';
 import { inspectPlatformIcon, type PlatformIconOptions, type PlatformIconResult } from './index.ts';
+import { inflatedSize } from './png.ts';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const XLINK = 'http://www.w3.org/1999/xlink';
@@ -54,7 +55,7 @@ it.each([
   ['empty', new Uint8Array()],
   ['JPEG', Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])],
   ['SVGZ', gzipSync(new TextEncoder().encode(svg('<rect/>')))],
-  ['UTF-16 SVG', new Uint8Array(Buffer.from(`﻿${svg('<rect/>')}`, 'utf16le'))],
+  ['UTF-16 SVG', new Uint8Array(Buffer.from(`\uFEFF${svg('<rect/>')}`, 'utf16le'))],
   ['text', new TextEncoder().encode('hello <svg/>')],
 ])('[AC-F1-06v] unknown bytes are format-invalid: %s', (_name, input) => {
   expect(inspectPlatformIcon(input, options())).toEqual({
@@ -103,7 +104,7 @@ it('[AC-F1-06v] invalid UTF-8 is format-invalid', () => {
 it('[AC-F1-06v] DOCTYPE without subset and BOM are accepted; xml-stylesheet is unconvertible', () => {
   const doctype = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://never.invalid/svg.dtd">';
   expect(
-    all(clean(`﻿<?xml version="1.0"?>${doctype}${svg('<path d="M0 0"/>')}`).document, 'path'),
+    all(clean(`\uFEFF<?xml version="1.0"?>${doctype}${svg('<path d="M0 0"/>')}`).document, 'path'),
   ).toHaveLength(1);
   expect(rejected(`<?xml-stylesheet href="https://x.invalid/a.css"?>${svg('<rect/>')}`)).toBe(
     'icon_svg_unconvertible',
@@ -394,3 +395,191 @@ it('[AC-F1-06v] deep nesting at the element limit converts without exhausting th
   const deep = svg(`${'<g>'.repeat(4998)}<rect/>${'</g>'.repeat(4998)}`);
   expect(all(clean(deep).document, 'g')).toHaveLength(4998);
 });
+
+// ---------------------------------------------------------------- round 2: style values in SVG syntax
+
+function styled(declaration: string): Element {
+  return all(clean(svg(`<path d="M0 0L1 1" style="${declaration}"/>`)).document, 'path')[0]!;
+}
+
+it.each([
+  ['translate(10px,20px)', 'translate(10 20)'],
+  ['translate(10px, 20px) rotate(45deg)', 'translate(10 20) rotate(45)'],
+  ['rotate(45deg)', 'rotate(45)'],
+  ['rotate(30 5 5)', 'rotate(30 5 5)'],
+  ['skewX(10deg) scale(2,3)', 'skewX(10) scale(2 3)'],
+  ['matrix(1,0,0,1,2,3)', 'matrix(1 0 0 1 2 3)'],
+  ['translate(2 3)', 'translate(2 3)'],
+])('[AC-F1-06v] CSS transform %s is rewritten in SVG transform-list syntax', (css, attribute) => {
+  expect(styled(`transform: ${css}`).getAttribute('transform')).toBe(attribute);
+});
+
+it.each([
+  'translateX(10px)',
+  'translateY(1px)',
+  'scaleX(2)',
+  'translate(10%, 0)',
+  'translate(1em, 0)',
+  'rotate(1rad)',
+  'rotate(0.5turn)',
+  'rotate(45deg 5 5)',
+  'scale(2px)',
+  'skew(10deg)',
+  'translate3d(1px,1px,0)',
+  'none',
+  'translate(1px',
+])('[AC-F1-06v] CSS transform without a faithful SVG form is unconvertible: %s', (css) => {
+  expect(rejected(svg(`<path d="M0 0" style="transform: ${css}"/>`))).toBe(
+    'icon_svg_unconvertible',
+  );
+  expect(rejected(svg(`<style>.t{transform:${css}}</style><path class="t" d="M0 0"/>`))).toBe(
+    'icon_svg_unconvertible',
+  );
+});
+
+it.each([
+  ['fill', 'currentColor'],
+  ['fill', 'none'],
+  ['fill', 'rgb(255, 0, 0)'],
+  ['fill', 'rgb(100%,0%,0%)'],
+  ['fill', 'url(#g) none'],
+  ['fill', 'url(#g) #fff'],
+  ['stroke', 'darkslategray'],
+  ['stroke-width', '2px'],
+  ['stroke-width', '1.5'],
+  ['stroke-width', '10%'],
+  ['stroke-dasharray', '2px, 3'],
+  ['stroke-dasharray', 'none'],
+  ['stroke-miterlimit', '1'],
+  ['opacity', '.5'],
+  ['fill-rule', 'nonzero'],
+  ['stroke-linecap', 'square'],
+  ['stroke-linejoin', 'miter'],
+  ['fill', 'inherit'],
+])('[AC-F1-06v] style value with the same SVG meaning is kept: %s: %s', (name, value) => {
+  const source = `<defs><linearGradient id="g"/></defs><path d="M0 0L1 1" style="${name}: ${value}"/>`;
+  expect(all(clean(svg(source)).document, 'path')[0]!.getAttribute(name)).toBe(value);
+});
+
+it.each([
+  ['fill', 'rgba(0,0,0,0.5)'],
+  ['fill', 'hsl(0, 100%, 50%)'],
+  ['fill', '#ff000080'],
+  ['fill', 'RED'],
+  ['fill', 'notacolor'],
+  ['fill', 'transparent'],
+  ['fill', 'red blue'],
+  ['stroke', 'url(#g) url(#g)'],
+  ['stop-color', 'none'],
+  ['stroke-width', '2rem'],
+  ['stroke-width', '-1'],
+  ['stroke-width', '2vw'],
+  ['stroke-dasharray', '2 -3'],
+  ['stroke-miterlimit', '0.5'],
+  ['opacity', '50%'],
+  ['fill-opacity', 'half'],
+  ['stroke-linejoin', 'arcs'],
+  ['stroke-linecap', 'ROUND'],
+  ['fill-rule', 'odd'],
+])('[AC-F1-06v] style value SVG would read differently is unconvertible: %s: %s', (name, value) => {
+  const tag = name.startsWith('stop-') ? 'stop' : 'path';
+  expect(
+    rejected(
+      svg(
+        `<defs><linearGradient id="g"><stop offset="0"/></linearGradient></defs><${tag} style="${name}: ${value}"/>`,
+      ),
+    ),
+  ).toBe('icon_svg_unconvertible');
+});
+
+// ---------------------------------------------------------------- round 2: interlaced and 16-bit PNG
+
+function rawPng(
+  ihdrFields: {
+    width: number;
+    height: number;
+    depth: number;
+    colorType: number;
+    interlace: number;
+  },
+  inflated: Buffer,
+): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(ihdrFields.width, 0);
+  ihdr.writeUInt32BE(ihdrFields.height, 4);
+  ihdr[8] = ihdrFields.depth;
+  ihdr[9] = ihdrFields.colorType;
+  ihdr[12] = ihdrFields.interlace;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(inflated)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+const INTERLACED = { width: 512, height: 512, depth: 8, colorType: 6, interlace: 1 } as const;
+
+it('[AC-F1-06v] inflated size follows the Adam7 pass layout', () => {
+  expect(inflatedSize(8, 8, 32, false)).toBe(264);
+  expect(inflatedSize(8, 8, 32, true)).toBe(5 + 5 + 9 + 18 + 34 + 68 + 132);
+  expect(inflatedSize(1, 1, 8, true)).toBe(2);
+  expect(inflatedSize(3, 1, 1, true)).toBe(2 + 2 + 2);
+});
+
+it('[AC-F1-06v] interlaced PNG of exactly its Adam7 size is decoded and accepted', () => {
+  const input = rawPng(INTERLACED, Buffer.alloc(inflatedSize(512, 512, 32, true)));
+  expect(ok(inspectPlatformIcon(input, options())).format).toBe('png');
+});
+
+it.each([
+  ['one byte over', () => inflatedSize(512, 512, 32, true) + 1],
+  ['decompression bomb', () => 64 * 1024 * 1024],
+])(
+  '[AC-F1-06v] interlaced PNG inflating past its size is rejected before pngjs: %s',
+  (_n, size) => {
+    const input = rawPng(INTERLACED, Buffer.alloc(size()));
+    expect(input.length).toBeLessThan(204800);
+    const read = vi.spyOn(pngjs.PNG.sync, 'read');
+    try {
+      expect(inspectPlatformIcon(input, options())).toEqual({
+        ok: false,
+        reason: 'icon_format_invalid',
+      });
+      expect(read).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+    }
+  },
+);
+
+it('[AC-F1-06v] interlace method other than 0 / 1 is format-invalid', () => {
+  const input = rawPng({ ...INTERLACED, interlace: 2 }, Buffer.alloc(16));
+  expect(inspectPlatformIcon(input, options())).toEqual({
+    ok: false,
+    reason: 'icon_format_invalid',
+  });
+});
+
+function rgba16(cornerAlpha: number): Buffer {
+  const stride = 1 + 512 * 8;
+  const rows = Buffer.alloc(stride * 512);
+  // Opaque centre pixel; top-left corner alpha set to the raw 16-bit value under test.
+  rows.writeUInt16BE(0xffff, stride * 256 + 1 + 256 * 8 + 6);
+  rows.writeUInt16BE(cornerAlpha, 1 + 6);
+  return rawPng({ width: 512, height: 512, depth: 16, colorType: 6, interlace: 0 }, rows);
+}
+
+it('[AC-F1-06v] 16-bit RGBA PNG with raw corner alpha 0 is accepted', () => {
+  expect(ok(inspectPlatformIcon(rgba16(0), options())).sanitized).toBe(false);
+});
+
+it.each([1, 128, 0xffff])(
+  '[AC-F1-06v] 16-bit RGBA PNG corner alpha is judged unscaled: raw %i is rejected',
+  (alpha) => {
+    expect(inspectPlatformIcon(rgba16(alpha), options())).toEqual({
+      ok: false,
+      reason: 'icon_format_invalid',
+    });
+  },
+);
