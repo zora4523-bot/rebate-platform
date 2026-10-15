@@ -1,0 +1,28 @@
+id: B3-05c
+repo: rebate-platform
+title: Orchestrator 第三段：无模型降级接线（关键词出卡 / 空结果 notice / 全平台失败 50302 带 fallback_q，finish_reason fallback 或 budget）与 AgentUnderTest 评测适配器
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，plan.md §3.2–3.3）。实现 B3-05b 的 DegradedPath 端口；B3-03f 最小可挂载版本的第三块（B3-05a/b/c）。
+# 依据：BR-AI-14 细则「无模型降级」（触发、取词、平台、排序、文案键、50302 条件，取值只在 08）；04 §8.2 error.fallback_q；B3-02d 纯函数 planKeywordSearch / resolveDegradedOutcome / degradeFinishReason。
+# 取词用模型形态（占位符）的剩余自由文本（plan.md U-3）；平台取 tools.enabledSearchPlatforms；搜索经 tools.searchKeyword（B3-04b 实现）；空工具集时平台为空 → 空结果。链接不在本段（B3-05e）。
+# 上线前路由只能是 no_model（无 Key、未签快照），所以本段是 staging 最先跑通的链路（plan.md §1.2）。
+# 评测适配器 createEvalAgent(deps) → packages/evals 的 AgentUnderTest：帧与 trace（intent、tool_calls、card_sources、link_registrations）照 evals TurnOutput 收集；模型一律经 ports.model（createPortTransport 包成传输，A 模式是录制、B 模式由运行器给 createEvalModelPort）；
+#   apps/api 不加 @couli/evals 依赖（锁文件），类型按结构写、规则测试按路径 import evals 核对。BR-AI-21 冒烟门从 B3-11 提示词与私有录制到位起执行（plan.md G-8）。
+# 分工：清单外新台账，Codex 先写规则测试，Opus 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-14, BR-AI-21]
+refs_hash:
+  BR-AI-14: e8ed6052e898
+  BR-AI-21: 7e5eb4e48745
+deps: [B3-05b, B3-02d]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/degraded/**'
+  - 'apps/api/src/modules/agent/orchestrator/eval/**'
+test_paths:
+  - 'test/spec/agent/orchestrator-degraded/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/orchestrator-degraded/**'
+status: todo
+pr: null

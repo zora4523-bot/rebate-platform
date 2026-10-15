@@ -1,0 +1,30 @@
+id: B3-04a
+repo: rebate-platform
+title: Agent 工具第一段：ToolRegistry——工具 schema（additionalProperties=false、不含身份字段）、按主体与 agent.tools.<name>.enabled 过滤下发、参数校验 + decideToolCall 拒绝、身份由会话注入、handler 注册接口、specs/agent-tools.allowlist；实现 B3-05b 的 OrchestratorTools
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，couli-runs/B3-05-plan/plan.md §3.4）。先 B3-05b 定工具端口，本段实现；agent/tools/registry/** 只 import orchestrator/index.ts 的类型。
+# 依据：BR-AI-02 细则（注册表路径 agent/tools/registry、工具集合、开关「关闭的工具不下发」、allowlist 集合相等、denylist 正则与两处扫描对象、依赖规则；page_guide 不进注册表）；
+#   BR-AI-03（身份字段清单与比较规则、命中返回 invalid_args 并告警、其他 schema 外字段只拒绝、不丢字段继续）；BR-AI-11 与 BR-AI-01 主体过滤（订单类与收益工具只下发给已绑手机主体）。
+# 本段只注册已有 handler 的工具：B3-04b search_products、B3-04c get_rebate_quote；订单类（B3-08）、search_rules / handoff_to_human、get_my_earnings（B3-16）随各自任务加入，allowlist 同步。
+# 身份上下文（app_id、user_id、device_id、scene 推广位等）只从 RunBodyInput.caller 构造，handler 签名里不出现模型参数中的身份字段；拒绝判定复用 guard 的 decideToolCall、IDENTITY_FIELDS。
+# CI 门禁四项（allowlist / denylist / dependency-cruiser / 只读入口导出检查）改 tools/** 与依赖规则配置，属保护路径第三类要负责人标签，另开门禁任务；本段只交 allowlist 文件与「注册表导出 = allowlist」「schema 不含身份字段」的单测。
+# 风险 RV2（specs/** 不在 risk-map）。分工：清单外新台账，Codex 先写规则测试，Opus 实现，Codex 评审。refs 连一跳超 24KB 时编排者手工生成任务书。
+# 
+refs: [BR-AI-02, BR-AI-03, BR-AI-11]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+  BR-AI-03: 2131432de5c6
+  BR-AI-11: 0ce4651ba7c3
+deps: [B3-05b, B3-06a]
+paths:
+  - 'apps/api/src/modules/agent/tools/registry/**'
+  - 'specs/agent-tools.allowlist'
+test_paths:
+  - 'test/spec/agent/tools-registry/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-registry/**'
+status: todo
+pr: null
