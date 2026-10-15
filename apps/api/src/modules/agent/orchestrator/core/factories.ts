@@ -9,13 +9,22 @@ import type {
 } from './ports.ts';
 
 /**
- * B3-05b / 02 §9.1–9.2. ChatInput is prompt.system + definitions(input.caller), unchanged,
+ * B3-05b / 02 §9.1–9.2. ChatInput is prompt.system + awaited
+ * definitions(input.caller.appId, input.caller), unchanged,
  * with messages initially [{role:'user', content: proceed.modelText}]. A tool round appends
  * {role:'assistant', content: roundText || null, tool_calls}, then, in call order,
  * {role:'tool', tool_call_id, content: JSON.stringify(outcome.modelView)}.
  * Only modelView goes back to the model, never cards/trace/placeholders/raw input.
  * Tools own schema/identity rejection and untrusted-title delimiting in modelView.
- * One OutputGuard per run (including its final end flush); fixed keys use texts.text.
+ * Unknown names are rejected by core WITHOUT execute/toolDisplay/tool.status; append
+ * {error:'invalid_args'} as the tool message, count the call, and continue the loop.
+ * Known tools receive the original args, placeholders and input.context unchanged.
+ * Known failed/rejected calls emit failed after start; successful calls emit end.
+ * toolDisplay gets appId, registered name, phase and validated args.platform (or undefined).
+ * One modelClock, OutputGuard and set of counters per run, never shared by factory users.
+ * One ctx.text per GuardEmit (including the final end flush), preserving guard order.
+ * Fixed keys use awaited texts.text(appId, key), including guard replacement keys.
+ * Core alone emits proceed.notices once before model/path output, through the same caps.
  * A blocked output stops tools/cards not yet emitted; timeout replacement keeps cards.
  * Output limits guard all paths. tool.status is not a content frame. Embedded cards count
  * toward cards but not frames; never emit a partial structured card to fit the limit.
@@ -26,7 +35,11 @@ import type {
  * are discarded. RunManager owns the actual cancellation terminal; the body returns done stop.
  * No IntentPort + final JSON object with agent_intent => out_of_scope fixed text, done stop.
  * No DeterministicPath + links => agent.degraded.empty notice, done fallback, no model call.
- * Router refused => agent.refuse.unsafe, done safety. No prompt => no-model degraded path.
+ * Router refused => agent.refuse.unsafe, done safety. No prompt => degraded route_no_model,
+ * without complete() or tool execution. Read the shared immutable PromptSource once per run;
+ * trace records that version, the actual last responding model and all attempts in order.
+ * Trace tool args are a storage-masked copy after placeholder restoration (B3-05a),
+ * while execute and model messages retain their model-form placeholders unchanged.
  */
 export function createAgentRunBody(deps: AgentRunBodyDeps): (input: RunBodyInput) => RunBody {
   void deps;

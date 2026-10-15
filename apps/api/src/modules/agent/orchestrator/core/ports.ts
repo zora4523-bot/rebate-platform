@@ -1,4 +1,5 @@
 // B3-05b: downstream contracts; no runtime defaults in the test-stage skeleton.
+import type { Platform } from '@couli/contracts-ts';
 import type { Candidate } from '../../../parsing/index.ts';
 import type { AgentCaller, RunBodyInput } from '../../http/index.ts';
 import type { FilterHit, SentenceReviewPort } from '../../guard/index.ts';
@@ -9,6 +10,7 @@ import type {
 } from '../../model-gateway/degraded/index.ts';
 import type { ToolDefinition } from '../../model-gateway/openai-compat/index.ts';
 import type {
+  AttemptRecord,
   ModelRouter,
   ResolvedRoute,
   RunModelClock,
@@ -32,6 +34,8 @@ export interface InputProceed {
   /** Run-local only; never sent to the model or trace. */
   readonly placeholders: Readonly<Record<string, string>>;
   readonly links: readonly Candidate[];
+  /** Core emits once, in order, before model/path output; counted against run limits.
+   * Downstream paths receive these for context only and MUST NOT re-emit them. */
   readonly notices: readonly UnnumberedCard[];
   readonly untrustedInput: boolean;
   readonly paramsRequested: boolean;
@@ -59,6 +63,8 @@ export interface OrchestratorToolCall {
 
 export interface ToolContext {
   readonly subject: AgentCaller;
+  /** Scenario entry, passed unchanged from RunBodyInput.context. */
+  readonly context?: RunBodyInput['context'];
   readonly runId: string;
   readonly sessionId: string;
   readonly signal: AbortSignal;
@@ -95,7 +101,7 @@ export interface KeywordSearchOutcome {
 }
 
 export interface OrchestratorTools {
-  definitions(subject: AgentCaller): readonly ToolDefinition[];
+  definitions(appId: string, subject: AgentCaller): Promise<readonly ToolDefinition[]>;
   execute(call: OrchestratorToolCall, ctx: ToolContext): Promise<ToolOutcome>;
   enabledSearchPlatforms(appId: string): Promise<readonly string[]>;
   searchKeyword(plan: KeywordSearchPlan, ctx: ToolContext): Promise<KeywordSearchOutcome>;
@@ -127,19 +133,36 @@ export interface IntentPort {
 }
 
 export interface AgentRunTexts {
-  text(key: string): string;
-  /** Template lookup only: receives no user input or tool arguments. */
-  toolDisplay(tool: string, phase: 'start' | 'end' | 'failed'): string;
+  text(appId: string, key: string): Promise<string>;
+  /** Template lookup only: registered tool + validated platform enum, never raw arguments.
+   * Missing/invalid platform uses the generic template (undefined). */
+  toolDisplay(
+    appId: string,
+    tool: string,
+    phase: 'start' | 'end' | 'failed',
+    platform?: Platform,
+  ): Promise<string>;
 }
 
+/** Immutable prompt release for the wiring lifetime; labels and body share this source.
+ * Deploy a new source with the release, not a mutable "latest" between labels and body. */
 export interface PromptSource {
   current(appId: string): Promise<{ readonly version: string; readonly system: string } | null>;
 }
 
 export interface OrchestratorTrace extends ToolTraceFragment {
   readonly intent: string | null;
+  /** Actual last successful ModelOutcome.model; null when no model answered. */
+  readonly model: string | null;
+  /** All router attempt records in round order, including failed primary attempts. */
+  readonly attempts: readonly AttemptRecord[];
+  /** Version of the prompt actually used, or 'none' without a model prompt. */
+  readonly prompt_version: string;
   readonly tool_calls: readonly {
     readonly name: string;
+    /** Storage form: restore placeholders on a copy, then B3-05a maskForTrace.
+     * Long numbers retain only their last four digits, including nested args.
+     * Neither raw values nor unresolved known placeholders go to the sink. */
     readonly args: unknown;
     readonly status: 'ok' | 'failed' | 'rejected';
   }[];
@@ -163,12 +186,15 @@ export interface AgentRunBodyDeps {
   readonly intents?: IntentPort;
   readonly review: SentenceReviewPort;
   readonly texts: AgentRunTexts;
+  /** Same immutable source passed to createRunLabels. Read once per run, not per round. */
   readonly prompt: PromptSource;
   readonly limits: OrchestratorLimits;
   readonly trace?: RunTraceSink;
 }
 
 export interface RunLabelsDeps {
+  /** Same route provider wired to ModelRouter; label predicts the first entry only.
+   * Failover's actual responding model belongs in OrchestratorTrace.model. */
   readonly route: (appId: string) => Promise<ResolvedRoute>;
   readonly prompt: PromptSource;
   readonly modelLabel: (appId: string, modelSnapshot: string | null) => Promise<string>;

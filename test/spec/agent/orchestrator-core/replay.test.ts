@@ -60,7 +60,7 @@ it('[AC-B3-05b#3][BR-AI-06][BR-AI-05] 工具状态模板、顺序出卡、第二
     { kind: 'card', card: cards[1] },
   ]);
   expect(r.text()).toBe('先看卡片。也可看看另一款。');
-  expect(r.deps.tools.definitions).toHaveBeenCalledWith(input().caller);
+  expect(r.deps.tools.definitions).toHaveBeenCalledWith('synthetic-app', input().caller);
   expect(r.execute.mock.calls[0]).toEqual([
     { id: 'synthetic-call-a', name: 'search_products', args: { q: '合成保温杯' } },
     expect.objectContaining({
@@ -127,7 +127,7 @@ it('[AC-B3-05b#5][BR-AI-03][BR-AI-06] 身份字段原样交注册端口拒绝，
   r.replayed();
 });
 
-it('[AC-B3-05b#6][BR-AI-14][BR-AI-06] trace 保留模型占位参数与意图，不恢复用户长数字', async () => {
+it('[AC-B3-05b#6][BR-AI-14][BR-AI-06] 工具收到原值占位表，trace 参数存储形态只保留后四位', async () => {
   const value = input();
   const raw = '987654321012345678';
   const args = { q: '合成订单<num_1>', extra: ['<num_1>'] };
@@ -146,8 +146,20 @@ it('[AC-B3-05b#6][BR-AI-14][BR-AI-06] trace 保留模型占位参数与意图，
   });
   expect(r.traces.at(-1)).toMatchObject({
     intent: 'out_of_scope',
-    tool_calls: [{ name: 'search_products', args, status: 'ok' }],
+    tool_calls: [
+      {
+        name: 'search_products',
+        args: {
+          q: expect.stringMatching(/^合成订单[^0-9<>]+5678$/u),
+          extra: [expect.stringMatching(/^[^0-9<>]+5678$/u)],
+        },
+        status: 'ok',
+      },
+    ],
   });
+  expect(r.execute.mock.calls[0]?.[0].args).toEqual(args);
+  expect(r.execute.mock.calls[0]?.[1].placeholders).toEqual({ '<num_1>': raw });
+  expect(JSON.stringify(r.traces)).not.toContain('<num_1>');
   expect(JSON.stringify(r.traces)).not.toContain(raw);
   expect(JSON.stringify(r.requests)).not.toContain(raw);
   expect(r.text()).toBe('固定文案:agent.refuse.out_of_scope');

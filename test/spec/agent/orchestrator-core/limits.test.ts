@@ -166,3 +166,72 @@ it('[AC-B3-05b#32][BR-AI-06] suggestions 只能来自服务端工具，最多三
   ]);
   r.replayed();
 });
+
+it('[AC-B3-05b#43][BR-AI-06][BR-AI-14] 同轮两个工具各返回八件商品，卡片累计上限不按工具重置', async () => {
+  // 02 §9.2: 12 total, including container. Two product_list(8) cost 9 + 9;
+  // the second whole card cannot fit and must not be partially emitted.
+  const first = productList(8);
+  const second = { ...productList(8), fallback_text: '合成第二批' };
+  const r = setup(
+    [
+      {
+        calls: [toolCall('synthetic-eight-a'), toolCall('synthetic-eight-b')],
+        views: [{}, {}],
+      },
+    ],
+    {
+      outcomes: [
+        { kind: 'ok', modelView: {}, cards: [first] },
+        {
+          kind: 'ok',
+          modelView: {},
+          cards: [second],
+          suggestions: [{ text: '不应显示', send_text: '不应显示' }],
+        },
+      ],
+    },
+  );
+  expect(await r.run()).toEqual({ kind: 'done', finishReason: 'limit' });
+  expect(r.content()).toEqual([{ kind: 'card', card: first }]);
+  expect(r.execute).toHaveBeenCalledTimes(2);
+  expect(r.complete).toHaveBeenCalledTimes(1);
+  r.replayed();
+});
+
+it('[AC-B3-05b#44][BR-AI-06][BR-AI-14] 跨两轮工具的卡片恰到十二张即停，不重新分配额度', async () => {
+  const cards = [productList(5), { ...productList(5), fallback_text: '合成下一轮' }];
+  const r = setup(
+    [
+      { calls: [toolCall('synthetic-card-round-a')], views: [{}] },
+      { calls: [toolCall('synthetic-card-round-b')], views: [{}] },
+    ],
+    {
+      outcomes: cards.map((card) => ({
+        kind: 'ok',
+        modelView: {},
+        cards: [card],
+      })),
+    },
+  );
+  expect(await r.run()).toEqual({ kind: 'done', finishReason: 'limit' });
+  expect(r.content()).toEqual(cards.map((card) => ({ kind: 'card', card })));
+  expect(r.complete).toHaveBeenCalledTimes(2);
+  expect(r.execute).toHaveBeenCalledTimes(2);
+  r.replayed();
+});
+
+it('[AC-B3-05b#45][BR-AI-06][BR-AI-14] 工具前后两轮文字累计封顶二万码点', async () => {
+  // No sentence delimiter: sentence count cannot conceal a per-round text counter bug.
+  const r = setup([
+    { parts: ['😀'.repeat(15000)], calls: [toolCall('synthetic-text-round')], views: [{}] },
+    { parts: ['🦊'.repeat(10000)] },
+  ]);
+  expect(await r.run()).toEqual({ kind: 'done', finishReason: 'limit' });
+  expect(r.text()).toBe('😀'.repeat(15000) + '🦊'.repeat(5000));
+  expect(Array.from(r.text())).toHaveLength(20000);
+  expect(r.content().length).toBeLessThanOrEqual(400);
+  expect(r.complete).toHaveBeenCalledTimes(2);
+  expect(r.execute).toHaveBeenCalledTimes(1);
+  expect(r.events.at(-1)?.kind).toBe('text');
+  r.replayed();
+});

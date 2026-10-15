@@ -17,7 +17,7 @@ it('[AC-B3-05b#38][BR-AI-06] 空工具端口无定义、无平台、拒绝任意
     signal: context().ctx.signal,
     placeholders: {},
   };
-  expect(tools.definitions(input().caller)).toEqual([]);
+  expect(await tools.definitions('synthetic-app', input().caller)).toEqual([]);
   expect(await tools.enabledSearchPlatforms('synthetic-app')).toEqual([]);
   expect(
     await tools.execute(

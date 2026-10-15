@@ -34,6 +34,7 @@ import { createAgentRunBody } from '../../../../apps/api/src/modules/agent/orche
 import {
   FakeRunClock,
   FLASH,
+  PLUS,
   ManualScheduler,
   quietBreaker,
   resolved,
@@ -135,11 +136,11 @@ export type Event =
   | { kind: 'status'; tool: string; phase: string; display: string }
   | { kind: 'suggestions'; items: Parameters<RunContext['suggestions']>[0] };
 
-export function context() {
+export function context(runId = 'synthetic-run') {
   const controller = new AbortController();
   const events: Event[] = [];
   const ctx: RunContext = {
-    runId: 'synthetic-run',
+    runId,
     sessionId: 'synthetic-session',
     signal: controller.signal,
     get cardsDelivered() {
@@ -174,6 +175,8 @@ export interface SetupOptions {
   readonly budget?: boolean;
   readonly modelMs?: number;
   readonly failAfter?: number;
+  /** Synthesize primary timeout; only the backup has a successful recording. */
+  readonly primaryTimeout?: boolean;
 }
 
 export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions = {}) {
@@ -184,7 +187,10 @@ export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions =
       description: '合成搜索工具',
       parameters: {
         type: 'object',
-        properties: { q: { type: 'string' } },
+        properties: {
+          q: { type: 'string' },
+          platform: { type: 'string', enum: ['taobao', 'jd', 'pdd'] },
+        },
         additionalProperties: false,
       },
     },
@@ -195,7 +201,7 @@ export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions =
       const request = buildModelRequest(
         {
           vendor: 'qwen',
-          model: FLASH,
+          model: options.primaryTimeout ? PLUS : FLASH,
           system: '合成系统前缀',
           tools: definitions,
           messages: structuredClone(messages),
@@ -210,6 +216,8 @@ export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions =
   const misses: unknown[] = [];
   const transport = createPortTransport(async (request) => {
     requests.push(request);
+    if (options.primaryTimeout && request.model === FLASH)
+      throw new ModelProtocolError('timeout', 'synthetic primary timeout');
     if (options.failAfter !== undefined && requests.length > options.failAfter)
       throw new ModelProtocolError('network', 'synthetic failure');
     try {
@@ -231,9 +239,10 @@ export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions =
     rewrittenSampleGrants: [],
     ownerAggregateApprovals: [],
   });
+  const route = vi.fn(() => resolved('flash', 'plus'));
   const router = createModelRouter({
     gateway,
-    route: () => resolved('flash', 'plus'),
+    route,
     budgetExhausted: () => options.budget ?? false,
     config: { attemptTimeoutMs: 3000, breaker: quietBreaker() },
     scheduler,
@@ -263,7 +272,7 @@ export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions =
       return value;
     },
     tools: {
-      definitions: vi.fn(() => definitions),
+      definitions: vi.fn(async () => definitions),
       execute,
       enabledSearchPlatforms: vi.fn(async () => []),
       searchKeyword: vi.fn(async () => ({ results: [], cards: [] })),
@@ -272,8 +281,8 @@ export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions =
     degraded: { run: degraded },
     review: { review },
     texts: {
-      text: (key) => `固定文案:${key}`,
-      toolDisplay: (tool, phase) => `模板:${tool}:${phase}`,
+      text: vi.fn(async (_appId, key) => `固定文案:${key}`),
+      toolDisplay: vi.fn(async (_appId, tool, phase) => `模板:${tool}:${phase}`),
     },
     prompt: { current: vi.fn(async () => ({ version: 'synthetic-v1', system: '合成系统前缀' })) },
     // Expected defaults are literals from 02 §9.1–9.2, never taken from the SUT.
@@ -296,6 +305,7 @@ export function setup(turns: readonly ReplayTurn[] = [], options: SetupOptions =
     requests,
     traces,
     modelClocks,
+    route,
     store,
     run: (patch: Partial<AgentRunBodyDeps> = {}, value = input()) =>
       createAgentRunBody({ ...deps, ...patch })(value)(output.ctx),
