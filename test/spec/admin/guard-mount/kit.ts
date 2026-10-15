@@ -48,11 +48,9 @@ export async function exportedGuard() {
   const platform = (await import(new URL('apps/api/src/modules/platform/index.ts', ROOT).href)) as {
     AdminOperationGuard: typeof AdminOperationGuard;
   };
-  const http = (await import(
-    new URL('apps/api/src/modules/platform/http/index.ts', ROOT).href
-  )) as { AdminOperationGuard: typeof AdminOperationGuard };
+  // platform/http/index.ts does not re-export it: its runtime exports are frozen by
+  // test/spec/platform/crypto/wiring-nest.test.ts; platform/index.ts exports it directly.
   expect(platform.AdminOperationGuard).toBe(AdminOperationGuard);
-  expect(http.AdminOperationGuard).toBe(AdminOperationGuard);
   return platform.AdminOperationGuard;
 }
 
