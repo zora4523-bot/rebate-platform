@@ -94,28 +94,82 @@ export interface RunGuardFactoryDeps {
 }
 
 export function createAgentAccessPort(deps: AgentConfigDeps): AgentAccessPort {
-  void deps;
-  throw new Error('NotImplemented: createAgentAccessPort');
+  return {
+    async check(caller) {
+      return (await isOpen(deps.reader, caller.appId, caller.userId, caller.phoneBound))
+        ? null
+        : { code: 30501 };
+    },
+  };
 }
 
 export function createAgentIdentityPort(deps: AgentConfigDeps): AgentIdentityPort {
-  void deps;
-  throw new Error('NotImplemented: createAgentIdentityPort');
+  return {
+    async check(caller) {
+      const requirePhone = await deps.reader.configValue(caller.appId, 'agent.require_phone');
+      if (requirePhone?.value === true) {
+        if (caller.userId === null) return { code: 10001 };
+        return caller.phoneBound ? null : { code: 10005 };
+      }
+      if (caller.userId === null) {
+        const quota = await deps.reader.configValue(caller.appId, 'agent.guest_daily_quota');
+        if (quota?.value === 0) return { code: 10001 };
+      }
+      return null;
+    },
+  };
 }
 
 export function createConsentVersionSource(deps: ConsentVersionSourceDeps): ConsentVersionSource {
-  void deps;
-  throw new Error('NotImplemented: createConsentVersionSource');
+  return async (appId) => {
+    const key = 'legal.ai_third_party.version';
+    const value = (await deps.reader.configValue(appId, key))?.value;
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return value;
+    deps.logger?.warn({ app_id: appId, config_key: key }, 'agent.consent_version_config_invalid');
+    return 1;
+  };
 }
 
 export function createAgentConsentPort(deps: AgentConsentPortDeps): AgentConsentPort {
-  void deps;
-  throw new Error('NotImplemented: createAgentConsentPort');
+  return {
+    async check({ appId, userId, deviceId }) {
+      // The identity reader uses deps.version as currentVersion on each check (B3-03f wiring).
+      const verdict = await deps.consent.check({ appId, userId, deviceId });
+      return verdict.allowed ? null : { code: 10004 };
+    },
+  };
 }
 
 export function createRunGuardFactory(
   deps: RunGuardFactoryDeps,
 ): (run: RunGuardTarget) => RunGuard {
-  void deps;
-  throw new Error('NotImplemented: createRunGuardFactory');
+  return ({ appId, ownerKey }) => {
+    const id = ownerKey.slice(2);
+    if (id.length === 0 || (!ownerKey.startsWith('u:') && !ownerKey.startsWith('d:'))) {
+      throw new Error('Invalid agent run owner key');
+    }
+    const userId = ownerKey.startsWith('u:') ? id : null;
+    const deviceId = userId === null ? id : '';
+    return {
+      async check() {
+        // Binding was checked at admission; a live run only rechecks opening and consent.
+        if (!(await isOpen(deps.reader, appId, userId, true))) return { code: 30501 };
+        const verdict = await deps.consent.check({ appId, userId, deviceId });
+        return verdict.allowed ? null : { code: 10004 };
+      },
+    };
+  };
+}
+
+async function isOpen(
+  reader: AgentConfigDeps['reader'],
+  appId: string,
+  userId: string | null,
+  phoneBound: boolean,
+): Promise<boolean> {
+  if ((await reader.configValue(appId, 'agent.enabled'))?.value !== true) return false;
+  if ((await reader.configValue(appId, 'agent.whitelist_only'))?.value === false) return true;
+  if (userId === null || !phoneBound) return false;
+  const ids = (await reader.configValue(appId, 'agent.whitelist_user_ids'))?.value;
+  return Array.isArray(ids) && ids.every((id) => typeof id === 'string') && ids.includes(userId);
 }

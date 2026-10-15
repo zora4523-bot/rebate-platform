@@ -455,6 +455,7 @@ export function createAgentHttp(deps: AgentHttpDeps): AgentHttp {
           {
             ticket: result.ticket,
             ownerKey: ownerKeyOf(caller),
+            appId: caller.appId,
             limits,
             meta: {
               message_id: assistantMessageId,

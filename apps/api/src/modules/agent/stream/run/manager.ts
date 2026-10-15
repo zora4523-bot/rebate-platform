@@ -49,6 +49,7 @@ async function run(
   const { ticket, sink } = start;
   const { runId, sessionId } = ticket;
   const { config, registry, scheduler } = deps;
+  let guard = deps.guard;
   const writer = new StreamWriter({ sink, validator });
   const bodyAbort = new AbortController();
   const waits = new AbortController();
@@ -234,7 +235,7 @@ async function run(
       // The timeout releases polling, not the observation of this query's result. A late
       // revocation still interrupts a live run; choose() protects an already chosen ending.
       await Promise.race([
-        deps.guard.check().then((answer) => {
+        guard.check().then((answer) => {
           if (answer !== null) interrupt(answer.code === 30501 ? 'disabled' : 'consent_withdrawn');
         }),
         scheduler
@@ -251,9 +252,12 @@ async function run(
   sink.onClose(disconnected);
   try {
     try {
+      if (deps.guardFor !== undefined && start.appId !== undefined) {
+        guard = deps.guardFor({ appId: start.appId, ownerKey: start.ownerKey, runId });
+      }
       await registry.register({ runId, sessionId, ownerKey: start.ownerKey });
     } catch {
-      // Admission has already charged the run; registration failure also needs settlement.
+      // Admission has charged the run; registration or guard construction failure must settle.
       choose(errorEnd(50001, 'server_error', true));
     }
     const metaWritten = write('meta', { ...start.meta, session_id: sessionId, run_id: runId });
