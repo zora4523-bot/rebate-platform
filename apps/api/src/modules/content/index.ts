@@ -12,6 +12,11 @@ import { createKyselyContentStore } from './infra/kysely-content-store.ts';
 export type { ConfigValue, ContentConfig, ContentReader } from './application/content-reader.ts';
 // F1-06w: the admin console's platform mark reads, loaded by app.module on the admin entry only.
 export { ContentAdminModule } from './content-admin.module.ts';
+export { publishedPlatformIcons } from './application/published-platform-icons.ts';
+export type {
+  PublishedPlatformIconOptions,
+  PublishedPlatformIcons,
+} from './application/published-platform-icons.ts';
 
 export interface ContentReaderOptions {
   /** Primary handle (ADR-0001 §4.2 #11); the reader only reads. */
