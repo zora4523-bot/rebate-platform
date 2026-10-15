@@ -29,10 +29,12 @@
 //   {userId} when the caller has a user id and a bound phone; otherwise guest {loggedIn: userId !==
 //   null, deviceHash, ipKey} (BR-AI-15, BR-ID-03).
 //   admit's answer:
-//   - accepted → reply.stream(SSE headers), then runs.start({ticket, ownerKey, limits, meta:
-//     {message_id: assistantMessageId, prompt_version, model_label: labels.modelLabel(appId,
-//     modelSnapshot), ai_label: labels.aiLabel(appId)}, sink}, body(input)); the RunManager writes
-//     every frame (meta first, one terminal frame last); after start resolves, sink.end().
+//   - accepted → reply.stream(SSE headers), then runs.start({ticket, ownerKey, appId:
+//     caller.appId, limits, meta: {message_id: assistantMessageId, prompt_version, model_label:
+//     labels.modelLabel(appId, modelSnapshot), ai_label: labels.aiLabel(appId)}, sink},
+//     body(input)); the RunManager writes every frame (meta first, one terminal frame last); after
+//     start resolves, sink.end(). appId is the only field B3-03i added (RunStart.appId, for the
+//     RunManager's per-run guard); every other field is as before.
 //   - duplicate → reply.stream(SSE headers) and exactly two frames, ids 1 and 2 (04 §8.1): meta
 //     {session_id, run_id: original.runId, message_id: original.assistantMessageId,
 //     prompt_version: original.promptVersion, model_label: labels.modelLabel(appId,

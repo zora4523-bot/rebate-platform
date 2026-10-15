@@ -56,6 +56,18 @@ export interface RunGuard {
   check(): Promise<null | { readonly code: 30501 | 10004 }>;
 }
 
+/**
+ * The run a guard is taken for (B3-03i, plan G-1): the guard of one run checks that run's subject
+ * (BR-AI-13: a withdrawal ends the live runs of that subject only; BR-AI-12: agent.enabled off
+ * ends every run).
+ */
+export interface RunGuardTarget {
+  readonly appId: string;
+  /** u:<user_id> | d:<device_id> (BR-AI-20), as RunStart.ownerKey. */
+  readonly ownerKey: string;
+  readonly runId: string;
+}
+
 export interface RunTexts {
   text(key: 'agent.timeout'): string;
   errorMsg(code: number): string;
@@ -132,6 +144,11 @@ export interface RunStart {
   readonly limits: AdmissionLimits;
   readonly meta: Omit<MetaData, 'session_id' | 'run_id' | 'duplicate'>;
   readonly sink: RunSink;
+  /**
+   * B3-03i (only added): the app of the run; the HTTP layer passes caller.appId. Used for
+   * RunManagerDeps.guardFor; absent, the run is guarded by RunManagerDeps.guard as before.
+   */
+  readonly appId?: string;
 }
 
 export interface RunFinal {
@@ -151,6 +168,15 @@ export interface RunManagerDeps {
   readonly cards: CardSequence;
   readonly texts: RunTexts;
   readonly guard: RunGuard;
+  /**
+   * B3-03i (only added, plan G-1): the guard of one run. When given and RunStart.appId is
+   * present, the manager takes that run's guard from guardFor({appId: start.appId, ownerKey:
+   * start.ownerKey, runId: ticket.runId}) and polls only it for that run, exactly as `guard` is
+   * polled (cadence, read timeout, a rejection or timeout retried next round, 30501 → disabled,
+   * 10004 → consent_withdrawn); `guard` is then not consulted for that run. Without guardFor, or
+   * without start.appId, every run is guarded by `guard` as before.
+   */
+  readonly guardFor?: (run: RunGuardTarget) => RunGuard;
   readonly clock: Clock;
   readonly scheduler: Scheduler;
   readonly config: RunConfig;
