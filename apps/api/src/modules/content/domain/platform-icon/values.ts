@@ -146,3 +146,26 @@ export function presentationValue(property: string, value: string): string {
   if (!valid) unconvertible(`${property} value has no faithful SVG attribute form`);
   return collapsed;
 }
+
+// ------------------------------------------------------------------ transform attribute
+
+const COMMA_WSP = String.raw`(?:\s+,?\s*|,\s*)`;
+const ATTRIBUTE_TRANSFORM = new RegExp(
+  `^\\s*(?:(?:matrix|translate|scale|rotate|skewX|skewY)\\s*\\(\\s*${NUMBER}(?:${COMMA_WSP}${NUMBER})*\\s*\\)\\s*,?\\s*)+$`,
+);
+
+/**
+ * Whether an SVG `transform` attribute value is a transform list every reader parses alike
+ * (the six SVG functions, numeric arguments in the counts SVG allows). Merging transforms by
+ * concatenation is only faithful when each part parses on its own: an unparseable part would
+ * void the merged list instead of only itself.
+ */
+export function isTransformList(value: string): boolean {
+  if (!ATTRIBUTE_TRANSFORM.test(value)) return false;
+  const functionCall = /([A-Za-z]+)\s*\(([^()]*)\)/g;
+  for (let match = functionCall.exec(value); match; match = functionCall.exec(value)) {
+    const count = match[2]!.trim().split(new RegExp(COMMA_WSP)).length;
+    if (!TRANSFORMS.get(match[1]!)!.counts.includes(count)) return false;
+  }
+  return true;
+}

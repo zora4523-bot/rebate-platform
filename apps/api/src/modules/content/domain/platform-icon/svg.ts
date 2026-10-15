@@ -30,6 +30,7 @@ import {
 } from './policy.ts';
 import { localId, normalizeUrls } from './references.ts';
 import { invalid, unconvertible } from './rejection.ts';
+import { isTransformList } from './values.ts';
 
 export interface Deadline {
   remainingMs(): number;
@@ -390,10 +391,67 @@ interface Context {
   readonly copy: boolean;
   /** Whether this subtree reaches the output (false under a removed element). */
   readonly emit: boolean;
+  /**
+   * The output parent is a clipPath, whose content model takes shapes only (a g child is not
+   * drawn into the clip): a use here is expanded by flattening, never by wrapping in a g.
+   */
+  readonly shapesOnly: boolean;
 }
+
+/** What enclosing uses and groups hand down to a flattened shape. */
+interface Frame {
+  /** Transform lists to apply before the shape's own, outermost first. */
+  readonly transforms: readonly string[];
+  /** Inherited properties set on the enclosing uses and groups (innermost wins). */
+  readonly inherited: Attributes;
+}
+
+/** SVG shape elements: the only drawing children a clipPath takes. */
+const SHAPES: ReadonlySet<string> = new Set([
+  'path',
+  'rect',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+]);
+
+/** Inherited whitelisted properties: a shape picks them up from an enclosing use or g. */
+const INHERITED: ReadonlySet<string> = new Set([
+  'fill',
+  'fill-opacity',
+  'fill-rule',
+  'stroke',
+  'stroke-width',
+  'stroke-linecap',
+  'stroke-linejoin',
+  'stroke-miterlimit',
+  'stroke-dasharray',
+  'stroke-dashoffset',
+  'stroke-opacity',
+  'paint-order',
+  'color',
+  'clip-rule',
+  'visibility',
+]);
+
+/**
+ * Non-inherited properties of a use or g that act on the group as a whole in a clip path; they
+ * cannot be moved onto the flattened shapes without a group, so the document is unconvertible.
+ * Others (opacity, paint servers' stop-*, geometry of a g) do not affect clipping.
+ */
+const GROUP_ONLY: readonly string[] = ['clip-path', 'mask', 'vector-effect'];
 
 type Step =
   | { readonly kind: 'enter'; readonly element: Element; readonly context: Context }
+  /** An element of a use expanded under a clipPath: shapes come out with merged transforms. */
+  | {
+      readonly kind: 'flat';
+      readonly element: Element;
+      readonly context: Context;
+      readonly frame: Frame;
+    }
   | { readonly kind: 'text'; readonly value: string }
   /** Leaves an element: closes its tag (if emitted) and takes it off the active path. */
   | { readonly kind: 'exit'; readonly element: Element; readonly close: string | null };
@@ -424,12 +482,19 @@ class Converter {
     }
     // Explicit work stack: nesting may reach the element limit, deeper than a safe call stack.
     const work: Step[] = [
-      { kind: 'enter', element: this.#source.root, context: { depth: 0, copy: false, emit: true } },
+      {
+        kind: 'enter',
+        element: this.#source.root,
+        context: { depth: 0, copy: false, emit: true, shapesOnly: false },
+      },
     ];
     for (let step = work.pop(); step; step = work.pop()) {
       switch (step.kind) {
         case 'enter':
           this.#enter(step.element, step.context, work);
+          break;
+        case 'flat':
+          this.#flatten(step.element, step.context, step.frame, work);
           break;
         case 'text':
           this.#output.text(step.value);
@@ -444,6 +509,10 @@ class Converter {
   }
 
   #enter(element: Element, context: Context, work: Step[]): void {
+    if (context.shapesOnly && element.localName === 'use' && element.namespaceURI === SVG_NS) {
+      this.#flatten(element, context, { transforms: [], inherited: new Map() }, work);
+      return;
+    }
     checkDeadline(this.#deadline);
     this.#active.add(element);
     if (element.localName === 'use' && element.namespaceURI === SVG_NS) {
@@ -461,7 +530,11 @@ class Converter {
     }
     work.push({ kind: 'exit', element, close: keep ? name : null });
     const keepText = keep && TEXT_ELEMENTS.has(name);
-    const children: Context = { ...context, emit: keep && !keepText };
+    const children: Context = {
+      ...context,
+      emit: keep && !keepText,
+      shapesOnly: keep && name === 'clipPath',
+    };
     const steps: Step[] = [];
     for (let child = element.firstChild; child; child = child.nextSibling) {
       if (child.nodeType === ELEMENT_NODE) {
@@ -476,15 +549,13 @@ class Converter {
     for (let i = steps.length - 1; i >= 0; i--) work.push(steps[i]!);
   }
 
-  /** Replaces a use by a group carrying its attributes and an x / y translation. */
-  #expand(use: Element, context: Context, work: Step[]): void {
-    const attributes = this.#resolved.get(use)!;
+  /**
+   * Checks a use reference and charges its copy to the budgets; returns the referenced element,
+   * or null for a use without a reference (it draws nothing).
+   */
+  #target(attributes: Attributes, context: Context): Element | null {
     const href = attributes.get(XLINK_HREF);
-    if (href === undefined) {
-      // A use without a reference draws nothing.
-      work.push({ kind: 'exit', element: use, close: null });
-      return;
-    }
+    if (href === undefined) return null;
     const id = localId(href);
     if (id === null) unconvertible('use refers outside the document');
     const target = this.#source.ids.get(id);
@@ -497,11 +568,21 @@ class Converter {
       // A new viewport (viewBox, width / height) cannot be rewritten as a plain group.
       unconvertible('use refers to a viewport element');
     }
-    const depth = context.depth + 1;
-    if (depth > MAX_USE_DEPTH) unconvertible('use nesting too deep');
+    if (context.depth + 1 > MAX_USE_DEPTH) unconvertible('use nesting too deep');
     this.#elements += this.#source.subtreeSize.get(target)!;
     if (this.#elements > MAX_ELEMENTS) unconvertible('too many elements after expansion');
+    return target;
+  }
 
+  /** Replaces a use by a group carrying its attributes and an x / y translation. */
+  #expand(use: Element, context: Context, work: Step[]): void {
+    const attributes = this.#resolved.get(use)!;
+    const target = this.#target(attributes, context);
+    if (target === null) {
+      work.push({ kind: 'exit', element: use, close: null });
+      return;
+    }
+    const depth = context.depth + 1;
     const x = useOffset(attributes.get('x'));
     const y = useOffset(attributes.get('y'));
     const group: Attributes = new Map(attributes);
@@ -518,9 +599,93 @@ class Converter {
     work.push({
       kind: 'enter',
       element: target,
-      context: { depth, copy: true, emit: context.emit },
+      context: { depth, copy: true, emit: context.emit, shapesOnly: false },
     });
   }
+
+  /**
+   * Expansion under a clipPath (whose children must be shapes): no g is inserted. Each shape of
+   * the copy is emitted directly, its transform prefixed by the enclosing use transforms, x / y
+   * translations and g transforms (outermost first, as SVG composes them), and inherited
+   * properties of those uses and groups copied onto it unless it sets its own. Anything a group
+   * would still be needed for rejects the document; elements that draw nothing are dropped.
+   */
+  #flatten(element: Element, context: Context, frame: Frame, work: Step[]): void {
+    checkDeadline(this.#deadline);
+    this.#active.add(element);
+    work.push({ kind: 'exit', element, close: null });
+    if (element.namespaceURI !== SVG_NS) return;
+    const name = element.localName ?? '';
+    const attributes = this.#resolved.get(element)!;
+
+    if (name === 'use' || name === 'g') {
+      let target: Element | null = null;
+      if (name === 'use') {
+        target = this.#target(attributes, context);
+        if (target === null) return;
+      }
+      for (const property of GROUP_ONLY) {
+        if (attributes.has(property))
+          unconvertible(`${property} on a use flattened into a clip path`);
+      }
+      if (attributes.get('display')?.trim() === 'none') return;
+      const transforms = [...frame.transforms];
+      const own = attributes.get('transform')?.trim();
+      if (own) transforms.push(checkedTransform(own));
+      if (name === 'use') {
+        const x = useOffset(attributes.get('x'));
+        const y = useOffset(attributes.get('y'));
+        if (x !== 0 || y !== 0) transforms.push(`translate(${String(x)} ${String(y)})`);
+      }
+      const inherited: Attributes = new Map(frame.inherited);
+      for (const [property, value] of attributes) {
+        if (INHERITED.has(property)) inherited.set(property, value);
+      }
+      const next: Frame = { transforms, inherited };
+      if (target !== null) {
+        const deeper: Context = { ...context, depth: context.depth + 1, copy: true };
+        work.push({ kind: 'flat', element: target, context: deeper, frame: next });
+        return;
+      }
+      const children = elementChildren(element);
+      for (let i = children.length - 1; i >= 0; i--) {
+        work.push({ kind: 'flat', element: children[i]!, context, frame: next });
+      }
+      return;
+    }
+    // Defs, paint servers, nested clip paths and masks draw nothing in place (and a copy keeps
+    // no id to be referenced by); descriptive and unlisted elements are dropped by step ②.
+    if (!SHAPES.has(name)) return;
+
+    const merged: Attributes = new Map(attributes);
+    for (const [property, value] of frame.inherited) {
+      const own = merged.get(property)?.trim();
+      if (own === undefined || own === '' || own === 'inherit') merged.set(property, value);
+    }
+    const own = merged.get('transform')?.trim();
+    const transforms = [...frame.transforms];
+    if (own) transforms.push(checkedTransform(own));
+    if (transforms.length > 0) merged.set('transform', transforms.join(' '));
+    else merged.delete('transform');
+    // The exit pushed above only clears the active path; this one closes the shape first.
+    work.pop();
+    this.#output.open(name, keptAttributes(name, merged, true));
+    work.push({ kind: 'exit', element, close: name });
+    const children: Context = { ...context, copy: true, emit: true, shapesOnly: false };
+    const steps: Step[] = [];
+    for (const child of elementChildren(element)) {
+      steps.push({ kind: 'enter', element: child, context: children });
+    }
+    for (let i = steps.length - 1; i >= 0; i--) work.push(steps[i]!);
+  }
+}
+
+/** A transform list that may be concatenated with others, or the document is unconvertible. */
+function checkedTransform(value: string): string {
+  if (value.includes('\\') || value.includes('/*') || !isTransformList(value)) {
+    unconvertible('transform cannot be merged into a clip path shape');
+  }
+  return value;
 }
 
 export function sanitizeSvg(input: Uint8Array, maxBytes: number, deadline: Deadline): Uint8Array {

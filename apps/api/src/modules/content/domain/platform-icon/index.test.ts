@@ -583,3 +583,120 @@ it.each([1, 128, 0xffff])(
     });
   },
 );
+
+// ---------------------------------------------------------------- use under clipPath
+
+function clipChildren(document: Document): Element[] {
+  const clip = all(document, 'clipPath')[0]!;
+  return Array.from(clip.childNodes).filter((node): node is Element => node.nodeType === 1);
+}
+
+it('[AC-F1-06v] use under clipPath is expanded without a g: offset merged into the shape', () => {
+  const { document } = clean(
+    svg(
+      '<defs><rect id="r" width="4" height="4"/></defs>' +
+        '<clipPath id="c"><use href="#r" x="5"/></clipPath><path d="M0 0H9V9z" clip-path="url(#c)"/>',
+    ),
+  );
+  const children = clipChildren(document);
+  expect(children.map((child) => child.localName)).toEqual(['rect']);
+  expect(children[0]!.getAttribute('transform')).toBe('translate(5 0)');
+  expect(children[0]!.getAttribute('width')).toBe('4');
+  expect(children[0]!.hasAttribute('id')).toBe(false);
+  expect(all(document, 'g')).toHaveLength(0);
+});
+
+it('[AC-F1-06v] clipPath use: use transform and offset precede the shape transform', () => {
+  const { document } = clean(
+    svg(
+      '<defs><rect id="r" width="4" height="4" transform="rotate(45)"/></defs>' +
+        '<clipPath id="c"><use href="#r" x="1" y="2" transform="scale(2)"/></clipPath>',
+    ),
+  );
+  const [rect] = clipChildren(document);
+  expect(rect!.getAttribute('transform')).toBe('scale(2) translate(1 2) rotate(45)');
+});
+
+it('[AC-F1-06v] clipPath use of a group flattens each shape, nested uses included', () => {
+  const { document } = clean(
+    svg(
+      '<defs><circle id="dot" r="1"/>' +
+        '<g id="pair" transform="translate(10 0)" clip-rule="evenodd">' +
+        '<rect width="2" height="2"/><g><use href="#dot" y="3"/></g><title>t</title></g></defs>' +
+        '<clipPath id="c"><use href="#pair" x="5" clip-rule="nonzero"/><rect width="1" height="1"/></clipPath>',
+    ),
+  );
+  const children = clipChildren(document);
+  expect(children.map((child) => child.localName)).toEqual(['rect', 'circle', 'rect']);
+  expect(children[0]!.getAttribute('transform')).toBe('translate(5 0) translate(10 0)');
+  expect(children[1]!.getAttribute('transform')).toBe(
+    'translate(5 0) translate(10 0) translate(0 3)',
+  );
+  // The inner g's clip-rule wins over the outer use's, as inheritance would give.
+  expect(children[0]!.getAttribute('clip-rule')).toBe('evenodd');
+  expect(children[1]!.getAttribute('clip-rule')).toBe('evenodd');
+  expect(children[2]!.hasAttribute('transform')).toBe(false);
+  expect(all(document, 'g').filter((g) => g.parentNode?.nodeName === 'clipPath')).toHaveLength(0);
+});
+
+it('[AC-F1-06v] clipPath use: the shape keeps its own inherited property and display none drops', () => {
+  const { document } = clean(
+    svg(
+      '<defs><rect id="r" width="4" height="4" clip-rule="evenodd"/></defs>' +
+        '<clipPath id="c"><use href="#r" clip-rule="nonzero"/><use href="#r" display="none"/></clipPath>',
+    ),
+  );
+  const children = clipChildren(document);
+  expect(children).toHaveLength(1);
+  expect(children[0]!.getAttribute('clip-rule')).toBe('evenodd');
+  expect(children[0]!.hasAttribute('transform')).toBe(false);
+});
+
+it('[AC-F1-06v] use outside clipPath still expands into a g', () => {
+  const { document } = clean(
+    svg(
+      '<defs><rect id="r" width="4" height="4"/></defs><mask id="m"><use href="#r" x="5"/></mask>',
+    ),
+  );
+  const mask = all(document, 'mask')[0]!;
+  expect(mask.firstChild?.nodeName).toBe('g');
+  expect((mask.firstChild as Element).getAttribute('transform')).toBe('translate(5 0)');
+});
+
+it.each([
+  ['clip-path on the use', '<use href="#r" clip-path="url(#o)"/>', ''],
+  ['mask on a referenced group', '<use href="#g"/>', ''],
+  ['malformed use transform', '<use href="#r" transform="rotate(1 2)"/>', ''],
+  ['unparseable shape transform', '<use href="#bad"/>', ''],
+  ['cycle through the flattening', '<use href="#loop"/>', ''],
+  ['external reference', '<use href="other.svg#r"/>', ''],
+])('[AC-F1-06v] clipPath use that needs a group is unconvertible: %s', (_name, use) => {
+  const source = svg(
+    '<defs><rect id="r" width="4" height="4"/><clipPath id="o"><rect width="1" height="1"/></clipPath>' +
+      '<g id="g" mask="url(#o)"><rect width="1" height="1"/></g>' +
+      '<rect id="bad" width="1" height="1" transform="translate(1px)"/>' +
+      '<g id="loop"><use href="#loop"/></g></defs>' +
+      `<clipPath id="c">${use}</clipPath>`,
+  );
+  expect(rejected(source)).toBe('icon_svg_unconvertible');
+});
+
+it('[AC-F1-06v] clipPath flattening polls the deadline and counts copies', () => {
+  let calls = 0;
+  const source = svg(
+    `<defs><g id="many">${'<rect width="1" height="1"/>'.repeat(10)}</g></defs><clipPath id="c"><use href="#many"/></clipPath>`,
+  );
+  clean(
+    source,
+    options(204800, () => {
+      calls += 1;
+      return 2000;
+    }),
+  );
+  const baseline = calls;
+  expect(baseline).toBeGreaterThan(10);
+  const limited = svg(
+    `<defs><g id="many">${'<rect width="1" height="1"/>'.repeat(600)}</g></defs><clipPath id="c">${'<use href="#many"/>'.repeat(9)}</clipPath>`,
+  );
+  expect(rejected(limited)).toBe('icon_svg_unconvertible');
+});
