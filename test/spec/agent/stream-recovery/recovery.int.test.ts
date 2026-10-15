@@ -236,9 +236,13 @@ it('[AC-B3-03h#3] 两个 worker（各自的连接池、同一库）同时 tick�
     ]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
 
+    // One row per step: three rows took three steps, a fourth found nothing left (wrapped).
+    expect(ga.calls).toBe(4);
+
     // B's next tick takes the lock and finds nothing left.
     await wb.schedule.fire('tick');
     expect(gb.calls).toBe(1);
+    expect(ga.calls).toBe(4);
     expect(wb.logs.of('agent_sweep_tick')).toEqual([
       expect.objectContaining({ processed: 0, finalized: 0 }),
     ]);

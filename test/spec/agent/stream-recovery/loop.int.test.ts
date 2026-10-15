@@ -4,7 +4,9 @@
 // 处理一行，内容 B3-03e 已测），tick 只由注入的 schedule 触发，时长只走注入的 Clock：两轮周期、游标跨轮、
 // 本轮上限、step 抛错后下一轮照常、按 Clock 的时限、running 期间不并发、按定时器的时限（旧轮不再派发）、stop
 // 等进行中的一行且不再派发、stop 的等待上限。真 finalize 下的超时与失锁见 takeover.int.test.ts。
+import type { DB } from '@couli/db';
 import { createTestDatabase } from '@couli/db/testing';
+import type { Kysely } from 'kysely';
 import { expect, it } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -26,8 +28,11 @@ import {
   START_MS,
   ScriptedSweeper,
   advisoryHolders,
+  connectionFailsOnce,
   result,
   settleWork,
+  statementFailsOnce,
+  terminate,
   until,
 } from './kit.ts';
 
@@ -42,7 +47,9 @@ interface Rig {
   readonly loop: AgentSweepLoop;
 }
 
-function rig(options: { random?: () => number; config?: Partial<AgentSweepLoopConfig> } = {}): Rig {
+function rig(
+  options: { random?: () => number; config?: Partial<AgentSweepLoopConfig>; db?: Kysely<DB> } = {},
+): Rig {
   const clock = new FixedClock(new Date(START_MS));
   const logs = new Logs();
   const schedule = new ManualSchedule();
@@ -50,7 +57,7 @@ function rig(options: { random?: () => number; config?: Partial<AgentSweepLoopCo
   const config = { ...agentSweepLoopDefaults(), ...options.config };
   const loop = startAgentSweeper({
     step,
-    db: pg.db,
+    db: options.db ?? pg.db,
     clock,
     logger: logs.logger,
     config,
@@ -96,11 +103,16 @@ it('[AC-B3-03h#8] 连续两轮周期：每次延迟为 interval ×(1 ± 抖动)�
     expect(r.schedule.pending('tick').map((a) => a.delayMs)).toEqual([delay(0.75)]);
     expect(r.step.cursors).toEqual([sweepStart(), cursor(1)]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
+    // A tick that ended normally leaves no time-limit timer behind.
+    expect(r.schedule.armed.filter((a) => a.timer === 'tick_timeout')).toHaveLength(1);
+    expect(r.schedule.pending('tick_timeout')).toEqual([]);
 
     await r.schedule.fire('tick');
     expect(r.schedule.pending('tick').map((a) => a.delayMs)).toEqual([delay(0.999_999)]);
     expect(r.step.cursors).toEqual([sweepStart(), cursor(1), cursor(2), cursor(3)]);
     expect(await advisoryHolders(pg.db)).toEqual([]);
+    expect(r.schedule.armed.filter((a) => a.timer === 'tick_timeout')).toHaveLength(2);
+    expect(r.schedule.pending('tick_timeout')).toEqual([]);
 
     expect(r.logs.of('agent_sweep_tick')).toEqual([
       expect.objectContaining({
@@ -306,4 +318,88 @@ it('[AC-B3-03h#33] stop 的等待有上限：进行中的一行挂起时 stop_ti
   expect(await advisoryHolders(pg.db)).toEqual([]);
   expect(r.step.cursors).toHaveLength(1);
   expect(r.schedule.pending('tick')).toEqual([]);
+});
+
+/** The second tick of a loop whose first tick failed: runs as usual (not 'busy'), lock released. */
+async function nextTickRunsAsUsual(r: Rig): Promise<void> {
+  r.step.answer = () => Promise.resolve(done());
+  const calls = r.step.cursors.length;
+  await r.schedule.fire('tick');
+  expect(r.logs.of('agent_sweep_skipped')).toEqual([]);
+  expect(r.step.cursors).toHaveLength(calls + 1);
+  expect(r.logs.of('agent_sweep_tick').at(-1)).toMatchObject({ processed: 0, wrapped: true });
+  expect(await advisoryHolders(pg.db)).toEqual([]);
+}
+
+it('[AC-B3-03h#37] 借连接失败（db.connection().execute 在回调前就拒绝）：这一轮的 promise 正常结束（不拒绝、无未处理的拒绝），恰一条 error agent_sweep_lock_failed {stage: acquire}，step 未被调用；running 已复位，下一轮照常取锁、记 agent_sweep_tick、锁已释放', async () => {
+  const flaky = connectionFailsOnce(pg.db);
+  const r = rig({ db: flaky.db });
+  try {
+    r.step.answer = () => Promise.resolve(done());
+    await expect(r.schedule.fire('tick')).resolves.toBeUndefined();
+    expect(flaky.failed()).toBe(1);
+    expect(r.step.cursors).toEqual([]);
+    expect(r.logs.of('agent_sweep_lock_failed')).toEqual([
+      expect.objectContaining({ level: LEVEL.error, stage: 'acquire', error_name: 'Error' }),
+    ]);
+    expect(r.logs.of('agent_sweep_tick')).toEqual([]);
+    expect(r.logs.lines.join('\n')).not.toContain('fixture: no connection available');
+    await nextTickRunsAsUsual(r);
+    expect(r.logs.of('agent_sweep_lock_failed')).toHaveLength(1);
+  } finally {
+    await r.loop.stop();
+  }
+});
+
+it('[AC-B3-03h#38] 取锁语句抛错（pg_try_advisory_lock 失败、连接本身完好）：这一轮正常结束不拒绝，恰一条 agent_sweep_lock_failed {stage: acquire}，step 未被调用，锁未被持有；下一轮照常', async () => {
+  const flaky = statementFailsOnce(pg.db, /pg_try_advisory_lock/);
+  const r = rig({ db: flaky.db });
+  try {
+    await expect(r.schedule.fire('tick')).resolves.toBeUndefined();
+    expect(flaky.failed()).toBe(1);
+    expect(r.step.cursors).toEqual([]);
+    expect(r.logs.of('agent_sweep_lock_failed')).toEqual([
+      expect.objectContaining({ level: LEVEL.error, stage: 'acquire' }),
+    ]);
+    expect(await advisoryHolders(pg.db)).toEqual([]);
+    await nextTickRunsAsUsual(r);
+    expect(r.logs.of('agent_sweep_lock_failed')).toHaveLength(1);
+  } finally {
+    await r.loop.stop();
+  }
+});
+
+it('[AC-B3-03h#39] 解锁失败（最后一行之后锁连接的后端被杀，unlock 报错）：这一轮正常结束不拒绝，记本轮的 agent_sweep_tick 外加恰一条 agent_sweep_lock_failed {stage: unlock}；running 已复位，下一轮照常取锁、记 agent_sweep_tick、锁已释放', async () => {
+  const r = rig();
+  try {
+    r.step.answer = async () => {
+      // The only row is done; the lock connection dies before the tick unlocks.
+      const holders = await advisoryHolders(pg.db);
+      expect(holders).toHaveLength(1);
+      await terminate(pg.db, holders[0]!);
+      await until(
+        'the killed backend released its lock',
+        async () => (await advisoryHolders(pg.db)).length === 0,
+      );
+      r.step.answer = null;
+      return done();
+    };
+    await expect(r.schedule.fire('tick')).resolves.toBeUndefined();
+    expect(r.step.cursors).toHaveLength(1);
+    expect(r.logs.of('agent_sweep_lock_failed')).toEqual([
+      expect.objectContaining({
+        level: LEVEL.error,
+        stage: 'unlock',
+        error_name: expect.any(String),
+      }),
+    ]);
+    expect(r.logs.of('agent_sweep_tick')).toEqual([
+      expect.objectContaining({ processed: 0, wrapped: true }),
+    ]);
+    expect(await advisoryHolders(pg.db)).toEqual([]);
+    await nextTickRunsAsUsual(r);
+    expect(r.logs.of('agent_sweep_lock_failed')).toHaveLength(1);
+  } finally {
+    await r.loop.stop();
+  }
 });

@@ -21,6 +21,7 @@ import {
 import { instance, memberKey, runRow, usedOn } from '../stream-finalize/kit.ts';
 import { leftover, type Leftover } from '../stream-sweeper/kit.ts';
 import {
+  GatedSweeper,
   HeldFinalizer,
   LEVEL,
   Logs,
@@ -39,6 +40,7 @@ interface Worker {
   readonly logs: Logs;
   readonly schedule: ManualSchedule;
   readonly finalizer: HeldFinalizer;
+  readonly step: GatedSweeper;
   readonly loop: AgentSweepLoop;
 }
 
@@ -70,12 +72,15 @@ function worker(
     label,
     options,
   );
-  const step = createSweeper({
-    db,
-    finalizer,
-    clock,
-    config: { ...sweeperDefaults(), maxPerTick: 1 },
-  });
+  // Counts the loop's step calls (never closed: it only forwards).
+  const step = new GatedSweeper(
+    createSweeper({
+      db,
+      finalizer,
+      clock,
+      config: { ...sweeperDefaults(), maxPerTick: 1 },
+    }),
+  );
   const loop = startAgentSweeper({
     step,
     db,
@@ -84,7 +89,7 @@ function worker(
     config: agentSweepLoopDefaults(),
     schedule: schedule.schedule,
   });
-  return { logs, schedule, finalizer, loop };
+  return { logs, schedule, finalizer, step, loop };
 }
 
 async function settledOnce(runs: readonly Leftover[]): Promise<void> {
@@ -184,6 +189,8 @@ it('[AC-B3-03h#32] 失锁（S1-2）：A 持锁处理第一条时 finalize 挂起
     expect(await a.finalizer.outcomes[0]!).toMatchObject({ kind: 'final', wrote: false });
     await tickA;
     await settleWork(pg.db);
+    // After the lock was lost A made no further step call (only the one that was in flight).
+    expect(a.step.calls).toBe(1);
     expect(a.finalizer.calls).toEqual([runs[0]!.runId]);
     expect(events).toEqual([
       'A:call:r1',

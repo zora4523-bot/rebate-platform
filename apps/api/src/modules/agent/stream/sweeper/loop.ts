@@ -29,8 +29,10 @@
 //     still in flight.
 //   - A tick: db.connection().execute(c => …) — one pinned connection c for the whole tick; on c
 //     `SELECT pg_try_advisory_lock(hashtextextended('agent.sweep', 0))`. false → info or debug
-//     'agent_sweep_skipped' {reason: 'locked'}; the tick ends, step never called. The lock query
-//     failing → error 'agent_sweep_lock_failed' {error_name}; the tick ends. true → t0 =
+//     'agent_sweep_skipped' {reason: 'locked'}; the tick ends, step never called. Borrowing c
+//     failing (db.connection().execute rejects before the callback runs) or the lock query
+//     failing → error 'agent_sweep_lock_failed' {stage: 'acquire', error_name}; the tick ends,
+//     step never called. true → t0 =
 //     deps.clock.now(); a 'tick_timeout' timer of tickTimeoutMs is armed; then the dispatch loop:
 //       before EVERY step call, in this order: (1) stop() was called → end; (2) rows handled in
 //       this tick (sum of the steps' processed) ≥ maxPerTick → end; (3) deps.clock.now() − t0 ≥
@@ -47,14 +49,20 @@
 //       later result or rejection is ignored (never unhandled, cursor unchanged) and NOTHING more
 //       is dispatched by this tick, ever.
 //     Every end except lock lost: `SELECT pg_advisory_unlock(hashtextextended('agent.sweep', 0))`
-//     on the same c, then c goes back to the pool (an unlock failure is only an error line
-//     'agent_sweep_lock_failed' {error_name}). The armed 'tick_timeout' timer is cancelled when
-//     the tick ends otherwise.
+//     on the same c, then c goes back to the pool (an unlock failure, e.g. c's backend died after
+//     the last step, is only an error line 'agent_sweep_lock_failed' {stage: 'unlock',
+//     error_name}, in addition to the tick's own end line). The armed 'tick_timeout' timer is
+//     cancelled when the tick ends otherwise (no pending 'tick_timeout' after a normal end).
+//     Failure containment: whatever fails — borrowing c, the lock query, a step, `SELECT 1`, the
+//     unlock — the promise returned to the 'tick' timer resolves (never rejects, nothing
+//     unhandled: with the default setTimeout a rejection would end the worker process) and the
+//     running flag is cleared, so the next tick runs as usual.
 //     A tick that ended on (1), (2) or wrapped logs info 'agent_sweep_tick' {processed, finalized,
 //     skipped_running, skipped_held, failed, wrapped, duration_ms} (sums over its steps; duration
 //     = deps.clock.now() at the end − t0). Every tick logs exactly one of 'agent_sweep_skipped',
 //     'agent_sweep_tick', 'agent_sweep_tick_timeout', 'agent_sweep_lock_lost', 'agent_sweep_failed'
-//     or 'agent_sweep_lock_failed' (plus, at most, an unlock failure line).
+//     or 'agent_sweep_lock_failed' {stage: 'acquire'} (plus, at most, one unlock failure line
+//     {stage: 'unlock'}).
 //     The cursor is kept in this process across ticks: sweepStart() at first, then the nextCursor
 //     of the last step that resolved in time.
 //     Log lines carry counts and error names only (never error messages: they may hold user

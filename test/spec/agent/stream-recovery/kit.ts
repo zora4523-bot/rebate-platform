@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { sql, type Kysely } from 'kysely';
+import { sql, type Kysely, type KyselyPlugin } from 'kysely';
 import { afterEach, beforeEach, expect } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -168,6 +168,55 @@ export async function advisoryHolders(db: Kysely<DB>): Promise<number[]> {
 
 export async function terminate(db: Kysely<DB>, pid: number): Promise<void> {
   await sql`SELECT pg_terminate_backend(${pid})`.execute(db);
+}
+
+/**
+ * The same database whose first db.connection().execute(…) rejects before its callback runs (a
+ * pool that cannot hand out a connection); every later call is the real one.
+ */
+export function connectionFailsOnce(db: Kysely<DB>): { db: Kysely<DB>; failed: () => number } {
+  let failed = 0;
+  const wrapped = new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop === 'connection' && failed === 0) {
+        return () => ({
+          execute: () => {
+            failed += 1;
+            return Promise.reject(new Error('fixture: no connection available'));
+          },
+        });
+      }
+      const value: unknown = Reflect.get(target, prop, receiver);
+      return typeof value === 'function'
+        ? (value as (...a: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
+  return { db: wrapped, failed: () => failed };
+}
+
+/**
+ * The same database (a Kysely plugin) where the first statement whose SQL matches `pattern`
+ * throws before it is sent (the connection stays healthy); later statements run as usual.
+ */
+export function statementFailsOnce(
+  db: Kysely<DB>,
+  pattern: RegExp,
+): { db: Kysely<DB>; failed: () => number } {
+  let failed = 0;
+  const plugin: KyselyPlugin = {
+    transformQuery(args) {
+      if (failed === 0 && pattern.test(JSON.stringify(args.node))) {
+        failed += 1;
+        throw new Error('fixture: statement failed');
+      }
+      return args.node;
+    },
+    transformResult(args) {
+      return Promise.resolve(args.result);
+    },
+  };
+  return { db: db.withPlugin(plugin), failed: () => failed };
 }
 
 export async function runRow(db: Kysely<DB>, runId: string): Promise<Row> {

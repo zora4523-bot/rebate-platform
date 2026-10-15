@@ -10,7 +10,10 @@ import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
-import { sweeperDefaults } from '../../../../apps/api/src/modules/agent/stream/sweeper/index.ts';
+import {
+  sweepStart,
+  sweeperDefaults,
+} from '../../../../apps/api/src/modules/agent/stream/sweeper/index.ts';
 import {
   AgentModule,
   agentSweeperToken,
@@ -121,6 +124,37 @@ it('[AC-B3-03h#35] 真实 provider（AgentModule.forWorker）：运行体与 cre
     expect(logs.of('agent_sweep_tick')).toHaveLength(1);
     expect((await runRow(pg.db, later.runId))['final_event']).toBeNull();
     expect((await sessionRow(pg.db, later.sessionId))['run_lock_run_id']).toBe(later.runId);
+  } finally {
+    await context.close();
+  }
+});
+
+it('[AC-B3-03h#40] 真实 provider 的 step 每次只处理一行：两条遗留 run 时 step.sweepOnce(sweepStart()) 只收尾第一条（processed 1、wrapped false、游标停在它上），第二条要下一次调用；本轮上限在 loopConfig（= sweeperConfig.maxPerTick）而不在 step', async () => {
+  const first = await leftover(pg.db, START_MS);
+  const second = await leftover(pg.db, START_MS + 1_000);
+  const nowMs = second.lockMs + sweeperDefaults().marginMs + 1_000;
+  const clock = new FixedClock(new Date(nowMs));
+  const logs = new Logs();
+  const context = await agentContext(clock, logs);
+  try {
+    const runtime = context.get(agentSweeperToken(), { strict: false }) as AgentSweeperRuntime;
+    expect(runtime.loopConfig.maxPerTick).toBe(runtime.sweeperConfig.maxPerTick);
+    expect(runtime.loopConfig.maxPerTick).toBeGreaterThan(1);
+
+    const r1 = await runtime.step.sweepOnce(sweepStart());
+    expect(r1).toMatchObject({ processed: 1, finalized: 1, failed: 0, wrapped: false });
+    expect(r1.nextCursor).toEqual({
+      lockExpiresAt: new Date(first.lockMs),
+      sessionId: first.sessionId,
+    });
+    expect((await runRow(pg.db, first.runId))['final_event']).not.toBeNull();
+    expect((await runRow(pg.db, second.runId))['final_event']).toBeNull();
+
+    const r2 = await runtime.step.sweepOnce(r1.nextCursor);
+    expect(r2).toMatchObject({ processed: 1, finalized: 1, wrapped: false });
+    expect((await runRow(pg.db, second.runId))['final_event']).not.toBeNull();
+    const r3 = await runtime.step.sweepOnce(r2.nextCursor);
+    expect(r3).toMatchObject({ processed: 0, wrapped: true });
   } finally {
     await context.close();
   }
