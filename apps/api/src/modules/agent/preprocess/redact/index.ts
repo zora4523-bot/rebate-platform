@@ -78,25 +78,59 @@ export function maskForTrace(value: unknown): unknown {
 /** A whole <num_k> token: k starts at 1, no leading zero. */
 const PLACEHOLDER_RE = /^<num_[1-9]\d*>$/;
 const LITERAL_PLACEHOLDER_RE = /<num_[1-9]\d*>/g;
-/** Email (including Alipay accounts that are email addresses): local part, @, dotted domain. */
-const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+/**
+ * Email (including Alipay accounts that are email addresses). The local part is the whole run of
+ * RFC 5322 atext characters and dots, a superset of dot-atom, so an account such as
+ * "synthetic'o" is never split and partly left in clear; then @ and a dotted domain.
+ */
+const EMAIL_RE = /[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
 const HAN = '\\p{Script=Han}';
 /** Up to three spaces (half or full width), commas or enumeration commas between address parts. */
 const ADDRESS_SEP = '[ \\t\\u3000,，、]{0,3}';
+const ADDRESS_WS = '[ \\t\\u3000]{0,3}';
+const ADDRESS_DIGITS = '[0-9０-９]+';
 /** One detail character, or a space run that is followed by a digit or letter ("88号 101室"). */
-const ADDRESS_DETAIL =
+const ADDRESS_CHAR =
   `(?:[${HAN}A-Za-z0-9０-９Ａ-Ｚａ-ｚ#＃\\-－—]` + `|[ \\t\\u3000]+(?=[A-Za-z0-9０-９Ａ-Ｚａ-ｚ]))`;
-const ADDRESS_MARKER = '(?:路|街|道|巷|弄|里|号|室|栋|幢|楼|单元|层|村|组|座)';
+/** Room-number characters after the last marker ("8号303", "3栋A-201"). */
+const ADDRESS_TRAIL = '[A-Za-z0-9０-９Ａ-Ｚａ-ｚ#＃\\-－]*';
+const NUMBER_MARKER = '(?:号|室|栋|幢|楼|单元|层|座|弄)';
+const ROAD_MARKER = '(?:路|街|道|巷|弄|胡同)';
+/** Further detail up to the last number marker ("88号101室"); bounded to keep matching linear. */
+const ADDRESS_TAIL = `(?:${ADDRESS_CHAR}{0,24}${NUMBER_MARKER}${ADDRESS_TRAIL})?`;
+/** Detail with a number right before a number marker: "合成路88号", "3栋201室", "90 号". */
+const DETAIL_NUMBERED =
+  `${ADDRESS_CHAR}{0,24}?${ADDRESS_DIGITS}${ADDRESS_WS}${NUMBER_MARKER}` +
+  `${ADDRESS_TRAIL}${ADDRESS_TAIL}`;
+/** Detail with a road marker directly followed by a house number: "朝阳路12号", "文三路 90 号". */
+const DETAIL_ROAD =
+  `${ADDRESS_CHAR}{0,24}?${ROAD_MARKER}${ADDRESS_WS}${ADDRESS_DIGITS}${ADDRESS_WS}` +
+  `(?:号|弄)${ADDRESS_TRAIL}${ADDRESS_TAIL}`;
 /**
- * Delivery address: optional province, a city, then a district / county / town followed by a
- * detail part ending in a road / street / number / room style marker (plus any trailing room
- * digits). The parts may be separated by spaces, commas or enumeration commas. Group 1 (province,
- * city and the separator after it) is kept; group 2 (district, county and the detail) is masked.
+ * A place name: Han characters that are not themselves administrative markers, so a run such as
+ * "区县区县" splits into parts exactly one way and matching cannot backtrack exponentially.
+ */
+const PLACE_NAME = `(?:(?![省市区县旗镇乡]|街道|自治区)${HAN})`;
+/** Province and / or city: the part that is kept. */
+const PROVINCE_CITY =
+  `(?:${PLACE_NAME}{2,6}(?:省|自治区)${ADDRESS_SEP}(?:${PLACE_NAME}{2,6}市${ADDRESS_SEP})?` +
+  `|${PLACE_NAME}{2,6}市${ADDRESS_SEP})`;
+/** One to three district-level parts (district, county, banner, town, township, subdistrict). */
+const DISTRICTS = `(?:${PLACE_NAME}{1,8}(?:区|县|旗|镇|乡|街道)${ADDRESS_SEP}){1,3}`;
+/**
+ * Delivery address (BR-AI-14: province / city / district + road, street, number, room style
+ * detail). At least one administrative part must come first, and the detail must carry a number
+ * at a marker, so ordinary sentences such as "去超市买的7号电池" or "我住市中心附近" stay as they
+ * are. Alternatives, tried in order at each position:
+ *   1. province / city, district parts, numbered detail      → keep group 1
+ *   2. province / city, road + house number (no district)    → keep group 2
+ *   3. district parts, numbered detail (no province or city) → keep nothing
+ * Everything after the kept province / city is masked.
  */
 const ADDRESS_RE = new RegExp(
-  `((?:${HAN}{2,6}?(?:省|自治区)${ADDRESS_SEP})?${HAN}{2,6}?市${ADDRESS_SEP})` +
-    `(${HAN}{1,8}?(?:区|县|旗|镇|乡|街道)${ADDRESS_SEP}${ADDRESS_DETAIL}*${ADDRESS_MARKER}` +
-    `[A-Za-z0-9０-９Ａ-Ｚａ-ｚ#＃\\-－]*)`,
+  `(${PROVINCE_CITY})${DISTRICTS}${DETAIL_NUMBERED}` +
+    `|(${PROVINCE_CITY})${DETAIL_ROAD}` +
+    `|${DISTRICTS}${DETAIL_NUMBERED}`,
   'gu',
 );
 /** A maximal run of ASCII digits, optionally closed by the ID-card check letter. */
@@ -137,7 +171,11 @@ function redactFreeText(text: string, longNumber: (raw: string) => string): stri
   if (text === '') return text;
   return text
     .replace(EMAIL_RE, (email) => `${email[0] ?? ''}***${email.slice(email.indexOf('@'))}`)
-    .replace(ADDRESS_RE, (_match, region: string) => `${region}***`)
+    .replace(
+      ADDRESS_RE,
+      (_match, withDistrict: string | undefined, withRoad: string | undefined) =>
+        `${withDistrict ?? withRoad ?? ''}***`,
+    )
     .replace(DIGIT_RUN_RE, (run) => redactDigitRun(run, longNumber));
 }
 
