@@ -13,7 +13,7 @@ export type PddParameters = Readonly<Record<string, PddParameter>>;
  * no URL encoding); numbers and booleans use their JavaScript string form; arrays and objects
  * use compact JSON, which is also the exact string submitted on the wire.
  */
-// TODO(规划/11 §4.5): 数组参数序列化 — blocked on CAP-PDD probe 核对
+// 数组参数：probe 核对通过（goods.search 的 range_list 作紧凑 JSON 字符串参与签名，网关接受；B1-04u）。
 export function pddParameterText(value: PddParameter): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
