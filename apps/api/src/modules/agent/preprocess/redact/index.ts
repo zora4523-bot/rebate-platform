@@ -1,3 +1,9 @@
+// B3-05a: Preprocessor part one (pure functions). BR-AI-14 redaction table for text sent to the
+// model, the per-run <num_k> placeholder table and its restoration in tool arguments, and the
+// storage form used before anything is written to PG (BR-AI-19). Links and share passwords are
+// located with the parsing module's untruncated candidate spans, never with a looser pattern, so
+// a phone number or long number right after a link is still redacted.
+import { findCandidateSpans } from '../../../parsing/index.ts';
 import type { RedactedText as AdmissionRedactedText } from '../../stream/admission/index.ts';
 import type { RedactedText as DegradedRedactedText } from '../../model-gateway/degraded/index.ts';
 
@@ -13,7 +19,12 @@ export interface AgentRedactor {
 
 /** 存储形态：自由文本长数字只保留后四位，不生成占位表。 */
 export function createAgentRedactor(): AgentRedactor {
-  throw new Error('NotImplemented: createAgentRedactor');
+  return {
+    redact(appId: string, text: string): Promise<AgentRedactedText> {
+      void appId;
+      return Promise.resolve(redactForStorage(text));
+    },
+  };
 }
 
 /** 先移出全部链接与口令，再对剩余自由文本应用 BR-AI-14 脱敏表。 */
@@ -21,19 +32,137 @@ export function redactForModel(text: string): {
   text: AgentRedactedText;
   placeholders: PlaceholderTable;
 } {
-  void text;
-  throw new Error('NotImplemented: redactForModel');
+  const tokens = new Map<string, string>();
+  const longNumber = (raw: string): string => {
+    let token = tokens.get(raw);
+    if (token === undefined) {
+      token = `<num_${String(tokens.size + 1)}>`;
+      tokens.set(raw, token);
+    }
+    return token;
+  };
+  let out = '';
+  for (const segment of freeSegments(text)) {
+    const redacted = redactFreeText(segment, longNumber);
+    // A removed link or password leaves a single space when both sides would otherwise touch,
+    // so two digit runs never merge into a new long number.
+    if (out !== '' && redacted !== '' && !/\s$/u.test(out) && !/^\s/u.test(redacted)) out += ' ';
+    out += redacted;
+  }
+  const placeholders: Record<string, string> = {};
+  for (const [raw, token] of tokens) placeholders[token] = raw;
+  return { text: out as AgentRedactedText, placeholders };
 }
 
 /** 递归复制工具参数，仅还原与表键完全一致的字符串值。 */
 export function restorePlaceholders(value: unknown, table: PlaceholderTable): unknown {
-  void value;
-  void table;
-  throw new Error('NotImplemented: restorePlaceholders');
+  return mapLeaves(value, (text) =>
+    PLACEHOLDER_RE.test(text) && Object.hasOwn(table, text) ? (table[text] ?? text) : text,
+  );
 }
 
 /** BR-AI-19：工具参数落库前递归转换为存储形态，不修改输入。 */
 export function maskForTrace(value: unknown): unknown {
-  void value;
-  throw new Error('NotImplemented: maskForTrace');
+  return mapLeaves(value, redactForStorage);
+}
+
+// ---------------------------------------------------------------------------------------------
+
+/** A whole <num_k> token: k starts at 1, no leading zero. */
+const PLACEHOLDER_RE = /^<num_[1-9]\d*>$/;
+/** Email (including Alipay accounts that are email addresses): local part, @, dotted domain. */
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+const HAN = '\\p{Script=Han}';
+/**
+ * Delivery address: optional province, a city, then a district or county followed by a detail
+ * part ending in a road / street / number / room style marker. Group 1 (province and city) is
+ * kept; group 2 (district, county and the detail) is masked.
+ */
+const ADDRESS_RE = new RegExp(
+  `((?:${HAN}{2,6}?(?:省|自治区))?${HAN}{2,6}?市)` +
+    `(${HAN}{1,8}?(?:区|县|旗)[${HAN}A-Za-z0-9#\\-]*(?:路|街|道|巷|弄|里|号|室|栋|幢|楼|单元|层|村|组))`,
+  'gu',
+);
+/** A maximal run of ASCII digits, optionally closed by the ID-card check letter. */
+const DIGIT_RUN_RE = /\d+[Xx]?/g;
+const PHONE_RE = /^1[3-9]\d{9}$/;
+const ID_WEIGHTS = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+const ID_CHECK_CODES = '10X98765432';
+const LONG_NUMBER_MIN = 11;
+const MASK = '****';
+
+/** Storage form: candidates verbatim, free text redacted, long numbers keep the last four. */
+function redactForStorage(text: string): AgentRedactedText {
+  let out = '';
+  let cursor = 0;
+  for (const span of findCandidateSpans(text)) {
+    out += redactFreeText(text.slice(cursor, span.index), keepLastFour);
+    out += span.raw;
+    cursor = span.index + span.raw.length;
+  }
+  out += redactFreeText(text.slice(cursor), keepLastFour);
+  return out as AgentRedactedText;
+}
+
+/** The free-text pieces around every link and password candidate, in text order. */
+function freeSegments(text: string): string[] {
+  const segments: string[] = [];
+  let cursor = 0;
+  for (const span of findCandidateSpans(text)) {
+    segments.push(text.slice(cursor, span.index));
+    cursor = span.index + span.raw.length;
+  }
+  segments.push(text.slice(cursor));
+  return segments;
+}
+
+/** Applies the BR-AI-14 table to one piece of free text; long numbers go to `longNumber`. */
+function redactFreeText(text: string, longNumber: (raw: string) => string): string {
+  if (text === '') return text;
+  return text
+    .replace(EMAIL_RE, (email) => `${email[0] ?? ''}***${email.slice(email.indexOf('@'))}`)
+    .replace(ADDRESS_RE, (_match, region: string) => `${region}***`)
+    .replace(DIGIT_RUN_RE, (run) => redactDigitRun(run, longNumber));
+}
+
+function redactDigitRun(run: string, longNumber: (raw: string) => string): string {
+  const last = run.at(-1);
+  if (last === 'X' || last === 'x') {
+    const digits = run.slice(0, -1);
+    if (digits.length === 17 && isValidIdCard(run)) return MASK + run.slice(-4);
+    return redactDigitRun(digits, longNumber) + last;
+  }
+  if (run.length === 18 && isValidIdCard(run)) return MASK + run.slice(-4);
+  if (PHONE_RE.test(run)) return `${run.slice(0, 3)}${MASK}${run.slice(-4)}`;
+  if (run.length >= LONG_NUMBER_MIN) return longNumber(run);
+  return run;
+}
+
+/** GB 11643 check digit over the first 17 digits. */
+function isValidIdCard(id: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < ID_WEIGHTS.length; i += 1) sum += Number(id[i]) * (ID_WEIGHTS[i] ?? 0);
+  return ID_CHECK_CODES[sum % 11] === id[17]?.toUpperCase();
+}
+
+function keepLastFour(raw: string): string {
+  return MASK + raw.slice(-4);
+}
+
+/** Deep copy of JSON-like data with every string leaf passed through `leaf`; keys stay as-is. */
+function mapLeaves(value: unknown, leaf: (text: string) => string): unknown {
+  if (typeof value === 'string') return leaf(value);
+  if (Array.isArray(value)) return value.map((item: unknown) => mapLeaves(item, leaf));
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, mapLeaves(item, leaf)]),
+    );
+  }
+  return value;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false;
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
