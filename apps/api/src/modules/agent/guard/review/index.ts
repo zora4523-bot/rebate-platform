@@ -1,5 +1,5 @@
 import type { RootLogger, Scheduler } from '../../../platform/index.ts';
-import type { SentenceReviewPort } from '../index.ts';
+import type { ReviewVerdict, SentenceReviewPort } from '../index.ts';
 
 // B3-06b · BR-AI-18 · 文档差异表，尚无真实调用能力验证（09 U-79）。
 // https://help.aliyun.com/zh/document_detail/2671445.html
@@ -70,15 +70,208 @@ export interface AliyunReviewDeps {
 }
 
 export function defaultAliyunReviewDifferences(): AliyunReviewDifferences {
-  throw new Error('NotImplemented: defaultAliyunReviewDifferences');
+  return {
+    inputService: 'llm_query_moderation',
+    outputService: 'llm_response_moderation',
+    codePath: ['Code'],
+    successCode: 200,
+    verdictPath: ['Data', 'RiskLevel'],
+    passValues: ['none'],
+    blockValues: ['high', 'medium', 'low'],
+  };
 }
 
 export function createAliyunInputReview(deps: AliyunReviewDeps): SentenceReviewPort {
-  void deps;
-  throw new Error('NotImplemented: createAliyunInputReview');
+  return createAliyunReview(deps, 'input');
 }
 
 export function createAliyunOutputReview(deps: AliyunReviewDeps): SentenceReviewPort {
-  void deps;
-  throw new Error('NotImplemented: createAliyunOutputReview');
+  return createAliyunReview(deps, 'output');
+}
+
+// ---------------------------------------------------------------------------------------------
+// 共用实现：两种场景只差 Service 参数；映射、时限、fail-close 完全相同。不跟随跳转、不重试。
+
+type Side = 'input' | 'output';
+
+/** 不可判定的原因，只作平铺日志字段；不含正文、凭据、签名或原始异常。 */
+type Unavailable =
+  | 'config'
+  | 'deadline'
+  | 'error'
+  | 'http_status'
+  | 'body_not_json'
+  | 'code_mismatch'
+  | 'verdict_unknown';
+
+type Outcome =
+  | { readonly verdict: 'pass' | 'block' }
+  | { readonly verdict: 'timeout'; readonly reason: Unavailable; readonly status?: number };
+
+const ACTION = 'TextModerationPlus';
+const VERSION = '2022-03-02';
+const CONTENT_TYPE = 'application/x-www-form-urlencoded; charset=utf-8';
+const LOG_MESSAGE = 'agent.safety.review_unavailable';
+
+function createAliyunReview(deps: AliyunReviewDeps, side: Side): SentenceReviewPort {
+  const differences = deps.differences ?? defaultAliyunReviewDifferences();
+  const service = side === 'input' ? differences.inputService : differences.outputService;
+
+  return {
+    async review(text: string): Promise<ReviewVerdict> {
+      let outcome: Outcome;
+      try {
+        outcome = await reviewWithDeadline(deps, differences, service, text);
+      } catch {
+        outcome = { verdict: 'timeout', reason: 'error' };
+      }
+      if (outcome.verdict === 'timeout') logUnavailable(deps, side, outcome);
+      return outcome.verdict;
+    },
+  };
+}
+
+/**
+ * 一次审核的总预算从读取配置时开始：取凭据、签名、发请求、读正文都计入同一个时限，
+ * 收到响应头不重新计时。到点即中止请求并返回 timeout，不等待 fetch 配合中止。
+ */
+async function reviewWithDeadline(
+  deps: AliyunReviewDeps,
+  differences: AliyunReviewDifferences,
+  service: string,
+  text: string,
+): Promise<Outcome> {
+  let budget: unknown;
+  try {
+    budget = deps.timeoutMs();
+  } catch {
+    return { verdict: 'timeout', reason: 'config' };
+  }
+  if (typeof budget !== 'number' || !Number.isFinite(budget) || budget <= 0) {
+    return { verdict: 'timeout', reason: 'config' };
+  }
+
+  const request = new AbortController();
+  const timer = new AbortController();
+  const expired = new Promise<Outcome>((resolve) => {
+    deps.scheduler.sleep(budget, timer.signal).then(
+      () => {
+        resolve({ verdict: 'timeout', reason: 'deadline' });
+      },
+      () => {
+        // 计时器被取消：审核已先结束，这个分支不再参与竞争。
+      },
+    );
+  });
+  const work = attempt(deps, differences, service, text, request.signal).catch((): Outcome => ({
+    verdict: 'timeout',
+    reason: 'error',
+  }));
+
+  const outcome = await Promise.race([work, expired]);
+  // 到点：中止仍在进行的签名或请求；先结束：释放计时器。
+  if (outcome.verdict === 'timeout' && outcome.reason === 'deadline') request.abort();
+  timer.abort();
+  return outcome;
+}
+
+async function attempt(
+  deps: AliyunReviewDeps,
+  differences: AliyunReviewDifferences,
+  service: string,
+  text: string,
+  signal: AbortSignal,
+): Promise<Outcome> {
+  // 每次审核重新取凭据并签名，不缓存，Key 轮换即时生效。
+  const credentials = deps.credentials();
+  const body = new URLSearchParams({
+    Service: service,
+    ServiceParameters: JSON.stringify({ content: text }),
+  }).toString();
+  const headers: Readonly<Record<string, string>> = { 'content-type': CONTENT_TYPE };
+  const signed = await deps.sign(
+    { endpoint: deps.endpoint, method: 'POST', headers, body, action: ACTION, version: VERSION },
+    credentials,
+    signal,
+  );
+  // 迟到的签名不得再发请求。
+  if (signal.aborted) return { verdict: 'timeout', reason: 'deadline' };
+
+  // 签名器只能追加请求头；地址、方法、正文与已列出的请求头不受它影响。
+  const response = await deps.fetch(deps.endpoint, {
+    method: 'POST',
+    headers: { ...stringHeaders(signed), ...headers },
+    body,
+    signal,
+    redirect: 'error',
+  });
+  const status = response.status;
+  if (!Number.isInteger(status) || status < 200 || status > 299) {
+    return { verdict: 'timeout', reason: 'http_status', status };
+  }
+  const raw = await response.text();
+  if (signal.aborted) return { verdict: 'timeout', reason: 'deadline' };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { verdict: 'timeout', reason: 'body_not_json' };
+  }
+  return mapVerdict(parsed, differences);
+}
+
+/** 只认差异表写明的字段与取值；其余（缺失、类型不符、大小写或空白不同）一律 timeout。 */
+function mapVerdict(body: unknown, differences: AliyunReviewDifferences): Outcome {
+  const code = readPath(body, differences.codePath);
+  if (typeof code !== 'number' || code !== differences.successCode) {
+    return { verdict: 'timeout', reason: 'code_mismatch' };
+  }
+  const value = readPath(body, differences.verdictPath);
+  if (typeof value !== 'string') return { verdict: 'timeout', reason: 'verdict_unknown' };
+  // 同一取值同时出现在两张表时按命中处理，不放行。
+  if (differences.blockValues.includes(value)) return { verdict: 'block' };
+  if (differences.passValues.includes(value)) return { verdict: 'pass' };
+  return { verdict: 'timeout', reason: 'verdict_unknown' };
+}
+
+function readPath(value: unknown, path: readonly string[]): unknown {
+  if (path.length === 0) return undefined;
+  let current: unknown = value;
+  for (const key of path) {
+    if (!isPlainRecord(current) || !Object.hasOwn(current, key)) return undefined;
+    current = current[key];
+  }
+  return current;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringHeaders(value: unknown): Record<string, string> {
+  if (!isPlainRecord(value)) throw new Error('aliyun review: signer returned no headers');
+  const out: Record<string, string> = {};
+  for (const [key, header] of Object.entries(value)) {
+    if (typeof header !== 'string') throw new Error('aliyun review: signer header not a string');
+    out[key] = header;
+  }
+  return out;
+}
+
+function logUnavailable(
+  deps: AliyunReviewDeps,
+  side: Side,
+  outcome: { readonly reason: Unavailable; readonly status?: number },
+): void {
+  try {
+    deps.logger?.warn(
+      outcome.status === undefined
+        ? { review_side: side, reason: outcome.reason }
+        : { review_side: side, reason: outcome.reason, http_status: outcome.status },
+      LOG_MESSAGE,
+    );
+  } catch {
+    // 日志失败不影响 fail-close 结果。
+  }
 }
