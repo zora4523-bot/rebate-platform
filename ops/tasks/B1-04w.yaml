@@ -1,0 +1,28 @@
+id: B1-04w
+repo: rebate-platform
+title: 拼多多订单拉取的三处收口：listOrders 内部每一次上游分页请求（尾页探测与倒序翻页）都经配额治理；increment 时间窗先按毫秒校验跨度与先后再取整到秒；订单 goods_id 无损整数解析（超过 2^53 报 invalid_dto，恰好 2^53 按既有规则测试接受）
+type: impl
+# 草稿 2026-10-15（拼多多接入线 pdd-lane）。来源：B1-04i（#476）Codex money r1 三条 S2（couli-runs/B1-04i/review-codex.json）与 spec-test r1 S2。order-sync 接入拼多多前做。
+# ① 配额（最优先）：现状 createGovernedAdapter 只在外层对 listOrders 扣一次 token，而适配器内部会发多次上游请求（探最后一页 + 倒序翻页），共享的多多进宝账号（与优券汇共用）有上游限流风险。做法由实现定，但须满足：每次实际上游请求都消耗一次配额且不重复计数；取消信号照常传递；限流错误（52101 / 70031）仍按 B1-04g 分类为 rate_limited。若需改 governed-adapter 的接口（例如给适配器注入按请求取 token 的回调），保持其他平台与既有调用方行为不变。
+# ① 补（#479 评审）：遍历中途本地配额被拒 → 整次以 quota_exceeded 结束，外层不重试、不计上游故障、不从第 1 页重来；规则测试含「配额只够 k 次时传输层恰好调用 k 次」。上游限流时优先每页各自重试，不重做整个遍历。外层「每次尝试扣一个 token」对其他平台与 AC-B1-04b-GOV#3/#8、pdd-orders GOV#3（详情 3 次尝试正好 3 个 token）保持；是否关掉外层扣 token 看适配器是否声明自己逐请求计量，不看平台（演示适配器与未声明的拼多多假适配器经包装拉订单仍恰好扣 1 个）；规则测试直接断言错误码 quota_exceeded；按页治理后整次遍历的时长由调用方（order-sync）控制，实现说明写明；新回调 / 选项对直接构造适配器的调用方可选；若用 CallCtx 回调，包装层须覆盖调用方传入的同名字段，防绕过计量。
+# ② 时间窗：跨度 ≤ 24 小时、from ≥ now − 90 天、from < to 按毫秒原值判，再把边界按上游秒精度转换（from 向下取整、to 向上取整后不得因此被拒）；取整后发给上游的边界须仍在 24 小时 / 90 天以内（必要时把取整后的边界收回到限内），不发 86401 秒跨度。
+# ③ goods_id：只对订单 goods_id 从原始 JSON 文本无损取整数（不改全局解析，AC-B1-04g-RESPONSE#1 与 request(method, params, signal?) 原签名保持），> 2^53 → invalid_dto；= 2^53 仍接受（AC-B1-04i 既有规则测试 DTO#12）。
+# 完成后删改 orders.ts 中关于 2^53 的旧 TODO。
+# 风险：union/** RV2（订单数据进佣金计算链）。与 B1-04u / B1-04h 同改 union/infra/pdd/**，派工串行。
+refs: []
+refs_hash: {}
+deps: [B1-04i]
+paths:
+  - 'apps/api/src/modules/union/infra/pdd/**'
+  - 'apps/api/src/modules/union/application/governed-adapter.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
+  - 'apps/api/src/modules/union/domain/types.ts'
+test_paths:
+  - 'test/spec/union/pdd-orders-quota/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pdd-orders-quota/**'
+status: todo
+pr: null
