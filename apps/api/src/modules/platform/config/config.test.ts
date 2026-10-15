@@ -30,6 +30,7 @@ describe('loadConfig', () => {
       mediaPublicBaseUrl: 'https://media.local.invalid',
       pdd: null,
       pddQueryCustomParameters: null,
+      unionEndpointOverrideDir: null,
     });
   });
 
@@ -66,6 +67,7 @@ describe('loadConfig', () => {
       adminAuth: null,
       pdd: null,
       pddQueryCustomParameters: null,
+      unionEndpointOverrideDir: null,
     });
   });
 

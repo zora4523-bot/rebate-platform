@@ -10,6 +10,7 @@ import { readMediaConfig } from './media.ts';
 import { readPddConfig, type PddClientConfig } from './pdd.ts';
 import { readPddQueryConfig } from './pdd-query.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
+import { readUnionEndpointOverrideConfig } from './union-endpoint-override.ts';
 
 export { APP_ENVS, type AppEnv } from './app-env.ts';
 
@@ -87,6 +88,13 @@ export interface AppConfig {
    * in any environment; a hand-built config without it counts as null.
    */
   readonly pddQueryCustomParameters?: string | null;
+  /**
+   * UNION_ENDPOINT_OVERRIDE_DIR (./union-endpoint-override.ts, B1-04y): staging only, an absolute
+   * path of the mounted directory the UNION_ENDPOINTS factory reads <platform>.json from instead
+   * of the packaged config/union-endpoints/. Existence is not checked here. Null when unset; a
+   * hand-built config without it counts as null.
+   */
+  readonly unionEndpointOverrideDir?: string | null;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -165,6 +173,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     problems.push(...readMediaConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     if (appEnv.success) problems.push(...readPddConfig(appEnv.data, env).problems);
     problems.push(...readPddQueryConfig(env).problems);
+    if (appEnv.success)
+      problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
     throw new ConfigError(problems);
   }
 
@@ -184,6 +194,11 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...pddProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
   violations.push(...pddQueryProblems);
+  const { unionEndpointOverrideDir, problems: overrideProblems } = readUnionEndpointOverrideConfig(
+    values.APP_ENV,
+    env,
+  );
+  violations.push(...overrideProblems);
   if (violations.length > 0) throw new ConfigError(violations);
 
   return {
@@ -202,5 +217,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     mediaPublicBaseUrl,
     pdd,
     pddQueryCustomParameters,
+    unionEndpointOverrideDir,
   };
 }

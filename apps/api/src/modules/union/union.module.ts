@@ -8,6 +8,7 @@ import {
   DB,
   PDD_QUERY_CUSTOM_PARAMETERS_ENV,
   ROOT_LOGGER,
+  UNION_ENDPOINT_OVERRIDE_DIR_ENV,
   openPddCredentials,
   type AppConfig,
   type Clock,
@@ -146,6 +147,31 @@ async function startUnionRegistry(
   });
 }
 
+/**
+ * The UNION_ENDPOINTS factory (B1-04y): with UNION_ENDPOINT_OVERRIDE_DIR (staging only, validated
+ * by loadConfig) the three endpoint files are read from that mounted directory, with the same
+ * validation; a missing or invalid file there stops the entry (no fallback to the packaged
+ * directory). Without it the module's directory is read. Each call reads its own config; nothing
+ * is cached between configs.
+ */
+function startUnionEndpoints(
+  directory: string,
+  config: AppConfig,
+): Promise<readonly UnionEndpoint[]> {
+  const override = config.unionEndpointOverrideDir;
+  if (override == null || override === '') return loadUnionEndpoints(directory, config.appEnv);
+  if (config.appEnv !== 'staging') {
+    // loadConfig refuses this already; a hand-built config must not reach another environment.
+    return Promise.reject(
+      new UnionError(
+        'invalid_endpoint',
+        `${UNION_ENDPOINT_OVERRIDE_DIR_ENV} is only accepted when APP_ENV=staging`,
+      ),
+    );
+  }
+  return loadUnionEndpoints(override, config.appEnv);
+}
+
 @Module({})
 export class UnionModule {
   static forRoot(directory: string = UNION_ENDPOINTS_DIR): DynamicModule {
@@ -157,7 +183,7 @@ export class UnionModule {
         {
           provide: UNION_ENDPOINTS,
           inject: [APP_CONFIG],
-          useFactory: (config: AppConfig) => loadUnionEndpoints(directory, config.appEnv),
+          useFactory: (config: AppConfig) => startUnionEndpoints(directory, config),
         },
         {
           provide: UNION_REGISTRY,
