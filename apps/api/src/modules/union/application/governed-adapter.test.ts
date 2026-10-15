@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import type { QuotaLimiter, Scheduler } from '../../platform/index.ts';
 import {
   createGovernedAdapter,
@@ -138,4 +138,62 @@ it('[AC-B1-04i-UNIT#1] 详情端口按幂等读包装：依赖故障重试，缺
   expect(createGovernedAdapter(adapter, { endpoint, scheduler, quota }).getPddOrderDetail).toBe(
     undefined,
   );
+});
+
+const sync: CallCtx = { appId: 'app-a', requestId: 'req-2', purpose: 'order_sync' };
+
+it('[AC-B1-04w-UNIT#1] 调用方传入的 gateUpstream 不会传给未声明逐请求计量的端口', async () => {
+  const seen: CallCtx[] = [];
+  const { adapter } = failingAdapter('upstream_unavailable', () => 'ok');
+  const port = createGovernedAdapter(
+    {
+      ...adapter,
+      listOrders: async (_win, _opt, call) => {
+        seen.push(call);
+        return { items: [], nextCursor: null };
+      },
+    },
+    { endpoint, scheduler, quota },
+  );
+  const forged = vi.fn(async () => {
+    throw new Error('forged gate');
+  });
+  const window = { from: '2026-10-06T00:00:00Z', to: '2026-10-06T01:00:00Z' };
+  await port.listOrders(window, {}, { ...sync, gateUpstream: forged });
+  expect(seen).toHaveLength(1);
+  expect(seen[0]).not.toHaveProperty('gateUpstream');
+  expect(seen[0]!.signal).toBeInstanceOf(AbortSignal);
+  expect(forged).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-04w-UNIT#2] 逐请求计量：每次门控请求扣一个 token；调用方取消后不再发下一次请求', async () => {
+  const take = vi.fn(() => true);
+  const controller = new AbortController();
+  let sent = 0;
+  const { adapter } = failingAdapter('upstream_unavailable', () => 'ok');
+  const port = createGovernedAdapter(
+    {
+      ...adapter,
+      listOrdersMetering: 'per_request',
+      listOrders: async (_win, _opt, call) => {
+        expect(call.signal).toBeUndefined();
+        const gate = call.gateUpstream!;
+        for (let i = 0; i < 3; i += 1) {
+          await gate(async (signal) => {
+            expect(signal).toBeInstanceOf(AbortSignal);
+            sent += 1;
+            if (sent === 2) controller.abort(new Error('caller stopped'));
+          });
+        }
+        return { items: [], nextCursor: null };
+      },
+    },
+    { endpoint, scheduler, quota: { bucketKey: quota.bucketKey, tryAcquire: take } },
+  );
+  const window = { from: '2026-10-06T00:00:00Z', to: '2026-10-06T01:00:00Z' };
+  await expect(port.listOrders(window, {}, { ...sync, signal: controller.signal })).rejects.toThrow(
+    'caller stopped',
+  );
+  expect(sent).toBe(2);
+  expect(take).toHaveBeenCalledTimes(2);
 });

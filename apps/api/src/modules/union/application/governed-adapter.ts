@@ -8,6 +8,15 @@
 // Business refusals from the adapter (UnionError with a business code) are classified
 // `rejected`: not retried and not counted by the breaker; only timeouts, upstream throttling,
 // network and 5xx failures are.
+// B1-04w: an adapter that declares `listOrdersMetering: 'per_request'` (the live Pinduoduo
+// adapter: tail-page probing plus reverse paging) gets no outer governance for listOrders;
+// instead it receives `CallCtx.gateUpstream`, and every upstream request it actually sends
+// runs through the same offline governor: one token per attempt, a per-request timeout, retries
+// of that request only. A local quota refusal ends the whole traversal with `quota_exceeded`
+// (nothing replayed, nothing counted by the breaker). The traversal as a whole has no time
+// limit here: its duration is bounded by the caller (order-sync), which may abort between
+// requests with its own `ctx.signal`. Every other operation, and listOrders of an adapter that
+// does not declare it, keeps one token per attempt of the whole call.
 import {
   createGovernor,
   unionPolicy,
@@ -24,6 +33,7 @@ import {
   type UnionAdapter,
   type UnionEndpoint,
   type UnionIdentity,
+  type UpstreamGate,
 } from '../domain/types.ts';
 
 export interface GovernedAdapterOptions {
@@ -61,16 +71,24 @@ export function createGovernedAdapter(
   const governorFor = (ctx: CallCtx): Governor =>
     ctx.purpose === 'online' ? governors.online : governors.offline;
 
-  /** A copy of the caller's context; signal, base URL and headers come from configuration. */
-  const callCtx = (ctx: CallCtx, signal: AbortSignal): CallCtx => ({
-    ...ctx,
-    signal,
-    baseUrl: endpoint.baseUrl,
-    headers:
-      endpoint.mode === 'replay' && ctx.scenario !== undefined
-        ? { 'X-Scenario': ctx.scenario }
-        : {},
-  });
+  /**
+   * A copy of the caller's context; base URL and headers come from configuration. A caller's
+   * signal and gateUpstream are never passed through (the wrapper supplies its own).
+   */
+  const baseCtx = (ctx: CallCtx): CallCtx => {
+    const copy: { -readonly [K in keyof CallCtx]: CallCtx[K] } = {
+      ...ctx,
+      baseUrl: endpoint.baseUrl,
+      headers:
+        endpoint.mode === 'replay' && ctx.scenario !== undefined
+          ? { 'X-Scenario': ctx.scenario }
+          : {},
+    };
+    delete copy.signal;
+    delete copy.gateUpstream;
+    return copy;
+  };
+  const callCtx = (ctx: CallCtx, signal: AbortSignal): CallCtx => ({ ...baseCtx(ctx), signal });
 
   const run = <T>(
     kind: CallKind,
@@ -82,6 +100,28 @@ export function createGovernedAdapter(
       purpose: ctx.purpose,
       classify: classifyUnionError,
     });
+
+  /**
+   * B1-04w: listOrders of an adapter metered per request. Each gated request is one governed
+   * call (idempotent read); the caller's own signal only stops the traversal between requests.
+   */
+  const listOrdersPerRequest = (
+    win: Parameters<UnionAdapter['listOrders']>[0],
+    opt: Parameters<UnionAdapter['listOrders']>[1],
+    ctx: CallCtx,
+  ) => {
+    const governor = governorFor(ctx);
+    const caller = ctx.signal;
+    const gateUpstream: UpstreamGate = (request) => {
+      caller?.throwIfAborted();
+      return governor.call(request, {
+        kind: 'idempotent_read',
+        purpose: ctx.purpose,
+        classify: classifyUnionError,
+      });
+    };
+    return adapter.listOrders(win, opt, { ...baseCtx(ctx), gateUpstream });
+  };
 
   const {
     bindPublisher,
@@ -114,7 +154,9 @@ export function createGovernedAdapter(
     getItem: (ref, ctx) => run('idempotent_read', ctx, (c) => adapter.getItem(ref, c)),
     resolveLink: (raw, ctx) => run('idempotent_read', ctx, (c) => adapter.resolveLink(raw, c)),
     listOrders: (win, opt, ctx) =>
-      run('idempotent_read', ctx, (c) => adapter.listOrders(win, opt, c)),
+      adapter.listOrdersMetering === 'per_request'
+        ? listOrdersPerRequest(win, opt, ctx)
+        : run('idempotent_read', ctx, (c) => adapter.listOrders(win, opt, c)),
     async convert(req, identity, ctx) {
       assertIdentity(identity, ctx, 'convert');
       return await run('write', ctx, (c) => adapter.convert(req, identity, c));

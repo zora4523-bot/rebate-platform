@@ -96,7 +96,18 @@ export interface CallCtx {
   readonly signal?: AbortSignal;
   readonly baseUrl?: string | null;
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * B1-04w: runs one upstream request under governance (quota token, per-request timeout,
+   * retry, breaker). Supplied only by the governed wrapper, and only to an operation the adapter
+   * declares as metered per request (UnionAdapter.listOrdersMetering); the wrapper always
+   * replaces or removes a caller-supplied value. Absent on direct construction: the adapter then
+   * sends the request itself with `signal`.
+   */
+  readonly gateUpstream?: UpstreamGate;
 }
+
+/** B1-04w: see CallCtx.gateUpstream. The request receives the signal of its own attempt. */
+export type UpstreamGate = <T>(request: (signal: AbortSignal) => Promise<T>) => Promise<T>;
 
 export interface Page<T> {
   readonly items: readonly T[];
@@ -313,6 +324,13 @@ export interface TljCreateResult {
 
 export interface UnionAdapter {
   readonly platform: Platform;
+  /**
+   * B1-04w: declared by an adapter whose listOrders sends several upstream requests and runs
+   * each through CallCtx.gateUpstream. The governed wrapper then takes no token of its own for
+   * listOrders (each request takes one); without the declaration it governs listOrders as one
+   * call. Declared on the adapter object or class, never on the method.
+   */
+  readonly listOrdersMetering?: 'per_request';
   searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>>;
   getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail>;
   resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink>;

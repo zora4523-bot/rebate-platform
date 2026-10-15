@@ -26,6 +26,7 @@ import {
   type UnionItem,
   type UnionItemDetail,
   type UnionOrder,
+  type UpstreamGate,
 } from '../../domain/types.ts';
 import type { UnionTransport, UnionTransportResponse } from '../replay.ts';
 import { pddParameterText, signPddParameters, type PddParameters } from './sign.ts';
@@ -58,6 +59,7 @@ import {
   mapPddOrder,
   orderList,
   parseIncrementCursor,
+  parsePddOrderEnvelope,
   parseRangeCursor,
   PDD_INCREMENT_MAX_PAGE,
   PDD_INCREMENT_PAGE_SIZE,
@@ -106,8 +108,16 @@ const PUBLIC_PARAMETERS: ReadonlySet<string> = new Set([
 
 type WireValue = string | number | boolean;
 
+/** 订单接口的一次上游请求（B1-04w：见 PddUnionAdapter#orderSender）。 */
+type OrderSender = (method: string, parameters: PddParameters) => Promise<unknown>;
+
 export class PddUnionAdapter implements UnionAdapter {
   readonly platform = 'pdd' as const;
+  /**
+   * B1-04w：listOrders 一次调用会发多次上游请求（探尾页 + 倒序翻页），每次实际请求都经
+   * CallCtx.gateUpstream 各自计量（治理包装据此不再在外层整体扣一个 token）。
+   */
+  readonly listOrdersMetering = 'per_request' as const;
   readonly #credentials: () => Promise<PddCredentials>;
   readonly #transport: UnionTransport;
   readonly #clock: Clock;
@@ -129,6 +139,29 @@ export class PddUnionAdapter implements UnionAdapter {
 
   /** Internal request foundation; not exported through the union module's public port. */
   async request(method: string, parameters: PddParameters, signal?: AbortSignal): Promise<unknown> {
+    return unwrapPddResponse(method, await this.#send(method, parameters, signal), this.#warn);
+  }
+
+  /**
+   * B1-04w：订单接口的请求。错误分类与外层键照 request 判，订单行另从原始 JSON 文本二次解析，
+   * 使 goods_id 无损（parsePddOrderEnvelope）。
+   */
+  async #requestOrders(
+    method: string,
+    parameters: PddParameters,
+    signal: AbortSignal | undefined,
+  ): Promise<unknown> {
+    const response = await this.#send(method, parameters, signal);
+    unwrapPddResponse(method, response, this.#warn);
+    return parsePddOrderEnvelope(response.body, pddEnvelopeKey(method)!);
+  }
+
+  /** 签名并发送；返回未解包的原始响应。 */
+  async #send(
+    method: string,
+    parameters: PddParameters,
+    signal: AbortSignal | undefined,
+  ): Promise<UnionTransportResponse> {
     // 先做不需要凭据的同步检查，再取凭据：取凭据之前不 await 别的东西。
     if (pddEnvelopeKey(method) === undefined) {
       throw new UnionError('adapter_unimplemented', `pdd ${method}: not implemented`, 'pdd');
@@ -149,9 +182,8 @@ export class PddUnionAdapter implements UnionAdapter {
     };
     const body = JSON.stringify({ ...unsigned, sign: signPddParameters(unsigned, clientSecret) });
 
-    let response: UnionTransportResponse;
     try {
-      response = await this.#transport({
+      return await this.#transport({
         platform: 'pdd',
         url,
         method: 'POST',
@@ -164,7 +196,6 @@ export class PddUnionAdapter implements UnionAdapter {
       // 未知传输错误不带原文与 cause，避免请求内容进入错误信息。
       throw new UnionError('upstream_unavailable', `pdd ${method}: transport failed`, 'pdd');
     }
-    return unwrapPddResponse(method, response, this.#warn);
   }
 
   /** Business parameters on the wire: structured values become the compact strings they sign as. */
@@ -395,28 +426,44 @@ export class PddUnionAdapter implements UnionAdapter {
    */
   async listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>> {
     const mode = opt?.queryMode ?? 'increment';
-    if (mode === 'pay_time') return await this.#listByPayTime(win, opt.cursor, ctx.signal);
+    const send = this.#orderSender(ctx);
+    if (mode === 'pay_time') return await this.#listByPayTime(win, opt.cursor, send);
     if (mode !== 'increment') {
       throw new UnionError('invalid_dto', 'pdd listOrders: unknown queryMode', 'pdd');
     }
-    return await this.#listIncrement(win, opt?.cursor, ctx.signal);
+    return await this.#listIncrement(win, opt?.cursor, send);
+  }
+
+  /**
+   * B1-04w：listOrders 的每次上游请求。经治理包装时走 ctx.gateUpstream（每次实际请求扣一个
+   * token、单独超时与重试，取消信号是该次尝试的）；直接构造、没有回调时用 ctx.signal 直接发。
+   * 缓存命中的页不再经过这里，所以不重复计量。
+   */
+  #orderSender(ctx: CallCtx): OrderSender {
+    const gate: UpstreamGate | undefined = ctx?.gateUpstream;
+    if (gate === undefined) {
+      return (method, parameters) => this.#requestOrders(method, parameters, ctx?.signal);
+    }
+    return (method, parameters) =>
+      gate((signal) => this.#requestOrders(method, parameters, signal));
   }
 
   async #listIncrement(
     win: TimeWindow,
     cursor: string | undefined,
-    signal: AbortSignal | undefined,
+    send: OrderSender,
   ): Promise<Page<UnionOrder>> {
     const window = incrementWindow(win, this.#clock.now().getTime());
     const fetched = new Map<number, readonly unknown[]>();
     const fetchPage = async (page: number): Promise<readonly unknown[]> => {
       const cached = fetched.get(page);
       if (cached !== undefined) return cached;
-      const envelope = await this.request(
-        PDD_ORDER_INCREMENT,
-        { ...window, page, page_size: PDD_INCREMENT_PAGE_SIZE, return_count: false },
-        signal,
-      );
+      const envelope = await send(PDD_ORDER_INCREMENT, {
+        ...window,
+        page,
+        page_size: PDD_INCREMENT_PAGE_SIZE,
+        return_count: false,
+      });
       const rows = orderList(envelope);
       fetched.set(page, rows);
       return rows;
@@ -464,15 +511,14 @@ export class PddUnionAdapter implements UnionAdapter {
   async #listByPayTime(
     win: TimeWindow,
     cursor: string | undefined,
-    signal: AbortSignal | undefined,
+    send: OrderSender,
   ): Promise<Page<UnionOrder>> {
     const window = rangeWindow(win);
     const token = cursor === undefined ? undefined : parseRangeCursor(cursor);
-    const envelope = await this.request(
-      PDD_ORDER_RANGE,
-      { ...window, ...(token === undefined ? {} : { last_order_id: token }) },
-      signal,
-    );
+    const envelope = await send(PDD_ORDER_RANGE, {
+      ...window,
+      ...(token === undefined ? {} : { last_order_id: token }),
+    });
     const items = orderList(envelope).map((row) => mapPddOrder(row, 'range'));
     const next = lastOrderId(envelope);
     // 空批、没有迭代器、或迭代器原样不变都结束，避免死循环。
@@ -485,7 +531,11 @@ export class PddUnionAdapter implements UnionAdapter {
     if (typeof orderSn !== 'string' || orderSn.trim() === '') {
       throw new UnionError('invalid_dto', 'pdd getPddOrderDetail: order_sn is blank', 'pdd');
     }
-    const envelope = await this.request(PDD_ORDER_DETAIL, { order_sn: orderSn }, ctx.signal);
+    const envelope = await this.#requestOrders(
+      PDD_ORDER_DETAIL,
+      { order_sn: orderSn },
+      ctx?.signal,
+    );
     return mapPddOrder(envelope, 'detail');
   }
 }

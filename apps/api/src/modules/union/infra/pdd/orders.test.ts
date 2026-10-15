@@ -99,3 +99,21 @@ it('[AC-B1-04i-UNIT#6] range 迭代器原样不变但仍有数据时也结束，
   expect(page.items).toHaveLength(1);
   expect(page.nextCursor).toBeNull();
 });
+
+it('[AC-B1-04w-UNIT#3] 整个窗口落在 90 天界所在那一秒时，收回后的起点不追上终点', () => {
+  const nowMs = Date.parse('2026-10-15T00:00:00.500Z');
+  const oldestMs = nowMs - 90 * 86_400_000;
+  const window = incrementWindow(
+    { from: new Date(oldestMs).toISOString(), to: new Date(oldestMs + 1).toISOString() },
+    nowMs,
+  );
+  expect(window.start_update_time).toBe(Math.ceil(oldestMs / 1000));
+  expect(window.end_update_time).toBe(window.start_update_time + 1);
+});
+
+it('[AC-B1-04w-UNIT#4] 直接映射时普通数值商品号只接受非负安全整数', () => {
+  expect(mapPddOrder({ ...base, goods_id: 42 }, 'increment').goods_id).toBe('42');
+  for (const goods_id of [2 ** 53, -1, 1.5]) {
+    expect(() => mapPddOrder({ ...base, goods_id }, 'increment')).toThrow(UnionError);
+  }
+});

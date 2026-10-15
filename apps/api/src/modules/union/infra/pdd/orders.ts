@@ -23,10 +23,12 @@ const INCREMENT_MAX_AGE_SECONDS = 90 * SECONDS_PER_DAY;
 /** range 的 start_time / end_time 是北京时间（UTC+8，无夏令时）。 */
 const BEIJING_OFFSET_SECONDS = 8 * 3_600;
 /**
- * goods_id 的上限按规则测试取 2^53（含）。TODO(规划/11 §4.5): 上游 2^53+1 会被 JSON.parse 舍成 2^53，
- * 改为 ≤ 2^53−1 — blocked on 规则测试 AC-B1-04i-DTO#12 现按 2^53 验收（拼多多真实商品号远小于此；编排者已记 followup）。
+ * goods_id 的上限 2^53（含，AC-B1-04i-DTO#12）。B1-04w：比较的是上游原始 JSON 文本（见
+ * parsePddOrderEnvelope），2^53+1 不会再被 JSON.parse 舍成 2^53 而混过去。
  */
-const MAX_GOODS_ID = 2 ** 53;
+const MAX_GOODS_ID = 2n ** 53n;
+/** 无损商品号只接受十进制非负整数字面量：无符号、无小数点、无指数、无前导零。 */
+const GOODS_ID_TEXT = /^(?:0|[1-9][0-9]*)$/;
 
 export type PddOrderSource = 'increment' | 'range' | 'detail';
 
@@ -78,31 +80,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** 秒级 UTC 边界；from 向下取整、to 向上取整，再按秒校验。 */
-function windowSeconds(win: TimeWindow): { readonly start: number; readonly end: number } {
+/** 毫秒原值的时间窗；from < to 按毫秒判（同秒内逆序或相等不能靠向外取整变合法）。 */
+function windowMillis(win: TimeWindow): { readonly fromMs: number; readonly toMs: number } {
   const fromMs = typeof win?.from === 'string' ? Date.parse(win.from) : Number.NaN;
   const toMs = typeof win?.to === 'string' ? Date.parse(win.to) : Number.NaN;
   if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
     throw invalid('time window must be two ISO-8601 instants');
   }
-  const start = Math.floor(fromMs / 1000);
-  const end = Math.ceil(toMs / 1000);
-  if (start >= end) throw invalid('time window must have from < to');
-  return { start, end };
+  if (fromMs >= toMs) throw invalid('time window must have from < to');
+  return { fromMs, toMs };
 }
 
-/** increment 的更新时间窗：跨度 ≤ 24 小时、起点不早于 now − 90 天；拆分窗口是 order-sync 的事。 */
+/** 秒级 UTC 边界：先按毫秒校验，再 from 向下取整、to 向上取整（向外，不漏边界上的订单）。 */
+function windowSeconds(win: TimeWindow): { readonly start: number; readonly end: number } {
+  const { fromMs, toMs } = windowMillis(win);
+  return { start: Math.floor(fromMs / 1000), end: Math.ceil(toMs / 1000) };
+}
+
+/**
+ * increment 的更新时间窗：跨度 ≤ 24 小时、起点不早于 now − 90 天、from < to，都按毫秒原值判；
+ * 拆分窗口是 order-sync 的事。合法窗口再转成上游的秒：from 向下、to 向上取整；取整若越过限制，
+ * 只把越界的那一秒收回（起点收到 90 天界内的第一个整秒，终点收到起点 + 24 小时），不发 86401 秒跨度。
+ */
 export function incrementWindow(
   win: TimeWindow,
   nowMs: number,
 ): { readonly start_update_time: number; readonly end_update_time: number } {
-  const { start, end } = windowSeconds(win);
-  if (end - start > INCREMENT_MAX_SPAN_SECONDS) {
+  const { fromMs, toMs } = windowMillis(win);
+  const oldestMs = nowMs - INCREMENT_MAX_AGE_SECONDS * 1000;
+  if (toMs - fromMs > INCREMENT_MAX_SPAN_SECONDS * 1000) {
     throw invalid('increment window exceeds 24 hours');
   }
-  if (start * 1000 < nowMs - INCREMENT_MAX_AGE_SECONDS * 1000) {
-    throw invalid('increment window starts more than 90 days ago');
-  }
+  if (fromMs < oldestMs) throw invalid('increment window starts more than 90 days ago');
+  // fromMs ≥ oldestMs，所以收回后的起点仍 ≤ ceil(from)；toMs − fromMs ≤ 24h，所以 start + 24h ≥ floor(to)。
+  const start = Math.max(Math.floor(fromMs / 1000), Math.ceil(oldestMs / 1000));
+  let end = Math.min(Math.ceil(toMs / 1000), start + INCREMENT_MAX_SPAN_SECONDS);
+  // 整个窗口落在 90 天界所在的那一秒里时，起点被收回后可能追上终点：终点外扩一秒，宁多不漏。
+  if (end <= start) end = start + 1;
   return { start_update_time: start, end_update_time: end };
 }
 
@@ -259,10 +273,53 @@ function nonNegativeFen(value: unknown, name: string): bigint {
   return fen;
 }
 
-/** JSON 整数商品号 → 十进制字符串；不经浮点运算。 */
+/** 订单报文里数值型 goods_id 的原始 JSON 文本（B1-04w；只由 parsePddOrderEnvelope 产生）。 */
+export class PddRawInteger {
+  readonly text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
+/** JSON.parse 的源文本访问（Node ≥ 21；本仓库 engines 为 Node 24）。 */
+interface ReviverContext {
+  readonly source?: string;
+}
+
+/**
+ * B1-04w：订单接口专用的二次解析。与 JSON.parse 相同，只是名为 goods_id 的数值换成它的原始
+ * 文本（PddRawInteger），从而能无损区分 2^53 与 2^53+1。字段名按 JSON 解码后比较（转义写法
+ * 同样命中）；嵌套对象里的同名数值也会被换掉，但映射只读订单本层登记过的字段，不读它们。
+ * 网关错误、外层键缺失仍由 unwrapPddResponse 先判；全局解包（request）不受影响。
+ */
+export function parsePddOrderEnvelope(body: string, key: string): unknown {
+  const parsed: unknown = JSON.parse(
+    body,
+    (name: string, value: unknown, context?: ReviverContext): unknown =>
+      name === 'goods_id' && typeof value === 'number'
+        ? new PddRawInteger(typeof context?.source === 'string' ? context.source : '')
+        : value,
+  );
+  if (!isRecord(parsed) || !Object.hasOwn(parsed, key)) {
+    throw new UnionError('upstream_unavailable', `pdd order: missing ${key} in response`, 'pdd');
+  }
+  return parsed[key];
+}
+
+/**
+ * 商品号 → 十进制字符串；不经浮点运算。适配器给的是原始文本（PddRawInteger），按 bigint 比较
+ * 上限 2^53（含）；直接调用 mapPddOrder 传入的普通数值只接受安全整数（无法判断是否已被舍入）。
+ */
 function goodsId(value: unknown): string | null {
   if (value === undefined) return null;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > MAX_GOODS_ID) {
+  if (value instanceof PddRawInteger) {
+    if (!GOODS_ID_TEXT.test(value.text) || BigInt(value.text) > MAX_GOODS_ID) {
+      throw invalid('goods_id must be a non-negative integer within 2^53');
+    }
+    return value.text;
+  }
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw invalid('goods_id must be a non-negative integer within 2^53');
   }
   return String(value);
