@@ -140,7 +140,13 @@ it('[AC-B1-03c#21] markTipRead：真实 AppModule 自动装配 content 读取器
     const options = {
       method: 'POST',
       url: '/v1/me/tips/jump_tip/read',
-      headers: { ...HEADERS, 'x-trace-id': TRACE, authorization: 'Bearer assembly-fixture' },
+      headers: {
+        ...HEADERS,
+        'x-trace-id': TRACE,
+        authorization: 'Bearer assembly-fixture',
+        'x-channel': 'appstore',
+        'x-device-id': '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6c',
+      },
       payload: { platform: 'taobao' },
     };
     const invalidToken = await app.inject({
