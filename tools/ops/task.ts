@@ -10,6 +10,7 @@ import { matchesAny } from '../lib/glob.ts';
 import {
   isCodexFirst,
   loadCodexImplForbidden,
+  loadCodexImplMechanical,
   loadCodexImplTasks,
 } from '../lib/codex-impl-tasks.ts';
 import { loadLegacyTasks, needsTestPaths } from '../lib/legacy-tasks.ts';
@@ -271,6 +272,30 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
         problems.push(
           `paths: "${glob}" reaches "${hit}", which stays with the default split (ops/approvals.yaml id 19), not a Codex implementation`,
         );
+      }
+    }
+  }
+  // ops/approvals.yaml id 31: the mechanical commit of a Codex implementation (planned markers
+  // removed from the contract, files regenerated) is Claude's and stays outside `paths`, so
+  // forbidden_paths do not apply to it; only the files the list names are allowed.
+  if (task.mechanical_paths.length > 0) {
+    if (!codexFirst) {
+      problems.push(
+        'mechanical_paths: only a Codex implementation ledger (tools/guard/codex-impl-tasks.json) names them; a Claude implementation lists those files in paths',
+      );
+    } else {
+      const allowed = loadCodexImplMechanical(root);
+      if (allowed.length === 0) {
+        problems.push(
+          'mechanical_paths: tools/guard/codex-impl-tasks.json has no mechanical_paths; none is allowed (fail-closed)',
+        );
+      }
+      for (const glob of task.mechanical_paths) {
+        if (allowed.length > 0 && !insideGlobs(glob, allowed)) {
+          problems.push(
+            `mechanical_paths: "${glob}" is not one of the mechanical_paths of tools/guard/codex-impl-tasks.json (ops/approvals.yaml id 31)`,
+          );
+        }
       }
     }
   }

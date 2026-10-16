@@ -51,6 +51,15 @@ const NO_TESTER_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: N1-01').replace(
   'tester: none',
 );
 
+/**
+ * A Codex implementation of an interface (ops/approvals.yaml id 31): Codex implements in the
+ * content module, Claude's mechanical commit removes the planned marker and regenerates.
+ */
+const MECHANICAL_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: F1-02e').replace(
+  '  - "apps/api/src/modules/ledger/**"',
+  '  - "apps/api/src/modules/content/**"\ntest_paths:\n  - "test/spec/content/**"\nmechanical_paths:\n  - "contracts/openapi.yaml"\n  - "apps/api/src/route-schemas.gen.ts"',
+);
+
 const APPROVALS = [
   'source: "规划/11 §7.3"',
   'spec_ref: cbd8f06fa7ab14631f1e7f4dd9106fda8bef749b',
@@ -117,6 +126,17 @@ beforeAll(() => {
     // 2026-10-05 (no test_paths, old scope); B2-02d is not on it.
     'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: ['B2-02a'] }),
     'ops/approvals.yaml': APPROVALS,
+    'ops/tasks/F1-02e.yaml': MECHANICAL_TASK,
+    'tools/guard/codex-impl-tasks.json': JSON.stringify({
+      approval: 23,
+      tasks: ['F1-02e'],
+      forbidden_paths: ['contracts/**'],
+      mechanical_paths: [
+        'contracts/openapi.yaml',
+        'apps/api/src/route-schemas.gen.ts',
+        'packages/contracts-ts/src/openapi.gen.ts',
+      ],
+    }),
   });
   for (const file of [
     'tools/guard/protected-paths.json',
@@ -1222,5 +1242,168 @@ describe('run.ts git --task: a ledger the pull request adds (owner decision 2026
     expect(res.status).toBe(1);
     expect(res.stderr).not.toContain('the ledger is the one this pull request adds');
     expect(res.stderr).toContain('apps/api/src/modules/orders/sync.ts');
+  });
+});
+
+describe('run.ts git --task: mechanical contract commits of a Codex implementation (ops/approvals.yaml id 31)', () => {
+  const OPENAPI = [
+    'paths:',
+    '  /v1/a:',
+    '    get:',
+    '      operationId: getA',
+    '      x-implementation: planned',
+    '      responses: {}',
+    '  /v1/b:',
+    '    get:',
+    '      operationId: getB',
+    '      x-implementation: planned',
+    '      responses: {}',
+    '',
+  ].join('\n');
+  const MARK =
+    '\n\nCouli-Mechanical: contract-codegen\nCo-Authored-By: Claude <noreply@anthropic.com>';
+
+  function commitAll(root: string, message: string): string {
+    fixtureGit(root, ['add', '-A']);
+    fixtureGit(root, ['commit', '-q', '-m', message]);
+    return fixtureGit(root, ['rev-parse', 'HEAD']);
+  }
+
+  /**
+   * Base → rule tests (spec_commit) → the Codex implementation → `mechanical` (Claude's commit,
+   * marked unless `unmarked`) → evidence.
+   */
+  function branch(opts: {
+    implementer?: Record<string, string>;
+    mechanical?: Record<string, string>;
+    message?: string;
+  }): { root: string; base: string } {
+    const { root, base } = makeRepo({
+      'contracts/openapi.yaml': OPENAPI,
+      'apps/api/src/route-schemas.gen.ts': 'export const S = {};\n',
+      'packages/contracts-ts/src/openapi.gen.ts': 'export type P = {};\n',
+      'apps/api/src/modules/content/a.ts': 'export const a = 1;\n',
+    });
+    writeFiles(root, { 'test/spec/content/a.test.ts': "it('[F1-02e] a', () => {});\n" });
+    const spec = commitAll(root, 'test(spec): F1-02e rule tests');
+    writeFiles(
+      root,
+      opts.implementer ?? { 'apps/api/src/modules/content/a.ts': 'export const a = 2;\n' },
+    );
+    commitAll(root, 'F1-02e: implementation by Codex');
+    if (opts.mechanical) {
+      writeFiles(root, opts.mechanical);
+      commitAll(root, opts.message ?? `chore(contracts): F1-02e leaves planned${MARK}`);
+    }
+    writeFiles(root, {
+      'ops/evidence/F1-02e.json': JSON.stringify({ task: 'F1-02e', spec_commit: spec }),
+    });
+    commitAll(root, 'chore(ops): F1-02e evidence');
+    return { root, base };
+  }
+  const run = (root: string, base: string) =>
+    guard('run.ts', ['git', '--base', base, '--task', 'F1-02e', '--cwd', root]);
+  const leavePlanned = {
+    'contracts/openapi.yaml': OPENAPI.replace('      x-implementation: planned\n', ''),
+    'apps/api/src/route-schemas.gen.ts': 'export const S = { getA: {} };\n',
+  };
+
+  it('a marked commit that only removes planned and regenerates passes; the rest stays in paths', () => {
+    const { root, base } = branch({ mechanical: leavePlanned });
+    const res = run(root, base);
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout.split('\n')[0]).toBe('PASS path-guard');
+    expect(res.stderr).toContain('1 commit(s) marked Couli-Mechanical: contract-codegen');
+  });
+
+  it('a Codex (unmarked) commit that touches the contract is refused', () => {
+    const { root, base } = branch({
+      implementer: {
+        'apps/api/src/modules/content/a.ts': 'export const a = 2;\n',
+        'contracts/openapi.yaml': OPENAPI.replace('      x-implementation: planned\n', ''),
+      },
+    });
+    const res = run(root, base);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('contracts/openapi.yaml: modified outside the task paths');
+  });
+
+  it('a Codex commit touching the contract is refused even when a marked commit exists', () => {
+    const { root, base } = branch({
+      implementer: {
+        'apps/api/src/modules/content/a.ts': 'export const a = 2;\n',
+        'contracts/openapi.yaml': OPENAPI.replace('operationId: getB', 'operationId: getBB'),
+      },
+      mechanical: {
+        'contracts/openapi.yaml': OPENAPI.replace(
+          'operationId: getB',
+          'operationId: getBB',
+        ).replace('      x-implementation: planned\n', ''),
+      },
+    });
+    const res = run(root, base);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('contracts/openapi.yaml: modified outside the task paths');
+  });
+
+  it('a marked commit that removes one more line than planned is refused', () => {
+    const { root, base } = branch({
+      mechanical: {
+        'contracts/openapi.yaml': OPENAPI.replace(
+          '      x-implementation: planned\n      responses: {}\n',
+          '',
+        ),
+      },
+    });
+    const res = run(root, base);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(
+      /contracts\/openapi\.yaml: line 6 .*only "x-implementation: planned" lines may be removed/,
+    );
+  });
+
+  it('a marked commit that edits code or a path outside mechanical_paths is refused', () => {
+    const { root, base } = branch({
+      mechanical: {
+        ...leavePlanned,
+        'apps/api/src/modules/content/a.ts': 'export const a = 3;\n',
+        'packages/contracts-ts/src/openapi.gen.ts': 'export type P = { a: 1 };\n',
+      },
+    });
+    const res = run(root, base);
+    expect(res.status).toBe(1);
+    // Code is not a mechanical path; the generated client is in the trusted list but not in the ledger.
+    expect(res.stderr).toContain('apps/api/src/modules/content/a.ts: outside the mechanical_paths');
+    expect(res.stderr).toContain(
+      'packages/contracts-ts/src/openapi.gen.ts: outside the mechanical_paths',
+    );
+  });
+
+  it('a wrong trailer value is refused; without the trailer the commit is held to paths', () => {
+    const wrong = branch({
+      mechanical: leavePlanned,
+      message: 'chore(contracts): leaves planned\n\nCouli-Mechanical: anything',
+    });
+    const wrongRes = run(wrong.root, wrong.base);
+    expect(wrongRes.status).toBe(1);
+    expect(wrongRes.stderr).toContain('Couli-Mechanical must be exactly "contract-codegen"');
+    const plain = branch({ mechanical: leavePlanned, message: 'chore(contracts): leaves planned' });
+    const plainRes = run(plain.root, plain.base);
+    expect(plainRes.status).toBe(1);
+    expect(plainRes.stderr).toContain('contracts/openapi.yaml: modified outside the task paths');
+  });
+
+  it('a ledger without mechanical_paths gets no mechanical commit', () => {
+    const { root, base } = branch({ mechanical: { 'apps/api/src/modules/content/b.ts': '' } });
+    const res = guard('run.ts', ['git', '--base', base, '--task', 'B2-02a', '--cwd', root]);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('the task ledger names no mechanical_paths');
+  });
+
+  it("post-run's path-guard.ts keeps the task paths only (a marked commit does not widen it)", () => {
+    const { root, base } = branch({ mechanical: leavePlanned });
+    const res = guard('path-guard.ts', ['--task', 'F1-02e', '--base', base, '--cwd', root]);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('contracts/openapi.yaml: modified outside the task paths');
   });
 });

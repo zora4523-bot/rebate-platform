@@ -473,3 +473,87 @@ it('[ops/approvals.yaml id 23] a listed row and its split tasks may name impl: c
     removeDir(`${root}/tools/guard/codex-impl-tasks.json`);
   }
 });
+
+it('[ops/approvals.yaml id 31] mechanical_paths: only on a Codex implementation ledger, only the listed files, outside forbidden_paths', () => {
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    'tools/guard/codex-impl-tasks.json': JSON.stringify({
+      approval: 23,
+      tasks: ['X1-02'],
+      forbidden_paths: ['contracts/**', 'packages/contracts-ts/**'],
+      mechanical_paths: [
+        'contracts/openapi.yaml',
+        'packages/contracts-ts/src/openapi.gen.ts',
+        'apps/api/src/modules/platform/validation/route-schemas.gen.ts',
+      ],
+    }),
+    // Codex implementation with the contract and generated files as mechanical paths: accepted.
+    'ops/tasks/X1-02m.yaml': good({
+      id: 'X1-02m',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      paths: "\n  - 'apps/api/src/modules/content/**'",
+      mechanical_paths:
+        "\n  - 'contracts/openapi.yaml'\n  - 'packages/contracts-ts/src/openapi.gen.ts'\n  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'",
+    }),
+    // A mechanical path not on the list, or a wider glob over the contracts.
+    'ops/tasks/X1-02n.yaml': good({
+      id: 'X1-02n',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      paths: "\n  - 'apps/api/src/modules/content/**'",
+      mechanical_paths: "\n  - 'contracts/**'\n  - 'apps/api/src/modules/content/a.ts'",
+    }),
+    // The contract in paths is still refused for a Codex implementation.
+    'ops/tasks/X1-02o.yaml': good({
+      id: 'X1-02o',
+      impl: 'codex',
+      tester: 'claude',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      paths: "\n  - 'apps/api/src/modules/content/**'\n  - 'contracts/openapi.yaml'",
+    }),
+    // A Claude implementation names the files in paths, not mechanical_paths.
+    'ops/tasks/X1-01q.yaml': good({
+      id: 'X1-01q',
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      mechanical_paths: "\n  - 'contracts/openapi.yaml'",
+    }),
+  });
+  try {
+    expect(checkTask('X1-02m', opts('RV1'))).toEqual([]);
+    expect(checkTask('X1-02n', opts('RV1'))).toEqual([
+      'mechanical_paths: "contracts/**" is not one of the mechanical_paths of tools/guard/codex-impl-tasks.json (ops/approvals.yaml id 31)',
+      'mechanical_paths: "apps/api/src/modules/content/a.ts" is not one of the mechanical_paths of tools/guard/codex-impl-tasks.json (ops/approvals.yaml id 31)',
+    ]);
+    expect(checkTask('X1-02o', opts('RV1'))).toEqual([
+      'paths: "contracts/openapi.yaml" reaches "contracts/**", which stays with the default split (ops/approvals.yaml id 19), not a Codex implementation',
+    ]);
+    expect(checkTask('X1-01q', opts('RV1'))).toEqual([
+      'mechanical_paths: only a Codex implementation ledger (tools/guard/codex-impl-tasks.json) names them; a Claude implementation lists those files in paths',
+    ]);
+    // A list without mechanical_paths allows none (fail-closed).
+    writeFiles(root, {
+      'tools/guard/codex-impl-tasks.json': JSON.stringify({
+        approval: 23,
+        tasks: ['X1-02'],
+        forbidden_paths: ['contracts/**'],
+      }),
+    });
+    expect(checkTask('X1-02m', opts('RV1')).join('\n')).toContain(
+      'tools/guard/codex-impl-tasks.json has no mechanical_paths; none is allowed (fail-closed)',
+    );
+  } finally {
+    for (const id of ['X1-02m', 'X1-02n', 'X1-02o', 'X1-01q']) {
+      removeDir(`${root}/ops/tasks/${id}.yaml`);
+    }
+    removeDir(`${root}/tools/guard/codex-impl-tasks.json`);
+  }
+});
