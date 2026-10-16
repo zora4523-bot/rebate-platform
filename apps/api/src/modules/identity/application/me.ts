@@ -15,11 +15,12 @@
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { Clock } from '../../platform/index.ts';
+import type { Clock, RootLogger } from '../../platform/index.ts';
 import type { RiskStateService } from '../../risk/index.ts';
 import type { SmsConfigReader } from './sms-codes.ts';
 import { instantPlus } from './config-seconds.ts';
 import { currentStates } from '../domain/login.ts';
+import { DEFAULT_AVATAR } from '../domain/registration.ts';
 import { userConsentRecords } from '../infra/consent-records.ts';
 import { meUser, hasDirectChildren, hasBannedAccountAppeal } from '../infra/me-reads.ts';
 import type { InviteBackfillActivityPort, MeSubject } from '../ports/invite-backfill-activity.ts';
@@ -44,6 +45,7 @@ export interface MeServiceOptions {
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   readonly config: SmsConfigReader;
+  readonly logger: Pick<RootLogger, 'warn'>;
   readonly risk: Pick<RiskStateService, 'readRiskState'>;
   readonly balance: MeBalancePort;
   readonly unionBindings: MeUnionBindingsPort;
@@ -65,11 +67,27 @@ function configuredNumber(value: unknown, key: string): number {
 }
 
 export function createMeService(options: MeServiceOptions): MeService {
-  const { clock, config, risk, balance, unionBindings, activity } = options;
+  const { clock, config, logger, risk, balance, unionBindings, activity } = options;
   const db = options.db.withSchema('app');
   return {
     async read(subject) {
       const user = await meUser(db, subject);
+      let avatarUrl = user.avatar;
+      if (avatarUrl === DEFAULT_AVATAR) {
+        const configuredAvatar = await config.configValue(subject.appId, 'me.default_avatar_url');
+        const value = configuredAvatar?.value;
+        if (
+          typeof value !== 'string' ||
+          !/^https:\/\//i.test(value) ||
+          !URL.canParse(value) ||
+          new URL(value).hostname === ''
+        ) {
+          // Do not log the configured value or any user fields, including on invalid URLs.
+          logger.warn({ config_key: 'me.default_avatar_url' }, 'identity_default_avatar_invalid');
+          throw new Error('identity: invalid me.default_avatar_url');
+        }
+        avatarUrl = value;
+      }
       const [hoursConfig, bindConfig, privacyConfig, agreementConfig] = await Promise.all(
         [
           'invite.backfill_hours',
@@ -127,7 +145,7 @@ export function createMeService(options: MeServiceOptions): MeService {
       return {
         user_id: subject.userId,
         nickname: user.nickname,
-        avatar_url: user.avatar,
+        avatar_url: avatarUrl,
         invite_code: banned ? null : user.invite_code,
         inviter_bound: user.parent_id !== null,
         invite_backfill: { eligible, deadline_at: eligible ? deadline.toISOString() : null },

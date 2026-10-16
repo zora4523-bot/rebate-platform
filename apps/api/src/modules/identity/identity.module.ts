@@ -623,18 +623,20 @@ export class IdentityModule {
           inject: [
             CLOCK,
             IDENTITY_CONFIG,
+            ROOT_LOGGER,
             { token: DB, optional: true },
             { token: ME_READ_PORTS, optional: true },
           ],
           useFactory: (
             clock: Clock,
             config: SmsConfigReader | null,
+            logger: RootLogger,
             db?: Kysely<Database>,
             ports?: MeReadPorts | null,
           ): MeService | null =>
             db === undefined || config === null || ports == null
               ? null
-              : createMeService({ db, clock, config, ...ports }),
+              : createMeService({ db, clock, config, logger, ...ports }),
         },
         {
           provide: LOGOUT,
