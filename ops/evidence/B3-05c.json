@@ -1,0 +1,113 @@
+{
+  "task": "B3-05c",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "fda9cfa979dbbacd6dc1e5df759e1406780c134a",
+  "red_tests": [
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#1][BR-AI-14] 只将模型形态剩余文本传入关键词计划，不还原长数字或抽取条件",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#2][BR-AI-14] 接线使用默认三十字符计划，错误预填也使用截断后的 q",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#3][BR-AI-14] models_failed：部分平台成功即出原始商品卡和固定文案，以 fallback 结束",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#3][BR-AI-14] model_timeout：部分平台成功即出原始商品卡和固定文案，以 fallback 结束",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#3][BR-AI-14] route_no_model：部分平台成功即出原始商品卡和固定文案，以 fallback 结束",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#3][BR-AI-14] budget：部分平台成功即出原始商品卡和固定文案，以 budget 结束",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#4][BR-AI-14] models_failed：有平台成功但为空，仅出 empty notice，无错误码",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#4][BR-AI-14] budget：有平台成功但为空，仅出 empty notice，无错误码",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#5][BR-AI-14] no_platform：不搜索，出 empty notice，保留 budget 完成原因",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#5][BR-AI-14] no_keyword：不搜索，出 empty notice，保留 budget 完成原因",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#6][BR-AI-14] 全部已开启平台明确失败才返回契约合法的 50302 和 fallback_q，不出卡",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#7][BR-AI-14] 计划内平台结果缺失向核心抛错，不掩盖为空结果或全平台失败",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#8][BR-AI-14] 进入时已经中止，不搜索也不输出",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#9][BR-AI-14] 等待搜索时中止，晚到的商品卡和文字都不输出",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#10][BR-AI-14] 固定文案读取中止后不再写文字或新增卡片",
+    "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#11][BR-AI-14] 无模型核心实际接入降级路径，预处理 notice 不重复，且不调用模型",
+    "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#12][BR-AI-21] 合成冒烟回放与同一 RunBody 直接驱动逐帧相同，trace 与工具结果一致",
+    "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#13][BR-AI-21] 模型每轮经过本次 ports.model，消耗按完整请求匹配的合成录制",
+    "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#14][BR-AI-21] 网关捕获录制缺失也不能让适配器返回成功降级，RecordingMiss 原样冒泡",
+    "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#15][BR-AI-21] runReplay 将缺录制记为 recording_miss，不通过或伪装业务 fallback",
+    "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#16][BR-AI-21] 一个适配器连续评测使用各自模型端口，帧和 trace 不跨题累积",
+    "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#17][BR-AI-21][BR-AI-14] error 终帧保留搜索回退关键词，不另补 done"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/orchestrator/degraded/**, orchestrator/eval/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/orchestrator-degraded/** in 2 attempts (container red 22 tests); Claude spec-test review round 1 fail (invalid product-card fixture S1 x2), round 2 pass. Opus implemented 3 times; Codex general review rounds 1–2 fail with one S1 each, round 3 pass. Production trace for the degraded path is a follow-up (core path). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fda9cfa979dbbacd6dc1e5df759e1406780c134a",
+      "tree": "858451eebfc2bc88f43328917f6d231de106e373",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T11:48:55Z",
+      "finished_at": "2026-10-16T11:49:00Z",
+      "red_tests": [
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#1][BR-AI-14] 只将模型形态剩余文本传入关键词计划，不还原长数字或抽取条件",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#2][BR-AI-14] 接线使用默认三十字符计划，错误预填也使用截断后的 q",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#3][BR-AI-14] models_failed：部分平台成功即出原始商品卡和固定文案，以 fallback 结束",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#3][BR-AI-14] model_timeout：部分平台成功即出原始商品卡和固定文案，以 fallback 结束",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#3][BR-AI-14] route_no_model：部分平台成功即出原始商品卡和固定文案，以 fallback 结束",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#3][BR-AI-14] budget：部分平台成功即出原始商品卡和固定文案，以 budget 结束",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#4][BR-AI-14] models_failed：有平台成功但为空，仅出 empty notice，无错误码",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#4][BR-AI-14] budget：有平台成功但为空，仅出 empty notice，无错误码",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#5][BR-AI-14] no_platform：不搜索，出 empty notice，保留 budget 完成原因",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#5][BR-AI-14] no_keyword：不搜索，出 empty notice，保留 budget 完成原因",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#6][BR-AI-14] 全部已开启平台明确失败才返回契约合法的 50302 和 fallback_q，不出卡",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#7][BR-AI-14] 计划内平台结果缺失向核心抛错，不掩盖为空结果或全平台失败",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#8][BR-AI-14] 进入时已经中止，不搜索也不输出",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#9][BR-AI-14] 等待搜索时中止，晚到的商品卡和文字都不输出",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#10][BR-AI-14] 固定文案读取中止后不再写文字或新增卡片",
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts > [AC-B3-05c#11][BR-AI-14] 无模型核心实际接入降级路径，预处理 notice 不重复，且不调用模型",
+        "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#12][BR-AI-21] 合成冒烟回放与同一 RunBody 直接驱动逐帧相同，trace 与工具结果一致",
+        "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#13][BR-AI-21] 模型每轮经过本次 ports.model，消耗按完整请求匹配的合成录制",
+        "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#14][BR-AI-21] 网关捕获录制缺失也不能让适配器返回成功降级，RecordingMiss 原样冒泡",
+        "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#15][BR-AI-21] runReplay 将缺录制记为 recording_miss，不通过或伪装业务 fallback",
+        "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#16][BR-AI-21] 一个适配器连续评测使用各自模型端口，帧和 trace 不跨题累积",
+        "test/spec/agent/orchestrator-degraded/eval.test.ts > [AC-B3-05c#17][BR-AI-21][BR-AI-14] error 终帧保留搜索回退关键词，不另补 done"
+      ],
+      "expected": [
+        "test/spec/agent/orchestrator-degraded/degraded.test.ts",
+        "test/spec/agent/orchestrator-degraded/eval.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "3886c5a2b165bcd467d983c732e7ea0aac41d40014b90f0f8a7437540a3aecc3"
+        }
+      ],
+      "gate": {
+        "commit": "f3abaff230c3c0bd5eed20def3d6a9ef640edab6",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "Codex code reviews: round 1 fail (eval adapter threw on any model failure, S1), round 2 fail (degraded trace fragments dropped, S1), both fixed by Opus attempts 2 and 3; round 3 pass (couli-runs/B3-05c/review-codex-r1.json, review-codex-r2.json, review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "round 1 fail (2 S1), round 2 pass r2 (couli-runs/B3-05c/review-claude-spec-test.json, review-claude-spec-test-r2.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "a340fed01ea04b1216d4345bb5144743ad59ba26",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf",
+    "test/spec": "1ea88c3dc24cc9700d65a5d1e0fb807d3c6f088f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf"
+  }
+}
