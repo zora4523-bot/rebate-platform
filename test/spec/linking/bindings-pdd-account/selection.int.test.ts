@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { fixture } from '../bindings-pdd-query/kit.ts';
 import { accountFixture, databaseFixture, listed, noSideEffects, TIMEOUT } from './kit.ts';
 
-// 标准数据库入口由 createTestDatabase 读取 TEST_PG_ADMIN_URL。
+// 标准数据库入口由 createTestDatabase 读取（全局 setup 的管理员连接）。
 const database = databaseFixture(createTestDatabase);
 
 it.each(['pending_auth', 'invalid'] as const)(
