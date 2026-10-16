@@ -120,15 +120,14 @@ it('[AC-B1-04p-WIRING#1] staging pdd live 的 HTTPS 装配在一次商品调用�
   }
 });
 
-it('[AC-B1-04p-WIRING#2] 可选 DB 缺席仍可调用非商品接口，归档不可用只在启动 warn 一次', async () => {
+it('[AC-B1-04p-WIRING#2] 可选 DB 缺席不包装归档、不增加启动日志，非商品接口照常调用', async () => {
   const h = harness(db);
   const fetchDouble = vi.fn(async () => new Response('{"authority_query_response":{"bind":1}}'));
   vi.stubGlobal('fetch', fetchDouble);
   const live = await assemble(h.clock);
   try {
-    expect(live.logger.warn).toHaveBeenCalledTimes(1);
-    const startupLogs = JSON.stringify(live.logger.warn.mock.calls);
-    expect(startupLogs).not.toMatch(/fake-pass!|synthetic-unused-file/);
+    expect(live.logger.warn).not.toHaveBeenCalled();
+    expect(live.logger.error).not.toHaveBeenCalled();
     const adapter = live.registry.get('pdd');
     expect(adapter.queryPddAuthority).toBeTypeOf('function');
     for (let i = 0; i < 2; i++) {
@@ -142,7 +141,7 @@ it('[AC-B1-04p-WIRING#2] 可选 DB 缺席仍可调用非商品接口，归档不
       expect(result).toEqual({ authorized: true });
     }
     expect(fetchDouble).toHaveBeenCalledTimes(2);
-    expect(live.logger.warn).toHaveBeenCalledTimes(1);
+    expect(live.logger.warn).not.toHaveBeenCalled();
     expect(live.logger.error).not.toHaveBeenCalled();
     expect(await rows(reader, h.appId)).toEqual([]);
   } finally {

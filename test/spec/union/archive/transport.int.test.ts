@@ -6,7 +6,10 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { UnionError } from '../../../../apps/api/src/modules/union/domain/types.ts';
 import { createArchivingTransport } from '../../../../apps/api/src/modules/union/infra/archive.ts';
-import type { UnionTransport } from '../../../../apps/api/src/modules/union/infra/replay.ts';
+import {
+  UnionReplayError,
+  type UnionTransport,
+} from '../../../../apps/api/src/modules/union/infra/replay.ts';
 import { harness, outcome, request, response, rows, START } from './kit.ts';
 
 let database: TestDatabase;
@@ -139,24 +142,30 @@ it('[AC-B1-04p-TX#1] 调用方事务回滚不回滚报文；相同响应的每�
   expect(stored[0]!.id).not.toBe(stored[1]!.id);
 });
 
-it('[AC-B1-04p-ERROR#3] 普通 Error 也先归档空响应，再原样抛出', async () => {
-  const h = harness(db);
-  const failure = new Error('fake-network-failure!');
-  const wrapped = createArchivingTransport(async () => {
-    throw failure;
-  }, h);
-  expect(await outcome(() => wrapped(request(h.appId)))).toBe(failure);
-  const stored = await rows(reader, h.appId);
-  expect(stored).toHaveLength(1);
-  expect(stored[0]).toMatchObject({
-    app_id: h.appId,
-    platform: 'pdd',
-    kind: 'query',
-    latency_ms: 0,
-    fetched_at: new Date(START),
-  });
-  expect(stored[0]!.payload).toEqual(gzipSync(''));
-});
+it.each([
+  ['普通 Error', new Error('fake-network-failure!')],
+  ['带 code 的非 UnionError', new UnionReplayError('recording_mismatch', 'fake-replay-failure!')],
+] as const)(
+  '[AC-B1-04p-ERROR#3] %s 先归档空响应且 error_code 为 NULL，再原样抛出',
+  async (_label, failure) => {
+    const h = harness(db);
+    const wrapped = createArchivingTransport(async () => {
+      throw failure;
+    }, h);
+    expect(await outcome(() => wrapped(request(h.appId)))).toBe(failure);
+    const stored = await rows(reader, h.appId);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({
+      app_id: h.appId,
+      platform: 'pdd',
+      kind: 'query',
+      latency_ms: 0,
+      error_code: null,
+      fetched_at: new Date(START),
+    });
+    expect(stored[0]!.payload).toEqual(gzipSync(''));
+  },
+);
 
 it('[AC-B1-04p-ROW#2] 并发 app/platform/kind 与响应不会串行归属，先完成请求先入库', async () => {
   const h = harness(db);

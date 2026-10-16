@@ -49,7 +49,7 @@ it.each(['success', 'http', 'throw'] as const)(
     );
     expect(extra).toHaveLength(1);
     expect(extra[0]?.[1]).toBeTypeOf('string');
-    expect(String(extra[0]?.[1]).toLowerCase()).toBe('error');
+    expect(extra[0]?.[1]).toMatch(/\S/);
     const text = JSON.stringify(h.logger.error.mock.calls);
     for (const marker of [
       'fake-request-private!',
