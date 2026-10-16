@@ -1,0 +1,19 @@
+id: B1-02v
+repo: rebate-platform
+title: 测试修改：风控冻结测试 [AC-B1-03c#21] 发往 markTipRead 的请求缺契约必填头 X-Device-Id、X-Channel 用了非枚举值 app_store；planned 时不校验，B1-02s 上线真实路由后先回 20001（400）到不了 ④a；补合法设备号、渠道改 appstore，假库同时返回 appstore 行
+type: test-change
+# 草稿 2026-10-16（身份与风控线 identity-lane）。B1-02s 实现后测试机完整验证只此一条红：expected 400 to be 403，响应 20001 data.fields=[x-device-id]（契约 DeviceId 必填）；x-channel 'app_store' 也不在 install_channel 枚举内。
+# 改法（编排者定，最小）：只改 #21 的请求头（加 x-device-id 合法 UUID、x-channel 改 appstore）；idempotency-kit.ts 的假 app_versions 结果在原 app_store 行之外再返回一行 appstore（其余用例只查 app_store，不受影响）。断言、向量、标题不改。
+# 核对：叠 B1-02s 实现时 test/spec/risk/min-version/** 275 条全过；主干（planned）下同样全过。限流集成夹具已带合法设备号与 appstore，不用改。走非 task/ 分支 test-change/B1-02v，Codex 评审 pass 后按 approvals #24 加标签合并。
+refs: []
+refs_hash: {}
+deps: [B1-02t]
+paths:
+  - 'test/spec/risk/min-version/assembly.test.ts'
+  - 'test/spec/risk/min-version/idempotency-kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/min-version/**'
+status: todo
