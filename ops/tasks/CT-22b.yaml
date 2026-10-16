@@ -13,6 +13,7 @@ contract_sections: ['3.2', '6.3']
 deps: [CT-22a]
 paths:
   - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
   - 'contracts/texts.default.json'
   - 'specs/fund-term-keys.yaml'
   - 'packages/contracts-ts/**'
