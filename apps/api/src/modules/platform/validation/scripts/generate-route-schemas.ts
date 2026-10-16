@@ -36,8 +36,17 @@ export async function routeSchemasSource(): Promise<string> {
       if (operation === undefined || 'x-implementation' in operation) continue;
       const operationId = operation.operationId;
       if (operationId === undefined) throw new Error('Contract operation without operationId');
+      // An optional JSON request body (markTipRead: jump_tip sends {platform},
+      // inviter_before_buy none) gets no body part: routeSchemaOf refuses a body that is not
+      // required, so the handler checks the body itself against the contract schema.
+      const contractOperation = operation as unknown as ContractOperation;
+      const { requestBody, ...withoutBody } = contractOperation;
+      const optionalJsonBody =
+        requestBody !== undefined &&
+        requestBody.required !== true &&
+        Object.keys(requestBody.content ?? {}).join() === 'application/json';
       const schema = routeSchemaOf(
-        operation as unknown as ContractOperation,
+        optionalJsonBody ? withoutBody : contractOperation,
         pathItem?.parameters as readonly ContractParameter[] | undefined,
       );
       // Fail here, not at application start, when a part does not compile in strict mode.
