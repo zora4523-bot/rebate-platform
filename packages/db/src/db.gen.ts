@@ -269,6 +269,42 @@ export interface CategoryBlocklist {
   updated_by: string;
 }
 
+export interface CommissionRuleReserves {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  platform: string;
+  reserve_bp: number;
+  rule_version_id: string;
+}
+
+export interface CommissionRules {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  level: string;
+  order_type: string;
+  platform: string;
+  r_direct_bp: number;
+  r_indirect_bp: Generated<number>;
+  r_own_bp: number;
+  rule_version_id: string;
+}
+
+export interface CommissionRuleVersions {
+  app_id: string;
+  base_version_id: string | null;
+  created_at: Generated<Timestamp>;
+  drafter_id: string | null;
+  effective_from: Timestamp | null;
+  indirect_approved_at: Timestamp | null;
+  indirect_approver_id: string | null;
+  indirect_enabled: Generated<boolean>;
+  published_at: Timestamp | null;
+  publisher_id: string | null;
+  revoked_at: Timestamp | null;
+  rule_version_id: string;
+  status: Generated<string>;
+}
+
 export interface ConfigItems {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -980,6 +1016,9 @@ export interface DB {
   audit_logs: AuditLogs;
   blocklist: Blocklist;
   category_blocklist: CategoryBlocklist;
+  commission_rule_reserves: CommissionRuleReserves;
+  commission_rule_versions: CommissionRuleVersions;
+  commission_rules: CommissionRules;
   config_items: ConfigItems;
   consent_records: ConsentRecords;
   device_registrations: DeviceRegistrations;
