@@ -6,6 +6,7 @@ type: migration
 # 依据 04 §3.2 commission_splits / amounts / beneficiary_events / totals 行；BR-CALC-02（raw_n_fen 可为负、base_fen ≥ 0、platform_retain_fen ≥ 0）、BR-CALC-10（唯一 order_id、不可变范围）、
 # BR-CALC-27（totals 唯一 (order_id, commission_version)、只追加）。四表带 app_id；外键指向 order_keys / orders 与 commission_rule_versions；约束、索引写明名字；
 # 不可变列由「禁止 UPDATE / DELETE」触发器或不授 UPDATE 保证；金额列 bigint *_fen、比例 smallint *_bp。迁移号取落地时主干最大号 +1，两段式（db/AGENTS.md）。
+# tools/ci/lint-migrations.test.ts 逐表锁定资金表清单，新资金表须同步加入（B2-01d #550 CI 实测；第三类保护路径，带标签）。
 refs: [BR-CALC-10, BR-CALC-27]
 refs_hash:
   BR-CALC-10: 1848b1fb0a51
@@ -15,6 +16,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/db/commission/splits/**'
 impl: claude
