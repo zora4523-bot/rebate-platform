@@ -1555,6 +1555,65 @@ CREATE TABLE app.category_blocklist (
 
 
 --
+-- Name: commission_rule_reserves; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.commission_rule_reserves (
+    rule_version_id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    reserve_bp smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT commission_rule_reserves_reserve_bp_check CHECK (((reserve_bp >= 0) AND (reserve_bp <= 10000)))
+);
+
+
+--
+-- Name: commission_rule_versions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.commission_rule_versions (
+    rule_version_id uuid NOT NULL,
+    app_id text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    effective_from timestamp with time zone,
+    indirect_enabled boolean DEFAULT false NOT NULL,
+    base_version_id uuid,
+    drafter_id uuid,
+    publisher_id uuid,
+    published_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    indirect_approver_id uuid,
+    indirect_approved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT commission_rule_versions_effective_from_check CHECK (((status = 'draft'::text) OR (effective_from IS NOT NULL))),
+    CONSTRAINT commission_rule_versions_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'revoked'::text])))
+);
+
+
+--
+-- Name: commission_rules; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.commission_rules (
+    rule_version_id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    level text NOT NULL,
+    order_type text NOT NULL,
+    r_own_bp smallint NOT NULL,
+    r_direct_bp smallint NOT NULL,
+    r_indirect_bp smallint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT commission_rules_level_check CHECK ((level = ANY (ARRAY['L1'::text, 'L2'::text, 'L3'::text]))),
+    CONSTRAINT commission_rules_order_type_check CHECK ((order_type = ANY (ARRAY['self'::text, 'share'::text]))),
+    CONSTRAINT commission_rules_r_direct_bp_check CHECK (((r_direct_bp >= 0) AND (r_direct_bp <= 8000))),
+    CONSTRAINT commission_rules_r_indirect_bp_check CHECK (((r_indirect_bp >= 0) AND (r_indirect_bp <= 8000))),
+    CONSTRAINT commission_rules_r_own_bp_check CHECK (((r_own_bp >= 0) AND (r_own_bp <= 8000)))
+);
+
+
+--
 -- Name: config_items; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3451,6 +3510,38 @@ ALTER TABLE ONLY app.category_blocklist
 
 
 --
+-- Name: commission_rule_reserves commission_rule_reserves_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_reserves
+    ADD CONSTRAINT commission_rule_reserves_pkey PRIMARY KEY (rule_version_id, platform);
+
+
+--
+-- Name: commission_rule_versions commission_rule_versions_app_id_rule_version_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_versions
+    ADD CONSTRAINT commission_rule_versions_app_id_rule_version_id_key UNIQUE (app_id, rule_version_id);
+
+
+--
+-- Name: commission_rule_versions commission_rule_versions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_versions
+    ADD CONSTRAINT commission_rule_versions_pkey PRIMARY KEY (rule_version_id);
+
+
+--
+-- Name: commission_rules commission_rules_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rules
+    ADD CONSTRAINT commission_rules_pkey PRIMARY KEY (rule_version_id, platform, level, order_type);
+
+
+--
 -- Name: config_items config_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4326,6 +4417,13 @@ CREATE INDEX blocklist_value_idx ON app.blocklist USING btree (app_id, dimension
 
 
 --
+-- Name: commission_rule_versions_published_effective_from_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX commission_rule_versions_published_effective_from_key ON app.commission_rule_versions USING btree (app_id, effective_from) WHERE (status = 'published'::text);
+
+
+--
 -- Name: consent_records_device_type_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -5143,6 +5241,70 @@ ALTER TABLE ONLY app.audit_logs
 
 ALTER TABLE ONLY app.category_blocklist
     ADD CONSTRAINT category_blocklist_platform_fkey FOREIGN KEY (platform) REFERENCES app.platforms(code);
+
+
+--
+-- Name: commission_rule_reserves commission_rule_reserves_platform_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_reserves
+    ADD CONSTRAINT commission_rule_reserves_platform_fkey FOREIGN KEY (platform) REFERENCES app.platforms(code);
+
+
+--
+-- Name: commission_rule_reserves commission_rule_reserves_rule_version_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_reserves
+    ADD CONSTRAINT commission_rule_reserves_rule_version_id_fkey FOREIGN KEY (app_id, rule_version_id) REFERENCES app.commission_rule_versions(app_id, rule_version_id);
+
+
+--
+-- Name: commission_rule_versions commission_rule_versions_base_version_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_versions
+    ADD CONSTRAINT commission_rule_versions_base_version_id_fkey FOREIGN KEY (app_id, base_version_id) REFERENCES app.commission_rule_versions(app_id, rule_version_id);
+
+
+--
+-- Name: commission_rule_versions commission_rule_versions_drafter_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_versions
+    ADD CONSTRAINT commission_rule_versions_drafter_id_fkey FOREIGN KEY (app_id, drafter_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: commission_rule_versions commission_rule_versions_indirect_approver_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_versions
+    ADD CONSTRAINT commission_rule_versions_indirect_approver_id_fkey FOREIGN KEY (app_id, indirect_approver_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: commission_rule_versions commission_rule_versions_publisher_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_versions
+    ADD CONSTRAINT commission_rule_versions_publisher_id_fkey FOREIGN KEY (app_id, publisher_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: commission_rules commission_rules_platform_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rules
+    ADD CONSTRAINT commission_rules_platform_fkey FOREIGN KEY (platform) REFERENCES app.platforms(code);
+
+
+--
+-- Name: commission_rules commission_rules_rule_version_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rules
+    ADD CONSTRAINT commission_rules_rule_version_id_fkey FOREIGN KEY (app_id, rule_version_id) REFERENCES app.commission_rule_versions(app_id, rule_version_id);
 
 
 --
@@ -6708,6 +6870,72 @@ GRANT UPDATE(updated_by) ON TABLE app.category_blocklist TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.category_blocklist TO couli_app;
+
+
+--
+-- Name: TABLE commission_rule_reserves; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.commission_rule_reserves TO couli_app;
+GRANT SELECT ON TABLE app.commission_rule_reserves TO couli_readonly;
+
+
+--
+-- Name: TABLE commission_rule_versions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.commission_rule_versions TO couli_app;
+GRANT SELECT ON TABLE app.commission_rule_versions TO couli_readonly;
+
+
+--
+-- Name: COLUMN commission_rule_versions.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.commission_rule_versions TO couli_app;
+
+
+--
+-- Name: COLUMN commission_rule_versions.publisher_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(publisher_id) ON TABLE app.commission_rule_versions TO couli_app;
+
+
+--
+-- Name: COLUMN commission_rule_versions.published_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(published_at) ON TABLE app.commission_rule_versions TO couli_app;
+
+
+--
+-- Name: COLUMN commission_rule_versions.revoked_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(revoked_at) ON TABLE app.commission_rule_versions TO couli_app;
+
+
+--
+-- Name: COLUMN commission_rule_versions.indirect_approver_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(indirect_approver_id) ON TABLE app.commission_rule_versions TO couli_app;
+
+
+--
+-- Name: COLUMN commission_rule_versions.indirect_approved_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(indirect_approved_at) ON TABLE app.commission_rule_versions TO couli_app;
+
+
+--
+-- Name: TABLE commission_rules; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.commission_rules TO couli_app;
+GRANT SELECT ON TABLE app.commission_rules TO couli_readonly;
 
 
 --
