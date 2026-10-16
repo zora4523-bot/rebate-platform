@@ -21,4 +21,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/admin-admins/**'
-status: todo
+status: done
+pr: 417

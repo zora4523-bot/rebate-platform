@@ -1,0 +1,95 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-admins/list.test.ts > [AC-F1-06i-LIST#1] 默认 admins 页按契约取数，展示七列、超管及普通账号映射且只读",
+    "test/spec/frontend/admin-admins/list.test.ts > [AC-F1-06i-LIST#2] 停用、已过期及恰好到期的锁定回到账号状态，时间按北京时间展示",
+    "test/spec/frontend/admin-admins/list.test.ts > [AC-F1-06i-PAGE#1] antd 分页显示总数，第二页重新 GET 并替换首屏数据",
+    "test/spec/frontend/admin-admins/list.test.ts > [AC-F1-06i-LIST#3] 默认页面接线只对超管 admins 生效，保留调用方 renderPage 与其余占位页",
+    "test/spec/frontend/admin-admins/source.test.ts > [AC-F1-06i-SOURCE#1] 页面 JSX 使用真实 antd Table，不手写基础控件、ant 类名或 CSS 皮肤",
+    "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#1] 空响应在实际账号表格中显示 antd Empty",
+    "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#2] network 失败用 antd 反馈出错，手动重试重新请求并恢复数据",
+    "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#2] http 失败用 antd 反馈出错，手动重试重新请求并恢复数据",
+    "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#2] parse 失败用 antd 反馈出错，手动重试重新请求并恢复数据",
+    "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#3] 10403 admin_permission_denied 显示无权限 Result，不显示表格",
+    "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#4] 请求在途时表格显示 Spin，响应后退出加载状态并显示数据"
+  ],
+  "risk_note": "RV2 by path (apps/admin globs match the funds rule; no money logic). Admin accounts list page (11 §2.6 pilot, page spec design/specs/admins.md at couli 96d2ab1, board AdmAdmins): antd Table (rowKey admin_id, server paging through the F1-06g data provider getList, showTotal, scroll.x only), Empty, Result (error with retry; 10403 admin_permission_denied as a 403 page without retry), Typography, Alert role=note, Tag; dates and lock times computed at +08:00 regardless of the runtime time zone, lock only when locked_until is strictly later than now; stale responses dropped. App renders the page for the admins menu only when the caller passes no renderPage. Not built (spec section 7): name and last-login columns and the filter bar (no contract fields / parameters), create / permissions / disable (later task). Rule tests by Codex in one call (red/1, 11 tests), spec-test review by a fresh Claude subagent passed with three S2 written into the implementation brief. Implementation by Opus 5.5 in one round. Reviews: Codex only (approvals id 27). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "one S2 (a lock shown as active stays shown after it expires until the next render; follow-up recorded), money checklist n/a"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent; pass with three S2 (403 distinct from generic errors, Table scroll.x, fixed +08:00 formatting) carried into the implementation brief"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  },
+  "task": "F1-06i",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "c09b82a9c547be97aba17a8cc1cd261559bb25ac",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c09b82a9c547be97aba17a8cc1cd261559bb25ac",
+      "tree": "367bc5f678c75f5253da7973cad84a3e41b35987",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T07:14:59Z",
+      "finished_at": "2026-10-16T07:15:11Z",
+      "gate": {
+        "commit": "a5d129712daf596c726fda3b28e1ee110499ded0",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-admins/list.test.ts > [AC-F1-06i-LIST#1] 默认 admins 页按契约取数，展示七列、超管及普通账号映射且只读",
+        "test/spec/frontend/admin-admins/list.test.ts > [AC-F1-06i-LIST#2] 停用、已过期及恰好到期的锁定回到账号状态，时间按北京时间展示",
+        "test/spec/frontend/admin-admins/list.test.ts > [AC-F1-06i-PAGE#1] antd 分页显示总数，第二页重新 GET 并替换首屏数据",
+        "test/spec/frontend/admin-admins/list.test.ts > [AC-F1-06i-LIST#3] 默认页面接线只对超管 admins 生效，保留调用方 renderPage 与其余占位页",
+        "test/spec/frontend/admin-admins/source.test.ts > [AC-F1-06i-SOURCE#1] 页面 JSX 使用真实 antd Table，不手写基础控件、ant 类名或 CSS 皮肤",
+        "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#1] 空响应在实际账号表格中显示 antd Empty",
+        "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#2] network 失败用 antd 反馈出错，手动重试重新请求并恢复数据",
+        "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#2] http 失败用 antd 反馈出错，手动重试重新请求并恢复数据",
+        "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#2] parse 失败用 antd 反馈出错，手动重试重新请求并恢复数据",
+        "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#3] 10403 admin_permission_denied 显示无权限 Result，不显示表格",
+        "test/spec/frontend/admin-admins/states.test.ts > [AC-F1-06i-STATES#4] 请求在途时表格显示 Spin，响应后退出加载状态并显示数据"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-admins/list.test.ts",
+        "test/spec/frontend/admin-admins/source.test.ts",
+        "test/spec/frontend/admin-admins/states.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "9960239bd598f3f800b60dcdb20633281531550adfb19d45c6d2b66a9c0501b3"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "4c370181d70963b1abca68c1b9438d2b0cb7178e",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
