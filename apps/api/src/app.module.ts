@@ -39,6 +39,7 @@ import {
 import { HealthModule } from './modules/health/index.ts';
 import {
   IdentityModule,
+  ME_READ_PORTS,
   TOKEN_CHECK,
   createSmsSender,
   smsSenderToken,
@@ -47,6 +48,7 @@ import {
   createIdentityViewerContext,
   createSameDeviceLoginReader,
   createUserLevelReader,
+  createInviteBackfillActivityReader,
   type IdentityAttrCodeReader,
   type IdentityConfigReader,
   type IdentityContext,
@@ -55,12 +57,15 @@ import {
   type UserLevelReader,
   type AccountAssetsPort,
   type AccountRiskPort,
+  type MeReadPorts,
+  type MeUnionBindingStatus,
 } from './modules/identity/index.ts';
 import {
   LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
   LINK_REGISTRATIONS,
   LinkingModule,
+  createUnionAuthReads,
   createUnavailableAttrCodeReader,
   inOpenReads,
   loadLinkOpenApps,
@@ -118,6 +123,7 @@ import {
   createRiskStateService,
   createDeviceRegistrationRisk,
   createSmsRisk,
+  riskStateServiceToken,
   ephemeralSmsRiskIndex,
   unkeyedDeviceRegistrationIndex,
   type DeviceRegistrationRisk,
@@ -126,6 +132,7 @@ import {
   type MinimumVersionReaders,
   type RateLimitThresholdReaders,
   type BlocklistService,
+  type RiskStateService,
 } from './modules/risk/index.ts';
 import {
   REGISTERED_PLATFORMS,
@@ -347,6 +354,68 @@ function identityModule(): DynamicModule {
       }),
     },
   });
+}
+
+@Module({})
+class IdentityMePortsModule {}
+
+/**
+ * GET /v1/me read ports: the guard's risk service and linking's binding projection. This global
+ * assembly imports risk's export so identity needs no reverse module import into risk.
+ */
+function identityMePorts(risk: DynamicModule): DynamicModule {
+  return {
+    module: IdentityMePortsModule,
+    global: true,
+    imports: [risk],
+    providers: [
+      {
+        provide: ME_READ_PORTS,
+        inject: [APP_CONFIG, CLOCK, riskStateServiceToken(), { token: DB, optional: true }],
+        useFactory: (
+          appConfig: AppConfig,
+          clock: Clock,
+          riskState: RiskStateService | null,
+          db?: Kysely<Database>,
+        ): MeReadPorts | null => {
+          if (db === undefined || riskState === null) return null;
+          const reads = createUnionAuthReads({
+            db: db.withSchema('app'),
+            config: createContentReader({ db, clock }),
+            appEnv: appConfig.appEnv,
+            // binding() has no PID dependency. Refuse accidental use of an auth command here.
+            pids: { getActivePid: () => Promise.reject(new Error('me: binding projection only')) },
+          });
+          return {
+            risk: riskState,
+            activity: createInviteBackfillActivityReader(db),
+            balance: {
+              // TODO(规划/11 §2.3): 余额摘要读 ledger — blocked on ledger 模块（B2）
+              balanceOf: () =>
+                Promise.resolve({ available_fen: 0, withdrawable_fen: 0, estimated_total_fen: 0 }),
+            },
+            unionBindings: {
+              async statusOf(subject, platform): Promise<MeUnionBindingStatus> {
+                const { status } = await reads.binding(subject.appId, subject.userId, platform);
+                switch (status) {
+                  case 'unbound':
+                  case 'pending_auth':
+                  case 'active':
+                  case 'invalid':
+                  case 'released':
+                  case 'blocked':
+                    return status;
+                  default:
+                    throw new Error('me: invalid union binding status');
+                }
+              },
+            },
+          };
+        },
+      },
+    ],
+    exports: [ME_READ_PORTS],
+  };
 }
 
 /** Synthetic config key of the demo quoter's rule (DemoQuoteRule); never a commission rule. */
@@ -876,6 +945,7 @@ export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
     // One module object for both imports, so Nest builds the identity module once.
     const identity = options.entry === 'api' ? identityModule() : undefined;
+    const risk = identity === undefined ? undefined : riskModule(identity);
     // One module object per import: Nest builds union and linking once.
     const union =
       options.entry === 'api' || options.entry === 'worker' ? UnionModule.forRoot() : undefined;
@@ -912,7 +982,9 @@ export class AppModule {
         ...(options.entry === 'api'
           ? [ContentPublicModule.forApi({ viewerContext: identityViewer })]
           : []),
-        ...(identity === undefined ? [] : [identity, riskModule(identity)]),
+        ...(identity === undefined || risk === undefined
+          ? []
+          : [identity, risk, identityMePorts(risk)]),
         ...(union === undefined ? [] : [union]),
         // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.

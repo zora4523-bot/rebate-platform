@@ -33,6 +33,7 @@ import {
   type AccountRiskPort,
 } from './application/bind-phone.ts';
 import { createTipsService, type TipsService } from './application/tips.ts';
+import { createMeService, type MeService, type MeReadPorts } from './application/me.ts';
 import { createH5TokenService, type H5TokenService } from './application/h5-token.ts';
 import {
   createOauthAttemptService,
@@ -79,6 +80,8 @@ import {
   H5_TOKENS,
   IDENTITY_CONFIG,
   LOGOUT,
+  ME,
+  ME_READ_PORTS,
   OAUTH_ATTEMPTS,
   REFRESH,
   SMS_CODES,
@@ -101,6 +104,7 @@ import { RefreshController } from './http/public/refresh.controller.ts';
 import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { TipsController } from './http/public/tips.controller.ts';
+import { MeController } from './http/public/me.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
 import { deviceHashOf } from './infra/login-accounts.ts';
 import { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
@@ -256,6 +260,7 @@ export class IdentityModule {
         H5TokenController,
         ConsentsController,
         TipsController,
+        MeController,
       ],
       providers: [
         options.accountAssets === undefined
@@ -612,6 +617,24 @@ export class IdentityModule {
           inject: [CLOCK, { token: DB, optional: true }],
           useFactory: (clock: Clock, db?: Kysely<Database>): TipsService | null =>
             db === undefined ? null : createTipsService({ db, clock }),
+        },
+        {
+          provide: ME,
+          inject: [
+            CLOCK,
+            IDENTITY_CONFIG,
+            { token: DB, optional: true },
+            { token: ME_READ_PORTS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            config: SmsConfigReader | null,
+            db?: Kysely<Database>,
+            ports?: MeReadPorts | null,
+          ): MeService | null =>
+            db === undefined || config === null || ports == null
+              ? null
+              : createMeService({ db, clock, config, ...ports }),
         },
         {
           provide: LOGOUT,
