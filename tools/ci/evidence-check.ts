@@ -57,6 +57,10 @@
 //              looked up only with --pr-number) AND no changed path is a money / attribution
 //              implementation path (MONEY_PATHS). Touching one keeps the requirement exactly as
 //              before. Task branches are never waived.
+//   Migration rename hotfix (ops/approvals.yaml id 32): on branch fix/migration-<NNNN>-collision a
+//              change that only renames colliding migrations exactly (and replaces their file names
+//              in non-SQL text and db/schema.sql) needs no task branch and no evidence file; the
+//              conditions are in migrationRename. Protected paths and their label are unchanged.
 // It prevents omissions, not malice (规划/11 §3.2). Exit codes: 0 ok, 1 failed, 2 usage.
 //
 // TODO(规划/11 §3.2): `run_attempt` > 1 on funds paths (不许重跑到绿) needs the Actions API and
@@ -90,6 +94,178 @@ export const MONEY_PATHS: readonly string[] = [
   'db/migrations/**',
 ];
 
+/**
+ * Branch of a pure migration rename hotfix (ops/approvals.yaml id 32): `fix/migration-<NNNN>-collision`,
+ * NNNN the migration number that two merged migrations share.
+ */
+export const MIGRATION_RENAME_BRANCH = /^fix\/migration-([0-9]{4})-collision$/;
+const MIGRATION_FILE = /^db\/migrations\/([0-9]{4})_[a-z0-9]+(?:-[a-z0-9]+)*\.sql$/;
+
+export type MigrationRename = {
+  /** The branch is `fix/migration-<NNNN>-collision`. */
+  branch: boolean;
+  /** Every condition holds: the change is a pure rename of colliding migrations. */
+  ok: boolean;
+  problems: string[];
+  renames: { from: string; to: string }[];
+};
+
+/** Migration file numbers directly under db/migrations at `ref` (null when a name is malformed). */
+function migrationNumbers(prDir: string, ref: string): { numbers: number[]; bad: string[] } {
+  const res = tryGit(
+    ['-c', 'core.quotepath=false', 'ls-tree', '-z', '--name-only', `${ref}`, 'db/migrations/'],
+    { cwd: prDir },
+  );
+  const names = res.status === 0 ? res.stdout.split('\0').filter((f) => f !== '') : [];
+  const numbers: number[] = [];
+  const bad: string[] = [];
+  for (const name of names) {
+    const m = MIGRATION_FILE.exec(name);
+    if (m === null) bad.push(name);
+    else numbers.push(Number(m[1]));
+  }
+  return { numbers: numbers.sort((a, b) => a - b), bad };
+}
+
+/**
+ * Pure migration rename hotfix (ops/approvals.yaml id 32, 规划/11 §7.3 第 11 项): two parallel
+ * lines merged migrations with the same number (2026-10-09 two 0025, #381; 2026-10-16 two 0031),
+ * so packages/db migrations.test is red on main and every PR's ci-gate fails, while a rename on a
+ * non-task branch was refused here (db/migrations is a MONEY_PATHS entry) and a task branch needs a
+ * ledger PR first, which cannot pass ci-gate either. Allowed, all of:
+ * - the branch is `fix/migration-<NNNN>-collision` and the merge base has at least two migrations
+ *   numbered NNNN;
+ * - every changed migration is an exact rename (git rename with 100% similarity and the same blob)
+ *   of a db/migrations/NNNN_*.sql file to another well-formed migration file name: no migration is
+ *   added, deleted or edited, and nothing else under db/migrations changes;
+ * - after the renames the migration numbers at the head are 1..n with no duplicate and no gap;
+ * - any other changed file is a modified text file (not .sql except db/schema.sql, not under a
+ *   money / attribution implementation path) whose head content is exactly its base content with
+ *   every renamed file name replaced by its new name (a file-name reference, nothing else).
+ * Then no task branch and no evidence file are required. guard-git and protected-paths are
+ * unchanged: db/migrations stays a protected path and needs the owner approval label.
+ */
+export function migrationRename(
+  prDir: string,
+  mergeBase: string,
+  head: string,
+  headRef: string,
+): MigrationRename {
+  const branch = MIGRATION_RENAME_BRANCH.exec(headRef);
+  const result: MigrationRename = { branch: branch !== null, ok: false, problems: [], renames: [] };
+  if (branch === null) return result;
+  const number = Number(branch[1]);
+  const problems = result.problems;
+
+  const before = migrationNumbers(prDir, mergeBase);
+  if (before.numbers.filter((n) => n === number).length < 2) {
+    problems.push(`the merge base has no two migrations numbered ${branch[1]}`);
+  }
+
+  // -M100%: only exact renames pair up; an edited rename shows as a deletion and an addition.
+  const out = tryGit(
+    [
+      '-c',
+      'core.quotepath=false',
+      'diff',
+      '--name-status',
+      '-z',
+      '-M100%',
+      '--no-ext-diff',
+      mergeBase,
+      head,
+      '--',
+    ],
+    { cwd: prDir },
+  );
+  if (out.status !== 0) {
+    problems.push(`git diff ${mergeBase}..${head} failed`);
+    return result;
+  }
+  const fields = out.stdout.split('\0');
+  const modified: string[] = [];
+  for (let i = 0; i < fields.length;) {
+    const status = fields[i++] ?? '';
+    if (status === '') continue;
+    const code = status[0] ?? '';
+    if (code === 'R') {
+      const from = fields[i++] ?? '';
+      const to = fields[i++] ?? '';
+      const fromFile = MIGRATION_FILE.exec(from);
+      const same =
+        treeOf(prDir, mergeBase, from) !== null &&
+        treeOf(prDir, mergeBase, from) === treeOf(prDir, head, to);
+      if (fromFile === null || Number(fromFile[1]) !== number) {
+        problems.push(`${from} → ${to}: only a migration numbered ${branch[1]} may be renamed`);
+      } else if (MIGRATION_FILE.exec(to) === null) {
+        problems.push(`${from} → ${to}: the new name is not db/migrations/NNNN_kebab-name.sql`);
+      } else if (status !== 'R100' || !same) {
+        problems.push(`${from} → ${to}: the content changed (only the file name may change)`);
+      } else {
+        result.renames.push({ from, to });
+      }
+    } else if (code === 'C') {
+      const from = fields[i++] ?? '';
+      const to = fields[i++] ?? '';
+      problems.push(`${from} → ${to}: a copy is not a rename`);
+    } else {
+      const path = fields[i++] ?? '';
+      if (code === 'M' && !path.startsWith('db/migrations/')) modified.push(path);
+      else if (path.startsWith('db/migrations/')) {
+        problems.push(
+          `${path} (${code}): a migration may only be renamed, not added, deleted or edited`,
+        );
+      } else {
+        problems.push(
+          `${path} (${code}): only migration renames and file-name references may change`,
+        );
+      }
+    }
+  }
+  if (result.renames.length === 0) problems.push('no migration was renamed');
+
+  const after = migrationNumbers(prDir, head);
+  for (const name of after.bad) {
+    problems.push(`${name}: not a migration file name (NNNN_kebab-name.sql)`);
+  }
+  const expected = after.numbers.map((_, i) => i + 1);
+  if (after.numbers.join(',') !== expected.join(',')) {
+    problems.push(
+      `after the rename the migration numbers are not 1..${after.numbers.length} without a ` +
+        `duplicate or a gap (${after.numbers.map((n) => String(n).padStart(4, '0')).join(', ')})`,
+    );
+  }
+
+  const names = result.renames.map(({ from, to }) => ({
+    from: from.slice('db/migrations/'.length),
+    to: to.slice('db/migrations/'.length),
+  }));
+  for (const path of modified) {
+    const lower = path.toLowerCase();
+    if (lower.endsWith('.sql') && path !== 'db/schema.sql') {
+      problems.push(`${path}: SQL content may not change`);
+      continue;
+    }
+    if (matchesAny(lower, MONEY_PATHS)) {
+      problems.push(`${path}: a money / attribution implementation path may not change`);
+      continue;
+    }
+    const was = showOrNull(prDir, mergeBase, path);
+    const now = showOrNull(prDir, head, path);
+    let rewritten = was;
+    for (const { from, to } of names) rewritten = rewritten?.split(from).join(to) ?? null;
+    if (was === null || now === null || rewritten !== now || was === now) {
+      problems.push(
+        `${path}: changes other than replacing the renamed file names (${names
+          .map((n) => `${n.from} → ${n.to}`)
+          .join(', ')})`,
+      );
+    }
+  }
+  result.ok = problems.length === 0;
+  return result;
+}
+
 export type EvidenceReport = {
   ok: boolean;
   risk: RiskLevel;
@@ -103,6 +279,8 @@ export type EvidenceReport = {
   waived: boolean;
   /** Changed paths that are money / attribution implementation paths. */
   money_paths: string[];
+  /** A pure migration rename hotfix (ops/approvals.yaml id 32): no task branch, no evidence. */
+  migration_rename: boolean;
 };
 
 export type EvidenceInput = {
@@ -747,9 +925,22 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
   const waivable = risk === 'RV2' && task === null && moneyPaths.length === 0;
   const approval = input.approval ?? null;
   let waived = false;
+  const rename = migrationRename(input.prDir, mergeBase, input.head, input.headRef);
+  if (rename.branch && !rename.ok) {
+    for (const problem of rename.problems) {
+      notices.push(`not a pure migration rename hotfix (ops/approvals.yaml id 32): ${problem}`);
+    }
+  }
 
   if (risk !== 'RV2') {
     notices.push(`risk ${risk}: no evidence file required (${changed.length} changed path(s))`);
+  } else if (task === null && rename.ok) {
+    notices.push(
+      `pure migration rename hotfix on branch "${input.headRef}" (${rename.renames
+        .map((r) => `${r.from} → ${r.to}`)
+        .join(', ')}): no task branch and no evidence file required (ops/approvals.yaml id 32); ` +
+        'db/migrations stays a protected path (protected-paths, guard-git)',
+    );
   } else if (task === null && waivable && approval?.approved === true) {
     waived = true;
     notices.push(
@@ -813,6 +1004,7 @@ export function checkEvidence(input: EvidenceInput): EvidenceReport {
     waivable,
     waived,
     money_paths: moneyPaths,
+    migration_rename: task === null && rename.ok,
   };
 }
 
