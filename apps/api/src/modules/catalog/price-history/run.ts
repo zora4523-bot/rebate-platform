@@ -16,8 +16,25 @@ export function decidePriceRun(
   observation: PriceRunObservation,
   touchMinIntervalMinutes: number,
 ): PriceRunDecision {
-  void latest;
-  void observation;
-  void touchMinIntervalMinutes;
-  throw new Error('NotImplemented: decidePriceRun');
+  if (latest === null) return { kind: 'insert' };
+  const elapsedMs = observation.observedAt.getTime() - latest.lastObservedAt.getTime();
+  if (elapsedMs < 0) return { kind: 'none' };
+
+  const { values } = observation;
+  if (
+    values.priceFen !== latest.priceFen ||
+    values.couponFen !== latest.couponFen ||
+    values.finalPriceFen !== latest.finalPriceFen ||
+    values.inStock !== latest.inStock
+  ) {
+    return { kind: 'insert' };
+  }
+  if (elapsedMs >= touchMinIntervalMinutes * 60_000) {
+    return {
+      kind: 'touch',
+      lastObservedAt: observation.observedAt,
+      observationCount: latest.observationCount + 1,
+    };
+  }
+  return { kind: 'none' };
 }
