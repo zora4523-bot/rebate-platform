@@ -1,0 +1,118 @@
+{
+  "task": "B1-02s",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "b664c4fff8892c7eb8f3bde50d57d8b05af1342d",
+  "red_tests": [
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#1] 未读 GET 只返回空平台对象和 null，读取不产生已读行",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#2] 两个平台各记 Clock 时刻，GET 只列已读平台",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#3] 重复 POST 回 0，推进 Clock 后原行及首次 read_at 不变",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#4] 同账号另一设备及会话读取相同提示状态",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#5] inviter_before_buy 无请求体可记已读，平台固定空串且 GET 不分平台",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#6] inviter_before_buy 首次及重复调用忽略请求体：合法平台",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#6] inviter_before_buy 首次及重复调用忽略请求体：无平台及额外字段",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#6] inviter_before_buy 首次及重复调用忽略请求体：非法平台",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#7] jump_tip 无请求体返回 20001 且 fields 仅含 platform",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#7] jump_tip 空对象返回 20001 且 fields 仅含 platform",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 \"not-a-platform\" 返回 20001 且不落行",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 \"ios\" 返回 20001 且不落行",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 \"\" 返回 20001 且不落行",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 null 返回 20001 且不落行",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 1 返回 20001 且不落行",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#9] POST 非法 tip_key 返回 20001 且不落行",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#10] DELETE 清空全部 jump_tip 平台、保留邀请提示，再读后可按新 Clock 重新记录",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#11] 无记录 DELETE 仍成功，GET 仍为未读",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#12] DELETE inviter_before_buy 返回 20001，现有记录不受影响",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#12] DELETE unknown_tip 返回 20001，现有记录不受影响",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#13] 同 app 其他用户、其他 app 的读写及删除互不影响",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#14] 游客 GET /v1/me/tips 返回 10001 且不写表",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#14] 游客 POST /v1/me/tips/jump_tip/read 返回 10001 且不写表",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#14] 游客 POST /v1/me/tips/inviter_before_buy/read 返回 10001 且不写表",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#14] 游客 DELETE /v1/me/tips/jump_tip 返回 10001 且不写表",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#15] 低版本 GET 不拦，两个 POST 和 DELETE 均由真实守卫返回 10405 且不写表",
+    "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#16] 同账号并发首次标记只有一行，后续并发重试保留首次时间"
+  ],
+  "risk_note": "RV2 overall (identity RV1 plus platform/validation's route-schema generator, RV2). GET/POST/DELETE /v1/me/tips leave planned (contract CT-15j). Reads and writes of app.user_tip_reads only by the token's app_id and uid; POST inserts with ON CONFLICT DO NOTHING (an existing row keeps read_at, read_at from the injected Clock); jump_tip needs a body {platform} checked in the handler against MarkTipReadRequest (missing → 20001 fields=[platform], extra fields → 20001); inviter_before_buy ignores the body and stores platform ''; DELETE removes only the user's jump_tip rows. Login 10001, version gate 10405, ban 10006 and rate limits come from the existing global guards. The generator gives an optional JSON request body no body schema (only markTipRead has one); routeSchemaOf and its frozen tests are unchanged. Frozen risk tests were adjusted beforehand by test-changes B1-02t (#518) and B1-02v. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b664c4fff8892c7eb8f3bde50d57d8b05af1342d",
+      "tree": "1f813f735702f6c90670dc8ead0c93b0cd0392b0",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T11:53:56Z",
+      "finished_at": "2026-10-16T11:54:04Z",
+      "red_tests": [
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#1] 未读 GET 只返回空平台对象和 null，读取不产生已读行",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#2] 两个平台各记 Clock 时刻，GET 只列已读平台",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#3] 重复 POST 回 0，推进 Clock 后原行及首次 read_at 不变",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#4] 同账号另一设备及会话读取相同提示状态",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#5] inviter_before_buy 无请求体可记已读，平台固定空串且 GET 不分平台",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#6] inviter_before_buy 首次及重复调用忽略请求体：合法平台",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#6] inviter_before_buy 首次及重复调用忽略请求体：无平台及额外字段",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#6] inviter_before_buy 首次及重复调用忽略请求体：非法平台",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#7] jump_tip 无请求体返回 20001 且 fields 仅含 platform",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#7] jump_tip 空对象返回 20001 且 fields 仅含 platform",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 \"not-a-platform\" 返回 20001 且不落行",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 \"ios\" 返回 20001 且不落行",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 \"\" 返回 20001 且不落行",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 null 返回 20001 且不落行",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#8] 非法购买平台 1 返回 20001 且不落行",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#9] POST 非法 tip_key 返回 20001 且不落行",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#10] DELETE 清空全部 jump_tip 平台、保留邀请提示，再读后可按新 Clock 重新记录",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#11] 无记录 DELETE 仍成功，GET 仍为未读",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#12] DELETE inviter_before_buy 返回 20001，现有记录不受影响",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#12] DELETE unknown_tip 返回 20001，现有记录不受影响",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#13] 同 app 其他用户、其他 app 的读写及删除互不影响",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#14] 游客 GET /v1/me/tips 返回 10001 且不写表",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#14] 游客 POST /v1/me/tips/jump_tip/read 返回 10001 且不写表",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#14] 游客 POST /v1/me/tips/inviter_before_buy/read 返回 10001 且不写表",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#14] 游客 DELETE /v1/me/tips/jump_tip 返回 10001 且不写表",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#15] 低版本 GET 不拦，两个 POST 和 DELETE 均由真实守卫返回 10405 且不写表",
+        "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#16] 同账号并发首次标记只有一行，后续并发重试保留首次时间"
+      ],
+      "expected": ["test/spec/identity/tips/http.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ac30caa810d73e032d73045838d04df73759b6c99862d67b3908bd0a518728b7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass (0 findings); checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run; 27 tests in 1 file red for the right reason on the test runner) reviewed by a fresh Claude subagent: round 1 pass (S2: intermediate state of the frozen risk tests before registration; no case for extra body fields)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "a340fed01ea04b1216d4345bb5144743ad59ba26",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf",
+    "test/spec": "7a50a72149a551922aaca315c81275b2e60b619b",
+    "specs": "d132032ab94a9b89610f6453d3cc274de9221f2f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf"
+  }
+}
