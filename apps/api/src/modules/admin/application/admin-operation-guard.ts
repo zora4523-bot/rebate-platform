@@ -61,8 +61,10 @@ export class AdminOperationGuardImpl extends AdminOperationGuard {
     this.#deps = deps;
   }
 
+  // TODO(规划/11 §2): F1-10c widens the port (a list of permission points, readOnly); this
+  // implementation still takes one point only — blocked on F1-10c's implementation round.
   override async run(
-    input: AdminOperationInput,
+    input: AdminOperationInput & { readonly permission: string },
     business: (actor: AdminActor) => Promise<AdminOperationResponse>,
   ): Promise<AdminOperationResponse> {
     const { request, permission, operation } = input;
