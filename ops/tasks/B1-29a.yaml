@@ -1,0 +1,28 @@
+id: B1-29a
+repo: rebate-platform
+title: catalog：价格走势读取与计算——只读 price_snapshot，最近 30 个自然日（+08:00）每天一点取当日最后一次记录、同日多来源按 detail、search、quote，游程行跨越窗口起点按窗口内日期计；不同日期少于 price_trend.min_distinct_days 或平台未达 stable_7d 时 no_data；返回不含任何用户标识
+type: impl
+# 2026-10-16 入账（be-codex，规划/11 §1.1 2026-10-16 条）。05 B1-29 拆为 a（本任务：用例与读取，Codex 实现）、b（路由与去掉 planned，碰契约，Claude 实现）。
+# 依据：04 §6.3 price-trend 行、BR-WATCH-05（price_snapshot 游程：first_observed_at ~ last_observed_at 之间价格不变）、BR-WATCH-19（不读观测、不读第三方）、BR-PROD-03（key_stability stable_7d）、BR-TEXT-11（纪日 +08:00、纯日期）、
+#   08 参数 price_trend.min_distinct_days（默认 2，04 §10）；05 验收：属性测试覆盖跨日、同日多来源、游程行跨越窗口起点、只有 1 天、未达 stable_7d；返回里没有用户标识（10 AC-S1-141）。
+# 「当日最后一次记录」按游程行在当日内的最后观测时刻（last_observed_at 落在当日取它，跨日的行在其覆盖的每一天都有值）由编排者裁定，见 couli-runs/B1-29a/decision-orchestrator.md，摘入任务书第 2 节；source_key 按详情报价是否含券选 .source / .source.general。
+# 会计日只用 packages/domain 提供的日期函数（AGENTS.md 硬规则 5），时间只读注入的 Clock；对外经 catalog/index.ts 导出 getPriceTrend 与结果类型，不注册路由（B1-29b）。
+# 必须复用：@couli/db Kysely 与生成类型、catalog 读 platforms.key_stability 的现有查询（infra/kysely-catalog-store.ts）、配置读取现有做法。子模块不从本模块 index.ts 导入（教训 16）。
+refs: [BR-WATCH-05, BR-PROD-03, BR-TEXT-11]
+refs_hash:
+  BR-WATCH-05: 93ee2a377963
+  BR-PROD-03: 1708058a2ff7
+  BR-TEXT-11: 335c82582156
+deps: [B1-17a, B1-17b, CT-22a]
+paths:
+  - 'apps/api/src/modules/catalog/price-trend/**'
+  - 'apps/api/src/modules/catalog/index.ts'
+test_paths:
+  - 'test/spec/catalog/price-trend/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/price-trend/**'
+status: todo
+pr: null

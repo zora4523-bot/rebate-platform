@@ -1,0 +1,26 @@
+id: B1-28c
+repo: rebate-platform
+title: 收藏路由与详情 favorited：四个收藏接口的控制器挂进 CatalogModule（鉴权 login、幂等键、参数校验来自契约、调用 B1-28b 用例），GET /v1/products/{product_key} 返回 favorited（未登录 false）；去掉四个操作的 planned，重生成 route-schemas.gen.ts 与 openapi.gen.ts
+type: impl
+# 2026-10-16 入账（be-codex）。05 B1-28 第三段；碰 contracts/ 与生成物（Codex 禁区），所以 Claude 实现、Codex 写测试与评审。
+# 依据：04 §6.3 收藏两行、CT-22b 的契约形状；详情的 favorited 查询失败不影响详情主体（按 false 处理并记日志，编排者裁定，任务书写明）。
+# 契约槽：去掉 planned 前在 couli-runs/B3-lane/notices.md 登记占槽，合并后登记释放。
+refs: []
+refs_hash: {}
+deps: [B1-28b, CT-22b, B1-29b]
+paths:
+  - 'apps/api/src/modules/catalog/http/public/favorites.controller.ts'
+  - 'apps/api/src/modules/catalog/http/public/product.controller.ts'
+  - 'apps/api/src/modules/catalog/catalog.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/catalog/favorites-route/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/favorites-route/**'
+status: todo
+pr: null

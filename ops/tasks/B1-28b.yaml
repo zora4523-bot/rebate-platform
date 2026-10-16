@@ -1,0 +1,25 @@
+id: B1-28b
+repo: rebate-platform
+title: catalog：收藏用例——加入（幂等，已存在返回原记录）、上限 favorites.max_per_user（默认 200，超出 20001 favorites_full）、取消（不存在也成功）、批量删除（≤100 项）、按收藏时间倒序的游标分页列表与取卡失效判定（invalid 卡只含标题与图）、是否已收藏查询、按用户全部删除（供注销）
+type: impl
+# 2026-10-16 入账（be-codex，规划/11 §1.1 2026-10-16 条：Codex 实现、Claude 写测试与评审）。05 B1-28 第二段；表由 B1-28a 建，路由与详情 favorited 在 B1-28c。
+# 依据：04 §6.3 收藏两行与 §3.2 favorites 行、BR-PROD-03（product_key 规范化与平台一致）、BR-TEXT-13（失效商品表述）、BR-ID-30 细则 ⑱（收藏留存：用户删除即物理删除、注销完成时删除）；05 验收：同一商品重复收藏只有一行、第 201 条被拒、失效商品 invalid=true 且无价格与 rebate_*（10 AC-S1-139）。
+# 取卡：复用 catalog 已有的单一取卡入口 createCatalogCardEntry（scene retrieval）与商品读取（CatalogProductReader / getProduct 的上游），只登记 link 与报价快照、不转链（TRADE-03）；联盟返回不存在、已下架或不可推广 → invalid。并发加入同一商品靠唯一约束（硬规则 4），上限检查与插入在同一事务内（同用户串行，advisory lock 或行锁由实现定，测试要覆盖并发第 200 / 201 条）。
+# 时间只读注入的 Clock；对外经 catalog/index.ts 导出用例工厂与类型，不注册路由（B1-28c）。注销删除的接线（identity 删除流程调用）另开任务通知身份线。
+# 必须复用：@couli/db Kysely 与生成类型、catalog 的 CatalogConfigReader、card-entry、product-reader；子模块不从本模块 index.ts 导入（教训 16）。
+refs: [BR-PROD-03]
+refs_hash:
+  BR-PROD-03: 1708058a2ff7
+deps: [B1-28a, CT-22b]
+paths:
+  - 'apps/api/src/modules/catalog/favorites/**'
+  - 'apps/api/src/modules/catalog/index.ts'
+test_paths:
+  - 'test/spec/catalog/favorites/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/favorites/**'
+status: todo
+pr: null

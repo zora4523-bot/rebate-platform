@@ -16,7 +16,11 @@
     "QA-09a",
     "QA-09b",
     "QA-09c",
-    "F1-02d"
+    "F1-02d",
+    "B1-17b",
+    "B1-17c",
+    "B1-29a",
+    "B1-28b"
   ],
   "forbidden_paths": [
     "contracts/**",
