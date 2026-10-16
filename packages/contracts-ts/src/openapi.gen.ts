@@ -267,6 +267,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge the third-party account into the phone account
+         * @description Merges the current third-party account without phone into the account that owns the phone
+         *     number (BR-ID-06, 拍板第二批 OPS-04). The body takes only `merge_ticket`: data.merge_ticket
+         *     of the 30411 returned by POST /v1/me/phone, valid for 5 minutes and once, bound to the
+         *     current user and the target number; the SMS code was already used there and none is sent
+         *     again. On success the third-party identities move to the phone account, the source account
+         *     is tombstoned and all its sessions are revoked, and the tokens of the phone account are
+         *     returned (is_new_user=false, session_scope decided for this request as for a login). A
+         *     ticket that is expired, used or whose conditions no longer hold is only 30411; the ticket
+         *     store being unavailable is 50001 and nothing is merged. A retry with the same
+         *     Idempotency-Key after a lost response finds the source session revoked and gets 10002: the
+         *     token check comes before the idempotent replay (BR-ID-06 细则). Version gate: applied.
+         */
+        post: operations["mergeAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/step-up": {
         parameters: {
             query?: never;
@@ -921,7 +951,17 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change the nickname
+         * @description Takes only `nickname`; the avatar cannot be changed in the MVP (BR-ID-39, 拍板第二批
+         *     OPS-13), so any other field is 20001. The nickname, trimmed of leading and trailing white
+         *     space, must be 1–16 extended grapheme clusters, otherwise 20001 with data.fields containing
+         *     nickname. It then goes through content-safety text review: a hit, or a review that times
+         *     out (fail-close), is 20001 with data.reason=nickname_sensitive and is not counted. After 3
+         *     successful changes in the natural month (+08:00) a further change is 30415. The client
+         *     fetches GET /v1/me again after success. Version gate: applied.
+         */
+        patch: operations["updateMe"];
         trace?: never;
     };
     "/v1/me/phone": {
@@ -2999,6 +3039,21 @@ export interface components {
             phone: components["schemas"]["Phone"];
             /** @description purpose=bind SMS code sent to the new number. */
             code: string;
+        };
+        UpdateMeRequest: {
+            /**
+             * @description New nickname. The server trims leading and trailing white space and checks the length
+             *     as 1–16 extended grapheme clusters (BR-ID-39); no minLength / maxLength here because
+             *     JSON Schema counts code points.
+             */
+            nickname: string;
+        };
+        MergeAccountRequest: {
+            /**
+             * @description data.merge_ticket of the 30411 returned by POST /v1/me/phone; valid for 5 minutes and
+             *     once. Its format is not part of the contract.
+             */
+            merge_ticket: string;
         };
         /**
          * @description One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则).
@@ -5543,6 +5598,88 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    mergeAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "merge_ticket": "example-merge-ticket"
+                 *     }
+                 */
+                "application/json": components["schemas"]["MergeAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Merged; the tokens of the phone account. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a62",
+                     *         "is_new_user": false,
+                     *         "tokens": {
+                     *           "access_token": "example-access-token-one",
+                     *           "access_expires_at": "2026-10-02T11:30:00+08:00",
+                     *           "refresh_token": "example-refresh-token-one",
+                     *           "refresh_expires_at": "2026-11-01T09:30:00+08:00",
+                     *           "session_scope": "full"
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     stepUp: {
         parameters: {
             query?: never;
@@ -7241,6 +7378,62 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    updateMe: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "nickname": "小狸"
+                 *     }
+                 */
+                "application/json": components["schemas"]["UpdateMeRequest"];
+            };
+        };
+        responses: {
+            /** @description The nickname is changed. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

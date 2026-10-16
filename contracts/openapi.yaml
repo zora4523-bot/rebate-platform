@@ -743,6 +743,85 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/auth/merge:
+    post:
+      operationId: mergeAccount
+      tags:
+        - identity
+      summary: Merge the third-party account into the phone account
+      description: |
+        Merges the current third-party account without phone into the account that owns the phone
+        number (BR-ID-06, 拍板第二批 OPS-04). The body takes only `merge_ticket`: data.merge_ticket
+        of the 30411 returned by POST /v1/me/phone, valid for 5 minutes and once, bound to the
+        current user and the target number; the SMS code was already used there and none is sent
+        again. On success the third-party identities move to the phone account, the source account
+        is tombstoned and all its sessions are revoked, and the tokens of the phone account are
+        returned (is_new_user=false, session_scope decided for this request as for a login). A
+        ticket that is expired, used or whose conditions no longer hold is only 30411; the ticket
+        store being unavailable is 50001 and nothing is merged. A retry with the same
+        Idempotency-Key after a lost response finds the source session revoked and gets 10002: the
+        token check comes before the idempotent replay (BR-ID-06 细则). Version gate: applied.
+      x-auth: login
+      x-signed: true
+      x-idempotent: true
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 20001
+        - 30411
+        - 50001
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeAccountRequest'
+            example:
+              merge_ticket: example-merge-ticket
+      responses:
+        '200':
+          description: Merged; the tokens of the phone account.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a62
+                  is_new_user: false
+                  tokens:
+                    access_token: example-access-token-one
+                    access_expires_at: '2026-10-02T11:30:00+08:00'
+                    refresh_token: example-refresh-token-one
+                    refresh_expires_at: '2026-11-01T09:30:00+08:00'
+                    session_scope: full
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/auth/step-up:
     post:
       operationId: stepUp
@@ -2585,6 +2664,67 @@ paths:
                     state: normal
                     reason_category: null
                     frozen_until: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    patch:
+      operationId: updateMe
+      tags:
+        - identity
+      summary: Change the nickname
+      description: |
+        Takes only `nickname`; the avatar cannot be changed in the MVP (BR-ID-39, 拍板第二批
+        OPS-13), so any other field is 20001. The nickname, trimmed of leading and trailing white
+        space, must be 1–16 extended grapheme clusters, otherwise 20001 with data.fields containing
+        nickname. It then goes through content-safety text review: a hit, or a review that times
+        out (fail-close), is 20001 with data.reason=nickname_sensitive and is not counted. After 3
+        successful changes in the natural month (+08:00) a further change is 30415. The client
+        fetches GET /v1/me again after success. Version gate: applied.
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 20001
+        - 30415
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+            example:
+              nickname: 小狸
+      responses:
+        '200':
+          description: The nickname is changed.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              example:
+                code: 0
+                msg: ''
+                data: {}
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -9152,6 +9292,30 @@ components:
           type: string
           description: purpose=bind SMS code sent to the new number.
           pattern: '^[0-9]{6}$'
+    UpdateMeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - nickname
+      properties:
+        nickname:
+          type: string
+          description: |
+            New nickname. The server trims leading and trailing white space and checks the length
+            as 1–16 extended grapheme clusters (BR-ID-39); no minLength / maxLength here because
+            JSON Schema counts code points.
+    MergeAccountRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - merge_ticket
+      properties:
+        merge_ticket:
+          type: string
+          description: |
+            data.merge_ticket of the 30411 returned by POST /v1/me/phone; valid for 5 minutes and
+            once. Its format is not part of the contract.
+          minLength: 1
     TipKey:
       type: string
       description: One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则).

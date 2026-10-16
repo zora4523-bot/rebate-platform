@@ -48,6 +48,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "POST",
+    "path": "/v1/auth/merge",
+    "auth": "login"
+  },
+  {
+    "method": "POST",
     "path": "/v1/auth/step-up",
     "auth": "login"
   },
@@ -168,6 +173,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/me",
+    "auth": "login"
+  },
+  {
+    "method": "PATCH",
     "path": "/v1/me",
     "auth": "login"
   },
