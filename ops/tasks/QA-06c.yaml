@@ -1,0 +1,24 @@
+id: QA-06c
+repo: rebate-platform
+title: k6 压测脚本补「同步」场景（暂不开工）：后台订单手动同步接口按峰值 3 倍加压，阈值（P95、错误率）进 QA-06a 的同目录配置，只打本地与 WireMock
+type: impl
+# 2026-10-16 草稿（会话 codex-impl-six，编排裁定：QA-06a 拆出的 05 QA-06「同步」场景）。规划/11 §1.1 例外条、§7.3 第 14 项。
+# 流程同 QA-06a：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
+# 开工条件：后台订单手动同步接口（路径、方法、请求与响应、权限 order.view）已由契约线入 contracts/openapi.yaml（尚未入账，
+# 见 couli-runs/CODEX-IMPL/contract-gaps-for-orchestrator.md 2026-10-08 条）；QA-06a 合并。接口未入契约前不臆造路径。
+# 在 QA-06a 的 infra/load/k6 上加 sync 场景（service admin、LOAD_ADMIN_BASE_URL）；QA-06a 的冻结测试不改，新规则测试放 test/spec/load/k6/sync/。
+# 订单同步的上游联盟接口只打 infra/fault 的 WireMock（09 README §0.2 硬规则 5）。
+refs: []
+refs_hash: {}
+deps: [QA-06a]
+paths:
+  - 'infra/load/k6/**'
+test_paths:
+  - 'test/spec/load/k6/sync/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/load/k6/sync/**'
+status: todo
+pr: null
