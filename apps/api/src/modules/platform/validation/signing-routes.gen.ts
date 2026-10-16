@@ -382,6 +382,46 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "GET",
+    "path": "/admin/v1/kill-switches",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/kill-switches/:key",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/config-items",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/config-items/batch",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/config-items/:key",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/config-items/:key",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/config-items/:key/versions",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/config-items/:key/rollback",
+    "signed": false
+  },
+  {
     "method": "POST",
     "path": "/v1/agent/sessions",
     "signed": false
