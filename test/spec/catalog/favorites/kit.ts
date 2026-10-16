@@ -17,6 +17,26 @@ export function at(hhmm: string, day = '2031-05-20'): Date {
   return new Date(`${day}T${hhmm}:00.000+08:00`);
 }
 
+/**
+ * Boundary amounts in fen (review r1 S1): 0, 1, odd values, and values beyond the signed 32-bit
+ * range (2^31 = 2147483648), up to the largest safe integer.
+ */
+export const BOUNDARY_FEN: readonly number[] = [
+  0, 1, 3, 999, 2147483647, 2147483648, 2147483649, 4294967295, 4294967297, 9007199254740991,
+];
+
+/** A priced card whose every *_fen field is set to `fen` (boundary card fixture). */
+export function boundaryCard(productKey: string, fen: number): ProductCard {
+  return pricedCard(productKey, {
+    price_fen: fen,
+    coupon_fen: fen,
+    final_price_fen: fen,
+    est_net_price_fen: fen,
+    rebate_min_fen: fen,
+    rebate_max_fen: fen,
+  });
+}
+
 /** A complete priced list card (search shape) for a product key. */
 export function pricedCard(productKey: string, overrides: Partial<ProductCard> = {}): ProductCard {
   return {

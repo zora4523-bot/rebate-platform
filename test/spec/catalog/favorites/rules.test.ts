@@ -12,7 +12,7 @@ import {
   type FavoriteCardOutcome,
   type FavoriteUnavailableReason,
 } from '../../../../apps/api/src/modules/catalog/index.ts';
-import { CAP_KEY, capConfig, pricedCard } from './kit.ts';
+import { BOUNDARY_FEN, CAP_KEY, boundaryCard, capConfig, pricedCard } from './kit.ts';
 
 it('[AC-B1-28b#1] 上限读 favorites.max_per_user（按 app 读）：配 3 → 3，配 1 → 1，配 500 → 500', async () => {
   const three = capConfig(3);
@@ -88,7 +88,17 @@ it('[AC-B1-28b#7] 取到的卡 availability=off_shelf（已下架）→ invalid=
   expect(view).toEqual({ invalid: true, productCard: { title: '下架商品', image: null } });
 }, 10_000);
 
-const fenArb = fc.option(fc.integer({ min: 0, max: 10_000_000 }), { nil: null });
+// Amounts: explicit boundaries (0, 1, odd, > 2^31), ordinary small amounts, odd amounts, and
+// amounts beyond the signed 32-bit range up to the largest safe integer (review r1 S1).
+const fenArb = fc.option(
+  fc.oneof(
+    fc.constantFrom(...BOUNDARY_FEN),
+    fc.integer({ min: 0, max: 10_000_000 }),
+    fc.integer({ min: 0, max: 5_000_000 }).map((n) => n * 2 + 1),
+    fc.bigInt({ min: 2n ** 31n, max: BigInt(Number.MAX_SAFE_INTEGER) }).map((n) => Number(n)),
+  ),
+  { nil: null },
+);
 const textArb = fc.option(fc.string({ maxLength: 20 }), { nil: null });
 const outcomeArb: fc.Arbitrary<FavoriteCardOutcome> = fc.oneof(
   fc.record({
@@ -102,7 +112,11 @@ const outcomeArb: fc.Arbitrary<FavoriteCardOutcome> = fc.oneof(
       title: textArb,
       image: textArb,
       price: fenArb,
-      rebate: fenArb,
+      coupon: fenArb,
+      finalPrice: fenArb,
+      estNet: fenArb,
+      rebateMin: fenArb,
+      rebateMax: fenArb,
       availability: fc.constantFrom(
         'ok' as const,
         'off_shelf' as const,
@@ -111,18 +125,32 @@ const outcomeArb: fc.Arbitrary<FavoriteCardOutcome> = fc.oneof(
         'unknown' as const,
       ),
     })
-    .map(({ title, image, price, rebate, availability }) => ({
-      kind: 'card' as const,
-      card: pricedCard('tb:9100', {
+    .map(
+      ({
         title,
         image,
-        price_fen: price,
-        final_price_fen: price,
-        rebate_min_fen: rebate,
-        rebate_max_fen: rebate,
+        price,
+        coupon,
+        finalPrice,
+        estNet,
+        rebateMin,
+        rebateMax,
         availability,
+      }) => ({
+        kind: 'card' as const,
+        card: pricedCard('tb:9100', {
+          title,
+          image,
+          price_fen: price,
+          coupon_fen: coupon,
+          final_price_fen: finalPrice,
+          est_net_price_fen: estNet,
+          rebate_min_fen: rebateMin,
+          rebate_max_fen: rebateMax,
+          availability,
+        }),
       }),
-    })),
+    ),
 );
 
 function expectedInvalid(outcome: FavoriteCardOutcome): boolean {
@@ -150,3 +178,31 @@ it('[AC-B1-28b#8] 属性：失效卡任何情况下都只含 title 与 image（�
   );
   expect(invalidSeen).toBeGreaterThan(0);
 }, 120_000);
+
+it.each([
+  [0, 0],
+  [1, 1],
+  [3, 3],
+  [999, 999],
+  [2147483647, 2147483647],
+  [2147483648, 2147483648],
+  [2147483649, 2147483649],
+  [4294967297, 4294967297],
+  [9007199254740991, 9007199254740991],
+])(
+  '[AC-B1-28b#46] 有效卡金额 %d 分（0、1、奇数、> 2^31）原样保留，不做 32 位截断或改号',
+  (fen: number, expected: number) => {
+    const view = favoriteCardView({ kind: 'card', card: boundaryCard('tb:9200', fen) });
+    expect(view.invalid).toBe(false);
+    expect(view.productCard).toMatchObject({
+      price_fen: expected,
+      coupon_fen: expected,
+      final_price_fen: expected,
+      est_net_price_fen: expected,
+      rebate_min_fen: expected,
+      rebate_max_fen: expected,
+    });
+    expect(view.productCard).toEqual(boundaryCard('tb:9200', expected));
+  },
+  10_000,
+);
