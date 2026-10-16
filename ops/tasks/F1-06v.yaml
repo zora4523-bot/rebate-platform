@@ -22,5 +22,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/platform-icons/sanitize/**'
-status: todo
-pr: null
+status: done
+pr: 512
