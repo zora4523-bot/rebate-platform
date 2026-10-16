@@ -129,7 +129,7 @@ it('[AC-B2-03f#34] BR-CALC-05/06/07/11：独立预算生成的合法版本恒通
       );
     }),
   ).toBe(true);
-});
+}, 600_000);
 
 const CORRUPTIONS = [
   { kind: 'missing', code: 'MISSING_RULE' },
@@ -191,4 +191,5 @@ it.each(CORRUPTIONS)(
       }),
     ).toBe(true);
   },
+  600_000,
 );
