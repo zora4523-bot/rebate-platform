@@ -7,7 +7,7 @@ type: impl
 # 做法：app.module.ts 的 RebateQuoter 工厂按 (appEnv, unionModeOf(endpoints)) 选报价器；真实报价器需要数据库句柄，没有 DB 而又要真实报价器 → 拒绝启动（不回退演示）。
 # LINK_OPEN_PORTS.quoteReads.prepare 改为调用真实报价器的 prepare（演示时仍预读 DEMO_QUOTE_KEYS）；linking 的 LinkOpenQuoteReads.prepare 参数由 appId 扩为开放读取计划
 # （LinkOpenReadPlan），link-open-wiring.ts 照传；link-open-reads.ts 导出通用 openScopedReader，app.module 用它包 commission 的规则读取端口。验收：prepare 之后 quote() 不再触库，
-# 未预读的读取按 OpenReadNotPrepared 失败。不改 linking 其余逻辑、不改 catalog 卡片组装。预期行为：prod 在后台发布接口落地前无已发布版本，报价 fail-closed。
+# 时钟在预读与报价之间前进时开放仍成功、报价不触库；未预读的读取按 OpenReadNotPrepared 失败。不改 linking 其余逻辑、不改 catalog 卡片组装。预期行为：prod 在后台发布接口落地前无已发布版本，报价 fail-closed。
 # outside_needed：切 live 前在 staging 跑一次 db/seeds/0002，并确认 tech_fee_bp、rebate.taobao.compare_rate_ratio_bp 已配置。
 # 风险 RV2（linking 与 app.module）。Codex 写规则测试，Claude 过审，Opus 实现，Codex 资金评审。
 refs: [BR-CALC-20]
