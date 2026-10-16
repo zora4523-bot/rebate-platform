@@ -24,6 +24,8 @@
 -- tlj_redpacket_fen ≥ 0 or NULL; tlj_redpacket_fen and platform_est_profit_fen are NULL together
 -- (red packet not matched, report shows 待核) and otherwise
 -- platform_est_profit_fen = n_total_fen − user_share_total_fen − tlj_redpacket_fen (may be < 0).
+-- The NULL pairing is spelled out as two explicit branches: a bare equality would evaluate to NULL
+-- when only one side is NULL, and a CHECK lets NULL through.
 --
 -- Every table references app.order_keys (app_id, order_id), never the partitioned app.orders;
 -- the snapshot also references app.commission_rule_versions (app_id, rule_version_id), so no row
@@ -145,7 +147,11 @@ CREATE TABLE app.commission_split_totals (
   CONSTRAINT commission_split_totals_platform_est_profit_fen_check
     CHECK (
       (tlj_redpacket_fen IS NULL AND platform_est_profit_fen IS NULL)
-      OR platform_est_profit_fen = n_total_fen - user_share_total_fen - tlj_redpacket_fen
+      OR (
+        tlj_redpacket_fen IS NOT NULL
+        AND platform_est_profit_fen IS NOT NULL
+        AND platform_est_profit_fen = n_total_fen - user_share_total_fen - tlj_redpacket_fen
+      )
     ),
   CONSTRAINT commission_split_totals_order_fkey FOREIGN KEY (app_id, order_id)
     REFERENCES app.order_keys (app_id, order_id)
