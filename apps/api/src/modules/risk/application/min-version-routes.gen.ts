@@ -532,6 +532,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "getProductPriceTrend",
+    "method": "GET",
+    "path": "/v1/products/:product_key/price-trend",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "parseInput",
     "method": "POST",
     "path": "/v1/inputs/parse",

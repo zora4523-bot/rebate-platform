@@ -257,6 +257,11 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "GET",
+    "path": "/v1/products/:product_key/price-trend",
+    "signed": false
+  },
+  {
     "method": "POST",
     "path": "/v1/inputs/parse",
     "signed": true

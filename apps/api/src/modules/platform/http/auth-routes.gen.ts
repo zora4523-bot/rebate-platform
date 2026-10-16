@@ -257,6 +257,11 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "optional"
   },
   {
+    "method": "GET",
+    "path": "/v1/products/:product_key/price-trend",
+    "auth": "none"
+  },
+  {
     "method": "POST",
     "path": "/v1/inputs/parse",
     "auth": "optional"
