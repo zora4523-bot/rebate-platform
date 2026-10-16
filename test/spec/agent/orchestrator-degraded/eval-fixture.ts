@@ -25,10 +25,11 @@ import type {
 } from '../../../../apps/api/src/modules/agent/orchestrator/eval/index.ts';
 import type { RunContext } from '../../../../apps/api/src/modules/agent/stream/run/index.ts';
 import { numberCard } from '../../../../apps/api/src/modules/agent/stream/run/index.ts';
-import { input, proceed, productList, setup } from '../orchestrator-core/kit.ts';
+import { input, proceed, setup } from '../orchestrator-core/kit.ts';
 import { appendExpected, response, toolCall } from '../orchestrator-core/fixtures/recordings.ts';
 import type { ReplayTurn } from '../orchestrator-core/fixtures/recordings.ts';
 import { FLASH, ManualScheduler, quietBreaker, resolved } from '../model-routing/kit.ts';
+import { syntheticProductList } from './product-fixture.ts';
 
 // Entirely synthetic smoke material, not the private release smoke set (BR-AI-21).
 export const smokeCase: EvalCase = {
@@ -126,7 +127,7 @@ export function evalFixture() {
     {
       kind: 'ok',
       modelView: { reference: 'synthetic-card' },
-      cards: [productList(1)],
+      cards: [syntheticProductList()],
       trace: {
         card_sources: structuredClone(expectedTrace.card_sources!),
         link_registrations: structuredClone(expectedTrace.link_registrations!),

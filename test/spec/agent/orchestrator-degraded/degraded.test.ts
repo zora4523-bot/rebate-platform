@@ -6,14 +6,16 @@ import type { KeywordSearchOutcome } from '../../../../apps/api/src/modules/agen
 import { createAgentRunBody } from '../../../../apps/api/src/modules/agent/orchestrator/index.ts';
 import { createFrameValidator } from '../../../../apps/api/src/modules/agent/stream/writer/index.ts';
 import { numberCard } from '../../../../apps/api/src/modules/agent/stream/run/index.ts';
-import { context, input, notice, proceed, productList, setup } from '../orchestrator-core/kit.ts';
+import { context, input, notice, proceed, setup } from '../orchestrator-core/kit.ts';
+import { syntheticProductList } from './product-fixture.ts';
 
 // BR-AI-14 §无模型降级: expected plans/keys/results are literals, never planner output.
 function fixture() {
   const output = context();
-  const card = productList(1);
+  const card = syntheticProductList();
+  // Deliberately non-alphabetical so reordering enabled platforms fails the plan assertions.
   const enabledSearchPlatforms = vi.fn<DegradedPathDeps['tools']['enabledSearchPlatforms']>(
-    async () => ['jd', 'taobao'],
+    async () => ['taobao', 'jd'],
   );
   const searchKeyword = vi.fn<DegradedPathDeps['tools']['searchKeyword']>(async () => ({
     results: [
@@ -63,7 +65,7 @@ it('[AC-B3-05c#1][BR-AI-14] 只将模型形态剩余文本传入关键词计划�
   await path.run(request, f.ctx);
   expect(f.enabledSearchPlatforms).toHaveBeenCalledExactlyOnceWith('synthetic-other-app');
   expect(f.searchKeyword).toHaveBeenCalledExactlyOnceWith(
-    { q: '合成<num_1> 500ml 30元以内', platforms: ['jd', 'taobao'], sort: 'relevance' },
+    { q: '合成<num_1> 500ml 30元以内', platforms: ['taobao', 'jd'], sort: 'relevance' },
     {
       subject: request.input.caller,
       context: request.input.context,
@@ -94,7 +96,7 @@ it('[AC-B3-05c#2][BR-AI-14] 接线使用默认三十字符计划，错误预填�
   );
   expect(f.searchKeyword.mock.calls[0]?.[0]).toEqual({
     q: 'abcdefghijklmnopqrstuvwxyzABCD',
-    platforms: ['jd', 'taobao'],
+    platforms: ['taobao', 'jd'],
     sort: 'relevance',
   });
   expect(result).toMatchObject({
