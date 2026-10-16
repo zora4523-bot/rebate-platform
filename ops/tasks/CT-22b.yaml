@@ -14,6 +14,7 @@ deps: [CT-22a]
 paths:
   - 'contracts/openapi.yaml'
   - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
 impl: claude
