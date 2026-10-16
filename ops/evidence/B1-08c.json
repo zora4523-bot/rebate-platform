@@ -1,0 +1,125 @@
+{
+  "task": "B1-08c",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "6dc019dd0ae9c0c0cb7ecf0119951cf0385a72fc",
+  "red_tests": [
+    "test/spec/db/orders-sync/access.int.test.ts > [AC-B1-08c#22] application and readonly grants match the table-specific privilege matrix",
+    "test/spec/db/orders-sync/access.int.test.ts > [AC-B1-08c#23] populated tables deny DELETE and TRUNCATE to app and all writes to readonly",
+    "test/spec/db/orders-sync/access.int.test.ts > [AC-B1-08c#24] append-only rows reject UPDATE as well as DELETE and remain unchanged",
+    "test/spec/db/orders-sync/access.int.test.ts > [AC-B1-08c#25] append-only tables also register enabled BEFORE ROW guards for UPDATE and DELETE",
+    "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#14] counter codes have a named closed CHECK while drop reasons remain open nonempty text",
+    "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#15] daily aggregate uniqueness includes tenant, platform, date and counter or reason",
+    "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#16] daily counts preserve bigint precision, accept zero and reject negatives on INSERT and UPDATE",
+    "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#17] concurrent atomic updates retain every increment and the application-supplied day",
+    "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#18] drop deduplication uses tenant, platform, sub-order and reason",
+    "test/spec/db/orders-sync/cursors.int.test.ts > [AC-B1-08c#5] the stream unique constraint includes tenant, platform, account, query and scene",
+    "test/spec/db/orders-sync/cursors.int.test.ts > [AC-B1-08c#6] a missing union account fails with 23503, required stream fields reject NULL",
+    "test/spec/db/orders-sync/cursors.int.test.ts > [AC-B1-08c#7] one stream can advance its application-supplied watermark without touching another scene",
+    "test/spec/db/orders-sync/history.int.test.ts > [AC-B1-08c#19] history has named field and source CHECKs with exactly the task values",
+    "test/spec/db/orders-sync/history.int.test.ts > [AC-B1-08c#20] history retains initial NULL from-status and subsequent transitions at injected times",
+    "test/spec/db/orders-sync/history.int.test.ts > [AC-B1-08c#21] history requires an existing order and rejects NULL in required audit fields",
+    "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#8] named CHECKs admit exactly nine reasons and three disposition states",
+    "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#9] pending accepts absent order and raw status; payload ids remain logical references",
+    "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#10] the named partial unique index covers only open cases",
+    "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#11] concurrent attempts at the same unresolved case leave one row",
+    "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#12] detected_at can refresh in place and disposition frees the open key",
+    "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#13] pending mandatory fields reject NULL and missing status has no implicit open default",
+    "test/spec/db/orders-sync/shape.int.test.ts > [AC-B1-08c#1] all six ordinary app tables have tenant identity and a named primary key",
+    "test/spec/db/orders-sync/shape.int.test.ts > [AC-B1-08c#2] stream, pending, counter, drop and history columns retain the task shape",
+    "test/spec/db/orders-sync/shape.int.test.ts > [AC-B1-08c#3] business timestamps have no database default and pending status is application supplied",
+    "test/spec/db/orders-sync/shape.int.test.ts > [AC-B1-08c#4] named foreign keys reference accounts and order keys without cascading"
+  ],
+  "risk_note": "RV2 (db/migrations; order-attribution tables). Migration 0034 adds six app tables from 04 §3.2 — sync_cursors (unique per sync stream, FK to union_accounts), order_sync_pending (nine upper-case reasons, open / resolved / dismissed, partial unique index for open rows), order_sync_counters, order_sync_drops / order_sync_drop_keys (insert-only), order_status_history (insert-only) — all constraints and indexes named, insert-only tables guarded by app.reject_update_delete(), couli_app without DELETE / TRUNCATE, couli_readonly SELECT; no partitions and no deletion (BR-ID-30 ⑰). Generated schema.sql / db.gen.ts from pnpm db:snapshot on the test machine. Migration number swapped with B1-02w by the orchestrator (0034).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6dc019dd0ae9c0c0cb7ecf0119951cf0385a72fc",
+      "tree": "3349f3e8cfe81a9d8c21fe2ce006067df602a4f4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T19:36:20Z",
+      "finished_at": "2026-10-16T19:36:27Z",
+      "gate": {
+        "commit": "1878feeabc5a1a0a8e83604413de177fd46b1623",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/orders-sync/access.int.test.ts > [AC-B1-08c#22] application and readonly grants match the table-specific privilege matrix",
+        "test/spec/db/orders-sync/access.int.test.ts > [AC-B1-08c#23] populated tables deny DELETE and TRUNCATE to app and all writes to readonly",
+        "test/spec/db/orders-sync/access.int.test.ts > [AC-B1-08c#24] append-only rows reject UPDATE as well as DELETE and remain unchanged",
+        "test/spec/db/orders-sync/access.int.test.ts > [AC-B1-08c#25] append-only tables also register enabled BEFORE ROW guards for UPDATE and DELETE",
+        "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#14] counter codes have a named closed CHECK while drop reasons remain open nonempty text",
+        "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#15] daily aggregate uniqueness includes tenant, platform, date and counter or reason",
+        "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#16] daily counts preserve bigint precision, accept zero and reject negatives on INSERT and UPDATE",
+        "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#17] concurrent atomic updates retain every increment and the application-supplied day",
+        "test/spec/db/orders-sync/counts.int.test.ts > [AC-B1-08c#18] drop deduplication uses tenant, platform, sub-order and reason",
+        "test/spec/db/orders-sync/cursors.int.test.ts > [AC-B1-08c#5] the stream unique constraint includes tenant, platform, account, query and scene",
+        "test/spec/db/orders-sync/cursors.int.test.ts > [AC-B1-08c#6] a missing union account fails with 23503, required stream fields reject NULL",
+        "test/spec/db/orders-sync/cursors.int.test.ts > [AC-B1-08c#7] one stream can advance its application-supplied watermark without touching another scene",
+        "test/spec/db/orders-sync/history.int.test.ts > [AC-B1-08c#19] history has named field and source CHECKs with exactly the task values",
+        "test/spec/db/orders-sync/history.int.test.ts > [AC-B1-08c#20] history retains initial NULL from-status and subsequent transitions at injected times",
+        "test/spec/db/orders-sync/history.int.test.ts > [AC-B1-08c#21] history requires an existing order and rejects NULL in required audit fields",
+        "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#8] named CHECKs admit exactly nine reasons and three disposition states",
+        "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#9] pending accepts absent order and raw status; payload ids remain logical references",
+        "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#10] the named partial unique index covers only open cases",
+        "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#11] concurrent attempts at the same unresolved case leave one row",
+        "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#12] detected_at can refresh in place and disposition frees the open key",
+        "test/spec/db/orders-sync/pending.int.test.ts > [AC-B1-08c#13] pending mandatory fields reject NULL and missing status has no implicit open default",
+        "test/spec/db/orders-sync/shape.int.test.ts > [AC-B1-08c#1] all six ordinary app tables have tenant identity and a named primary key",
+        "test/spec/db/orders-sync/shape.int.test.ts > [AC-B1-08c#2] stream, pending, counter, drop and history columns retain the task shape",
+        "test/spec/db/orders-sync/shape.int.test.ts > [AC-B1-08c#3] business timestamps have no database default and pending status is application supplied",
+        "test/spec/db/orders-sync/shape.int.test.ts > [AC-B1-08c#4] named foreign keys reference accounts and order keys without cascading"
+      ],
+      "expected": [
+        "test/spec/db/orders-sync/access.int.test.ts",
+        "test/spec/db/orders-sync/counts.int.test.ts",
+        "test/spec/db/orders-sync/cursors.int.test.ts",
+        "test/spec/db/orders-sync/history.int.test.ts",
+        "test/spec/db/orders-sync/pending.int.test.ts",
+        "test/spec/db/orders-sync/shape.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b0e2c344a52704ddb6b93409cb46a319f31377e3ed76cfac258f0e2b645d4ee5"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings (approvals 27: Codex only)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, 7 files, 25 tests). Round 1 pass with two S2 (trigger function body not asserted; unique checks pinned to UNIQUE constraints with column order), both satisfied by the implementation brief."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "97c5a089decf73e7d78bf16a10857dc3fa0ddb9d",
+    "specs": "4b37a92670828e2b8c3e0734ecb85eb5371a7277"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}
