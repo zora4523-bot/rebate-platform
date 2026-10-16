@@ -1,0 +1,84 @@
+{
+  "risk_note": "RV2 by the PR (infra/load/k6/** is not in ops/risk-map.yaml; rule tests under test/**). Codex-first implementation (ops/approvals.yaml id 23; tools/guard/codex-impl-tasks.json): rule tests by a Claude subagent (spec_commit; revised before merge to the three scenarios of the narrowed ledger, #517, precedent B1-05j), container red run on the spec_commit tree on the test machine, implementation by Codex through codex-run.sh impl --phase impl (attempt 1 partial, attempt 2 finished; the orchestrator changed no code). Targets loopback / WireMock only, no credentials in the repository, no real union or model host (09 README §0.2 hard rule 5); grafana/k6:1.3.0 digest checked against Docker Hub. Full verification by the required CI checks (approvals id 21). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent (approvals id 27: the family other than the implementer) with the money checklist (idempotency, clock, app_id ok; rounding, sign, concurrency, partial refund n/a): per-scenario config routing, contract match of search / convert (signature headers) / Agent SSE messages and frames, loopback-only targets, config-driven options; 1 S2 (compose mounts fixtures.json inside the read-only /load bind mount) to follow-ups, fixed with QA-06c"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by a Claude subagent reviewed by fresh read-only Codex sessions: round 1 (2026-10-06, four scenarios) pass with out-of-scope S1s; after the split rounds 2 and 3 pass, the out-of-scope S1s of rounds 1-2 were added to the rule tests; round 3's remaining out-of-scope S1 (a static check cannot prove the shared helper routes each scenario) was checked by the code review and logged in follow-ups"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  },
+  "task": "QA-06a",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "9d61a1b19f678f5fb6c53123c4e4bb5c1292a3fb",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "9d61a1b19f678f5fb6c53123c4e4bb5c1292a3fb",
+      "tree": "6f67c6c847ad0b666e6b7f8113d02a8934c5691c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T07:29:43Z",
+      "finished_at": "2026-10-16T07:29:47Z",
+      "gate": {
+        "commit": "b6a549f8d42d90744e2ef6982492ce38de1c8bd8",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/load/k6/files.test.ts > [规划/05 QA-06] 同目录 config.json 有搜索、转链、Agent SSE 三个场景，系数为 3，并通过 configProblems",
+        "test/spec/load/k6/files.test.ts > [01 §7.1 指针] 配置的 P95 不比 01 §7.1 目标宽：搜索 ≤1500ms、转链 ≤1500ms、SSE 首事件 ≤1000ms（按首字节计）；每个场景都有错误率",
+        "test/spec/load/k6/files.test.ts > [规划/05 QA-06 场景] 搜索打 /v1/products/search，转链打 convert 或 open，Agent SSE 打 stream 的发消息接口且按并发流加压",
+        "test/spec/load/k6/files.test.ts > [09 README §0.2 硬规则 5] config.json 与 script.ts 里出现的 URL 只指向回环或 WireMock",
+        "test/spec/load/k6/files.test.ts > [规划/05 QA-06] 入口 script.ts 读同目录 config.json、从 options.ts 取 options 与 base URL，并导出三个场景函数；options.ts 不用 Node 内置模块",
+        "test/spec/load/k6/files.test.ts > [规划/05 QA-06 场景产生负载] script.ts 三个场景函数体都不为空，并以本场景的配置调用 k6/http，或调用本脚本里直接调用 k6/http 的函数",
+        "test/spec/load/k6/files.test.ts > [规划/05 QA-06; AGENTS.md 硬规则 9] k6 只用 grafana/k6 1.x 精确版本并按 sha256 摘要锁定的镜像，不进 npm 依赖",
+        "test/spec/load/k6/files.test.ts > [规划/05 QA-06 复用 QA-05a] k6 目录不另起 WireMock、不写故障桩：上游与故障只用 infra/fault",
+        "test/spec/load/k6/files.test.ts > [规划/05 QA-06 说明] README 写明运行命令、配置文件、三个场景、环境变量、复用 infra/fault 与不压真实联盟接口",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06] 合法配置没有问题",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06 场景] 缺一个场景或多出未登记的场景都是问题",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06 峰值 3 倍] 系数不是 3 是问题；峰值须为正整数",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06 阈值] 每个场景都要有 P95 正整数毫秒与 0 到 1 之间（不含端点）的错误率",
+        "test/spec/load/k6/options.test.ts > [09 README §0.2 硬规则 5] 目标只许回环与 WireMock：联盟、百炼、伪装成回环的主机、带凭据与相对主机的路径都是问题",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06] 场景用到的服务必须配了 base URL",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06 峰值 3 倍] 请求类场景按每秒到达数加压到峰值×3 并保持；exec 即场景名",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06 Agent SSE] SSE 场景按并发流数（VU）加压到峰值×3 并保持",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06 阈值] 每个场景一条 P95 阈值、一条错误率阈值，按 scenario 标签分开，取值来自配置",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06 峰值 3 倍；阈值取自配置] 换一组合法配置，加压目标、保持时长与阈值随配置变",
+        "test/spec/load/k6/options.test.ts > [规划/05 QA-06 峰值 3 倍] 不合法的配置不出 options：抛出写明问题的错误",
+        "test/spec/load/k6/options.test.ts > [09 README §0.2 硬规则 5] 环境变量可把 base URL 改到别的回环端口或 WireMock，改到外部主机就抛错"
+      ],
+      "expected": ["test/spec/load/k6/files.test.ts", "test/spec/load/k6/options.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "7e86c0db7db41636af63f4b4a6f890cfdc6e0e6646134986dbc1630ba12cf3ae"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "8b477623a5bca968dd3993511f15d4acb79f3d8f",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}
