@@ -333,6 +333,15 @@ export interface EventLog {
   payload: Json;
 }
 
+export interface Favorites {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  platform: string;
+  product_key: string;
+  user_id: string;
+}
+
 export interface IdempotencyKeys {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -985,6 +994,7 @@ export interface DB {
   device_registrations: DeviceRegistrations;
   devices: Devices;
   event_log: EventLog;
+  favorites: Favorites;
   idempotency_keys: IdempotencyKeys;
   inbox_messages: InboxMessages;
   link_logs: LinkLogs;
