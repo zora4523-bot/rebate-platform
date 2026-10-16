@@ -1,0 +1,35 @@
+{
+  "task": "CT-02i",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "1878feeabc5a1a0a8e83604413de177fd46b1623",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml, contracts/error-codes.yaml): adds the admin config center and kill switches, all x-implementation planned: GET /admin/v1/kill-switches and PUT /admin/v1/kill-switches/{key} (permission point per key from 04 §11.2: switch.all, or switch.payout / switch.pay for their keys; totp step-up; withdraw.auto_payout.enabled can only be turned off from the console, turning it on needs the owner's confirmation, BR-WDR-30: 20001 [value]); GET /admin/v1/config-items, /{key}, /{key}/versions (any config.* point, read-only, no step-up), PUT /{key}, POST /batch (one permission point per batch, keys and values checked before versions), POST /{key}/rollback (permission point and step-up tier per key). expected_version CAS: 20902 data.resource gains config_item and kill_switch. New admin step-up header parameter AdminStepUpToken (X-Step-Up-Token, optional) on the four writes only. Regenerated openapi.gen.ts and error-codes.gen.ts, and the auth, signing and minimum-version route tables that list planned operations (paths added by ledger PR #591, as CT-15n). Orchestrator rulings in couli-runs/F1-10a/decision-orchestrator.md. tester none (contract task); implementation by an Opus 5.5 subagent in two runs. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1: turning withdraw.auto_payout.enabled on needs the owner's confirmation per BR-WDR-30; fixed in implementation run 2 by allowing only off from the console), round 2 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "a699f4e2217a878dae0073db1be7f2e5313e3f6e",
+    "specs": "4b37a92670828e2b8c3e0734ecb85eb5371a7277"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}

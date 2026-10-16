@@ -198,6 +198,9 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'settle_batch',
     // CT-17g: admin platform mark publish / restore CAS (04 §6.6, BR-TEXT-24).
     'platform_icon',
+    // CT-02i: admin configuration item and emergency switch CAS (04 §6.6, §10.2).
+    'config_item',
+    'kill_switch',
   ]);
 });
 

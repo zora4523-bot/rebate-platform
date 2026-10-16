@@ -782,6 +782,86 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListKillSwitches",
+    "method": "GET",
+    "path": "/admin/v1/kill-switches",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdateKillSwitch",
+    "method": "PUT",
+    "path": "/admin/v1/kill-switches/:key",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListConfigItems",
+    "method": "GET",
+    "path": "/admin/v1/config-items",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminBatchUpdateConfigItems",
+    "method": "POST",
+    "path": "/admin/v1/config-items/batch",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetConfigItem",
+    "method": "GET",
+    "path": "/admin/v1/config-items/:key",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdateConfigItem",
+    "method": "PUT",
+    "path": "/admin/v1/config-items/:key",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListConfigItemVersions",
+    "method": "GET",
+    "path": "/admin/v1/config-items/:key/versions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRollbackConfigItem",
+    "method": "POST",
+    "path": "/admin/v1/config-items/:key/rollback",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "createAgentSession",
     "method": "POST",
     "path": "/v1/agent/sessions",

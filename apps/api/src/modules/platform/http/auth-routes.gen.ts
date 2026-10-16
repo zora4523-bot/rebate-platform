@@ -382,6 +382,46 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "GET",
+    "path": "/admin/v1/kill-switches",
+    "auth": "admin"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/kill-switches/:key",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/config-items",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/config-items/batch",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/config-items/:key",
+    "auth": "admin"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/config-items/:key",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/config-items/:key/versions",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/config-items/:key/rollback",
+    "auth": "admin"
+  },
+  {
     "method": "POST",
     "path": "/v1/agent/sessions",
     "auth": "optional"
