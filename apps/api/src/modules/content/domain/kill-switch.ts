@@ -2,7 +2,7 @@
 // fields that do not depend on the stored value) and the check of a requested change
 // (PUT /admin/v1/kill-switches/{key}), as pure functions over the F1-10b registry
 // (switch-registry.ts). Rule tests: test/spec/content/kill-switches/**.
-import type { SwitchDefault, SwitchPermission } from './switch-registry.ts';
+import { switchSpecOf, type SwitchDefault, type SwitchPermission } from './switch-registry.ts';
 
 /** The contract's AdminConfigValueType values a registered switch can take. */
 export type KillSwitchValueType = 'boolean' | 'enum' | 'object';
@@ -26,8 +26,22 @@ export type KillSwitchRefusal = 'key' | 'value';
 
 /** The descriptor of `key`, or null when `key` is not a registered emergency switch. */
 export function killSwitchDescriptor(key: string): KillSwitchDescriptor | null {
-  void key;
-  throw new Error('NotImplemented: killSwitchDescriptor');
+  const spec = switchSpecOf(key);
+  if (spec === null) return null;
+  const placeholder = spec.pattern.split('.').findIndex((segment) => segment.startsWith('<'));
+  const part = key.split('.')[placeholder];
+  const override =
+    part !== undefined && Object.hasOwn(spec.defaultOverrides, part)
+      ? spec.defaultOverrides[part]
+      : undefined;
+  return {
+    key,
+    default: override === undefined ? spec.defaultValue : override,
+    valueType: spec.valueType.kind,
+    options: spec.valueType.kind === 'enum' ? spec.valueType.values : null,
+    permissions: spec.permissions,
+    adminEditable: spec.adminEditable,
+  };
 }
 
 /**
@@ -36,7 +50,15 @@ export function killSwitchDescriptor(key: string): KillSwitchDescriptor | null {
  * enum value outside its options included) or turns withdraw.auto_payout.enabled on (BR-WDR-30).
  */
 export function killSwitchChangeRefusal(key: string, value: unknown): KillSwitchRefusal | null {
-  void key;
-  void value;
-  throw new Error('NotImplemented: killSwitchChangeRefusal');
+  const descriptor = killSwitchDescriptor(key);
+  if (descriptor === null || !descriptor.adminEditable) return 'key';
+  if (key === 'withdraw.auto_payout.enabled' && value !== false) return 'value';
+  switch (descriptor.valueType) {
+    case 'boolean':
+      return typeof value === 'boolean' ? null : 'value';
+    case 'enum':
+      return typeof value === 'string' && descriptor.options?.includes(value) ? null : 'value';
+    case 'object':
+      return typeof value === 'object' && value !== null && !Array.isArray(value) ? null : 'value';
+  }
 }
