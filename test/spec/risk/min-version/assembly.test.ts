@@ -40,18 +40,33 @@ it('[AC-B1-03c#21] markTipRead：真实 AppModule 自动装配 content 读取器
     Post(path: string): (target: object, key: string, descriptor: PropertyDescriptor) => void;
   };
   const handled = vi.fn(() => ({ code: 0, msg: '', trace_id: TRACE }));
-  // 此 planned 路由实现时须换为其他 planned 路由，或改为替换真实控制器的服务依赖。
+  // markTipRead 尚为 planned 时由本探针注册该路由；B1-02s 起 identity 的 TipsController 拥有该路由
+  // （同一路由注册两次 Fastify 拒绝启动），此时不注册探针，只把真实 prototype 上的 markTipRead 换成
+  // 探针处理函数，并把原函数上的全部 Reflect 元数据（路由、HTTP 码、路由 schema）复制过去，
+  // 路由、guard 与装配仍是生产代码；finally 里还原原函数（同 rate-limit/http-kit.ts 的做法）。
+  // 探针不读参数，真实方法的参数装饰器（如 @Req()）不影响它。
   class Probe {
     markTipRead() {
       return handled();
     }
   }
-  common.Controller('v1')(Probe);
-  common.Post('me/tips/:tip_key/read')(
-    Probe.prototype,
-    'markTipRead',
-    Object.getOwnPropertyDescriptor(Probe.prototype, 'markTipRead')!,
+  const tipsProto = await import(
+    new URL('apps/api/src/modules/identity/http/public/tips.controller.ts', ROOT).href
+  ).then(
+    (module: Record<string, unknown>) =>
+      (module['TipsController'] as { prototype: { markTipRead(...args: never[]): unknown } })
+        .prototype,
+    () => undefined,
   );
+  const realTip = tipsProto?.markTipRead;
+  if (tipsProto === undefined) {
+    common.Controller('v1')(Probe);
+    common.Post('me/tips/:tip_key/read')(
+      Probe.prototype,
+      'markTipRead',
+      Object.getOwnPropertyDescriptor(Probe.prototype, 'markTipRead')!,
+    );
+  }
   const { AppModule } = (await import(new URL('apps/api/src/app.module.ts', ROOT).href)) as {
     AppModule: { forEntry(options: PlatformOptions): Record<string, unknown> };
   };
@@ -90,7 +105,10 @@ it('[AC-B1-03c#21] markTipRead：真实 AppModule 自动装配 content 读取器
     const module = original(options);
     return {
       ...module,
-      controllers: [...((module['controllers'] ?? []) as unknown[]), Probe],
+      controllers: [
+        ...((module['controllers'] ?? []) as unknown[]),
+        ...(tipsProto === undefined ? [Probe] : []),
+      ],
       providers: [
         ...((module['providers'] ?? []) as unknown[]),
         { provide: TOKEN_CHECK, useValue: tokenCheck },
@@ -100,6 +118,18 @@ it('[AC-B1-03c#21] markTipRead：真实 AppModule 自动装配 content 读取器
   const f = idemFixture(idemRequest(false), 'missing', true, '8.4.2');
   let app: HttpApp | undefined;
   try {
+    if (tipsProto !== undefined && realTip !== undefined) {
+      const probeTip = () => handled();
+      const metadata = Reflect as unknown as {
+        getMetadataKeys(target: object): unknown[];
+        getMetadata(key: unknown, target: object): unknown;
+        defineMetadata(key: unknown, value: unknown, target: object): void;
+      };
+      for (const key of metadata.getMetadataKeys(realTip)) {
+        metadata.defineMetadata(key, metadata.getMetadata(key, realTip), probeTip);
+      }
+      tipsProto.markTipRead = probeTip;
+    }
     app = await createHttpApp('api', {
       dbHandles: { db: f.db, dbRead: null, close: async () => undefined },
       config: loadConfig({ APP_ENV: 'test' }),
@@ -142,6 +172,7 @@ it('[AC-B1-03c#21] markTipRead：真实 AppModule 自动装配 content 读取器
     expect(handled).toHaveBeenCalledTimes(1);
   } finally {
     spy.mockRestore();
+    if (tipsProto !== undefined && realTip !== undefined) tipsProto.markTipRead = realTip;
     await app?.close();
     await f.db.destroy();
   }
