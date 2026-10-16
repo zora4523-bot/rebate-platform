@@ -71,15 +71,15 @@ const RATIO_FIELDS = ['r_own_bp', 'r_direct_bp', 'r_indirect_bp'] as const;
 const RATIO_MAX_BP = 8000n;
 const RESERVE_MAX_BP = 10000n;
 
-type Level = RuleVersionRow['level'];
-type OrderType = RuleVersionRow['order_type'];
+/** 每个平台的组合槽位数：L1–L3 × self/share。 */
+const SLOTS_PER_PLATFORM = LEVELS.length * ORDER_TYPES.length;
 
-function isLevel(value: unknown): value is Level {
-  return LEVELS.some((level) => level === value);
+function levelIndex(value: unknown): number {
+  return value === 'L1' ? 0 : value === 'L2' ? 1 : value === 'L3' ? 2 : -1;
 }
 
-function isOrderType(value: unknown): value is OrderType {
-  return ORDER_TYPES.some((orderType) => orderType === value);
+function orderTypeIndex(value: unknown): number {
+  return value === 'self' ? 0 : value === 'share' ? 1 : -1;
 }
 
 function inRange(value: unknown, max: bigint): value is bigint {
@@ -90,11 +90,8 @@ function show(value: unknown): string {
   return typeof value === 'bigint' ? `${value.toString()}n` : `${typeof value}`;
 }
 
-function key(platform: string, level: string, orderType: string): string {
-  return JSON.stringify([platform, level, orderType]);
-}
-
 const ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?\+08:00$/;
+const OFFSET_SECONDS = 8 * 3600;
 
 function daysInMonth(year: number, month: number): number {
   if (month === 2) {
@@ -123,19 +120,17 @@ export function parseInstantSeconds(text: unknown): number | null {
   if (typeof text !== 'string') return null;
   const match = ISO_PATTERN.exec(text);
   if (match === null) return null;
-  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number) as [
-    number,
-    number,
-    number,
-    number,
-    number,
-    number,
-  ];
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
   if (month < 1 || month > 12) return null;
   if (day < 1 || day > daysInMonth(year, month)) return null;
   if (hour > 23 || minute > 59 || second > 59) return null;
   const localSeconds = daysFromCivil(year, month, day) * 86400 + hour * 3600 + minute * 60 + second;
-  return localSeconds - 8 * 3600;
+  return localSeconds - OFFSET_SECONDS;
 }
 
 /**
@@ -145,46 +140,104 @@ export function parseInstantSeconds(text: unknown): number | null {
  * 携带 platform/order_type。时间字符串须合法且带 +08:00，不归一化非法日期。
  * 错误按类别输出：规则维度 → 预留维度 → 预留范围 → 单项比例 → 间推开关 →
  * 活动加成 → 合计上限 → 生效时间；同类内按输入或平台清单顺序。
+ * 实现上规则行与预留行各只遍历一次，按类别分桶后再按上述顺序拼接。
  */
 export function validateRuleVersion(input: ValidateRuleVersionInput): ValidateRuleVersionResult {
   const { draft } = input;
+  const indirectEnabled = draft.indirect_enabled;
   const errors: RuleVersionValidationError[] = [];
-  const platforms = [...new Set(input.platforms)];
-  const configured = new Set(platforms);
 
-  // BR-CALC-06：规则维度——未配置平台、缺组合、重复组合。
-  const ruleCounts = new Map<string, number>();
-  const unknownRuleErrors: RuleVersionValidationError[] = [];
+  // commission.platforms 去重，保留首次出现的顺序；下标用于组合槽位与 (平台, 订单类型) 分组。
+  const platforms: string[] = [];
+  const platformIndex = new Map<string, number>();
+  for (const platform of input.platforms) {
+    if (!platformIndex.has(platform)) {
+      platformIndex.set(platform, platforms.length);
+      platforms.push(platform);
+    }
+  }
+  const platformCount = platforms.length;
+  const groupCount = platformCount * ORDER_TYPES.length;
+
+  // 规则行一次遍历：维度错误、单项比例、间推开关分桶，同时累计组合次数与每组各项最大值。
+  // 各项最大值从 0 起算（负值已单独报错，不得拉低合计）；关闭间推时间推项按 0 计（BR-CALC-05）。
+  const ruleCounts = new Array<number>(platformCount * SLOTS_PER_PLATFORM).fill(0);
+  const maxOwn = new Array<bigint>(groupCount).fill(0n);
+  const maxDirect = new Array<bigint>(groupCount).fill(0n);
+  const maxIndirect = new Array<bigint>(groupCount).fill(0n);
+  const ratioErrors: RuleVersionValidationError[] = [];
+  const indirectErrors: RuleVersionValidationError[] = [];
   for (const row of draft.rules) {
-    if (!configured.has(row.platform)) {
-      unknownRuleErrors.push({
+    const p = platformIndex.get(row.platform);
+    if (p === undefined) {
+      errors.push({
         code: 'UNKNOWN_PLATFORM',
         platform: row.platform,
         level: row.level,
         order_type: row.order_type,
         detail: `规则行平台 ${row.platform} 不在 commission.platforms 中`,
       });
-      continue;
+    } else {
+      const l = levelIndex(row.level);
+      const o = orderTypeIndex(row.order_type);
+      if (l < 0 || o < 0) {
+        errors.push({
+          code: 'UNKNOWN_PLATFORM',
+          platform: row.platform,
+          level: row.level,
+          order_type: row.order_type,
+          detail: `规则行 ${row.platform} 的等级 ${String(row.level)} 或订单类型 ${String(row.order_type)} 不在 L1–L3 × self/share 中`,
+        });
+      } else {
+        ruleCounts[p * SLOTS_PER_PLATFORM + l * ORDER_TYPES.length + o]! += 1;
+        const g = p * ORDER_TYPES.length + o;
+        const own: unknown = row.r_own_bp;
+        const direct: unknown = row.r_direct_bp;
+        if (typeof own === 'bigint' && own > maxOwn[g]!) maxOwn[g] = own;
+        if (typeof direct === 'bigint' && direct > maxDirect[g]!) maxDirect[g] = direct;
+        if (indirectEnabled) {
+          const indirect: unknown = row.r_indirect_bp;
+          if (typeof indirect === 'bigint' && indirect > maxIndirect[g]!) maxIndirect[g] = indirect;
+        }
+      }
     }
-    if (!isLevel(row.level) || !isOrderType(row.order_type)) {
-      unknownRuleErrors.push({
-        code: 'UNKNOWN_PLATFORM',
+
+    // BR-CALC-07：单项 0–8000，每个字段单独报告。
+    for (const field of RATIO_FIELDS) {
+      const value: unknown = row[field];
+      if (!inRange(value, RATIO_MAX_BP)) {
+        ratioErrors.push({
+          code: 'RATIO_OUT_OF_RANGE',
+          platform: row.platform,
+          level: row.level,
+          order_type: row.order_type,
+          detail: `${row.platform}/${row.level}/${row.order_type} 的 ${field}=${show(value)} 超出 0–8000`,
+        });
+      }
+    }
+
+    // BR-CALC-05：关闭间推的版本 r_indirect_bp 必须全为 0。
+    if (!indirectEnabled && row.r_indirect_bp !== 0n) {
+      indirectErrors.push({
+        code: 'INDIRECT_DISABLED',
         platform: row.platform,
         level: row.level,
         order_type: row.order_type,
-        detail: `规则行 ${row.platform} 的等级 ${String(row.level)} 或订单类型 ${String(row.order_type)} 不在 L1–L3 × self/share 中`,
+        detail: `indirect_enabled=false 但 ${row.platform}/${row.level}/${row.order_type} 的 r_indirect_bp=${show(row.r_indirect_bp)}`,
       });
-      continue;
     }
-    const k = key(row.platform, row.level, row.order_type);
-    ruleCounts.set(k, (ruleCounts.get(k) ?? 0) + 1);
   }
-  errors.push(...unknownRuleErrors);
+
+  // BR-CALC-06：规则维度——缺组合、重复组合（按平台清单 × 等级 × 订单类型的顺序）。
   const duplicateRuleErrors: RuleVersionValidationError[] = [];
-  for (const platform of platforms) {
-    for (const level of LEVELS) {
-      for (const order_type of ORDER_TYPES) {
-        const count = ruleCounts.get(key(platform, level, order_type)) ?? 0;
+  for (let p = 0; p < platformCount; p += 1) {
+    const platform = platforms[p]!;
+    for (let l = 0; l < LEVELS.length; l += 1) {
+      const level = LEVELS[l]!;
+      for (let o = 0; o < ORDER_TYPES.length; o += 1) {
+        const count = ruleCounts[p * SLOTS_PER_PLATFORM + l * ORDER_TYPES.length + o]!;
+        if (count === 1) continue;
+        const order_type = ORDER_TYPES[o]!;
         if (count === 0) {
           errors.push({
             code: 'MISSING_RULE',
@@ -193,7 +246,7 @@ export function validateRuleVersion(input: ValidateRuleVersionInput): ValidateRu
             order_type,
             detail: `缺少比例行 ${platform}/${level}/${order_type}`,
           });
-        } else if (count > 1) {
+        } else {
           duplicateRuleErrors.push({
             code: 'DUPLICATE_RULE',
             platform,
@@ -205,31 +258,43 @@ export function validateRuleVersion(input: ValidateRuleVersionInput): ValidateRu
       }
     }
   }
-  errors.push(...duplicateRuleErrors);
+  for (const error of duplicateRuleErrors) errors.push(error);
 
-  // BR-CALC-06：预留维度——未配置平台、缺平台、重复平台。
-  const reserveCounts = new Map<string, number>();
+  // BR-CALC-06：预留维度——未配置平台、缺平台、重复平台；同一遍历收集 BR-CALC-02 范围错误。
+  const reserveCounts = new Array<number>(platformCount).fill(0);
+  const reserveRangeErrors: RuleVersionValidationError[] = [];
   for (const row of draft.reserves) {
-    if (!configured.has(row.platform)) {
+    const p = platformIndex.get(row.platform);
+    if (p === undefined) {
       errors.push({
         code: 'UNKNOWN_PLATFORM',
         platform: row.platform,
         detail: `预留行平台 ${row.platform} 不在 commission.platforms 中`,
       });
-      continue;
+    } else {
+      reserveCounts[p]! += 1;
     }
-    reserveCounts.set(row.platform, (reserveCounts.get(row.platform) ?? 0) + 1);
+    // BR-CALC-02/06：预留比例 0–10000。
+    if (!inRange(row.reserve_bp, RESERVE_MAX_BP)) {
+      reserveRangeErrors.push({
+        code: 'RESERVE_OUT_OF_RANGE',
+        platform: row.platform,
+        detail: `平台 ${row.platform} 的 reserve_bp=${show(row.reserve_bp)} 超出 0–10000`,
+      });
+    }
   }
   const duplicateReserveErrors: RuleVersionValidationError[] = [];
-  for (const platform of platforms) {
-    const count = reserveCounts.get(platform) ?? 0;
+  for (let p = 0; p < platformCount; p += 1) {
+    const count = reserveCounts[p]!;
+    if (count === 1) continue;
+    const platform = platforms[p]!;
     if (count === 0) {
       errors.push({
         code: 'MISSING_RESERVE',
         platform,
         detail: `缺少平台 ${platform} 的 reserve_bp`,
       });
-    } else if (count > 1) {
+    } else {
       duplicateReserveErrors.push({
         code: 'DUPLICATE_RESERVE',
         platform,
@@ -237,49 +302,10 @@ export function validateRuleVersion(input: ValidateRuleVersionInput): ValidateRu
       });
     }
   }
-  errors.push(...duplicateReserveErrors);
-
-  // BR-CALC-02/06：预留比例 0–10000。
-  for (const row of draft.reserves) {
-    if (!inRange(row.reserve_bp, RESERVE_MAX_BP)) {
-      errors.push({
-        code: 'RESERVE_OUT_OF_RANGE',
-        platform: row.platform,
-        detail: `平台 ${row.platform} 的 reserve_bp=${show(row.reserve_bp)} 超出 0–10000`,
-      });
-    }
-  }
-
-  // BR-CALC-07：单项 0–8000，每个字段单独报告。
-  for (const row of draft.rules) {
-    for (const field of RATIO_FIELDS) {
-      const value: unknown = row[field];
-      if (!inRange(value, RATIO_MAX_BP)) {
-        errors.push({
-          code: 'RATIO_OUT_OF_RANGE',
-          platform: row.platform,
-          level: row.level,
-          order_type: row.order_type,
-          detail: `${row.platform}/${row.level}/${row.order_type} 的 ${field}=${show(value)} 超出 0–8000`,
-        });
-      }
-    }
-  }
-
-  // BR-CALC-05：关闭间推的版本 r_indirect_bp 必须全为 0。
-  if (!draft.indirect_enabled) {
-    for (const row of draft.rules) {
-      if (row.r_indirect_bp !== 0n) {
-        errors.push({
-          code: 'INDIRECT_DISABLED',
-          platform: row.platform,
-          level: row.level,
-          order_type: row.order_type,
-          detail: `indirect_enabled=false 但 ${row.platform}/${row.level}/${row.order_type} 的 r_indirect_bp=${show(row.r_indirect_bp)}`,
-        });
-      }
-    }
-  }
+  for (const error of duplicateReserveErrors) errors.push(error);
+  for (const error of reserveRangeErrors) errors.push(error);
+  for (const error of ratioErrors) errors.push(error);
+  for (const error of indirectErrors) errors.push(error);
 
   // BR-CALC-07：活动加成单项 0–8000（MVP 不传即 0）。
   const bonus: unknown = input.activity_bonus_bp ?? 0n;
@@ -293,41 +319,28 @@ export function validateRuleVersion(input: ValidateRuleVersionInput): ValidateRu
   const bonusForTotal = typeof bonus === 'bigint' && bonus > 0n ? bonus : 0n;
 
   // BR-CALC-07：每 (平台, 订单类型) max_等级 三项 + 活动加成 ≤ 8000。
-  // 各项最大值从 0 起算（负值已单独报错，不得拉低合计）；关闭间推时间推项按 0 计（BR-CALC-05）。
-  for (const platform of platforms) {
-    for (const order_type of ORDER_TYPES) {
-      let maxOwn = 0n;
-      let maxDirect = 0n;
-      let maxIndirect = 0n;
-      for (const row of draft.rules) {
-        if (row.platform !== platform || row.order_type !== order_type || !isLevel(row.level)) {
-          continue;
-        }
-        if (typeof row.r_own_bp === 'bigint' && row.r_own_bp > maxOwn) maxOwn = row.r_own_bp;
-        if (typeof row.r_direct_bp === 'bigint' && row.r_direct_bp > maxDirect) {
-          maxDirect = row.r_direct_bp;
-        }
-        if (
-          draft.indirect_enabled &&
-          typeof row.r_indirect_bp === 'bigint' &&
-          row.r_indirect_bp > maxIndirect
-        ) {
-          maxIndirect = row.r_indirect_bp;
-        }
-      }
-      const total = maxOwn + maxDirect + maxIndirect + bonusForTotal;
+  for (let p = 0; p < platformCount; p += 1) {
+    for (let o = 0; o < ORDER_TYPES.length; o += 1) {
+      const g = p * ORDER_TYPES.length + o;
+      const own = maxOwn[g]!;
+      const direct = maxDirect[g]!;
+      const indirect = maxIndirect[g]!;
+      const total = own + direct + indirect + bonusForTotal;
       if (total > RATIO_MAX_BP) {
+        const platform = platforms[p]!;
+        const order_type = ORDER_TYPES[o]!;
         errors.push({
           code: 'TOTAL_RATIO_EXCEEDED',
           platform,
           order_type,
-          detail: `${platform}/${order_type} 合计 max r_own_bp ${maxOwn} + max r_direct_bp ${maxDirect} + max r_indirect_bp ${maxIndirect} + activity_bonus_bp ${bonusForTotal} = ${total} > 8000`,
+          detail: `${platform}/${order_type} 合计 max r_own_bp ${own} + max r_direct_bp ${direct} + max r_indirect_bp ${indirect} + activity_bonus_bp ${bonusForTotal} = ${total} > 8000`,
         });
       }
     }
   }
 
   // BR-CALC-11：effective_from ≥ publish_at，且严格大于所有已发布未撤销版本（到秒）。
+  // 每个时刻在一次调用内只解析一次。
   const effective = parseInstantSeconds(draft.effective_from);
   if (effective === null) {
     errors.push({
@@ -342,12 +355,16 @@ export function validateRuleVersion(input: ValidateRuleVersionInput): ValidateRu
       detail: `publish_at=${JSON.stringify(input.publish_at)} 不是合法的 ISO 8601 +08:00 时刻`,
     });
   }
+  const blocking: string[] = [];
   for (const text of input.published_effective_froms) {
-    if (parseInstantSeconds(text) === null) {
+    const seconds = parseInstantSeconds(text);
+    if (seconds === null) {
       errors.push({
         code: 'INVALID_PUBLISHED_EFFECTIVE_FROM',
         detail: `已发布版本 effective_from=${JSON.stringify(text)} 不是合法的 ISO 8601 +08:00 时刻`,
       });
+    } else if (effective !== null && seconds >= effective) {
+      blocking.push(text);
     }
   }
   if (effective !== null && publishAt !== null && effective < publishAt) {
@@ -356,17 +373,11 @@ export function validateRuleVersion(input: ValidateRuleVersionInput): ValidateRu
       detail: `effective_from=${draft.effective_from} 早于发布时刻 ${input.publish_at}`,
     });
   }
-  if (effective !== null) {
-    const blocking = input.published_effective_froms.filter((text) => {
-      const seconds = parseInstantSeconds(text);
-      return seconds !== null && seconds >= effective;
+  if (blocking.length > 0) {
+    errors.push({
+      code: 'EFFECTIVE_NOT_INCREASING',
+      detail: `effective_from=${draft.effective_from} 未严格大于已发布未撤销版本 ${blocking.join('、')}`,
     });
-    if (blocking.length > 0) {
-      errors.push({
-        code: 'EFFECTIVE_NOT_INCREASING',
-        detail: `effective_from=${draft.effective_from} 未严格大于已发布未撤销版本 ${blocking.join('、')}`,
-      });
-    }
   }
 
   return errors.length === 0 ? { ok: true } : { ok: false, errors };
