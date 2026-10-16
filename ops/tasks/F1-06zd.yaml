@@ -9,6 +9,8 @@ type: impl
 # AdmPlatformIconPublished、AdmPlatformIconRestored、AdmPlatformIconConflict；决定 decisions-r20-platform-icons.md；文案为代理补全（needs.md admin.platform_icon.*，待负责人看）。
 # 用 antd 组件（Table、Drawer、Modal、Alert、Tag、Button、Pagination、Result；03 §9.1，手写替代记 S1），经 F1-06g 的 data provider 与 F1-06zb 的 createAdminApi 取数；预览一律 <img> 加载清洗后的 url。
 # 上传、清洗预览、存为版本、补登来源在 F1-06ze。
+# 2026-10-17 补：加菜单会让冻结的 admin-shell / admin-antd 菜单与外壳用例（菜单清单取自 test/spec/frontend/admin-shell/fixtures.ts 的 MENU）必红，
+# 照 F1-06h 先例把 fixtures.ts 列进 test_paths，由规则测试提交在 MENU「版本管理」后加「平台标识」一行（第一类 add-only 改动，PR 合并要负责人标签，approvals 第 24 条）；单独 test-change 先合或后合都会让主干红。
 refs: [BR-TEXT-24]
 refs_hash:
   BR-TEXT-24: 0cda692fd39e
@@ -21,6 +23,7 @@ paths:
   - 'apps/admin/src/App.tsx'
 test_paths:
   - 'test/spec/frontend/admin-platform-icons/**'
+  - 'test/spec/frontend/admin-shell/fixtures.ts'
 impl: codex
 tester: claude
 accept:
