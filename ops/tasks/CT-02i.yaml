@@ -5,13 +5,14 @@ type: contract
 # 2026-10-16 入账（后台后端线 admin-backend，编排会话 10-16 20:3x 派「后台配置中心与紧急开关后端」：05 F1-10 后端部分、05 F1-02「含 kill switches」；解开 QA-05c）。
 # 依据 04 §3.2 config_items / kill_switches、§10（回滚、版本与操作记录）、§10.2（服务端 10 秒内生效、修改需 step-up 并告警）、§11.2 config.* / switch.*、§5 / §7（20902 CAS、10003 step-up）；02 §10、§14；01 F-ADM-13、F-CFG-04 / 07；08 BR-WDR-17、BR-INV-21。
 # 规划未定处的编排者裁定见 couli-runs/F1-10a/decision-orchestrator.md（编号即下文「裁定 N」）：开关仍存 config_items 由注册表区分（裁定 1），开关键进程内缓存 ≤5 秒直读 PG（裁定 2），历史表 config_item_versions（裁定 3），expected_version CAS（裁定 4），任一权限点守卫（裁定 5）。
+# contract_sections 只列 10.2、11.2（再加 6.6 或整个 §10 任务书超 24KB）；§6.6 的后台通用约定已在 openapi info，§10 开头「回滚、当前有效值、版本与操作记录」由编排者摘进任务书第 9 节。
 # 要点：新增 8 个操作全部 x-implementation: planned（由 F1-10d / F1-10e 去掉）；按键所需权限点（开关按键写「任一」：04 §11.2 switch.payout 所列的键（withdraw.enabled、payout.enabled、payout.queue_paused、payout.channel_enabled.<channel>、payout.channel_paused.<channel>；payout.proven_success_writeoff.enabled 等是 config.business 配置项、不是开关）为 switch.all 或 switch.payout，switch.pay 所列的键（pay.enabled、pay.channel_enabled.<pay_channel>）为 switch.all 或 switch.pay，其余（含 withdraw.auto_payout.enabled）只 switch.all）与档位写在 description（04 §11.2，specs/permissions.yaml）；读列表持有任一 config.* / switch.* 即可（裁定 5）；改值请求 {value, expected_version, reason}；回滚 {to_version, expected_version, reason}；整批 {items:[{key,value,expected_version}], reason} 整次成功或整次拒绝（裁定 8）。
 # 后台写操作用 X-Step-Up-Token 头：新建后台专用参数组件（required: false：只有档位不为空的权限点要求令牌，缺令牌由守卫答 10003 data.tier，不由路由校验拒绝；台账评审 S2-3），不复用用户侧 StepUpToken（packages/contracts-ts/scripts/conformance.ts 限定其只在用户侧 x-step-up 操作）。error-codes.yaml 20902 的 data.resource 补 config_item、kill_switch。不改 /v1/config（F1-02c）。
 refs: [BR-WDR-17, BR-INV-21]
 refs_hash:
   BR-WDR-17: f6119a685e00
   BR-INV-21: 97103f163904
-contract_sections: ['6.6', '10', '10.2', '11.2']
+contract_sections: ['10.2', '11.2']
 deps: []
 paths:
   - 'contracts/openapi.yaml'
