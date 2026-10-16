@@ -1,0 +1,27 @@
+id: F1-02f
+repo: rebate-platform
+title: content：GET /v1/articles（按 category 游标分页，公告带 NoticeItem）与 GET /v1/articles/{article_id}（可选 version），只读已发布文章；去掉 listArticles、getArticle 的 planned
+type: impl
+# 2026-10-16 入账（内容模块客户端接口线 content-client）。依据 04 §6.2 articles 行与 §3.2 articles 行、08 BR-TEXT-13 细则「首页公告条的关闭与内容版本」、BR-ID-11（匿名可读）、
+# contracts/openapi.yaml listArticles / getArticle、ArticleSummary（Notice / Plain）、NoticeItem（不可关闭的公告必须有 end_at）、30701。
+# 规则摘录与裁定见 couli-runs/F1-02f/decision-orchestrator.md，摘入任务书第 9 节（「已发布」的 status 取值、NoticeItem 的 text / target 来源、排序与游标、非法 article_id 按 30701）。
+# 去掉两条的 planned，重生成两个生成物。契约槽同 F1-02c。
+refs: [BR-TEXT-13, BR-ID-11]
+refs_hash:
+  BR-TEXT-13: 87d129361c25
+  BR-ID-11: 7b951792bc86
+deps: [F1-02a, F1-02c]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/content/articles/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/articles/**'
+status: todo

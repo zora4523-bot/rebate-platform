@@ -1,0 +1,23 @@
+id: F1-02d
+repo: rebate-platform
+title: content：GET /v1/config 下发 platform_icons——只列已发布替换图的键 → {url, sha256, version}，读 F1-06y 的下发读口 publishedPlatformIcons，每次读库不缓存
+type: impl
+# 2026-10-16 入账（内容模块客户端接口线 content-client）。依据 08 BR-TEXT-24 正文与细则（下发与客户端兜底）、04 §10.1 platform_icons 行、
+# contracts/openapi.yaml ConfigPlatformIcons / ConfigPlatformIcon（url 必须 https、sha256 64 位小写十六进制、version ≥ 1；对象可为空）。
+# 要点：恢复内置或从未发布的键不出现；发布 / 回滚 / 恢复内置后下一次 GET /v1/config 随之变化（admin 与 api 是不同进程，不做进程内缓存，F1-06y 裁定 11）；
+# url 用 F1-06z 媒体端口 mediaUrlOf 的结果（与后台读接口同源）；跨 app_id 隔离。不改契约（Config.platform_icons 已是可选键），不占契约槽。
+refs: [BR-TEXT-24]
+refs_hash:
+  BR-TEXT-24: 0cda692fd39e
+deps: [F1-02c, F1-06y]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/content/config-icons/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config-icons/**'
+status: todo
