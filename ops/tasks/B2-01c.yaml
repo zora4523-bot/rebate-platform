@@ -1,0 +1,28 @@
+id: B2-01c
+repo: rebate-platform
+title: packages/money 加 mulBpBpFloor(amount_fen, a_bp, b_bp)：floor(amount × a_bp × b_bp / 10^8)，两个比例先相乘、只在最后取整一次（BR-CALC-17 拼多多自购报价「一次乘完再一次 floor」）
+type: impl
+# 2026-10-16 资金线 funds-quote 入账（B2-01 剩余部分，拆自 05 B2-01「packages/money」）。为什么：BR-CALC-17 要求
+# 拼多多自购报价 N = floor(分享口径佣金 × self_buy_factor_bp × account_level_factor_bp / 10000 / 10000)，写明
+# mulDivFloor(x, a×b, 100000000n)；现有 mulDivFloor 只收 0–10000 的比例，分两步 floor 又违反「只允许一次 floor」。
+# 做法：只加一个纯函数并从 src/index.ts 导出，不改已有函数语义。入参：amount_fen 为 bigint 且 ≥ 0（否则 InvalidAmount）；
+# a_bp、b_bp 各为 0–10000 的 bigint（否则 InvalidRatio）；先乘后除，结果 ≤ amount_fen。
+# 依据：BR-CALC-01（整数分、只经本包、负数抛错）、BR-CALC-17 细则两例（400 × 7500 × 10000 → 300；333 × 7500 × 8000 → 199）。
+# 风险：packages/money → RV2（money）。Codex 先写规则测试（先红），Claude 新子代理过审，Opus 实现，Codex 资金评审（approvals 27）。
+refs: [BR-CALC-01, BR-CALC-17]
+refs_hash:
+  BR-CALC-01: 102e2d700e30
+  BR-CALC-17: c717a001ea25
+deps: []
+paths:
+  - 'packages/money/src/**'
+test_paths:
+  - 'test/spec/money/mul-bp-bp/**'
+  - 'test/properties/money/mul-bp-bp/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/money/mul-bp-bp/**'
+status: todo
+pr: null

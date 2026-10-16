@@ -1,0 +1,26 @@
+id: B2-01g
+repo: rebate-platform
+title: 迁移：分佣快照四表 commission_splits（含 reserve_bp / reserve_fen、raw_n_fen、base_fen、platform_retain_fen、受益人 JSON）、commission_split_amounts、commission_split_beneficiary_events、commission_split_totals 及授权（只插入）
+type: migration
+# 2026-10-16 资金线 funds-quote 入账（05 B2-01「commission_splits.reserve_bp / reserve_fen」；快照写入是 B2-03 后续任务，接 order-sync 流水线）。不在报价器最短路径上，排在 B2-03d 之后。
+# 依据 04 §3.2 commission_splits / amounts / beneficiary_events / totals 行；BR-CALC-02（raw_n_fen 可为负、base_fen ≥ 0、platform_retain_fen ≥ 0）、BR-CALC-10（唯一 order_id、不可变范围）、
+# BR-CALC-27（totals 唯一 (order_id, commission_version)、只追加）。四表带 app_id；外键指向 order_keys / orders 与 commission_rule_versions；约束、索引写明名字；
+# 不可变列由「禁止 UPDATE / DELETE」触发器或不授 UPDATE 保证；金额列 bigint *_fen、比例 smallint *_bp。迁移号取落地时主干最大号 +1，两段式（db/AGENTS.md）。
+refs: [BR-CALC-10, BR-CALC-27]
+refs_hash:
+  BR-CALC-10: 1848b1fb0a51
+  BR-CALC-27: ff78446ad011
+deps: [B2-01d]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/commission/splits/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/commission/splits/**'
+status: todo
+pr: null

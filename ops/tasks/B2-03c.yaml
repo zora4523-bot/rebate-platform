@@ -1,0 +1,29 @@
+id: B2-03c
+repo: rebate-platform
+title: commission 模块：规则版本读取（报价时刻生效的已发布未撤销版本，BR-CALC-11；版本不全按 BR-CALC-06 拒绝）与真实返利报价器 createCommissionRebateQuoter（实现 catalog 的 CardRebateQuoter：quoteN → quoteRebate，按查看者等级与订单类型取比例、先扣该平台 reserve_bp）
+type: impl
+# 2026-10-16 资金线 funds-quote 入账（05 B2-03「规则版本、预估计算」；02 §4.1 commission 模块，无 HTTP）。新模块 apps/api/src/modules/commission/（risk-map 与模块 AGENTS.md 另由 chore PR 登记）。
+# 报价器：输入 UnionItem、Viewer、CardQuoteContext（同演示报价器）；N_quote 由 union 的 quoteN() 得出、本人份额由 @couli/domain quoteRebate() 得出，本模块不自写任何取整或比例运算；
+# 返回 RebateQuote 的形状与语义同演示报价器（BR-PRICE-06 / 07 / 08 / 09：淘宝 price_compare_risk 区间下限按 rebate.taobao.compare_rate_ratio_bp 重算、0 为 no_rebate、返后价 = 券后价 − 下限）。
+# 读：commission_rule_versions / rules / reserves（只读本模块的表）；tech_fee_bp、rebate.taobao.compare_rate_ratio_bp、union.pdd.*、commission.platforms 经 CatalogConfigReader；缺任一值
+# 或平台不在 commission.platforms、版本缺行 → 报价失败（抛错，不按 0、不回退别的版本）。查看者等级：游客 L1（BR-CALC-20）；登录用户经端口 ViewerLevelReader 取当前等级——identity 尚无
+# 等级读取导出，本任务给出端口与过渡实现：所选版本该 (平台, 订单类型) 三个等级 r_own_bp 相同时与等级无关照常报价，不同时报价失败；TODO 指向 identity 等级读取（notices 已请 identity 线）。
+# 预读：给出 prepare(appId, userIds) 让开放（linking open）事务前读完版本与等级，事务内只答预读值（同 openScopedConfig 的做法，由 B2-03d 接线）。时间只读注入的 Clock。
+# 风险 RV2（未登记路径默认）。Codex 写规则测试，Claude 过审，Opus 实现，Codex 资金评审。
+refs: [BR-CALC-06, BR-CALC-11, BR-CALC-20]
+refs_hash:
+  BR-CALC-06: 8cc9b9a9afc7
+  BR-CALC-11: 0bdd7a33eb83
+  BR-CALC-20: b6075c494b94
+deps: [B2-01d, B2-03a, B2-03b]
+paths:
+  - 'apps/api/src/modules/commission/**'
+test_paths:
+  - 'test/spec/commission/quoter/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/commission/quoter/**'
+status: todo
+pr: null
