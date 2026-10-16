@@ -68,7 +68,24 @@ it(
   '[AC-B1-17a#2] history has no user, device, attribution or personalized channel columns',
   async () => {
     await ready(app);
-    const names = (await columns(app)).map(({ name }) => name.toLowerCase());
+    const names = (await columns(app)).map(({ name }) => name);
+    expect(names.toSorted()).toEqual([
+      'app_id',
+      'coupon_fen',
+      'created_at',
+      'final_price_fen',
+      'first_observed_at',
+      'goods_sign_plan',
+      'id',
+      'in_stock',
+      'last_observed_at',
+      'observation_count',
+      'platform',
+      'price_fen',
+      'product_key',
+      'sku_key',
+      'source_kind',
+    ]);
     for (const forbidden of [
       'user_id',
       'device_id',
@@ -85,6 +102,26 @@ it(
       expect(names, forbidden).not.toContain(forbidden);
     }
     expect(names.filter((name) => /user|device|relation|union_id/i.test(name))).toEqual([]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B1-17a#16] MVP migrations do not create P1 watch or observation tables',
+  async () => {
+    await ready(app);
+    for (const table of [
+      'app.watch',
+      'app.tracked_item',
+      'app.tracked_query',
+      'app.watch_event',
+      'app.price_observation',
+    ]) {
+      const result = await sql<{ name: string | null }>`
+        SELECT to_regclass(${table})::text AS name
+      `.execute(app);
+      expect(result.rows[0]?.name, table).toBeNull();
+    }
   },
   TIMEOUT,
 );
