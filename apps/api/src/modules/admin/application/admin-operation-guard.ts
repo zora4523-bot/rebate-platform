@@ -65,7 +65,7 @@ export class AdminOperationGuardImpl extends AdminOperationGuard {
     input: AdminOperationInput,
     business: (actor: AdminActor) => Promise<AdminOperationResponse>,
   ): Promise<AdminOperationResponse> {
-    const { request, permission, operation } = input;
+    const { request, permission, operation, readOnly } = input;
     const principal = adminPrincipal(request);
     if (principal === undefined) {
       // Not a client error: a business route that is not x-auth admin / super used the guard.
@@ -96,7 +96,8 @@ export class AdminOperationGuardImpl extends AdminOperationGuard {
         },
         permission,
         ...(operation === undefined ? {} : { operation }),
-        headers: headersOf(request),
+        ...(readOnly === undefined ? {} : { readOnly }),
+        headers: readOnly === true ? {} : headersOf(request),
         traceId,
       },
       () => business(actor),

@@ -119,3 +119,17 @@ it('[AC-F1-06u-UNIT#3] no verified principal or a failing database is a plain er
   );
   expect(business).not.toHaveBeenCalled();
 });
+
+it('[AC-F1-10c-UNIT#1] read-only requests forward the selection without accessing headers', async () => {
+  const s = setup();
+  const headers = vi.fn(() => {
+    throw new Error('read-only operations must not access headers');
+  });
+  Object.defineProperty(s.request, 'headers', { get: headers });
+  const business = vi.fn(async () => OK);
+  const permission = ['switch.all', 'fund.adjust'] as const;
+  expect(await s.port.run({ request: s.request, permission, readOnly: true }, business)).toBe(OK);
+  expect(headers).not.toHaveBeenCalled();
+  expect(s.seen[0]).toMatchObject({ permission, readOnly: true, headers: {} });
+  expect(business).toHaveBeenCalledOnce();
+});

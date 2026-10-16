@@ -61,6 +61,27 @@ async function rejection(promise: Promise<unknown>): Promise<{ status: number; b
   return { status: http.getStatus(), body: http.getResponse() };
 }
 
+it('[AC-F1-10c-UNIT#2] a write list releases the claim after business failure and consumes only on success', async () => {
+  const s = setup();
+  const grant = await s.tokens.issue({ ...s.principal, tier: 'sms' });
+  const request = {
+    principal: s.principal,
+    permission: ['fund.writeoff', 'fund.adjust'],
+    headers: { 'x-step-up-token': grant.step_up_token },
+  };
+  const failure = new Error('business failed');
+  await expect(s.guard.run(request, () => Promise.reject(failure))).rejects.toBe(failure);
+  const rejectedResult: AdminBusinessResponse = { statusCode: 409, body: { code: 20902 } };
+  expect(await s.guard.run(request, async () => rejectedResult)).toBe(rejectedResult);
+  const business = vi.fn(async () => SUCCESS);
+  expect(await s.guard.run(request, business)).toBe(SUCCESS);
+  expect((await rejection(s.guard.run(request, business))).body).toMatchObject({
+    code: 10003,
+    data: { tier: 'sms' },
+  });
+  expect(business).toHaveBeenCalledOnce();
+});
+
 it('[AC-F1-06l#14] tokens are opaque, random and expire five minutes after issue by the Clock', async () => {
   const s = setup();
   const grant = await s.tokens.issue({ ...s.principal, tier: 'totp' });

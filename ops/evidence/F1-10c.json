@@ -1,0 +1,104 @@
+{
+  "task": "F1-10c",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "cf9f0b287c85ec8af4d932cbef6ac76afafbc8c6",
+  "red_tests": [
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#1] 只读 + 数组：持有其中任一即放行，不要求令牌，无效令牌也被忽略",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#2] 只读不读也不核销所带令牌，之后令牌仍可用于一次写操作",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#3] 只读不判二次验证：短信档权限点未登记验证手机号也放行，写操作仍要求",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#4] 只读 + 数组都不持有返回 10403，不执行业务也不核销令牌；勾选后即放行",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#5] 只读 + 混档数组不是编程错误：持有任一即放行且不要求令牌",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#6] 写 + 同档（totp）数组，持有 [\"switch.all\"]：缺令牌 10003，带有效令牌执行一次并核销",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#6] 写 + 同档（totp）数组，持有 [\"switch.payout\"]：缺令牌 10003，带有效令牌执行一次并核销",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#6] 写 + 同档（totp）数组，持有 [\"switch.all\",\"switch.payout\"]：缺令牌 10003，带有效令牌执行一次并核销",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#7] 写 + 同档数组都不持有返回 10403 且不核销令牌；勾选其一后同一令牌可用一次",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#8] 写 + 同档（无需二次验证）数组：持有任一即执行，不要求也不读令牌",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#9] 写 + 同档（短信）数组按短信档要令牌，已登记验证手机号=false",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#9] 写 + 同档（短信）数组按短信档要令牌，已登记验证手机号=true",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"config.general\",\"config.business\"]（持有 [\"config.general\"]）是编程错误 50001：不执行业务、不核销令牌",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"config.general\",\"config.business\"]（持有 [\"config.business\"]）是编程错误 50001：不执行业务、不核销令牌",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"config.general\",\"config.business\"]（持有 [\"config.general\",\"config.business\"]）是编程错误 50001：不执行业务、不核销令牌",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"switch.all\",\"fund.adjust\"]（持有 [\"switch.all\"]）是编程错误 50001：不执行业务、不核销令牌",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"switch.all\",\"fund.adjust\"]（持有 [\"fund.adjust\"]）是编程错误 50001：不执行业务、不核销令牌",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"switch.all\",\"fund.adjust\"]（持有 [\"switch.all\",\"fund.adjust\"]）是编程错误 50001：不执行业务、不核销令牌",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#11] 空数组是编程错误 50001（只读=false），不执行业务",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#11] 空数组是编程错误 50001（只读=true），不执行业务",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#12] 超管未勾任何点：只读数组直接放行；写数组仍按共同档位要令牌；混档与空数组仍是 50001",
+    "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#13] 单个权限点：非只读（缺省或 readOnly=false）与单元素数组同 F1-06u，只读则不要求令牌"
+  ],
+  "risk_note": "RV2 (admin authorization boundary). AdminOperationGuard takes a single permission point or an array: read-only operations (readOnly) pass when the admin holds any of the points, with no step-up and no token read or consumed; write operations pass with any point of an array whose points share one step-up tier (specs/permissions.yaml), then follow the existing token flow; mixed tiers or an empty array are a programming error 50001 before the business callback and before any token is consumed; a single point keeps the F1-06l / F1-06u behaviour; super admins hold every point. No new runtime export from platform/http/index.ts. Implemented by Codex (approvals 30 / 31), rule tests by a Claude subagent. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "cf9f0b287c85ec8af4d932cbef6ac76afafbc8c6",
+      "tree": "048c3ea97d2f04537de40f14066974d686d0f68e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T16:26:11Z",
+      "finished_at": "2026-10-16T16:26:27Z",
+      "red_tests": [
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#1] 只读 + 数组：持有其中任一即放行，不要求令牌，无效令牌也被忽略",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#2] 只读不读也不核销所带令牌，之后令牌仍可用于一次写操作",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#3] 只读不判二次验证：短信档权限点未登记验证手机号也放行，写操作仍要求",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#4] 只读 + 数组都不持有返回 10403，不执行业务也不核销令牌；勾选后即放行",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#5] 只读 + 混档数组不是编程错误：持有任一即放行且不要求令牌",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#6] 写 + 同档（totp）数组，持有 [\"switch.all\"]：缺令牌 10003，带有效令牌执行一次并核销",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#6] 写 + 同档（totp）数组，持有 [\"switch.payout\"]：缺令牌 10003，带有效令牌执行一次并核销",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#6] 写 + 同档（totp）数组，持有 [\"switch.all\",\"switch.payout\"]：缺令牌 10003，带有效令牌执行一次并核销",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#7] 写 + 同档数组都不持有返回 10403 且不核销令牌；勾选其一后同一令牌可用一次",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#8] 写 + 同档（无需二次验证）数组：持有任一即执行，不要求也不读令牌",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#9] 写 + 同档（短信）数组按短信档要令牌，已登记验证手机号=false",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#9] 写 + 同档（短信）数组按短信档要令牌，已登记验证手机号=true",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"config.general\",\"config.business\"]（持有 [\"config.general\"]）是编程错误 50001：不执行业务、不核销令牌",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"config.general\",\"config.business\"]（持有 [\"config.business\"]）是编程错误 50001：不执行业务、不核销令牌",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"config.general\",\"config.business\"]（持有 [\"config.general\",\"config.business\"]）是编程错误 50001：不执行业务、不核销令牌",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"switch.all\",\"fund.adjust\"]（持有 [\"switch.all\"]）是编程错误 50001：不执行业务、不核销令牌",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"switch.all\",\"fund.adjust\"]（持有 [\"fund.adjust\"]）是编程错误 50001：不执行业务、不核销令牌",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#10] 写 + 混档数组 [\"switch.all\",\"fund.adjust\"]（持有 [\"switch.all\",\"fund.adjust\"]）是编程错误 50001：不执行业务、不核销令牌",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#11] 空数组是编程错误 50001（只读=false），不执行业务",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#11] 空数组是编程错误 50001（只读=true），不执行业务",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#12] 超管未勾任何点：只读数组直接放行；写数组仍按共同档位要令牌；混档与空数组仍是 50001",
+        "test/spec/admin/guard-any/guard.int.test.ts > [AC-F1-10c#13] 单个权限点：非只读（缺省或 readOnly=false）与单元素数组同 F1-06u，只读则不要求令牌"
+      ],
+      "expected": ["test/spec/admin/guard-any/guard.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2e47d089efecb47948c3877371a0010367d3d610ef0e03f50731a40633e58afe"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "scope": "fresh read-only Claude subagent with the money checklist (not the rule-test author): round 1 pass, 0 S0/S1; 1 S2 to follow-ups (read-only mode does not check that the points exist in the catalogue, so a super admin passes a misspelt point; no such caller)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests (13 cases, 22 runs) by a Claude subagent; round 1 by a fresh read-only Codex session: pass with no findings"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "66e726b2643e32c8fb6c98780c324bc9312ff7cf",
+    "test/spec": "a55a8db24574b75476c72ff6bfa866e441e1afdb",
+    "specs": "e3bb9aaad4133100875640f64e420a0f3631d5e1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "66e726b2643e32c8fb6c98780c324bc9312ff7cf"
+  }
+}
