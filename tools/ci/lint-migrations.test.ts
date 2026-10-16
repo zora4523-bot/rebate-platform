@@ -169,6 +169,9 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'processed_events',
     'idempotency_keys',
     'appeals',
+    'commission_rule_versions',
+    'commission_rules',
+    'commission_rule_reserves',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
