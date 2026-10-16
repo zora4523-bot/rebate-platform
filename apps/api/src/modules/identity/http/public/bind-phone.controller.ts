@@ -1,0 +1,113 @@
+import { Controller, Inject, Optional, Post, Req, Res } from '@nestjs/common';
+import { RouteSchema } from '@nestjs/platform-fastify';
+import type { Schema } from '@couli/contracts-ts';
+import {
+  IDEMPOTENCY,
+  contractRouteSchema,
+  tokenPrincipal,
+  type CheckedRequest,
+  type HandlerResult,
+  type Idempotency,
+} from '../../../platform/index.ts';
+import {
+  BindPhoneBlocked,
+  type BindPhoneResult,
+  type BindPhoneService,
+} from '../../application/bind-phone.ts';
+import { BIND_PHONE } from '../../application/tokens.ts';
+
+interface BindPhoneRequest extends CheckedRequest {
+  readonly id: string;
+  readonly headers: Readonly<Record<string, string | string[] | undefined>>;
+  readonly body: Schema<'BindPhoneRequest'>;
+}
+
+interface RawReply {
+  code(status: number): RawReply;
+  type(contentType: string): RawReply;
+  send(body: string): unknown;
+}
+
+const ERRORS = {
+  10003: { status: 403, msg: '为保障资金安全，请先完成短信验证' },
+  20001: { status: 400, msg: '请输入 11 位中国大陆手机号' },
+  20002: { status: 400, msg: '验证码错误，请重新输入' },
+  20003: { status: 400, msg: '验证码已失效，请重新获取' },
+  30411: { status: 422, msg: '该手机号已注册，可退出后用手机号登录' },
+  44001: { status: 403, msg: '操作未通过安全校验' },
+  50001: { status: 500, msg: '服务端错误' },
+} as const;
+
+function response(result: BindPhoneResult, traceId: string): HandlerResult {
+  if (result.code === 0) {
+    const envelope: Schema<'EmptyResponse'> = { code: 0, msg: '', data: {}, trace_id: traceId };
+    return { status: 200, envelope };
+  }
+  const error = ERRORS[result.code];
+  return {
+    status: error.status,
+    envelope: {
+      code: result.code,
+      msg: error.msg,
+      trace_id: traceId,
+      ...('data' in result && result.data !== undefined ? { data: result.data } : {}),
+    },
+  };
+}
+
+@Controller('v1')
+export class BindPhoneController {
+  constructor(
+    @Inject(BIND_PHONE) private readonly phones: BindPhoneService | null,
+    @Optional() @Inject(IDEMPOTENCY) private readonly idempotency?: Idempotency,
+  ) {}
+
+  @Post('me/phone')
+  @RouteSchema(contractRouteSchema('bindPhone'))
+  async bind(@Req() request: BindPhoneRequest, @Res() reply: RawReply): Promise<void> {
+    const principal = tokenPrincipal(request);
+    const device = request.verifiedDevice;
+    if (
+      principal === undefined ||
+      device === undefined ||
+      this.phones === null ||
+      this.idempotency === undefined
+    ) {
+      throw new Error('identity: bind phone needs storage and a verified token and device');
+    }
+    const phones = this.phones;
+    const key = request.headers['idempotency-key'];
+    try {
+      const result = await this.idempotency.executeInTransaction(
+        {
+          appId: principal.app_id,
+          actor: { userId: principal.uid, deviceId: device.deviceId, phoneHmac: null },
+          method: 'POST',
+          path: '/v1/me/phone',
+          key: typeof key === 'string' ? key : undefined,
+          body: request.body,
+          traceId: request.id,
+        },
+        async (trx) =>
+          response(
+            await phones.bind(trx, {
+              app_id: principal.app_id,
+              user_id: principal.uid,
+              device_id: device.deviceId,
+              body: request.body,
+            }),
+            request.id,
+          ),
+      );
+      reply.code(result.status).type('application/json; charset=utf-8').send(result.body);
+    } catch (error) {
+      if (!(error instanceof BindPhoneBlocked)) throw error;
+      await error.record();
+      const result = response(error.result, request.id);
+      reply
+        .code(result.status)
+        .type('application/json; charset=utf-8')
+        .send(JSON.stringify(result.envelope));
+    }
+  }
+}

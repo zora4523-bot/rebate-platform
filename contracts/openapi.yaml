@@ -2758,7 +2758,6 @@ paths:
       x-idempotent: true
       x-step-up: phone_change
       x-min-version-gate: true
-      x-implementation: planned
       x-error-codes:
         - 20001
         - 20002

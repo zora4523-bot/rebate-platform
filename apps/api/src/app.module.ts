@@ -1,4 +1,4 @@
-import { type DynamicModule, type Provider, Module, Scope } from '@nestjs/common';
+import { type DynamicModule, type Provider, HttpException, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -53,6 +53,8 @@ import {
   type IdentityRequest,
   type SessionPushTokens,
   type UserLevelReader,
+  type AccountAssetsPort,
+  type AccountRiskPort,
 } from './modules/identity/index.ts';
 import {
   LINK_LANDING_PORTS,
@@ -87,6 +89,7 @@ import {
   CLOCK,
   DB,
   FIELD_CRYPTO,
+  EVENT_BUS,
   PlatformModule,
   REDIS,
   ROOT_LOGGER,
@@ -97,6 +100,7 @@ import {
   type AppConfig,
   type Clock,
   type FieldCrypto,
+  type EventBus,
   type PlatformOptions,
   type RedisHandle,
   type RootLogger,
@@ -111,6 +115,7 @@ import {
   RiskScanModule,
   SIGNATURE_CHECK,
   createBlocklistService,
+  createRiskStateService,
   createDeviceRegistrationRisk,
   createSmsRisk,
   ephemeralSmsRiskIndex,
@@ -199,6 +204,67 @@ function requestChecks(options: PlatformOptions): Provider {
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
+    accountAssets: {
+      useFactory: (): AccountAssetsPort => ({
+        async countOrders(db, account) {
+          const row = await db
+            .withSchema('app')
+            .selectFrom('orders')
+            .select((eb) => eb.fn.countAll<string>().as('count'))
+            .where('app_id', '=', account.app_id)
+            .where('user_id', '=', account.user_id)
+            .executeTakeFirstOrThrow();
+          return Number(row.count);
+        },
+        // TODO(规划/11 §2.3): 并号条件读找回申请 — blocked on B1-10 找回申请
+        hasClaims: () => Promise.resolve(false),
+        // TODO(规划/11 §2.3): 并号条件读余额流水 — blocked on ledger 模块（B2）
+        hasLedgerEntries: () => Promise.resolve(false),
+      }),
+    },
+    accountRisk: {
+      inject: [CLOCK, { token: EVENT_BUS, optional: true }],
+      useFactory: (clock: Clock, events?: EventBus): AccountRiskPort | null =>
+        events === undefined
+          ? null
+          : {
+              async isBanned(db, account) {
+                // Bind the exported reader to the caller's transaction: no second connection.
+                const risk = createRiskStateService({ db, clock, events });
+                const snapshot = await risk.readRiskState(account, { fresh: true });
+                if (snapshot.state === 'banned') return true;
+                if (snapshot.state !== 'appealing') return false;
+                // Reuse risk's exported request check for the pre-appeal state. This is only a
+                // read probe; its synthetic principal is never used for authentication or writes.
+                try {
+                  await risk.checkRequest(
+                    {
+                      id: '',
+                      method: 'POST',
+                      routeOptions: { url: '/v1/me/phone' },
+                      headers: {},
+                      principal: {
+                        uid: account.user_id,
+                        app_id: account.app_id,
+                        sid: '',
+                        device_id: '',
+                        scp: 'full',
+                      },
+                    },
+                    db,
+                  );
+                  return false;
+                } catch (error) {
+                  if (error instanceof HttpException) {
+                    const body = error.getResponse();
+                    if (typeof body === 'object' && 'code' in body && body.code === 10006)
+                      return true;
+                  }
+                  throw error;
+                }
+              },
+            },
+    },
     config: {
       inject: [CLOCK, { token: DB, optional: true }],
       useFactory: (clock: Clock, db?: Kysely<Database>): IdentityConfigReader | null =>

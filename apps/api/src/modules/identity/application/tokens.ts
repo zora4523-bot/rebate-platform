@@ -57,3 +57,6 @@ export const CONSENTS = Symbol('CONSENTS');
 
 /** The TipsService (tips.ts); null when the process has no database. */
 export const TIPS = Symbol('TIPS');
+
+/** First phone binding; null without its storage and read ports. */
+export const BIND_PHONE = Symbol('BIND_PHONE');
