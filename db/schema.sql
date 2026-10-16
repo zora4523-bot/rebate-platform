@@ -1614,6 +1614,23 @@ CREATE TABLE app.commission_rules (
 
 
 --
+-- Name: config_item_versions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.config_item_versions (
+    app_id text NOT NULL,
+    key text NOT NULL,
+    version integer NOT NULL,
+    value jsonb NOT NULL,
+    updated_by text NOT NULL,
+    updated_by_admin_id uuid,
+    reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT config_item_versions_version_check CHECK ((version >= 1))
+);
+
+
+--
 -- Name: config_items; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3539,6 +3556,14 @@ ALTER TABLE ONLY app.commission_rule_versions
 
 ALTER TABLE ONLY app.commission_rules
     ADD CONSTRAINT commission_rules_pkey PRIMARY KEY (rule_version_id, platform, level, order_type);
+
+
+--
+-- Name: config_item_versions config_item_versions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.config_item_versions
+    ADD CONSTRAINT config_item_versions_pkey PRIMARY KEY (app_id, key, version);
 
 
 --
@@ -6936,6 +6961,15 @@ GRANT UPDATE(indirect_approved_at) ON TABLE app.commission_rule_versions TO coul
 
 GRANT SELECT,INSERT ON TABLE app.commission_rules TO couli_app;
 GRANT SELECT ON TABLE app.commission_rules TO couli_readonly;
+
+
+--
+-- Name: TABLE config_item_versions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.config_item_versions TO couli_app;
+GRANT SELECT ON TABLE app.config_item_versions TO couli_readonly;
+GRANT SELECT ON TABLE app.config_item_versions TO couli_payout;
 
 
 --
