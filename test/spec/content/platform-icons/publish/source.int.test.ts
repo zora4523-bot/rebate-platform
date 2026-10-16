@@ -129,6 +129,8 @@ it.each(['a', 'b'] as const)(
   async (first) => {
     const f = await setup(h);
     await version(h, f.actor, 'jd', 1);
+    // The revised pause may pass a DO NOTHING insert only when the mark already exists.
+    await icon(h, f.actor, 'jd', null, 0);
     const before = await snapshot(h, f.appId);
     const second = first === 'a' ? 'b' : 'a';
     const responses = await orderedRace(
@@ -136,6 +138,7 @@ it.each(['a', 'b'] as const)(
       f,
       { op: 'source', body: { expected_revision: 1, source_url: `${SOURCE}/${first}` } },
       { op: 'source', body: { expected_revision: 1, source_url: `${SOURCE}/${second}` } },
+      true,
     );
     const winner = await success<Version>(responses.second, 'source');
     await conflict(responses.first, 'source');

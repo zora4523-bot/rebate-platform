@@ -9,7 +9,13 @@ interface Attempt {
 }
 
 /** The second HTTP request commits while the first is stopped at the database boundary. */
-export async function orderedRace(h: Harness, f: Setup, first: Attempt, second: Attempt) {
+export async function orderedRace(
+  h: Harness,
+  f: Setup,
+  first: Attempt,
+  second: Attempt,
+  existingMarkRow: boolean,
+) {
   return h.db.connection().execute(async (db) => {
     const connection = await db.getExecutor().provideConnection(async (value) => value);
     const app = await (
@@ -24,9 +30,23 @@ export async function orderedRace(h: Harness, f: Setup, first: Attempt, second: 
       const revisionTable = first.op === 'source' ? 'platform_icon_versions' : 'platform_icons';
       let entered = false;
       let secondResponse: Response | undefined;
+      let secondTimedOut = false;
       const runSecond = async () => {
         entered = true;
-        secondResponse = await write(f, second.op, second.body);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          secondResponse = await Promise.race([
+            write(f, second.op, second.body),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => {
+                secondTimedOut = true;
+                reject(new Error('orderedRace: second request did not finish within 5 seconds'));
+              }, 5_000);
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
       };
       const spy = vi
         .spyOn(connection, 'executeQuery')
@@ -37,6 +57,15 @@ export async function orderedRace(h: Harness, f: Setup, first: Attempt, second: 
             const [query] = args;
             const contentQuery = /\bplatform_icons\b|\bplatform_icon_versions\b/.test(query.sql);
             if (!entered && contentQuery) {
+              if (
+                existingMarkRow &&
+                query.query.kind === 'InsertQueryNode' &&
+                query.query.onConflict?.doNothing
+              ) {
+                // An existing-row DO NOTHING neither reads revision nor locks the conflict row.
+                // For absent rows keep the original BEFORE-INSERT pause: insertion takes a lock.
+                return execute<R>(...args);
+              }
               const plainRead =
                 query.query.kind === 'SelectQueryNode' && !/\bfor\b/i.test(query.sql);
               if (
@@ -60,6 +89,10 @@ export async function orderedRace(h: Harness, f: Setup, first: Attempt, second: 
         );
       try {
         const firstResponse = await write({ ...f, app }, first.op, first.body);
+        // HTTP error handling must not turn a timed-out pause into an accepted CAS conflict.
+        expect(secondTimedOut, 'second request must complete while the first is paused').toBe(
+          false,
+        );
         expect(entered, 'first request must reach the controlled database boundary').toBe(true);
         expect(secondResponse).toBeDefined();
         return { first: firstResponse, second: secondResponse! };

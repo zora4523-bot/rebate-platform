@@ -208,6 +208,7 @@ it.each([
       f,
       { op: 'publish', body: { expected_revision: revision, version: first } },
       { op: 'publish', body: { expected_revision: revision, version: second } },
+      existing,
     );
     const winner = await success(responses.second, 'publish');
     await conflict(responses.first, 'publish');
@@ -242,6 +243,7 @@ it.each(['publish', 'restore'] as const)(
       f,
       { op: first, body: bodies[first] },
       { op: second, body: bodies[second] },
+      true,
     );
     await success(responses.second, second);
     await conflict(responses.first, first);
