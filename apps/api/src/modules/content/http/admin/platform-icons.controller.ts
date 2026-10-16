@@ -6,6 +6,9 @@
 // page_size and the write bodies (20001) before a handler runs. Each handler runs inside platform's
 // AdminOperationGuard for content.platform_icon (10403 without the point), so no icon table is
 // queried before the permission passes; the app is the guard's actor, never a request field.
+// Upload and save as version (F1-06x; adminUploadPlatformIcon, adminCreatePlatformIconVersion):
+// the upload's multipart stream is read only inside the guard's business callback (platform
+// readSingleUpload), so a refused permission never consumes the request body.
 // Served by the admin entry only (content's ContentAdminModule).
 //
 // Nest's decorators are applied as plain calls below (not decorator syntax): content's index.ts
@@ -29,8 +32,14 @@ import {
   AdminOperationGuard,
   contractRouteSchema,
   fieldsErrorEnvelope,
+  readSingleUpload,
   type CheckedRequest,
+  type SingleUploadRequest,
 } from '../../../platform/index.ts';
+import {
+  PlatformIconUploader,
+  PlatformIconUploadRejectedError,
+} from '../../application/platform-icon-uploader.ts';
 import {
   PlatformIconFieldsError,
   PlatformIconReader,
@@ -40,6 +49,7 @@ import {
   PlatformIconConflictError,
   PlatformIconWriter,
   type PlatformIconActor,
+  type PlatformIconCreateBody,
   type PlatformIconPublishBody,
   type PlatformIconRestoreBody,
   type PlatformIconSourceBody,
@@ -58,31 +68,57 @@ export class AdminPlatformIconsController {
   readonly #guard: AdminOperationGuard;
   readonly #reader: PlatformIconReader;
   readonly #writer: PlatformIconWriter;
+  readonly #uploader: PlatformIconUploader;
 
-  constructor(guard: AdminOperationGuard, reader: PlatformIconReader, writer: PlatformIconWriter) {
+  constructor(
+    guard: AdminOperationGuard,
+    reader: PlatformIconReader,
+    writer: PlatformIconWriter,
+    uploader: PlatformIconUploader,
+  ) {
     this.#guard = guard;
     this.#reader = reader;
     this.#writer = writer;
+    this.#uploader = uploader;
   }
 
+  /** adminUploadPlatformIcon: check and clean one file, stage it for saving, store its media. */
   async upload(
-    request: PlatformIconsRequest,
+    request: PlatformIconsRequest & SingleUploadRequest,
     key: string,
   ): Promise<Schema<'AdminPlatformIconUploadResponse'>> {
-    void request;
-    void key;
-    throw new Error('NotImplemented: AdminPlatformIconsController.upload');
+    let response: Schema<'AdminPlatformIconUploadResponse'> | undefined;
+    await this.#guard.run({ request, permission: PERMISSION }, async (actor) => {
+      try {
+        const data = await this.#uploader.upload(editorOf(actor, request), key, () =>
+          readSingleUpload(request),
+        );
+        response = { code: 0, msg: '', data, trace_id: request.id };
+        return { statusCode: 200, body: response };
+      } catch (error) {
+        throw refusal(error, request.id);
+      }
+    });
+    return answered(response);
   }
 
+  /** adminCreatePlatformIconVersion: save an upload as the mark's next version. */
   async create(
     request: PlatformIconsRequest,
     key: string,
-    body: Schema<'AdminPlatformIconVersionCreateRequest'>,
+    body: PlatformIconCreateBody,
   ): Promise<Schema<'AdminPlatformIconVersionResponse'>> {
-    void request;
-    void key;
-    void body;
-    throw new Error('NotImplemented: AdminPlatformIconsController.create');
+    let response: Schema<'AdminPlatformIconVersionResponse'> | undefined;
+    await this.#guard.run({ request, permission: PERMISSION }, async (actor) => {
+      try {
+        const data = await this.#writer.create(editorOf(actor, request), key, body);
+        response = { code: 0, msg: '', data, trace_id: request.id };
+        return { statusCode: 200, body: response };
+      } catch (error) {
+        throw refusal(error, request.id);
+      }
+    });
+    return answered(response);
   }
 
   /** adminListPlatformIcons: every mark of the admin's app, in enum order. */
@@ -187,8 +223,18 @@ function editorOf(
   };
 }
 
-/** 20001 (data.fields) and 20902 (data.resource=platform_icon); anything else is rethrown. */
+/**
+ * 20001 (data.fields; an upload rejection also data.reason) and 20902
+ * (data.resource=platform_icon); anything else is rethrown.
+ */
 function refusal(error: unknown, traceId: string): unknown {
+  if (error instanceof PlatformIconUploadRejectedError) {
+    const refused = fieldsErrorEnvelope(['file'], traceId);
+    return new HttpException(
+      { ...refused.body, data: { fields: ['file'], reason: error.reason } },
+      refused.statusCode,
+    );
+  }
   if (error instanceof PlatformIconFieldsError) {
     const refused = fieldsErrorEnvelope(error.fields, traceId);
     return new HttpException(refused.body, refused.statusCode);
@@ -220,9 +266,12 @@ function answered<T>(response: T | undefined): T {
   const register = Object.getOwnPropertyDescriptor(prototype, 'register')!;
   const publish = Object.getOwnPropertyDescriptor(prototype, 'publish')!;
   const restore = Object.getOwnPropertyDescriptor(prototype, 'restore')!;
+  const upload = Object.getOwnPropertyDescriptor(prototype, 'upload')!;
+  const create = Object.getOwnPropertyDescriptor(prototype, 'create')!;
   Inject(AdminOperationGuard)(AdminPlatformIconsController, undefined, 0);
   Inject(PlatformIconReader)(AdminPlatformIconsController, undefined, 1);
   Inject(PlatformIconWriter)(AdminPlatformIconsController, undefined, 2);
+  Inject(PlatformIconUploader)(AdminPlatformIconsController, undefined, 3);
   Req()(prototype, 'list', 0);
   Get()(prototype, 'list', list);
   RouteSchema(contractRouteSchema('adminListPlatformIcons'))(prototype, 'list', list);
@@ -261,5 +310,16 @@ function answered<T>(response: T | undefined): T {
     'restore',
     restore,
   );
+  Req()(prototype, 'upload', 0);
+  Param('key')(prototype, 'upload', 1);
+  Post(':key/uploads')(prototype, 'upload', upload);
+  HttpCode(200)(prototype, 'upload', upload);
+  RouteSchema(contractRouteSchema('adminUploadPlatformIcon'))(prototype, 'upload', upload);
+  Req()(prototype, 'create', 0);
+  Param('key')(prototype, 'create', 1);
+  Body()(prototype, 'create', 2);
+  Post(':key/versions')(prototype, 'create', create);
+  HttpCode(200)(prototype, 'create', create);
+  RouteSchema(contractRouteSchema('adminCreatePlatformIconVersion'))(prototype, 'create', create);
   Controller('admin/v1/platform-icons')(AdminPlatformIconsController);
 }

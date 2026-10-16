@@ -124,17 +124,21 @@ it('[BR-ID-34] the admin entry, whose plan runs the admin check, registers contr
   );
   app = await createHttpApp('admin', overrides('admin'));
   const server = app.getHttpAdapter().getInstance();
-  // Nest registers the implemented ones (logout) in init; the planned ones register as probes.
+  // Nest registers the implemented ones in init (which would refuse an unchecked admin route).
+  // A route still planned in the contract has no controller yet and is registered here as a probe
+  // instead. Since F1-06x no contract admin / super route is planned, so there is nothing to probe
+  // today; the check no longer requires a probe to exist.
+  expect(admin.length).toBeGreaterThan(0);
   await app.init();
-  let probed = 0;
-  for (const route of admin) {
-    if (server.hasRoute({ method: route.method, url: route.path })) continue;
+  const unregistered = admin.filter(
+    (route) => !server.hasRoute({ method: route.method, url: route.path }),
+  );
+  for (const route of unregistered) {
     expect(() =>
       server.route({ method: route.method, url: route.path, handler: () => ({}) }),
     ).not.toThrow();
-    probed += 1;
   }
-  expect(probed).toBeGreaterThan(0);
+  expect(unregistered.length).toBeLessThan(admin.length);
   expect(server.hasRoute({ method: 'POST', url: '/admin/v1/auth/logout' })).toBe(true);
   expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
 });

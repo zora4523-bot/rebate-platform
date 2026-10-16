@@ -21,6 +21,18 @@
 // The audit row is appended on the same transaction (actions version_source, publish, rollback,
 // restore_builtin; facts key, from_version, to_version; never file contents).
 //
+// Save as version (F1-06x; adminCreatePlatformIconVersion; rulings F1-06n 2, 7, 9): one
+// transaction reads the upload (a plain read: uploads are SELECT / INSERT only, never locked;
+// missing, expired at expires_at <= now, another key or another app → 20001 [upload_id]), then
+// takes the mark row as above, and only under that lock looks for a version already saved from
+// this upload_id (found → 200 with it as it is now; nothing of the retried body is applied, no
+// audit), checks sanitized_confirmed (20001 [sanitized_confirmed]), numbers the new version
+// max(version) + 1 and inserts it (revision 1, never published, created_by snapshot) with
+// RETURNING. The mark keeps revision and current_version; only updated_* move. Audit action
+// version_create (key, version, upload_id) on the same transaction. A 23505 on the upload_id
+// UNIQUE (not reachable while the lock is held, kept as the last guard) rolls back and answers
+// the version that holds the upload_id.
+//
 // Pure module (no decorators, erasable syntax).
 import type { Schema } from '@couli/contracts-ts';
 import type { AuditInput, Clock } from '../../platform/index.ts';
@@ -103,6 +115,44 @@ export interface PlatformIconWriteTx {
     key: Key,
   ): Promise<{ row: PlatformIconRow | undefined; latestVersion: number | null }>;
   audit(input: AuditInput): Promise<void>;
+  /** The platform_icon_uploads row by id (plain SELECT, no lock); undefined when absent. */
+  upload(uploadId: string): Promise<PlatformIconUploadState | undefined>;
+  /** The version of the mark saved from this upload, as it is now. */
+  savedVersion(
+    appId: string,
+    key: Key,
+    uploadId: string,
+  ): Promise<PlatformIconVersionRow | undefined>;
+  /** max(version) of the mark, 0 when it has none (call under the mark lock). */
+  latestVersion(appId: string, key: Key): Promise<number>;
+  /** INSERT … RETURNING of a new version. */
+  insertVersion(input: PlatformIconNewVersion): Promise<PlatformIconVersionRow>;
+}
+
+/** What saving needs from an upload row. */
+export interface PlatformIconUploadState {
+  readonly appId: string;
+  readonly key: string;
+  readonly sha256: string;
+  readonly format: string;
+  readonly bytes: number;
+  readonly sanitized: boolean;
+  readonly expiresAt: Date;
+}
+
+export interface PlatformIconNewVersion {
+  readonly appId: string;
+  readonly key: Key;
+  readonly version: number;
+  readonly uploadId: string;
+  readonly sha256: string;
+  readonly format: string;
+  readonly bytes: number;
+  readonly sanitized: boolean;
+  readonly sourceUrl: string | null;
+  /** Calendar date `YYYY-MM-DD`. */
+  readonly downloadedOn: string | null;
+  readonly editor: PlatformIconEditor;
 }
 
 export interface PlatformIconWriteStore {
@@ -131,6 +181,29 @@ export interface PlatformIconPublishBody {
 export interface PlatformIconRestoreBody {
   readonly expected_revision?: unknown;
 }
+
+export interface PlatformIconCreateBody {
+  readonly upload_id?: unknown;
+  readonly sanitized_confirmed?: unknown;
+  readonly source_url?: unknown;
+  readonly downloaded_on?: unknown;
+}
+
+const UNIQUE_VIOLATION = '23505';
+/** platform_icon_versions.upload_id UNIQUE: an upload is saved as at most one version. */
+const UPLOAD_CONSTRAINT = 'platform_icon_versions_upload_id_key';
+
+function isUploadConflict(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const { code, constraint } = error as { code?: unknown; constraint?: unknown };
+  return code === UNIQUE_VIOLATION && constraint === UPLOAD_CONSTRAINT;
+}
+
+const optionalText = (value: unknown, field: string): string | null => {
+  if (value === undefined) return null;
+  if (typeof value === 'string') return value;
+  throw new PlatformIconFieldsError([field]);
+};
 
 const isCount = (value: unknown, min: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min;
@@ -271,6 +344,79 @@ export class PlatformIconWriter {
       await this.#auditTransition(tx, actor, key, mark.currentVersion, null, expected);
       return this.#icon(tx, actor.appId, key);
     });
+  }
+
+  /** adminCreatePlatformIconVersion: saves an upload as the mark's next version (a draft unless
+   * both source_url and downloaded_on are given); a retry with the same upload_id answers the
+   * version it was saved as. */
+  async create(
+    actor: PlatformIconActor,
+    rawKey: string,
+    body: PlatformIconCreateBody,
+  ): Promise<Version> {
+    const key = keyOf(rawKey);
+    // The route schema has validated the body already; these checks only narrow the types.
+    const uploadId = body.upload_id;
+    if (typeof uploadId !== 'string') throw new PlatformIconFieldsError(['upload_id']);
+    if (body.sanitized_confirmed !== undefined && typeof body.sanitized_confirmed !== 'boolean') {
+      throw new PlatformIconFieldsError(['sanitized_confirmed']);
+    }
+    const confirmed = body.sanitized_confirmed === true;
+    const sourceUrl = optionalText(body.source_url, 'source_url');
+    const downloadedOn = optionalText(body.downloaded_on, 'downloaded_on');
+    const editor = this.#editor(actor);
+    try {
+      return await this.#store.transaction(async (tx) => {
+        const upload = await tx.upload(uploadId);
+        if (
+          upload === undefined ||
+          upload.appId !== actor.appId ||
+          upload.key !== key ||
+          upload.expiresAt.getTime() <= editor.at.getTime()
+        ) {
+          throw new PlatformIconFieldsError(['upload_id']);
+        }
+        await tx.lockMark(actor.appId, key);
+        const saved = await tx.savedVersion(actor.appId, key, uploadId);
+        if (saved !== undefined) return platformIconVersionOf(saved, this.#mediaPublicBaseUrl);
+        if (upload.sanitized && !confirmed) {
+          throw new PlatformIconFieldsError(['sanitized_confirmed']);
+        }
+        const version = (await tx.latestVersion(actor.appId, key)) + 1;
+        const created = await tx.insertVersion({
+          appId: actor.appId,
+          key,
+          version,
+          uploadId,
+          sha256: upload.sha256,
+          format: upload.format,
+          bytes: upload.bytes,
+          sanitized: upload.sanitized,
+          sourceUrl,
+          downloadedOn,
+          editor,
+        });
+        await tx.touchMark(actor.appId, key, editor);
+        await tx.audit({
+          appId: actor.appId,
+          actor: actor.adminId,
+          action: 'version_create',
+          target: target(key),
+          before: null,
+          after: { key, version, upload_id: uploadId },
+          ip: actor.ip,
+        });
+        return platformIconVersionOf(created, this.#mediaPublicBaseUrl);
+      });
+    } catch (error) {
+      if (!isUploadConflict(error)) throw error;
+      // Rolled back; the upload is held by the version another request committed.
+      const saved = await this.#store.transaction((tx) =>
+        tx.savedVersion(actor.appId, key, uploadId),
+      );
+      if (saved === undefined) throw error;
+      return platformIconVersionOf(saved, this.#mediaPublicBaseUrl);
+    }
   }
 
   #editor(actor: PlatformIconActor): PlatformIconEditor {

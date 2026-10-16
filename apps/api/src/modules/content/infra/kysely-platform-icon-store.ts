@@ -6,6 +6,7 @@ import type {
   PlatformIconStore,
   PlatformIconVersionRow,
 } from '../application/platform-icon-reader.ts';
+import type { PlatformIconUploadStore } from '../application/platform-icon-uploader.ts';
 import type {
   PlatformIconEditor,
   PlatformIconWriteStore,
@@ -41,6 +42,23 @@ interface VersionSelect {
 
 // A DATE column read as text: pg would otherwise parse it into a Date at local midnight.
 const downloadedOn = sql<string | null>`to_char(v.downloaded_on, 'YYYY-MM-DD')`.as('downloaded_on');
+
+/** VERSION_COLUMNS on an INSERT … RETURNING, where the table carries no alias. */
+const INSERTED_COLUMNS = [
+  'version',
+  'sha256',
+  'format',
+  'bytes',
+  'sanitized',
+  'source_url',
+  'ever_published',
+  'revision',
+  'created_by',
+  'created_at',
+] as const;
+const insertedDownloadedOn = sql<string | null>`to_char(downloaded_on, 'YYYY-MM-DD')`.as(
+  'downloaded_on',
+);
 
 function versionRow(row: VersionSelect): PlatformIconVersionRow {
   return {
@@ -281,6 +299,103 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort): PlatformIconWriteTx {
     },
 
     audit: (input) => audit.append(input),
+
+    async upload(uploadId) {
+      // A plain read: the application role holds SELECT / INSERT only on uploads (no FOR UPDATE).
+      const row = await app
+        .selectFrom('platform_icon_uploads')
+        .select(['app_id', 'key', 'sha256', 'format', 'bytes', 'sanitized', 'expires_at'])
+        .where('id', '=', uploadId)
+        .executeTakeFirst();
+      return row === undefined
+        ? undefined
+        : {
+            appId: row.app_id,
+            key: row.key,
+            sha256: row.sha256,
+            format: row.format,
+            bytes: row.bytes,
+            sanitized: row.sanitized,
+            expiresAt: row.expires_at,
+          };
+    },
+
+    async savedVersion(appId, key, uploadId) {
+      const row = await app
+        .selectFrom('platform_icon_versions as v')
+        .select([...VERSION_COLUMNS, downloadedOn])
+        .where('v.app_id', '=', appId)
+        .where('v.key', '=', key)
+        .where('v.upload_id', '=', uploadId)
+        .executeTakeFirst();
+      return row === undefined ? undefined : versionRow(row);
+    },
+
+    async latestVersion(appId, key) {
+      return (await latestOf(trx, appId, key)) ?? 0;
+    },
+
+    async insertVersion(input) {
+      const row = await app
+        .insertInto('platform_icon_versions')
+        .values({
+          app_id: input.appId,
+          key: input.key,
+          version: input.version,
+          upload_id: input.uploadId,
+          sha256: input.sha256,
+          format: input.format,
+          bytes: input.bytes,
+          sanitized: input.sanitized,
+          source_url: input.sourceUrl,
+          downloaded_on: input.downloadedOn,
+          ever_published: false,
+          revision: 1,
+          created_by: input.editor.loginName,
+          created_by_admin_id: input.editor.adminId,
+          created_at: input.editor.at,
+        })
+        .returning([...INSERTED_COLUMNS, insertedDownloadedOn])
+        .executeTakeFirstOrThrow();
+      return versionRow(row);
+    },
+  };
+}
+
+/**
+ * Upload staging over the primary handle: the config read and the INSERT run outside any
+ * transaction (autocommit), so the row is committed when insertUpload resolves.
+ */
+export function createKyselyPlatformIconUploadStore(db: Kysely<DB>): PlatformIconUploadStore {
+  const app = db.withSchema('app');
+  return {
+    async configValue(appId, key) {
+      const row = await app
+        .selectFrom('config_items')
+        .select('value')
+        .where('app_id', '=', appId)
+        .where('key', '=', key)
+        .executeTakeFirst();
+      return row?.value;
+    },
+
+    async insertUpload(row) {
+      await app
+        .insertInto('platform_icon_uploads')
+        .values({
+          id: row.id,
+          app_id: row.appId,
+          key: row.key,
+          sha256: row.sha256,
+          format: row.format,
+          bytes: row.bytes,
+          sanitized: row.sanitized,
+          created_by_admin_id: row.createdByAdminId,
+          created_at: row.createdAt,
+          expires_at: row.expiresAt,
+        })
+        .execute();
+    },
   };
 }
 
