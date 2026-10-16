@@ -219,7 +219,6 @@ it.each([
   ['missing', undefined],
   ['other app', staged({ appId: 'other' })],
   ['other key', staged({ key: 'tmall' })],
-  ['expired at the instant', staged({ expiresAt: AT })],
 ])(
   '[AC-F1-06x#14] a %s upload is 20001 [upload_id] before the mark is locked',
   async (_n, upload) => {
@@ -236,6 +235,51 @@ it.each([
     expect(tx.insertVersion).not.toHaveBeenCalled();
   },
 );
+
+it('[AC-F1-06x#14] a malformed upload_id is 20001 [upload_id] before any transaction', async () => {
+  const { writer, transaction, tx } = fake(unlocked, undefined, undefined, { upload: staged() });
+  await expect(writer.create(ACTOR, 'jd', { upload_id: 'not-a-uuid' })).rejects.toMatchObject({
+    fields: ['upload_id'],
+  });
+  expect(transaction).not.toHaveBeenCalled();
+  expect(tx.upload).not.toHaveBeenCalled();
+});
+
+it('[AC-F1-06x#14] an unsaved upload expired at the instant is 20001 [upload_id] under the lock, nothing written', async () => {
+  const { writer, tx } = fake(unlocked, undefined, undefined, {
+    upload: staged({ expiresAt: AT }),
+  });
+  await expect(writer.create(ACTOR, 'jd', { upload_id: UPLOAD_ID })).rejects.toMatchObject({
+    fields: ['upload_id'],
+  });
+  expect(tx.savedVersion.mock.invocationCallOrder[0]!).toBeGreaterThan(
+    tx.lockMark.mock.invocationCallOrder[0]!,
+  );
+  expect(tx.latestVersion).not.toHaveBeenCalled();
+  expect(tx.insertVersion).not.toHaveBeenCalled();
+  expect(tx.touchMark).not.toHaveBeenCalled();
+  expect(tx.audit).not.toHaveBeenCalled();
+});
+
+it('[AC-F1-06x#17] a retry after expires_at of an upload already saved answers the same version, no second version or audit', async () => {
+  const saved = versionRow({ version: 1, revision: 1, sanitized: true });
+  const { writer, tx } = fake(unlocked, undefined, undefined, {
+    // Saved before expiry; the clock (AT) is now past expires_at.
+    upload: staged({ sanitized: true, expiresAt: new Date(AT.getTime() - 1) }),
+    saved,
+  });
+  const result = await writer.create(ACTOR, 'jd', {
+    upload_id: UPLOAD_ID,
+    sanitized_confirmed: false,
+  });
+  expect(result).toMatchObject({ version: 1, revision: 1 });
+  expect(tx.lockMark).toHaveBeenCalledOnce();
+  expect(tx.savedVersion).toHaveBeenCalledWith('app', 'jd', UPLOAD_ID);
+  expect(tx.latestVersion).not.toHaveBeenCalled();
+  expect(tx.insertVersion).not.toHaveBeenCalled();
+  expect(tx.touchMark).not.toHaveBeenCalled();
+  expect(tx.audit).not.toHaveBeenCalled();
+});
 
 it('[AC-F1-06x#17] an upload already saved answers that version under the lock, before the confirmation check', async () => {
   const saved = versionRow({ version: 4, revision: 3, everPublished: true });

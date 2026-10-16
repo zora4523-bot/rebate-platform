@@ -23,11 +23,12 @@
 //
 // Save as version (F1-06x; adminCreatePlatformIconVersion; rulings F1-06n 2, 7, 9): one
 // transaction reads the upload (a plain read: uploads are SELECT / INSERT only, never locked;
-// missing, expired at expires_at <= now, another key or another app → 20001 [upload_id]), then
-// takes the mark row as above, and only under that lock looks for a version already saved from
-// this upload_id (found → 200 with it as it is now; nothing of the retried body is applied, no
-// audit), checks sanitized_confirmed (20001 [sanitized_confirmed]), numbers the new version
-// max(version) + 1 and inserts it (revision 1, never published, created_by snapshot) with
+// a non-uuid id is refused before any query; missing, another key or another app → 20001
+// [upload_id]), then takes the mark row as above, and only under that lock looks for a version
+// already saved from this upload_id (found → 200 with it as it is now, even past expires_at;
+// nothing of the retried body is applied, no audit). Only an unsaved upload is then checked for
+// expiry (expires_at <= now → 20001 [upload_id]) and for sanitized_confirmed (20001
+// [sanitized_confirmed]); then the new version is numbered max(version) + 1 and inserted (revision 1, never published, created_by snapshot) with
 // RETURNING. The mark keeps revision and current_version; only updated_* move. Audit action
 // version_create (key, version, upload_id) on the same transaction. A 23505 on the upload_id
 // UNIQUE (not reachable while the lock is held, kept as the last guard) rolls back and answers
@@ -44,6 +45,8 @@ import {
   type PlatformIconRow,
   type PlatformIconVersionRow,
 } from './platform-icon-reader.ts';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Key = Schema<'PlatformIconKey'>;
 type Icon = Schema<'AdminPlatformIcon'>;
@@ -357,7 +360,10 @@ export class PlatformIconWriter {
     const key = keyOf(rawKey);
     // The route schema has validated the body already; these checks only narrow the types.
     const uploadId = body.upload_id;
-    if (typeof uploadId !== 'string') throw new PlatformIconFieldsError(['upload_id']);
+    // A malformed id is refused before any query (a uuid cast would fail as 22P02 otherwise).
+    if (typeof uploadId !== 'string' || !UUID.test(uploadId)) {
+      throw new PlatformIconFieldsError(['upload_id']);
+    }
     if (body.sanitized_confirmed !== undefined && typeof body.sanitized_confirmed !== 'boolean') {
       throw new PlatformIconFieldsError(['sanitized_confirmed']);
     }
@@ -368,17 +374,17 @@ export class PlatformIconWriter {
     try {
       return await this.#store.transaction(async (tx) => {
         const upload = await tx.upload(uploadId);
-        if (
-          upload === undefined ||
-          upload.appId !== actor.appId ||
-          upload.key !== key ||
-          upload.expiresAt.getTime() <= editor.at.getTime()
-        ) {
+        if (upload === undefined || upload.appId !== actor.appId || upload.key !== key) {
           throw new PlatformIconFieldsError(['upload_id']);
         }
         await tx.lockMark(actor.appId, key);
+        // Idempotency comes before expiry: a save whose response was lost may be retried after
+        // expires_at and still answers the version it created.
         const saved = await tx.savedVersion(actor.appId, key, uploadId);
         if (saved !== undefined) return platformIconVersionOf(saved, this.#mediaPublicBaseUrl);
+        if (upload.expiresAt.getTime() <= editor.at.getTime()) {
+          throw new PlatformIconFieldsError(['upload_id']);
+        }
         if (upload.sanitized && !confirmed) {
           throw new PlatformIconFieldsError(['sanitized_confirmed']);
         }
