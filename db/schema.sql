@@ -1697,6 +1697,20 @@ ALTER TABLE app.event_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: favorites; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.favorites (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    platform text NOT NULL,
+    product_key text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: idempotency_keys; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3485,6 +3499,22 @@ ALTER TABLE ONLY app.event_log_default
 
 
 --
+-- Name: favorites favorites_app_id_user_id_platform_product_key_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.favorites
+    ADD CONSTRAINT favorites_app_id_user_id_platform_product_key_key UNIQUE (app_id, user_id, platform, product_key);
+
+
+--
+-- Name: favorites favorites_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.favorites
+    ADD CONSTRAINT favorites_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: idempotency_keys idempotency_keys_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4349,6 +4379,13 @@ CREATE INDEX event_log_event_id_idx ON ONLY app.event_log USING btree (event_id)
 --
 
 CREATE INDEX event_log_default_event_id_idx ON app.event_log_default USING btree (event_id);
+
+
+--
+-- Name: favorites_app_id_user_id_created_at_id_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX favorites_app_id_user_id_created_at_id_idx ON app.favorites USING btree (app_id, user_id, created_at DESC, id);
 
 
 --
@@ -6845,6 +6882,14 @@ GRANT SELECT(updated_at) ON TABLE app.devices TO couli_readonly;
 GRANT SELECT,INSERT ON TABLE app.event_log TO couli_app;
 GRANT SELECT,INSERT ON TABLE app.event_log TO couli_payout;
 GRANT SELECT ON TABLE app.event_log TO couli_readonly;
+
+
+--
+-- Name: TABLE favorites; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE ON TABLE app.favorites TO couli_app;
+GRANT SELECT ON TABLE app.favorites TO couli_readonly;
 
 
 --
