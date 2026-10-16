@@ -4,11 +4,11 @@ title: 开关切换演练脚本（暂不开工）：逐个切换 02 §14 列出�
 type: impl
 # 2026-10-06 草稿（会话 codex-impl-six 拆分）。规划/11 §1.1 例外条、§7.3 第 14 项；docs/changes/20261006-部分任务改由Codex实现.md。
 # 流程：Claude 子代理先写规则测试（test_paths，先红）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 按风险级评审。
-# 开工条件：开关读写入口已实现（content 模块 config_items / kill_switches 与后台接口，尚未入账）；QA-05a 合并。
+# 开工条件：开关读写入口已实现（2026-10-16 入账：F1-10b 开关注册表与 10 秒生效、F1-10d 紧急开关后台接口；开关仍存 config_items，见 couli-runs/F1-10a/decision-orchestrator.md 裁定 1）；QA-05a 合并。
 # 资金开关（payout.*、pay.*）不在本批，留第 12 项分工。
 refs: []
 refs_hash: {}
-deps: [QA-05a]
+deps: [QA-05a, F1-10b, F1-10d]
 paths:
   - 'infra/drills/switches/**'
 test_paths:
