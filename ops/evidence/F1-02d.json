@@ -1,0 +1,86 @@
+{
+  "task": "F1-02d",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "57bf97f5be3d055451f6b525ac84d0576fb593d1",
+  "red_tests": [
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#1] 没有任何平台标识行时 platform_icons 为空对象，响应过 ConfigResponse 契约",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#2] 只有草稿版本（从未发布）的键不下发",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#3] 单键已发布：值为 {url, sha256, version}，url 为去尾斜杠的媒体基址 + 摘要 + .svg",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#4] 多键只列已发布的键；值取 current_version 而不是最新保存的版本；png 后缀为 .png",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#5] 发布后下一次请求立即可见，无需推进时钟（不缓存，即使上一次请求已读过配置）",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#6] 回滚后立即下发回滚到的版本，url 与 sha256 随之变化",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#7] 「恢复内置」后该键立即从下发里消失，其余已发布键不受影响",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#8] 标识表里不属于 PlatformIconKey 的键即使已发布也不下发",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#9] 跨 app 隔离：每个 app 只看到自己已发布的标识",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#10] 游客、登录、deletion_only 会话下发同一份 platform_icons",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#11] 未配 MEDIA_PUBLIC_BASE_URL：省略 platform_icons 键并记 warn（带 app_id），其余配置照常 200",
+    "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#12] 已配基址时其余配置键照常下发，platform_icons 只是在其上增加的键"
+  ],
+  "risk_note": "RV2 (content client config API). GET /v1/config now delivers platform_icons: the published marks of the caller's app_id only, each value exactly publishedPlatformIcons (url = mediaUrlOf(MEDIA_PUBLIC_BASE_URL, sha256, format), sha256, version); read from the database on every request (no cache; the other keys keep content's 60 s reader); key omitted with a warn when the api entry has no media base URL, other keys still 200; database errors make the whole response 50001. No contract change, no writes, no funds. Codex implementation (ledger impl: codex, approvals 30), rule tests by a Claude subagent. Full verification by the required CI checks (ops/approvals.yaml id 21). The frozen F1-02c rule tests [AC-F1-02c#1] and [AC-F1-02c#21], which asserted platform_icons absent, were relaxed to 'absent or {}' by the separate test-change task F1-02g (#588) before this lands.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "57bf97f5be3d055451f6b525ac84d0576fb593d1",
+      "tree": "376381defa29c43e83b85f996f0953d350a6d230",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T18:02:29Z",
+      "finished_at": "2026-10-16T18:02:38Z",
+      "red_tests": [
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#1] 没有任何平台标识行时 platform_icons 为空对象，响应过 ConfigResponse 契约",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#2] 只有草稿版本（从未发布）的键不下发",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#3] 单键已发布：值为 {url, sha256, version}，url 为去尾斜杠的媒体基址 + 摘要 + .svg",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#4] 多键只列已发布的键；值取 current_version 而不是最新保存的版本；png 后缀为 .png",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#5] 发布后下一次请求立即可见，无需推进时钟（不缓存，即使上一次请求已读过配置）",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#6] 回滚后立即下发回滚到的版本，url 与 sha256 随之变化",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#7] 「恢复内置」后该键立即从下发里消失，其余已发布键不受影响",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#8] 标识表里不属于 PlatformIconKey 的键即使已发布也不下发",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#9] 跨 app 隔离：每个 app 只看到自己已发布的标识",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#10] 游客、登录、deletion_only 会话下发同一份 platform_icons",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#11] 未配 MEDIA_PUBLIC_BASE_URL：省略 platform_icons 键并记 warn（带 app_id），其余配置照常 200",
+        "test/spec/content/config-icons/delivery.int.test.ts > [AC-F1-02d#12] 已配基址时其余配置键照常下发，platform_icons 只是在其上增加的键"
+      ],
+      "expected": ["test/spec/content/config-icons/delivery.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "437a8cf3285eb5330043aa3471905dda27fd725d940f65d58ff9a40a6d4e6903"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh Claude subagent, round 1 pass; one S2 (no media base and no published mark omits the key instead of {}; same client effect) tracked in followups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "12 rule tests by a Claude subagent reviewed by a fresh Codex read-only session: round 1 pass, one S2 (fixture leaves ever_published false) tracked in followups"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "de43c110544bd0306435eb0fedda89b934a8f792",
+    "specs": "e3bb9aaad4133100875640f64e420a0f3631d5e1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}
