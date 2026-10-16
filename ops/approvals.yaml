@@ -206,3 +206,9 @@ approvals:
     granted: true
     date: '2026-10-16'
     note: '编排会话按规划/11 §7.3 第 11 项（门禁流程本身的小改动由编排会话决定）决定；先例两次撞号：2026-10-09 两个 0025（PR #381 纯改名，只能负责人管理员绕过合并），2026-10-16 两个 0031（B1-28a #555 先合 0031_favorites.sql、B2-01d #550 后合 0031_commission-rules.sql），PR #564 把后者纯改名为 0032_commission-rules.sql，负责人当日授权编排会话一次性绕过（gh pr merge --admin 对规则集无效，照 #381 先例临时停用规则集 main-protection 约 10 秒后 squash 合并、立即恢复并核对与改前一致，记录 couli-runs/approvals/564/README.md），被绕过的检查是 evidence-check（非 task/ 分支、无证据）、protected-paths 与 guard-git（迁移目录只增，未加标签），原因即下述死锁；本条之后同类热修不再绕过；死锁原因：非 task 分支改 db/migrations 被 evidence-check 拒（MONEY_PATHS），task 分支要先合台账 PR，而主干 migrations.test 红让任何 PR 的 ci-gate 都过不了；改名 PR 的树已无重复，ci-gate 的 verify-fast 本身为绿，无需特殊处理；不放宽任何资金测试（migrations.test、lint-migrations 照常跑）；落在分支 chore/guard-migration-rename-hotfix（tools/ci/evidence-check.ts 与其测试、db/AGENTS.md、ops/approvals.yaml）；本条所在的 PR 按第 24 条由编排会话核对头提交后加标签'
+  - id: 33
+    row: 15
+    title: 'H5 与管理后台前端（apps/h5/**、apps/admin/**）的新任务默认改由 Codex 实现：已开工的任务保持原分工（界定同第 30 条）；tools/guard/codex-impl-tasks.json 的 forbidden_paths 移出 apps/h5/** 与 apps/admin/**，其余禁区（契约、迁移、money、domain、三端原生、资金与归属模块、.github、tools、ops、commission-examples）照旧；流程：Claude 子代理先写规则测试 / 浏览器测试（先红）→ Codex 新只读会话过审测试 → Codex 经 codex-run.sh impl --phase impl 实现 → 前端线浏览器截图对照定稿设计稿、差异记 design-diffs.md → Claude 新子代理代码评审（第 27 条）；设计稿未定稿的页面不派；改派不改风险级与合并门槛；任务号仍逐个加进清单'
+    granted: true
+    date: '2026-10-16'
+    note: '负责人原话「放开吧 看是你要规划好 看着codex」（2026-10-16 晚，编排会话问「要不要把 H5 和后台前端也放开给 Codex 实现」时作答）；规划依据：规划仓库 PR couli#118（合并提交 033abb1），规划/11 §1.1「2026-10-16 晚负责人再放开 H5 与管理后台前端」、§7.3 第 15 项备注、docs/changes/20261016-未开工任务改由Codex实现.md §1.1；落在分支 chore/codex-frontend-paths（tools/guard/codex-impl-tasks.json、tools/lib/codex-impl-tasks.test.ts、ops/approvals.yaml）；本条所在的 PR 按第 24 条由编排会话核对头提交后加标签'
