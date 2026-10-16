@@ -6,7 +6,10 @@
 // (BR-PRICE-08), otherwise est_net_price_fen = final − min (BR-PRICE-09).
 //
 // Two modes. Live (no prepare() yet): every quote reads rules, the level and configuration in
-// the viewer's app scope, nothing is cached across quotes. Scoped (after prepare()): quotes only
+// the viewer's app scope, nothing is cached across quotes. The quote instant is taken once,
+// before any port is read, and the version is selected at that instant: the list read afterwards
+// always contains the version in force then, while a version that becomes effective (or is
+// revoked) during the reads is never picked from a list that may already be stale. Scoped (after prepare()): quotes only
 // answer from the values pre-read by the latest prepare(), never touch a port again (the link
 // open transaction must not borrow another connection); a viewer outside that scope, or a
 // failed prepare(), rejects. Every failure rejects the quote; nothing ever quotes as 0.
@@ -54,6 +57,8 @@ const LEVELS: ReadonlySet<unknown> = new Set(['L1', 'L2', 'L3']);
 
 /** Values one quote computes from; config holds only entries that were present. */
 interface QuoteInputs {
+  /** The instant the rule version is selected at (BR-CALC-11). */
+  readonly at: Date;
   readonly versions: readonly RuleVersion[];
   readonly level: UserLevel;
   readonly config: ReadonlyMap<string, unknown>;
@@ -176,7 +181,7 @@ export function createCommissionRebateQuoter(
         ? bpConfig(required(inputs.config, COMPARE_RATIO_KEY), COMPARE_RATIO_KEY)
         : undefined;
 
-    const version = selectRuleVersion(inputs.versions, clock.now());
+    const version = selectRuleVersion(inputs.versions, inputs.at);
     const terms = selectQuoteTerms({
       version,
       platforms,
@@ -225,14 +230,19 @@ export function createCommissionRebateQuoter(
     viewer: Viewer,
   ): Promise<QuoteInputs> {
     const appId = checkAppId(viewer.appId);
+    // Read the clock before any port, never during or after the reads (see the header).
+    const at = clock.now();
     const [versions, level, values] = await Promise.all([
       rules.publishedVersions(appId),
       readLevel(appId, viewer.userId),
       readConfig(appId, neededKeys(item, ctx)),
     ]);
-    return { versions, level, config: values };
+    return { at, versions, level, config: values };
   }
 
+  // Scoped mode: production wiring must not call prepare(). TODO(规划/11 §2.3): 删除或改为无状态
+  // — blocked on 规则测试 test-change（冻结规则测试要求 prepare 之后跨生效时刻换用新版本，此处
+  // 的版本列表来自 prepare 时刻，报价时刻在其后读时钟）。
   function scopedInputs(scope: PreparedScope | null, viewer: Viewer): QuoteInputs {
     if (scope === null) {
       throw new Error('commission quote: no prepared scope (last prepare failed or is pending)');
@@ -250,7 +260,7 @@ export function createCommissionRebateQuoter(
       }
       level = prepared;
     }
-    return { versions: scope.versions, level, config: scope.config };
+    return { at: clock.now(), versions: scope.versions, level, config: scope.config };
   }
 
   async function quote(
@@ -267,6 +277,8 @@ export function createCommissionRebateQuoter(
     return compute(item, ctx, inputs);
   }
 
+  // 生产装配不得调用 prepare()。TODO(规划/11 §2.3): 删除或改为无状态 — blocked on 规则测试
+  // test-change.
   async function prepare(appId: string, userIds: readonly string[]): Promise<void> {
     // The previous scope stops answering immediately; only this call's result may replace it.
     generation += 1;
