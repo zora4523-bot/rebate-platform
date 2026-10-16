@@ -51,7 +51,8 @@ describe('[AC-B3-05d][BR-AI-18] advice pre-check lets product searches through (
     '有没有卖讲官司怎么打的教材',
     '哪里能买到讲投资建议的书',
     '求购一本股票投资入门书',
-    '想要一台治疗方案演示用的投影机',
+    '推荐一本讲买什么基金的书',
+    '有没有讲药怎么吃的绘本',
   ])('proceeds: %s', async (text) => {
     expect((await check(text)).kind).toBe('proceed');
   });
@@ -70,9 +71,13 @@ describe('[AC-B3-05d][BR-AI-18] advice pre-check lets product searches through (
     '帮我推荐一只基金',
     '推荐一款理财产品，给点投资建议',
     '什么时候买基金合适，买入时机怎么看',
-    '推荐一本讲买什么基金的书',
     '帮我诊断一下头痛是什么病',
     '劳动纠纷怎么起诉',
+    '我买的这个药一次吃几片',
+    '刚买的这款药膏怎么用',
+    '想买的保健品有副作用吗',
+    '买了两盒药，能不能一起吃',
+    '帮我找个药，用法用量是多少',
   ])('refuses advice: %s', async (text) => {
     expect(await check(text)).toEqual({
       kind: 'refuse',
