@@ -1,0 +1,18 @@
+id: B2-02b
+repo: rebate-platform
+title: 迁移门禁资金表清单补缺：tools/ci/lint-migrations.ts 资金表名单加 daily_balances、asset_snapshots、bad_debt_writeoffs、admin_adjustments、recon_diffs、fund_ledger（现有前缀匹配不到），同步锁定清单测试
+type: guard-change
+# 2026-10-17 资金线入账（ledger-plan.md §2.1、D17）。收紧门禁：这些将来的资金表在建表前就纳入「不得 DROP / 改类型 / squawk-ignore、约束须命名」保护。只加表名，不改判定逻辑。
+# 按编排授权（门禁登记类）由本线核对后加 owner-approved 标签；D17 记作「事后报负责人」。先例 B2-01d / B2-01g 同步 lint-migrations.test.ts 锁定清单。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

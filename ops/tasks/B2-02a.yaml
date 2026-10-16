@@ -1,0 +1,21 @@
+id: B2-02a
+repo: rebate-platform
+title: 门禁登记新模块 ledger：ops/risk-map.yaml 加 apps/api/src/modules/ledger/** 为 RV2（同 commission），重生成根 AGENTS.md 分工表，同步 tools/guard/lib/risk.test.ts，加 ledger/AGENTS.md 与一行 @AGENTS.md 的 CLAUDE.md
+type: guard-change
+# 2026-10-17 资金线 funds-quote 入账（编排 05:5x；方案 couli-runs/FUNDS-quote/ledger-plan.md §2.1）。先例 B2-03e（#520）：risk-map-coverage 要求每个模块目录有规则，资金模块须自带 AGENTS.md。
+# 收紧门禁（未登记路径本就 RV2），按编排 2026-10-16 14:4x 授权由本线加 owner-approved 标签。模块 AGENTS.md ≤60 行、不写数值与公式：只有 ledger 改余额、分录只插入、记账按账户 ID 升序加锁、金额只经 @couli/money。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'ops/risk-map.yaml'
+  - 'AGENTS.md'
+  - 'tools/guard/lib/risk.test.ts'
+  - 'apps/api/src/modules/ledger/AGENTS.md'
+  - 'apps/api/src/modules/ledger/CLAUDE.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
