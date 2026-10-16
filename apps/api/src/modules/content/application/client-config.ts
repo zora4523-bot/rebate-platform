@@ -6,6 +6,7 @@
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import type { Logger } from 'pino';
+import { MediaStoreUnavailableError } from '../../platform/index.ts';
 import {
   buildClientConfig,
   CLIENT_CONFIG_KEYS,
@@ -13,6 +14,7 @@ import {
   type ConfigViewer,
 } from '../domain/client-config.ts';
 import type { ContentReader } from './content-reader.ts';
+import type { PublishedPlatformIcons } from './published-platform-icons.ts';
 
 /** The caller of one request, resolved by identity (content never imports identity). */
 export abstract class ConfigViewerContext {
@@ -31,6 +33,8 @@ export class ClientConfigUnavailableError extends Error {
 
 export interface ClientConfigDeps {
   readonly reader: ContentReader;
+  /** Fresh primary-database read on every request, outside ContentReader's cache. */
+  readonly platformIcons: (appId: string) => Promise<PublishedPlatformIcons>;
   readonly linkPatterns: () => NonNullable<ClientConfig['link_patterns']>;
   readonly logger: Pick<Logger, 'warn' | 'error'>;
 }
@@ -81,6 +85,15 @@ export class ClientConfigService {
       },
     });
     if (config === undefined) throw new ClientConfigUnavailableError(missing);
+    try {
+      config.platform_icons = await this.#deps.platformIcons(viewer.appId);
+    } catch (error) {
+      if (!(error instanceof MediaStoreUnavailableError)) throw error;
+      logger.warn(
+        { event: 'content_config_platform_icons_unavailable', app_id: viewer.appId },
+        'media public base URL unavailable; platform_icons omitted',
+      );
+    }
     return config;
   }
 }

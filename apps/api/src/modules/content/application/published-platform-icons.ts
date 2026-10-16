@@ -3,11 +3,11 @@
 // version's cleaned file url (platform mediaUrlOf over MEDIA_PUBLIC_BASE_URL), its SHA-256 and its
 // number. Read from the database on every call, never cached: a publish, rollback or restore on
 // the admin entry (another process) shows in the very next read. Keys outside enum
-// platform_icon_key are not delivered. /v1/config itself is a later task.
+// platform_icon_key are not delivered. Used by GET /v1/config (F1-02d).
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { mediaUrlOf } from '../../platform/index.ts';
+import { MediaStoreUnavailableError, mediaUrlOf } from '../../platform/index.ts';
 import { publishedIconRows } from '../infra/kysely-platform-icon-store.ts';
 import { formatOf, isPlatformIconKey } from './platform-icon-reader.ts';
 
@@ -26,6 +26,11 @@ export async function publishedPlatformIcons(
   appId: string,
 ): Promise<PublishedPlatformIcons> {
   const rows = await publishedIconRows(options.db, appId);
+  // Check even with no published rows. Read first so database failures cannot be hidden by
+  // /v1/config's missing-media fallback.
+  if ((options.mediaPublicBaseUrl ?? '').replace(/\/+$/, '') === '') {
+    throw new MediaStoreUnavailableError();
+  }
   const result: PublishedPlatformIcons = {};
   for (const row of rows) {
     if (!isPlatformIconKey(row.key)) continue;

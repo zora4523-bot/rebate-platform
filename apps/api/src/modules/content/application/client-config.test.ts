@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
+import { MediaStoreUnavailableError } from '../../platform/index.ts';
 import type { ClientConfig } from '../domain/client-config.ts';
-import { ClientConfigService, ClientConfigUnavailableError } from './client-config.ts';
+import {
+  ClientConfigService,
+  ClientConfigUnavailableError,
+  type ClientConfigDeps,
+} from './client-config.ts';
 import type { ContentReader } from './content-reader.ts';
 
 const REQUIRED: Record<string, unknown> = {
@@ -12,7 +17,11 @@ const REQUIRED: Record<string, unknown> = {
   'legal.agreement.version': 5,
 };
 
-function service(values: Record<string, unknown>, failure?: Error) {
+function service(
+  values: Record<string, unknown>,
+  failure?: Error,
+  platformIcons: ClientConfigDeps['platformIcons'] = () => Promise.resolve({}),
+) {
   const warns: unknown[] = [];
   const errors: unknown[] = [];
   const apps = new Set<string>();
@@ -28,6 +37,7 @@ function service(values: Record<string, unknown>, failure?: Error) {
   };
   const svc = new ClientConfigService({
     reader,
+    platformIcons,
     linkPatterns: () =>
       ({ version: 'lp', rules: [] }) as NonNullable<ClientConfig['link_patterns']>,
     logger: {
@@ -62,4 +72,24 @@ it('[AC-F1-02c] a malformed optional key warns with the key and keeps the defaul
 it('[AC-F1-02c] a failed read rejects, never a default answer', async () => {
   const s = service(REQUIRED, new Error('down'));
   await expect(s.svc.read({ appId: 'a', userId: null }, null)).rejects.toThrow('down');
+});
+
+it('[AC-F1-02d] unavailable media omits the key and warns with the app id', async () => {
+  const s = service(REQUIRED, undefined, () => Promise.reject(new MediaStoreUnavailableError()));
+  const config = await s.svc.read({ appId: 'app1', userId: null }, null);
+  expect(Object.hasOwn(config, 'platform_icons')).toBe(false);
+  expect(config.h5_base_url).toBe(REQUIRED['h5_base_url']);
+  expect(s.warns).toEqual([{ event: 'content_config_platform_icons_unavailable', app_id: 'app1' }]);
+});
+
+it('[AC-F1-02d] icon database errors reject even after a successful config read', async () => {
+  let fail = false;
+  const failure = new Error('icon database unavailable');
+  const s = service(REQUIRED, undefined, () =>
+    fail ? Promise.reject(failure) : Promise.resolve({}),
+  );
+  expect((await s.svc.read({ appId: 'app1', userId: null }, null)).platform_icons).toEqual({});
+  fail = true;
+  await expect(s.svc.read({ appId: 'app1', userId: null }, null)).rejects.toBe(failure);
+  expect(s.warns).toEqual([]);
 });
