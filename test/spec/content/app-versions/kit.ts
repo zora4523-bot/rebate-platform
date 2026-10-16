@@ -143,7 +143,7 @@ export function harness(loadInfra: () => Promise<TestInfra>): Harness {
 
 /** A fresh app_id per test (≤ 32 chars) so the 60 s (appId, platform) cache never leaks. */
 export function freshAppId(): string {
-  return `f102e-${randomBytes(8).toString('hex')}`;
+  return `f102e_${randomBytes(8).toString('hex')}`;
 }
 
 export interface Row {
