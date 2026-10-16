@@ -14,6 +14,7 @@ import {
   START,
   SWITCH_CACHE_MAX_MS,
   SWITCH_EFFECTIVE_MS,
+  settle,
   type Json,
 } from './kit.ts';
 
@@ -192,4 +193,44 @@ it('[AC-F1-10b#24] §9.2 (3) 时钟只用注入的 Clock：时钟不动时开关
   }
   expect(store.readsOf(APP, key)).toBe(1);
   expect(switchSpecOf(key)?.systemWritten).toBe(true);
+});
+
+it('[AC-F1-10b#25] 04 §10.2「10 秒内生效」、F1-02b「从读取开始时刻起算」：t=0 发起的读取慢到 t=8s 才带回旧值 on，t=1s 已关闭开关；完成后立刻再读与 t=11s 再读都重新访问 store 并返回 off', async () => {
+  const key = 'growth.invite_bind.enabled';
+  const { store, clock, reader } = setup();
+  store.set(APP, key, true, 1);
+  store.holdNextRead();
+  const slow = reader.configValue(APP, key);
+  await settle();
+  expect(store.heldReads()).toBe(1);
+  clock.advanceMs(1_000);
+  store.set(APP, key, false, 2);
+  clock.advanceMs(7_000);
+  store.finishHeldRead({ value: true, version: 1 });
+  expect(await slow).toStrictEqual({ value: true, version: 1 });
+  // The entry dates from t=0, so at t=8s it is older than any switch lifetime (<= 5 s).
+  expect(await reader.configValue(APP, key)).toStrictEqual({ value: false, version: 2 });
+  expect(store.readsOf(APP, key)).toBe(2);
+  clock.advanceMs(SWITCH_EFFECTIVE_MS - 7_000);
+  expect(await reader.configValue(APP, key)).toStrictEqual({ value: false, version: 2 });
+});
+
+it('[AC-F1-10b#26] §9.2 (3)、F1-02b「从读取开始时刻起算」：开关读取在时长将尽时才完成，带回的旧值在「发起时刻 + 开关缓存时长」到期，不从完成时刻重新起算', async () => {
+  const ttl = switchCacheTtlMs();
+  const key = 'withdraw.enabled';
+  const { store, clock, reader } = setup();
+  store.set(APP, key, true, 1);
+  store.holdNextRead();
+  const slow = reader.configValue(APP, key);
+  await settle();
+  expect(store.heldReads()).toBe(1);
+  store.set(APP, key, false, 2);
+  clock.advanceMs(ttl - 1);
+  store.finishHeldRead({ value: true, version: 1 });
+  expect(await slow).toStrictEqual({ value: true, version: 1 });
+  expect(await reader.configValue(APP, key)).toStrictEqual({ value: true, version: 1 });
+  expect(store.readsOf(APP, key)).toBe(1);
+  clock.advanceMs(1);
+  expect(await reader.configValue(APP, key)).toStrictEqual({ value: false, version: 2 });
+  expect(store.readsOf(APP, key)).toBe(2);
 });

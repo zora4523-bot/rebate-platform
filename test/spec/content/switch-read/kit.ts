@@ -170,11 +170,34 @@ export const NOT_SWITCHES: readonly (readonly [string, string])[] = [
   ['indirect_enabled', 'rule version field, not a switch'],
 ];
 
-/** In-memory ContentStore: counts reads per (appId, key) and can fail on demand. */
+/**
+ * In-memory ContentStore: counts reads per (appId, key) and can fail on demand. holdNextRead()
+ * suspends the next configItem call until the test finishes it, so the clock and the stored row
+ * can move while that read is in flight (a slow PostgreSQL read).
+ */
 export class FakeStore implements ContentStore {
   private readonly rows = new Map<string, ContentConfig>();
   private readonly reads = new Map<string, number>();
+  private holdNext = false;
+  private readonly held: ((row: ContentConfig | null) => void)[] = [];
   failure: Error | null = null;
+
+  /** The next configItem call stays pending until finishHeldRead() answers it. */
+  holdNextRead(): void {
+    this.holdNext = true;
+  }
+
+  /** How many held reads have started and are still pending. */
+  heldReads(): number {
+    return this.held.length;
+  }
+
+  /** Completes the oldest held read with `row` (what the database saw when the read ran). */
+  finishHeldRead(row: ContentConfig | null): void {
+    const finish = this.held.shift();
+    if (finish === undefined) throw new Error('kit: no held read to finish');
+    finish(row);
+  }
 
   set(appId: string, key: string, value: Json, version: number): void {
     this.rows.set(storeKey(appId, key), { value, version });
@@ -196,6 +219,12 @@ export class FakeStore implements ContentStore {
     const id = storeKey(appId, key);
     this.reads.set(id, (this.reads.get(id) ?? 0) + 1);
     if (this.failure !== null) return Promise.reject(this.failure);
+    if (this.holdNext) {
+      this.holdNext = false;
+      return new Promise((resolve) => {
+        this.held.push(resolve);
+      });
+    }
     const row = this.rows.get(id);
     return Promise.resolve(
       row === undefined ? null : { value: structuredClone(row.value), version: row.version },
@@ -205,4 +234,11 @@ export class FakeStore implements ContentStore {
 
 function storeKey(appId: string, key: string): string {
   return JSON.stringify([appId, key]);
+}
+
+/** Lets pending microtasks and the reader's deferred load run (real event loop, no fake timers). */
+export function settle(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
 }
