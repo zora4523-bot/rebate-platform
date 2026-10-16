@@ -1,7 +1,8 @@
 import type { ClientPlatform } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Clock } from '../../platform/index.ts';
-import { CONTENT_CACHE_TTL_MS } from '../domain/cache-policy.ts';
+import { CONTENT_CACHE_TTL_MS, switchCacheTtlMs } from '../domain/cache-policy.ts';
+import { switchSpecOf } from '../domain/switch-registry.ts';
 import { isVersionGatedPlatform } from '../domain/version-gate.ts';
 import { TtlCache } from './ttl-cache.ts';
 
@@ -47,7 +48,8 @@ export interface ContentStore {
 }
 
 /**
- * ContentReader with both reads cached for CONTENT_CACHE_TTL_MS (rule in TtlCache). Minimum
+ * ContentReader with registered switches cached for switchCacheTtlMs() and other reads for
+ * CONTENT_CACHE_TTL_MS (rule in TtlCache). Minimum
  * versions are cached per (appId, platform) with every channel of that platform, so the cache
  * holds only rows that exist however many distinct channels callers ask for; missing config keys
  * are cached like present ones. One instance per process shares its cache across requests.
@@ -56,11 +58,13 @@ export class CachedContentReader implements ContentReader {
   private readonly store: ContentStore;
   private readonly versions: TtlCache<ReadonlyMap<string, string | null>>;
   private readonly configs: TtlCache<ContentConfig | null>;
+  private readonly switches: TtlCache<ContentConfig | null>;
 
   constructor(store: ContentStore, clock: Clock) {
     this.store = store;
     this.versions = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
     this.configs = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
+    this.switches = new TtlCache(clock, switchCacheTtlMs());
   }
 
   async minSupportedVersion(
@@ -76,9 +80,8 @@ export class CachedContentReader implements ContentReader {
   }
 
   async configValue(appId: string, key: string): Promise<ContentConfig | null> {
-    const config = await this.configs.get(cacheKey(appId, key), () =>
-      this.store.configItem(appId, key),
-    );
+    const cache = switchSpecOf(key) === null ? this.configs : this.switches;
+    const config = await cache.get(cacheKey(appId, key), () => this.store.configItem(appId, key));
     if (config === null) return null;
     // Every caller gets its own copy: the cached value is shared by all later reads.
     return { value: structuredClone(config.value), version: config.version };
