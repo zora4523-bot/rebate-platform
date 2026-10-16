@@ -1,10 +1,10 @@
-import { chinaDate, chinaDayRange, chinaMonth, chinaMonthRange } from '@couli/domain';
+import { accountingDate, chinaDayRange, chinaMonth, chinaMonthRange } from '@couli/domain';
 import { expect, it } from 'vitest';
 
 it.each([NaN, Infinity, -Infinity, 8_640_000_000_000_001])(
-  '[AC-B1-08d#9] chinaDate 拒绝非法 Date（%s），抛 RangeError',
+  '[AC-B1-08d#9] accountingDate 拒绝非法 Date（%s），抛 RangeError',
   (value) => {
-    expect(() => chinaDate(new Date(value))).toThrow(RangeError);
+    expect(() => accountingDate(new Date(value))).toThrow(RangeError);
   },
 );
 

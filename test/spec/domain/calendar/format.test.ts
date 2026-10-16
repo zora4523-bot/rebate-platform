@@ -1,4 +1,4 @@
-import { chinaDate, chinaMonth } from '@couli/domain';
+import { accountingDate, chinaMonth } from '@couli/domain';
 import { expect, it } from 'vitest';
 
 // B1-08d 编排补充：固定 +08:00，自然月归月不推导 settle_period。
@@ -25,8 +25,8 @@ const instants = [
   ['1991-06-30T15:30:00.000Z', '1991-06-30', '1991-06'],
 ] as const;
 
-it.each(instants)('[AC-B1-08d#1] chinaDate：%s → %s', (iso, date) => {
-  expect(chinaDate(new Date(iso))).toBe(date);
+it.each(instants)('[AC-B1-08d#1] accountingDate：%s → %s', (iso, date) => {
+  expect(accountingDate(new Date(iso))).toBe(date);
 });
 
 it.each(instants)('[AC-B1-08d#2] chinaMonth：%s 归入对应自然月', (iso, _date, month) => {
@@ -37,17 +37,17 @@ it.each(['2026-10-20T00:10:00+08:00', '2026-10-19T16:10:00Z', '2026-10-19T09:10:
   '[AC-B1-08d#3] 同一绝对时刻 %s 的日期与月份一致',
   (iso) => {
     const at = new Date(iso);
-    expect([chinaDate(at), chinaMonth(at)]).toEqual(['2026-10-20', '2026-10']);
+    expect([accountingDate(at), chinaMonth(at)]).toEqual(['2026-10-20', '2026-10']);
   },
 );
 
 it('[AC-B1-08d#4] 格式化不修改传入 Date，交错调用后结果不变', () => {
   const at = new Date('2026-12-31T15:59:59.999Z');
   const before = at.getTime();
-  const first = [chinaDate(at), chinaMonth(at)];
-  chinaDate(new Date('2024-02-29T16:00:00Z'));
+  const first = [accountingDate(at), chinaMonth(at)];
+  accountingDate(new Date('2024-02-29T16:00:00Z'));
   chinaMonth(new Date('2024-02-29T16:00:00Z'));
-  expect({ first, again: [chinaDate(at), chinaMonth(at)], instant: at.getTime() }).toEqual({
+  expect({ first, again: [accountingDate(at), chinaMonth(at)], instant: at.getTime() }).toEqual({
     first: ['2026-12-31', '2026-12'],
     again: ['2026-12-31', '2026-12'],
     instant: before,

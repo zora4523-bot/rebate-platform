@@ -1,4 +1,4 @@
-import { chinaDate, chinaDayRange, chinaMonth, chinaMonthRange } from '@couli/domain';
+import { accountingDate, chinaDayRange, chinaMonth, chinaMonthRange } from '@couli/domain';
 import { expect, it } from 'vitest';
 
 const days = [
@@ -14,23 +14,31 @@ const days = [
   ['1991-06-30', '1991-06-29T16:00:00.000Z', '1991-06-30T16:00:00.000Z', '1991-07-01'],
 ] as const;
 
-it.each(days)('[AC-B1-08d#5] %s 自然日区间为固定 +08:00 的两个零点', (date, start, end) => {
-  const range = chinaDayRange(date);
-  expect(range.start).toBeInstanceOf(Date);
-  expect(range.end).toBeInstanceOf(Date);
-  expect([range.start.toISOString(), range.end.toISOString()]).toEqual([start, end]);
-  expect(range.end.getTime() - range.start.getTime()).toBe(86_400_000);
-});
+it.each(days)(
+  '[AC-B1-08d#5] %s 自然日区间为固定 +08:00 的两个零点字符串（精确到秒）',
+  (date, start, end, next) => {
+    const range = chinaDayRange(date);
+    expect(range).toEqual({
+      start: `${date}T00:00:00+08:00`,
+      end: `${next}T00:00:00+08:00`,
+    });
+    expect([Date.parse(range.start), Date.parse(range.end)]).toEqual([
+      Date.parse(start),
+      Date.parse(end),
+    ]);
+    expect(Date.parse(range.end) - Date.parse(range.start)).toBe(86_400_000);
+  },
+);
 
 it.each(days)(
   '[AC-B1-08d#6] %s 日区间左闭右开且与次日连续，日期往返不变',
   (date, _start, _end, next) => {
     const range = chinaDayRange(date);
-    expect(chinaDate(range.start)).toBe(date);
-    expect(chinaDate(new Date(range.end.getTime() - 1))).toBe(date);
-    expect(chinaDate(range.end)).toBe(next);
-    expect(chinaDate(new Date(range.start.getTime() - 1))).not.toBe(date);
-    expect(range.end.getTime()).toBe(chinaDayRange(next).start.getTime());
+    expect(accountingDate(new Date(range.start))).toBe(date);
+    expect(accountingDate(new Date(Date.parse(range.end) - 1))).toBe(date);
+    expect(accountingDate(new Date(range.end))).toBe(next);
+    expect(accountingDate(new Date(Date.parse(range.start) - 1))).not.toBe(date);
+    expect(range.end).toBe(chinaDayRange(next).start);
   },
 );
 
@@ -50,12 +58,17 @@ const months = [
 
 it.each(months)(
   '[AC-B1-08d#7] %s 自然月区间正确处理月长、跨年和闰年',
-  (month, start, end, _next, length) => {
+  (month, start, end, next, length) => {
     const range = chinaMonthRange(month);
-    expect(range.start).toBeInstanceOf(Date);
-    expect(range.end).toBeInstanceOf(Date);
-    expect([range.start.toISOString(), range.end.toISOString()]).toEqual([start, end]);
-    expect(range.end.getTime() - range.start.getTime()).toBe(length * 86_400_000);
+    expect(range).toEqual({
+      start: `${month}-01T00:00:00+08:00`,
+      end: `${next}-01T00:00:00+08:00`,
+    });
+    expect([Date.parse(range.start), Date.parse(range.end)]).toEqual([
+      Date.parse(start),
+      Date.parse(end),
+    ]);
+    expect(Date.parse(range.end) - Date.parse(range.start)).toBe(length * 86_400_000);
   },
 );
 
@@ -63,11 +76,24 @@ it.each(months)(
   '[AC-B1-08d#8] %s 月区间左闭右开且与次月连续，月份往返不变',
   (month, _start, _end, next) => {
     const range = chinaMonthRange(month);
-    expect(chinaMonth(range.start)).toBe(month);
-    expect(chinaMonth(new Date(range.end.getTime() - 1))).toBe(month);
-    expect(chinaMonth(range.end)).toBe(next);
-    expect(chinaMonth(new Date(range.start.getTime() - 1))).not.toBe(month);
-    expect(range.end.getTime()).toBe(chinaMonthRange(next).start.getTime());
-    expect(range.start.getTime()).toBe(chinaDayRange(`${month}-01`).start.getTime());
+    expect(chinaMonth(new Date(range.start))).toBe(month);
+    expect(chinaMonth(new Date(Date.parse(range.end) - 1))).toBe(month);
+    expect(chinaMonth(new Date(range.end))).toBe(next);
+    expect(chinaMonth(new Date(Date.parse(range.start) - 1))).not.toBe(month);
+    expect(range.end).toBe(chinaMonthRange(next).start);
+    expect(range.start).toBe(chinaDayRange(`${month}-01`).start);
   },
 );
+
+it('[AC-B1-08d#15] 日月区间交错调用后结果不变', () => {
+  const day = chinaDayRange('2026-12-31');
+  const month = chinaMonthRange('2026-12');
+  chinaDayRange('2024-02-29');
+  chinaMonthRange('2024-02');
+  expect([day, month, chinaDayRange('2026-12-31'), chinaMonthRange('2026-12')]).toEqual([
+    { start: '2026-12-31T00:00:00+08:00', end: '2027-01-01T00:00:00+08:00' },
+    { start: '2026-12-01T00:00:00+08:00', end: '2027-01-01T00:00:00+08:00' },
+    { start: '2026-12-31T00:00:00+08:00', end: '2027-01-01T00:00:00+08:00' },
+    { start: '2026-12-01T00:00:00+08:00', end: '2027-01-01T00:00:00+08:00' },
+  ]);
+});
