@@ -51,7 +51,9 @@ afterAll(async () => {
 it('[AC-F1-02c#1] 最小有效配置下发所有约定键、规划缺省与完整契约', async () => {
   const id = await configured(h, { 'invite.required': true });
   const data = await success(h.app, id);
-  expect(data).toEqual({
+  // platform_icons belongs to F1-02d: absent before it, {} once delivered (no published mark here).
+  expect([undefined, {}]).toContainEqual(data.platform_icons);
+  expect({ ...data, platform_icons: undefined }).toEqual({
     dict_version: '0',
     h5_base_url: REQUIRED['h5_base_url'],
     h5_release: { version: 'stable-v1' },
@@ -609,8 +611,9 @@ it('[AC-F1-02c#21] link_patterns 只取平台规格表，忽略同名配置及�
   });
   const data = await success(h.app, id);
   expect(data.link_patterns).toEqual(getLinkPatterns());
+  // platform_icons never comes from a same-named config row: absent before F1-02d, {} after it.
+  expect([undefined, {}]).toContainEqual(data.platform_icons);
   for (const key of [
-    'platform_icons',
     'lkg_max_age_sec',
     'config_version',
     'bridge_disabled_methods',
