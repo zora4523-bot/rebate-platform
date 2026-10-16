@@ -13,6 +13,8 @@ paths:
   - 'apps/api/src/modules/catalog/catalog.module.ts'
   - 'contracts/openapi.yaml'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
   - 'packages/contracts-ts/src/openapi.gen.ts'
 test_paths:
   - 'test/spec/catalog/price-trend-route/**'
