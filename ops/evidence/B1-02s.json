@@ -1,7 +1,7 @@
 {
   "task": "B1-02s",
   "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
-  "spec_commit": "b664c4fff8892c7eb8f3bde50d57d8b05af1342d",
+  "spec_commit": "a0bfd61d6e5987eb68acfe3674f4a853596936ab",
   "red_tests": [
     "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#1] 未读 GET 只返回空平台对象和 null，读取不产生已读行",
     "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#2] 两个平台各记 Clock 时刻，GET 只列已读平台",
@@ -37,11 +37,11 @@
       "mode": "container",
       "script": "red",
       "exit_code": 0,
-      "commit": "b664c4fff8892c7eb8f3bde50d57d8b05af1342d",
-      "tree": "1f813f735702f6c90670dc8ead0c93b0cd0392b0",
+      "commit": "a0bfd61d6e5987eb68acfe3674f4a853596936ab",
+      "tree": "2e53e7b68c7c75fbbaad48128bc7e631a79e3cfd",
       "prop_seed": 20261001,
-      "started_at": "2026-10-16T11:53:56Z",
-      "finished_at": "2026-10-16T11:54:04Z",
+      "started_at": "2026-10-16T11:54:37Z",
+      "finished_at": "2026-10-16T11:54:44Z",
       "red_tests": [
         "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#1] 未读 GET 只返回空平台对象和 null，读取不产生已读行",
         "test/spec/identity/tips/http.int.test.ts > [AC-B1-02s#2] 两个平台各记 Clock 时刻，GET 只列已读平台",
