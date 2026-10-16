@@ -15,6 +15,7 @@ paths:
   - 'contracts/openapi.yaml'
   - 'contracts/texts.default.json'
   - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
 impl: claude
 tester: none
 accept:
